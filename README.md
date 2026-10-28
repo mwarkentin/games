@@ -20,3 +20,7 @@ Some useful tools live next door at
 ## Words
 
 - [Letterfield](https://games.michaelwarkentin.com/letterfield): an endless word search across a map of themed territories
+
+## Strategy
+
+- [Air Traffic Controller](https://games.michaelwarkentin.com/air-traffic-controller): keep aircraft separated while you land arrivals and hand off departures, a remake of the 1985 DOS game
