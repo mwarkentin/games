@@ -1,0 +1,16 @@
+[project]
+name = "games"
+version = "0"
+description = "Build scripts and tests for games.michaelwarkentin.com"
+requires-python = ">=3.12"
+dependencies = ["markdown"]
+
+[dependency-groups]
+dev = ["pytest", "pytest-playwright"]
+
+[tool.uv]
+package = false
+
+[tool.pytest.ini_options]
+pythonpath = ["scripts"]
+testpaths = ["tests"]

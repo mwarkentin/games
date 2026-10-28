@@ -1,0 +1,1203 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="description" content="An endless word search: wander a map of themed territories and circle words hidden in all eight directions.">
+<style>:root{color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}html{scroll-padding-top:env(safe-area-inset-top,0px)}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#fff;color:#000}img{max-width:100%}[hidden]:not([hidden=until-found i]){display:none!important}</style>
+<title>Letterfield</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Big+Shoulders+Display:wght@700;800&family=Martian+Mono:wght@400;500&family=Schibsted+Grotesk:wght@400;500;600&display=swap">
+<style>
+/* Layout: a full-bleed survey sheet (canvas) with map furniture floating on it — a cartouche (title + current territory) top-left,
+   the word legend bottom-left, instruments bottom-right, and a field-notes drawer docked on the right. */
+:root{
+  --paper:#EBEEE7;
+  --panel:#F7F8F4;
+  --ink:#1B2428;
+  --muted:#59656A;
+  --rule:#C6CFC6;
+  --accent:#2A43C2;
+  --on-accent:#FFFFFF;
+  --danger:#B23A2C;
+  --hover:rgba(27,36,40,.055);
+  --shadow:0 10px 28px -14px rgba(27,36,40,.38);
+  --mark-s:58%;
+  --mark-l:38%;
+  --mode:light;
+  --f-display:"Big Shoulders Display","Arial Narrow",Impact,sans-serif;
+  --f-mono:"Martian Mono",ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+  --f-ui:"Schibsted Grotesk",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --gl:max(16px, env(safe-area-inset-left, 0px));
+  --gr:max(16px, env(safe-area-inset-right, 0px));
+  --top:calc(env(safe-area-inset-top, 0px) + 12px);
+  --bottom:calc(env(safe-area-inset-bottom, 0px) + 12px);
+  --notes-w:340px;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --paper:#0F171A; --panel:#162024; --ink:#E2E7DE; --muted:#93A19D; --rule:#2B3A3E;
+    --accent:#97A9FF; --on-accent:#0C1330; --danger:#FF8D7C; --hover:rgba(226,231,222,.06);
+    --shadow:0 14px 32px -14px rgba(0,0,0,.7); --mark-s:68%; --mark-l:68%; --mode:dark; color-scheme:dark;
+  }
+}
+:root[data-theme="dark"]{
+  --paper:#0F171A; --panel:#162024; --ink:#E2E7DE; --muted:#93A19D; --rule:#2B3A3E;
+  --accent:#97A9FF; --on-accent:#0C1330; --danger:#FF8D7C; --hover:rgba(226,231,222,.06);
+  --shadow:0 14px 32px -14px rgba(0,0,0,.7); --mark-s:68%; --mark-l:68%; --mode:dark; color-scheme:dark;
+}
+html,body{height:100%;overflow:hidden}
+body{
+  margin:0;background:var(--paper);color:var(--ink);font:15px/1.45 var(--f-ui);
+  padding-left:max(16px, env(safe-area-inset-left, 0px));
+  padding-right:max(16px, env(safe-area-inset-right, 0px));
+  -webkit-tap-highlight-color:transparent;overscroll-behavior:none;
+}
+button{font:inherit;color:inherit}
+button:focus-visible,a:focus-visible,#map:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.mark{--c:hsl(var(--h,200) var(--mark-s) var(--mark-l))}
+
+#map{position:fixed;inset:0;width:100%;height:100%;display:block;touch-action:none;cursor:grab;outline:none}
+#map.grabbing{cursor:grabbing}
+#map.select{cursor:crosshair}
+
+.card{background:var(--panel);border:1px solid var(--rule);border-radius:8px;box-shadow:var(--shadow)}
+.eyebrow{font:500 10px/1 var(--f-mono);letter-spacing:.14em;text-transform:uppercase;color:var(--muted)}
+
+/* Cartouche: map title block */
+.cartouche{position:fixed;top:var(--top);left:var(--gl);display:flex;align-items:stretch;max-width:calc(100% - 140px);outline:1px solid var(--rule);outline-offset:-5px;padding:3px}
+.brand{padding:9px 14px 8px 12px;border-right:1px solid var(--rule);display:flex;flex-direction:column;justify-content:center;gap:5px}
+.brand h1{margin:0;font:800 27px/.85 var(--f-display);letter-spacing:.05em;text-transform:uppercase}
+.brand small{font:400 9px/1 var(--f-mono);letter-spacing:.16em;text-transform:uppercase;color:var(--muted)}
+.territory{padding:8px 14px 8px 12px;display:grid;grid-template-columns:auto minmax(0,1fr);column-gap:10px;row-gap:3px;align-items:center;min-width:0}
+.swatch{grid-row:1 / span 2;width:12px;height:12px;border-radius:50%;background:var(--c);box-shadow:0 0 0 3px color-mix(in srgb, var(--c) 22%, transparent)}
+.t-name{font:700 20px/1 var(--f-display);letter-spacing:.05em;text-transform:uppercase;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.t-meta{font:400 11px/1.2 var(--f-mono);color:var(--muted);font-variant-numeric:tabular-nums;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+
+/* Legend: words hidden in view */
+.legend{position:fixed;left:var(--gl);bottom:var(--bottom);width:304px;padding:11px 12px 12px}
+.legend-head{display:flex;justify-content:space-between;align-items:baseline;gap:12px;margin-bottom:9px}
+.legend-count{font:400 11px/1 var(--f-mono);color:var(--muted);font-variant-numeric:tabular-nums}
+.chips{list-style:none;margin:0;padding:0;display:flex;flex-wrap:wrap;gap:6px}
+.chip{font:500 12px/1 var(--f-mono);letter-spacing:.07em;padding:7px 8px 6px;border:1px solid var(--rule);border-radius:5px;background:var(--panel);cursor:pointer;white-space:nowrap}
+.chip:hover{border-color:var(--ink)}
+.chip.found{color:var(--muted);text-decoration:line-through;text-decoration-thickness:2px;text-decoration-color:var(--c);border-style:dashed;cursor:default}
+.legend-note{font:400 12px/1.4 var(--f-ui);color:var(--muted);padding:2px 0}
+
+/* Instruments */
+.instruments{position:fixed;right:var(--gr);bottom:var(--bottom);display:flex;flex-direction:column;align-items:flex-end;gap:8px;pointer-events:none;transition:right .28s ease}
+.instruments > *{pointer-events:auto}
+body.docked .instruments{right:calc(var(--notes-w) + 16px)}
+.seg{display:flex;padding:3px;gap:2px}
+.seg button{display:flex;align-items:center;gap:6px;padding:8px 10px;border:0;border-radius:5px;background:transparent;color:var(--muted);font:600 12px/1 var(--f-ui);cursor:pointer}
+.seg button[aria-pressed="true"]{background:var(--ink);color:var(--panel)}
+.seg svg{width:15px;height:15px}
+.zoom{display:flex;flex-direction:column;overflow:hidden}
+.zoom button{width:40px;height:40px;border:0;background:transparent;display:grid;place-items:center;cursor:pointer}
+.zoom button:hover{background:var(--hover)}
+.zoom button + button{border-top:1px solid var(--rule)}
+.zoom svg{width:17px;height:17px}
+
+/* Notes toggle */
+.notes-toggle{position:fixed;top:var(--top);right:var(--gr);display:flex;align-items:center;gap:8px;padding:10px 12px;cursor:pointer;font:600 13px/1 var(--f-ui)}
+.notes-toggle svg{width:17px;height:17px}
+.badge{font:500 11px/1 var(--f-mono);background:var(--ink);color:var(--panel);border-radius:999px;padding:4px 7px 3px;font-variant-numeric:tabular-nums}
+body.docked .notes-toggle{visibility:hidden}
+
+/* Field notes drawer */
+.notes{position:fixed;top:0;right:0;bottom:0;width:var(--notes-w);max-width:100%;background:var(--panel);border-left:1px solid var(--rule);display:flex;flex-direction:column;
+  padding-top:env(safe-area-inset-top, 0px);padding-bottom:env(safe-area-inset-bottom, 0px);padding-right:env(safe-area-inset-right, 0px);
+  transform:translateX(100%);visibility:hidden;transition:transform .28s ease, visibility 0s linear .28s;box-shadow:var(--shadow)}
+body.notes-open .notes{transform:none;visibility:visible;transition:transform .28s ease, visibility 0s}
+body.docked .notes{box-shadow:none}
+.notes-head{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;padding:18px 18px 12px}
+.notes-head h2{margin:0;font:800 30px/.9 var(--f-display);letter-spacing:.04em;text-transform:uppercase;text-wrap:balance}
+.notes-sub{margin:7px 0 0;font-size:13px;color:var(--muted);max-width:30ch}
+.icon-btn{width:36px;height:36px;flex:none;border:1px solid var(--rule);border-radius:7px;background:transparent;display:grid;place-items:center;cursor:pointer}
+.icon-btn:hover{background:var(--hover)}
+.icon-btn svg{width:16px;height:16px}
+.tally{display:grid;grid-template-columns:auto auto minmax(0,1fr);gap:0;margin:0 18px;border-top:1px solid var(--rule);border-bottom:1px solid var(--rule)}
+.tally div{padding:10px 14px 10px 0;min-width:0}
+.tally div + div{padding-left:14px;border-left:1px solid var(--rule)}
+.tally dt{font:500 9.5px/1 var(--f-mono);letter-spacing:.14em;text-transform:uppercase;color:var(--muted);margin-bottom:6px}
+.tally dd{margin:0;font:700 22px/1 var(--f-display);letter-spacing:.04em;font-variant-numeric:tabular-nums;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.filters{display:flex;flex-wrap:wrap;gap:6px;padding:12px 18px 6px}
+.filters:empty{display:none}
+.filter{display:flex;align-items:center;gap:6px;font:500 11px/1 var(--f-mono);padding:6px 8px;border:1px solid var(--rule);border-radius:999px;background:transparent;cursor:pointer;color:var(--muted)}
+.filter i{width:8px;height:8px;border-radius:50%;background:var(--c)}
+.filter[aria-pressed="true"]{border-color:var(--ink);color:var(--ink);background:var(--hover)}
+.finds{list-style:none;margin:0;padding:6px 8px 10px;overflow-y:auto;flex:1;min-height:0;overscroll-behavior:contain}
+.find{display:grid;grid-template-columns:10px minmax(0,1fr) auto;column-gap:12px;row-gap:5px;align-items:baseline;padding:10px 10px;border-radius:6px;color:inherit;text-decoration:none}
+.find:hover{background:var(--hover)}
+.find-dot{width:10px;height:10px;border-radius:50%;background:var(--c);align-self:center}
+.find.stray .find-dot{background:transparent;border:2px dashed var(--c);width:10px;height:10px;box-sizing:border-box}
+.find-word{font:700 21px/1 var(--f-display);letter-spacing:.07em;min-width:0;overflow:hidden;text-overflow:ellipsis}
+.find-when{font:400 10.5px/1 var(--f-mono);color:var(--muted);white-space:nowrap}
+.find-meta{grid-column:2 / 4;font:400 11px/1.4 var(--f-mono);color:var(--muted);font-variant-numeric:tabular-nums}
+.find-meta b{font-weight:500;color:var(--ink)}
+.finds-empty{padding:18px 10px;color:var(--muted);font-size:14px;max-width:36ch}
+.finds-empty strong{display:block;color:var(--ink);font:700 18px/1.1 var(--f-display);letter-spacing:.05em;text-transform:uppercase;margin-bottom:6px}
+.sync{margin:0;padding:12px 18px 14px;border-top:1px solid var(--rule);display:flex;align-items:center;gap:8px;font:400 11px/1.3 var(--f-mono);color:var(--muted)}
+.sync-dot{width:7px;height:7px;border-radius:50%;background:var(--muted);flex:none}
+.sync[data-state="synced"] .sync-dot{background:hsl(150 var(--mark-s) var(--mark-l))}
+.sync[data-state="connecting"] .sync-dot{animation:blink 1s infinite alternate}
+@keyframes blink{to{opacity:.25}}
+
+/* Coach + toast */
+.coach{position:fixed;top:calc(var(--top) + 76px);left:var(--gl);width:330px;max-width:calc(100% - 32px);padding:14px 14px 12px}
+.coach p{margin:0 0 10px;font-size:13.5px;line-height:1.5}
+.coach strong{font-weight:600}
+.coach-row{display:flex;justify-content:space-between;align-items:center;gap:10px}
+.coach kbd{font:500 10.5px/1 var(--f-mono);color:var(--muted)}
+.btn{font:600 13px/1 var(--f-ui);padding:9px 14px;border:0;border-radius:6px;background:var(--accent);color:var(--on-accent);cursor:pointer}
+.toast{position:fixed;top:var(--top);left:50%;transform:translate(-50%,-8px);opacity:0;pointer-events:none;display:grid;grid-template-columns:auto auto;align-items:center;column-gap:10px;row-gap:4px;padding:10px 16px 10px 14px;transition:opacity .2s ease, transform .2s ease;max-width:calc(100% - 32px)}
+body.docked .toast{left:calc((100% - var(--notes-w)) / 2)}
+.toast.show{opacity:1;transform:translate(-50%,0)}
+.toast i{grid-row:span 2;width:10px;height:10px;border-radius:50%;background:var(--c)}
+.toast b{font:700 19px/1 var(--f-display);letter-spacing:.07em}
+.toast span{font:400 11px/1.2 var(--f-mono);color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.vh{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+
+@media (max-width: 1100px){ .toast{top:calc(var(--top) + 70px)} }
+@media (max-width: 699px){
+  .cartouche{right:calc(var(--gr) + 58px);max-width:none;padding:2px;outline-offset:-4px}
+  .brand{padding:7px 9px 6px 8px}
+  .brand h1{font-size:17px}
+  .brand small{display:none}
+  .territory{padding:6px 10px 6px 9px;column-gap:8px;row-gap:2px}
+  .swatch{width:9px;height:9px}
+  .t-name{font-size:15.5px}
+  .t-meta{font-size:9.5px}
+  .notes-toggle{padding:0;width:46px;height:46px;justify-content:center;gap:0}
+  .notes-toggle .label{display:none}
+  .notes-toggle .badge{position:absolute;top:-6px;right:-6px}
+  .legend{right:var(--gr);width:auto;padding:9px 0 10px}
+  .legend-head{padding:0 12px;margin-bottom:8px}
+  .chips{flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none;padding:0 12px}
+  .chips::-webkit-scrollbar{display:none}
+  .chip{flex:none}
+  .legend-note{padding:2px 0}
+  .instruments{left:var(--gl);bottom:calc(var(--bottom) + 84px);flex-direction:row;justify-content:space-between;align-items:flex-end}
+  .zoom{flex-direction:row}
+  .zoom button + button{border-top:0;border-left:1px solid var(--rule)}
+  .notes{top:auto;left:0;width:100%;height:min(80%, 680px);border-left:0;border-top:1px solid var(--rule);border-radius:14px 14px 0 0;transform:translateY(100%);padding-left:env(safe-area-inset-left, 0px)}
+  .coach{top:calc(var(--top) + 60px);right:var(--gr);width:auto}
+  .toast{top:calc(var(--top) + 60px)}
+}
+@media (prefers-reduced-motion: reduce){
+  .notes,.toast,.instruments{transition:none}
+}
+</style>
+</head>
+<body>
+
+<canvas id="map" tabindex="0" aria-label="Endless word search grid. Drag to explore, pinch or Ctrl-scroll to zoom. Tap a word's first letter, then its last letter, to circle it."></canvas>
+
+<header class="cartouche card">
+  <div class="brand">
+    <h1>Letterfield</h1>
+    <small>Endless word search</small>
+  </div>
+  <div class="territory mark" id="territory">
+    <span class="swatch" aria-hidden="true"></span>
+    <div class="t-name" id="tName">&nbsp;</div>
+    <div class="t-meta"><span id="tTheme"></span> · <span id="tCoord"></span></div>
+  </div>
+</header>
+
+<button class="notes-toggle card" id="notesToggle" aria-expanded="false" aria-controls="notes">
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 4h11a3 3 0 0 1 3 3v13H8a3 3 0 0 1-3-3V4z"/><path d="M5 17a3 3 0 0 1 3-3h11"/><path d="M9 8h6"/></svg>
+  <span class="label">Field notes</span>
+  <span class="badge" id="notesBadge">0</span>
+</button>
+
+<section class="legend card" aria-label="Words hidden in view">
+  <div class="legend-head">
+    <span class="eyebrow">Hidden in view</span>
+    <span class="legend-count" id="legendCount"></span>
+  </div>
+  <ul class="chips" id="legendList"></ul>
+</section>
+
+<div class="instruments">
+  <div class="seg card" role="group" aria-label="What dragging does">
+    <button type="button" id="modePan" aria-pressed="true">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v18M3 12h18M12 3l-3 3M12 3l3 3M12 21l-3-3M12 21l3-3M3 12l3-3M3 12l3 3M21 12l-3-3M21 12l-3 3"/></svg>
+      Pan
+    </button>
+    <button type="button" id="modeSelect" aria-pressed="false">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="8.5" width="18" height="7" rx="3.5"/><path d="M7 12h10"/></svg>
+      Circle
+    </button>
+  </div>
+  <div class="zoom card">
+    <button type="button" id="zoomIn" aria-label="Zoom in"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></button>
+    <button type="button" id="zoomOut" aria-label="Zoom out"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M5 12h14"/></svg></button>
+    <button type="button" id="home" aria-label="Return to the origin"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="6.5"/><circle cx="12" cy="12" r="1.6" fill="currentColor"/><path d="M12 2v4M12 18v4M2 12h4M18 12h4"/></svg></button>
+  </div>
+</div>
+
+<aside class="notes" id="notes" aria-label="Field notes">
+  <div class="notes-head">
+    <div>
+      <h2>Field notes</h2>
+      <p class="notes-sub">Every word you circle, with where you found it. Tap one to fly back.</p>
+    </div>
+    <button type="button" class="icon-btn" id="notesClose" aria-label="Close field notes"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+  </div>
+  <dl class="tally">
+    <div><dt>Words</dt><dd id="tWords">0</dd></div>
+    <div><dt>Territories</dt><dd id="tTerr">0</dd></div>
+    <div><dt>Longest</dt><dd id="tLong">—</dd></div>
+  </dl>
+  <div class="filters" id="filters" role="group" aria-label="Filter by theme"></div>
+  <ol class="finds" id="finds"></ol>
+  <p class="sync" id="sync" data-state="local"><span class="sync-dot" aria-hidden="true"></span><span id="syncText">Saved in this browser</span></p>
+</aside>
+
+<div class="coach card" id="coach" role="note" hidden>
+  <p><strong>Every territory hides its own words</strong>, running in all eight directions. Tap a word's first letter, then its last, to circle it. Drag to wander; the grid never ends.</p>
+  <div class="coach-row"><kbd>Shift-drag also circles</kbd><button type="button" class="btn" id="coachOk">Start exploring</button></div>
+</div>
+
+<div class="toast card mark" id="toast" role="status" aria-live="polite"></div>
+
+<script>
+(() => {
+'use strict';
+const $ = s => document.querySelector(s);
+
+/* ---------- World constants ---------- */
+const SEED = 0x1E77E2;
+const CH = 12;          // cells per chunk side
+const RG = 4;           // chunks per territory side
+const RC = CH * RG;     // cells per territory side (48)
+const LETTER_MIN = 9, LETTER_FULL = 13, ZMIN = 2, ZMAX = 80;
+const DIRS = [[1,0],[1,1],[0,1],[-1,1],[-1,0],[-1,-1],[0,-1],[1,-1]];
+const DNAME = ['E','SE','S','SW','W','NW','N','NE'];
+const DARROW = ['→','↘','↓','↙','←','↖','↑','↗'];
+const DWEIGHT = [3,2,3,1,1,1,1,2], DW_TOTAL = 14;
+const NOTES_W = 340;
+const K_FINDS = 'letterfield.finds.v1', K_CAM = 'letterfield.cam.v1', K_COACH = 'letterfield.coach.v1', K_NOTES = 'letterfield.notes.v1';
+const GRID_FONT = '"Martian Mono", ui-monospace, Menlo, monospace';
+const DISPLAY_FONT = '"Big Shoulders Display", "Arial Narrow", sans-serif';
+const RM = matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+const THEMES = [
+  ['Kitchen',18,'Saffron Quarter|Ladle Lane|Cumin Market|Broth Commons|Ginger Row','BASIL BRAISE BROTH BUTTER CLOVE CUMIN DOUGH FENNEL GARLIC GINGER KNEAD LADLE LEMON MINCE NUTMEG OREGANO PAPRIKA PEPPER POACH RISOTTO SAFFRON SAGE SAUTE SIMMER SKILLET SORREL THYME TOAST WHISK ZEST'],
+  ['Orchard',42,'Quince Rows|Plum Terrace|Fig Arbor|Apricot Slope|Medlar Close','APPLE APRICOT BANANA BERRY CHERRY CITRON CURRANT DAMSON DATE FIG GRAPE GUAVA KIWI KUMQUAT LIME LOQUAT LYCHEE MANGO MEDLAR MELON NECTARINE OLIVE PAPAYA PEACH PEAR PERSIMMON PLUM POMELO QUINCE RAISIN'],
+  ['Mountains',66,'Scree Pass|Granite Shoulder|Cairn Heights|Basalt Spur|Talus Cirque','ALPINE BASALT BOULDER BUTTE CAIRN CANYON CAVERN CLIFF CRAG FJORD FLINT GEYSER GLACIER GORGE GRANITE LAVA MAGMA MESA MORAINE PEAK QUARTZ RIDGE SCREE SHALE SLATE SUMMIT TALUS TUNDRA VALLEY VOLCANO'],
+  ['Garden',98,'Petal Common|Crocus Green|Lilac Walk|Poppy Ridge|Clover Patch','ASTER AZALEA BLOOM BULB CLOVER CROCUS DAHLIA DAISY HOSTA IRIS LILAC LILY LOTUS LUPINE MARIGOLD ORCHID PANSY PEONY PETAL POLLEN POPPY PRIMROSE ROSE SEED SNOWDROP STEM TULIP VIOLET YARROW ZINNIA'],
+  ['Forest',140,'Alder Hollow|Mossback Wood|Bracken Dell|Cedar Hush|Owl Thicket','ACORN ALDER ASPEN BADGER BARK BIRCH BRACKEN BRAMBLE CANOPY CEDAR FERN FOX FUNGUS HAZEL HOLLOW HOLLY LARCH LICHEN MAPLE MOSS OWL PINE ROOT SAPLING SPRUCE THICKET TIMBER TRILLIUM WILLOW WOODLAND'],
+  ['Animals',166,'Otter Run|Lynx Country|Bison Range|Lemur Canopy|Marmot Burrows','ALPACA BEAVER BISON CAMEL CHEETAH COYOTE FERRET GECKO GIRAFFE HYENA IBEX IGUANA JACKAL KOALA LEMUR LYNX MARMOT MOOSE OCELOT OTTER PANDA PUMA QUOKKA RACCOON SLOTH TAPIR WALRUS WOMBAT YAK ZEBRA'],
+  ['Sea',190,'Brine Reach|Kelp Shallows|Gull Strand|Pearl Banks|Saltmarsh Sound','ANCHOR ANEMONE BARNACLE BRINE CORAL COVE CURRENT DRIFT FATHOM GULL HARBOR KELP KRILL LAGOON LIMPET MANTA NARWHAL ORCA OYSTER PEARL PLANKTON REEF SEAWEED SHOAL SQUID SURF SWELL TIDE URCHIN WHALE'],
+  ['Weather',212,'Gale Moor|Drizzle Downs|Cirrus Heights|Squall Point|Fogbank Flats','BLIZZARD BREEZE CIRRUS CLOUD CUMULUS CYCLONE DELUGE DEW DRIZZLE FOG FROST GALE GUST HAIL HAZE LIGHTNING MIST MONSOON NIMBUS RAIN RAINBOW SLEET SNOW SQUALL STORM SUNSHINE THUNDER TORNADO TYPHOON ZEPHYR'],
+  ['Library',238,'Folio Stacks|Quill Corner|Margin Lands|Stanza Court|Ledger Hall','ALMANAC ATLAS BINDING CHAPTER CODEX DRAFT EPILOGUE ESSAY FABLE FOLIO GLOSSARY INDEX INK JOURNAL LEDGER MARGIN MYTH NOVEL PAGE POEM PREFACE PROSE QUILL SAGA SCROLL SONNET SPINE STANZA TOME VERSE'],
+  ['Space',268,'Comet Verge|Nebula Drift|Zenith Fields|Pulsar Rim|Lunar Steppe','APOGEE ASTEROID AURORA COMET CORONA COSMOS CRATER ECLIPSE GALAXY GRAVITY JUPITER LUNAR MARS METEOR NEBULA NOVA ORBIT PARSEC PHOTON PLANET PULSAR QUASAR ROCKET ROVER SATURN SOLAR STAR VENUS VOID ZENITH'],
+  ['Workshop',305,'Anvil Yard|Lathe Works|Rivet Gulch|Chisel Bench|Hinge Mill','ANVIL AUGER AWL BOLT BRACE CHISEL CLAMP DRILL FILE GIMLET HAMMER HINGE LATHE LEVEL MALLET NAIL PLANE PLIERS RASP RIVET SANDER SAW SCREW SOLDER SPANNER TONGS TROWEL VISE WASHER WRENCH'],
+  ['Music',340,'Fiddle Crossing|Cello Basin|Chord Hills|Tempo Vale|Lute Terrace','ALTO ARIA BANJO BASS BUGLE CANTATA CELLO CHORD CHORUS CLEF CODA FIDDLE FUGUE GUITAR HARP LUTE LYRE MELODY OBOE OCTAVE OPERA PIANO RHYTHM SONATA TEMPO TENOR TRILL TUBA VIOLA WALTZ'],
+].map(([name, hue, places, words]) => ({ name, hue, places: places.split('|'), words: words.split(' ') }));
+const NT = THEMES.length;
+const VOCAB = new Map();
+THEMES.forEach((t, i) => t.words.forEach(w => { if (!VOCAB.has(w)) VOCAB.set(w, i); }));
+
+/* ---------- Deterministic generation ---------- */
+function h3(a, b, c) {
+  let h = Math.imul(a | 0, 0x27d4eb2d) ^ Math.imul(b | 0, 0x165667b1) ^ (c | 0);
+  h ^= h >>> 15; h = Math.imul(h, 0x85ebca6b);
+  h ^= h >>> 13; h = Math.imul(h, 0xc2b2ae35);
+  h ^= h >>> 16; return h >>> 0;
+}
+function rng(seed) {
+  let a = seed | 0;
+  return () => {
+    a = (a + 0x6D2B79F5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+const fdiv = (a, b) => Math.floor(a / b);
+const clamp = (v, a, b) => v < a ? a : v > b ? b : v;
+const RSEED = SEED ^ 0x5bd1e995;
+const regionTheme = (rx, ry) => h3(rx, ry, RSEED) % NT;
+function regionName(rx, ry) {
+  const h = h3(rx, ry, RSEED), t = THEMES[h % NT];
+  return t.places[(h >>> 9) % t.places.length];
+}
+const keyOf = (w, x, y, d) => `${w}~${x}~${y}~${d}`;
+
+function genChunk(cx, cy) {
+  const r = rng(h3(cx, cy, SEED));
+  const th = regionTheme(fdiv(cx, RG), fdiv(cy, RG));
+  const g = new Uint8Array(CH * CH).fill(255);
+  const pool = THEMES[th].words.slice();
+  for (let i = pool.length - 1; i > 0; i--) { const j = Math.floor(r() * (i + 1)); const t = pool[i]; pool[i] = pool[j]; pool[j] = t; }
+  const target = 6 + Math.floor(r() * 3);
+  const words = [];
+  for (const w of pool) {
+    if (words.length >= target) break;
+    const L = w.length;
+    for (let attempt = 0; attempt < 40; attempt++) {
+      let pick = r() * DW_TOTAL, d = 0;
+      while (pick >= DWEIGHT[d]) { pick -= DWEIGHT[d]; d++; }
+      const dx = DIRS[d][0], dy = DIRS[d][1];
+      const x0 = dx < 0 ? L - 1 : 0, x1 = dx > 0 ? CH - L : CH - 1;
+      const y0 = dy < 0 ? L - 1 : 0, y1 = dy > 0 ? CH - L : CH - 1;
+      const sx = x0 + Math.floor(r() * (x1 - x0 + 1)), sy = y0 + Math.floor(r() * (y1 - y0 + 1));
+      let ok = true, overlap = 0;
+      for (let i = 0; i < L; i++) {
+        const c = g[(sy + dy * i) * CH + sx + dx * i], v = w.charCodeAt(i) - 65;
+        if (c !== 255) { if (c !== v) { ok = false; break; } overlap++; }
+      }
+      if (!ok || overlap === L) continue;
+      for (let i = 0; i < L; i++) g[(sy + dy * i) * CH + sx + dx * i] = w.charCodeAt(i) - 65;
+      const x = cx * CH + sx, y = cy * CH + sy;
+      words.push({ w, x, y, d, th, key: keyOf(w, x, y, d) });
+      break;
+    }
+  }
+  let src = 'AEIOUNRSTL';
+  for (const o of words) src += o.w;
+  for (let i = 0; i < g.length; i++) if (g[i] === 255) g[i] = src.charCodeAt(Math.floor(r() * src.length)) - 65;
+  return { g, words };
+}
+const chunks = new Map();
+function chunk(cx, cy) {
+  const k = cx + ',' + cy;
+  let c = chunks.get(k);
+  if (!c) {
+    c = genChunk(cx, cy);
+    chunks.set(k, c);
+    if (chunks.size > 4000) { let n = 0; for (const key of chunks.keys()) { chunks.delete(key); if (++n >= 800) break; } }
+  }
+  return c;
+}
+function letterAt(x, y) {
+  const cx = fdiv(x, CH), cy = fdiv(y, CH);
+  return chunk(cx, cy).g[(y - cy * CH) * CH + (x - cx * CH)];
+}
+const wordEnd = (e) => [e.x + DIRS[e.d][0] * (e.w.length - 1), e.y + DIRS[e.d][1] * (e.w.length - 1)];
+
+/* ---------- Formatting ---------- */
+const fmtCoord = (x, y) => `${Math.abs(x)}${x < 0 ? 'W' : 'E'} · ${Math.abs(y)}${y < 0 ? 'N' : 'S'}`;
+const hashNum = v => v < 0 ? 'm' + (-v) : String(v);
+const hashOf = e => `f-${e.w.toLowerCase()}-${hashNum(e.x)}-${hashNum(e.y)}-${e.d}`;
+function parseHash(h) {
+  const m = /^#?f-([a-z]{3,12})-(m?\d{1,9})-(m?\d{1,9})-([0-7])$/.exec(h || '');
+  if (!m) return null;
+  const n = s => s[0] === 'm' ? -Number(s.slice(1)) : Number(s);
+  const w = m[1].toUpperCase();
+  if (!VOCAB.has(w)) return null;
+  return { w, x: n(m[2]), y: n(m[3]), d: Number(m[4]) };
+}
+function rel(t) {
+  const s = (Date.now() - t) / 1000;
+  if (s < 60) return 'just now';
+  if (s < 3600) return Math.floor(s / 60) + 'm ago';
+  if (s < 86400) return Math.floor(s / 3600) + 'h ago';
+  if (s < 86400 * 7) return Math.floor(s / 86400) + 'd ago';
+  return new Date(t).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+}
+
+/* ---------- Storage ---------- */
+const LS = {
+  get(k) { try { return localStorage.getItem(k); } catch (_) { return null; } },
+  set(k, v) { try { localStorage.setItem(k, v); } catch (_) {} },
+};
+const found = new Map();
+function sanitize(o) {
+  if (!o || typeof o !== 'object') return null;
+  const w = String(o.w || '');
+  if (!/^[A-Z]{3,12}$/.test(w) || !VOCAB.has(w)) return null;
+  const x = Number(o.x), y = Number(o.y), d = Number(o.d);
+  if (![x, y].every(v => Number.isInteger(v) && Math.abs(v) < 1e9) || !Number.isInteger(d) || d < 0 || d > 7) return null;
+  const s = o.s ? 1 : 0;
+  const t = Number.isFinite(Number(o.t)) ? Number(o.t) : Date.now();
+  const th = s ? VOCAB.get(w) : regionTheme(fdiv(x, RC), fdiv(y, RC));
+  return { key: keyOf(w, x, y, d), w, x, y, d, t, s, th, born: 0 };
+}
+function loadLocal() {
+  try {
+    const arr = JSON.parse(LS.get(K_FINDS) || '[]');
+    if (Array.isArray(arr)) for (const o of arr) { const e = sanitize(o); if (e) found.set(e.key, e); }
+  } catch (_) {}
+}
+const plain = e => ({ w: e.w, x: e.x, y: e.y, d: e.d, t: e.t, s: e.s });
+function saveLocal() { LS.set(K_FINDS, JSON.stringify([...found.values()].map(plain))); }
+
+let coll = null, dbWritable = false, writeChain = Promise.resolve();
+const syncEl = $('#sync'), syncText = $('#syncText');
+function setSync(state) {
+  syncEl.dataset.state = state;
+  syncText.textContent = state === 'synced' ? 'Synced with your Claude account' : state === 'connecting' ? 'Connecting to your account…' : 'Saved in this browser';
+}
+function queueWrite(e) {
+  if (!coll || !dbWritable) return;
+  const ref = coll.doc(e.key), body = plain(e);
+  const attempt = () => ref.set(body);
+  writeChain = writeChain.then(attempt).catch(err => {
+    const code = err && err.code;
+    if (code === 'unavailable') return new Promise(r => setTimeout(r, 600 + Math.random() * 900)).then(attempt).catch(() => {});
+    if (code === 'quota_exceeded') { toast('<b>Notes are full</b><span>This map stores up to 25,000 finds</span>'); return; }
+    dbWritable = false; setSync('local');
+  });
+}
+async function connectStore() {
+  const cl = window.claude;
+  if (!cl || typeof cl.use !== 'function') return setSync('local');
+  setSync('connecting');
+  let db = null, user = null;
+  try { [db, user] = await Promise.all([cl.use('db'), cl.use('user')]); } catch (_) {}
+  if (!db || !user) return setSync('local');
+  let uid = null, canWrite = null;
+  try { uid = await user.id(); } catch (_) {}
+  if (!uid) return setSync('local');
+  try { canWrite = await user.can('data.write'); } catch (_) {}
+  if (canWrite === false) return setSync('local');
+  try { coll = db.collection('data/users/' + uid); } catch (_) { return setSync('local'); }
+  dbWritable = true;
+  let first = true;
+  coll.onSnapshot(snap => {
+    let changed = false;
+    const remote = new Set();
+    for (const doc of snap.docs) {
+      remote.add(doc.id);
+      if (found.has(doc.id)) continue;
+      const e = sanitize(doc.data());
+      if (e && e.key === doc.id) { found.set(e.key, e); changed = true; }
+    }
+    if (first) {
+      first = false;
+      for (const e of found.values()) if (!remote.has(e.key)) queueWrite(e);
+    }
+    if (dbWritable) setSync('synced');
+    if (changed) { saveLocal(); renderNotes(); scheduleHud(); invalidate(); }
+  }, () => { coll = null; dbWritable = false; setSync('local'); });
+}
+
+/* ---------- Canvas + colours ---------- */
+const canvas = $('#map');
+const ctx = canvas.getContext('2d', { alpha: false });
+let W = 1, H = 1, dpr = 1, dock = 0;
+const cam = { x: 6, y: 6, cs: 38 };
+let C = {}, TC = [], farRGB = [];
+
+function hexRGB(hex) {
+  const m = /^#?([0-9a-f]{6})$/i.exec((hex || '').trim());
+  if (!m) return [235, 238, 231];
+  const n = parseInt(m[1], 16);
+  return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+}
+function hslRGB(h, s, l) {
+  const k = n => (n + h / 30) % 12, a = s * Math.min(l, 1 - l);
+  const f = n => l - a * Math.max(-1, Math.min(k(n) - 3, Math.min(9 - k(n), 1)));
+  return [Math.round(f(0) * 255), Math.round(f(8) * 255), Math.round(f(4) * 255)];
+}
+const rgba = (hex, a) => { const c = hexRGB(hex); return `rgba(${c[0]},${c[1]},${c[2]},${a})`; };
+function readColors() {
+  const st = getComputedStyle(document.documentElement);
+  const g = n => st.getPropertyValue(n).trim();
+  C = { paper: g('--paper'), ink: g('--ink'), muted: g('--muted'), rule: g('--rule'), accent: g('--accent'), danger: g('--danger'), dark: g('--mode') === 'dark' };
+  C.selFill = rgba(C.accent, C.dark ? .2 : .14);
+  C.failFill = rgba(C.danger, .14);
+  const ms = g('--mark-s') || '58%', ml = g('--mark-l') || '38%';
+  const fa = C.dark ? .22 : .26;
+  TC = THEMES.map(t => ({ stroke: `hsl(${t.hue}, ${ms}, ${ml})`, fill: `hsla(${t.hue}, 75%, 55%, ${fa})`, tint: `hsl(${t.hue}, 45%, 50%)` }));
+  const pr = hexRGB(C.paper), a = C.dark ? .15 : .2;
+  farRGB = THEMES.map(t => { const c = hslRGB(t.hue, .45, .5); return [0, 1, 2].map(i => Math.round(pr[i] * (1 - a) + c[i] * a)); });
+  atlas.key = '';
+  invalidate();
+}
+const tintAlpha = cs => { const base = C.dark ? .075 : .09, far = C.dark ? .15 : .2; return base + (far - base) * clamp((14 - cs) / 11, 0, 1); };
+
+/* Glyph atlas: 26 letters rendered once per zoom level, then blitted per cell */
+const atlas = { c: document.createElement('canvas'), S: 0, key: '' };
+let fontEpoch = 0;
+function ensureAtlas(S) {
+  const key = S + '|' + C.ink + '|' + fontEpoch;
+  if (atlas.key === key) return;
+  atlas.key = key; atlas.S = S;
+  const c = atlas.c; c.width = S * 26; c.height = S;
+  const g = c.getContext('2d');
+  g.clearRect(0, 0, c.width, c.height);
+  g.fillStyle = C.ink;
+  g.font = `500 ${Math.max(5, S * 0.42)}px ${GRID_FONT}`;
+  g.textAlign = 'center'; g.textBaseline = 'alphabetic';
+  const m = g.measureText('H'), capH = m.actualBoundingBoxAscent || S * 0.3;
+  for (let i = 0; i < 26; i++) g.fillText(String.fromCharCode(65 + i), i * S + S / 2, S / 2 + capH / 2);
+}
+
+/* Far field: territories sampled into a small bitmap when they shrink below a few pixels */
+const ff = { c: document.createElement('canvas'), w: 0, h: 0, g: null, img: null };
+function drawFar(vx0, vy0, cs) {
+  const step = 4, gw = Math.ceil(W / step), gh = Math.ceil(H / step);
+  if (ff.w !== gw || ff.h !== gh) { ff.c.width = gw; ff.c.height = gh; ff.w = gw; ff.h = gh; ff.g = ff.c.getContext('2d'); ff.img = ff.g.createImageData(gw, gh); }
+  const data = ff.img.data, inv = step / cs;
+  for (let j = 0; j < gh; j++) {
+    const ry = Math.floor((vy0 + (j + .5) * inv) / RC);
+    let prx = NaN, col = null;
+    for (let i = 0; i < gw; i++) {
+      const rx = Math.floor((vx0 + (i + .5) * inv) / RC);
+      if (rx !== prx) { prx = rx; col = farRGB[regionTheme(rx, ry)]; }
+      const p = (j * gw + i) * 4;
+      data[p] = col[0]; data[p + 1] = col[1]; data[p + 2] = col[2]; data[p + 3] = 255;
+    }
+  }
+  ff.g.putImageData(ff.img, 0, 0);
+  ctx.imageSmoothingEnabled = true;
+  ctx.drawImage(ff.c, 0, 0, gw * step, gh * step);
+}
+
+function capsule(x0, y0, x1, y1, r) {
+  const a = Math.atan2(y1 - y0, x1 - x0);
+  ctx.beginPath();
+  ctx.moveTo(x0 + r * Math.cos(a - Math.PI / 2), y0 + r * Math.sin(a - Math.PI / 2));
+  ctx.arc(x1, y1, r, a - Math.PI / 2, a + Math.PI / 2);
+  ctx.arc(x0, y0, r, a + Math.PI / 2, a + Math.PI * 1.5);
+  ctx.closePath();
+}
+
+/* ---------- Interaction state ---------- */
+const sel = { anchor: null, end: null };
+let fail = null, hint = null, pulse = null, flight = null, inertia = null;
+let dragMode = 'pan';
+
+function draw(now) {
+  let anim = false;
+  const cs = cam.cs, OX = (W - dock) / 2, OY = H / 2;
+  const vx0 = cam.x - OX / cs, vy0 = cam.y - OY / cs, vx1 = vx0 + W / cs, vy1 = vy0 + H / cs;
+  const SX = wx => (wx - cam.x) * cs + OX, SY = wy => (wy - cam.y) * cs + OY;
+
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.globalAlpha = 1;
+  ctx.fillStyle = C.paper;
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+  // Territory tints
+  const rpx = RC * cs;
+  const rx0 = fdiv(Math.floor(vx0), RC), rx1 = fdiv(Math.floor(vx1), RC);
+  const ry0 = fdiv(Math.floor(vy0), RC), ry1 = fdiv(Math.floor(vy1), RC);
+  if (rpx < 28) {
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    drawFar(vx0, vy0, cs);
+  } else {
+    ctx.globalAlpha = tintAlpha(cs);
+    for (let ry = ry0; ry <= ry1; ry++) {
+      const y0 = Math.round(SY(ry * RC) * dpr), y1 = Math.round(SY((ry + 1) * RC) * dpr);
+      for (let rx = rx0; rx <= rx1; rx++) {
+        const x0 = Math.round(SX(rx * RC) * dpr), x1 = Math.round(SX((rx + 1) * RC) * dpr);
+        ctx.fillStyle = TC[regionTheme(rx, ry)].tint;
+        ctx.fillRect(x0, y0, x1 - x0, y1 - y0);
+      }
+    }
+    ctx.globalAlpha = 1;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.strokeStyle = C.rule; ctx.lineWidth = 1;
+    ctx.setLineDash(cs > 6 ? [5, 5] : []);
+    ctx.beginPath();
+    for (let rx = rx0 + 1; rx <= rx1; rx++) { const x = Math.round(SX(rx * RC)) + .5; ctx.moveTo(x, 0); ctx.lineTo(x, H); }
+    for (let ry = ry0 + 1; ry <= ry1; ry++) { const y = Math.round(SY(ry * RC)) + .5; ctx.moveTo(0, y); ctx.lineTo(W, y); }
+    ctx.stroke();
+    ctx.setLineDash([]);
+  }
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+  // Circled words
+  const r = Math.max(1.6, cs * .40);
+  for (const e of found.values()) {
+    const [ex, ey] = wordEnd(e);
+    if (Math.max(e.x, ex) + 1 < vx0 || Math.min(e.x, ex) > vx1 || Math.max(e.y, ey) + 1 < vy0 || Math.min(e.y, ey) > vy1) continue;
+    const tc = TC[e.th];
+    if (cs < 3) {
+      ctx.fillStyle = tc.stroke;
+      ctx.beginPath(); ctx.arc(SX((e.x + ex) / 2 + .5), SY((e.y + ey) / 2 + .5), 2.6, 0, Math.PI * 2); ctx.fill();
+      continue;
+    }
+    let p = 1;
+    if (e.born) { p = Math.max(0, (now - e.born) / 340); if (p >= 1 || RM) { e.born = 0; p = 1; } else { anim = true; p = 1 - Math.pow(1 - p, 3); } }
+    const x0 = SX(e.x + .5), y0 = SY(e.y + .5), x1 = SX(ex + .5), y1 = SY(ey + .5);
+    capsule(x0, y0, x0 + (x1 - x0) * p, y0 + (y1 - y0) * p, r);
+    ctx.fillStyle = tc.fill; ctx.fill();
+    ctx.lineWidth = clamp(cs * .06, 1, 2.4);
+    ctx.strokeStyle = tc.stroke;
+    if (e.s) ctx.setLineDash([Math.max(2, cs * .16), Math.max(2, cs * .1)]);
+    ctx.stroke();
+    ctx.setLineDash([]);
+  }
+
+  // Failed attempt wobble
+  if (fail) {
+    const t = Math.max(0, (now - fail.t0) / 480);
+    if (t >= 1) fail = null;
+    else {
+      anim = true;
+      const off = RM ? 0 : Math.sin(t * Math.PI * 6) * (1 - t) * cs * .15;
+      ctx.globalAlpha = 1 - t * t;
+      capsule(SX(fail.a.x + .5) + off, SY(fail.a.y + .5), SX(fail.b.x + .5) + off, SY(fail.b.y + .5), cs * .42);
+      ctx.fillStyle = C.failFill; ctx.fill();
+      ctx.strokeStyle = C.danger; ctx.lineWidth = 2; ctx.stroke();
+      ctx.globalAlpha = 1;
+    }
+  }
+
+  // Selection in progress
+  if (sel.anchor) {
+    const a = sel.anchor, b = sel.end || a;
+    capsule(SX(a.x + .5), SY(a.y + .5), SX(b.x + .5), SY(b.y + .5), cs * .42);
+    ctx.fillStyle = C.selFill; ctx.fill();
+    ctx.strokeStyle = C.accent; ctx.lineWidth = 2; ctx.stroke();
+  }
+
+  // Letters
+  const la = clamp((cs - LETTER_MIN) / (LETTER_FULL - LETTER_MIN), 0, 1);
+  if (la > 0) {
+    const csd = cs * dpr, S = Math.max(4, Math.round(csd));
+    ensureAtlas(S);
+    const img = atlas.c, oxd = OX * dpr - cam.x * csd + (csd - S) / 2, oyd = OY * dpr - cam.y * csd + (csd - S) / 2;
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.globalAlpha = la;
+    const x0 = Math.floor(vx0), x1 = Math.floor(vx1), y0 = Math.floor(vy0), y1 = Math.floor(vy1);
+    for (let cy = fdiv(y0, CH); cy <= fdiv(y1, CH); cy++) {
+      for (let cx = fdiv(x0, CH); cx <= fdiv(x1, CH); cx++) {
+        const g = chunk(cx, cy).g;
+        const ax = Math.max(x0, cx * CH), bx = Math.min(x1, cx * CH + CH - 1);
+        const ay = Math.max(y0, cy * CH), by = Math.min(y1, cy * CH + CH - 1);
+        for (let y = ay; y <= by; y++) {
+          const row = (y - cy * CH) * CH - cx * CH, dy = Math.round(y * csd + oyd);
+          for (let x = ax; x <= bx; x++) ctx.drawImage(img, g[row + x] * S, 0, S, S, Math.round(x * csd + oxd), dy, S, S);
+        }
+      }
+    }
+    ctx.globalAlpha = 1;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  }
+
+  // Hint ping on a word's first letter
+  if (hint) {
+    const t = Math.max(0, (now - hint.t0) / 2100);
+    if (t >= 1) hint = null;
+    else {
+      anim = true;
+      const cxs = SX(hint.x + .5), cys = SY(hint.y + .5);
+      ctx.strokeStyle = C.accent; ctx.lineWidth = 2.5;
+      ctx.beginPath(); ctx.arc(cxs, cys, cs * .46, 0, Math.PI * 2); ctx.stroke();
+      if (!RM) {
+        const ph = (t * 3) % 1;
+        ctx.globalAlpha = 1 - ph; ctx.lineWidth = 2;
+        ctx.beginPath(); ctx.arc(cxs, cys, cs * (.46 + ph * .9), 0, Math.PI * 2); ctx.stroke();
+        ctx.globalAlpha = 1;
+      }
+    }
+  }
+
+  // Arrival pulse around a word you flew back to
+  if (pulse && !flight) {
+    const t = Math.max(0, (now - pulse.t0) / 2600);
+    if (t >= 1) pulse = null;
+    else {
+      anim = true;
+      const [ex, ey] = wordEnd(pulse);
+      const x0 = SX(pulse.x + .5), y0 = SY(pulse.y + .5), x1 = SX(ex + .5), y1 = SY(ey + .5);
+      ctx.strokeStyle = C.accent;
+      ctx.lineWidth = 2.5;
+      capsule(x0, y0, x1, y1, cs * .5); ctx.stroke();
+      if (!RM) for (const k of [0, .5]) {
+        const ph = (t * 2.2 + k) % 1;
+        ctx.globalAlpha = (1 - ph) * .8; ctx.lineWidth = 2;
+        capsule(x0, y0, x1, y1, cs * (.5 + ph * 1.1)); ctx.stroke();
+      }
+      ctx.globalAlpha = 1;
+    }
+  }
+
+  // Territory names when zoomed out
+  const lab = clamp((11 - cs) / 3, 0, 1);
+  if (lab > 0 && rpx >= 70) {
+    const fs = clamp(rpx * .075, 11, 30), hasLS = 'letterSpacing' in ctx;
+    ctx.globalAlpha = lab;
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.lineJoin = 'round';
+    for (let ry = ry0; ry <= ry1; ry++) for (let rx = rx0; rx <= rx1; rx++) {
+      const t = regionTheme(rx, ry), cxs = SX((rx + .5) * RC), cys = SY((ry + .5) * RC);
+      ctx.font = `800 ${fs}px ${DISPLAY_FONT}`;
+      if (hasLS) ctx.letterSpacing = (fs * (fs > 14 ? .08 : .03)).toFixed(1) + 'px';
+      const name = regionName(rx, ry).toUpperCase();
+      ctx.lineWidth = 4; ctx.strokeStyle = C.paper; ctx.strokeText(name, cxs, cys);
+      ctx.fillStyle = C.ink; ctx.fillText(name, cxs, cys);
+      const fs2 = Math.max(8.5, fs * .4);
+      ctx.font = `500 ${fs2}px ${GRID_FONT}`;
+      if (hasLS) ctx.letterSpacing = (fs2 * .14).toFixed(1) + 'px';
+      ctx.fillStyle = TC[t].stroke;
+      ctx.fillText(THEMES[t].name.toUpperCase(), cxs, cys + fs * .62 + fs2 * .7);
+    }
+    if (hasLS) ctx.letterSpacing = '0px';
+    ctx.globalAlpha = 1;
+  }
+
+  // Origin benchmark
+  if (cs < LETTER_FULL) {
+    const x = SX(0), y = SY(0);
+    if (x > -20 && x < W + 20 && y > -20 && y < H + 20) {
+      ctx.strokeStyle = C.accent; ctx.lineWidth = 1.5;
+      ctx.beginPath(); ctx.arc(x, y, 5, 0, Math.PI * 2);
+      ctx.moveTo(x - 10, y); ctx.lineTo(x + 10, y); ctx.moveTo(x, y - 10); ctx.lineTo(x, y + 10);
+      ctx.stroke();
+    }
+  }
+  return anim;
+}
+
+let raf = 0;
+function invalidate() { if (!raf) raf = requestAnimationFrame(frame); }
+function frame(now) {
+  raf = 0;
+  let anim = false;
+  if (flight) {
+    const t = Math.min(1, (now - flight.t0) / flight.dur);
+    const e = t < .5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+    const p = flight.fn(e);
+    cam.x = p[0]; cam.y = p[1]; cam.cs = flight.vw / p[2];
+    if (t >= 1) { const f = flight; flight = null; cam.cs = f.cs1; if (f.then) f.then(now); }
+    anim = true; camChanged();
+  }
+  if (inertia) {
+    const dt = Math.min(48, now - inertia.last); inertia.last = now;
+    cam.x -= inertia.vx * dt / cam.cs; cam.y -= inertia.vy * dt / cam.cs;
+    const k = Math.exp(-dt / 260); inertia.vx *= k; inertia.vy *= k;
+    if (Math.hypot(inertia.vx, inertia.vy) < .02) inertia = null;
+    anim = true; camChanged();
+  }
+  if (draw(now)) anim = true;
+  if (anim) invalidate();
+}
+
+/* ---------- Camera motion ---------- */
+const RHO = Math.SQRT2;
+function interpZoom(p0, p1) {
+  const [ux0, uy0, w0] = p0, [ux1, uy1, w1] = p1;
+  const dx = ux1 - ux0, dy = uy1 - uy0, d2 = dx * dx + dy * dy;
+  let fn, S;
+  if (d2 < 1e-12) {
+    S = Math.log(w1 / w0) / RHO;
+    fn = t => [ux0 + t * dx, uy0 + t * dy, w0 * Math.exp(RHO * t * S)];
+  } else {
+    const d1 = Math.sqrt(d2);
+    const b0 = (w1 * w1 - w0 * w0 + 4 * d2) / (2 * w0 * 2 * d1);
+    const b1 = (w1 * w1 - w0 * w0 - 4 * d2) / (2 * w1 * 2 * d1);
+    const r0 = -Math.asinh(b0), r1 = -Math.asinh(b1);
+    S = (r1 - r0) / RHO;
+    const c0 = Math.cosh(r0), s0 = Math.sinh(r0);
+    fn = t => { const s = t * S, u = w0 / (2 * d1) * (c0 * Math.tanh(RHO * s + r0) - s0); return [ux0 + u * dx, uy0 + u * dy, w0 * c0 / Math.cosh(RHO * s + r0)]; };
+  }
+  fn.duration = Math.abs(S) * 1000;
+  return fn;
+}
+function flyTo(wx, wy, cs, opts = {}) {
+  inertia = null;
+  cs = clamp(cs, ZMIN, ZMAX);
+  if (RM || opts.instant) {
+    cam.x = wx; cam.y = wy; cam.cs = cs; flight = null; camChanged(); invalidate();
+    if (opts.then) opts.then(performance.now());
+    return;
+  }
+  const vw = Math.max(1, W - dock);
+  const fn = interpZoom([cam.x, cam.y, vw / cam.cs], [wx, wy, vw / cs]);
+  flight = { fn, vw, cs1: cs, t0: performance.now(), dur: clamp(fn.duration * .85, opts.min ?? 450, opts.max ?? 2800), then: opts.then };
+  invalidate();
+}
+function zoomAt(px, py, f) {
+  const cs = clamp(cam.cs * f, ZMIN, ZMAX);
+  const wx = cam.x + (px - (W - dock) / 2) / cam.cs, wy = cam.y + (py - H / 2) / cam.cs;
+  cam.x = wx - (px - (W - dock) / 2) / cs; cam.y = wy - (py - H / 2) / cs; cam.cs = cs;
+  camChanged(); invalidate();
+}
+let camTimer = 0;
+function camChanged() {
+  scheduleHud();
+  clearTimeout(camTimer);
+  camTimer = setTimeout(() => LS.set(K_CAM, JSON.stringify({ x: +cam.x.toFixed(2), y: +cam.y.toFixed(2), cs: +cam.cs.toFixed(2) })), 500);
+}
+function screenToWorld(px, py) { return { x: cam.x + (px - (W - dock) / 2) / cam.cs, y: cam.y + (py - H / 2) / cam.cs }; }
+function cellAtScreen(px, py) { const w = screenToWorld(px, py); return { x: Math.floor(w.x), y: Math.floor(w.y), wx: w.x, wy: w.y }; }
+function goToEntry(e) {
+  const [ex, ey] = wordEnd(e);
+  const cs = cam.cs >= 26 && cam.cs <= 60 ? cam.cs : 40;
+  pulse = null;
+  flyTo((e.x + ex) / 2 + .5, (e.y + ey) / 2 + .5, cs, { then: now => { pulse = { x: e.x, y: e.y, d: e.d, w: e.w, t0: now }; invalidate(); } });
+}
+
+/* ---------- Finding words ---------- */
+function snapEnd(a, wx, wy) {
+  const fx = wx - (a.x + .5), fy = wy - (a.y + .5);
+  if (Math.hypot(fx, fy) < .5) return { x: a.x, y: a.y };
+  const d = ((Math.round(Math.atan2(fy, fx) / (Math.PI / 4)) % 8) + 8) % 8;
+  const [dx, dy] = DIRS[d];
+  const n = clamp(Math.round(dx && dy ? (fx * dx + fy * dy) / 2 : fx * dx + fy * dy), 0, 24);
+  return { x: a.x + dx * n, y: a.y + dy * n };
+}
+function tryCollect(a, b) {
+  const dx = Math.sign(b.x - a.x), dy = Math.sign(b.y - a.y);
+  const n = Math.max(Math.abs(b.x - a.x), Math.abs(b.y - a.y));
+  const d = DIRS.findIndex(v => v[0] === dx && v[1] === dy);
+  if (n < 2 || d < 0) return miss(a, b);
+  let s = '';
+  for (let i = 0; i <= n; i++) s += String.fromCharCode(65 + letterAt(a.x + dx * i, a.y + dy * i));
+  const ch = chunk(fdiv(a.x, CH), fdiv(a.y, CH));
+  for (const w of ch.words) {
+    const [ex, ey] = wordEnd(w);
+    if ((w.x === a.x && w.y === a.y && ex === b.x && ey === b.y) || (w.x === b.x && w.y === b.y && ex === a.x && ey === a.y)) return collect(w.w, w.x, w.y, w.d, false);
+  }
+  if (s.length >= 4 && VOCAB.has(s)) return collect(s, a.x, a.y, d, true);
+  const rs = [...s].reverse().join('');
+  if (rs.length >= 4 && VOCAB.has(rs)) return collect(rs, b.x, b.y, (d + 4) % 8, true);
+  miss(a, b);
+}
+function miss(a, b) { fail = { a, b, t0: performance.now() }; invalidate(); }
+function collect(w, x, y, d, stray) {
+  const key = keyOf(w, x, y, d);
+  const have = found.get(key);
+  if (have) {
+    toast(`<i></i><b>${w}</b><span>Already in your notes</span>`, THEMES[have.th].hue);
+    pulse = { x, y, d, w, t0: performance.now() }; invalidate();
+    return;
+  }
+  const e = sanitize({ w, x, y, d, t: Date.now(), s: stray ? 1 : 0 });
+  e.born = performance.now();
+  found.set(key, e);
+  saveLocal(); queueWrite(e);
+  const rx = fdiv(x, RC), ry = fdiv(y, RC);
+  toast(`<i></i><b>${w}</b><span>${stray ? 'Stray ' + THEMES[e.th].name.toLowerCase() + ' word' : THEMES[e.th].name} · ${regionName(rx, ry)}</span>`, THEMES[e.th].hue);
+  dismissCoach();
+  renderNotes(); scheduleHud(); invalidate();
+}
+function onTap(c) {
+  if (cam.cs < LETTER_MIN) { flyTo(c.wx, c.wy, 30); return; }
+  const a = sel.anchor;
+  if (!a) { sel.anchor = { x: c.x, y: c.y }; sel.end = null; }
+  else if (a.x === c.x && a.y === c.y) { sel.anchor = null; sel.end = null; }
+  else {
+    const dx = c.x - a.x, dy = c.y - a.y;
+    if (dx === 0 || dy === 0 || Math.abs(dx) === Math.abs(dy)) { sel.anchor = null; sel.end = null; tryCollect(a, { x: c.x, y: c.y }); }
+    else { sel.anchor = { x: c.x, y: c.y }; sel.end = null; }
+  }
+  invalidate();
+}
+
+/* ---------- Pointer, wheel, keys ---------- */
+const pointers = new Map();
+let gest = null;
+function pinchState() { const [a, b] = [...pointers.values()]; return { cx: (a.x + b.x) / 2, cy: (a.y + b.y) / 2, d: Math.max(1, Math.hypot(a.x - b.x, a.y - b.y)) }; }
+canvas.addEventListener('pointerdown', e => {
+  if (e.pointerType === 'mouse' && e.button > 1) return;
+  try { canvas.setPointerCapture(e.pointerId); } catch (_) {}
+  pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+  flight = null; inertia = null;
+  if (pointers.size === 2) {
+    if (gest && gest.type === 'seldrag') { sel.anchor = null; sel.end = null; }
+    const s = pinchState(), w = screenToWorld(s.cx, s.cy);
+    gest = { type: 'pinch', d0: s.d, cs0: cam.cs, wx: w.x, wy: w.y };
+  } else if (pointers.size === 1) {
+    const t = performance.now();
+    gest = { type: 'press', x0: e.clientX, y0: e.clientY, lx: e.clientX, ly: e.clientY, sd: (dragMode === 'select' || e.shiftKey) && e.button !== 1, samples: [{ t, x: e.clientX, y: e.clientY }] };
+  }
+  invalidate();
+});
+canvas.addEventListener('pointermove', e => {
+  const p = pointers.get(e.pointerId);
+  if (!p) {
+    if (e.pointerType === 'mouse' && sel.anchor) {
+      const c = cellAtScreen(e.clientX, e.clientY), end = snapEnd(sel.anchor, c.wx, c.wy);
+      if (!sel.end || end.x !== sel.end.x || end.y !== sel.end.y) { sel.end = end; invalidate(); }
+    }
+    return;
+  }
+  p.x = e.clientX; p.y = e.clientY;
+  if (!gest) return;
+  if (gest.type === 'pinch') {
+    if (pointers.size < 2) return;
+    const s = pinchState(), cs = clamp(gest.cs0 * s.d / gest.d0, ZMIN, ZMAX);
+    cam.cs = cs; cam.x = gest.wx - (s.cx - (W - dock) / 2) / cs; cam.y = gest.wy - (s.cy - H / 2) / cs;
+    camChanged(); invalidate(); return;
+  }
+  if (gest.type === 'press') {
+    if (Math.hypot(e.clientX - gest.x0, e.clientY - gest.y0) < (e.pointerType === 'touch' ? 9 : 5)) return;
+    if (gest.sd && cam.cs >= LETTER_MIN) { const c0 = cellAtScreen(gest.x0, gest.y0); gest.type = 'seldrag'; sel.anchor = { x: c0.x, y: c0.y }; }
+    else { gest.type = 'pan'; canvas.classList.add('grabbing'); }
+  }
+  if (gest.type === 'pan') {
+    cam.x -= (e.clientX - gest.lx) / cam.cs; cam.y -= (e.clientY - gest.ly) / cam.cs;
+    gest.lx = e.clientX; gest.ly = e.clientY;
+    const t = performance.now();
+    gest.samples.push({ t, x: e.clientX, y: e.clientY });
+    while (gest.samples.length > 2 && t - gest.samples[0].t > 100) gest.samples.shift();
+    camChanged(); invalidate();
+  } else if (gest.type === 'seldrag') {
+    const c = cellAtScreen(e.clientX, e.clientY);
+    sel.end = snapEnd(sel.anchor, c.wx, c.wy); invalidate();
+  }
+});
+function endPointer(e, cancelled) {
+  if (!pointers.has(e.pointerId)) return;
+  pointers.delete(e.pointerId);
+  if (!gest) return;
+  if (gest.type === 'pinch') {
+    if (pointers.size === 1) { const q = [...pointers.values()][0]; gest = { type: 'pan', lx: q.x, ly: q.y, samples: [] }; }
+    else if (!pointers.size) gest = null;
+    return;
+  }
+  if (pointers.size) return;
+  const g = gest; gest = null;
+  canvas.classList.remove('grabbing');
+  if (cancelled) { if (g.type === 'seldrag') { sel.anchor = null; sel.end = null; } invalidate(); return; }
+  if (g.type === 'press') onTap(cellAtScreen(e.clientX, e.clientY));
+  else if (g.type === 'seldrag') {
+    const a = sel.anchor, b = sel.end; sel.anchor = null; sel.end = null;
+    if (a && b && (a.x !== b.x || a.y !== b.y)) tryCollect(a, b);
+    invalidate();
+  } else if (g.type === 'pan' && !RM) {
+    const s = g.samples, now = performance.now();
+    if (s.length >= 2 && now - s[s.length - 1].t < 60) {
+      const a = s[0], b = s[s.length - 1], dt = b.t - a.t;
+      if (dt > 0) {
+        const vx = (b.x - a.x) / dt, vy = (b.y - a.y) / dt;
+        if (Math.hypot(vx, vy) > .15) { inertia = { vx, vy, last: now }; invalidate(); }
+      }
+    }
+  }
+}
+canvas.addEventListener('pointerup', e => endPointer(e, false));
+canvas.addEventListener('pointercancel', e => endPointer(e, true));
+canvas.addEventListener('pointerleave', e => { if (e.pointerType === 'mouse' && !pointers.size && sel.anchor && sel.end) { sel.end = null; invalidate(); } });
+canvas.addEventListener('contextmenu', e => e.preventDefault());
+canvas.addEventListener('wheel', e => {
+  e.preventDefault();
+  flight = null; inertia = null;
+  let dx = e.deltaX, dy = e.deltaY;
+  if (e.deltaMode === 1) { dx *= 16; dy *= 16; } else if (e.deltaMode === 2) { dx *= W; dy *= H; }
+  if (e.ctrlKey || e.metaKey) zoomAt(e.clientX, e.clientY, Math.exp(-clamp(dy, -60, 60) * .01));
+  else { if (e.shiftKey && !dx) { dx = dy; dy = 0; } cam.x += dx / cam.cs; cam.y += dy / cam.cs; camChanged(); invalidate(); }
+}, { passive: false });
+
+window.addEventListener('keydown', e => {
+  if (e.key === 'Shift' && dragMode === 'pan') canvas.classList.add('select');
+  const inNotes = e.target && e.target.closest && e.target.closest('.notes');
+  if (e.key === 'Escape') {
+    if (sel.anchor) { sel.anchor = null; sel.end = null; invalidate(); return; }
+    if (notesOpen && !dock) { setNotes(false); notesToggle.focus(); }
+    return;
+  }
+  if (inNotes || e.metaKey || e.ctrlKey || e.altKey) return;
+  const step = 180 / cam.cs, OX = cam.x, OY = cam.y;
+  const k = e.key.length === 1 ? e.key.toLowerCase() : e.key;
+  switch (k) {
+    case 'ArrowLeft': case 'a': flyTo(OX - step, OY, cam.cs, { min: 160, max: 200 }); break;
+    case 'ArrowRight': case 'd': flyTo(OX + step, OY, cam.cs, { min: 160, max: 200 }); break;
+    case 'ArrowUp': case 'w': flyTo(OX, OY - step, cam.cs, { min: 160, max: 200 }); break;
+    case 'ArrowDown': case 's': flyTo(OX, OY + step, cam.cs, { min: 160, max: 200 }); break;
+    case '+': case '=': flyTo(cam.x, cam.y, cam.cs * 1.5, { min: 220, max: 320 }); break;
+    case '-': case '_': flyTo(cam.x, cam.y, cam.cs / 1.5, { min: 220, max: 320 }); break;
+    case 'n': setNotes(!notesOpen); break;
+    case 'h': goHome(); break;
+    default: return;
+  }
+  e.preventDefault();
+});
+window.addEventListener('keyup', e => { if (e.key === 'Shift' && dragMode === 'pan') canvas.classList.remove('select'); });
+
+/* ---------- HUD ---------- */
+const tName = $('#tName'), tTheme = $('#tTheme'), tCoord = $('#tCoord'), territory = $('#territory');
+const legendList = $('#legendList'), legendCount = $('#legendCount');
+let hudTimer = 0, hudRegion = '', legendSig = '', legendWords = new Map();
+function scheduleHud() { if (!hudTimer) hudTimer = setTimeout(() => { hudTimer = 0; updateHud(); }, 110); }
+function updateHud() {
+  const cx = Math.floor(cam.x), cy = Math.floor(cam.y), rx = fdiv(cx, RC), ry = fdiv(cy, RC), rk = rx + ',' + ry;
+  if (rk !== hudRegion) {
+    hudRegion = rk;
+    const t = regionTheme(rx, ry);
+    tName.textContent = regionName(rx, ry);
+    tTheme.textContent = THEMES[t].name;
+    territory.style.setProperty('--h', THEMES[t].hue);
+  }
+  tCoord.textContent = fmtCoord(cx, cy);
+  updateLegend();
+}
+function updateLegend() {
+  const cs = cam.cs;
+  if (cs < LETTER_MIN) {
+    if (legendSig !== 'far') { legendSig = 'far'; legendList.innerHTML = '<li class="legend-note">Zoom in to read the letters.</li>'; legendCount.textContent = ''; }
+    return;
+  }
+  const OX = (W - dock) / 2;
+  const vx0 = cam.x - OX / cs, vx1 = cam.x + (W - dock - OX) / cs, vy0 = cam.y - H / 2 / cs, vy1 = cam.y + H / 2 / cs;
+  const items = [];
+  for (let cy = fdiv(Math.floor(vy0), CH); cy <= fdiv(Math.floor(vy1), CH); cy++) {
+    for (let cx = fdiv(Math.floor(vx0), CH); cx <= fdiv(Math.floor(vx1), CH); cx++) {
+      for (const w of chunk(cx, cy).words) {
+        const [ex, ey] = wordEnd(w);
+        if (Math.max(w.x, ex) + 1 <= vx0 || Math.min(w.x, ex) >= vx1 || Math.max(w.y, ey) + 1 <= vy0 || Math.min(w.y, ey) >= vy1) continue;
+        const mx = (w.x + ex) / 2 + .5 - cam.x, my = (w.y + ey) / 2 + .5 - cam.y;
+        items.push({ w, dist: mx * mx + my * my, f: found.has(w.key) });
+      }
+    }
+  }
+  items.sort((a, b) => a.dist - b.dist);
+  let nf = 0; for (const it of items) if (it.f) nf++;
+  legendCount.textContent = items.length ? `${nf} of ${items.length} found` : '';
+  const shown = items.slice(0, 14).sort((a, b) => (a.w.w < b.w.w ? -1 : a.w.w > b.w.w ? 1 : 0));
+  const sig = shown.map(i => i.w.key + (i.f ? '+' : '')).join('|');
+  if (sig === legendSig) return;
+  legendSig = sig;
+  legendWords = new Map(shown.map(i => [i.w.key, i.w]));
+  legendList.innerHTML = shown.length
+    ? shown.map(i => `<li><button type="button" class="chip mark${i.f ? ' found' : ''}" data-key="${i.w.key}" style="--h:${THEMES[i.w.th].hue}" ${i.f ? 'aria-disabled="true"' : 'title="Show where it starts"'}>${i.w.w}</button></li>`).join('')
+    : '<li class="legend-note">No words here. Keep wandering.</li>';
+}
+legendList.addEventListener('click', e => {
+  const b = e.target.closest('.chip');
+  if (!b || b.classList.contains('found')) return;
+  const w = legendWords.get(b.dataset.key);
+  if (w) { hint = { x: w.x, y: w.y, t0: performance.now() }; invalidate(); }
+});
+
+const toastEl = $('#toast');
+let toastTimer = 0;
+function toast(html, hue) {
+  toastEl.innerHTML = html;
+  if (hue != null) toastEl.style.setProperty('--h', hue);
+  toastEl.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => toastEl.classList.remove('show'), 2400);
+}
+
+/* ---------- Field notes ---------- */
+const notesToggle = $('#notesToggle'), notesBadge = $('#notesBadge'), findsEl = $('#finds'), filtersEl = $('#filters');
+let notesOpen = false, filter = null;
+function applyDock() {
+  const nd = notesOpen && W >= 1100 ? NOTES_W : 0;
+  if (nd !== dock) { cam.x -= (nd - dock) / (2 * cam.cs); dock = nd; }
+  document.body.classList.toggle('docked', nd > 0);
+}
+function setNotes(open, remember = true) {
+  notesOpen = open;
+  document.body.classList.toggle('notes-open', open);
+  notesToggle.setAttribute('aria-expanded', String(open));
+  if (remember) LS.set(K_NOTES, open ? '1' : '0');
+  applyDock();
+  if (open) renderNotes();
+  scheduleHud(); invalidate();
+}
+function renderNotes() {
+  const all = [...found.values()].sort((a, b) => b.t - a.t);
+  notesBadge.textContent = all.length;
+  $('#tWords').textContent = all.length;
+  $('#tTerr').textContent = new Set(all.map(e => fdiv(e.x, RC) + ',' + fdiv(e.y, RC))).size;
+  const longest = all.reduce((m, e) => (!m || e.w.length > m.w.length ? e : m), null);
+  $('#tLong').textContent = longest ? longest.w : '—';
+  const counts = new Array(NT).fill(0);
+  for (const e of all) counts[e.th]++;
+  if (filter !== null && !counts[filter]) filter = null;
+  const used = THEMES.map((t, i) => i).filter(i => counts[i]).sort((a, b) => counts[b] - counts[a]);
+  filtersEl.innerHTML = used.length > 1
+    ? `<button type="button" class="filter" data-f="" aria-pressed="${filter === null}">All ${all.length}</button>` +
+      used.map(i => `<button type="button" class="filter mark" data-f="${i}" style="--h:${THEMES[i].hue}" aria-pressed="${filter === i}"><i></i>${THEMES[i].name} ${counts[i]}</button>`).join('')
+    : '';
+  const rows = filter === null ? all : all.filter(e => e.th === filter);
+  findsEl.innerHTML = all.length
+    ? rows.map(e => {
+        const rx = fdiv(e.x, RC), ry = fdiv(e.y, RC);
+        return `<li><a class="find mark${e.s ? ' stray' : ''}" href="#${hashOf(e)}" data-key="${e.key}" style="--h:${THEMES[e.th].hue}">` +
+          `<span class="find-dot" aria-hidden="true"></span><span class="find-word">${e.w}</span><span class="find-when">${rel(e.t)}</span>` +
+          `<span class="find-meta"><b>${regionName(rx, ry)}</b> · ${fmtCoord(e.x, e.y)} · ${DARROW[e.d]} ${DNAME[e.d]}${e.s ? ' · stray' : ''}</span></a></li>`;
+      }).join('')
+    : '<li class="finds-empty"><strong>No words yet</strong>Circle a word on the map and it lands here with its territory, grid reference and the bearing it reads in. Tap an entry later to fly straight back to it.</li>';
+}
+filtersEl.addEventListener('click', e => {
+  const b = e.target.closest('.filter'); if (!b) return;
+  filter = b.dataset.f === '' ? null : Number(b.dataset.f);
+  renderNotes();
+});
+let hashSuppress = '';
+findsEl.addEventListener('click', e => {
+  const a = e.target.closest('a.find'); if (!a) return;
+  e.preventDefault();
+  const en = found.get(a.dataset.key); if (!en) return;
+  if (!dock) setNotes(false, false);
+  goToEntry(en);
+  const h = '#' + hashOf(en);
+  try { if (location.hash !== h) { hashSuppress = h; location.hash = h; } } catch (_) {}
+});
+window.addEventListener('hashchange', () => {
+  if (location.hash === hashSuppress) { hashSuppress = ''; return; }
+  const p = parseHash(location.hash);
+  if (p) goToEntry(p);
+});
+notesToggle.addEventListener('click', () => setNotes(!notesOpen));
+$('#notesClose').addEventListener('click', () => setNotes(false));
+setInterval(() => { if (notesOpen) renderNotes(); }, 60000);
+
+/* ---------- Controls ---------- */
+function setMode(m) {
+  dragMode = m;
+  $('#modePan').setAttribute('aria-pressed', String(m === 'pan'));
+  $('#modeSelect').setAttribute('aria-pressed', String(m === 'select'));
+  canvas.classList.toggle('select', m === 'select');
+}
+$('#modePan').addEventListener('click', () => setMode('pan'));
+$('#modeSelect').addEventListener('click', () => setMode('select'));
+$('#zoomIn').addEventListener('click', () => flyTo(cam.x, cam.y, cam.cs * 1.6, { min: 240, max: 360 }));
+$('#zoomOut').addEventListener('click', () => flyTo(cam.x, cam.y, cam.cs / 1.6, { min: 240, max: 360 }));
+const defaultCs = () => (W < 700 ? 32 : 38);
+function goHome() { flyTo(6, 6, defaultCs()); }
+$('#home').addEventListener('click', goHome);
+
+const coach = $('#coach');
+function dismissCoach() { if (!coach.hidden) { coach.hidden = true; LS.set(K_COACH, '1'); } }
+$('#coachOk').addEventListener('click', dismissCoach);
+
+/* ---------- Boot ---------- */
+function resize() {
+  dpr = Math.min(window.devicePixelRatio || 1, 3);
+  W = Math.max(1, window.innerWidth); H = Math.max(1, window.innerHeight);
+  canvas.width = Math.round(W * dpr); canvas.height = Math.round(H * dpr);
+  applyDock(); scheduleHud(); invalidate();
+}
+window.addEventListener('resize', resize);
+matchMedia('(prefers-color-scheme: dark)').addEventListener('change', readColors);
+new MutationObserver(readColors).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme', 'class'] });
+function bumpFonts() { fontEpoch++; atlas.key = ''; invalidate(); }
+if (document.fonts) {
+  document.fonts.addEventListener && document.fonts.addEventListener('loadingdone', bumpFonts);
+  const loadFaces = () => Promise.all([document.fonts.load(`500 20px ${GRID_FONT}`), document.fonts.load(`800 20px ${DISPLAY_FONT}`)]).then(bumpFonts, () => {});
+  if (document.readyState === 'complete') loadFaces(); else window.addEventListener('load', loadFaces);
+}
+
+readColors();
+W = Math.max(1, window.innerWidth);
+try {
+  const c = JSON.parse(LS.get(K_CAM) || 'null');
+  if (c && [c.x, c.y, c.cs].every(Number.isFinite)) { cam.x = c.x; cam.y = c.y; cam.cs = clamp(c.cs, ZMIN, ZMAX); }
+  else cam.cs = defaultCs();
+} catch (_) { cam.cs = defaultCs(); }
+loadLocal();
+notesOpen = W >= 1100 && LS.get(K_NOTES) !== '0';
+document.body.classList.toggle('notes-open', notesOpen);
+notesToggle.setAttribute('aria-expanded', String(notesOpen));
+dock = notesOpen && W >= 1100 ? NOTES_W : 0;
+document.body.classList.toggle('docked', dock > 0);
+resize();
+renderNotes();
+const startHash = parseHash(location.hash);
+if (startHash) {
+  const [ex, ey] = wordEnd(startHash);
+  flyTo((startHash.x + ex) / 2 + .5, (startHash.y + ey) / 2 + .5, 40, { instant: true, then: now => { pulse = { ...startHash, t0: now }; } });
+}
+if (LS.get(K_COACH) !== '1') coach.hidden = false;
+updateHud();
+invalidate();
+connectStore();
+
+})();
+</script>
+</body>
+</html>
