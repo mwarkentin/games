@@ -11,3 +11,7 @@ Some useful tools live next door at
 
 <!-- recently starts -->
 <!-- recently stops -->
+
+## Math
+
+- [Doodle Chomp](https://games.michaelwarkentin.com/doodle-chomp): steer Nib around a worksheet and chomp the numbers that fit the rule, with games from kindergarten counting to primes and factors
