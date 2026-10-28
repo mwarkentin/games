@@ -1,0 +1,28 @@
+name: Test
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0 # the tests build the site, which reads git history
+      - uses: astral-sh/setup-uv@v10.2.0
+      - name: Cache Playwright browsers
+        uses: actions/cache@v6
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('uv.lock') }}
+      - name: Install dependencies
+        run: |
+          uv sync --locked
+          uv run playwright install --with-deps chromium
+      - name: Run tests
+        run: uv run pytest
