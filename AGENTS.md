@@ -68,17 +68,26 @@ example):
 - A `LEADERBOARD_URL` constant holds the Worker's URL. While it's empty the
   leaderboard stays hidden, so a game works the same without it.
   `?leaderboard=<url>` overrides it for local testing and for tests.
-- `GET /v1/scores?game=<game>&board=<board>` reads the top 10. `POST
-  /v1/scores` saves three-letter initials with the score and enough detail
-  for the Worker's plausibility check. Send the POST as JSON with
-  `Content-Type: text/plain` to avoid a CORS preflight.
-- Split boards so scores compare fairly (Funnels & Buckets uses number range
-  plus extra-easy mode), and keep practice variants off the board.
+- `GET /v1/scores?game=<game>&scope=<*|group code>&difficulty=<d|all>&mode=<m|all>`
+  reads the top 10 for a view. `POST /v1/scores` saves three-letter initials
+  with the score, enough detail for the Worker's plausibility check, the
+  player's group codes and whether it also goes on the public board. Send
+  POSTs as JSON with `Content-Type: text/plain` to avoid a CORS preflight.
+- Split scores so they compare fairly (Funnels & Buckets files them by
+  number range as difficulty and extra easy as mode), and keep practice
+  variants off the board. Offer views that narrow to either or show all.
+- Groups are private boards shared by a four-character code: `POST
+  /v1/groups` starts one and `GET /v1/groups/<code>` looks one up. Invite
+  links are `?join=<code>`. Groups work across games, so the joined groups
+  (`games.groups`), the player's initials (`games.initials`) and their
+  public-board choice (`games.public`) are shared `localStorage` keys
+  without a game prefix.
 - If the Worker can't be reached, say so in one line and let the game carry
   on.
-- Add the game's boards and a `check()` to `GAMES` in `worker/src/index.js`,
-  with tests in `worker/test/`. Game tests fake the API with Playwright's
-  `page.route`; see `tests/test_funnels_and_buckets_leaderboard.py`.
+- Add the game's difficulties, modes and a `check()` to `GAMES` in
+  `worker/src/leaderboard.js`, with tests in `worker/test/`. Game tests fake
+  the API with Playwright's `page.route`; see
+  `tests/test_funnels_and_buckets_leaderboard.py`.
 - Credentials live only in GitHub (the `CLOUDFLARE_API_TOKEN` secret and the
   `CLOUDFLARE_ACCOUNT_ID` variable) and in Cloudflare, never in the repo.
 

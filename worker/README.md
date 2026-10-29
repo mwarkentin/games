@@ -8,25 +8,58 @@ leaderboard uses a handful of requests and database rows per game played.
 ## API
 
 ```
-GET  /v1/scores?game=funnels-and-buckets&board=classic
-  → 200 {"game": "...", "board": "...", "scores": [{"rank", "id", "initials", "score", "level", "at"}]}
+GET  /v1/scores?game=funnels-and-buckets&scope=*&difficulty=classic&mode=all
+  → 200 {"game", "scope", "difficulty", "mode",
+         "scores": [{"rank", "entry", "initials", "score", "level", "difficulty", "mode", "at"}]}
+  → 404 {"error": "unknown group"}
 
 POST /v1/scores
-  {"game": "funnels-and-buckets", "board": "classic", "initials": "ABC",
-   "score": 150, "level": 2, "popped": 12, "seconds": 90}
-  → 201 {"id": 42, "rank": 3, "scores": [...top 10...]}
-  → 400 {"error": "..."}  invalid or implausible score
-  → 403                   page not in ALLOWED_ORIGINS
-  → 429                   more than 10 saves in 10 minutes from one IP address
+  {"game": "funnels-and-buckets", "difficulty": "classic", "mode": "normal",
+   "initials": "ABC", "score": 150, "level": 2, "popped": 12, "seconds": 90,
+   "groups": ["K7QP"], "public": true}
+  → 201 {"entry": "<uuid>", "ranks": {"*": 3, "K7QP": 1}}
+
+POST /v1/groups
+  {"name": "Family"}
+  → 201 {"code": "K7QP", "name": "Family"}
+
+GET  /v1/groups/K7QP
+  → 200 {"code": "K7QP", "name": "Family"}
+  → 404 {"error": "unknown group"}
+
+Errors: 400 {"error": "..."} for an invalid or implausible request,
+        403 for a POST from a page not in ALLOWED_ORIGINS,
+        429 for more than 10 scores in 10 minutes, or 5 new groups in an
+        hour, from one IP address.
 ```
 
-Games send the POST body as JSON with `Content-Type: text/plain`, which
+Games send POST bodies as JSON with `Content-Type: text/plain`, which
 browsers treat as a simple request and send without a CORS preflight.
 
-Each board keeps its top 100 scores. The Worker checks that a score is
-possible for the game (see `GAMES` in `src/index.js`), allows only three
-letters A–Z as initials, and stores a salted hash of each IP address, never
-the address itself, to rate-limit saves.
+**Views.** A view is one scope (`*` for the public board, or a group code)
+narrowed by `difficulty` and `mode`, each of which can be `all` (the
+default). It returns the top 10. Ranks in a POST response are within the
+score's own difficulty and mode.
+
+**Groups** are private boards for family or friends. Each has a
+four-character code from `ABCDEFGHJKMNPQRSTUVWXYZ23456789` (no 0/O or
+1/I/L, so codes are easy to read aloud) and a name of up to 24 characters.
+There are no accounts: anyone with the code can see the group's scores and
+add to them. Games remember the groups a player has joined in
+`localStorage` and send their codes with each score, up to five. A score
+goes to the public board unless `public` is `false`, and to each listed
+group.
+
+**Storage.** Every place a score is shown is its own row in `scores`
+(`scope` is `*` or a group code); the copies share an `entry` id. Each
+(game, scope, difficulty, mode) keeps its top 100. The Worker checks that a
+score is possible for the game (see `GAMES` in `src/leaderboard.js`), allows
+only three letters A–Z as initials, and stores a salted hash of each IP
+address, never the address itself, to rate-limit writes.
+
+`src/leaderboard.js` holds the logic and `src/index.js` only exports the
+Worker: the runtime treats every export of the main module as an entry
+point, so constants exported for tests can't live there.
 
 ## Setup
 
@@ -93,19 +126,29 @@ node --disable-warning=ExperimentalWarning --test "worker/test/*.test.js"
 
 ## Moderation
 
-Remove a score by its id (shown in API responses):
+Remove a score from every board it's on by its `entry` id (shown in API
+responses):
 
 ```sh
 npx wrangler@4.151.0 d1 execute games-leaderboard --remote \
-  --command "DELETE FROM scores WHERE id = 42"
+  --command "DELETE FROM scores WHERE entry = '<uuid>'"
+```
+
+Delete a group and its scores (its members then see "That group doesn't
+exist any more"):
+
+```sh
+npx wrangler@4.151.0 d1 execute games-leaderboard --remote \
+  --command "DELETE FROM scores WHERE scope = 'K7QP'; DELETE FROM groups WHERE code = 'K7QP'"
 ```
 
 To add a word to the initials blocklist, edit `BLOCKED_INITIALS` in
-`src/index.js`.
+`src/leaderboard.js`.
 
 ## Adding another game
 
-Add an entry to `GAMES` in `src/index.js` with its board names and a
-`check()` that rejects scores the game couldn't produce, plus tests in
-`test/leaderboard.test.js`. The game then calls the same two endpoints with
-its own `game` name.
+Add an entry to `GAMES` in `src/leaderboard.js` with its difficulties and
+modes and a `check()` that rejects scores the game couldn't produce, plus
+tests in `test/leaderboard.test.js`. The game then calls the same endpoints
+with its own `game` name. Groups aren't tied to a game, so a family's group
+works in every game that has a leaderboard.
