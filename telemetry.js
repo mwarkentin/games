@@ -3,7 +3,7 @@
 // tests/test_telemetry.py covers it.
 (() => {
   // The games project's DSN. While it's empty, nothing loads and nothing is sent.
-  const SENTRY_DSN = '';
+  const SENTRY_DSN = 'https://8d55bf3ad202125a5bf149c37f672a10@o1142222.ingest.us.sentry.io/4512340849786880';
   const SDK = [
     {
       src: 'https://browser.sentry-cdn.com/11.10.0/bundle.tracing.replay.min.js',
