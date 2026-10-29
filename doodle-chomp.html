@@ -391,6 +391,45 @@ legend { padding: 0; margin-bottom: 8px; font-size: .7rem; font-weight: 700; tex
 .save-msg { margin: 0; min-height: 1.3em; font-size: .88rem; color: var(--ink-soft); }
 .save-msg.err { color: var(--red); }
 .ov-card .score-list { width: 100%; max-width: 320px; margin: 2px auto 0; text-align: left; }
+.score-list .who small { display: block; font-family: var(--font-ui); font-weight: 400; font-size: .76rem; letter-spacing: 0; color: var(--ink-soft); }
+.score-list li.mine .who small { color: var(--hi-ink); }
+.btn.lb-open { align-self: flex-start; margin-top: 8px; padding: .55em 1em; font-size: .95rem; box-shadow: 2px 2px 0 var(--edge); }
+.ov-board { display: flex; flex-direction: column; align-items: center; gap: 6px; width: 100%; max-width: 320px; margin: 6px auto 0; }
+.ov-board .scores-which { margin: 0; }
+.ov-board .score-list { margin: 0; }
+.ov-board .btn.lb-open { align-self: center; margin-top: 2px; }
+.lb-public { display: flex; align-items: flex-start; gap: 8px; margin: 2px 0 0; font-size: .9rem; line-height: 1.35; color: var(--ink-soft); text-align: left; cursor: pointer; }
+.lb-public input { flex: none; width: 20px; height: 20px; margin: 0; accent-color: var(--ink); }
+.lb-scopes { display: flex; flex-wrap: wrap; justify-content: center; gap: 6px; }
+.lb-card .lb-scopes { justify-content: flex-start; }
+.lb-scopes button {
+  min-height: 36px; padding: .3em .9em; cursor: pointer; touch-action: manipulation;
+  border: 2px solid var(--ink-soft); border-radius: 999px; background: var(--card); color: var(--ink);
+  font: 700 .92rem/1.2 var(--font-ui);
+}
+.lb-scopes button[aria-pressed="true"] { border-color: var(--ink); background: var(--hi); color: var(--hi-ink); }
+.lb-ov { z-index: 30; }
+.lb-card { max-width: 460px; display: flex; flex-direction: column; gap: 12px; }
+.lb-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.lb-head .ov-title { text-align: left; }
+.lb-filters { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.lb-filters label, .lb-row label { display: flex; flex-direction: column; gap: 4px; font-size: .7rem; font-weight: 700; text-transform: uppercase; letter-spacing: .1em; color: var(--ink-soft); }
+.lb-card select, .lb-card input {
+  width: 100%; min-width: 0; min-height: 44px; padding: 6px 10px; font: 16px/1.2 var(--font-ui); color: var(--ink);
+  background: var(--paper); border: 2px solid var(--ink); border-radius: 10px 12px 9px 11px;
+}
+.lb-card .score-list li:last-child { border-bottom: 0; }
+.lb-groups { display: flex; flex-direction: column; gap: 10px; padding-top: 12px; border-top: 2px dashed var(--grid-major); }
+.lb-groups h3 { margin: 0; font-size: .7rem; font-weight: 700; text-transform: uppercase; letter-spacing: .1em; color: var(--ink-soft); }
+.lb-mygroups { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.lb-mygroups li { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; grid-template-areas: "name share leave" "code share leave"; align-items: center; gap: 2px 8px; }
+.lb-mygroups .gname { grid-area: name; min-width: 0; font-family: var(--font-hand); font-weight: 700; font-size: 1.08rem; line-height: 1.2; overflow-wrap: anywhere; }
+.lb-mygroups code { grid-area: code; font: 800 .95rem/1.2 var(--font-hand); letter-spacing: .14em; color: var(--ink-soft); }
+.lb-mygroups .btn:nth-of-type(1) { grid-area: share; }
+.lb-mygroups .btn:nth-of-type(2) { grid-area: leave; }
+.lb-mygroups .btn, .lb-row .btn { padding: .5em .9em; font-size: .95rem; box-shadow: 2px 2px 0 var(--edge); }
+.lb-row > div { display: flex; gap: 8px; }
+.lb-row #lbJoinCode { width: 7em; flex: none; letter-spacing: .2em; text-transform: uppercase; text-align: center; }
 .howto summary { cursor: pointer; font-weight: 700; width: max-content; }
 .howto ul { margin: 8px 0 0; padding-left: 1.1em; display: grid; gap: 6px; font-size: .94rem; line-height: 1.4; color: var(--ink-soft); }
 .howto b { color: var(--ink); }
@@ -593,6 +632,7 @@ legend { padding: 0; margin-bottom: 8px; font-size: .7rem; font-weight: 700; tex
         <h2 id="menuScoresTitle">High scores <span class="scores-which" id="menuWhich">Multiples · Explorer</span></h2>
         <ol class="score-list" id="menuScoreList" hidden></ol>
         <p class="scores-note" id="menuScoreNote">Loading scores…</p>
+        <button type="button" class="btn lb-open" id="lbOpenMenu" hidden>High scores &amp; groups</button>
       </section>
       <details class="howto" id="howto">
         <summary>How to play</summary>
@@ -602,7 +642,7 @@ legend { padding: 0; margin-bottom: 8px; font-size: .7rem; font-weight: 700; tex
           <li><b>Watch the edges.</b> A red <b>!</b> shows where a doodle is about to walk in.</li>
           <li><b>Listen</b> for the doodles. Their footsteps get louder as they get closer to Nib.</li>
           <li><b>Clear the level</b> by chomping every number that fits. You get an extra life every 3 levels.</li>
-          <li><b>Make the top 10</b> for your game and difficulty to put your initials on the high-score board.</li>
+          <li id="howtoBoard" hidden><b>Make the top 10</b> for your game and difficulty to put your initials on the high-score board, or <b>start a group</b> for family or friends.</li>
         </ul>
       </details>
     </div>
@@ -614,6 +654,56 @@ legend { padding: 0; margin-bottom: 8px; font-size: .7rem; font-weight: 700; tex
       <h2 class="ov-title" id="ovTitle">Paused</h2>
       <div class="ov-body" id="ovBody"></div>
       <div class="ov-actions" id="ovActions"></div>
+    </div>
+  </div>
+
+  <div class="overlay lb-ov" id="lbOv" hidden>
+    <div class="card lb-card" role="dialog" aria-modal="true" aria-labelledby="lbTitle">
+      <div class="lb-head">
+        <h2 class="ov-title" id="lbTitle">High scores</h2>
+        <button type="button" class="icon-btn" id="lbClose" aria-label="Close high scores">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>
+        </button>
+      </div>
+      <div class="lb-scopes" id="lbScopes" role="group" aria-label="Whose scores" hidden></div>
+      <div class="lb-filters">
+        <label>Game
+          <select id="lbMode">
+            <option value="all">All games</option>
+            <option value="multiples">Multiples</option>
+            <option value="factors">Factors</option>
+            <option value="primes">Primes</option>
+            <option value="equals">Equals</option>
+            <option value="compare">Greater &amp; less</option>
+            <option value="mix">Mix it up</option>
+            <option value="kinder">Kindergarten</option>
+          </select>
+        </label>
+        <label>Difficulty
+          <select id="lbDiff">
+            <option value="all">All</option>
+            <option value="starter">Starter</option>
+            <option value="explorer">Explorer</option>
+            <option value="expert">Expert</option>
+          </select>
+        </label>
+      </div>
+      <ol class="score-list" id="lbList" hidden></ol>
+      <p class="scores-note" id="lbNote" aria-live="polite"></p>
+      <section class="lb-groups" aria-labelledby="lbGroupsTitle">
+        <h3 id="lbGroupsTitle">Your groups</h3>
+        <p class="scores-note" id="lbNoGroups">A group is a private high-score board for family or friends. Anyone with its four-character code can join.</p>
+        <ul class="lb-mygroups" id="lbGroupList" hidden></ul>
+        <form class="lb-row" id="lbJoinForm">
+          <label for="lbJoinCode">Join with a code</label>
+          <div><input id="lbJoinCode" maxlength="4" autocomplete="off" autocapitalize="characters" autocorrect="off" spellcheck="false" enterkeyhint="go" placeholder="K7QP"><button type="submit" class="btn">Join</button></div>
+        </form>
+        <form class="lb-row" id="lbCreateForm">
+          <label for="lbGroupName">Start a group</label>
+          <div><input id="lbGroupName" maxlength="24" autocomplete="off" enterkeyhint="go" placeholder="Family"><button type="submit" class="btn">Start</button></div>
+        </form>
+        <p class="scores-note" id="lbGroupNote" aria-live="polite"></p>
+      </section>
     </div>
   </div>
 
@@ -956,7 +1046,9 @@ const els = {};
 ['app', 'stage', 'board', 'cells', 'lines', 'sprites', 'levelOut', 'scoreOut', 'livesOut', 'rule', 'rulePre', 'ruleKey',
  'ruleKeyText', 'rulePost', 'menu', 'overlay', 'ovArt', 'ovTitle', 'ovBody', 'ovActions', 'announcer', 'soundBtn',
  'pauseBtn', 'chompBtn', 'playBtn', 'modeChips', 'diffSeg', 'titleNib', 'pad', 'menuScoreList', 'menuScoreNote', 'menuWhich',
- 'sideScoreList', 'sideScoreNote', 'sideWhich', 'sayBtn', 'diffField', 'kNote'].forEach(id => { els[id] = $(id); });
+ 'sideScoreList', 'sideScoreNote', 'sideWhich', 'sayBtn', 'diffField', 'kNote', 'howtoBoard', 'lbOpenMenu', 'lbOv', 'lbClose',
+ 'lbScopes', 'lbMode', 'lbDiff', 'lbList', 'lbNote', 'lbNoGroups', 'lbGroupList', 'lbJoinForm', 'lbJoinCode', 'lbCreateForm',
+ 'lbGroupName', 'lbGroupNote'].forEach(id => { els[id] = $(id); });
 
 // ---------- saved preferences (this browser only) ----------
 const store = {
@@ -968,7 +1060,7 @@ const store = {
 const S = {
   // diff is the difficulty in play; diffPick is the one chosen on the menu (Kindergarten has no difficulty, so it plays as 0).
   phase: 'menu', mode: 'multiples', diff: 1, diffPick: 1,
-  level: 1, score: 0, lives: 3,
+  level: 1, score: 0, lives: 3, chomps: 0, startT: 0,
   spec: null, nextSpec: null, rule: null, cfg: null,
   cols: 6, rows: 5, cw: 60, ch: 50, cells: [], cellEls: [], hereIdx: -1,
   player: { c: 2, r: 2, target: null, invUntil: 0, lastMove: 0, lastBump: 0, bumpDir: '' },
@@ -1416,6 +1508,7 @@ function chomp() {
     const pts = 5 * (2 + S.diff) + 2 * (S.level - 1);
     S.score += pts;
     S.levelChomps++;
+    S.chomps++;
     renderCell(i);
     crumbs(p.c, p.r);
     popText(p.c, p.r, '+' + pts);
@@ -1494,7 +1587,8 @@ function gameOver() {
 function newGame() {
   hideOverlay();
   els.menu.hidden = true;
-  S.savedId = null;
+  S.chomps = 0;
+  S.startT = S.t;
   S.level = 1;
   S.score = 0;
   S.lives = startLives();
@@ -1508,7 +1602,8 @@ function beginPlay() {
   Sound.unlock();
   if (S.phase !== 'menu') return;
   els.menu.hidden = true;
-  S.savedId = null;
+  S.chomps = 0;
+  S.startT = S.t;
   S.level = 1;
   S.score = 0;
   S.lives = startLives();
@@ -1743,10 +1838,11 @@ function showOverlay({ art, artCls, title, red, body, actions }) {
   S.ovShownAt = performance.now();
   els.overlay.hidden = false;
   const first = els.ovActions.firstChild;
-  if (first) setTimeout(() => { if (!els.overlay.hidden) first.focus({ preventScroll: true }); }, 30);
+  if (first) setTimeout(() => { if (!els.overlay.hidden && !els.overlay.contains(document.activeElement)) first.focus({ preventScroll: true }); }, 30);
 }
 function hideOverlay() {
   if (els.overlay.contains(document.activeElement)) document.activeElement.blur();
+  ob = null;
   els.overlay.hidden = true;
   S.ovPrimary = null;
 }
@@ -1798,117 +1894,195 @@ function showClear(bonus, perfect, extra) {
   Voice.say(perfect ? 'Great job! You got them all right!' : 'Great job!');
   announce(`Level ${S.level} done. Score ${S.score}.`);
 }
-// ---------- high scores, kept in the page's shared database ----------
-// One document per entry in `scores`, top 10 kept per game and difficulty.
+// ---------- high scores, on the site's leaderboard ----------
+// The leaderboard Worker keeps the scores, filed by game (the Worker calls it
+// the mode) and difficulty; Kindergarten has no difficulty and is filed as
+// starter. Groups are private boards shared by a four-character code. There
+// are no accounts: the groups you're in are remembered on this device. While
+// LEADERBOARD_URL is empty, scores stay in this browser.
+const LEADERBOARD_URL = '';
+const PUBLIC = '*';
 const TOP = 10;
 const MODE_NAMES = { multiples: 'Multiples', factors: 'Factors', primes: 'Primes', equals: 'Equals', compare: 'Greater & less', mix: 'Mix it up', kinder: 'Kindergarten' };
-const DIFF_NAMES = ['Starter', 'Explorer', 'Expert'];
-const Scores = {
-  state: window.claude && typeof window.claude.use === 'function' ? 'pending' : 'local',
-  db: null, uid: null, writable: null, all: [], ready: false, error: '',
+const DIFFS = ['starter', 'explorer', 'expert'];
+const DIFF_NAMES = { starter: 'Starter', explorer: 'Explorer', expert: 'Expert' };
+const GROUP_CODE = /^[A-HJKMNP-Z2-9]{4}$/;
+const MAX_GROUPS = 5;
+const UNAVAILABLE = 'The high-score board is unavailable right now.';
+const OFFLINE = 'Couldn’t reach the high-score board. Try again in a moment.';
+const Leaderboard = {
+  api: (() => {
+    const override = new URLSearchParams(location.search).get('leaderboard') || '';
+    return (/^https?:\/\//.test(override) ? override : LEADERBOARD_URL).replace(/\/+$/, '');
+  })(),
+  cache: {},
+  async request(path, options) {
+    const ctl = new AbortController();
+    const timer = setTimeout(() => ctl.abort(), 8000);
+    try {
+      const res = await fetch(this.api + path, { ...options, signal: ctl.signal });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw Object.assign(new Error(body.error || `HTTP ${res.status}`), { status: res.status, fromServer: true });
+      return body;
+    } finally {
+      clearTimeout(timer);
+    }
+  },
+  // text/plain keeps a POST a simple request, so the browser skips a CORS preflight.
+  post(path, body) {
+    return this.request(path, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=UTF-8' }, body: JSON.stringify(body) });
+  },
+  async scores({ scope, difficulty, mode }, maxAge) {
+    const query = new URLSearchParams({ game: 'doodle-chomp', scope, difficulty, mode });
+    const hit = this.cache[query];
+    if (hit && Date.now() - hit.at < maxAge) return hit.scores;
+    const { scores } = await this.request(`/v1/scores?${query}`);
+    this.cache[query] = { scores, at: Date.now() };
+    return scores;
+  },
+  async save(entry) {
+    const body = await this.post('/v1/scores', { game: 'doodle-chomp', ...entry });
+    this.cache = {};
+    return body;
+  },
+  createGroup: name => Leaderboard.post('/v1/groups', { name }),
+  group: code => Leaderboard.request(`/v1/groups/${code}`),
 };
-const boardId = () => `${S.mode}-${S.diff}`;
-const boardLabel = () => (S.mode === 'kinder' ? MODE_NAMES.kinder : `${MODE_NAMES[S.mode]} · ${DIFF_NAMES[S.diff]}`);
+
+// Groups, initials and the public-board choice are shared with the site's
+// other games, so their keys have no "doodle-chomp:" prefix.
+const shared = {
+  get(k, d) { try { const v = localStorage.getItem('games.' + k); return v === null ? d : JSON.parse(v); } catch (e) { return d; } },
+  set(k, v) { try { localStorage.setItem('games.' + k, JSON.stringify(v)); } catch (e) { /* storage unavailable */ } },
+};
+function myGroups() {
+  const groups = shared.get('groups', []);
+  return (Array.isArray(groups) ? groups : []).filter(g => g && GROUP_CODE.test(g.code) && typeof g.name === 'string').slice(0, MAX_GROUPS);
+}
+const groupName = code => (myGroups().find(g => g.code === code) || {}).name || code;
+const scopeName = scope => (scope === PUBLIC ? 'Everyone' : groupName(scope));
+const boardOf = () => ({ difficulty: DIFFS[S.diff], mode: S.mode });
+const boardName = b => (b.mode === 'kinder' ? MODE_NAMES.kinder : `${MODE_NAMES[b.mode]} · ${DIFF_NAMES[b.difficulty]}`);
+const boardLabel = () => boardName(boardOf());
+// Which scope tab is open, and the high-score screen's filters.
+function lbView() {
+  const saved = store.get('lbView', {});
+  const v = { scope: PUBLIC, difficulty: 'all', mode: 'all', ...(saved && typeof saved === 'object' ? saved : {}) };
+  if (v.scope !== PUBLIC && !myGroups().some(g => g.code === v.scope)) v.scope = PUBLIC;
+  if (!DIFF_NAMES[v.difficulty]) v.difficulty = 'all';
+  if (!MODE_NAMES[v.mode]) v.mode = 'all';
+  return v;
+}
+const setLbView = changes => store.set('lbView', { ...lbView(), ...changes });
+
 // Arcade-style initials: three letters, A to Z.
 const LETTERS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
 const cleanInitials = s => String(s || '').toUpperCase().replace(/[^A-Z]/g, '').slice(0, 3);
-const byScore = (a, b) => b.score - a.score || a.at - b.at;
-const scoresLive = () => Scores.state === 'db' && Scores.ready && !Scores.error;
-function boardScores(key) { return Scores.all.filter(x => x.board === key).sort(byScore); }
-function qualifies(score, key) { const list = boardScores(key); return score > 0 && (list.length < TOP || score > list[TOP - 1].score); }
-function rankFor(score, key) { return 1 + boardScores(key).filter(x => x.score >= score).length; }
-function readEntry(d) {
-  const x = d.data();
-  if (!x || typeof x.board !== 'string' || !Number.isFinite(Number(x.score))) return null;
-  // Older entries carried a typed name instead of initials: show its first three letters.
-  const initials = cleanInitials(x.initials) || cleanInitials(x.name) || '???';
-  return { id: d.id, board: x.board, initials, score: Number(x.score), level: Number(x.level) || 0, at: Number(x.at) || 0 };
-}
-async function initScores() {
-  if (Scores.state !== 'pending') return;
-  let db = null, user = null;
-  try { [db, user] = await Promise.all([window.claude.use('db'), window.claude.use('user')]); } catch (e) { db = null; }
-  if (!db) { Scores.state = 'local'; renderScores(); return; }
-  Scores.db = db;
-  Scores.state = 'db';
-  if (user) {
-    Scores.uid = await user.id();
-    Scores.writable = await user.can('data.write');
-  }
-  renderScores();
-  try {
-    db.collection('scores').onSnapshot(snap => {
-      Scores.all = snap.docs.map(readEntry).filter(Boolean);
-      Scores.ready = true;
-      Scores.error = '';
-      renderScores();
-    }, err => { Scores.error = (err && err.code) || 'unavailable'; renderScores(); });
-  } catch (e) {
-    Scores.error = 'unavailable';
-    renderScores();
-  }
-}
-// Rank-numbered rows; past the top few, the highlighted entry keeps its place after a "…".
-function scoreRows(listEl, list, highlightId, max) {
+const savedInitials = () => cleanInitials(shared.get('initials', '')) || cleanInitials(store.get('initials', ''));
+
+let boardRequest = 0, overRequest = 0, screenRequest = 0;
+let lastGame = null;   // the finished game, kept so its score can be saved
+let ob = null;         // the game-over card's high-score section
+
+// Rank-numbered rows; past the top few, your entry keeps its place after a "…".
+// Views that mix boards say which board each score is from.
+function scoreRows(listEl, list, mine, max, tags) {
   listEl.textContent = '';
-  const at = list.findIndex(x => x.id === highlightId);
-  const rows = list.slice(0, max).map((x, i) => [i + 1, x]);
-  if (at >= max) { rows.length = max - 1; rows.push(null, [at + 1, list[at]]); }
-  for (const row of rows) {
+  const at = mine ? list.findIndex(x => x.entry === mine) : -1;
+  const rows = list.slice(0, max);
+  if (at >= max) { rows.length = max - 1; rows.push(null, list[at]); }
+  for (const x of rows) {
     const li = document.createElement('li');
-    if (!row) { li.className = 'gap'; li.textContent = '…'; listEl.appendChild(li); continue; }
-    const [rank, x] = row;
-    if (x.id === highlightId) li.className = 'mine';
-    for (const [cls, text] of [['rank', rank], ['who', x.initials], ['pts', x.score], ['lvl', 'L' + x.level]]) {
+    if (!x) { li.className = 'gap'; li.textContent = '…'; listEl.appendChild(li); continue; }
+    if (mine && x.entry === mine) li.className = 'mine';
+    for (const [cls, text] of [['rank', x.rank], ['who', x.initials], ['pts', x.score], ['lvl', 'L' + x.level]]) {
       const s = document.createElement('span');
       s.className = cls;
       s.textContent = text;
       li.appendChild(s);
     }
+    if (tags) {
+      const tag = document.createElement('small');
+      tag.textContent = boardName(x);
+      li.querySelector('.who').appendChild(tag);
+    }
     listEl.appendChild(li);
   }
   listEl.hidden = !rows.length;
 }
-function renderScores() {
-  const key = boardId(), label = boardLabel();
-  for (const [listEl, noteEl, whichEl] of [[els.menuScoreList, els.menuScoreNote, els.menuWhich], [els.sideScoreList, els.sideScoreNote, els.sideWhich]]) {
-    whichEl.textContent = label;
-    let note = '';
-    if (Scores.state === 'pending' || (Scores.state === 'db' && !Scores.ready && !Scores.error)) note = 'Loading scores…';
-    else if (Scores.state === 'local' || Scores.error) {
-      const best = store.get(bestKey(), 0);
-      note = best ? `Best score in this browser: ${best}` : 'Scores are kept in this browser only.';
+// Everyone, then each group you're in. Hidden when you're in no groups.
+function renderScopes(container, active, onPick) {
+  const groups = myGroups();
+  container.hidden = !groups.length;
+  container.replaceChildren(...[{ code: PUBLIC, name: 'Everyone' }, ...groups].map(g => {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.textContent = g.name;
+    b.setAttribute('aria-pressed', String(g.code === active));
+    b.addEventListener('click', () => onPick(g.code));
+    return b;
+  }));
+}
+// Loads one view into one or more [list, note] pairs.
+async function loadScores(targets, view, isCurrent, emptyText, max, tags) {
+  try {
+    const scores = await Leaderboard.scores(view, 30000);
+    if (!isCurrent()) return null;
+    for (const [listEl, noteEl] of targets) {
+      scoreRows(listEl, scores, lastGame && lastGame.entry, max, tags);
+      noteEl.textContent = scores.length ? '' : emptyText;
     }
-    const list = note ? [] : boardScores(key);
-    if (!note && !list.length) note = 'No scores yet. Finish a game to put the first initials on the board.';
-    scoreRows(listEl, list, S.savedId, 5);
-    noteEl.textContent = note;
+    return scores;
+  } catch (e) {
+    if (!isCurrent()) return null;
+    for (const [listEl, noteEl] of targets) {
+      scoreRows(listEl, [], null, max);
+      noteEl.textContent = e.status === 404 ? 'That group doesn’t exist any more.' : UNAVAILABLE;
+    }
+    return null;
   }
 }
-async function saveScore(initials) {
-  const entry = { board: boardId(), mode: S.mode, diff: S.diff, initials, score: S.score, level: S.level, uid: Scores.uid || null, at: Date.now() };
-  const ref = Scores.db.collection('scores').doc();
-  try {
-    try { await ref.set(entry); }
-    catch (err) {
-      if (!err || err.code !== 'unavailable') throw err;
-      await new Promise(r => setTimeout(r, 400 + Math.random() * 600));
-      await ref.set(entry);
+
+// The menu and the margin show the top 5 for the chosen game and difficulty.
+function renderScores() {
+  const label = boardLabel();
+  const targets = [[els.menuScoreList, els.menuScoreNote, els.menuWhich], [els.sideScoreList, els.sideScoreNote, els.sideWhich]];
+  if (!Leaderboard.api) {
+    const best = store.get(bestKey(), 0);
+    for (const [listEl, noteEl, whichEl] of targets) {
+      whichEl.textContent = label;
+      scoreRows(listEl, [], null, 5);
+      noteEl.textContent = best ? `Best score in this browser: ${best}` : 'Scores are kept in this browser only.';
     }
-  } catch (err) {
-    const code = err && err.code;
-    if (code === 'invalid_argument') { Scores.writable = false; return { ok: false, message: 'Only people who can edit this page can save scores.' }; }
-    if (code === 'quota_exceeded') return { ok: false, message: 'The score board is full, so this score could not be saved.' };
-    return { ok: false, message: "That didn't save. Check your connection and try again." };
+    return;
   }
-  const mine = { ...entry, id: ref.id };
-  if (!Scores.all.some(x => x.id === ref.id)) Scores.all = Scores.all.concat([mine]);
-  // Keep only the top 10 for this board. Someone else may already have removed an entry.
-  const extra = boardScores(entry.board).slice(TOP);
-  for (const x of extra) { try { await Scores.db.collection('scores').doc(x.id).delete(); } catch (e) { /* already gone */ } }
-  return { ok: true, id: ref.id };
+  const { scope } = lbView(), request = ++boardRequest;
+  for (const [listEl, noteEl, whichEl] of targets) {
+    whichEl.textContent = scope === PUBLIC ? label : `${label} · ${scopeName(scope)}`;
+    if (listEl.hidden) noteEl.textContent = 'Loading scores…';
+  }
+  loadScores(targets, { scope, ...boardOf() }, () => request === boardRequest,
+    'No scores yet. Finish a game to put the first initials on the board.', 5);
+}
+
+async function saveScore(initials, isPublic) {
+  const game = lastGame, groups = myGroups();
+  try {
+    const { difficulty, mode, score, level, chomps, seconds } = game;
+    const body = await Leaderboard.save({
+      difficulty, mode, initials, score, level, chomps, seconds,
+      groups: groups.map(g => g.code), public: !groups.length || isPublic,
+    });
+    game.entry = body.entry;
+    shared.set('initials', initials);
+    if (groups.length) shared.set('public', isPublic);
+    return { ok: true, ranks: body.ranks };
+  } catch (err) {
+    return { ok: false, message: err.fromServer ? `That didn't save: ${err.message}.` : OFFLINE };
+  }
 }
 // Three letter slots: type into them, or step through A to Z with the arrows (no phone keyboard needed).
+// In a group, a checkbox says whether the score goes on the public board too.
 function initialsForm(onSaved) {
   const form = document.createElement('form');
   form.className = 'save-score';
@@ -1918,9 +2092,14 @@ function initialsForm(onSaved) {
   form.innerHTML = '<p class="initials-label" id="initialsLabel">Put your initials on the board</p><div class="initials-row">' +
     '<div class="initials" role="group" aria-labelledby="initialsLabel">' +
     [0, 1, 2].map(i => `<div class="slot">${arrow(i, 1)}<input class="letter" id="initial${i}" maxlength="3" placeholder="_" autocomplete="off" autocapitalize="characters" autocorrect="off" spellcheck="false" enterkeyhint="${i < 2 ? 'next' : 'done'}" aria-label="Initial ${i + 1} of 3">${arrow(i, -1)}</div>`).join('') +
-    '</div><button type="submit" class="btn primary">Save</button></div><p class="save-msg" aria-live="polite"></p>';
+    '</div><button type="submit" class="btn primary">Save</button></div>' +
+    '<label class="lb-public" hidden><input type="checkbox" id="lbPublic"> Show it on the public board too, not just my groups</label>' +
+    '<p class="save-msg" aria-live="polite"></p>';
   const inputs = [...form.querySelectorAll('.letter')], btn = form.querySelector('button[type="submit"]'), msg = form.querySelector('.save-msg');
-  const saved = cleanInitials(store.get('initials', ''));
+  const publicBox = form.querySelector('#lbPublic');
+  form.querySelector('.lb-public').hidden = !myGroups().length;
+  publicBox.checked = shared.get('public', true) !== false;
+  const saved = savedInitials();
   inputs.forEach((inp, i) => { inp.value = saved[i] || ''; });
   const setLetter = (i, ch) => {
     inputs[i].value = ch;
@@ -1974,55 +2153,273 @@ function initialsForm(onSaved) {
       inputs.find(x => !x.value).focus();
       return;
     }
-    btn.disabled = true;
-    inputs.forEach(x => { x.disabled = true; });
+    const controls = [btn, publicBox, ...inputs];
+    controls.forEach(x => { x.disabled = true; });
     msg.className = 'save-msg';
     msg.textContent = 'Saving…';
-    const res = await saveScore(initials);
-    if (res.ok) { store.set('initials', initials); onSaved(res.id); return; }
-    btn.disabled = false;
-    inputs.forEach(x => { x.disabled = false; });
+    const res = await saveScore(initials, publicBox.checked);
+    if (res.ok) { onSaved(res.ranks); return; }
+    controls.forEach(x => { x.disabled = false; });
     msg.className = 'save-msg err';
     msg.textContent = res.message;
   });
   form.focusFirst = () => { const target = inputs.find(x => !x.value) || btn; target.focus(); };
   return form;
 }
-function showOver(savedId) {
-  const key = boardId(), label = boardLabel(), body = [];
-  let form = null;
-  if (scoresLive()) {
-    const list = boardScores(key), top = list[0];
-    body.push(statsRow([['Score', S.score], ['Level', S.level], ['Record', top ? top.score : S.score]]));
-    if (savedId) {
-      const rank = list.findIndex(x => x.id === savedId) + 1;
-      body.push(para(rank ? `Saved. ${list[rank - 1].initials} is #${rank} on the ${label} board.` : 'Saved.', 'soft'));
-      const ol = document.createElement('ol');
-      ol.className = 'score-list';
-      scoreRows(ol, list, savedId, 5);
-      body.push(ol);
-    } else if (qualifies(S.score, key) && Scores.writable !== false) {
-      const rank = rankFor(S.score, key);
-      body.push(para(rank === 1 ? (top ? `New record! The old one was ${top.score}.` : 'First score on this board!') : `That's #${rank} on the ${label} board.`, 'soft'));
-      form = initialsForm(id => { S.savedId = id; renderScores(); showOver(id); });
-      body.push(form);
-    } else if (qualifies(S.score, key)) {
-      body.push(para(`That would be #${rankFor(S.score, key)} on the board, but only people who can edit this page can save scores.`, 'soft'));
-    } else {
-      body.push(para(top ? `Top score on this board: ${top.score} by ${top.initials}.` : 'Chomp a few numbers to get on the board.', 'soft'));
-    }
+
+function showOver() {
+  const body = [statsRow([['Score', S.score], ['Level', S.level], ['Best', Math.max(store.get(bestKey(), 0), S.score)]])];
+  if (Leaderboard.api) {
+    lastGame = S.score > 0
+      ? { ...boardOf(), score: S.score, level: S.level, chomps: S.chomps, seconds: Math.max(1, Math.round((S.t - S.startT) / 1000)), entry: null }
+      : null;
+    body.push(overBoard());
   } else {
-    body.push(statsRow([['Score', S.score], ['Level', S.level], ['Best', Math.max(store.get(bestKey(), 0), S.score)]]));
     body.push(para(S.score > S.bestBefore && S.score > 0 ? 'That\'s a new best score in this browser.' : `The last page was ${S.rule.text.short.toLowerCase()}.`, 'soft'));
   }
   showOverlay({
-    art: 'nib', artCls: savedId ? '' : 'hurt', title: savedId ? 'On the board!' : 'Game over',
+    art: 'nib', artCls: 'hurt', title: 'Game over',
     body,
     actions: [{ label: 'Play again', run: newGame }, { label: 'Change game', run: openMenu }],
   });
-  if (form && finePointer.matches) setTimeout(() => { if (!els.overlay.hidden) form.focusFirst(); }, 60);
-  if (!savedId) announce(`Game over. Score ${S.score}.`);
+  announce(`Game over. Score ${S.score}.`);
+  if (ob) refreshOverBoard(true);
 }
+// The game-over card's board: this game's top 5, scope tabs when you're in a
+// group, and initials for a score worth saving.
+function overBoard() {
+  const box = document.createElement('div');
+  box.className = 'ov-board';
+  const which = para(boardLabel(), 'scores-which');
+  const scopes = document.createElement('div');
+  scopes.className = 'lb-scopes';
+  scopes.setAttribute('role', 'group');
+  scopes.setAttribute('aria-label', 'Whose scores');
+  scopes.hidden = true;
+  const list = document.createElement('ol');
+  list.className = 'score-list';
+  list.hidden = true;
+  const note = para('Loading scores…', 'scores-note');
+  note.setAttribute('aria-live', 'polite');
+  const open = document.createElement('button');
+  open.type = 'button';
+  open.className = 'btn lb-open';
+  open.textContent = 'High scores & groups';
+  open.addEventListener('click', openBoardScreen);
+  box.append(which, scopes, list, note, open);
+  ob = { box, scopes, list, note, form: null };
+  return box;
+}
+async function refreshOverBoard(offerSave) {
+  const here = ob, { scope } = lbView(), request = ++overRequest;
+  if (!here) return;
+  renderScopes(here.scopes, scope, code => { setLbView({ scope: code }); refreshOverBoard(false); });
+  here.note.textContent = 'Loading scores…';
+  const scores = await loadScores([[here.list, here.note]], { scope, ...boardOf() }, () => request === overRequest && ob === here,
+    `No scores ${scope === PUBLIC ? 'on this board' : `in ${scopeName(scope)}`} yet.`, 5);
+  const game = lastGame;
+  if (!offerSave || !scores || here.form || !game || game.entry) return;
+  // In a group, every score is worth saving. Otherwise (and then the list is
+  // the public one) it has to make the top 10, where ties go to whoever got
+  // there first.
+  const inGroups = myGroups().length > 0;
+  if (!inGroups && scores.length >= TOP && game.score <= scores[TOP - 1].score) return;
+  if (!inGroups) {
+    const rank = 1 + scores.filter(x => x.score >= game.score).length;
+    here.note.textContent = rank > 1 ? `That's #${rank} on the ${boardLabel()} board.`
+      : scores.length ? `A new record! The old one was ${scores[0].score}.` : 'First score on this board!';
+  }
+  here.form = initialsForm(ranks => scoreSaved(here, game, ranks));
+  here.box.insertBefore(here.form, here.scopes);
+  const active = document.activeElement;
+  if (finePointer.matches && (!active || active === document.body || els.ovActions.contains(active))) here.form.focusFirst();
+}
+async function scoreSaved(here, game, ranks) {
+  if (ob !== here || game !== lastGame) return;
+  here.form.remove();
+  here.form = null;
+  els.ovTitle.textContent = 'On the board!';
+  els.ovArt.innerHTML = svgFor('nib');
+  if (!(lbView().scope in ranks)) setLbView({ scope: Object.keys(ranks)[0] });
+  renderScores();
+  await refreshOverBoard(false);
+  const where = Object.entries(ranks).map(([scope, rank]) => `#${rank} ${scope === PUBLIC ? 'on Everyone' : `in ${scopeName(scope)}`}`);
+  here.note.textContent = `Saved! ${where.join(', ')}.`;
+  announce(here.note.textContent);
+  els.ovActions.firstChild.focus({ preventScroll: true });
+}
+
+// ---------- the high-score screen: any view, plus joining, starting and leaving groups ----------
+let lbOpener = null;
+function openBoardScreen() {
+  if (!Leaderboard.api) return;
+  lbOpener = document.activeElement;
+  els.lbOv.hidden = false;
+  const v = lbView();
+  els.lbMode.value = v.mode;
+  els.lbDiff.value = v.difficulty;
+  renderMyGroups();
+  refreshScreen();
+  els.lbClose.focus();
+}
+function closeBoardScreen() {
+  els.lbOv.hidden = true;
+  els.lbGroupNote.textContent = '';
+  renderScores();
+  // Joining or leaving a group changes the tabs, and whether a score is worth saving.
+  if (ob && !els.overlay.hidden) {
+    if (ob.form && lastGame && !lastGame.entry) { ob.form.remove(); ob.form = null; }
+    refreshOverBoard(true);
+  }
+  if (lbOpener && document.contains(lbOpener)) lbOpener.focus({ preventScroll: true });
+}
+function refreshScreen() {
+  const v = lbView(), request = ++screenRequest;
+  renderScopes(els.lbScopes, v.scope, code => { setLbView({ scope: code }); refreshScreen(); });
+  els.lbNote.textContent = 'Loading scores…';
+  return loadScores([[els.lbList, els.lbNote]], v, () => request === screenRequest,
+    `No scores ${v.scope === PUBLIC ? 'here' : `in ${scopeName(v.scope)}`} yet.`, TOP,
+    v.difficulty === 'all' || v.mode === 'all');
+}
+
+function renderMyGroups() {
+  const groups = myGroups();
+  els.lbGroupList.replaceChildren(...groups.map(g => {
+    const li = document.createElement('li');
+    const name = document.createElement('span');
+    name.className = 'gname';
+    name.textContent = g.name;
+    const code = document.createElement('code');
+    code.textContent = g.code;
+    const share = document.createElement('button');
+    share.type = 'button';
+    share.className = 'btn';
+    share.textContent = 'Share';
+    share.addEventListener('click', () => shareGroup(g, share));
+    const leave = document.createElement('button');
+    leave.type = 'button';
+    leave.className = 'btn';
+    leave.textContent = 'Leave';
+    leave.addEventListener('click', () => leaveGroup(g));
+    li.append(name, code, share, leave);
+    return li;
+  }));
+  els.lbGroupList.hidden = !groups.length;
+  els.lbNoGroups.hidden = groups.length > 0;
+  els.lbCreateForm.hidden = els.lbJoinForm.hidden = groups.length >= MAX_GROUPS;
+}
+
+function inviteLink(code) {
+  const url = new URL(location.pathname, location.origin);
+  const api = new URLSearchParams(location.search).get('leaderboard');
+  if (api) url.searchParams.set('leaderboard', api);
+  url.searchParams.set('join', code);
+  return url.toString();
+}
+async function shareGroup(g, button) {
+  const url = inviteLink(g.code);
+  const text = `Join "${g.name}" on the Doodle Chomp high-score board with code ${g.code}: ${url}`;
+  try {
+    if (navigator.share && window.matchMedia && matchMedia('(pointer: coarse)').matches) {
+      await navigator.share({ title: 'Doodle Chomp', text: `Join "${g.name}" with code ${g.code}`, url });
+      return;
+    }
+    await navigator.clipboard.writeText(text);
+    button.textContent = 'Copied';
+  } catch (e) {
+    if (e && e.name === 'AbortError') return;   // closed the share sheet
+    button.textContent = 'Copy failed';
+  }
+  setTimeout(() => { button.textContent = 'Share'; }, 1500);
+}
+function addGroup(g) {
+  shared.set('groups', [...myGroups().filter(x => x.code !== g.code), { code: g.code, name: g.name }]);
+  setLbView({ scope: g.code });
+  renderMyGroups();
+  refreshScreen();
+}
+function leaveGroup(g) {
+  if (!confirm(`Leave ${g.name}? You can rejoin later with code ${g.code}.`)) return;
+  shared.set('groups', myGroups().filter(x => x.code !== g.code));
+  if (lbView().scope === g.code) setLbView({ scope: PUBLIC });
+  els.lbGroupNote.textContent = `Left ${g.name}.`;
+  renderMyGroups();
+  refreshScreen();
+}
+
+const normalizeCode = value => value.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 4);
+async function joinGroup(e) {
+  e.preventDefault();
+  const code = normalizeCode(els.lbJoinCode.value);
+  if (!GROUP_CODE.test(code)) {
+    els.lbGroupNote.textContent = 'Group codes are four letters and numbers, like K7QP.';
+    return;
+  }
+  if (myGroups().some(g => g.code === code)) {
+    els.lbGroupNote.textContent = `You’re already in ${groupName(code)}.`;
+    return;
+  }
+  els.lbGroupNote.textContent = 'Looking up the group…';
+  try {
+    const g = await Leaderboard.group(code);
+    addGroup(g);
+    els.lbJoinCode.value = '';
+    els.lbGroupNote.textContent = `Joined ${g.name}. Scores you save from now on go to ${g.name} too.`;
+  } catch (err) {
+    els.lbGroupNote.textContent = err.status === 404 ? `There’s no group with code ${code}.` : OFFLINE;
+  }
+}
+async function createGroup(e) {
+  e.preventDefault();
+  const name = els.lbGroupName.value.trim();
+  if (!name) {
+    els.lbGroupNote.textContent = 'Give the group a name, like Family.';
+    return;
+  }
+  els.lbGroupNote.textContent = 'Starting the group…';
+  try {
+    const g = await Leaderboard.createGroup(name);
+    addGroup(g);
+    els.lbGroupName.value = '';
+    els.lbGroupNote.textContent = `Started ${g.name}. Share code ${g.code} so others can join.`;
+  } catch (err) {
+    els.lbGroupNote.textContent = err.fromServer ? `Couldn’t start the group: ${err.message}.` : OFFLINE;
+  }
+}
+
+// An invite link (?join=CODE) opens the high-score screen ready to join.
+async function handleInvite() {
+  const params = new URLSearchParams(location.search);
+  const code = normalizeCode(params.get('join') || '');
+  if (!Leaderboard.api || !code) return;
+  params.delete('join');
+  const rest = params.toString();
+  history.replaceState(null, '', location.pathname + (rest ? `?${rest}` : '') + location.hash);
+  openBoardScreen();
+  els.lbJoinCode.value = code;
+  if (myGroups().some(g => g.code === code)) {
+    els.lbGroupNote.textContent = `You’re already in ${groupName(code)}.`;
+    return;
+  }
+  try {
+    const g = await Leaderboard.group(code);
+    els.lbGroupNote.textContent = `You’re invited to ${g.name}. Tap Join to add it.`;
+  } catch (err) {
+    els.lbGroupNote.textContent = err.status === 404 ? `There’s no group with code ${code}.` : UNAVAILABLE;
+  }
+}
+
+els.lbOpenMenu.addEventListener('click', openBoardScreen);
+els.lbClose.addEventListener('click', closeBoardScreen);
+els.lbMode.addEventListener('change', () => { setLbView({ mode: els.lbMode.value }); refreshScreen(); });
+els.lbDiff.addEventListener('change', () => { setLbView({ difficulty: els.lbDiff.value }); refreshScreen(); });
+els.lbJoinForm.addEventListener('submit', joinGroup);
+els.lbCreateForm.addEventListener('submit', createGroup);
+els.lbJoinCode.addEventListener('input', () => {
+  const v = normalizeCode(els.lbJoinCode.value);
+  if (v !== els.lbJoinCode.value) els.lbJoinCode.value = v;
+});
+els.lbOv.addEventListener('click', e => { if (e.target === els.lbOv) closeBoardScreen(); });
 function showPaused() {
   const left = okLeft();
   showOverlay({
@@ -2087,6 +2484,8 @@ document.addEventListener('keydown', e => {
   if (e.ctrlKey || e.metaKey || e.altKey) return;
   Sound.unlock();
   const k = e.key, t = e.target instanceof Element ? e.target : null;
+  // The high-score screen sits over everything: Escape closes it, and game keys wait.
+  if (!els.lbOv.hidden) { if (k === 'Escape') { e.preventDefault(); closeBoardScreen(); } return; }
   const onControl = !!(t && t.closest('button, summary, input, a, select, textarea'));
   const isSpace = k === ' ' || k === 'Spacebar';
   if (S.phase === 'play') {
@@ -2188,6 +2587,7 @@ function snapshot() {
     v: 1, mode: S.mode, diff: S.diffPick,
     game: live ? {
       level: S.level, score: S.score, lives: Math.max(1, S.lives), spec: S.spec, nextSpec: S.nextSpec,
+      chomps: S.chomps, played: S.t - S.startT,
       cols: S.cols, rows: S.rows, bestBefore: S.bestBefore || 0, levelWrong: S.levelWrong, levelChomps: S.levelChomps,
       player: { c: S.player.c, r: S.player.r },
       cells: S.cells.map(x => ({ text: x.text, value: x.value, split: x.split, steps: x.steps, plain: x.plain, pic: x.pic, ok: x.ok, why: x.why, eaten: x.eaten })),
@@ -2198,7 +2598,7 @@ function restore(data) {
   const g = data && data.v === 1 && data.game;
   if (!g || !g.spec || !Array.isArray(g.cells) || g.cells.length !== g.cols * g.rows) return false;
   try {
-    S.level = g.level; S.score = g.score; S.lives = g.lives;
+    S.level = g.level; S.score = g.score; S.lives = g.lives; S.chomps = g.chomps || 0; S.startT = S.t - (g.played || 0);
     S.bestBefore = g.bestBefore; S.levelWrong = g.levelWrong || 0; S.levelChomps = g.levelChomps || 0;
     S.spec = g.spec; S.rule = ruleFrom(g.spec); S.cfg = levelConfig(S.level, S.diff);
     S.cols = g.cols; S.rows = g.rows; S.cells = g.cells;
@@ -2234,9 +2634,33 @@ function start(data) {
   S.playerEl = makeSprite('nib', 'player');
   S.playerEl.style.setProperty('--dur', '110ms');
   if (!restore(data)) openMenu();
+  els.lbOpenMenu.hidden = els.howtoBoard.hidden = !Leaderboard.api;
   syncMenu();
-  initScores();
+  handleInvite();
   requestAnimationFrame(frame);
+}
+
+// #debug exposes hooks for tests: chompRight() moves Nib onto a number that
+// fits the rule and chomps it, and end() finishes the game.
+if (location.hash === '#debug') {
+  window.__dc = {
+    peek: () => ({ phase: S.phase, score: S.score, level: S.level, chomps: S.chomps, lives: S.lives }),
+    chompRight() {
+      const i = S.cells.findIndex(x => x.ok && !x.eaten);
+      if (S.phase !== 'play' || i < 0) return false;
+      S.player.c = i % S.cols;
+      S.player.r = Math.floor(i / S.cols);
+      placePlayer(true);
+      chomp();
+      return true;
+    },
+    end() {
+      if (S.phase !== 'play') return;
+      S.lives = 0;
+      renderHud();
+      gameOver();
+    },
+  };
 }
 const hot = window.claude && window.claude.hot;
 if (hot && typeof hot.snapshot === 'function') { try { hot.snapshot(snapshot); } catch (e) { /* older viewer */ } }

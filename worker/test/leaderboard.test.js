@@ -97,6 +97,29 @@ describe('validate', () => {
     assert.equal(validate(entry({ level: 5 })), 'level does not match bubbles popped');
     assert.equal(validate(entry({ mode: 'easy', level: 2 })), 'level does not match bubbles popped');
   });
+
+  test('checks Doodle Chomp games against chomps, level and time', () => {
+    // Explorer chomps score 15 plus 2 per level after the first; levels 1 and 2
+    // cleared add 75, plus up to 50 each for perfect pages: 450 to 650 here.
+    const chomp = (overrides) => entry({
+      game: 'doodle-chomp', difficulty: 'explorer', mode: 'multiples', popped: undefined,
+      score: 520, level: 3, chomps: 25, seconds: 60, ...overrides,
+    });
+    assert.equal(validate(chomp()), null);
+    assert.equal(validate(chomp({ score: 450 })), null);
+    assert.equal(validate(chomp({ score: 650 })), null);
+    assert.equal(validate(chomp({ mode: 'kinder', difficulty: 'starter', level: 2, chomps: 10, score: 175 })), null);
+    assert.equal(validate(chomp({ level: 1, chomps: 1, score: 15, seconds: 1 })), null);
+
+    assert.equal(validate(chomp({ score: 449 })), 'score does not match chomps and level');
+    assert.equal(validate(chomp({ score: 651 })), 'score does not match chomps and level');
+    assert.equal(validate(chomp({ chomps: 19 })), 'too few chomps to reach this level');
+    assert.equal(validate(chomp({ seconds: 4 })), 'too many chomps for the time played');
+    assert.equal(validate(chomp({ chomps: undefined })), 'chomps must be a positive whole number');
+    assert.equal(validate(chomp({ mode: 'kinder' })), 'kindergarten games are filed as starter');
+    assert.equal(validate(chomp({ mode: 'easy' })), 'unknown mode');
+    assert.equal(validate(chomp({ difficulty: 'classic' })), 'unknown difficulty');
+  });
 });
 
 describe('saving scores', () => {
@@ -128,6 +151,22 @@ describe('saving scores', () => {
     assert.deepEqual(await initials(`${BOARD}&scope=*`), ['MOM']);
     assert.deepEqual(await initials(`${BOARD}&scope=${family}`), ['KID', 'MOM']);
     assert.deepEqual(await initials(`${BOARD}&scope=${friends}`), ['MOM']);
+  });
+
+  test('keeps each game’s scores apart, while groups work in every game', async () => {
+    const family = await newGroup('Family');
+    await save(entry({ initials: 'FNB', groups: [family] }));
+    const chomp = {
+      game: 'doodle-chomp', difficulty: 'explorer', mode: 'multiples', initials: 'DOD',
+      score: 520, level: 3, chomps: 25, seconds: 60, groups: [family],
+    };
+    const body = await (await save(chomp)).json();
+    assert.deepEqual(body.ranks, { '*': 1, [family]: 1 });
+
+    assert.deepEqual(await initials(`game=doodle-chomp&scope=${family}`), ['DOD']);
+    assert.deepEqual(await initials(`game=funnels-and-buckets&scope=${family}`), ['FNB']);
+    assert.deepEqual(await initials('game=doodle-chomp&scope=*&mode=multiples&difficulty=explorer'), ['DOD']);
+    assert.deepEqual(await initials('game=doodle-chomp&scope=*&mode=kinder'), []);
   });
 
   test('rejects groups that do not exist', async () => {

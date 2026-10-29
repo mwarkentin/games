@@ -49,8 +49,9 @@ utilities; games live here so they get their own origin and their own rules.
 
 An artifact may call `window.claude` for shared storage or sign-in. That
 never exists on this site, so every such call must sit behind a feature
-check and fall back to `localStorage` (Doodle Chomp's high scores and
-Letterfield's field notes already do). When bringing a new artifact over:
+check and fall back to `localStorage` (Letterfield's field notes already
+do). Shared high scores go through the leaderboard Worker instead (see
+below). When bringing a new artifact over:
 
 1. Read it with the Artifact tool, then move the `<title>`, `<link>` and
    first `<style>` tags the artifact service leaves at the top of `<body>`
@@ -62,8 +63,8 @@ Letterfield's field notes already do). When bringing a new artifact over:
 ## Leaderboards
 
 Global high scores live in the Worker under `worker/`, which checks every
-score before saving it. A game takes part like this (Funnels & Buckets is the
-example):
+score before saving it. Funnels & Buckets and Doodle Chomp take part like
+this:
 
 - A `LEADERBOARD_URL` constant holds the Worker's URL. While it's empty the
   leaderboard stays hidden, so a game works the same without it.
@@ -86,8 +87,8 @@ example):
   on.
 - Add the game's difficulties, modes and a `check()` to `GAMES` in
   `worker/src/leaderboard.js`, with tests in `worker/test/`. Game tests fake
-  the API with Playwright's `page.route`; see
-  `tests/test_funnels_and_buckets_leaderboard.py`.
+  the API with Playwright's `page.route` and `tests/fake_leaderboard.py`; see
+  `tests/test_doodle_chomp_leaderboard.py`.
 - Credentials live only in GitHub (the `CLOUDFLARE_API_TOKEN` secret and the
   `CLOUDFLARE_ACCOUNT_ID` variable) and in Cloudflare, never in the repo.
 
