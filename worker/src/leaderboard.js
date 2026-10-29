@@ -76,6 +76,28 @@ export const GAMES = {
       return null;
     },
   },
+  // A shift is ranked by aircraft handled, then, for a clean shift, by the
+  // time left over: score = handled × 10000 + seconds to spare, and level
+  // carries the number handled. The mode is the slowest radar sweep used.
+  'air-traffic-controller': {
+    difficulties: ['trainee', 'easy', 'average', 'hard', 'expert'],
+    modes: ['calm', 'steady', 'rush'],
+    shifts: { trainee: [30, 8], easy: [70, 26], average: [50, 26], hard: [35, 26], expert: [25, 26] },  // minutes, aircraft
+    check({ difficulty, score, level: handled, sweeps }) {
+      const [minutes, aircraft] = this.shifts[difficulty];
+      // Each radar sweep is 15 seconds of game time.
+      if (!isInt(sweeps, 1, minutes * 4)) return 'sweeps must fit in the shift';
+      if (handled > aircraft) return 'more aircraft handled than the shift has';
+      const clean = handled === aircraft;
+      // Aircraft check in throughout the shift's first (minutes - 15) minutes,
+      // so a clean shift can't end in under half that.
+      if (clean && sweeps < (minutes - 15) * 2) return 'shift finished too quickly';
+      if (score !== handled * 10000 + (clean ? (minutes * 4 - sweeps) * 15 : 0)) {
+        return 'score does not match aircraft handled and time';
+      }
+      return null;
+    },
+  },
 };
 
 class HttpError extends Error {

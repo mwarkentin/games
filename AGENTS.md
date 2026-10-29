@@ -81,8 +81,8 @@ below). When bringing a new artifact over:
 ## Leaderboards
 
 Global high scores live in the Worker under `worker/`, which checks every
-score before saving it. Funnels & Buckets and Doodle Chomp take part like
-this:
+score before saving it. Funnels & Buckets, Doodle Chomp and Air Traffic
+Controller take part like this:
 
 - A `LEADERBOARD_URL` constant holds the Worker's URL. While it's empty the
   leaderboard stays hidden, so a game works the same without it.
@@ -93,8 +93,11 @@ this:
   player's group codes and whether it also goes on the public board. Send
   POSTs as JSON with `Content-Type: text/plain` to avoid a CORS preflight.
 - Split scores so they compare fairly (Funnels & Buckets files them by
-  number range as difficulty and extra easy as mode), and keep practice
-  variants off the board. Offer views that narrow to either or show all.
+  number range as difficulty and extra easy as mode; Air Traffic Controller
+  by shift and the slowest radar sweep used), and keep practice variants off
+  the board. Offer views that narrow to either or show all. A game without
+  a points score encodes its ranking in one (see Air Traffic Controller in
+  `GAMES`).
 - Groups are private boards shared by a four-character code: `POST
   /v1/groups` starts one and `GET /v1/groups/<code>` looks one up. Invite
   links are `?join=<code>`. Groups work across games, so the joined groups
