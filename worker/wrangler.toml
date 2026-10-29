@@ -1,0 +1,16 @@
+# Cloudflare Worker for game leaderboards. See README.md for setup.
+name = "games-leaderboard"
+main = "src/index.js"
+compatibility_date = "2026-10-01"
+
+[vars]
+# Pages allowed to read and save scores. The localhost entries are for testing
+# the games against `wrangler dev`.
+ALLOWED_ORIGINS = "https://games.michaelwarkentin.com,http://localhost:8000,http://127.0.0.1:8000"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "games-leaderboard"
+# Placeholder: replace with the id printed by `npx wrangler d1 create games-leaderboard`.
+database_id = "00000000-0000-0000-0000-000000000000"
+migrations_dir = "migrations"

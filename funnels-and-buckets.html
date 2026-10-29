@@ -310,6 +310,28 @@ h2 { margin: 0; font-family: var(--font-display); font-weight: 400; font-size: 3
   font-size: 15px; font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap;
 }
 .facts li b { color: var(--good); }
+.lb { display: flex; flex-direction: column; gap: 8px; }
+.lb h3 { margin: 0; font-size: 11px; font-weight: 700; letter-spacing: 0.09em; text-transform: uppercase; color: var(--ink-soft); }
+.lb h3 span { letter-spacing: 0.04em; color: var(--ink); }
+.lb h3 span:not(:empty)::before { content: '\00b7  '; color: var(--ink-soft); }
+.lb-ranks { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; font-variant-numeric: tabular-nums; }
+.lb-ranks li { display: grid; grid-template-columns: 2.2em 1fr auto; align-items: baseline; gap: 8px; padding: 5px 10px; border-radius: 10px; font-size: 15px; }
+.lb-ranks li:nth-child(odd) { background: var(--bg); }
+.lb-ranks .rk { font-weight: 700; color: var(--ink-soft); }
+.lb-ranks .who { font-weight: 700; letter-spacing: 0.14em; }
+.lb-ranks .pts { font-weight: 700; }
+.lb-ranks li.mine { background: var(--glove); color: var(--glove-ink); }
+.lb-ranks li.mine .rk { color: var(--glove-ink); }
+.lb-note { margin: 0; font-size: 14px; color: var(--ink-soft); }
+.lb-note:empty { display: none; }
+.lb-save { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; }
+.lb-save label { font-size: 14px; font-weight: 700; }
+.lb-save input {
+  width: 5.4em; height: 48px; padding: 0 10px; border-radius: 12px;
+  border: 1.5px solid var(--panel-edge); background: var(--bg); color: var(--ink);
+  font: 700 22px/1 var(--font-body); letter-spacing: 0.22em; text-transform: uppercase; text-align: center;
+}
+.lb-save .btn { height: 48px; font-size: 17px; }
 
 @media (prefers-reduced-motion: reduce) {
   .readout.shake, .card { animation: none; }
@@ -455,6 +477,11 @@ h2 { margin: 0; font-family: var(--font-display); font-weight: 400; font-size: 3
 
     <button class="btn btn-primary start" id="startBtn" type="button">Start</button>
     <p class="best-line" id="bestLine" hidden><span id="bestLabel">Best score</span> <b id="menuBest">0</b></p>
+    <section class="lb" id="menuLb" aria-labelledby="menuLbTitle" hidden>
+      <h3 id="menuLbTitle">Top scores <span id="menuLbWhich"></span></h3>
+      <ol class="lb-ranks" id="menuLbList"></ol>
+      <p class="lb-note" id="menuLbNote"></p>
+    </section>
 
     <div class="visitors">
       <div class="vis"><canvas class="vis-icon" data-who="sponge" width="44" height="44" aria-hidden="true"></canvas><p><b>Sponge</b> pops in sometimes. Everything you pop while it&rsquo;s out scores triple.</p></div>
@@ -491,6 +518,16 @@ h2 { margin: 0; font-family: var(--font-display); font-weight: 400; font-size: 3
       <div><dt>Wrong</dt><dd id="stWrong">0</dd></div>
       <div><dt>Level</dt><dd id="stLevel">1</dd></div>
     </dl>
+    <section class="lb" id="overLb" aria-labelledby="overLbTitle" hidden>
+      <h3 id="overLbTitle">Leaderboard <span id="overLbWhich"></span></h3>
+      <form class="lb-save" id="lbForm" hidden>
+        <label for="lbInitials">Your initials</label>
+        <input id="lbInitials" name="initials" maxlength="3" autocomplete="off" autocapitalize="characters" autocorrect="off" spellcheck="false" enterkeyhint="done" aria-describedby="overLbNote">
+        <button class="btn btn-primary" id="lbSave" type="submit">Save</button>
+      </form>
+      <ol class="lb-ranks" id="overLbList"></ol>
+      <p class="lb-note" id="overLbNote" aria-live="polite"></p>
+    </section>
     <div class="practice" id="practiceWrap">
       <h3>Practice these</h3>
       <ul class="facts" id="practiceList"></ul>
@@ -518,6 +555,10 @@ h2 { margin: 0; font-family: var(--font-display); font-weight: 400; font-size: 3
   const TAU = Math.PI * 2;
   const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
   const DEBUG = location.hash === '#debug';
+  // Global leaderboard API: the Cloudflare Worker in worker/ (see worker/README.md).
+  // While this is empty the leaderboard stays hidden and best scores stay in this
+  // browser. ?leaderboard=<url> overrides it, e.g. http://localhost:8787 for `wrangler dev`.
+  const LEADERBOARD_URL = '';
 
   const OPS = {
     add: { sym: '+', pts: 5 },
@@ -731,6 +772,9 @@ h2 { margin: 0; font-family: var(--font-display); font-weight: 400; font-size: 3
     ovScore: $('#ovScore'), ovBest: $('#ovBest'), newBest: $('#newBest'),
     stPopped: $('#stPopped'), stMissed: $('#stMissed'), stWrong: $('#stWrong'), stLevel: $('#stLevel'),
     practiceWrap: $('#practiceWrap'), practiceList: $('#practiceList'),
+    menuLb: $('#menuLb'), menuLbWhich: $('#menuLbWhich'), menuLbList: $('#menuLbList'), menuLbNote: $('#menuLbNote'),
+    overLb: $('#overLb'), overLbWhich: $('#overLbWhich'), overLbList: $('#overLbList'), overLbNote: $('#overLbNote'),
+    lbForm: $('#lbForm'), lbInitials: $('#lbInitials'), lbSave: $('#lbSave'),
   };
   const setText = (el, t) => { if (el.textContent !== t) el.textContent = t; };
 
@@ -1522,12 +1566,154 @@ h2 { margin: 0; font-family: var(--font-display); font-weight: 400; font-size: 3
     els.practiceWrap.hidden = !missedList.length;
     els.overOv.hidden = false;
     els.overOv.scrollTop = 0;
+    showOverBoard();
   }
   function updateMenuBest() {
     const b = bests[modeKey()];
     els.bestLine.hidden = !b;
     els.bestLabel.textContent = settings.solo ? 'Extra easy best' : 'Best score';
     els.menuBest.textContent = b.toLocaleString();
+    updateMenuBoard();
+  }
+
+  /* ================= leaderboard ================= */
+  // Scores only compare within one number range and mode, so each pair is its
+  // own board. Practice games limited to one times table don't count.
+  const RANGE_NAMES = { starter: 'Starter', classic: 'Classic', challenge: 'Challenge' };
+  const SINGLE_TABLE_NOTE = 'Games with one times table are practice and don\u2019t go on the leaderboard.';
+  const Leaderboard = {
+    api: (() => {
+      const override = new URLSearchParams(location.search).get('leaderboard') || '';
+      return (/^https?:\/\//.test(override) ? override : LEADERBOARD_URL).replace(/\/+$/, '');
+    })(),
+    cache: {},
+    board: (s) => (s.table ? null : s.range + (s.solo ? '-easy' : '')),
+    label: (s) => RANGE_NAMES[s.range] + (s.solo ? ' \u00b7 Extra easy' : ''),
+    async request(path, options) {
+      const ctl = new AbortController();
+      const timer = setTimeout(() => ctl.abort(), 8000);
+      try {
+        const res = await fetch(this.api + path, { ...options, signal: ctl.signal });
+        const body = await res.json().catch(() => ({}));
+        if (!res.ok) throw Object.assign(new Error(body.error || `HTTP ${res.status}`), { fromServer: true });
+        return body;
+      } finally {
+        clearTimeout(timer);
+      }
+    },
+    async top(board, maxAge) {
+      const hit = this.cache[board];
+      if (hit && Date.now() - hit.at < maxAge) return hit.scores;
+      const body = await this.request(`/v1/scores?game=funnels-and-buckets&board=${board}`);
+      this.cache[board] = { scores: body.scores, at: Date.now() };
+      return body.scores;
+    },
+    async save(entry) {
+      // text/plain keeps this a simple request, so the browser skips a CORS preflight.
+      const body = await this.request('/v1/scores', {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain;charset=UTF-8' },
+        body: JSON.stringify({ game: 'funnels-and-buckets', ...entry }),
+      });
+      this.cache[entry.board] = { scores: body.scores, at: Date.now() };
+      return body;
+    },
+  };
+  let menuBoardRequest = 0;
+  let lastGame = null;      // the finished game, kept so its score can be saved
+
+  function renderRanks(list, scores, mineId) {
+    list.replaceChildren(...scores.map((s) => {
+      const li = document.createElement('li');
+      if (s.id === mineId) li.className = 'mine';
+      for (const [cls, text] of [['rk', String(s.rank)], ['who', s.initials], ['pts', s.score.toLocaleString()]]) {
+        const span = document.createElement('span');
+        span.className = cls;
+        span.textContent = text;
+        li.append(span);
+      }
+      return li;
+    }));
+    list.hidden = !scores.length;
+  }
+
+  async function updateMenuBoard() {
+    if (!Leaderboard.api) return;
+    const board = Leaderboard.board(settings), request = ++menuBoardRequest;
+    els.menuLb.hidden = false;
+    els.menuLbWhich.textContent = board ? Leaderboard.label(settings) : '';
+    if (!board) { renderRanks(els.menuLbList, []); els.menuLbNote.textContent = SINGLE_TABLE_NOTE; return; }
+    try {
+      const scores = await Leaderboard.top(board, 30000);
+      if (request !== menuBoardRequest) return;
+      renderRanks(els.menuLbList, scores.slice(0, 5));
+      els.menuLbNote.textContent = scores.length ? '' : 'No scores yet. Yours could be first.';
+    } catch (e) {
+      if (request !== menuBoardRequest) return;
+      renderRanks(els.menuLbList, []);
+      els.menuLbNote.textContent = 'The leaderboard is unavailable right now.';
+    }
+  }
+
+  async function showOverBoard() {
+    if (!Leaderboard.api) return;
+    const board = Leaderboard.board(settings);
+    const game = lastGame = board && score > 0
+      ? { board, score, level, popped, seconds: Math.max(1, Math.round(gameTime)), saved: false }
+      : { board: null };
+    els.overLb.hidden = false;
+    els.lbForm.hidden = true;
+    els.overLbWhich.textContent = board ? Leaderboard.label(settings) : '';
+    renderRanks(els.overLbList, []);
+    if (!board) { els.overLbNote.textContent = SINGLE_TABLE_NOTE; return; }
+    els.overLbNote.textContent = 'Loading scores\u2026';
+    try {
+      const scores = await Leaderboard.top(board, 0);
+      if (game !== lastGame) return;
+      renderRanks(els.overLbList, scores);
+      // Ties go to whoever got there first, so a top-10 score has to beat 10th place.
+      const qualifies = !!game.board && (scores.length < 10 || game.score > scores[scores.length - 1].score);
+      els.lbForm.hidden = !qualifies;
+      if (qualifies) els.lbInitials.value = store.get('fb.initials', '');
+      els.overLbNote.textContent = qualifies ? 'That\u2019s a top-10 score! Add your initials.'
+        : scores.length ? '' : 'No scores on this board yet.';
+    } catch (e) {
+      if (game !== lastGame) return;
+      els.overLbNote.textContent = 'The leaderboard is unavailable right now.';
+    }
+  }
+
+  async function saveToBoard(e) {
+    e.preventDefault();
+    const game = lastGame;
+    if (!game || !game.board || game.saved) return;
+    const initials = els.lbInitials.value.toUpperCase().replace(/[^A-Z]/g, '');
+    if (initials.length !== 3) {
+      els.overLbNote.textContent = 'Initials are three letters, A to Z.';
+      els.lbInitials.focus();
+      return;
+    }
+    els.lbSave.disabled = true;
+    els.overLbNote.textContent = 'Saving\u2026';
+    try {
+      const { board, score: s, level: l, popped: p, seconds } = game;
+      const body = await Leaderboard.save({ board, initials, score: s, level: l, popped: p, seconds });
+      game.saved = true;
+      store.set('fb.initials', initials);
+      if (game !== lastGame) return;
+      els.lbForm.hidden = true;
+      renderRanks(els.overLbList, body.scores, body.id);
+      els.overLbNote.textContent = `Saved! You\u2019re number ${body.rank} on the ${els.overLbWhich.textContent} board.`;
+      menuBoardRequest++;
+    } catch (err) {
+      if (game === lastGame) {
+        els.overLbNote.textContent = err.fromServer
+          ? `Couldn\u2019t save: ${err.message}.`
+          : 'Couldn\u2019t reach the leaderboard. Try again in a moment.';
+      }
+    } finally {
+      els.lbSave.disabled = false;
+    }
   }
 
   /* ================= settings form ================= */
@@ -1627,6 +1813,11 @@ h2 { margin: 0; font-family: var(--font-display); font-weight: 400; font-size: 3
     els.resumeBtn.addEventListener('click', resumeGame);
     els.pauseBtn.addEventListener('click', () => (state === 'paused' ? resumeGame() : pauseGame()));
     els.muteBtn.addEventListener('click', toggleMute);
+    els.lbForm.addEventListener('submit', saveToBoard);
+    els.lbInitials.addEventListener('input', () => {
+      const v = els.lbInitials.value.toUpperCase().replace(/[^A-Z]/g, '').slice(0, 3);
+      if (v !== els.lbInitials.value) els.lbInitials.value = v;
+    });
     document.querySelectorAll('#menu .ops input, #menu .seg input, #table, #solo').forEach((inp) => {
       inp.addEventListener('change', () => {
         if (inp.closest('.ops') && !document.querySelector('.ops input:checked')) inp.checked = true;
@@ -1682,6 +1873,7 @@ h2 { margin: 0; font-family: var(--font-display); font-weight: 400; font-size: 3
         peek: () => ({ state, score, level, popped, wrongs, missed, input, fills: fills.slice(), visitor: visitor && visitor.kind,
           bubbles: bubbles.map((b) => ({ text: b.p.text, ans: b.p.ans, t: +b.t.toFixed(3), lane: b.lane })) }),
         fillAlmost: () => { fills = [CAP, CAP, CAP, CAP - 1]; },
+        end: () => { if (state === 'playing') beginEnd(); },
         visitor: (kind) => { visitor = { kind, side: 'right', t: 0, dur: 30 }; },
         speed: (k) => { timeScale = k; },
         queue: (list) => { debugQueue = list.map(([op, a, b]) => ({ op, a, b, ans: { add: a + b, sub: a - b, mul: a * b, div: a / b }[op], text: `${a} ${OPS[op].sym} ${b}` })); },
