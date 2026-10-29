@@ -53,6 +53,29 @@ export const GAMES = {
       return null;
     },
   },
+  'doodle-chomp': {
+    difficulties: ['starter', 'explorer', 'expert'],
+    modes: ['multiples', 'factors', 'primes', 'equals', 'compare', 'mix', 'kinder'],
+    check({ difficulty, mode, score, level, chomps, seconds }) {
+      if (!isInt(chomps, 1, 100000)) return 'chomps must be a positive whole number';
+      if (!isInt(seconds, 1, 6 * 60 * 60)) return 'seconds must be between 1 and 21600';
+      if (mode === 'kinder' && difficulty !== 'starter') return 'kindergarten games are filed as starter';
+      // A page starts with at least 10 numbers to chomp (7 on kindergarten's
+      // smaller page), and a level ends once they're all chomped. Ink blots can
+      // drip more onto a page, so there's no upper limit.
+      const cleared = level - 1;
+      if (chomps < cleared * (mode === 'kinder' ? 7 : 10)) return 'too few chomps to reach this level';
+      // A chomp on level n scores 5 × (2 + difficulty) + 2 × (n - 1). Clearing
+      // level n adds 25 × n, plus 50 for a page with no wrong chomps.
+      const base = 5 * (2 + this.difficulties.indexOf(difficulty));
+      const bonuses = (25 * level * cleared) / 2;
+      const least = chomps * base + bonuses;
+      const most = chomps * (base + 2 * cleared) + bonuses + 50 * cleared;
+      if (score < least || score > most) return 'score does not match chomps and level';
+      if (chomps > seconds * 4 + 5) return 'too many chomps for the time played';
+      return null;
+    },
+  },
 };
 
 class HttpError extends Error {
