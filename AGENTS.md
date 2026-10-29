@@ -57,6 +57,10 @@ loads Sentry's SDK from `browser.sentry-cdn.com`, pinned to a version with
 an integrity hash; to update it, change both URLs and both hashes
 (`curl -s <url> | openssl dgst -sha384 -binary | openssl base64 -A`).
 
+Everything it sends is labelled with the game's name, taken from the URL: a
+`game` tag on errors and replays, and a `game` attribute on trace spans.
+Filter on that rather than splitting games into projects or environments.
+
 Replays show what was on screen, canvases and leaderboards included, with
 text inputs masked. To hide something else from replays, give it the
 `sentry-mask` class. IP addresses aren't sent. `tests/test_telemetry.py`

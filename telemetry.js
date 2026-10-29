@@ -19,6 +19,10 @@
   if (!SENTRY_DSN || location.hostname !== 'games.michaelwarkentin.com') return;
 
   const release = document.currentScript?.dataset.release || undefined;
+  // Everything is labelled with the game's name (funnels-and-buckets for
+  // /funnels-and-buckets), so one game's issues, replays, traces and alerts
+  // can be picked out.
+  const game = location.pathname.split('/').pop().replace(/\.html$/, '');
 
   // Errors from before the SDK arrives are kept and sent once it does.
   // Errors from cross-origin scripts arrive as "Script error." with no error
@@ -48,6 +52,8 @@
       replaysSessionSampleRate: 0.1,
       replaysOnErrorSampleRate: 1,
       dataCollection: { userInfo: false },
+      // Tags label errors and replays; attributes label the spans of a trace.
+      initialScope: { tags: { game }, attributes: { game } },
     });
     early.forEach((error) => Sentry.captureException(error, { mechanism: { handled: false } }));
   };

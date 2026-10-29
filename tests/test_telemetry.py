@@ -124,6 +124,8 @@ def test_errors_reach_sentry_with_a_replay(page: Page, production, sentry, error
     [replay] = sentry.wait_for(page, "replay_event")
 
     assert event["exception"]["values"][0]["value"] == "bucket overflow"
+    assert event["tags"]["game"] == replay["tags"]["game"] == "funnels-and-buckets"
+    assert {span["attributes"]["game"]["value"] for span in spans["items"]} == {"funnels-and-buckets"}
     assert event["release"].startswith("games@")
     assert event["sdk"]["settings"]["infer_ip"] == "never"
     assert event["event_id"] in replay["error_ids"]
