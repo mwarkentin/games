@@ -414,6 +414,9 @@ const FONT_DATA = '"IBM Plex Mono", ui-monospace, Menlo, monospace';
 
 /* ---------- Helpers ---------- */
 const $ = (s) => document.querySelector(s);
+// Setting text is a DOM change even when it's the same, and the clock is set
+// every frame, so only write what's different.
+const setText = (el, t) => { if (el.textContent !== t) el.textContent = t; };
 const isApt = (d) => d === 'a' || d === 'b';
 const sym = (d) => (isApt(d) ? APTS[d].sym : d);
 const cheb = (a, b) => Math.max(Math.abs(a.x - b.x), Math.abs(a.y - b.y));
@@ -884,9 +887,9 @@ function fracNow(now) {
   return 0;
 }
 function updateClock(now) {
-  if (!G) { els.clock.textContent = '--:--'; els.tickfill.style.width = '0'; return; }
+  if (!G) { setText(els.clock, '--:--'); els.tickfill.style.width = '0'; return; }
   const f = fracNow(now);
-  els.clock.textContent = mmss(Math.max(0, (G.shift - G.tick) * 15 - f * 15));
+  setText(els.clock, mmss(Math.max(0, (G.shift - G.tick) * 15 - f * 15)));
   els.tickfill.style.width = (f * 100).toFixed(1) + '%';
 }
 

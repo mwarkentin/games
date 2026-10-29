@@ -1,3 +1,4 @@
+from page_changes import repeated_no_op_writes
 from playwright.sync_api import Page, expect
 
 
@@ -24,4 +25,12 @@ def test_escape_pauses(page: Page, site_url, errors):
     expect(page.locator("#pauseOv")).to_be_visible()
     page.click("#resumeBtn")
     expect(page.locator("#pauseOv")).to_be_hidden()
+    assert errors == []
+
+
+def test_playing_doesnt_keep_rewriting_the_page(page: Page, site_url, errors):
+    page.goto(f"{site_url}/funnels-and-buckets#debug")
+    page.click("#startBtn")
+    expect(page.locator("#menu")).to_be_hidden()
+    assert repeated_no_op_writes(page) == {}
     assert errors == []
