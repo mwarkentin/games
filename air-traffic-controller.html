@@ -160,6 +160,7 @@ details li b{color:var(--amber);font-weight:600}
 .statline{display:flex;gap:18px;flex-wrap:wrap}
 .statline .readout .val{font-size:20px}
 .result-msg{font-size:18px}
+.btn.next{flex-basis:100%}
 @media (prefers-reduced-motion:reduce){.turn .key svg{transition:none}}
 </style>
 </head>
@@ -237,6 +238,7 @@ details li b{color:var(--amber);font-weight:600}
         <li><b>Separation</b>: aircraft at the same altitude stay 3 miles apart, and no aircraft climbs or descends through another within 3 miles. Red marks warn of a loss within 45 s; one loss ends the shift.</li>
         <li><b>Moves</b>: jets fly 1 mile per sweep, props 1 mile every second sweep. Altitude changes 1,000 ft per mile. Turns go 45° per mile, starting one mile after the instruction. Arrivals hold at the first navaid they reach unless told otherwise.</li>
         <li><b>Fuel</b>: jets carry 15 minutes, props 21, counted from when the strip appears.</li>
+        <li><b>Saved</b>: an unfinished shift is kept on this device after every sweep. Close the game and it waits for you, paused.</li>
       </ul>
     </details>
     <div class="fine">Keyboard: type a callsign, then A0–A5, L1–L4, R1–R4, P, H, M, CA or CB. Space advances one sweep, Esc pauses. Rules follow the 1985 DOS game; the sector map is redrawn for a portrait screen.</div>
@@ -263,6 +265,7 @@ details li b{color:var(--amber);font-weight:600}
     </div>
     <div class="note" id="resBest"></div>
     <div class="cta">
+      <button class="btn primary next" id="btnNext" hidden>Next shift</button>
       <button class="btn primary" id="btnAgain">Same shift again</button>
       <button class="btn" id="btnMenu">Change shift</button>
     </div>
@@ -753,7 +756,23 @@ function renderTop() {
   els.speedVal.textContent = sp.sec + 's';
 }
 
-function renderAll() { renderTop(); renderRadio(); renderStrips(); renderDeck(); }
+function renderAll() { renderTop(); renderRadio(); renderStrips(); renderDeck(); saveShift(); }
+
+// An unfinished shift is saved on every change, so closing the tab (or the
+// phone discarding it) loses nothing; a finished or abandoned one is cleared.
+const SAVE_KEY = 'atc-shift';
+function saveShift() {
+  try {
+    if (G && (G.state === 'running' || G.state === 'paused')) localStorage.setItem(SAVE_KEY, JSON.stringify(G));
+    else localStorage.removeItem(SAVE_KEY);
+  } catch (e) { /* storage unavailable or full */ }
+}
+function savedShift() {
+  const g = store.get(SAVE_KEY, null);
+  const ok = g && g.v === 1 && (g.state === 'running' || g.state === 'paused') && Array.isArray(g.ac) && g.ac.length
+    && LEVELS.some((l) => l.id === g.level) && Number.isInteger(g.tick) && Number.isInteger(g.shift);
+  return ok ? g : null;
+}
 
 function tickMs() { return ((SPEEDS.find((s) => s.id === (G ? G.speed : prefs.speed)) || SPEEDS[1]).sec) * 1000; }
 function fracNow(now) {
@@ -999,7 +1018,7 @@ function pause() {
   const air = G.ac.filter((a) => a.state === 'air').length;
   const wait = G.ac.filter((a) => a.state === 'ground').length;
   $('#pauseSummary').textContent = `${mmss((G.shift - G.tick) * 15)} left in the shift. ${air} airborne, ${wait} waiting to depart, ${done} of ${G.ac.length} handled.`;
-  showOverlay('paused'); releaseWake();
+  showOverlay('paused'); releaseWake(); saveShift();
 }
 function resume() {
   if (!G || G.state !== 'paused') return;
@@ -1021,7 +1040,7 @@ function select(cs) {
 function showOverlay(which) {
   for (const id of ['menu', 'paused', 'result']) els[id].hidden = id !== which;
   els.overlay.hidden = false;
-  const btn = which === 'menu' ? $('#btnStart') : which === 'paused' ? $('#btnResume') : $('#btnAgain');
+  const btn = which === 'menu' ? $('#btnStart') : which === 'paused' ? $('#btnResume') : $('#btnNext').hidden ? $('#btnAgain') : $('#btnNext');
   setTimeout(() => btn.focus({ preventScroll: true }), 30);
 }
 function hideOverlay() { els.overlay.hidden = true; }
@@ -1040,6 +1059,10 @@ function showResult() {
   $('#resHandled').innerHTML = `${done}<small>/${G.ac.length}</small>`;
   $('#resTime').textContent = mmss(G.tick * 15);
   $('#resLevel').textContent = L.name;
+  const next = r.kind === 'win' ? LEVELS[LEVELS.indexOf(L) + 1] : null;
+  $('#btnNext').hidden = !next;
+  $('#btnNext').textContent = next ? `Next shift: ${next.name}` : 'Next shift';
+  $('#btnAgain').classList.toggle('primary', !next);
   const best = store.get('atc-best', {})[G.level];
   $('#resBest').textContent = best ? `${L.name} shifts won on this device: ${best.wins}. Most time to spare: ${mmss(best.spare)}.` : `No ${L.name.toLowerCase()} shifts won on this device yet.`;
   showOverlay('result');
@@ -1124,6 +1147,10 @@ $('#btnStart').addEventListener('click', () => startGame(prefs.level, prefs.spee
 $('#btnResume').addEventListener('click', resume);
 $('#btnQuit').addEventListener('click', () => { G = null; renderAll(); buildMenu(); showOverlay('menu'); });
 $('#btnAgain').addEventListener('click', () => startGame(G ? G.level : prefs.level, G ? G.speed : prefs.speed));
+$('#btnNext').addEventListener('click', () => {
+  const i = LEVELS.findIndex((l) => l.id === G.level);
+  if (LEVELS[i + 1]) startGame(LEVELS[i + 1].id, G.speed);
+});
 $('#btnMenu').addEventListener('click', () => { buildMenu(); showOverlay('menu'); });
 
 document.addEventListener('keydown', (e) => {
@@ -1173,14 +1200,17 @@ function releaseWake() { try { if (wakeLock) wakeLock.release(); } catch (e) { /
 
 /* ---------- Boot ---------- */
 function boot(data) {
+  if (!(data && data.game)) data = { game: savedShift(), restored: true };
   readColors();
   resize();
   if (window.ResizeObserver) new ResizeObserver(resize).observe(wrap); else window.addEventListener('resize', resize);
   buildMenu();
   if (data && data.game && data.game.v === 1) {
     G = data.game;
-    if (G.state === 'running' || G.state === 'paused') { G.state = 'running'; lastTickAt = performance.now(); pause(); }
-    else if (G.state === 'over') showResult();
+    if (G.state === 'running' || G.state === 'paused') {
+      G.state = 'running'; lastTickAt = performance.now(); pause();
+      if (data.restored) $('#pauseSummary').textContent = `Picked up where you left off. ${$('#pauseSummary').textContent}`;
+    } else if (G.state === 'over') showResult();
     renderAll();
   } else {
     renderAll();
