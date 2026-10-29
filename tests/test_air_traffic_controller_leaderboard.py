@@ -297,6 +297,23 @@ def test_invite_link_opens_the_join_card(page: Page, site_url, errors):
     assert errors == []
 
 
+def test_invite_link_over_a_saved_shift_returns_to_it(page: Page, site_url, errors):
+    fake = FakeLeaderboard(groups={"K7QP": "Family"})
+    open_game(page, site_url, fake)
+    page.click("#btnStart")
+    page.click("#btnAdvance")
+    page.goto(f"{site_url}/air-traffic-controller?leaderboard={API}&join=K7QP#debug")
+    expect(page.locator("#board")).to_be_visible()
+    page.click("#lbJoinForm button")
+    expect(page.locator("#lbGroupNote")).to_contain_text("Joined Family.")
+    page.click("#lbClose")
+    expect(page.locator("#paused")).to_be_visible()
+    expect(page.locator("#pauseSummary")).to_contain_text("Picked up where you left off.")
+    page.click("#btnResume")
+    expect(page.locator("#overlay")).to_be_hidden()
+    assert errors == []
+
+
 def test_joining_checks_the_code(page: Page, site_url):
     fake = FakeLeaderboard(groups={"K7QP": "Family"})
     open_game(page, site_url, fake)
