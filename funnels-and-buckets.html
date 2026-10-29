@@ -310,6 +310,58 @@ h2 { margin: 0; font-family: var(--font-display); font-weight: 400; font-size: 3
   font-size: 15px; font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap;
 }
 .facts li b { color: var(--good); }
+.lb { display: flex; flex-direction: column; gap: 8px; }
+.lb h3 { margin: 0; font-size: 11px; font-weight: 700; letter-spacing: 0.09em; text-transform: uppercase; color: var(--ink-soft); }
+.lb h3 span { letter-spacing: 0.04em; color: var(--ink); }
+.lb h3 span:not(:empty)::before { content: '\00b7  '; color: var(--ink-soft); }
+.lb-ranks { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; font-variant-numeric: tabular-nums; }
+.lb-ranks li { display: grid; grid-template-columns: 2.2em 1fr auto; align-items: baseline; gap: 8px; padding: 5px 10px; border-radius: 10px; font-size: 15px; }
+.lb-ranks li:nth-child(odd) { background: var(--bg); }
+.lb-ranks .rk { font-weight: 700; color: var(--ink-soft); }
+.lb-ranks .who { font-weight: 700; letter-spacing: 0.14em; min-width: 0; }
+.lb-ranks .who small { display: block; letter-spacing: 0; font-weight: 400; font-size: 12px; color: var(--ink-soft); }
+.lb-ranks .pts { font-weight: 700; }
+.lb-ranks li.mine { background: var(--glove); color: var(--glove-ink); }
+.lb-ranks li.mine .rk, .lb-ranks li.mine small { color: var(--glove-ink); }
+.lb-note { margin: 0; font-size: 14px; color: var(--ink-soft); }
+.lb-note:empty { display: none; }
+.lb-scopes { display: flex; gap: 6px; overflow-x: auto; scrollbar-width: none; padding-bottom: 2px; }
+.lb-scopes::-webkit-scrollbar { display: none; }
+.lb-scopes button {
+  flex: none; height: 36px; padding: 0 14px; border-radius: 999px;
+  border: 1.5px solid var(--panel-edge); background: var(--bg); color: var(--ink);
+  font: 700 14px/1 var(--font-body); white-space: nowrap; touch-action: manipulation;
+}
+.lb-scopes button[aria-pressed="true"] { background: var(--glove); border-color: var(--glove-edge); color: var(--glove-ink); }
+.lb-save { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; }
+.lb-save label, .lb-row label { font-size: 14px; font-weight: 700; }
+.lb-save input, .lb-row input {
+  height: 48px; padding: 0 10px; border-radius: 12px;
+  border: 1.5px solid var(--panel-edge); background: var(--bg); color: var(--ink);
+  font: 700 20px/1 var(--font-body);
+}
+.lb-save #lbInitials, .lb-row #lbJoinCode { width: 5.4em; letter-spacing: 0.22em; text-transform: uppercase; text-align: center; }
+.lb-save .btn, .lb-row .btn, .lb-open { height: 48px; font-size: 17px; }
+.lb-save .check { flex-basis: 100%; display: flex; align-items: center; gap: 8px; font-size: 14px; font-weight: 400; }
+.lb-save .check input { width: 20px; height: 20px; margin: 0; accent-color: var(--glove-edge); }
+.lb-open { width: 100%; }
+.lb-head { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+.lb-filters { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.lb-filters label { display: flex; flex-direction: column; gap: 4px; font-size: 11px; font-weight: 700; letter-spacing: 0.09em; text-transform: uppercase; color: var(--ink-soft); min-width: 0; }
+.lb-filters select {
+  -webkit-appearance: none; appearance: none; width: 100%; height: 44px; padding: 0 12px;
+  border-radius: 12px; border: 1.5px solid var(--panel-edge); background: var(--bg); color: var(--ink);
+  font: 700 16px/1 var(--font-body); letter-spacing: 0; text-transform: none;
+}
+.lb-groups { display: flex; flex-direction: column; gap: 10px; padding-top: 14px; border-top: 1.5px dashed var(--panel-edge); }
+.lb-mygroups { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.lb-mygroups li { display: grid; grid-template-columns: 1fr auto auto auto; align-items: center; gap: 8px; }
+.lb-mygroups .gname { font-weight: 700; min-width: 0; overflow-wrap: anywhere; }
+.lb-mygroups code { font: 700 15px/1 ui-monospace, SFMono-Regular, Menlo, monospace; letter-spacing: 0.12em; }
+.lb-mygroups .btn { height: 40px; padding: 0 12px; font-size: 15px; }
+.lb-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; }
+.lb-row label { flex-basis: 100%; }
+.lb-row #lbGroupName { flex: 1 1 10em; min-width: 0; }
 
 @media (prefers-reduced-motion: reduce) {
   .readout.shake, .card { animation: none; }
@@ -455,6 +507,12 @@ h2 { margin: 0; font-family: var(--font-display); font-weight: 400; font-size: 3
 
     <button class="btn btn-primary start" id="startBtn" type="button">Start</button>
     <p class="best-line" id="bestLine" hidden><span id="bestLabel">Best score</span> <b id="menuBest">0</b></p>
+    <section class="lb" id="menuLb" aria-labelledby="menuLbTitle" hidden>
+      <h3 id="menuLbTitle">Top scores <span id="menuLbWhich"></span></h3>
+      <ol class="lb-ranks" id="menuLbList"></ol>
+      <p class="lb-note" id="menuLbNote"></p>
+      <button class="btn btn-ghost lb-open" id="lbOpenMenu" type="button">Leaderboard &amp; groups</button>
+    </section>
 
     <div class="visitors">
       <div class="vis"><canvas class="vis-icon" data-who="sponge" width="44" height="44" aria-hidden="true"></canvas><p><b>Sponge</b> pops in sometimes. Everything you pop while it&rsquo;s out scores triple.</p></div>
@@ -491,6 +549,19 @@ h2 { margin: 0; font-family: var(--font-display); font-weight: 400; font-size: 3
       <div><dt>Wrong</dt><dd id="stWrong">0</dd></div>
       <div><dt>Level</dt><dd id="stLevel">1</dd></div>
     </dl>
+    <section class="lb" id="overLb" aria-labelledby="overLbTitle" hidden>
+      <h3 id="overLbTitle">Leaderboard <span id="overLbWhich"></span></h3>
+      <div class="lb-scopes" id="overLbScopes" role="group" aria-label="Whose scores" hidden></div>
+      <form class="lb-save" id="lbForm" hidden>
+        <label for="lbInitials">Your initials</label>
+        <input id="lbInitials" name="initials" maxlength="3" autocomplete="off" autocapitalize="characters" autocorrect="off" spellcheck="false" enterkeyhint="done" aria-describedby="overLbNote">
+        <button class="btn btn-primary" id="lbSave" type="submit">Save</button>
+        <label class="check" id="lbPublicRow" hidden><input type="checkbox" id="lbPublic" checked> Show on the public board too, not just my groups</label>
+      </form>
+      <ol class="lb-ranks" id="overLbList"></ol>
+      <p class="lb-note" id="overLbNote" aria-live="polite"></p>
+      <button class="btn btn-ghost lb-open" id="lbOpenOver" type="button">Leaderboard &amp; groups</button>
+    </section>
     <div class="practice" id="practiceWrap">
       <h3>Practice these</h3>
       <ul class="facts" id="practiceList"></ul>
@@ -499,6 +570,56 @@ h2 { margin: 0; font-family: var(--font-display); font-weight: 400; font-size: 3
       <button class="btn btn-primary" id="againBtn" type="button">Play again</button>
       <button class="btn btn-ghost" id="settingsBtn" type="button">Settings</button>
     </div>
+  </div>
+</section>
+
+<section class="overlay" id="lbOv" aria-labelledby="lbTitle" hidden>
+  <div class="card">
+    <div class="lb-head">
+      <h2 id="lbTitle">Leaderboard</h2>
+      <button class="icon-btn" id="lbClose" type="button" aria-label="Close the leaderboard">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>
+      </button>
+    </div>
+    <section class="lb" aria-label="Scores">
+      <div class="lb-scopes" id="lbScopes" role="group" aria-label="Whose scores" hidden></div>
+      <div class="lb-filters">
+        <label>Difficulty
+          <select id="lbDifficulty">
+            <option value="all">All</option>
+            <option value="starter">Starter</option>
+            <option value="classic">Classic</option>
+            <option value="challenge">Challenge</option>
+          </select>
+        </label>
+        <label>Mode
+          <select id="lbMode">
+            <option value="all">All</option>
+            <option value="normal">Normal</option>
+            <option value="easy">Extra easy</option>
+          </select>
+        </label>
+      </div>
+      <ol class="lb-ranks" id="lbList"></ol>
+      <p class="lb-note" id="lbNote" aria-live="polite"></p>
+    </section>
+    <section class="lb lb-groups" aria-labelledby="lbGroupsTitle">
+      <h3 id="lbGroupsTitle">Your groups</h3>
+      <p class="lb-note" id="lbNoGroups">A group is a private leaderboard for family or friends. Anyone with its four-character code can join.</p>
+      <ul class="lb-mygroups" id="lbGroupList" hidden></ul>
+      <form class="lb-row" id="lbJoinForm">
+        <label for="lbJoinCode">Join with a code</label>
+        <input id="lbJoinCode" maxlength="4" autocomplete="off" autocapitalize="characters" autocorrect="off" spellcheck="false" enterkeyhint="go" placeholder="K7QP">
+        <button class="btn btn-ghost" type="submit">Join</button>
+      </form>
+      <form class="lb-row" id="lbCreateForm">
+        <label for="lbGroupName">Start a group</label>
+        <input id="lbGroupName" maxlength="24" autocomplete="off" enterkeyhint="go" placeholder="Family">
+        <button class="btn btn-ghost" type="submit">Start</button>
+      </form>
+      <p class="lb-note" id="lbGroupNote" aria-live="polite"></p>
+      <p class="fine">Groups you join are remembered on this device. Scores you save go to every group you&rsquo;re in.</p>
+    </section>
   </div>
 </section>
 
@@ -518,6 +639,10 @@ h2 { margin: 0; font-family: var(--font-display); font-weight: 400; font-size: 3
   const TAU = Math.PI * 2;
   const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
   const DEBUG = location.hash === '#debug';
+  // Global leaderboard API: the Cloudflare Worker in worker/ (see worker/README.md).
+  // While this is empty the leaderboard stays hidden and best scores stay in this
+  // browser. ?leaderboard=<url> overrides it, e.g. http://localhost:8787 for `wrangler dev`.
+  const LEADERBOARD_URL = '';
 
   const OPS = {
     add: { sym: '+', pts: 5 },
@@ -731,6 +856,15 @@ h2 { margin: 0; font-family: var(--font-display); font-weight: 400; font-size: 3
     ovScore: $('#ovScore'), ovBest: $('#ovBest'), newBest: $('#newBest'),
     stPopped: $('#stPopped'), stMissed: $('#stMissed'), stWrong: $('#stWrong'), stLevel: $('#stLevel'),
     practiceWrap: $('#practiceWrap'), practiceList: $('#practiceList'),
+    menuLb: $('#menuLb'), menuLbWhich: $('#menuLbWhich'), menuLbList: $('#menuLbList'), menuLbNote: $('#menuLbNote'),
+    overLb: $('#overLb'), overLbWhich: $('#overLbWhich'), overLbList: $('#overLbList'), overLbNote: $('#overLbNote'),
+    lbForm: $('#lbForm'), lbInitials: $('#lbInitials'), lbSave: $('#lbSave'),
+    overLbScopes: $('#overLbScopes'), lbPublicRow: $('#lbPublicRow'), lbPublic: $('#lbPublic'),
+    lbOpenMenu: $('#lbOpenMenu'), lbOpenOver: $('#lbOpenOver'),
+    lbOv: $('#lbOv'), lbClose: $('#lbClose'), lbScopes: $('#lbScopes'), lbDifficulty: $('#lbDifficulty'), lbMode: $('#lbMode'),
+    lbList: $('#lbList'), lbNote: $('#lbNote'), lbNoGroups: $('#lbNoGroups'), lbGroupList: $('#lbGroupList'),
+    lbJoinForm: $('#lbJoinForm'), lbJoinCode: $('#lbJoinCode'), lbCreateForm: $('#lbCreateForm'), lbGroupName: $('#lbGroupName'),
+    lbGroupNote: $('#lbGroupNote'),
   };
   const setText = (el, t) => { if (el.textContent !== t) el.textContent = t; };
 
@@ -1522,12 +1656,378 @@ h2 { margin: 0; font-family: var(--font-display); font-weight: 400; font-size: 3
     els.practiceWrap.hidden = !missedList.length;
     els.overOv.hidden = false;
     els.overOv.scrollTop = 0;
+    showOverBoard();
   }
   function updateMenuBest() {
     const b = bests[modeKey()];
     els.bestLine.hidden = !b;
     els.bestLabel.textContent = settings.solo ? 'Extra easy best' : 'Best score';
     els.menuBest.textContent = b.toLocaleString();
+    updateMenuBoard();
+  }
+
+  /* ================= leaderboard ================= */
+  // Scores are filed by difficulty (the number range) and mode (normal or
+  // extra easy), so views can narrow to either or show everything. Practice
+  // games limited to one times table don't count.
+  // Groups are private boards shared by a four-character code. There are no
+  // accounts: the groups you're in are remembered on this device.
+  const PUBLIC = '*';
+  const RANGE_NAMES = { starter: 'Starter', classic: 'Classic', challenge: 'Challenge' };
+  const MODE_NAMES = { normal: 'Normal', easy: 'Extra easy' };
+  const GROUP_CODE = /^[A-HJKMNP-Z2-9]{4}$/;
+  const MAX_GROUPS = 5;
+  const SINGLE_TABLE_NOTE = 'Games with one times table are practice and don’t go on the leaderboard.';
+  const UNAVAILABLE = 'The leaderboard is unavailable right now.';
+  const Leaderboard = {
+    api: (() => {
+      const override = new URLSearchParams(location.search).get('leaderboard') || '';
+      return (/^https?:\/\//.test(override) ? override : LEADERBOARD_URL).replace(/\/+$/, '');
+    })(),
+    cache: {},
+    async request(path, options) {
+      const ctl = new AbortController();
+      const timer = setTimeout(() => ctl.abort(), 8000);
+      try {
+        const res = await fetch(this.api + path, { ...options, signal: ctl.signal });
+        const body = await res.json().catch(() => ({}));
+        if (!res.ok) throw Object.assign(new Error(body.error || `HTTP ${res.status}`), { status: res.status, fromServer: true });
+        return body;
+      } finally {
+        clearTimeout(timer);
+      }
+    },
+    // text/plain keeps a POST a simple request, so the browser skips a CORS preflight.
+    post(path, body) {
+      return this.request(path, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=UTF-8' }, body: JSON.stringify(body) });
+    },
+    async scores({ scope, difficulty, mode }, maxAge) {
+      const query = new URLSearchParams({ game: 'funnels-and-buckets', scope, difficulty, mode });
+      const hit = this.cache[query];
+      if (hit && Date.now() - hit.at < maxAge) return hit.scores;
+      const { scores } = await this.request(`/v1/scores?${query}`);
+      this.cache[query] = { scores, at: Date.now() };
+      return scores;
+    },
+    async save(entry) {
+      const body = await this.post('/v1/scores', { game: 'funnels-and-buckets', ...entry });
+      this.cache = {};
+      return body;
+    },
+    createGroup: (name) => Leaderboard.post('/v1/groups', { name }),
+    group: (code) => Leaderboard.request(`/v1/groups/${code}`),
+  };
+
+  // Shared with other games on the site, hence no "fb." prefix.
+  const myGroups = () => store.get('games.groups', []).filter((g) => g && GROUP_CODE.test(g.code)).slice(0, MAX_GROUPS);
+  const groupName = (code) => (myGroups().find((g) => g.code === code) || {}).name || code;
+  const scopeName = (scope) => (scope === PUBLIC ? 'Everyone' : groupName(scope));
+  const boardOf = (s) => (s.table ? null : { difficulty: s.range, mode: s.solo ? 'easy' : 'normal' });
+  const boardName = (b) => RANGE_NAMES[b.difficulty] + (b.mode === 'easy' ? ' · Extra easy' : '');
+  // Which scope tab is open, and the leaderboard screen's filters.
+  function lbView() {
+    const v = { scope: PUBLIC, difficulty: 'all', mode: 'all', ...store.get('fb.lbView', {}) };
+    if (v.scope !== PUBLIC && !myGroups().some((g) => g.code === v.scope)) v.scope = PUBLIC;
+    if (!RANGE_NAMES[v.difficulty]) v.difficulty = 'all';
+    if (!MODE_NAMES[v.mode]) v.mode = 'all';
+    return v;
+  }
+  const setLbView = (changes) => store.set('fb.lbView', { ...lbView(), ...changes });
+
+  let menuRequest = 0, overRequest = 0, screenRequest = 0;
+  let lastGame = null;      // the finished game, kept so its score can be saved
+
+  function renderRanks(list, scores, { mine = null, tags = false } = {}) {
+    list.replaceChildren(...scores.map((s) => {
+      const li = document.createElement('li');
+      if (mine && s.entry === mine) li.className = 'mine';
+      const who = document.createElement('span');
+      who.className = 'who';
+      who.textContent = s.initials;
+      if (tags) {
+        const tag = document.createElement('small');
+        tag.textContent = boardName(s);
+        who.append(tag);
+      }
+      const rank = document.createElement('span');
+      rank.className = 'rk';
+      rank.textContent = String(s.rank);
+      const pts = document.createElement('span');
+      pts.className = 'pts';
+      pts.textContent = s.score.toLocaleString();
+      li.append(rank, who, pts);
+      return li;
+    }));
+    list.hidden = !scores.length;
+  }
+
+  // Everyone, then each group you're in. Hidden when you're in no groups.
+  function renderScopes(container, active, onPick) {
+    const groups = myGroups();
+    container.hidden = !groups.length;
+    container.replaceChildren(...[{ code: PUBLIC, name: 'Everyone' }, ...groups].map((g) => {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.textContent = g.name;
+      b.setAttribute('aria-pressed', String(g.code === active));
+      b.addEventListener('click', () => onPick(g.code));
+      return b;
+    }));
+  }
+
+  async function loadList(list, note, view, isCurrent, emptyText, tags) {
+    try {
+      const scores = await Leaderboard.scores(view, 30000);
+      if (!isCurrent()) return null;
+      renderRanks(list, scores, { mine: lastGame && lastGame.entry, tags });
+      note.textContent = scores.length ? '' : emptyText;
+      return scores;
+    } catch (e) {
+      if (!isCurrent()) return null;
+      renderRanks(list, []);
+      note.textContent = e.status === 404 ? 'That group doesn’t exist any more.' : UNAVAILABLE;
+      return null;
+    }
+  }
+
+  /* menu: the top 5 for the chosen settings */
+  async function updateMenuBoard() {
+    if (!Leaderboard.api) return;
+    const board = boardOf(settings), { scope } = lbView(), request = ++menuRequest;
+    els.menuLb.hidden = false;
+    els.menuLbWhich.textContent = board ? `${boardName(board)}${scope === PUBLIC ? '' : ` · ${scopeName(scope)}`}` : '';
+    if (!board) { renderRanks(els.menuLbList, []); els.menuLbNote.textContent = SINGLE_TABLE_NOTE; return; }
+    const scores = await loadList(els.menuLbList, els.menuLbNote, { scope, ...board }, () => request === menuRequest,
+      'No scores yet. Yours could be first.');
+    if (scores) renderRanks(els.menuLbList, scores.slice(0, 5));
+  }
+
+  /* game over: this game's board, and initials for a score worth saving */
+  async function showOverBoard() {
+    if (!Leaderboard.api) return;
+    const board = boardOf(settings);
+    lastGame = board && score > 0
+      ? { ...board, score, level, popped, seconds: Math.max(1, Math.round(gameTime)), entry: null }
+      : null;
+    els.overLb.hidden = false;
+    els.lbForm.hidden = true;
+    els.overLbWhich.textContent = board ? boardName(board) : '';
+    els.overLbScopes.hidden = true;
+    renderRanks(els.overLbList, []);
+    if (!board) { els.overLbNote.textContent = SINGLE_TABLE_NOTE; return; }
+    const scores = await refreshOverList();
+    if (!scores || !lastGame || lastGame.entry) return;
+    // In a group, every score is worth saving. Otherwise (and then the list
+    // is the public one) it has to make the top 10, where ties go to whoever
+    // got there first.
+    const worthIt = myGroups().length > 0 || scores.length < 10 || lastGame.score > scores[scores.length - 1].score;
+    if (!worthIt) return;
+    els.lbForm.hidden = false;
+    els.lbPublicRow.hidden = !myGroups().length;
+    els.lbPublic.checked = store.get('games.public', true) !== false;
+    els.lbInitials.value = store.get('games.initials', '');
+    els.overLbNote.textContent = myGroups().length ? 'Add your initials to save this score.' : 'That’s a top-10 score! Add your initials.';
+  }
+  async function refreshOverList() {
+    const board = boardOf(settings), { scope } = lbView(), request = ++overRequest;
+    renderScopes(els.overLbScopes, scope, (code) => { setLbView({ scope: code }); refreshOverList(); });
+    els.overLbNote.textContent = 'Loading scores…';
+    return loadList(els.overLbList, els.overLbNote, { scope, ...board }, () => request === overRequest,
+      `No scores ${scope === PUBLIC ? 'on this board' : `in ${scopeName(scope)}`} yet.`);
+  }
+
+  async function saveToBoard(e) {
+    e.preventDefault();
+    const game = lastGame;
+    if (!game || game.entry) return;
+    const initials = els.lbInitials.value.toUpperCase().replace(/[^A-Z]/g, '');
+    if (initials.length !== 3) {
+      els.overLbNote.textContent = 'Initials are three letters, A to Z.';
+      els.lbInitials.focus();
+      return;
+    }
+    const groups = myGroups();
+    const isPublic = !groups.length || els.lbPublic.checked;
+    els.lbSave.disabled = true;
+    els.overLbNote.textContent = 'Saving…';
+    try {
+      const { difficulty, mode, score: s, level: l, popped: p, seconds } = game;
+      const body = await Leaderboard.save({
+        difficulty, mode, initials, score: s, level: l, popped: p, seconds,
+        groups: groups.map((g) => g.code), public: isPublic,
+      });
+      game.entry = body.entry;
+      store.set('games.initials', initials);
+      if (groups.length) store.set('games.public', isPublic);
+      if (game !== lastGame) return;
+      els.lbForm.hidden = true;
+      if (!(lbView().scope in body.ranks)) setLbView({ scope: Object.keys(body.ranks)[0] });
+      await refreshOverList();
+      const where = Object.entries(body.ranks).map(([scope, rank]) => `#${rank} ${scope === PUBLIC ? 'on Everyone' : `in ${scopeName(scope)}`}`);
+      els.overLbNote.textContent = `Saved! ${where.join(', ')}.`;
+    } catch (err) {
+      if (game === lastGame) {
+        els.overLbNote.textContent = err.fromServer
+          ? `Couldn’t save: ${err.message}.`
+          : 'Couldn’t reach the leaderboard. Try again in a moment.';
+      }
+    } finally {
+      els.lbSave.disabled = false;
+    }
+  }
+
+  /* leaderboard screen: any view, plus joining, starting and leaving groups */
+  function openBoardScreen() {
+    if (!Leaderboard.api) return;
+    els.lbOv.hidden = false;
+    els.lbOv.scrollTop = 0;
+    const v = lbView();
+    els.lbDifficulty.value = v.difficulty;
+    els.lbMode.value = v.mode;
+    renderMyGroups();
+    refreshScreen();
+    els.lbClose.focus();
+  }
+  function closeBoardScreen() {
+    els.lbOv.hidden = true;
+    els.lbGroupNote.textContent = '';
+    updateMenuBoard();
+    if (state === 'over' && !els.overLb.hidden) refreshOverList();
+  }
+  function refreshScreen() {
+    const v = lbView(), request = ++screenRequest;
+    renderScopes(els.lbScopes, v.scope, (code) => { setLbView({ scope: code }); refreshScreen(); });
+    els.lbNote.textContent = 'Loading scores…';
+    return loadList(els.lbList, els.lbNote, v, () => request === screenRequest,
+      `No scores ${v.scope === PUBLIC ? 'here' : `in ${scopeName(v.scope)}`} yet.`,
+      v.difficulty === 'all' || v.mode === 'all');
+  }
+
+  function renderMyGroups() {
+    const groups = myGroups();
+    els.lbGroupList.replaceChildren(...groups.map((g) => {
+      const li = document.createElement('li');
+      const name = document.createElement('span');
+      name.className = 'gname';
+      name.textContent = g.name;
+      const code = document.createElement('code');
+      code.textContent = g.code;
+      const share = document.createElement('button');
+      share.type = 'button';
+      share.className = 'btn btn-ghost';
+      share.textContent = 'Share';
+      share.addEventListener('click', () => shareGroup(g, share));
+      const leave = document.createElement('button');
+      leave.type = 'button';
+      leave.className = 'btn btn-ghost';
+      leave.textContent = 'Leave';
+      leave.addEventListener('click', () => leaveGroup(g));
+      li.append(name, code, share, leave);
+      return li;
+    }));
+    els.lbGroupList.hidden = !groups.length;
+    els.lbNoGroups.hidden = groups.length > 0;
+    els.lbCreateForm.hidden = els.lbJoinForm.hidden = groups.length >= MAX_GROUPS;
+  }
+
+  function inviteLink(code) {
+    const url = new URL(location.pathname, location.origin);
+    const api = new URLSearchParams(location.search).get('leaderboard');
+    if (api) url.searchParams.set('leaderboard', api);
+    url.searchParams.set('join', code);
+    return url.toString();
+  }
+  async function shareGroup(g, button) {
+    const url = inviteLink(g.code);
+    const text = `Join "${g.name}" on the Funnels & Buckets leaderboard with code ${g.code}: ${url}`;
+    try {
+      if (navigator.share && matchMedia('(pointer: coarse)').matches) {
+        await navigator.share({ title: 'Funnels & Buckets', text: `Join "${g.name}" with code ${g.code}`, url });
+        return;
+      }
+      await navigator.clipboard.writeText(text);
+      button.textContent = 'Copied';
+    } catch (e) {
+      if (e && e.name === 'AbortError') return;   // closed the share sheet
+      button.textContent = 'Copy failed';
+    }
+    setTimeout(() => { button.textContent = 'Share'; }, 1500);
+  }
+  function addGroup(g) {
+    store.set('games.groups', [...myGroups().filter((x) => x.code !== g.code), { code: g.code, name: g.name }]);
+    setLbView({ scope: g.code });
+    renderMyGroups();
+    refreshScreen();
+  }
+  function leaveGroup(g) {
+    if (!confirm(`Leave ${g.name}? You can rejoin later with code ${g.code}.`)) return;
+    store.set('games.groups', myGroups().filter((x) => x.code !== g.code));
+    if (lbView().scope === g.code) setLbView({ scope: PUBLIC });
+    els.lbGroupNote.textContent = `Left ${g.name}.`;
+    renderMyGroups();
+    refreshScreen();
+  }
+
+  const normalizeCode = (value) => value.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 4);
+  async function joinGroup(e) {
+    e.preventDefault();
+    const code = normalizeCode(els.lbJoinCode.value);
+    if (!GROUP_CODE.test(code)) {
+      els.lbGroupNote.textContent = 'Group codes are four letters and numbers, like K7QP.';
+      return;
+    }
+    if (myGroups().some((g) => g.code === code)) {
+      els.lbGroupNote.textContent = `You’re already in ${groupName(code)}.`;
+      return;
+    }
+    els.lbGroupNote.textContent = 'Looking up the group…';
+    try {
+      const g = await Leaderboard.group(code);
+      addGroup(g);
+      els.lbJoinCode.value = '';
+      els.lbGroupNote.textContent = `Joined ${g.name}. Scores you save from now on go to ${g.name} too.`;
+    } catch (err) {
+      els.lbGroupNote.textContent = err.status === 404 ? `There’s no group with code ${code}.` : 'Couldn’t reach the leaderboard. Try again in a moment.';
+    }
+  }
+  async function createGroup(e) {
+    e.preventDefault();
+    const name = els.lbGroupName.value.trim();
+    if (!name) {
+      els.lbGroupNote.textContent = 'Give the group a name, like Family.';
+      return;
+    }
+    els.lbGroupNote.textContent = 'Starting the group…';
+    try {
+      const g = await Leaderboard.createGroup(name);
+      addGroup(g);
+      els.lbGroupName.value = '';
+      els.lbGroupNote.textContent = `Started ${g.name}. Share code ${g.code} so others can join.`;
+    } catch (err) {
+      els.lbGroupNote.textContent = err.fromServer ? `Couldn’t start the group: ${err.message}.` : 'Couldn’t reach the leaderboard. Try again in a moment.';
+    }
+  }
+
+  // An invite link (?join=CODE) opens the leaderboard screen ready to join.
+  async function handleInvite() {
+    const params = new URLSearchParams(location.search);
+    const code = normalizeCode(params.get('join') || '');
+    if (!Leaderboard.api || !code) return;
+    params.delete('join');
+    const rest = params.toString();
+    history.replaceState(null, '', location.pathname + (rest ? `?${rest}` : '') + location.hash);
+    openBoardScreen();
+    els.lbJoinCode.value = code;
+    if (myGroups().some((g) => g.code === code)) {
+      els.lbGroupNote.textContent = `You’re already in ${groupName(code)}.`;
+      return;
+    }
+    try {
+      const g = await Leaderboard.group(code);
+      els.lbGroupNote.textContent = `You’re invited to ${g.name}. Tap Join to add it.`;
+    } catch (err) {
+      els.lbGroupNote.textContent = err.status === 404 ? `There’s no group with code ${code}.` : UNAVAILABLE;
+    }
   }
 
   /* ================= settings form ================= */
@@ -1591,6 +2091,10 @@ h2 { margin: 0; font-family: var(--font-display); font-weight: 400; font-size: 3
   function onKeyDown(e) {
     if (e.metaKey || e.ctrlKey || e.altKey) return;
     const k = e.key;
+    if (!els.lbOv.hidden) {
+      if (k === 'Escape') { e.preventDefault(); closeBoardScreen(); }
+      return;
+    }
     if (state === 'playing') {
       if (k.length === 1 && k >= '0' && k <= '9') { e.preventDefault(); keyVisual(k); handleKey(k); }
       else if (k === 'Backspace' || k === 'Delete') { e.preventDefault(); keyVisual('back'); handleKey('back'); }
@@ -1627,6 +2131,22 @@ h2 { margin: 0; font-family: var(--font-display); font-weight: 400; font-size: 3
     els.resumeBtn.addEventListener('click', resumeGame);
     els.pauseBtn.addEventListener('click', () => (state === 'paused' ? resumeGame() : pauseGame()));
     els.muteBtn.addEventListener('click', toggleMute);
+    els.lbForm.addEventListener('submit', saveToBoard);
+    els.lbInitials.addEventListener('input', () => {
+      const v = els.lbInitials.value.toUpperCase().replace(/[^A-Z]/g, '').slice(0, 3);
+      if (v !== els.lbInitials.value) els.lbInitials.value = v;
+    });
+    els.lbJoinCode.addEventListener('input', () => {
+      const v = normalizeCode(els.lbJoinCode.value);
+      if (v !== els.lbJoinCode.value) els.lbJoinCode.value = v;
+    });
+    els.lbOpenMenu.addEventListener('click', openBoardScreen);
+    els.lbOpenOver.addEventListener('click', openBoardScreen);
+    els.lbClose.addEventListener('click', closeBoardScreen);
+    els.lbDifficulty.addEventListener('change', () => { setLbView({ difficulty: els.lbDifficulty.value }); refreshScreen(); });
+    els.lbMode.addEventListener('change', () => { setLbView({ mode: els.lbMode.value }); refreshScreen(); });
+    els.lbJoinForm.addEventListener('submit', joinGroup);
+    els.lbCreateForm.addEventListener('submit', createGroup);
     document.querySelectorAll('#menu .ops input, #menu .seg input, #table, #solo').forEach((inp) => {
       inp.addEventListener('change', () => {
         if (inp.closest('.ops') && !document.querySelector('.ops input:checked')) inp.checked = true;
@@ -1682,6 +2202,7 @@ h2 { margin: 0; font-family: var(--font-display); font-weight: 400; font-size: 3
         peek: () => ({ state, score, level, popped, wrongs, missed, input, fills: fills.slice(), visitor: visitor && visitor.kind,
           bubbles: bubbles.map((b) => ({ text: b.p.text, ans: b.p.ans, t: +b.t.toFixed(3), lane: b.lane })) }),
         fillAlmost: () => { fills = [CAP, CAP, CAP, CAP - 1]; },
+        end: () => { if (state === 'playing') beginEnd(); },
         visitor: (kind) => { visitor = { kind, side: 'right', t: 0, dur: 30 }; },
         speed: (k) => { timeScale = k; },
         queue: (list) => { debugQueue = list.map(([op, a, b]) => ({ op, a, b, ans: { add: a + b, sub: a - b, mul: a * b, div: a / b }[op], text: `${a} ${OPS[op].sym} ${b}` })); },
@@ -1690,6 +2211,7 @@ h2 { margin: 0; font-family: var(--font-display); font-weight: 400; font-size: 3
       };
     }
     requestAnimationFrame((t) => { last = t; requestAnimationFrame(frame); });
+    handleInvite();
   }
 
   const hot = window.claude && window.claude.hot;

@@ -1,0 +1,40 @@
+name: Deploy leaderboard worker
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'worker/**'
+      - '.github/workflows/leaderboard.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: leaderboard
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    # Skipped until the Cloudflare account is set up: add the
+    # CLOUDFLARE_ACCOUNT_ID variable and CLOUDFLARE_API_TOKEN secret
+    # (see worker/README.md).
+    if: vars.CLOUDFLARE_ACCOUNT_ID != ''
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: worker
+    env:
+      CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      WRANGLER_SEND_METRICS: 'false'
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+      - name: Apply database migrations
+        run: npx --yes wrangler@4.151.0 d1 migrations apply games-leaderboard --remote
+      - name: Deploy worker
+        run: npx --yes wrangler@4.151.0 deploy

@@ -15,6 +15,9 @@ utilities; games live here so they get their own origin and their own rules.
   `games.json`, so don't create those by hand. Games are published exactly as
   committed; nothing is injected into them.
 - `tests/`: pytest with Playwright.
+- `worker/`: the leaderboard API, a Cloudflare Worker with a D1 database. It
+  deploys through its own workflow and is never part of the site. See
+  `worker/README.md`.
 
 ## Rules for every game
 
@@ -35,7 +38,9 @@ utilities; games live here so they get their own origin and their own rules.
 - Pause when the tab is hidden (`visibilitychange`) if the game runs on a
   timer.
 - Keep scores and settings in `localStorage`, with keys prefixed by the
-  game's name: every game on this site shares one origin.
+  game's name: every game on this site shares one origin. Global
+  leaderboards go through the leaderboard Worker (see below), never straight
+  from the page to a database.
 - The `<head>` has a `<title>`, a viewport meta tag and a one-sentence
   `<meta name="description" content="...">`. The index and colophon show
   that description.
@@ -53,6 +58,38 @@ Letterfield's field notes already do). When bringing a new artifact over:
 2. Drop `<meta name="claude:viewport-fit-sides">`; nothing here reads it.
 3. Put the artifact's URL in the commit message so the colophon links back
    to it.
+
+## Leaderboards
+
+Global high scores live in the Worker under `worker/`, which checks every
+score before saving it. A game takes part like this (Funnels & Buckets is the
+example):
+
+- A `LEADERBOARD_URL` constant holds the Worker's URL. While it's empty the
+  leaderboard stays hidden, so a game works the same without it.
+  `?leaderboard=<url>` overrides it for local testing and for tests.
+- `GET /v1/scores?game=<game>&scope=<*|group code>&difficulty=<d|all>&mode=<m|all>`
+  reads the top 10 for a view. `POST /v1/scores` saves three-letter initials
+  with the score, enough detail for the Worker's plausibility check, the
+  player's group codes and whether it also goes on the public board. Send
+  POSTs as JSON with `Content-Type: text/plain` to avoid a CORS preflight.
+- Split scores so they compare fairly (Funnels & Buckets files them by
+  number range as difficulty and extra easy as mode), and keep practice
+  variants off the board. Offer views that narrow to either or show all.
+- Groups are private boards shared by a four-character code: `POST
+  /v1/groups` starts one and `GET /v1/groups/<code>` looks one up. Invite
+  links are `?join=<code>`. Groups work across games, so the joined groups
+  (`games.groups`), the player's initials (`games.initials`) and their
+  public-board choice (`games.public`) are shared `localStorage` keys
+  without a game prefix.
+- If the Worker can't be reached, say so in one line and let the game carry
+  on.
+- Add the game's difficulties, modes and a `check()` to `GAMES` in
+  `worker/src/leaderboard.js`, with tests in `worker/test/`. Game tests fake
+  the API with Playwright's `page.route`; see
+  `tests/test_funnels_and_buckets_leaderboard.py`.
+- Credentials live only in GitHub (the `CLOUDFLARE_API_TOKEN` secret and the
+  `CLOUDFLARE_ACCOUNT_ID` variable) and in Cloudflare, never in the repo.
 
 ## Adding or changing a game
 
@@ -72,6 +109,7 @@ Letterfield's field notes already do). When bringing a new artifact over:
 ```sh
 uv run playwright install chromium   # once
 uv run pytest                        # builds the site into a temp dir, then tests it
+node --disable-warning=ExperimentalWarning --test "worker/test/*.test.js"   # the leaderboard Worker
 uv run ./build.sh && python3 -m http.server -d _site 8000   # preview the real site
 ```
 
@@ -82,7 +120,8 @@ pins and the README link.
 
 In a Claude Code on the web sandbox, the default network policy can block
 `cdn.jsdelivr.net`, `cdnjs.cloudflare.com`, `fonts.googleapis.com`,
-`fonts.gstatic.com` and `cdn.playwright.dev`. A test failing with
+`fonts.gstatic.com`, `cdn.playwright.dev`, `registry.npmjs.org` (for
+`wrangler`) and the leaderboard Worker's host. A test failing with
 `Failed: https://...` for one of those hosts means the sandbox can't reach
 it, not that the game is broken. Ask for those hosts to be allowed. CI has
 full network access.

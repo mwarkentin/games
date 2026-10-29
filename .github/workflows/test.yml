@@ -26,3 +26,13 @@ jobs:
           uv run playwright install --with-deps chromium
       - name: Run tests
         run: uv run pytest
+
+  worker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22 # the tests use node:sqlite
+      - name: Test the leaderboard worker
+        run: node --disable-warning=ExperimentalWarning --test "worker/test/*.test.js"
