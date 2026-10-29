@@ -9,6 +9,7 @@ from build_colophon import format_message
 from build_sitemap import NAMESPACE, build_sitemap
 from common import BASE_URL, ROOT, extract_meta_description, game_files
 from gather_links import extract_urls
+from publish import current_release, inject_telemetry
 
 
 def test_extract_urls_trims_punctuation_and_duplicates():
@@ -92,8 +93,24 @@ def test_site_contains_only_publishable_files(site_dir):
     assert published == expected, "the site should hold the games and generated pages only"
 
 
-def test_games_are_published_unchanged_with_colophon_entries(site_dir):
+def test_inject_telemetry_goes_before_head_end_once():
+    page = "<html><HEAD><title>t</title></HEAD><body></head></body>"
+    injected = inject_telemetry(page, "run();\n", "games@abc")
+    assert injected == (
+        '<html><HEAD><title>t</title><script data-telemetry data-release="games@abc">\nrun();\n</script>\n'
+        "</HEAD><body></head></body>"
+    )
+    assert inject_telemetry(injected, "run();", "games@abc") == injected
+    no_head = inject_telemetry("<p>no head", "run();", "")
+    assert no_head == '<p>no head\n<script data-telemetry data-release="">\nrun();\n</script>\n'
+
+
+def test_games_are_published_with_only_telemetry_added_and_colophon_entries(site_dir):
     colophon = (site_dir / "colophon.html").read_text("utf-8")
+    telemetry = (ROOT / "telemetry.js").read_text("utf-8")
     for filename in game_files():
-        assert (site_dir / filename).read_bytes() == (ROOT / filename).read_bytes()
+        source = (ROOT / filename).read_text("utf-8")
+        published = (site_dir / filename).read_text("utf-8")
+        assert published == inject_telemetry(source, telemetry, current_release())
+        assert published.index("<script data-telemetry") < published.index("</head>")
         assert f'id="{filename}"' in colophon
