@@ -1555,7 +1555,8 @@ h2 { margin: 0; font-family: var(--font-display); font-weight: 400; font-size: 3
     setText(els.score, score.toLocaleString());
     setText(els.level, String(level));
     setText(els.best, Math.max(bests[modeKey()], score).toLocaleString());
-    els.pauseBtn.disabled = !(state === 'playing' || state === 'paused');
+    const noPause = !(state === 'playing' || state === 'paused');
+    if (els.pauseBtn.disabled !== noPause) els.pauseBtn.disabled = noPause;
     const eff = state === 'playing' ? activeVisitor() || '' : '';
     if (eff !== lastEffect) {
       lastEffect = eff;
@@ -1574,7 +1575,7 @@ h2 { margin: 0; font-family: var(--font-display); font-weight: 400; font-size: 3
       amb = bubbles.some((b) => String(b.p.ans) === input) &&
         bubbles.some((b) => { const s = String(b.p.ans); return s.length > input.length && s.startsWith(input); });
     }
-    els.roHint.hidden = !amb;
+    if (els.roHint.hidden !== !amb) els.roHint.hidden = !amb;
   }
 
   let last = 0;
