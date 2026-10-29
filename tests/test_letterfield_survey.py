@@ -10,22 +10,37 @@ meet and joins all four.
 
 from __future__ import annotations
 
+import base64
 import json
 import re
 
-from playwright.sync_api import Page, WebSocketRoute, expect
+from playwright.sync_api import Page, Route, WebSocketRoute, expect
 
 SURVEY = "https://survey.test"
 NOW_MS = 1_793_000_000_000
+AREA, AREA_WORDS = 12, 1_119_898
+SIZE = (2 * AREA + 1) * 4  # territories per side of the shared world
+
+
+def world_map(charted=None, sectors=(), spawn=None, players=0):
+    """A GET /v1/survey/world answer. `charted` maps (tx, ty) territories to counts."""
+    data = bytearray(SIZE * SIZE)
+    for (tx, ty), n in (charted or {}).items():
+        data[(ty + AREA * 4) * SIZE + tx + AREA * 4] = n
+    return {"charted": sum(data), "total": AREA_WORDS, "players": players, "area": AREA,
+            "territories": base64.b64encode(bytes(data)).decode(), "sectors": list(sectors), "spawn": spawn}
 
 
 class FakeSurvey:
     """Answers each sector's WebSocket the way worker/src/survey.js does."""
 
-    def __init__(self, claims=(), presence=(), taken=()):
+    def __init__(self, claims=(), presence=(), taken=(), world=None, totals=None, full=None):
         self.claims = list(claims)        # [w, x, y, d, s, initials, at] already charted in sector 0,0
         self.presence = list(presence)    # [id, initials, x, y] of other players in sector 0,0
         self.taken = {tuple(c[:4]): c for c in taken}  # words someone else charts first, just before us
+        self.world = world or world_map()  # what GET /v1/survey/world answers
+        self.totals = totals              # a {t: world} message each sector sends after hello
+        self.full = full                  # "sector" or "world": every sector turns players away
         self.sectors: list[str] = []      # path of every connection
         self.received: list[dict] = []    # every message from the game
         self.sockets: dict[str, WebSocketRoute] = {}
@@ -37,8 +52,13 @@ class FakeSurvey:
         self.sockets[key] = ws
         you = f"you-{key}"
         home = key == "0,0"
+        if self.full:
+            ws.send(json.dumps({"t": "full", "world": self.full == "world"}))
+            return
         ws.send(json.dumps({"t": "hello", "you": you, "sector": [int(sector[1]), int(sector[2])],
                             "claims": self.claims if home else []}))
+        if self.totals:
+            ws.send(json.dumps({"t": "world", **self.totals}))
         if home and self.presence:
             ws.send(json.dumps({"t": "presence", "n": len(self.presence), "p": self.presence}))
 
@@ -55,6 +75,9 @@ class FakeSurvey:
 
         ws.on_message(on_message)
 
+    def handle_world(self, route: Route) -> None:
+        route.fulfill(json=self.world, headers={"Access-Control-Allow-Origin": "*"})
+
     def sent(self, kind: str) -> list[dict]:
         return [m for m in self.received if m["t"] == kind]
 
@@ -63,10 +86,12 @@ def open_game(page: Page, site_url: str, fake: FakeSurvey | None) -> None:
     page.set_viewport_size({"width": 1280, "height": 900})
     if fake:
         page.route_web_socket(re.compile(r"^wss://survey\.test/"), fake.handle)
+        page.route(f"{SURVEY}/v1/survey/world", fake.handle_world)
         page.goto(f"{site_url}/letterfield?survey={SURVEY}#debug")
     else:
         page.goto(f"{site_url}/letterfield#debug")
-    page.click("#coachOk")
+    if page.locator("#coach").is_visible():
+        page.click("#coachOk")
 
 
 def open_notes(page: Page) -> None:
@@ -122,7 +147,8 @@ def test_shared_map_shows_other_surveyors_and_their_words(page: Page, site_url, 
     open_game(page, site_url, fake)
     expect(page.locator("#survey")).to_be_visible()
     expect(page.locator("#surveyText")).to_have_text(re.compile(
-        r"^Live · 2 other surveyors nearby\n\w[\w ]+: 1 of \d+ hidden words charted\n0 words charted first by you$"
+        r"^Live · 2 other surveyors nearby\nWorld: 0 of 1,119,898 charted · 0 online\n"
+        r"\w[\w ]+: 1 of \d+ charted\n0 words charted first by you$"
     ))
     assert sorted(fake.sectors) == ["-1,-1", "-1,0", "0,-1", "0,0"]
     expect(page.locator("#tCharted")).to_have_text(re.compile(r"^ · 1/\d+ charted$"))
@@ -227,4 +253,72 @@ def test_travelling_joins_the_sectors_where_you_land(page: Page, site_url, error
     # Nothing on the way was joined, and the sectors left behind are let go.
     assert all(abs(int(k.split(",")[0])) <= 1 or abs(int(k.split(",")[0]) - x // 192) <= 1 for k in fake.sectors)
     page.wait_for_function(f"[...window.__lf.links.keys()].every(k => Math.abs(+k.split(',')[0] - {x // 192}) <= 1)", timeout=8000)
+    assert errors == []
+
+
+def test_world_counter_ticks_up_as_words_are_charted(page: Page, site_url, errors):
+    words = known_words(page, site_url)
+    fake = FakeSurvey(totals={"charted": 412_883, "total": AREA_WORDS, "players": 3_201})
+    open_game(page, site_url, fake)
+    expect(page.locator("#surveyText")).to_contain_text("World: 412,883 of 1,119,898 charted · 3,201 online")
+    expect(page.locator("#brandSub")).to_have_text("412,883 of 1,119,898 charted")
+    circle(page, words[3])
+    expect(page.locator("#brandSub")).to_have_text("412,884 of 1,119,898 charted")
+    assert errors == []
+
+
+def test_world_map_shows_where_people_are_and_flies_there(page: Page, site_url, errors):
+    fake = FakeSurvey(world=world_map(charted={(0, 0): 60, (1, 0): 112, (-20, 30): 5},
+                                      sectors=[[0, 0, 12], [-5, 7, 45]], players=57))
+    open_game(page, site_url, fake)
+    open_notes(page)
+    page.click("#surveyMap summary")
+    expect(page.locator("#worldNote")).to_have_text("57 surveyors in 2 sectors")
+    expect(page.locator("#surveyText")).to_contain_text("World: 177 of 1,119,898 charted · 57 online")
+    # Darker where charted: the territory at the origin is drawn stronger than an untouched one.
+    shade = """([tx, ty]) => { const c = document.getElementById('worldMap'), g = c.getContext('2d');
+      const cell = c.width / 100, [r, gr, b] = g.getImageData((tx + 48.5) * cell, (ty + 48.5) * cell, 1, 1).data;
+      return r + gr + b; }"""
+    assert page.evaluate(shade, [0, 0]) < page.evaluate(shade, [10, 10])
+
+    # Tapping the map flies to that territory.
+    box = page.locator("#worldMap").bounding_box()
+    tx, ty = -40, 20
+    page.mouse.click(box["x"] + (tx + 48.5) / 100 * box["width"], box["y"] + (ty + 48.5) / 100 * box["height"])
+    page.wait_for_function(f"Math.floor(window.__lf.cam.x / 48) === {tx} && Math.floor(window.__lf.cam.y / 48) === {ty}", timeout=8000)
+    assert errors == []
+
+
+def test_new_players_start_where_the_atlas_suggests(page: Page, site_url, errors):
+    fake = FakeSurvey(world=world_map(sectors=[[3, -2, 20]], spawn=[3 * 192 + 40, -2 * 192 + 70], players=20))
+    open_game(page, site_url, fake)
+    page.wait_for_function("window.__lf.links.get('3,-2')?.you")
+    cam = page.evaluate("[window.__lf.cam.x, window.__lf.cam.y]")
+    assert abs(cam[0] - (3 * 192 + 40.5)) <= 4 and abs(cam[1] - (-2 * 192 + 70.5)) <= 4  # beside the latest claim
+    assert "0,0" not in fake.sectors  # it waited to hear where to start before joining
+
+    # A returning player picks up where they left off.
+    page.wait_for_timeout(600)  # the camera is saved half a second after it moves
+    page.reload()
+    page.wait_for_function("window.__lf.links.get('3,-2')?.you")
+    assert page.evaluate("Math.floor(window.__lf.cam.x / 192)") == 3
+    assert errors == []
+
+
+def test_full_sector_says_so(page: Page, site_url, errors):
+    fake = FakeSurvey(full="sector")
+    open_game(page, site_url, fake)
+    expect(page.locator("#surveyText")).to_have_text("This part of the map is full right now. Your finds still save in this browser.")
+    circle(page, hidden_words(page)[0])
+    expect(page.locator("#notesBadge")).to_have_text("1")
+    page.wait_for_timeout(1500)
+    assert len(fake.sectors) == 4  # and it doesn't keep knocking
+    assert errors == []
+
+
+def test_full_survey_says_so(page: Page, site_url, errors):
+    fake = FakeSurvey(full="world")
+    open_game(page, site_url, fake)
+    expect(page.locator("#surveyText")).to_have_text("The survey is full right now. Your finds still save in this browser.")
+    expect(page.locator("#survey")).to_have_attribute("data-state", "offline")
     assert errors == []

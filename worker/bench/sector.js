@@ -1,8 +1,10 @@
-// How much work one survey sector does per message, measured in Node with the
-// same stand-ins the tests use. It shows whether our own code or the
-// platform's per-object limits would cap a crowded sector. Run with:
+// How much work our own code does per message in one survey sector, measured
+// in Node with the same stand-ins the tests use. Run with:
 //   node --disable-warning=ExperimentalWarning worker/bench/sector.js
-// Node isn't the Workers runtime, so read the numbers as an order of magnitude.
+// This is only our code. In the Workers runtime, receiving and sending each
+// WebSocket message costs far more than this: bench/load.js against wrangler
+// dev saturates a sector at 750 to 1,000 players, where this estimate says it
+// would be nearly idle. Use it to catch slow code, and load.js for capacity.
 
 import { DatabaseSync } from 'node:sqlite';
 import { performance } from 'node:perf_hooks';
@@ -61,13 +63,14 @@ let n = 0;
 for (const ws of sockets) await sector.webSocketMessage(ws, JSON.stringify({ t: 'pos', x: (n++ % 190) + 0.5, y: n % 190 }));
 
 let claimed = 0;
-const claimMs = time(`claim, broadcast to ${PLAYERS} sockets`, Math.min(2000, words.length - 1), (i) => {
+const claimMs = time(`claim, sent to ${PLAYERS} sockets without batching`, Math.min(2000, words.length - 1), (i) => {
   const ws = sockets[i % PLAYERS];
   const me = ws.deserializeAttachment();
   me.tokens = 5;
   ws.serializeAttachment(me);
   const { w, x, y, d } = words[i];
   sector.claim(ws, me, { t: 'claim', w, x, y, d });
+  sector.sendBatch(true);
   claimed++;
 });
 const posMs = time('position update', 20000, (i) => {
@@ -96,4 +99,5 @@ const busy = PLAYERS * (0.5 * posMs + claimMs / 30) + frameMs;
 console.log(`
 If each of ${PLAYERS} players sends a position every 2 s and claims a word every
 30 s, and the sector sends one presence frame a second, the sector is busy for
-about ${busy.toFixed(0)} ms of every second, sending ${(PLAYERS * frameBytes / 1024 / 1024).toFixed(1)} MB of positions (${(PLAYERS * 0.5 + PLAYERS / 30).toFixed(0)} incoming messages a second).`);
+about ${busy.toFixed(0)} ms of every second in our code, sending ${(PLAYERS * frameBytes / 1024 / 1024).toFixed(1)} MB of positions
+(${(PLAYERS * 0.5 + PLAYERS / 30).toFixed(0)} incoming messages a second). The runtime's own work per message is the real limit.`);

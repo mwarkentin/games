@@ -156,6 +156,14 @@ body.docked .notes{box-shadow:none}
 .survey-sign input:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
 .survey-sign .btn{flex:none;padding:9px 12px}
 .survey-hint{margin:7px 0 0;font-size:12px;color:var(--muted)}
+.survey-map{margin-top:9px}
+.survey-map summary{cursor:pointer;font:500 10px/1 var(--f-mono);letter-spacing:.14em;text-transform:uppercase;color:var(--muted);padding:4px 0}
+.survey-map canvas{display:block;width:min(100%, 220px);aspect-ratio:1;margin:8px auto 0;border:1px solid var(--rule);border-radius:4px;cursor:crosshair;touch-action:manipulation}
+.survey-map-note{margin:6px 0 0;text-align:center;font:400 10.5px/1.4 var(--f-mono);color:var(--muted)}
+.survey-map-note:empty{display:none}
+/* With the survey panel, the whole drawer scrolls, so the world map never pushes the finds out of reach. */
+.notes.has-survey{overflow-y:auto;overscroll-behavior:contain}
+.notes.has-survey .finds{flex:1 0 auto;overflow:visible}
 .survey-hint:empty{display:none}
 
 /* Coach + toast */
@@ -212,7 +220,7 @@ body.docked .toast{left:calc((100% - var(--notes-w)) / 2)}
 <header class="cartouche card">
   <div class="brand">
     <h1>Letterfield</h1>
-    <small>Endless word search</small>
+    <small id="brandSub">Endless word search</small>
   </div>
   <div class="territory mark" id="territory">
     <span class="swatch" aria-hidden="true"></span>
@@ -269,6 +277,11 @@ body.docked .toast{left:calc((100% - var(--notes-w)) / 2)}
   <section class="survey" id="survey" data-state="connecting" aria-label="Shared survey" hidden>
     <div class="survey-head"><span class="survey-dot" aria-hidden="true"></span><span class="eyebrow">Shared survey</span></div>
     <p class="survey-text" id="surveyText"></p>
+    <details class="survey-map" id="surveyMap">
+      <summary>World map</summary>
+      <canvas id="worldMap" width="200" height="200" aria-label="Map of the shared world: charted territories are darker, dots are players. Tap to fly there."></canvas>
+      <p class="survey-map-note" id="worldNote"></p>
+    </details>
     <form class="survey-sign" id="surveySign">
       <label for="surveyInitials">Sign the words you chart first</label>
       <input id="surveyInitials" maxlength="3" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="ABC" aria-describedby="surveyHint">
@@ -311,6 +324,7 @@ const K_INITIALS = 'games.initials';  // shared with the other games' leaderboar
 const SURVEY_URL = '';
 const SECTOR = RC * 4;  // cells per survey sector side: 4×4 territories, one server room each
 const SECTOR_LINKS = 4; // sectors joined at once, nearest the middle of the view first
+const SURVEY_AREA = 12; // the world charted together: sectors -12 to 12 each way, 100×100 territories
 const GRID_FONT = '"Martian Mono", ui-monospace, Menlo, monospace';
 const DISPLAY_FONT = '"Big Shoulders Display", "Arial Narrow", sans-serif';
 const RM = matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -524,6 +538,9 @@ const pending = new Set();  // keys of our own claims awaiting an answer
 const ghosts = new Map();   // surveyor id → where their marker is drawn, easing toward their position
 const terrTotals = new Map();
 let surveyPaused = false, posSent = null, posTimer = 0, lastNews = 0;
+let world = null, worldShown = 0, worldExtra = 0, worldMap = null, worldTimer = 0, spawning = false;
+const surveyHttp = surveyApi.replace(/^ws/, 'http');
+const inSurveyArea = (x, y) => Math.abs(fdiv(x, SECTOR)) <= SURVEY_AREA && Math.abs(fdiv(y, SECTOR)) <= SURVEY_AREA;
 const sectorKey = (x, y) => fdiv(x, SECTOR) + ',' + fdiv(y, SECTOR);
 const myInitials = () => { const v = LS.get(K_INITIALS) || ''; return /^[A-Z]{3}$/.test(v) ? v : ''; };
 const tell = (l, m) => { if (l && l.open && l.ws) try { l.ws.send(JSON.stringify(m)); } catch (_) {} };
@@ -539,7 +556,7 @@ function sectorsInView() {
 // Joins the sectors in view and leaves ones that have been out of view a few
 // seconds. Mid-flight it joins nothing, rather than every sector on the way.
 function syncSurvey() {
-  if (!surveyApi) return;
+  if (!surveyApi || spawning) return;
   const want = surveyPaused ? [] : sectorsInView(), keep = new Set(), now = Date.now();
   for (const { sx, sy } of want) {
     const k = sx + ',' + sy, l = links.get(k);
@@ -557,7 +574,7 @@ function syncSurvey() {
 function openLink(sx, sy) {
   const k = sx + ',' + sy;
   let l = links.get(k);
-  if (!l) { l = { k, sx, sy, ws: null, open: false, you: null, n: 0, counted: false, here: [], tries: 0, timer: 0, unwanted: 0, failed: false }; links.set(k, l); }
+  if (!l) { l = { k, sx, sy, ws: null, open: false, you: null, n: 0, counted: false, here: [], tries: 0, timer: 0, unwanted: 0, failed: false, full: false }; links.set(k, l); }
   let ws;
   try { ws = new WebSocket(`${surveyApi}/v1/survey/${sx}/${sy}`); } catch (_) { l.failed = true; return; }
   l.ws = ws;
@@ -571,15 +588,18 @@ function openLink(sx, sy) {
     if (l.ws !== ws) return;
     let m = null;
     try { m = JSON.parse(ev.data); } catch (_) {}
-    if (m) onSurvey(l, m);
+    if (Array.isArray(m)) m.forEach(one => one && onSurvey(l, one));  // messages sent together
+    else if (m) onSurvey(l, m);
   };
-  ws.onclose = () => {
+  ws.onclose = ev => {
     if (l.ws !== ws) return;
     Object.assign(l, { ws: null, open: false, you: null, n: 0, counted: false, here: [] });
     if (posSent && posSent.l === l) posSent = null;
+    if (ev.code === 4000 && !l.full) l.full = 'sector';
     if (links.get(k) === l) {
       l.failed = true;
-      const wait = Math.min(30000, 1000 * 2 ** l.tries++) * (.5 + Math.random());
+      // A full sector is asked again in a minute or so; anything else backs off from a second.
+      const wait = l.full ? 45000 : Math.min(30000, 1000 * 2 ** l.tries++) * (.5 + Math.random());
       l.timer = setTimeout(() => { l.timer = 0; if (links.get(k) === l && !surveyPaused) openLink(sx, sy); }, wait);
     }
     renderSurvey(); scheduleHud(); invalidate();
@@ -611,13 +631,14 @@ function sendPos() {
 }
 function onSurvey(l, m) {
   if (m.t === 'hello' && Array.isArray(m.claims)) {
-    l.you = m.you; l.failed = false; l.tries = 0;
+    l.you = m.you; l.failed = false; l.full = false; l.tries = 0;
     for (const [k, c] of claims) if (sectorKey(c.x, c.y) === l.k) claims.delete(k);
     for (const r of m.claims) addClaim(r, false);
     if (claims.size > 30000) for (const [k, c] of claims) if (!links.has(sectorKey(c.x, c.y))) claims.delete(k);
   } else if (m.t === 'claimed') {
     const c = addClaim(m.c, true);
     if (!c) return;
+    if (!c.s && inSurveyArea(c.x, c.y)) worldExtra++;
     if (m.by === l.you && pending.delete(c.key)) firstToChart(c);
     else if (!found.has(c.key)) news(c);
     if (!c.s) {
@@ -629,6 +650,12 @@ function onSurvey(l, m) {
     if (c && pending.delete(c.key)) toast(`<i></i><b>${c.w}</b><span>Charted first by ${c.by || 'another surveyor'} · ${rel(c.at)}</span>`, THEMES[c.th].hue);
   } else if (m.t === 'error') {
     pending.delete(m.key);
+  } else if (m.t === 'world' && Number.isInteger(m.charted) && Number.isInteger(m.total) && Number.isInteger(m.players)) {
+    world = { charted: m.charted, total: m.total, players: m.players };
+    worldExtra = 0;
+  } else if (m.t === 'full') {
+    l.full = m.world ? 'world' : 'sector';
+    try { l.ws.close(); } catch (_) {}
   } else if (m.t === 'presence' && Array.isArray(m.p)) {
     const p = m.p.filter(q => Array.isArray(q) && typeof q[0] === 'string' && Number.isFinite(q[2]) && Number.isFinite(q[3]));
     l.n = m.n | 0;
@@ -691,16 +718,89 @@ function renderSurvey() {
   let firsts = 0;
   for (const e of found.values()) if (e.f) firsts++;
   surveyEl.dataset.state = live ? 'live' : failed ? 'offline' : 'connecting';
+  // The live count ticks up with claims seen nearby between the Atlas's totals, and never runs backwards.
+  if (world) worldShown = Math.min(world.total, Math.max(worldShown, world.charted + worldExtra));
+  if (world && W >= 700) $('#brandSub').textContent = `${worldShown.toLocaleString()} of ${world.total.toLocaleString()} charted`;
   if (!live) {
+    const home = links.get(sectorKey(Math.floor(cam.x), Math.floor(cam.y)));
     surveyText.textContent = surveyPaused ? 'Paused while this tab is hidden.'
+      : home && home.full === 'world' ? 'The survey is full right now. Your finds still save in this browser.'
+      : home && home.full ? 'This part of the map is full right now. Your finds still save in this browser.'
       : failed ? 'Survey offline. Your finds still save in this browser.' : 'Joining the survey…';
     return;
   }
   const cx = Math.floor(cam.x), cy = Math.floor(cam.y), rx = fdiv(cx, RC), ry = fdiv(cy, RC), here = links.get(sectorKey(cx, cy));
   const [done, total] = here && here.you ? territoryProgress(rx, ry) : [0, 0];
   surveyText.textContent = `Live · ${others} other surveyor${others === 1 ? '' : 's'} nearby\n` +
-    (total ? `${regionName(rx, ry)}: ${done} of ${total} hidden words charted\n` : '') +
+    (world ? `World: ${worldShown.toLocaleString()} of ${world.total.toLocaleString()} charted · ${world.players.toLocaleString()} online\n` : '') +
+    (total ? `${regionName(rx, ry)}: ${done} of ${total} charted\n` : '') +
     `${firsts} word${firsts === 1 ? '' : 's'} charted first by you`;
+}
+
+// The world map: fetched while it's open, from a cache the Worker keeps for a few seconds.
+async function fetchWorld(timeoutMs = 4000) {
+  const ctl = new AbortController(), timer = setTimeout(() => ctl.abort(), timeoutMs);
+  try {
+    const res = await fetch(surveyHttp + '/v1/survey/world', { signal: ctl.signal });
+    const m = res.ok ? await res.json() : null;
+    if (!m || !Number.isInteger(m.area) || typeof m.territories !== 'string' || !Array.isArray(m.sectors)) return null;
+    const bytes = atob(m.territories), size = (2 * m.area + 1) * RG;
+    if (bytes.length !== size * size) return null;
+    worldMap = { area: m.area, size, bytes, sectors: m.sectors.filter(q => Array.isArray(q) && q.every(Number.isInteger)), spawn: m.spawn };
+    if ([m.charted, m.total, m.players].every(Number.isInteger)) { world = { charted: m.charted, total: m.total, players: m.players }; worldExtra = 0; }
+    return worldMap;
+  } catch (_) {
+    return null;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+const worldCanvas = $('#worldMap'), worldNote = $('#worldNote'), surveyMapEl = $('#surveyMap');
+function drawWorld() {
+  if (!worldMap || !surveyMapEl.open) return;
+  const px = Math.round((worldCanvas.clientWidth || 200) * Math.min(window.devicePixelRatio || 1, 2));
+  if (worldCanvas.width !== px) { worldCanvas.width = px; worldCanvas.height = px; }
+  const g = worldCanvas.getContext('2d'), { size, bytes, area } = worldMap, cell = px / size, first = -area * RG;
+  g.globalAlpha = 1; g.fillStyle = C.paper; g.fillRect(0, 0, px, px);
+  // Territories in a faint wash of their theme's colour, inked in as they're
+  // charted (a territory hides about 112 words); players are dots on top.
+  for (let ty = 0; ty < size; ty++) for (let tx = 0; tx < size; tx++) {
+    const x = Math.floor(tx * cell), y = Math.floor(ty * cell), w = Math.ceil(cell), n = bytes.charCodeAt(ty * size + tx);
+    g.globalAlpha = .14; g.fillStyle = TC[regionTheme(first + tx, first + ty)].tint; g.fillRect(x, y, w, w);
+    if (n) { g.globalAlpha = .15 + .75 * Math.min(1, n / 112); g.fillStyle = C.ink; g.fillRect(x, y, w, w); }
+  }
+  g.globalAlpha = .85; g.fillStyle = C.accent; g.strokeStyle = C.paper; g.lineWidth = Math.max(1, px / 300);
+  for (const [sx, sy, n] of worldMap.sectors) {
+    g.beginPath();
+    g.arc(((sx + area) * 4 + 2) * cell, ((sy + area) * 4 + 2) * cell, (1 + .6 * Math.log2(1 + n)) * px / 220, 0, Math.PI * 2);
+    g.fill(); g.stroke();
+  }
+  g.globalAlpha = 1;
+  const yx = (cam.x / RC - first) * cell, yy = (cam.y / RC - first) * cell;
+  if (yx >= 0 && yy >= 0 && yx <= px && yy <= px) {
+    g.beginPath(); g.arc(yx, yy, px / 36, 0, Math.PI * 2);
+    g.strokeStyle = C.paper; g.lineWidth = px / 60; g.stroke();
+    g.strokeStyle = C.danger; g.lineWidth = px / 150; g.stroke();
+  }
+  const online = worldMap.sectors.reduce((a, q) => a + q[2], 0);
+  worldNote.textContent = `${online.toLocaleString()} surveyor${online === 1 ? '' : 's'} in ${worldMap.sectors.length} sector${worldMap.sectors.length === 1 ? '' : 's'}`;
+}
+async function refreshWorld() {
+  clearTimeout(worldTimer); worldTimer = 0;
+  if (!surveyApi || !surveyMapEl.open || !notesOpen || surveyPaused) return;
+  if (await fetchWorld()) { drawWorld(); renderSurvey(); }
+  else worldNote.textContent = 'Couldn’t load the world map.';
+  if (surveyMapEl.open) worldTimer = setTimeout(refreshWorld, 20000);
+}
+// New players start where the Atlas suggests: where the latest word was
+// charted in the biggest crowd that has room, so there's company from the start.
+async function spawnSomewhere() {
+  spawning = true;
+  const m = await fetchWorld(2500), edge = m ? (m.area + 1) * SECTOR : 0;
+  spawning = false;
+  const sp = m && Array.isArray(m.spawn) && m.spawn.length === 2 && m.spawn.every(v => Number.isInteger(v) && Math.abs(v) <= edge) ? m.spawn : null;
+  if (sp && cam.x === 6 && cam.y === 6) flyTo(sp[0] + .5 + (Math.random() - .5) * 8, sp[1] + .5 + (Math.random() - .5) * 8, cam.cs, { instant: true });
+  syncSurvey();
 }
 
 /* ---------- Canvas + colours ---------- */
@@ -1311,6 +1411,7 @@ function updateHud() {
     tName.textContent = regionName(rx, ry);
     tTheme.textContent = THEMES[t].name;
     territory.style.setProperty('--h', THEMES[t].hue);
+    if (notesOpen) drawWorld();  // moves "you are here" on the world map
   }
   tCoord.textContent = fmtCoord(cx, cy);
   if (surveyApi) {
@@ -1383,7 +1484,7 @@ function setNotes(open, remember = true) {
   notesToggle.setAttribute('aria-expanded', String(open));
   if (remember) LS.set(K_NOTES, open ? '1' : '0');
   applyDock();
-  if (open) renderNotes();
+  if (open) { renderNotes(); refreshWorld(); }
   scheduleHud(); invalidate();
 }
 function renderNotes() {
@@ -1462,7 +1563,15 @@ $('#surveySign').addEventListener('submit', e => {
   for (const l of links.values()) tell(l, { t: 'me', initials: v });
   surveyHint.textContent = `Words you chart first are signed ${v}.`;
 });
-document.addEventListener('visibilitychange', () => { if (surveyApi) { surveyPaused = document.hidden; syncSurvey(); } });
+document.addEventListener('visibilitychange', () => { if (surveyApi) { surveyPaused = document.hidden; syncSurvey(); refreshWorld(); } });
+surveyMapEl.addEventListener('toggle', refreshWorld);
+worldCanvas.addEventListener('click', e => {
+  if (!worldMap) return;
+  const r = worldCanvas.getBoundingClientRect(), first = -worldMap.area * RG;
+  const tx = first + Math.floor((e.clientX - r.left) / r.width * worldMap.size), ty = first + Math.floor((e.clientY - r.top) / r.height * worldMap.size);
+  if (!dock) setNotes(false, false);
+  flyTo((tx + .5) * RC, (ty + .5) * RC, Math.max(cam.cs, 30));
+});
 
 const coach = $('#coach');
 function dismissCoach() { if (!coach.hidden) { coach.hidden = true; LS.set(K_COACH, '1'); } }
@@ -1487,9 +1596,10 @@ if (document.fonts) {
 
 readColors();
 W = Math.max(1, window.innerWidth);
+let camSaved = false;
 try {
   const c = JSON.parse(LS.get(K_CAM) || 'null');
-  if (c && [c.x, c.y, c.cs].every(Number.isFinite)) { cam.x = c.x; cam.y = c.y; cam.cs = clamp(c.cs, ZMIN, ZMAX); }
+  if (c && [c.x, c.y, c.cs].every(Number.isFinite)) { cam.x = c.x; cam.y = c.y; cam.cs = clamp(c.cs, ZMIN, ZMAX); camSaved = true; }
   else cam.cs = defaultCs();
 } catch (_) { cam.cs = defaultCs(); }
 loadLocal();
@@ -1508,13 +1618,15 @@ if (startHash) {
 if (LS.get(K_COACH) !== '1') coach.hidden = false;
 if (surveyApi) {
   surveyEl.hidden = false;
+  $('#notes').classList.add('has-survey');
   surveyInput.value = myInitials();
   setInterval(syncSurvey, 2000);
+  if (!camSaved && !startHash) spawnSomewhere();
 }
 updateHud();
 invalidate();
 connectStore();
-if (location.hash === '#debug') window.__lf = { cam, found, claims, links, chunk, wordEnd, collect, territoryProgress };
+if (location.hash === '#debug') window.__lf = { cam, found, claims, links, chunk, wordEnd, collect, territoryProgress, world: () => world };
 
 })();
 </script>
