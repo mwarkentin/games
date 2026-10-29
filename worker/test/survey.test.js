@@ -10,7 +10,7 @@ import { afterEach, beforeEach, describe, mock, test } from 'node:test';
 import vm from 'node:vm';
 
 import worker from '../src/index.js';
-import { CH, DIRS, VOCAB, chunk, genChunk, keyOf, letterAt, wordEnd } from '../src/letterfield-world.js';
+import { CH, DIRS, RG, THEMES, THEME_DATA, VOCAB, chunk, genChunk, keyOf, letterAt, regionTheme, wordEnd } from '../src/letterfield-world.js';
 import {
   AREA, AREA_WORDS, Atlas, BATCH_MS, CLAIM_BURST, CLAIM_REFILL_MS, MAX_ONLINE, MAX_PLAYERS, ONLINE_MS, PRESENCE_MAX, PRESENCE_MS,
   QUIET, REPORT_MS, SAVE_MS, SAVE_POS_MS, SECTOR, SPAWN_MAX, Sector, VIEW_MS, checkClaim, routeSurvey,
@@ -27,7 +27,7 @@ function gameWorld() {
   const end = html.indexOf('/* ---------- Formatting ---------- */');
   assert.ok(start > 0 && end > start, 'letterfield.html lost its section markers');
   const context = vm.createContext({ matchMedia: () => ({ matches: false }) });
-  return vm.runInContext(`${html.slice(start, end)}; ({ genChunk, letterAt, SECTOR, SURVEY_AREA })`, context);
+  return vm.runInContext(`${html.slice(start, end)}; ({ genChunk, letterAt, regionName, regionTheme, SECTOR, SURVEY_AREA, THEME_DATA, THEMES })`, context);
 }
 
 // A hidden word in the given chunk, as the game would send it.
@@ -65,6 +65,17 @@ describe('the world copy', () => {
       }
     }
     for (const [x, y] of [[1e6, -3e5], [-987654, 123457], [40000, 40000]]) assert.equal(letterAt(x, y), game.letterAt(x, y));
+  });
+
+  test('has the same themes as the game, and lays them out the same way', () => {
+    const game = gameWorld();
+    assert.equal(THEME_DATA, game.THEME_DATA);
+    // One chunk in a territory of every theme.
+    for (let t = 0; t < THEMES.length; t++) {
+      const cx = t * RG + (t % RG), cy = -(t % 3);
+      assert.equal(regionTheme(Math.floor(cx / RG), Math.floor(cy / RG)), game.regionTheme(Math.floor(cx / RG), Math.floor(cy / RG)));
+      assert.deepEqual(genChunk(cx, cy).words, JSON.parse(JSON.stringify(game.genChunk(cx, cy).words)), `words differ in chunk ${cx},${cy}`);
+    }
   });
 
   test('splits the map into the same sectors and shared world as the game', () => {
@@ -551,6 +562,53 @@ describe('Atlas', () => {
     assert.equal((await worldMap()).charted, 1);
     clock += VIEW_MS;
     assert.equal((await worldMap()).charted, 2);
+  });
+});
+
+describe('the map', () => {
+  test('has well-formed themes: 40 words or more, A to Z, 3 to 10 letters, each in one theme', () => {
+    const seen = new Map();
+    for (const t of THEMES) {
+      assert.ok(t.words.length >= 40, `${t.name} has ${t.words.length} words`);
+      assert.ok(Number.isInteger(t.hue) && t.hue >= 0 && t.hue < 360, `${t.name} hue`);
+      for (const w of t.words) {
+        assert.match(w, /^[A-Z]{3,10}$/, `${t.name}: ${w}`);
+        assert.ok(!seen.has(w), `${w} is in ${seen.get(w)} and ${t.name}`);
+        seen.set(w, t.name);
+      }
+    }
+    assert.equal(new Set(THEMES.map((t) => t.name)).size, THEMES.length);
+  });
+
+  test('never repeats a theme within 9 territories, and neighbours differ in colour', () => {
+    const circ = (a) => Math.min(((a % 360) + 360) % 360, 360 - (((a % 360) + 360) % 360));
+    for (let ry = -20; ry < 20; ry++) {
+      for (let rx = -20; rx < 20; rx++) {
+        const t = regionTheme(rx, ry);
+        for (let dy = -9; dy <= 9; dy++) {
+          for (let dx = -9; dx <= 9; dx++) {
+            if (!dx && !dy) continue;
+            const u = regionTheme(rx + dx, ry + dy);
+            assert.notEqual(u, t, `${rx},${ry} and ${rx + dx},${ry + dy}`);
+            if (Math.abs(dx) <= 1 && Math.abs(dy) <= 1) assert.ok(circ(THEMES[t].hue - THEMES[u].hue) >= 30, `hues at ${rx},${ry}`);
+          }
+        }
+      }
+    }
+  });
+
+  test('names every territory in the shared world, with repeats at least 60 apart', () => {
+    const { regionName } = gameWorld();
+    const where = new Map();
+    for (let ry = -AREA * 4; ry < (AREA + 1) * 4; ry++) {
+      for (let rx = -AREA * 4; rx < (AREA + 1) * 4; rx++) {
+        const name = regionName(rx, ry);
+        assert.match(name, /^[A-Z][a-z]{3,9} [A-Z][a-z]+$/);
+        for (const [x, y] of where.get(name) ?? []) assert.ok(Math.max(Math.abs(x - rx), Math.abs(y - ry)) >= 60, `${name} at ${x},${y} and ${rx},${ry}`);
+        where.set(name, [...(where.get(name) ?? []), [rx, ry]]);
+      }
+    }
+    assert.ok(where.size > 0.99 * (2 * AREA + 1) ** 2 * 16);
   });
 });
 

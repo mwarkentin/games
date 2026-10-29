@@ -14,7 +14,7 @@ It stays switched off until `SURVEY_URL` is set.
 
 Letterfield already gives every player the same map, because every letter
 comes from a fixed seed. The middle of that map, 100×100 territories around
-the origin, hides **1,119,898 words**. The shared survey turns them into one
+the origin, hides **1,120,206 words**. The shared survey turns them into one
 job for everyone: chart them all.
 
 - **The first player to circle a word charts it.** Their initials appear
@@ -22,7 +22,7 @@ job for everyone: chart them all.
   You can still circle it for your own field notes; the game tells you who
   got there first ("Charted first by SIS · 3m ago").
 - **One number for the whole world.** The header shows "412,883 of
-  1,119,898 charted", and it ticks up as words are charted nearby. The
+  1,120,206 charted", and it ticks up as words are charted nearby. The
   current territory has its own count ("83/120 charted"), and the game
   announces a territory once all of its hidden words are charted.
 - **You can see the crowd.** Other players appear as coloured dots with

@@ -13,7 +13,7 @@
 // thousands of players: no object sees more than the players near it.
 //
 // The middle of the map, 100×100 territories around the origin, is the world
-// everyone charts together: it hides 1,119,898 words. One Atlas object keeps
+// everyone charts together: it hides 1,120,206 words. One Atlas object keeps
 // the totals and the world map. Sectors in that area report their numbers to
 // it every few seconds while busy; players only read its cached world map.
 //
@@ -52,7 +52,7 @@ export const PRESENCE_MAX = 64;       // positions per update; `n` still counts 
 export const CLAIM_BURST = 5;         // claims a socket can make at once,
 export const CLAIM_REFILL_MS = 1500;  // then one per this many milliseconds
 export const AREA = 12;               // the shared world: sectors -12 to 12 each way
-export const AREA_WORDS = 1119898;    // hidden words in it (test/survey.test.js recounts them)
+export const AREA_WORDS = 1120206;    // hidden words in it (test/survey.test.js recounts them)
 export const REPORT_MS = 10000;       // a busy sector reports to the atlas at most this often
 export const SAVE_MS = 60000;         // the atlas writes changed numbers to storage at most this often
 export const VIEW_MS = 5000;          // the world map is rebuilt, and cached, for this long
