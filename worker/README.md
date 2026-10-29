@@ -103,9 +103,10 @@ and the games keep their leaderboards hidden.
    deploys. The Worker's URL appears in the log, for example
    `https://games-leaderboard.<your-subdomain>.workers.dev`.
 7. **Point the games at it:** set `LEADERBOARD_URL` in
-   `funnels-and-buckets.html` and `doodle-chomp.html` to that URL and merge.
-   To turn on Letterfield's shared survey too, set `SURVEY_URL` in
-   `letterfield.html` to the same URL.
+   `funnels-and-buckets.html`, `doodle-chomp.html` and
+   `air-traffic-controller.html` to that URL and merge. To turn on
+   Letterfield's shared survey too, set `SURVEY_URL` in `letterfield.html`
+   to the same URL.
 
 Optional: serve the Worker from your own domain (such as
 `api.games.michaelwarkentin.com`) under the Worker's Settings → Domains &
@@ -124,7 +125,8 @@ npx wrangler@4.151.0 dev --port 8787
 Then serve the games with `python3 -m http.server 8000` from the repo root
 and open
 `http://localhost:8000/funnels-and-buckets.html?leaderboard=http://localhost:8787`
-(or `doodle-chomp.html` with the same query).
+(or `doodle-chomp.html` or `air-traffic-controller.html` with the same
+query).
 `ALLOWED_ORIGINS` in `wrangler.toml` already allows `localhost:8000`.
 
 Tests run with Node's built-in test runner against a real SQLite database
