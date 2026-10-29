@@ -3,6 +3,15 @@ name = "games-leaderboard"
 main = "src/index.js"
 compatibility_date = "2026-10-01"
 
+# Workers Logs keeps the Worker's console output and uncaught exceptions for
+# a few days. Invocation logs stay off: they would record every request's
+# headers, client IP included, and the Worker only ever keeps a salted hash.
+[observability]
+enabled = true
+
+[observability.logs]
+invocation_logs = false
+
 [vars]
 # Pages allowed to read and save scores. The localhost entries are for testing
 # the games against `wrangler dev`.

@@ -12,8 +12,10 @@ utilities; games live here so they get their own origin and their own rules.
 - `README.md`: the game list. The build turns it into `index.html`.
 - `build.sh` and `scripts/`: assemble the site in `_site/` (never committed).
   The build also generates `index.html`, `colophon.html`, `sitemap.xml` and
-  `games.json`, so don't create those by hand. Games are published exactly as
-  committed; nothing is injected into them.
+  `games.json`, so don't create those by hand. Games are published as
+  committed, apart from `telemetry.js` (see below).
+- `telemetry.js`: error reporting, performance and session replays through
+  Sentry. The build inlines it into every game's `<head>`.
 - `tests/`: pytest with Playwright.
 - `worker/`: the leaderboard API, a Cloudflare Worker with a D1 database. It
   deploys through its own workflow and is never part of the site. See
@@ -26,7 +28,8 @@ utilities; games live here so they get their own origin and their own rules.
   lines; keep it in one file anyway.
 - Load libraries from `cdn.jsdelivr.net` or `cdnjs.cloudflare.com`, pinned
   to an exact version. Fonts may come from Google Fonts, with a system font
-  later in every `font-family` so the game still works without them.
+  later in every `font-family` so the game still works without them. The one
+  other host is `browser.sentry-cdn.com`, for `telemetry.js` only.
 - Phone first: playable at 375px wide in portrait with touch alone (an
   on-screen pad, taps or swipes), and with a keyboard on a computer. No
   sideways scrolling. Inputs, textareas and selects use `font-size: 16px`
@@ -44,6 +47,21 @@ utilities; games live here so they get their own origin and their own rules.
 - The `<head>` has a `<title>`, a viewport meta tag and a one-sentence
   `<meta name="description" content="...">`. The index and colophon show
   that description.
+
+## Telemetry
+
+`telemetry.js` sends errors, performance traces and session replays to
+Sentry. It does nothing until `SENTRY_DSN` is set, and only runs on
+games.michaelwarkentin.com, so local previews and tests send nothing. It
+loads Sentry's SDK from `browser.sentry-cdn.com`, pinned to a version with
+an integrity hash; to update it, change both URLs and both hashes
+(`curl -s <url> | openssl dgst -sha384 -binary | openssl base64 -A`).
+
+Replays show what was on screen, canvases and leaderboards included, with
+text inputs masked. To hide something else from replays, give it the
+`sentry-mask` class. IP addresses aren't sent. `tests/test_telemetry.py`
+serves the site under its real hostname to check that it reports errors
+with a replay and never sends anything from elsewhere.
 
 ## Games that started as claude.ai artifacts
 
@@ -121,11 +139,11 @@ pins and the README link.
 
 In a Claude Code on the web sandbox, the default network policy can block
 `cdn.jsdelivr.net`, `cdnjs.cloudflare.com`, `fonts.googleapis.com`,
-`fonts.gstatic.com`, `cdn.playwright.dev`, `registry.npmjs.org` (for
-`wrangler`) and the leaderboard Worker's host. A test failing with
-`Failed: https://...` for one of those hosts means the sandbox can't reach
-it, not that the game is broken. Ask for those hosts to be allowed. CI has
-full network access.
+`fonts.gstatic.com`, `browser.sentry-cdn.com`, `cdn.playwright.dev`,
+`registry.npmjs.org` (for `wrangler`) and the leaderboard Worker's host. A
+test failing with `Failed: https://...` for one of those hosts means the
+sandbox can't reach it, not that the game is broken. Ask for those hosts to
+be allowed. CI has full network access.
 
 ## Security
 

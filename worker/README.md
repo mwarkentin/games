@@ -57,6 +57,11 @@ score is possible for the game (see `GAMES` in `src/leaderboard.js`), allows
 only three letters A–Z as initials, and stores a salted hash of each IP
 address, never the address itself, to rate-limit writes.
 
+**Logs.** Workers Logs keeps the Worker's console output and uncaught
+exceptions for a few days. Its per-request invocation logs are off in
+`wrangler.toml`, because they would store each request's headers, the
+client's IP address included.
+
 `src/leaderboard.js` holds the logic and `src/index.js` only exports the
 Worker: the runtime treats every export of the main module as an entry
 point, so constants exported for tests can't live there.
