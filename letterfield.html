@@ -792,8 +792,8 @@ async function refreshWorld() {
   else worldNote.textContent = 'Couldn’t load the world map.';
   if (surveyMapEl.open) worldTimer = setTimeout(refreshWorld, 20000);
 }
-// New players start where the Atlas suggests: where the latest word was
-// charted in the biggest crowd that has room, so there's company from the start.
+// New players start where the Atlas suggests: in the middle of the biggest
+// crowd that has room, so there's company from the start.
 async function spawnSomewhere() {
   spawning = true;
   const m = await fetchWorld(2500), edge = m ? (m.area + 1) * SECTOR : 0;

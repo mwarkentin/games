@@ -29,11 +29,13 @@ job for everyone: chart them all.
   their initials, at the middle of their screen.
 - **A world map.** It's in the notes panel: territories ink in as they're
   charted, dots show where people are, and tapping it flies you there.
-- **New players land in the crowd.** You start wherever the latest word was
-  charted in the busiest part of the map that still has room. eieio found
-  that players need to see "so many people" the moment they arrive; One
-  Million Chessboards spread newcomers into small clusters and lost that
-  moment.
+- **New players land in the crowd.** You start in the middle of the busiest
+  crowd that still has room. eieio found that players need to see "so many
+  people" the moment they arrive; One Million Chessboards spread newcomers
+  into small clusters and lost that moment. "The middle" is the median of
+  where the crowd's players are looking. An earlier version used the latest
+  claim, and a single straggler in the crowd's sector could pull newcomers
+  100 cells away from everyone.
 - **It fails gracefully.**
   - Field notes stay personal and still work offline.
   - If the server can't be reached, the notes panel says so in one line and
@@ -81,8 +83,8 @@ From [Scaling One Million Checkboxes][omcb] and
   sends one list of positions a second (up to 64 people, plus a head count)
   however many players moved.
 - **The Atlas** is one object for the shared world. Each sector in the area
-  reports its charted counts, player count and latest claim at most every
-  10 s while something is changing. Reports are absolute numbers, so a lost
+  reports its charted counts, player count and the middle of its crowd at
+  most every 10 s while something is changing. Reports are absolute numbers, so a lost
   or repeated report does no harm. The Atlas writes the charted counts to
   storage at most once a minute.
 - **The world map** is one byte per territory (10 KB), plus players per

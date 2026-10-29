@@ -400,10 +400,23 @@ describe('Sector', () => {
     clock += REPORT_MS;
     await say(b, { t: 'pos', x: 401, y: -500 });
     await settle();
-    assert.deepEqual(reports[1], { sx: 2, sy: -3, players: 1, charted: countsFor(2), hot: [words[1].x, words[1].y] });
+    assert.deepEqual(reports[1], { sx: 2, sy: -3, players: 1, charted: countsFor(2), hot: [401, -500] });  // where the player is
     assert.deepEqual(b.last('world'), { t: 'world', charted: 1002, total: AREA_WORDS, players: 40 });
     // Later joiners get the totals straight away.
     assert.deepEqual(join(2, -3).sent[1], { t: 'world', charted: 1002, total: AREA_WORDS, players: 40 });
+  });
+
+  test('reports the middle of the crowd, not the stragglers', async () => {
+    const reports = [];
+    reportingSector(reports);
+    const crowd = [[400, -540], [402, -541], [405, -538], [401, -539], [560, -400]];  // four together, one far off
+    let last;
+    for (const [x, y] of crowd) { last = join(2, -3); clock += 1; await say(last, { t: 'pos', x, y }); }
+    await settle();  // the first report, sent with the first move
+    clock += REPORT_MS;
+    await say(last, { t: 'pos', x: 560.5, y: -400 });
+    await settle();
+    assert.deepEqual(reports.at(-1).hot, [402, -539]);
   });
 
   test('reports its last change when its players leave', async () => {
@@ -511,7 +524,7 @@ describe('Atlas', () => {
     assert.deepEqual([map.charted, map.total, map.players, map.area], [16, AREA_WORDS, 2 + SPAWN_MAX, AREA]);
   });
 
-  test('starts new players in the biggest crowd with room, where the latest word was charted', async () => {
+  test('starts new players in the middle of the biggest crowd with room', async () => {
     assert.equal((await worldMap()).spawn, null);  // nobody playing: the origin
     await report({ sx: 3, sy: 3, players: 12, charted: counts(), hot: [3 * SECTOR + 7, 3 * SECTOR + 9] });
     await report({ sx: -2, sy: 5, players: 80, charted: counts(), hot: [-2 * SECTOR + 50, 5 * SECTOR + 60] });

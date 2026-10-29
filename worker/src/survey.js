@@ -150,7 +150,7 @@ export class Sector {
     this.reportedAt = 0;     // when the Atlas last heard from this sector
     this.reportDue = false;
     this.reporting = false;
-    this.hot = null;         // [x, y] of the latest claim: where new players should land
+    this.hot = null;         // [x, y] of the latest claim, for where new players land when nobody's placed
     this.where = null;       // [sx, sy], from the first socket to join or wake it
     this.claimsJson = null;  // every claim as JSON, built on the first join after waking, then kept up to date
     this.counts = null;      // hidden words charted in each of the sector's 16 territories, likewise
@@ -342,6 +342,15 @@ export class Sector {
     this.maybeReport();
   }
 
+  // The middle of the crowd: the median of where players are looking, which
+  // a few people wandering off on their own don't pull away from everyone else.
+  crowd() {
+    const here = this.here();
+    if (!here.length) return null;
+    const median = (values) => Math.floor(values.sort((a, b) => a - b)[values.length >> 1]);
+    return [median(here.map((p) => p.x)), median(here.map((p) => p.y))];
+  }
+
   // Index of the sector's territory that holds cell (x, y), row by row.
   territory(x, y) {
     const [sx, sy] = this.coords();
@@ -377,7 +386,7 @@ export class Sector {
     try {
       const res = await atlas(this.env).fetch('https://atlas/report', {
         method: 'POST',
-        body: JSON.stringify({ sx, sy, players: this.here().length, charted: this.chartedCounts(), hot: this.hot }),
+        body: JSON.stringify({ sx, sy, players: this.here().length, charted: this.chartedCounts(), hot: this.crowd() ?? this.hot }),
       });
       world = await res.json();
     } catch {
@@ -489,10 +498,10 @@ export class Atlas {
     return { ...this.totals(), area: AREA, territories: btoa(territories), sectors, spawn: this.spawn(live) };
   }
 
-  // Where a new player should start, as a cell: where the latest word was
-  // charted in the biggest crowd that still has room, so the first thing they
-  // see is lots of people at work; beside the biggest crowd if every crowd is
-  // full; or at the origin (null) while nobody is playing.
+  // Where a new player should start, as a cell: in the middle of the biggest
+  // crowd that still has room, so the first thing they see is lots of people
+  // at work; beside the biggest crowd if every crowd is full; or at the
+  // origin (null) while nobody is playing.
   spawn(live) {
     const centre = (r) => [r.sx * SECTOR + SECTOR / 2, r.sy * SECTOR + SECTOR / 2];
     const open = live.filter((r) => r.players < SPAWN_MAX).sort((a, b) => b.players - a.players);
