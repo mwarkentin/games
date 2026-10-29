@@ -15,8 +15,9 @@ utilities; games live here so they get their own origin and their own rules.
   `games.json`, so don't create those by hand. Games are published exactly as
   committed; nothing is injected into them.
 - `tests/`: pytest with Playwright.
-- `worker/`: the leaderboard API, a Cloudflare Worker with a D1 database. It
-  deploys through its own workflow and is never part of the site. See
+- `worker/`: the leaderboard API, a Cloudflare Worker with a D1 database,
+  and Letterfield's shared survey (Durable Objects; see `worker/SURVEY.md`).
+  It deploys through its own workflow and is never part of the site. See
   `worker/README.md`.
 
 ## Rules for every game

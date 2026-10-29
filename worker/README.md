@@ -5,6 +5,11 @@ A [Cloudflare Worker](https://developers.cloudflare.com/workers/) with a
 global high scores for the games. It runs on Cloudflare's free plan: the
 leaderboard uses a handful of requests and database rows per game played.
 
+The same Worker hosts Letterfield's shared survey, an experiment in many
+players exploring one map at once: a Durable Object per sector of the map,
+reached over WebSockets. [SURVEY.md](SURVEY.md) covers its design, its API
+and how far it scales.
+
 ## API
 
 ```
@@ -58,8 +63,10 @@ only three letters A–Z as initials, and stores a salted hash of each IP
 address, never the address itself, to rate-limit writes.
 
 `src/leaderboard.js` holds the logic and `src/index.js` only exports the
-Worker: the runtime treats every export of the main module as an entry
-point, so constants exported for tests can't live there.
+Worker and the survey's Durable Object class: the runtime treats every
+export of the main module as an entry point, so constants exported for tests
+can't live there. `src/survey.js` and `src/letterfield-world.js` are the
+survey.
 
 ## Setup
 
@@ -97,6 +104,8 @@ and the games keep their leaderboards hidden.
    `https://games-leaderboard.<your-subdomain>.workers.dev`.
 7. **Point the games at it:** set `LEADERBOARD_URL` in
    `funnels-and-buckets.html` and `doodle-chomp.html` to that URL and merge.
+   To turn on Letterfield's shared survey too, set `SURVEY_URL` in
+   `letterfield.html` to the same URL.
 
 Optional: serve the Worker from your own domain (such as
 `api.games.michaelwarkentin.com`) under the Worker's Settings → Domains &
@@ -119,7 +128,7 @@ and open
 `ALLOWED_ORIGINS` in `wrangler.toml` already allows `localhost:8000`.
 
 Tests run with Node's built-in test runner against a real SQLite database
-(node:sqlite stands in for D1):
+(node:sqlite stands in for D1 and for the survey's Durable Object storage):
 
 ```sh
 node --disable-warning=ExperimentalWarning --test "worker/test/*.test.js"

@@ -143,6 +143,20 @@ body.docked .notes{box-shadow:none}
 .sync[data-state="synced"] .sync-dot{background:hsl(150 var(--mark-s) var(--mark-l))}
 .sync[data-state="connecting"] .sync-dot{animation:blink 1s infinite alternate}
 @keyframes blink{to{opacity:.25}}
+.survey{margin:12px 18px 0;padding:10px 12px 11px;border:1px solid var(--rule);border-radius:7px}
+.survey-head{display:flex;align-items:center;gap:8px;margin-bottom:7px}
+.survey-dot{width:7px;height:7px;border-radius:50%;background:var(--muted);flex:none}
+.survey[data-state="live"] .survey-dot{background:hsl(150 var(--mark-s) var(--mark-l))}
+.survey[data-state="offline"] .survey-dot{background:var(--danger)}
+.survey[data-state="connecting"] .survey-dot{animation:blink 1s infinite alternate}
+.survey-text{margin:0;font:400 11.5px/1.5 var(--f-mono);color:var(--muted);white-space:pre-line}
+.survey-sign{display:flex;align-items:center;gap:8px;margin-top:10px}
+.survey-sign label{flex:1;min-width:0;font-size:13px}
+.survey-sign input{width:74px;flex:none;box-sizing:border-box;font:500 16px/1 var(--f-mono);letter-spacing:.18em;text-transform:uppercase;padding:7px 6px 7px 9px;border:1px solid var(--rule);border-radius:6px;background:var(--paper);color:var(--ink)}
+.survey-sign input:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+.survey-sign .btn{flex:none;padding:9px 12px}
+.survey-hint{margin:7px 0 0;font-size:12px;color:var(--muted)}
+.survey-hint:empty{display:none}
 
 /* Coach + toast */
 .coach{position:fixed;top:calc(var(--top) + 76px);left:var(--gl);width:330px;max-width:calc(100% - 32px);padding:14px 14px 12px}
@@ -187,6 +201,7 @@ body.docked .toast{left:calc((100% - var(--notes-w)) / 2)}
 }
 @media (prefers-reduced-motion: reduce){
   .notes,.toast,.instruments{transition:none}
+  .sync-dot,.survey-dot{animation:none!important}
 }
 </style>
 </head>
@@ -202,7 +217,7 @@ body.docked .toast{left:calc((100% - var(--notes-w)) / 2)}
   <div class="territory mark" id="territory">
     <span class="swatch" aria-hidden="true"></span>
     <div class="t-name" id="tName">&nbsp;</div>
-    <div class="t-meta"><span id="tTheme"></span> · <span id="tCoord"></span></div>
+    <div class="t-meta"><span id="tTheme"></span> · <span id="tCoord"></span><span id="tCharted" hidden></span></div>
   </div>
 </header>
 
@@ -251,6 +266,16 @@ body.docked .toast{left:calc((100% - var(--notes-w)) / 2)}
     <div><dt>Territories</dt><dd id="tTerr">0</dd></div>
     <div><dt>Longest</dt><dd id="tLong">—</dd></div>
   </dl>
+  <section class="survey" id="survey" data-state="connecting" aria-label="Shared survey" hidden>
+    <div class="survey-head"><span class="survey-dot" aria-hidden="true"></span><span class="eyebrow">Shared survey</span></div>
+    <p class="survey-text" id="surveyText"></p>
+    <form class="survey-sign" id="surveySign">
+      <label for="surveyInitials">Sign the words you chart first</label>
+      <input id="surveyInitials" maxlength="3" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="ABC" aria-describedby="surveyHint">
+      <button type="submit" class="btn">Sign</button>
+    </form>
+    <p class="survey-hint" id="surveyHint"></p>
+  </section>
   <div class="filters" id="filters" role="group" aria-label="Filter by theme"></div>
   <ol class="finds" id="finds"></ol>
   <p class="sync" id="sync" data-state="local"><span class="sync-dot" aria-hidden="true"></span><span id="syncText">Saved in this browser</span></p>
@@ -280,6 +305,12 @@ const DARROW = ['→','↘','↓','↙','←','↖','↑','↗'];
 const DWEIGHT = [3,2,3,1,1,1,1,2], DW_TOTAL = 14;
 const NOTES_W = 340;
 const K_FINDS = 'letterfield.finds.v1', K_CAM = 'letterfield.cam.v1', K_COACH = 'letterfield.coach.v1', K_NOTES = 'letterfield.notes.v1';
+const K_INITIALS = 'games.initials';  // shared with the other games' leaderboards
+// The shared survey (see worker/SURVEY.md): while SURVEY_URL is empty the game
+// is single-player and connects nowhere. ?survey=<url> overrides it for testing.
+const SURVEY_URL = '';
+const SECTOR = RC * 4;  // cells per survey sector side: 4×4 territories, one server room each
+const SECTOR_LINKS = 4; // sectors joined at once, nearest the middle of the view first
 const GRID_FONT = '"Martian Mono", ui-monospace, Menlo, monospace';
 const DISPLAY_FONT = '"Big Shoulders Display", "Arial Narrow", sans-serif';
 const RM = matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -413,10 +444,10 @@ function sanitize(o) {
   if (!/^[A-Z]{3,12}$/.test(w) || !VOCAB.has(w)) return null;
   const x = Number(o.x), y = Number(o.y), d = Number(o.d);
   if (![x, y].every(v => Number.isInteger(v) && Math.abs(v) < 1e9) || !Number.isInteger(d) || d < 0 || d > 7) return null;
-  const s = o.s ? 1 : 0;
+  const s = o.s ? 1 : 0, f = o.f ? 1 : 0;
   const t = Number.isFinite(Number(o.t)) ? Number(o.t) : Date.now();
   const th = s ? VOCAB.get(w) : regionTheme(fdiv(x, RC), fdiv(y, RC));
-  return { key: keyOf(w, x, y, d), w, x, y, d, t, s, th, born: 0 };
+  return { key: keyOf(w, x, y, d), w, x, y, d, t, s, f, th, born: 0 };
 }
 function loadLocal() {
   try {
@@ -424,7 +455,7 @@ function loadLocal() {
     if (Array.isArray(arr)) for (const o of arr) { const e = sanitize(o); if (e) found.set(e.key, e); }
   } catch (_) {}
 }
-const plain = e => ({ w: e.w, x: e.x, y: e.y, d: e.d, t: e.t, s: e.s });
+const plain = e => ({ w: e.w, x: e.x, y: e.y, d: e.d, t: e.t, s: e.s, ...(e.f ? { f: 1 } : {}) });
 function saveLocal() { LS.set(K_FINDS, JSON.stringify([...found.values()].map(plain))); }
 
 let coll = null, dbWritable = false, writeChain = Promise.resolve();
@@ -477,6 +508,201 @@ async function connectStore() {
   }, () => { coll = null; dbWritable = false; setSync('local'); });
 }
 
+/* ---------- Shared survey ---------- */
+// Everyone explores the same map. With a survey server, each word is credited
+// to whoever circles it first, and other surveyors show up as they wander. The
+// map is split into sectors; the game joins the few in view, one WebSocket
+// each, and tells only the sector under the middle of the view where it is.
+const surveyApi = (() => {
+  let url = SURVEY_URL;
+  try { const q = new URLSearchParams(location.search).get('survey'); if (q && /^(https?|wss?):\/\//.test(q)) url = q; } catch (_) {}
+  return url.replace(/\/+$/, '').replace(/^http/, 'ws');
+})();
+const claims = new Map();   // key → entry like a find, plus by (initials) and at: every word anyone has charted
+const links = new Map();    // 'sx,sy' → one sector's connection
+const pending = new Set();  // keys of our own claims awaiting an answer
+const ghosts = new Map();   // surveyor id → where their marker is drawn, easing toward their position
+const terrTotals = new Map();
+let surveyPaused = false, posSent = null, posTimer = 0, lastNews = 0;
+const sectorKey = (x, y) => fdiv(x, SECTOR) + ',' + fdiv(y, SECTOR);
+const myInitials = () => { const v = LS.get(K_INITIALS) || ''; return /^[A-Z]{3}$/.test(v) ? v : ''; };
+const tell = (l, m) => { if (l && l.open && l.ws) try { l.ws.send(JSON.stringify(m)); } catch (_) {} };
+const surveyEl = $('#survey'), surveyText = $('#surveyText'), surveyInput = $('#surveyInitials'), surveyHint = $('#surveyHint');
+
+function sectorsInView() {
+  const cs = cam.cs, hw = (W - dock) / 2 / cs, hh = H / 2 / cs, out = [];
+  for (let sy = fdiv(Math.floor(cam.y - hh), SECTOR); sy <= fdiv(Math.floor(cam.y + hh), SECTOR); sy++)
+    for (let sx = fdiv(Math.floor(cam.x - hw), SECTOR); sx <= fdiv(Math.floor(cam.x + hw), SECTOR); sx++)
+      out.push({ sx, sy, dist: Math.hypot((sx + .5) * SECTOR - cam.x, (sy + .5) * SECTOR - cam.y) });
+  return out.sort((a, b) => a.dist - b.dist).slice(0, SECTOR_LINKS);
+}
+// Joins the sectors in view and leaves ones that have been out of view a few
+// seconds. Mid-flight it joins nothing, rather than every sector on the way.
+function syncSurvey() {
+  if (!surveyApi) return;
+  const want = surveyPaused ? [] : sectorsInView(), keep = new Set(), now = Date.now();
+  for (const { sx, sy } of want) {
+    const k = sx + ',' + sy, l = links.get(k);
+    keep.add(k);
+    if (l) l.unwanted = 0; else if (!flight) openLink(sx, sy);
+  }
+  for (const [k, l] of links) {
+    if (keep.has(k)) continue;
+    if (!l.unwanted) l.unwanted = now;
+    if (surveyPaused || now - l.unwanted > 4000) closeLink(k);
+  }
+  sendPos();
+  renderSurvey();
+}
+function openLink(sx, sy) {
+  const k = sx + ',' + sy;
+  let l = links.get(k);
+  if (!l) { l = { k, sx, sy, ws: null, open: false, you: null, n: 0, counted: false, here: [], tries: 0, timer: 0, unwanted: 0, failed: false }; links.set(k, l); }
+  let ws;
+  try { ws = new WebSocket(`${surveyApi}/v1/survey/${sx}/${sy}`); } catch (_) { l.failed = true; return; }
+  l.ws = ws;
+  ws.onopen = () => {
+    if (l.ws !== ws) return;
+    l.open = true;
+    tell(l, { t: 'me', initials: myInitials() });
+    sendPos();
+  };
+  ws.onmessage = ev => {
+    if (l.ws !== ws) return;
+    let m = null;
+    try { m = JSON.parse(ev.data); } catch (_) {}
+    if (m) onSurvey(l, m);
+  };
+  ws.onclose = () => {
+    if (l.ws !== ws) return;
+    Object.assign(l, { ws: null, open: false, you: null, n: 0, counted: false, here: [] });
+    if (posSent && posSent.l === l) posSent = null;
+    if (links.get(k) === l) {
+      l.failed = true;
+      const wait = Math.min(30000, 1000 * 2 ** l.tries++) * (.5 + Math.random());
+      l.timer = setTimeout(() => { l.timer = 0; if (links.get(k) === l && !surveyPaused) openLink(sx, sy); }, wait);
+    }
+    renderSurvey(); scheduleHud(); invalidate();
+  };
+}
+function closeLink(k) {
+  const l = links.get(k);
+  if (!l) return;
+  links.delete(k);
+  clearTimeout(l.timer);
+  if (posSent && posSent.l === l) posSent = null;
+  const ws = l.ws;
+  l.ws = null; l.open = false; l.here = [];
+  if (ws) try { ws.close(); } catch (_) {}
+  invalidate();
+}
+// Where we're looking, to the sector under the middle of the view only, at most once a second.
+function sendPos() {
+  clearTimeout(posTimer); posTimer = 0;
+  const home = links.get(sectorKey(Math.floor(cam.x), Math.floor(cam.y)));
+  if (posSent && posSent.l !== home) { tell(posSent.l, { t: 'pos', away: true }); posSent = null; }
+  if (!home || !home.open) return;
+  const x = Math.round(cam.x * 10) / 10, y = Math.round(cam.y * 10) / 10;
+  if (posSent && Math.hypot(x - posSent.x, y - posSent.y) < 1) return;
+  const wait = posSent ? posSent.at + 1000 - Date.now() : 0;
+  if (wait > 0) { posTimer = setTimeout(sendPos, wait); return; }
+  tell(home, { t: 'pos', x, y });
+  posSent = { l: home, x, y, at: Date.now() };
+}
+function onSurvey(l, m) {
+  if (m.t === 'hello' && Array.isArray(m.claims)) {
+    l.you = m.you; l.failed = false; l.tries = 0;
+    for (const [k, c] of claims) if (sectorKey(c.x, c.y) === l.k) claims.delete(k);
+    for (const r of m.claims) addClaim(r, false);
+    if (claims.size > 30000) for (const [k, c] of claims) if (!links.has(sectorKey(c.x, c.y))) claims.delete(k);
+  } else if (m.t === 'claimed') {
+    const c = addClaim(m.c, true);
+    if (!c) return;
+    if (m.by === l.you && pending.delete(c.key)) firstToChart(c);
+    else if (!found.has(c.key)) news(c);
+    if (!c.s) {
+      const rx = fdiv(c.x, RC), ry = fdiv(c.y, RC), [done, total] = territoryProgress(rx, ry);
+      if (done === total) setTimeout(() => toast(`<i></i><b>${regionName(rx, ry)}</b><span>Every hidden word here is charted</span>`, THEMES[regionTheme(rx, ry)].hue), 1800);
+    }
+  } else if (m.t === 'taken') {
+    const c = addClaim(m.c, false);
+    if (c && pending.delete(c.key)) toast(`<i></i><b>${c.w}</b><span>Charted first by ${c.by || 'another surveyor'} · ${rel(c.at)}</span>`, THEMES[c.th].hue);
+  } else if (m.t === 'error') {
+    pending.delete(m.key);
+  } else if (m.t === 'presence' && Array.isArray(m.p)) {
+    const p = m.p.filter(q => Array.isArray(q) && typeof q[0] === 'string' && Number.isFinite(q[2]) && Number.isFinite(q[3]));
+    l.n = m.n | 0;
+    l.counted = p.some(q => q[0] === l.you);
+    l.here = p.filter(q => q[0] !== l.you);
+  } else return;
+  renderSurvey(); scheduleHud(); invalidate();
+}
+function addClaim(r, live) {
+  if (!Array.isArray(r)) return null;
+  const e = sanitize({ w: r[0], x: r[1], y: r[2], d: r[3], s: r[4], t: r[6] });
+  if (!e) return null;
+  e.by = typeof r[5] === 'string' && /^[A-Z]{3}$/.test(r[5]) ? r[5] : '';
+  e.at = e.t;
+  [e.ex, e.ey] = wordEnd(e);
+  if (live && !found.has(e.key)) e.born = performance.now();
+  claims.set(e.key, e);
+  return e;
+}
+function surveyClaim(e) {
+  const l = links.get(sectorKey(e.x, e.y));
+  if (!l || !l.you) return;
+  pending.add(e.key);
+  tell(l, { t: 'claim', w: e.w, x: e.x, y: e.y, d: e.d });
+}
+function firstToChart(c) {
+  const e = found.get(c.key);
+  if (e && !e.f) { e.f = 1; saveLocal(); queueWrite(e); renderNotes(); }
+  toast(`<i></i><b>${c.w}</b><span>First to chart it · ${regionName(fdiv(c.x, RC), fdiv(c.y, RC))}</span>`, THEMES[c.th].hue);
+}
+// Someone else charted a word in view: say so now and then, never over another note.
+function news(c) {
+  const now = Date.now(), [ex, ey] = wordEnd(c), hw = (W - dock) / 2 / cam.cs, hh = H / 2 / cam.cs;
+  const inView = Math.max(c.x, ex) + 1 > cam.x - hw && Math.min(c.x, ex) < cam.x + hw && Math.max(c.y, ey) + 1 > cam.y - hh && Math.min(c.y, ey) < cam.y + hh;
+  if (!inView || now - lastNews < 8000 || toastEl.classList.contains('show')) return;
+  lastNews = now;
+  toast(`<i></i><b>${c.w}</b><span>Just charted by ${c.by || 'another surveyor'}</span>`, THEMES[c.th].hue);
+}
+// Hidden words charted in a territory, and how many it has.
+function territoryProgress(rx, ry) {
+  const k = rx + ',' + ry;
+  let total = terrTotals.get(k);
+  if (total === undefined) {
+    total = 0;
+    for (let cy = ry * RG; cy < ry * RG + RG; cy++) for (let cx = rx * RG; cx < rx * RG + RG; cx++) total += chunk(cx, cy).words.length;
+    if (terrTotals.size > 2000) terrTotals.clear();
+    terrTotals.set(k, total);
+  }
+  let done = 0;
+  for (const c of claims.values()) if (!c.s && fdiv(c.x, RC) === rx && fdiv(c.y, RC) === ry) done++;
+  return [done, total];
+}
+function renderSurvey() {
+  if (!surveyApi) return;
+  let live = 0, failed = 0, others = 0;
+  for (const l of links.values()) {
+    if (l.you) { live++; others += Math.max(0, l.n - (l.counted ? 1 : 0)); }
+    else if (l.failed) failed++;
+  }
+  let firsts = 0;
+  for (const e of found.values()) if (e.f) firsts++;
+  surveyEl.dataset.state = live ? 'live' : failed ? 'offline' : 'connecting';
+  if (!live) {
+    surveyText.textContent = surveyPaused ? 'Paused while this tab is hidden.'
+      : failed ? 'Survey offline. Your finds still save in this browser.' : 'Joining the survey…';
+    return;
+  }
+  const cx = Math.floor(cam.x), cy = Math.floor(cam.y), rx = fdiv(cx, RC), ry = fdiv(cy, RC), here = links.get(sectorKey(cx, cy));
+  const [done, total] = here && here.you ? territoryProgress(rx, ry) : [0, 0];
+  surveyText.textContent = `Live · ${others} other surveyor${others === 1 ? '' : 's'} nearby\n` +
+    (total ? `${regionName(rx, ry)}: ${done} of ${total} hidden words charted\n` : '') +
+    `${firsts} word${firsts === 1 ? '' : 's'} charted first by you`;
+}
+
 /* ---------- Canvas + colours ---------- */
 const canvas = $('#map');
 const ctx = canvas.getContext('2d', { alpha: false });
@@ -503,6 +729,7 @@ function readColors() {
   C.selFill = rgba(C.accent, C.dark ? .2 : .14);
   C.failFill = rgba(C.danger, .14);
   const ms = g('--mark-s') || '58%', ml = g('--mark-l') || '38%';
+  C.ms = ms; C.ml = ml;
   const fa = C.dark ? .22 : .26;
   TC = THEMES.map(t => ({ stroke: `hsl(${t.hue}, ${ms}, ${ml})`, fill: `hsla(${t.hue}, 75%, 55%, ${fa})`, tint: `hsl(${t.hue}, 45%, 50%)` }));
   const pr = hexRGB(C.paper), a = C.dark ? .15 : .2;
@@ -627,6 +854,31 @@ function draw(now) {
     ctx.setLineDash([]);
   }
 
+  // Words other surveyors charted: an outline only, so your own finds stand out
+  for (const c of claims.values()) {
+    if (found.has(c.key)) continue;
+    const ex = c.ex, ey = c.ey;
+    if (Math.max(c.x, ex) + 1 < vx0 || Math.min(c.x, ex) > vx1 || Math.max(c.y, ey) + 1 < vy0 || Math.min(c.y, ey) > vy1) continue;
+    const tc = TC[c.th];
+    ctx.globalAlpha = .6;
+    if (cs < 3) {
+      ctx.fillStyle = tc.stroke;
+      ctx.beginPath(); ctx.arc(SX((c.x + ex) / 2 + .5), SY((c.y + ey) / 2 + .5), 1.8, 0, Math.PI * 2); ctx.fill();
+      ctx.globalAlpha = 1;
+      continue;
+    }
+    let p = 1;
+    if (c.born) { p = Math.max(0, (now - c.born) / 340); if (p >= 1 || RM) { c.born = 0; p = 1; } else { anim = true; p = 1 - Math.pow(1 - p, 3); } }
+    const x0 = SX(c.x + .5), y0 = SY(c.y + .5), x1 = SX(ex + .5), y1 = SY(ey + .5);
+    capsule(x0, y0, x0 + (x1 - x0) * p, y0 + (y1 - y0) * p, r);
+    ctx.lineWidth = clamp(cs * .05, 1, 2);
+    ctx.strokeStyle = tc.stroke;
+    if (c.s) ctx.setLineDash([Math.max(2, cs * .16), Math.max(2, cs * .1)]);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.globalAlpha = 1;
+  }
+
   // Failed attempt wobble
   if (fail) {
     const t = Math.max(0, (now - fail.t0) / 480);
@@ -673,6 +925,47 @@ function draw(now) {
     ctx.globalAlpha = 1;
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   }
+
+  // Who charted each word first, beside its last letter, when zoomed in
+  if (cs >= 24 && claims.size) {
+    ctx.font = `500 ${clamp(cs * .24, 8, 11)}px ${GRID_FONT}`;
+    ctx.textAlign = 'left'; ctx.textBaseline = 'top'; ctx.lineJoin = 'round'; ctx.lineWidth = 3; ctx.strokeStyle = C.paper;
+    for (const c of claims.values()) {
+      if (!c.by) continue;
+      const ex = c.ex, ey = c.ey;
+      if (ex + 1 < vx0 || ex > vx1 || ey + 1 < vy0 || ey > vy1) continue;
+      const tx = SX(ex + .5) + cs * .3, ty = SY(ey + .5) + cs * .2;
+      ctx.strokeText(c.by, tx, ty);
+      ctx.fillStyle = TC[c.th].stroke; ctx.fillText(c.by, tx, ty);
+    }
+  }
+
+  // Other surveyors, at the middle of their view, easing toward each new position
+  const seen = new Set();
+  ctx.lineWidth = 2;
+  for (const l of links.values()) for (const [id, ini, gx, gy] of l.here) {
+    seen.add(id);
+    let gh = ghosts.get(id);
+    if (!gh) {
+      let hue = 0;
+      for (let i = 0; i < id.length; i++) hue = (hue * 31 + id.charCodeAt(i)) % 360;
+      gh = { x: gx, y: gy, t: now, hue };
+      ghosts.set(id, gh);
+    }
+    const k = RM || Math.hypot(gx - gh.x, gy - gh.y) > 80 ? 1 : 1 - Math.exp(-(now - gh.t) / 180);
+    gh.x += (gx - gh.x) * k; gh.y += (gy - gh.y) * k; gh.t = now;
+    if (Math.hypot(gx - gh.x, gy - gh.y) > .02) anim = true;
+    const px = SX(gh.x), py = SY(gh.y);
+    if (px < -40 || px > W + 40 || py < -20 || py > H + 20) continue;
+    ctx.fillStyle = `hsl(${gh.hue}, ${C.ms}, ${C.ml})`; ctx.strokeStyle = C.paper;
+    ctx.beginPath(); ctx.arc(px, py, 5, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+    if (ini && cs >= LETTER_MIN) {
+      ctx.font = `500 10px ${GRID_FONT}`; ctx.textAlign = 'left'; ctx.textBaseline = 'middle'; ctx.lineWidth = 3;
+      ctx.strokeText(ini, px + 9, py); ctx.fillStyle = C.ink; ctx.fillText(ini, px + 9, py);
+      ctx.lineWidth = 2;
+    }
+  }
+  for (const id of ghosts.keys()) if (!seen.has(id)) ghosts.delete(id);
 
   // Hint ping on a word's first letter
   if (hint) {
@@ -865,7 +1158,7 @@ function collect(w, x, y, d, stray) {
   const e = sanitize({ w, x, y, d, t: Date.now(), s: stray ? 1 : 0 });
   e.born = performance.now();
   found.set(key, e);
-  saveLocal(); queueWrite(e);
+  saveLocal(); queueWrite(e); surveyClaim(e);
   const rx = fdiv(x, RC), ry = fdiv(y, RC);
   toast(`<i></i><b>${w}</b><span>${stray ? 'Stray ' + THEMES[e.th].name.toLowerCase() + ' word' : THEMES[e.th].name} · ${regionName(rx, ry)}</span>`, THEMES[e.th].hue);
   dismissCoach();
@@ -1006,7 +1299,7 @@ window.addEventListener('keydown', e => {
 window.addEventListener('keyup', e => { if (e.key === 'Shift' && dragMode === 'pan') canvas.classList.remove('select'); });
 
 /* ---------- HUD ---------- */
-const tName = $('#tName'), tTheme = $('#tTheme'), tCoord = $('#tCoord'), territory = $('#territory');
+const tName = $('#tName'), tTheme = $('#tTheme'), tCoord = $('#tCoord'), tCharted = $('#tCharted'), territory = $('#territory');
 const legendList = $('#legendList'), legendCount = $('#legendCount');
 let hudTimer = 0, hudRegion = '', legendSig = '', legendWords = new Map();
 function scheduleHud() { if (!hudTimer) hudTimer = setTimeout(() => { hudTimer = 0; updateHud(); }, 110); }
@@ -1020,6 +1313,12 @@ function updateHud() {
     territory.style.setProperty('--h', THEMES[t].hue);
   }
   tCoord.textContent = fmtCoord(cx, cy);
+  if (surveyApi) {
+    syncSurvey();
+    const l = links.get(sectorKey(cx, cy)), [done, total] = l && l.you ? territoryProgress(rx, ry) : [0, 0];
+    tCharted.hidden = !total;
+    if (total) tCharted.textContent = ` · ${done}/${total} charted`;
+  }
   updateLegend();
 }
 function updateLegend() {
@@ -1108,7 +1407,7 @@ function renderNotes() {
         const rx = fdiv(e.x, RC), ry = fdiv(e.y, RC);
         return `<li><a class="find mark${e.s ? ' stray' : ''}" href="#${hashOf(e)}" data-key="${e.key}" style="--h:${THEMES[e.th].hue}">` +
           `<span class="find-dot" aria-hidden="true"></span><span class="find-word">${e.w}</span><span class="find-when">${rel(e.t)}</span>` +
-          `<span class="find-meta"><b>${regionName(rx, ry)}</b> · ${fmtCoord(e.x, e.y)} · ${DARROW[e.d]} ${DNAME[e.d]}${e.s ? ' · stray' : ''}</span></a></li>`;
+          `<span class="find-meta"><b>${regionName(rx, ry)}</b> · ${fmtCoord(e.x, e.y)} · ${DARROW[e.d]} ${DNAME[e.d]}${e.s ? ' · stray' : ''}${e.f ? ' · charted first' : ''}</span></a></li>`;
       }).join('')
     : '<li class="finds-empty"><strong>No words yet</strong>Circle a word on the map and it lands here with its territory, grid reference and the bearing it reads in. Tap an entry later to fly straight back to it.</li>';
 }
@@ -1150,6 +1449,20 @@ $('#zoomOut').addEventListener('click', () => flyTo(cam.x, cam.y, cam.cs / 1.6, 
 const defaultCs = () => (W < 700 ? 32 : 38);
 function goHome() { flyTo(6, 6, defaultCs()); }
 $('#home').addEventListener('click', goHome);
+
+surveyInput.addEventListener('input', () => {
+  const v = surveyInput.value.toUpperCase().replace(/[^A-Z]/g, '').slice(0, 3);
+  if (v !== surveyInput.value) surveyInput.value = v;
+});
+$('#surveySign').addEventListener('submit', e => {
+  e.preventDefault();
+  const v = surveyInput.value;
+  if (!/^[A-Z]{3}$/.test(v)) { surveyHint.textContent = 'Use three letters, A to Z.'; return; }
+  LS.set(K_INITIALS, v);
+  for (const l of links.values()) tell(l, { t: 'me', initials: v });
+  surveyHint.textContent = `Words you chart first are signed ${v}.`;
+});
+document.addEventListener('visibilitychange', () => { if (surveyApi) { surveyPaused = document.hidden; syncSurvey(); } });
 
 const coach = $('#coach');
 function dismissCoach() { if (!coach.hidden) { coach.hidden = true; LS.set(K_COACH, '1'); } }
@@ -1193,9 +1506,15 @@ if (startHash) {
   flyTo((startHash.x + ex) / 2 + .5, (startHash.y + ey) / 2 + .5, 40, { instant: true, then: now => { pulse = { ...startHash, t0: now }; } });
 }
 if (LS.get(K_COACH) !== '1') coach.hidden = false;
+if (surveyApi) {
+  surveyEl.hidden = false;
+  surveyInput.value = myInitials();
+  setInterval(syncSurvey, 2000);
+}
 updateHud();
 invalidate();
 connectStore();
+if (location.hash === '#debug') window.__lf = { cam, found, claims, links, chunk, wordEnd, collect, territoryProgress };
 
 })();
 </script>
