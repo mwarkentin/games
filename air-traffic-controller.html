@@ -160,6 +160,44 @@ details li b{color:var(--amber);font-weight:600}
 .statline{display:flex;gap:18px;flex-wrap:wrap}
 .statline .readout .val{font-size:20px}
 .result-msg{font-size:18px}
+
+/* leaderboard: ranked shifts, scope tabs, filters and groups */
+.lb-which{color:var(--ink);letter-spacing:.06em}
+.lb-ranks{list-style:none;margin:0;padding:0;font:500 15px/1.25 var(--font-data);font-variant-numeric:tabular-nums}
+.lb-ranks li{display:grid;grid-template-columns:2ch minmax(0,1fr) auto 5.2ch;align-items:baseline;gap:10px;padding:6px 8px;border-bottom:1px solid var(--rule)}
+.lb-ranks li:last-child{border-bottom:0}
+.lb-ranks .rk{color:var(--muted);text-align:right}
+.lb-ranks .who{font-weight:700;letter-spacing:.12em;min-width:0}
+.lb-ranks .who small{display:block;font:500 12px/1.3 var(--font-data);letter-spacing:0;color:var(--muted)}
+.lb-ranks .spare{text-align:right;color:var(--green)}
+.lb-ranks li.mine{background:var(--amber);color:var(--amber-ink);border-radius:6px;border-bottom-color:transparent}
+.lb-ranks li.mine .rk,.lb-ranks li.mine .spare,.lb-ranks li.mine .who small{color:var(--amber-ink)}
+.btn.lb-open{flex:none;height:42px;font-size:16px}
+.lb-scopes{display:flex;flex-wrap:wrap;gap:6px}
+.lb-scopes button{height:36px;padding:0 12px;border-radius:18px;border:1px solid var(--rule);background:var(--key);font:600 16px/1 var(--font-ui);letter-spacing:.03em}
+.lb-scopes button[aria-pressed="true"]{background:var(--cyan);border-color:var(--cyan);color:var(--scope)}
+.lb-save{display:grid;grid-template-columns:auto 5.5em auto;align-items:center;gap:8px 10px}
+.lb-save > label:first-child{font:600 16px/1 var(--font-ui);letter-spacing:.04em}
+.lb-save .btn{height:44px}
+.lb-public{grid-column:1/-1;display:flex;align-items:flex-start;gap:8px;font:500 13px/1.4 var(--font-data);color:var(--muted);cursor:pointer}
+.lb-public input{flex:none;width:18px;height:18px;margin:0;accent-color:var(--amber)}
+.card input:not([type]),.card select{width:100%;min-width:0;height:44px;padding:0 10px;border-radius:7px;border:1px solid var(--rule);background:var(--scope);color:var(--ink);font:600 17px/1 var(--font-data)}
+#lbInitials,#lbJoinCode{text-transform:uppercase;letter-spacing:.2em;text-align:center}
+.lb-top{display:flex;align-items:center;justify-content:space-between;gap:12px}
+.btn.lb-close{flex:none;height:40px;font-size:16px}
+.lb-filters{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+.lb-filters label,.lb-row label{display:flex;flex-direction:column;gap:6px;font:600 12px/1 var(--font-ui);letter-spacing:.14em;text-transform:uppercase;color:var(--muted)}
+.lb-groups{border-top:1px solid var(--rule);padding-top:12px;gap:10px}
+.lb-mygroups{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:8px}
+.lb-mygroups li{display:grid;grid-template-columns:minmax(0,1fr) auto auto;grid-template-areas:"name share leave" "code share leave";align-items:center;gap:2px 8px}
+.lb-mygroups .gname{grid-area:name;font:600 18px/1.15 var(--font-ui);overflow-wrap:anywhere}
+.lb-mygroups code{grid-area:code;font:600 14px/1.2 var(--font-data);letter-spacing:.16em;color:var(--cyan)}
+.lb-mygroups .btn{height:40px;padding:0 12px;font-size:15px;flex:none}
+.lb-mygroups .btn:nth-of-type(1){grid-area:share}
+.lb-mygroups .btn:nth-of-type(2){grid-area:leave}
+.lb-row > div{display:flex;gap:8px}
+.lb-row .btn{flex:none;height:44px;font-size:16px}
+#lbJoinCode{width:7.5em;flex:none}
 @media (prefers-reduced-motion:reduce){.turn .key svg{transition:none}}
 </style>
 </head>
@@ -228,6 +266,12 @@ details li b{color:var(--amber);font-weight:600}
       <div class="chips" id="speedChips"></div>
     </div>
     <div class="cta"><button class="btn primary" id="btnStart">Start shift</button></div>
+    <div class="group lb" id="menuLb" hidden>
+      <div class="glbl">Leaderboard <span class="lb-which" id="menuLbWhich"></span></div>
+      <ol class="lb-ranks" id="menuLbList" hidden></ol>
+      <div class="note" id="menuLbNote"></div>
+      <button class="btn lb-open" id="lbOpenMenu" type="button">Leaderboard &amp; groups</button>
+    </div>
     <details id="rules" open>
       <summary>How to play</summary>
       <ul>
@@ -262,9 +306,67 @@ details li b{color:var(--amber);font-weight:600}
       <div class="readout"><span class="lbl">Shift</span><span class="val" id="resLevel"></span></div>
     </div>
     <div class="note" id="resBest"></div>
+    <div class="group lb" id="resLb" hidden>
+      <div class="glbl">Leaderboard <span class="lb-which" id="resLbWhich"></span></div>
+      <div class="lb-scopes" id="resLbScopes" role="group" aria-label="Whose shifts" hidden></div>
+      <form class="lb-save" id="lbForm" hidden>
+        <label for="lbInitials">Your initials</label>
+        <input id="lbInitials" maxlength="3" autocomplete="off" autocapitalize="characters" autocorrect="off" spellcheck="false" enterkeyhint="done" aria-describedby="resLbNote">
+        <button class="btn primary" id="lbSave" type="submit">Save</button>
+        <label class="lb-public" id="lbPublicRow" hidden><input type="checkbox" id="lbPublic" checked> Show on the public board too, not just my groups</label>
+      </form>
+      <ol class="lb-ranks" id="resLbList" hidden></ol>
+      <div class="note" id="resLbNote" aria-live="polite"></div>
+      <button class="btn lb-open" id="lbOpenResult" type="button">Leaderboard &amp; groups</button>
+    </div>
     <div class="cta">
       <button class="btn primary" id="btnAgain">Same shift again</button>
       <button class="btn" id="btnMenu">Change shift</button>
+    </div>
+  </div>
+
+  <div class="card" id="board" hidden>
+    <div class="lb-top">
+      <h2 id="boardTitle">Leaderboard</h2>
+      <button class="btn lb-close" id="lbClose" type="button">Close</button>
+    </div>
+    <div class="lb-scopes" id="lbScopes" role="group" aria-label="Whose shifts" hidden></div>
+    <div class="lb-filters">
+      <label>Shift
+        <select id="lbDifficulty">
+          <option value="all">All</option>
+          <option value="trainee">Trainee</option>
+          <option value="easy">Easy</option>
+          <option value="average">Average</option>
+          <option value="hard">Hard</option>
+          <option value="expert">Expert</option>
+        </select>
+      </label>
+      <label>Radar sweep
+        <select id="lbMode">
+          <option value="all">All</option>
+          <option value="calm">Calm</option>
+          <option value="steady">Steady</option>
+          <option value="rush">Rush</option>
+        </select>
+      </label>
+    </div>
+    <ol class="lb-ranks" id="lbList" hidden></ol>
+    <div class="note" id="lbNote" aria-live="polite"></div>
+    <div class="note">Ranked by aircraft handled, then by time to spare on a clean shift. The sweep is the slowest one used.</div>
+    <div class="group lb-groups">
+      <div class="glbl">Your groups</div>
+      <div class="note" id="lbNoGroups">A group is a private leaderboard for family or friends. Anyone with its four-character code can join.</div>
+      <ul class="lb-mygroups" id="lbGroupList" hidden></ul>
+      <form class="lb-row" id="lbJoinForm">
+        <label for="lbJoinCode">Join with a code</label>
+        <div><input id="lbJoinCode" maxlength="4" autocomplete="off" autocapitalize="characters" autocorrect="off" spellcheck="false" enterkeyhint="go" placeholder="K7QP"><button class="btn" type="submit">Join</button></div>
+      </form>
+      <form class="lb-row" id="lbCreateForm">
+        <label for="lbGroupName">Start a group</label>
+        <div><input id="lbGroupName" maxlength="24" autocomplete="off" enterkeyhint="go" placeholder="Family"><button class="btn" type="submit">Start</button></div>
+      </form>
+      <div class="note" id="lbGroupNote" aria-live="polite"></div>
     </div>
   </div>
 </div>
@@ -371,7 +473,7 @@ function makeGame(levelId, speedId) {
   });
   ac.sort((a, b) => a.et - b.et || a.cs.localeCompare(b.cs));
   for (const a of ac) if (a.post <= 0) a.state = 'posted';
-  return { v: 1, level: L.id, speed: speedId, tick: 0, shift, ac, state: 'running', sel: null, log: [], result: null, alerts: { planes: {}, pairs: [] } };
+  return { v: 1, level: L.id, speed: speedId, slowest: speedId, tick: 0, shift, ac, state: 'running', sel: null, log: [], result: null, alerts: { planes: {}, pairs: [] } };
 }
 
 /* ---------- Simulation ---------- */
@@ -618,7 +720,7 @@ function radio(cs, said, reply, cls) {
 const els = {
   clock: $('#clock'), done: $('#done'), tickfill: $('#tickfill'), radio: $('#radio'), strips: $('#strips'),
   hCs: $('#hCs'), hL1: $('#hL1'), hL2: $('#hL2'), hTag: $('#hTag'), cmd: $('#cmd'),
-  overlay: $('#overlay'), menu: $('#menu'), paused: $('#paused'), result: $('#result'),
+  overlay: $('#overlay'), menu: $('#menu'), paused: $('#paused'), result: $('#result'), board: $('#board'),
   speedVal: $('#speedVal'), btnPause: $('#btnPause'),
 };
 const ARROW = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2.5 20 12h-5v9.5H9V12H4z"/></svg>';
@@ -1019,7 +1121,7 @@ function select(cs) {
 }
 
 function showOverlay(which) {
-  for (const id of ['menu', 'paused', 'result']) els[id].hidden = id !== which;
+  for (const id of ['menu', 'paused', 'result', 'board']) els[id].hidden = id !== which;
   els.overlay.hidden = false;
   const btn = which === 'menu' ? $('#btnStart') : which === 'paused' ? $('#btnResume') : $('#btnAgain');
   setTimeout(() => btn.focus({ preventScroll: true }), 30);
@@ -1043,6 +1145,7 @@ function showResult() {
   const best = store.get('atc-best', {})[G.level];
   $('#resBest').textContent = best ? `${L.name} shifts won on this device: ${best.wins}. Most time to spare: ${mmss(best.spare)}.` : `No ${L.name.toLowerCase()} shifts won on this device yet.`;
   showOverlay('result');
+  showResultBoard();
 }
 
 function buildMenu() {
@@ -1053,11 +1156,389 @@ function buildMenu() {
     const L = LEVELS.find((l) => l.id === prefs.level);
     const best = store.get('atc-best', {})[L.id];
     $('#levelNote').textContent = `${L.n} aircraft over a ${L.min}-minute shift, none arriving in the last 15 minutes.${best ? ` Won ${best.wins}× here.` : ''}`;
+    updateMenuBoard();
   };
   note();
   lc.onclick = (e) => { const b = e.target.closest('[data-level]'); if (!b) return; prefs.level = b.dataset.level; for (const x of lc.children) x.setAttribute('aria-pressed', x === b); note(); };
-  sc.onclick = (e) => { const b = e.target.closest('[data-speed]'); if (!b) return; prefs.speed = b.dataset.speed; for (const x of sc.children) x.setAttribute('aria-pressed', x === b); renderTop(); };
+  sc.onclick = (e) => { const b = e.target.closest('[data-speed]'); if (!b) return; prefs.speed = b.dataset.speed; for (const x of sc.children) x.setAttribute('aria-pressed', x === b); renderTop(); updateMenuBoard(); };
 }
+
+/* ---------- Leaderboard ---------- */
+// Shifts are filed by level and by the slowest radar sweep used, and ranked by
+// aircraft handled, then by time to spare on a clean shift: the Worker stores
+// that as handled × 10000 + seconds to spare, with the number handled as the
+// level. Groups are private boards shared by a four-character code; the
+// groups you're in are remembered on this device. While LEADERBOARD_URL is
+// empty, the leaderboard stays hidden.
+const LEADERBOARD_URL = '';
+const PUBLIC = '*';
+const TOP = 10;
+const GROUP_CODE = /^[A-HJKMNP-Z2-9]{4}$/;
+const MAX_GROUPS = 5;
+const UNAVAILABLE = 'The leaderboard is unavailable right now.';
+const OFFLINE = 'Couldn’t reach the leaderboard. Try again in a moment.';
+const Leaderboard = {
+  api: (() => {
+    const override = new URLSearchParams(location.search).get('leaderboard') || '';
+    return (/^https?:\/\//.test(override) ? override : LEADERBOARD_URL).replace(/\/+$/, '');
+  })(),
+  cache: {},
+  async request(path, options) {
+    const ctl = new AbortController();
+    const timer = setTimeout(() => ctl.abort(), 8000);
+    try {
+      const res = await fetch(this.api + path, { ...options, signal: ctl.signal });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw Object.assign(new Error(body.error || `HTTP ${res.status}`), { status: res.status, fromServer: true });
+      return body;
+    } finally {
+      clearTimeout(timer);
+    }
+  },
+  // text/plain keeps a POST a simple request, so the browser skips a CORS preflight.
+  post(path, body) {
+    return this.request(path, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=UTF-8' }, body: JSON.stringify(body) });
+  },
+  async scores({ scope, difficulty, mode }, maxAge) {
+    const query = new URLSearchParams({ game: 'air-traffic-controller', scope, difficulty, mode });
+    const hit = this.cache[query];
+    if (hit && Date.now() - hit.at < maxAge) return hit.scores;
+    const { scores } = await this.request(`/v1/scores?${query}`);
+    this.cache[query] = { scores, at: Date.now() };
+    return scores;
+  },
+  async save(entry) {
+    const body = await this.post('/v1/scores', { game: 'air-traffic-controller', ...entry });
+    this.cache = {};
+    return body;
+  },
+  createGroup: (name) => Leaderboard.post('/v1/groups', { name }),
+  group: (code) => Leaderboard.request(`/v1/groups/${code}`),
+};
+
+// Shared with the site's other games, hence no "atc-" prefix.
+const myGroups = () => { const g = store.get('games.groups', []); return (Array.isArray(g) ? g : []).filter((x) => x && GROUP_CODE.test(x.code) && typeof x.name === 'string').slice(0, MAX_GROUPS); };
+const groupName = (code) => (myGroups().find((g) => g.code === code) || {}).name || code;
+const scopeName = (scope) => (scope === PUBLIC ? 'Everyone' : groupName(scope));
+const levelOf = (id) => LEVELS.find((l) => l.id === id) || LEVELS[0];
+const speedOf = (id) => SPEEDS.find((s) => s.id === id) || SPEEDS[1];
+const boardName = (b) => `${levelOf(b.difficulty).name} · ${speedOf(b.mode).name}`;
+// Which scope tab is open, and the leaderboard card's filters.
+function lbView() {
+  const saved = store.get('atc-lbView', {});
+  const v = { scope: PUBLIC, difficulty: 'all', mode: 'all', ...(saved && typeof saved === 'object' ? saved : {}) };
+  if (v.scope !== PUBLIC && !myGroups().some((g) => g.code === v.scope)) v.scope = PUBLIC;
+  if (!LEVELS.some((l) => l.id === v.difficulty)) v.difficulty = 'all';
+  if (!SPEEDS.some((s) => s.id === v.mode)) v.mode = 'all';
+  return v;
+}
+const setLbView = (changes) => store.set('atc-lbView', { ...lbView(), ...changes });
+
+// What a finished shift puts on the board.
+function shiftEntry(g) {
+  const handled = g.ac.filter((a) => a.state === 'landed' || a.state === 'exited').length;
+  const spare = g.result && g.result.kind === 'win' ? (g.shift - g.tick) * 15 : 0;
+  return { difficulty: g.level, mode: g.slowest || g.speed, score: handled * 10000 + spare, level: handled, sweeps: g.tick };
+}
+
+let menuRequest = 0, resRequest = 0, screenRequest = 0;
+let lbReturn = 'menu', lbOpener = null;
+
+function renderRanks(list, scores, { mine = null, tags = false } = {}) {
+  list.replaceChildren(...scores.map((s) => {
+    const li = document.createElement('li');
+    if (mine && s.entry === mine) li.className = 'mine';
+    const spare = s.score % 10000, n = levelOf(s.difficulty).n;
+    const cells = [['rk', s.rank], ['who', s.initials], ['res', `${s.level}/${n}`], ['spare', s.level === n ? '+' + mmss(spare) : '']];
+    for (const [cls, text] of cells) {
+      const span = document.createElement('span');
+      span.className = cls;
+      span.textContent = text;
+      li.append(span);
+    }
+    if (tags) {
+      const tag = document.createElement('small');
+      tag.textContent = boardName(s);
+      li.querySelector('.who').append(tag);
+    }
+    return li;
+  }));
+  list.hidden = !scores.length;
+}
+// Everyone, then each group you're in. Hidden when you're in no groups.
+function renderScopes(container, active, onPick) {
+  const groups = myGroups();
+  container.hidden = !groups.length;
+  container.replaceChildren(...[{ code: PUBLIC, name: 'Everyone' }, ...groups].map((g) => {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.textContent = g.name;
+    b.setAttribute('aria-pressed', String(g.code === active));
+    b.addEventListener('click', () => onPick(g.code));
+    return b;
+  }));
+}
+async function loadList(list, note, view, isCurrent, emptyText, tags) {
+  try {
+    const scores = await Leaderboard.scores(view, 30000);
+    if (!isCurrent()) return null;
+    renderRanks(list, scores, { mine: G && G.entry, tags });
+    note.textContent = scores.length ? '' : emptyText;
+    return scores;
+  } catch (e) {
+    if (!isCurrent()) return null;
+    renderRanks(list, []);
+    note.textContent = e.status === 404 ? 'That group doesn’t exist any more.' : UNAVAILABLE;
+    return null;
+  }
+}
+
+/* menu: the top 5 for the chosen shift and sweep */
+async function updateMenuBoard() {
+  if (!Leaderboard.api) return;
+  const board = { difficulty: prefs.level, mode: prefs.speed }, { scope } = lbView(), request = ++menuRequest;
+  $('#menuLb').hidden = false;
+  $('#menuLbWhich').textContent = boardName(board) + (scope === PUBLIC ? '' : ` · ${scopeName(scope)}`);
+  const scores = await loadList($('#menuLbList'), $('#menuLbNote'), { scope, ...board }, () => request === menuRequest,
+    'No shifts on this board yet.');
+  if (scores) renderRanks($('#menuLbList'), scores.slice(0, 5), { mine: G && G.entry });
+}
+
+/* shift report: this board, and initials for a shift worth saving */
+async function showResultBoard() {
+  const box = $('#resLb');
+  box.hidden = !Leaderboard.api;
+  if (!Leaderboard.api || !G || !G.result) return;
+  const game = G, entry = shiftEntry(game);
+  $('#resLbWhich').textContent = boardName(entry);
+  $('#lbForm').hidden = true;
+  const scores = await refreshResultList();
+  if (!scores || game !== G || game.entry || !entry.level) return;
+  // In a group, every shift with an aircraft handled is worth saving.
+  // Otherwise (and then the list is the public one) it has to make the top
+  // 10, where ties go to whoever got there first.
+  const groups = myGroups();
+  if (!groups.length && scores.length >= TOP && entry.score <= scores[TOP - 1].score) return;
+  $('#lbForm').hidden = false;
+  $('#lbPublicRow').hidden = !groups.length;
+  $('#lbPublic').checked = store.get('games.public', true) !== false;
+  $('#lbInitials').value = store.get('games.initials', '');
+  if (!groups.length) {
+    const rank = 1 + scores.filter((s) => s.score >= entry.score).length;
+    $('#resLbNote').textContent = `That’s #${rank} on the ${boardName(entry)} board. Add your initials.`;
+  } else {
+    $('#resLbNote').textContent = 'Add your initials to save this shift.';
+  }
+}
+async function refreshResultList() {
+  if (!G || !G.result) return null;
+  const { scope } = lbView(), board = shiftEntry(G), request = ++resRequest;
+  renderScopes($('#resLbScopes'), scope, (code) => { setLbView({ scope: code }); refreshResultList(); });
+  $('#resLbNote').textContent = 'Loading shifts…';
+  const scores = await loadList($('#resLbList'), $('#resLbNote'), { scope, difficulty: board.difficulty, mode: board.mode },
+    () => request === resRequest, `No shifts ${scope === PUBLIC ? 'on this board' : `in ${scopeName(scope)}`} yet.`);
+  if (scores) renderRanks($('#resLbList'), scores.slice(0, 5), { mine: G && G.entry });
+  return scores;
+}
+async function saveShift(e) {
+  e.preventDefault();
+  const game = G;
+  if (!game || !game.result || game.entry) return;
+  const initials = $('#lbInitials').value.toUpperCase().replace(/[^A-Z]/g, '');
+  if (initials.length !== 3) {
+    $('#resLbNote').textContent = 'Initials are three letters, A to Z.';
+    $('#lbInitials').focus();
+    return;
+  }
+  const groups = myGroups(), isPublic = !groups.length || $('#lbPublic').checked;
+  $('#lbSave').disabled = true;
+  $('#resLbNote').textContent = 'Saving…';
+  try {
+    const body = await Leaderboard.save({
+      ...shiftEntry(game), initials, groups: groups.map((g) => g.code), public: isPublic,
+    });
+    game.entry = body.entry;
+    store.set('games.initials', initials);
+    if (groups.length) store.set('games.public', isPublic);
+    if (game !== G) return;
+    $('#lbForm').hidden = true;
+    if (!(lbView().scope in body.ranks)) setLbView({ scope: Object.keys(body.ranks)[0] });
+    await refreshResultList();
+    const where = Object.entries(body.ranks).map(([scope, rank]) => `#${rank} ${scope === PUBLIC ? 'on Everyone' : `in ${scopeName(scope)}`}`);
+    $('#resLbNote').textContent = `Saved! ${where.join(', ')}.`;
+  } catch (err) {
+    if (game === G) $('#resLbNote').textContent = err.fromServer ? `Couldn’t save: ${err.message}.` : OFFLINE;
+  } finally {
+    $('#lbSave').disabled = false;
+  }
+}
+
+/* leaderboard card: any view, plus joining, starting and leaving groups */
+function openBoardScreen() {
+  if (!Leaderboard.api) return;
+  lbReturn = !els.result.hidden ? 'result' : 'menu';
+  lbOpener = document.activeElement;
+  const v = lbView();
+  $('#lbDifficulty').value = v.difficulty;
+  $('#lbMode').value = v.mode;
+  renderMyGroups();
+  refreshScreen();
+  for (const id of ['menu', 'paused', 'result']) els[id].hidden = true;
+  els.board.hidden = false;
+  els.overlay.hidden = false;
+  els.board.scrollTop = 0;
+  $('#lbClose').focus({ preventScroll: true });
+}
+function closeBoardScreen() {
+  els.board.hidden = true;
+  els[lbReturn].hidden = false;
+  $('#lbGroupNote').textContent = '';
+  // Joining or leaving a group changes the tabs, and whether a shift is worth saving.
+  if (lbReturn === 'result') showResultBoard(); else updateMenuBoard();
+  if (lbOpener && document.contains(lbOpener)) lbOpener.focus({ preventScroll: true });
+}
+function refreshScreen() {
+  const v = lbView(), request = ++screenRequest;
+  renderScopes($('#lbScopes'), v.scope, (code) => { setLbView({ scope: code }); refreshScreen(); });
+  $('#lbNote').textContent = 'Loading shifts…';
+  return loadList($('#lbList'), $('#lbNote'), v, () => request === screenRequest,
+    `No shifts ${v.scope === PUBLIC ? 'here' : `in ${scopeName(v.scope)}`} yet.`,
+    v.difficulty === 'all' || v.mode === 'all');
+}
+
+function renderMyGroups() {
+  const groups = myGroups();
+  $('#lbGroupList').replaceChildren(...groups.map((g) => {
+    const li = document.createElement('li');
+    const name = document.createElement('span');
+    name.className = 'gname';
+    name.textContent = g.name;
+    const code = document.createElement('code');
+    code.textContent = g.code;
+    const share = document.createElement('button');
+    share.type = 'button';
+    share.className = 'btn';
+    share.textContent = 'Share';
+    share.addEventListener('click', () => shareGroup(g, share));
+    const leave = document.createElement('button');
+    leave.type = 'button';
+    leave.className = 'btn';
+    leave.textContent = 'Leave';
+    leave.addEventListener('click', () => leaveGroup(g));
+    li.append(name, code, share, leave);
+    return li;
+  }));
+  $('#lbGroupList').hidden = !groups.length;
+  $('#lbNoGroups').hidden = groups.length > 0;
+  $('#lbCreateForm').hidden = $('#lbJoinForm').hidden = groups.length >= MAX_GROUPS;
+}
+
+function inviteLink(code) {
+  const url = new URL(location.pathname, location.origin);
+  const api = new URLSearchParams(location.search).get('leaderboard');
+  if (api) url.searchParams.set('leaderboard', api);
+  url.searchParams.set('join', code);
+  return url.toString();
+}
+async function shareGroup(g, button) {
+  const url = inviteLink(g.code);
+  const text = `Join "${g.name}" on the Air Traffic Controller leaderboard with code ${g.code}: ${url}`;
+  try {
+    if (navigator.share && window.matchMedia && matchMedia('(pointer: coarse)').matches) {
+      await navigator.share({ title: 'Air Traffic Controller', text: `Join "${g.name}" with code ${g.code}`, url });
+      return;
+    }
+    await navigator.clipboard.writeText(text);
+    button.textContent = 'Copied';
+  } catch (e) {
+    if (e && e.name === 'AbortError') return;   // closed the share sheet
+    button.textContent = 'Copy failed';
+  }
+  setTimeout(() => { button.textContent = 'Share'; }, 1500);
+}
+function addGroup(g) {
+  store.set('games.groups', [...myGroups().filter((x) => x.code !== g.code), { code: g.code, name: g.name }]);
+  setLbView({ scope: g.code });
+  renderMyGroups();
+  refreshScreen();
+}
+function leaveGroup(g) {
+  if (!confirm(`Leave ${g.name}? You can rejoin later with code ${g.code}.`)) return;
+  store.set('games.groups', myGroups().filter((x) => x.code !== g.code));
+  if (lbView().scope === g.code) setLbView({ scope: PUBLIC });
+  $('#lbGroupNote').textContent = `Left ${g.name}.`;
+  renderMyGroups();
+  refreshScreen();
+}
+
+const normalizeCode = (value) => value.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 4);
+async function joinGroup(e) {
+  e.preventDefault();
+  const note = $('#lbGroupNote'), code = normalizeCode($('#lbJoinCode').value);
+  if (!GROUP_CODE.test(code)) { note.textContent = 'Group codes are four letters and numbers, like K7QP.'; return; }
+  if (myGroups().some((g) => g.code === code)) { note.textContent = `You’re already in ${groupName(code)}.`; return; }
+  note.textContent = 'Looking up the group…';
+  try {
+    const g = await Leaderboard.group(code);
+    addGroup(g);
+    $('#lbJoinCode').value = '';
+    note.textContent = `Joined ${g.name}. Shifts you save from now on go to ${g.name} too.`;
+  } catch (err) {
+    note.textContent = err.status === 404 ? `There’s no group with code ${code}.` : OFFLINE;
+  }
+}
+async function createGroup(e) {
+  e.preventDefault();
+  const note = $('#lbGroupNote'), name = $('#lbGroupName').value.trim();
+  if (!name) { note.textContent = 'Give the group a name, like Family.'; return; }
+  note.textContent = 'Starting the group…';
+  try {
+    const g = await Leaderboard.createGroup(name);
+    addGroup(g);
+    $('#lbGroupName').value = '';
+    note.textContent = `Started ${g.name}. Share code ${g.code} so others can join.`;
+  } catch (err) {
+    note.textContent = err.fromServer ? `Couldn’t start the group: ${err.message}.` : OFFLINE;
+  }
+}
+
+// An invite link (?join=CODE) opens the leaderboard card ready to join.
+async function handleInvite() {
+  const params = new URLSearchParams(location.search);
+  const code = normalizeCode(params.get('join') || '');
+  if (!Leaderboard.api || !code) return;
+  params.delete('join');
+  const rest = params.toString();
+  history.replaceState(null, '', location.pathname + (rest ? `?${rest}` : '') + location.hash);
+  if (els.overlay.hidden) return;   // a shift is under way
+  openBoardScreen();
+  $('#lbJoinCode').value = code;
+  const note = $('#lbGroupNote');
+  if (myGroups().some((g) => g.code === code)) { note.textContent = `You’re already in ${groupName(code)}.`; return; }
+  try {
+    const g = await Leaderboard.group(code);
+    note.textContent = `You’re invited to ${g.name}. Tap Join to add it.`;
+  } catch (err) {
+    note.textContent = err.status === 404 ? `There’s no group with code ${code}.` : UNAVAILABLE;
+  }
+}
+
+$('#lbForm').addEventListener('submit', saveShift);
+$('#lbInitials').addEventListener('input', () => {
+  const el = $('#lbInitials'), v = el.value.toUpperCase().replace(/[^A-Z]/g, '').slice(0, 3);
+  if (v !== el.value) el.value = v;
+});
+$('#lbJoinCode').addEventListener('input', () => {
+  const el = $('#lbJoinCode'), v = normalizeCode(el.value);
+  if (v !== el.value) el.value = v;
+});
+$('#lbOpenMenu').addEventListener('click', openBoardScreen);
+$('#lbOpenResult').addEventListener('click', openBoardScreen);
+$('#lbClose').addEventListener('click', closeBoardScreen);
+$('#lbDifficulty').addEventListener('change', () => { setLbView({ difficulty: $('#lbDifficulty').value }); refreshScreen(); });
+$('#lbMode').addEventListener('change', () => { setLbView({ mode: $('#lbMode').value }); refreshScreen(); });
+$('#lbJoinForm').addEventListener('submit', joinGroup);
+$('#lbCreateForm').addEventListener('submit', createGroup);
 
 /* ---------- Input ---------- */
 cv.addEventListener('pointerdown', (e) => {
@@ -1117,6 +1598,7 @@ $('#btnSpeed').addEventListener('click', () => {
     G.speed = next;
     lastTickAt = performance.now() - f * tickMs();
   } else if (G) G.speed = next;
+  if (G && G.state !== 'over' && speedOf(next).sec > speedOf(G.slowest || G.speed).sec) G.slowest = next;
   prefs.speed = next; store.set('atc-prefs', prefs);
   renderTop();
 });
@@ -1129,7 +1611,8 @@ $('#btnMenu').addEventListener('click', () => { buildMenu(); showOverlay('menu')
 document.addEventListener('keydown', (e) => {
   if (e.metaKey || e.ctrlKey || e.altKey) return;
   if (!els.overlay.hidden) {
-    if (e.key === 'Escape' && G && G.state === 'paused') { e.preventDefault(); resume(); }
+    if (e.key === 'Escape' && !els.board.hidden) { e.preventDefault(); closeBoardScreen(); }
+    else if (e.key === 'Escape' && G && G.state === 'paused') { e.preventDefault(); resume(); }
     return;
   }
   if (!G) return;
@@ -1186,8 +1669,23 @@ function boot(data) {
     renderAll();
     showOverlay('menu');
   }
+  handleInvite();
   if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => {}).catch(() => {});
   requestAnimationFrame(frame);
+}
+
+// #debug exposes hooks for tests: finish(handled, sweeps) lands or clears the
+// first `handled` aircraft and ends the shift that many sweeps in.
+if (location.hash === '#debug') {
+  window.__atc = {
+    peek: () => G && { state: G.state, tick: G.tick, level: G.level, speed: G.speed, slowest: G.slowest, n: G.ac.length },
+    finish(handled = G.ac.length, sweeps = G.tick) {
+      G.tick = sweeps;
+      G.ac.forEach((a, i) => { if (i < handled) a.state = isApt(a.dst) ? 'landed' : 'exited'; });
+      if (handled >= G.ac.length) over('win', [], '');
+      else over('conflict', [G.ac[handled].cs], `${G.ac[handled].cs} lost separation.`);
+    },
+  };
 }
 
 const hot = window.claude && window.claude.hot;

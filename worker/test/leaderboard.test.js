@@ -120,6 +120,27 @@ describe('validate', () => {
     assert.equal(validate(chomp({ mode: 'easy' })), 'unknown mode');
     assert.equal(validate(chomp({ difficulty: 'classic' })), 'unknown difficulty');
   });
+
+  test('checks Air Traffic Controller shifts against aircraft handled and sweeps', () => {
+    // A clean Trainee shift (8 aircraft, 120 sweeps) ended 80 sweeps in: 40
+    // sweeps to spare, 600 seconds.
+    const shift = (overrides) => entry({
+      game: 'air-traffic-controller', difficulty: 'trainee', mode: 'steady', popped: undefined, seconds: undefined,
+      score: 80600, level: 8, sweeps: 80, ...overrides,
+    });
+    assert.equal(validate(shift()), null);
+    assert.equal(validate(shift({ score: 50000, level: 5, sweeps: 44 })), null);  // lost with 5 handled
+    assert.equal(validate(shift({ sweeps: 120, score: 80000 })), null);           // clean on the last sweep
+    assert.equal(validate(shift({ difficulty: 'expert', mode: 'rush', level: 26, sweeps: 30, score: 260000 + 70 * 15 })), null);
+
+    assert.equal(validate(shift({ score: 80615 })), 'score does not match aircraft handled and time');
+    assert.equal(validate(shift({ score: 50600, level: 5 })), 'score does not match aircraft handled and time');
+    assert.equal(validate(shift({ sweeps: 29, score: 80000 + 91 * 15 })), 'shift finished too quickly');
+    assert.equal(validate(shift({ sweeps: 121 })), 'sweeps must fit in the shift');
+    assert.equal(validate(shift({ sweeps: undefined })), 'sweeps must fit in the shift');
+    assert.equal(validate(shift({ level: 9, score: 90000 })), 'more aircraft handled than the shift has');
+    assert.equal(validate(shift({ mode: 'normal' })), 'unknown mode');
+  });
 });
 
 describe('saving scores', () => {
