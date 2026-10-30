@@ -12,10 +12,12 @@ from fake_leaderboard import API, FakeLeaderboard
 from playwright.sync_api import Page, expect
 
 UNAVAILABLE = "The high-score board is unavailable right now."
+# Local midnight on Monday, as the page works it out.
+START_OF_WEEK = "() => { const d = new Date(); d.setHours(0, 0, 0, 0); d.setDate(d.getDate() - (d.getDay() + 6) % 7); return d.getTime(); }"
 
 
-def row(initials: str, score: int, scope: str = "*", difficulty: str = "explorer", mode: str = "multiples") -> dict:
-    return {"initials": initials, "score": score, "level": 3, "scope": scope, "difficulty": difficulty, "mode": mode}
+def row(initials: str, score: int, scope: str = "*", difficulty: str = "explorer", mode: str = "multiples", **extra) -> dict:
+    return {"initials": initials, "score": score, "level": 3, "scope": scope, "difficulty": difficulty, "mode": mode, **extra}
 
 
 def open_game(page: Page, site_url: str, fake: FakeLeaderboard | None, query: str = "") -> None:
@@ -76,13 +78,14 @@ def test_board_stays_hidden_until_configured(page: Page, site_url, errors):
 def test_top_ten_score_saves_initials(page: Page, site_url, errors):
     fake = FakeLeaderboard([row("KID", 300), row("MRW", 245), row("SIS", 400, difficulty="expert")])
     open_game(page, site_url, fake)
-    expect(page.locator("#menuWhich")).to_have_text("Multiples · Explorer")
+    expect(page.locator("#menuWhich")).to_have_text("Multiples · Explorer · This week")
     expect(page.locator("#menuScoreList li")).to_have_text(["1KID300L3", "2MRW245L3"])
+    expect(page.locator("#menuScopes")).to_be_hidden()  # no groups, so no tabs
     expect(page.locator("#howtoBoard")).to_have_js_property("hidden", False)
 
     play(page)
     board = page.locator(".ov-board")
-    expect(board.locator(".scores-note")).to_have_text("That's #3 on the Multiples · Explorer board.")
+    expect(board.locator(".scores-note")).to_have_text("That's #3 this week on the Multiples · Explorer board.")
     expect(board.locator(".lb-scopes")).to_be_hidden()  # no groups, so no tabs
     expect(board.locator(".lb-public")).to_be_hidden()
     expect(page.locator("#initial0")).to_be_focused()
@@ -91,11 +94,12 @@ def test_top_ten_score_saves_initials(page: Page, site_url, errors):
     page.click(".save-score button[type=submit]")
 
     expect(page.locator("#ovTitle")).to_have_text("On the board!")
-    expect(board.locator(".scores-note")).to_have_text("Saved! #3 on Everyone.")
+    expect(board.locator(".scores-note")).to_have_text("Saved! #3 this week on Everyone.")
     expect(board.locator("li.mine")).to_have_text("3ZED30L1")
     expect(page.locator(".save-score")).to_have_count(0)
     [entry] = fake.posts
     assert entry.pop("seconds") >= 1
+    assert entry.pop("since") == page.evaluate(START_OF_WEEK)
     assert entry == {
         "game": "doodle-chomp", "difficulty": "explorer", "mode": "multiples", "initials": "ZED",
         "score": 30, "level": 1, "chomps": 2, "groups": [], "public": True,
@@ -124,9 +128,11 @@ def test_kindergarten_has_its_own_board(page: Page, site_url, errors):
     fake = FakeLeaderboard([row("KID", 90, difficulty="starter", mode="kinder"), row("MRW", 245)])
     open_game(page, site_url, fake)
     page.click("label:has(#mode-kinder)")
-    expect(page.locator("#menuWhich")).to_have_text("Kindergarten")
+    expect(page.locator("#menuWhich")).to_have_text("Kindergarten · This week")
     expect(page.locator("#menuScoreList li")).to_have_text(["1KID90L3"])
-    assert fake.views[-1] == {"game": "doodle-chomp", "scope": "*", "difficulty": "starter", "mode": "kinder"}
+    assert fake.views[-1] == {
+        "game": "doodle-chomp", "scope": "*", "difficulty": "starter", "mode": "kinder", "since": str(page.evaluate(START_OF_WEEK)),
+    }
     assert errors == []
 
 
@@ -174,8 +180,10 @@ def test_high_score_screen_filters_by_game_and_difficulty(page: Page, site_url, 
     expect(page.locator("#lbList li")).to_have_text(["1MRW245L3"])  # one board, so no tags
     page.select_option("#lbMode", "primes")
     expect(page.locator("#lbList")).to_be_hidden()
-    expect(page.locator("#lbNote")).to_have_text("No scores here yet.")
-    assert fake.views[-1] == {"game": "doodle-chomp", "scope": "*", "difficulty": "expert", "mode": "primes"}
+    expect(page.locator("#lbNote")).to_have_text("No scores here this week yet.")
+    assert fake.views[-1] == {
+        "game": "doodle-chomp", "scope": "*", "difficulty": "expert", "mode": "primes", "since": str(page.evaluate(START_OF_WEEK)),
+    }
 
     # Game keys wait while the screen is open; Escape closes it.
     page.keyboard.press("Space")
@@ -187,6 +195,30 @@ def test_high_score_screen_filters_by_game_and_difficulty(page: Page, site_url, 
     page.click("#lbOpenMenu")
     expect(page.locator("#lbMode")).to_have_value("primes")
     expect(page.locator("#lbDiff")).to_have_value("expert")
+    assert errors == []
+
+
+def test_periods_narrow_the_board(page: Page, site_url, errors):
+    fake = FakeLeaderboard([row("KID", 300), row("MRW", 245), row("OLD", 900, days_ago=40)])
+    open_game(page, site_url, fake)
+    expect(page.locator("#menuScoreList li .who")).to_have_text(["KID", "MRW"])  # this week, by default
+
+    play(page)
+    expect(page.locator(".ov-board .scores-which")).to_have_text("Multiples · Explorer · This week")
+    type_initials(page, "ZED")
+    page.click(".save-score button[type=submit]")
+    expect(page.locator(".ov-board .scores-note")).to_have_text("Saved! #3 this week on Everyone (#4 all time).")
+
+    page.click(".ov-board .lb-open")
+    expect(page.locator("#lbPeriods button")).to_have_text(["Today", "This week", "This month", "All time"])
+    page.click("#lbPeriods >> text=All time")
+    expect(page.locator("#lbList li .who")).to_have_text(
+        ["OLDMultiples · Explorer", "KIDMultiples · Explorer", "MRWMultiples · Explorer", "ZEDMultiples · Explorer"]
+    )
+    assert "since" not in fake.views[-1]
+    page.click("#lbClose")
+    expect(page.locator(".ov-board .scores-which")).to_have_text("Multiples · Explorer · All time")
+    expect(page.locator(".ov-board li .who")).to_have_text(["OLD", "KID", "MRW", "ZED"])
     assert errors == []
 
 
@@ -203,7 +235,7 @@ def test_start_a_group_and_share_an_invite(page: Page, site_url, errors):
     expect(page.locator("#lbGroupList li code")).to_have_text("K7QP")
     expect(page.locator("#lbScopes button")).to_have_text(["Everyone", "Family"])
     expect(page.locator("#lbScopes button[aria-pressed=true]")).to_have_text("Family")
-    expect(page.locator("#lbNote")).to_have_text("No scores in Family yet.")
+    expect(page.locator("#lbNote")).to_have_text("No scores in Family this week yet.")
     assert stored(page, "games.groups") == [{"code": "K7QP", "name": "Family"}]
 
     page.click("#lbGroupList button >> text=Share")
@@ -214,9 +246,11 @@ def test_start_a_group_and_share_an_invite(page: Page, site_url, errors):
     assert link.path == "/doodle-chomp"
     assert parse_qs(link.query) == {"leaderboard": [API], "join": ["K7QP"]}
 
-    # The menu now shows the group's board.
+    # The menu now shows the group's board, with tabs to switch.
     page.click("#lbClose")
-    expect(page.locator("#menuWhich")).to_have_text("Multiples · Explorer · Family")
+    expect(page.locator("#menuWhich")).to_have_text("Multiples · Explorer · This week")
+    expect(page.locator("#menuScopes button")).to_have_text(["Everyone", "Family"])
+    expect(page.locator("#menuScopes button[aria-pressed=true]")).to_have_text("Family")
     assert errors == []
 
 
@@ -231,6 +265,14 @@ def test_group_members_save_to_their_groups(page: Page, site_url, errors):
     page.click("#lbScopes button >> text=Family")
     page.click("#lbClose")
     expect(page.locator("#menuScoreList li")).to_have_text(["1MOM500L3"])
+    expect(page.locator("#sideWhich")).to_have_text("Multiples · Explorer · This week · Family")  # the margin has no tabs
+
+    # The menu's tabs switch its list, and the margin's, too.
+    page.click("#menuScopes >> text=Everyone")
+    expect(page.locator("#menuScoreList li")).to_have_count(5)
+    expect(page.locator("#sideWhich")).to_have_text("Multiples · Explorer · This week")
+    page.click("#menuScopes >> text=Family")
+    expect(page.locator("#menuScoreList li")).to_have_text(["1MOM500L3"])
 
     # Not a top-10 public score, but in a group every score can be saved.
     play(page)
@@ -242,7 +284,7 @@ def test_group_members_save_to_their_groups(page: Page, site_url, errors):
     page.uncheck("#lbPublic")
     type_initials(page, "DAD")
     page.click(".save-score button[type=submit]")
-    expect(board.locator(".scores-note")).to_have_text("Saved! #2 in Family, #1 in Friends.")
+    expect(board.locator(".scores-note")).to_have_text("Saved! #2 this week in Family, #1 this week in Friends.")
     expect(board.locator("li.mine")).to_have_text("2DAD30L1")
     assert fake.posts[0]["groups"] == ["K7QP", "W3XY"]
     assert fake.posts[0]["public"] is False

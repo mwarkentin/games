@@ -1,19 +1,23 @@
 // Leaderboard API logic: routing, validation and SQL for the D1 database.
 // src/index.js wraps it as the Worker; tests import it directly.
 //
-//   GET  /v1/scores?game=&scope=&difficulty=&mode=   top 10 for one view
-//   POST /v1/scores                                  save a finished game
+//   GET  /v1/scores?game=&scope=&difficulty=&mode=&since=   top 10 for one view
+//   POST /v1/scores                                         save a finished game
 //   POST /v1/groups                                  create a private group
 //   GET  /v1/groups/<code>                           look up a group to join
 //
 // A scope is '*' for the public board or a group's four-character code;
-// difficulty and mode can be 'all'. POST bodies are JSON sent as text/plain,
+// difficulty and mode can be 'all'; since (epoch milliseconds, within the
+// last 32 days) narrows a view to scores saved from then on, so the page can
+// ask for "today" or "this week" in its own time zone. POST bodies are JSON sent as text/plain,
 // which keeps the request "simple" so browsers skip the CORS preflight. Only
 // origins in ALLOWED_ORIGINS get a response the browser will read, and only
 // they may write.
 
 const TOP = 10;            // scores returned per view
-const KEEP = 100;          // scores stored per scope, difficulty and mode
+const RANK_LIMIT = 1000;   // ranks past this are reported as null, to cap rows read
+const DAY_MS = 24 * 60 * 60 * 1000;
+const MAX_SINCE_MS = 32 * DAY_MS;   // a month, in any time zone
 const MAX_GROUPS = 5;      // groups one score can be saved to
 const MAX_BODY_BYTES = 2048;
 const HOUR = 60 * 60 * 1000;
@@ -173,12 +177,35 @@ export function validate(entry) {
   return game.check(entry);
 }
 
+// Reads the optional since parameter: null for all time. A day ahead is
+// allowed, for a device whose clock runs fast just after midnight.
+function readSince(value, now) {
+  if (value === undefined || value === null || value === '') return null;
+  const since = Number(value);
+  if (!Number.isInteger(since) || since > now + DAY_MS || since < now - MAX_SINCE_MS) {
+    throw new HttpError(400, 'since must be a time in the last 32 days, in milliseconds');
+  }
+  return since;
+}
+
+// Every score is kept, so each view shape reads through its own index: the
+// top of a board, a view narrowed by one filter or neither, or a recent
+// period's scores (then sorted, as a period holds few rows).
+function indexFor({ difficulty, mode, since }) {
+  if (since !== null) return 'scores_by_time';
+  if (difficulty !== 'all' && mode !== 'all') return 'scores_by_board';
+  if (difficulty !== 'all') return 'scores_by_difficulty';
+  if (mode !== 'all') return 'scores_by_mode';
+  return 'scores_by_scope';
+}
+
 async function groupExists(db, code) {
   return (await db.prepare('SELECT 1 AS ok FROM groups WHERE code = ?').bind(code).first('ok')) === 1;
 }
 
-// The top 10 for one scope, optionally narrowed to one difficulty and mode.
-async function readView(db, url) {
+// The top 10 for one scope, optionally narrowed to one difficulty and mode,
+// and to scores saved since a given time.
+async function readView(db, url, now) {
   const p = url.searchParams;
   const game = GAMES[p.get('game')];
   const scope = p.get('scope') || PUBLIC;
@@ -187,22 +214,25 @@ async function readView(db, url) {
   if (!game) throw new HttpError(400, 'unknown game');
   if (difficulty !== 'all' && !game.difficulties.includes(difficulty)) throw new HttpError(400, 'unknown difficulty');
   if (mode !== 'all' && !game.modes.includes(mode)) throw new HttpError(400, 'unknown mode');
+  const since = readSince(p.get('since'), now);
   if (scope !== PUBLIC && !(CODE.test(scope) && (await groupExists(db, scope)))) throw new HttpError(404, 'unknown group');
 
   const where = ['game = ?', 'scope = ?'];
   const params = [p.get('game'), scope];
   if (difficulty !== 'all') { where.push('difficulty = ?'); params.push(difficulty); }
   if (mode !== 'all') { where.push('mode = ?'); params.push(mode); }
+  if (since !== null) { where.push('created_at >= ?'); params.push(since); }
   const { results } = await db
     .prepare(
       `SELECT entry, initials, score, level, difficulty, mode, created_at FROM scores
+       INDEXED BY ${indexFor({ difficulty, mode, since })}
        WHERE ${where.join(' AND ')}
        ORDER BY score DESC, created_at ASC, id ASC LIMIT ?`,
     )
     .bind(...params, TOP)
     .all();
   return {
-    game: p.get('game'), scope, difficulty, mode,
+    game: p.get('game'), scope, difficulty, mode, since,
     scores: results.map((row, i) => ({
       rank: i + 1, entry: row.entry, initials: row.initials, score: row.score, level: row.level,
       difficulty: row.difficulty, mode: row.mode, at: row.created_at,
@@ -210,10 +240,30 @@ async function readView(db, url) {
   };
 }
 
+// A new score's place on its own board (difficulty and mode), all time or
+// since a given time. Ties go to whoever got there first, so it ranks below
+// equal scores. score >= ? lets the index start at this score rather than
+// scan the board, and counting stops at RANK_LIMIT, so a low score on a big
+// board doesn't read every row above it.
+async function rankOf(db, { game, scope, difficulty, mode, score }, now, since) {
+  const recent = since === null ? '' : 'AND created_at >= ?';
+  const above = await db
+    .prepare(
+      `SELECT COUNT(*) AS n FROM (
+         SELECT 1 FROM scores INDEXED BY ${since === null ? 'scores_by_board' : 'scores_by_time'}
+         WHERE game = ? AND scope = ? AND difficulty = ? AND mode = ? ${recent}
+         AND score >= ? AND NOT (score = ? AND created_at >= ?) LIMIT ${RANK_LIMIT})`,
+    )
+    .bind(game, scope, difficulty, mode, ...(since === null ? [] : [since]), score, score, now)
+    .first('n');
+  return above >= RANK_LIMIT ? null : above + 1;
+}
+
 async function saveScore(request, env, now) {
   const entry = await readBody(request);
   const problem = validate(entry);
   if (problem) throw new HttpError(400, problem);
+  const since = readSince(entry.since, now);
   const db = env.DB;
   const groups = [...new Set(entry.groups ?? [])];
   for (const code of groups) {
@@ -224,7 +274,7 @@ async function saveScore(request, env, now) {
   const { game, difficulty, mode, initials, score, level } = entry;
   const id = crypto.randomUUID();
   const scopes = [...(entry.public === false ? [] : [PUBLIC]), ...groups];
-  const ranks = {};
+  const ranks = {}, periodRanks = {};
   for (const scope of scopes) {
     await db
       .prepare(
@@ -233,26 +283,11 @@ async function saveScore(request, env, now) {
       )
       .bind(id, game, scope, difficulty, mode, initials, score, level, now)
       .run();
-    // Rank within the game's own difficulty and mode. Ties go to whoever got
-    // there first, so a new score ranks below equal ones.
-    const above = await db
-      .prepare(
-        `SELECT COUNT(*) AS n FROM scores WHERE game = ? AND scope = ? AND difficulty = ? AND mode = ?
-         AND (score > ? OR (score = ? AND created_at < ?))`,
-      )
-      .bind(game, scope, difficulty, mode, score, score, now)
-      .first('n');
-    ranks[scope] = above + 1;
-    await db
-      .prepare(
-        `DELETE FROM scores WHERE game = ? AND scope = ? AND difficulty = ? AND mode = ? AND id NOT IN (
-           SELECT id FROM scores WHERE game = ? AND scope = ? AND difficulty = ? AND mode = ?
-           ORDER BY score DESC, created_at ASC, id ASC LIMIT ?)`,
-      )
-      .bind(game, scope, difficulty, mode, game, scope, difficulty, mode, KEEP)
-      .run();
+    const row = { game, scope, difficulty, mode, score };
+    ranks[scope] = await rankOf(db, row, now, null);
+    if (since !== null) periodRanks[scope] = await rankOf(db, row, now, since);
   }
-  return { entry: id, ranks };
+  return since === null ? { entry: id, ranks } : { entry: id, ranks, periodRanks };
 }
 
 async function createGroup(request, env, now) {
@@ -289,7 +324,7 @@ export async function handle(request, env, now = Date.now()) {
   const groupPath = url.pathname.match(/^\/v1\/groups\/([^/]+)$/);
   try {
     if (method === 'OPTIONS') return new Response(null, { status: 204, headers: cors });
-    if (url.pathname === '/v1/scores' && method === 'GET') return json(await readView(env.DB, url), 200, cors);
+    if (url.pathname === '/v1/scores' && method === 'GET') return json(await readView(env.DB, url, now), 200, cors);
     if (groupPath && method === 'GET') return json(await readGroup(env.DB, groupPath[1]), 200, cors);
     if ((url.pathname === '/v1/scores' || url.pathname === '/v1/groups') && method === 'POST') {
       if (!allowedOrigin) throw new HttpError(403, 'origin not allowed');

@@ -13,10 +13,13 @@ from playwright.sync_api import Page, expect
 
 SINGLE_TABLE_NOTE = "Games with one times table are practice and don’t go on the leaderboard."
 UNAVAILABLE = "The leaderboard is unavailable right now."
+# Local midnight on Monday, as the page works it out.
+START_OF_WEEK = "() => { const d = new Date(); d.setHours(0, 0, 0, 0); d.setDate(d.getDate() - (d.getDay() + 6) % 7); return d.getTime(); }"
+START_OF_TODAY = "() => new Date().setHours(0, 0, 0, 0)"
 
 
-def row(initials: str, score: int, scope: str = "*", difficulty: str = "classic", mode: str = "normal") -> dict:
-    return {"initials": initials, "score": score, "level": 3, "scope": scope, "difficulty": difficulty, "mode": mode}
+def row(initials: str, score: int, scope: str = "*", difficulty: str = "classic", mode: str = "normal", **extra) -> dict:
+    return {"initials": initials, "score": score, "level": 3, "scope": scope, "difficulty": difficulty, "mode": mode, **extra}
 
 
 def open_game(page: Page, site_url: str, fake: FakeLeaderboard | None, query: str = "") -> None:
@@ -64,8 +67,9 @@ def test_leaderboard_stays_hidden_until_configured(page: Page, site_url, errors)
 def test_top_ten_score_saves_initials(page: Page, site_url, errors):
     fake = FakeLeaderboard([row("KID", 300), row("MRW", 245), row("SIS", 400, difficulty="starter")])
     open_game(page, site_url, fake)
-    expect(page.locator("#menuLbWhich")).to_have_text("Classic")
+    expect(page.locator("#menuLbWhich")).to_have_text("Classic · This week")
     expect(page.locator("#menuLbList li")).to_have_count(2)
+    expect(page.locator("#menuLbScopes")).to_be_hidden()  # no groups, so no tabs
     expect(page.locator("#lbPublicRow")).to_be_hidden()
 
     play_one_bubble(page)
@@ -75,11 +79,12 @@ def test_top_ten_score_saves_initials(page: Page, site_url, errors):
     expect(page.locator("#lbInitials")).to_have_value("ZED")
     page.click("#lbSave")
 
-    expect(page.locator("#overLbNote")).to_have_text("Saved! #3 on Everyone.")
+    expect(page.locator("#overLbNote")).to_have_text("Saved! #3 this week on Everyone.")
     expect(page.locator("#overLbList li.mine")).to_have_text("3ZED20")
     expect(page.locator("#lbForm")).to_be_hidden()
     [entry] = fake.posts
     assert entry.pop("seconds") >= 1
+    assert entry.pop("since") == page.evaluate(START_OF_WEEK)
     assert entry == {
         "game": "funnels-and-buckets", "difficulty": "classic", "mode": "normal", "initials": "ZED",
         "score": 20, "level": 1, "popped": 1, "groups": [], "public": True,
@@ -157,8 +162,11 @@ def test_leaderboard_screen_filters_by_difficulty_and_mode(page: Page, site_url,
     expect(page.locator("#lbList li")).to_have_text("1DAD90")  # one board, so no tags
     page.select_option("#lbDifficulty", "challenge")
     expect(page.locator("#lbList")).to_be_hidden()
-    expect(page.locator("#lbNote")).to_have_text("No scores here yet.")
-    assert fake.views[-1] == {"game": "funnels-and-buckets", "scope": "*", "difficulty": "challenge", "mode": "easy"}
+    expect(page.locator("#lbNote")).to_have_text("No scores here this week yet.")
+    assert fake.views[-1] == {
+        "game": "funnels-and-buckets", "scope": "*", "difficulty": "challenge", "mode": "easy",
+        "since": str(page.evaluate(START_OF_WEEK)),
+    }
 
     # The filters are remembered, and Escape closes the screen.
     page.keyboard.press("Escape")
@@ -167,6 +175,40 @@ def test_leaderboard_screen_filters_by_difficulty_and_mode(page: Page, site_url,
     page.click("#lbOpenMenu")
     expect(page.locator("#lbDifficulty")).to_have_value("challenge")
     expect(page.locator("#lbMode")).to_have_value("easy")
+    assert errors == []
+
+
+def test_periods_narrow_the_leaderboard(page: Page, site_url, errors):
+    fake = FakeLeaderboard([row("KID", 300), row("MRW", 245), row("OLD", 900, days_ago=40)])
+    open_game(page, site_url, fake)
+    expect(page.locator("#menuLbList li .who")).to_have_text(["KID", "MRW"])  # this week, by default
+
+    # A score can make this week's board without making the all-time one.
+    play_one_bubble(page)
+    page.fill("#lbInitials", "ZED")
+    page.click("#lbSave")
+    expect(page.locator("#overLbNote")).to_have_text("Saved! #3 this week on Everyone (#4 all time).")
+    assert fake.posts[0]["since"] == page.evaluate(START_OF_WEEK)
+
+    page.click("#lbOpenOver")
+    periods = page.locator("#lbPeriods button")
+    expect(periods).to_have_text(["Today", "This week", "This month", "All time"])
+    expect(page.locator("#lbPeriods button[aria-pressed=true]")).to_have_text("This week")
+    page.click("#lbPeriods >> text=All time")
+    expect(page.locator("#lbList li .who")).to_have_text(["OLDClassic", "KIDClassic", "MRWClassic", "ZEDClassic"])
+    assert "since" not in fake.views[-1]
+    page.click("#lbPeriods >> text=Today")
+    expect(page.locator("#lbList li")).to_have_count(3)
+    assert fake.views[-1]["since"] == str(page.evaluate(START_OF_TODAY))
+
+    # The period carries over to the menu, and is remembered.
+    page.click("#lbPeriods >> text=All time")
+    page.click("#lbClose")
+    expect(page.locator("#overLbWhich")).to_have_text("Classic · All time")
+    page.click("#settingsBtn")
+    expect(page.locator("#menuLbWhich")).to_have_text("Classic · All time")
+    page.reload()
+    expect(page.locator("#menuLbList li .who")).to_have_text(["OLD", "KID", "MRW", "ZED"])
     assert errors == []
 
 
@@ -188,7 +230,7 @@ def test_start_a_group_and_share_an_invite(page: Page, site_url, errors):
     # The new group's board opens, empty for now, beside the Everyone tab.
     expect(page.locator("#lbScopes button")).to_have_text(["Everyone", "The Warkentins"])
     expect(page.locator("#lbScopes button[aria-pressed=true]")).to_have_text("The Warkentins")
-    expect(page.locator("#lbNote")).to_have_text("No scores in The Warkentins yet.")
+    expect(page.locator("#lbNote")).to_have_text("No scores in The Warkentins this week yet.")
     page.click("#lbScopes button >> text=Everyone")
     expect(page.locator("#lbList li")).to_have_count(1)
 
@@ -213,7 +255,15 @@ def test_group_members_save_to_their_groups(page: Page, site_url, errors):
     join_group(page, "W3XY", "Friends")
     page.click("#lbScopes button >> text=Family")
     page.click("#lbClose")
-    expect(page.locator("#menuLbWhich")).to_have_text("Classic · Family")
+    expect(page.locator("#menuLbWhich")).to_have_text("Classic · This week")
+    expect(page.locator("#menuLbScopes button")).to_have_text(["Everyone", "Family", "Friends"])
+    expect(page.locator("#menuLbScopes button[aria-pressed=true]")).to_have_text("Family")
+    expect(page.locator("#menuLbList li")).to_have_text(["1MOM500"])
+
+    # The menu's tabs switch its list too.
+    page.click("#menuLbScopes >> text=Everyone")
+    expect(page.locator("#menuLbList li")).to_have_count(5)
+    page.click("#menuLbScopes >> text=Family")
     expect(page.locator("#menuLbList li")).to_have_text(["1MOM500"])
 
     # Not a top-10 public score, but in a group every score can be saved.
@@ -225,7 +275,7 @@ def test_group_members_save_to_their_groups(page: Page, site_url, errors):
     page.uncheck("#lbPublic")
     page.fill("#lbInitials", "DAD")
     page.click("#lbSave")
-    expect(page.locator("#overLbNote")).to_have_text("Saved! #2 in Family, #1 in Friends.")
+    expect(page.locator("#overLbNote")).to_have_text("Saved! #2 this week in Family, #1 this week in Friends.")
     expect(page.locator("#overLbList li.mine")).to_have_text("2DAD20")
     assert fake.posts[0]["groups"] == ["K7QP", "W3XY"]
     assert fake.posts[0]["public"] is False
@@ -241,7 +291,7 @@ def test_group_members_save_to_their_groups(page: Page, site_url, errors):
     expect(page.locator("#lbPublic")).not_to_be_checked()
     page.check("#lbPublic")
     page.click("#lbSave")
-    expect(page.locator("#overLbNote")).to_have_text("Saved! #11 on Everyone, #3 in Family, #2 in Friends.")
+    expect(page.locator("#overLbNote")).to_have_text("Saved! #11 this week on Everyone, #3 this week in Family, #2 this week in Friends.")
     assert errors == []
 
 

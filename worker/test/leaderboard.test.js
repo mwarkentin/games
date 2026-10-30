@@ -16,13 +16,16 @@ const NOW = Date.UTC(2026, 9, 29, 12);
 const BOARD = 'game=funnels-and-buckets&difficulty=classic&mode=normal';
 
 // The parts of the D1 API the Worker uses: prepare().bind().all()/first()/run().
+// Every query run is logged, so tests can check its plan.
 function fakeD1() {
   const db = new DatabaseSync(':memory:');
   for (const file of readdirSync(MIGRATIONS).sort()) db.exec(readFileSync(new URL(file, MIGRATIONS), 'utf8'));
+  const log = [];
   const statement = (sql, params = []) => ({
     bind: (...values) => statement(sql, values),
-    all: async () => ({ results: db.prepare(sql).all(...params) }),
+    all: async () => { log.push({ sql, params }); return { results: db.prepare(sql).all(...params) }; },
     first: async (column) => {
+      log.push({ sql, params });
       const row = db.prepare(sql).get(...params);
       if (!row) return null;
       return column ? row[column] : row;
@@ -32,7 +35,7 @@ function fakeD1() {
       return { success: true, meta: { changes: result.changes, last_row_id: Number(result.lastInsertRowid) } };
     },
   });
-  return { prepare: (sql) => statement(sql), raw: db };
+  return { prepare: (sql) => statement(sql), raw: db, log };
 }
 
 let env;
@@ -66,6 +69,18 @@ async function newGroup(name = 'Family') {
   const response = await createGroup(name);
   assert.equal(response.status, 201);
   return (await response.json()).code;
+}
+
+const DAY = 24 * 60 * 60 * 1000;
+
+// Puts scores straight into the table, saved at a given time.
+function seed(rows) {
+  const insert = env.DB.raw.prepare(
+    `INSERT INTO scores (entry, game, scope, difficulty, mode, initials, score, level, created_at)
+     VALUES (?, 'funnels-and-buckets', ?, ?, ?, ?, ?, 2, ?)`,
+  );
+  rows.forEach((r, i) => insert.run(`seed-${i}`, r.scope ?? '*', r.difficulty ?? 'classic', r.mode ?? 'normal',
+    r.initials ?? 'AAA', r.score, r.at ?? NOW - 1000));
 }
 
 async function initials(query) {
@@ -196,14 +211,30 @@ describe('saving scores', () => {
     assert.equal((await response.json()).error, 'unknown group ZZZZ');
   });
 
-  test('keeps the top 100 per scope, difficulty and mode', async () => {
-    for (let i = 1; i <= 105; i++) await save(entry({ score: i }), { ip: `ip-${i}` });
-    await save(entry({ score: 1, mode: 'easy', level: 1 }), { ip: 'other' });
-    const counts = env.DB.raw.prepare('SELECT mode, COUNT(*) AS n, MIN(score) AS low FROM scores GROUP BY mode ORDER BY mode').all();
-    assert.deepEqual(counts.map((r) => ({ ...r })), [
-      { mode: 'easy', n: 1, low: 1 },
-      { mode: 'normal', n: 100, low: 6 },
-    ]);
+  test('keeps every score, and stops counting ranks at 1000', async () => {
+    seed(Array.from({ length: 1000 }, (_, i) => ({ score: 200 + i })));   // 200 to 1199
+    const low = await (await save(entry({ score: 150 }))).json();
+    assert.deepEqual(low.ranks, { '*': null });
+    const mid = await (await save(entry({ score: 600 }), { ip: 'other' })).json();
+    assert.deepEqual(mid.ranks, { '*': 601 });   // 601 to 1199 are higher, and the earlier 600 ranks first
+    assert.equal(env.DB.raw.prepare('SELECT COUNT(*) AS n FROM scores').get().n, 1002);
+  });
+
+  test('ranks within a recent period too, when asked', async () => {
+    seed([{ score: 500, at: NOW - 10 * DAY }, { score: 400, at: NOW - 10 * DAY }, { score: 350, at: NOW - 3600 }]);
+    const body = await (await save(entry({ score: 300, since: NOW - DAY }))).json();
+    assert.deepEqual(body.ranks, { '*': 4 });
+    assert.deepEqual(body.periodRanks, { '*': 2 });
+    const plain = await (await save(entry({ score: 300 }), { ip: 'other' })).json();
+    assert.equal('periodRanks' in plain, false);
+  });
+
+  test('rejects a since outside the last 32 days', async () => {
+    for (const since of [NOW + 2 * DAY, NOW - 33 * DAY, 'yesterday', 1.5]) {
+      const response = await save(entry({ since }), { ip: String(since) });
+      assert.equal(response.status, 400);
+      assert.equal((await response.json()).error, 'since must be a time in the last 32 days, in milliseconds');
+    }
   });
 
   test('rejects invalid scores and bodies without saving', async () => {
@@ -263,6 +294,46 @@ describe('views', () => {
   test('returns at most 10', async () => {
     for (let i = 0; i < 12; i++) await save(entry({ score: 10 + i }), { ip: `x${i}` });
     assert.equal((await (await view('game=funnels-and-buckets')).json()).scores.length, 10);
+  });
+
+  test('narrowed to scores saved since a time', async () => {
+    seed([{ initials: 'OLD', score: 999, at: NOW - 10 * DAY }, { initials: 'OLE', score: 999, difficulty: 'starter', at: NOW - 10 * DAY }]);
+    const since = NOW - DAY;
+    const body = await (await view(`game=funnels-and-buckets&since=${since}`)).json();
+    assert.equal(body.since, since);
+    assert.deepEqual(body.scores.map((s) => s.initials), ['STA', 'EZY', 'CLA', 'CHA']);
+    assert.deepEqual(await initials(`game=funnels-and-buckets&difficulty=classic&since=${since}`), ['EZY', 'CLA']);
+    assert.deepEqual(await initials(`${BOARD}&since=${since}`), ['CLA']);
+    assert.deepEqual(await initials(BOARD), ['OLD', 'CLA']);
+    assert.equal((await view(`game=funnels-and-buckets&since=${NOW - 33 * DAY}`)).status, 400);
+    assert.equal((await view(`game=funnels-and-buckets&since=${NOW + 2 * DAY}`)).status, 400);
+    // A fast clock just past midnight asks for a moment that hasn't come yet: no scores, not an error.
+    assert.deepEqual(await initials(`game=funnels-and-buckets&since=${NOW + 60000}`), []);
+  });
+
+  test('reads each view through an index, sorting only a period’s scores', async () => {
+    const plan = () => {
+      const { sql, params } = env.DB.log.findLast((q) => q.sql.includes('FROM scores'));
+      return env.DB.raw.prepare(`EXPLAIN QUERY PLAN ${sql}`).all(...params).map((r) => r.detail).join(' | ');
+    };
+    const cases = [
+      [BOARD, 'scores_by_board'],
+      ['game=funnels-and-buckets&difficulty=classic', 'scores_by_difficulty'],
+      ['game=funnels-and-buckets&mode=easy', 'scores_by_mode'],
+      ['game=funnels-and-buckets', 'scores_by_scope'],
+    ];
+    for (const [query, index] of cases) {
+      await view(query);
+      assert.match(plan(), new RegExp(`^SEARCH scores USING INDEX ${index} `));
+      assert.doesNotMatch(plan(), /TEMP B-TREE/);
+    }
+    await view(`${BOARD}&since=${NOW - DAY}`);
+    assert.match(plan(), /^SEARCH scores USING INDEX scores_by_time \(game=\? AND scope=\? AND created_at>\?\)/);
+    // Ranking a new score starts at that score instead of scanning the board.
+    await save(entry());
+    const rank = env.DB.log.filter((q) => q.sql.includes('COUNT(*) AS n FROM (')).at(-1);
+    const detail = env.DB.raw.prepare(`EXPLAIN QUERY PLAN ${rank.sql}`).all(...rank.params).map((r) => r.detail).join(' | ');
+    assert.match(detail, /scores_by_board \(game=\? AND scope=\? AND difficulty=\? AND mode=\? AND score>\?\)/);
   });
 
   test('rejects unknown filters and groups', async () => {
