@@ -133,7 +133,7 @@ def test_survey_stays_off_until_configured(page: Page, site_url, errors):
     circle(page, hidden_words(page)[0])
     expect(page.locator("#notesBadge")).to_have_text("1")
     expect(page.locator("#survey")).to_be_hidden()
-    expect(page.locator("#tCharted")).to_be_hidden()
+    expect(page.locator("#tCharted")).to_have_text(re.compile(r"^ · 1/\d+ found$"))
     assert sockets == []
     assert errors == []
 
@@ -321,4 +321,44 @@ def test_full_survey_says_so(page: Page, site_url, errors):
     open_game(page, site_url, fake)
     expect(page.locator("#surveyText")).to_have_text("The survey is full right now. Your finds still save in this browser.")
     expect(page.locator("#survey")).to_have_attribute("data-state", "offline")
+    assert errors == []
+
+
+def territory_words(page: Page, site_url: str) -> list[list]:
+    """Every word hidden in territory (0, 0), read before the test opens the game for real."""
+    page.goto(f"{site_url}/letterfield#debug")
+    words = page.evaluate("""() => {
+      const out = [];
+      for (let cy = 0; cy < 4; cy++) for (let cx = 0; cx < 4; cx++) for (const o of window.__lf.chunk(cx, cy).words) out.push([o.w, o.x, o.y, o.d]);
+      return out;
+    }""")
+    page.evaluate("localStorage.clear()")
+    page.goto("about:blank")
+    return words
+
+
+def test_charting_the_last_word_in_a_territory_sets_it_off(page: Page, site_url, errors):
+    words = territory_words(page, site_url)
+    fake = FakeSurvey(claims=[[*w, 0, "MRW", NOW_MS - 60_000] for w in words[1:]])
+    open_game(page, site_url, fake)
+    expect(page.locator("#tCharted")).to_have_text(f" · {len(words) - 1}/{len(words)} charted")
+    circle(page, words[0])
+    expect(page.locator("#nova")).to_be_visible(timeout=6000)
+    expect(page.locator("#novaText")).to_contain_text("every hidden word charted, the last by you")
+    expect(page.locator("#tCharted")).to_have_text(f" · {len(words)}/{len(words)} charted")
+    assert errors == []
+
+
+def test_someone_else_finishing_a_territory_nearby_sets_it_off_too(page: Page, site_url, errors):
+    words = territory_words(page, site_url)
+    fake = FakeSurvey(claims=[[*w, 0, "MRW", NOW_MS - 60_000] for w in words[1:]])
+    open_game(page, site_url, fake)
+    eventually(page, lambda: "0,0" in fake.sockets)
+    expect(page.locator("#tCharted")).to_have_text(f" · {len(words) - 1}/{len(words)} charted")
+    cam = page.evaluate("({ ...window.__lf.cam })")
+    fake.sockets["0,0"].send(json.dumps({"t": "claimed", "c": [*words[0], 0, "SIS", NOW_MS], "by": "someone"}))
+    expect(page.locator("#nova")).to_be_visible(timeout=6000)
+    expect(page.locator("#novaText")).to_contain_text("the last by SIS")
+    # Only your own pulls the camera over to watch.
+    assert page.evaluate("({ ...window.__lf.cam })") == cam
     assert errors == []

@@ -183,6 +183,17 @@ body.docked .toast{left:calc((100% - var(--notes-w)) / 2)}
 .vh{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
 
 @media (max-width: 1100px){ .toast{top:calc(var(--top) + 70px)} }
+
+/* Supernova: the banner when a territory is finished */
+.nova{position:fixed;left:50%;top:40%;transform:translate(-50%,-50%);width:max-content;max-width:calc(100% - 32px);text-align:center;pointer-events:none;opacity:0;--c:hsl(var(--h,200) 95% 60%)}
+body.docked .nova{left:calc((100% - var(--notes-w)) / 2)}
+.nova b{display:block;font:800 clamp(38px, 10.5vw, 128px)/.9 var(--f-display);letter-spacing:.14em;margin-right:-.14em;text-transform:uppercase;color:var(--ink);text-shadow:0 0 14px var(--c),0 0 42px var(--c),0 0 96px var(--c)}
+.nova span{display:block;margin-top:14px;font:500 12px/1.4 var(--f-mono);letter-spacing:.12em;text-transform:uppercase;color:var(--ink);text-shadow:0 0 4px var(--paper),0 0 10px var(--paper),0 0 18px var(--paper)}
+.nova.show{animation:nova 4.6s ease-out forwards}
+.nova.show b{animation:nova-word 4.6s cubic-bezier(.16,.9,.3,1) forwards}
+@keyframes nova{0%{opacity:0}5%{opacity:1}80%{opacity:1}100%{opacity:0}}
+@keyframes nova-word{0%{transform:scale(.35);letter-spacing:.7em;filter:blur(8px)}14%{transform:scale(1.07);filter:blur(0)}30%{transform:scale(1)}100%{transform:scale(1.05);letter-spacing:.18em}}
+#sound[aria-pressed="false"] .on,#sound[aria-pressed="true"] .off{display:none}
 @media (max-width: 699px){
   .cartouche{right:calc(var(--gr) + 58px);max-width:none;padding:2px;outline-offset:-4px}
   .brand{padding:7px 9px 6px 8px}
@@ -210,6 +221,7 @@ body.docked .toast{left:calc((100% - var(--notes-w)) / 2)}
 }
 @media (prefers-reduced-motion: reduce){
   .notes,.toast,.instruments{transition:none}
+  .nova.show b{animation:none}
   .sync-dot,.survey-dot{animation:none!important}
 }
 </style>
@@ -259,6 +271,7 @@ body.docked .toast{left:calc((100% - var(--notes-w)) / 2)}
     <button type="button" id="zoomIn" aria-label="Zoom in"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></button>
     <button type="button" id="zoomOut" aria-label="Zoom out"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M5 12h14"/></svg></button>
     <button type="button" id="home" aria-label="Return to the origin"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="6.5"/><circle cx="12" cy="12" r="1.6" fill="currentColor"/><path d="M12 2v4M12 18v4M2 12h4M18 12h4"/></svg></button>
+    <button type="button" id="sound" aria-pressed="true" aria-label="Sound" title="Sound (M)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 9.5h3.5L12 6v12l-4.5-3.5H4z"/><path class="on" d="M15.5 9.2a4 4 0 0 1 0 5.6M18.2 6.6a7.6 7.6 0 0 1 0 10.8"/><path class="off" d="M16 9.5l5 5M21 9.5l-5 5"/></svg></button>
   </div>
 </div>
 
@@ -301,6 +314,7 @@ body.docked .toast{left:calc((100% - var(--notes-w)) / 2)}
 </div>
 
 <div class="toast card mark" id="toast" role="status" aria-live="polite"></div>
+<div class="nova" id="nova" role="status" aria-live="polite" hidden><b>Supernova</b><span id="novaText"></span></div>
 
 <script>
 (() => {
@@ -318,7 +332,7 @@ const DNAME = ['E','SE','S','SW','W','NW','N','NE'];
 const DARROW = ['→','↘','↓','↙','←','↖','↑','↗'];
 const DWEIGHT = [3,2,3,1,1,1,1,2], DW_TOTAL = 14;
 const NOTES_W = 340;
-const K_FINDS = 'letterfield.finds.v2', K_FINDS_V1 = 'letterfield.finds.v1', K_CAM = 'letterfield.cam.v1', K_COACH = 'letterfield.coach.v1', K_NOTES = 'letterfield.notes.v1';
+const K_FINDS = 'letterfield.finds.v2', K_FINDS_V1 = 'letterfield.finds.v1', K_CAM = 'letterfield.cam.v1', K_COACH = 'letterfield.coach.v1', K_NOTES = 'letterfield.notes.v1', K_SOUND = 'letterfield.sound.v1';
 const K_INITIALS = 'games.initials';  // shared with the other games' leaderboards
 // The shared survey (see worker/SURVEY.md): while SURVEY_URL is empty the game
 // is single-player and connects nowhere. ?survey=<url> overrides it for testing.
@@ -787,7 +801,12 @@ function onSurvey(l, m) {
     else if (!found.has(c.key)) news(c);
     if (!c.s) {
       const rx = fdiv(c.x, RC), ry = fdiv(c.y, RC), [done, total] = territoryProgress(rx, ry);
-      if (done === total) setTimeout(() => toast(`<i></i><b>${regionName(rx, ry)}</b><span>Every hidden word here is charted</span>`, THEMES[regionTheme(rx, ry)].hue), 1800);
+      if (done === total) {
+        // Close enough to see, it goes supernova; further off, a note will do.
+        const mine = m.by === l.you, last = mine ? 'the last by you' : c.by ? `the last by ${c.by}` : '';
+        const text = `${regionName(rx, ry)} · every hidden word charted${last ? ', ' + last : ''}`;
+        if (!nearView(rx, ry) || !supernova(rx, ry, { mine, text })) setTimeout(() => toast(`<i></i><b>${regionName(rx, ry)}</b><span>Every hidden word here is charted</span>`, THEMES[regionTheme(rx, ry)].hue), 1800);
+      }
     }
   } else if (m.t === 'taken') {
     const c = addClaim(m.c, false);
@@ -838,8 +857,8 @@ function news(c) {
   lastNews = now;
   toast(`<i></i><b>${c.w}</b><span>Just charted by ${c.by || 'another surveyor'}</span>`, THEMES[c.th].hue);
 }
-// Hidden words charted in a territory, and how many it has.
-function territoryProgress(rx, ry) {
+// How many words a territory hides.
+function territoryTotal(rx, ry) {
   const k = rx + ',' + ry;
   let total = terrTotals.get(k);
   if (total === undefined) {
@@ -848,10 +867,22 @@ function territoryProgress(rx, ry) {
     if (terrTotals.size > 2000) terrTotals.clear();
     terrTotals.set(k, total);
   }
+  return total;
+}
+// Hidden words charted in a territory, and how many it has.
+function territoryProgress(rx, ry) {
   let done = 0;
   for (const c of claims.values()) if (!c.s && fdiv(c.x, RC) === rx && fdiv(c.y, RC) === ry) done++;
-  return [done, total];
+  return [done, territoryTotal(rx, ry)];
 }
+// Hidden words in a territory that are in your notes.
+function territoryFound(rx, ry) {
+  let n = 0;
+  for (const e of found.values()) if (!e.s && fdiv(e.x, RC) === rx && fdiv(e.y, RC) === ry) n++;
+  return n;
+}
+// Within a few territories of the middle of the view.
+const nearView = (rx, ry) => Math.max(Math.abs(rx - fdiv(Math.floor(cam.x), RC)), Math.abs(ry - fdiv(Math.floor(cam.y), RC))) <= 3;
 function renderSurvey() {
   if (!surveyApi) return;
   let live = 0, failed = 0, others = 0;
@@ -1030,6 +1061,329 @@ function capsule(x0, y0, x1, y1, r) {
   ctx.closePath();
 }
 
+/* ---------- Supernova ---------- */
+// Finishing a territory sets it off. It draws energy in for a couple of
+// seconds, bursts, and a shockwave rolls out across the map, shoving and
+// swelling the letters as it passes.
+const NOVA_CHARGE = 2600, NOVA_WAVE = 3400, NOVA_END = NOVA_CHARGE + 4400;
+const novaEl = $('#nova'), novaText = $('#novaText');
+let nova = null, novaTimer = 0;
+const novae = new Set();  // territories that have gone off this visit
+function supernova(rx, ry, opts = {}) {
+  const k = rx + ',' + ry, now = performance.now();
+  if (novae.has(k) || (nova && now - nova.t0 < NOVA_END)) return false;
+  novae.add(k);
+  const x = (rx + .5) * RC, y = (ry + .5) * RC;
+  const r = rng(h3(rx, ry, SEED ^ 0x7f4a7c15)), motes = [], sparks = [];
+  for (let i = 0; i < 140; i++) motes.push({ a: r() * Math.PI * 2, r: .6 + r() * 1.2, s: r(), laps: 2 + r() * 3, spin: (r() < .5 ? -1 : 1) * (1 + r() * 2), w: .8 + r() * 1.8 });
+  for (let i = 0; i < 220; i++) sparks.push({ a: r() * Math.PI * 2, v: 220 + Math.pow(r(), 1.7) * 1700, life: .6 + r() * 1.7, w: 1 + r() * 2.4, white: r() < .35 });
+  nova = { rx, ry, th: regionTheme(rx, ry), x, y, t0: now, burst: false, text: opts.text || regionName(rx, ry), motes, sparks };
+  // Your own: the camera centres on it, close enough that the shockwave has letters to throw.
+  if (opts.mine && !RM) flyTo(x, y, clamp(cam.cs, 18, 28), { min: 900, max: 1500 });
+  const far = clamp((Math.max(Math.abs(x - cam.x), Math.abs(y - cam.y)) - RC) / (RC * 4), 0, 1);
+  playNova(far);
+  invalidate();
+  return true;
+}
+function novaBanner() {
+  novaText.textContent = nova.text;
+  novaEl.style.setProperty('--h', THEMES[nova.th].hue);
+  novaEl.hidden = false;
+  novaEl.classList.remove('show'); void novaEl.offsetWidth; novaEl.classList.add('show');
+  clearTimeout(novaTimer);
+  novaTimer = setTimeout(() => { novaEl.classList.remove('show'); novaEl.hidden = true; }, 4700);
+}
+// The supernova this frame, or null: charge runs 0 to 1, then after counts
+// seconds since the burst. Sizes are CSS pixels; the d-suffixed ones are for
+// the letters, which are drawn in device pixels.
+function novaState(now) {
+  if (!nova) return null;
+  const t = now - nova.t0;
+  if (t >= NOVA_END) { nova = null; return null; }
+  const charge = clamp(t / NOVA_CHARGE, 0, 1), after = (t - NOVA_CHARGE) / 1000;
+  if (after >= 0 && !nova.burst) { nova.burst = true; novaBanner(); }
+  const shake = RM ? 0 : after < 0 ? 3 * charge ** 3 : 18 * Math.exp(-after * 3.4);
+  return { t, charge, after, hue: THEMES[nova.th].hue, sx: (Math.random() * 2 - 1) * shake, sy: (Math.random() * 2 - 1) * shake };
+}
+function novaPlace(nv, cs, SX, SY) {
+  nv.cx = SX(nova.x); nv.cy = SY(nova.y);
+  nv.tr = RC * cs * .72;  // the territory's reach, centre to corner
+  nv.amp = 0;
+  if (nv.after >= 0 && !RM) {
+    const tw = clamp(nv.after * 1000 / NOVA_WAVE, 0, 1);
+    const reach = Math.max(Math.hypot(nv.cx, nv.cy), Math.hypot(W - nv.cx, nv.cy), Math.hypot(nv.cx, H - nv.cy), Math.hypot(W - nv.cx, H - nv.cy)) + 260;
+    nv.R = reach * (1 - Math.pow(1 - tw, 1.7));
+    nv.band = 34 + nv.R * .05;
+    nv.amp = tw < 1 ? Math.pow(1 - tw, .6) : 0;
+  }
+  nv.cxd = nv.cx * dpr; nv.cyd = nv.cy * dpr; nv.trd = nv.tr * dpr;
+  nv.Rd = (nv.R || 0) * dpr; nv.bandd = (nv.band || 1) * dpr;
+  nv.pushd = Math.max(cs * .9, 14) * dpr; nv.jit = cs * .16 * dpr;
+}
+// How far the letter centred at px, py (device pixels) moves, and how much it
+// swells: into nOX, nOY and nK. Returns false when the supernova leaves it alone.
+let nOX = 0, nOY = 0, nK = 1;
+function novaLetter(nv, px, py, x, y) {
+  const vx = px - nv.cxd, vy = py - nv.cyd, d = Math.hypot(vx, vy) || 1;
+  const inside = 1 - d / nv.trd;
+  let push = 0, k = 1, jx = 0, jy = 0;
+  if (nv.after < 0) {
+    if (inside <= 0) return false;
+    // Drawn in toward the core, squeezed, and trembling
+    const c = nv.charge * nv.charge, f = Math.min(1, inside * 1.6), j = nv.charge ** 3 * nv.jit;
+    push = -d * .22 * c * f; k = 1 - .35 * c * f;
+    jx = Math.sin(nv.t * .05 + x * 12.9898 + y * 4.1) * j; jy = Math.cos(nv.t * .047 + y * 78.233 + x * 2.3) * j;
+  } else {
+    if (inside <= 0 && nv.amp <= 0) return false;
+    if (inside > 0) {
+      // Flung back out past where it was, then settling
+      const f = Math.min(1, inside * 1.6), s = -Math.exp(-nv.after * 4.2) * Math.cos(nv.after * 13);
+      push = d * .22 * f * s; k = 1 + .35 * f * s;
+    }
+    if (nv.amp > 0) {
+      const u = (d - nv.Rd) / nv.bandd, u2 = (d - nv.Rd * .74) / nv.bandd;
+      if (u > -6 || u2 > -4) {
+        let g = u > 0 ? Math.exp(-u * u * 3) : Math.exp(-u * u * .7) - .4 * Math.exp(-(u + 1.8) * (u + 1.8));
+        g = (g + .35 * Math.exp(-u2 * u2 * 1.5)) * nv.amp;
+        push += g * nv.pushd; k += Math.max(0, g) * 1.5;
+      }
+    }
+  }
+  nOX = vx / d * push + jx; nOY = vy / d * push + jy; nK = k;
+  return true;
+}
+const novaGlow = (nv, l, a) => `hsla(${nv.hue}, 95%, ${l}%, ${a})`;
+// Under the letters: the territory heating up.
+function novaUnder(nv, cs, SX, SY) {
+  const heat = nv.after < 0 ? .4 * nv.charge ** 2 : .55 * Math.exp(-nv.after * 1.1);
+  if (heat < .005) return;
+  ctx.fillStyle = novaGlow(nv, C.dark ? 45 : 55, heat);
+  ctx.fillRect(SX(nova.rx * RC), SY(nova.ry * RC), RC * cs, RC * cs);
+}
+// Over everything: the world going dark as the star draws it in, then lit
+// again by the shockwave; the motes falling in, the core, the sparks, the flash.
+function novaOver(nv) {
+  const { cx, cy, tr } = nv;
+  const corner = Math.max(Math.hypot(cx, cy), Math.hypot(W - cx, cy), Math.hypot(cx, H - cy), Math.hypot(W - cx, H - cy));
+  const dark = RM ? 0 : .9 * (nv.after < 0 ? nv.charge ** 1.3 : 1 - clamp((nv.after - 2.2) / 1.2, 0, 1));
+  if (dark > .01) {
+    const shade = a => `rgba(4,7,22,${a})`;
+    let g;
+    if (nv.after < 0) {
+      g = ctx.createRadialGradient(cx, cy, tr * .2, cx, cy, Math.max(tr, corner));
+      g.addColorStop(0, shade(dark * .15)); g.addColorStop(.35, shade(dark * .75)); g.addColorStop(1, shade(dark));
+    } else {
+      // Lit behind the wave, still dark ahead of it
+      const inner = Math.max(0, nv.R - nv.band * 3), outer = Math.max(inner + 1, nv.R + nv.band);
+      g = ctx.createRadialGradient(cx, cy, inner, cx, cy, outer);
+      g.addColorStop(0, shade(0)); g.addColorStop(1, shade(dark));
+    }
+    ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+  }
+  ctx.globalCompositeOperation = 'lighter';
+  ctx.lineCap = 'round';
+  // The shockwave: a bright front with fainter echoes behind it
+  if (nv.amp > 0) for (const [f, a] of [[1, 1], [.74, .45], [.52, .25]]) {
+    const R = nv.R * f, w = nv.band * (f === 1 ? 2.2 : 1.5), al = a * nv.amp;
+    if (R < 2 || al < .01) continue;
+    const g = ctx.createRadialGradient(cx, cy, Math.max(0, R - w), cx, cy, R + w * .3);
+    g.addColorStop(0, novaGlow(nv, 55, 0));
+    g.addColorStop(.7, novaGlow(nv, 55, al * .5));
+    g.addColorStop(.93, `rgba(255,255,255,${al * .85})`);
+    g.addColorStop(1, novaGlow(nv, 55, 0));
+    ctx.fillStyle = g;
+    ctx.beginPath();
+    ctx.arc(cx, cy, R + w * .3, 0, Math.PI * 2);
+    ctx.arc(cx, cy, Math.max(0, R - w), 0, Math.PI * 2, true);
+    ctx.fill();
+  }
+  // Motes streaming in along spirals, faster as the charge builds
+  if (nv.after < 0 && !RM) for (const m of nova.motes) {
+    const ph = (m.s + nv.charge ** 1.6 * m.laps) % 1, back = Math.max(0, ph - .05 - .08 * nv.charge);
+    const at = q => { const rr = m.r * tr * Math.pow(1 - q, 1.3); return [cx + Math.cos(m.a + m.spin * q) * rr, cy + Math.sin(m.a + m.spin * q) * rr]; };
+    const [hx, hy] = at(ph), [bx, by] = at(back);
+    ctx.globalAlpha = Math.sin(Math.PI * ph) * Math.min(1, nv.charge * 4) * .9;
+    ctx.strokeStyle = novaGlow(nv, 70, 1); ctx.lineWidth = m.w * (.6 + nv.charge);
+    ctx.beginPath(); ctx.moveTo(bx, by); ctx.lineTo(hx, hy); ctx.stroke();
+  }
+  ctx.globalAlpha = 1;
+  const core = nv.after < 0 ? nv.charge : Math.max(0, 1 - nv.after / .8);
+  if (core > .01) {
+    const beat = RM ? 1 : 1 + .14 * Math.sin(nv.t * (.006 + .05 * nv.charge ** 2));
+    const rad = tr * (nv.after < 0 ? .08 + .32 * nv.charge ** 1.5 : .4 + nv.after * 3) * beat;
+    const g = ctx.createRadialGradient(cx, cy, 0, cx, cy, rad);
+    g.addColorStop(0, `rgba(255,255,255,${core})`);
+    g.addColorStop(.2, `rgba(255,255,255,${core * .85})`);
+    g.addColorStop(.38, novaGlow(nv, 72, core * .8));
+    g.addColorStop(.7, novaGlow(nv, 55, core * .3));
+    g.addColorStop(1, novaGlow(nv, 50, 0));
+    ctx.fillStyle = g; ctx.beginPath(); ctx.arc(cx, cy, rad, 0, Math.PI * 2); ctx.fill();
+  }
+  if (nv.after >= 0 && !RM) for (const s of nova.sparks) {
+    const t = nv.after;
+    if (t >= s.life) continue;
+    const drag = 2.4, dist = s.v * (1 - Math.exp(-drag * t)) / drag, len = 3 + Math.min(50, s.v * Math.exp(-drag * t) * .035);
+    const c = Math.cos(s.a), sn = Math.sin(s.a);
+    ctx.globalAlpha = 1 - t / s.life;
+    ctx.strokeStyle = s.white ? '#fff' : novaGlow(nv, 62, 1); ctx.lineWidth = s.w;
+    ctx.beginPath(); ctx.moveTo(cx + c * Math.max(0, dist - len), cy + sn * Math.max(0, dist - len)); ctx.lineTo(cx + c * dist, cy + sn * dist); ctx.stroke();
+  }
+  ctx.globalAlpha = 1;
+  ctx.globalCompositeOperation = 'source-over';
+  if (nv.after >= 0 && nv.after < .8) {
+    const a = (1 - nv.after / .8) ** 2 * (RM ? .3 : .9);
+    ctx.fillStyle = `rgba(255,255,255,${a})`;
+    ctx.fillRect(0, 0, W, H);
+  }
+  ctx.lineCap = 'butt';
+}
+
+/* ---------- Sound ---------- */
+// Only a supernova makes a sound. Nothing starts before the first tap or key,
+// and the speaker button (or M) turns it off.
+let soundOn = LS.get(K_SOUND) !== '0', gestured = false, ac = null, acOut = null;
+const novaBuses = new Set();
+function startAudio() {
+  if (!soundOn || !gestured) return null;
+  if (!ac) {
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if (!AC) return null;
+    try { ac = new AC(); } catch (_) { return null; }
+    acOut = audioOut(ac);
+  }
+  if (ac.state === 'suspended' && !document.hidden) ac.resume().catch(() => {});
+  return ac;
+}
+// Gain, then a compressor and a limiter, so a blast never clips.
+function audioOut(a) {
+  const g = a.createGain(), comp = a.createDynamicsCompressor(), lim = a.createDynamicsCompressor();
+  g.gain.value = .7;
+  comp.threshold.value = -18; comp.ratio.value = 4;
+  lim.threshold.value = -4; lim.knee.value = 0; lim.ratio.value = 20; lim.attack.value = .001; lim.release.value = .12;
+  g.connect(comp); comp.connect(lim); lim.connect(a.destination);
+  return g;
+}
+function onGesture(e) {
+  gestured = true;
+  if (!(e.target && e.target.closest && e.target.closest('#sound'))) startAudio();  // the button itself decides
+}
+window.addEventListener('pointerdown', onGesture, true);
+window.addEventListener('keydown', onGesture, true);
+document.addEventListener('visibilitychange', () => {
+  if (!ac) return;
+  if (document.hidden) ac.suspend().catch(() => {}); else if (soundOn) ac.resume().catch(() => {});
+});
+function playNova(far) {
+  const a = startAudio();
+  if (!a) return;
+  const bus = novaSound(a, acOut, a.currentTime + .03, far);
+  novaBuses.add(bus);
+  setTimeout(() => novaBuses.delete(bus), NOVA_END + 2000);
+}
+const soundBtn = $('#sound');
+function setSound(on) {
+  soundOn = on;
+  LS.set(K_SOUND, on ? '1' : '0');
+  soundBtn.setAttribute('aria-pressed', String(on));
+  if (on) startAudio();
+  else { for (const b of novaBuses) b.gain.value = 0; novaBuses.clear(); }
+}
+soundBtn.setAttribute('aria-pressed', String(soundOn));
+soundBtn.addEventListener('click', () => setSound(!soundOn));
+
+const noiseBufs = new WeakMap(), roomBufs = new WeakMap();
+function noiseOf(a) {
+  let b = noiseBufs.get(a);
+  if (!b) {
+    b = a.createBuffer(1, a.sampleRate * 2, a.sampleRate);
+    const d = b.getChannelData(0);
+    for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+    noiseBufs.set(a, b);
+  }
+  return b;
+}
+function roomOf(a) {  // a long, dark reverb tail
+  let b = roomBufs.get(a);
+  if (!b) {
+    const n = Math.floor(a.sampleRate * 3.8);
+    b = a.createBuffer(2, n, a.sampleRate);
+    for (let ch = 0; ch < 2; ch++) { const d = b.getChannelData(ch); for (let i = 0; i < n; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / n, 3.2); }
+    roomBufs.set(a, b);
+  }
+  return b;
+}
+// The sound of a star going: a rising charge, a held breath, the blast and its
+// long rumble, and a shimmer as the shockwave passes. Works in any audio
+// context, offline ones too; far (0 to 1) makes it quieter and duller.
+function novaSound(a, out, t, far = 0) {
+  const T = t + NOVA_CHARGE / 1000, end = T + 6;
+  const bus = a.createGain(); bus.gain.value = 1 - .72 * far;
+  const tone = a.createBiquadFilter(); tone.type = 'lowpass'; tone.frequency.value = 18000 - 16800 * far;
+  bus.connect(tone); tone.connect(out);
+  const room = a.createConvolver(); room.buffer = roomOf(a);
+  const wet = a.createGain(); wet.gain.value = .5; room.connect(wet); wet.connect(bus);
+  const gain = (v, to = bus) => { const g = a.createGain(); g.gain.value = v; g.connect(to); return g; };
+  const filter = (type, f, q, to) => { const n = a.createBiquadFilter(); n.type = type; n.frequency.value = f; n.Q.value = q; n.connect(to); return n; };
+  const osc = (type, f, to) => { const o = a.createOscillator(); o.type = type; o.frequency.value = f; o.connect(to); o.start(t); o.stop(end); return o; };
+  const noise = (to, from = t) => { const n = a.createBufferSource(); n.buffer = noiseOf(a); n.loop = true; n.connect(to); n.start(from); n.stop(end); return n; };
+  const env = (p, pts) => { p.setValueAtTime(pts[0][1], pts[0][0]); for (const [at, v, kind] of pts.slice(1)) kind ? p.exponentialRampToValueAtTime(v, at) : p.linearRampToValueAtTime(v, at); };
+  const cut = T - .09, gone = T - .02;  // the held breath before the blast
+
+  // Charge: a detuned drone climbing two octaves through an opening, resonant filter...
+  const droneAmp = gain(0), droneLp = filter('lowpass', 160, 1, droneAmp);
+  droneAmp.connect(room);
+  for (const m of [1, 1.006, .5]) { const o = osc('sawtooth', 55 * m, droneLp); env(o.frequency, [[t, 55 * m], [gone, 220 * m, 1]]); }
+  env(droneLp.frequency, [[t, 160], [gone, 5200, 1]]);
+  env(droneLp.Q, [[t, 1], [gone, 11]]);
+  env(droneAmp.gain, [[t, 0], [t + (cut - t) * .85, .1], [cut, .11], [gone, 0]]);
+  // ...throbbing faster and faster...
+  const throb = gain(0, droneAmp.gain), lfo = osc('sine', 3, throb);
+  env(lfo.frequency, [[t, 3], [cut, 26, 1]]);
+  env(throb.gain, [[t, 0], [cut, .08], [gone, 0]]);
+  // ...under a rushing noise riser and a swelling sub.
+  const riseAmp = gain(0), riseBp = filter('bandpass', 350, 1, riseAmp);
+  riseAmp.connect(room);
+  noise(riseBp);
+  env(riseBp.frequency, [[t, 350], [cut, 7500, 1]]);
+  env(riseBp.Q, [[t, 1], [cut, 5]]);
+  env(riseAmp.gain, [[t, .0001], [cut, .16, 1], [gone, 0]]);
+  const subAmp = gain(0), sub = osc('sine', 38, subAmp);
+  env(sub.frequency, [[t, 38], [gone, 64, 1]]);
+  env(subAmp.gain, [[t, 0], [cut, .22], [gone, 0]]);
+
+  // Blast: a falling boom, a punch and a crack...
+  const boomAmp = gain(0), boom = osc('sine', 160, boomAmp);
+  env(boom.frequency, [[T, 160], [T + 1.6, 28, 1]]);
+  env(boomAmp.gain, [[T, 0], [T + .006, .9], [T + 3.2, .001, 1]]);
+  const punchAmp = gain(0), punch = osc('triangle', 1200, punchAmp);
+  env(punch.frequency, [[T, 1200], [T + .09, 50, 1]]);
+  env(punchAmp.gain, [[T, 0], [T + .003, .5], [T + .14, .001, 1]]);
+  const crackAmp = gain(0);
+  noise(filter('highpass', 1500, .7, crackAmp), T);
+  env(crackAmp.gain, [[T, 0], [T + .004, .55], [T + .38, .001, 1]]);
+  // ...then the rumble rolling away into the reverb...
+  const rumbleAmp = gain(0), rumbleLp = filter('lowpass', 4500, .8, rumbleAmp);
+  rumbleAmp.connect(room);
+  noise(rumbleLp, T);
+  env(rumbleLp.frequency, [[T, 4500], [T + 4, 90, 1]]);
+  env(rumbleAmp.gain, [[T, 0], [T + .01, .75], [T + 5.2, .001, 1]]);
+  // ...the shockwave whooshing past from one side to the other...
+  const whooshAmp = gain(0), pan = a.createStereoPanner ? a.createStereoPanner() : null;
+  if (pan) { pan.connect(whooshAmp); env(pan.pan, [[T, -.7], [T + 2.8, .7]]); }
+  const whooshBp = filter('bandpass', 2600, 2, pan || whooshAmp);
+  noise(whooshBp, T);
+  env(whooshBp.frequency, [[T, 2600], [T + 2.8, 260, 1]]);
+  env(whooshAmp.gain, [[T, 0], [T + .15, .35], [T + 3, .001, 1]]);
+  // ...and a shimmer, as if the stars rang.
+  for (const [i, f] of [523.25, 659.25, 783.99, 1046.5, 1318.5, 1567.98].entries()) {
+    const amp = gain(0, room), o = osc('sine', f, amp);
+    o.detune.value = (i % 2 ? 1 : -1) * (3 + i);
+    env(amp.gain, [[T + .1, 0], [T + .5 + i * .06, .05], [T + 5.4, .0005, 1], [end - .05, 0]]);
+    amp.connect(bus);
+  }
+  return bus;
+}
+
 /* ---------- Interaction state ---------- */
 const sel = { anchor: null, end: null };
 let fail = null, hint = null, pulse = null, flight = null, inertia = null;
@@ -1037,9 +1391,12 @@ let dragMode = 'pan';
 
 function draw(now) {
   let anim = false;
-  const cs = cam.cs, OX = (W - dock) / 2, OY = H / 2;
+  const nv = novaState(now);
+  if (nv) anim = true;
+  const cs = cam.cs, OX = (W - dock) / 2 + (nv ? nv.sx : 0), OY = H / 2 + (nv ? nv.sy : 0);
   const vx0 = cam.x - OX / cs, vy0 = cam.y - OY / cs, vx1 = vx0 + W / cs, vy1 = vy0 + H / cs;
   const SX = wx => (wx - cam.x) * cs + OX, SY = wy => (wy - cam.y) * cs + OY;
+  if (nv) novaPlace(nv, cs, SX, SY);
 
   ctx.setTransform(1, 0, 0, 1, 0, 0);
   ctx.globalAlpha = 1;
@@ -1074,6 +1431,7 @@ function draw(now) {
     ctx.setLineDash([]);
   }
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  if (nv) novaUnder(nv, cs, SX, SY);
 
   // Circled words
   const r = Math.max(1.6, cs * .40);
@@ -1154,7 +1512,7 @@ function draw(now) {
     const img = atlas.c, oxd = OX * dpr - cam.x * csd + (csd - S) / 2, oyd = OY * dpr - cam.y * csd + (csd - S) / 2;
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.globalAlpha = la;
-    const x0 = Math.floor(vx0), x1 = Math.floor(vx1), y0 = Math.floor(vy0), y1 = Math.floor(vy1);
+    const x0 = Math.floor(vx0), x1 = Math.floor(vx1), y0 = Math.floor(vy0), y1 = Math.floor(vy1), moved = nv && !RM;
     for (let cy = fdiv(y0, CH); cy <= fdiv(y1, CH); cy++) {
       for (let cx = fdiv(x0, CH); cx <= fdiv(x1, CH); cx++) {
         const g = chunk(cx, cy).g;
@@ -1162,7 +1520,13 @@ function draw(now) {
         const ay = Math.max(y0, cy * CH), by = Math.min(y1, cy * CH + CH - 1);
         for (let y = ay; y <= by; y++) {
           const row = (y - cy * CH) * CH - cx * CH, dy = Math.round(y * csd + oyd);
-          for (let x = ax; x <= bx; x++) ctx.drawImage(img, g[row + x] * S, 0, S, S, Math.round(x * csd + oxd), dy, S, S);
+          if (moved) for (let x = ax; x <= bx; x++) {
+            const dx = Math.round(x * csd + oxd);
+            if (!novaLetter(nv, dx + S / 2, dy + S / 2, x, y)) { ctx.drawImage(img, g[row + x] * S, 0, S, S, dx, dy, S, S); continue; }
+            const z = S * nK;
+            ctx.drawImage(img, g[row + x] * S, 0, S, S, dx + nOX - (z - S) / 2, dy + nOY - (z - S) / 2, z, z);
+          }
+          else for (let x = ax; x <= bx; x++) ctx.drawImage(img, g[row + x] * S, 0, S, S, Math.round(x * csd + oxd), dy, S, S);
         }
       }
     }
@@ -1282,6 +1646,7 @@ function draw(now) {
       ctx.stroke();
     }
   }
+  if (nv) novaOver(nv);
   return anim;
 }
 
@@ -1405,6 +1770,10 @@ function collect(w, x, y, d, stray) {
   saveLocal(); queueWrite(e); surveyClaim(e);
   const rx = fdiv(x, RC), ry = fdiv(y, RC);
   toast(`<i></i><b>${w}</b><span>${stray ? 'Stray ' + THEMES[e.th].name.toLowerCase() + ' word' : THEMES[e.th].name} · ${regionName(rx, ry)}</span>`, THEMES[e.th].hue);
+  if (!stray) {
+    const total = territoryTotal(rx, ry);
+    if (territoryFound(rx, ry) === total) supernova(rx, ry, { mine: true, text: `${regionName(rx, ry)} · all ${total} hidden words found` });
+  }
   dismissCoach();
   renderNotes(); scheduleHud(); invalidate();
 }
@@ -1535,6 +1904,7 @@ window.addEventListener('keydown', e => {
     case '+': case '=': flyTo(cam.x, cam.y, cam.cs * 1.5, { min: 220, max: 320 }); break;
     case '-': case '_': flyTo(cam.x, cam.y, cam.cs / 1.5, { min: 220, max: 320 }); break;
     case 'n': setNotes(!notesOpen); break;
+    case 'm': setSound(!soundOn); break;
     case 'h': goHome(); break;
     default: return;
   }
@@ -1563,6 +1933,9 @@ function updateHud() {
     const l = links.get(sectorKey(cx, cy)), [done, total] = l && l.you ? territoryProgress(rx, ry) : [0, 0];
     tCharted.hidden = !total;
     if (total) tCharted.textContent = ` · ${done}/${total} charted`;
+  } else {
+    tCharted.hidden = false;
+    tCharted.textContent = ` · ${territoryFound(rx, ry)}/${territoryTotal(rx, ry)} found`;
   }
   updateLegend();
 }
@@ -1771,7 +2144,7 @@ updateHud();
 invalidate();
 if (redrawn) setTimeout(() => toast(`<i></i><b>The map has been redrawn</b><span>${NT} themes now, every territory named · ${redrawn.kept ? `${redrawn.kept} of your ${redrawn.had} finds are still on it` : 'your old finds are not on it'}</span>`, null, 7000), 900);
 connectStore();
-if (location.hash === '#debug') window.__lf = { cam, found, claims, links, chunk, wordEnd, collect, territoryProgress, world: () => world };
+if (location.hash === '#debug') window.__lf = { cam, found, claims, links, chunk, wordEnd, collect, territoryProgress, world: () => world, supernova, novaSound, audioOut, nova: () => nova };
 
 })();
 </script>
