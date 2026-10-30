@@ -91,11 +91,15 @@ Controller take part like this:
 - A `LEADERBOARD_URL` constant holds the Worker's URL. While it's empty the
   leaderboard stays hidden, so a game works the same without it.
   `?leaderboard=<url>` overrides it for local testing and for tests.
-- `GET /v1/scores?game=<game>&scope=<*|group code>&difficulty=<d|all>&mode=<m|all>`
+- `GET /v1/scores?game=<game>&scope=<*|group code>&difficulty=<d|all>&mode=<m|all>&since=<ms>`
   reads the top 10 for a view. `POST /v1/scores` saves three-letter initials
   with the score, enough detail for the Worker's plausibility check, the
   player's group codes and whether it also goes on the public board. Send
   POSTs as JSON with `Content-Type: text/plain` to avoid a CORS preflight.
+- Every score is kept, and views cover Today, This week, This month or All
+  time (This week by default). The page sends `since`, the start of the
+  period in the player's own time zone (Monday for weeks), on views and on
+  saves, so the reply ranks the score for that period too.
 - Split scores so they compare fairly (Funnels & Buckets files them by
   number range as difficulty and extra easy as mode; Air Traffic Controller
   by shift and the slowest radar sweep used), and keep practice variants off

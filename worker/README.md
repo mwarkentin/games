@@ -8,16 +8,17 @@ leaderboard uses a handful of requests and database rows per game played.
 ## API
 
 ```
-GET  /v1/scores?game=funnels-and-buckets&scope=*&difficulty=classic&mode=all
-  → 200 {"game", "scope", "difficulty", "mode",
+GET  /v1/scores?game=funnels-and-buckets&scope=*&difficulty=classic&mode=all&since=1792987200000
+  → 200 {"game", "scope", "difficulty", "mode", "since",
          "scores": [{"rank", "entry", "initials", "score", "level", "difficulty", "mode", "at"}]}
   → 404 {"error": "unknown group"}
 
 POST /v1/scores
   {"game": "funnels-and-buckets", "difficulty": "classic", "mode": "normal",
    "initials": "ABC", "score": 150, "level": 2, "popped": 12, "seconds": 90,
-   "groups": ["K7QP"], "public": true}
-  → 201 {"entry": "<uuid>", "ranks": {"*": 3, "K7QP": 1}}
+   "groups": ["K7QP"], "public": true, "since": 1792987200000}
+  → 201 {"entry": "<uuid>", "ranks": {"*": 14, "K7QP": 1},
+         "periodRanks": {"*": 2, "K7QP": 1}}
 
 POST /v1/groups
   {"name": "Family"}
@@ -38,8 +39,18 @@ browsers treat as a simple request and send without a CORS preflight.
 
 **Views.** A view is one scope (`*` for the public board, or a group code)
 narrowed by `difficulty` and `mode`, each of which can be `all` (the
-default). It returns the top 10. Ranks in a POST response are within the
-score's own difficulty and mode.
+default). It returns the top 10.
+
+**Periods.** `since` (milliseconds since 1970) narrows a view to scores
+saved from then on: the games send the start of today, this week (Monday)
+or this month in the player's own time zone. It must be within the last 32
+days (or up to a day ahead, for a device clock that runs fast); leave it
+out for all time.
+
+**Ranks.** A POST returns each score's rank within its own difficulty and
+mode: `ranks` for all time and, when the POST includes `since`,
+`periodRanks` for that period. Counting stops at 1,000, so a rank past that
+is `null` (the games say "beyond #1,000").
 
 **Groups** are private boards for family or friends. Each has a
 four-character code from `ABCDEFGHJKMNPQRSTUVWXYZ23456789` (no 0/O or
@@ -51,8 +62,15 @@ goes to the public board unless `public` is `false`, and to each listed
 group.
 
 **Storage.** Every place a score is shown is its own row in `scores`
-(`scope` is `*` or a group code); the copies share an `entry` id. Each
-(game, scope, difficulty, mode) keeps its top 100. The Worker checks that a
+(`scope` is `*` or a group code); the copies share an `entry` id. Every
+score is kept. A copy is a few hundred bytes with its indexes, so the free
+plan's 500 MB holds hundreds of thousands of saves.
+
+D1 counts every row a query scans against the free plan's 5 million a day,
+so each view reads through an index of its own (named with `INDEXED BY` in
+`src/leaderboard.js`, and checked with `EXPLAIN QUERY PLAN` in the tests).
+An all-time top 10 reads about 10 rows, and a period view reads only that
+period's scores. The Worker checks that a
 score is possible for the game (see `GAMES` in `src/leaderboard.js`), allows
 only three letters A–Z as initials, and stores a salted hash of each IP
 address, never the address itself, to rate-limit writes.
@@ -152,6 +170,17 @@ npx wrangler@4.151.0 d1 execute games-leaderboard --remote \
 
 To add a word to the initials blocklist, edit `BLOCKED_INITIALS` in
 `src/leaderboard.js`.
+
+If the database ever grows too big, delete scores older than a year that
+aren't in their board's all-time top 100:
+
+```sh
+npx wrangler@4.151.0 d1 execute games-leaderboard --remote --command "
+  DELETE FROM scores WHERE created_at < (unixepoch('now', '-1 year') * 1000) AND id NOT IN (
+    SELECT id FROM (SELECT id, ROW_NUMBER() OVER (
+      PARTITION BY game, scope, difficulty, mode ORDER BY score DESC, created_at, id) AS n FROM scores)
+    WHERE n <= 100)"
+```
 
 ## Adding another game
 

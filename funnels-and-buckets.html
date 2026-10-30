@@ -353,6 +353,10 @@ h2 { margin: 0; font-family: var(--font-display); font-weight: 400; font-size: 3
   border-radius: 12px; border: 1.5px solid var(--panel-edge); background: var(--bg); color: var(--ink);
   font: 700 16px/1 var(--font-body); letter-spacing: 0; text-transform: none;
 }
+.lb-periods { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); border: 1.5px solid var(--panel-edge); border-radius: 12px; overflow: hidden; }
+.lb-periods button { height: 40px; padding: 0 4px; border: 0; background: var(--bg); color: var(--ink); font: 700 14px/1.1 var(--font-body); touch-action: manipulation; }
+.lb-periods button + button { border-left: 1.5px solid var(--panel-edge); }
+.lb-periods button[aria-pressed="true"] { background: var(--glove); color: var(--glove-ink); }
 .lb-groups { display: flex; flex-direction: column; gap: 10px; padding-top: 14px; border-top: 1.5px dashed var(--panel-edge); }
 .lb-mygroups { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
 .lb-mygroups li { display: grid; grid-template-columns: 1fr auto auto auto; align-items: center; gap: 8px; }
@@ -583,6 +587,7 @@ h2 { margin: 0; font-family: var(--font-display); font-weight: 400; font-size: 3
     </div>
     <section class="lb" aria-label="Scores">
       <div class="lb-scopes" id="lbScopes" role="group" aria-label="Whose scores" hidden></div>
+      <div class="lb-periods" id="lbPeriods" role="group" aria-label="When"></div>
       <div class="lb-filters">
         <label>Difficulty
           <select id="lbDifficulty">
@@ -861,7 +866,7 @@ h2 { margin: 0; font-family: var(--font-display); font-weight: 400; font-size: 3
     lbForm: $('#lbForm'), lbInitials: $('#lbInitials'), lbSave: $('#lbSave'),
     overLbScopes: $('#overLbScopes'), lbPublicRow: $('#lbPublicRow'), lbPublic: $('#lbPublic'),
     lbOpenMenu: $('#lbOpenMenu'), lbOpenOver: $('#lbOpenOver'),
-    lbOv: $('#lbOv'), lbClose: $('#lbClose'), lbScopes: $('#lbScopes'), lbDifficulty: $('#lbDifficulty'), lbMode: $('#lbMode'),
+    lbOv: $('#lbOv'), lbClose: $('#lbClose'), lbScopes: $('#lbScopes'), lbPeriods: $('#lbPeriods'), lbDifficulty: $('#lbDifficulty'), lbMode: $('#lbMode'),
     lbList: $('#lbList'), lbNote: $('#lbNote'), lbNoGroups: $('#lbNoGroups'), lbGroupList: $('#lbGroupList'),
     lbJoinForm: $('#lbJoinForm'), lbJoinCode: $('#lbJoinCode'), lbCreateForm: $('#lbCreateForm'), lbGroupName: $('#lbGroupName'),
     lbGroupNote: $('#lbGroupNote'),
@@ -1680,6 +1685,19 @@ h2 { margin: 0; font-family: var(--font-display); font-weight: 400; font-size: 3
   const MAX_GROUPS = 5;
   const SINGLE_TABLE_NOTE = 'Games with one times table are practice and don’t go on the leaderboard.';
   const UNAVAILABLE = 'The leaderboard is unavailable right now.';
+  // Views cover all time or a recent period, which starts at local midnight,
+  // on Monday or on the 1st, in the player's own time zone.
+  const PERIODS = { today: 'Today', week: 'This week', month: 'This month', all: 'All time' };
+  const PERIOD_WORDS = { today: 'today', week: 'this week', month: 'this month', all: 'all time' };
+  const during = (period) => (period === 'all' ? '' : ` ${PERIOD_WORDS[period]}`);
+  function periodStart(period) {
+    if (period === 'all') return null;
+    const d = new Date();
+    d.setHours(0, 0, 0, 0);
+    if (period === 'week') d.setDate(d.getDate() - ((d.getDay() + 6) % 7));
+    if (period === 'month') d.setDate(1);
+    return d.getTime();
+  }
   const Leaderboard = {
     api: (() => {
       const override = new URLSearchParams(location.search).get('leaderboard') || '';
@@ -1702,8 +1720,10 @@ h2 { margin: 0; font-family: var(--font-display); font-weight: 400; font-size: 3
     post(path, body) {
       return this.request(path, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=UTF-8' }, body: JSON.stringify(body) });
     },
-    async scores({ scope, difficulty, mode }, maxAge) {
+    async scores({ scope, difficulty, mode, period }, maxAge) {
       const query = new URLSearchParams({ game: 'funnels-and-buckets', scope, difficulty, mode });
+      const since = periodStart(period);
+      if (since !== null) query.set('since', since);
       const hit = this.cache[query];
       if (hit && Date.now() - hit.at < maxAge) return hit.scores;
       const { scores } = await this.request(`/v1/scores?${query}`);
@@ -1725,10 +1745,11 @@ h2 { margin: 0; font-family: var(--font-display); font-weight: 400; font-size: 3
   const scopeName = (scope) => (scope === PUBLIC ? 'Everyone' : groupName(scope));
   const boardOf = (s) => (s.table ? null : { difficulty: s.range, mode: s.solo ? 'easy' : 'normal' });
   const boardName = (b) => RANGE_NAMES[b.difficulty] + (b.mode === 'easy' ? ' · Extra easy' : '');
-  // Which scope tab is open, and the leaderboard screen's filters.
+  // Which scope tab and period are open, and the leaderboard screen's filters.
   function lbView() {
-    const v = { scope: PUBLIC, difficulty: 'all', mode: 'all', ...store.get('fb.lbView', {}) };
+    const v = { scope: PUBLIC, period: 'week', difficulty: 'all', mode: 'all', ...store.get('fb.lbView', {}) };
     if (v.scope !== PUBLIC && !myGroups().some((g) => g.code === v.scope)) v.scope = PUBLIC;
+    if (!PERIODS[v.period]) v.period = 'week';
     if (!RANGE_NAMES[v.difficulty]) v.difficulty = 'all';
     if (!MODE_NAMES[v.mode]) v.mode = 'all';
     return v;
@@ -1760,6 +1781,28 @@ h2 { margin: 0; font-family: var(--font-display); font-weight: 400; font-size: 3
       return li;
     }));
     list.hidden = !scores.length;
+  }
+
+  function renderPeriods(container, active, onPick) {
+    container.replaceChildren(...Object.entries(PERIODS).map(([id, name]) => {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.textContent = name;
+      b.setAttribute('aria-pressed', String(id === active));
+      b.addEventListener('click', () => onPick(id));
+      return b;
+    }));
+  }
+  // "#2 this week on Everyone (#14 all time)"; all time on its own when that's the view.
+  function savedText({ ranks, periodRanks = {} }, period) {
+    const where = Object.entries(ranks).map(([scope, rank]) => {
+      const place = scope === PUBLIC ? 'on Everyone' : `in ${scopeName(scope)}`;
+      const ever = rank === null ? 'beyond #1,000' : `#${rank}`;
+      const recent = periodRanks[scope];
+      if (period === 'all' || !recent) return `${ever} ${place}`;
+      return `#${recent}${during(period)} ${place}${recent === rank ? '' : ` (${ever} all time)`}`;
+    });
+    return `Saved! ${where.join(', ')}.`;
   }
 
   // Everyone, then each group you're in. Hidden when you're in no groups.
@@ -1794,12 +1837,12 @@ h2 { margin: 0; font-family: var(--font-display); font-weight: 400; font-size: 3
   /* menu: the top 5 for the chosen settings */
   async function updateMenuBoard() {
     if (!Leaderboard.api) return;
-    const board = boardOf(settings), { scope } = lbView(), request = ++menuRequest;
+    const board = boardOf(settings), { scope, period } = lbView(), request = ++menuRequest;
     els.menuLb.hidden = false;
-    els.menuLbWhich.textContent = board ? `${boardName(board)}${scope === PUBLIC ? '' : ` · ${scopeName(scope)}`}` : '';
+    els.menuLbWhich.textContent = board ? `${boardName(board)} · ${PERIODS[period]}${scope === PUBLIC ? '' : ` · ${scopeName(scope)}`}` : '';
     if (!board) { renderRanks(els.menuLbList, []); els.menuLbNote.textContent = SINGLE_TABLE_NOTE; return; }
-    const scores = await loadList(els.menuLbList, els.menuLbNote, { scope, ...board }, () => request === menuRequest,
-      'No scores yet. Yours could be first.');
+    const scores = await loadList(els.menuLbList, els.menuLbNote, { scope, period, ...board }, () => request === menuRequest,
+      `No scores${during(period)} yet. Yours could be first.`);
     if (scores) renderRanks(els.menuLbList, scores.slice(0, 5));
   }
 
@@ -1812,7 +1855,7 @@ h2 { margin: 0; font-family: var(--font-display); font-weight: 400; font-size: 3
       : null;
     els.overLb.hidden = false;
     els.lbForm.hidden = true;
-    els.overLbWhich.textContent = board ? boardName(board) : '';
+    els.overLbWhich.textContent = '';
     els.overLbScopes.hidden = true;
     renderRanks(els.overLbList, []);
     if (!board) { els.overLbNote.textContent = SINGLE_TABLE_NOTE; return; }
@@ -1827,14 +1870,16 @@ h2 { margin: 0; font-family: var(--font-display); font-weight: 400; font-size: 3
     els.lbPublicRow.hidden = !myGroups().length;
     els.lbPublic.checked = store.get('games.public', true) !== false;
     els.lbInitials.value = store.get('games.initials', '');
-    els.overLbNote.textContent = myGroups().length ? 'Add your initials to save this score.' : 'That’s a top-10 score! Add your initials.';
+    els.overLbNote.textContent = myGroups().length ? 'Add your initials to save this score.' : `That’s a top-10 score${during(lbView().period)}! Add your initials.`;
   }
   async function refreshOverList() {
-    const board = boardOf(settings), { scope } = lbView(), request = ++overRequest;
+    const board = boardOf(settings), { scope, period } = lbView(), request = ++overRequest;
+    if (!board) return null;   // one times table: practice, off the board
+    els.overLbWhich.textContent = `${boardName(board)} · ${PERIODS[period]}`;
     renderScopes(els.overLbScopes, scope, (code) => { setLbView({ scope: code }); refreshOverList(); });
     els.overLbNote.textContent = 'Loading scores…';
-    return loadList(els.overLbList, els.overLbNote, { scope, ...board }, () => request === overRequest,
-      `No scores ${scope === PUBLIC ? 'on this board' : `in ${scopeName(scope)}`} yet.`);
+    return loadList(els.overLbList, els.overLbNote, { scope, period, ...board }, () => request === overRequest,
+      `No scores ${scope === PUBLIC ? 'on this board' : `in ${scopeName(scope)}`}${during(period)} yet.`);
   }
 
   async function saveToBoard(e) {
@@ -1853,9 +1898,10 @@ h2 { margin: 0; font-family: var(--font-display); font-weight: 400; font-size: 3
     els.overLbNote.textContent = 'Saving…';
     try {
       const { difficulty, mode, score: s, level: l, popped: p, seconds } = game;
+      const { period } = lbView();
       const body = await Leaderboard.save({
         difficulty, mode, initials, score: s, level: l, popped: p, seconds,
-        groups: groups.map((g) => g.code), public: isPublic,
+        groups: groups.map((g) => g.code), public: isPublic, since: periodStart(period) ?? undefined,
       });
       game.entry = body.entry;
       store.set('games.initials', initials);
@@ -1864,8 +1910,7 @@ h2 { margin: 0; font-family: var(--font-display); font-weight: 400; font-size: 3
       els.lbForm.hidden = true;
       if (!(lbView().scope in body.ranks)) setLbView({ scope: Object.keys(body.ranks)[0] });
       await refreshOverList();
-      const where = Object.entries(body.ranks).map(([scope, rank]) => `#${rank} ${scope === PUBLIC ? 'on Everyone' : `in ${scopeName(scope)}`}`);
-      els.overLbNote.textContent = `Saved! ${where.join(', ')}.`;
+      els.overLbNote.textContent = savedText(body, period);
     } catch (err) {
       if (game === lastGame) {
         els.overLbNote.textContent = err.fromServer
@@ -1898,9 +1943,10 @@ h2 { margin: 0; font-family: var(--font-display); font-weight: 400; font-size: 3
   function refreshScreen() {
     const v = lbView(), request = ++screenRequest;
     renderScopes(els.lbScopes, v.scope, (code) => { setLbView({ scope: code }); refreshScreen(); });
+    renderPeriods(els.lbPeriods, v.period, (period) => { setLbView({ period }); refreshScreen(); });
     els.lbNote.textContent = 'Loading scores…';
     return loadList(els.lbList, els.lbNote, v, () => request === screenRequest,
-      `No scores ${v.scope === PUBLIC ? 'here' : `in ${scopeName(v.scope)}`} yet.`,
+      `No scores ${v.scope === PUBLIC ? 'here' : `in ${scopeName(v.scope)}`}${during(v.period)} yet.`,
       v.difficulty === 'all' || v.mode === 'all');
   }
 

@@ -187,6 +187,10 @@ details li b{color:var(--amber);font-weight:600}
 .lb-top{display:flex;align-items:center;justify-content:space-between;gap:12px}
 .btn.lb-close{flex:none;height:40px;font-size:16px}
 .lb-filters{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+.lb-periods{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));border:1px solid var(--rule);border-radius:8px;overflow:hidden}
+.lb-periods button{height:40px;padding:0 4px;border:0;background:var(--key);font:600 16px/1.1 var(--font-ui);letter-spacing:.03em}
+.lb-periods button+button{border-left:1px solid var(--rule)}
+.lb-periods button[aria-pressed="true"]{background:var(--amber);color:var(--amber-ink)}
 .lb-filters label,.lb-row label{display:flex;flex-direction:column;gap:6px;font:600 12px/1 var(--font-ui);letter-spacing:.14em;text-transform:uppercase;color:var(--muted)}
 .lb-groups{border-top:1px solid var(--rule);padding-top:12px;gap:10px}
 .lb-mygroups{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:8px}
@@ -334,6 +338,7 @@ details li b{color:var(--amber);font-weight:600}
       <button class="btn lb-close" id="lbClose" type="button">Close</button>
     </div>
     <div class="lb-scopes" id="lbScopes" role="group" aria-label="Whose shifts" hidden></div>
+    <div class="lb-periods" id="lbPeriods" role="group" aria-label="When"></div>
     <div class="lb-filters">
       <label>Shift
         <select id="lbDifficulty">
@@ -1203,6 +1208,19 @@ const GROUP_CODE = /^[A-HJKMNP-Z2-9]{4}$/;
 const MAX_GROUPS = 5;
 const UNAVAILABLE = 'The leaderboard is unavailable right now.';
 const OFFLINE = 'Couldn’t reach the leaderboard. Try again in a moment.';
+// Views cover all time or a recent period, which starts at local midnight, on
+// Monday or on the 1st, in the player's own time zone.
+const PERIODS = { today: 'Today', week: 'This week', month: 'This month', all: 'All time' };
+const PERIOD_WORDS = { today: 'today', week: 'this week', month: 'this month', all: 'all time' };
+const during = (period) => (period === 'all' ? '' : ` ${PERIOD_WORDS[period]}`);
+function periodStart(period) {
+  if (period === 'all') return null;
+  const d = new Date();
+  d.setHours(0, 0, 0, 0);
+  if (period === 'week') d.setDate(d.getDate() - ((d.getDay() + 6) % 7));
+  if (period === 'month') d.setDate(1);
+  return d.getTime();
+}
 const Leaderboard = {
   api: (() => {
     const override = new URLSearchParams(location.search).get('leaderboard') || '';
@@ -1225,8 +1243,10 @@ const Leaderboard = {
   post(path, body) {
     return this.request(path, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=UTF-8' }, body: JSON.stringify(body) });
   },
-  async scores({ scope, difficulty, mode }, maxAge) {
+  async scores({ scope, difficulty, mode, period }, maxAge) {
     const query = new URLSearchParams({ game: 'air-traffic-controller', scope, difficulty, mode });
+    const since = periodStart(period);
+    if (since !== null) query.set('since', since);
     const hit = this.cache[query];
     if (hit && Date.now() - hit.at < maxAge) return hit.scores;
     const { scores } = await this.request(`/v1/scores?${query}`);
@@ -1252,7 +1272,8 @@ const boardName = (b) => `${levelOf(b.difficulty).name} · ${speedOf(b.mode).nam
 // Which scope tab is open, and the leaderboard card's filters.
 function lbView() {
   const saved = store.get('atc-lbView', {});
-  const v = { scope: PUBLIC, difficulty: 'all', mode: 'all', ...(saved && typeof saved === 'object' ? saved : {}) };
+  const v = { scope: PUBLIC, period: 'week', difficulty: 'all', mode: 'all', ...(saved && typeof saved === 'object' ? saved : {}) };
+  if (!PERIODS[v.period]) v.period = 'week';
   if (v.scope !== PUBLIC && !myGroups().some((g) => g.code === v.scope)) v.scope = PUBLIC;
   if (!LEVELS.some((l) => l.id === v.difficulty)) v.difficulty = 'all';
   if (!SPEEDS.some((s) => s.id === v.mode)) v.mode = 'all';
@@ -1291,6 +1312,27 @@ function renderRanks(list, scores, { mine = null, tags = false } = {}) {
   }));
   list.hidden = !scores.length;
 }
+function renderPeriods(container, active, onPick) {
+  container.replaceChildren(...Object.entries(PERIODS).map(([id, name]) => {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.textContent = name;
+    b.setAttribute('aria-pressed', String(id === active));
+    b.addEventListener('click', () => onPick(id));
+    return b;
+  }));
+}
+// "#2 this week on Everyone (#14 all time)"; all time on its own when that's the view.
+function savedText({ ranks, periodRanks = {} }, period) {
+  const where = Object.entries(ranks).map(([scope, rank]) => {
+    const place = scope === PUBLIC ? 'on Everyone' : `in ${scopeName(scope)}`;
+    const ever = rank === null ? 'beyond #1,000' : `#${rank}`;
+    const recent = periodRanks[scope];
+    if (period === 'all' || !recent) return `${ever} ${place}`;
+    return `#${recent}${during(period)} ${place}${recent === rank ? '' : ` (${ever} all time)`}`;
+  });
+  return `Saved! ${where.join(', ')}.`;
+}
 // Everyone, then each group you're in. Hidden when you're in no groups.
 function renderScopes(container, active, onPick) {
   const groups = myGroups();
@@ -1322,11 +1364,11 @@ async function loadList(list, note, view, isCurrent, emptyText, tags) {
 /* menu: the top 5 for the chosen shift and sweep */
 async function updateMenuBoard() {
   if (!Leaderboard.api) return;
-  const board = { difficulty: prefs.level, mode: prefs.speed }, { scope } = lbView(), request = ++menuRequest;
+  const board = { difficulty: prefs.level, mode: prefs.speed }, { scope, period } = lbView(), request = ++menuRequest;
   $('#menuLb').hidden = false;
-  $('#menuLbWhich').textContent = boardName(board) + (scope === PUBLIC ? '' : ` · ${scopeName(scope)}`);
-  const scores = await loadList($('#menuLbList'), $('#menuLbNote'), { scope, ...board }, () => request === menuRequest,
-    'No shifts on this board yet.');
+  $('#menuLbWhich').textContent = `${boardName(board)} · ${PERIODS[period]}${scope === PUBLIC ? '' : ` · ${scopeName(scope)}`}`;
+  const scores = await loadList($('#menuLbList'), $('#menuLbNote'), { scope, period, ...board }, () => request === menuRequest,
+    `No shifts on this board${during(period)} yet.`);
   if (scores) renderRanks($('#menuLbList'), scores.slice(0, 5), { mine: G && G.entry });
 }
 
@@ -1336,7 +1378,6 @@ async function showResultBoard() {
   box.hidden = !Leaderboard.api;
   if (!Leaderboard.api || !G || !G.result) return;
   const game = G, entry = shiftEntry(game);
-  $('#resLbWhich').textContent = boardName(entry);
   $('#lbForm').hidden = true;
   const scores = await refreshResultList();
   if (!scores || game !== G || game.entry || !entry.level) return;
@@ -1351,18 +1392,19 @@ async function showResultBoard() {
   $('#lbInitials').value = store.get('games.initials', '');
   if (!groups.length) {
     const rank = 1 + scores.filter((s) => s.score >= entry.score).length;
-    $('#resLbNote').textContent = `That’s #${rank} on the ${boardName(entry)} board. Add your initials.`;
+    $('#resLbNote').textContent = `That’s #${rank}${during(lbView().period)} on the ${boardName(entry)} board. Add your initials.`;
   } else {
     $('#resLbNote').textContent = 'Add your initials to save this shift.';
   }
 }
 async function refreshResultList() {
   if (!G || !G.result) return null;
-  const { scope } = lbView(), board = shiftEntry(G), request = ++resRequest;
+  const { scope, period } = lbView(), board = shiftEntry(G), request = ++resRequest;
+  $('#resLbWhich').textContent = `${boardName(board)} · ${PERIODS[period]}`;
   renderScopes($('#resLbScopes'), scope, (code) => { setLbView({ scope: code }); refreshResultList(); });
   $('#resLbNote').textContent = 'Loading shifts…';
-  const scores = await loadList($('#resLbList'), $('#resLbNote'), { scope, difficulty: board.difficulty, mode: board.mode },
-    () => request === resRequest, `No shifts ${scope === PUBLIC ? 'on this board' : `in ${scopeName(scope)}`} yet.`);
+  const scores = await loadList($('#resLbList'), $('#resLbNote'), { scope, period, difficulty: board.difficulty, mode: board.mode },
+    () => request === resRequest, `No shifts ${scope === PUBLIC ? 'on this board' : `in ${scopeName(scope)}`}${during(period)} yet.`);
   if (scores) renderRanks($('#resLbList'), scores.slice(0, 5), { mine: G && G.entry });
   return scores;
 }
@@ -1380,8 +1422,9 @@ async function saveToBoard(e) {
   $('#lbSave').disabled = true;
   $('#resLbNote').textContent = 'Saving…';
   try {
+    const { period } = lbView();
     const body = await Leaderboard.save({
-      ...shiftEntry(game), initials, groups: groups.map((g) => g.code), public: isPublic,
+      ...shiftEntry(game), initials, groups: groups.map((g) => g.code), public: isPublic, since: periodStart(period) ?? undefined,
     });
     game.entry = body.entry;
     store.set('games.initials', initials);
@@ -1390,8 +1433,7 @@ async function saveToBoard(e) {
     $('#lbForm').hidden = true;
     if (!(lbView().scope in body.ranks)) setLbView({ scope: Object.keys(body.ranks)[0] });
     await refreshResultList();
-    const where = Object.entries(body.ranks).map(([scope, rank]) => `#${rank} ${scope === PUBLIC ? 'on Everyone' : `in ${scopeName(scope)}`}`);
-    $('#resLbNote').textContent = `Saved! ${where.join(', ')}.`;
+    $('#resLbNote').textContent = savedText(body, period);
   } catch (err) {
     if (game === G) $('#resLbNote').textContent = err.fromServer ? `Couldn’t save: ${err.message}.` : OFFLINE;
   } finally {
@@ -1426,9 +1468,10 @@ function closeBoardScreen() {
 function refreshScreen() {
   const v = lbView(), request = ++screenRequest;
   renderScopes($('#lbScopes'), v.scope, (code) => { setLbView({ scope: code }); refreshScreen(); });
+  renderPeriods($('#lbPeriods'), v.period, (period) => { setLbView({ period }); refreshScreen(); });
   $('#lbNote').textContent = 'Loading shifts…';
   return loadList($('#lbList'), $('#lbNote'), v, () => request === screenRequest,
-    `No shifts ${v.scope === PUBLIC ? 'here' : `in ${scopeName(v.scope)}`} yet.`,
+    `No shifts ${v.scope === PUBLIC ? 'here' : `in ${scopeName(v.scope)}`}${during(v.period)} yet.`,
     v.difficulty === 'all' || v.mode === 'all');
 }
 

@@ -408,6 +408,10 @@ legend { padding: 0; margin-bottom: 8px; font-size: .7rem; font-weight: 700; tex
   font: 700 .92rem/1.2 var(--font-ui);
 }
 .lb-scopes button[aria-pressed="true"] { border-color: var(--ink); background: var(--hi); color: var(--hi-ink); }
+.lb-periods { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); border: 2px solid var(--ink); border-radius: 12px 14px 11px 13px; overflow: hidden; }
+.lb-periods button { min-height: 40px; padding: 4px 2px; border: 0; background: var(--card); color: var(--ink); font: 700 .92rem/1.15 var(--font-ui); cursor: pointer; touch-action: manipulation; }
+.lb-periods button + button { border-left: 2px solid var(--ink); }
+.lb-periods button[aria-pressed="true"] { background: var(--hi); color: var(--hi-ink); }
 .lb-ov { z-index: 30; }
 .lb-card { max-width: 460px; display: flex; flex-direction: column; gap: 12px; }
 .lb-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
@@ -666,6 +670,7 @@ legend { padding: 0; margin-bottom: 8px; font-size: .7rem; font-weight: 700; tex
         </button>
       </div>
       <div class="lb-scopes" id="lbScopes" role="group" aria-label="Whose scores" hidden></div>
+      <div class="lb-periods" id="lbPeriods" role="group" aria-label="When"></div>
       <div class="lb-filters">
         <label>Game
           <select id="lbMode">
@@ -1047,7 +1052,7 @@ const els = {};
  'ruleKeyText', 'rulePost', 'menu', 'overlay', 'ovArt', 'ovTitle', 'ovBody', 'ovActions', 'announcer', 'soundBtn',
  'pauseBtn', 'chompBtn', 'playBtn', 'modeChips', 'diffSeg', 'titleNib', 'pad', 'menuScoreList', 'menuScoreNote', 'menuWhich',
  'sideScoreList', 'sideScoreNote', 'sideWhich', 'sayBtn', 'diffField', 'kNote', 'howtoBoard', 'lbOpenMenu', 'lbOv', 'lbClose',
- 'lbScopes', 'lbMode', 'lbDiff', 'lbList', 'lbNote', 'lbNoGroups', 'lbGroupList', 'lbJoinForm', 'lbJoinCode', 'lbCreateForm',
+ 'lbScopes', 'lbPeriods', 'lbMode', 'lbDiff', 'lbList', 'lbNote', 'lbNoGroups', 'lbGroupList', 'lbJoinForm', 'lbJoinCode', 'lbCreateForm',
  'lbGroupName', 'lbGroupNote'].forEach(id => { els[id] = $(id); });
 
 // ---------- saved preferences (this browser only) ----------
@@ -1910,6 +1915,19 @@ const GROUP_CODE = /^[A-HJKMNP-Z2-9]{4}$/;
 const MAX_GROUPS = 5;
 const UNAVAILABLE = 'The high-score board is unavailable right now.';
 const OFFLINE = 'Couldn’t reach the high-score board. Try again in a moment.';
+// Views cover all time or a recent period, which starts at local midnight, on
+// Monday or on the 1st, in the player's own time zone.
+const PERIODS = { today: 'Today', week: 'This week', month: 'This month', all: 'All time' };
+const PERIOD_WORDS = { today: 'today', week: 'this week', month: 'this month', all: 'all time' };
+const during = period => (period === 'all' ? '' : ` ${PERIOD_WORDS[period]}`);
+function periodStart(period) {
+  if (period === 'all') return null;
+  const d = new Date();
+  d.setHours(0, 0, 0, 0);
+  if (period === 'week') d.setDate(d.getDate() - ((d.getDay() + 6) % 7));
+  if (period === 'month') d.setDate(1);
+  return d.getTime();
+}
 const Leaderboard = {
   api: (() => {
     const override = new URLSearchParams(location.search).get('leaderboard') || '';
@@ -1932,8 +1950,10 @@ const Leaderboard = {
   post(path, body) {
     return this.request(path, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=UTF-8' }, body: JSON.stringify(body) });
   },
-  async scores({ scope, difficulty, mode }, maxAge) {
+  async scores({ scope, difficulty, mode, period }, maxAge) {
     const query = new URLSearchParams({ game: 'doodle-chomp', scope, difficulty, mode });
+    const since = periodStart(period);
+    if (since !== null) query.set('since', since);
     const hit = this.cache[query];
     if (hit && Date.now() - hit.at < maxAge) return hit.scores;
     const { scores } = await this.request(`/v1/scores?${query}`);
@@ -1967,8 +1987,9 @@ const boardLabel = () => boardName(boardOf());
 // Which scope tab is open, and the high-score screen's filters.
 function lbView() {
   const saved = store.get('lbView', {});
-  const v = { scope: PUBLIC, difficulty: 'all', mode: 'all', ...(saved && typeof saved === 'object' ? saved : {}) };
+  const v = { scope: PUBLIC, period: 'week', difficulty: 'all', mode: 'all', ...(saved && typeof saved === 'object' ? saved : {}) };
   if (v.scope !== PUBLIC && !myGroups().some(g => g.code === v.scope)) v.scope = PUBLIC;
+  if (!PERIODS[v.period]) v.period = 'week';
   if (!DIFF_NAMES[v.difficulty]) v.difficulty = 'all';
   if (!MODE_NAMES[v.mode]) v.mode = 'all';
   return v;
@@ -2009,6 +2030,27 @@ function scoreRows(listEl, list, mine, max, tags) {
     listEl.appendChild(li);
   }
   listEl.hidden = !rows.length;
+}
+function renderPeriods(container, active, onPick) {
+  container.replaceChildren(...Object.entries(PERIODS).map(([id, name]) => {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.textContent = name;
+    b.setAttribute('aria-pressed', String(id === active));
+    b.addEventListener('click', () => onPick(id));
+    return b;
+  }));
+}
+// "#2 this week on Everyone (#14 all time)"; all time on its own when that's the view.
+function savedText({ ranks, periodRanks = {} }, period) {
+  const where = Object.entries(ranks).map(([scope, rank]) => {
+    const place = scope === PUBLIC ? 'on Everyone' : `in ${scopeName(scope)}`;
+    const ever = rank === null ? 'beyond #1,000' : `#${rank}`;
+    const recent = periodRanks[scope];
+    if (period === 'all' || !recent) return `${ever} ${place}`;
+    return `#${recent}${during(period)} ${place}${recent === rank ? '' : ` (${ever} all time)`}`;
+  });
+  return `Saved! ${where.join(', ')}.`;
 }
 // Everyone, then each group you're in. Hidden when you're in no groups.
 function renderScopes(container, active, onPick) {
@@ -2056,27 +2098,28 @@ function renderScores() {
     }
     return;
   }
-  const { scope } = lbView(), request = ++boardRequest;
+  const { scope, period } = lbView(), request = ++boardRequest;
   for (const [listEl, noteEl, whichEl] of targets) {
-    whichEl.textContent = scope === PUBLIC ? label : `${label} · ${scopeName(scope)}`;
+    whichEl.textContent = `${label} · ${PERIODS[period]}${scope === PUBLIC ? '' : ` · ${scopeName(scope)}`}`;
     if (listEl.hidden) noteEl.textContent = 'Loading scores…';
   }
-  loadScores(targets, { scope, ...boardOf() }, () => request === boardRequest,
-    'No scores yet. Finish a game to put the first initials on the board.', 5);
+  loadScores(targets, { scope, period, ...boardOf() }, () => request === boardRequest,
+    `No scores${during(period)} yet. Finish a game to put the first initials on the board.`, 5);
 }
 
 async function saveScore(initials, isPublic) {
   const game = lastGame, groups = myGroups();
   try {
     const { difficulty, mode, score, level, chomps, seconds } = game;
+    const { period } = lbView();
     const body = await Leaderboard.save({
       difficulty, mode, initials, score, level, chomps, seconds,
-      groups: groups.map(g => g.code), public: !groups.length || isPublic,
+      groups: groups.map(g => g.code), public: !groups.length || isPublic, since: periodStart(period) ?? undefined,
     });
     game.entry = body.entry;
     shared.set('initials', initials);
     if (groups.length) shared.set('public', isPublic);
-    return { ok: true, ranks: body.ranks };
+    return { ok: true, ranks: body.ranks, periodRanks: body.periodRanks, period };
   } catch (err) {
     return { ok: false, message: err.fromServer ? `That didn't save: ${err.message}.` : OFFLINE };
   }
@@ -2158,7 +2201,7 @@ function initialsForm(onSaved) {
     msg.className = 'save-msg';
     msg.textContent = 'Saving…';
     const res = await saveScore(initials, publicBox.checked);
-    if (res.ok) { onSaved(res.ranks); return; }
+    if (res.ok) { onSaved(res); return; }
     controls.forEach(x => { x.disabled = false; });
     msg.className = 'save-msg err';
     msg.textContent = res.message;
@@ -2207,16 +2250,17 @@ function overBoard() {
   open.textContent = 'High scores & groups';
   open.addEventListener('click', openBoardScreen);
   box.append(which, scopes, list, note, open);
-  ob = { box, scopes, list, note, form: null };
+  ob = { box, which, scopes, list, note, form: null };
   return box;
 }
 async function refreshOverBoard(offerSave) {
-  const here = ob, { scope } = lbView(), request = ++overRequest;
+  const here = ob, { scope, period } = lbView(), request = ++overRequest;
   if (!here) return;
+  here.which.textContent = `${boardLabel()} · ${PERIODS[period]}`;
   renderScopes(here.scopes, scope, code => { setLbView({ scope: code }); refreshOverBoard(false); });
   here.note.textContent = 'Loading scores…';
-  const scores = await loadScores([[here.list, here.note]], { scope, ...boardOf() }, () => request === overRequest && ob === here,
-    `No scores ${scope === PUBLIC ? 'on this board' : `in ${scopeName(scope)}`} yet.`, 5);
+  const scores = await loadScores([[here.list, here.note]], { scope, period, ...boardOf() }, () => request === overRequest && ob === here,
+    `No scores ${scope === PUBLIC ? 'on this board' : `in ${scopeName(scope)}`}${during(period)} yet.`, 5);
   const game = lastGame;
   if (!offerSave || !scores || here.form || !game || game.entry) return;
   // In a group, every score is worth saving. Otherwise (and then the list is
@@ -2226,15 +2270,17 @@ async function refreshOverBoard(offerSave) {
   if (!inGroups && scores.length >= TOP && game.score <= scores[TOP - 1].score) return;
   if (!inGroups) {
     const rank = 1 + scores.filter(x => x.score >= game.score).length;
-    here.note.textContent = rank > 1 ? `That's #${rank} on the ${boardLabel()} board.`
-      : scores.length ? `A new record! The old one was ${scores[0].score}.` : 'First score on this board!';
+    here.note.textContent = rank > 1 ? `That's #${rank}${during(period)} on the ${boardLabel()} board.`
+      : !scores.length ? `First score on this board${during(period)}!`
+      : period === 'all' ? `A new record! The old one was ${scores[0].score}.` : `Top score${during(period)}! The best before was ${scores[0].score}.`;
   }
-  here.form = initialsForm(ranks => scoreSaved(here, game, ranks));
+  here.form = initialsForm(res => scoreSaved(here, game, res));
   here.box.insertBefore(here.form, here.scopes);
   const active = document.activeElement;
   if (finePointer.matches && (!active || active === document.body || els.ovActions.contains(active))) here.form.focusFirst();
 }
-async function scoreSaved(here, game, ranks) {
+async function scoreSaved(here, game, saved) {
+  const { ranks } = saved;
   if (ob !== here || game !== lastGame) return;
   here.form.remove();
   here.form = null;
@@ -2243,8 +2289,7 @@ async function scoreSaved(here, game, ranks) {
   if (!(lbView().scope in ranks)) setLbView({ scope: Object.keys(ranks)[0] });
   renderScores();
   await refreshOverBoard(false);
-  const where = Object.entries(ranks).map(([scope, rank]) => `#${rank} ${scope === PUBLIC ? 'on Everyone' : `in ${scopeName(scope)}`}`);
-  here.note.textContent = `Saved! ${where.join(', ')}.`;
+  here.note.textContent = savedText(saved, saved.period);
   announce(here.note.textContent);
   els.ovActions.firstChild.focus({ preventScroll: true });
 }
@@ -2276,9 +2321,10 @@ function closeBoardScreen() {
 function refreshScreen() {
   const v = lbView(), request = ++screenRequest;
   renderScopes(els.lbScopes, v.scope, code => { setLbView({ scope: code }); refreshScreen(); });
+  renderPeriods(els.lbPeriods, v.period, period => { setLbView({ period }); refreshScreen(); });
   els.lbNote.textContent = 'Loading scores…';
   return loadScores([[els.lbList, els.lbNote]], v, () => request === screenRequest,
-    `No scores ${v.scope === PUBLIC ? 'here' : `in ${scopeName(v.scope)}`} yet.`, TOP,
+    `No scores ${v.scope === PUBLIC ? 'here' : `in ${scopeName(v.scope)}`}${during(v.period)} yet.`, TOP,
     v.difficulty === 'all' || v.mode === 'all');
 }
 

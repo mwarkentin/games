@@ -14,11 +14,13 @@ from fake_leaderboard import API, FakeLeaderboard
 from playwright.sync_api import Page, expect
 
 UNAVAILABLE = "The leaderboard is unavailable right now."
+# Local midnight on Monday, as the page works it out.
+START_OF_WEEK = "() => { const d = new Date(); d.setHours(0, 0, 0, 0); d.setDate(d.getDate() - (d.getDay() + 6) % 7); return d.getTime(); }"
 
 
-def row(initials: str, handled: int, spare: int = 0, scope: str = "*", difficulty: str = "trainee", mode: str = "steady") -> dict:
+def row(initials: str, handled: int, spare: int = 0, scope: str = "*", difficulty: str = "trainee", mode: str = "steady", **extra) -> dict:
     score = handled * 10000 + spare
-    return {"initials": initials, "score": score, "level": handled, "scope": scope, "difficulty": difficulty, "mode": mode}
+    return {"initials": initials, "score": score, "level": handled, "scope": scope, "difficulty": difficulty, "mode": mode, **extra}
 
 
 def open_game(page: Page, site_url: str, fake: FakeLeaderboard | None, query: str = "") -> None:
@@ -61,24 +63,24 @@ def test_leaderboard_stays_hidden_until_configured(page: Page, site_url, errors)
 def test_clean_shift_saves_initials(page: Page, site_url, errors):
     fake = FakeLeaderboard([row("KID", 8, spare=900), row("MRW", 5)])
     open_game(page, site_url, fake)
-    expect(page.locator("#menuLbWhich")).to_have_text("Trainee · Steady")
+    expect(page.locator("#menuLbWhich")).to_have_text("Trainee · Steady · This week")
     expect(page.locator("#menuLbList li")).to_have_text(["1KID8/8+15:00", "2MRW5/8"])
 
     fly_shift(page, handled=8, sweeps=80)  # 40 sweeps, 10 minutes, to spare
-    expect(page.locator("#resLbWhich")).to_have_text("Trainee · Steady")
+    expect(page.locator("#resLbWhich")).to_have_text("Trainee · Steady · This week")
     expect(page.locator("#lbForm")).to_be_visible()
     expect(page.locator("#lbPublicRow")).to_be_hidden()
-    expect(page.locator("#resLbNote")).to_have_text("That’s #2 on the Trainee · Steady board. Add your initials.")
+    expect(page.locator("#resLbNote")).to_have_text("That’s #2 this week on the Trainee · Steady board. Add your initials.")
     page.locator("#lbInitials").press_sequentially("z3e d")  # letters only, upper-cased as you type
     expect(page.locator("#lbInitials")).to_have_value("ZED")
     page.click("#lbSave")
 
-    expect(page.locator("#resLbNote")).to_have_text("Saved! #2 on Everyone.")
+    expect(page.locator("#resLbNote")).to_have_text("Saved! #2 this week on Everyone.")
     expect(page.locator("#resLbList li.mine")).to_have_text("2ZED8/8+10:00")
     expect(page.locator("#lbForm")).to_be_hidden()
     assert fake.posts == [{
         "game": "air-traffic-controller", "difficulty": "trainee", "mode": "steady", "score": 80600, "level": 8,
-        "sweeps": 80, "initials": "ZED", "groups": [], "public": True,
+        "sweeps": 80, "initials": "ZED", "groups": [], "public": True, "since": page.evaluate(START_OF_WEEK),
     }]
 
     # The menu shows the new entry, and the initials are remembered for next time.
@@ -95,10 +97,10 @@ def test_lost_shift_ranks_by_aircraft_handled(page: Page, site_url, errors):
     open_game(page, site_url, fake)
     fly_shift(page, handled=5, sweeps=44)
     expect(page.locator("#resTitle")).to_have_text("Separation lost")
-    expect(page.locator("#resLbNote")).to_have_text("That’s #3 on the Trainee · Steady board. Add your initials.")
+    expect(page.locator("#resLbNote")).to_have_text("That’s #3 this week on the Trainee · Steady board. Add your initials.")
     page.fill("#lbInitials", "DAD")
     page.click("#lbSave")
-    expect(page.locator("#resLbNote")).to_have_text("Saved! #3 on Everyone.")
+    expect(page.locator("#resLbNote")).to_have_text("Saved! #3 this week on Everyone.")
     expect(page.locator("#resLbList li")).to_have_text(["1KID8/8+15:00", "2MRW5/8", "3DAD5/8", "4SIS3/8"])
     assert fake.posts[0]["score"] == 50000
     assert fake.posts[0]["level"] == 5
@@ -119,16 +121,16 @@ def test_slowest_sweep_decides_the_board(page: Page, site_url, errors):
     fake = FakeLeaderboard()
     open_game(page, site_url, fake)
     page.click("#speedChips >> text=Rush")
-    expect(page.locator("#menuLbWhich")).to_have_text("Trainee · Rush")
+    expect(page.locator("#menuLbWhich")).to_have_text("Trainee · Rush · This week")
     page.click("#btnStart")
     page.click("#btnSpeed")  # rush → calm, mid-shift
     page.click("#btnSpeed")  # calm → steady
     assert page.evaluate("window.__atc.peek().slowest") == "calm"
     page.evaluate("window.__atc.finish(8, 80)")
-    expect(page.locator("#resLbWhich")).to_have_text("Trainee · Calm")
+    expect(page.locator("#resLbWhich")).to_have_text("Trainee · Calm · This week")
     page.fill("#lbInitials", "MRW")
     page.click("#lbSave")
-    expect(page.locator("#resLbNote")).to_have_text("Saved! #1 on Everyone.")
+    expect(page.locator("#resLbNote")).to_have_text("Saved! #1 this week on Everyone.")
     assert fake.posts[0]["mode"] == "calm"
     assert errors == []
 
@@ -175,8 +177,11 @@ def test_leaderboard_card_filters_by_shift_and_sweep(page: Page, site_url, error
     expect(page.locator("#lbList li")).to_have_text(["1DAD4/8"])  # one board, so no tags
     page.select_option("#lbDifficulty", "hard")
     expect(page.locator("#lbList")).to_be_hidden()
-    expect(page.locator("#lbNote")).to_have_text("No shifts here yet.")
-    assert fake.views[-1] == {"game": "air-traffic-controller", "scope": "*", "difficulty": "hard", "mode": "calm"}
+    expect(page.locator("#lbNote")).to_have_text("No shifts here this week yet.")
+    assert fake.views[-1] == {
+        "game": "air-traffic-controller", "scope": "*", "difficulty": "hard", "mode": "calm",
+        "since": str(page.evaluate(START_OF_WEEK)),
+    }
 
     # Escape goes back to the menu, and the filters are remembered.
     page.keyboard.press("Escape")
@@ -187,6 +192,29 @@ def test_leaderboard_card_filters_by_shift_and_sweep(page: Page, site_url, error
     page.click("#lbOpenMenu")
     expect(page.locator("#lbDifficulty")).to_have_value("hard")
     expect(page.locator("#lbMode")).to_have_value("calm")
+    assert errors == []
+
+
+def test_periods_narrow_the_leaderboard(page: Page, site_url, errors):
+    fake = FakeLeaderboard([row("KID", 8, spare=900), row("MRW", 5), row("OLD", 8, spare=1500, days_ago=40)])
+    open_game(page, site_url, fake)
+    expect(page.locator("#menuLbList li .who")).to_have_text(["KID", "MRW"])  # this week, by default
+
+    fly_shift(page, handled=8, sweeps=80)
+    page.fill("#lbInitials", "ZED")
+    page.click("#lbSave")
+    expect(page.locator("#resLbNote")).to_have_text("Saved! #2 this week on Everyone (#3 all time).")
+
+    page.click("#lbOpenResult")
+    expect(page.locator("#lbPeriods button")).to_have_text(["Today", "This week", "This month", "All time"])
+    page.click("#lbPeriods >> text=All time")
+    expect(page.locator("#lbList li .who")).to_have_text(
+        ["OLDTrainee · Steady", "KIDTrainee · Steady", "ZEDTrainee · Steady", "MRWTrainee · Steady"]
+    )
+    assert "since" not in fake.views[-1]
+    page.click("#lbClose")
+    expect(page.locator("#resLbWhich")).to_have_text("Trainee · Steady · All time")
+    expect(page.locator("#resLbList li .who")).to_have_text(["OLD", "KID", "ZED", "MRW"])
     assert errors == []
 
 
@@ -203,7 +231,7 @@ def test_start_a_group_and_share_an_invite(page: Page, site_url, errors):
     expect(page.locator("#lbGroupList li code")).to_have_text("K7QP")
     expect(page.locator("#lbScopes button")).to_have_text(["Everyone", "Family"])
     expect(page.locator("#lbScopes button[aria-pressed=true]")).to_have_text("Family")
-    expect(page.locator("#lbNote")).to_have_text("No shifts in Family yet.")
+    expect(page.locator("#lbNote")).to_have_text("No shifts in Family this week yet.")
     assert stored(page, "games.groups") == [{"code": "K7QP", "name": "Family"}]
 
     page.click("#lbGroupList button >> text=Share")
@@ -215,7 +243,7 @@ def test_start_a_group_and_share_an_invite(page: Page, site_url, errors):
     assert parse_qs(link.query) == {"leaderboard": [API], "join": ["K7QP"]}
 
     page.click("#lbClose")
-    expect(page.locator("#menuLbWhich")).to_have_text("Trainee · Steady · Family")
+    expect(page.locator("#menuLbWhich")).to_have_text("Trainee · Steady · This week · Family")
     assert errors == []
 
 
@@ -239,7 +267,7 @@ def test_group_members_save_to_their_groups(page: Page, site_url, errors):
     page.uncheck("#lbPublic")
     page.fill("#lbInitials", "DAD")
     page.click("#lbSave")
-    expect(page.locator("#resLbNote")).to_have_text("Saved! #2 in Family, #1 in Friends.")
+    expect(page.locator("#resLbNote")).to_have_text("Saved! #2 this week in Family, #1 this week in Friends.")
     expect(page.locator("#resLbList li.mine")).to_have_text("2DAD6/8")
     assert fake.posts[0]["groups"] == ["K7QP", "W3XY"]
     assert fake.posts[0]["public"] is False
