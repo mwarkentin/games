@@ -194,6 +194,11 @@ body.docked .nova{left:calc((100% - var(--notes-w)) / 2)}
 @keyframes nova{0%{opacity:0}5%{opacity:1}80%{opacity:1}100%{opacity:0}}
 @keyframes nova-word{0%{transform:scale(.35);letter-spacing:.7em;filter:blur(8px)}14%{transform:scale(1.07);filter:blur(0)}30%{transform:scale(1)}100%{transform:scale(1.05);letter-spacing:.18em}}
 #sound[aria-pressed="false"] .on,#sound[aria-pressed="true"] .off{display:none}
+/* Hover card: who's behind a caret, or who charted a word */
+.peek{position:fixed;left:0;top:0;pointer-events:none;display:flex;align-items:center;gap:7px;padding:6px 9px;font:500 11px/1.2 var(--f-mono);white-space:nowrap}
+.peek i{width:8px;height:8px;border-radius:50%;background:var(--c);flex:none}
+.peek b{font-weight:600;letter-spacing:.08em}
+.peek span{color:var(--muted)}
 @media (max-width: 699px){
   .cartouche{right:calc(var(--gr) + 58px);max-width:none;padding:2px;outline-offset:-4px}
   .brand{padding:7px 9px 6px 8px}
@@ -314,6 +319,7 @@ body.docked .nova{left:calc((100% - var(--notes-w)) / 2)}
 </div>
 
 <div class="toast card mark" id="toast" role="status" aria-live="polite"></div>
+<div class="peek card mark" id="peek" hidden></div>
 <div class="nova" id="nova" role="status" aria-live="polite" hidden><b>Supernova</b><span id="novaText"></span></div>
 
 <script>
@@ -693,7 +699,8 @@ const surveyApi = (() => {
 const claims = new Map();   // key → entry like a find, plus by (initials) and at: every word anyone has charted
 const links = new Map();    // 'sx,sy' → one sector's connection
 const pending = new Set();  // keys of our own claims awaiting an answer
-const ghosts = new Map();   // surveyor id → where their marker is drawn, easing toward their position
+const ghosts = new Map();   // surveyor id → where their caret is drawn, easing toward their position
+const IDLE_MS = 20000;      // a surveyor who hasn't moved for this long fades
 const terrTotals = new Map();
 let surveyPaused = false, posSent = null, posTimer = 0, lastNews = 0;
 let world = null, worldShown = 0, worldExtra = 0, worldMap = null, worldTimer = 0, spawning = false;
@@ -1534,45 +1541,33 @@ function draw(now) {
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   }
 
-  // Who charted each word first, beside its last letter, when zoomed in
-  if (cs >= 24 && claims.size) {
-    ctx.font = `500 ${clamp(cs * .24, 8, 11)}px ${GRID_FONT}`;
-    ctx.textAlign = 'left'; ctx.textBaseline = 'top'; ctx.lineJoin = 'round'; ctx.lineWidth = 3; ctx.strokeStyle = C.paper;
-    for (const c of claims.values()) {
-      if (!c.by) continue;
-      const ex = c.ex, ey = c.ey;
-      if (ex + 1 < vx0 || ex > vx1 || ey + 1 < vy0 || ey > vy1) continue;
-      const tx = SX(ex + .5) + cs * .3, ty = SY(ey + .5) + cs * .2;
-      ctx.strokeText(c.by, tx, ty);
-      ctx.fillStyle = TC[c.th].stroke; ctx.fillText(c.by, tx, ty);
-    }
-  }
-
-  // Other surveyors, at the middle of their view, easing toward each new position
+  // Other surveyors: a caret in the gap beside the letter in the middle of their
+  // view, like someone else's cursor (a dot when zoomed out), and never text on
+  // the letters. It eases toward each new position; idle surveyors fade.
   const seen = new Set();
-  ctx.lineWidth = 2;
   for (const l of links.values()) for (const [id, ini, gx, gy] of l.here) {
     seen.add(id);
     let gh = ghosts.get(id);
     if (!gh) {
       let hue = 0;
       for (let i = 0; i < id.length; i++) hue = (hue * 31 + id.charCodeAt(i)) % 360;
-      gh = { x: gx, y: gy, t: now, hue };
+      gh = { x: gx, y: gy, t: now, hue, tx: gx, ty: gy, moved: now };
       ghosts.set(id, gh);
     }
+    gh.ini = /^[A-Z]{3}$/.test(ini) ? ini : '';  // it goes into the hover card's HTML
+    if (gx !== gh.tx || gy !== gh.ty) { gh.tx = gx; gh.ty = gy; gh.moved = now; }
     const k = RM || Math.hypot(gx - gh.x, gy - gh.y) > 80 ? 1 : 1 - Math.exp(-(now - gh.t) / 180);
     gh.x += (gx - gh.x) * k; gh.y += (gy - gh.y) * k; gh.t = now;
     if (Math.hypot(gx - gh.x, gy - gh.y) > .02) anim = true;
     const px = SX(gh.x), py = SY(gh.y);
     if (px < -40 || px > W + 40 || py < -20 || py > H + 20) continue;
-    ctx.fillStyle = `hsl(${gh.hue}, ${C.ms}, ${C.ml})`; ctx.strokeStyle = C.paper;
-    ctx.beginPath(); ctx.arc(px, py, 5, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
-    if (ini && cs >= LETTER_MIN) {
-      ctx.font = `500 10px ${GRID_FONT}`; ctx.textAlign = 'left'; ctx.textBaseline = 'middle'; ctx.lineWidth = 3;
-      ctx.strokeText(ini, px + 9, py); ctx.fillStyle = C.ink; ctx.fillText(ini, px + 9, py);
-      ctx.lineWidth = 2;
-    }
+    ctx.globalAlpha = 1 - .65 * clamp((now - gh.moved - IDLE_MS) / 2000, 0, 1);
+    ctx.fillStyle = `hsl(${gh.hue}, ${C.ms}, ${C.ml})`;
+    if (cs < LETTER_MIN) { ctx.beginPath(); ctx.arc(px, py, 3, 0, Math.PI * 2); ctx.fill(); continue; }
+    const w = clamp(cs * .07, 2, 3), h = cs * .66;
+    ctx.fillRect(SX(Math.round(gh.x)) - w / 2, SY(Math.floor(gh.y) + .5) - h / 2, w, h);
   }
+  ctx.globalAlpha = 1;
   for (const id of ghosts.keys()) if (!seen.has(id)) ghosts.delete(id);
 
   // Hint ping on a word's first letter
@@ -1717,6 +1712,7 @@ function zoomAt(px, py, f) {
 let camTimer = 0;
 function camChanged() {
   scheduleHud();
+  hidePeek();
   clearTimeout(camTimer);
   camTimer = setTimeout(() => LS.set(K_CAM, JSON.stringify({ x: +cam.x.toFixed(2), y: +cam.y.toFixed(2), cs: +cam.cs.toFixed(2) })), 500);
 }
@@ -1872,6 +1868,48 @@ function endPointer(e, cancelled) {
     }
   }
 }
+// Hovering with a mouse names who's there: the surveyor behind a caret, or who
+// charted a word first. Names never sit on the map itself.
+const peekEl = $('#peek');
+let peekRaf = 0, peekPos = null;
+function hidePeek() { if (!peekEl.hidden) peekEl.hidden = true; }
+function peekAt(px, py) {
+  if (!surveyApi || pointers.size || sel.anchor || flight || cam.cs < LETTER_MIN) return hidePeek();
+  const cs = cam.cs, w = screenToWorld(px, py), now = performance.now();
+  let near = null, nd = cs * .6, html = '', hue = 0;
+  for (const gh of ghosts.values()) {
+    const d = Math.hypot((Math.round(gh.x) - w.x) * cs, (Math.floor(gh.y) + .5 - w.y) * cs);
+    if (d < nd) { nd = d; near = gh; }
+  }
+  if (near) {
+    html = `<i></i><b>${near.ini || 'A surveyor'}</b><span>${now - near.moved > IDLE_MS ? 'idle' : 'surveying here'}</span>`;
+    hue = near.hue;
+  } else {
+    const x = Math.floor(w.x), y = Math.floor(w.y);
+    for (const c of claims.values()) {
+      const [dx, dy] = DIRS[c.d], n = dx ? (x - c.x) * dx : (y - c.y) * dy;
+      if (n < 0 || n >= c.w.length || c.x + dx * n !== x || c.y + dy * n !== y) continue;
+      const e = found.get(c.key), who = e && e.f ? 'you' : c.by || 'another surveyor';
+      html = `<i></i><b>${c.w}</b><span>Charted first by ${who} · ${rel(c.at)}</span>`;
+      hue = THEMES[c.th].hue;
+      break;
+    }
+  }
+  if (!html) return hidePeek();
+  if (peekEl.innerHTML !== html) peekEl.innerHTML = html;
+  peekEl.style.setProperty('--h', hue);
+  peekEl.hidden = false;
+  const r = peekEl.getBoundingClientRect();
+  const left = px + 14 + r.width > W - 8 ? px - 14 - r.width : px + 14, top = py + 16 + r.height > H - 8 ? py - 12 - r.height : py + 16;
+  peekEl.style.transform = `translate(${Math.round(left)}px, ${Math.round(top)}px)`;
+}
+canvas.addEventListener('pointermove', e => {
+  if (e.pointerType !== 'mouse' || e.buttons) return hidePeek();
+  peekPos = [e.clientX, e.clientY];
+  if (!peekRaf) peekRaf = requestAnimationFrame(() => { peekRaf = 0; peekAt(...peekPos); });
+});
+canvas.addEventListener('pointerdown', hidePeek);
+canvas.addEventListener('pointerleave', hidePeek);
 canvas.addEventListener('pointerup', e => endPointer(e, false));
 canvas.addEventListener('pointercancel', e => endPointer(e, true));
 canvas.addEventListener('pointerleave', e => { if (e.pointerType === 'mouse' && !pointers.size && sel.anchor && sel.end) { sel.end = null; invalidate(); } });

@@ -362,3 +362,40 @@ def test_someone_else_finishing_a_territory_nearby_sets_it_off_too(page: Page, s
     # Only your own pulls the camera over to watch.
     assert page.evaluate("({ ...window.__lf.cam })") == cam
     assert errors == []
+
+
+SCREEN_OF = """([x, y]) => {
+  const cam = window.__lf.cam, dock = document.body.classList.contains('docked') ? 340 : 0;
+  return [(x - cam.x) * cam.cs + (innerWidth - dock) / 2, (y - cam.y) * cam.cs + innerHeight / 2];
+}"""
+
+
+def test_hovering_names_surveyors_and_who_charted_a_word(page: Page, site_url, errors):
+    words = known_words(page, site_url)
+    w, x, y, d = words[0]
+    fake = FakeSurvey(
+        claims=[[*words[0], 0, "MRW", NOW_MS - 60_000]],
+        presence=[["kid1", "KID", 9.5, 7.0], ["odd", "<b>", 3.4, 9.2]],
+    )
+    open_game(page, site_url, fake)
+    expect(page.locator("#surveyText")).to_contain_text("2 other surveyors nearby")
+    peek = page.locator("#peek")
+    expect(peek).to_be_hidden()
+
+    # The caret sits in the gap beside the cell in the middle of their view.
+    page.mouse.move(*page.evaluate(SCREEN_OF, [10, 7.5]))
+    expect(peek).to_be_visible()
+    expect(peek).to_have_text("KIDsurveying here")
+    page.mouse.move(*page.evaluate(SCREEN_OF, [3, 9.5]))
+    expect(peek).to_have_text("A surveyorsurveying here")  # odd initials never reach the page
+
+    # A charted word names who got there first.
+    dirs = [[1, 0], [1, 1], [0, 1], [-1, 1], [-1, 0], [-1, -1], [0, -1], [1, -1]]
+    mid = len(w) // 2
+    page.mouse.move(*page.evaluate(SCREEN_OF, [x + dirs[d][0] * mid + .5, y + dirs[d][1] * mid + .5]))
+    expect(peek).to_contain_text(f"{w}Charted first by MRW")
+
+    # Panning hides it.
+    page.mouse.wheel(0, 120)
+    expect(peek).to_be_hidden()
+    assert errors == []

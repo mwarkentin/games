@@ -17,16 +17,18 @@ comes from a fixed seed. The middle of that map, 100×100 territories around
 the origin, hides **1,120,206 words**. The shared survey turns them into one
 job for everyone: chart them all.
 
-- **The first player to circle a word charts it.** Their initials appear
-  next to it, and everyone else sees it outlined in its territory's colour.
-  You can still circle it for your own field notes; the game tells you who
-  got there first ("Charted first by SIS · 3m ago").
+- **The first player to circle a word charts it.** Everyone else sees it
+  outlined in its territory's colour; hovering it says who got there first
+  ("Charted first by SIS · 3m ago"). You can still circle it for your own
+  field notes, and the game tells you who beat you to it.
 - **One number for the whole world.** The header shows "412,883 of
   1,120,206 charted", and it ticks up as words are charted nearby. The
-  current territory has its own count ("83/120 charted"), and the game
-  announces a territory once all of its hidden words are charted.
-- **You can see the crowd.** Other players appear as coloured dots with
-  their initials, at the middle of their screen.
+  current territory has its own count ("83/120 charted"), and a territory
+  goes supernova when its last hidden word is charted.
+- **You can see the crowd.** Each other player is a coloured caret, like a
+  collaborator's cursor, in the gap beside the letter in the middle of their
+  screen. No names sit on the letters: hovering a caret shows their
+  initials, and carets fade once a player has been idle for 20 seconds.
 - **A world map.** It's in the notes panel: territories ink in as they're
   charted, dots show where people are, and tapping it flies you there.
 - **New players land in the crowd.** You start in the middle of the busiest
