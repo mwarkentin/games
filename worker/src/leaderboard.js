@@ -31,8 +31,8 @@ const PUBLIC = '*';
 const CODE_ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
 const CODE = /^[A-HJKMNP-Z2-9]{4}$/;
 const GROUP_NAME = /^[\p{L}\p{N}][\p{L}\p{N} '&.,!-]{0,23}$/u;
-const INITIALS = /^[A-Z]{3}$/;
-const BLOCKED_INITIALS = new Set([
+export const INITIALS = /^[A-Z]{3}$/;
+export const BLOCKED_INITIALS = new Set([
   'ASS', 'CUM', 'DIC', 'DIK', 'FAG', 'FCK', 'FUC', 'FUK', 'KKK', 'NIG', 'SEX', 'SHT', 'TIT', 'WTF', 'XXX',
 ]);
 

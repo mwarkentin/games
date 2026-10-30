@@ -23,3 +23,18 @@ database_name = "games-leaderboard"
 # Placeholder: replace with the id printed by `npx wrangler d1 create games-leaderboard`.
 database_id = "00000000-0000-0000-0000-000000000000"
 migrations_dir = "migrations"
+
+# Letterfield's shared survey: one Durable Object per sector of the map and
+# one Atlas for the world's totals, each with its own SQLite storage. See
+# SURVEY.md.
+[[durable_objects.bindings]]
+name = "SECTORS"
+class_name = "Sector"
+
+[[durable_objects.bindings]]
+name = "ATLAS"
+class_name = "Atlas"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["Sector", "Atlas"]
