@@ -69,6 +69,7 @@ def test_top_ten_score_saves_initials(page: Page, site_url, errors):
     open_game(page, site_url, fake)
     expect(page.locator("#menuLbWhich")).to_have_text("Classic · This week")
     expect(page.locator("#menuLbList li")).to_have_count(2)
+    expect(page.locator("#menuLbScopes")).to_be_hidden()  # no groups, so no tabs
     expect(page.locator("#lbPublicRow")).to_be_hidden()
 
     play_one_bubble(page)
@@ -254,7 +255,15 @@ def test_group_members_save_to_their_groups(page: Page, site_url, errors):
     join_group(page, "W3XY", "Friends")
     page.click("#lbScopes button >> text=Family")
     page.click("#lbClose")
-    expect(page.locator("#menuLbWhich")).to_have_text("Classic · This week · Family")
+    expect(page.locator("#menuLbWhich")).to_have_text("Classic · This week")
+    expect(page.locator("#menuLbScopes button")).to_have_text(["Everyone", "Family", "Friends"])
+    expect(page.locator("#menuLbScopes button[aria-pressed=true]")).to_have_text("Family")
+    expect(page.locator("#menuLbList li")).to_have_text(["1MOM500"])
+
+    # The menu's tabs switch its list too.
+    page.click("#menuLbScopes >> text=Everyone")
+    expect(page.locator("#menuLbList li")).to_have_count(5)
+    page.click("#menuLbScopes >> text=Family")
     expect(page.locator("#menuLbList li")).to_have_text(["1MOM500"])
 
     # Not a top-10 public score, but in a group every score can be saved.

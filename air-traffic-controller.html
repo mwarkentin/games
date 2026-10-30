@@ -273,6 +273,7 @@ details li b{color:var(--amber);font-weight:600}
     <div class="cta"><button class="btn primary" id="btnStart">Start shift</button></div>
     <div class="group lb" id="menuLb" hidden>
       <div class="glbl">Leaderboard <span class="lb-which" id="menuLbWhich"></span></div>
+      <div class="lb-scopes" id="menuLbScopes" role="group" aria-label="Whose shifts" hidden></div>
       <ol class="lb-ranks" id="menuLbList" hidden></ol>
       <div class="note" id="menuLbNote"></div>
       <button class="btn lb-open" id="lbOpenMenu" type="button">Leaderboard &amp; groups</button>
@@ -1366,7 +1367,8 @@ async function updateMenuBoard() {
   if (!Leaderboard.api) return;
   const board = { difficulty: prefs.level, mode: prefs.speed }, { scope, period } = lbView(), request = ++menuRequest;
   $('#menuLb').hidden = false;
-  $('#menuLbWhich').textContent = `${boardName(board)} · ${PERIODS[period]}${scope === PUBLIC ? '' : ` · ${scopeName(scope)}`}`;
+  $('#menuLbWhich').textContent = `${boardName(board)} · ${PERIODS[period]}`;
+  renderScopes($('#menuLbScopes'), scope, (code) => { setLbView({ scope: code }); updateMenuBoard(); });
   const scores = await loadList($('#menuLbList'), $('#menuLbNote'), { scope, period, ...board }, () => request === menuRequest,
     `No shifts on this board${during(period)} yet.`);
   if (scores) renderRanks($('#menuLbList'), scores.slice(0, 5), { mine: G && G.entry });

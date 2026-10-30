@@ -401,7 +401,8 @@ legend { padding: 0; margin-bottom: 8px; font-size: .7rem; font-weight: 700; tex
 .lb-public { display: flex; align-items: flex-start; gap: 8px; margin: 2px 0 0; font-size: .9rem; line-height: 1.35; color: var(--ink-soft); text-align: left; cursor: pointer; }
 .lb-public input { flex: none; width: 20px; height: 20px; margin: 0; accent-color: var(--ink); }
 .lb-scopes { display: flex; flex-wrap: wrap; justify-content: center; gap: 6px; }
-.lb-card .lb-scopes { justify-content: flex-start; }
+.lb-card .lb-scopes, .scores .lb-scopes { justify-content: flex-start; }
+.scores .lb-scopes { margin-bottom: 6px; }
 .lb-scopes button {
   min-height: 36px; padding: .3em .9em; cursor: pointer; touch-action: manipulation;
   border: 2px solid var(--ink-soft); border-radius: 999px; background: var(--card); color: var(--ink);
@@ -634,6 +635,7 @@ legend { padding: 0; margin-bottom: 8px; font-size: .7rem; font-weight: 700; tex
       </div>
       <section class="scores" aria-labelledby="menuScoresTitle">
         <h2 id="menuScoresTitle">High scores <span class="scores-which" id="menuWhich">Multiples · Explorer</span></h2>
+        <div class="lb-scopes" id="menuScopes" role="group" aria-label="Whose scores" hidden></div>
         <ol class="score-list" id="menuScoreList" hidden></ol>
         <p class="scores-note" id="menuScoreNote">Loading scores…</p>
         <button type="button" class="btn lb-open" id="lbOpenMenu" hidden>High scores &amp; groups</button>
@@ -1050,7 +1052,7 @@ const $ = id => document.getElementById(id);
 const els = {};
 ['app', 'stage', 'board', 'cells', 'lines', 'sprites', 'levelOut', 'scoreOut', 'livesOut', 'rule', 'rulePre', 'ruleKey',
  'ruleKeyText', 'rulePost', 'menu', 'overlay', 'ovArt', 'ovTitle', 'ovBody', 'ovActions', 'announcer', 'soundBtn',
- 'pauseBtn', 'chompBtn', 'playBtn', 'modeChips', 'diffSeg', 'titleNib', 'pad', 'menuScoreList', 'menuScoreNote', 'menuWhich',
+ 'pauseBtn', 'chompBtn', 'playBtn', 'modeChips', 'diffSeg', 'titleNib', 'pad', 'menuScoreList', 'menuScoreNote', 'menuWhich', 'menuScopes',
  'sideScoreList', 'sideScoreNote', 'sideWhich', 'sayBtn', 'diffField', 'kNote', 'howtoBoard', 'lbOpenMenu', 'lbOv', 'lbClose',
  'lbScopes', 'lbPeriods', 'lbMode', 'lbDiff', 'lbList', 'lbNote', 'lbNoGroups', 'lbGroupList', 'lbJoinForm', 'lbJoinCode', 'lbCreateForm',
  'lbGroupName', 'lbGroupNote'].forEach(id => { els[id] = $(id); });
@@ -2100,9 +2102,12 @@ function renderScores() {
   }
   const { scope, period } = lbView(), request = ++boardRequest;
   for (const [listEl, noteEl, whichEl] of targets) {
-    whichEl.textContent = `${label} · ${PERIODS[period]}${scope === PUBLIC ? '' : ` · ${scopeName(scope)}`}`;
+    whichEl.textContent = `${label} · ${PERIODS[period]}`;
     if (listEl.hidden) noteEl.textContent = 'Loading scores…';
   }
+  // The menu has tabs; the margin, which doesn't, names the group instead.
+  renderScopes(els.menuScopes, scope, code => { setLbView({ scope: code }); renderScores(); });
+  if (scope !== PUBLIC) els.sideWhich.textContent += ` · ${scopeName(scope)}`;
   loadScores(targets, { scope, period, ...boardOf() }, () => request === boardRequest,
     `No scores${during(period)} yet. Finish a game to put the first initials on the board.`, 5);
 }

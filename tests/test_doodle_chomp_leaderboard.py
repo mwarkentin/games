@@ -80,6 +80,7 @@ def test_top_ten_score_saves_initials(page: Page, site_url, errors):
     open_game(page, site_url, fake)
     expect(page.locator("#menuWhich")).to_have_text("Multiples · Explorer · This week")
     expect(page.locator("#menuScoreList li")).to_have_text(["1KID300L3", "2MRW245L3"])
+    expect(page.locator("#menuScopes")).to_be_hidden()  # no groups, so no tabs
     expect(page.locator("#howtoBoard")).to_have_js_property("hidden", False)
 
     play(page)
@@ -245,9 +246,11 @@ def test_start_a_group_and_share_an_invite(page: Page, site_url, errors):
     assert link.path == "/doodle-chomp"
     assert parse_qs(link.query) == {"leaderboard": [API], "join": ["K7QP"]}
 
-    # The menu now shows the group's board.
+    # The menu now shows the group's board, with tabs to switch.
     page.click("#lbClose")
-    expect(page.locator("#menuWhich")).to_have_text("Multiples · Explorer · This week · Family")
+    expect(page.locator("#menuWhich")).to_have_text("Multiples · Explorer · This week")
+    expect(page.locator("#menuScopes button")).to_have_text(["Everyone", "Family"])
+    expect(page.locator("#menuScopes button[aria-pressed=true]")).to_have_text("Family")
     assert errors == []
 
 
@@ -261,6 +264,14 @@ def test_group_members_save_to_their_groups(page: Page, site_url, errors):
     join_group(page, "W3XY", "Friends")
     page.click("#lbScopes button >> text=Family")
     page.click("#lbClose")
+    expect(page.locator("#menuScoreList li")).to_have_text(["1MOM500L3"])
+    expect(page.locator("#sideWhich")).to_have_text("Multiples · Explorer · This week · Family")  # the margin has no tabs
+
+    # The menu's tabs switch its list, and the margin's, too.
+    page.click("#menuScopes >> text=Everyone")
+    expect(page.locator("#menuScoreList li")).to_have_count(5)
+    expect(page.locator("#sideWhich")).to_have_text("Multiples · Explorer · This week")
+    page.click("#menuScopes >> text=Family")
     expect(page.locator("#menuScoreList li")).to_have_text(["1MOM500L3"])
 
     # Not a top-10 public score, but in a group every score can be saved.

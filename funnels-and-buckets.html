@@ -513,6 +513,7 @@ h2 { margin: 0; font-family: var(--font-display); font-weight: 400; font-size: 3
     <p class="best-line" id="bestLine" hidden><span id="bestLabel">Best score</span> <b id="menuBest">0</b></p>
     <section class="lb" id="menuLb" aria-labelledby="menuLbTitle" hidden>
       <h3 id="menuLbTitle">Top scores <span id="menuLbWhich"></span></h3>
+      <div class="lb-scopes" id="menuLbScopes" role="group" aria-label="Whose scores" hidden></div>
       <ol class="lb-ranks" id="menuLbList"></ol>
       <p class="lb-note" id="menuLbNote"></p>
       <button class="btn btn-ghost lb-open" id="lbOpenMenu" type="button">Leaderboard &amp; groups</button>
@@ -861,7 +862,7 @@ h2 { margin: 0; font-family: var(--font-display); font-weight: 400; font-size: 3
     ovScore: $('#ovScore'), ovBest: $('#ovBest'), newBest: $('#newBest'),
     stPopped: $('#stPopped'), stMissed: $('#stMissed'), stWrong: $('#stWrong'), stLevel: $('#stLevel'),
     practiceWrap: $('#practiceWrap'), practiceList: $('#practiceList'),
-    menuLb: $('#menuLb'), menuLbWhich: $('#menuLbWhich'), menuLbList: $('#menuLbList'), menuLbNote: $('#menuLbNote'),
+    menuLb: $('#menuLb'), menuLbWhich: $('#menuLbWhich'), menuLbScopes: $('#menuLbScopes'), menuLbList: $('#menuLbList'), menuLbNote: $('#menuLbNote'),
     overLb: $('#overLb'), overLbWhich: $('#overLbWhich'), overLbList: $('#overLbList'), overLbNote: $('#overLbNote'),
     lbForm: $('#lbForm'), lbInitials: $('#lbInitials'), lbSave: $('#lbSave'),
     overLbScopes: $('#overLbScopes'), lbPublicRow: $('#lbPublicRow'), lbPublic: $('#lbPublic'),
@@ -1839,8 +1840,14 @@ h2 { margin: 0; font-family: var(--font-display); font-weight: 400; font-size: 3
     if (!Leaderboard.api) return;
     const board = boardOf(settings), { scope, period } = lbView(), request = ++menuRequest;
     els.menuLb.hidden = false;
-    els.menuLbWhich.textContent = board ? `${boardName(board)} · ${PERIODS[period]}${scope === PUBLIC ? '' : ` · ${scopeName(scope)}`}` : '';
-    if (!board) { renderRanks(els.menuLbList, []); els.menuLbNote.textContent = SINGLE_TABLE_NOTE; return; }
+    els.menuLbWhich.textContent = board ? `${boardName(board)} · ${PERIODS[period]}` : '';
+    if (!board) {
+      els.menuLbScopes.hidden = true;
+      renderRanks(els.menuLbList, []);
+      els.menuLbNote.textContent = SINGLE_TABLE_NOTE;
+      return;
+    }
+    renderScopes(els.menuLbScopes, scope, (code) => { setLbView({ scope: code }); updateMenuBoard(); });
     const scores = await loadList(els.menuLbList, els.menuLbNote, { scope, period, ...board }, () => request === menuRequest,
       `No scores${during(period)} yet. Yours could be first.`);
     if (scores) renderRanks(els.menuLbList, scores.slice(0, 5));
