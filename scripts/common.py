@@ -6,11 +6,14 @@ import html
 import re
 from datetime import datetime
 from pathlib import Path
+from urllib.parse import urlencode
 
 BASE_URL = "https://games.michaelwarkentin.com"
 SITE_NAME = "games.michaelwarkentin.com"
 REPO_URL = "https://github.com/mwarkentin/games"
 ROOT = Path(__file__).resolve().parent.parent
+# The Stripe Payment Link for tips. While it's empty, pages have no tip link.
+TIP_URL = ""
 
 # Pages the build generates. A game can't use these filenames.
 GENERATED_PAGES = {"index.html": "/", "colophon.html": "/colophon"}
@@ -107,11 +110,32 @@ li { margin: 0.3rem 0; }
 """
 
 
-def render_page(title: str, body: str, *, extra_css: str = "", description: str = "") -> str:
-    """Wrap generated content in the shared page chrome."""
+def tip_link(source: str) -> str:
+    """TIP_URL tagged with where the tip came from, so Stripe shows it on the payment.
+
+    client_reference_id allows only letters, digits, dashes and underscores;
+    Stripe drops anything else.
+    """
+    reference = re.sub(r"[^A-Za-z0-9_-]", "_", source)
+    separator = "&" if "?" in TIP_URL else "?"
+    return f"{TIP_URL}{separator}{urlencode({'client_reference_id': reference})}"
+
+
+def render_page(
+    title: str, body: str, *, extra_css: str = "", description: str = "", tip_source: str = ""
+) -> str:
+    """Wrap generated content in the shared page chrome.
+
+    tip_source labels the header's tip link, which appears once TIP_URL is set.
+    """
     meta = (
         f'\n<meta name="description" content="{html.escape(description)}">'
         if description
+        else ""
+    )
+    tip = (
+        f'<a href="{html.escape(tip_link(tip_source or "games"))}">Tip jar</a>'
+        if TIP_URL
         else ""
     )
     return f"""<!DOCTYPE html>
@@ -126,7 +150,7 @@ def render_page(title: str, body: str, *, extra_css: str = "", description: str 
 <header>
   <div class="bar">
     <a class="home" href="/">{SITE_NAME}</a>
-    <nav><a href="/colophon">Colophon</a><a href="{REPO_URL}">GitHub</a></nav>
+    <nav><a href="/colophon">Colophon</a><a href="{REPO_URL}">GitHub</a>{tip}</nav>
   </div>
 </header>
 <main>

@@ -14,6 +14,11 @@ utilities; games live here so they get their own origin and their own rules.
   The build also generates `index.html`, `colophon.html`, `sitemap.xml` and
   `games.json`, so don't create those by hand. Games are published as
   committed, apart from `telemetry.js` (see below).
+- `TIP_URL` in `scripts/common.py`: the Stripe Payment Link for tips. Once
+  it's set, the header of the home page and colophon link to it as "Tip
+  jar", tagged with `client_reference_id=games-home` or `games-colophon` so
+  each payment shows where it came from. Games themselves get no link,
+  since they own the whole screen.
 - `telemetry.js`: error reporting, performance and session replays through
   Sentry. The build inlines it into every game's `<head>`.
 - `tests/`: pytest with Playwright.
