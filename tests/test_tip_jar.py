@@ -23,7 +23,8 @@ def test_tip_link_tags_the_source(monkeypatch):
     assert tip_link("games").endswith("?prefilled_promo_code=x&client_reference_id=games")
 
 
-def test_header_has_no_tip_link_without_url():
+def test_header_has_no_tip_link_without_url(monkeypatch):
+    monkeypatch.setattr(common, "TIP_URL", "")
     assert "Tip jar" not in render_page("Title", "<p>body</p>")
 
 

@@ -13,7 +13,7 @@ SITE_NAME = "games.michaelwarkentin.com"
 REPO_URL = "https://github.com/mwarkentin/games"
 ROOT = Path(__file__).resolve().parent.parent
 # The Stripe Payment Link for tips. While it's empty, pages have no tip link.
-TIP_URL = ""
+TIP_URL = "https://buy.stripe.com/4gM7sL3xucbG0ADgcd3Je00"
 
 # Pages the build generates. A game can't use these filenames.
 GENERATED_PAGES = {"index.html": "/", "colophon.html": "/colophon"}
