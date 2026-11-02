@@ -91,16 +91,13 @@ and the games keep their leaderboards hidden.
 
 1. **Create a Cloudflare account** at https://dash.cloudflare.com/sign-up
    (the free plan is enough) and note your **account ID** from the dashboard.
-2. **Create the database.** From this `worker/` folder:
+2. **The database** is created and managed with OpenTofu, outside this repo,
+   and its id is already in `wrangler.toml` (it isn't a secret). Sign in to
+   Cloudflare for the next step, from this `worker/` folder:
 
    ```sh
    npx wrangler@4.151.0 login
-   npx wrangler@4.151.0 d1 create games-leaderboard
    ```
-
-   Copy the `database_id` it prints into `wrangler.toml`, replacing the
-   placeholder `00000000-0000-0000-0000-000000000000`, and commit it. The id
-   is not a secret.
 3. **Set the IP hashing salt**, any long random string:
 
    ```sh

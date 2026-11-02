@@ -20,6 +20,7 @@ ALLOWED_ORIGINS = "https://games.michaelwarkentin.com,http://localhost:8000,http
 [[d1_databases]]
 binding = "DB"
 database_name = "games-leaderboard"
-# Placeholder: replace with the id printed by `npx wrangler d1 create games-leaderboard`.
-database_id = "00000000-0000-0000-0000-000000000000"
+# The database is created and managed with OpenTofu, outside this repo. The id
+# isn't a secret.
+database_id = "14348cc4-b12d-47a1-bf6e-8190a4898eb3"
 migrations_dir = "migrations"
