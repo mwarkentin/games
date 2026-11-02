@@ -114,6 +114,31 @@ def test_top_ten_score_saves_initials(page: Page, site_url, errors):
     assert errors == []
 
 
+def test_initials_get_focus_even_if_focus_was_left_outside_the_card(page: Page, site_url, errors):
+    # In CI the Play button can still hold focus when a quick game ends,
+    # because the browser hasn't yet noticed it was hidden. If the scores then
+    # arrived before the card's own focus timer, the initials were skipped and
+    # Play again got focus instead. A focused button outside the card stands
+    # in for it here, and makes the race happen every time.
+    fake = FakeLeaderboard([row("KID", 300), row("MRW", 245)])
+    open_game(page, site_url, fake)
+    expect(page.locator("#menuScoreList li")).to_have_count(2)
+    page.click("#playBtn")
+    page.evaluate("window.__dc.chompRight(); window.__dc.chompRight()")
+    page.evaluate("""() => {
+        const outside = document.createElement('button');
+        outside.textContent = 'Outside the card';
+        document.body.appendChild(outside);
+        outside.focus();
+        window.__dc.end();
+    }""")
+    expect(page.locator("#ovTitle")).to_have_text("Game over")
+    expect(page.locator("#initial0")).to_be_focused()
+    page.wait_for_timeout(100)  # past the card's 30 ms focus timer
+    expect(page.locator("#initial0")).to_be_focused()
+    assert errors == []
+
+
 def test_score_below_tenth_place_only_shows_the_board(page: Page, site_url, errors):
     fake = FakeLeaderboard([row(f"A{chr(65 + i)}A", 500 - i) for i in range(10)])
     open_game(page, site_url, fake)

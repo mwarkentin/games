@@ -2282,7 +2282,9 @@ async function refreshOverBoard(offerSave) {
   here.form = initialsForm(res => scoreSaved(here, game, res));
   here.box.insertBefore(here.form, here.scopes);
   const active = document.activeElement;
-  if (finePointer.matches && (!active || active === document.body || els.ovActions.contains(active))) here.form.focusFirst();
+  // Focus outside the card counts as none: showOverlay pulls it into the
+  // card anyway, and it can still be on the just-hidden Play button.
+  if (finePointer.matches && (!els.overlay.contains(active) || els.ovActions.contains(active))) here.form.focusFirst();
 }
 async function scoreSaved(here, game, saved) {
   const { ranks } = saved;
