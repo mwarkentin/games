@@ -7,7 +7,7 @@ import xml.etree.ElementTree as ET
 import build_index
 from build_colophon import format_message
 from build_sitemap import NAMESPACE, build_sitemap
-from common import BASE_URL, ROOT, extract_meta_description, game_files
+from common import BASE_URL, GENERATED_PAGES, ROOT, extract_meta_description, game_files, inject_analytics
 from gather_links import extract_urls
 from publish import current_release, inject_telemetry
 
@@ -105,12 +105,20 @@ def test_inject_telemetry_goes_before_head_end_once():
     assert no_head == '<p>no head\n<script data-telemetry data-release="">\nrun();\n</script>\n'
 
 
-def test_games_are_published_with_only_telemetry_added_and_colophon_entries(site_dir):
+def test_games_are_published_with_only_telemetry_and_analytics_added_and_colophon_entries(site_dir):
     colophon = (site_dir / "colophon.html").read_text("utf-8")
     telemetry = (ROOT / "telemetry.js").read_text("utf-8")
     for filename in game_files():
         source = (ROOT / filename).read_text("utf-8")
         published = (site_dir / filename).read_text("utf-8")
-        assert published == inject_telemetry(source, telemetry, current_release())
-        assert published.index("<script data-telemetry") < published.index("</head>")
+        assert published == inject_analytics(inject_telemetry(source, telemetry, current_release()))
+        assert published.index("<script data-telemetry") < published.index("<script data-analytics") < published.index("</head>")
         assert f'id="{filename}"' in colophon
+
+
+def test_generated_pages_get_analytics_but_not_telemetry(site_dir):
+    for filename in GENERATED_PAGES:
+        page = (site_dir / filename).read_text("utf-8")
+        assert page.count("<script data-analytics>") == 1
+        assert page.index("<script data-analytics>") < page.index("</head>")
+        assert "<script data-telemetry" not in page
