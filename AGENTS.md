@@ -13,7 +13,7 @@ utilities; games live here so they get their own origin and their own rules.
 - `build.sh` and `scripts/`: assemble the site in `_site/` (never committed).
   The build also generates `index.html`, `colophon.html`, `sitemap.xml` and
   `games.json`, so don't create those by hand. Games are published as
-  committed, apart from `telemetry.js` (see below).
+  committed, apart from `telemetry.js` and `analytics.js` (see below).
 - `TIP_URL` in `scripts/common.py`: the Stripe Payment Link for tips. Once
   it's set, the header of the home page and colophon link to it as "Tip
   jar", tagged with `client_reference_id=games-home` or `games-colophon` so
@@ -21,6 +21,8 @@ utilities; games live here so they get their own origin and their own rules.
   since they own the whole screen.
 - `telemetry.js`: error reporting, performance and session replays through
   Sentry. The build inlines it into every game's `<head>`.
+- `analytics.js`: page views through Counterscale. The build inlines it into
+  every page's `<head>`, the home page and colophon included.
 - `tests/`: pytest with Playwright.
 - `worker/`: the leaderboard API, a Cloudflare Worker with a D1 database. It
   deploys through its own workflow and is never part of the site. See
@@ -33,8 +35,9 @@ utilities; games live here so they get their own origin and their own rules.
   lines; keep it in one file anyway.
 - Load libraries from `cdn.jsdelivr.net` or `cdnjs.cloudflare.com`, pinned
   to an exact version. Fonts may come from Google Fonts, with a system font
-  later in every `font-family` so the game still works without them. The one
-  other host is `browser.sentry-cdn.com`, for `telemetry.js` only.
+  later in every `font-family` so the game still works without them. The
+  only other hosts are `browser.sentry-cdn.com`, for `telemetry.js`, and
+  Counterscale's own address, for `analytics.js`.
 - Phone first: playable at 375px wide in portrait with touch alone (an
   on-screen pad, taps or swipes), and with a keyboard on a computer. No
   sideways scrolling. Inputs, textareas and selects use `font-size: 16px`
@@ -71,6 +74,27 @@ text inputs masked. To hide something else from replays, give it the
 `sentry-mask` class. IP addresses aren't sent. `tests/test_telemetry.py`
 serves the site under its real hostname to check that it reports errors
 with a replay and never sends anything from elsewhere.
+
+## Analytics
+
+`analytics.js` counts page views with
+[Counterscale](https://counterscale.dev), which runs on our Cloudflare
+account (installed with its own CLI, not from this repo). It does nothing
+until `COUNTERSCALE_URL` is set, and only runs on games.michaelwarkentin.com.
+It loads Counterscale's tracker from jsDelivr with an integrity hash, so to
+update it change the version and the hash together (the same `openssl`
+command as for Sentry's SDK), and keep it on the version the Counterscale
+install runs.
+
+Each page view sends the page's path, never its query string or fragment
+(which can hold group invite codes), and the other site a visitor came from
+as its origin only; moves within the site have no referrer. Counterscale adds
+the browser and device from the user agent and the country from the IP
+address, which it doesn't keep, and sets no cookies. The tracker's own
+defaults would read a referrer and UTM tags from the query string and watch
+`history.pushState`, so keep passing it `url`, `referrer` and
+`autoTrackPageviews: false`. `tests/test_analytics.py` checks all of this
+against a fake Counterscale.
 
 ## Games that started as claude.ai artifacts
 

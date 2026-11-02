@@ -17,6 +17,30 @@ TIP_URL = "https://buy.stripe.com/4gM7sL3xucbG0ADgcd3Je00"
 
 # Pages the build generates. A game can't use these filenames.
 GENERATED_PAGES = {"index.html": "/", "colophon.html": "/colophon"}
+# Counterscale page views, inlined into every page: games and generated pages.
+ANALYTICS = "analytics.js"
+
+
+def inline_script(text: str, marker: str, script: str, attrs: str = "") -> str:
+    """Inline a script before </head>, or at the end, once.
+
+    The tag is <script {marker}{attrs}>, and a page that already has one is
+    left as it is. Inline rather than a file, so it runs without waiting for
+    another request.
+    """
+    if f"<script {marker}" in text:
+        return text
+    tag = f"<script {marker}{attrs}>\n{script.strip()}\n</script>\n"
+    index = text.lower().find("</head>")
+    if index == -1:
+        return f"{text.rstrip()}\n{tag}"
+    return f"{text[:index]}{tag}{text[index:]}"
+
+
+def inject_analytics(text: str, root: Path | None = None) -> str:
+    """Inline analytics.js into a page."""
+    script = ((root or ROOT) / ANALYTICS).read_text("utf-8")
+    return inline_script(text, "data-analytics", script)
 
 
 def game_files(root: Path = ROOT) -> list[str]:
@@ -124,7 +148,7 @@ def tip_link(source: str) -> str:
 def render_page(
     title: str, body: str, *, extra_css: str = "", description: str = "", tip_source: str = ""
 ) -> str:
-    """Wrap generated content in the shared page chrome.
+    """Wrap generated content in the shared page chrome, with analytics.
 
     tip_source labels the header's tip link, which appears once TIP_URL is set.
     """
@@ -138,7 +162,7 @@ def render_page(
         if TIP_URL
         else ""
     )
-    return f"""<!DOCTYPE html>
+    page = f"""<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
@@ -159,3 +183,4 @@ def render_page(
 </body>
 </html>
 """
+    return inject_analytics(page)
