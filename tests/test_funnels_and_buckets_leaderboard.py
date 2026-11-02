@@ -199,7 +199,9 @@ def test_periods_narrow_the_leaderboard(page: Page, site_url, errors):
     assert "since" not in fake.views[-1]
     page.click("#lbPeriods >> text=Today")
     expect(page.locator("#lbList li")).to_have_count(3)
-    assert fake.views[-1]["since"] == str(page.evaluate(START_OF_TODAY))
+    # Today asks for scores since midnight. On a Monday the week started then
+    # too, so the page reuses the view it already has instead of asking again.
+    assert str(page.evaluate(START_OF_TODAY)) in [view.get("since") for view in fake.views]
 
     # The period carries over to the menu, and is remembered.
     page.click("#lbPeriods >> text=All time")
