@@ -119,6 +119,45 @@ def test_finishing_shows_the_results_and_unlocks_a_power_up(page: Page, site_url
     assert errors == []
 
 
+def test_recent_games_are_listed_newest_first(page: Page, site_url, errors):
+    page.goto(f"{site_url}/war#debug")
+    page.click("#historyBtn")
+    expect(page.locator("#historyNote")).to_have_text("No games yet. Finish one and it shows up here.")
+    page.click("#historyDone")
+    # Older games already on this device: only the last 30 are kept.
+    page.evaluate("""localStorage.setItem('war:history', JSON.stringify(Array(29).fill({
+        at: Date.now() - 3 * 86400000, mode: 'solo', code: null, length: 'standard', players: 3,
+        rivals: ['Sir Toast', 'Lady Beans'], place: 2, won: false, shared: false, cards: 40, out: 0,
+        battles: 60, wars: 4, best: 90, slams: 60, peak: 0.4 })))""")
+
+    for opponents in (1, 4):
+        page.fill("#oppRange", str(opponents))
+        page.click("#soloLength button[data-length=quick]")
+        page.click("#soloBtn")
+        page.wait_for_function(f"{STATE}.canSlam")
+        page.evaluate("window.__war.slam(180)")
+        page.evaluate("window.__war.finish()")
+        expect(page.locator("#over")).to_be_visible()
+        page.click("#overMenuBtn")
+
+    saved = page.evaluate("JSON.parse(localStorage.getItem('war:history'))")
+    assert len(saved) == 30
+    assert [g["players"] for g in saved[:3]] == [5, 2, 3]
+    page.click("#historyBtn")
+    games = page.locator("#historyList li")
+    expect(games).to_have_count(30)
+    expect(games.nth(0)).to_contain_text("Solo · Skirmish · vs ")
+    expect(games.nth(0)).to_contain_text(" and 1 more")
+    expect(games.nth(0)).to_contain_text("mightiest slam: COSMIC SLAM")
+    expect(games.nth(0).locator(".g-when")).to_contain_text("Today")
+    expect(games.nth(1)).not_to_contain_text("more")
+    expect(games.nth(2)).to_contain_text("2nd of 3")
+    expect(games.nth(2)).to_contain_text("best odds 40%")
+    page.keyboard.press("Escape")
+    expect(page.locator("#historyOv")).to_be_hidden()
+    assert errors == []
+
+
 def test_the_science_measures_your_slams(page: Page, site_url, errors):
     start_solo(page, site_url, opponents=1, length="quick", seed=3)
     page.evaluate("window.__war.pace(0.05)")

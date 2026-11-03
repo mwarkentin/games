@@ -320,6 +320,16 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px s
 .stat-grid b { display: block; font-size: 18px; }
 .science { background: var(--panel-2); border-left: 4px solid var(--accent); padding: 8px 10px; border-radius: 8px; font-size: 14px; margin: 10px 0; }
 .unlock { background: var(--gold); color: var(--gold-ink); padding: 10px 12px; border-radius: 12px; font-weight: 700; margin: 10px 0; }
+.menu-tools { display: grid; grid-template-columns: 1fr 1fr auto; gap: 6px; }
+.menu-tools .btn { padding: 10px 6px; white-space: nowrap; }
+.menu-tools #menuSoundBtn { width: 52px; font-size: 20px; }
+.games { list-style: none; padding: 0; margin: 8px 0 0; display: grid; gap: 6px; }
+.games li { background: var(--panel-2); border-radius: 12px; padding: 8px 10px; font-size: 13px; }
+.games li.won { border-left: 4px solid var(--gold); }
+.games .g-top { display: flex; justify-content: space-between; gap: 8px; align-items: baseline; }
+.games .g-place { font-weight: 800; font-size: 15px; }
+.games .g-when { color: var(--panel-dim); white-space: nowrap; font-size: 12px; }
+.games .g-detail { color: var(--panel-dim); overflow-wrap: anywhere; }
 .styles { display: grid; gap: 6px; }
 .styles button { display: flex; gap: 10px; align-items: center; text-align: left; padding: 8px 10px; border-radius: 12px; border: 2px solid var(--panel-line); background: var(--panel-2); color: var(--panel-ink); min-height: 52px; }
 .styles button .em { font-size: 26px; width: 34px; text-align: center; }
@@ -409,9 +419,10 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px s
       </div>
     </div>
     <p class="fine" id="lifetime"></p>
-    <div class="row" style="justify-content:space-between">
+    <div class="menu-tools">
       <button class="btn" id="stylesBtn">🧤 Power-ups</button>
-      <button class="btn" id="menuSoundBtn">🔊 Sound on</button>
+      <button class="btn" id="historyBtn">📜 History</button>
+      <button class="btn" id="menuSoundBtn" aria-label="Sound on">🔊</button>
     </div>
   </div>
 </div>
@@ -476,6 +487,16 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px s
       <button class="btn" id="overMenuBtn">Menu</button>
       <button class="btn primary grow" id="againBtn">Play again</button>
     </div>
+  </div>
+</div>
+
+<!-- Recent games -->
+<div class="overlay" id="historyOv" hidden>
+  <div class="panel">
+    <h2>Recent games</h2>
+    <p class="small dim" id="historyNote"></p>
+    <ol class="games" id="historyList"></ol>
+    <button class="btn primary wide" id="historyDone" style="margin-top:10px">Done</button>
   </div>
 </div>
 
@@ -908,7 +929,9 @@ function renderSound() {
   const label = Sound.on ? 'Sound on' : 'Sound off';
   setText($('soundBtn'), Sound.on ? '🔊' : '🔇');
   setAttr($('soundBtn'), 'aria-label', label);
-  setText($('menuSoundBtn'), `${Sound.on ? '🔊' : '🔇'} ${label}`);
+  setText($('menuSoundBtn'), Sound.on ? '🔊' : '🔇');
+  setAttr($('menuSoundBtn'), 'aria-label', label);
+  setAttr($('menuSoundBtn'), 'title', label);
 }
 
 // ---- Effects ----
@@ -2016,12 +2039,15 @@ function showOver() {
     setText($('oddsVerdict'), chart.verdict);
   }
   $('science').replaceChildren(...science());
-  const life = store.get('stats', { games: 0, wins: 0, slams: 0, best: 0 });
-  life.games++;
-  if (won) life.wins++;
-  life.slams += S.mine.length;
-  life.best = Math.max(life.best, ...S.mine.map((x) => x[0]), 0);
-  store.set('stats', life);
+  if (me !== null) {
+    const life = store.get('stats', { games: 0, wins: 0, slams: 0, best: 0 });
+    life.games++;
+    if (won) life.wins++;
+    life.slams += S.mine.length;
+    life.best = Math.max(life.best, ...S.mine.map((x) => x[0]), 0);
+    store.set('stats', life);
+    recordGame(o);
+  }
   const unlocked = unlockStyle();
   setHidden($('unlock'), !unlocked);
   if (unlocked !== null) setText($('unlock'), `New power-up: ${STYLES[unlocked][0]} ${STYLES[unlocked][1]} (${STYLES[unlocked][2]}, no effect). Equip it from the power-ups button.`);
@@ -2030,6 +2056,69 @@ function showOver() {
   setHidden($('over'), false);
   setHidden($('pause'), true);
   if (won) Sound.win();
+}
+
+// ---- Recent games ----
+
+const HISTORY_KEEP = 30;
+
+// Adds the game you just played to the top of your recent games.
+function recordGame(o) {
+  const me = S.you;
+  // Your chances before the result was known: the last point is the result.
+  const chances = Odds.history.slice(0, -1).map(([, p]) => p);
+  const games = store.get('history', []);
+  games.unshift({
+    at: Date.now(), mode: S.mode, code: S.code || null, length: S.length, players: S.players.length,
+    rivals: S.players.filter((_, seat) => seat !== me).slice(0, 3).map((p) => p.name),
+    place: o.order.indexOf(me) + 1, won: o.winners.includes(me), shared: o.winners.length > 1,
+    cards: o.counts[me], out: o.out[me] || 0, battles: o.battles, wars: o.wars,
+    best: Math.max(0, ...S.mine.map((x) => x[0])), slams: S.mine.length,
+    peak: chances.length ? Math.max(...chances) : null,
+  });
+  store.set('history', games.slice(0, HISTORY_KEEP));
+}
+
+const ordinal = (n) => n + (n % 100 >= 11 && n % 100 <= 13 ? 'th' : ['th', 'st', 'nd', 'rd'][n % 10] || 'th');
+
+function whenPlayed(at) {
+  const date = new Date(at);
+  const today = new Date();
+  const time = date.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
+  if (date.toDateString() === today.toDateString()) return `Today ${time}`;
+  today.setDate(today.getDate() - 1);
+  if (date.toDateString() === today.toDateString()) return `Yesterday ${time}`;
+  return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+}
+
+function renderHistory() {
+  const games = store.get('history', []);
+  setText($('historyNote'), games.length
+    ? `Your last ${plural(games.length, 'game')} on this device, newest first.`
+    : 'No games yet. Finish one and it shows up here.');
+  const list = $('historyList');
+  list.replaceChildren();
+  for (const g of games) {
+    const li = el('li', g.won ? 'won' : '');
+    const top = el('div', 'g-top');
+    const place = g.won ? `${g.shared ? '🤝 Shared win' : '🏆 Won'}${g.players > 2 ? ` · 1st of ${g.players}` : ''}`
+      : g.out ? `💀 Out in battle ${g.out} · ${ordinal(g.place)} of ${g.players}` : `🃏 ${ordinal(g.place)} of ${g.players}`;
+    top.append(el('span', 'g-place', place), el('span', 'g-when', whenPlayed(g.at)));
+    const more = g.players - 1 - g.rivals.length;
+    const rivals = `vs ${g.rivals.join(', ')}${more > 0 ? ` and ${more} more` : ''}`;
+    const length = (LENGTH_LABELS[g.length] || LENGTH_LABELS.standard)[0];
+    const where = g.mode === 'room' && g.code ? `Room ${g.code}` : 'Solo';
+    const line1 = `${where} · ${length} · ${rivals}`;
+    const line2 = [
+      g.cards ? plural(g.cards, 'card') : null,
+      plural(g.battles, 'battle'),
+      plural(g.wars, 'war'),
+      g.slams ? `mightiest slam: ${tierName(g.best)}` : 'no slams',
+      g.peak !== null && g.peak !== undefined ? `best odds ${pct(g.peak)}` : null,
+    ].filter(Boolean).join(' · ');
+    li.append(top, el('div', 'g-detail', line1), el('div', 'g-detail', line2));
+    list.append(li);
+  }
 }
 
 // Whoever runs the room deals the next game; everyone else waits for them.
@@ -2295,6 +2384,8 @@ function init() {
   // Power-ups
   $('styleBtn').addEventListener('click', openStyles);
   $('stylesBtn').addEventListener('click', openStyles);
+  $('historyBtn').addEventListener('click', () => { renderHistory(); setHidden($('historyOv'), false); });
+  $('historyDone').addEventListener('click', () => setHidden($('historyOv'), true));
   $('stylesDone').addEventListener('click', () => { setHidden($('stylesOv'), true); renderControls(); });
   $('styleList').addEventListener('click', (e) => {
     const b = e.target.closest('button');
@@ -2321,6 +2412,8 @@ function init() {
     if ((e.key === ' ' || e.key === 'Enter') && tableUp()) {
       e.preventDefault();
       if (!e.repeat) startCharge('key');
+    } else if (e.key === 'Escape' && !$('historyOv').hidden) {
+      setHidden($('historyOv'), true);
     } else if (e.key === 'Escape' && !$('app').hidden) {
       if (!$('stylesOv').hidden) setHidden($('stylesOv'), true);
       else if (!$('pause').hidden) closePause();

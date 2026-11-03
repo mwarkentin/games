@@ -125,6 +125,8 @@ def test_friends_join_with_the_code_and_see_each_other(page: Page, browser, site
     expect(guest.locator("#overNote")).to_have_text("Waiting for Dana to deal again…")
     expect(guest.locator("#againBtn")).to_be_hidden()
     expect(page.locator("#overTitle")).to_have_text("Victory!")
+    played = guest.evaluate("JSON.parse(localStorage.getItem('war:history'))[0]")
+    assert (played["mode"], played["code"], played["place"], played["won"]) == ("room", "K7QP", 2, False)
     page.click("#againBtn")
     expect(guest.locator("#over")).to_be_hidden()
     guest.wait_for_function(f"{STATE}.battle === 1 && {STATE}.phase === 'playing'")
@@ -145,6 +147,16 @@ def test_latecomers_watch(page: Page, site_url, errors):
     expect(page.locator("#meNote")).to_contain_text("watching")
     expect(page.locator("#opponents .tile")).to_have_count(2)
     expect(page.locator("#slamBtn")).to_be_disabled()
+    # Watching a game that ends doesn't count as playing it.
+    fake.broadcast({
+        "t": "flip", "battle": 1, "stage": 0, "winner": 0, "tied": [0], "gods": False, "pot": 2,
+        "plays": [[0, 0, card(12), 50, 0, 0], [1, 0, card(1), 50, 0, 0]], "counts": [27, 25], "out": [],
+        "over": {"winners": [0], "order": [0, 1], "counts": [27, 25], "out": [0, 0],
+                 "battles": 1, "wars": 0, "biggest": 0, "deepest": 0},
+    })
+    expect(page.locator("#over")).to_be_visible()
+    assert page.evaluate("localStorage.getItem('war:history')") is None
+    assert page.evaluate("localStorage.getItem('war:stats')") is None
     assert errors == []
 
 
