@@ -24,12 +24,13 @@ const HOUR = 60 * 60 * 1000;
 const LIMITS = {
   score: { max: 10, windowMs: 10 * 60 * 1000 },  // saves per IP address
   group: { max: 5, windowMs: HOUR },             // new groups per IP address
+  room: { max: 20, windowMs: HOUR },             // new War rooms per IP address (see war.js)
 };
 
 const PUBLIC = '*';
 // No 0/O or 1/I/L, so a code read aloud or off a screen can't be mistyped.
-const CODE_ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
-const CODE = /^[A-HJKMNP-Z2-9]{4}$/;
+export const CODE_ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
+export const CODE = /^[A-HJKMNP-Z2-9]{4}$/;
 const GROUP_NAME = /^[\p{L}\p{N}][\p{L}\p{N} '&.,!-]{0,23}$/u;
 const INITIALS = /^[A-Z]{3}$/;
 const BLOCKED_INITIALS = new Set([
@@ -104,7 +105,7 @@ export const GAMES = {
   },
 };
 
-class HttpError extends Error {
+export class HttpError extends Error {
   constructor(status, message) {
     super(message);
     this.status = status;
@@ -141,13 +142,13 @@ async function readBody(request) {
   }
 }
 
-async function hashIp(request, salt) {
+export async function hashIp(request, salt) {
   const ip = request.headers.get('CF-Connecting-IP') || 'unknown';
   const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(`${salt || ''}:${ip}`));
   return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, '0')).join('');
 }
 
-async function rateLimit(db, kind, ipHash, now) {
+export async function rateLimit(db, kind, ipHash, now) {
   const { max, windowMs } = LIMITS[kind];
   await db.prepare('DELETE FROM submissions WHERE created_at < ?').bind(now - HOUR).run();
   const recent = await db

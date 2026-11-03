@@ -21,6 +21,10 @@ Some useful tools live next door at
 
 - [Letterfield](https://games.michaelwarkentin.com/letterfield): an endless word search across a map of themed territories
 
+## Cards
+
+- [War](https://games.michaelwarkentin.com/war): the card game War with absurdly powerful card slams that change nothing at all, solo against up to 49 bots or with friends sharing a room code
+
 ## Strategy
 
 - [Air Traffic Controller](https://games.michaelwarkentin.com/air-traffic-controller): keep aircraft separated while you land arrivals and hand off departures, a remake of the 1985 DOS game

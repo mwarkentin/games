@@ -24,3 +24,13 @@ database_name = "games-leaderboard"
 # isn't a secret.
 database_id = "14348cc4-b12d-47a1-bf6e-8190a4898eb3"
 migrations_dir = "migrations"
+
+# War rooms: one Durable Object per room, holding the game and every player's
+# WebSocket (see src/war.js). The free plan allows SQLite-backed classes only.
+[[durable_objects.bindings]]
+name = "WAR_ROOMS"
+class_name = "WarRoom"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["WarRoom"]

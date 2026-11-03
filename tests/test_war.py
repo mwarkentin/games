@@ -1,0 +1,253 @@
+"""War, played solo against bots. Rooms are in test_war_rooms.py.
+
+?seed= makes the deal repeat, and #debug exposes window.__war: state() reads
+the table, slam(power) slams right away, pace(p) speeds the game up,
+finish() plays the rest of it out at once and odds() runs the win
+probability model.
+"""
+
+from __future__ import annotations
+
+import re
+
+import pytest
+from playwright.sync_api import Page, expect
+
+STATE = "window.__war.state()"
+
+
+def start_solo(page: Page, site_url: str, opponents: int = 1, length: str = "standard", seed: int = 7) -> None:
+    page.goto(f"{site_url}/war?seed={seed}#debug")
+    page.fill("#oppRange", str(opponents))
+    page.click(f"#soloLength button[data-length={length}]")
+    page.click("#soloBtn")
+    expect(page.locator("#app")).to_be_visible()
+    page.wait_for_function(f"{STATE}.canSlam")
+
+
+def hold_slam(page: Page, ms: int) -> None:
+    box = page.locator("#slamBtn").bounding_box()
+    page.mouse.move(box["x"] + box["width"] / 2, box["y"] + box["height"] / 2)
+    page.mouse.down()
+    page.wait_for_timeout(ms)
+    page.mouse.up()
+
+
+def test_hold_to_charge_and_release_to_slam(page: Page, site_url, errors):
+    start_solo(page, site_url)
+    assert page.locator("#opponents .tile").count() == 1
+    box = page.locator("#slamBtn").bounding_box()
+    page.mouse.move(box["x"] + 40, box["y"] + 30)
+    page.mouse.down()
+    page.wait_for_timeout(900)
+    expect(page.locator("#slamText")).not_to_have_text("Hold to slam")
+    page.mouse.up()
+
+    power = page.evaluate(f"{STATE}.slams[0][0]")
+    assert power > 30, "nearly a second of charging is a decent slam"
+    # The battle plays out once the bot has slammed too: a winner, or a war.
+    page.wait_for_function(f"{STATE}.battle === 2 || {STATE}.stage === 1")
+    counts = page.evaluate(f"{STATE}.counts")
+    assert 40 < sum(counts) <= 52, "cards in a war's pot belong to nobody yet"
+    expect(page.locator("#caption")).not_to_be_empty()
+    assert errors == []
+
+
+def test_space_bar_slams(page: Page, site_url, errors):
+    start_solo(page, site_url)
+    page.keyboard.down(" ")
+    page.wait_for_timeout(400)
+    page.keyboard.up(" ")
+    assert page.evaluate(f"{STATE}.slams[0]") is not None
+    assert errors == []
+
+
+def test_slam_power_changes_nothing(page: Page, site_url):
+    def play(power: int) -> list:
+        page.goto("about:blank")
+        start_solo(page, site_url, opponents=3, seed=99)
+        page.evaluate("window.__war.pace(0.05)")
+        log = []
+        for _ in range(6):
+            page.wait_for_function(f"{STATE}.canSlam")
+            battle, stage = page.evaluate(f"[{STATE}.battle, {STATE}.stage]")
+            assert page.evaluate(f"window.__war.slam({power})")
+            page.wait_for_function(f"{STATE}.battle !== {battle} || {STATE}.stage !== {stage}")
+            log.append([battle, stage, page.evaluate(f"{STATE}.counts")])
+        return log
+
+    assert play(0) == play(200)
+
+
+def test_a_table_of_fifty_fits_a_phone(page: Page, site_url, errors):
+    page.set_viewport_size({"width": 375, "height": 740})
+    start_solo(page, site_url, opponents=49)
+    assert page.locator("#opponents .tile").count() == 49
+    expect(page.locator("#battleSub")).to_contain_text("50 of 50 still in")
+    page.evaluate("window.__war.slam(120)")
+    page.wait_for_function(f"{STATE}.battle === 2 || {STATE}.stage === 1")
+    assert page.evaluate("document.documentElement.scrollWidth") <= 375
+    assert errors == []
+
+
+def test_finishing_shows_the_results_and_unlocks_a_power_up(page: Page, site_url, errors):
+    start_solo(page, site_url, opponents=4, length="quick")
+    page.evaluate("window.__war.slam(80)")
+    page.evaluate("window.__war.finish()")
+    expect(page.locator("#over")).to_be_visible()
+    expect(page.locator("#overSub")).to_contain_text("battles")
+    expect(page.locator("#standings li.me")).to_be_visible()
+    expect(page.locator("#science")).not_to_be_empty()
+    expect(page.locator("#unlock")).to_contain_text("New power-up")
+    styles = page.evaluate("JSON.parse(localStorage.getItem('war:styles'))")
+    assert len(styles) == 2
+
+    # Equip it from the menu.
+    page.click("#overMenuBtn")
+    page.click("#stylesBtn")
+    unlocked = [i for i in styles if i != 0][0]
+    page.click(f"#styleList button[data-i='{unlocked}']")
+    page.click("#stylesDone")
+    assert page.evaluate("JSON.parse(localStorage.getItem('war:style'))") == unlocked
+    expect(page.locator("#lifetime")).to_contain_text("1 game played")
+
+    # Slams carry the power-up's style, which is all it does.
+    page.click("#soloBtn")
+    page.wait_for_function(f"{STATE}.canSlam")
+    page.evaluate("window.__war.slam(50)")
+    assert page.evaluate(f"{STATE}.slams[0]") == [50, unlocked]
+    assert errors == []
+
+
+def test_recent_games_are_listed_newest_first(page: Page, site_url, errors):
+    page.goto(f"{site_url}/war#debug")
+    page.click("#historyBtn")
+    expect(page.locator("#historyNote")).to_have_text("No games yet. Finish one and it shows up here.")
+    page.click("#historyDone")
+    # Older games already on this device: only the last 30 are kept.
+    page.evaluate("""localStorage.setItem('war:history', JSON.stringify(Array(29).fill({
+        at: Date.now() - 3 * 86400000, mode: 'solo', code: null, length: 'standard', players: 3,
+        rivals: ['Sir Toast', 'Lady Beans'], place: 2, won: false, shared: false, cards: 40, out: 0,
+        battles: 60, wars: 4, best: 90, slams: 60, peak: 0.4 })))""")
+
+    for opponents in (1, 4):
+        page.fill("#oppRange", str(opponents))
+        page.click("#soloLength button[data-length=quick]")
+        page.click("#soloBtn")
+        page.wait_for_function(f"{STATE}.canSlam")
+        page.evaluate("window.__war.slam(180)")
+        page.evaluate("window.__war.finish()")
+        expect(page.locator("#over")).to_be_visible()
+        page.click("#overMenuBtn")
+
+    saved = page.evaluate("JSON.parse(localStorage.getItem('war:history'))")
+    assert len(saved) == 30
+    assert [g["players"] for g in saved[:3]] == [5, 2, 3]
+    page.click("#historyBtn")
+    games = page.locator("#historyList li")
+    expect(games).to_have_count(30)
+    expect(games.nth(0)).to_contain_text("Solo · Skirmish · vs ")
+    expect(games.nth(0)).to_contain_text(" and 1 more")
+    expect(games.nth(0)).to_contain_text("mightiest slam: COSMIC SLAM")
+    expect(games.nth(0).locator(".g-when")).to_contain_text("Today")
+    expect(games.nth(1)).not_to_contain_text("more")
+    expect(games.nth(2)).to_contain_text("2nd of 3")
+    expect(games.nth(2)).to_contain_text("best odds 40%")
+    page.keyboard.press("Escape")
+    expect(page.locator("#historyOv")).to_be_hidden()
+    assert errors == []
+
+
+def test_the_science_measures_your_slams(page: Page, site_url, errors):
+    start_solo(page, site_url, opponents=1, length="quick", seed=3)
+    page.evaluate("window.__war.pace(0.05)")
+    page.click("#autoBtn")
+    page.wait_for_selector("#over:not([hidden])", timeout=60_000)
+    expect(page.locator("#science")).to_contain_text("Correlation between slam power and winning: r = ")
+    mine = page.evaluate(f"{STATE}.mine")
+    assert len(mine) >= 15 and all(won is not None for _, won in mine)
+    # Your win probability through the game, with a verdict on it.
+    expect(page.locator("#oddsChart svg polyline")).to_have_count(1)
+    expect(page.locator("#oddsVerdict")).not_to_be_empty()
+    assert errors == []
+
+
+def test_win_probability_follows_the_game_and_ignores_slams(page: Page, site_url, errors):
+    # Seed 2: your five loses to an ace in the first battle.
+    start_solo(page, site_url, seed=2)
+    expect(page.locator("#odds")).to_be_visible()
+    expect(page.locator("#oddsYou")).to_have_text(re.compile(r"^You (\d+%|<1%|>99%)$"))
+    expect(page.locator("#oddsFav")).to_contain_text("%")
+    page.evaluate("window.__war.slam(150)")
+    expect(page.locator("#oddsNote")).to_have_text("Slam impact on win probability: +0.0%")
+    page.wait_for_function(f"{STATE}.odds.length === 2", timeout=15_000)
+    (_, start), (_, after) = page.evaluate(f"{STATE}.odds")
+    assert after < start, "losing a battle costs you"
+    expect(page.locator("#oddsDelta")).to_have_text(re.compile(r"^▼\d+$"))
+    assert errors == []
+
+
+def test_the_win_probability_model(page: Page, site_url):
+    page.goto(f"{site_url}/war#debug")
+    odds = lambda counts, battle, limit, sims=200: page.evaluate(f"window.__war.odds({counts}, {battle}, {limit}, {sims})")
+    # Head to head it's worked out, not simulated.
+    assert odds([26, 26], 1, 60) == [pytest.approx(0.5), pytest.approx(0.5)]
+    assert odds([25, 27], 2, 60)[0] < 0.5
+    assert odds([45, 7], 55, 60)[0] > 0.99, "45 cards to 7 with six battles left is nearly certain"
+    assert odds([52, 0], 10, 60) == [1, 0]
+    # ...and agrees with playing it out with the real rules.
+    for counts, battle, limit in [([30, 22], 40, 60), ([12, 40], 1, 400)]:
+        worked_out = odds(counts, battle, limit)[0]
+        simulated = page.evaluate(f"window.__war.simulate({counts}, {battle}, {limit}, 4000)")[0]
+        assert abs(worked_out - simulated) < 0.04, (counts, worked_out, simulated)
+    # More players are simulated.
+    crowd = odds("Array(10).fill(26).map((n, i) => i ? n - 2 : n + 18)", 1, 60)
+    assert abs(sum(crowd) - 1) < 1e-9
+    assert crowd[0] == max(crowd), "the player with the most cards is the favorite"
+
+
+def test_hiding_the_tab_pauses_a_solo_game(page: Page, site_url, errors):
+    start_solo(page, site_url, opponents=2)
+    page.evaluate("window.__war.pace(0.05)")
+    page.evaluate("window.__war.slam(60)")
+    page.evaluate(
+        "Object.defineProperty(document, 'hidden', { value: true, configurable: true });"
+        "document.dispatchEvent(new Event('visibilitychange'))"
+    )
+    expect(page.locator("#pause")).to_be_visible()
+    page.wait_for_timeout(1000)  # a battle played out just before may still be on its way to the table
+    battle, stage = page.evaluate(f"[{STATE}.battle, {STATE}.stage]")
+    page.wait_for_timeout(1500)
+    assert page.evaluate(f"[{STATE}.battle, {STATE}.stage]") == [battle, stage], "nothing happens while paused"
+    page.evaluate("Object.defineProperty(document, 'hidden', { value: false, configurable: true })")
+    page.click("#resumeBtn")
+    page.wait_for_function(f"{STATE}.canSlam")
+    page.evaluate("window.__war.slam(10)")
+    page.wait_for_function(f"{STATE}.battle !== {battle} || {STATE}.stage !== {stage}")
+    assert errors == []
+
+
+def test_quit_to_menu(page: Page, site_url, errors):
+    start_solo(page, site_url)
+    page.click("#menuBtn")
+    page.click("#quitBtn")
+    expect(page.locator("#menu")).to_be_visible()
+    expect(page.locator("#app")).to_be_hidden()
+    assert errors == []
+
+
+def test_reduced_motion_skips_the_fireworks(page: Page, site_url, errors):
+    page.emulate_media(reduced_motion="reduce")
+    start_solo(page, site_url)
+    page.evaluate("window.__war.slam(200)")
+    page.wait_for_timeout(400)
+    assert page.locator("#fx .bit").count() == 0
+    assert page.evaluate("document.getElementById('app').classList.contains('shake')") is False
+    assert errors == []
+
+
+def test_rooms_stay_hidden_without_a_server(page: Page, site_url, errors):
+    page.goto(f"{site_url}/war?room=K7QP")
+    expect(page.locator("#soloBtn")).to_be_visible()
+    expect(page.locator("#friends")).to_be_hidden()
+    assert errors == []
