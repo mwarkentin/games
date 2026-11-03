@@ -212,6 +212,53 @@ def test_music_stays_off_once_turned_off(page: Page, site_url, errors):
     assert errors == []
 
 
+DECKS = ["classic", "neon", "pixel", "royal", "space", "spooky", "candy"]
+KINGS = {"classic": "👑", "neon": "😎", "pixel": "🕹️", "royal": "🤴", "space": "🛸", "spooky": "💀", "candy": "🍩"}
+TITLE_KING = ".title-cards .card:nth-child(3) .cc"  # the king of hearts on the menu
+
+
+def test_every_deck_looks_different(page: Page, site_url, errors):
+    page.goto(f"{site_url}/war#debug")
+    expect(page.locator("#menuDecks button")).to_have_count(len(DECKS))
+    looks = {}
+    for key in DECKS:
+        page.evaluate(f"window.__war.deck('{key}')")
+        expect(page.locator(TITLE_KING)).to_have_text(KINGS[key])
+        looks[key] = page.evaluate("""() => {
+            const face = getComputedStyle(document.querySelector('.title-cards .card'));
+            const back = getComputedStyle(document.querySelector('#menuDecks button[aria-pressed=true] .card'));
+            return [face.backgroundColor, face.fontFamily, back.backgroundImage].join(' | ');
+        }""")
+    assert len(set(looks.values())) == len(DECKS), looks
+    assert errors == []
+
+
+def test_pick_a_deck_in_the_menu_or_mid_game(page: Page, site_url, errors):
+    page.goto(f"{site_url}/war?seed=2#debug")
+    page.click("#menuDecks button[data-deck=space]")
+    expect(page.locator("#menuDeckNote")).to_have_text("Space: Lost among the stars.")
+    assert page.evaluate("document.documentElement.dataset.deck") == "space"
+    assert page.evaluate("JSON.parse(localStorage.getItem('war:deck'))") == "space"
+
+    page.click("#soloBtn")
+    page.wait_for_function(f"{STATE}.canSlam")
+    page.evaluate("window.__war.slam(100)")
+    page.wait_for_function(f"{STATE}.battle === 2")
+    page.click("#menuBtn")
+    page.click("#pauseDecks button[data-deck=candy]")
+    expect(page.locator("#pauseDeckNote")).to_have_text("Candy: Very sweet. No nutritional value.")
+    page.click("#resumeBtn")
+    assert page.evaluate("document.documentElement.dataset.deck") == "candy"
+    expect(page.locator("#opponents .tile")).to_have_count(1)
+    expect(page.locator("#mySlot .card")).to_have_count(1)
+
+    page.reload()
+    assert page.evaluate("document.documentElement.dataset.deck") == "candy"
+    expect(page.locator(TITLE_KING)).to_have_text("🍩")
+    expect(page.locator("#menuDecks button[data-deck=candy]")).to_have_attribute("aria-pressed", "true")
+    assert errors == []
+
+
 def test_space_bar_slams(page: Page, site_url, errors):
     start_solo(page, site_url)
     page.keyboard.down(" ")
