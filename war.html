@@ -307,10 +307,12 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px s
 .fine { font-size: 12px; color: var(--panel-dim); margin-top: 12px; }
 .err { color: var(--accent); font-weight: 700; min-height: 1.3em; }
 .stack-gap { display: grid; gap: 8px; }
+/* Over the battle counter, so it never hides the cards. */
 #toast {
-  position: fixed; left: 50%; bottom: calc(env(safe-area-inset-bottom) + 150px); transform: translateX(-50%);
-  z-index: 40; background: var(--panel); color: var(--panel-ink); padding: 10px 14px; border-radius: 14px;
-  box-shadow: var(--shadow); font-weight: 700; font-size: 14px; max-width: calc(100% - 32px); text-align: center;
+  position: fixed; left: 50%; top: calc(env(safe-area-inset-top) + 4px); transform: translateX(-50%);
+  z-index: 40; background: var(--panel); color: var(--panel-ink); padding: 8px 12px; border-radius: 14px;
+  box-shadow: var(--shadow); font-weight: 700; font-size: 13px; width: max-content;
+  max-width: min(360px, calc(100% - 110px)); text-align: center;
 }
 #conn { position: fixed; top: calc(env(safe-area-inset-top) + 52px); left: 50%; transform: translateX(-50%); z-index: 15; background: var(--war); color: #fff; padding: 6px 12px; border-radius: 999px; font-weight: 700; font-size: 13px; }
 
