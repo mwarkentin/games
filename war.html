@@ -42,7 +42,7 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px s
 
 #app {
   position: fixed; inset: 0; display: grid;
-  grid-template-rows: auto minmax(0, 1fr) auto auto auto;
+  grid-template-rows: auto auto minmax(0, 1fr) auto auto auto;
   padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
   background:
     repeating-linear-gradient(45deg, rgba(255, 255, 255, .025) 0 2px, transparent 2px 6px),
@@ -65,6 +65,28 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px s
 #battleInfo { flex: 1; min-width: 0; text-align: center; font-family: var(--display); font-size: 15px; letter-spacing: .02em; }
 #battleInfo small { display: block; font: 600 11px/1.2 system-ui, sans-serif; color: var(--felt-dim); letter-spacing: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 #roomTag { font: 700 12px/1 system-ui, sans-serif; padding: 6px 8px; border-radius: 10px; background: rgba(0, 0, 0, .22); letter-spacing: .08em; }
+
+/* Win probability */
+#odds { padding: 0 14px 4px; display: grid; gap: 3px; width: 100%; max-width: 560px; justify-self: center; }
+#oddsNote {
+  font: 700 10px/1.2 system-ui, sans-serif; text-transform: uppercase; letter-spacing: .08em; color: var(--felt-dim);
+  text-align: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+#oddsNote.slam { color: var(--gold); }
+#oddsRow { display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 700; min-width: 0; }
+#oddsYou { white-space: nowrap; font-variant-numeric: tabular-nums; }
+#oddsDelta { font-size: 11px; white-space: nowrap; margin-left: -4px; }
+#oddsDelta.up { color: #c4ffd2; }
+#oddsDelta.down { color: #ffb8ae; }
+.otrack { flex: 1; min-width: 40px; height: 8px; border-radius: 99px; background: rgba(0, 0, 0, .28); overflow: hidden; }
+#oddsFill { height: 100%; width: 50%; background: var(--gold); border-radius: 99px; transition: width .6s ease, background .3s; }
+#odds.swing-up #oddsFill { background: #5fe08a; }
+#odds.swing-down #oddsFill { background: var(--war); }
+#oddsFav { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 48%; color: var(--felt-dim); font-weight: 600; }
+#oddsChart svg { width: 100%; height: 90px; display: block; background: var(--panel-2); border-radius: 10px; }
+#oddsChart .mid { stroke: var(--panel-line); stroke-dasharray: 4 4; vector-effect: non-scaling-stroke; }
+#oddsChart .line { fill: none; stroke: var(--accent); stroke-width: 2.5; stroke-linejoin: round; vector-effect: non-scaling-stroke; }
+#oddsChart .area { fill: var(--accent); opacity: .14; }
 
 /* Opponents */
 #opponents {
@@ -329,6 +351,10 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px s
     <span id="roomTag" hidden></span>
     <button class="icon-btn" id="soundBtn" aria-label="Sound on">🔊</button>
   </header>
+  <section id="odds" hidden>
+    <div id="oddsNote">Win probability</div>
+    <div id="oddsRow"><span id="oddsYou"></span><span id="oddsDelta"></span><div class="otrack"><div id="oddsFill"></div></div><span id="oddsFav"></span></div>
+  </section>
   <section id="opponents" aria-label="Other players"></section>
   <section id="arena" aria-live="polite">
     <div id="banner"></div>
@@ -436,6 +462,11 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px s
     <h2 id="overTitle">Victory!</h2>
     <p class="dim" id="overSub"></p>
     <ol class="standings" id="standings"></ol>
+    <div id="oddsSection" hidden>
+      <h3>Your win probability</h3>
+      <div id="oddsChart"></div>
+      <p class="small dim" id="oddsVerdict"></p>
+    </div>
     <h3>The war in numbers</h3>
     <div class="stat-grid" id="overStats"></div>
     <div class="science" id="science"></div>
@@ -1166,7 +1197,7 @@ function onState(m) {
     const g = m.game;
     // A new game, or a snapshot of a different moment in this one.
     const fresh = m.phase === 'playing' && (wasPhase !== 'playing' || g.battle < S.battle);
-    if (fresh) { S.mine = []; S.overShown = false; S.naps = 0; }
+    if (fresh) { S.mine = []; S.overShown = false; S.naps = 0; Odds.reset(); }
     if (fresh || S.battle !== g.battle || S.stage !== g.stage) {
       clearLater();
       S.cards = {};
@@ -1181,6 +1212,8 @@ function onState(m) {
     S.opensAt = now() + g.opensIn;
     S.closesAt = now() + g.closesIn;
     S.charging = {};
+    if (g.over) { if (Odds.seats) Odds.settle(g.over); }
+    else if (g.stage === 0 && (fresh || !Odds.seats)) Odds.update(g.counts, g.battle, g.limit);
   } else {
     Object.assign(S, { battle: 0, stage: 0, fighters: [], counts: [], out: [], over: null, cards: {}, result: null, slams: {} });
   }
@@ -1278,7 +1311,9 @@ function onFlip(m) {
   Sound.flip();
   narrate(m);
   if (m.next) onStage(m.next);
+  if (m.winner !== null && m.next) Odds.update(m.counts, m.next.battle, S.limit);
   if (m.over) {
+    Odds.settle(m.over);
     S.over = m.over;
     S.phase = 'over';
     later(showOver, 1600 * pace());
@@ -1338,6 +1373,238 @@ function gain(n) {
   node.classList.remove('show');
   void node.offsetWidth;
   node.classList.add('show');
+}
+
+// ---- Win probability ----
+
+// A sports-broadcast win probability, from what anyone at the table can see:
+// how many cards each player holds and how many battles are left. It never
+// peeks at anyone's cards, and it ignores slams, because so do the rules.
+//
+// Head to head, it's worked out exactly: with the cards unknown, every battle
+// is a coin flip for the pot (a war is a coin flip for a bigger one), so the
+// chances follow from cards held and battles left. With more players, it deals
+// random cards in those numbers and plays the rest of the game out hundreds of
+// times with the real rules.
+const ODDS_SIMS = 500;
+const ODDS_LOOKAHEAD = 400;  // battles; total war is judged on the cards held after that
+
+// One simulated future from the start of a battle: who wins.
+function oddsFuture(counts, battle, limit) {
+  const { game } = warNewGame(counts.map(() => false), 'standard', Math.random, 0);
+  const cards = game.piles.flat();
+  let k = 0;
+  game.piles = counts.map((c) => cards.slice(k, (k += c)));
+  game.out = counts.map((c) => (c ? 0 : 1));
+  game.limit = Math.min(limit, battle - 1 + ODDS_LOOKAHEAD);
+  game.battle = battle - 1;
+  warOpenStage(game, 0, Math.random, null, 0);
+  while (!game.over) warResolve(game, 0, Math.random);
+  return game.over.winners;
+}
+
+// Head to head: how your cards can change in one battle, as [change,
+// chance] pairs, when you hold `held` of the 52.
+const DECK = 52;
+function headsUpSteps(held) {
+  const TIE = 3 / 51;  // two random cards of the same rank
+  const steps = new Map();
+  const add = (change, p) => steps.set(change, (steps.get(change) || 0) + p);
+  // a and b: cards each player still holds; inA and inB: cards each has put in.
+  const fight = (a, b, inA, inB, p, depth) => {
+    const tie = depth < 8 ? TIE : 0;
+    add(inB, (p * (1 - tie)) / 2);
+    add(-inA, (p * (1 - tie)) / 2);
+    if (!tie) return;
+    const q = p * tie;
+    if (!a && !b) { add(inB, q / 2); add(-inA, q / 2); return; }  // the war gods
+    if (!a) { add(-inA, q); return; }
+    if (!b) { add(inB, q); return; }
+    const downA = Math.min(3, a - 1), downB = Math.min(3, b - 1);
+    fight(a - downA - 1, b - downB - 1, inA + downA + 1, inB + downB + 1, q, depth + 1);
+  };
+  fight(held - 1, DECK - held - 1, 1, 1, 1, 0);
+  return [...steps];
+}
+let headsUpTable = null;
+
+// Head to head: the chance of holding more cards than the other player when
+// the battles run out (half for a tie), or every card before then.
+function headsUpOdds(held, left) {
+  headsUpTable ??= Array.from({ length: DECK + 1 }, (_, k) => (k > 0 && k < DECK ? headsUpSteps(k) : []));
+  let chance = Array.from({ length: DECK + 1 }, (_, k) => (k > DECK / 2 ? 1 : k === DECK / 2 ? 0.5 : 0));
+  for (let t = 0; t < left; t++) {
+    const next = chance.slice();
+    for (let k = 1; k < DECK; k++) {
+      let v = 0;
+      for (const [change, p] of headsUpTable[k]) v += p * chance[Math.max(0, Math.min(DECK, k + change))];
+      next[k] = v;
+    }
+    chance = next;
+  }
+  return chance[held];
+}
+
+// Everyone's chances from the start of a battle: worked out head to head,
+// simulated otherwise.
+function oddsFor(counts, battle, limit, sims) {
+  if (counts.length === 2) {
+    const first = headsUpOdds(counts[0], limit - battle + 1);
+    return [first, 1 - first];
+  }
+  return oddsEstimate(counts, battle, limit, sims);
+}
+
+function oddsEstimate(counts, battle, limit, sims) {
+  const wins = counts.map(() => 0);
+  for (let i = 0; i < sims; i++) {
+    const winners = oddsFuture(counts, battle, limit);
+    for (const seat of winners) wins[seat] += 1 / winners.length;
+  }
+  return wins.map((w) => w / sims);
+}
+
+// Rounded so nobody still holding cards is ever 0% or 100%.
+function pct(p, sure) {
+  if (sure || (p > 0 && p < 1)) {
+    if (!sure && p < 0.01) return '<1%';
+    if (!sure && p > 0.99) return '>99%';
+    return `${Math.round(p * 100)}%`;
+  }
+  return p <= 0 ? '<1%' : '>99%';
+}
+
+const Odds = {
+  seats: null,   // each player's chance of winning, or null before the first estimate
+  sims: 0,
+  history: [],   // [battle, your chance] through this game
+  delta: 0,
+  job: 0,
+  slamUntil: 0,
+  reset() {
+    this.job++;
+    Object.assign(this, { seats: null, sims: 0, history: [], delta: 0, slamUntil: 0 });
+    renderOdds();
+  },
+  // Estimates the odds as a battle starts, a few milliseconds at a time so
+  // the cards keep moving smoothly, then shows them.
+  update(counts, battle, limit) {
+    const job = ++this.job;
+    if (counts.length === 2) {
+      setTimeout(() => { if (job === this.job) this.show(oddsFor(counts, battle, limit), 0, battle); }, 0);
+      return;
+    }
+    counts = counts.slice();
+    const wins = counts.map(() => 0);
+    let sims = 0;
+    const started = now();
+    const step = () => {
+      if (job !== this.job) return;
+      const slice = now();
+      while (sims < ODDS_SIMS && now() - slice < 8) {
+        const winners = oddsFuture(counts, battle, limit);
+        for (const seat of winners) wins[seat] += 1 / winners.length;
+        sims++;
+      }
+      if (sims < ODDS_SIMS && now() - started < 400) { setTimeout(step, 0); return; }
+      this.show(wins.map((w) => w / sims), sims, battle);
+    };
+    setTimeout(step, 0);
+  },
+  // The game is over, so the odds are certain.
+  settle(over) {
+    this.job++;
+    this.show(over.counts.map((_, seat) => (over.winners.includes(seat) ? 1 / over.winners.length : 0)), this.sims, over.battles + 1);
+  },
+  show(chances, sims, battle) {
+    const me = S.you;
+    const before = this.seats && me !== null ? this.seats[me] : null;
+    this.seats = chances;
+    this.sims = sims;
+    this.delta = before === null ? 0 : chances[me] - before;
+    // Simulations wobble: only call a change that's bigger than the wobble.
+    if (sims && before !== null) {
+      const wobble = Math.sqrt((2 * Math.max(0.01, chances[me] * (1 - chances[me]))) / sims);
+      if (Math.abs(this.delta) < 2.5 * wobble) this.delta = 0;
+    }
+    if (me !== null) {
+      const last = this.history[this.history.length - 1];
+      if (last && last[0] === battle) last[1] = chances[me];
+      else this.history.push([battle, chances[me]]);
+    }
+    renderOdds();
+    const box = $('odds');
+    box.classList.remove('swing-up', 'swing-down');
+    if (Math.abs(this.delta) >= 0.2) {
+      box.classList.add(this.delta > 0 ? 'swing-up' : 'swing-down');
+      later(() => box.classList.remove('swing-up', 'swing-down'), 1500);
+    }
+  },
+};
+
+function renderOdds() {
+  const box = $('odds');
+  const p = Odds.seats;
+  const show = Boolean(p) && (S.phase === 'playing' || S.phase === 'over') && p.length === S.players.length;
+  setHidden(box, !show);
+  if (!show) return;
+  const me = S.you;
+  const over = S.phase === 'over';
+  const sure = (seat) => over || S.out[seat] > 0;
+  const rivals = S.players.map((_, seat) => seat).filter((seat) => seat !== me);
+  const fav = rivals.reduce((best, seat) => (p[seat] > p[best] ? seat : best), rivals[0]);
+  const lead = me !== null ? me : fav;
+  setText($('oddsYou'), me !== null ? `You ${pct(p[me], sure(me))}` : `${avatarOf(fav)} ${playerName(fav)} ${pct(p[fav], sure(fav))}`);
+  const d = me !== null ? Math.round(Odds.delta * 100) : 0;
+  setText($('oddsDelta'), d ? `${d > 0 ? '▲' : '▼'}${Math.abs(d)}` : '');
+  setClass($('oddsDelta'), 'up', d > 0);
+  setClass($('oddsDelta'), 'down', d < 0);
+  const width = `${Math.round(p[lead] * 1000) / 10}%`;
+  if ($('oddsFill').style.width !== width) $('oddsFill').style.width = width;
+  let right = '';
+  if (me !== null && rivals.length === 1) right = `${pct(p[fav], sure(fav))} ${playerName(fav)}`;
+  else if (me !== null) right = p[me] >= p[fav] ? 'You’re the favorite' : `Favorite: ${avatarOf(fav)} ${playerName(fav)} ${pct(p[fav], sure(fav))}`;
+  setText($('oddsFav'), right);
+  const slamming = now() < Odds.slamUntil;
+  setText($('oddsNote'), slamming ? 'Slam impact on win probability: +0.0%'
+    : over ? 'Win probability · final'
+      : Odds.sims ? `Win probability · ${fmt(Odds.sims)} simulated futures` : 'Win probability · from cards held and battles left');
+  setClass($('oddsNote'), 'slam', slamming);
+}
+
+// Your chances through the game, for the end screen, with a verdict.
+function oddsChart() {
+  const h = Odds.history;
+  if (S.you === null || !S.over || h.length < 3) return null;
+  const NS = 'http://www.w3.org/2000/svg';
+  const W = 300, TOP = 6, BOTTOM = 84;
+  const first = h[0][0], last = h[h.length - 1][0];
+  const x = (b) => ((b - first) / Math.max(1, last - first)) * W;
+  const y = (p) => BOTTOM - p * (BOTTOM - TOP);
+  const svg = document.createElementNS(NS, 'svg');
+  const add = (tag, attrs) => {
+    const node = document.createElementNS(NS, tag);
+    for (const [k, v] of Object.entries(attrs)) node.setAttribute(k, String(v));
+    svg.append(node);
+  };
+  svg.setAttribute('viewBox', `0 0 ${W} 90`);
+  svg.setAttribute('preserveAspectRatio', 'none');
+  svg.setAttribute('role', 'img');
+  svg.setAttribute('aria-label', 'Your win probability, battle by battle');
+  add('line', { x1: 0, x2: W, y1: y(0.5), y2: y(0.5), class: 'mid' });
+  const points = h.map(([b, p]) => `${x(b).toFixed(1)},${y(p).toFixed(1)}`);
+  add('path', { d: `M0,${BOTTOM} L${points.join(' L')} L${W},${BOTTOM} Z`, class: 'area' });
+  add('polyline', { points: points.join(' '), class: 'line' });
+  // The result itself is the last point, so judge the game on the rest.
+  let lo = h[0], hi = h[0];
+  for (const point of h.slice(0, -1)) {
+    if (point[1] < lo[1]) lo = point;
+    if (point[1] > hi[1]) hi = point;
+  }
+  const verdict = S.over.winners.includes(S.you)
+    ? (lo[1] < 0.2 ? `Comeback of the war: you were down to ${pct(lo[1])} at battle ${lo[0]}.` : `Never really in doubt. Your lowest was ${pct(lo[1])}.`)
+    : (hi[1] > 0.7 ? `You were ${pct(hi[1])} to win at battle ${hi[0]}. Then you weren’t.` : `Your best was ${pct(hi[1])}, at battle ${hi[0]}. The model saw this coming.`);
+  return { svg, verdict };
 }
 
 // ---- Drawing the table ----
@@ -1533,6 +1800,7 @@ function renderAll() {
   renderWarRow();
   renderBar();
   renderControls();
+  renderOdds();
   document.documentElement.style.setProperty('--pace', String(pace()));
 }
 
@@ -1605,6 +1873,9 @@ function slam(power) {
   S.naps = 0;
   S.conn.send({ t: 'slam', power, style });
   S.animUntil = now() + (reduceMotion.matches ? 0 : 420 * pace());
+  Odds.slamUntil = now() + 1800;
+  renderOdds();
+  later(renderOdds, 1850);
   renderMe();
   renderControls();
   later(() => {
@@ -1649,6 +1920,7 @@ function backToMenu(message) {
   S.code = null;
   clearLater();
   cancelCharge();
+  Odds.reset();
   tileKey = '';
   for (const id of ['app', 'lobby', 'pause', 'over']) setHidden($(id), true);
   setHidden($('menu'), false);
@@ -1737,6 +2009,12 @@ function showOver() {
   cell(o.biggest ? `${o.biggest}-way` : '—', 'biggest war');
   cell(o.deepest ? deep : '—', 'deepest war');
 
+  const chart = oddsChart();
+  setHidden($('oddsSection'), !chart);
+  if (chart) {
+    $('oddsChart').replaceChildren(chart.svg);
+    setText($('oddsVerdict'), chart.verdict);
+  }
   $('science').replaceChildren(...science());
   const life = store.get('stats', { games: 0, wins: 0, slams: 0, best: 0 });
   life.games++;
@@ -2092,17 +2370,23 @@ function renderStyles() {
 init();
 
 // #debug exposes hooks for tests: state() reads the table, slam(power) slams
-// right away, finish() plays a solo game out, pace(p) speeds a solo game up.
+// right away, finish() plays a solo game out, pace(p) speeds a solo game up,
+// odds(counts, battle, limit, sims) runs the win probability model and
+// simulate() runs its simulations, even head to head.
 if (DEBUG) {
   window.__war = {
     state: () => ({
       mode: S.mode, phase: S.phase, you: S.you, battle: S.battle, stage: S.stage, fighters: S.fighters.slice(),
       counts: S.counts.slice(), slams: { ...S.slams }, canSlam: canSlam(), over: S.over, players: S.players.length,
       mine: S.mine.map((x) => x.slice()),
+      odds: Odds.history.map((x) => x.slice()),
+      chances: Odds.seats && Odds.seats.slice(),
     }),
     slam: (power) => { if (!canSlam()) return false; slam(power); return true; },
     finish: () => S.conn && S.conn.finish && S.conn.finish(),
     pace: (p) => { if (S.conn && S.conn.setPace) S.conn.setPace(p); },
+    odds: (counts, battle, limit, sims) => oddsFor(counts, battle, limit, sims || 200),
+    simulate: (counts, battle, limit, sims) => oddsEstimate(counts, battle, limit, sims),
   };
 }
 </script>

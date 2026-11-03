@@ -1,12 +1,16 @@
 """War, played solo against bots. Rooms are in test_war_rooms.py.
 
 ?seed= makes the deal repeat, and #debug exposes window.__war: state() reads
-the table, slam(power) slams right away, pace(p) speeds the game up and
-finish() plays the rest of it out at once.
+the table, slam(power) slams right away, pace(p) speeds the game up,
+finish() plays the rest of it out at once and odds() runs the win
+probability model.
 """
 
 from __future__ import annotations
 
+import re
+
+import pytest
 from playwright.sync_api import Page, expect
 
 STATE = "window.__war.state()"
@@ -123,7 +127,44 @@ def test_the_science_measures_your_slams(page: Page, site_url, errors):
     expect(page.locator("#science")).to_contain_text("Correlation between slam power and winning: r = ")
     mine = page.evaluate(f"{STATE}.mine")
     assert len(mine) >= 15 and all(won is not None for _, won in mine)
+    # Your win probability through the game, with a verdict on it.
+    expect(page.locator("#oddsChart svg polyline")).to_have_count(1)
+    expect(page.locator("#oddsVerdict")).not_to_be_empty()
     assert errors == []
+
+
+def test_win_probability_follows_the_game_and_ignores_slams(page: Page, site_url, errors):
+    # Seed 2: your five loses to an ace in the first battle.
+    start_solo(page, site_url, seed=2)
+    expect(page.locator("#odds")).to_be_visible()
+    expect(page.locator("#oddsYou")).to_have_text(re.compile(r"^You (\d+%|<1%|>99%)$"))
+    expect(page.locator("#oddsFav")).to_contain_text("%")
+    page.evaluate("window.__war.slam(150)")
+    expect(page.locator("#oddsNote")).to_have_text("Slam impact on win probability: +0.0%")
+    page.wait_for_function(f"{STATE}.odds.length === 2", timeout=15_000)
+    (_, start), (_, after) = page.evaluate(f"{STATE}.odds")
+    assert after < start, "losing a battle costs you"
+    expect(page.locator("#oddsDelta")).to_have_text(re.compile(r"^▼\d+$"))
+    assert errors == []
+
+
+def test_the_win_probability_model(page: Page, site_url):
+    page.goto(f"{site_url}/war#debug")
+    odds = lambda counts, battle, limit, sims=200: page.evaluate(f"window.__war.odds({counts}, {battle}, {limit}, {sims})")
+    # Head to head it's worked out, not simulated.
+    assert odds([26, 26], 1, 60) == [pytest.approx(0.5), pytest.approx(0.5)]
+    assert odds([25, 27], 2, 60)[0] < 0.5
+    assert odds([45, 7], 55, 60)[0] > 0.99, "45 cards to 7 with six battles left is nearly certain"
+    assert odds([52, 0], 10, 60) == [1, 0]
+    # ...and agrees with playing it out with the real rules.
+    for counts, battle, limit in [([30, 22], 40, 60), ([12, 40], 1, 400)]:
+        worked_out = odds(counts, battle, limit)[0]
+        simulated = page.evaluate(f"window.__war.simulate({counts}, {battle}, {limit}, 4000)")[0]
+        assert abs(worked_out - simulated) < 0.04, (counts, worked_out, simulated)
+    # More players are simulated.
+    crowd = odds("Array(10).fill(26).map((n, i) => i ? n - 2 : n + 18)", 1, 60)
+    assert abs(sum(crowd) - 1) < 1e-9
+    assert crowd[0] == max(crowd), "the player with the most cards is the favorite"
 
 
 def test_hiding_the_tab_pauses_a_solo_game(page: Page, site_url, errors):
