@@ -185,9 +185,23 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px s
 #warRow .more { align-self: center; font-weight: 700; }
 
 /* You */
-#me { display: flex; align-items: center; justify-content: center; gap: 18px; padding: 4px 12px; min-height: 140px; position: relative; }
-#me .card { --w: 88px; }
-@media (min-width: 700px) { #me .card { --w: 104px; } }
+#me { --cw: 88px; display: flex; align-items: center; justify-content: center; gap: 16px; padding: 4px 12px; min-height: 140px; position: relative; }
+#me .card { --w: var(--cw); }
+@media (min-width: 700px) { #me { --cw: 104px; } }
+#myPile { touch-action: none; }
+/* The war pile: every card you lay face down in a war, slammed one by one. */
+#myWar { display: grid; justify-items: center; gap: 4px; }
+#myWar .wpile { position: relative; width: var(--cw); height: calc(var(--cw) * 1.4); }
+#myWar .wpile:empty { border: 2px dashed rgba(255, 80, 70, .7); border-radius: 9px; }
+#myWar .wpile .card { position: absolute; inset: 0; transform: translate(var(--dx), var(--dy)) rotate(var(--r)); }
+#myWar .wpile .card.slam { animation: wslam calc(380ms * var(--pace)) cubic-bezier(.5, 0, .75, 0) both; }
+@keyframes wslam {
+  0% { transform: translate(var(--dx), calc(var(--dy) - 70px)) rotate(calc(var(--r) - 30deg)) scale(1.5); opacity: .3; }
+  70% { transform: translate(var(--dx), var(--dy)) rotate(var(--r)) scale(1.08); opacity: 1; }
+  100% { transform: translate(var(--dx), var(--dy)) rotate(var(--r)); }
+}
+#myWar .wcount { font-size: 12px; font-weight: 700; color: #ffb8ae; white-space: nowrap; }
+.card.ghost { position: absolute; left: 0; top: 0; --w: 88px; z-index: 31; box-shadow: 0 18px 30px rgba(0, 0, 0, .45); will-change: transform; }
 #myPile { position: relative; display: grid; justify-items: center; gap: 4px; }
 #myPile .stack { position: relative; }
 #myPile .stack::before, #myPile .stack::after {
@@ -230,12 +244,16 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px s
   background-size: 320px 100%; opacity: .95;
 }
 #slamText { position: relative; text-shadow: 0 2px 0 rgba(0, 0, 0, .25); white-space: nowrap; }
+#slamText.long { font-size: 17px; }
+#slamBtn.tapped { animation: tapped 120ms ease-out; }
+@keyframes tapped { 0% { transform: translateY(4px) scale(.97); } 100% { transform: none; } }
 #tools { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; justify-content: center; }
 .chip {
-  border: 0; border-radius: 999px; padding: 8px 12px; background: rgba(0, 0, 0, .22); font-size: 13px; font-weight: 700;
+  border: 0; border-radius: 999px; padding: 8px 10px; background: rgba(0, 0, 0, .22); font-size: 13px; font-weight: 700;
   white-space: nowrap; max-width: 100%; overflow: hidden; text-overflow: ellipsis; min-height: 36px;
 }
 .chip[aria-pressed="true"] { background: var(--gold); color: var(--gold-ink); }
+#styleBtn { max-width: 9.5em; }
 #cheers { display: flex; gap: 4px; }
 #cheers button { width: 36px; height: 36px; border-radius: 50%; border: 0; background: rgba(0, 0, 0, .22); font-size: 18px; padding: 0; }
 
@@ -298,6 +316,7 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px s
 .seg button { border-radius: 12px; border: 2px solid var(--panel-line); background: var(--panel-2); padding: 8px 6px; font-weight: 700; font-size: 14px; color: var(--panel-ink); min-height: 48px; }
 .seg button small { display: block; font-weight: 400; color: var(--panel-dim); font-size: 12px; }
 .seg button[aria-pressed="true"] { border-color: var(--accent); background: var(--panel); }
+.seg.three { grid-template-columns: repeat(3, 1fr); }
 .seg button:disabled { cursor: default; }
 .code-big { font-family: var(--display); font-size: 44px; letter-spacing: .12em; color: var(--accent); line-height: 1; }
 .people { display: flex; flex-wrap: wrap; gap: 6px; max-height: 210px; overflow-y: auto; }
@@ -373,6 +392,7 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px s
   </section>
   <section id="me">
     <div id="myPile"><div class="stack"><div class="card back"></div></div><div id="myLabel"></div></div>
+    <div id="myWar" hidden><div class="wpile"></div><span class="wcount"></span></div>
     <div id="mySlot"><div class="card empty"></div></div>
     <div id="gain"></div>
     <div id="meNote" hidden></div>
@@ -381,7 +401,8 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px s
     <button id="slamBtn" disabled><span id="meterFill"></span><span id="slamText">Hold to slam</span></button>
     <div id="tools">
       <button class="chip" id="styleBtn">🖐️ Bare hands</button>
-      <button class="chip" id="autoBtn" aria-pressed="false">🤖 Autopilot</button>
+      <button class="chip" id="inputBtn" title="How you slam: tap to switch">✊ Hold</button>
+      <button class="chip" id="autoBtn" aria-pressed="false">🤖 Auto</button>
       <button class="chip" id="fastBtn" aria-pressed="false" hidden>⏩ Fast</button>
       <div id="cheers" hidden></div>
     </div>
@@ -418,6 +439,8 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px s
         <div class="err" id="friendsErr" aria-live="polite"></div>
       </div>
     </div>
+    <h3>How you slam</h3>
+    <div class="seg three" id="inputSeg" role="group" aria-label="How you slam"></div>
     <p class="fine" id="lifetime"></p>
     <div class="menu-tools">
       <button class="btn" id="stylesBtn">🧤 Power-ups</button>
@@ -527,8 +550,10 @@ const WAR = {
   AVATARS: 24,
   TIERS: 9,            // slam tiers, from boop to cosmic
   STAGE_MS: 8000,      // to slam before your card flops over by itself
+  WAR_STAGE_MS: 20000, // the same in a war, where you slam every card you lay down
   NAPS: 2,             // flops in a row before a stage stops waiting for you
   BOT_MS: 1300,        // the shortest a stage lasts, while the bots slam
+  WAR_BOT_MS: 2600,    // the same in a war, while the bots slam all their cards
   REVEAL_MS: 2400,     // to watch the cards turn over before the next battle
   WAR_REVEAL_MS: 3000, // the same before a war
 };
@@ -596,9 +621,15 @@ function warNewGame(bots, length, random, now, pace) {
   return { game, stage: warOpenStage(game, now, random, null, 0) };
 }
 
+// How long the bots take to slam: a moment in a battle, longer in a war,
+// where they slam every card they lay down.
+function warBotMs(game) {
+  return Math.round((game.stage ? WAR.WAR_BOT_MS : WAR.BOT_MS) * game.pace);
+}
+
 // Opens the next stage: a new battle for everyone still holding cards, or,
 // when fighters is given, a war between them. Bots slam straight away; the
-// pages show their slams one by one over the stage's first second.
+// pages show their slams one by one while the stage opens.
 function warOpenStage(game, now, random, fighters, delay) {
   if (fighters) {
     game.stage++;
@@ -611,14 +642,14 @@ function warOpenStage(game, now, random, fighters, delay) {
   }
   game.slams = {};
   game.opensAt = now + Math.round(delay * game.pace);
-  game.closesAt = game.opensAt + WAR.STAGE_MS;
+  game.closesAt = game.opensAt + (game.stage ? WAR.WAR_STAGE_MS : WAR.STAGE_MS);
   const bots = [];
   for (const seat of game.fighters) {
     if (!game.bots[seat]) continue;
     const power = warBotPower(random);
     const style = Math.floor(random() * WAR.STYLES);
     game.slams[seat] = [power, style, 0];
-    bots.push([seat, power, style, Math.round((100 + random() * (WAR.BOT_MS - 300)) * game.pace)]);
+    bots.push([seat, power, style, Math.round(100 * game.pace + random() * (warBotMs(game) - 300 * game.pace))]);
   }
   return {
     t: 'stage', battle: game.battle, stage: game.stage, limit: game.limit, fighters: game.fighters.slice(),
@@ -636,7 +667,7 @@ function warWaitingFor(game, online) {
 // When to play the stage out: once everyone online has slammed and the bots
 // have had their moment, or when time runs out.
 function warDueAt(game, online) {
-  return warWaitingFor(game, online).length ? game.closesAt : game.opensAt + Math.round(WAR.BOT_MS * game.pace);
+  return warWaitingFor(game, online).length ? game.closesAt : game.opensAt + warBotMs(game);
 }
 
 // Records a slam. Returns the message to pass on, or null when it doesn't
@@ -919,7 +950,8 @@ const Sound = {
   win() { [523, 659, 784, 1046].forEach((f, i) => this.tone(f, i * 0.09, 0.22, { type: 'triangle', gain: 0.14 })); },
   lose() { this.tone(330, 0, 0.3, { type: 'triangle', gain: 0.12, to: 290 }); this.tone(277, 0.3, 0.55, { type: 'triangle', gain: 0.12, to: 220 }); },
   war() {
-    [[220, 277, 330], [247, 311, 370]].forEach((chord, i) => chord.forEach((f) => this.tone(f, i * 0.28, 0.3, { type: 'sawtooth', gain: 0.05 })));
+    this.noise(0, 0.9, 0.35, 180);
+    [[220, 277, 330], [247, 311, 370], [294, 370, 440]].forEach((chord, i) => chord.forEach((f) => this.tone(f, i * 0.28, i === 2 ? 0.6 : 0.3, { type: 'sawtooth', gain: 0.05 })));
   },
   blip(tier) { this.tone(300 + tier * 90, 0, 0.06, { type: 'square', gain: 0.04 }); },
   cheer() { this.tone(880, 0, 0.08, { type: 'triangle', gain: 0.06, to: 1200 }); },
@@ -963,6 +995,16 @@ function burst(x, y, style, power, small) {
     flash.addEventListener('animationend', () => flash.remove(), { once: true });
     fx.append(flash);
   }
+}
+
+// A war breaks out: the table flashes red and jumps.
+function warFlash() {
+  if (reduceMotion.matches) return;
+  const flash = el('div', 'flash');
+  flash.style.background = 'radial-gradient(ellipse at center, rgba(255, 60, 40, .15) 30%, rgba(255, 30, 20, .6))';
+  flash.addEventListener('animationend', () => flash.remove(), { once: true });
+  $('fx').append(flash);
+  shake(160);
 }
 
 function shake(power) {
@@ -1026,6 +1068,9 @@ const S = {
   overShown: false,
   animUntil: 0,
   naps: 0,               // your cards that flopped over by themselves in a row
+  input: store.get('input', 'hold'),  // how you slam: hold, mash or fling
+  plan: null,            // the cards you're slamming this stage (see slamPlan)
+  thumps: {},            // seat -> face-down cards others have slammed this war stage
 };
 const timers = new Set();
 function later(fn, ms) {
@@ -1190,6 +1235,7 @@ function receive(m) {
       if (m.seat !== S.you) { S.charging[m.seat] = m.tier; renderTile(m.seat); }
       return;
     case 'slam': return onSlam(m);
+    case 'card': return onCard(m);
     case 'flip': return onFlip(m);
     case 'cheer':
       if (m.seat !== S.you || S.mode === 'solo') { floatCheer(m.seat, m.e); if (m.seat !== S.you) Sound.cheer(); }
@@ -1220,7 +1266,7 @@ function onState(m) {
     const g = m.game;
     // A new game, or a snapshot of a different moment in this one.
     const fresh = m.phase === 'playing' && (wasPhase !== 'playing' || g.battle < S.battle);
-    if (fresh) { S.mine = []; S.overShown = false; S.naps = 0; Odds.reset(); }
+    if (fresh) { S.mine = []; S.overShown = false; S.naps = 0; S.plan = null; Odds.reset(); }
     if (fresh || S.battle !== g.battle || S.stage !== g.stage) {
       clearLater();
       S.cards = {};
@@ -1235,6 +1281,7 @@ function onState(m) {
     S.opensAt = now() + g.opensIn;
     S.closesAt = now() + g.closesIn;
     S.charging = {};
+    S.thumps = {};
     if (g.over) { if (Odds.seats) Odds.settle(g.over); }
     else if (g.stage === 0 && (fresh || !Odds.seats)) Odds.update(g.counts, g.battle, g.limit);
   } else {
@@ -1255,13 +1302,20 @@ function onOnline(m) {
 }
 
 function onStage(m) {
-  S.pending = { ...m, slams: {} };
+  S.pending = { ...m, slams: {}, thumps: {} };
   S.limit = m.limit;
   S.opensAt = now() + m.opensIn;
   S.closesAt = now() + m.closesIn;
   later(openStage, m.opensIn);
   for (const [seat, power, style, delay] of m.bots) {
-    later(() => { S.charging[seat] = Math.min(WAR.TIERS - 1, tierOf(power) + 1); renderTile(seat); }, m.opensIn + Math.max(0, delay - 450 * pace()));
+    // In a war, bots slam each face-down card before the one that counts.
+    const downs = m.stage ? Math.min(3, Math.max(0, (S.counts[seat] ?? 0) - 1)) : 0;
+    for (let i = 0; i < downs; i++) {
+      const thump = Math.max(0, Math.min(WAR.MAX_POWER, power + Math.round((Math.random() - 0.5) * 80)));
+      later(() => receive({ t: 'card', seat, n: i, power: thump }), m.opensIn + (delay * (i + 1)) / (downs + 1));
+    }
+    const glow = m.stage ? 60 : Math.max(0, delay - 450 * pace());
+    later(() => { S.charging[seat] = Math.min(WAR.TIERS - 1, tierOf(power) + 1); renderTile(seat); }, m.opensIn + glow);
     later(() => receive({ t: 'slam', seat, power, style }), m.opensIn + delay);
   }
 }
@@ -1276,6 +1330,7 @@ function openStage() {
   S.stage = m.stage;
   S.fighters = m.fighters.slice();
   S.slams = m.slams;
+  S.thumps = m.thumps;
   S.charging = {};
   if (m.stage === 0) {
     S.cards = {};
@@ -1287,6 +1342,24 @@ function openStage() {
   }
   renderAll();
   if (S.auto && isFighting(S.you)) later(autoSlam, (250 + Math.random() * 700) * pace());
+}
+
+// Someone slammed a card face down in a war. The last one comes as a slam.
+function onCard(m) {
+  if (m.seat === S.you) return;
+  const early = S.pending && S.pending.fighters.includes(m.seat);
+  const thumps = early ? S.pending.thumps : S.thumps;
+  if ((thumps[m.seat] || 0) > m.n) return;
+  thumps[m.seat] = m.n + 1;
+  if (early) return;
+  renderTile(m.seat);
+  renderWarRow();
+  const tile = tiles.get(m.seat);
+  if (tile && tile.node.offsetParent) {
+    const [x, y] = centerOf(tile.slot);
+    burst(x, y, 0, m.power, true);
+  }
+  if (S.players.length <= 6) Sound.slam(m.power, 0, true);
 }
 
 function onSlam(m) {
@@ -1308,7 +1381,7 @@ function onSlam(m) {
 }
 
 const OPEN_LINES = [
-  'Hold the button to charge your slam. It changes nothing.',
+  'However you slam it, it changes nothing.',
   'Slam it like you mean it.', 'Charge up. The cards are watching.',
   'Remember: power is a state of mind.', 'A good slam is its own reward. Literally its only reward.',
   'Wind up. Let it rip.', 'The table can take it.',
@@ -1331,6 +1404,7 @@ function onFlip(m) {
   if (mine) S.naps = mine[5] ? S.naps + 1 : 0;
   if (m.out) for (const seat of m.out) S.out[seat] = m.battle;
   S.charging = {};
+  S.thumps = {};  // the face-down cards are in S.cards now
   Sound.flip();
   narrate(m);
   if (m.next) onStage(m.next);
@@ -1353,8 +1427,12 @@ function narrate(m) {
     const word = cardName(m.plays.find((p) => p[0] === m.tied[0])[2]);
     banner(n === 2 ? (m.stage ? 'DOUBLE WAR!' : 'WAR!') : `${n}-WAY WAR!`, true);
     const who = names.length > 3 ? `${names.slice(0, 3).join(', ')} and ${names.length - 3} more` : names.join(' and ');
-    setText($('caption'), `${who} ${names.length === 2 ? 'both' : 'all'} turned over ${aOrAn(word)}. Three face down, one face up.`);
+    const mineToSlam = m.next.fighters.includes(me) ? Math.min(3, Math.max(0, (S.counts[me] ?? 0) - 1)) + 1 : 0;
+    const call = mineToSlam > 1 ? `Slam all ${['', 'one', 'two', 'three', 'four'][mineToSlam]} of your cards!`
+      : mineToSlam ? 'You have one card left. Make it count.' : 'Three face down, one face up.';
+    setText($('caption'), `${who} ${names.length === 2 ? 'both' : 'all'} turned over ${aOrAn(word)}. ${call}`);
     Sound.war();
+    warFlash();
     return;
   }
   const winCard = m.plays.find((p) => p[0] === m.winner)[2];
@@ -1696,8 +1774,9 @@ function renderTile(seat) {
   setText(t.count, S.battle ? String(S.counts[seat] ?? 0) : '');
   if (S.battle) setAttr(t.count, 'title', plural(S.counts[seat] ?? 0, 'card'));
   const slam = S.slams[seat];
+  const thumps = S.thumps[seat] || 0;
   const label = out ? 'out' : slam ? `${STYLES[slam[1]]?.[0] || ''} ${tierName(slam[0])}`.trim()
-    : charging !== undefined ? 'charging…' : '';
+    : thumps ? `${thumps} face down…` : charging !== undefined ? 'charging…' : '';
   setText(t.stat, label);
   const key = cardKeyFor(seat);
   if (key !== t.cardKey) {
@@ -1708,7 +1787,7 @@ function renderTile(seat) {
     t.cardKey = key;
   }
   setClass(t.card, 'dim', r && r.winner !== null && r.winner !== seat && S.cards[seat]);
-  const downs = S.cards[seat] ? S.cards[seat].down : 0;
+  const downs = (S.cards[seat] ? S.cards[seat].down : 0) + thumps;
   if (downs && !t.downs) { t.downs = el('span', 'downs'); t.slot.append(t.downs); }
   if (t.downs) {
     setHidden(t.downs, !downs);
@@ -1748,17 +1827,40 @@ function renderMe() {
     slot.dataset.key = key;
   }
   setClass(slot, 'won', S.result && S.result.winner === me && c);
-  const downs = c ? c.down : 0;
-  let badge = slot.querySelector('.downs');
-  if (downs && !badge) { badge = el('span', 'downs'); slot.append(badge); }
-  if (badge) setText(badge, `+${downs} face down`);
+  renderWarPile();
+}
+
+// Your face-down cards in a war, landing one slam at a time.
+function renderWarPile() {
+  const me = S.you;
+  const box = $('myWar');
+  const c = S.cards[me];
+  const flipped = c && c.stage === S.stage;
+  const inWar = S.phase === 'playing' && S.stage > 0 && isFighting(me) && !S.pending;
+  const plan = inWar ? slamPlan() : null;
+  const local = plan && !flipped ? Math.min(plan.done.length, plan.need - 1) : 0;
+  const downs = (c ? c.down : 0) + local;
+  setHidden(box, me === null || S.out[me] > 0 || !(downs || (plan && plan.need > 1)));
+  const pile = box.querySelector('.wpile');
+  const shown = Math.min(downs, 9);
+  while (pile.childElementCount > shown) pile.lastElementChild.remove();
+  while (pile.childElementCount < shown) {
+    const i = pile.childElementCount;
+    const card = cardEl('back');
+    card.style.setProperty('--r', `${((i * 47) % 25) - 12}deg`);
+    card.style.setProperty('--dx', `${((i * 29) % 11) - 5}px`);
+    card.style.setProperty('--dy', `${-i * 3}px`);
+    if (!reduceMotion.matches) card.classList.add('slam');
+    pile.append(card);
+  }
+  setText(box.querySelector('.wcount'), downs ? `${downs} face down` : 'Face down here');
 }
 
 function renderWarRow() {
   const row = $('warRow');
   const war = S.phase === 'playing' && S.stage > 0;
   const fighters = war ? S.fighters.filter((s) => s !== S.you) : [];
-  const key = war ? `${S.battle}.${S.stage}:${fighters.map((s) => `${s}=${S.cards[s] ? S.cards[s].up : ''}`).join(',')}` : '';
+  const key = war ? `${S.battle}.${S.stage}:${fighters.map((s) => `${s}=${S.cards[s] ? S.cards[s].up : ''}/${S.thumps[s] || 0}`).join(',')}` : '';
   if (row.dataset.key === key) return;
   row.dataset.key = key;
   row.replaceChildren();
@@ -1766,7 +1868,8 @@ function renderWarRow() {
   for (const seat of fighters.slice(0, 6)) {
     const box = el('div', 'wf');
     const c = S.cards[seat];
-    box.append(cardEl(c && c.up !== undefined ? c.up : 'back'), el('span', '', `${avatarOf(seat)} ${playerName(seat)}`));
+    const downs = (c ? c.down : 0) + (S.thumps[seat] || 0);
+    box.append(cardEl(c && c.up !== undefined ? c.up : 'back'), el('span', '', `${downs ? `+${downs} · ` : ''}${avatarOf(seat)} ${playerName(seat)}`));
     row.append(box);
   }
   if (fighters.length > 6) row.append(el('span', 'more', `+${fighters.length - 6}`));
@@ -1788,8 +1891,9 @@ function renderControls() {
   const fighting = S.phase === 'playing' && S.you !== null && isFighting(S.you) && !S.pending;
   const can = fighting && !S.slams[S.you] && now() >= S.opensAt;
   const btn = $('slamBtn');
-  if (btn.disabled !== !can && !charge) btn.disabled = !can;
-  if (!charge) {
+  const busy = inputBusy();
+  if (btn.disabled !== !can && !busy) btn.disabled = !can;
+  if (!busy) {
     let text = 'Hold to slam';
     if (S.phase !== 'playing' || S.you === null) text = S.phase === 'over' ? 'Game over' : 'Watching';
     else if (S.battle && S.out[S.you]) text = 'Out of cards';
@@ -1799,14 +1903,19 @@ function renderControls() {
     else if (now() < S.opensAt) text = 'Get ready…';
     else if (S.naps >= WAR.NAPS) text = 'You dozed off. Slam to wake up!';
     else {
+      const plan = slamPlan();
       const left = Math.ceil((S.closesAt - now()) / 1000);
-      text = left <= 4 ? `Slam! ${Math.max(0, left)}…` : S.stage > 0 ? 'Hold to slam · WAR' : 'Hold to slam';
+      const step = plan.need > 1 ? (plan.done.length + 1 < plan.need ? `Face-down ${plan.done.length + 1}/${plan.need - 1}` : 'The decider') : '';
+      text = left <= 4 ? `${step ? 'Hurry' : 'Slam'}! ${Math.max(0, left)}…` : step ? `${step} · ${INPUTS[S.input][3]}` : INPUTS[S.input][2];
     }
     setText($('slamText'), text);
+    setClass($('slamText'), 'long', text.length > 16);
     if ($('meterFill').style.width !== '0%') $('meterFill').style.width = '0%';
   }
   const st = STYLES[S.style] || STYLES[0];
   setText($('styleBtn'), `${st[0]} ${st[1]}`);
+  setText($('inputBtn'), `${INPUTS[S.input][0]} ${INPUTS[S.input][1]}`);
+  setHidden($('inputBtn'), S.you === null);
   setAttr($('autoBtn'), 'aria-pressed', String(S.auto));
   setHidden($('autoBtn'), S.you === null);
   setHidden($('styleBtn'), S.you === null);
@@ -1829,16 +1938,85 @@ function renderAll() {
 
 // A quiet tick for the slam button's countdown and the stage opening, writing
 // only what changed.
-setInterval(() => { if (S.phase === 'playing' && !document.hidden) renderControls(); }, 200);
+setInterval(() => {
+  if (S.phase !== 'playing' || document.hidden) return;
+  beatTheClock();
+  renderControls();
+}, 200);
 
 // ---- Slamming ----
+//
+// Three ways to slam, all for show: hold the button and let go, tap it as
+// fast as you can, or fling a card at the table. In a war you slam every card
+// you lay down, up to three face down and then the one that decides it; only
+// the last one goes to the room as your slam.
 
-let charge = null;  // { start, power, tier, pointer }
+// [emoji, name, what the button says, what it says in a war]
+const INPUTS = {
+  hold: ['✊', 'Hold', 'Hold to slam', 'hold'],
+  mash: ['👆', 'Mash', 'Tap fast to slam', 'tap fast'],
+  fling: ['🫳', 'Fling', 'Fling a card', 'fling'],
+};
+const INPUT_HELP = { hold: 'Hold, let go', mash: 'Tap for 5 s', fling: 'Throw a card' };
+const MASH_MS = 5000;
+const MASH_WAR_MS = 2500;  // for each card in a war
+
+let charge = null;  // hold: { start, power, tier, pointer }
+let mash = null;    // mash: { start, taps, window, tier }
+let fling = null;   // fling: { pointer, x0, y0, points, ghost, tier }
 
 function canSlam() {
   return S.phase === 'playing' && S.you !== null && isFighting(S.you) && !S.pending && !S.slams[S.you] && now() >= S.opensAt;
 }
 
+// The cards you slam this stage: one in a battle; in a war, up to three face
+// down and then the one that decides it.
+function slamPlan() {
+  const key = `${S.battle}.${S.stage}`;
+  if (!S.plan || S.plan.key !== key) {
+    const held = S.counts[S.you] ?? 0;
+    S.plan = { key, need: S.stage ? Math.min(3, Math.max(0, held - 1)) + 1 : 1, done: [] };
+  }
+  return S.plan;
+}
+
+const inputBusy = () => Boolean(charge || mash || fling);
+
+function setInput(mode) {
+  if (!INPUTS[mode] || inputBusy()) return;
+  S.input = mode;
+  store.set('input', mode);
+  renderControls();
+  renderInputs();
+}
+
+function cancelInput() {
+  charge = null;
+  mash = null;
+  if (fling) { fling.ghost.remove(); fling = null; }
+  Sound.stopCharge();
+  $('slamBtn').classList.remove('held');
+  $('me').classList.remove('charging');
+  renderControls();
+}
+
+function showMeter(power, text) {
+  $('meterFill').style.width = `${(power / WAR.MAX_POWER) * 100}%`;
+  $('me').style.setProperty('--power', String(power));
+  setText($('slamText'), text);
+  setClass($('slamText'), 'long', text.length > 16);
+}
+
+// A slam building up reaches a new tier: a blip, and the room hears about it.
+function reachTier(state, power) {
+  const tier = tierOf(power);
+  if (tier <= state.tier) return;
+  state.tier = tier;
+  Sound.blip(tier);
+  if (S.mode === 'room') S.conn.send({ t: 'charge', tier });
+}
+
+// Hold: the longer you hold, the harder it lands.
 function chargePower(ms) {
   const t = ms / 1000;
   return Math.min(WAR.MAX_POWER, t < 1.2 ? (t / 1.2) * 100 : 100 + (t - 1.2) * 42);
@@ -1846,7 +2024,7 @@ function chargePower(ms) {
 
 function startCharge(pointer) {
   Sound.unlock();
-  if (charge || !canSlam()) return;
+  if (inputBusy() || !canSlam()) return;
   charge = { start: now(), power: 0, tier: 0, pointer };
   $('slamBtn').classList.add('held');
   $('me').classList.add('charging');
@@ -1856,64 +2034,179 @@ function startCharge(pointer) {
 
 function chargeFrame() {
   if (!charge) return;
-  if (!canSlam()) { cancelCharge(); return; }
+  if (!canSlam()) { cancelInput(); return; }
   const power = Math.round(chargePower(now() - charge.start));
   charge.power = power;
-  const tier = tierOf(power);
-  $('meterFill').style.width = `${(power / WAR.MAX_POWER) * 100}%`;
-  $('me').style.setProperty('--power', String(power));
-  setText($('slamText'), power >= WAR.MAX_POWER ? 'THE METER BROKE' : TIERS[tier][1].toUpperCase());
-  if (tier > charge.tier) {
-    charge.tier = tier;
-    Sound.blip(tier);
-    if (S.mode === 'room') S.conn.send({ t: 'charge', tier });
-  }
+  showMeter(power, power >= WAR.MAX_POWER ? 'THE METER BROKE' : TIERS[tierOf(power)][1].toUpperCase());
+  reachTier(charge, power);
   Sound.setCharge(power);
   if (power >= WAR.MAX_POWER && now() - charge.start > 4200) { releaseCharge(); return; }
   requestAnimationFrame(chargeFrame);
 }
 
-function cancelCharge() {
-  charge = null;
-  Sound.stopCharge();
-  $('slamBtn').classList.remove('held');
-  $('me').classList.remove('charging');
-  renderControls();
-}
-
 function releaseCharge() {
   if (!charge) return;
   const power = Math.round(chargePower(now() - charge.start));
-  cancelCharge();
-  slam(power);
+  cancelInput();
+  slamCard(power);
 }
 
-function slam(power) {
+// Mash: the first tap starts the clock, and every tap until it runs out
+// counts. Eight taps a second is a ULTRA SLAM; eleven breaks the meter.
+const mashPower = (m) => Math.min(WAR.MAX_POWER, Math.round((m.taps * 18000) / m.window));
+
+function mashTap() {
+  Sound.unlock();
+  if (!canSlam() || charge || fling) return;
+  if (!mash) {
+    mash = { start: now(), taps: 0, window: S.stage ? MASH_WAR_MS : MASH_MS, tier: 0 };
+    $('me').classList.add('charging');
+    requestAnimationFrame(mashFrame);
+  }
+  mash.taps++;
+  Sound.tone(420 + Math.min(40, mash.taps) * 12, 0, 0.05, { type: 'square', gain: 0.035 });
+  const btn = $('slamBtn');
+  btn.classList.remove('tapped');
+  void btn.offsetWidth;
+  btn.classList.add('tapped');
+}
+
+function mashFrame() {
+  if (!mash) return;
+  if (!canSlam()) { cancelInput(); return; }
+  const left = mash.window - (now() - mash.start);
+  const power = mashPower(mash);
+  showMeter(power, `${plural(mash.taps, 'tap')} · ${Math.max(0, left / 1000).toFixed(1)}s`);
+  reachTier(mash, power);
+  if (left <= 0) { finishMash(); return; }
+  requestAnimationFrame(mashFrame);
+}
+
+function finishMash() {
+  if (!mash) return;
+  const power = mashPower(mash);
+  cancelInput();
+  slamCard(power);
+}
+
+// Fling: grab a card, from your deck or the button, and throw it. Power is
+// how fast it was going when you let go, plus a little for how far it went.
+function startFling(e) {
+  Sound.unlock();
+  if (!canSlam() || inputBusy()) return;
+  const ghost = cardEl('back');
+  ghost.classList.add('ghost');
+  $('fx').append(ghost);
+  fling = { pointer: e.pointerId, x0: e.clientX, y0: e.clientY, points: [[now(), e.clientX, e.clientY]], ghost, tier: 0 };
+  moveGhost(e.clientX, e.clientY, 0);
+  $('me').classList.add('charging');
+}
+
+function moveGhost(x, y, tilt) {
+  fling.ghost.style.transform = `translate(${x - 44}px, ${y - 62}px) rotate(${tilt}deg) scale(1.08)`;
+}
+
+function flingPower() {
+  const points = fling.points;
+  const [t1, x1, y1] = points[points.length - 1];
+  let j = points.length - 1;
+  while (j > 0 && t1 - points[j - 1][0] <= 90) j--;
+  const [t0, x0, y0] = points[Math.max(0, j - 1)];
+  const speed = Math.hypot(x1 - x0, y1 - y0) / Math.max(16, t1 - t0);
+  const distance = Math.hypot(x1 - fling.x0, y1 - fling.y0);
+  return { distance, power: Math.min(WAR.MAX_POWER, Math.round(speed * 60 + distance * 0.1)) };
+}
+
+function moveFling(e) {
+  if (!fling || e.pointerId !== fling.pointer) return;
+  const last = fling.points[fling.points.length - 1];
+  fling.points.push([now(), e.clientX, e.clientY]);
+  if (fling.points.length > 40) fling.points.shift();
+  moveGhost(e.clientX, e.clientY, Math.max(-25, Math.min(25, (e.clientX - last[1]) * 0.8)));
+  const { power } = flingPower();
+  showMeter(power, TIERS[tierOf(power)][1].toUpperCase());
+  reachTier(fling, power);
+}
+
+function releaseFling(e) {
+  if (!fling || (e && e.pointerId !== fling.pointer)) return;
+  if (e && e.type === 'pointerup') moveFling(e);
+  const { distance, power } = flingPower();
+  const ghost = fling.ghost;
+  fling.ghost = el('span');  // keep the card on screen while it lands
+  if (distance < 30 || !canSlam()) {
+    ghost.remove();
+    cancelInput();
+    if (distance < 30 && e && e.type === 'pointerup') toast('Drag the card and throw it at the table!', 1600);
+    return;
+  }
+  const plan = slamPlan();
+  const target = (plan.done.length + 1 < plan.need ? $('myWar') : $('mySlot')).getBoundingClientRect();
+  ghost.style.transition = `transform ${reduceMotion.matches ? 0 : Math.round(160 * pace())}ms ease-in`;
+  ghost.style.transform = `translate(${target.left + target.width / 2 - 44}px, ${target.top + target.height / 2 - 62}px) rotate(0deg) scale(1)`;
+  setTimeout(() => ghost.remove(), reduceMotion.matches ? 0 : 170 * pace());
+  cancelInput();
+  slamCard(power);
+}
+
+// Slams your next card: one face down in a war, or the one that counts.
+function slamCard(power) {
   if (!canSlam()) return;
+  const plan = slamPlan();
   const style = S.style;
-  S.slams[S.you] = [power, style];
+  const n = plan.done.length;
+  plan.done.push(power);
   S.mine.push([power, null]);
   S.naps = 0;
-  S.conn.send({ t: 'slam', power, style });
+  const last = plan.done.length >= plan.need;
+  if (last) {
+    S.slams[S.you] = [power, style];
+    S.conn.send({ t: 'slam', power, style });
+  } else if (S.mode === 'room') {
+    S.conn.send({ t: 'card', n, power });
+  }
   S.animUntil = now() + (reduceMotion.matches ? 0 : 420 * pace());
   Odds.slamUntil = now() + 1800;
   renderOdds();
   later(renderOdds, 1850);
   renderMe();
   renderControls();
+  // In a war, each card lands harder than the last.
+  const boost = S.stage ? 1 + n * 0.3 + (last ? 0.4 : 0) : 1;
   later(() => {
-    const [x, y] = centerOf($('mySlot'));
-    burst(x, y, style, power, false);
-    shake(power);
+    const [x, y] = centerOf(last ? $('mySlot') : $('myWar'));
+    burst(x, y, style, Math.min(WAR.MAX_POWER, Math.round(power * boost)), false);
+    shake(power * boost);
     Sound.slam(power, style, false);
     banner(`${tierName(power).toUpperCase()}!`, false);
+    if (S.stage) setText($('caption'), warCardLine(plan, n, power, last));
   }, reduceMotion.matches ? 0 : 300 * pace());
   if (power >= WAR.MAX_POWER) bump('cosmic');
+  if (!last && S.auto) later(autoSlam, (220 + Math.random() * 260) * pace());
+}
+
+function warCardLine(plan, n, power, last) {
+  if (!last) return `Face-down card ${n + 1} of ${plan.need - 1}: ${tierName(power)}. ${n + 2 < plan.need ? 'Next!' : 'Now the decider.'}`;
+  if (plan.need === 1) return `Your last card: ${tierName(power)}. It’s all you’ve got.`;
+  const total = plan.done.reduce((a, b) => a + b, 0);
+  return `The decider: ${tierName(power)}. War power ${fmt(total)}. The cards remain unimpressed.`;
 }
 
 function autoSlam() {
-  if (!S.auto || !canSlam()) return;
-  slam(20 + Math.floor(Math.random() * 170));
+  if (!S.auto || !canSlam() || inputBusy()) return;
+  slamCard(20 + Math.floor(Math.random() * 170));
+}
+
+// With the clock nearly out, finish what you started: let go of the slam in
+// progress and slam any face-down cards left, so a war you've begun doesn't
+// end in a flop. A stage you never touched still flops.
+function beatTheClock() {
+  if (!canSlam() || S.closesAt - now() > 700) return;
+  if (charge) releaseCharge();
+  else if (mash) finishMash();
+  else if (fling) releaseFling(null);
+  const plan = slamPlan();
+  while (plan.done.length && canSlam()) slamCard(0);
 }
 
 // Your battles, for the science at the end: the power you slammed with, and
@@ -1942,7 +2235,7 @@ function backToMenu(message) {
   S.phase = null;
   S.code = null;
   clearLater();
-  cancelCharge();
+  cancelInput();
   Odds.reset();
   tileKey = '';
   for (const id of ['app', 'lobby', 'pause', 'over']) setHidden($(id), true);
@@ -1998,7 +2291,7 @@ function renderLengths(box, value, locked) {
 function showOver() {
   if (S.overShown || !S.over) return;
   S.overShown = true;
-  cancelCharge();
+  cancelInput();
   const o = S.over;
   const me = S.you;
   const won = me !== null && o.winners.includes(me);
@@ -2207,8 +2500,23 @@ function renderMenu() {
     ? `${plural(life.games, 'game')} played, ${plural(life.wins, 'win')}, ${fmt(life.slams)} slams. Mightiest: ${tierName(life.best)}.`
     : 'Slam power is cosmetic. The cards decide everything. That is the joke, and also the rules.');
   renderSound();
+  renderInputs();
   const titleCards = document.querySelector('.title-cards');
   if (!titleCards.childElementCount) titleCards.append(cardEl(12), cardEl(25 + 13), cardEl(11 + 13));
+}
+
+function renderInputs() {
+  const box = $('inputSeg');
+  if (!box.childElementCount) {
+    for (const [key, [emoji, name]] of Object.entries(INPUTS)) {
+      const b = el('button', '');
+      b.type = 'button';
+      b.dataset.input = key;
+      b.append(document.createTextNode(`${emoji} ${name}`), el('small', '', INPUT_HELP[key]));
+      box.append(b);
+    }
+  }
+  for (const b of box.children) setAttr(b, 'aria-pressed', String(b.dataset.input === S.input));
 }
 
 function myName() {
@@ -2295,7 +2603,7 @@ async function share() {
 
 function openPause() {
   if (S.mode === 'solo') S.conn.pause();
-  cancelCharge();
+  cancelInput();
   const solo = S.mode === 'solo';
   setText($('pauseTitle'), solo ? 'Paused' : 'Menu');
   setText($('pauseNote'), solo ? 'The war waits for you.' : 'The game carries on without you while you’re here: your cards flop over by themselves.');
@@ -2310,6 +2618,7 @@ function closePause() {
 }
 
 function init() {
+  if (!INPUTS[S.input]) S.input = 'hold';
   const stored = store.get('styles', [0]);
   if (!stored.includes(S.style)) S.style = 0;
   $('oppRange').value = String(store.get('opponents', 1));
@@ -2362,6 +2671,14 @@ function init() {
     S.conn.send({ t: 'start' });
   });
   $('overMenuBtn').addEventListener('click', () => backToMenu());
+  $('inputSeg').addEventListener('click', (e) => {
+    const b = e.target.closest('button');
+    if (b) setInput(b.dataset.input);
+  });
+  $('inputBtn').addEventListener('click', () => {
+    const order = Object.keys(INPUTS);
+    setInput(order[(order.indexOf(S.input) + 1) % order.length]);
+  });
   $('autoBtn').addEventListener('click', () => {
     S.auto = !S.auto;
     renderControls();
@@ -2395,23 +2712,37 @@ function init() {
     renderStyles();
   });
 
-  // The slam button: hold to charge, let go to slam.
+  // The slam button: hold it, mash it, or drag a card off it. In fling mode
+  // your deck works too.
   const btn = $('slamBtn');
   btn.addEventListener('pointerdown', (e) => {
     if (e.button > 0) return;
     e.preventDefault();
     try { btn.setPointerCapture(e.pointerId); } catch (err) { /* fine */ }
-    startCharge(e.pointerId);
+    if (S.input === 'mash') mashTap();
+    else if (S.input === 'fling') startFling(e);
+    else startCharge(e.pointerId);
   });
   btn.addEventListener('pointerup', (e) => { if (charge && charge.pointer === e.pointerId) releaseCharge(); });
   btn.addEventListener('pointercancel', () => { if (charge) releaseCharge(); });
   btn.addEventListener('contextmenu', (e) => e.preventDefault());
+  const deck = $('myPile');
+  deck.addEventListener('pointerdown', (e) => {
+    if (S.input !== 'fling' || e.button > 0) return;
+    e.preventDefault();
+    try { deck.setPointerCapture(e.pointerId); } catch (err) { /* fine */ }
+    startFling(e);
+  });
+  document.addEventListener('pointermove', moveFling);
+  document.addEventListener('pointerup', releaseFling);
+  document.addEventListener('pointercancel', releaseFling);
   document.addEventListener('keydown', (e) => {
     if (e.target.closest && e.target.closest('input, select, textarea')) return;
     Sound.unlock();
     if ((e.key === ' ' || e.key === 'Enter') && tableUp()) {
       e.preventDefault();
-      if (!e.repeat) startCharge('key');
+      // Mash counts key presses; hold and fling hold the key to charge.
+      if (!e.repeat) { if (S.input === 'mash') mashTap(); else startCharge('key'); }
     } else if (e.key === 'Escape' && !$('historyOv').hidden) {
       setHidden($('historyOv'), true);
     } else if (e.key === 'Escape' && !$('app').hidden) {
@@ -2427,7 +2758,7 @@ function init() {
   document.addEventListener('pointerdown', () => Sound.unlock(), { passive: true });
   document.addEventListener('visibilitychange', () => {
     if (!document.hidden) return;
-    cancelCharge();
+    cancelInput();
     if (S.mode === 'solo' && S.phase === 'playing' && $('pause').hidden) openPause();
   });
 }
@@ -2463,7 +2794,9 @@ function renderStyles() {
 init();
 
 // #debug exposes hooks for tests: state() reads the table, slam(power) slams
-// right away, finish() plays a solo game out, pace(p) speeds a solo game up,
+// right away (every card, in a war), input(mode) picks how you slam, hurry()
+// runs your clock down to its last moment,
+// finish() plays a solo game out, pace(p) speeds a solo game up,
 // odds(counts, battle, limit, sims) runs the win probability model and
 // simulate() runs its simulations, even head to head.
 if (DEBUG) {
@@ -2474,8 +2807,16 @@ if (DEBUG) {
       mine: S.mine.map((x) => x.slice()),
       odds: Odds.history.map((x) => x.slice()),
       chances: Odds.seats && Odds.seats.slice(),
+      input: S.input,
+      plan: S.plan && { need: S.plan.need, done: S.plan.done.slice() },
     }),
-    slam: (power) => { if (!canSlam()) return false; slam(power); return true; },
+    slam: (power) => {
+      if (!canSlam()) return false;
+      while (canSlam()) slamCard(power);
+      return true;
+    },
+    input: (mode) => setInput(mode),
+    hurry: () => { S.closesAt = now() + 600; },
     finish: () => S.conn && S.conn.finish && S.conn.finish(),
     pace: (p) => { if (S.conn && S.conn.setPace) S.conn.setPace(p); },
     odds: (counts, battle, limit, sims) => oddsFor(counts, battle, limit, sims || 200),

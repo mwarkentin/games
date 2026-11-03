@@ -147,7 +147,7 @@ class FakeWarRoom:
             self.send_states()
         elif kind == "start" and is_host:
             self.deal()
-        elif kind in ("slam", "charge") and seat is not None:
+        elif kind in ("slam", "charge", "card") and seat is not None:
             self.broadcast({"t": kind, "seat": seat, **{k: v for k, v in message.items() if k != "t"}})
         elif kind == "cheer":
             self.broadcast({"t": "cheer", "seat": seat, "e": message["e"]})

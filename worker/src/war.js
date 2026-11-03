@@ -26,8 +26,10 @@ const WAR = {
   AVATARS: 24,
   TIERS: 9,            // slam tiers, from boop to cosmic
   STAGE_MS: 8000,      // to slam before your card flops over by itself
+  WAR_STAGE_MS: 20000, // the same in a war, where you slam every card you lay down
   NAPS: 2,             // flops in a row before a stage stops waiting for you
   BOT_MS: 1300,        // the shortest a stage lasts, while the bots slam
+  WAR_BOT_MS: 2600,    // the same in a war, while the bots slam all their cards
   REVEAL_MS: 2400,     // to watch the cards turn over before the next battle
   WAR_REVEAL_MS: 3000, // the same before a war
 };
@@ -95,9 +97,15 @@ function warNewGame(bots, length, random, now, pace) {
   return { game, stage: warOpenStage(game, now, random, null, 0) };
 }
 
+// How long the bots take to slam: a moment in a battle, longer in a war,
+// where they slam every card they lay down.
+function warBotMs(game) {
+  return Math.round((game.stage ? WAR.WAR_BOT_MS : WAR.BOT_MS) * game.pace);
+}
+
 // Opens the next stage: a new battle for everyone still holding cards, or,
 // when fighters is given, a war between them. Bots slam straight away; the
-// pages show their slams one by one over the stage's first second.
+// pages show their slams one by one while the stage opens.
 function warOpenStage(game, now, random, fighters, delay) {
   if (fighters) {
     game.stage++;
@@ -110,14 +118,14 @@ function warOpenStage(game, now, random, fighters, delay) {
   }
   game.slams = {};
   game.opensAt = now + Math.round(delay * game.pace);
-  game.closesAt = game.opensAt + WAR.STAGE_MS;
+  game.closesAt = game.opensAt + (game.stage ? WAR.WAR_STAGE_MS : WAR.STAGE_MS);
   const bots = [];
   for (const seat of game.fighters) {
     if (!game.bots[seat]) continue;
     const power = warBotPower(random);
     const style = Math.floor(random() * WAR.STYLES);
     game.slams[seat] = [power, style, 0];
-    bots.push([seat, power, style, Math.round((100 + random() * (WAR.BOT_MS - 300)) * game.pace)]);
+    bots.push([seat, power, style, Math.round(100 * game.pace + random() * (warBotMs(game) - 300 * game.pace))]);
   }
   return {
     t: 'stage', battle: game.battle, stage: game.stage, limit: game.limit, fighters: game.fighters.slice(),
@@ -135,7 +143,7 @@ function warWaitingFor(game, online) {
 // When to play the stage out: once everyone online has slammed and the bots
 // have had their moment, or when time runs out.
 function warDueAt(game, online) {
-  return warWaitingFor(game, online).length ? game.closesAt : game.opensAt + Math.round(WAR.BOT_MS * game.pace);
+  return warWaitingFor(game, online).length ? game.closesAt : game.opensAt + warBotMs(game);
 }
 
 // Records a slam. Returns the message to pass on, or null when it doesn't
@@ -408,6 +416,15 @@ export class WarRoom {
         if (room.phase !== 'playing' || seat === null || !Number.isInteger(message.tier)) return;
         if (!room.game.fighters.includes(seat) || room.game.slams[seat]) return;
         return this.broadcast({ t: 'charge', seat, tier: Math.max(0, Math.min(WAR.TIERS - 1, message.tier)) });
+      case 'card':
+        // In a war, each card laid face down is slammed on its own, for show;
+        // the last card is the slam that counts.
+        if (room.phase !== 'playing' || seat === null || !room.game.stage || !Number.isInteger(message.n)) return;
+        if (message.n < 0 || message.n > 2 || !room.game.fighters.includes(seat) || room.game.slams[seat]) return;
+        return this.broadcast({
+          t: 'card', seat, n: message.n,
+          power: Math.max(0, Math.min(WAR.MAX_POWER, Math.round(Number(message.power)) || 0)),
+        });
       case 'slam': {
         if (room.phase !== 'playing' || seat === null) return;
         const slam = warSlam(room.game, seat, message.power, message.style);
