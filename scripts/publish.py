@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
 """Copy everything publishable into the site directory.
 
-Games are copied as they are apart from two additions, inlined before
-</head>: telemetry.js (Sentry) and analytics.js (Counterscale). Nothing is
-drawn on top of them, because each one owns the whole screen. games.json is
-copied alongside them. Anything not listed here (scripts, tests, Markdown,
-the two scripts' own files) never reaches the site.
+Games are copied as they are apart from three additions, inserted before
+</head>: telemetry.js (Sentry), analytics.js (Counterscale), and the links
+and script that make each game a home-screen app (see build_pwa.py). Nothing
+is drawn on top of them, because each one owns the whole screen. games.json
+is copied alongside them. Anything not listed here or in build_pwa.py
+(scripts, tests, Markdown, the scripts' own files) never reaches the site.
 
 Usage: publish.py [SITE_DIR]
 """
@@ -17,7 +18,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-from common import ROOT, game_files, inject_analytics, inline_script
+from common import ROOT, game_files, inject_analytics, inject_pwa, inline_script
 
 TELEMETRY = "telemetry.js"
 
@@ -46,6 +47,7 @@ def publish(site_dir: Path, root: Path = ROOT) -> list[str]:
     for filename in published:
         text = (root / filename).read_text("utf-8")
         text = inject_analytics(inject_telemetry(text, telemetry, release), root)
+        text = inject_pwa(text, filename.removesuffix(".html"))
         (site_dir / filename).write_text(text, "utf-8")
     games_json = root / "games.json"
     if games_json.exists():

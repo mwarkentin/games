@@ -19,6 +19,25 @@ TIP_URL = "https://buy.stripe.com/4gM7sL3xucbG0ADgcd3Je00"
 GENERATED_PAGES = {"index.html": "/", "colophon.html": "/colophon"}
 # Counterscale page views, inlined into every page: games and generated pages.
 ANALYTICS = "analytics.js"
+# Home-screen apps (see scripts/build_pwa.py). Each game is its own app, named
+# after its slug; the home page and colophon share the app called HOME_APP.
+HOME_APP = "index"
+# icons/<app>-<size>.png: an apple-touch-icon, and the manifest's two icons.
+ICON_SIZES = (180, 192, 512)
+# Registers sw.js, which keeps an offline copy of every page.
+REGISTER_SERVICE_WORKER = """
+if ('serviceWorker' in navigator) {
+  addEventListener('load', () => navigator.serviceWorker.register('/sw.js').catch(() => {}));
+}
+"""
+
+
+def insert_in_head(text: str, tags: str) -> str:
+    """Insert tags just before </head>, or at the end of a page without one."""
+    index = text.lower().find("</head>")
+    if index == -1:
+        return f"{text.rstrip()}\n{tags}"
+    return f"{text[:index]}{tags}{text[index:]}"
 
 
 def inline_script(text: str, marker: str, script: str, attrs: str = "") -> str:
@@ -30,11 +49,19 @@ def inline_script(text: str, marker: str, script: str, attrs: str = "") -> str:
     """
     if f"<script {marker}" in text:
         return text
-    tag = f"<script {marker}{attrs}>\n{script.strip()}\n</script>\n"
-    index = text.lower().find("</head>")
-    if index == -1:
-        return f"{text.rstrip()}\n{tag}"
-    return f"{text[:index]}{tag}{text[index:]}"
+    return insert_in_head(text, f"<script {marker}{attrs}>\n{script.strip()}\n</script>\n")
+
+
+def inject_pwa(text: str, app: str) -> str:
+    """Link a page to its app's manifest and icons, and register sw.js, once."""
+    if "<script data-pwa" in text:
+        return text
+    tags = (
+        f'<link rel="manifest" href="/manifests/{app}.webmanifest">\n'
+        f'<link rel="icon" type="image/png" sizes="192x192" href="/icons/{app}-192.png">\n'
+        f'<link rel="apple-touch-icon" href="/icons/{app}-180.png">\n'
+    )
+    return inline_script(insert_in_head(text, tags), "data-pwa", REGISTER_SERVICE_WORKER)
 
 
 def inject_analytics(text: str, root: Path | None = None) -> str:
@@ -57,13 +84,18 @@ def extract_title(text: str, fallback: str) -> str:
     return html.unescape(match.group(1).strip()) if match else fallback
 
 
-def extract_meta_description(text: str) -> str:
+def extract_meta(text: str, name: str) -> str:
+    """The content of the first <meta name="{name}">, or ""."""
     for tag in re.findall(r"<meta\b[^>]*>", text, re.IGNORECASE):
-        if re.search(r"""name\s*=\s*["']description["']""", tag, re.IGNORECASE):
+        if re.search(rf"""name\s*=\s*["']{re.escape(name)}["']""", tag, re.IGNORECASE):
             match = re.search(r"""content\s*=\s*(["'])(.*?)\1""", tag, re.DOTALL)
             if match:
                 return html.unescape(match.group(2).strip())
     return ""
+
+
+def extract_meta_description(text: str) -> str:
+    return extract_meta(text, "description")
 
 
 def parse_date(value: str | None) -> datetime | None:
@@ -150,6 +182,8 @@ def render_page(
 ) -> str:
     """Wrap generated content in the shared page chrome, with analytics.
 
+    Generated pages belong to the home-screen app for the whole site.
+
     tip_source labels the header's tip link, which appears once TIP_URL is set.
     """
     meta = (
@@ -167,6 +201,8 @@ def render_page(
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">{meta}
+<meta name="theme-color" media="(prefers-color-scheme: light)" content="#ffffff">
+<meta name="theme-color" media="(prefers-color-scheme: dark)" content="#141414">
 <title>{html.escape(title)}</title>
 <style>{PAGE_CSS}{extra_css}</style>
 </head>
@@ -183,4 +219,4 @@ def render_page(
 </body>
 </html>
 """
-    return inject_analytics(page)
+    return inject_pwa(inject_analytics(page), HOME_APP)
