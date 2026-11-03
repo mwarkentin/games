@@ -3,6 +3,13 @@
 Small browser games, mostly built with help from LLMs. Each one is a single
 `.html` file that runs on a phone or a computer, with nothing to install.
 
+You can still put any game on your Home Screen: open it in Safari on an
+iPhone or iPad, tap Share, then Add to Home Screen. In Chrome on Android,
+choose Add to Home screen from the menu. It opens full screen like an app and
+keeps working offline. Add this page instead to keep every game in one app.
+On an iPhone, the Home Screen app keeps its own scores and settings, separate
+from Safari's.
+
 The [colophon](https://games.michaelwarkentin.com/colophon) lists every
 game's history, with links to the chats and agent sessions that made them.
 The code lives in [mwarkentin/games](https://github.com/mwarkentin/games).

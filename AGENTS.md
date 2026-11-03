@@ -11,9 +11,10 @@ utilities; games live here so they get their own origin and their own rules.
   `foo.html` is served at `/foo`.
 - `README.md`: the game list. The build turns it into `index.html`.
 - `build.sh` and `scripts/`: assemble the site in `_site/` (never committed).
-  The build also generates `index.html`, `colophon.html`, `sitemap.xml` and
-  `games.json`, so don't create those by hand. Games are published as
-  committed, apart from `telemetry.js` and `analytics.js` (see below).
+  The build also generates `index.html`, `colophon.html`, `sitemap.xml`,
+  `games.json` and each page's web app manifest, so don't create those by
+  hand. Games are published as committed, apart from `telemetry.js`,
+  `analytics.js` and the home-screen app links (see below).
 - `TIP_URL` in `scripts/common.py`: the Stripe Payment Link for tips. Once
   it's set, the header of the home page and colophon link to it as "Tip
   jar", tagged with `client_reference_id=games-home` or `games-colophon` so
@@ -23,6 +24,10 @@ utilities; games live here so they get their own origin and their own rules.
   Sentry. The build inlines it into every game's `<head>`.
 - `analytics.js`: page views through Counterscale. The build inlines it into
   every page's `<head>`, the home page and colophon included.
+- `sw.js`: the service worker that keeps every page working offline. The
+  build fills in its list of pages and a version.
+- `icons/`: each app's icon, drawn as `<app>.svg` and rendered to the PNGs
+  beside it by `scripts/render_icons.py`.
 - `tests/`: pytest with Playwright.
 - `worker/`: the leaderboard API, a Cloudflare Worker with a D1 database,
   which also runs War's multiplayer rooms as Durable Objects. It deploys
@@ -56,6 +61,11 @@ utilities; games live here so they get their own origin and their own rules.
 - The `<head>` has a `<title>`, a viewport meta tag and a one-sentence
   `<meta name="description" content="...">`. The index and colophon show
   that description.
+- The `<head>` also has a `<meta name="theme-color">` matching the game's
+  background (a light and a dark one if it has both, light first). If the
+  title is longer than 12 characters, add
+  `<meta name="apple-mobile-web-app-title" content="...">` with a shorter
+  name for the Home Screen.
 
 ## Telemetry
 
@@ -96,6 +106,38 @@ defaults would read a referrer and UTM tags from the query string and watch
 `history.pushState`, so keep passing it `url`, `referrer` and
 `autoTrackPageviews: false`. `tests/test_analytics.py` checks all of this
 against a fake Counterscale.
+
+## Home-screen apps
+
+Every page can be added to a phone's Home Screen and keeps working offline.
+`scripts/build_pwa.py` gives each game a manifest of its own
+(`/manifests/<game>.webmanifest`, scoped to the game), so adding a game makes
+an app that opens straight into it. The home page and colophon share one for
+the whole site (`index`), which opens at the game list. Names, descriptions
+and colors come from each game's `<head>`.
+
+The build links each page to its manifest and icons and registers `sw.js`.
+It stores every page when it installs. After that, pages come from the
+network first and fall back to the stored copy when the network fails or
+takes more than four seconds. Google Fonts are stored too. Nothing else goes
+through it, so the leaderboard, War's rooms, Sentry and Counterscale behave
+as they would without it. A hash of the pages is the worker's version, so
+each deploy refreshes every stored page.
+
+Each app's icon is `icons/<app>.svg`, a full-bleed 512×512 square with
+everything that matters inside the middle circle (radius 205), drawn with
+shapes rather than text. Run `uv run scripts/render_icons.py` after drawing
+or changing one and commit the PNGs: the deploy has no browser to render
+them, and `tests/test_pwa.py` fails if they're out of date. A game without
+an icon is deployed with the site's.
+
+The other tests block service workers so `page.route` sees every request;
+`tests/test_pwa.py` allows them. A service worker's own requests ignore
+`context.set_offline`, so to test offline, abort the site's requests with
+`context.route`.
+
+iPhones keep a Home Screen app's `localStorage` apart from Safari's, so
+scores, groups and initials saved in Safari don't carry over to it.
 
 ## Games that started as claude.ai artifacts
 
@@ -175,12 +217,14 @@ Object that holds the game and every player's WebSocket (`worker/src/war.js`).
 1. Create or update `foo.html` following the rules above.
 2. Link it from `README.md` under the right heading:
    `- [Title](https://games.michaelwarkentin.com/foo): what it is`.
-3. Add `tests/test_foo.py` that starts the game and plays a little: press
+3. Draw its icon as `icons/foo.svg` and run `uv run scripts/render_icons.py`
+   (see Home-screen apps).
+4. Add `tests/test_foo.py` that starts the game and plays a little: press
    Start, make a move, check the score or board changed. A debug hook such
    as Funnels & Buckets' `#debug` / `window.__fb` makes this much easier.
    `tests/test_games.py` already smoke-tests every game.
-4. Run `uv run pytest` and make sure it passes.
-5. In the commit message, say what changed and include the URL of the chat,
+5. Run `uv run pytest` and make sure it passes.
+6. In the commit message, say what changed and include the URL of the chat,
    artifact or agent session behind it.
 
 ## Commands
@@ -190,6 +234,7 @@ uv run playwright install chromium   # once
 uv run pytest                        # builds the site into a temp dir, then tests it
 node --disable-warning=ExperimentalWarning --test "worker/test/*.test.js"   # the leaderboard Worker
 uv run ./build.sh && python3 -m http.server -d _site 8000   # preview the real site
+uv run scripts/render_icons.py       # after drawing or changing an icon
 ```
 
 The smoke tests load every game at phone and desktop sizes and fail on
