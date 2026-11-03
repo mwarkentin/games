@@ -53,6 +53,93 @@ def test_hold_to_charge_and_release_to_slam(page: Page, site_url, errors):
     assert errors == []
 
 
+def test_a_war_means_slamming_every_card(page: Page, site_url, errors):
+    # Seed 7: both players turn over a five in the first battle.
+    start_solo(page, site_url, seed=7)
+    hold_slam(page, 400)
+    page.wait_for_function(f"{STATE}.stage === 1 && {STATE}.canSlam")
+    expect(page.locator("#caption")).to_contain_text("Slam all four of your cards!")
+    expect(page.locator("#myWar .wcount")).to_have_text("Face down here")
+    for n in (1, 2, 3):
+        expect(page.locator("#slamText")).to_have_text(f"Face-down {n}/3 · hold")
+        hold_slam(page, 300)
+        expect(page.locator("#myWar .wpile .card")).to_have_count(n)
+        assert page.evaluate(f"{STATE}.canSlam"), "the war isn't slammed until the last card"
+    expect(page.locator("#myWar .wcount")).to_have_text("3 face down")
+    expect(page.locator("#slamText")).to_have_text("The decider · hold")
+    hold_slam(page, 300)
+    assert page.evaluate(f"{STATE}.slams[0]") is not None
+    assert len(page.evaluate(f"{STATE}.mine")) == 5, "one slam for the battle, four for the war"
+    expect(page.locator("#caption")).to_contain_text("War power")
+    # The bot slams its face-down cards too.
+    expect(page.locator("#opponents .tile .downs")).to_have_text("+3")
+    assert errors == []
+
+
+def test_a_war_you_started_is_finished_before_the_clock_runs_out(page: Page, site_url, errors):
+    start_solo(page, site_url, seed=7)
+    page.evaluate("window.__war.slam(50)")
+    page.wait_for_function(f"{STATE}.stage === 1 && {STATE}.canSlam")
+    hold_slam(page, 300)
+    page.evaluate("window.__war.hurry()")
+    page.wait_for_function(f"{STATE}.slams[0] !== undefined")
+    assert len(page.evaluate(f"{STATE}.plan.done")) == 4, "the face-down cards left go down at no power"
+    assert errors == []
+
+
+def test_mash_to_slam(page: Page, site_url, errors):
+    page.goto(f"{site_url}/war?seed=2#debug")
+    page.click("#inputSeg button[data-input=mash]")
+    page.click("#soloBtn")
+    page.wait_for_function(f"{STATE}.canSlam")
+    expect(page.locator("#slamText")).to_have_text("Tap fast to slam")
+    box = page.locator("#slamBtn").bounding_box()
+    for _ in range(25):
+        page.mouse.click(box["x"] + box["width"] / 2, box["y"] + box["height"] / 2)
+    expect(page.locator("#slamText")).to_contain_text("25 taps")
+    # Five seconds after the first tap, the taps become a slam: 25 in 5 s is 90.
+    page.wait_for_function(f"{STATE}.slams[0] !== undefined", timeout=8000)
+    assert page.evaluate(f"{STATE}.slams[0][0]") == 90
+    assert errors == []
+
+
+def test_fling_to_slam(page: Page, site_url, errors):
+    page.goto(f"{site_url}/war?seed=2#debug")
+    page.click("#inputSeg button[data-input=fling]")
+    page.click("#soloBtn")
+    page.wait_for_function(f"{STATE}.canSlam")
+    deck = page.locator("#myPile .card").bounding_box()
+    x, y = deck["x"] + deck["width"] / 2, deck["y"] + deck["height"] / 2
+    # A twitch isn't a throw.
+    page.mouse.move(x, y)
+    page.mouse.down()
+    page.mouse.move(x + 4, y - 6)
+    page.mouse.up()
+    assert page.evaluate(f"{STATE}.slams[0]") is None
+    page.mouse.move(x, y)
+    page.mouse.down()
+    page.mouse.move(x + 20, y - 80, steps=4)
+    expect(page.locator("#fx .card.ghost")).to_have_count(1)
+    page.mouse.move(x + 40, y - 300, steps=3)
+    page.mouse.up()
+    assert page.evaluate(f"{STATE}.slams[0][0]") > 30
+    assert errors == []
+
+
+def test_how_you_slam_is_remembered(page: Page, site_url, errors):
+    start_solo(page, site_url)
+    expect(page.locator("#inputBtn")).to_have_text("✊ Hold")
+    page.click("#inputBtn")
+    expect(page.locator("#inputBtn")).to_have_text("👆 Mash")
+    page.click("#inputBtn")
+    expect(page.locator("#inputBtn")).to_have_text("🫳 Fling")
+    expect(page.locator("#slamText")).to_have_text("Fling a card")
+    assert page.evaluate("JSON.parse(localStorage.getItem('war:input'))") == "fling"
+    page.reload()
+    expect(page.locator("#inputSeg button[data-input=fling]")).to_have_attribute("aria-pressed", "true")
+    assert errors == []
+
+
 def test_space_bar_slams(page: Page, site_url, errors):
     start_solo(page, site_url)
     page.keyboard.down(" ")

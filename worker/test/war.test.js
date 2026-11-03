@@ -164,6 +164,14 @@ describe('the rules', () => {
     assert.deepEqual(flip.plays, [[0, 0, card(2), 120, 2, 0], [1, 0, card(3), 0, 0, 1]]);
   });
 
+  test('a war gives people longer to slam, and the bots longer to show off', () => {
+    const game = rigged([[card(9), card(1), card(2), card(3), card(4)], [card(9, 1), card(5), card(6), card(7), card(8)]], { bots: [false, true] });
+    const war = warResolve(game, NOW, seeded(1)).next;
+    assert.equal(war.closesIn - war.opensIn, WAR.WAR_STAGE_MS);
+    assert.equal(warDueAt(game, new Set()), game.opensAt + WAR.WAR_BOT_MS);
+    assert.ok(war.bots[0][3] > 0 && war.bots[0][3] < WAR.WAR_BOT_MS);
+  });
+
   test('bots slam as a stage opens, and a stage waits only for people online', () => {
     const { game, stage } = warNewGame([false, true, true, false], 'standard', seeded(11), NOW);
     assert.deepEqual(stage.bots.map(([seat]) => seat), [1, 2]);
@@ -388,6 +396,32 @@ describe('rooms', () => {
     assert.deepEqual(dana.last('flip'), flip);
     assert.equal(flip.counts.reduce((a, b) => a + b), 52 * 2);
     assert.ok(flip.next);
+  });
+
+  test('in a war, each face-down card is slammed on its own, and everyone hears about it', async () => {
+    const dana = await join(room, 'Dana');
+    const bob = await join(room, 'Bob');
+    await say(room, dana, { t: 'start' });
+    await say(room, dana, { t: 'card', n: 0, power: 50 });
+    assert.equal(bob.all('card').length, 0, 'no face-down cards in a plain battle');
+
+    // Rig a tie, so the next stage is a war between Dana and Bob.
+    const game = room.room.game;
+    game.piles = [[card(9), card(1), card(2), card(3), card(4)], [card(9, 1), card(5), card(6), card(7), card(8)]];
+    await say(room, dana, { t: 'slam', power: 10, style: 0 });
+    await say(room, bob, { t: 'slam', power: 10, style: 0 });
+    await fireAlarm(room);
+    const war = bob.last('flip').next;
+    assert.equal(war.stage, 1);
+    assert.equal(war.closesIn - war.opensIn, WAR.WAR_STAGE_MS);
+
+    await say(room, dana, { t: 'card', n: 0, power: 999 });
+    await say(room, dana, { t: 'card', n: 1, power: 'lots' });
+    await say(room, dana, { t: 'card', n: 5, power: 50 });
+    assert.deepEqual(bob.all('card'), [{ t: 'card', seat: 0, n: 0, power: WAR.MAX_POWER }, { t: 'card', seat: 0, n: 1, power: 0 }]);
+    await say(room, dana, { t: 'slam', power: 120, style: 1 });
+    await say(room, dana, { t: 'card', n: 2, power: 50 });
+    assert.equal(bob.all('card').length, 2, 'nothing more once the last card is slammed');
   });
 
   test("a player who doesn't slam in time flops", async () => {

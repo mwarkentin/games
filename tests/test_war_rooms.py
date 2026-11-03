@@ -112,6 +112,14 @@ def test_friends_join_with_the_code_and_see_each_other(page: Page, browser, site
         "counts": [25, 25], "next": fake.stage(1, stage=1, fighters=[0, 1], opens_in=500),
     })
     expect(guest.locator("#banner")).to_have_text("WAR!")
+    # In the war, Dana slams each of her cards: three face down, as she goes,
+    # then the one that decides it. Bob sees them land.
+    page.wait_for_function(f"{STATE}.stage === 1 && {STATE}.canSlam")
+    expect(page.locator("#slamText")).to_have_text("Face-down 1/3 · hold")
+    page.evaluate("window.__war.slam(120)")
+    assert [(m["n"], m["power"]) for m in fake.messages("card")] == [(0, 120), (1, 120), (2, 120)]
+    assert fake.messages("slam")[-1]["power"] == 120
+    expect(guest.locator("#opponents .tile .downs")).to_have_text("+3")
     fake.broadcast({
         "t": "flip", "battle": 1, "stage": 1, "winner": 0, "tied": [0], "gods": False, "pot": 10,
         "plays": [[0, 3, card(12), 0, 0, 1], [1, 3, card(4), 0, 0, 1]], "counts": [31, 21], "out": [],
