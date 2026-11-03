@@ -1,0 +1,2108 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>War: Slam Edition</title>
+<meta name="description" content="The card game War with absurdly powerful card slams that change nothing at all, solo against up to 49 bots or with up to 50 friends sharing a room code.">
+<meta name="theme-color" content="#166240">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bungee&display=swap">
+<style>
+:root {
+  --felt: #1f7d4f; --felt-2: #145a39; --felt-ink: #fdf8ec; --felt-dim: rgba(253, 248, 236, .74);
+  --panel: #fffaf0; --panel-ink: #2b2118; --panel-dim: #6f6052; --panel-line: #e7dcc8; --panel-2: #f4ecdc;
+  --accent: #ff4d2e; --accent-ink: #fff; --gold: #ffc93d; --gold-ink: #3a2700; --war: #ff3b30;
+  --card: #fffdf6; --card-ink: #1d1d1f; --card-red: #d1262a; --card-edge: #d6ccb8;
+  --back-1: #c8322e; --back-2: #8f1c19;
+  --shadow: 0 6px 18px rgba(0, 0, 0, .28);
+  --display: "Bungee", Impact, "Arial Black", system-ui, sans-serif;
+  --pace: 1;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --felt: #12482f; --felt-2: #0a2c1c; --felt-ink: #f3eee2; --felt-dim: rgba(243, 238, 226, .7);
+    --panel: #201b17; --panel-ink: #f3ece0; --panel-dim: #b4a693; --panel-line: #3b332b; --panel-2: #2a241f;
+    --card: #f2ede1; --card-edge: #b9ae99; --shadow: 0 6px 18px rgba(0, 0, 0, .5);
+    color-scheme: dark;
+  }
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; background: var(--felt-2); overscroll-behavior: none; }
+body {
+  font: 15px/1.35 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; color: var(--felt-ink);
+  -webkit-tap-highlight-color: transparent; touch-action: manipulation; overflow: hidden;
+  -webkit-user-select: none; user-select: none;
+}
+button { font: inherit; color: inherit; cursor: pointer; }
+button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px solid var(--gold); outline-offset: 2px; }
+[hidden] { display: none !important; }
+
+#app {
+  position: fixed; inset: 0; display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto auto auto;
+  padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+  background:
+    repeating-linear-gradient(45deg, rgba(255, 255, 255, .025) 0 2px, transparent 2px 6px),
+    radial-gradient(ellipse at 50% 42%, var(--felt), var(--felt-2) 78%);
+}
+#app.shake { animation: shake calc(420ms * var(--pace)) cubic-bezier(.36, .07, .19, .97); }
+@keyframes shake {
+  10%, 90% { transform: translate(calc(var(--amp) * -.3), calc(var(--amp) * .2)); }
+  20%, 80% { transform: translate(calc(var(--amp) * .6), calc(var(--amp) * -.5)); }
+  30%, 50%, 70% { transform: translate(calc(var(--amp) * -1), calc(var(--amp) * .7)); }
+  40%, 60% { transform: translate(var(--amp), calc(var(--amp) * -1)); }
+}
+
+/* Top bar */
+#bar { display: flex; align-items: center; gap: 8px; padding: 6px 10px; min-height: 46px; }
+.icon-btn {
+  width: 38px; height: 38px; border-radius: 12px; border: 0; background: rgba(0, 0, 0, .22);
+  display: grid; place-items: center; font-size: 19px; flex: none;
+}
+#battleInfo { flex: 1; min-width: 0; text-align: center; font-family: var(--display); font-size: 15px; letter-spacing: .02em; }
+#battleInfo small { display: block; font: 600 11px/1.2 system-ui, sans-serif; color: var(--felt-dim); letter-spacing: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#roomTag { font: 700 12px/1 system-ui, sans-serif; padding: 6px 8px; border-radius: 10px; background: rgba(0, 0, 0, .22); letter-spacing: .08em; }
+
+/* Opponents */
+#opponents {
+  overflow-y: auto; overflow-x: hidden; padding: 4px 10px 6px; display: grid; gap: 6px;
+  align-content: center; justify-content: center; scrollbar-width: thin;
+}
+#opponents.size-l { grid-template-columns: minmax(0, 220px); }
+#opponents.size-m { grid-template-columns: repeat(var(--cols), minmax(0, 120px)); }
+#opponents.size-s { grid-template-columns: repeat(var(--cols), minmax(0, 92px)); }
+#opponents.size-xs { grid-template-columns: repeat(auto-fill, minmax(50px, 1fr)); justify-content: stretch; align-content: start; gap: 4px; }
+@media (min-width: 700px) {
+  #opponents.size-xs { grid-template-columns: repeat(auto-fill, minmax(70px, 1fr)); }
+  #opponents.size-s { grid-template-columns: repeat(var(--cols), minmax(0, 110px)); }
+}
+.tile {
+  position: relative; display: flex; flex-direction: column; align-items: center; gap: 3px;
+  padding: 6px 4px 5px; border-radius: 14px; background: rgba(0, 0, 0, .18); min-width: 0;
+  border: 2px solid transparent; transition: opacity .3s, border-color .2s, background .2s;
+}
+.tile .tname { font-weight: 700; font-size: 13px; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tile .tmeta { display: flex; gap: 4px; align-items: center; font-size: 12px; color: var(--felt-dim); white-space: nowrap; max-width: 100%; overflow: hidden; }
+.tile .tcount { font-variant-numeric: tabular-nums; font-weight: 700; color: var(--felt-ink); }
+.tile .tstat { font: 700 10px/1 system-ui, sans-serif; text-transform: uppercase; letter-spacing: .04em; overflow: hidden; text-overflow: ellipsis; }
+.tile .tslot { position: relative; display: grid; place-items: center; }
+.tile.out { opacity: .38; }
+.tile.offline .tname::after { content: " · away"; font-weight: 400; color: var(--felt-dim); }
+.tile.war { border-color: var(--war); background: rgba(255, 59, 48, .16); }
+.tile.won { border-color: var(--gold); background: rgba(255, 201, 61, .22); animation: pulse calc(700ms * var(--pace)) ease-out; }
+.tile.slammed .tstat { color: var(--gold); }
+.tile.charging { animation: tremble .12s linear infinite; }
+.tile.charging .tslot { filter: drop-shadow(0 0 calc(var(--glow, 2) * 1px) var(--gold)); }
+@keyframes tremble { 0%, 100% { transform: translate(0, 0); } 25% { transform: translate(-1px, 1px); } 75% { transform: translate(1px, -1px); } }
+@keyframes pulse { 0% { transform: scale(1); } 40% { transform: scale(1.08); } 100% { transform: scale(1); } }
+.size-xs .tile { padding: 3px 2px 3px; border-radius: 10px; gap: 1px; }
+.size-xs .tile .tname { font-size: 10px; font-weight: 600; }
+.size-xs .tile .tmeta { font-size: 10px; }
+.size-xs .tile .tstat { display: none; }
+.size-l .tile { padding: 10px; }
+.size-l .tile .tname { font-size: 15px; }
+
+/* Cards */
+.card {
+  --w: 44px; width: var(--w); height: calc(var(--w) * 1.4); border-radius: calc(var(--w) * .1);
+  background: var(--card); color: var(--card-ink); border: 1px solid var(--card-edge);
+  box-shadow: 0 2px 5px rgba(0, 0, 0, .25); position: relative; flex: none; overflow: hidden;
+  font-family: var(--display);
+}
+.card.red { color: var(--card-red); }
+.card .ci { position: absolute; left: 6%; top: 4%; font-size: calc(var(--w) * .26); line-height: .95; text-align: center; }
+.card .ci b { display: block; font-weight: 400; }
+.card .ci i { display: block; font-style: normal; font-family: system-ui, sans-serif; font-size: .9em; }
+.card .cc { position: absolute; inset: 0; display: grid; place-items: center; font-size: calc(var(--w) * .5); font-family: system-ui, sans-serif; padding-top: 8%; }
+.card.back {
+  background:
+    radial-gradient(circle at 50% 50%, transparent 0 22%, rgba(255, 255, 255, .18) 23% 26%, transparent 27%),
+    repeating-linear-gradient(45deg, var(--back-1) 0 5px, var(--back-2) 5px 10px);
+  border: calc(var(--w) * .06) solid #fff6e8;
+}
+.card.back::after {
+  content: "W"; position: absolute; inset: 0; display: grid; place-items: center;
+  color: rgba(255, 246, 232, .9); font-size: calc(var(--w) * .34);
+}
+.card.empty { background: transparent; border: 2px dashed rgba(255, 255, 255, .22); box-shadow: none; }
+.card.flipin { animation: flipin calc(380ms * var(--pace)) ease-out; }
+@keyframes flipin { from { transform: rotateY(90deg) scale(1.1); } to { transform: none; } }
+.card.dim { filter: saturate(.4) brightness(.8); }
+.size-xs .card { --w: 30px; }
+.size-xs .card .ci { font-size: 10px; left: 0; right: 0; top: 2px; }
+.size-xs .card .cc { display: none; }
+.size-xs .card .ci i { font-size: 11px; }
+.size-s .card { --w: 46px; }
+.size-m .card { --w: 66px; }
+.size-l .card { --w: 92px; }
+@media (min-width: 700px) {
+  .size-xs .card { --w: 38px; }
+  .size-s .card { --w: 56px; }
+  .size-m .card { --w: 80px; }
+  .size-l .card { --w: 110px; }
+}
+.downs { position: absolute; right: -6px; bottom: -4px; background: var(--war); color: #fff; font: 700 10px/1 system-ui, sans-serif; padding: 3px 5px; border-radius: 8px; }
+
+/* Arena */
+#arena { padding: 2px 12px 4px; text-align: center; min-height: 92px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; }
+#banner {
+  font-family: var(--display); font-size: 30px; line-height: 1; color: var(--gold); min-height: 30px;
+  text-shadow: 0 3px 0 rgba(0, 0, 0, .35); white-space: nowrap; max-width: 100%; overflow: hidden; text-overflow: ellipsis;
+}
+#banner.war { color: #fff; text-shadow: 0 0 12px var(--war), 0 3px 0 var(--war); }
+#banner.pop { animation: pop calc(600ms * var(--pace)) cubic-bezier(.2, 1.6, .4, 1); }
+@keyframes pop { 0% { transform: scale(.3); opacity: 0; } 60% { transform: scale(1.15); opacity: 1; } 100% { transform: scale(1); } }
+#caption { font-size: 14px; color: var(--felt-ink); max-width: 34em; min-height: 2.7em; text-wrap: balance; }
+#warRow { display: flex; gap: 6px; justify-content: center; flex-wrap: wrap; max-width: 100%; }
+#warRow .wf { display: flex; flex-direction: column; align-items: center; gap: 2px; font-size: 11px; max-width: 64px; }
+#warRow .wf span { max-width: 64px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#warRow .card { --w: 34px; }
+#warRow .more { align-self: center; font-weight: 700; }
+
+/* You */
+#me { display: flex; align-items: center; justify-content: center; gap: 18px; padding: 4px 12px; min-height: 140px; position: relative; }
+#me .card { --w: 88px; }
+@media (min-width: 700px) { #me .card { --w: 104px; } }
+#myPile { position: relative; display: grid; justify-items: center; gap: 4px; }
+#myPile .stack { position: relative; }
+#myPile .stack::before, #myPile .stack::after {
+  content: ""; position: absolute; inset: 0; border-radius: 9px; background: var(--back-2); border: 1px solid #fff6e8;
+}
+#myPile .stack::before { transform: translate(4px, 4px); }
+#myPile .stack::after { transform: translate(2px, 2px); }
+#myPile .stack .card { z-index: 1; }
+#myPile.empty .stack { visibility: hidden; }
+#myLabel { font-size: 13px; font-weight: 700; text-align: center; max-width: 120px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#myLabel small { display: block; font-weight: 400; color: var(--felt-dim); }
+#mySlot { position: relative; display: grid; place-items: center; }
+#mySlot .card.slam { animation: slamdown calc(460ms * var(--pace)) cubic-bezier(.5, 0, .75, 0) both; }
+@keyframes slamdown {
+  0% { transform: translate(-90px, 30px) rotate(-18deg) scale(1.5); opacity: .4; }
+  70% { transform: translate(0, 0) rotate(3deg) scale(1.08); opacity: 1; }
+  100% { transform: none; }
+}
+#mySlot.won .card:not(.back) { box-shadow: 0 0 0 3px var(--gold), 0 0 22px var(--gold); }
+#me.charging #myPile .stack { animation: tremble calc(140ms - var(--power, 0) * .4ms) linear infinite; }
+#me.charging #myPile .stack .card { box-shadow: 0 0 calc(var(--power, 0) * .18px) calc(var(--power, 0) * .05px) var(--gold); }
+#meNote { position: absolute; inset: 0; display: grid; place-items: center; text-align: center; font-weight: 700; color: var(--felt-dim); padding: 0 20px; }
+#gain { position: absolute; left: 50%; top: 10px; font-family: var(--display); color: var(--gold); font-size: 22px; pointer-events: none; opacity: 0; }
+#gain.show { animation: rise calc(1100ms * var(--pace)) ease-out; }
+@keyframes rise { 0% { opacity: 0; transform: translate(-50%, 10px); } 20% { opacity: 1; } 100% { opacity: 0; transform: translate(-50%, -40px); } }
+
+/* Controls */
+#controls { padding: 4px 12px 10px; display: grid; gap: 8px; width: 100%; max-width: 560px; justify-self: center; }
+#slamBtn {
+  position: relative; overflow: hidden; height: 64px; border: 0; border-radius: 20px;
+  background: var(--accent); color: var(--accent-ink); box-shadow: 0 5px 0 #b52a14, var(--shadow);
+  font-family: var(--display); font-size: 22px; letter-spacing: .03em; touch-action: none;
+  -webkit-touch-callout: none;
+}
+#slamBtn:disabled { background: rgba(0, 0, 0, .25); color: var(--felt-dim); box-shadow: none; cursor: default; }
+#slamBtn.held { transform: translateY(3px); box-shadow: 0 2px 0 #b52a14, var(--shadow); }
+#meterFill {
+  position: absolute; left: 0; top: 0; bottom: 0; width: 0; pointer-events: none;
+  background: linear-gradient(90deg, #ffd23d, #ff9a1f 45%, #ff3b30 70%, #c13cff 88%, #3cf0ff);
+  background-size: 320px 100%; opacity: .95;
+}
+#slamText { position: relative; text-shadow: 0 2px 0 rgba(0, 0, 0, .25); white-space: nowrap; }
+#tools { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; justify-content: center; }
+.chip {
+  border: 0; border-radius: 999px; padding: 8px 12px; background: rgba(0, 0, 0, .22); font-size: 13px; font-weight: 700;
+  white-space: nowrap; max-width: 100%; overflow: hidden; text-overflow: ellipsis; min-height: 36px;
+}
+.chip[aria-pressed="true"] { background: var(--gold); color: var(--gold-ink); }
+#cheers { display: flex; gap: 4px; }
+#cheers button { width: 36px; height: 36px; border-radius: 50%; border: 0; background: rgba(0, 0, 0, .22); font-size: 18px; padding: 0; }
+
+/* Effects */
+#fx { position: fixed; inset: 0; pointer-events: none; z-index: 30; overflow: hidden; }
+.bit { position: absolute; font-size: 22px; animation: burst var(--t, 900ms) cubic-bezier(.15, .7, .3, 1) forwards; will-change: transform, opacity; }
+@keyframes burst {
+  0% { transform: translate(-50%, -50%) scale(.4); opacity: 1; }
+  100% { transform: translate(calc(-50% + var(--dx)), calc(-50% + var(--dy))) rotate(var(--rot)) scale(1.1); opacity: 0; }
+}
+.floaty { position: absolute; font-size: 30px; animation: floaty 1.8s ease-out forwards; }
+@keyframes floaty { 0% { transform: translate(-50%, 0) scale(.6); opacity: 0; } 15% { opacity: 1; transform: translate(-50%, -20px) scale(1.1); } 100% { opacity: 0; transform: translate(calc(-50% + var(--dx)), -170px) scale(1); } }
+.flash { position: absolute; inset: 0; animation: flash calc(380ms * var(--pace)) ease-out forwards; }
+@keyframes flash { from { opacity: .75; } to { opacity: 0; } }
+
+/* Overlays */
+.overlay {
+  position: fixed; inset: 0; z-index: 20; display: flex; flex-direction: column; align-items: center; overflow-y: auto;
+  padding: calc(env(safe-area-inset-top) + 14px) calc(env(safe-area-inset-right) + 12px) calc(env(safe-area-inset-bottom) + 14px) calc(env(safe-area-inset-left) + 12px);
+  background: rgba(6, 26, 16, .58); -webkit-backdrop-filter: blur(3px); backdrop-filter: blur(3px);
+}
+.overlay.solid { background: radial-gradient(ellipse at 50% 30%, var(--felt), var(--felt-2) 80%); -webkit-backdrop-filter: none; backdrop-filter: none; }
+.panel {
+  margin: auto 0; flex: none;
+  width: min(100%, 440px); background: var(--panel); color: var(--panel-ink); border-radius: 22px;
+  padding: 18px 16px; box-shadow: var(--shadow); -webkit-user-select: text; user-select: text;
+}
+.panel h1, .panel h2 { font-family: var(--display); font-weight: 400; margin: 0 0 4px; line-height: 1.05; }
+.panel h1 { font-size: 40px; color: var(--accent); }
+.panel h2 { font-size: 24px; }
+.panel h3 { font-size: 13px; text-transform: uppercase; letter-spacing: .08em; color: var(--panel-dim); margin: 16px 0 8px; }
+.panel p { margin: 6px 0; }
+.dim { color: var(--panel-dim); }
+.small { font-size: 13px; }
+.row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.row > * { min-width: 0; }
+.grow { flex: 1; }
+.btn {
+  border: 0; border-radius: 14px; padding: 12px 16px; font-weight: 800; font-size: 16px; min-height: 48px;
+  background: var(--panel-2); color: var(--panel-ink); border: 2px solid var(--panel-line);
+}
+.btn.primary { background: var(--accent); color: var(--accent-ink); border-color: transparent; box-shadow: 0 4px 0 #b52a14; }
+.btn.gold { background: var(--gold); color: var(--gold-ink); border-color: transparent; box-shadow: 0 4px 0 #b68a10; }
+.btn:disabled { opacity: .5; cursor: default; box-shadow: none; }
+.btn.wide { width: 100%; }
+.panel input[type=text], .panel select {
+  font-size: 16px; padding: 10px 12px; border-radius: 12px; border: 2px solid var(--panel-line);
+  background: var(--panel-2); color: var(--panel-ink); min-height: 46px; width: 100%;
+}
+.panel input[type=range] { width: 100%; accent-color: var(--accent); }
+#codeInput { text-transform: uppercase; letter-spacing: .3em; font-weight: 800; width: 7.5em !important; text-align: center; }
+.title-cards { display: flex; gap: 6px; margin: 4px 0 8px; }
+.title-cards .card { --w: 38px; }
+.title-cards .card:nth-child(1) { transform: rotate(-12deg); }
+.title-cards .card:nth-child(3) { transform: rotate(10deg); }
+.avatars { display: grid; grid-template-columns: repeat(8, 1fr); gap: 4px; }
+.avatars button { aspect-ratio: 1; border-radius: 10px; border: 2px solid transparent; background: var(--panel-2); font-size: 20px; padding: 0; }
+.avatars button[aria-pressed="true"] { border-color: var(--accent); background: var(--panel); }
+.seg { display: grid; grid-template-columns: repeat(2, 1fr); gap: 6px; }
+.seg button { border-radius: 12px; border: 2px solid var(--panel-line); background: var(--panel-2); padding: 8px 6px; font-weight: 700; font-size: 14px; color: var(--panel-ink); min-height: 48px; }
+.seg button small { display: block; font-weight: 400; color: var(--panel-dim); font-size: 12px; }
+.seg button[aria-pressed="true"] { border-color: var(--accent); background: var(--panel); }
+.seg button:disabled { cursor: default; }
+.code-big { font-family: var(--display); font-size: 44px; letter-spacing: .12em; color: var(--accent); line-height: 1; }
+.people { display: flex; flex-wrap: wrap; gap: 6px; max-height: 210px; overflow-y: auto; }
+.person { display: inline-flex; align-items: center; gap: 4px; padding: 5px 9px; border-radius: 999px; background: var(--panel-2); font-size: 14px; font-weight: 600; max-width: 100%; }
+.person span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.person.bot { font-weight: 400; color: var(--panel-dim); }
+.person.offline { opacity: .5; }
+.person.me { outline: 2px solid var(--accent); }
+.stepper { display: flex; align-items: center; gap: 6px; }
+.stepper button { width: 44px; height: 44px; border-radius: 12px; border: 2px solid var(--panel-line); background: var(--panel-2); font-size: 20px; font-weight: 800; color: var(--panel-ink); }
+.stepper output { min-width: 2.2em; text-align: center; font-weight: 800; font-size: 18px; }
+.standings { list-style: none; padding: 0; margin: 0; display: grid; gap: 4px; }
+.standings li { display: flex; gap: 8px; align-items: center; padding: 6px 8px; border-radius: 10px; background: var(--panel-2); font-size: 14px; }
+.standings li.me { outline: 2px solid var(--accent); }
+.standings li .nm { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.standings li .pl { font-family: var(--display); width: 2.2em; color: var(--panel-dim); }
+.standings li.win .pl { color: var(--accent); }
+.stat-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 6px; }
+.stat-grid div { background: var(--panel-2); border-radius: 10px; padding: 8px; font-size: 13px; }
+.stat-grid b { display: block; font-size: 18px; }
+.science { background: var(--panel-2); border-left: 4px solid var(--accent); padding: 8px 10px; border-radius: 8px; font-size: 14px; margin: 10px 0; }
+.unlock { background: var(--gold); color: var(--gold-ink); padding: 10px 12px; border-radius: 12px; font-weight: 700; margin: 10px 0; }
+.styles { display: grid; gap: 6px; }
+.styles button { display: flex; gap: 10px; align-items: center; text-align: left; padding: 8px 10px; border-radius: 12px; border: 2px solid var(--panel-line); background: var(--panel-2); color: var(--panel-ink); min-height: 52px; }
+.styles button .em { font-size: 26px; width: 34px; text-align: center; }
+.styles button[aria-pressed="true"] { border-color: var(--accent); background: var(--panel); }
+.styles button:disabled { opacity: .45; cursor: default; }
+.styles button small { display: block; color: var(--panel-dim); }
+.fine { font-size: 12px; color: var(--panel-dim); margin-top: 12px; }
+.err { color: var(--accent); font-weight: 700; min-height: 1.3em; }
+.stack-gap { display: grid; gap: 8px; }
+#toast {
+  position: fixed; left: 50%; bottom: calc(env(safe-area-inset-bottom) + 150px); transform: translateX(-50%);
+  z-index: 40; background: var(--panel); color: var(--panel-ink); padding: 10px 14px; border-radius: 14px;
+  box-shadow: var(--shadow); font-weight: 700; font-size: 14px; max-width: calc(100% - 32px); text-align: center;
+}
+#conn { position: fixed; top: calc(env(safe-area-inset-top) + 52px); left: 50%; transform: translateX(-50%); z-index: 15; background: var(--war); color: #fff; padding: 6px 12px; border-radius: 999px; font-weight: 700; font-size: 13px; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: 1ms !important; animation-iteration-count: 1 !important; transition: none !important; }
+}
+</style>
+</head>
+<body>
+<div id="app" hidden>
+  <header id="bar">
+    <button class="icon-btn" id="menuBtn" aria-label="Pause menu">☰</button>
+    <div id="battleInfo"><span id="battleNum">Battle 1</span><small id="battleSub"></small></div>
+    <span id="roomTag" hidden></span>
+    <button class="icon-btn" id="soundBtn" aria-label="Sound on">🔊</button>
+  </header>
+  <section id="opponents" aria-label="Other players"></section>
+  <section id="arena" aria-live="polite">
+    <div id="banner"></div>
+    <div id="warRow"></div>
+    <div id="caption"></div>
+  </section>
+  <section id="me">
+    <div id="myPile"><div class="stack"><div class="card back"></div></div><div id="myLabel"></div></div>
+    <div id="mySlot"><div class="card empty"></div></div>
+    <div id="gain"></div>
+    <div id="meNote" hidden></div>
+  </section>
+  <footer id="controls">
+    <button id="slamBtn" disabled><span id="meterFill"></span><span id="slamText">Hold to slam</span></button>
+    <div id="tools">
+      <button class="chip" id="styleBtn">🖐️ Bare hands</button>
+      <button class="chip" id="autoBtn" aria-pressed="false">🤖 Autopilot</button>
+      <button class="chip" id="fastBtn" aria-pressed="false" hidden>⏩ Fast</button>
+      <div id="cheers" hidden></div>
+    </div>
+  </footer>
+</div>
+<div id="fx"></div>
+<div id="conn" hidden>Reconnecting…</div>
+<div id="toast" hidden></div>
+
+<!-- Menu -->
+<div class="overlay solid" id="menu">
+  <div class="panel">
+    <div class="title-cards" aria-hidden="true"></div>
+    <h1>War!</h1>
+    <p><b>Slam Edition.</b> The card game where the highest card wins, and you can slam your card down as hard as you like. It won't help.</p>
+    <h3>Play solo</h3>
+    <label for="opponents" class="small" id="oppLabel">1 opponent</label>
+    <input type="range" id="oppRange" min="1" max="49" value="1" aria-labelledby="oppLabel">
+    <div class="seg" id="soloLength" style="margin-top:8px"></div>
+    <p class="small dim" id="soloNote"></p>
+    <button class="btn primary wide" id="soloBtn">Deal me in</button>
+
+    <div id="friends" hidden>
+      <h3>Play with friends</h3>
+      <label class="small" for="nameInput">Your name</label>
+      <input type="text" id="nameInput" maxlength="16" autocomplete="nickname" spellcheck="false" placeholder="Name">
+      <div class="avatars" id="avatars" style="margin-top:8px" role="group" aria-label="Your animal"></div>
+      <div class="stack-gap" style="margin-top:10px">
+        <button class="btn gold wide" id="newRoomBtn">Start a room</button>
+        <div class="row">
+          <input type="text" id="codeInput" maxlength="4" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="CODE" aria-label="Room code">
+          <button class="btn grow" id="joinBtn">Join with code</button>
+        </div>
+        <div class="err" id="friendsErr" aria-live="polite"></div>
+      </div>
+    </div>
+    <p class="fine" id="lifetime"></p>
+    <div class="row" style="justify-content:space-between">
+      <button class="btn" id="stylesBtn">🧤 Power-ups</button>
+      <button class="btn" id="menuSoundBtn">🔊 Sound on</button>
+    </div>
+  </div>
+</div>
+
+<!-- Lobby -->
+<div class="overlay solid" id="lobby" hidden>
+  <div class="panel">
+    <p class="small dim" style="margin:0">Room code</p>
+    <div class="row" style="justify-content:space-between">
+      <div class="code-big" id="lobbyCode">----</div>
+      <button class="btn" id="shareBtn">Invite</button>
+    </div>
+    <p class="small dim" id="shareNote">Friends join at this page with the code, or with your invite link.</p>
+    <h3 id="peopleTitle">Players</h3>
+    <div class="people" id="people"></div>
+    <div id="hostControls">
+      <h3>Bots</h3>
+      <div class="row">
+        <div class="stepper"><button id="botLess" aria-label="Fewer bots">−</button><output id="botCount">0</output><button id="botMore" aria-label="More bots">+</button></div>
+        <button class="btn grow" id="botFill">Fill to 50</button>
+      </div>
+      <h3>Length</h3>
+      <div class="seg" id="roomLength"></div>
+    </div>
+    <p class="small dim" id="lobbyNote"></p>
+    <div class="err" id="lobbyErr" aria-live="polite"></div>
+    <div class="row" style="margin-top:8px">
+      <button class="btn" id="leaveBtn">Leave</button>
+      <button class="btn primary grow" id="dealBtn">Deal the cards</button>
+    </div>
+  </div>
+</div>
+
+<!-- Pause -->
+<div class="overlay" id="pause" hidden>
+  <div class="panel stack-gap">
+    <h2 id="pauseTitle">Paused</h2>
+    <p class="dim small" id="pauseNote"></p>
+    <button class="btn primary wide" id="resumeBtn">Back to the table</button>
+    <button class="btn wide" id="skipBtn">Skip to the end</button>
+    <button class="btn wide" id="quitBtn">Quit to menu</button>
+  </div>
+</div>
+
+<!-- Game over -->
+<div class="overlay" id="over" hidden>
+  <div class="panel">
+    <h2 id="overTitle">Victory!</h2>
+    <p class="dim" id="overSub"></p>
+    <ol class="standings" id="standings"></ol>
+    <h3>The war in numbers</h3>
+    <div class="stat-grid" id="overStats"></div>
+    <div class="science" id="science"></div>
+    <div class="unlock" id="unlock" hidden></div>
+    <p class="small dim" id="overNote"></p>
+    <div class="row" style="margin-top:8px">
+      <button class="btn" id="overMenuBtn">Menu</button>
+      <button class="btn primary grow" id="againBtn">Play again</button>
+    </div>
+  </div>
+</div>
+
+<!-- Power-ups -->
+<div class="overlay" id="stylesOv" hidden>
+  <div class="panel">
+    <h2>Power-ups</h2>
+    <p class="small dim">Equip one to make your slams more impressive. Each finished game unlocks another.</p>
+    <div class="styles" id="styleList"></div>
+    <p class="fine">All power-ups have been independently verified to have no effect on the outcome of any battle.</p>
+    <button class="btn primary wide" id="stylesDone" style="margin-top:8px">Done</button>
+  </div>
+</div>
+
+<script>
+'use strict';
+// ---- BEGIN WAR CORE ----
+// The rules of War and the pacing of a game, shared word for word by war.html
+// (solo games against bots) and worker/src/war.js (rooms played over the
+// network). worker/test/war.test.js checks that the two copies match, so
+// change both. A slam's power and style are passed along for show, but the
+// rules never read them: slamming changes nothing.
+const WAR = {
+  MAX_PLAYERS: 50,
+  LENGTHS: { quick: 20, standard: 60, long: 150, total: 5000 },  // battles at most
+  MAX_POWER: 200,
+  STYLES: 11,          // power-ups, 0 for bare hands
+  AVATARS: 24,
+  TIERS: 9,            // slam tiers, from boop to cosmic
+  STAGE_MS: 8000,      // to slam before your card flops over by itself
+  NAPS: 2,             // flops in a row before a stage stops waiting for you
+  BOT_MS: 1300,        // the shortest a stage lasts, while the bots slam
+  REVEAL_MS: 2400,     // to watch the cards turn over before the next battle
+  WAR_REVEAL_MS: 3000, // the same before a war
+};
+
+const WAR_BOT_FIRST = [
+  'Sir', 'Lady', 'Captain', 'Doctor', 'Baron', 'Auntie', 'Professor', 'Lil', 'Big', 'Sleepy',
+  'Grumpy', 'Sneaky', 'Lucky', 'Soggy', 'Turbo', 'Dizzy', 'Cosmic', 'Wobbly', 'Mighty', 'Tiny',
+];
+const WAR_BOT_LAST = [
+  'Shuffles', 'Pancake', 'Noodle', 'Walrus', 'Biscuit', 'Pickle', 'Waffle', 'Badger', 'Muffin', 'Goose',
+  'Nugget', 'Meatball', 'Toast', 'Pebble', 'Beans', 'Squid', 'Crumpet', 'Tater', 'Wombat', 'Jellybean',
+];
+
+// Cards are numbers: rank is card % 13 (0 is a two, 12 an ace) and suit is
+// floor(card / 13) % 4. There's a deck for every two players, so everyone
+// starts with about 26 cards however many play.
+function warShuffle(cards, random) {
+  for (let i = cards.length - 1; i > 0; i--) {
+    const j = Math.floor(random() * (i + 1));
+    [cards[i], cards[j]] = [cards[j], cards[i]];
+  }
+  return cards;
+}
+
+function warDeal(count, random) {
+  const decks = Math.max(1, Math.ceil(count / 2));
+  const cards = warShuffle(Array.from({ length: 52 * decks }, (_, i) => i), random);
+  const piles = Array.from({ length: count }, () => []);
+  cards.forEach((card, i) => piles[i % count].push(card));
+  return piles;
+}
+
+function warBotNames(count, random, taken) {
+  const used = new Set(taken || []);
+  const names = [];
+  while (names.length < count) {
+    const name = WAR_BOT_FIRST[Math.floor(random() * WAR_BOT_FIRST.length)] + ' '
+      + WAR_BOT_LAST[Math.floor(random() * WAR_BOT_LAST.length)];
+    if (!used.has(name)) { used.add(name); names.push(name); }
+  }
+  return names;
+}
+
+// Some bots place their cards gently, most slam, a few lose control entirely.
+function warBotPower(random) {
+  const r = random();
+  if (r < 0.25) return Math.floor(random() * 40);
+  if (r < 0.8) return 40 + Math.floor(random() * 90);
+  return 150 + Math.floor(random() * 51);
+}
+
+// A new game for seats 0..n-1, where bots[seat] is true for a bot. Returns
+// the game and the message opening its first battle.
+function warNewGame(bots, length, random, now, pace) {
+  const game = {
+    limit: WAR.LENGTHS[length] || WAR.LENGTHS.standard,
+    piles: warDeal(bots.length, random),
+    bots: bots.slice(),
+    out: bots.map(() => 0),  // the battle each player ran out of cards in
+    naps: bots.map(() => 0), // stages in a row each player's card flopped over by itself
+    battle: 0, stage: 0, fighters: [], slams: {}, pot: [],
+    opensAt: 0, closesAt: 0, pace: pace || 1,
+    wars: 0, biggest: 0, deepest: 0, over: null,
+  };
+  return { game, stage: warOpenStage(game, now, random, null, 0) };
+}
+
+// Opens the next stage: a new battle for everyone still holding cards, or,
+// when fighters is given, a war between them. Bots slam straight away; the
+// pages show their slams one by one over the stage's first second.
+function warOpenStage(game, now, random, fighters, delay) {
+  if (fighters) {
+    game.stage++;
+    game.fighters = fighters;
+  } else {
+    game.battle++;
+    game.stage = 0;
+    game.fighters = game.piles.map((_, seat) => seat).filter((seat) => game.piles[seat].length);
+    game.pot = [];
+  }
+  game.slams = {};
+  game.opensAt = now + Math.round(delay * game.pace);
+  game.closesAt = game.opensAt + WAR.STAGE_MS;
+  const bots = [];
+  for (const seat of game.fighters) {
+    if (!game.bots[seat]) continue;
+    const power = warBotPower(random);
+    const style = Math.floor(random() * WAR.STYLES);
+    game.slams[seat] = [power, style, 0];
+    bots.push([seat, power, style, Math.round((100 + random() * (WAR.BOT_MS - 300)) * game.pace)]);
+  }
+  return {
+    t: 'stage', battle: game.battle, stage: game.stage, limit: game.limit, fighters: game.fighters.slice(),
+    opensIn: game.opensAt - now, closesIn: game.closesAt - now, bots,
+  };
+}
+
+// Players (not bots) in this stage who are online and haven't slammed yet,
+// unless they've dozed off: then nobody waits for them until they slam again.
+function warWaitingFor(game, online) {
+  return game.fighters.filter((seat) => !game.bots[seat] && online.has(seat) && !game.slams[seat]
+    && game.naps[seat] < WAR.NAPS);
+}
+
+// When to play the stage out: once everyone online has slammed and the bots
+// have had their moment, or when time runs out.
+function warDueAt(game, online) {
+  return warWaitingFor(game, online).length ? game.closesAt : game.opensAt + Math.round(WAR.BOT_MS * game.pace);
+}
+
+// Records a slam. Returns the message to pass on, or null when it doesn't
+// count: the game is over, the seat isn't fighting, or it already slammed.
+function warSlam(game, seat, power, style) {
+  if (game.over || !game.fighters.includes(seat) || game.slams[seat]) return null;
+  power = Math.max(0, Math.min(WAR.MAX_POWER, Math.round(Number(power)) || 0));
+  style = Number.isInteger(style) && style >= 0 && style < WAR.STYLES ? style : 0;
+  game.slams[seat] = [power, style, 0];
+  game.naps[seat] = 0;
+  return { t: 'slam', seat, power, style };
+}
+
+// Plays the stage out. Every fighter turns over their top card (in a war,
+// after laying up to three face down, keeping one to turn over) and the
+// highest rank takes the pot. A tie is a war between the tied players who
+// still have cards: if only one does, they win; if none do, the war gods pick.
+// Anyone who hasn't slammed flops their card over anyway. Returns the message
+// describing it all, with the next stage or the end of the game.
+function warResolve(game, now, random) {
+  const plays = [];
+  let best = -1;
+  for (const seat of game.fighters) {
+    const pile = game.piles[seat];
+    const slam = game.slams[seat] || [0, 0, 1];
+    if (slam[2]) game.naps[seat]++;
+    const down = game.stage ? Math.min(3, pile.length - 1) : 0;
+    game.pot.push(...pile.splice(0, down));
+    const up = pile.shift();
+    game.pot.push(up);
+    best = Math.max(best, up % 13);
+    plays.push([seat, down, up, ...slam]);
+  }
+  const tied = plays.filter((play) => play[2] % 13 === best).map((play) => play[0]);
+  const able = tied.filter((seat) => game.piles[seat].length);
+  let winner = tied.length === 1 ? tied[0] : able.length === 1 ? able[0] : null;
+  const gods = tied.length > 1 && !able.length;
+  if (gods) winner = tied[Math.floor(random() * tied.length)];
+  const message = { t: 'flip', battle: game.battle, stage: game.stage, plays, tied, winner, gods, pot: game.pot.length };
+  if (winner === null) {
+    if (!game.stage) game.wars++;
+    game.biggest = Math.max(game.biggest, able.length);
+    game.deepest = Math.max(game.deepest, game.stage + 1);
+    message.counts = game.piles.map((pile) => pile.length);
+    message.next = warOpenStage(game, now, random, able, WAR.WAR_REVEAL_MS);
+    return message;
+  }
+  game.piles[winner].push(...warShuffle(game.pot, random));
+  game.pot = [];
+  message.counts = game.piles.map((pile) => pile.length);
+  message.out = [];
+  message.counts.forEach((count, seat) => {
+    if (!count && !game.out[seat]) { game.out[seat] = game.battle; message.out.push(seat); }
+  });
+  if (message.counts.filter(Boolean).length <= 1 || game.battle >= game.limit) {
+    game.fighters = [];
+    game.over = warStandings(game);
+    message.over = game.over;
+  } else {
+    message.next = warOpenStage(game, now, random, null, WAR.REVEAL_MS);
+  }
+  return message;
+}
+
+// Most cards first, then whoever lasted longest. Everyone tied for the most
+// cards wins.
+function warStandings(game) {
+  const counts = game.piles.map((pile) => pile.length);
+  const lasted = (seat) => game.out[seat] || Infinity;
+  const order = counts.map((_, seat) => seat).sort((a, b) => counts[b] - counts[a] || lasted(b) - lasted(a) || a - b);
+  const most = counts[order[0]];
+  return {
+    winners: order.filter((seat) => counts[seat] === most), order, counts, out: game.out.slice(),
+    battles: game.battle, wars: game.wars, biggest: game.biggest, deepest: game.deepest,
+  };
+}
+// ---- END WAR CORE ----
+
+// ---- Settings ----
+
+// The leaderboard Worker's URL, which also runs War rooms (worker/src/war.js).
+// While it's empty, playing with friends stays hidden and War is solo only.
+// ?rooms=<url> overrides it, for local testing and for tests.
+const ROOMS_URL = '';
+
+const TIERS = [
+  [0, 'boop'], [12, 'tap'], [30, 'thwack'], [50, 'SLAM'], [70, 'BIG SLAM'],
+  [90, 'MEGA SLAM'], [115, 'ULTRA SLAM'], [145, 'TECTONIC SLAM'], [175, 'COSMIC SLAM'],
+];
+// [emoji, name, made-up stat, particles]
+const STYLES = [
+  ['🖐️', 'Bare hands', '+0 everything', ['💥']],
+  ['🌶️', 'Hot Sauce', '+40 Spice', ['🔥', '🌶️']],
+  ['⚡', 'Thunder Glove', '+9,000 Volts', ['⚡', '✨']],
+  ['🫧', 'Bubble Wrap', '+12 Pop', ['🫧']],
+  ['👵', "Grandma's Blessing", '+100 Love', ['💖', '🍪']],
+  ['🚀', 'Rocket Boots', '+3 Thrust', ['🚀', '💨']],
+  ['🎉', 'Confetti Cannon', '+50 Party', ['🎉', '🎊']],
+  ['🧦', 'Lucky Sock', '+0% Luck (verified)', ['🍀', '🧦']],
+  ['🪩', 'Disco Ball', '+70s Groove', ['🪩', '✨', '🕺']],
+  ['🦆', 'Rubber Duck', '+1 Quack', ['🦆']],
+  ['🌋', 'Volcano Glove', '+800° Heat', ['🌋', '🔥', '🪨']],
+];
+const AVATARS = ['🦊', '🐸', '🐼', '🐙', '🦄', '🐯', '🐨', '🐵', '🦉', '🐢', '🦖', '🐳', '🦀', '🐝', '🦩', '🐧', '🦔', '🐮', '🐷', '🐰', '🦁', '🐲', '👽', '🤖'];
+const CHEERS = ['🔥', '😱', '😂', '👏', '🍅', '💤'];
+const RANKS = ['2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K', 'A'];
+const RANK_NAMES = ['two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten', 'jack', 'queen', 'king', 'ace'];
+const SUITS = ['♠︎', '♥︎', '♦︎', '♣︎'];
+const FACES = { 9: '🤹', 10: '👸', 11: '👑' };
+const LENGTH_LABELS = {
+  quick: ['Skirmish', '20 battles'], standard: ['Battle', '60 battles'],
+  long: ['Campaign', '150 battles'], total: ['Total war', 'until one has every card'],
+};
+const FAST_PACE = 0.3;
+
+// ---- Small helpers ----
+
+const $ = (id) => document.getElementById(id);
+const reduceMotion = window.matchMedia ? window.matchMedia('(prefers-reduced-motion: reduce)') : { matches: false };
+const params = new URLSearchParams(location.search);
+const DEBUG = location.hash === '#debug';
+
+const store = {
+  get(key, fallback) {
+    try { const v = localStorage.getItem('war:' + key); return v === null ? fallback : JSON.parse(v); } catch (e) { return fallback; }
+  },
+  set(key, value) { try { localStorage.setItem('war:' + key, JSON.stringify(value)); } catch (e) { /* private mode */ } },
+};
+
+// Only touch the page when something changed, so nothing is rewritten for nothing.
+function setText(node, text) { if (node.textContent !== text) node.textContent = text; }
+function setHidden(node, hidden) { if (node.hidden !== hidden) node.hidden = hidden; }
+function setClass(node, name, on) { node.classList.toggle(name, Boolean(on)); }
+function setAttr(node, name, value) { if (node.getAttribute(name) !== value) node.setAttribute(name, value); }
+function el(tag, cls, text) {
+  const node = document.createElement(tag);
+  if (cls) node.className = cls;
+  if (text !== undefined) node.textContent = text;
+  return node;
+}
+const tierOf = (power) => { let t = 0; TIERS.forEach(([min], i) => { if (power >= min) t = i; }); return t; };
+const tierName = (power) => TIERS[tierOf(power)][1];
+const cardName = (card) => RANK_NAMES[card % 13];
+const aOrAn = (word) => (/^[aeiou]/.test(word) ? 'an ' : 'a ') + word;
+const pick = (list) => list[Math.floor(Math.random() * list.length)];
+const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
+const fmt = (n) => n.toLocaleString('en-US');
+
+// A seeded random number generator (mulberry32), for ?seed= deals.
+function seeded(seed) {
+  return () => {
+    seed = (seed + 0x6d2b79f5) | 0;
+    let t = Math.imul(seed ^ (seed >>> 15), 1 | seed);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+function cardEl(card) {
+  const node = el('div', 'card');
+  if (card === 'back') { node.classList.add('back'); return node; }
+  if (card === null || card === undefined) { node.classList.add('empty'); return node; }
+  const rank = card % 13;
+  const suit = Math.floor(card / 13) % 4;
+  if (suit === 1 || suit === 2) node.classList.add('red');
+  const corner = el('span', 'ci');
+  corner.append(el('b', '', RANKS[rank]), el('i', '', SUITS[suit]));
+  node.append(corner, el('span', 'cc', FACES[rank] || SUITS[suit]));
+  node.setAttribute('aria-label', `${RANK_NAMES[rank]} of ${['spades', 'hearts', 'diamonds', 'clubs'][suit]}`);
+  return node;
+}
+
+function toast(text, ms = 2600) {
+  const node = $('toast');
+  setText(node, text);
+  node.hidden = false;
+  clearTimeout(toast.timer);
+  toast.timer = setTimeout(() => { node.hidden = true; }, ms);
+}
+
+function randomToken() {
+  if (window.crypto && crypto.randomUUID) return crypto.randomUUID();
+  return Array.from(crypto.getRandomValues(new Uint8Array(16)), (b) => b.toString(16).padStart(2, '0')).join('');
+}
+
+function roomsUrl() {
+  const override = params.get('rooms') || '';
+  return (/^https?:\/\//.test(override) ? override : ROOMS_URL).replace(/\/+$/, '');
+}
+
+// ---- Sound ----
+
+const Sound = {
+  on: store.get('sound', true),
+  ctx: null,
+  charge: null,
+  unlock() {
+    if (!this.on || this.ctx) return;
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if (!AC) return;
+    try { this.ctx = new AC(); } catch (e) { this.ctx = null; }
+  },
+  toggle() {
+    this.on = !this.on;
+    store.set('sound', this.on);
+    if (!this.on) this.stopCharge();
+    if (this.on) this.unlock();
+    renderSound();
+  },
+  ready() {
+    if (!this.on || !this.ctx) return null;
+    if (this.ctx.state === 'suspended') this.ctx.resume();
+    return this.ctx;
+  },
+  tone(freq, start, length, { type = 'sine', gain = 0.2, to = null } = {}) {
+    const ctx = this.ready();
+    if (!ctx) return;
+    const t = ctx.currentTime + start;
+    const osc = ctx.createOscillator();
+    const amp = ctx.createGain();
+    osc.type = type;
+    osc.frequency.setValueAtTime(freq, t);
+    if (to) osc.frequency.exponentialRampToValueAtTime(to, t + length);
+    amp.gain.setValueAtTime(gain, t);
+    amp.gain.exponentialRampToValueAtTime(0.0001, t + length);
+    osc.connect(amp).connect(ctx.destination);
+    osc.start(t);
+    osc.stop(t + length + 0.02);
+  },
+  noise(start, length, gain, cutoff) {
+    const ctx = this.ready();
+    if (!ctx) return;
+    const t = ctx.currentTime + start;
+    const buffer = ctx.createBuffer(1, Math.ceil(ctx.sampleRate * length), ctx.sampleRate);
+    const data = buffer.getChannelData(0);
+    for (let i = 0; i < data.length; i++) data[i] = (Math.random() * 2 - 1) * (1 - i / data.length);
+    const src = ctx.createBufferSource();
+    const filter = ctx.createBiquadFilter();
+    const amp = ctx.createGain();
+    src.buffer = buffer;
+    filter.type = 'lowpass';
+    filter.frequency.value = cutoff;
+    amp.gain.value = gain;
+    src.connect(filter).connect(amp).connect(ctx.destination);
+    src.start(t);
+  },
+  startCharge() {
+    const ctx = this.ready();
+    if (!ctx || this.charge) return;
+    const osc = ctx.createOscillator();
+    const amp = ctx.createGain();
+    osc.type = 'sawtooth';
+    osc.frequency.value = 110;
+    amp.gain.value = 0.035;
+    osc.connect(amp).connect(ctx.destination);
+    osc.start();
+    this.charge = { osc, amp };
+  },
+  setCharge(power) {
+    if (!this.charge || !this.ctx) return;
+    this.charge.osc.frequency.setTargetAtTime(110 + power * 4.5, this.ctx.currentTime, 0.03);
+    this.charge.amp.gain.setTargetAtTime(0.03 + power / 3000, this.ctx.currentTime, 0.05);
+  },
+  stopCharge() {
+    if (!this.charge) return;
+    try { this.charge.osc.stop(); } catch (e) { /* stopped */ }
+    this.charge = null;
+  },
+  slam(power, style, quiet) {
+    const loud = quiet ? 0.25 : 1;
+    const p = power / WAR.MAX_POWER;
+    this.noise(0, 0.12 + p * 0.35, (0.25 + p * 0.6) * loud, 600 + p * 3000);
+    this.tone(90 - p * 40, 0, 0.18 + p * 0.4, { gain: (0.3 + p * 0.5) * loud, to: 40 });
+    if (quiet) return;
+    if (style === 9) this.tone(520, 0.05, 0.18, { type: 'square', gain: 0.08, to: 300 });
+    if (style === 3) for (let i = 0; i < 4; i++) this.noise(0.08 + i * 0.07, 0.03, 0.25, 4000);
+    if (style === 2) this.noise(0, 0.5, 0.2, 9000);
+  },
+  flip() { this.noise(0, 0.05, 0.25, 5000); },
+  win() { [523, 659, 784, 1046].forEach((f, i) => this.tone(f, i * 0.09, 0.22, { type: 'triangle', gain: 0.14 })); },
+  lose() { this.tone(330, 0, 0.3, { type: 'triangle', gain: 0.12, to: 290 }); this.tone(277, 0.3, 0.55, { type: 'triangle', gain: 0.12, to: 220 }); },
+  war() {
+    [[220, 277, 330], [247, 311, 370]].forEach((chord, i) => chord.forEach((f) => this.tone(f, i * 0.28, 0.3, { type: 'sawtooth', gain: 0.05 })));
+  },
+  blip(tier) { this.tone(300 + tier * 90, 0, 0.06, { type: 'square', gain: 0.04 }); },
+  cheer() { this.tone(880, 0, 0.08, { type: 'triangle', gain: 0.06, to: 1200 }); },
+};
+
+function renderSound() {
+  const label = Sound.on ? 'Sound on' : 'Sound off';
+  setText($('soundBtn'), Sound.on ? '🔊' : '🔇');
+  setAttr($('soundBtn'), 'aria-label', label);
+  setText($('menuSoundBtn'), `${Sound.on ? '🔊' : '🔇'} ${label}`);
+}
+
+// ---- Effects ----
+
+let liveBits = 0;
+function burst(x, y, style, power, small) {
+  if (reduceMotion.matches) return;
+  const fx = $('fx');
+  const bits = STYLES[style] ? STYLES[style][3] : STYLES[0][3];
+  const count = small ? Math.round(power / 60) : 4 + Math.round(power / 9);
+  for (let i = 0; i < count && liveBits < 90; i++) {
+    const bit = el('span', 'bit', bits[i % bits.length]);
+    const angle = Math.random() * Math.PI * 2;
+    const dist = (small ? 30 : 60) + Math.random() * (small ? 40 : 60 + power * 1.2);
+    bit.style.left = x + 'px';
+    bit.style.top = y + 'px';
+    bit.style.setProperty('--dx', Math.cos(angle) * dist + 'px');
+    bit.style.setProperty('--dy', Math.sin(angle) * dist + 'px');
+    bit.style.setProperty('--rot', (Math.random() * 720 - 360) + 'deg');
+    bit.style.setProperty('--t', Math.round((700 + Math.random() * 500) * pace()) + 'ms');
+    if (small) bit.style.fontSize = '15px';
+    liveBits++;
+    bit.addEventListener('animationend', () => { bit.remove(); liveBits--; }, { once: true });
+    fx.append(bit);
+  }
+  if (!small && (style === 2 || style === 8 || power >= 175)) {
+    const flash = el('div', 'flash');
+    flash.style.background = style === 8 ? 'conic-gradient(#f0f, #0ff, #ff0, #f0f)' : style === 2 ? '#e6f4ff' : '#fff3c4';
+    flash.addEventListener('animationend', () => flash.remove(), { once: true });
+    fx.append(flash);
+  }
+}
+
+function shake(power) {
+  if (reduceMotion.matches || power < 30) return;
+  const app = $('app');
+  app.style.setProperty('--amp', Math.min(18, 2 + power / 12) + 'px');
+  app.classList.remove('shake');
+  void app.offsetWidth;
+  app.classList.add('shake');
+}
+
+function centerOf(node) {
+  const r = node.getBoundingClientRect();
+  return [r.left + r.width / 2, r.top + r.height / 2];
+}
+
+function banner(text, war) {
+  const node = $('banner');
+  setText(node, text);
+  setClass(node, 'war', war);
+  node.classList.remove('pop');
+  if (text && !reduceMotion.matches) { void node.offsetWidth; node.classList.add('pop'); }
+}
+
+function floatCheer(seat, e) {
+  const tile = seat === S.you ? $('myPile') : tiles.get(seat)?.node;
+  const [x, y] = tile && tile.isConnected && tile.offsetParent ? centerOf(tile) : [window.innerWidth / 2, window.innerHeight - 120];
+  const node = el('span', 'floaty', CHEERS[e]);
+  node.style.left = x + 'px';
+  node.style.top = y + 'px';
+  node.style.setProperty('--dx', (Math.random() * 80 - 40) + 'px');
+  node.addEventListener('animationend', () => node.remove(), { once: true });
+  $('fx').append(node);
+}
+
+// ---- Game state, as the room describes it ----
+
+const S = {
+  mode: null,            // 'solo' or 'room'
+  conn: null,
+  code: null,
+  phase: null,
+  you: null,
+  host: null,
+  length: store.get('length', 'standard'),
+  players: [],
+  watchers: 0,
+  battle: 0, limit: 0, stage: 0,
+  fighters: [], counts: [], out: [], pot: 0, wars: 0,
+  slams: {},             // seat -> [power, style] this stage
+  charging: {},          // seat -> tier, for others charging up
+  cards: {},             // seat -> { up, down } on the table this battle
+  result: null,          // the last flip
+  opensAt: 0, closesAt: 0,
+  pending: null,         // the next stage, until it opens
+  over: null,
+  mine: [],              // [power, won] for each battle you fought in
+  style: store.get('style', 0),
+  auto: false,
+  fast: false,
+  overShown: false,
+  animUntil: 0,
+  naps: 0,               // your cards that flopped over by themselves in a row
+};
+const timers = new Set();
+function later(fn, ms) {
+  const id = setTimeout(() => { timers.delete(id); fn(); }, Math.max(0, ms));
+  timers.add(id);
+  return id;
+}
+function clearLater() { for (const id of timers) clearTimeout(id); timers.clear(); }
+const pace = () => (S.fast ? FAST_PACE : 1);
+const now = () => performance.now();
+const isFighting = (seat) => S.fighters.includes(seat);
+const playerName = (seat) => (seat === S.you ? 'You' : S.players[seat] ? S.players[seat].name : 'Someone');
+const avatarOf = (seat) => AVATARS[S.players[seat]?.avatar] || '🃏';
+
+// ---- Solo games: the core, run right here against bots ----
+
+class SoloRoom {
+  constructor({ opponents, length, name, avatar, random }) {
+    this.random = random;
+    this.length = length;
+    this.players = [{ name, avatar, bot: false, online: true }];
+    for (const bot of warBotNames(opponents, random, [name])) {
+      this.players.push({ name: bot, avatar: Math.floor(random() * AVATARS.length), bot: true, online: true });
+    }
+    this.game = null;
+    this.timer = 0;
+    this.pausedAt = 0;
+  }
+  start() {
+    const made = warNewGame(this.players.map((p) => p.bot), this.length, this.random, Date.now(), pace());
+    this.game = made.game;
+    receive(this.snapshot());
+    receive(made.stage);
+    this.schedule();
+  }
+  snapshot() {
+    const g = this.game;
+    return {
+      t: 'state', code: null, phase: g.over ? 'over' : 'playing', length: this.length, you: 0, host: 0, watchers: 0,
+      players: this.players,
+      game: {
+        battle: g.battle, limit: g.limit, stage: g.stage, fighters: g.fighters, counts: g.piles.map((p) => p.length),
+        out: g.out, pot: g.pot.length, slams: g.slams, opensIn: Math.max(0, g.opensAt - Date.now()),
+        closesIn: Math.max(0, g.closesAt - Date.now()), wars: g.wars, over: g.over,
+      },
+    };
+  }
+  send(message) {
+    if (!this.game) return;
+    if (message.t === 'slam') {
+      const slam = warSlam(this.game, 0, message.power, message.style);
+      if (slam) { receive(slam); this.schedule(); }
+    } else if (message.t === 'start') {
+      this.start();
+    } else if (message.t === 'cheer') {
+      receive({ t: 'cheer', seat: 0, e: message.e });
+    }
+  }
+  schedule() {
+    clearTimeout(this.timer);
+    if (!this.game || this.game.over || this.pausedAt) return;
+    const due = warDueAt(this.game, new Set([0]));
+    this.timer = setTimeout(() => this.tick(), Math.max(0, due - Date.now()));
+  }
+  tick() {
+    if (!this.game || this.game.over || this.pausedAt) return;
+    if (Date.now() < warDueAt(this.game, new Set([0]))) { this.schedule(); return; }
+    receive(warResolve(this.game, Date.now(), this.random));
+    this.schedule();
+  }
+  setPace(p) { if (this.game) this.game.pace = p; }
+  pause() {
+    if (this.pausedAt || !this.game || this.game.over) return;
+    this.pausedAt = Date.now();
+    clearTimeout(this.timer);
+  }
+  resume() {
+    if (!this.pausedAt) return;
+    const paused = Date.now() - this.pausedAt;
+    this.pausedAt = 0;
+    this.game.opensAt += paused;
+    this.game.closesAt += paused;
+    receive({ t: 'timing', opensIn: this.game.opensAt - Date.now(), closesIn: this.game.closesAt - Date.now() });
+    this.schedule();
+  }
+  // Plays every remaining battle at once, with nobody slamming.
+  finish() {
+    if (!this.game || this.game.over) return;
+    clearTimeout(this.timer);
+    this.pausedAt = 0;
+    while (!this.game.over) warResolve(this.game, Date.now(), this.random);
+    receive(this.snapshot());
+  }
+  close() { clearTimeout(this.timer); this.game = null; }
+}
+
+// ---- Rooms: the same messages, from the War room over a WebSocket ----
+
+class NetRoom {
+  constructor(code, me) {
+    this.code = code;
+    this.me = me;
+    this.ws = null;
+    this.tries = 0;
+    this.closed = false;
+    this.open();
+  }
+  open() {
+    const ws = new WebSocket(`${roomsUrl().replace(/^http/, 'ws')}/v1/war/rooms/${this.code}`);
+    this.ws = ws;
+    ws.onopen = () => {
+      this.tries = 0;
+      setHidden($('conn'), true);
+      ws.send(JSON.stringify({ t: 'hello', ...this.me }));
+    };
+    ws.onmessage = (event) => {
+      let message;
+      try { message = JSON.parse(event.data); } catch (e) { return; }
+      if (message && typeof message.t === 'string') receive(message);
+    };
+    ws.onclose = () => {
+      if (this.closed || this.ws !== ws) return;
+      this.tries++;
+      setHidden($('conn'), false);
+      if (this.tries > 6) {
+        this.closed = true;
+        backToMenu("Lost touch with the room. Check your connection and join again.");
+        return;
+      }
+      this.timer = setTimeout(() => this.open(), Math.min(8000, 500 * 2 ** this.tries));
+    };
+  }
+  send(message) {
+    if (this.ws && this.ws.readyState === 1) this.ws.send(JSON.stringify(message));
+  }
+  close() {
+    this.closed = true;
+    clearTimeout(this.timer);
+    this.send({ t: 'leave' });
+    try { this.ws.close(1000, 'bye'); } catch (e) { /* closed */ }
+    setHidden($('conn'), true);
+  }
+}
+
+async function roomRequest(method, path) {
+  const response = await fetch(roomsUrl() + path, {
+    method, headers: method === 'POST' ? { 'Content-Type': 'text/plain' } : {}, body: method === 'POST' ? '{}' : undefined,
+  });
+  let body = {};
+  try { body = await response.json(); } catch (e) { /* not JSON */ }
+  return { status: response.status, body };
+}
+
+// ---- Messages from the room ----
+
+function receive(m) {
+  switch (m.t) {
+    case 'state': return onState(m);
+    case 'online': return onOnline(m);
+    case 'stage': return onStage(m);
+    case 'charge':
+      if (m.seat !== S.you) { S.charging[m.seat] = m.tier; renderTile(m.seat); }
+      return;
+    case 'slam': return onSlam(m);
+    case 'flip': return onFlip(m);
+    case 'cheer':
+      if (m.seat !== S.you || S.mode === 'solo') { floatCheer(m.seat, m.e); if (m.seat !== S.you) Sound.cheer(); }
+      return;
+    case 'timing':
+      S.opensAt = now() + m.opensIn;
+      S.closesAt = now() + m.closesIn;
+      return;
+    case 'error':
+      if (!$('menu').hidden) setText($('friendsErr'), m.error);
+      else if (!$('lobby').hidden) setText($('lobbyErr'), m.error);
+      else toast(m.error);
+      return;
+    default:
+  }
+}
+
+function onState(m) {
+  const wasPhase = S.phase;
+  S.code = m.code;
+  S.phase = m.phase;
+  S.you = m.you;
+  S.host = m.host;
+  S.length = m.length;
+  S.watchers = m.watchers || 0;
+  S.players = m.players.map((p) => ({ ...p }));
+  if (m.game) {
+    const g = m.game;
+    // A new game, or a snapshot of a different moment in this one.
+    const fresh = m.phase === 'playing' && (wasPhase !== 'playing' || g.battle < S.battle);
+    if (fresh) { S.mine = []; S.overShown = false; S.naps = 0; }
+    if (fresh || S.battle !== g.battle || S.stage !== g.stage) {
+      clearLater();
+      S.cards = {};
+      S.result = null;
+    }
+    Object.assign(S, {
+      battle: g.battle, limit: g.limit, stage: g.stage, fighters: g.fighters.slice(), counts: g.counts.slice(),
+      out: g.out.slice(), pot: g.pot, wars: g.wars, over: g.over, pending: null,
+    });
+    S.slams = {};
+    for (const [seat, slam] of Object.entries(g.slams || {})) S.slams[seat] = slam.slice(0, 2);
+    S.opensAt = now() + g.opensIn;
+    S.closesAt = now() + g.closesIn;
+    S.charging = {};
+  } else {
+    Object.assign(S, { battle: 0, stage: 0, fighters: [], counts: [], out: [], over: null, cards: {}, result: null, slams: {} });
+  }
+  showScreen();
+  renderAll();
+  if (S.phase === 'over' && S.over) { showOver(); renderOverButtons(); }
+}
+
+function onOnline(m) {
+  const online = new Set(m.online);
+  S.players.forEach((p, seat) => { if (!p.bot) p.online = online.has(seat); });
+  S.host = m.host;
+  S.watchers = m.watchers || 0;
+  renderAll();
+  if (S.phase === 'over') renderOverButtons();
+}
+
+function onStage(m) {
+  S.pending = { ...m, slams: {} };
+  S.limit = m.limit;
+  S.opensAt = now() + m.opensIn;
+  S.closesAt = now() + m.closesIn;
+  later(openStage, m.opensIn);
+  for (const [seat, power, style, delay] of m.bots) {
+    later(() => { S.charging[seat] = Math.min(WAR.TIERS - 1, tierOf(power) + 1); renderTile(seat); }, m.opensIn + Math.max(0, delay - 450 * pace()));
+    later(() => receive({ t: 'slam', seat, power, style }), m.opensIn + delay);
+  }
+}
+
+// The stage the room opened: clears the table for a new battle, or brings the
+// fighters forward for a war.
+function openStage() {
+  const m = S.pending;
+  if (!m) return;
+  S.pending = null;
+  S.battle = m.battle;
+  S.stage = m.stage;
+  S.fighters = m.fighters.slice();
+  S.slams = m.slams;
+  S.charging = {};
+  if (m.stage === 0) {
+    S.cards = {};
+    S.result = null;
+    S.pot = 0;
+    const final = m.battle === m.limit && m.limit < WAR.LENGTHS.total;
+    banner(final ? 'FINAL BATTLE' : '', false);
+    setText($('caption'), isFighting(S.you) ? (final ? 'Last chance. Slam like it matters. (It does not.)' : pick(OPEN_LINES)) : '');
+  }
+  renderAll();
+  if (S.auto && isFighting(S.you)) later(autoSlam, (250 + Math.random() * 700) * pace());
+}
+
+function onSlam(m) {
+  // A slam can beat this page to the next stage opening, by a few milliseconds.
+  const target = S.pending && S.pending.fighters.includes(m.seat) ? S.pending.slams : S.slams;
+  if (target[m.seat]) return;
+  target[m.seat] = [m.power, m.style];
+  delete S.charging[m.seat];
+  if (m.seat === S.you) return;
+  renderTile(m.seat);
+  if (target !== S.slams) return;
+  const tile = tiles.get(m.seat);
+  if (tile && tile.node.offsetParent) {
+    const [x, y] = centerOf(tile.slot);
+    burst(x, y, m.style, m.power, S.players.length > 6);
+  }
+  if (S.players.length <= 6 || m.power >= 175) Sound.slam(m.power, m.style, true);
+  if (S.players.length <= 4 && m.power >= 145) shake(m.power / 3);
+}
+
+const OPEN_LINES = [
+  'Hold the button to charge your slam. It changes nothing.',
+  'Slam it like you mean it.', 'Charge up. The cards are watching.',
+  'Remember: power is a state of mind.', 'A good slam is its own reward. Literally its only reward.',
+  'Wind up. Let it rip.', 'The table can take it.',
+];
+
+function onFlip(m) {
+  const wait = S.animUntil - now();
+  if (wait > 0) { later(() => onFlip(m), wait); return; }
+  if (S.pending && S.pending.battle === m.battle && S.pending.stage === m.stage) openStage();
+  S.result = m;
+  S.counts = m.counts.slice();
+  S.pot = m.pot;
+  for (const [seat, down, up, power, style] of m.plays) {
+    const before = S.cards[seat];
+    S.cards[seat] = { up, down: (before ? before.down : 0) + down, stage: m.stage };
+    if (!S.slams[seat]) S.slams[seat] = [power, style];
+  }
+  if (m.winner !== null) recordResult(m);
+  const mine = m.plays.find((p) => p[0] === S.you);
+  if (mine) S.naps = mine[5] ? S.naps + 1 : 0;
+  if (m.out) for (const seat of m.out) S.out[seat] = m.battle;
+  S.charging = {};
+  Sound.flip();
+  narrate(m);
+  if (m.next) onStage(m.next);
+  if (m.over) {
+    S.over = m.over;
+    S.phase = 'over';
+    later(showOver, 1600 * pace());
+  }
+  renderAll();
+}
+
+function narrate(m) {
+  const me = S.you;
+  const mine = m.plays.find((p) => p[0] === me);
+  if (m.winner === null) {
+    const n = m.next.fighters.length;
+    const names = m.next.fighters.map(playerName);
+    const word = cardName(m.plays.find((p) => p[0] === m.tied[0])[2]);
+    banner(n === 2 ? (m.stage ? 'DOUBLE WAR!' : 'WAR!') : `${n}-WAY WAR!`, true);
+    const who = names.length > 3 ? `${names.slice(0, 3).join(', ')} and ${names.length - 3} more` : names.join(' and ');
+    setText($('caption'), `${who} ${names.length === 2 ? 'both' : 'all'} turned over ${aOrAn(word)}. Three face down, one face up.`);
+    Sound.war();
+    return;
+  }
+  const winCard = m.plays.find((p) => p[0] === m.winner)[2];
+  const winner = playerName(m.winner);
+  const takes = m.stage ? `the whole pot of ${m.pot}` : plural(m.pot, 'card');
+  if (m.winner === me) {
+    const [power, , auto] = mine.slice(3);
+    banner(m.stage ? 'WAR WON!' : 'YOU WIN!', false);
+    const lines = auto ? [`You dozed off, your ${cardName(winCard)} flopped over, and it won ${takes}. Effort is overrated.`]
+      : m.gods ? [`Nobody had cards left to fight with. The war gods smile on you: ${takes}.`]
+      : !m.tied.includes(me) ? [`The others ran out of cards mid-war. You take ${takes}.`]
+      : power < 30 ? [`A gentle ${tierName(power)}, and your ${cardName(winCard)} takes ${takes}. Finesse.`, `You barely touched it. Your ${cardName(winCard)} wins ${takes} anyway.`]
+      : [`${tierName(power).toUpperCase()}! Your ${cardName(winCard)} takes ${takes}. The slam had nothing to do with it.`, `Your ${cardName(winCard)} wins ${takes}. Scientists confirm the ${tierName(power)} was irrelevant.`];
+    setText($('caption'), pick(lines));
+    Sound.win();
+    gain(m.pot);
+    return;
+  }
+  if (mine) {
+    const [power, , auto] = mine.slice(3);
+    banner(m.out && m.out.includes(me) ? 'OUT OF CARDS' : '', false);
+    const yours = cardName(mine[2]);
+    const lines = auto ? [`You dozed off and your ${yours} flopped over. ${winner}'s ${cardName(winCard)} takes ${takes}.`]
+      : m.gods ? [`Nobody had cards left to fight with. The war gods pick ${winner}.`]
+      : power >= 115 ? [`That ${tierName(power)} registered on seismographs. Your ${yours} still loses to ${aOrAn(cardName(winCard))}.`, `An incredible ${tierName(power)}. Sadly, ${yours}s are not aces.`]
+      : [`A respectable ${tierName(power)}. ${winner}'s ${cardName(winCard)} takes ${takes}.`, `Your ${yours} loses to ${winner}'s ${cardName(winCard)}. Slam harder? (It won't help.)`];
+    setText($('caption'), pick(lines));
+    Sound.lose();
+    return;
+  }
+  banner('', false);
+  const how = m.gods ? 'The war gods pick' : '';
+  setText($('caption'), how ? `${how} ${winner}, who takes ${takes}.` : `${winner} ${m.winner === me ? 'take' : 'takes'} ${takes} with ${aOrAn(cardName(winCard))}.`);
+}
+
+function gain(n) {
+  const node = $('gain');
+  setText(node, `+${n}`);
+  node.classList.remove('show');
+  void node.offsetWidth;
+  node.classList.add('show');
+}
+
+// ---- Drawing the table ----
+
+const tiles = new Map();  // seat -> { node, slot, name, count, stat, card }
+let tileKey = '';
+
+function others() {
+  return S.players.map((_, seat) => seat).filter((seat) => seat !== S.you);
+}
+
+function buildTiles() {
+  const seats = others();
+  const key = seats.map((s) => `${s}:${S.players[s].name}:${S.players[s].avatar}`).join('|');
+  if (key === tileKey) return;
+  tileKey = key;
+  tiles.clear();
+  const box = $('opponents');
+  box.replaceChildren();
+  const n = seats.length;
+  const size = n <= 1 ? 'size-l' : n <= 3 ? 'size-m' : n <= 8 ? 'size-s' : 'size-xs';
+  box.className = size;
+  box.style.setProperty('--cols', String(n <= 4 ? n : Math.min(4, Math.ceil(n / 2))));
+  for (const seat of seats) {
+    const p = S.players[seat];
+    const node = el('div', 'tile');
+    const slot = el('div', 'tslot');
+    const card = cardEl(null);
+    slot.append(card);
+    const info = el('div', 'tname');
+    info.textContent = `${AVATARS[p.avatar] || '🃏'} ${p.name}`;
+    const meta = el('div', 'tmeta');
+    const count = el('span', 'tcount', '');
+    const stat = el('span', 'tstat', '');
+    meta.append(count, stat);
+    node.append(slot, info, meta);
+    node.title = p.bot ? `${p.name} (bot)` : p.name;
+    box.append(node);
+    tiles.set(seat, { node, slot, count, stat, card, cardKey: 'empty', downs: null });
+  }
+}
+
+// What's in front of a player: the card they turned over, or face-down cards
+// they've slammed but nobody has seen yet.
+function cardKeyFor(seat) {
+  const c = S.cards[seat];
+  if (S.phase === 'playing' && isFighting(seat) && S.slams[seat] && !S.pending && (!c || c.stage < S.stage)) return 'back';
+  return c ? String(c.up) : 'empty';
+}
+
+function renderTile(seat) {
+  const t = tiles.get(seat);
+  if (!t) return;
+  const p = S.players[seat];
+  const out = S.phase !== 'lobby' && S.battle > 0 && (S.out[seat] > 0);
+  const fighting = isFighting(seat) && S.phase === 'playing';
+  const r = S.result;
+  setClass(t.node, 'out', out);
+  setClass(t.node, 'offline', p && !p.bot && !p.online);
+  setClass(t.node, 'war', fighting && S.stage > 0);
+  setClass(t.node, 'won', r && r.winner === seat && S.cards[seat]);
+  setClass(t.node, 'slammed', Boolean(S.slams[seat]));
+  const charging = S.charging[seat];
+  setClass(t.node, 'charging', charging !== undefined && !S.slams[seat]);
+  if (charging !== undefined && t.glow !== charging) { t.glow = charging; t.node.style.setProperty('--glow', String(2 + charging * 2)); }
+  setText(t.count, S.battle ? String(S.counts[seat] ?? 0) : '');
+  if (S.battle) setAttr(t.count, 'title', plural(S.counts[seat] ?? 0, 'card'));
+  const slam = S.slams[seat];
+  const label = out ? 'out' : slam ? `${STYLES[slam[1]]?.[0] || ''} ${tierName(slam[0])}`.trim()
+    : charging !== undefined ? 'charging…' : '';
+  setText(t.stat, label);
+  const key = cardKeyFor(seat);
+  if (key !== t.cardKey) {
+    const card = cardEl(key === 'back' ? 'back' : key === 'empty' ? null : Number(key));
+    if (key !== 'back' && key !== 'empty' && !reduceMotion.matches) card.classList.add('flipin');
+    t.card.replaceWith(card);
+    t.card = card;
+    t.cardKey = key;
+  }
+  setClass(t.card, 'dim', r && r.winner !== null && r.winner !== seat && S.cards[seat]);
+  const downs = S.cards[seat] ? S.cards[seat].down : 0;
+  if (downs && !t.downs) { t.downs = el('span', 'downs'); t.slot.append(t.downs); }
+  if (t.downs) {
+    setHidden(t.downs, !downs);
+    setText(t.downs, `+${downs}`);
+  }
+}
+
+function renderMe() {
+  const me = S.you;
+  const watching = me === null;
+  const out = !watching && S.battle > 0 && S.out[me] > 0;
+  setHidden($('myPile'), watching);
+  setHidden($('mySlot'), watching || out);
+  const note = $('meNote');
+  setHidden(note, !(watching || out));
+  if (watching) setText(note, S.phase === 'over' ? 'Watching. You’re in the next game.' : 'You’re watching this one. You’ll be dealt into the next game.');
+  else if (out) setText(note, S.mode === 'solo' ? '💀 Out of cards! Speed things up, or skip to the end from the menu.' : '💀 Out of cards! Cheer from the sidelines.');
+  if (watching) return;
+  const p = S.players[me];
+  const count = S.counts[me] ?? 0;
+  setClass($('myPile'), 'empty', S.battle > 0 && count === 0);
+  const label = $('myLabel');
+  const top = `${AVATARS[p.avatar] || '🃏'} ${p.name}`;
+  const sub = S.battle ? plural(count, 'card') : '';
+  if (label.dataset.v !== top + sub) {
+    label.dataset.v = top + sub;
+    label.replaceChildren(document.createTextNode(top), el('small', '', sub));
+  }
+  const slot = $('mySlot');
+  const c = S.cards[me];
+  const key = cardKeyFor(me);
+  if (slot.dataset.key !== key) {
+    const card = cardEl(key === 'back' ? 'back' : key === 'empty' ? null : Number(key));
+    if (key === 'back' && !reduceMotion.matches) card.classList.add('slam');
+    else if (key !== 'empty' && !reduceMotion.matches) card.classList.add('flipin');
+    slot.replaceChildren(card);
+    slot.dataset.key = key;
+  }
+  setClass(slot, 'won', S.result && S.result.winner === me && c);
+  const downs = c ? c.down : 0;
+  let badge = slot.querySelector('.downs');
+  if (downs && !badge) { badge = el('span', 'downs'); slot.append(badge); }
+  if (badge) setText(badge, `+${downs} face down`);
+}
+
+function renderWarRow() {
+  const row = $('warRow');
+  const war = S.phase === 'playing' && S.stage > 0;
+  const fighters = war ? S.fighters.filter((s) => s !== S.you) : [];
+  const key = war ? `${S.battle}.${S.stage}:${fighters.map((s) => `${s}=${S.cards[s] ? S.cards[s].up : ''}`).join(',')}` : '';
+  if (row.dataset.key === key) return;
+  row.dataset.key = key;
+  row.replaceChildren();
+  if (!war || S.players.length <= 4) return;
+  for (const seat of fighters.slice(0, 6)) {
+    const box = el('div', 'wf');
+    const c = S.cards[seat];
+    box.append(cardEl(c && c.up !== undefined ? c.up : 'back'), el('span', '', `${avatarOf(seat)} ${playerName(seat)}`));
+    row.append(box);
+  }
+  if (fighters.length > 6) row.append(el('span', 'more', `+${fighters.length - 6}`));
+}
+
+function renderBar() {
+  const playing = S.phase === 'playing' || S.phase === 'over';
+  setText($('battleNum'), playing ? (S.stage > 0 && S.phase === 'playing' ? `Battle ${fmt(S.battle)} · War ${S.stage}` : `Battle ${fmt(S.battle)}`) : 'War!');
+  const alive = S.counts.filter(Boolean).length;
+  const limit = S.limit >= WAR.LENGTHS.total ? 'Total war' : `of ${S.limit}`;
+  const sub = playing ? `${limit} · ${alive} of ${S.players.length} still in${S.watchers ? ` · ${S.watchers} watching` : ''}` : '';
+  setText($('battleSub'), sub);
+  const tag = $('roomTag');
+  setHidden(tag, !S.code);
+  if (S.code) setText(tag, S.code);
+}
+
+function renderControls() {
+  const fighting = S.phase === 'playing' && S.you !== null && isFighting(S.you) && !S.pending;
+  const can = fighting && !S.slams[S.you] && now() >= S.opensAt;
+  const btn = $('slamBtn');
+  if (btn.disabled !== !can && !charge) btn.disabled = !can;
+  if (!charge) {
+    let text = 'Hold to slam';
+    if (S.phase !== 'playing' || S.you === null) text = S.phase === 'over' ? 'Game over' : 'Watching';
+    else if (S.battle && S.out[S.you]) text = 'Out of cards';
+    else if (S.slams[S.you] && fighting) text = `${tierName(S.slams[S.you][0])}!`;
+    else if (S.pending) text = S.pending.stage > 0 && !S.pending.fighters.includes(S.you) ? 'War in progress…' : 'Get ready…';
+    else if (!fighting) text = 'War in progress…';
+    else if (now() < S.opensAt) text = 'Get ready…';
+    else if (S.naps >= WAR.NAPS) text = 'You dozed off. Slam to wake up!';
+    else {
+      const left = Math.ceil((S.closesAt - now()) / 1000);
+      text = left <= 4 ? `Slam! ${Math.max(0, left)}…` : S.stage > 0 ? 'Hold to slam · WAR' : 'Hold to slam';
+    }
+    setText($('slamText'), text);
+    if ($('meterFill').style.width !== '0%') $('meterFill').style.width = '0%';
+  }
+  const st = STYLES[S.style] || STYLES[0];
+  setText($('styleBtn'), `${st[0]} ${st[1]}`);
+  setAttr($('autoBtn'), 'aria-pressed', String(S.auto));
+  setHidden($('autoBtn'), S.you === null);
+  setHidden($('styleBtn'), S.you === null);
+  const fastShown = S.mode === 'solo';
+  setHidden($('fastBtn'), !fastShown);
+  setAttr($('fastBtn'), 'aria-pressed', String(S.fast));
+  setHidden($('cheers'), S.mode !== 'room');
+}
+
+function renderAll() {
+  buildTiles();
+  for (const seat of tiles.keys()) renderTile(seat);
+  renderMe();
+  renderWarRow();
+  renderBar();
+  renderControls();
+  document.documentElement.style.setProperty('--pace', String(pace()));
+}
+
+// A quiet tick for the slam button's countdown and the stage opening, writing
+// only what changed.
+setInterval(() => { if (S.phase === 'playing' && !document.hidden) renderControls(); }, 200);
+
+// ---- Slamming ----
+
+let charge = null;  // { start, power, tier, pointer }
+
+function canSlam() {
+  return S.phase === 'playing' && S.you !== null && isFighting(S.you) && !S.pending && !S.slams[S.you] && now() >= S.opensAt;
+}
+
+function chargePower(ms) {
+  const t = ms / 1000;
+  return Math.min(WAR.MAX_POWER, t < 1.2 ? (t / 1.2) * 100 : 100 + (t - 1.2) * 42);
+}
+
+function startCharge(pointer) {
+  Sound.unlock();
+  if (charge || !canSlam()) return;
+  charge = { start: now(), power: 0, tier: 0, pointer };
+  $('slamBtn').classList.add('held');
+  $('me').classList.add('charging');
+  Sound.startCharge();
+  requestAnimationFrame(chargeFrame);
+}
+
+function chargeFrame() {
+  if (!charge) return;
+  if (!canSlam()) { cancelCharge(); return; }
+  const power = Math.round(chargePower(now() - charge.start));
+  charge.power = power;
+  const tier = tierOf(power);
+  $('meterFill').style.width = `${(power / WAR.MAX_POWER) * 100}%`;
+  $('me').style.setProperty('--power', String(power));
+  setText($('slamText'), power >= WAR.MAX_POWER ? 'THE METER BROKE' : TIERS[tier][1].toUpperCase());
+  if (tier > charge.tier) {
+    charge.tier = tier;
+    Sound.blip(tier);
+    if (S.mode === 'room') S.conn.send({ t: 'charge', tier });
+  }
+  Sound.setCharge(power);
+  if (power >= WAR.MAX_POWER && now() - charge.start > 4200) { releaseCharge(); return; }
+  requestAnimationFrame(chargeFrame);
+}
+
+function cancelCharge() {
+  charge = null;
+  Sound.stopCharge();
+  $('slamBtn').classList.remove('held');
+  $('me').classList.remove('charging');
+  renderControls();
+}
+
+function releaseCharge() {
+  if (!charge) return;
+  const power = Math.round(chargePower(now() - charge.start));
+  cancelCharge();
+  slam(power);
+}
+
+function slam(power) {
+  if (!canSlam()) return;
+  const style = S.style;
+  S.slams[S.you] = [power, style];
+  S.mine.push([power, null]);
+  S.naps = 0;
+  S.conn.send({ t: 'slam', power, style });
+  S.animUntil = now() + (reduceMotion.matches ? 0 : 420 * pace());
+  renderMe();
+  renderControls();
+  later(() => {
+    const [x, y] = centerOf($('mySlot'));
+    burst(x, y, style, power, false);
+    shake(power);
+    Sound.slam(power, style, false);
+    banner(`${tierName(power).toUpperCase()}!`, false);
+  }, reduceMotion.matches ? 0 : 300 * pace());
+  if (power >= WAR.MAX_POWER) bump('cosmic');
+}
+
+function autoSlam() {
+  if (!S.auto || !canSlam()) return;
+  slam(20 + Math.floor(Math.random() * 170));
+}
+
+// Your battles, for the science at the end: the power you slammed with, and
+// whether you won.
+// Cards that flopped over by themselves don't count.
+function recordResult(m) {
+  for (const x of S.mine) if (x[1] === null) x[1] = m.winner === S.you;
+}
+
+// ---- Screens ----
+
+function showScreen() {
+  const playing = S.phase === 'playing' || S.phase === 'over';
+  setText($('friendsErr'), '');
+  setHidden($('app'), !playing);
+  setHidden($('menu'), true);
+  setHidden($('lobby'), S.phase !== 'lobby');
+  if (S.phase !== 'over') setHidden($('over'), true);
+  if (S.phase === 'lobby') renderLobby();
+}
+
+function backToMenu(message) {
+  if (S.conn) S.conn.close();
+  S.conn = null;
+  S.mode = null;
+  S.phase = null;
+  S.code = null;
+  clearLater();
+  cancelCharge();
+  tileKey = '';
+  for (const id of ['app', 'lobby', 'pause', 'over']) setHidden($(id), true);
+  setHidden($('menu'), false);
+  history.replaceState(null, '', location.pathname + (params.get('rooms') ? `?rooms=${encodeURIComponent(params.get('rooms'))}` : '') + location.hash);
+  renderMenu();
+  setText($('friendsErr'), message || '');
+}
+
+function renderLobby() {
+  setText($('lobbyCode'), S.code || '----');
+  const people = $('people');
+  people.replaceChildren();
+  S.players.forEach((p, seat) => {
+    const chip = el('span', `person${p.bot ? ' bot' : ''}${p.online ? '' : ' offline'}${seat === S.you ? ' me' : ''}`);
+    chip.append(el('b', '', AVATARS[p.avatar] || '🃏'), el('span', '', `${p.name}${seat === S.host ? ' (host)' : ''}${p.bot ? ' (bot)' : ''}`));
+    people.append(chip);
+  });
+  const humans = S.players.filter((p) => !p.bot).length;
+  const bots = S.players.length - humans;
+  setText($('peopleTitle'), `Players (${S.players.length} of ${WAR.MAX_PLAYERS})`);
+  const host = S.you !== null && S.you === S.host;
+  setHidden($('hostControls'), !host);
+  setText($('botCount'), String(bots));
+  $('botLess').disabled = !bots;
+  $('botMore').disabled = S.players.length >= WAR.MAX_PLAYERS;
+  $('botFill').disabled = S.players.length >= WAR.MAX_PLAYERS;
+  renderLengths($('roomLength'), S.length, !host);
+  const hostName = S.host !== null ? S.players[S.host]?.name : null;
+  setText($('lobbyNote'), host
+    ? (S.players.length < 2 ? 'Waiting for friends. Or add some bots.' : `${plural(S.players.length, 'player')}, ${plural(Math.max(1, Math.ceil(S.players.length / 2)), 'deck')}. Everyone gets about 26 cards.`)
+    : S.you === null ? 'This room is full. You can watch.' : `Waiting for ${hostName || 'the host'} to deal.`);
+  setHidden($('dealBtn'), !host);
+  $('dealBtn').disabled = S.players.length < 2;
+}
+
+function renderLengths(box, value, locked) {
+  if (!box.childElementCount) {
+    for (const [key, [name, sub]] of Object.entries(LENGTH_LABELS)) {
+      const b = el('button', '');
+      b.type = 'button';
+      b.dataset.length = key;
+      b.append(document.createTextNode(name), el('small', '', sub));
+      box.append(b);
+    }
+  }
+  for (const b of box.children) {
+    setAttr(b, 'aria-pressed', String(b.dataset.length === value));
+    if (b.disabled !== locked) b.disabled = locked;
+  }
+}
+
+function showOver() {
+  if (S.overShown || !S.over) return;
+  S.overShown = true;
+  cancelCharge();
+  const o = S.over;
+  const me = S.you;
+  const won = me !== null && o.winners.includes(me);
+  const shared = o.winners.length > 1;
+  const names = o.winners.map(playerName);
+  setText($('overTitle'), won ? (shared ? 'Shared victory!' : 'Victory!') : shared ? 'A shared victory' : `${names[0]} wins!`);
+  const alive = o.counts.filter(Boolean).length;
+  setText($('overSub'), alive <= 1
+    ? `${names[0]} ${won ? 'hold' : 'holds'} every card after ${plural(o.battles, 'battle')}.`
+    : `After ${plural(o.battles, 'battle')}, the most cards wins${shared ? `, and ${names.join(' and ')} tied` : ''}.`);
+
+  const list = $('standings');
+  list.replaceChildren();
+  const rows = o.order.slice(0, 8);
+  if (me !== null && !rows.includes(me)) rows.push(me);
+  for (const seat of rows) {
+    const li = el('li', `${o.winners.includes(seat) ? 'win' : ''}${seat === me ? ' me' : ''}`);
+    const place = o.order.indexOf(seat) + 1;
+    li.append(el('span', 'pl', `#${place}`), el('span', 'nm', `${avatarOf(seat)} ${playerName(seat)}`),
+      el('span', '', o.counts[seat] ? plural(o.counts[seat], 'card') : `out in battle ${o.out[seat]}`));
+    list.append(li);
+  }
+  if (o.order.length > rows.length) list.append(el('li', 'dim', `…and ${o.order.length - rows.length} more`));
+
+  const stats = $('overStats');
+  stats.replaceChildren();
+  const deep = ['', 'Single', 'Double', 'Triple', 'Quadruple'][o.deepest] || `${o.deepest}×`;
+  const cell = (big, small) => { const d = el('div'); d.append(el('b', '', big), document.createTextNode(small)); stats.append(d); };
+  cell(fmt(o.battles), 'battles');
+  cell(fmt(o.wars), o.wars === 1 ? 'war' : 'wars');
+  cell(o.biggest ? `${o.biggest}-way` : '—', 'biggest war');
+  cell(o.deepest ? deep : '—', 'deepest war');
+
+  $('science').replaceChildren(...science());
+  const life = store.get('stats', { games: 0, wins: 0, slams: 0, best: 0 });
+  life.games++;
+  if (won) life.wins++;
+  life.slams += S.mine.length;
+  life.best = Math.max(life.best, ...S.mine.map((x) => x[0]), 0);
+  store.set('stats', life);
+  const unlocked = unlockStyle();
+  setHidden($('unlock'), !unlocked);
+  if (unlocked !== null) setText($('unlock'), `New power-up: ${STYLES[unlocked][0]} ${STYLES[unlocked][1]} (${STYLES[unlocked][2]}, no effect). Equip it from the power-ups button.`);
+
+  renderOverButtons();
+  setHidden($('over'), false);
+  setHidden($('pause'), true);
+  if (won) Sound.win();
+}
+
+// Whoever runs the room deals the next game; everyone else waits for them.
+function renderOverButtons() {
+  const me = S.you;
+  const host = S.mode === 'solo' || (me !== null ? me === S.host : S.host === null);
+  setText($('againBtn'), S.mode === 'solo' ? 'Play again' : 'Deal again');
+  setHidden($('againBtn'), !host);
+  setText($('overMenuBtn'), S.mode === 'room' ? 'Leave' : 'Menu');
+  setText($('overNote'), host ? '' : `Waiting for ${S.players[S.host]?.name || 'the host'} to deal again…`);
+}
+
+// How much your slams mattered, measured.
+function science() {
+  const done = S.mine.filter((x) => x[1] !== null);
+  const nodes = [];
+  if (S.you === null || done.length < 4) {
+    nodes.push(document.createTextNode('Not enough slams to measure how little they matter. Play a longer game.'));
+    return nodes;
+  }
+  const wins = done.filter((x) => x[1]);
+  const losses = done.filter((x) => !x[1]);
+  const avg = (list) => (list.length ? Math.round(list.reduce((a, x) => a + x[0], 0) / list.length) : null);
+  const xs = done.map((x) => x[0]);
+  const ys = done.map((x) => (x[1] ? 1 : 0));
+  const mean = (v) => v.reduce((a, b) => a + b, 0) / v.length;
+  const mx = mean(xs), my = mean(ys);
+  let sxy = 0, sxx = 0, syy = 0;
+  xs.forEach((x, i) => { sxy += (x - mx) * (ys[i] - my); sxx += (x - mx) ** 2; syy += (ys[i] - my) ** 2; });
+  const r = sxx && syy ? sxy / Math.sqrt(sxx * syy) : 0;
+  const best = Math.max(...xs);
+  nodes.push(el('b', '', 'The science of slamming. '));
+  nodes.push(document.createTextNode(
+    `You slammed ${plural(done.length, 'time')}, up to a ${tierName(best)}. `
+    + `Average power when you won: ${avg(wins) ?? '—'}. When you lost: ${avg(losses) ?? '—'}. `
+    + `Correlation between slam power and winning: r = ${r.toFixed(2)}. `
+    + (Math.abs(r) < 0.3 ? 'As promised, it changes nothing.' : 'A coincidence. The rules never even look at it.'),
+  ));
+  return nodes;
+}
+
+function unlockStyle() {
+  const have = new Set(store.get('styles', [0]));
+  const locked = STYLES.map((_, i) => i).filter((i) => !have.has(i));
+  if (!locked.length) return null;
+  const next = locked[Math.floor(Math.random() * locked.length)];
+  have.add(next);
+  store.set('styles', [...have]);
+  return next;
+}
+
+function bump(what) {
+  if (what === 'cosmic' && !store.get('cosmic', false)) {
+    store.set('cosmic', true);
+    toast('Achievement: you broke the slam meter. Nothing happened.');
+  }
+}
+
+// ---- Menu ----
+
+let menuLength = store.get('length', 'standard');
+let avatar = store.get('avatar', Math.floor(Math.random() * AVATARS.length));
+
+function renderMenu() {
+  const n = Number($('oppRange').value);
+  setText($('oppLabel'), `${plural(n, 'opponent')} · ${plural(Math.ceil((n + 1) / 2), 'deck')}`);
+  renderLengths($('soloLength'), menuLength, false);
+  setText($('soloNote'), menuLength === 'total' && n > 3
+    ? `With ${n + 1} players, total war could take thousands of battles. Autopilot and Fast help.`
+    : n >= 20 ? 'A big table: expect a lot of many-way wars.' : '');
+  const rooms = Boolean(roomsUrl());
+  setHidden($('friends'), !rooms);
+  const box = $('avatars');
+  if (!box.childElementCount) {
+    AVATARS.forEach((a, i) => {
+      const b = el('button', '', a);
+      b.type = 'button';
+      b.dataset.i = String(i);
+      b.setAttribute('aria-label', `Animal ${i + 1}`);
+      box.append(b);
+    });
+  }
+  for (const b of box.children) setAttr(b, 'aria-pressed', String(Number(b.dataset.i) === avatar));
+  const life = store.get('stats', null);
+  setText($('lifetime'), life && life.games
+    ? `${plural(life.games, 'game')} played, ${plural(life.wins, 'win')}, ${fmt(life.slams)} slams. Mightiest: ${tierName(life.best)}.`
+    : 'Slam power is cosmetic. The cards decide everything. That is the joke, and also the rules.');
+  renderSound();
+  const titleCards = document.querySelector('.title-cards');
+  if (!titleCards.childElementCount) titleCards.append(cardEl(12), cardEl(25 + 13), cardEl(11 + 13));
+}
+
+function myName() {
+  const name = $('nameInput').value.trim().replace(/\s+/g, ' ');
+  return name;
+}
+
+function startSolo() {
+  Sound.unlock();
+  const seed = params.get('seed');
+  const random = seed ? seeded(Number(seed) || 1) : Math.random;
+  const opponents = Number($('oppRange').value);
+  store.set('length', menuLength);
+  store.set('opponents', opponents);
+  S.mode = 'solo';
+  S.fast = false;
+  S.battle = 0;
+  S.phase = null;
+  tileKey = '';
+  S.conn = new SoloRoom({ opponents, length: menuLength, name: 'You', avatar, random });
+  S.conn.start();
+}
+
+const NAME_OK = /^[\p{L}\p{N}][\p{L}\p{N} '&.,!?-]{0,15}$/u;
+
+async function startRoom(code) {
+  Sound.unlock();
+  const name = myName();
+  const err = $('friendsErr');
+  if (!NAME_OK.test(name)) { setText(err, 'Pick a name first: up to 16 letters or numbers.'); $('nameInput').focus(); return; }
+  store.set('name', name);
+  store.set('avatar', avatar);
+  setText(err, code ? 'Finding the room…' : 'Starting a room…');
+  try {
+    if (!code) {
+      const made = await roomRequest('POST', '/v1/war/rooms');
+      if (made.status !== 201) { setText(err, made.body.error ? `Couldn’t start a room: ${made.body.error}.` : 'Couldn’t start a room. Try again in a bit.'); return; }
+      code = made.body.code;
+    } else {
+      const found = await roomRequest('GET', `/v1/war/rooms/${code}`);
+      if (found.status === 404) { setText(err, `There’s no room ${code}. Check the code?`); return; }
+      if (found.status !== 200) { setText(err, 'The War server is unavailable right now. Try solo instead.'); return; }
+    }
+  } catch (e) {
+    setText(err, 'The War server is unavailable right now. Try solo instead.');
+    return;
+  }
+  setText(err, '');
+  let token = store.get('token', null);
+  if (!token) { token = randomToken(); store.set('token', token); }
+  S.mode = 'room';
+  S.fast = false;
+  S.battle = 0;
+  S.phase = null;
+  tileKey = '';
+  const query = new URLSearchParams(location.search);
+  query.set('room', code);
+  history.replaceState(null, '', `${location.pathname}?${query}${location.hash}`);
+  setText(err, 'Connecting…');
+  S.conn = new NetRoom(code, { name, avatar, token });
+  setText($('lobbyCode'), code);
+}
+
+function inviteUrl() {
+  const url = new URL(location.pathname, location.origin);
+  url.searchParams.set('room', S.code);
+  if (params.get('rooms')) url.searchParams.set('rooms', params.get('rooms'));
+  return url.toString();
+}
+
+async function share() {
+  const url = inviteUrl();
+  const text = `Join my game of War! Room ${S.code}`;
+  try {
+    if (navigator.share && matchMedia('(pointer: coarse)').matches) { await navigator.share({ title: 'War: Slam Edition', text, url }); return; }
+    await navigator.clipboard.writeText(url);
+    setText($('shareNote'), 'Invite link copied. Paste it to your friends.');
+  } catch (e) {
+    setText($('shareNote'), `Share this link: ${url}`);
+  }
+}
+
+// ---- Wiring ----
+
+function openPause() {
+  if (S.mode === 'solo') S.conn.pause();
+  cancelCharge();
+  const solo = S.mode === 'solo';
+  setText($('pauseTitle'), solo ? 'Paused' : 'Menu');
+  setText($('pauseNote'), solo ? 'The war waits for you.' : 'The game carries on without you while you’re here: your cards flop over by themselves.');
+  setHidden($('skipBtn'), !solo || !S.conn.game || S.phase !== 'playing');
+  setText($('quitBtn'), solo ? 'Quit to menu' : 'Leave the room');
+  setHidden($('pause'), false);
+}
+
+function closePause() {
+  setHidden($('pause'), true);
+  if (S.mode === 'solo' && S.conn) S.conn.resume();
+}
+
+function init() {
+  const stored = store.get('styles', [0]);
+  if (!stored.includes(S.style)) S.style = 0;
+  $('oppRange').value = String(store.get('opponents', 1));
+  $('nameInput').value = store.get('name', '') || (() => { try { return JSON.parse(localStorage.getItem('games.initials')) || ''; } catch (e) { return ''; } })();
+  renderMenu();
+  const code = (params.get('room') || '').toUpperCase();
+  if (/^[A-HJKMNP-Z2-9]{4}$/.test(code) && roomsUrl()) {
+    $('codeInput').value = code;
+    setText($('joinBtn'), `Join room ${code}`);
+    setText($('friendsErr'), $('nameInput').value ? '' : 'Pick a name, then join.');
+  }
+
+  $('oppRange').addEventListener('input', renderMenu);
+  $('soloLength').addEventListener('click', (e) => {
+    const b = e.target.closest('button');
+    if (b) { menuLength = b.dataset.length; renderMenu(); }
+  });
+  $('roomLength').addEventListener('click', (e) => {
+    const b = e.target.closest('button');
+    if (b && !b.disabled) S.conn.send({ t: 'length', length: b.dataset.length });
+  });
+  $('avatars').addEventListener('click', (e) => {
+    const b = e.target.closest('button');
+    if (b) { avatar = Number(b.dataset.i); store.set('avatar', avatar); renderMenu(); }
+  });
+  $('soloBtn').addEventListener('click', startSolo);
+  $('newRoomBtn').addEventListener('click', () => startRoom(null));
+  $('joinBtn').addEventListener('click', () => {
+    const code = $('codeInput').value.trim().toUpperCase();
+    if (!/^[A-HJKMNP-Z2-9]{4}$/.test(code)) { setText($('friendsErr'), 'Room codes are four letters and numbers.'); return; }
+    startRoom(code);
+  });
+  $('codeInput').addEventListener('keydown', (e) => { if (e.key === 'Enter') $('joinBtn').click(); });
+  $('shareBtn').addEventListener('click', share);
+  $('botLess').addEventListener('click', () => S.conn.send({ t: 'bots', n: S.players.filter((p) => p.bot).length - 1 }));
+  $('botMore').addEventListener('click', () => S.conn.send({ t: 'bots', n: S.players.filter((p) => p.bot).length + 1 }));
+  $('botFill').addEventListener('click', () => S.conn.send({ t: 'bots', n: WAR.MAX_PLAYERS }));
+  $('dealBtn').addEventListener('click', () => { setText($('lobbyErr'), ''); S.conn.send({ t: 'start' }); });
+  $('leaveBtn').addEventListener('click', () => backToMenu());
+
+  $('soundBtn').addEventListener('click', () => Sound.toggle());
+  $('menuSoundBtn').addEventListener('click', () => Sound.toggle());
+  $('menuBtn').addEventListener('click', openPause);
+  $('resumeBtn').addEventListener('click', closePause);
+  $('quitBtn').addEventListener('click', () => backToMenu());
+  $('skipBtn').addEventListener('click', () => { setHidden($('pause'), true); clearLater(); S.conn.finish(); });
+  $('againBtn').addEventListener('click', () => {
+    setHidden($('over'), true);
+    S.overShown = false;
+    S.conn.send({ t: 'start' });
+  });
+  $('overMenuBtn').addEventListener('click', () => backToMenu());
+  $('autoBtn').addEventListener('click', () => {
+    S.auto = !S.auto;
+    renderControls();
+    if (S.auto) autoSlam();
+  });
+  $('fastBtn').addEventListener('click', () => {
+    S.fast = !S.fast;
+    if (S.mode === 'solo') S.conn.setPace(pace());
+    renderAll();
+  });
+  const cheers = $('cheers');
+  CHEERS.forEach((c, i) => {
+    const b = el('button', '', c);
+    b.type = 'button';
+    b.setAttribute('aria-label', `Cheer ${c}`);
+    b.addEventListener('click', () => { S.conn.send({ t: 'cheer', e: i }); floatCheer(S.you, i); });
+    cheers.append(b);
+  });
+
+  // Power-ups
+  $('styleBtn').addEventListener('click', openStyles);
+  $('stylesBtn').addEventListener('click', openStyles);
+  $('stylesDone').addEventListener('click', () => { setHidden($('stylesOv'), true); renderControls(); });
+  $('styleList').addEventListener('click', (e) => {
+    const b = e.target.closest('button');
+    if (!b || b.disabled) return;
+    S.style = Number(b.dataset.i);
+    store.set('style', S.style);
+    renderStyles();
+  });
+
+  // The slam button: hold to charge, let go to slam.
+  const btn = $('slamBtn');
+  btn.addEventListener('pointerdown', (e) => {
+    if (e.button > 0) return;
+    e.preventDefault();
+    try { btn.setPointerCapture(e.pointerId); } catch (err) { /* fine */ }
+    startCharge(e.pointerId);
+  });
+  btn.addEventListener('pointerup', (e) => { if (charge && charge.pointer === e.pointerId) releaseCharge(); });
+  btn.addEventListener('pointercancel', () => { if (charge) releaseCharge(); });
+  btn.addEventListener('contextmenu', (e) => e.preventDefault());
+  document.addEventListener('keydown', (e) => {
+    if (e.target.closest && e.target.closest('input, select, textarea')) return;
+    Sound.unlock();
+    if ((e.key === ' ' || e.key === 'Enter') && tableUp()) {
+      e.preventDefault();
+      if (!e.repeat) startCharge('key');
+    } else if (e.key === 'Escape' && !$('app').hidden) {
+      if (!$('stylesOv').hidden) setHidden($('stylesOv'), true);
+      else if (!$('pause').hidden) closePause();
+      else if ($('over').hidden) openPause();
+    }
+  });
+  document.addEventListener('keyup', (e) => {
+    if ((e.key === ' ' || e.key === 'Enter') && tableUp()) e.preventDefault();
+    if ((e.key === ' ' || e.key === 'Enter') && charge && charge.pointer === 'key') releaseCharge();
+  });
+  document.addEventListener('pointerdown', () => Sound.unlock(), { passive: true });
+  document.addEventListener('visibilitychange', () => {
+    if (!document.hidden) return;
+    cancelCharge();
+    if (S.mode === 'solo' && S.phase === 'playing' && $('pause').hidden) openPause();
+  });
+}
+
+// The table is up, with nothing over it.
+function tableUp() {
+  return !$('app').hidden && $('pause').hidden && $('over').hidden && $('stylesOv').hidden && $('lobby').hidden;
+}
+
+function openStyles() {
+  renderStyles();
+  setHidden($('stylesOv'), false);
+}
+
+function renderStyles() {
+  const have = new Set(store.get('styles', [0]));
+  const list = $('styleList');
+  list.replaceChildren();
+  STYLES.forEach(([emoji, name, stat], i) => {
+    const b = el('button', '');
+    b.type = 'button';
+    b.dataset.i = String(i);
+    const owned = have.has(i);
+    b.disabled = !owned;
+    b.setAttribute('aria-pressed', String(S.style === i));
+    const text = el('span', '');
+    text.append(document.createTextNode(owned ? name : 'Locked'), el('small', '', owned ? `${stat} (no effect)` : 'Finish a game to unlock a power-up'));
+    b.append(el('span', 'em', owned ? emoji : '🔒'), text);
+    list.append(b);
+  });
+}
+
+init();
+
+// #debug exposes hooks for tests: state() reads the table, slam(power) slams
+// right away, finish() plays a solo game out, pace(p) speeds a solo game up.
+if (DEBUG) {
+  window.__war = {
+    state: () => ({
+      mode: S.mode, phase: S.phase, you: S.you, battle: S.battle, stage: S.stage, fighters: S.fighters.slice(),
+      counts: S.counts.slice(), slams: { ...S.slams }, canSlam: canSlam(), over: S.over, players: S.players.length,
+      mine: S.mine.map((x) => x.slice()),
+    }),
+    slam: (power) => { if (!canSlam()) return false; slam(power); return true; },
+    finish: () => S.conn && S.conn.finish && S.conn.finish(),
+    pace: (p) => { if (S.conn && S.conn.setPace) S.conn.setPace(p); },
+  };
+}
+</script>
+</body>
+</html>

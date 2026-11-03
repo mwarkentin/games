@@ -2,8 +2,11 @@
 
 A [Cloudflare Worker](https://developers.cloudflare.com/workers/) with a
 [D1](https://developers.cloudflare.com/d1/) (SQLite) database that stores
-global high scores for the games. It runs on Cloudflare's free plan: the
-leaderboard uses a handful of requests and database rows per game played.
+global high scores for the games, and a
+[Durable Object](https://developers.cloudflare.com/durable-objects/) per
+room for War's multiplayer games (see [War rooms](#war-rooms)). It runs on
+Cloudflare's free plan: the leaderboard uses a handful of requests and
+database rows per game played.
 
 ## API
 
@@ -84,6 +87,59 @@ client's IP address included.
 Worker: the runtime treats every export of the main module as an entry
 point, so constants exported for tests can't live there.
 
+## War rooms
+
+`war.html` plays with friends through rooms. `src/war.js` holds the
+`WarRoom` Durable Object class, one per room, which keeps the game and
+every player's WebSocket, and deals, waits for slams and plays out each
+battle itself. Pages only show what it tells them.
+
+```
+POST /v1/war/rooms
+  → 201 {"code": "K7QP"}
+  → 429 for more than 20 new rooms in an hour from one IP address
+
+GET  /v1/war/rooms/K7QP
+  → 200 {"code", "phase": "lobby" | "playing" | "over", "players", "full"}
+  → 404 {"error": "unknown room"}
+
+GET  /v1/war/rooms/K7QP  (Upgrade: websocket)  joins the room
+```
+
+Both writes and the WebSocket need an origin in `ALLOWED_ORIGINS`. Over the
+WebSocket, pages send JSON messages:
+
+| Message | Means |
+| --- | --- |
+| `{"t":"hello","name","avatar","token"}` | join, or rejoin the same seat with the same token |
+| `{"t":"length","length"}`, `{"t":"bots","n"}`, `{"t":"start"}` | the host sets up the game and deals |
+| `{"t":"charge","tier"}`, `{"t":"slam","power","style"}` | charging up, then slamming (for show only) |
+| `{"t":"cheer","e"}` | an emoji for everyone, at most every 0.4 seconds |
+| `{"t":"leave"}` | leave the lobby |
+
+The room answers with `state` (everything, sent on joining and when the
+lobby changes), `online`, `stage` (a battle or war opens, with the bots'
+slams), `charge`, `slam`, `flip` (the cards turn over, with the next stage
+or the final standings), `cheer` and `error`.
+
+The first player still connected is the host. Up to 50 play (people take
+the place of bots in a full lobby) and up to 60 can be connected, the rest
+watching; anyone who joins mid-game watches, and is dealt into the next
+one. If a player's card flops over by itself twice in a row, the room stops
+waiting for them until they slam again. A game with nobody connected waits
+for someone to come back, and a room nobody has used for six hours deletes
+itself.
+
+The rules between `BEGIN WAR CORE` and `END WAR CORE` in `src/war.js` are
+also in `war.html`, for solo games; `test/war.test.js` checks the two copies
+match.
+
+**Cost.** The free plan allows SQLite-backed Durable Objects only, which
+`wrangler.toml`'s migration asks for. A room writes its storage once per
+battle (slams in progress stay in memory), and WebSocket messages from
+pages count as one request per 20. A busy evening of games is well within
+the free plan.
+
 ## Setup
 
 Everything below is done once. Until step 5, the deploy workflow is skipped
@@ -117,7 +173,8 @@ and the games keep their leaderboards hidden.
    `https://games-leaderboard.<your-subdomain>.workers.dev`.
 7. **Point the games at it:** set `LEADERBOARD_URL` in
    `funnels-and-buckets.html`, `doodle-chomp.html` and
-   `air-traffic-controller.html` to that URL and merge.
+   `air-traffic-controller.html`, and `ROOMS_URL` in `war.html`, to that
+   URL and merge.
 
 Optional: serve the Worker from your own domain (such as
 `api.games.michaelwarkentin.com`) under the Worker's Settings → Domains &
@@ -137,7 +194,8 @@ Then serve the games with `python3 -m http.server 8000` from the repo root
 and open
 `http://localhost:8000/funnels-and-buckets.html?leaderboard=http://localhost:8787`
 (or `doodle-chomp.html` or `air-traffic-controller.html` with the same
-query).
+query), or `http://localhost:8000/war.html?rooms=http://localhost:8787` for
+War rooms. `wrangler dev` runs the Durable Objects locally too.
 `ALLOWED_ORIGINS` in `wrangler.toml` already allows `localhost:8000`.
 
 Tests run with Node's built-in test runner against a real SQLite database

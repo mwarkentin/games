@@ -24,8 +24,9 @@ utilities; games live here so they get their own origin and their own rules.
 - `analytics.js`: page views through Counterscale. The build inlines it into
   every page's `<head>`, the home page and colophon included.
 - `tests/`: pytest with Playwright.
-- `worker/`: the leaderboard API, a Cloudflare Worker with a D1 database. It
-  deploys through its own workflow and is never part of the site. See
+- `worker/`: the leaderboard API, a Cloudflare Worker with a D1 database,
+  which also runs War's multiplayer rooms as Durable Objects. It deploys
+  through its own workflow and is never part of the site. See
   `worker/README.md`.
 
 ## Rules for every game
@@ -149,6 +150,25 @@ Controller take part like this:
   `tests/test_doodle_chomp_leaderboard.py`.
 - Credentials live only in GitHub (the `CLOUDFLARE_API_TOKEN` secret and the
   `CLOUDFLARE_ACCOUNT_ID` variable) and in Cloudflare, never in the repo.
+
+## Multiplayer rooms
+
+War plays live with friends through the same Worker: each room is a Durable
+Object that holds the game and every player's WebSocket (`worker/src/war.js`).
+
+- A `ROOMS_URL` constant holds the Worker's URL. While it's empty, playing
+  with friends stays hidden and the game is solo only. `?rooms=<url>`
+  overrides it for local testing and for tests.
+- The room is in charge: it deals, waits for slams and plays every battle,
+  and the page only shows what it's told. Solo games run the same rules in
+  the page. The rules sit between `BEGIN WAR CORE` and `END WAR CORE`
+  markers, word for word the same in `war.html` and `worker/src/war.js`, and
+  `worker/test/war.test.js` checks they match, so change both.
+- Rooms have four-character codes from the same alphabet as groups, and
+  invite links are `?room=<code>`. Players rejoin their seat with a random
+  token kept in `localStorage` (`war:token`).
+- Game tests fake a room with Playwright's `page.route_web_socket` and
+  `tests/fake_war_room.py`; see `tests/test_war_rooms.py`.
 
 ## Adding or changing a game
 
