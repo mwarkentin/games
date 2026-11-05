@@ -30,8 +30,9 @@ utilities; games live here so they get their own origin and their own rules.
   beside it by `scripts/render_icons.py`.
 - `tests/`: pytest with Playwright.
 - `worker/`: the leaderboard API, a Cloudflare Worker with a D1 database,
-  which also runs War's multiplayer rooms as Durable Objects. It deploys
-  through its own workflow and is never part of the site. See
+  which also runs War's multiplayer rooms and Letterfield's shared survey as
+  Durable Objects (see `worker/SURVEY.md`). It deploys through its own
+  workflow and is never part of the site. See
   `worker/README.md`.
 
 ## Rules for every game

@@ -31,6 +31,23 @@ migrations_dir = "migrations"
 name = "WAR_ROOMS"
 class_name = "WarRoom"
 
+# Letterfield's shared survey: one Durable Object per sector of the map and
+# one Atlas for the world's totals, each with its own SQLite storage. See
+# SURVEY.md.
+[[durable_objects.bindings]]
+name = "SECTORS"
+class_name = "Sector"
+
+[[durable_objects.bindings]]
+name = "ATLAS"
+class_name = "Atlas"
+
+# Migrations run once each, in order, and a deployed tag can't change: add a
+# new tag for each new class.
 [[migrations]]
 tag = "v1"
 new_sqlite_classes = ["WarRoom"]
+
+[[migrations]]
+tag = "v2"
+new_sqlite_classes = ["Sector", "Atlas"]

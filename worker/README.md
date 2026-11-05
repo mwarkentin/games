@@ -8,6 +8,11 @@ room for War's multiplayer games (see [War rooms](#war-rooms)). It runs on
 Cloudflare's free plan: the leaderboard uses a handful of requests and
 database rows per game played.
 
+The same Worker hosts Letterfield's shared survey, an experiment in many
+players exploring one map at once: a Durable Object per sector of the map,
+reached over WebSockets. [SURVEY.md](SURVEY.md) covers its design, its API
+and how far it scales.
+
 ## API
 
 ```
@@ -84,8 +89,10 @@ exceptions for a few days. Its per-request invocation logs are off in
 client's IP address included.
 
 `src/leaderboard.js` holds the logic and `src/index.js` only exports the
-Worker: the runtime treats every export of the main module as an entry
-point, so constants exported for tests can't live there.
+Worker and the Durable Object classes: the runtime treats every
+export of the main module as an entry point, so constants exported for tests
+can't live there. `src/survey.js` and `src/letterfield-world.js` are the
+survey.
 
 ## War rooms
 
@@ -160,9 +167,9 @@ keep their leaderboards hidden. After that:
 
 1. **Deploy:** run the **Deploy leaderboard worker** workflow from the
    Actions tab, or push a change under `worker/`. It applies migrations,
-   then deploys with `IP_SALT` as a Worker secret. Wrangler makes the War
-   rooms' Durable Object class from the `[[migrations]]` in
-   `wrangler.toml`. The Worker answers at
+   then deploys with `IP_SALT` as a Worker secret. Wrangler makes the
+   Durable Object classes (War's rooms, and the survey's sectors and Atlas)
+   from the `[[migrations]]` in `wrangler.toml`. The Worker answers at
    `https://games-leaderboard.mwarkentin.workers.dev`.
 2. **The games already point at it:** `LEADERBOARD_URL` in
    `funnels-and-buckets.html`, `doodle-chomp.html` and
@@ -170,6 +177,9 @@ keep their leaderboards hidden. After that:
    first deploy they say the leaderboard can't be reached and carry on. If
    the URL ever changes, change it there and in `WORKER_URL` in
    `tests/fake_leaderboard.py`, which keeps tests off the real Worker.
+3. **Letterfield's shared survey stays off** until `SURVEY_URL` in
+   `letterfield.html` is set to the same URL. Before that, try it on the
+   live site with `?survey=https://games-leaderboard.mwarkentin.workers.dev`.
 
 Don't change the salt or the token here by hand: the next OpenTofu apply
 would put them back. To replace the token, see mwarkentin/infra's README.
@@ -197,7 +207,7 @@ War rooms. `wrangler dev` runs the Durable Objects locally too.
 `ALLOWED_ORIGINS` in `wrangler.toml` already allows `localhost:8000`.
 
 Tests run with Node's built-in test runner against a real SQLite database
-(node:sqlite stands in for D1):
+(node:sqlite stands in for D1 and for the survey's Durable Object storage):
 
 ```sh
 node --disable-warning=ExperimentalWarning --test "worker/test/*.test.js"
