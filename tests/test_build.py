@@ -7,8 +7,19 @@ import xml.etree.ElementTree as ET
 import build_index
 from build_colophon import format_message
 from build_sitemap import NAMESPACE, build_sitemap
-from common import BASE_URL, ROOT, extract_meta_description, game_files
+from common import (
+    BASE_URL,
+    GENERATED_PAGES,
+    HOME_APP,
+    ICON_SIZES,
+    ROOT,
+    extract_meta_description,
+    game_files,
+    inject_analytics,
+    inject_pwa,
+)
 from gather_links import extract_urls
+from publish import current_release, inject_telemetry
 
 
 def test_extract_urls_trims_punctuation_and_duplicates():
@@ -88,12 +99,63 @@ def test_build_sitemap_lists_games_and_generated_pages():
 
 def test_site_contains_only_publishable_files(site_dir):
     published = {path.relative_to(site_dir).as_posix() for path in site_dir.rglob("*") if path.is_file()}
-    expected = {*game_files(), "index.html", "colophon.html", "games.json", "sitemap.xml", "robots.txt"}
-    assert published == expected, "the site should hold the games and generated pages only"
+    apps = [*(filename.removesuffix(".html") for filename in game_files()), HOME_APP]
+    expected = {
+        *game_files(),
+        "index.html",
+        "colophon.html",
+        "games.json",
+        "sitemap.xml",
+        "robots.txt",
+        "sw.js",
+        *(f"manifests/{app}.webmanifest" for app in apps),
+        *(f"icons/{app}-{size}.png" for app in apps for size in ICON_SIZES),
+    }
+    assert published == expected, "the site should hold the games, generated pages and their apps only"
 
 
-def test_games_are_published_unchanged_with_colophon_entries(site_dir):
+def test_inject_telemetry_goes_before_head_end_once():
+    page = "<html><HEAD><title>t</title></HEAD><body></head></body>"
+    injected = inject_telemetry(page, "run();\n", "games@abc")
+    assert injected == (
+        '<html><HEAD><title>t</title><script data-telemetry data-release="games@abc">\nrun();\n</script>\n'
+        "</HEAD><body></head></body>"
+    )
+    assert inject_telemetry(injected, "run();", "games@abc") == injected
+    no_head = inject_telemetry("<p>no head", "run();", "")
+    assert no_head == '<p>no head\n<script data-telemetry data-release="">\nrun();\n</script>\n'
+
+
+def test_games_are_published_with_only_telemetry_analytics_and_app_links_added_and_colophon_entries(site_dir):
     colophon = (site_dir / "colophon.html").read_text("utf-8")
+    telemetry = (ROOT / "telemetry.js").read_text("utf-8")
     for filename in game_files():
-        assert (site_dir / filename).read_bytes() == (ROOT / filename).read_bytes()
+        source = (ROOT / filename).read_text("utf-8")
+        published = (site_dir / filename).read_text("utf-8")
+        app = filename.removesuffix(".html")
+        assert published == inject_pwa(inject_analytics(inject_telemetry(source, telemetry, current_release())), app)
+        assert (
+            published.index("<script data-telemetry")
+            < published.index("<script data-analytics")
+            < published.index("<script data-pwa")
+            < published.index("</head>")
+        )
         assert f'id="{filename}"' in colophon
+
+
+def test_generated_pages_get_analytics_but_not_telemetry(site_dir):
+    for filename in GENERATED_PAGES:
+        page = (site_dir / filename).read_text("utf-8")
+        assert page.count("<script data-analytics>") == 1
+        assert page.index("<script data-analytics>") < page.index("</head>")
+        assert "<script data-telemetry" not in page
+
+
+def test_inject_pwa_links_the_app_and_registers_the_worker_once():
+    page = "<html><head><title>t</title></head><body></body></html>"
+    injected = inject_pwa(page, "foo")
+    head = injected[: injected.index("</head>")]
+    assert '<link rel="manifest" href="/manifests/foo.webmanifest">' in head
+    assert '<link rel="apple-touch-icon" href="/icons/foo-180.png">' in head
+    assert "navigator.serviceWorker.register('/sw.js')" in head
+    assert inject_pwa(injected, "foo") == injected

@@ -17,9 +17,9 @@ concurrency:
 
 jobs:
   deploy:
-    # Skipped until the Cloudflare account is set up: add the
-    # CLOUDFLARE_ACCOUNT_ID variable and CLOUDFLARE_API_TOKEN secret
-    # (see worker/README.md).
+    # Skipped until mwarkentin/infra has set the CLOUDFLARE_ACCOUNT_ID
+    # variable and the CLOUDFLARE_API_TOKEN and IP_SALT secrets (see
+    # worker/README.md).
     if: vars.CLOUDFLARE_ACCOUNT_ID != ''
     runs-on: ubuntu-latest
     defaults:
@@ -36,5 +36,15 @@ jobs:
           node-version: 22
       - name: Apply database migrations
         run: npx --yes wrangler@4.151.0 d1 migrations apply games-leaderboard --remote
+      # The salt goes up with the deploy, so the new version never runs
+      # without it. The file lives outside the checkout, only until wrangler
+      # has read it.
       - name: Deploy worker
-        run: npx --yes wrangler@4.151.0 deploy
+        env:
+          IP_SALT: ${{ secrets.IP_SALT }}
+        run: |
+          test -n "$IP_SALT" || { echo "::error::The IP_SALT secret is missing; see worker/README.md"; exit 1; }
+          secrets="$RUNNER_TEMP/worker-secrets.json"
+          trap 'rm -f "$secrets"' EXIT
+          jq -n --arg salt "$IP_SALT" '{IP_SALT: $salt}' > "$secrets"
+          npx --yes wrangler@4.151.0 deploy --secrets-file "$secrets"

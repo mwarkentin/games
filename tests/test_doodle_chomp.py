@@ -3,8 +3,6 @@ from playwright.sync_api import Page, expect
 
 def test_play_starts_a_level(page: Page, site_url, errors):
     page.goto(f"{site_url}/doodle-chomp")
-    # Off claude.ai there's no shared score board, so scores stay in the browser.
-    expect(page.locator("#menuScoreNote")).to_have_text("Scores are kept in this browser only.")
 
     page.click("#playBtn")
     expect(page.locator("#menu")).to_be_hidden()

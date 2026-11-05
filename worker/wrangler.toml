@@ -3,6 +3,15 @@ name = "games-leaderboard"
 main = "src/index.js"
 compatibility_date = "2026-10-01"
 
+# Workers Logs keeps the Worker's console output and uncaught exceptions for
+# a few days. Invocation logs stay off: they would record every request's
+# headers, client IP included, and the Worker only ever keeps a salted hash.
+[observability]
+enabled = true
+
+[observability.logs]
+invocation_logs = false
+
 [vars]
 # Pages allowed to read and save scores. The localhost entries are for testing
 # the games against `wrangler dev`.
@@ -11,9 +20,16 @@ ALLOWED_ORIGINS = "https://games.michaelwarkentin.com,http://localhost:8000,http
 [[d1_databases]]
 binding = "DB"
 database_name = "games-leaderboard"
-# Placeholder: replace with the id printed by `npx wrangler d1 create games-leaderboard`.
-database_id = "00000000-0000-0000-0000-000000000000"
+# The database is created and managed with OpenTofu, outside this repo. The id
+# isn't a secret.
+database_id = "14348cc4-b12d-47a1-bf6e-8190a4898eb3"
 migrations_dir = "migrations"
+
+# War rooms: one Durable Object per room, holding the game and every player's
+# WebSocket (see src/war.js). The free plan allows SQLite-backed classes only.
+[[durable_objects.bindings]]
+name = "WAR_ROOMS"
+class_name = "WarRoom"
 
 # Letterfield's shared survey: one Durable Object per sector of the map and
 # one Atlas for the world's totals, each with its own SQLite storage. See
@@ -26,6 +42,12 @@ class_name = "Sector"
 name = "ATLAS"
 class_name = "Atlas"
 
+# Migrations run once each, in order, and a deployed tag can't change: add a
+# new tag for each new class.
 [[migrations]]
 tag = "v1"
+new_sqlite_classes = ["WarRoom"]
+
+[[migrations]]
+tag = "v2"
 new_sqlite_classes = ["Sector", "Atlas"]

@@ -2,8 +2,11 @@
 
 A [Cloudflare Worker](https://developers.cloudflare.com/workers/) with a
 [D1](https://developers.cloudflare.com/d1/) (SQLite) database that stores
-global high scores for the games. It runs on Cloudflare's free plan: the
-leaderboard uses a handful of requests and database rows per game played.
+global high scores for the games, and a
+[Durable Object](https://developers.cloudflare.com/durable-objects/) per
+room for War's multiplayer games (see [War rooms](#war-rooms)). It runs on
+Cloudflare's free plan: the leaderboard uses a handful of requests and
+database rows per game played.
 
 The same Worker hosts Letterfield's shared survey, an experiment in many
 players exploring one map at once: a Durable Object per sector of the map,
@@ -13,16 +16,17 @@ and how far it scales.
 ## API
 
 ```
-GET  /v1/scores?game=funnels-and-buckets&scope=*&difficulty=classic&mode=all
-  → 200 {"game", "scope", "difficulty", "mode",
+GET  /v1/scores?game=funnels-and-buckets&scope=*&difficulty=classic&mode=all&since=1792987200000
+  → 200 {"game", "scope", "difficulty", "mode", "since",
          "scores": [{"rank", "entry", "initials", "score", "level", "difficulty", "mode", "at"}]}
   → 404 {"error": "unknown group"}
 
 POST /v1/scores
   {"game": "funnels-and-buckets", "difficulty": "classic", "mode": "normal",
    "initials": "ABC", "score": 150, "level": 2, "popped": 12, "seconds": 90,
-   "groups": ["K7QP"], "public": true}
-  → 201 {"entry": "<uuid>", "ranks": {"*": 3, "K7QP": 1}}
+   "groups": ["K7QP"], "public": true, "since": 1792987200000}
+  → 201 {"entry": "<uuid>", "ranks": {"*": 14, "K7QP": 1},
+         "periodRanks": {"*": 2, "K7QP": 1}}
 
 POST /v1/groups
   {"name": "Family"}
@@ -43,8 +47,18 @@ browsers treat as a simple request and send without a CORS preflight.
 
 **Views.** A view is one scope (`*` for the public board, or a group code)
 narrowed by `difficulty` and `mode`, each of which can be `all` (the
-default). It returns the top 10. Ranks in a POST response are within the
-score's own difficulty and mode.
+default). It returns the top 10.
+
+**Periods.** `since` (milliseconds since 1970) narrows a view to scores
+saved from then on: the games send the start of today, this week (Monday)
+or this month in the player's own time zone. It must be within the last 32
+days (or up to a day ahead, for a device clock that runs fast); leave it
+out for all time.
+
+**Ranks.** A POST returns each score's rank within its own difficulty and
+mode: `ranks` for all time and, when the POST includes `since`,
+`periodRanks` for that period. Counting stops at 1,000, so a rank past that
+is `null` (the games say "beyond #1,000").
 
 **Groups** are private boards for family or friends. Each has a
 four-character code from `ABCDEFGHJKMNPQRSTUVWXYZ23456789` (no 0/O or
@@ -56,61 +70,123 @@ goes to the public board unless `public` is `false`, and to each listed
 group.
 
 **Storage.** Every place a score is shown is its own row in `scores`
-(`scope` is `*` or a group code); the copies share an `entry` id. Each
-(game, scope, difficulty, mode) keeps its top 100. The Worker checks that a
+(`scope` is `*` or a group code); the copies share an `entry` id. Every
+score is kept. A copy is a few hundred bytes with its indexes, so the free
+plan's 500 MB holds hundreds of thousands of saves.
+
+D1 counts every row a query scans against the free plan's 5 million a day,
+so each view reads through an index of its own (named with `INDEXED BY` in
+`src/leaderboard.js`, and checked with `EXPLAIN QUERY PLAN` in the tests).
+An all-time top 10 reads about 10 rows, and a period view reads only that
+period's scores. The Worker checks that a
 score is possible for the game (see `GAMES` in `src/leaderboard.js`), allows
 only three letters A–Z as initials, and stores a salted hash of each IP
 address, never the address itself, to rate-limit writes.
 
+**Logs.** Workers Logs keeps the Worker's console output and uncaught
+exceptions for a few days. Its per-request invocation logs are off in
+`wrangler.toml`, because they would store each request's headers, the
+client's IP address included.
+
 `src/leaderboard.js` holds the logic and `src/index.js` only exports the
-Worker and the survey's Durable Object class: the runtime treats every
+Worker and the Durable Object classes: the runtime treats every
 export of the main module as an entry point, so constants exported for tests
 can't live there. `src/survey.js` and `src/letterfield-world.js` are the
 survey.
 
+## War rooms
+
+`war.html` plays with friends through rooms. `src/war.js` holds the
+`WarRoom` Durable Object class, one per room, which keeps the game and
+every player's WebSocket, and deals, waits for slams and plays out each
+battle itself. Pages only show what it tells them.
+
+```
+POST /v1/war/rooms
+  → 201 {"code": "K7QP"}
+  → 429 for more than 20 new rooms in an hour from one IP address
+
+GET  /v1/war/rooms/K7QP
+  → 200 {"code", "phase": "lobby" | "playing" | "over", "players", "full"}
+  → 404 {"error": "unknown room"}
+
+GET  /v1/war/rooms/K7QP  (Upgrade: websocket)  joins the room
+```
+
+Both writes and the WebSocket need an origin in `ALLOWED_ORIGINS`. Over the
+WebSocket, pages send JSON messages:
+
+| Message | Means |
+| --- | --- |
+| `{"t":"hello","name","avatar","token"}` | join, or rejoin the same seat with the same token |
+| `{"t":"length","length"}`, `{"t":"bots","n"}`, `{"t":"start"}` | the host sets up the game and deals |
+| `{"t":"charge","tier"}`, `{"t":"slam","power","style"}` | charging up, then slamming (for show only) |
+| `{"t":"card","n","power"}` | in a war, slamming face-down card `n` (0 to 2) before the last one, which is the `slam` (for show only) |
+| `{"t":"cheer","e"}` | an emoji for everyone, at most every 0.4 seconds |
+| `{"t":"leave"}` | leave the lobby |
+
+The room answers with `state` (everything, sent on joining and when the
+lobby changes), `online`, `stage` (a battle or war opens, with the bots'
+slams), `charge`, `card`, `slam`, `flip` (the cards turn over, with the next
+stage or the final standings), `cheer` and `error`. Players get 8 seconds to
+slam in a battle and 20 in a war, where they slam every card they lay down.
+
+The first player still connected is the host. Up to 50 play (people take
+the place of bots in a full lobby) and up to 60 can be connected, the rest
+watching; anyone who joins mid-game watches, and is dealt into the next
+one. If a player's card flops over by itself twice in a row, the room stops
+waiting for them until they slam again. A game with nobody connected waits
+for someone to come back, and a room nobody has used for six hours deletes
+itself.
+
+The rules between `BEGIN WAR CORE` and `END WAR CORE` in `src/war.js` are
+also in `war.html`, for solo games; `test/war.test.js` checks the two copies
+match.
+
+**Cost.** The free plan allows SQLite-backed Durable Objects only, which
+`wrangler.toml`'s migration asks for. A room writes its storage once per
+battle (slams in progress stay in memory), and WebSocket messages from
+pages count as one request per 20. A busy evening of games is well within
+the free plan.
+
 ## Setup
 
-Everything below is done once. Until step 5, the deploy workflow is skipped
-and the games keep their leaderboards hidden.
+The Cloudflare side is managed with OpenTofu in mwarkentin/infra
+(`games.tf` there), not by hand. Its apply makes:
 
-1. **Create a Cloudflare account** at https://dash.cloudflare.com/sign-up
-   (the free plan is enough) and note your **account ID** from the dashboard.
-2. **Create the database.** From this `worker/` folder:
+- the D1 database, whose id is already in `wrangler.toml` (it isn't a
+  secret);
+- an account-owned API token limited to Workers Scripts and D1, stored here
+  as the `CLOUDFLARE_API_TOKEN` Actions secret;
+- the salt the Worker hashes IP addresses with, stored here as the
+  `IP_SALT` Actions secret;
+- the `CLOUDFLARE_ACCOUNT_ID` Actions variable.
 
-   ```sh
-   npx wrangler@4.151.0 login
-   npx wrangler@4.151.0 d1 create games-leaderboard
-   ```
+Until that variable exists, the deploy workflow is skipped and the games
+keep their leaderboards hidden. After that:
 
-   Copy the `database_id` it prints into `wrangler.toml`, replacing the
-   placeholder `00000000-0000-0000-0000-000000000000`, and commit it. The id
-   is not a secret.
-3. **Set the IP hashing salt**, any long random string:
-
-   ```sh
-   npx wrangler@4.151.0 secret put IP_SALT
-   ```
-
-4. **Create an API token** at https://dash.cloudflare.com/profile/api-tokens:
-   start from the **Edit Cloudflare Workers** template and add the
-   **Account → D1 → Edit** permission.
-5. **Give GitHub the credentials.** In this repo's Settings → Secrets and
-   variables → Actions:
-   - Secret `CLOUDFLARE_API_TOKEN`: the token from step 4.
-   - Variable `CLOUDFLARE_ACCOUNT_ID`: your account ID.
-6. **Deploy:** run the **Deploy leaderboard worker** workflow from the
-   Actions tab, or push a change under `worker/`. It applies migrations, then
-   deploys. The Worker's URL appears in the log, for example
-   `https://games-leaderboard.<your-subdomain>.workers.dev`.
-7. **Point the games at it:** set `LEADERBOARD_URL` in
+1. **Deploy:** run the **Deploy leaderboard worker** workflow from the
+   Actions tab, or push a change under `worker/`. It applies migrations,
+   then deploys with `IP_SALT` as a Worker secret. Wrangler makes the
+   Durable Object classes (War's rooms, and the survey's sectors and Atlas)
+   from the `[[migrations]]` in `wrangler.toml`. The Worker answers at
+   `https://games-leaderboard.mwarkentin.workers.dev`.
+2. **The games already point at it:** `LEADERBOARD_URL` in
    `funnels-and-buckets.html`, `doodle-chomp.html` and
-   `air-traffic-controller.html` to that URL and merge. To turn on
-   Letterfield's shared survey too, set `SURVEY_URL` in `letterfield.html`
-   to the same URL.
+   `air-traffic-controller.html`, and `ROOMS_URL` in `war.html`. Until the
+   first deploy they say the leaderboard can't be reached and carry on. If
+   the URL ever changes, change it there and in `WORKER_URL` in
+   `tests/fake_leaderboard.py`, which keeps tests off the real Worker.
+3. **Letterfield's shared survey stays off** until `SURVEY_URL` in
+   `letterfield.html` is set to the same URL. Before that, try it on the
+   live site with `?survey=https://games-leaderboard.mwarkentin.workers.dev`.
+
+Don't change the salt or the token here by hand: the next OpenTofu apply
+would put them back. To replace the token, see mwarkentin/infra's README.
 
 Optional: serve the Worker from your own domain (such as
-`api.games.michaelwarkentin.com`) under the Worker's Settings → Domains &
-Routes. That needs the domain's DNS on Cloudflare; the `workers.dev` URL
+`api.games.michaelwarkentin.com`). That needs the domain's DNS on
+Cloudflare, which mwarkentin/infra would manage; the `workers.dev` URL
 works without it.
 
 ## Local development
@@ -126,7 +202,8 @@ Then serve the games with `python3 -m http.server 8000` from the repo root
 and open
 `http://localhost:8000/funnels-and-buckets.html?leaderboard=http://localhost:8787`
 (or `doodle-chomp.html` or `air-traffic-controller.html` with the same
-query).
+query), or `http://localhost:8000/war.html?rooms=http://localhost:8787` for
+War rooms. `wrangler dev` runs the Durable Objects locally too.
 `ALLOWED_ORIGINS` in `wrangler.toml` already allows `localhost:8000`.
 
 Tests run with Node's built-in test runner against a real SQLite database
@@ -156,6 +233,17 @@ npx wrangler@4.151.0 d1 execute games-leaderboard --remote \
 
 To add a word to the initials blocklist, edit `BLOCKED_INITIALS` in
 `src/leaderboard.js`.
+
+If the database ever grows too big, delete scores older than a year that
+aren't in their board's all-time top 100:
+
+```sh
+npx wrangler@4.151.0 d1 execute games-leaderboard --remote --command "
+  DELETE FROM scores WHERE created_at < (unixepoch('now', '-1 year') * 1000) AND id NOT IN (
+    SELECT id FROM (SELECT id, ROW_NUMBER() OVER (
+      PARTITION BY game, scope, difficulty, mode ORDER BY score DESC, created_at, id) AS n FROM scores)
+    WHERE n <= 100)"
+```
 
 ## Adding another game
 

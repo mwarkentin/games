@@ -13,6 +13,7 @@ from pathlib import Path
 import pytest
 
 from common import ROOT
+from fake_leaderboard import stand_in_for_worker
 
 
 @pytest.fixture(scope="session")
@@ -54,8 +55,24 @@ def site_url(site_dir):
 
 @pytest.fixture(scope="session")
 def browser_context_args(browser_context_args):
-    """Fixed locale and time zone, so dates render the same everywhere."""
-    return {**browser_context_args, "locale": "en-US", "timezone_id": "America/Toronto"}
+    """Fixed locale and time zone, so dates render the same everywhere.
+
+    Service workers are blocked, so sw.js never answers a request that a
+    test means page.route to see. tests/test_pwa.py allows them.
+    """
+    return {
+        **browser_context_args,
+        "locale": "en-US",
+        "timezone_id": "America/Toronto",
+        "service_workers": "block",
+    }
+
+
+@pytest.fixture
+def context(context):
+    """pytest-playwright's context, with the real Worker faked (see fake_leaderboard.py)."""
+    stand_in_for_worker(context)
+    return context
 
 
 @pytest.fixture

@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <defs>
+    <pattern id="tile" width="64" height="64" patternUnits="userSpaceOnUse">
+      <path d="M64 0 V64 H0" fill="none" stroke="#b9d3c9" stroke-width="4"/>
+    </pattern>
+  </defs>
+  <rect width="512" height="512" fill="#d3e7df"/>
+  <rect width="512" height="512" fill="url(#tile)"/>
+  <path d="M150 312 L172 418 Q256 440 340 418 L362 312 Z" fill="#a3b3b9" stroke="#6c7e86" stroke-width="8" stroke-linejoin="round"/>
+  <path d="M160 352 Q256 372 352 352" fill="none" stroke="#6c7e86" stroke-width="6"/>
+  <rect x="222" y="372" width="68" height="30" rx="6" fill="#f2bd22" stroke="#c39009" stroke-width="4"/>
+  <ellipse cx="256" cy="312" rx="106" ry="24" fill="#6c7e86"/>
+  <ellipse cx="256" cy="316" rx="90" ry="15" fill="#2e90d2"/>
+  <path d="M206 286 L206 268 M306 286 L306 268" stroke="#12313a" stroke-width="5" stroke-linecap="round" opacity=".25"/>
+  <circle cx="256" cy="168" r="78" fill="#f6fcff" stroke="#12313a" stroke-width="9"/>
+  <path d="M212 136 A52 52 0 0 1 246 110" fill="none" stroke="#2e90d2" stroke-width="8" stroke-linecap="round" opacity=".55"/>
+  <path d="M256 132 V204 M220 168 H292" stroke="#12313a" stroke-width="16" stroke-linecap="round"/>
+</svg>

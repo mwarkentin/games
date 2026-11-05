@@ -1,3 +1,4 @@
+from page_changes import repeated_no_op_writes
 from playwright.sync_api import Page, expect
 
 
@@ -102,4 +103,12 @@ def test_shift_that_runs_out_of_time_has_no_next_shift(page: Page, site_url, err
     expect(page.locator("#btnNext")).to_be_hidden()
     expect(page.locator("#btnAgain")).to_have_class("btn primary")
     expect(page.locator("#btnAgain")).to_be_focused()
+    assert errors == []
+
+
+def test_a_shift_doesnt_keep_rewriting_the_page(page: Page, site_url, errors):
+    page.goto(f"{site_url}/air-traffic-controller")
+    page.click("#btnStart")
+    expect(page.locator("#overlay")).to_be_hidden()
+    assert repeated_no_op_writes(page) == {}
     assert errors == []

@@ -8,6 +8,8 @@ import pytest
 from playwright.sync_api import Page
 
 from common import BASE_URL, ROOT, game_files
+from fake_leaderboard import WORKER_URL
+from page_changes import repeated_no_op_writes
 
 GAMES = game_files()
 SCREENS = {"phone": {"width": 375, "height": 740}, "desktop": {"width": 1280, "height": 800}}
@@ -62,6 +64,14 @@ def test_game_is_listed_in_readme(filename):
     assert filename.removesuffix(".html") in targets, "add a link to README.md"
 
 
+@pytest.mark.parametrize("filename", GAMES)
+def test_game_uses_the_worker_tests_stand_in_for(filename):
+    """Tests fake WORKER_URL (see fake_leaderboard.py); any other address would reach a real server."""
+    text = (ROOT / filename).read_text("utf-8")
+    urls = re.findall(r"\b(?:LEADERBOARD|ROOMS)_URL = '([^']*)'", text)
+    assert all(url in ("", WORKER_URL) for url in urls), urls
+
+
 @pytest.mark.parametrize("screen", SCREENS)
 @pytest.mark.parametrize("filename", GAMES)
 def test_game_loads_cleanly(page: Page, site_url, errors, filename, screen):
@@ -74,6 +84,13 @@ def test_game_loads_cleanly(page: Page, site_url, errors, filename, screen):
         "page scrolls sideways"
     )
     assert page.evaluate(SMALL_INPUTS_JS) == [], "inputs under 16px make iOS zoom"
+
+
+@pytest.mark.parametrize("filename", GAMES)
+def test_game_doesnt_keep_rewriting_its_page(page: Page, site_url, filename):
+    page.set_viewport_size(SCREENS["phone"])
+    page.goto(f"{site_url}/{filename.removesuffix('.html')}", wait_until="networkidle")
+    assert repeated_no_op_writes(page) == {}, "only write what changed (see tests/page_changes.py)"
 
 
 @pytest.mark.parametrize("path", ["/", "/colophon"])
