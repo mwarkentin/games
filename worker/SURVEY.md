@@ -225,8 +225,33 @@ The first version, with timers, would have been billed for every second
 every busy sector existed: ~$0.0056 per sector-hour. That's ~$84 a day for
 625 busy sectors, before counting the quiet ones.
 
+### On the free plan
+
+This account runs on Workers Free, where every limit is per day, shared by
+the whole account (the leaderboards and War's rooms included), and reset at
+00:00 UTC. Past a limit, requests fail rather than cost money
+([Durable Objects][dopricing], [Workers][wpricing]):
+
+| free plan, per day | allowance | survey use per player-hour | enough for |
+| --- | --- | --- | --- |
+| Durable Object requests | 100,000 | ~106 | **~940 player-hours** |
+| Worker requests | 100,000 | ~30 | ~3,300 player-hours |
+| Durable Object time | 13,000 GB-s | ~0.35 GB-s | ~37,000 player-hours |
+| SQLite rows written | 100,000 | ≤ words charted | 100,000 claims |
+
+So Durable Object requests run out first, at about 940 player-hours a day:
+100 people playing for 9 hours, or 450 for 2. When they do, every Durable
+Object on the account stops answering until midnight UTC, War's rooms
+included. Before turning the survey on for everyone, either move to Workers
+Paid ($5 a month, costed above) or give the survey a daily budget (see "Not
+done yet").
+
 ## Not done yet
 
+- **A daily budget on the free plan.** The Atlas already hears from every
+  busy sector. It could count the day's player-time and, near the free
+  plan's limits, tell sectors to turn new players away (the `full` message
+  the game already handles), so War and the leaderboards keep working.
 - **Run `load.js` against a deployment.** That would confirm the per-sector
   limit and the 0.8 ms per player-second on Cloudflare's edge rather than a
   sandbox.
