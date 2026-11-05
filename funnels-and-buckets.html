@@ -651,7 +651,7 @@ h2 { margin: 0; font-family: var(--font-display); font-weight: 400; font-size: 3
   // Global leaderboard API: the Cloudflare Worker in worker/ (see worker/README.md).
   // While this is empty the leaderboard stays hidden and best scores stay in this
   // browser. ?leaderboard=<url> overrides it, e.g. http://localhost:8787 for `wrangler dev`.
-  const LEADERBOARD_URL = '';
+  const LEADERBOARD_URL = 'https://games-leaderboard.mwarkentin.workers.dev';
 
   const OPS = {
     add: { sym: '+', pts: 5 },

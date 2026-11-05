@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from urllib.parse import parse_qs, urlparse
 
-from fake_leaderboard import API, FakeLeaderboard
+from fake_leaderboard import API, FakeLeaderboard, without_worker
 from playwright.sync_api import Page, expect
 
 UNAVAILABLE = "The leaderboard is unavailable right now."
@@ -28,6 +28,7 @@ def open_game(page: Page, site_url: str, fake: FakeLeaderboard | None, query: st
         page.route(f"{API}/**", fake.handle)
         page.goto(f"{site_url}/air-traffic-controller?leaderboard={API}{query}#debug")
     else:
+        without_worker(page, site_url, "air-traffic-controller")
         page.goto(f"{site_url}/air-traffic-controller#debug")
 
 

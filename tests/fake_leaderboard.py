@@ -3,17 +3,25 @@
 Games read the API's URL from ?leaderboard=, so tests point them at
 https://leaderboard.test and route those requests here with Playwright's
 page.route. The real Worker is tested in worker/test/.
+
+Without ?leaderboard=, games call the real Worker (WORKER_URL). Every test
+context routes it to an empty fake with stand_in_for_worker(), so no test
+reads or writes real scores, and the smoke tests don't depend on the Worker
+being up or on its CORS rules, which only allow the real site.
 """
 
 from __future__ import annotations
 
 import json
+import re
 import time
 from urllib.parse import parse_qs, urlparse
 
-from playwright.sync_api import Route
+from playwright.sync_api import BrowserContext, Page, Route
 
 API = "https://leaderboard.test"
+# LEADERBOARD_URL in the games and ROOMS_URL in war.html.
+WORKER_URL = "https://games-leaderboard.mwarkentin.workers.dev"
 
 
 DAY_MS = 24 * 60 * 60 * 1000
@@ -107,3 +115,21 @@ class FakeLeaderboard:
                 reply(200, {"code": code, "name": self.groups[code]})
             else:
                 reply(404, {"error": "unknown group"})
+
+
+def stand_in_for_worker(context: BrowserContext) -> FakeLeaderboard:
+    """Answer the real Worker's URL in `context` with an empty fake."""
+    fake = FakeLeaderboard()
+    context.route(f"{WORKER_URL}/**", fake.handle)
+    return fake
+
+
+def without_worker(page: Page, site_url: str, game: str) -> None:
+    """Serve `game` with LEADERBOARD_URL and ROOMS_URL blanked, as it runs with no Worker set up."""
+
+    def handle(route: Route) -> None:
+        response = route.fetch()
+        body = re.sub(r"\b((?:LEADERBOARD|ROOMS)_URL = )'[^']*'", r"\1''", response.text())
+        route.fulfill(response=response, body=body)
+
+    page.route(lambda url: urlparse(url).path == f"/{game}", handle)

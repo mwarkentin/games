@@ -13,6 +13,7 @@ from pathlib import Path
 import pytest
 
 from common import ROOT
+from fake_leaderboard import stand_in_for_worker
 
 
 @pytest.fixture(scope="session")
@@ -65,6 +66,13 @@ def browser_context_args(browser_context_args):
         "timezone_id": "America/Toronto",
         "service_workers": "block",
     }
+
+
+@pytest.fixture
+def context(context):
+    """pytest-playwright's context, with the real Worker faked (see fake_leaderboard.py)."""
+    stand_in_for_worker(context)
+    return context
 
 
 @pytest.fixture

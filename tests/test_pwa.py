@@ -18,6 +18,7 @@ from playwright.sync_api import Browser, BrowserContext, Page
 
 from build_pwa import build_service_worker
 from common import GENERATED_PAGES, HOME_APP, ICON_SIZES, ROOT, extract_meta, extract_title, game_files
+from fake_leaderboard import stand_in_for_worker
 from render_icons import render
 
 GAMES = game_files()
@@ -127,6 +128,7 @@ def test_build_service_worker_fills_in_version_and_pages():
 def sw_context(browser: Browser, browser_context_args) -> BrowserContext:
     """A context that lets sw.js install and answer."""
     context = browser.new_context(**{**browser_context_args, "service_workers": "allow"})
+    stand_in_for_worker(context)
     yield context
     context.close()
 

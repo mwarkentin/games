@@ -8,6 +8,7 @@ import pytest
 from playwright.sync_api import Page
 
 from common import BASE_URL, ROOT, game_files
+from fake_leaderboard import WORKER_URL
 from page_changes import repeated_no_op_writes
 
 GAMES = game_files()
@@ -61,6 +62,14 @@ def test_game_is_listed_in_readme(filename):
         for target in re.findall(r"\]\(([^)\s]+)\)", readme)
     }
     assert filename.removesuffix(".html") in targets, "add a link to README.md"
+
+
+@pytest.mark.parametrize("filename", GAMES)
+def test_game_uses_the_worker_tests_stand_in_for(filename):
+    """Tests fake WORKER_URL (see fake_leaderboard.py); any other address would reach a real server."""
+    text = (ROOT / filename).read_text("utf-8")
+    urls = re.findall(r"\b(?:LEADERBOARD|ROOMS)_URL = '([^']*)'", text)
+    assert all(url in ("", WORKER_URL) for url in urls), urls
 
 
 @pytest.mark.parametrize("screen", SCREENS)
