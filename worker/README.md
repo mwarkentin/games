@@ -144,43 +144,39 @@ the free plan.
 
 ## Setup
 
-Everything below is done once. Until step 5, the deploy workflow is skipped
-and the games keep their leaderboards hidden.
+The Cloudflare side is managed with OpenTofu in mwarkentin/infra
+(`games.tf` there), not by hand. Its apply makes:
 
-1. **Create a Cloudflare account** at https://dash.cloudflare.com/sign-up
-   (the free plan is enough) and note your **account ID** from the dashboard.
-2. **The database** is created and managed with OpenTofu, outside this repo,
-   and its id is already in `wrangler.toml` (it isn't a secret). Sign in to
-   Cloudflare for the next step, from this `worker/` folder:
+- the D1 database, whose id is already in `wrangler.toml` (it isn't a
+  secret);
+- an account-owned API token limited to Workers Scripts and D1, stored here
+  as the `CLOUDFLARE_API_TOKEN` Actions secret;
+- the salt the Worker hashes IP addresses with, stored here as the
+  `IP_SALT` Actions secret;
+- the `CLOUDFLARE_ACCOUNT_ID` Actions variable.
 
-   ```sh
-   npx wrangler@4.151.0 login
-   ```
-3. **Set the IP hashing salt**, any long random string:
+Until that variable exists, the deploy workflow is skipped and the games
+keep their leaderboards hidden. After that:
 
-   ```sh
-   npx wrangler@4.151.0 secret put IP_SALT
-   ```
-
-4. **Create an API token** at https://dash.cloudflare.com/profile/api-tokens:
-   start from the **Edit Cloudflare Workers** template and add the
-   **Account → D1 → Edit** permission.
-5. **Give GitHub the credentials.** In this repo's Settings → Secrets and
-   variables → Actions:
-   - Secret `CLOUDFLARE_API_TOKEN`: the token from step 4.
-   - Variable `CLOUDFLARE_ACCOUNT_ID`: your account ID.
-6. **Deploy:** run the **Deploy leaderboard worker** workflow from the
-   Actions tab, or push a change under `worker/`. It applies migrations, then
-   deploys. The Worker's URL appears in the log, for example
-   `https://games-leaderboard.<your-subdomain>.workers.dev`.
-7. **Point the games at it:** set `LEADERBOARD_URL` in
+1. **Deploy:** run the **Deploy leaderboard worker** workflow from the
+   Actions tab, or push a change under `worker/`. It applies migrations,
+   then deploys with `IP_SALT` as a Worker secret. Wrangler makes the War
+   rooms' Durable Object class from the `[[migrations]]` in
+   `wrangler.toml`. The Worker answers at
+   `https://games-leaderboard.mwarkentin.workers.dev`.
+2. **The games already point at it:** `LEADERBOARD_URL` in
    `funnels-and-buckets.html`, `doodle-chomp.html` and
-   `air-traffic-controller.html`, and `ROOMS_URL` in `war.html`, to that
-   URL and merge.
+   `air-traffic-controller.html`, and `ROOMS_URL` in `war.html`. Until the
+   first deploy they say the leaderboard can't be reached and carry on. If
+   the URL ever changes, change it there and in `WORKER_URL` in
+   `tests/fake_leaderboard.py`, which keeps tests off the real Worker.
+
+Don't change the salt or the token here by hand: the next OpenTofu apply
+would put them back. To replace the token, see mwarkentin/infra's README.
 
 Optional: serve the Worker from your own domain (such as
-`api.games.michaelwarkentin.com`) under the Worker's Settings → Domains &
-Routes. That needs the domain's DNS on Cloudflare; the `workers.dev` URL
+`api.games.michaelwarkentin.com`). That needs the domain's DNS on
+Cloudflare, which mwarkentin/infra would manage; the `workers.dev` URL
 works without it.
 
 ## Local development

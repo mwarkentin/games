@@ -11,6 +11,7 @@ from __future__ import annotations
 import re
 
 import pytest
+from fake_leaderboard import without_worker
 from playwright.sync_api import Page, expect
 
 STATE = "window.__war.state()"
@@ -334,6 +335,7 @@ def test_reduced_motion_skips_the_fireworks(page: Page, site_url, errors):
 
 
 def test_rooms_stay_hidden_without_a_server(page: Page, site_url, errors):
+    without_worker(page, site_url, "war")
     page.goto(f"{site_url}/war?room=K7QP")
     expect(page.locator("#soloBtn")).to_be_visible()
     expect(page.locator("#friends")).to_be_hidden()

@@ -189,9 +189,15 @@ Controller take part like this:
 - Add the game's difficulties, modes and a `check()` to `GAMES` in
   `worker/src/leaderboard.js`, with tests in `worker/test/`. Game tests fake
   the API with Playwright's `page.route` and `tests/fake_leaderboard.py`; see
-  `tests/test_doodle_chomp_leaderboard.py`.
-- Credentials live only in GitHub (the `CLOUDFLARE_API_TOKEN` secret and the
-  `CLOUDFLARE_ACCOUNT_ID` variable) and in Cloudflare, never in the repo.
+  `tests/test_doodle_chomp_leaderboard.py`. Every test's browser context
+  also answers the real Worker's URL (`WORKER_URL` there) with an empty
+  fake, so no test touches real scores; `without_worker()` serves a game
+  with its URL blanked, to test it without a leaderboard.
+- The Worker answers at `https://games-leaderboard.mwarkentin.workers.dev`.
+  Its credentials (the `CLOUDFLARE_API_TOKEN` and `IP_SALT` secrets and the
+  `CLOUDFLARE_ACCOUNT_ID` variable) are made and set by OpenTofu in
+  mwarkentin/infra, live only there, in GitHub and in Cloudflare, and never
+  in this repo.
 
 ## Multiplayer rooms
 
@@ -244,11 +250,11 @@ pins and the README link.
 
 In a Claude Code on the web sandbox, the default network policy can block
 `cdn.jsdelivr.net`, `cdnjs.cloudflare.com`, `fonts.googleapis.com`,
-`fonts.gstatic.com`, `browser.sentry-cdn.com`, `cdn.playwright.dev`,
-`registry.npmjs.org` (for `wrangler`) and the leaderboard Worker's host. A
-test failing with `Failed: https://...` for one of those hosts means the
-sandbox can't reach it, not that the game is broken. Ask for those hosts to
-be allowed. CI has full network access.
+`fonts.gstatic.com`, `browser.sentry-cdn.com`, `cdn.playwright.dev` and
+`registry.npmjs.org` (for `wrangler`). A test failing with
+`Failed: https://...` for one of those hosts means the sandbox can't reach
+it, not that the game is broken. Ask for those hosts to be allowed. CI has
+full network access.
 
 ## Security
 

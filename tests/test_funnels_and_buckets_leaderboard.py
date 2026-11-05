@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from urllib.parse import parse_qs, urlparse
 
-from fake_leaderboard import API, FakeLeaderboard
+from fake_leaderboard import API, FakeLeaderboard, without_worker
 from playwright.sync_api import Page, expect
 
 SINGLE_TABLE_NOTE = "Games with one times table are practice and don’t go on the leaderboard."
@@ -27,6 +27,7 @@ def open_game(page: Page, site_url: str, fake: FakeLeaderboard | None, query: st
         page.route(f"{API}/**", fake.handle)
         page.goto(f"{site_url}/funnels-and-buckets?leaderboard={API}{query}#debug")
     else:
+        without_worker(page, site_url, "funnels-and-buckets")
         page.goto(f"{site_url}/funnels-and-buckets#debug")
 
 
