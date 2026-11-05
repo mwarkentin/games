@@ -9,7 +9,7 @@
 <meta name="theme-color" content="#166240">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bungee&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bungee&family=Press+Start+2P&display=swap">
 <style>
 :root {
   --felt: #1f7d4f; --felt-2: #145a39; --felt-ink: #fdf8ec; --felt-dim: rgba(253, 248, 236, .74);
@@ -128,27 +128,90 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px s
 .size-l .tile { padding: 10px; }
 .size-l .tile .tname { font-size: 15px; }
 
+/* Decks. Each sets the same --deck-* properties, on the page or on a swatch
+   in the deck chooser, starting from these defaults so none borrows from the
+   page's deck. Classic takes its colors from the light or dark scheme. */
+:root, [data-deck] {
+  --deck-border: 1px; --deck-radius: .1; --deck-font: var(--display); --deck-glow: none;
+  --deck-shadow: 0 2px 5px rgba(0, 0, 0, .25); --deck-mark-plate: transparent;
+}
+:root, [data-deck="classic"] {
+  --deck-face: var(--card); --deck-ink: var(--card-ink); --deck-red: var(--card-red); --deck-edge: var(--card-edge);
+  --deck-back:
+    radial-gradient(circle at 50% 50%, transparent 0 22%, rgba(255, 255, 255, .18) 23% 26%, transparent 27%),
+    repeating-linear-gradient(45deg, var(--back-1) 0 5px, var(--back-2) 5px 10px);
+  --deck-back-edge: #fff6e8; --deck-back-solid: var(--back-2); --deck-mark: "W"; --deck-mark-ink: rgba(255, 246, 232, .9);
+}
+[data-deck="neon"] {
+  --deck-face: #120d2a; --deck-ink: #5ff7ff; --deck-red: #ff4fd8; --deck-edge: #5ff7ff;
+  --deck-glow: 0 0 6px currentColor; --deck-shadow: 0 0 10px rgba(255, 79, 216, .55);
+  --deck-back:
+    linear-gradient(transparent 0 45%, rgba(255, 79, 216, .9) 45% 55%, transparent 55%) 0 0 / 100% 20%,
+    linear-gradient(90deg, transparent 0 45%, rgba(95, 247, 255, .7) 45% 55%, transparent 55%) 0 0 / 25% 100%,
+    linear-gradient(#1d0f3d, #120d2a);
+  --deck-back-edge: #ff4fd8; --deck-back-solid: #2a1458; --deck-mark: "⚡"; --deck-mark-ink: #fff36b;
+}
+[data-deck="pixel"] {
+  --deck-face: #f8f8f8; --deck-ink: #111; --deck-red: #d01c1c; --deck-edge: #111; --deck-border: 2px;
+  --deck-radius: 0; --deck-font: "Press Start 2P", ui-monospace, "Courier New", monospace;
+  --deck-shadow: 3px 3px 0 #000;
+  --deck-back: conic-gradient(#2fbf4a 25%, #146b2a 0 50%, #2fbf4a 0 75%, #146b2a 0) 0 0 / 8px 8px;
+  --deck-back-edge: #111; --deck-back-solid: #146b2a; --deck-mark: "★"; --deck-mark-ink: #ffe14d;
+}
+[data-deck="royal"] {
+  --deck-face: #fffaf0; --deck-ink: #1b1b2f; --deck-red: #9b1d2a; --deck-edge: #c9a227; --deck-border: 2px;
+  --deck-font: Georgia, "Times New Roman", serif;
+  --deck-back:
+    radial-gradient(circle, #c9a227 0 14%, transparent 16%) 0 0 / 10px 10px,
+    linear-gradient(135deg, #0f3d2e, #072419);
+  --deck-back-edge: #c9a227; --deck-back-solid: #0b3022; --deck-mark: "♛"; --deck-mark-ink: #f0cf5f;
+}
+[data-deck="space"] {
+  --deck-face: #101830; --deck-ink: #e8eeff; --deck-red: #ff8a3d; --deck-edge: #3a4a7a;
+  --deck-shadow: 0 2px 8px rgba(30, 40, 120, .6);
+  --deck-back:
+    radial-gradient(1px 1px at 20% 30%, #fff, transparent), radial-gradient(1px 1px at 70% 62%, #fff, transparent),
+    radial-gradient(1.5px 1.5px at 42% 82%, #cfe8ff, transparent), radial-gradient(1px 1px at 85% 18%, #fff, transparent),
+    radial-gradient(1px 1px at 12% 70%, #ffe, transparent), radial-gradient(circle at 30% 30%, #4b2b7f, #0a0a24 72%);
+  --deck-back-edge: #8aa0ff; --deck-back-solid: #1a1240; --deck-mark: "🪐"; --deck-mark-ink: #fff;
+}
+[data-deck="spooky"] {
+  --deck-face: #f3e9d2; --deck-ink: #2a1b3d; --deck-red: #e8590c; --deck-edge: #6b4f2a;
+  --deck-font: Georgia, "Times New Roman", serif;
+  --deck-back:
+    repeating-radial-gradient(circle at 50% 50%, transparent 0 7px, rgba(255, 255, 255, .16) 7px 8px),
+    repeating-conic-gradient(from 0deg at 50% 50%, transparent 0 21deg, rgba(255, 255, 255, .16) 21deg 23deg),
+    #24123a;
+  --deck-back-edge: #e8590c; --deck-back-solid: #24123a; --deck-mark: "🎃"; --deck-mark-ink: #fff;
+}
+[data-deck="candy"] {
+  --deck-face: #fff5fb; --deck-ink: #6a3d9a; --deck-red: #ff4f8b; --deck-edge: #ffb3d1; --deck-border: 2px;
+  --deck-radius: .2;
+  --deck-back: repeating-linear-gradient(-45deg, #ff8fc1 0 6px, #fff 6px 12px, #8fe3cf 12px 18px, #fff 18px 24px);
+  --deck-back-edge: #fff; --deck-back-solid: #ff8fc1; --deck-mark: "🍬"; --deck-mark-ink: #fff;
+  --deck-mark-plate: rgba(255, 255, 255, .92);
+}
+
 /* Cards */
 .card {
-  --w: 44px; width: var(--w); height: calc(var(--w) * 1.4); border-radius: calc(var(--w) * .1);
-  background: var(--card); color: var(--card-ink); border: 1px solid var(--card-edge);
-  box-shadow: 0 2px 5px rgba(0, 0, 0, .25); position: relative; flex: none; overflow: hidden;
-  font-family: var(--display);
+  --w: 44px; width: var(--w); height: calc(var(--w) * 1.4); border-radius: calc(var(--w) * var(--deck-radius));
+  background: var(--deck-face); color: var(--deck-ink); border: var(--deck-border) solid var(--deck-edge);
+  box-shadow: var(--deck-shadow); position: relative; flex: none; overflow: hidden;
+  font-family: var(--deck-font); text-shadow: var(--deck-glow);
 }
-.card.red { color: var(--card-red); }
+.card.red { color: var(--deck-red); }
 .card .ci { position: absolute; left: 6%; top: 4%; font-size: calc(var(--w) * .26); line-height: .95; text-align: center; }
 .card .ci b { display: block; font-weight: 400; }
 .card .ci i { display: block; font-style: normal; font-family: system-ui, sans-serif; font-size: .9em; }
 .card .cc { position: absolute; inset: 0; display: grid; place-items: center; font-size: calc(var(--w) * .5); font-family: system-ui, sans-serif; padding-top: 8%; }
 .card.back {
-  background:
-    radial-gradient(circle at 50% 50%, transparent 0 22%, rgba(255, 255, 255, .18) 23% 26%, transparent 27%),
-    repeating-linear-gradient(45deg, var(--back-1) 0 5px, var(--back-2) 5px 10px);
-  border: calc(var(--w) * .06) solid #fff6e8;
+  background: var(--deck-back);
+  border: calc(var(--w) * .06) solid var(--deck-back-edge);
 }
 .card.back::after {
-  content: "W"; position: absolute; inset: 0; display: grid; place-items: center;
-  color: rgba(255, 246, 232, .9); font-size: calc(var(--w) * .34);
+  content: var(--deck-mark); position: absolute; inset: 0; display: grid; place-items: center;
+  color: var(--deck-mark-ink); font-size: calc(var(--w) * .34); text-shadow: none;
+  background: radial-gradient(circle, var(--deck-mark-plate) 0 26%, transparent 27%);
 }
 .card.empty { background: transparent; border: 2px dashed rgba(255, 255, 255, .22); box-shadow: none; }
 .card.flipin { animation: flipin calc(380ms * var(--pace)) ease-out; }
@@ -206,7 +269,8 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px s
 #myPile { position: relative; display: grid; justify-items: center; gap: 4px; }
 #myPile .stack { position: relative; }
 #myPile .stack::before, #myPile .stack::after {
-  content: ""; position: absolute; inset: 0; border-radius: 9px; background: var(--back-2); border: 1px solid #fff6e8;
+  content: ""; position: absolute; inset: 0; border-radius: calc(var(--cw) * var(--deck-radius));
+  background: var(--deck-back-solid); border: 1px solid var(--deck-back-edge);
 }
 #myPile .stack::before { transform: translate(4px, 4px); }
 #myPile .stack::after { transform: translate(2px, 2px); }
@@ -318,6 +382,14 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px s
 .seg button small { display: block; font-weight: 400; color: var(--panel-dim); font-size: 12px; }
 .seg button[aria-pressed="true"] { border-color: var(--accent); background: var(--panel); }
 .seg.three { grid-template-columns: repeat(3, 1fr); }
+.decks { display: grid; grid-template-columns: repeat(7, 1fr); gap: 6px; }
+.decks button {
+  border: 2px solid transparent; border-radius: 10px; background: var(--panel-2); padding: 6px 0;
+  display: grid; place-items: center; min-height: 48px;
+}
+.decks button[aria-pressed="true"] { border-color: var(--accent); background: var(--panel); }
+.decks .card { --w: 30px; }
+.deck-note { margin: 6px 0 0; font-size: 13px; color: var(--panel-dim); }
 .seg button:disabled { cursor: default; }
 .code-big { font-family: var(--display); font-size: 44px; letter-spacing: .12em; color: var(--accent); line-height: 1; }
 .people { display: flex; flex-wrap: wrap; gap: 6px; max-height: 210px; overflow-y: auto; }
@@ -442,6 +514,9 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px s
     </div>
     <h3>How you slam</h3>
     <div class="seg three" id="inputSeg" role="group" aria-label="How you slam"></div>
+    <h3>Deck</h3>
+    <div class="decks" id="menuDecks" role="group" aria-label="Deck"></div>
+    <p class="deck-note" id="menuDeckNote"></p>
     <p class="fine" id="lifetime"></p>
     <div class="menu-tools">
       <button class="btn" id="stylesBtn">🧤 Power-ups</button>
@@ -488,6 +563,11 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px s
     <button class="btn primary wide" id="resumeBtn">Back to the table</button>
     <button class="btn wide" id="skipBtn">Skip to the end</button>
     <button class="btn wide" id="quitBtn">Quit to menu</button>
+    <div>
+      <h3>Deck</h3>
+      <div class="decks" id="pauseDecks" role="group" aria-label="Deck"></div>
+      <p class="deck-note" id="pauseDeckNote"></p>
+    </div>
   </div>
 </div>
 
@@ -777,7 +857,18 @@ const CHEERS = ['🔥', '😱', '😂', '👏', '🍅', '💤'];
 const RANKS = ['2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K', 'A'];
 const RANK_NAMES = ['two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten', 'jack', 'queen', 'king', 'ace'];
 const SUITS = ['♠︎', '♥︎', '♦︎', '♣︎'];
-const FACES = { 9: '🤹', 10: '👸', 11: '👑' };
+// Decks: [name, what it's like, jack, queen, king]. The looks are in the CSS,
+// under [data-deck].
+const DECKS = {
+  classic: ['Classic', 'Red stripes and cream cards.', '🤹', '👸', '👑'],
+  neon: ['Neon', 'Glows in the dark.', '🕺', '💃', '😎'],
+  pixel: ['8-bit', 'Chunky pixels, blown on before use.', '👾', '🎮', '🕹️'],
+  royal: ['Royal', 'Gold on green velvet.', '🛡️', '👸', '🤴'],
+  space: ['Space', 'Lost among the stars.', '🚀', '👽', '🛸'],
+  spooky: ['Spooky', 'Cobwebs, pumpkins and the undead.', '🧟', '🧛', '💀'],
+  candy: ['Candy', 'Very sweet. No nutritional value.', '🧁', '🍭', '🍩'],
+};
+let deck = 'classic';  // the one you picked: see init()
 const LENGTH_LABELS = {
   quick: ['Skirmish', '20 battles'], standard: ['Battle', '60 battles'],
   long: ['Campaign', '150 battles'], total: ['Total war', 'until one has every card'],
@@ -836,7 +927,7 @@ function cardEl(card) {
   if (suit === 1 || suit === 2) node.classList.add('red');
   const corner = el('span', 'ci');
   corner.append(el('b', '', RANKS[rank]), el('i', '', SUITS[suit]));
-  node.append(corner, el('span', 'cc', FACES[rank] || SUITS[suit]));
+  node.append(corner, el('span', 'cc', rank >= 9 && rank <= 11 ? DECKS[deck][rank - 7] : SUITS[suit]));
   node.setAttribute('aria-label', `${RANK_NAMES[rank]} of ${['spades', 'hearts', 'diamonds', 'clubs'][suit]}`);
   return node;
 }
@@ -2502,6 +2593,7 @@ function renderMenu() {
     : 'Slam power is cosmetic. The cards decide everything. That is the joke, and also the rules.');
   renderSound();
   renderInputs();
+  renderDecks();
   const titleCards = document.querySelector('.title-cards');
   if (!titleCards.childElementCount) titleCards.append(cardEl(12), cardEl(25 + 13), cardEl(11 + 13));
 }
@@ -2518,6 +2610,42 @@ function renderInputs() {
     }
   }
   for (const b of box.children) setAttr(b, 'aria-pressed', String(b.dataset.input === S.input));
+}
+
+function renderDecks() {
+  for (const [boxId, noteId] of [['menuDecks', 'menuDeckNote'], ['pauseDecks', 'pauseDeckNote']]) {
+    const box = $(boxId);
+    if (!box.childElementCount) {
+      for (const [key, [name]] of Object.entries(DECKS)) {
+        const b = el('button', '');
+        b.type = 'button';
+        b.dataset.deck = key;
+        b.title = name;
+        b.setAttribute('aria-label', `${name} deck`);
+        b.append(cardEl('back'));
+        box.append(b);
+      }
+    }
+    for (const b of box.children) setAttr(b, 'aria-pressed', String(b.dataset.deck === deck));
+    setText($(noteId), `${DECKS[deck][0]}: ${DECKS[deck][1]}`);
+  }
+}
+
+// Changes the deck, redrawing every card on screen with it.
+function setDeck(key) {
+  if (!DECKS[key] || key === deck) return;
+  deck = key;
+  store.set('deck', key);
+  document.documentElement.dataset.deck = key;
+  renderDecks();
+  document.querySelector('.title-cards').replaceChildren();
+  renderMenu();
+  if (S.phase === 'playing' || S.phase === 'over') {
+    tileKey = '';
+    $('mySlot').dataset.key = '';
+    $('warRow').dataset.key = '';
+    renderAll();
+  }
 }
 
 function myName() {
@@ -2620,6 +2748,8 @@ function closePause() {
 
 function init() {
   if (!INPUTS[S.input]) S.input = 'hold';
+  deck = DECKS[store.get('deck', 'classic')] ? store.get('deck', 'classic') : 'classic';
+  document.documentElement.dataset.deck = deck;
   const stored = store.get('styles', [0]);
   if (!stored.includes(S.style)) S.style = 0;
   $('oppRange').value = String(store.get('opponents', 1));
@@ -2672,6 +2802,12 @@ function init() {
     S.conn.send({ t: 'start' });
   });
   $('overMenuBtn').addEventListener('click', () => backToMenu());
+  for (const id of ['menuDecks', 'pauseDecks']) {
+    $(id).addEventListener('click', (e) => {
+      const b = e.target.closest('button');
+      if (b) setDeck(b.dataset.deck);
+    });
+  }
   $('inputSeg').addEventListener('click', (e) => {
     const b = e.target.closest('button');
     if (b) setInput(b.dataset.input);
@@ -2727,11 +2863,11 @@ function init() {
   btn.addEventListener('pointerup', (e) => { if (charge && charge.pointer === e.pointerId) releaseCharge(); });
   btn.addEventListener('pointercancel', () => { if (charge) releaseCharge(); });
   btn.addEventListener('contextmenu', (e) => e.preventDefault());
-  const deck = $('myPile');
-  deck.addEventListener('pointerdown', (e) => {
+  const pile = $('myPile');
+  pile.addEventListener('pointerdown', (e) => {
     if (S.input !== 'fling' || e.button > 0) return;
     e.preventDefault();
-    try { deck.setPointerCapture(e.pointerId); } catch (err) { /* fine */ }
+    try { pile.setPointerCapture(e.pointerId); } catch (err) { /* fine */ }
     startFling(e);
   });
   document.addEventListener('pointermove', moveFling);
@@ -2817,6 +2953,7 @@ if (DEBUG) {
       return true;
     },
     input: (mode) => setInput(mode),
+    deck: (key) => setDeck(key),
     hurry: () => { S.closesAt = now() + 600; },
     finish: () => S.conn && S.conn.finish && S.conn.finish(),
     pace: (p) => { if (S.conn && S.conn.setPace) S.conn.setPace(p); },
