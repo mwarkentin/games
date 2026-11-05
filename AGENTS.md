@@ -52,10 +52,6 @@ utilities; games live here so they get their own origin and their own rules.
   controls clear of `env(safe-area-inset-*)`.
 - Respect `prefers-reduced-motion` and `prefers-color-scheme`. Give sound an
   off switch, and start audio only after the player's first tap or key.
-- Music gets an off switch of its own, apart from sound effects. Write it in
-  code, as War does (the Music section of `war.html`: chiptunes played live
-  with Web Audio), rather than adding audio files: it plays offline, adds a
-  few KB, and nobody else holds the rights to it.
 - Pause when the tab is hidden (`visibilitychange`) if the game runs on a
   timer.
 - Keep scores and settings in `localStorage`, with keys prefixed by the
