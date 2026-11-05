@@ -22,10 +22,14 @@ from common import BASE_URL
 
 DSN = "https://public@sentry.test/1"
 DSN_LINE = re.compile(r"const SENTRY_DSN = '[^']*';")
+COUNTERSCALE_LINE = re.compile(r"const COUNTERSCALE_URL = '[^']*';")
 
 
 def with_test_dsn(text: str) -> str:
+    """Point telemetry.js at the fake Sentry below, and switch analytics.js
+    off so these tests never count a page view on the real Counterscale."""
     assert DSN_LINE.search(text), "telemetry.js should set SENTRY_DSN"
+    text = COUNTERSCALE_LINE.sub("const COUNTERSCALE_URL = '';", text)
     return DSN_LINE.sub(f"const SENTRY_DSN = '{DSN}';", text)
 
 
