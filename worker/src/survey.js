@@ -590,7 +590,9 @@ export class Atlas {
   rollDay() {
     const day = Math.floor(this.now() / DAY_MS);
     if (day === this.day) return;
-    if (this.day >= 0) this.yesterday = this.statsNow();
+    // Yesterday is the day before this one: if the Atlas heard nothing that
+    // day, it was a day of zeros, not the last day it did hear about.
+    if (this.day >= 0) this.yesterday = day - this.day === 1 ? this.statsNow() : this.newStats(day - 1);
     this.day = day;
     this.chartedToday = new Map();
     this.overList = [];

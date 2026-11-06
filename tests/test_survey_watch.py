@@ -18,6 +18,9 @@ def test_a_day_of_people_playing_is_quiet():
     assert check(world(charted=RATE_MIN_WORDS - 1, playerHours=0)) == []  # too few words to judge
     assert check({"yesterday": None}) == []  # the survey's first day, or the Atlas started again
     assert check({}) == []
+    stale = world(charted=9_000, capped=50, playerHours=1)
+    stale["today"]["day"] += 1  # yesterday's numbers are from two days ago, already checked
+    assert check(stale) == []
 
 
 def test_many_addresses_at_the_daily_cap():

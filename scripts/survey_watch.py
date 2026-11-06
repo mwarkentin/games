@@ -32,7 +32,11 @@ RATE_MIN_WORDS = 500  # too few words to judge a rate by
 def check(world: dict) -> list[str]:
     """Reasons yesterday looks like bots, or none."""
     day = world.get("yesterday") if isinstance(world, dict) else None
+    today = world.get("today") if isinstance(world, dict) else None
     if not isinstance(day, dict):
+        return []
+    # Only the day just gone: an older one has been checked already.
+    if isinstance(today, dict) and day.get("day") != today.get("day", 0) - 1:
         return []
     reasons = []
     capped, charted, hours = day.get("capped", 0), day.get("charted", 0), day.get("playerHours", 0)

@@ -698,6 +698,12 @@ describe('Atlas', () => {
     assert.equal(map.yesterday.charted, DAILY_CLAIMS + 2);
     assert.equal(map.yesterday.capped, 1);
     assert.deepEqual({ ...map.today, playerHours: 0 }, { day: TODAY + 1, charted: 0, addresses: 0, capped: 0, playerHours: 0 });
+
+    // A day with nothing to hear about is a day of zeros, not a repeat of the last busy one.
+    clock += 2 * DAY;
+    await report({ ...base, sx: 0, sy: 0, players: 0 });
+    clock += VIEW_MS;
+    assert.deepEqual((await worldMap()).yesterday, { day: TODAY + 2, charted: 0, addresses: 0, capped: 0, playerHours: 0 });
   });
 
   test('logs each hour\'s numbers, and each address reaching the cap, never the address', async () => {
