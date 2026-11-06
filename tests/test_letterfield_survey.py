@@ -1,8 +1,7 @@
 """Letterfield's shared survey, against a fake of the sector WebSockets.
 
-The game reads the survey server's URL from ?survey=, so these tests point it
-at https://survey.test and answer its WebSockets with Playwright's
-page.route_web_socket. The real Sector Durable Object is tested in
+?survey= points the game at https://survey.test, which tests/fake_survey.py
+answers. The real Sector Durable Object is tested in
 worker/test/survey.test.js. The game starts at cell (6, 6), so a desktop
 window sees the corner where sectors (0, 0), (-1, 0), (0, -1) and (-1, -1)
 meet and joins all four.
@@ -10,76 +9,15 @@ meet and joins all four.
 
 from __future__ import annotations
 
-import base64
 import json
 import re
 
-from playwright.sync_api import Page, Route, WebSocketRoute, expect
+from playwright.sync_api import Page, expect
+
+from fake_leaderboard import without_worker
+from fake_survey import AREA_WORDS, NOW_MS, FakeSurvey, world_map
 
 SURVEY = "https://survey.test"
-NOW_MS = 1_793_000_000_000
-AREA, AREA_WORDS = 12, 1_120_206
-SIZE = (2 * AREA + 1) * 4  # territories per side of the shared world
-
-
-def world_map(charted=None, sectors=(), spawn=None, players=0):
-    """A GET /v1/survey/world answer. `charted` maps (tx, ty) territories to counts."""
-    data = bytearray(SIZE * SIZE)
-    for (tx, ty), n in (charted or {}).items():
-        data[(ty + AREA * 4) * SIZE + tx + AREA * 4] = n
-    return {"charted": sum(data), "total": AREA_WORDS, "players": players, "area": AREA,
-            "territories": base64.b64encode(bytes(data)).decode(), "sectors": list(sectors), "spawn": spawn}
-
-
-class FakeSurvey:
-    """Answers each sector's WebSocket the way worker/src/survey.js does."""
-
-    def __init__(self, claims=(), presence=(), taken=(), world=None, totals=None, full=None):
-        self.claims = list(claims)        # [w, x, y, d, s, initials, at] already charted in sector 0,0
-        self.presence = list(presence)    # [id, initials, x, y] of other players in sector 0,0
-        self.taken = {tuple(c[:4]): c for c in taken}  # words someone else charts first, just before us
-        self.world = world or world_map()  # what GET /v1/survey/world answers
-        self.totals = totals              # a {t: world} message each sector sends after hello
-        self.full = full                  # "sector" or "world": every sector turns players away
-        self.sectors: list[str] = []      # path of every connection
-        self.received: list[dict] = []    # every message from the game
-        self.sockets: dict[str, WebSocketRoute] = {}
-
-    def handle(self, ws: WebSocketRoute) -> None:
-        sector = re.search(r"/v1/survey/(-?\d+)/(-?\d+)$", ws.url)
-        key = f"{sector[1]},{sector[2]}"
-        self.sectors.append(key)
-        self.sockets[key] = ws
-        you = f"you-{key}"
-        home = key == "0,0"
-        if self.full:
-            ws.send(json.dumps({"t": "full", "world": self.full == "world"}))
-            return
-        ws.send(json.dumps({"t": "hello", "you": you, "sector": [int(sector[1]), int(sector[2])],
-                            "claims": self.claims if home else []}))
-        if self.totals:
-            ws.send(json.dumps({"t": "world", **self.totals}))
-        if home and self.presence:
-            ws.send(json.dumps({"t": "presence", "n": len(self.presence), "p": self.presence}))
-
-        def on_message(text: str) -> None:
-            msg = json.loads(text)
-            self.received.append({**msg, "sector": key})
-            if msg["t"] != "claim":
-                return
-            word = (msg["w"], msg["x"], msg["y"], msg["d"])
-            if word in self.taken:
-                ws.send(json.dumps({"t": "taken", "c": self.taken[word]}))
-            else:
-                ws.send(json.dumps({"t": "claimed", "c": [*word, 0, "ZED", NOW_MS], "by": you}))
-
-        ws.on_message(on_message)
-
-    def handle_world(self, route: Route) -> None:
-        route.fulfill(json=self.world, headers={"Access-Control-Allow-Origin": "*"})
-
-    def sent(self, kind: str) -> list[dict]:
-        return [m for m in self.received if m["t"] == kind]
 
 
 def open_game(page: Page, site_url: str, fake: FakeSurvey | None) -> None:
@@ -89,6 +27,7 @@ def open_game(page: Page, site_url: str, fake: FakeSurvey | None) -> None:
         page.route(f"{SURVEY}/v1/survey/world", fake.handle_world)
         page.goto(f"{site_url}/letterfield?survey={SURVEY}#debug")
     else:
+        without_worker(page, site_url, "letterfield")  # SURVEY_URL blanked: playing alone
         page.goto(f"{site_url}/letterfield#debug")
     if page.locator("#coach").is_visible():
         page.click("#coachOk")
@@ -126,7 +65,7 @@ def eventually(page: Page, check, timeout_ms: int = 5000) -> None:
     assert check()
 
 
-def test_survey_stays_off_until_configured(page: Page, site_url, errors):
+def test_without_a_survey_url_the_game_plays_alone(page: Page, site_url, errors):
     sockets = []
     page.on("websocket", lambda ws: sockets.append(ws.url))
     open_game(page, site_url, None)
@@ -410,4 +349,15 @@ def test_word_list_gives_no_hints_on_the_shared_survey(page: Page, site_url, err
     # Plain labels: nothing to tap that would show where a word starts.
     expect(page.locator("#legendList button")).to_have_count(0)
     expect(page.locator("#legendList [title]")).to_have_count(0)
+    assert errors == []
+
+
+def test_the_game_joins_the_survey_on_the_worker_by_default(page: Page, site_url, errors):
+    # No ?survey=, so the game uses SURVEY_URL: the real Worker, which every
+    # test context answers with an empty fake (fake_leaderboard.py).
+    page.set_viewport_size({"width": 1280, "height": 900})
+    page.goto(f"{site_url}/letterfield#debug")
+    expect(page.locator("#survey")).to_be_visible()
+    expect(page.locator("#surveyText")).to_contain_text("Live")
+    page.wait_for_function("[...window.__lf.links.values()].some(l => l.you)")
     assert errors == []

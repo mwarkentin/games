@@ -1,5 +1,7 @@
 from playwright.sync_api import Page, expect
 
+from fake_leaderboard import without_worker
+
 # Screen positions of a legend word's first and last letters, for a word whose
 # ends are both on open map rather than under a panel. Mirrors the game's
 # camera: it starts centred on cell (6, 6) with 38px cells.
@@ -19,6 +21,7 @@ FIND_WORD_JS = """() => {
 
 
 def test_circling_a_word_adds_it_to_field_notes(page: Page, site_url, errors):
+    without_worker(page, site_url, "letterfield")  # alone, so the word list gives hints
     page.set_viewport_size({"width": 1280, "height": 900})
     page.goto(f"{site_url}/letterfield")
     page.click("#coachOk")
@@ -84,6 +87,7 @@ COLLECT = "words => { for (const [w, x, y, d] of words) window.__lf.collect(w, x
 
 
 def test_finding_every_word_in_a_territory_goes_supernova(page: Page, site_url, errors):
+    without_worker(page, site_url, "letterfield")  # alone, so the territory counts your own finds
     page.add_init_script(COUNT_AUDIO)
     page.goto(f"{site_url}/letterfield#debug")
     page.wait_for_function("window.__lf")
