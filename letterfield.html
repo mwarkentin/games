@@ -85,6 +85,8 @@ button:focus-visible,a:focus-visible,#map:focus-visible{outline:2px solid var(--
 .chip{font:500 12px/1 var(--f-mono);letter-spacing:.07em;padding:7px 8px 6px;border:1px solid var(--rule);border-radius:5px;background:var(--panel);cursor:pointer;white-space:nowrap}
 .chip:hover{border-color:var(--ink)}
 .chip.found{color:var(--muted);text-decoration:line-through;text-decoration-thickness:2px;text-decoration-color:var(--c);border-style:dashed;cursor:default}
+span.chip{cursor:default}
+span.chip:hover{border-color:var(--rule)}
 .legend-note{font:400 12px/1.4 var(--f-ui);color:var(--muted);padding:2px 0}
 
 /* Instruments */
@@ -1955,6 +1957,10 @@ window.addEventListener('keyup', e => { if (e.key === 'Shift' && dragMode === 'p
 /* ---------- HUD ---------- */
 const tName = $('#tName'), tTheme = $('#tTheme'), tCoord = $('#tCoord'), tCharted = $('#tCharted'), territory = $('#territory');
 const legendList = $('#legendList'), legendCount = $('#legendCount');
+// Tapping a word in the list pings where it starts, on your own. With the
+// shared survey the list only says what's hidden: a hint would make charting
+// a word first too easy.
+const hints = !surveyApi;
 let hudTimer = 0, hudRegion = '', legendSig = '', legendWords = new Map();
 function scheduleHud() { if (!hudTimer) hudTimer = setTimeout(() => { hudTimer = 0; updateHud(); }, 110); }
 function updateHud() {
@@ -2007,10 +2013,13 @@ function updateLegend() {
   legendSig = sig;
   legendWords = new Map(shown.map(i => [i.w.key, i.w]));
   legendList.innerHTML = shown.length
-    ? shown.map(i => `<li><button type="button" class="chip mark${i.f ? ' found' : ''}" data-key="${i.w.key}" style="--h:${THEMES[i.w.th].hue}" ${i.f ? 'aria-disabled="true"' : 'title="Show where it starts"'}>${i.w.w}</button></li>`).join('')
+    ? shown.map(i => hints
+      ? `<li><button type="button" class="chip mark${i.f ? ' found' : ''}" data-key="${i.w.key}" style="--h:${THEMES[i.w.th].hue}" ${i.f ? 'aria-disabled="true"' : 'title="Show where it starts"'}>${i.w.w}</button></li>`
+      : `<li><span class="chip mark${i.f ? ' found' : ''}" style="--h:${THEMES[i.w.th].hue}">${i.w.w}</span></li>`).join('')
     : '<li class="legend-note">No words here. Keep wandering.</li>';
 }
 legendList.addEventListener('click', e => {
+  if (!hints) return;
   const b = e.target.closest('.chip');
   if (!b || b.classList.contains('found')) return;
   const w = legendWords.get(b.dataset.key);

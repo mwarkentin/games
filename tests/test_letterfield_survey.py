@@ -134,6 +134,7 @@ def test_survey_stays_off_until_configured(page: Page, site_url, errors):
     expect(page.locator("#notesBadge")).to_have_text("1")
     expect(page.locator("#survey")).to_be_hidden()
     expect(page.locator("#tCharted")).to_have_text(re.compile(r"^ · 1/\d+ found$"))
+    expect(page.locator("#legendList button.chip").first).to_be_visible()  # on your own, the list gives hints
     assert sockets == []
     assert errors == []
 
@@ -398,4 +399,15 @@ def test_hovering_names_surveyors_and_who_charted_a_word(page: Page, site_url, e
     # Panning hides it.
     page.mouse.wheel(0, 120)
     expect(peek).to_be_hidden()
+    assert errors == []
+
+
+def test_word_list_gives_no_hints_on_the_shared_survey(page: Page, site_url, errors):
+    open_game(page, site_url, FakeSurvey())
+    expect(page.locator("#survey")).to_be_visible()
+    chips = page.locator("#legendList .chip")
+    expect(chips.first).to_be_visible()
+    # Plain labels: nothing to tap that would show where a word starts.
+    expect(page.locator("#legendList button")).to_have_count(0)
+    expect(page.locator("#legendList [title]")).to_have_count(0)
     assert errors == []
