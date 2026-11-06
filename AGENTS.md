@@ -163,9 +163,10 @@ built from `BASE_URL`.
 
 - A game with `previews/<game>.jpg` gets a large card with that image. Make
   it 1200×630 and under 300 KB, since WhatsApp shows no image for bigger
-  ones; `tests/test_build.py` checks both. A screenshot of the game mid-play
-  works well: Letterfield's was taken at 1200×630 at 2× with a few words
-  circled, then scaled down.
+  ones; `tests/test_build.py` checks both. Each game's is a screenshot taken
+  mid-play at 2× with the game's real fonts, then scaled down. Shoot at a
+  1200×630 window, or a wider one of the same shape (War's is 1440×756) if
+  the game is cramped at that height.
 - A game without one gets a small card with its 512px icon. The home page
   and colophon use `previews/index.jpg` if there is one, or the site's icon.
 - A page that writes its own `og:title` keeps its own tags.
