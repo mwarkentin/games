@@ -674,17 +674,19 @@ describe('Sector', () => {
 });
 
 describe('Atlas', () => {
-  let state, atlasObject, clock;
+  let state, atlasObject, clock, logged;
   beforeEach(() => {
+    logged = mock.method(console, 'log', () => {});
     mock.timers.enable({ apis: ['setTimeout'] });
     state = fakeState();
     atlasObject = new Atlas(state, {});
     clock = NOW;
     atlasObject.now = () => clock;
   });
-  afterEach(() => mock.timers.reset());
+  afterEach(() => { mock.timers.reset(); logged.mock.restore(); });
 
   const counts = (...n) => [...n, ...Array(16 - n.length).fill(0)];
+  const logs = (kind) => logged.mock.calls.map((c) => c.arguments[0]).filter((l) => l?.survey === kind);
   // A report, and the Atlas's answer: by default only the world's totals.
   async function report(body, { all = false } = {}) {
     const response = await atlasObject.fetch(new Request('https://atlas/report', { method: 'POST', body: JSON.stringify(body) }));
@@ -702,13 +704,13 @@ describe('Atlas', () => {
     await report({ sx: 1, sy: 0, players: 1, charted: counts(1), unpassed: 2 });
     await report({ sx: 1, sy: 0, players: 1, charted: counts(1) });  // older sectors send none
     let map = await worldMap();
-    assert.deepEqual(map.today, { day: TODAY, unpassed: 5 });
-    assert.deepEqual(map.yesterday, { day: TODAY - 1, unpassed: 0 });
+    assert.equal(map.today.day, TODAY);
+    assert.equal(map.today.unpassed, 5);
     clock += DAY;
     await report({ sx: 0, sy: 0, players: 3, charted: counts(5), unpassed: 1 });
     map = await worldMap();
-    assert.deepEqual(map.today, { day: TODAY + 1, unpassed: 1 });
-    assert.deepEqual(map.yesterday, { day: TODAY, unpassed: 5 });
+    assert.deepEqual([map.today.day, map.today.unpassed], [TODAY + 1, 1]);
+    assert.deepEqual([map.yesterday.day, map.yesterday.unpassed], [TODAY, 5]);
     for (const unpassed of [-1, 1.5, '2', 1e7]) assert.equal((await report({ sx: 0, sy: 0, players: 0, charted: counts(), unpassed }))[0], 400);
   });
 
@@ -743,6 +745,52 @@ describe('Atlas', () => {
     const [, answer] = await report({ sx: 0, sy: 0, players: 0, charted: counts() }, { all: true });
     assert.equal(answer.overAt, DAILY_LIST_MAX + 5);
     assert.deepEqual(answer.over, many.slice(5).map(([a]) => a));
+  });
+
+  test('keeps the day\'s numbers for the world map, and yesterday\'s', async () => {
+    const base = { charted: counts(), day: TODAY, overAt: 0 };
+    await report({ ...base, sx: 0, sy: 0, players: 3, by: [[hashed(1), 40], [hashed(2), 2]] });
+    clock += 60000;  // 3 players for a minute
+    await report({ ...base, sx: 1, sy: 0, players: 1, by: [[hashed(1), DAILY_CLAIMS - 40]] });
+    clock += 30 * 60000;  // both sectors went quiet, so their players stopped counting as online
+    await report({ ...base, sx: 1, sy: 0, players: 0 });
+    let map = await worldMap();
+    assert.deepEqual(map.today, { day: TODAY, charted: DAILY_CLAIMS + 2, addresses: 2, capped: 1, playerHours: 0.05, unpassed: 0 });
+    assert.equal(map.yesterday, null);
+
+    clock += DAY;
+    await report({ ...base, sx: 0, sy: 0, players: 0 });
+    clock += VIEW_MS;
+    map = await worldMap();
+    assert.equal(map.yesterday.charted, DAILY_CLAIMS + 2);
+    assert.equal(map.yesterday.capped, 1);
+    assert.deepEqual({ ...map.today, playerHours: 0 }, { day: TODAY + 1, charted: 0, addresses: 0, capped: 0, playerHours: 0, unpassed: 0 });
+
+    // A day with nothing to hear about is a day of zeros, not a repeat of the last busy one.
+    clock += 2 * DAY;
+    await report({ ...base, sx: 0, sy: 0, players: 0 });
+    clock += VIEW_MS;
+    assert.deepEqual((await worldMap()).yesterday, { day: TODAY + 2, charted: 0, addresses: 0, capped: 0, playerHours: 0, unpassed: 0 });
+  });
+
+  test('logs each hour\'s numbers, and each address reaching the cap, never the address', async () => {
+    clock = Math.floor(NOW / 3600000) * 3600000;  // on the hour
+    const base = { charted: counts(), day: TODAY, overAt: 0 };
+    await report({ ...base, sx: 0, sy: 0, players: 2, by: [[hashed(7), DAILY_CLAIMS]] });
+    assert.deepEqual(logs('daily cap'), [{ survey: 'daily cap', capped: 1 }]);
+    assert.ok(!JSON.stringify(logged.mock.calls.map((c) => c.arguments)).includes(hashed(7)));
+    clock += 60000;
+    await report({ ...base, sx: 0, sy: 0, players: 2, by: [[hashed(8), 10]] });
+    assert.equal(logs('hour').length, 0);
+    clock += 3600000;
+    await report({ ...base, sx: 0, sy: 0, players: 2 });
+    const [hour] = logs('hour');
+    assert.equal(hour.hour, new Date(clock - 3600000 - 60000).toISOString());
+    // 310 words in 2 players' minute: a rate no person reaches.
+    assert.deepEqual({ ...hour, today: undefined }, {
+      survey: 'hour', hour: hour.hour, charted: DAILY_CLAIMS + 10, playerHours: 0.03, perPlayerHour: 9300, today: undefined,
+    });
+    assert.equal(hour.today.capped, 1);
   });
 
   test('stops counting players whose sector has gone quiet', async () => {

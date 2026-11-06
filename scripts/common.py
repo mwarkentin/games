@@ -24,6 +24,10 @@ ANALYTICS = "analytics.js"
 HOME_APP = "index"
 # icons/<app>-<size>.png: an apple-touch-icon, and the manifest's two icons.
 ICON_SIZES = (180, 192, 512)
+# Link previews: previews/<app>.jpg, 1200x630, shown when a link to the page
+# is shared. Apps without one use their 512px icon as a small card instead.
+PREVIEWS = "previews"
+PREVIEW_SIZE = (1200, 630)
 # Registers sw.js, which keeps an offline copy of every page.
 REGISTER_SERVICE_WORKER = """
 if ('serviceWorker' in navigator) {
@@ -62,6 +66,43 @@ def inject_pwa(text: str, app: str) -> str:
         f'<link rel="apple-touch-icon" href="/icons/{app}-180.png">\n'
     )
     return inline_script(insert_in_head(text, tags), "data-pwa", REGISTER_SERVICE_WORKER)
+
+
+def inject_social(text: str, app: str, path: str, root: Path | None = None) -> str:
+    """Add Open Graph and Twitter card tags, so a shared link shows a card.
+
+    Title and description come from the page's own <head>. The image is
+    previews/<app>.jpg as a large card if the app has one, or else its 512px
+    icon as a small one. Every URL is absolute, as link unfurlers need. A page
+    that already has og:title is left as it is.
+    """
+    if re.search(r"""property\s*=\s*["']og:title["']""", text, re.IGNORECASE):
+        return text
+    title = extract_title(text, app)
+    description = extract_meta_description(text)
+    if ((root or ROOT) / PREVIEWS / f"{app}.jpg").exists():
+        image, (width, height), card = f"{BASE_URL}/{PREVIEWS}/{app}.jpg", PREVIEW_SIZE, "summary_large_image"
+    else:
+        image, (width, height), card = f"{BASE_URL}/icons/{app}-512.png", (512, 512), "summary"
+    tags = [
+        ("property", "og:type", "website"),
+        ("property", "og:site_name", SITE_NAME),
+        ("property", "og:title", title),
+        *([("property", "og:description", description)] if description else []),
+        ("property", "og:url", f"{BASE_URL}{path}"),
+        ("property", "og:image", image),
+        ("property", "og:image:width", str(width)),
+        ("property", "og:image:height", str(height)),
+        ("name", "twitter:card", card),
+    ]
+    return insert_in_head(
+        text, "".join(f'<meta {kind}="{key}" content="{html.escape(value)}">\n' for kind, key, value in tags)
+    )
+
+
+def preview_files(root: Path = ROOT) -> list[str]:
+    """The link-preview images, as paths like previews/foo.jpg."""
+    return sorted(f"{PREVIEWS}/{path.name}" for path in (root / PREVIEWS).glob("*.jpg"))
 
 
 def inject_analytics(text: str, root: Path | None = None) -> str:
@@ -183,11 +224,12 @@ def tip_link(source: str) -> str:
 
 
 def render_page(
-    title: str, body: str, *, extra_css: str = "", description: str = "", tip_source: str = ""
+    title: str, body: str, *, path: str = "/", extra_css: str = "", description: str = "", tip_source: str = ""
 ) -> str:
     """Wrap generated content in the shared page chrome, with analytics.
 
-    Generated pages belong to the home-screen app for the whole site.
+    Generated pages belong to the home-screen app for the whole site, and
+    share its link preview. path is where the page is served, for og:url.
 
     tip_source labels the header's tip link, which appears once TIP_URL is set.
     """
@@ -224,4 +266,4 @@ def render_page(
 </body>
 </html>
 """
-    return inject_pwa(inject_analytics(page), HOME_APP)
+    return inject_pwa(inject_analytics(inject_social(page, HOME_APP, path)), HOME_APP)

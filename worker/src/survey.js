@@ -4,9 +4,10 @@
 // Objects; tests import this module directly.
 //
 //   GET /v1/survey/<sx>/<sy>   WebSocket for one sector of the map
-//   GET /v1/survey/world       the world map: charted territories, players, where to start
-//   POST /v1/survey/pass       a Turnstile token for a pass that sector joins need (survey-pass.js),
-//                              only while TURNSTILE_SECRET is set
+//   GET /v1/survey/world       the world map: charted territories, players, where to start,
+//                              and today's and yesterday's numbers (see Atlas.stats)
+//   POST /v1/survey/pass       a Turnstile token for a pass (survey-pass.js), while TURNSTILE_SECRET
+//                              is set; joins need one only once TURNSTILE_REQUIRED is "true"
 //
 // The map is split into sectors of 4×4 territories (192×192 cells), and each
 // sector is its own Durable Object: one single-threaded room that holds the
@@ -84,6 +85,7 @@ export const UNPASSED_HEADER = 'X-Survey-Unpassed';  // '1' on a join without a 
 export const DAILY_CLAIMS = 300;      // words one address can chart in the shared world each UTC day
 export const DAILY_LIST_MAX = 2000;   // addresses past the daily cap that the Atlas hands out, latest first
 const DAY_MS = 86400000;
+const HOUR_MS = 3600000;
 const HASH = /^[0-9a-f]{64}$/;
 const TERR = SECTOR / RC;             // territories per sector side
 const MAX_MESSAGE = 256;
@@ -555,10 +557,17 @@ export class Atlas {
     this.day = -1;
     this.chartedToday = new Map();
     this.overList = [];
-    // The UTC day's numbers, in memory like the counts above, and the day
-    // before's. So far only joins without a Turnstile pass (TURNSTILE.md).
-    this.stats = null;
+    // The numbers that would show bots at work, for the UTC day so far and
+    // the day before (in the world map), and for the hour so far (in an
+    // hourly line in Workers Logs). Bots that claim without saying where
+    // they are add words charted but no player-hours, so words per
+    // player-hour climbs far past what people manage (about one a minute).
+    // Joins without a Turnstile pass (`unpassed`, see TURNSTILE.md) are
+    // almost all scripts once the game has a site key.
+    this.stats = this.newStats(-1);
     this.yesterday = null;
+    this.hour = { at: -1, charted: 0, playerHours: 0 };
+    this.sampledAt = 0;
     this.sql.exec(`CREATE TABLE IF NOT EXISTS sectors (
       sx INTEGER NOT NULL, sy INTEGER NOT NULL, charted TEXT NOT NULL, done INTEGER NOT NULL,
       PRIMARY KEY (sx, sy)) WITHOUT ROWID`);
@@ -587,8 +596,9 @@ export class Atlas {
         && by.every((e) => Array.isArray(e) && typeof e[0] === 'string' && HASH.test(e[0]) && isInt(e[1], 1, TERR * TERR * 1000))
         && (r.unpassed === undefined || isInt(r.unpassed, 0, 1e6));
       if (!ok) return json({ error: 'bad report' }, 400);
+      this.tally();
       this.countCharted(by);
-      this.today().unpassed += r.unpassed ?? 0;
+      this.stats.unpassed += r.unpassed ?? 0;  // tally() has rolled the day
       const key = `${r.sx},${r.sy}`, done = r.charted.reduce((a, b) => a + b, 0), old = this.load().get(key);
       const inside = (v, s) => Number.isInteger(v) && fdiv(v, SECTOR) === s;
       const hot = Array.isArray(r.hot) && inside(r.hot[0], r.sx) && inside(r.hot[1], r.sy) ? r.hot.slice(0, 2) : old?.hot ?? null;
@@ -607,24 +617,67 @@ export class Atlas {
     return json({ error: 'not found' }, 404);
   }
 
-  // Today's stats, rolling the last day's into `yesterday` when the day turns.
-  today() {
-    const day = Math.floor(this.now() / DAY_MS);
-    if (this.stats?.day !== day) {
-      this.yesterday = this.stats?.day === day - 1 ? this.stats : { day: day - 1, unpassed: 0 };
-      this.stats = { day, unpassed: 0 };
-    }
-    return this.stats;
-  }
-
   countCharted(by) {
-    const day = Math.floor(this.now() / DAY_MS);
-    if (day !== this.day) { this.day = day; this.chartedToday = new Map(); this.overList = []; }
+    this.rollDay();
     for (const [address, n] of by) {
       const before = this.chartedToday.get(address) ?? 0;
       this.chartedToday.set(address, before + n);
-      if (before < DAILY_CLAIMS && before + n >= DAILY_CLAIMS) this.overList.push(address);
+      this.stats.charted += n;
+      this.hour.charted += n;
+      if (before < DAILY_CLAIMS && before + n >= DAILY_CLAIMS) {
+        this.overList.push(address);
+        console.log({ survey: 'daily cap', capped: this.overList.length });  // never the address, hashed or not
+      }
     }
+  }
+
+  newStats(day) {
+    return { day, charted: 0, addresses: 0, capped: 0, playerHours: 0, unpassed: 0 };
+  }
+
+  // A new UTC day: today's numbers become yesterday's, and the counts per address start again.
+  rollDay() {
+    const day = Math.floor(this.now() / DAY_MS);
+    if (day === this.day) return;
+    // Yesterday is the day before this one: if the Atlas heard nothing that
+    // day, it was a day of zeros, not the last day it did hear about.
+    if (this.day >= 0) this.yesterday = day - this.day === 1 ? this.statsNow() : this.newStats(day - 1);
+    this.day = day;
+    this.chartedToday = new Map();
+    this.overList = [];
+    this.stats = this.newStats(day);
+  }
+
+  statsNow() {
+    const s = { ...this.stats, addresses: this.chartedToday.size, capped: this.overList.length };
+    s.playerHours = Math.round(s.playerHours * 100) / 100;
+    return s;
+  }
+
+  // On each report: adds up player-hours since the last one (a gap counts
+  // for at most ONLINE_MS, after which nobody counts as online anyway), and
+  // once an hour writes the hour's numbers to the log.
+  tally() {
+    const now = this.now();
+    this.rollDay();
+    if (this.sampledAt) {
+      const hours = this.totals().players * Math.min(now - this.sampledAt, ONLINE_MS) / HOUR_MS;
+      this.stats.playerHours += hours;
+      this.hour.playerHours += hours;
+    }
+    this.sampledAt = now;
+    const hour = Math.floor(now / HOUR_MS);
+    if (hour === this.hour.at) return;
+    if (this.hour.at >= 0) {
+      const { charted, playerHours } = this.hour;
+      console.log({
+        survey: 'hour', hour: new Date(this.hour.at * HOUR_MS).toISOString(), charted,
+        playerHours: Math.round(playerHours * 100) / 100,
+        perPlayerHour: playerHours > 0 ? Math.round(charted / playerHours) : null,
+        today: this.statsNow(),
+      });
+    }
+    this.hour = { at: hour, charted: 0, playerHours: 0 };
   }
 
   // Charted counts only change storage once a minute per sector at most:
@@ -668,8 +721,11 @@ export class Atlas {
     }
     let territories = '';
     for (const b of bytes) territories += String.fromCharCode(b);
-    const today = this.today();
-    return { ...this.totals(), area: AREA, territories: btoa(territories), sectors, spawn: this.spawn(live), today: { ...today }, yesterday: { ...this.yesterday } };
+    this.rollDay();
+    return {
+      ...this.totals(), area: AREA, territories: btoa(territories), sectors, spawn: this.spawn(live),
+      today: this.statsNow(), yesterday: this.yesterday,
+    };
   }
 
   // Where a new player should start, as a cell: in the middle of the biggest

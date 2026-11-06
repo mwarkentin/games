@@ -126,17 +126,24 @@ without a good pass with an `X-Survey-Unpassed: 1` header on the request it
 forwards, after deleting any copy the player sent (as it does
 `X-Survey-Address`). The sector counts them and sends the number since its
 last report as `unpassed` in its Atlas report, and puts it back if the
-report fails. The Atlas adds them up for the UTC day, and
-`GET /v1/survey/world` shows the day so far and the day before:
+report fails. The Atlas adds them up with the rest of the day's numbers
+(see "Watching for bots" in SURVEY.md), and `GET /v1/survey/world` shows
+the day so far and the day before:
 
 ```
-"today":     {"day": 20398, "unpassed": 41},
-"yesterday": {"day": 20397, "unpassed": 12}
+"today":     {"day": 20398, "charted": 412, "addresses": 31, "capped": 0, "playerHours": 9.5, "unpassed": 41},
+"yesterday": {"day": 20397, "charted": 980, "addresses": 64, "capped": 1, "playerHours": 22.1, "unpassed": 12}
 ```
 
 `day` is days since 1970, in UTC. The count lives in the Atlas's memory, so
 an eviction restarts the day; sectors outside the shared world don't report,
-so joins there aren't counted. Once the site key is in the game, nearly
+so joins there aren't counted. The daily **Watch the survey for bots**
+workflow (`scripts/survey_watch.py`) raises it once `TURNSTILE_SITE_KEY` is
+set in `letterfield.html`, when yesterday had at least 500 joins without a
+pass and at least 5 per player-hour: a player roaming opens about 10
+sockets an hour, so that's as if half of all play came from browsers that
+block Turnstile. Before the site key is in the game, every join comes
+without a pass, so the script ignores the count. Once the site key is in the game, nearly
 every player has a pass, so these joins are almost all scripts. A rising
 count is the signal to require passes; a count near zero says there's
 nothing to stop yet.
