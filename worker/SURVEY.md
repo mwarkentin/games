@@ -310,9 +310,11 @@ done yet").
   sandbox.
 - **Bots from many addresses.** Each address is limited (see "Limits per
   address"), but a botnet or a pool of proxies still gets those limits once
-  per address. The next step would be a [Turnstile][turnstile] check before
-  joining. It needs `challenges.cloudflare.com`, which the site's rules
-  don't allow yet, and a site key and secret made in mwarkentin/infra.
+  per address. A [Turnstile][turnstile] check before joining is built and
+  switched off: [TURNSTILE.md](TURNSTILE.md) covers how it works, what it
+  costs and how much it stops (scripts and cheap proxies, not a bot that
+  pays a solver service). Switching it on needs a widget and secret made in
+  mwarkentin/infra.
 - **Smaller snapshots.** Hidden words are deterministic, so a claim could
   be one bit in its chunk's word list. A fully charted sector's snapshot
   would shrink from 68 KB to a few hundred bytes plus initials. eieio
