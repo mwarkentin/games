@@ -125,14 +125,14 @@ survey also limits each IP address, wherever it plays:
   `IP_SALT`, as the leaderboard does, and hands the sector only the hash, in
   a header it sets itself. An IPv6 address counts by its /64, because a
   device can pick any address in its /64.
-- **Claims: 12 a minute per address, across every sector.** That's a
+- **Claims: 6 a minute per address, across every sector.** That's a
   [rate-limiting binding][ratelimit] (`SURVEY_CLAIMS` in `wrangler.toml`),
-  on top of each socket's own limit. It averages one claim every 5 s,
-  counted over a minute rather than 10 s, so a player who spots a few words
-  together still charts them all. One address would take about 65 days to
-  chart the world, rather than minutes. The cost is to players who share an
-  address: a family, a classroom, or a mobile network that puts many phones
-  behind one IPv4 address share those 12. A refused claim
+  on top of each socket's own limit. A player rarely finds more than one
+  word a minute, and counting over a minute rather than 10 s means a few
+  spotted together still all count. One address would take about 130 days
+  to chart the world, rather than minutes. The cost is to players who share
+  an address: a family, a classroom, or a mobile network that puts many
+  phones behind one IPv4 address share those 6. A refused claim
   gets the same `slow down` as a socket claiming too fast, and the game says
   "Too quick to chart · kept in your notes".
 - **Sockets: 40 per address in a sector, and 120 new ones a minute per

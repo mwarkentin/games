@@ -58,11 +58,11 @@ new_sqlite_classes = ["Sector", "Atlas"]
 # script charting the world. Periods can only be 10 or 60 seconds, and each
 # namespace_id must be unique in the account.
 [[ratelimits]]
-name = "SURVEY_CLAIMS"     # words claimed: 12 a minute, counted over a minute so a quick few all count
+name = "SURVEY_CLAIMS"     # words claimed: 6 a minute, counted over a minute so a quick few all count
 namespace_id = "7301"
 
   [ratelimits.simple]
-  limit = 12
+  limit = 6
   period = 60
 
 [[ratelimits]]
