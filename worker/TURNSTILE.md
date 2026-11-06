@@ -26,7 +26,7 @@ without playing. The survey already limits each hashed IP address (see
 | limit | per address | what it stops |
 | --- | --- | --- |
 | claims (rate-limiting binding) | 6 a minute | one script racing everyone |
-| claims, daily (in progress on `claude/survey-bot-protection`) | 300 a day | one address charting a lot slowly |
+| words charted in the shared world (counted by the Atlas) | 300 a UTC day | one address charting a lot slowly |
 | sockets in one sector | 40 | a few addresses filling a sector |
 | new sockets (rate-limiting binding) | 120 a minute | flooding every sector |
 
@@ -313,7 +313,7 @@ GitHub Pages behind it):
 
 1. **Merge the prototype, switched off.** Both keys empty means no change
    for players or the Worker, and the tests keep it working.
-2. **Don't switch it on yet.** Finish the daily cap per address, launch,
+2. **Don't switch it on yet.** Launch with the per-address limits,
    and watch for the signs of a pool: many addresses each claiming near
    the 6-a-minute limit, or the charted count climbing faster than the
    players online could manage. A charted world is a vanity board; the cost

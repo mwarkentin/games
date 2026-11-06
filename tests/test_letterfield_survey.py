@@ -35,15 +35,15 @@ def world_map(charted=None, sectors=(), spawn=None, players=0):
 class FakeSurvey:
     """Answers each sector's WebSocket the way worker/src/survey.js does."""
 
-    def __init__(self, claims=(), presence=(), taken=(), world=None, totals=None, full=None, too_fast=False, refuse=()):
+    def __init__(self, claims=(), presence=(), taken=(), world=None, totals=None, full=None, refuse=None, refuse_passes=()):
         self.claims = list(claims)        # [w, x, y, d, s, initials, at] already charted in sector 0,0
         self.presence = list(presence)    # [id, initials, x, y] of other players in sector 0,0
         self.taken = {tuple(c[:4]): c for c in taken}  # words someone else charts first, just before us
         self.world = world or world_map()  # what GET /v1/survey/world answers
         self.totals = totals              # a {t: world} message each sector sends after hello
         self.full = full                  # "sector" or "world": every sector turns players away
-        self.too_fast = too_fast          # every claim is refused, as a busy address's would be
-        self.refuse = set(refuse)         # survey passes the Worker turns away, as expired or another address's
+        self.refuse = refuse              # "slow down" or "daily limit": every claim is refused with it
+        self.refuse_passes = set(refuse_passes)  # survey passes the Worker turns away, as expired or another address's
         self.urls: list[str] = []         # the URL of every connection
         self.sectors: list[str] = []      # path of every connection
         self.received: list[dict] = []    # every message from the game
@@ -53,7 +53,7 @@ class FakeSurvey:
         sector = re.search(r"/v1/survey/(-?\d+)/(-?\d+)(?:\?pass=([^&]*))?$", ws.url)
         key = f"{sector[1]},{sector[2]}"
         self.urls.append(ws.url)
-        if sector[3] is not None and sector[3] in self.refuse:
+        if sector[3] is not None and sector[3] in self.refuse_passes:
             ws.send(json.dumps({"t": "unverified"}))  # the game closes it, as the Worker's close would
             return
         self.sectors.append(key)
@@ -76,9 +76,9 @@ class FakeSurvey:
             if msg["t"] != "claim":
                 return
             word = (msg["w"], msg["x"], msg["y"], msg["d"])
-            if self.too_fast:
+            if self.refuse:
                 word_key = f"{msg['w']}~{msg['x']}~{msg['y']}~{msg['d']}"
-                ws.send(json.dumps({"t": "error", "key": word_key, "error": "slow down"}))
+                ws.send(json.dumps({"t": "error", "key": word_key, "error": self.refuse}))
             elif word in self.taken:
                 ws.send(json.dumps({"t": "taken", "c": self.taken[word]}))
             else:
@@ -200,7 +200,7 @@ def test_second_to_a_word_hears_who_was_first(page: Page, site_url, errors):
 
 def test_claiming_too_fast_says_so_and_keeps_the_word(page: Page, site_url, errors):
     words = known_words(page, site_url)
-    fake = FakeSurvey(too_fast=True)
+    fake = FakeSurvey(refuse="slow down")
     open_game(page, site_url, fake)
     expect(page.locator("#survey")).to_have_attribute("data-state", "live")
     circle(page, words[0])
@@ -211,6 +211,16 @@ def test_claiming_too_fast_says_so_and_keeps_the_word(page: Page, site_url, erro
     circle(page, words[1])
     eventually(page, lambda: len(fake.sent("claim")) == 2)
     expect(page.locator("#survey")).to_have_attribute("data-state", "live")
+    assert errors == []
+
+
+def test_past_the_daily_limit_says_so_and_keeps_the_word(page: Page, site_url, errors):
+    words = known_words(page, site_url)
+    open_game(page, site_url, FakeSurvey(refuse="daily limit"))
+    expect(page.locator("#survey")).to_have_attribute("data-state", "live")
+    circle(page, words[0])
+    expect(page.locator("#toast")).to_contain_text("Today’s charting limit reached · kept in your notes")
+    assert page.evaluate("window.__lf.found.size") == 1
     assert errors == []
 
 
@@ -551,7 +561,7 @@ def test_refused_pass_gets_a_new_one(page: Page, site_url, errors):
     page.add_init_script("""localStorage.setItem('letterfield.surveyPass.v1',
       JSON.stringify({ pass: 'old-pass', expires: Date.now() + 1800000 }))""")
     desk = with_turnstile(page)
-    fake = FakeSurvey(refuse={"old-pass"})
+    fake = FakeSurvey(refuse_passes={"old-pass"})
     open_game(page, site_url, fake, f"&turnstile={SITE_KEY}")
     expect(page.locator("#survey")).to_have_attribute("data-state", "live")
     assert desk.tokens == [DUMMY_TOKEN]
