@@ -60,6 +60,9 @@ utilities; games live here so they get their own origin and their own rules.
   Music section): notes, not recordings, so it's small and works offline.
   Only public-domain or CC0 pieces, each listed in `music/README.md` with
   its source at a fixed commit; `tests/test_music.py` checks.
+  Ambient music with no tune to score, like Letterfield's drones and pads,
+  can instead be generated in the page with the Web Audio API, still with
+  no audio files.
 - Pause when the tab is hidden (`visibilitychange`) if the game runs on a
   timer.
 - Keep scores and settings in `localStorage`, with keys prefixed by the

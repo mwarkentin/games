@@ -134,3 +134,53 @@ def test_supernova_with_reduced_motion_keeps_still(page: Page, site_url, errors)
     expect(page.locator("#nova")).to_be_visible(timeout=5000)
     assert page.evaluate("({ ...window.__lf.cam })") == cam
     assert errors == []
+
+
+def test_music_starts_off_and_can_be_switched_on_and_off(page: Page, site_url, errors):
+    page.add_init_script(COUNT_AUDIO)
+    page.goto(f"{site_url}/letterfield#debug")
+    page.wait_for_function("window.__lf")
+    music = page.locator("#music")
+    expect(music).to_have_attribute("aria-pressed", "false")
+    page.keyboard.press("Shift")
+    assert page.evaluate("window.__lf.music()") is None, "no music until it's switched on"
+
+    music.click()
+    expect(music).to_have_attribute("aria-pressed", "true")
+    assert page.evaluate("localStorage.getItem('letterfield.music.v1')") == "1"
+    page.wait_for_function("window.__lf.music() && window.__lf.music().level > 0")
+    # Sound effects keep their own switch.
+    expect(page.locator("#sound")).to_have_attribute("aria-pressed", "true")
+
+    page.keyboard.press("b")
+    expect(music).to_have_attribute("aria-pressed", "false")
+    assert page.evaluate("localStorage.getItem('letterfield.music.v1')") == "0"
+    assert page.evaluate("window.__lf.music()") is None
+
+    # The choice is kept, and the music waits for a tap or key after a reload.
+    page.keyboard.press("b")
+    page.reload()
+    page.wait_for_function("window.__lf")
+    expect(page.locator("#music")).to_have_attribute("aria-pressed", "true")
+    assert page.evaluate("window.__audio") == 0
+    page.keyboard.press("Shift")
+    page.wait_for_function("window.__lf.music() !== null")
+    assert page.evaluate("window.__audio") == 1
+    assert errors == []
+
+
+def test_music_fades_out_while_the_tab_is_hidden(page: Page, site_url, errors):
+    page.add_init_script("localStorage.setItem('letterfield.coach.v1', '1'); localStorage.setItem('letterfield.music.v1', '1');")
+    page.goto(f"{site_url}/letterfield#debug")
+    page.wait_for_function("window.__lf")
+    page.keyboard.press("Shift")
+    page.wait_for_function("window.__lf.music() && window.__lf.music().level > .1")
+    hide = """hidden => {
+      Object.defineProperty(document, 'hidden', { configurable: true, get: () => hidden });
+      document.dispatchEvent(new Event('visibilitychange'));
+    }"""
+    page.evaluate(hide, True)
+    page.wait_for_function("window.__lf.music().state === 'suspended'")
+    page.evaluate(hide, False)
+    page.wait_for_function("window.__lf.music().state === 'running' && window.__lf.music().level > .1")
+    assert errors == []
