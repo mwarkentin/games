@@ -78,9 +78,12 @@ group.
 score is kept. A copy is a few hundred bytes with its indexes, so the free
 plan's 500 MB holds hundreds of thousands of saves.
 
-The survey's log is the `survey_log` table, one row per word charted,
-copied there by each sector (see "The log" in SURVEY.md). The whole shared
-world would be about 1.1 million rows and 100 MB.
+The survey's log is the `survey_log` table in a second database,
+`games-survey-log` (binding `LOG_DB`, migrations in `migrations-log/`), one
+row per word charted, copied there by each sector (see "The log" in
+SURVEY.md). The whole shared world would be about 1.1 million rows and
+100 MB. mwarkentin/infra makes it too; its id (the `survey_log_database_id`
+output) goes in `wrangler.toml`.
 
 D1 counts every row a query scans against the free plan's 5 million a day,
 so each view reads through an index of its own (named with `INDEXED BY` in
@@ -205,6 +208,7 @@ days are also kept in Cloudflare's cache (the Cache API does nothing on
 ```sh
 cd worker
 npx wrangler@4.151.0 d1 migrations apply games-leaderboard --local
+npx wrangler@4.151.0 d1 migrations apply games-survey-log --local
 echo "IP_SALT=dev" > .dev.vars
 npx wrangler@4.151.0 dev --port 8787
 ```

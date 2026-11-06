@@ -17,7 +17,7 @@
 // remembers the last claim D1 accepted, so a failed write is only tried again
 // later, and a sector that charted words before the log existed sends those
 // the first time it wakes. Rows are keyed by (at, key), so a resent row is
-// ignored. The table is ordered by time (migrations/0003_survey_log.sql), so
+// ignored. The table is ordered by time (migrations-log/0001_survey_log.sql, in LOG_DB), so
 // reading an hour reads only that hour's rows.
 //
 // Hours and days that are over don't change, so once one ended SETTLED_MS ago
@@ -106,7 +106,7 @@ function edgeCache() {
 export function routeLog(request, env, now = Date.now()) {
   const url = new URL(request.url);
   const day = url.pathname.match(LOG_DAY_PATH), hour = url.pathname.match(LOG_HOUR_PATH);
-  if (!(day || hour) || !env.DB) return null;
+  if (!(day || hour) || !env.LOG_DB) return null;
   const cors = corsHeaders(request, env);
   if (request.method !== 'GET') return json({ error: 'method not allowed' }, 405, cors);
   let ends, read, key;
@@ -114,7 +114,7 @@ export function routeLog(request, env, now = Date.now()) {
     const d = Number(day[1]);
     if (d > fdiv(now, DAY_MS)) return json({ error: 'that day has not started' }, 400, cors);
     ends = (d + 1) * DAY_MS;
-    read = () => readDay(env.DB, d);
+    read = () => readDay(env.LOG_DB, d);
     key = `day/${d}`;
   } else {
     const h = Number(hour[1]);
@@ -127,7 +127,7 @@ export function routeLog(request, env, now = Date.now()) {
       cursor = { at: Number(m[1]), key: m[2] };
     }
     ends = (h + 1) * HOUR_MS;
-    read = () => readHour(env.DB, h, cursor);
+    read = () => readHour(env.LOG_DB, h, cursor);
     key = `hour/${h}${cursor ? `?after=${after}` : ''}`;
   }
   const settled = now >= ends + SETTLED_MS;

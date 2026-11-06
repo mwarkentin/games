@@ -312,7 +312,7 @@ export class Sector {
     if (!this.logChecked) {
       // The first join after waking: anything the log hasn't got goes soon.
       this.logChecked = true;
-      if (this.env.DB && this.unlogged(2).some((r) => r.at > this.logMark())) this.logSoon(1000);
+      if (this.env.LOG_DB && this.unlogged(2).some((r) => r.at > this.logMark())) this.logSoon(1000);
     }
   }
 
@@ -423,7 +423,7 @@ export class Sector {
   // sector if it was evicted. Claims that come in before it goes off ride
   // along with it.
   logSoon(delay = LOG_MS) {
-    if (!this.env.DB) return;
+    if (!this.env.LOG_DB) return;
     const at = this.now() + delay;
     if (this.logAt && this.logAt <= at) return;
     this.logAt = at;
@@ -449,12 +449,12 @@ export class Sector {
   // Sends up to LOG_BATCH claims to D1, and moves the mark past them once D1
   // has them. Returns whether more are waiting.
   async flushLog() {
-    if (!this.env.DB) return false;
+    if (!this.env.LOG_DB) return false;
     const mark = this.logMark();
     const rows = this.unlogged(LOG_BATCH);
     // Only the claim at the mark itself, which D1 already has.
     if (!rows.length || rows.at(-1).at === mark) return false;
-    await writeLog(this.env.DB, rows);
+    await writeLog(this.env.LOG_DB, rows);
     this.sql.exec('INSERT INTO logged (id, at) VALUES (0, ?) ON CONFLICT (id) DO UPDATE SET at = excluded.at', rows.at(-1).at);
     return rows.length === LOG_BATCH;
   }

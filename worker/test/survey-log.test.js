@@ -17,7 +17,7 @@ import {
 } from '../src/survey-log.js';
 import { Sector } from '../src/survey.js';
 
-const MIGRATIONS = new URL('../migrations/', import.meta.url);
+const MIGRATIONS = new URL('../migrations-log/', import.meta.url);
 const ORIGIN = 'https://games.michaelwarkentin.com';
 const NOW = Date.UTC(2026, 10, 6, 14, 30);
 const HOUR = Math.floor(NOW / HOUR_MS);
@@ -142,8 +142,8 @@ describe('routeLog', () => {
   let env;
   beforeEach(async () => {
     forgetLog();
-    env = { DB: fakeD1(), ALLOWED_ORIGINS: ORIGIN };
-    await writeLog(env.DB, [stored(0, 0, 0, NOW - 1000), stored(1, 0, 0, NOW - 2 * DAY_MS)]);
+    env = { LOG_DB: fakeD1(), ALLOWED_ORIGINS: ORIGIN };
+    await writeLog(env.LOG_DB, [stored(0, 0, 0, NOW - 1000), stored(1, 0, 0, NOW - 2 * DAY_MS)]);
   });
   afterEach(() => { delete globalThis.caches; });
   const get = (path, { origin = ORIGIN, method = 'GET', now = NOW } = {}) =>
@@ -170,7 +170,7 @@ describe('routeLog', () => {
   });
 
   test('reads D1 once per answer while it is fresh', async () => {
-    const reads = () => env.DB.log.filter((q) => q.sql.startsWith('SELECT')).length;
+    const reads = () => env.LOG_DB.log.filter((q) => q.sql.startsWith('SELECT')).length;
     await get(`/v1/survey/log/hour/${HOUR}`);
     await get(`/v1/survey/log/hour/${HOUR}`);
     assert.equal(reads(), 1);
@@ -186,9 +186,9 @@ describe('routeLog', () => {
     const [cached] = stored.values();
     assert.equal(cached.headers.get('Access-Control-Allow-Origin'), null);
     forgetLog();  // another Worker instance
-    env.DB.log.length = 0;
+    env.LOG_DB.log.length = 0;
     const again = await get(`/v1/survey/log/day/${DAY - 2}`, { origin: 'http://localhost:8000' });
-    assert.equal(env.DB.log.length, 0);
+    assert.equal(env.LOG_DB.log.length, 0);
     assert.equal((await again.json()).total, 1);
     assert.equal(again.headers.get('Access-Control-Allow-Origin'), null);  // not in ALLOWED_ORIGINS here
   });
@@ -249,7 +249,7 @@ describe('Sector copying claims to the log', () => {
     logged = mock.method(console, 'log', () => {});
     mock.timers.enable({ apis: ['setTimeout'] });
     state = fakeState();
-    env = { DB: fakeD1() };
+    env = { LOG_DB: fakeD1() };
     clock = NOW;
     sector = make();
   });
@@ -277,18 +277,18 @@ describe('Sector copying claims to the log', () => {
     await claim(ws, 1);
     assert.equal(state.alarms, 1);  // the second rides with the first's alarm
     await fire();
-    assert.deepEqual(env.DB.rows().map((r) => r.w), [word(0).w, word(1).w]);
+    assert.deepEqual(env.LOG_DB.rows().map((r) => r.w), [word(0).w, word(1).w]);
     assert.equal(state.alarm, null);
     await claim(ws, 2);
     await fire();
-    assert.equal(env.DB.rows().length, 3);
-    assert.equal(env.DB.batches, 2);  // each claim went once
+    assert.equal(env.LOG_DB.rows().length, 3);
+    assert.equal(env.LOG_DB.batches, 2);  // each claim went once
   });
 
   test('keeps claims D1 did not take, and tries again later and later', async () => {
     const ws = join();
     await claim(ws, 0);
-    env.DB.fail = 'D1 is down';
+    env.LOG_DB.fail = 'D1 is down';
     await fire();
     assert.equal(state.alarm, clock + LOG_MS * 2);
     await fire();
@@ -296,10 +296,10 @@ describe('Sector copying claims to the log', () => {
     for (let i = 0; i < 10; i++) await fire();
     assert.equal(state.alarm, clock + LOG_RETRY_MAX_MS);
     assert.ok(logged.mock.calls.some((c) => c.arguments[0]?.survey === 'log failed'));
-    env.DB.fail = null;
+    env.LOG_DB.fail = null;
     await claim(ws, 1);
     await fire();
-    assert.deepEqual(env.DB.rows().map((r) => r.w), [word(0).w, word(1).w]);
+    assert.deepEqual(env.LOG_DB.rows().map((r) => r.w), [word(0).w, word(1).w]);
     assert.equal(state.alarm, null);
   });
 
@@ -317,10 +317,10 @@ describe('Sector copying claims to the log', () => {
     join();
     assert.equal(state.alarm, clock + 1000);
     await fire();
-    assert.equal(env.DB.rows().length, LOG_BATCH);
+    assert.equal(env.LOG_DB.rows().length, LOG_BATCH);
     assert.equal(state.alarm, clock + 1000);  // more to come
     await fire();
-    assert.equal(env.DB.rows().length, LOG_BATCH + 5);
+    assert.equal(env.LOG_DB.rows().length, LOG_BATCH + 5);
     assert.equal(state.alarm, null);
     // Waking again with nothing new sets no alarm.
     sector = make();
@@ -339,7 +339,7 @@ describe('Sector copying claims to the log', () => {
     const ats = state.storage.sql.exec('SELECT at FROM claims ORDER BY at').toArray().map((r) => r.at);
     assert.deepEqual(ats, [first, first + 1]);
     await fire();
-    assert.deepEqual(env.DB.rows().map((r) => r.at), [first, first + 1]);
+    assert.deepEqual(env.LOG_DB.rows().map((r) => r.at), [first, first + 1]);
   });
 
   test('needs no alarm without a log', async () => {

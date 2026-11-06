@@ -35,7 +35,9 @@ jobs:
         with:
           node-version: 22
       - name: Apply database migrations
-        run: npx --yes wrangler@4.151.0 d1 migrations apply games-leaderboard --remote
+        run: |
+          npx --yes wrangler@4.151.0 d1 migrations apply games-leaderboard --remote
+          npx --yes wrangler@4.151.0 d1 migrations apply games-survey-log --remote
       # The salt goes up with the deploy, so the new version never runs
       # without it. The file lives outside the checkout, only until wrangler
       # has read it. TURNSTILE_SECRET is optional: until mwarkentin/infra

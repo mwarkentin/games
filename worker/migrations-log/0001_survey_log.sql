@@ -1,4 +1,5 @@
--- Letterfield's survey log: one row per word charted, copied from the sector
+-- Letterfield's survey log, in its own database (LOG_DB in wrangler.toml):
+-- one row per word charted, copied from the sector
 -- that took the claim (see "The log" in SURVEY.md). The table is ordered by
 -- time, so reading an hour reads only that hour's rows and needs no other
 -- index. A sector resends rows it isn't sure arrived, and the same (at, key)

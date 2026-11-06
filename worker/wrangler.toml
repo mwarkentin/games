@@ -33,6 +33,19 @@ database_name = "games-leaderboard"
 database_id = "14348cc4-b12d-47a1-bf6e-8190a4898eb3"
 migrations_dir = "migrations"
 
+# Letterfield's survey log: every word charted, copied there by the survey's
+# sectors (see "The log" in SURVEY.md). A database of its own, so its batches
+# and a busy day's reads never queue with score saves, and so it can be
+# emptied or rebuilt without going near scores. Made with OpenTofu in
+# mwarkentin/infra (cloudflare.tf, output survey_log_database_id).
+[[d1_databases]]
+binding = "LOG_DB"
+database_name = "games-survey-log"
+# PLACEHOLDER until mwarkentin/infra makes the database: deploys fail until
+# this is the real id.
+database_id = "00000000-0000-0000-0000-000000000000"
+migrations_dir = "migrations-log"
+
 # War rooms: one Durable Object per room, holding the game and every player's
 # WebSocket (see src/war.js). The free plan allows SQLite-backed classes only.
 [[durable_objects.bindings]]

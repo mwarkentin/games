@@ -244,7 +244,7 @@ happened between 2 and 3 pm. The options were:
 
 | | for | against |
 | --- | --- | --- |
-| **D1, written by each sector** (chosen) | indexed SQL over the whole world; a page reads one hour with one query; already bound to the Worker; `wrangler d1 execute` for moderation | one database runs one query at a time, so writes must be batched |
+| **D1, written by each sector** (chosen) | indexed SQL over the whole world; a page reads one hour with one query; `wrangler d1 execute` for moderation | one database runs one query at a time, so writes must be batched (and the log gets a database of its own) |
 | D1, written through the Atlas | the Atlas already hears from busy sectors every 10 s | only sectors in the shared world report; claims held in the Atlas's memory are lost if it's evicted, so sectors would have to keep them until it confirms anyway; one more load on one object |
 | a Durable Object for the log (or one per day) | no new storage product | every read is a Durable Object request to the same few objects the writes go to; a viral day of readers lands on one single-threaded object; no ad hoc queries |
 | each sector's own claims, read on demand | nothing to copy | an hour or a player's finds span up to 625 objects |
@@ -254,7 +254,7 @@ the opposite load: rows appended a few times a minute per busy sector and read
 by a page that can be cached, which is what D1 is for.
 
 **How claims get there.** Each `Sector` copies its new claims to the
-`survey_log` table (`migrations/0003_survey_log.sql`) like an outbox:
+`survey_log` table (`migrations-log/0001_survey_log.sql`) like an outbox:
 
 - A claim sets a Durable Object [alarm][alarms] for `LOG_MS` (30 s) later, if
   none is set. Claims that come in before it goes off go with it. Unlike a
@@ -388,10 +388,14 @@ On the free plan, D1 and Durable Object storage each allow 100,000 rows
 written a day, so the log roughly halves the claims a day the free plan
 allows (see "On the free plan").
 
-**Isolation.** The log shares the `games-leaderboard` database with the
-leaderboards, so a backfill or a busy day's batches queue with score saves.
-They're small and spread out, but a separate D1 database for the log would
-remove that; it would need making in mwarkentin/infra.
+**A database of its own.** The log lives in `games-survey-log` (the
+`LOG_DB` binding, with its migrations in `migrations-log/`), not in the
+leaderboard's database. A D1 database runs one query at a time, so this way
+a backfill, a busy day's batches or a crowd reading today's log never
+queue with score saves, and the log can be emptied or rebuilt without going
+near scores. D1 bills by rows, not by database, so it costs nothing extra.
+mwarkentin/infra makes it (`cloudflare.tf`). Without the binding, sectors
+don't log and the log's paths aren't answered.
 
 ## Do Workers and D1 scale for this?
 
