@@ -1,0 +1,468 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="description" content="Every word charted in Letterfield's shared survey, hour by hour: what, where, by whom and when.">
+<meta name="theme-color" media="(prefers-color-scheme: light)" content="#EBEEE7">
+<meta name="theme-color" media="(prefers-color-scheme: dark)" content="#0F171A">
+<meta name="apple-mobile-web-app-title" content="Survey log">
+<!-- Part of Letterfield's home-screen app rather than an app of its own (see games_app in scripts/common.py). -->
+<meta name="games:app" content="letterfield">
+<title>Letterfield survey log</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Big+Shoulders+Display:wght@700;800&family=Martian+Mono:wght@400;500&family=Schibsted+Grotesk:wght@400;500;600&display=swap">
+<style>
+/* A page of the survey's history, not a game: it scrolls like a document, in
+   Letterfield's colours and type. Days, then hours newest first, then each word. */
+:root{
+  --paper:#EBEEE7; --panel:#F7F8F4; --ink:#1B2428; --muted:#59656A; --rule:#C6CFC6;
+  --accent:#2A43C2; --on-accent:#FFFFFF; --hover:rgba(27,36,40,.055);
+  --mark-s:58%; --mark-l:38%;
+  --f-display:"Big Shoulders Display","Arial Narrow",Impact,sans-serif;
+  --f-mono:"Martian Mono",ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+  --f-ui:"Schibsted Grotesk",system-ui,-apple-system,"Segoe UI",sans-serif;
+  color-scheme:light;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --paper:#0F171A; --panel:#162024; --ink:#E2E7DE; --muted:#93A19D; --rule:#2B3A3E;
+    --accent:#97A9FF; --on-accent:#0C1330; --hover:rgba(226,231,222,.06);
+    --mark-s:68%; --mark-l:68%; color-scheme:dark;
+  }
+}
+:root[data-theme="dark"]{
+  --paper:#0F171A; --panel:#162024; --ink:#E2E7DE; --muted:#93A19D; --rule:#2B3A3E;
+  --accent:#97A9FF; --on-accent:#0C1330; --hover:rgba(226,231,222,.06);
+  --mark-s:68%; --mark-l:68%; color-scheme:dark;
+}
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+html{scroll-padding-top:calc(env(safe-area-inset-top,0px) + 56px)}
+body{
+  margin:0;background:var(--paper);color:var(--ink);font:15px/1.45 var(--f-ui);
+  padding:calc(env(safe-area-inset-top,0px) + 16px) max(16px, env(safe-area-inset-right,0px)) calc(env(safe-area-inset-bottom,0px) + 32px) max(16px, env(safe-area-inset-left,0px));
+  -webkit-tap-highlight-color:transparent;
+}
+main{max-width:44rem;margin:0 auto}
+a{color:var(--accent)}
+button,input{font:inherit;color:inherit}
+button:focus-visible,a:focus-visible,input:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.mark{--c:hsl(var(--h,200) var(--mark-s) var(--mark-l))}
+.eyebrow{font:500 10px/1 var(--f-mono);letter-spacing:.14em;text-transform:uppercase;color:var(--muted)}
+
+header{display:flex;flex-wrap:wrap;align-items:flex-end;justify-content:space-between;gap:10px 16px;padding-bottom:14px;border-bottom:1px solid var(--rule)}
+header h1{margin:6px 0 0;font:800 40px/.9 var(--f-display);letter-spacing:.04em;text-transform:uppercase}
+header p{margin:8px 0 0;color:var(--muted);max-width:34ch}
+.back{font:500 12px/1 var(--f-mono);text-decoration:none;padding:10px 12px;border:1px solid var(--rule);border-radius:999px;color:var(--ink);white-space:nowrap}
+.back:hover{background:var(--hover)}
+
+.controls{display:flex;flex-wrap:wrap;gap:10px;align-items:center;justify-content:space-between;padding:14px 0}
+.seg{display:flex;border:1px solid var(--rule);border-radius:999px;padding:3px;background:var(--panel)}
+.seg button{border:0;background:transparent;border-radius:999px;padding:8px 14px;font:500 12px/1 var(--f-mono);letter-spacing:.06em;text-transform:uppercase;cursor:pointer;color:var(--muted)}
+.seg button[aria-pressed="true"]{background:var(--ink);color:var(--paper)}
+.day{display:flex;align-items:center;gap:6px}
+.day button{width:40px;height:40px;border-radius:50%;border:1px solid var(--rule);background:var(--panel);cursor:pointer;font-size:18px;line-height:1}
+.day button:disabled{opacity:.35;cursor:default}
+.day input{font-size:16px;height:40px;padding:0 10px;border:1px solid var(--rule);border-radius:8px;background:var(--panel);min-width:0;width:11.5em}
+
+.summary{background:var(--panel);border:1px solid var(--rule);border-radius:8px;padding:14px 14px 10px;margin-bottom:8px}
+.summary h2{margin:0;font:700 24px/1 var(--f-display);letter-spacing:.05em;text-transform:uppercase}
+.summary p{margin:6px 0 0;color:var(--muted);font:400 12px/1.5 var(--f-mono)}
+.bars{display:grid;grid-template-columns:repeat(24,minmax(0,1fr));gap:2px;align-items:end;height:48px;margin-top:12px}
+.bars button{border:0;padding:0;background:var(--rule);border-radius:2px 2px 0 0;min-height:2px;cursor:pointer}
+.bars button.some{background:var(--accent)}
+.bars button:disabled{cursor:default}
+.axis{display:flex;justify-content:space-between;font:400 10px/1 var(--f-mono);color:var(--muted);margin-top:4px}
+.days{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}
+.days button{border:1px solid var(--rule);background:transparent;border-radius:999px;padding:6px 10px;font:500 11px/1 var(--f-mono);cursor:pointer;color:var(--muted)}
+.days button[aria-current="true"]{border-color:var(--ink);color:var(--ink);background:var(--hover)}
+
+.status{color:var(--muted);padding:18px 2px;max-width:40ch}
+.status strong{display:block;color:var(--ink);font:700 20px/1.1 var(--f-display);letter-spacing:.05em;text-transform:uppercase;margin-bottom:6px}
+.status button{margin-top:10px;border:1px solid var(--rule);background:var(--panel);border-radius:999px;padding:8px 14px;cursor:pointer;font:500 12px/1 var(--f-mono)}
+
+.hour{margin-top:6px}
+.hour h3{position:sticky;top:0;z-index:1;margin:0;display:flex;justify-content:space-between;align-items:baseline;gap:10px;padding:calc(env(safe-area-inset-top,0px) + 10px) 2px 8px;background:var(--paper);border-bottom:1px solid var(--rule);font:700 20px/1 var(--f-display);letter-spacing:.06em}
+.hour h3 span{font:400 11px/1 var(--f-mono);letter-spacing:0;color:var(--muted)}
+.entries{list-style:none;margin:0;padding:4px 0}
+.entry a{display:grid;grid-template-columns:10px minmax(0,1fr) auto;column-gap:12px;row-gap:5px;align-items:baseline;padding:10px 8px;border-radius:6px;color:inherit;text-decoration:none}
+.entry a:hover{background:var(--hover)}
+.dot{width:10px;height:10px;border-radius:50%;background:var(--c);align-self:center}
+.entry.stray .dot{background:transparent;border:2px dashed var(--c)}
+.word{font:700 21px/1 var(--f-display);letter-spacing:.07em;min-width:0;overflow:hidden;text-overflow:ellipsis}
+.who{font:400 11px/1 var(--f-mono);color:var(--muted);white-space:nowrap;font-variant-numeric:tabular-nums}
+.who b{font-weight:500;color:var(--ink)}
+.you{display:inline-block;margin-left:6px;padding:3px 6px;border-radius:999px;background:var(--accent);color:var(--on-accent);font:500 9px/1 var(--f-mono);letter-spacing:.08em;text-transform:uppercase;vertical-align:1px}
+.meta{grid-column:2 / 4;font:400 11px/1.4 var(--f-mono);color:var(--muted);font-variant-numeric:tabular-nums;overflow-wrap:anywhere}
+.meta b{font-weight:500;color:var(--ink)}
+.loading{color:var(--muted);font:400 12px/1 var(--f-mono);padding:12px 8px}
+.foot{margin-top:28px;padding-top:12px;border-top:1px solid var(--rule);color:var(--muted);font-size:13px}
+@media (prefers-reduced-motion: no-preference){html{scroll-behavior:smooth}}
+@media (max-width:420px){header h1{font-size:34px}.day input{width:10em}}
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <div>
+      <div class="eyebrow">Letterfield · the shared survey</div>
+      <h1>Survey log</h1>
+      <p>Every word charted first, hour by hour. Tap one to fly there on the map.</p>
+    </div>
+    <a class="back" href="/letterfield">← The map</a>
+  </header>
+
+  <div class="controls">
+    <div class="seg" role="group" aria-label="Whose words">
+      <button type="button" id="viewAll" aria-pressed="true">Everyone</button>
+      <button type="button" id="viewMine" aria-pressed="false">Mine</button>
+    </div>
+    <div class="day">
+      <button type="button" id="prevDay" aria-label="Day before">‹</button>
+      <input type="date" id="dayInput" aria-label="Day">
+      <button type="button" id="nextDay" aria-label="Day after">›</button>
+    </div>
+  </div>
+
+  <section class="summary" id="summary" aria-live="polite">
+    <h2 id="sumTitle">…</h2>
+    <p id="sumText"></p>
+    <div class="bars" id="bars" aria-label="Words charted in each hour"></div>
+    <div class="axis"><span>0:00</span><span>6:00</span><span>12:00</span><span>18:00</span><span>24:00</span></div>
+    <div class="days" id="myDays" hidden></div>
+  </section>
+
+  <div id="log"></div>
+
+  <p class="foot">Times are yours, in <span id="zone"></span>. “Mine” lists the words this browser charted first, from Letterfield’s field notes; nothing about you is sent to find them. Initials are whatever each surveyor typed in, so they aren’t unique.</p>
+</main>
+<script>
+'use strict';
+// The survey's server (worker/src/survey-log.js). ?survey=<url> overrides it
+// for testing, as in letterfield.html.
+const SURVEY_URL = 'https://games-leaderboard.mwarkentin.workers.dev';
+const K_FINDS = 'letterfield.finds.v2';  // Letterfield's field notes, on this origin
+const HOUR = 3600000, DAY = 86400000;
+const DARROW = ['→','↘','↓','↙','←','↖','↑','↗'];
+const DNAME = ['E','SE','S','SW','W','NW','N','NE'];
+const RC = 48;  // cells per territory side
+const MAX_PAGES = 40;  // pages of one hour the page reads (500 each)
+
+const $ = s => document.querySelector(s);
+const api = (() => {
+  let url = SURVEY_URL;
+  try { const q = new URLSearchParams(location.search).get('survey'); if (q && /^(https?|wss?):\/\//.test(q)) url = q; } catch (_) {}
+  return url.replace(/\/+$/, '').replace(/^ws/, 'http');
+})();
+const fdiv = (a, b) => Math.floor(a / b);
+const keyOf = (w, x, y, d) => `${w}~${x}~${y}~${d}`;
+const hashNum = v => v < 0 ? 'm' + (-v) : String(v);
+const fmtCoord = (x, y) => `${Math.abs(x)}${x < 0 ? 'W' : 'E'} · ${Math.abs(y)}${y < 0 ? 'N' : 'S'}`;
+const timeFmt = new Intl.DateTimeFormat(undefined, { hour: 'numeric', minute: '2-digit' });
+const dayFmt = new Intl.DateTimeFormat(undefined, { weekday: 'long', month: 'long', day: 'numeric' });
+const shortDay = new Intl.DateTimeFormat(undefined, { month: 'short', day: 'numeric' });
+const plural = (n, one, many = one + 's') => `${n.toLocaleString()} ${n === 1 ? one : many}`;
+const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text !== undefined) e.textContent = text; return e; };
+
+// Days are the player's own: a local day runs from one midnight to the next,
+// which can be 23 or 25 hours around a clock change.
+const dayStart = t => { const d = new Date(t); return new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime(); };
+const nextDay = t => { const d = new Date(t); return new Date(d.getFullYear(), d.getMonth(), d.getDate() + 1).getTime(); };
+const prevDayOf = t => { const d = new Date(t); return new Date(d.getFullYear(), d.getMonth(), d.getDate() - 1).getTime(); };
+const isoDay = t => { const d = new Date(t); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
+const parseDay = s => { const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(s || ''); return m ? new Date(+m[1], +m[2] - 1, +m[3]).getTime() : null; };
+
+// The words this browser charted first: Letterfield marks a find `f` when a
+// sector says it was first. Read only, and only here.
+function myFirsts() {
+  let list = [];
+  try { list = JSON.parse(localStorage.getItem(K_FINDS) || '[]'); } catch (_) {}
+  const out = new Map();
+  if (!Array.isArray(list)) return out;
+  for (const o of list) {
+    if (!o || !o.f || typeof o.w !== 'string' || !/^[A-Z]{3,12}$/.test(o.w)) continue;
+    const x = Number(o.x), y = Number(o.y), d = Number(o.d), t = Number(o.t);
+    if (![x, y, d, t].every(Number.isFinite) || !Number.isInteger(x) || !Number.isInteger(y) || d < 0 || d > 7) continue;
+    out.set(keyOf(o.w, x, y, d), { w: o.w, x, y, d, t });
+  }
+  return out;
+}
+
+async function getJSON(path) {
+  const ctl = new AbortController(), timer = setTimeout(() => ctl.abort(), 10000);
+  try {
+    const res = await fetch(api + path, { signal: ctl.signal });
+    if (!res.ok) throw new Error('status ' + res.status);
+    return await res.json();
+  } finally { clearTimeout(timer); }
+}
+// Answers are cached by the Worker and the browser; this keeps them for the
+// page's own lifetime too, so going back and forth between days is instant.
+const memo = new Map();
+const cachedJSON = (path, live) => {
+  const kept = memo.get(path);
+  if (kept && (!live || Date.now() - kept.at < 15000)) return kept.p;
+  const p = getJSON(path);
+  memo.set(path, { p, at: Date.now() });
+  p.catch(() => memo.delete(path));
+  return p;
+};
+const isLive = endMs => Date.now() < endMs + HOUR;
+
+// Counts for each UTC hour that overlaps the local day: the day summary
+// comes per UTC day, so a local day can need two.
+async function hourCounts(from, to) {
+  const days = [];
+  // Not a UTC day that hasn't started: the Worker won't answer for one.
+  for (let d = fdiv(from, DAY); d <= Math.min(fdiv(to - 1, DAY), fdiv(Date.now(), DAY)); d++) days.push(d);
+  const answers = await Promise.all(days.map(d => cachedJSON(`/v1/survey/log/day/${d}`, isLive((d + 1) * DAY))));
+  const counts = new Map();
+  answers.forEach(a => {
+    if (!a || !Array.isArray(a.hours) || !Number.isInteger(a.day)) throw new Error('bad day');
+    a.hours.forEach((n, i) => { const h = a.day * 24 + i; if ((h + 1) * HOUR > from && h * HOUR < to && Number.isInteger(n)) counts.set(h, n); });
+  });
+  return counts;
+}
+
+// Every entry of one UTC hour, newest first.
+async function hourEntries(h) {
+  const live = isLive((h + 1) * HOUR);
+  let after = null, all = { entries: [], places: {}, themes: {} };
+  for (let page = 0; page < MAX_PAGES; page++) {
+    const a = await cachedJSON(`/v1/survey/log/hour/${h}` + (after ? '?after=' + encodeURIComponent(after) : ''), live);
+    if (!a || !Array.isArray(a.entries)) throw new Error('bad hour');
+    all.entries.push(...a.entries);
+    Object.assign(all.places, a.places || {});
+    Object.assign(all.themes, a.themes || {});
+    if (typeof a.next !== 'string') break;
+    after = a.next;
+  }
+  all.entries = all.entries.filter(okEntry).reverse();
+  return all;
+}
+const okEntry = e => Array.isArray(e) && typeof e[0] === 'string' && /^[A-Z]{3,12}$/.test(e[0])
+  && [e[1], e[2], e[3], e[6], e[7]].every(Number.isInteger) && e[3] >= 0 && e[3] <= 7;
+
+function entryRow(e, data, mine) {
+  const [w, x, y, d, s, initials, at, th] = e;
+  const key = keyOf(w, x, y, d);
+  const li = el('li', 'entry mark' + (s ? ' stray' : ''));
+  const theme = data.themes[th];
+  if (theme && Number.isFinite(theme[1])) li.style.setProperty('--h', theme[1]);
+  const a = el('a');
+  a.href = `/letterfield#f-${w.toLowerCase()}-${hashNum(x)}-${hashNum(y)}-${d}`;
+  a.append(el('i', 'dot'), el('span', 'word', w));
+  const who = el('span', 'who');
+  who.append(timeFmt.format(at) + ' · ');
+  who.append(el('b', '', /^[A-Z]{3}$/.test(initials || '') ? initials : '—'));
+  if (mine.has(key)) who.append(el('span', 'you', 'you'));
+  a.append(who);
+  const meta = el('span', 'meta');
+  const place = data.places[`${fdiv(x, RC)},${fdiv(y, RC)}`];
+  if (typeof place === 'string') meta.append(el('b', '', place), ' · ');
+  meta.append(`${fmtCoord(x, y)} · ${DARROW[d]} ${DNAME[d]}`);
+  const kind = theme && typeof theme[0] === 'string' ? (s ? 'stray ' + theme[0].toLowerCase() + ' word' : theme[0]) : (s ? 'stray' : '');
+  if (kind) meta.append(' · ' + kind);
+  a.append(meta);
+  a.title = `${w}: charted first${/^[A-Z]{3}$/.test(initials || '') ? ' by ' + initials : ''}, ${new Date(at).toLocaleString()}`;
+  li.append(a);
+  return li;
+}
+
+function hourLabel(h) {
+  return `${timeFmt.format(h * HOUR)} – ${timeFmt.format((h + 1) * HOUR)}`;
+}
+
+/* ---------- State and rendering ---------- */
+const state = { day: dayStart(Date.now()), mine: false, run: 0 };
+try {
+  const q = new URLSearchParams(location.search);
+  const d = parseDay(q.get('day'));
+  if (d !== null && d <= Date.now()) state.day = d;
+  state.mine = q.get('view') === 'mine';
+} catch (_) {}
+const logEl = $('#log'), bars = $('#bars'), dayInput = $('#dayInput');
+$('#zone').textContent = Intl.DateTimeFormat().resolvedOptions().timeZone || 'your time zone';
+let observer = null;
+
+function saveUrl() {
+  try {
+    const q = new URLSearchParams(location.search);
+    if (state.day === dayStart(Date.now())) q.delete('day'); else q.set('day', isoDay(state.day));
+    if (state.mine) q.set('view', 'mine'); else q.delete('view');
+    const s = q.toString();
+    history.replaceState(null, '', location.pathname + (s ? '?' + s : '') + location.hash);
+  } catch (_) {}
+}
+
+function status(title, text, retry) {
+  const box = el('div', 'status');
+  box.append(el('strong', '', title), text);
+  if (retry) { const b = el('button', '', 'Try again'); b.type = 'button'; b.onclick = render; box.append(el('br'), b); }
+  logEl.replaceChildren(box);
+}
+
+function drawBars(from, to, counts, mineCounts) {
+  const hours = [];
+  for (let t = from; t < to; t += HOUR) hours.push(fdiv(t, HOUR));
+  const shown = hours.map(h => (mineCounts ? mineCounts.get(h) || 0 : counts.get(h) || 0));
+  const top = Math.max(1, ...shown);
+  bars.style.gridTemplateColumns = `repeat(${hours.length}, minmax(0, 1fr))`;
+  bars.replaceChildren(...hours.map((h, i) => {
+    const b = el('button');
+    b.type = 'button';
+    const n = shown[i];
+    b.style.height = Math.max(4, Math.round((n / top) * 100)) + '%';
+    b.className = n ? 'some' : '';
+    b.disabled = !n;
+    b.setAttribute('aria-label', `${hourLabel(h)}: ${plural(n, 'word')}`);
+    b.title = `${hourLabel(h)} · ${plural(n, 'word')}`;
+    b.onclick = () => { const s = document.getElementById('h' + h); if (s) s.scrollIntoView({ block: 'start' }); };
+    return b;
+  }));
+}
+
+function drawMyDays(firsts) {
+  const box = $('#myDays');
+  box.hidden = !state.mine || !firsts.size;
+  if (box.hidden) return;
+  const byDay = new Map();
+  for (const f of firsts.values()) { const d = dayStart(f.t); byDay.set(d, (byDay.get(d) || 0) + 1); }
+  const days = [...byDay].sort((a, b) => b[0] - a[0]).slice(0, 14);
+  box.replaceChildren(...days.map(([d, n]) => {
+    const b = el('button', '', `${shortDay.format(d)} · ${n}`);
+    b.type = 'button';
+    if (d === state.day) b.setAttribute('aria-current', 'true');
+    b.onclick = () => { state.day = d; render(); };
+    return b;
+  }));
+}
+
+async function render() {
+  const run = ++state.run;
+  const from = state.day, to = nextDay(state.day), today = dayStart(Date.now());
+  saveUrl();
+  if (observer) observer.disconnect();
+  $('#viewAll').setAttribute('aria-pressed', String(!state.mine));
+  $('#viewMine').setAttribute('aria-pressed', String(state.mine));
+  dayInput.value = isoDay(state.day);
+  dayInput.max = isoDay(today);
+  $('#nextDay').disabled = state.day >= today;
+  $('#sumTitle').textContent = state.day === today ? 'Today' : state.day === prevDayOf(today) ? 'Yesterday' : dayFmt.format(state.day);
+  const firsts = myFirsts();
+  drawMyDays(firsts);
+  if (!api) {
+    $('#sumText').textContent = '';
+    bars.replaceChildren();
+    return status('Not open yet', 'The shared survey isn’t running yet, so there’s nothing to log.');
+  }
+  $('#sumText').textContent = 'Loading…';
+  logEl.replaceChildren(el('p', 'loading', 'Loading the log…'));
+  let counts;
+  try { counts = await hourCounts(from, to); } catch (_) {
+    if (run !== state.run) return;
+    $('#sumText').textContent = '';
+    drawBars(from, to, new Map());
+    return status('Can’t reach the log', 'The survey’s server didn’t answer. Your own finds are safe in Letterfield’s field notes.', true);
+  }
+  if (run !== state.run) return;
+  const hours = [...counts.keys()].filter(h => counts.get(h) > 0 && (h + 1) * HOUR > from && h * HOUR < to).sort((a, b) => b - a);
+  const total = hours.reduce((a, h) => a + counts.get(h), 0);
+  if (state.mine) return renderMine(run, from, to, counts, firsts);
+  drawBars(from, to, counts);
+  const busiest = hours.reduce((a, h) => (counts.get(h) > (counts.get(a) || 0) ? h : a), hours[0]);
+  $('#sumText').textContent = total
+    ? `${plural(total, 'word')} charted · busiest ${hourLabel(busiest)}`
+    : 'No words charted.';
+  if (!total) return status('Nothing charted', state.day === today ? 'No words charted yet today. Be the first: open the map and circle one.' : 'Nobody charted a word this day.');
+  logEl.replaceChildren(...hours.map(h => hourSection(h, counts.get(h))));
+  // Each hour loads as it scrolls into view.
+  observer = new IntersectionObserver(seen => {
+    for (const s of seen) if (s.isIntersecting) { observer.unobserve(s.target); fillHour(run, s.target, firsts); }
+  }, { rootMargin: '800px 0px' });
+  logEl.querySelectorAll('.hour').forEach(s => observer.observe(s));
+}
+
+function hourSection(h, n) {
+  const s = el('section', 'hour');
+  s.id = 'h' + h;
+  s.dataset.h = h;
+  const head = el('h3', '', hourLabel(h));
+  head.append(el('span', '', plural(n, 'word')));
+  s.append(head, el('p', 'loading', 'Loading…'));
+  return s;
+}
+
+async function fillHour(run, s, firsts) {
+  const h = Number(s.dataset.h);
+  let data;
+  try { data = await hourEntries(h); } catch (_) {
+    if (run !== state.run) return;
+    const p = s.querySelector('.loading');
+    p.textContent = 'Couldn’t load this hour. ';
+    const b = el('button', '', 'Try again'); b.type = 'button';
+    b.onclick = () => { p.textContent = 'Loading…'; fillHour(state.run, s, firsts); };
+    p.append(b);
+    return;
+  }
+  if (run !== state.run) return;
+  const list = el('ol', 'entries');
+  list.append(...data.entries.map(e => entryRow(e, data, firsts)));
+  s.querySelector('.loading').replaceWith(list);
+}
+
+// Mine: the day's log, narrowed to the words this browser charted first.
+// Only the hours that hold one are read, and the hour either side of a find
+// made near the turn of an hour, in case this device's clock was off.
+async function renderMine(run, from, to, counts, firsts) {
+  const SKEW = 10 * 60000;
+  const todays = [...firsts.values()].filter(f => f.t >= from - SKEW && f.t < to + SKEW);
+  const want = new Set();
+  for (const f of todays) for (const t of [f.t - SKEW, f.t, f.t + SKEW]) if (counts.get(fdiv(t, HOUR)) > 0) want.add(fdiv(t, HOUR));
+  let found = [];
+  const data = { places: {}, themes: {} };
+  try {
+    const parts = await Promise.all([...want].map(h => hourEntries(h)));
+    for (const p of parts) {
+      Object.assign(data.places, p.places); Object.assign(data.themes, p.themes);
+      found.push(...p.entries.filter(e => firsts.has(keyOf(e[0], e[1], e[2], e[3]))));
+    }
+  } catch (_) {
+    if (run !== state.run) return;
+    return status('Can’t reach the log', 'The survey’s server didn’t answer. Your own finds are safe in Letterfield’s field notes.', true);
+  }
+  if (run !== state.run) return;
+  found = found.filter(e => e[6] >= from && e[6] < to).sort((a, b) => b[6] - a[6]);
+  const mineCounts = new Map();
+  for (const e of found) mineCounts.set(fdiv(e[6], HOUR), (mineCounts.get(fdiv(e[6], HOUR)) || 0) + 1);
+  drawBars(from, to, counts, mineCounts);
+  const dayFirsts = todays.filter(f => f.t >= from && f.t < to).length;
+  const missing = Math.max(0, dayFirsts - found.length);
+  $('#sumText').textContent = !firsts.size ? 'No words charted first in this browser yet.'
+    : `${plural(found.length, 'word')} charted first by you` + (missing ? ` · ${missing} more in your notes aren’t in the log yet` : '');
+  if (!firsts.size) return status('None yet', 'Words you chart first in Letterfield show up here: join the survey and circle a word nobody has found. This uses the field notes saved in this browser.');
+  if (!found.length) return status('None this day', 'You didn’t chart a word first this day in this browser. Pick a day above.');
+  const hours = [...new Set(found.map(e => fdiv(e[6], HOUR)))].sort((a, b) => b - a);
+  logEl.replaceChildren(...hours.map(h => {
+    const s = hourSection(h, mineCounts.get(h));
+    const list = el('ol', 'entries');
+    list.append(...found.filter(e => fdiv(e[6], HOUR) === h).map(e => entryRow(e, data, firsts)));
+    s.querySelector('.loading').replaceWith(list);
+    return s;
+  }));
+}
+
+$('#viewAll').onclick = () => { if (state.mine) { state.mine = false; render(); } };
+$('#viewMine').onclick = () => { if (!state.mine) { state.mine = true; render(); } };
+$('#prevDay').onclick = () => { state.day = prevDayOf(state.day); render(); };
+$('#nextDay').onclick = () => { const n = nextDay(state.day); if (n <= Date.now()) { state.day = n; render(); } };
+dayInput.onchange = () => { const d = parseDay(dayInput.value); if (d !== null && d <= Date.now()) { state.day = d; render(); } };
+// Field notes change in Letterfield's own tab: "Mine" follows.
+addEventListener('storage', e => { if (e.key === K_FINDS && state.mine) render(); });
+render();
+if (location.hash === '#debug') window.__log = { state, render, myFirsts };
+</script>
+</body>
+</html>

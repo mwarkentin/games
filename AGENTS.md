@@ -8,7 +8,12 @@ utilities; games live here so they get their own origin and their own rules.
 ## Layout
 
 - `*.html` at the top level: one file per game. The filename is the URL:
-  `foo.html` is served at `/foo`.
+  `foo.html` is served at `/foo`. A page that belongs to a game rather than
+  being one, like `letterfield-log.html` (the survey's history), is built and
+  tested the same way but says `<meta name="games:app" content="letterfield">`:
+  it joins that game's home-screen app, so it needs no icon or manifest of
+  its own and its path must start with the game's (see `app_of` in
+  `scripts/common.py`).
 - `README.md`: the game list. The build turns it into `index.html`.
 - `build.sh` and `scripts/`: assemble the site in `_site/` (never committed).
   The build also generates `index.html`, `colophon.html`, `sitemap.xml`,

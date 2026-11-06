@@ -68,7 +68,7 @@ def test_game_is_listed_in_readme(filename):
 def test_game_uses_the_worker_tests_stand_in_for(filename):
     """Tests fake WORKER_URL (see fake_leaderboard.py); any other address would reach a real server."""
     text = (ROOT / filename).read_text("utf-8")
-    urls = re.findall(r"\b(?:LEADERBOARD|ROOMS)_URL = '([^']*)'", text)
+    urls = re.findall(r"\b(?:LEADERBOARD|ROOMS|SURVEY)_URL = '([^']*)'", text)
     assert all(url in ("", WORKER_URL) for url in urls), urls
 
 

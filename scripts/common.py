@@ -117,12 +117,34 @@ def music_files(root: Path = ROOT) -> list[str]:
 
 
 def game_files(root: Path = ROOT) -> list[str]:
-    """Every game: the .html files at the top level of the repo."""
+    """Every game: the .html files at the top level of the repo.
+
+    That includes pages that belong to a game, like Letterfield's survey log:
+    they're published, listed and tested the same way, but join their game's
+    home-screen app (see app_of).
+    """
     return sorted(
         path.name
         for path in root.glob("*.html")
         if path.name not in GENERATED_PAGES
     )
+
+
+def app_of(text: str, slug: str) -> str:
+    """The home-screen app a page belongs to: its own, named after its slug,
+    unless its <head> names a game's with <meta name="games:app" content="...">.
+
+    A page in another game's app shares that game's manifest, icons and link
+    preview, and opens inside it on a Home Screen, since its path starts with
+    the game's (/letterfield-log is in /letterfield's scope).
+    """
+    return extract_meta(text, "games:app") or slug
+
+
+def own_apps(root: Path = ROOT) -> list[str]:
+    """The games that are home-screen apps of their own, by slug."""
+    slugs = [filename.removesuffix(".html") for filename in game_files(root)]
+    return [slug for slug in slugs if app_of((root / f"{slug}.html").read_text("utf-8"), slug) == slug]
 
 
 def extract_title(text: str, fallback: str) -> str:

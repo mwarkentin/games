@@ -166,6 +166,8 @@ body.docked .notes{box-shadow:none}
 .survey-map canvas{display:block;width:min(100%, 220px);aspect-ratio:1;margin:8px auto 0;border:1px solid var(--rule);border-radius:4px;cursor:crosshair;touch-action:manipulation}
 .survey-map-note{margin:6px 0 0;text-align:center;font:400 10.5px/1.4 var(--f-mono);color:var(--muted)}
 .survey-map-note:empty{display:none}
+.survey-log{display:block;margin-top:6px;padding:4px 0;font:500 10px/1.3 var(--f-mono);letter-spacing:.14em;text-transform:uppercase;color:var(--muted)}
+.survey-log::after{content:" →"}
 /* With the survey panel, the whole drawer scrolls, so the world map never pushes the finds out of reach. */
 .notes.has-survey{overflow-y:auto;overscroll-behavior:contain}
 .notes.has-survey .finds{flex:1 0 auto;overflow:visible}
@@ -320,6 +322,7 @@ body.docked .nova{left:calc((100% - var(--notes-w)) / 2)}
       <canvas id="worldMap" width="200" height="200" aria-label="Map of the shared world: charted territories are darker, dots are players. Tap to fly there."></canvas>
       <p class="survey-map-note" id="worldNote"></p>
     </details>
+    <a class="survey-log" href="/letterfield-log">Survey log: every word charted, hour by hour</a>
     <form class="survey-sign" id="surveySign">
       <label for="surveyInitials">Sign the words you chart first</label>
       <input id="surveyInitials" maxlength="3" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="ABC" aria-describedby="surveyHint">

@@ -8,7 +8,8 @@ This branch includes a working prototype:
 - the map, shared with the game: `src/letterfield-world.js`
 - the survey code in `letterfield.html`
 
-It stays switched off until `SURVEY_URL` is set.
+It stays switched off until `SURVEY_URL` is set. Its history is a page of
+its own, `letterfield-log.html` (see "The log").
 
 ## One Million Words
 
@@ -228,6 +229,170 @@ already send it:
   daily counts per address, so an evicted Atlas starts the day again and
   forgets yesterday.
 
+## The log
+
+[letterfield-log](https://games.michaelwarkentin.com/letterfield-log) is a
+page of the survey's history: every word charted first, with where, by whom
+(their initials) and when, a day at a time, hour by hour. Each word links to
+`/letterfield#f-<word>-<x>-<y>-<d>`, which flies the game to it. "Mine"
+narrows it to the words this browser charted first.
+
+### Where the history lives: D1, copied from each sector
+
+Sectors already keep every claim, but a log can't ask 625 objects what
+happened between 2 and 3 pm. The options were:
+
+| | for | against |
+| --- | --- | --- |
+| **D1, written by each sector** (chosen) | indexed SQL over the whole world; a page reads one hour with one query; already bound to the Worker; `wrangler d1 execute` for moderation | one database runs one query at a time, so writes must be batched |
+| D1, written through the Atlas | the Atlas already hears from busy sectors every 10 s | only sectors in the shared world report; claims held in the Atlas's memory are lost if it's evicted, so sectors would have to keep them until it confirms anyway; one more load on one object |
+| a Durable Object for the log (or one per day) | no new storage product | every read is a Durable Object request to the same few objects the writes go to; a viral day of readers lands on one single-threaded object; no ad hoc queries |
+| each sector's own claims, read on demand | nothing to copy | an hour or a player's finds span up to 625 objects |
+
+D1 was ruled out above for *live* state: polling, positions, pushes. A log is
+the opposite load: rows appended a few times a minute per busy sector and read
+by a page that can be cached, which is what D1 is for.
+
+**How claims get there.** Each `Sector` copies its new claims to the
+`survey_log` table (`migrations/0003_survey_log.sql`) like an outbox:
+
+- A claim sets a Durable Object [alarm][alarms] for `LOG_MS` (30 s) later, if
+  none is set. Claims that come in before it goes off go with it. Unlike a
+  timer, an alarm doesn't stop the sector hibernating, and it wakes the
+  sector if it was evicted.
+- The alarm reads claims made since the last one D1 has (the sector's
+  `logged` mark, with an index on the claims' time) and writes up to 240 in
+  one D1 batch: 12 rows to an `INSERT` (D1 binds at most 100 values to a
+  statement) and one transaction for the lot. Only then does the mark move.
+- **If D1 fails**, nothing is lost: the claims are still in the sector, the
+  mark stays, and the alarm tries again after 1, 2, 4… minutes, up to 10.
+  Workers Logs gets a `{survey: 'log failed'}` line. A write that reached D1
+  but whose answer was lost is sent again; rows are keyed by `(at, key)`, so
+  D1 ignores the copy.
+- A claim's time is always after the sector's previous claim, even if the
+  object moved to a machine whose clock is behind, so the mark can't skip
+  one.
+- The table is `WITHOUT ROWID` and ordered by `(at, key)`, so reading an hour
+  reads just that hour's rows, and there's no other index to write: one row
+  written per claim. The tests check each query's plan.
+
+**Backfill.** None needed by hand. A sector that charted words before the log
+existed has no mark, so the first time it wakes after the deploy it sends
+every claim it holds, a batch a second, with their original times. Sectors
+nobody visits again keep theirs until someone does. Since `SURVEY_URL` was
+still empty on main when the log was built, that's only words charted by
+people trying `?survey=`.
+
+### The API
+
+```
+GET /v1/survey/log/day/<day>     (day = UTC days since 1970)
+  → {"day", "hours": [24 counts, one per UTC hour], "total"}
+GET /v1/survey/log/hour/<hour>   (hour = UTC hours since 1970)
+GET /v1/survey/log/hour/<hour>?after=<at>~<key>
+  → {"hour", "entries": [[w, x, y, d, s, initials, at, th], ...],
+     "places": {"rx,ry": "Monet Hollow"}, "themes": {"th": [name, hue]},
+     "next": "<at>~<key>" | null}
+```
+
+An hour comes oldest first, 500 entries a page; `next` is the `after` for the
+next page. A day or hour that hasn't started is a 400. The page shows the
+player's own days, so it asks for the one or two UTC days a local day
+overlaps, then each hour as it scrolls into view.
+
+**Caching.** Past hours and days don't change, but a claim can reach D1 up to
+`LOG_MS` late, or later while D1 is failing. So an hour or day that ended an
+hour ago (`SETTLED_MS`) is cached for a day, and the one still running for
+15 seconds:
+
+- `Cache-Control` on every answer, for browsers;
+- in each Worker instance's memory (up to 300 answers), so a crowd reading
+  the current hour costs one D1 query per instance every 15 s;
+- in Cloudflare's cache through the Cache API. It does nothing on
+  `workers.dev`, so it only starts helping once the Worker is on a custom
+  domain (see the Worker's README). The cached copy has no CORS headers; each
+  answer adds its own origin's.
+
+A backfilled sector's old claims can take up to a day to appear in hours that
+were already cached.
+
+### Where, readably
+
+Coordinates mean little, so each answer names the territories its entries
+are in (`places`, such as "Monet Hollow") and gives each theme's name and
+hue. The Worker works these out with `regionName`, now in
+`src/letterfield-world.js` beside the themes it already had (a test checks
+it names every territory in the shared world as the game does). The page
+holds none of the map's 40 KB of theme data.
+
+### "Mine"
+
+Initials are three letters anyone can type, so they can't say which words
+are yours. Two ways could:
+
+- **The finds already on the device** (chosen). The log is on the same
+  origin as the game, so it reads `letterfield.finds.v2`, where the game
+  marks each word a sector said you charted first (`f`). Mine is the day's
+  log narrowed to those words: the page fetches only the hours that hold
+  one, plus the hour either side when a find is within 10 minutes of it, in
+  case the device's clock was off. Everyone's log marks yours with "you".
+  Nothing about the player is sent or stored.
+- **A private player token**, like War's `war:token`, sent with each claim
+  and kept by the server as a hash. It would be the server's own record, so
+  a lost "you were first" answer wouldn't matter. But the token would live in
+  the same `localStorage` as the finds, so it reaches no further: a new
+  device or a cleared browser starts again either way. It would also add a
+  column to every sector's claims, a field to the protocol, and a lasting
+  pseudonymous ID for every claim, which would need keeping out of the API
+  just like hashed addresses and socket ids.
+
+The token would be worth it only with a way to carry it to another device
+(a sync code, say). On an iPhone the Home Screen app keeps its own storage,
+so the log is in Letterfield's app (see the build below) and opens there
+with the same finds.
+
+### How the page fits the site
+
+`letterfield-log.html` is a top-level page like a game, so it's published,
+listed in the README, smoke-tested at phone and desktop sizes, cached
+offline by `sw.js` and gets telemetry and analytics. It isn't a game of its
+own, though: `<meta name="games:app" content="letterfield">` puts it in
+Letterfield's home-screen app (`app_of` in `scripts/common.py`). It gets no
+manifest, icon or preview of its own, and since `/letterfield-log` starts
+with `/letterfield`, it's inside Letterfield's app scope. Letterfield's
+survey panel links to it. Its `SURVEY_URL` already points at the Worker,
+since it only reads; until the survey is on, the log is empty.
+
+### Cost
+
+On Workers Paid, per word charted: one D1 row written, one more row written
+in the sector (its time index), and a share of an alarm. Each busy sector's
+alarm runs at most every 30 s: one Durable Object request and two rows
+written (the alarm and the mark).
+
+| | whole world charted (1.12 M words) | a busy day (30,000 words) | the ceiling (all 625 sectors charting nonstop) |
+| --- | --- | --- | --- |
+| D1 rows written | 1.12 M (50 M a month included) | 30,000 | 75,000 batches an hour |
+| D1 storage | ~100 MB (5 GB included) | ~3 MB | |
+| alarms (DO requests) | | ≤ 2,880 per busy sector | ~$0.011 an hour |
+| rows written in sectors | 1.12 M + 2 per alarm | | ~$0.15 an hour past the included 50 M |
+| D1 rows read | each hour read reads its rows; cached as above | | |
+
+So the log adds nothing past the included allowances at the survey's
+expected sizes, and at the ceiling raises the worst case from about $0.75 to
+about $0.92 an hour. `LOG_MS` is the knob: 60 s would halve the alarm costs.
+Reading is cheap: 25 billion D1 rows read a month are included, and a
+settled hour is read from D1 about once a day per Worker instance.
+
+On the free plan, D1 and Durable Object storage each allow 100,000 rows
+written a day, so the log roughly halves the claims a day the free plan
+allows (see "On the free plan").
+
+**Isolation.** The log shares the `games-leaderboard` database with the
+leaderboards, so a backfill or a busy day's batches queue with score saves.
+They're small and spread out, but a separate D1 database for the log would
+remove that; it would need making in mwarkentin/infra.
+
 ## Do Workers and D1 scale for this?
 
 **Workers: yes.** They're stateless, and Cloudflare runs as many copies as
@@ -392,6 +557,11 @@ done yet").
   custom domain, Cloudflare's cache could serve it as chessboards did.
 - **Zoomed-out views** only show live claims from the four nearest sectors.
   A cached per-sector snapshot could fill in the rest of the screen.
+- **The log, live.** The log page shows a day as it was when opened. It
+  could refetch the running hour every 15 s, or take claims from the
+  sector sockets the game already uses.
+- **The log by initials or by territory.** Each would need an index, so a
+  row written per claim more.
 - **Finds made offline stay personal.** Uploading them later would let
   anyone backdate a pile of claims at once.
 
@@ -425,3 +595,4 @@ deploying, set `SURVEY_URL` in `letterfield.html` to the Worker's URL.
 [dopricing]: https://developers.cloudflare.com/durable-objects/platform/pricing/
 [ratelimit]: https://developers.cloudflare.com/workers/runtime-apis/bindings/rate-limit/
 [turnstile]: https://developers.cloudflare.com/turnstile/
+[alarms]: https://developers.cloudflare.com/durable-objects/api/alarms/

@@ -17,12 +17,14 @@ import pytest
 from playwright.sync_api import Browser, BrowserContext, Page
 
 from build_pwa import build_service_worker
-from common import GENERATED_PAGES, HOME_APP, ICON_SIZES, ROOT, extract_meta, extract_title, game_files, music_files
+from common import GENERATED_PAGES, HOME_APP, ICON_SIZES, ROOT, app_of, extract_meta, extract_title, game_files, music_files, own_apps
 from fake_leaderboard import stand_in_for_worker
 from render_icons import render
 
 GAMES = game_files()
-APPS = [*(filename.removesuffix(".html") for filename in GAMES), HOME_APP]
+APPS = [*own_apps(), HOME_APP]
+# Pages that belong to a game's app rather than having their own (see app_of).
+PARTS = [filename for filename in GAMES if filename.removesuffix(".html") not in APPS]
 PAGES = [*GENERATED_PAGES.values(), *(f"/{filename.removesuffix('.html')}" for filename in GAMES)]
 # iOS cuts off longer labels under a Home Screen icon.
 SHORT_NAME_LIMIT = 12
@@ -75,7 +77,7 @@ def test_icons_match_their_svg(page: Page, app):
         assert difference < 1, f"icons/{app}.svg changed: run scripts/render_icons.py"
 
 
-@pytest.mark.parametrize("filename", GAMES)
+@pytest.mark.parametrize("filename", [f"{app}.html" for app in APPS if app != HOME_APP])
 def test_each_game_is_an_app_of_its_own(site_dir, filename):
     slug = filename.removesuffix(".html")
     source = (ROOT / filename).read_text("utf-8")
@@ -98,6 +100,26 @@ def test_each_game_is_an_app_of_its_own(site_dir, filename):
     assert f'<link rel="manifest" href="/manifests/{slug}.webmanifest">' in head
     assert f'<link rel="apple-touch-icon" href="/icons/{slug}-180.png">' in head
     assert head.count("<script data-pwa>") == 1
+
+
+@pytest.mark.parametrize("filename", PARTS)
+def test_a_page_of_a_game_opens_in_that_games_app(site_dir, filename):
+    slug = filename.removesuffix(".html")
+    app = app_of((ROOT / filename).read_text("utf-8"), slug)
+    assert app in APPS, f"games:app names {app!r}, which isn't a game with an app of its own"
+    assert not (site_dir / "manifests" / f"{slug}.webmanifest").exists()
+    manifest = json.loads((site_dir / "manifests" / f"{app}.webmanifest").read_text("utf-8"))
+    # Inside the game's scope, so a Home Screen app opens it in place, with the game's storage.
+    assert f"/{slug}".startswith(manifest["scope"])
+    page = (site_dir / filename).read_text("utf-8")
+    head = page[: page.lower().index("</head>")]
+    assert f'<link rel="manifest" href="/manifests/{app}.webmanifest">' in head
+    assert f'<link rel="apple-touch-icon" href="/icons/{app}-180.png">' in head
+    assert head.count("<script data-pwa>") == 1
+
+
+def test_letterfields_survey_log_is_part_of_letterfield():
+    assert "letterfield-log.html" in PARTS
 
 
 @pytest.mark.parametrize("filename", GENERATED_PAGES)

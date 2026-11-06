@@ -2,7 +2,9 @@
 """Make every page installable as a home-screen app that works offline.
 
 Each game gets a web app manifest, so adding it to the Home Screen gives that
-game an app of its own, opening full screen at the game. The home page and
+game an app of its own, opening full screen at the game. A page that belongs
+to a game, like Letterfield's survey log, joins that game's app instead (see
+app_of in common.py). The home page and
 colophon share a manifest for the whole collection. Names, descriptions and
 colors come from each game's <head>: its <title>, description, theme-color
 and, for a short label under the icon, apple-mobile-web-app-title.
@@ -36,6 +38,7 @@ from common import (
     extract_title,
     game_files,
     music_files,
+    own_apps,
 )
 
 SERVICE_WORKER = "sw.js"
@@ -117,9 +120,10 @@ def page_version(files: list[Path]) -> str:
 
 def publish_pwa(site_dir: Path, root: Path = ROOT) -> dict[str, dict]:
     """Write the manifests, icons and sw.js into site_dir. Returns the manifests."""
+    # A page in another game's app (see app_of) uses that game's manifest.
     manifests = {
-        filename.removesuffix(".html"): game_manifest(filename, (root / filename).read_text("utf-8"))
-        for filename in game_files(root)
+        slug: game_manifest(f"{slug}.html", (root / f"{slug}.html").read_text("utf-8"))
+        for slug in own_apps(root)
     }
     manifests[HOME_APP] = home_manifest()
 
