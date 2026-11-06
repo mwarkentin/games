@@ -60,7 +60,7 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px s
 /* Top bar */
 #bar { display: flex; align-items: center; gap: 8px; padding: 6px 10px; min-height: 46px; }
 .icon-btn {
-  width: 38px; height: 38px; border-radius: 12px; border: 0; background: rgba(0, 0, 0, .22);
+  position: relative; width: 38px; height: 38px; border-radius: 12px; border: 0; background: rgba(0, 0, 0, .22);
   display: grid; place-items: center; font-size: 19px; flex: none;
 }
 #battleInfo { flex: 1; min-width: 0; text-align: center; font-family: var(--display); font-size: 15px; letter-spacing: .02em; }
@@ -342,7 +342,7 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px s
 }
 .overlay.solid { background: radial-gradient(ellipse at 50% 30%, var(--felt), var(--felt-2) 80%); -webkit-backdrop-filter: none; backdrop-filter: none; }
 .panel {
-  margin: auto 0; flex: none;
+  position: relative; margin: auto 0; flex: none;
   width: min(100%, 440px); background: var(--panel); color: var(--panel-ink); border-radius: 22px;
   padding: 18px 16px; box-shadow: var(--shadow); -webkit-user-select: text; user-select: text;
 }
@@ -412,9 +412,17 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px s
 .stat-grid b { display: block; font-size: 18px; }
 .science { background: var(--panel-2); border-left: 4px solid var(--accent); padding: 8px 10px; border-radius: 8px; font-size: 14px; margin: 10px 0; }
 .unlock { background: var(--gold); color: var(--gold-ink); padding: 10px 12px; border-radius: 12px; font-weight: 700; margin: 10px 0; }
-.menu-tools { display: grid; grid-template-columns: 1fr 1fr auto; gap: 6px; }
+.menu-tools { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
 .menu-tools .btn { padding: 10px 6px; white-space: nowrap; }
-.menu-tools #menuSoundBtn { width: 52px; font-size: 20px; }
+/* The sound switches, in the menu's corner and the top bar. Music off is the
+   note, struck through. */
+.corner { position: absolute; top: 12px; right: 12px; display: flex; gap: 6px; }
+.panel .icon-btn { background: var(--panel-2); color: var(--panel-ink); border: 2px solid var(--panel-line); }
+.icon-btn.off { opacity: .6; }
+.icon-btn.off::after {
+  content: ""; position: absolute; left: 20%; right: 20%; top: calc(50% - 1px); height: 3px;
+  background: currentColor; border-radius: 2px; transform: rotate(-45deg);
+}
 .games { list-style: none; padding: 0; margin: 8px 0 0; display: grid; gap: 6px; }
 .games li { background: var(--panel-2); border-radius: 12px; padding: 8px 10px; font-size: 13px; }
 .games li.won { border-left: 4px solid var(--gold); }
@@ -451,7 +459,8 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px s
     <button class="icon-btn" id="menuBtn" aria-label="Pause menu">☰</button>
     <div id="battleInfo"><span id="battleNum">Battle 1</span><small id="battleSub"></small></div>
     <span id="roomTag" hidden></span>
-    <button class="icon-btn" id="soundBtn" aria-label="Sound on">🔊</button>
+    <button class="icon-btn music-toggle" aria-label="Music on">🎵</button>
+    <button class="icon-btn sound-toggle" aria-label="Sound effects on">🔊</button>
   </header>
   <section id="odds" hidden>
     <div id="oddsNote">Win probability</div>
@@ -488,6 +497,10 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px s
 <!-- Menu -->
 <div class="overlay solid" id="menu">
   <div class="panel">
+    <div class="corner">
+      <button class="icon-btn music-toggle" aria-label="Music on">🎵</button>
+      <button class="icon-btn sound-toggle" aria-label="Sound effects on">🔊</button>
+    </div>
     <div class="title-cards" aria-hidden="true"></div>
     <h1>War!</h1>
     <p><b>Slam Edition.</b> The card game where the highest card wins, and you can slam your card down as hard as you like. It won't help.</p>
@@ -521,7 +534,6 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px s
     <div class="menu-tools">
       <button class="btn" id="stylesBtn">🧤 Power-ups</button>
       <button class="btn" id="historyBtn">📜 History</button>
-      <button class="btn" id="menuSoundBtn" aria-label="Sound on">🔊</button>
     </div>
   </div>
 </div>
@@ -956,11 +968,16 @@ const Sound = {
   on: store.get('sound', true),
   ctx: null,
   charge: null,
+  // Makes the audio context on the first tap or key, as browsers require.
+  // The music plays through it too.
   unlock() {
-    if (!this.on || this.ctx) return;
+    if (this.ctx || (!this.on && !Music.on)) return;
     const AC = window.AudioContext || window.webkitAudioContext;
     if (!AC) return;
     try { this.ctx = new AC(); } catch (e) { this.ctx = null; }
+    if (!this.ctx) return;
+    Music.preload();
+    syncMusic();
   },
   toggle() {
     this.on = !this.on;
@@ -1050,13 +1067,479 @@ const Sound = {
 };
 
 function renderSound() {
-  const label = Sound.on ? 'Sound on' : 'Sound off';
-  setText($('soundBtn'), Sound.on ? '🔊' : '🔇');
-  setAttr($('soundBtn'), 'aria-label', label);
-  setText($('menuSoundBtn'), Sound.on ? '🔊' : '🔇');
-  setAttr($('menuSoundBtn'), 'aria-label', label);
-  setAttr($('menuSoundBtn'), 'title', label);
+  const label = Sound.on ? 'Sound effects on' : 'Sound effects off';
+  for (const b of document.querySelectorAll('.sound-toggle')) {
+    setText(b, Sound.on ? '🔊' : '🔇');
+    setAttr(b, 'aria-label', label);
+    setAttr(b, 'title', label);
+  }
+  const music = Music.on ? 'Music on' : 'Music off';
+  for (const b of document.querySelectorAll('.music-toggle')) {
+    setClass(b, 'off', !Music.on);
+    setAttr(b, 'aria-label', music);
+    setAttr(b, 'title', music);
+  }
 }
+
+// ---- Music ----
+//
+// Public-domain pieces, read from MIDI files in music/ (see its README for
+// where each comes from) and played live on the voices of an old game
+// console: pulse waves for the tune and its harmony, a triangle for the bass
+// and noise for the drums. The arranger takes a piano piece's right-hand top
+// line as the tune, the next note down as harmony and the left hand's lowest
+// notes as bass, and writes drums to suit the time signature. The files hold
+// notes, not recordings: a few KB each, and the service worker keeps them
+// for offline play.
+
+const MUSIC_VOLUME = 0.45;
+
+// What plays when: which piece, which bars (an intro played once and then a
+// part that loops, or bars played once), how fast, and how to arrange them.
+const SONGS = {
+  menu: { file: 'the-entertainer', bpm: 80, intro: [[1, 4]], loop: [[5, 20]] },
+  battle: { file: 'thunder-and-lightning', bpm: 138, intro: [[1, 4]], loop: [[5, 64]] },
+  war: { file: 'hall-of-the-mountain-king', bpm: 140, loop: [[2, 17]], crash: 'start' },
+  war2: { file: 'hall-of-the-mountain-king', bpm: 168, loop: [[50, 65]], harmony: true, level: 1, crash: 'start' },
+  war3: { file: 'hall-of-the-mountain-king', bpm: 200, loop: [[50, 57]], harmony: true, double: true, level: 2, crash: 'start' },
+  win: { file: 'stars-and-stripes-forever', bpm: 220, once: [[209, 212]], level: 1, crash: 'end' },
+  lose: { file: 'prelude-in-c-minor', bpm: 72, once: [[1, 1], [13, 13]], drums: 'dirge', harmony: true },
+};
+
+// Reads a standard MIDI file into notes, timed in quarter notes (beats), so
+// the player can choose its own tempo. Returns { tempo, tracks: [[note]] }
+// where a note is { beat, length, pitch, velocity, channel }, tempo is the
+// file's first tempo in beats per minute and meter its first time signature.
+function parseMidi(bytes) {
+  let pos = 0;
+  const text = (n) => String.fromCharCode(...bytes.subarray(pos, (pos += n)));
+  const u32 = () => ((bytes[pos++] << 24) | (bytes[pos++] << 16) | (bytes[pos++] << 8) | bytes[pos++]) >>> 0;
+  const u16 = () => (bytes[pos++] << 8) | bytes[pos++];
+  const vlq = () => {
+    let value = 0, b;
+    do { b = bytes[pos++]; value = (value << 7) | (b & 0x7f); } while (b & 0x80);
+    return value;
+  };
+  if (text(4) !== 'MThd') throw new Error('not a MIDI file');
+  const headerEnd = u32() + pos;
+  u16();  // format
+  const trackCount = u16();
+  const division = u16();
+  if (division & 0x8000) throw new Error('SMPTE timing is not supported');
+  pos = headerEnd;
+  let tempo = 120, meter = null;
+  const tracks = [];
+  for (let t = 0; t < trackCount && pos < bytes.length; t++) {
+    if (text(4) !== 'MTrk') throw new Error('bad track');
+    const end = u32() + pos;
+    const notes = [];
+    const sounding = new Map();  // channel * 128 + pitch -> [notes still sounding]
+    let tick = 0, status = 0;
+    while (pos < end) {
+      tick += vlq();
+      if (bytes[pos] & 0x80) status = bytes[pos++];
+      const kind = status >> 4, channel = status & 15;
+      if (status === 0xff) {
+        const meta = bytes[pos++], length = vlq();
+        if (meta === 0x51 && tick === 0) tempo = 60e6 / ((bytes[pos] << 16) | (bytes[pos + 1] << 8) | bytes[pos + 2]);
+        if (meta === 0x58 && !meter) meter = [bytes[pos], 2 ** bytes[pos + 1]];
+        pos += length;
+      } else if (status === 0xf0 || status === 0xf7) {
+        pos += vlq();
+      } else if (kind === 0x8 || kind === 0x9) {
+        const pitch = bytes[pos++], velocity = bytes[pos++], key = channel * 128 + pitch;
+        if (kind === 0x9 && velocity > 0) {
+          const note = { beat: tick / division, length: 0, pitch, velocity, channel };
+          notes.push(note);
+          if (!sounding.has(key)) sounding.set(key, []);
+          sounding.get(key).push(note);
+        } else {
+          const note = sounding.get(key)?.shift();
+          if (note) note.length = tick / division - note.beat;
+        }
+      } else {
+        pos += kind === 0xc || kind === 0xd ? 1 : 2;
+      }
+    }
+    pos = end;
+    if (notes.length) tracks.push(notes);
+  }
+  return { tempo, meter: meter || [4, 4], tracks };
+}
+
+const CHIP_VOICES = {
+  lead: { wave: 'pulse25', vol: 0.16, sustain: 0.7, decay: 0.12, vibrato: 0.007, echo: true },
+  harm: { wave: 'pulse12', vol: 0.07, sustain: 0.6, decay: 0.1, vibrato: 0.005 },
+  bass: { wave: 'triangle', vol: 0.3, sustain: 1, decay: 0.2 },
+};
+
+const chipKits = new WeakMap();
+function chipKit(ctx) {
+  let kit = chipKits.get(ctx);
+  if (kit) return kit;
+  const pulse = (duty) => {
+    const real = new Float32Array(48);
+    for (let k = 1; k < 48; k++) real[k] = (2 / (k * Math.PI)) * Math.sin(k * Math.PI * duty);
+    return ctx.createPeriodicWave(real, new Float32Array(48));
+  };
+  const noise = ctx.createBuffer(1, ctx.sampleRate, ctx.sampleRate);
+  const data = noise.getChannelData(0);
+  for (let i = 0; i < data.length; i++) data[i] = Math.random() * 2 - 1;
+  kit = { pulse12: pulse(0.125), pulse25: pulse(0.25), pulse50: pulse(0.5), noise };
+  chipKits.set(ctx, kit);
+  return kit;
+}
+
+// The mixer: a bus for each voice, an echo on the tune (its delay follows
+// the tempo of each part), a compressor and the music's volume.
+function chipMixer(ctx, destination, volume) {
+  const out = ctx.createGain();
+  out.gain.value = volume;
+  out.connect(destination);
+  const master = ctx.createDynamicsCompressor();
+  master.threshold.value = -18;
+  master.ratio.value = 3;
+  master.connect(out);
+  const bus = (vol) => { const g = ctx.createGain(); g.gain.value = vol; g.connect(master); return g; };
+  const echo = ctx.createDelay(2);
+  echo.delayTime.value = 0.3;
+  const feedback = ctx.createGain();
+  feedback.gain.value = 0.28;
+  const wet = ctx.createGain();
+  wet.gain.value = 0.22;
+  echo.connect(feedback).connect(echo);
+  echo.connect(wet).connect(master);
+  const lead = bus(1);
+  lead.connect(echo);
+  return { out, lead, harm: bus(1), bass: bus(1), drums: bus(0.9), echo };
+}
+
+function chipNote(ctx, out, voice, pitch, time, length, vel) {
+  const v = CHIP_VOICES[voice];
+  const kit = chipKit(ctx);
+  const freq = 440 * 2 ** ((pitch - 69) / 12);
+  const osc = ctx.createOscillator();
+  if (v.wave === 'triangle') osc.type = 'triangle';
+  else osc.setPeriodicWave(kit[v.wave]);
+  osc.frequency.setValueAtTime(freq, time);
+  if (v.vibrato && length > 0.22) {
+    const lfo = ctx.createOscillator();
+    const depth = ctx.createGain();
+    lfo.frequency.value = 5.5;
+    depth.gain.setValueAtTime(0, time);
+    depth.gain.linearRampToValueAtTime(freq * v.vibrato, time + Math.min(length, 0.35));
+    lfo.connect(depth).connect(osc.frequency);
+    lfo.start(time);
+    lfo.stop(time + length + 0.05);
+  }
+  const vol = v.vol * (0.55 + 0.45 * (vel / 127));
+  const amp = ctx.createGain();
+  amp.gain.setValueAtTime(0, time);
+  amp.gain.linearRampToValueAtTime(vol, time + 0.004);
+  amp.gain.setTargetAtTime(vol * v.sustain, time + 0.004, v.decay);
+  amp.gain.setTargetAtTime(0, time + Math.max(0.02, length - 0.015), 0.012);
+  osc.connect(amp).connect(out);
+  osc.start(time);
+  osc.stop(time + length + 0.08);
+}
+
+function chipDrum(ctx, out, kind, time, vol) {
+  const kit = chipKit(ctx);
+  const noise = (type, freq, gain, length, q) => {
+    const src = ctx.createBufferSource();
+    src.buffer = kit.noise;
+    const filter = ctx.createBiquadFilter();
+    filter.type = type;
+    filter.frequency.value = freq;
+    if (q) filter.Q.value = q;
+    const amp = ctx.createGain();
+    amp.gain.setValueAtTime(gain * vol, time);
+    amp.gain.exponentialRampToValueAtTime(0.001, time + length);
+    src.connect(filter).connect(amp).connect(out);
+    src.start(time, Math.random() * 0.5);
+    src.stop(time + length + 0.02);
+  };
+  const tone = (from, to, gain, length) => {
+    const osc = ctx.createOscillator();
+    const amp = ctx.createGain();
+    osc.frequency.setValueAtTime(from, time);
+    osc.frequency.exponentialRampToValueAtTime(to, time + length * 0.7);
+    amp.gain.setValueAtTime(gain * vol, time);
+    amp.gain.exponentialRampToValueAtTime(0.001, time + length);
+    osc.connect(amp).connect(out);
+    osc.start(time);
+    osc.stop(time + length + 0.02);
+  };
+  if (kind === 'k' || kind === 'c') { tone(170, 45, 0.9, 0.22); noise('lowpass', 2500, 0.18, 0.02); }
+  if (kind === 's' || kind === 'r') { noise('bandpass', 2000, kind === 'r' ? 0.35 : 0.55, 0.14, 0.7); tone(220, 160, kind === 'r' ? 0.12 : 0.22, 0.07); }
+  if (kind === 'h') noise('highpass', 8000, 0.16, 0.04);
+  if (kind === 'o') noise('highpass', 7000, 0.14, 0.25);
+  if (kind === 'c') noise('highpass', 4000, 0.35, 1.3);
+}
+
+// Drums for one bar, as [offset in quarter notes, kind]: k kick, s snare,
+// h hi-hat, r snare roll. Kick and snare take turns on the beats with hi-hats
+// between them, busier at higher levels; a fill ends every fourth bar. A
+// dirge is a slow drum on every beat.
+function chipDrumBar(meter, style, level, fill) {
+  const [count, unit] = meter;
+  const compound = unit === 8 && count % 3 === 0;
+  const pulse = compound ? 1.5 : 4 / unit;
+  const beats = compound ? count / 3 : count;
+  const hits = [];
+  if (style === 'none') return hits;
+  for (let b = 0; b < beats; b++) {
+    const t = b * pulse;
+    if (style === 'dirge') { hits.push([t, 'k']); continue; }
+    if (fill && level > 0 && b === beats - 1) {
+      for (let i = 0; i < 4; i++) hits.push([t + (i * pulse) / 4, 'r']);
+      continue;
+    }
+    hits.push([t, b % 2 ? 's' : 'k']);
+    hits.push([t + pulse / 2, 'h']);
+    if (level > 0) hits.push([t + (3 * pulse) / 4, 'h']);
+    if (level > 1) { hits.push([t + pulse / 4, 'h']); if (b % 2) hits.push([t + pulse / 2, 'k']); }
+  }
+  return hits;
+}
+
+// Arranges bars of a parsed piano MIDI for the chip voices: the right hand's
+// top line as the tune, its next note down as harmony (or the tune an octave
+// down, with `double`), the left hand's lowest note as bass, and drums.
+// `sections` lists [first bar, last bar] ranges to play one after another.
+// Each part moves by whole octaves to sit where its voice sounds best,
+// unless `lead` or `bass` says how far. `crash` puts a cymbal at the 'start'
+// or 'end'. Returns { beats, events } with events in order of their beat.
+function chipArrange(song, { sections, lead, bass, harmony = false, double = false, drums = 'march', level = 0, crash }) {
+  const perBar = (song.meter[0] * 4) / song.meter[1];
+  const median = (list) => { const s = list.slice().sort((a, b) => a - b); return s[s.length >> 1]; };
+  const notes = { lead: [], harm: [], bass: [] };
+  const hits = [];
+  let offset = 0;
+  for (const [from, to] of sections) {
+    const start = (from - 1) * perBar, end = to * perBar;
+    const onsets = (track) => {
+      const groups = new Map();
+      for (const n of track) {
+        if (n.beat < start || n.beat >= end) continue;
+        if (!groups.has(n.beat)) groups.set(n.beat, []);
+        groups.get(n.beat).push(n);
+      }
+      return [...groups].sort((a, b) => a[0] - b[0]);
+    };
+    const at = (n, beat, pitch = n.pitch) => ({ beat: offset + beat - start, length: n.length, pitch, vel: n.velocity });
+    for (const [beat, group] of onsets(song.tracks[0])) {
+      const sorted = group.slice().sort((a, b) => b.pitch - a.pitch);
+      notes.lead.push(at(sorted[0], beat));
+      const second = sorted.find((n) => n.pitch < sorted[0].pitch);
+      if (harmony && second) notes.harm.push(at(second, beat));
+      else if (double) notes.harm.push(at(sorted[0], beat, sorted[0].pitch - 12));
+    }
+    for (const [beat, group] of onsets(song.tracks[1] || [])) {
+      notes.bass.push(at(group.reduce((a, b) => (b.pitch < a.pitch ? b : a)), beat));
+    }
+    for (let bar = from; bar <= to; bar++) {
+      const fill = (bar - from) % 4 === 3;
+      for (const [t, drum] of chipDrumBar(song.meter, drums, level, fill)) hits.push({ beat: offset + (bar - from) * perBar + t, drum });
+    }
+    offset += end - start;
+  }
+  const fit = (list, target) => (list.length ? 12 * Math.round((target - median(list.map((n) => n.pitch))) / 12) : 0);
+  const leadShift = lead ?? fit(notes.lead, 74);
+  const bassShift = bass ?? fit(notes.bass, 45);
+  const events = [];
+  for (const voice of ['lead', 'harm', 'bass']) {
+    const shift = voice === 'bass' ? bassShift : leadShift;
+    for (const n of notes[voice]) events.push({ ...n, voice, pitch: n.pitch + shift });
+  }
+  if (crash === 'start') hits.push({ beat: 0, drum: 'c' });
+  if (crash === 'end') hits.push({ beat: offset - perBar, drum: 'c' });
+  events.push(...hits);
+  events.sort((a, b) => a.beat - b.beat);
+  return { beats: offset, perBar, events };
+}
+
+// Plays one event of an arrangement at `time`, a beat being `beat` seconds.
+function chipEvent(ctx, mix, e, time, beat) {
+  if (e.drum) chipDrum(ctx, mix.drums, e.drum, time, e.drum === 'k' && e.soft ? 0.6 : 1);
+  else chipNote(ctx, mix[e.voice], e.voice, e.pitch, time, Math.max(0.05, e.length * beat), e.vel);
+}
+
+// Schedules a whole arrangement from `time` at `bpm` and returns when it ends.
+function chipPlay(ctx, mix, arrangement, { bpm, time }) {
+  const beat = 60 / bpm;
+  mix.echo.delayTime.setValueAtTime(beat * 0.75, time);
+  for (const e of arrangement.events) chipEvent(ctx, mix, e, time + e.beat * beat, beat);
+  return time + arrangement.beats * beat;
+}
+
+// The player: plays the song wanted for what's on screen, scheduling a
+// moment ahead, and changes songs on the next bar. A song can have an intro,
+// played once, before a part that loops; a jingle plays once and stops.
+const Music = {
+  on: store.get('music', true),
+  files: {},        // file -> its parsed MIDI, or a promise of it while it loads
+  parts: {},        // song -> { intro, loop, once }: its arrangements
+  mix: null,
+  want: null,       // the song wanted now
+  song: null,       // the song playing
+  seg: null,        // the part playing: { part, arr, start, beat, i, until }
+  queue: [],        // parts of the song still to come
+  next: null,       // { song, list }: the song taking over when this part stops
+  paused: null,     // the song to bring back when the tab is shown again
+  timer: 0,
+  // Fetches and arranges a song's piece, once.
+  async ready(name) {
+    const spec = SONGS[name];
+    if (!this.files[spec.file]) {
+      this.files[spec.file] = fetch(`music/${spec.file}.mid`)
+        .then((response) => {
+          if (!response.ok) throw new Error(`music/${spec.file}.mid: ${response.status}`);
+          return response.arrayBuffer();
+        })
+        .then((buffer) => parseMidi(new Uint8Array(buffer)))
+        .catch((error) => { delete this.files[spec.file]; throw error; });
+    }
+    const midi = await this.files[spec.file];
+    if (!this.parts[name]) {
+      const arrange = (sections, loop) => sections && { arr: chipArrange(midi, { ...spec, sections }), bpm: spec.bpm, loop };
+      this.parts[name] = { intro: arrange(spec.intro, false), loop: arrange(spec.loop, true), once: arrange(spec.once, false) };
+    }
+    return this.parts[name];
+  },
+  // Loads every piece in the background, so changes of song are quick.
+  preload() {
+    for (const name of Object.keys(SONGS)) this.ready(name).catch(() => {});
+  },
+  // Plays a song from the next bar of the one playing, or straight away;
+  // null stops. Its intro plays unless `intro` is false, or the music is
+  // coming back from a war.
+  play(name, intro) {
+    if (!this.on || !Sound.ctx) name = null;
+    if (name === this.want) return;
+    const from = this.want;
+    this.want = name;
+    if (!name) { this.stop(); return; }
+    this.ready(name).then((parts) => {
+      if (this.want !== name) return;
+      const withIntro = intro ?? !(from && from.startsWith('war'));
+      const list = parts.once ? [parts.once] : [...(parts.intro && withIntro ? [parts.intro] : []), parts.loop];
+      this.start(name, list);
+    }, () => { if (this.want === name) this.want = null; });
+  },
+  start(name, list) {
+    const ctx = Sound.ctx;
+    if (ctx.state === 'suspended') ctx.resume();
+    if (!this.mix) this.mix = chipMixer(ctx, ctx.destination, MUSIC_VOLUME);
+    this.mix.out.gain.cancelScheduledValues(ctx.currentTime);
+    this.mix.out.gain.setValueAtTime(MUSIC_VOLUME, ctx.currentTime);
+    this.next = { song: name, list };
+    if (this.seg) {
+      // Change on the first bar line past what's already scheduled.
+      const bar = this.seg.arr.perBar * this.seg.beat;
+      const after = ctx.currentTime + 0.3;
+      this.seg.until = this.seg.start + Math.ceil((after - this.seg.start) / bar) * bar;
+    } else {
+      this.seg = this.following(ctx.currentTime + 0.05);
+    }
+    if (!this.timer) this.timer = setInterval(() => this.tick(), 50);
+    this.tick();
+  },
+  // The part to play from `time`: the next song if one is waiting, or the
+  // rest of this one, or this part again if it loops.
+  following(time) {
+    let part = null;
+    if (this.next) {
+      this.song = this.next.song;
+      [part, ...this.queue] = this.next.list;
+      this.next = null;
+    } else if (this.queue.length) {
+      part = this.queue.shift();
+    } else if (this.seg && this.seg.part.loop) {
+      part = this.seg.part;
+    }
+    if (!part) return null;
+    const beat = 60 / part.bpm;
+    this.mix.echo.delayTime.setValueAtTime(beat * 0.75, time);
+    return { part, arr: part.arr, start: time, beat, i: 0, until: Infinity };
+  },
+  tick() {
+    const ctx = Sound.ctx;
+    const horizon = ctx.currentTime + 0.25;
+    while (this.seg) {
+      const seg = this.seg;
+      const end = Math.min(seg.until, seg.start + seg.arr.beats * seg.beat);
+      const e = seg.arr.events[seg.i];
+      const time = e ? seg.start + e.beat * seg.beat : end;
+      if (e && time < end) {
+        if (time >= horizon) break;
+        chipEvent(ctx, this.mix, e, time, seg.beat);
+        seg.i++;
+      } else if (end <= horizon) {
+        this.seg = this.following(end);
+      } else {
+        break;
+      }
+    }
+    if (!this.seg) {
+      this.song = null;  // a jingle has finished
+      this.halt();
+    }
+  },
+  halt() {
+    clearInterval(this.timer);
+    this.timer = 0;
+  },
+  // Stops now, fading out what's already on its way.
+  stop() {
+    this.seg = null;
+    this.next = null;
+    this.queue = [];
+    this.song = null;
+    this.halt();
+    if (this.mix) this.mix.out.gain.setTargetAtTime(0, Sound.ctx.currentTime, 0.04);
+  },
+  // The tab is hidden: hush, and start the song again when it's back.
+  pause() {
+    if (!this.want) return;
+    const name = this.want;
+    this.play(null);
+    this.paused = name;
+  },
+  resume() {
+    if (!this.paused) return;
+    const name = this.paused;
+    this.paused = null;
+    this.play(name, false);
+  },
+  toggle() {
+    this.on = !this.on;
+    store.set('music', this.on);
+    if (this.on) { Sound.unlock(); syncMusic(); } else this.play(null);
+    renderSound();
+  },
+};
+
+// Which war you're in, for the music: 0 for none, 1 for a war, 2 for a
+// double war and so on. Any war counts at a small table; at a big one, only
+// yours, or the music would never settle.
+function warDepth() {
+  const inWar = (stage, fighters) => stage > 0 && (S.players.length <= 4 || fighters.includes(S.you));
+  const now = inWar(S.stage, S.fighters) ? S.stage : 0;
+  return S.pending && inWar(S.pending.stage, S.pending.fighters) ? Math.max(now, S.pending.stage) : now;
+}
+
+// The music for what's on screen: The Entertainer in the menu and lobby,
+// Thunder and Lightning at the table and the Mountain King in a war, faster
+// the deeper it goes. The end of a game plays a jingle instead.
+function syncMusic() {
+  if (!Music.on || !Sound.ctx) return;
+  if (!$('menu').hidden || !$('lobby').hidden) { Music.play('menu'); return; }
+  if (S.phase !== 'playing') return;
+  const depth = warDepth();
+  Music.play(depth >= 3 ? 'war3' : depth === 2 ? 'war2' : depth === 1 ? 'war' : 'battle');
+}
+
 
 // ---- Effects ----
 
@@ -1433,6 +1916,7 @@ function openStage() {
     setText($('caption'), isFighting(S.you) ? (final ? 'Last chance. Slam like it matters. (It does not.)' : pick(OPEN_LINES)) : '');
   }
   renderAll();
+  syncMusic();
   if (S.auto && isFighting(S.you)) later(autoSlam, (250 + Math.random() * 700) * pace());
 }
 
@@ -1501,6 +1985,7 @@ function onFlip(m) {
   narrate(m);
   if (m.next) onStage(m.next);
   if (m.winner !== null && m.next) Odds.update(m.counts, m.next.battle, S.limit);
+  syncMusic();
   if (m.over) {
     Odds.settle(m.over);
     S.over = m.over;
@@ -2318,6 +2803,7 @@ function showScreen() {
   setHidden($('lobby'), S.phase !== 'lobby');
   if (S.phase !== 'over') setHidden($('over'), true);
   if (S.phase === 'lobby') renderLobby();
+  syncMusic();
 }
 
 function backToMenu(message) {
@@ -2334,6 +2820,7 @@ function backToMenu(message) {
   setHidden($('menu'), false);
   history.replaceState(null, '', location.pathname + (params.get('rooms') ? `?rooms=${encodeURIComponent(params.get('rooms'))}` : '') + location.hash);
   renderMenu();
+  syncMusic();
   setText($('friendsErr'), message || '');
 }
 
@@ -2440,7 +2927,8 @@ function showOver() {
   renderOverButtons();
   setHidden($('over'), false);
   setHidden($('pause'), true);
-  if (won) Sound.win();
+  if (Music.on && Sound.ctx) Music.play(won || me === null ? 'win' : 'lose');
+  else if (won) Sound.win();
 }
 
 // ---- Recent games ----
@@ -2790,8 +3278,8 @@ function init() {
   $('dealBtn').addEventListener('click', () => { setText($('lobbyErr'), ''); S.conn.send({ t: 'start' }); });
   $('leaveBtn').addEventListener('click', () => backToMenu());
 
-  $('soundBtn').addEventListener('click', () => Sound.toggle());
-  $('menuSoundBtn').addEventListener('click', () => Sound.toggle());
+  for (const b of document.querySelectorAll('.sound-toggle')) b.addEventListener('click', () => Sound.toggle());
+  for (const b of document.querySelectorAll('.music-toggle')) b.addEventListener('click', () => Music.toggle());
   $('menuBtn').addEventListener('click', openPause);
   $('resumeBtn').addEventListener('click', closePause);
   $('quitBtn').addEventListener('click', () => backToMenu());
@@ -2894,7 +3382,8 @@ function init() {
   });
   document.addEventListener('pointerdown', () => Sound.unlock(), { passive: true });
   document.addEventListener('visibilitychange', () => {
-    if (!document.hidden) return;
+    if (!document.hidden) { Music.resume(); return; }
+    Music.pause();
     cancelInput();
     if (S.mode === 'solo' && S.phase === 'playing' && $('pause').hidden) openPause();
   });
@@ -2930,7 +3419,8 @@ function renderStyles() {
 
 init();
 
-// #debug exposes hooks for tests: state() reads the table, slam(power) slams
+// #debug exposes hooks for tests: music() says what's playing and
+// musicLevels() measures every song; state() reads the table, slam(power) slams
 // right away (every card, in a war), input(mode) picks how you slam, hurry()
 // runs your clock down to its last moment,
 // finish() plays a solo game out, pace(p) speeds a solo game up,
@@ -2954,6 +3444,25 @@ if (DEBUG) {
     },
     input: (mode) => setInput(mode),
     deck: (key) => setDeck(key),
+    music: () => ({ on: Music.on, song: Music.want, playing: Music.song, songs: Object.keys(SONGS) }),
+    // How loud each song gets: rendered offline, as the game would play it.
+    musicLevels: async () => {
+      const levels = {};
+      for (const name of Object.keys(SONGS)) {
+        const parts = await Music.ready(name);
+        const list = [parts.intro, parts.loop, parts.once].filter(Boolean);
+        const seconds = list.reduce((sum, p) => sum + (p.arr.beats * 60) / p.bpm, 0) + 2;
+        const ctx = new OfflineAudioContext(1, Math.ceil(22050 * seconds), 22050);
+        const mix = chipMixer(ctx, ctx.destination, MUSIC_VOLUME);
+        let time = 0;
+        for (const p of list) time = chipPlay(ctx, mix, p.arr, { bpm: p.bpm, time });
+        const audio = (await ctx.startRendering()).getChannelData(0);
+        let peak = 0, sum = 0;
+        for (const v of audio) { peak = Math.max(peak, Math.abs(v)); sum += v * v; }
+        levels[name] = { peak, rms: Math.sqrt(sum / audio.length), seconds: time };
+      }
+      return levels;
+    },
     hurry: () => { S.closesAt = now() + 600; },
     finish: () => S.conn && S.conn.finish && S.conn.finish(),
     pace: (p) => { if (S.conn && S.conn.setPace) S.conn.setPace(p); },

@@ -70,6 +70,11 @@ def inject_analytics(text: str, root: Path | None = None) -> str:
     return inline_script(text, "data-analytics", script)
 
 
+def music_files(root: Path = ROOT) -> list[str]:
+    """The MIDI files games play, as paths like music/foo.mid (see music/README.md)."""
+    return sorted(f"music/{path.name}" for path in (root / "music").glob("*.mid"))
+
+
 def game_files(root: Path = ROOT) -> list[str]:
     """Every game: the .html files at the top level of the repo."""
     return sorted(

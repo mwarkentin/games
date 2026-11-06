@@ -1,14 +1,17 @@
 // Offline copies of every page, so a game added to the Home Screen still opens
-// without a connection. scripts/build_pwa.py publishes this with VERSION and
-// PAGES filled in; a new VERSION on each deploy refreshes every copy.
+// without a connection. scripts/build_pwa.py publishes this with VERSION,
+// PAGES and MUSIC filled in; a new VERSION on each deploy refreshes every copy.
 //
 // Pages come from the network first, so a deploy shows up straight away, and
-// from the offline copy when the network fails or is too slow to answer.
-// Google Fonts are kept too. Everything else (the leaderboard, War's rooms,
-// Sentry, Counterscale) goes straight to the network untouched.
+// from the offline copy when the network fails or is too slow to answer. The
+// music games play (music/*.mid) is kept with them and comes from the offline
+// copy first: it only changes along with VERSION. Google Fonts are kept too.
+// Everything else (the leaderboard, War's rooms, Sentry, Counterscale) goes
+// straight to the network untouched.
 
 const VERSION = 'dev';
 const PAGES = [];
+const MUSIC = [];
 
 const PAGE_CACHE = `pages-${VERSION}`;
 const FONT_CACHE = 'fonts';
@@ -36,15 +39,16 @@ addEventListener('fetch', (event) => {
   if (url.origin === location.origin) {
     const page = pagePath(url.pathname);
     if (PAGES.includes(page)) event.respondWith(networkFirst(event, page));
+    else if (MUSIC.includes(url.pathname)) event.respondWith(keptFirst(event, url.pathname));
   } else if (FONT_HOSTS.includes(url.hostname)) {
     event.respondWith(fromFontCache(event));
   }
 });
 
-// Every page or none: if one can't be fetched, installing fails and the
-// previous version keeps serving its copies until the next try.
+// Every page and piece of music or none: if one can't be fetched, installing
+// fails and the previous version keeps serving its copies until the next try.
 async function precache() {
-  const responses = await Promise.all(PAGES.map(async (page) => {
+  const responses = await Promise.all([...PAGES, ...MUSIC].map(async (page) => {
     const response = await fetch(page, { cache: 'no-cache' });
     if (!response.ok) throw new Error(`${page}: ${response.status}`);
     return [page, response];
@@ -81,6 +85,11 @@ async function networkFirst(event, page) {
   const fallback = network.then((response) => (response.status >= 500 ? cached : response), () => cached);
   const slow = new Promise((resolve) => setTimeout(resolve, NETWORK_WAIT_MS, cached));
   return Promise.race([fallback, slow]);
+}
+
+async function keptFirst(event, path) {
+  const cached = await (await caches.open(PAGE_CACHE)).match(path);
+  return cached || fetch(event.request);
 }
 
 // Font files never change at a given URL, so a kept one is simply used. The

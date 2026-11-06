@@ -17,7 +17,7 @@ import pytest
 from playwright.sync_api import Browser, BrowserContext, Page
 
 from build_pwa import build_service_worker
-from common import GENERATED_PAGES, HOME_APP, ICON_SIZES, ROOT, extract_meta, extract_title, game_files
+from common import GENERATED_PAGES, HOME_APP, ICON_SIZES, ROOT, extract_meta, extract_title, game_files, music_files
 from fake_leaderboard import stand_in_for_worker
 from render_icons import render
 
@@ -110,17 +110,20 @@ def test_generated_pages_belong_to_the_home_app(site_dir, filename):
     assert page.count("<script data-pwa>") == 1
 
 
-def test_service_worker_keeps_every_page(site_dir):
+def test_service_worker_keeps_every_page_and_the_music(site_dir):
     worker = (site_dir / "sw.js").read_text("utf-8")
     pages = json.loads(re.search(r"^const PAGES = (.*);$", worker, re.MULTILINE).group(1))
     assert sorted(pages) == sorted(PAGES)
+    music = json.loads(re.search(r"^const MUSIC = (.*);$", worker, re.MULTILINE).group(1))
+    assert music == [f"/{name}" for name in music_files()] and music
     assert re.search(r'^const VERSION = "[0-9a-f]{16}";$', worker, re.MULTILINE)
 
 
-def test_build_service_worker_fills_in_version_and_pages():
-    template = "const VERSION = 'dev';\nconst PAGES = [];\nconst PAGE_CACHE = `pages-${VERSION}`;\n"
-    assert build_service_worker(template, ["/", "/a"], "abc") == (
-        'const VERSION = "abc";\nconst PAGES = ["/", "/a"];\nconst PAGE_CACHE = `pages-${VERSION}`;\n'
+def test_build_service_worker_fills_in_version_pages_and_music():
+    template = "const VERSION = 'dev';\nconst PAGES = [];\nconst MUSIC = [];\nconst PAGE_CACHE = `pages-${VERSION}`;\n"
+    assert build_service_worker(template, ["/", "/a"], ["/music/a.mid"], "abc") == (
+        'const VERSION = "abc";\nconst PAGES = ["/", "/a"];\nconst MUSIC = ["/music/a.mid"];\n'
+        "const PAGE_CACHE = `pages-${VERSION}`;\n"
     )
 
 
@@ -159,6 +162,10 @@ def test_every_page_opens_offline_after_visiting_one(sw_context: BrowserContext,
     for path, same_as in {"/war?room=ABCD": "/war", "/letterfield.html": "/letterfield", "/index.html": "/"}.items():
         page.goto(f"{site_url}{path}")
         assert page.title() == titles[same_as], path
+    # So does the music, for games that play it.
+    for name in music_files():
+        size = page.evaluate(f"fetch('/{name}').then((r) => r.arrayBuffer()).then((b) => b.byteLength)")
+        assert size == (ROOT / name).stat().st_size, name
     assert errors == []
 
 
