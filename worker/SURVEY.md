@@ -185,6 +185,42 @@ survey also limits each IP address, wherever it plays:
   - A script reports its own position anyway, and flying across the map is
     normal play, so it could send a position next to each word first.
 
+### Watching for bots
+
+The limits slow down one address. A pool of addresses, a botnet or a
+proxy service, still gets them once per address, and that's when a
+Turnstile check would be worth switching on (see `TURNSTILE.md`). So the
+Atlas keeps the numbers that would show one, from the reports sectors
+already send it:
+
+- **For each UTC day:**
+  - words charted in the shared world;
+  - how many addresses charted them;
+  - how many reached the daily cap;
+  - player-hours, added up from the players online at each report.
+- **Where they show up:**
+  - The world map (`GET /v1/survey/world`) has `today` and `yesterday`.
+  - Workers Logs gets an `{survey: 'hour'}` line with each hour's words,
+    player-hours and words per player-hour.
+  - Workers Logs also gets an `{survey: 'daily cap'}` line whenever an
+    address reaches the cap. It holds the count only, never the address.
+- **What would look like a pool:**
+  - Many addresses at the cap in a day. One or two is a keen player or a
+    single script.
+  - Far more words per player-hour than people manage. A person charts a
+    word a minute at most. A bot that claims without sending positions adds
+    words but no player-hours, so its rate climbs.
+- **Telling you:** the **Watch the survey for bots** workflow
+  (`.github/workflows/survey-watch.yml`) reads the world map just after
+  midnight UTC. If yesterday had 20 or more addresses at the cap, or 120 or
+  more words per player-hour over at least 500 words, it opens an issue
+  labelled `survey-bots`, or comments on the one that's open.
+  `scripts/survey_watch.py` holds the thresholds. If the survey can't be
+  reached, it only warns.
+- **Lost on eviction:** the numbers live in the Atlas's memory, like the
+  daily counts per address, so an evicted Atlas starts the day again and
+  forgets yesterday.
+
 ## Do Workers and D1 scale for this?
 
 **Workers: yes.** They're stateless, and Cloudflare runs as many copies as
@@ -335,9 +371,11 @@ done yet").
   sandbox.
 - **Bots from many addresses.** Each address is limited (see "Limits per
   address"), but a botnet or a pool of proxies still gets those limits once
-  per address. The next step would be a [Turnstile][turnstile] check before
-  joining. It needs `challenges.cloudflare.com`, which the site's rules
-  don't allow yet, and a site key and secret made in mwarkentin/infra.
+  per address. "Watching for bots" says when it's happening. The next step
+  would be a [Turnstile][turnstile] check before joining, which is
+  evaluated, with a prototype, in PR #27. It needs
+  `challenges.cloudflare.com`, which the site's rules don't allow yet, and
+  a site key and secret made in mwarkentin/infra.
 - **Smaller snapshots.** Hidden words are deterministic, so a claim could
   be one bit in its chunk's word list. A fully charted sector's snapshot
   would shrink from 68 KB to a few hundred bytes plus initials. eieio

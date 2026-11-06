@@ -1,0 +1,36 @@
+name: Watch the survey for bots
+
+# Once a day, reads yesterday's numbers from Letterfield's shared survey
+# (the public world map) and, if they look like bots, opens an issue
+# labelled survey-bots, or adds to the one that's open. See
+# scripts/survey_watch.py for the thresholds.
+
+on:
+  schedule:
+    - cron: '23 0 * * *'  # just after midnight UTC, when "yesterday" is a whole day
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  watch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Check yesterday's numbers
+        run: python3 scripts/survey_watch.py > "$RUNNER_TEMP/alert.md"
+      - name: Open or update an issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          test -s "$RUNNER_TEMP/alert.md" || { echo "Nothing looks like bots."; exit 0; }
+          cat "$RUNNER_TEMP/alert.md"
+          gh label create survey-bots --color B60205 --description "Signs of bots in Letterfield's shared survey" --force
+          open=$(gh issue list --label survey-bots --state open --json number --jq '.[0].number // empty')
+          if [ -n "$open" ]; then
+            gh issue comment "$open" --body-file "$RUNNER_TEMP/alert.md"
+          else
+            gh issue create --title "Letterfield survey: signs of bots" --label survey-bots --body-file "$RUNNER_TEMP/alert.md"
+          fi
