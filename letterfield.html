@@ -823,7 +823,10 @@ function onSurvey(l, m) {
     const c = addClaim(m.c, false);
     if (c && pending.delete(c.key)) toast(`<i></i><b>${c.w}</b><span>Charted first by ${c.by || 'another surveyor'} · ${rel(c.at)}</span>`, THEMES[c.th].hue);
   } else if (m.t === 'error') {
-    pending.delete(m.key);
+    // Claiming too fast, from this tab or from everyone on the same network:
+    // the word stays in your notes, it just isn't signed.
+    const e = pending.delete(m.key) && m.error === 'slow down' ? found.get(m.key) : null;
+    if (e) toast(`<i></i><b>${e.w}</b><span>Too quick to chart · kept in your notes</span>`, THEMES[e.th].hue);
   } else if (m.t === 'world' && Number.isInteger(m.charted) && Number.isInteger(m.total) && Number.isInteger(m.players)) {
     world = { charted: m.charted, total: m.total, players: m.players };
     worldExtra = 0;

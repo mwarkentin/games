@@ -12,8 +12,8 @@ import vm from 'node:vm';
 import worker from '../src/index.js';
 import { CH, DIRS, RG, THEMES, THEME_DATA, VOCAB, chunk, genChunk, keyOf, letterAt, regionTheme, wordEnd } from '../src/letterfield-world.js';
 import {
-  AREA, AREA_WORDS, Atlas, BATCH_MS, CLAIM_BURST, CLAIM_REFILL_MS, MAX_ONLINE, MAX_PLAYERS, ONLINE_MS, PRESENCE_MAX, PRESENCE_MS,
-  QUIET, REPORT_MS, SAVE_MS, SAVE_POS_MS, SECTOR, SPAWN_MAX, Sector, VIEW_MS, checkClaim, routeSurvey,
+  ADDRESS_HEADER, ADDRESS_SOCKETS, AREA, AREA_WORDS, Atlas, BATCH_MS, CLAIM_BURST, CLAIM_REFILL_MS, MAX_ONLINE, MAX_PLAYERS, ONLINE_MS, PRESENCE_MAX, PRESENCE_MS,
+  QUIET, REPORT_MS, SAVE_MS, SAVE_POS_MS, SECTOR, SPAWN_MAX, Sector, VIEW_MS, addressOf, checkClaim, routeSurvey,
 } from '../src/survey.js';
 
 const ORIGIN = 'https://games.michaelwarkentin.com';
@@ -369,6 +369,92 @@ describe('Sector', () => {
     }
   });
 
+  // A stand-in for a rate-limiting binding: `max` calls per address, then no.
+  function fakeLimiter(max) {
+    const counts = new Map();
+    return {
+      counts,
+      limit: async ({ key }) => { counts.set(key, (counts.get(key) ?? 0) + 1); return { success: counts.get(key) <= max }; },
+    };
+  }
+
+  // Opens a socket the way the Worker does, from a hashed address; returns the server's end.
+  async function openFrom(address) {
+    let pair;
+    globalThis.WebSocketPair = function WebSocketPair() { pair = [fakeSocket(), fakeSocket()]; return { 0: pair[0], 1: pair[1] }; };
+    const RealResponse = Response;
+    globalThis.Response = class { constructor(body, init) { Object.assign(this, init); } };
+    try {
+      await sector.fetch(new Request('https://survey.test/v1/survey/0/0', { headers: { Upgrade: 'websocket', [ADDRESS_HEADER]: address } }));
+    } finally {
+      globalThis.Response = RealResponse;
+      delete globalThis.WebSocketPair;
+    }
+    return pair[1];
+  }
+
+  test('takes only so many sockets from one address', async () => {
+    const mine = [];
+    for (let i = 0; i < ADDRESS_SOCKETS; i++) mine.push(await openFrom('aaaa'));
+    assert.ok(mine.every((ws) => ws.sent[0].t === 'hello'));
+    const extra = await openFrom('aaaa');
+    assert.deepEqual(extra.sent, [{ t: 'full', world: false }]);
+    assert.equal(extra.code, 4000);
+    assert.equal((await openFrom('bbbb')).sent[0].t, 'hello');  // someone else still gets in
+
+    // When one leaves, the address has room again, including after the sector wakes.
+    mine[0].open = false;
+    await sector.webSocketClose(mine[0]);
+    sector = new Sector(state, {});
+    sector.now = () => clock;
+    assert.equal((await openFrom('aaaa')).sent[0].t, 'hello');
+    assert.equal((await openFrom('aaaa')).sent[0].t, 'full');
+  });
+
+  test('turns an address away when it opens sockets too fast, and lets everyone in if the limiter fails', async () => {
+    const joins = fakeLimiter(2);
+    sector = new Sector(state, { SURVEY_JOINS: joins });
+    assert.equal((await openFrom('aaaa')).sent[0].t, 'hello');
+    assert.equal((await openFrom('aaaa')).sent[0].t, 'hello');
+    assert.deepEqual((await openFrom('aaaa')).sent, [{ t: 'full', world: false }]);
+    assert.equal((await openFrom('bbbb')).sent[0].t, 'hello');
+    assert.deepEqual([...joins.counts], [['aaaa', 3], ['bbbb', 1]]);
+
+    sector = new Sector(state, { SURVEY_JOINS: { limit: async () => { throw new Error('limiter down'); } } });
+    assert.equal((await openFrom('aaaa')).sent[0].t, 'hello');
+  });
+
+  test('limits how fast one address can claim, across every sector', async () => {
+    const claims = fakeLimiter(3);
+    const env = { SURVEY_CLAIMS: claims };
+    sector = new Sector(state, env);
+    sector.now = () => clock;
+    const here = await openFrom('aaaa');
+    const otherState = fakeState();
+    const there = new Sector(otherState, env);
+    there.now = () => clock;
+    const far = fakeSocket();
+    there.join(far, 1, 0, 'aaaa');
+    const neighbour = await openFrom('bbbb');
+
+    // Each socket is well inside its own limit; together they pass the address's.
+    const words = chunk(0, 0).words, farWords = chunk(Math.floor(SECTOR / CH), 0).words;
+    await claim(here, words[0]);
+    await claim(here, words[1]);
+    await there.webSocketMessage(far, JSON.stringify({ t: 'claim', ...farWords[0] }));
+    await there.webSocketMessage(far, JSON.stringify({ t: 'claim', ...farWords[1] }));
+    await claim(here, words[2]);
+    mock.timers.tick(BATCH_MS);
+    assert.equal(here.sent.filter((m) => m.t === 'claimed').length, 2);
+    assert.equal(far.sent.filter((m) => m.t === 'claimed').length, 1);
+    assert.deepEqual(far.last('error'), { t: 'error', key: keyOf(farWords[1].w, farWords[1].x, farWords[1].y, farWords[1].d), error: 'slow down' });
+    assert.equal(here.last('error').error, 'slow down');
+    // The word is still there for whoever claims it next.
+    await claim(neighbour, words[2]);
+    mock.timers.tick(BATCH_MS);
+    assert.equal(neighbour.last('claimed').c[0], words[2].w);
+  });
+
   function reportingSector(reports) {
     const env = {
       ATLAS: {
@@ -624,11 +710,10 @@ describe('routeSurvey', () => {
     ALLOWED_ORIGINS: ORIGIN,
     SECTORS: {
       idFromName: (name) => ({ name }),
-      get: (id) => ({ fetch: async (request) => { forwarded.push([id.name, request.url]); return new Response('ok'); } }),
+      get: (id) => ({ fetch: async (request) => { forwarded.push([id.name, request.url, request.headers]); return new Response('ok'); } }),
     },
   };
-  const open = (path, { origin = ORIGIN, upgrade = 'websocket', method = 'GET' } = {}) => {
-    const headers = {};
+  const open = (path, { origin = ORIGIN, upgrade = 'websocket', method = 'GET', headers = {} } = {}) => {
     if (origin) headers.Origin = origin;
     if (upgrade) headers.Upgrade = upgrade;
     return routeSurvey(new Request(`https://survey.test${path}`, { method, headers }), env);
@@ -639,6 +724,23 @@ describe('routeSurvey', () => {
     await open('/v1/survey/-3/12');
     await open('/v1/survey/-0/007');
     assert.deepEqual(forwarded.map(([name]) => name), ['0,0', '-3,12', '0,7']);
+  });
+
+  test('tells the sector who is connecting by a salted hash of their address, never the address', async () => {
+    const addressFor = async (ip, extra = {}) => {
+      await open('/v1/survey/0/0', { headers: { 'CF-Connecting-IP': ip, ...extra } });
+      return forwarded.at(-1)[2].get(ADDRESS_HEADER);
+    };
+    const a = await addressFor('203.0.113.7');
+    assert.match(a, /^[0-9a-f]{64}$/);
+    assert.equal(await addressFor('203.0.113.7', { [ADDRESS_HEADER]: 'chosen-by-me' }), a);
+    assert.notEqual(await addressFor('203.0.113.8'), a);
+    // Everything in one IPv6 /64 is one address.
+    const v6 = await addressFor('2001:db8:aa:bb:1:2:3:4');
+    assert.equal(await addressFor('2001:db8:aa:bb::9'), v6);
+    assert.notEqual(await addressFor('2001:db8:aa:bc::9'), v6);
+    env.IP_SALT = 'pepper';
+    try { assert.notEqual(await addressFor('203.0.113.7'), a); } finally { delete env.IP_SALT; }
   });
 
   test('turns away other origins and plain requests', async () => {
@@ -684,6 +786,15 @@ describe('routeSurvey', () => {
     }
     assert.equal(routeSurvey(new Request('https://survey.test/v1/survey/0/0'), {}), null);
   });
+});
+
+test('addressOf keeps IPv4 addresses whole and IPv6 ones to their /64', () => {
+  assert.equal(addressOf('198.51.100.20'), '198.51.100.20');
+  assert.equal(addressOf('2001:DB8:0:1:aaaa:bbbb:cccc:dddd'), '2001:db8:0:1::/64');
+  assert.equal(addressOf('2001:db8::1'), '2001:db8:0:0::/64');
+  assert.equal(addressOf('::1'), '0:0:0:0::/64');
+  assert.equal(addressOf('2001:db8:0:1::'), '2001:db8:0:1::/64');
+  assert.equal(addressOf('nonsense:zz'), 'nonsense:zz');
 });
 
 test('a word never crosses a sector edge', () => {

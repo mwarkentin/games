@@ -35,13 +35,21 @@
 //   {t: 'hello', you, sector, claims}   on joining; claims are [w, x, y, d, s, initials, at]
 //   {t: 'claimed', c, by}           a new claim, to everyone; `by` is the claimer's id
 //   {t: 'taken', c}                 to a claimer who wasn't first
-//   {t: 'error', key, error}        to a claimer, for a word that isn't there
+//   {t: 'error', key, error}        to a claimer, for a word that isn't there, or 'slow down'
+//                                   when the socket or its address claims too fast
 //   {t: 'presence', n, p}           players here ([id, initials, x, y]), about once a second
 //   {t: 'world', charted, total, players}   the whole world's totals, as they change
 //   {t: 'full', world}              no room in the sector (or, with world: true, in the whole
-//                                   survey); the socket then closes with code 4000
+//                                   survey), or the player's address holds or opens too many
+//                                   sockets; the socket then closes with code 4000
+//
+// Limits per address (see "Bots" in SURVEY.md): the Worker hands each sector
+// a salted hash of the player's IP address, never the address itself. A
+// sector takes at most ADDRESS_SOCKETS sockets from one address, and two
+// rate-limiting bindings, set in wrangler.toml, count joins and claims per
+// address across every sector.
 
-import { BLOCKED_INITIALS, INITIALS, corsHeaders } from './leaderboard.js';
+import { BLOCKED_INITIALS, INITIALS, corsHeaders, hashAddress } from './leaderboard.js';
 import { CH, DIRS, RC, VOCAB, chunk, fdiv, keyOf, letterAt } from './letterfield-world.js';
 
 export const SECTOR = RC * 4;         // cells per sector side
@@ -61,6 +69,8 @@ export const SPAWN_MAX = 300;         // new players join the biggest crowd with
 export const MAX_ONLINE = 25000;      // players the whole survey takes at once: a ceiling on the bill
 export const QUIET = 32;              // a sector with fewer sockets than this sets short timers
 export const SAVE_POS_MS = 5000;      // a moving player's position is saved to their socket this often
+export const ADDRESS_SOCKETS = 40;    // sockets one address can hold in one sector (a classroom shares an address)
+export const ADDRESS_HEADER = 'X-Survey-Address';  // the hashed address, from the Worker to the sector
 const TERR = SECTOR / RC;             // territories per sector side
 const MAX_MESSAGE = 256;
 const LIMIT = 1e9;                    // the game's map runs to ±1e9 cells
@@ -110,7 +120,28 @@ export function routeSurvey(request, env) {
   if (!cors['Access-Control-Allow-Origin']) return text('origin not allowed', 403);
   if (request.headers.get('Upgrade') !== 'websocket') return text('expected a WebSocket', 426);
   const name = `${Number(m[1])},${Number(m[2])}`;
-  return env.SECTORS.get(env.SECTORS.idFromName(name)).fetch(request);
+  return addressed(request, env).then((forward) => env.SECTORS.get(env.SECTORS.idFromName(name)).fetch(forward));
+}
+
+// The request as the sector sees it: with the player's hashed address in a
+// header the Worker sets itself, so a player can't choose their own.
+async function addressed(request, env) {
+  const headers = new Headers(request.headers);
+  headers.set(ADDRESS_HEADER, await hashAddress(addressOf(request.headers.get('CF-Connecting-IP') || 'unknown'), env.IP_SALT));
+  return new Request(request, { headers });
+}
+
+// The part of an IP address that names one household or device: all of an
+// IPv4 address, or the /64 network of an IPv6 one, since a device can pick
+// any address in its /64 and change it at will.
+export function addressOf(ip) {
+  if (!ip.includes(':')) return ip;
+  const [head, tail] = ip.toLowerCase().split('::');
+  const before = head ? head.split(':') : [];
+  const after = tail === undefined ? [] : tail ? tail.split(':') : [];
+  const groups = tail === undefined ? before : [...before, ...Array(Math.max(0, 8 - before.length - after.length)).fill('0'), ...after];
+  const prefix = groups.slice(0, 4).map((g) => parseInt(g, 16));
+  return prefix.length === 4 && prefix.every((g) => g >= 0 && g <= 0xffff) ? `${prefix.map((g) => g.toString(16)).join(':')}::/64` : ip;
 }
 
 // Each Worker instance asks the Atlas for the world map at most once per
@@ -166,10 +197,28 @@ export class Sector {
     if (!m) return new Response('not found', { status: 404 });
     if (request.headers.get('Upgrade') !== 'websocket') return new Response('expected a WebSocket', { status: 426 });
     const [client, server] = Object.values(new WebSocketPair());
+    const address = request.headers.get(ADDRESS_HEADER) || null;
     if (this.world && this.world.players >= MAX_ONLINE) this.turnAway(server, true);
     else if (this.ctx.getWebSockets().length >= MAX_PLAYERS) this.turnAway(server, false);
-    else this.join(server, Number(m[1]), Number(m[2]));
+    else if (address && this.fromAddress(address) >= ADDRESS_SOCKETS) this.turnAway(server, false);
+    else if (!(await this.allowed('SURVEY_JOINS', address))) this.turnAway(server, false);
+    else this.join(server, Number(m[1]), Number(m[2]), address);
     return new Response(null, { status: 101, webSocket: client });
+  }
+
+  fromAddress(address) {
+    let n = 0;
+    for (const p of this.everyone().values()) if (p.address === address) n++;
+    return n;
+  }
+
+  // Asks one of the per-address rate limiters (wrangler.toml) whether to go
+  // ahead. Without the binding, or if it fails, the answer is yes: the limits
+  // per socket and per sector still hold.
+  async allowed(binding, address) {
+    const limiter = this.env[binding];
+    if (!limiter || !address) return true;
+    try { return (await limiter.limit({ key: address })).success !== false; } catch { return true; }
   }
 
   // A full sector (or survey) still answers, so the game can say why it isn't joining.
@@ -179,11 +228,11 @@ export class Sector {
     ws.close(4000, world ? 'survey is full' : 'sector is full');
   }
 
-  join(ws, sx, sy) {
+  join(ws, sx, sy, address = null) {
     this.ctx.acceptWebSocket(ws);
     this.where ??= [sx, sy];
     const id = crypto.randomUUID().slice(0, 8);
-    const me = { id, sx, sy, initials: '', x: null, y: null, moved: 0, saved: 0, tokens: CLAIM_BURST, refilled: this.now() };
+    const me = { id, sx, sy, address, initials: '', x: null, y: null, moved: 0, saved: 0, tokens: CLAIM_BURST, refilled: this.now() };
     ws.serializeAttachment(me);
     this.everyone().set(ws, me);
     // When everyone reconnects at once (after a deploy, say), each join just
@@ -234,12 +283,12 @@ export class Sector {
       if (away || me.moved - me.saved >= SAVE_POS_MS) this.save(ws, me);
       this.schedulePresence(away);
     } else if (msg.t === 'claim') {
-      this.claim(ws, me, msg);
+      await this.claim(ws, me, msg);
     }
     this.catchUp();
   }
 
-  claim(ws, me, msg) {
+  async claim(ws, me, msg) {
     const now = this.now();
     const key = typeof msg.w === 'string' ? keyOf(msg.w, msg.x, msg.y, msg.d) : null;
     me.tokens = Math.min(CLAIM_BURST, me.tokens + (now - me.refilled) / CLAIM_REFILL_MS);
@@ -247,9 +296,13 @@ export class Sector {
     if (me.tokens < 1) { this.save(ws, me); return send(ws, { t: 'error', key, error: 'slow down' }); }
     me.tokens -= 1;
     this.save(ws, me);
+    // Every claim from the address counts, wherever it's made, so more
+    // sockets in more sectors don't let a script claim any faster.
+    if (!(await this.allowed('SURVEY_CLAIMS', me.address))) return send(ws, { t: 'error', key, error: 'slow down' });
     const c = checkClaim(msg, me.sx, me.sy);
     if (c.error) return send(ws, { t: 'error', key, error: c.error });
-    // The object handles one message at a time, so the first claim to arrive wins.
+    // The insert runs as one statement with nothing awaited, so even if
+    // another claim ran while the limiter answered, the first to get here wins.
     const inserted = this.sql.exec(
       `INSERT INTO claims (key, w, x, y, d, s, initials, at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT (key) DO NOTHING RETURNING key`,

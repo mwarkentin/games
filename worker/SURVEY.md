@@ -59,7 +59,7 @@ From [Scaling One Million Checkboxes][omcb] and
 | Bandwidth was "my one unbounded cost" (OMCB capped its server at 250 Mbit/s) | Cloudflare doesn't charge for egress, and outgoing WebSocket messages are free |
 | "Bound my costs … instead of going serverless and scaling into bankruptcy" | `MAX_PLAYERS` per sector and `MAX_ONLINE` overall. Beyond them, players are told the survey is full; the bill can't run away |
 | Validate everything: someone checked box 100,000,000 and broke OMCB | every claim is checked against the server's copy of the map generator |
-| Bots pushed absurd traffic once the Go rewrite made things fast | a burst of 5 claims per socket, then one per 1.5 s; per-IP limits still to do |
+| Bots pushed absurd traffic once the Go rewrite made things fast | a burst of 5 claims per socket, then one per 1.5 s, and about one a second per IP address however many sockets it opens (see "Limits per address") |
 | Rollback netcode, so moves feel instant | not needed: a circled word is always kept locally, and the server only decides who gets the credit |
 | One Go process on one box (16 cores, never above ~10% CPU, later shrunk to an ~$80/month box) | a Durable Object is one JavaScript thread, so the world is split by place into many objects |
 
@@ -113,6 +113,51 @@ From [Scaling One Million Checkboxes][omcb] and
   positions are written to the attachment at most every 5 s.
 
 Messages are listed at the top of `src/survey.js`.
+
+### Limits per address
+
+The map comes from a fixed seed, and its generator is in the page, so a
+script can find every word without playing. Per-socket limits alone don't
+stop it: it can open as many sockets in as many sectors as it likes. So the
+survey also limits each IP address, wherever it plays:
+
+- **Addresses are hashed.** The Worker hashes the player's address with
+  `IP_SALT`, as the leaderboard does, and hands the sector only the hash, in
+  a header it sets itself. An IPv6 address counts by its /64, because a
+  device can pick any address in its /64.
+- **Claims: 10 every 10 s per address, across every sector.** That's a
+  [rate-limiting binding][ratelimit] (`SURVEY_CLAIMS` in `wrangler.toml`).
+  It's about six busy players' worth, for a family or a classroom on one
+  address, and on top of each socket's own limit. One address would take
+  about 13 days to chart the world, rather than minutes. A refused claim
+  gets the same `slow down` as a socket claiming too fast, and the game says
+  "Too quick to chart · kept in your notes".
+- **Sockets: 40 per address in a sector, and 120 new ones a minute per
+  address.** A sector counts its own sockets exactly, so a few addresses
+  can't fill it and lock everyone else out. A second binding
+  (`SURVEY_JOINS`) counts sockets opened anywhere. A player roaming the map
+  opens about 10 an hour. Either limit is answered with `full`, and the
+  game tries again in a minute or so.
+- **Why a binding and not a Durable Object per address.** The binding keeps
+  its counts in each Cloudflare location, in memory, and answers without
+  waiting for other locations to agree. So it's approximate: counts are per
+  location, and a burst can slip past. That's fine for stopping one script
+  racing everyone else. A Durable Object per address would be exact, but
+  every claim would wait on a round trip to another object, and pay for it.
+  In the load test, claims took as long with the binding as without it
+  (p50 3.6 ms against 3.4 ms). If the binding fails, the sector lets the
+  claim through, and the per-socket and per-sector limits still hold.
+- **Not checked: whether a claim is near the player.** A claim is only
+  accepted in a sector the player has a socket in, and that's about as tight
+  as a distance check could be:
+  - The game only lets you circle words at 9 px a cell or closer. A
+    2560 px desktop window still reaches about 160 cells from its middle,
+    and a 5120 px ultrawide about 285. Positions also lag up to a second,
+    and go only to the sector under the middle of the view.
+  - A fair radius would be around 300 cells, wider than a sector
+    (192 cells).
+  - A script reports its own position anyway, and flying across the map is
+    normal play, so it could send a position next to each word first.
 
 ## Do Workers and D1 scale for this?
 
@@ -216,6 +261,11 @@ Usage per player-hour, from the design and the 700-player run:
 | an eieio-style viral fortnight: 5,000 online on average, up to the cap | 1.68 M | ~$12 | ~$27 | ~$12.50 | **~$57** |
 | the ceiling: `MAX_ONLINE` (25,000) online all the time | 25,000 an hour | ~$0.22/h | ~$0.40/h | ~$0.11/h | **at most ~$0.75 an hour (~$18 a day)** |
 
+The per-address limits don't change these figures. A rate-limiting binding
+isn't a Durable Object, so it adds no Durable Object requests, and neither
+pricing page lists a charge for it. The hashed address is worked out once
+per connection, in the Worker.
+
 For comparison, OMCB cost about $850 to run, on 8 VMs, Redis and bandwidth.
 One Million Chessboards cost "a few hundred dollars": a $450/month box,
 later $80/month, plus about a terabyte of traffic a month. On Cloudflare,
@@ -255,13 +305,11 @@ done yet").
 - **Run `load.js` against a deployment.** That would confirm the per-sector
   limit and the 0.8 ms per player-second on Cloudflare's edge rather than a
   sandbox.
-- **Bots.** The map can be generated from the page source, so a script
-  could claim words as fast as the rate limit allows, from as many sockets
-  as it opens. Next steps:
-  - a limit per IP address across sectors (the Workers rate-limiting
-    binding, or a Durable Object keyed by hashed IP);
-  - a Turnstile check before joining;
-  - accepting claims only near where the player has said they are.
+- **Bots from many addresses.** Each address is limited (see "Limits per
+  address"), but a botnet or a pool of proxies still gets those limits once
+  per address. The next step would be a [Turnstile][turnstile] check before
+  joining. It needs `challenges.cloudflare.com`, which the site's rules
+  don't allow yet, and a site key and secret made in mwarkentin/infra.
 - **Smaller snapshots.** Hidden words are deterministic, so a claim could
   be one bit in its chunk's word list. A fully charted sector's snapshot
   would shrink from 68 KB to a few hundred bytes plus initials. eieio
@@ -281,6 +329,11 @@ npx wrangler@4.151.0 dev --port 8787     # the Worker and its Durable Objects, l
 node bench/load.js http://127.0.0.1:8787 300 30   # 300 players for 30 s
 ```
 
+Each player in `load.js` sends its own `CF-Connecting-IP`, so the limits per
+address don't turn them away. Only `wrangler dev` believes that header:
+Cloudflare's edge sets it itself, so the same trick can't get round the
+limits on the real Worker.
+
 To play, serve the games from the repo root (`python3 -m http.server 8000`)
 and open `http://localhost:8000/letterfield.html?survey=http://localhost:8787`
 in a few windows. The deploy workflow's `wrangler deploy` creates the
@@ -296,3 +349,5 @@ deploying, set `SURVEY_URL` in `letterfield.html` to the Worker's URL.
 [d1limits]: https://developers.cloudflare.com/d1/platform/limits/
 [wpricing]: https://developers.cloudflare.com/workers/platform/pricing/
 [dopricing]: https://developers.cloudflare.com/durable-objects/platform/pricing/
+[ratelimit]: https://developers.cloudflare.com/workers/runtime-apis/bindings/rate-limit/
+[turnstile]: https://developers.cloudflare.com/turnstile/
