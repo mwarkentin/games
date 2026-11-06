@@ -1,0 +1,121 @@
+name: Preview leaderboard worker
+
+# Every pull request that touches worker/ gets a Worker Preview: its own copy
+# of the Worker at https://pr-<number>-games-leaderboard.mwarkentin.workers.dev,
+# with Durable Objects of its own and the Previews' test database (see
+# "Previews" in worker/README.md). The URL goes in a comment on the pull
+# request, and the Preview is deleted when the pull request closes.
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, closed]
+    paths:
+      - 'worker/**'
+      - '.github/workflows/worker-preview.yml'
+
+permissions:
+  contents: read
+  pull-requests: write # the comment with the Preview's URL
+
+# One at a time across pull requests: Previews share a database, and two
+# runs applying its migrations at once could race.
+concurrency:
+  group: worker-preview
+  cancel-in-progress: false
+
+env:
+  CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+  CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+  WRANGLER_SEND_METRICS: 'false'
+  PREVIEW: pr-${{ github.event.pull_request.number }}
+
+jobs:
+  preview:
+    # Skipped until mwarkentin/infra has set up deploys (see worker/README.md),
+    # and for pull requests from forks, which get no secrets.
+    if: >-
+      github.event.action != 'closed' &&
+      vars.CLOUDFLARE_ACCOUNT_ID != '' &&
+      github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: worker
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+      # Migrations go on before the code that needs them, as in production.
+      # A branch's migrations stay on the shared database after it closes,
+      # which is fine for test scores; if they get in the way, empty or
+      # replace the database (see worker/README.md).
+      - name: Apply database migrations
+        run: npx --yes wrangler@4.151.0 d1 migrations apply games-leaderboard-previews --remote --config wrangler.previews-migrations.toml
+      # The salt goes up with the Preview, as with production's deploy.
+      - name: Create or update the Preview
+        id: preview
+        env:
+          IP_SALT: ${{ secrets.PREVIEW_IP_SALT }}
+        run: |
+          test -n "$IP_SALT" || { echo "::error::The PREVIEW_IP_SALT secret is missing; see worker/README.md"; exit 1; }
+          set -o pipefail
+          secrets="$RUNNER_TEMP/worker-secrets.json"
+          trap 'rm -f "$secrets"' EXIT
+          jq -n --arg salt "$IP_SALT" '{IP_SALT: $salt}' > "$secrets"
+          output="$(npx --yes wrangler@4.151.0 preview --name "$PREVIEW" --secrets-file "$secrets" \
+            --message "${{ github.event.pull_request.head.sha }}" --json)"
+          printf '%s\n' "$output"
+          url="$(printf '%s' "$output" | jq -er '.preview.urls[0]')"
+          echo "url=${url%/}" >> "$GITHUB_OUTPUT"
+      # One comment per pull request, kept up to date rather than added to on
+      # every push.
+      - name: Comment with the Preview's URL
+        env:
+          GH_TOKEN: ${{ github.token }}
+          URL: ${{ steps.preview.outputs.url }}
+          PR: ${{ github.event.pull_request.number }}
+          SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          marker='<!-- worker-preview -->'
+          site=https://games.michaelwarkentin.com
+          body="$marker
+          **Worker Preview:** $URL (updated for ${SHA:0:7})
+
+          Try it with the live games, which point at it with these overrides:
+
+          - [War, with friends]($site/war?rooms=$URL)
+          - [Funnels & Buckets]($site/funnels-and-buckets?leaderboard=$URL), [Doodle Chomp]($site/doodle-chomp?leaderboard=$URL), [Air Traffic Controller]($site/air-traffic-controller?leaderboard=$URL)
+          - [Letterfield's shared survey]($site/letterfield?survey=$URL)
+
+          Those pages are \`main\`'s. To try this branch's pages too, serve them locally with the same overrides.
+          Scores go to the Previews' test database; rooms and the survey start empty and are this Preview's alone. It's deleted when this pull request closes."
+          id="$(gh api "repos/$GITHUB_REPOSITORY/issues/$PR/comments" --paginate \
+            --jq "[.[] | select(.user.login == \"github-actions[bot]\" and (.body | startswith(\"$marker\")))][0].id // empty" | head -n 1)"
+          if [ -n "$id" ]; then
+            gh api -X PATCH "repos/$GITHUB_REPOSITORY/issues/comments/$id" -f body="$body" > /dev/null
+          else
+            gh api "repos/$GITHUB_REPOSITORY/issues/$PR/comments" -f body="$body" > /dev/null
+          fi
+
+  cleanup:
+    if: >-
+      github.event.action == 'closed' &&
+      vars.CLOUDFLARE_ACCOUNT_ID != '' &&
+      github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: worker
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+      # Deleting a Preview deletes its Durable Objects' storage too. A pull
+      # request whose Preview was never made (or was already evicted) has
+      # nothing to delete.
+      - name: Delete the Preview
+        run: |
+          npx --yes wrangler@4.151.0 preview delete --name "$PREVIEW" --skip-confirmation \
+            || echo "::warning::Couldn't delete Preview $PREVIEW; it may not exist. Check the Worker's Previews in the Cloudflare dashboard."

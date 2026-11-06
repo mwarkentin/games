@@ -193,6 +193,45 @@ Optional: serve the Worker from your own domain (such as
 Cloudflare, which mwarkentin/infra would manage; the `workers.dev` URL
 works without it.
 
+## Previews
+
+Every pull request that touches `worker/` gets a
+[Worker Preview](https://developers.cloudflare.com/workers/previews/): its
+own copy of the Worker at
+`https://pr-<number>-games-leaderboard.mwarkentin.workers.dev`. The
+**Preview leaderboard worker** workflow makes it, comments on the pull
+request with its URL and links to the live games pointed at it (with
+`?leaderboard=`, `?rooms=` and `?survey=`), and deletes it when the pull
+request closes. It's the way to try War's rooms or the survey with real
+phones before merging.
+
+- **Durable Objects** are the Preview's own: its rooms and survey start
+  empty and never touch production's, and go when it's deleted.
+- **Scores and groups** go to `games-leaderboard-previews`, a database of
+  test scores that all Previews share. The workflow applies the branch's
+  migrations to it first, with `wrangler.previews-migrations.toml`, since
+  `wrangler d1` reads only a config file's top-level databases. A branch's
+  migrations stay on it after the branch closes; if that gets in the way,
+  empty the database or replace it in mwarkentin/infra.
+- **Settings** aren't inherited: `[previews]` in `wrangler.toml` sets the
+  variables, the database, the Durable Object bindings and the rate limits
+  (counted apart from production's) again. Keep it in step with the
+  production settings above it. Observability is inherited.
+- **Secrets:** each Preview gets `PREVIEW_IP_SALT` as its `IP_SALT`, never
+  production's salt. Turnstile stays off.
+
+mwarkentin/infra makes the database and the salt. Previews are public URLs,
+like production's, and only accept writes from `ALLOWED_ORIGINS`. The free
+plan keeps up to 100 per Worker, dropping the one deployed to least recently.
+To try one by hand from a branch, after applying migrations as the workflow
+does:
+
+```sh
+cd worker
+npx wrangler@4.151.0 preview --name my-branch
+npx wrangler@4.151.0 preview delete --name my-branch
+```
+
 ## Local development
 
 ```sh
