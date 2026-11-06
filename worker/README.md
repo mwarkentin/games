@@ -10,8 +10,9 @@ database rows per game played.
 
 The same Worker hosts Letterfield's shared survey, an experiment in many
 players exploring one map at once: a Durable Object per sector of the map,
-reached over WebSockets. [SURVEY.md](SURVEY.md) covers its design, its API
-and how far it scales, and [TURNSTILE.md](TURNSTILE.md) an optional
+reached over WebSockets, with a log of every word charted in D1 for
+`letterfield-log.html`. [SURVEY.md](SURVEY.md) covers its design, its API
+(the log's under "The log") and how far it scales, and [TURNSTILE.md](TURNSTILE.md) an optional
 Turnstile check before joining: passes are handed out once the
 `TURNSTILE_SECRET` secret is set, and required only once
 `TURNSTILE_REQUIRED` is `"true"` in `wrangler.toml`.
@@ -77,6 +78,13 @@ group.
 score is kept. A copy is a few hundred bytes with its indexes, so the free
 plan's 500 MB holds hundreds of thousands of saves.
 
+The survey's log is the `survey_log` table in a second database,
+`games-survey-log` (binding `LOG_DB`, migrations in `migrations-log/`), one
+row per word charted, copied there by each sector (see "The log" in
+SURVEY.md). The whole shared world would be about 1.1 million rows and
+100 MB. mwarkentin/infra makes it too; its id (the `survey_log_database_id`
+output) goes in `wrangler.toml`.
+
 D1 counts every row a query scans against the free plan's 5 million a day,
 so each view reads through an index of its own (named with `INDEXED BY` in
 `src/leaderboard.js`, and checked with `EXPLAIN QUERY PLAN` in the tests).
@@ -94,7 +102,7 @@ client's IP address included.
 `src/leaderboard.js` holds the logic and `src/index.js` only exports the
 Worker and the Durable Object classes: the runtime treats every
 export of the main module as an entry point, so constants exported for tests
-can't live there. `src/survey.js` and `src/letterfield-world.js` are the
+can't live there. `src/survey.js`, `src/survey-log.js` and `src/letterfield-world.js` are the
 survey.
 
 ## War rooms
@@ -191,7 +199,9 @@ would put them back. To replace the token, see mwarkentin/infra's README.
 Optional: serve the Worker from your own domain (such as
 `api.games.michaelwarkentin.com`). That needs the domain's DNS on
 Cloudflare, which mwarkentin/infra would manage; the `workers.dev` URL
-works without it.
+works without it. On a custom domain the survey log's settled hours and
+days are also kept in Cloudflare's cache (the Cache API does nothing on
+`workers.dev`).
 
 ## Previews
 
@@ -213,6 +223,8 @@ phones before merging.
   `wrangler d1` reads only a config file's top-level databases. A branch's
   migrations stay on it after the branch closes; if that gets in the way,
   empty the database or replace it in mwarkentin/infra.
+- **The survey log** goes to `games-survey-log-previews` in the same way,
+  shared by every Preview and holding only test words.
 - **Settings** aren't inherited: `[previews]` in `wrangler.toml` sets the
   variables, the database, the Durable Object bindings and the rate limits
   (counted apart from production's) again. Keep it in step with the
@@ -237,6 +249,7 @@ npx wrangler@4.151.0 preview delete --name my-branch
 ```sh
 cd worker
 npx wrangler@4.151.0 d1 migrations apply games-leaderboard --local
+npx wrangler@4.151.0 d1 migrations apply games-survey-log --local
 echo "IP_SALT=dev" > .dev.vars
 npx wrangler@4.151.0 dev --port 8787
 ```

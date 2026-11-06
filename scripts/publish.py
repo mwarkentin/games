@@ -22,6 +22,7 @@ from pathlib import Path
 
 from common import (
     ROOT,
+    app_of,
     game_files,
     inject_analytics,
     inject_pwa,
@@ -56,8 +57,10 @@ def publish(site_dir: Path, root: Path = ROOT) -> list[str]:
 
     published = game_files(root)
     for filename in published:
-        app = filename.removesuffix(".html")
-        text = inject_social((root / filename).read_text("utf-8"), app, f"/{app}", root)
+        slug = filename.removesuffix(".html")
+        source = (root / filename).read_text("utf-8")
+        app = app_of(source, slug)
+        text = inject_social(source, app, f"/{slug}", root)
         text = inject_analytics(inject_telemetry(text, telemetry, release), root)
         text = inject_pwa(text, app)
         (site_dir / filename).write_text(text, "utf-8")

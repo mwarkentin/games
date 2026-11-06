@@ -10,7 +10,7 @@ import { afterEach, beforeEach, describe, mock, test } from 'node:test';
 import vm from 'node:vm';
 
 import worker from '../src/index.js';
-import { CH, DIRS, RG, THEMES, THEME_DATA, VOCAB, chunk, genChunk, keyOf, letterAt, regionTheme, wordEnd } from '../src/letterfield-world.js';
+import { CH, DIRS, RG, THEMES, THEME_DATA, VOCAB, chunk, genChunk, keyOf, letterAt, regionName, regionTheme, wordEnd } from '../src/letterfield-world.js';
 import {
   ADDRESS_HEADER, ADDRESS_SOCKETS, AREA, AREA_WORDS, Atlas, BATCH_MS, DAILY_CLAIMS, DAILY_LIST_MAX, CLAIM_BURST, CLAIM_REFILL_MS, MAX_ONLINE, MAX_PLAYERS, ONLINE_MS, PRESENCE_MAX, PRESENCE_MS,
   QUIET, REPORT_MS, UNPASSED_HEADER, SAVE_MS, SAVE_POS_MS, SECTOR, SPAWN_MAX, Sector, VIEW_MS, addressOf, checkClaim, routeSurvey,
@@ -79,6 +79,14 @@ describe('the world copy', () => {
       assert.equal(regionTheme(Math.floor(cx / RG), Math.floor(cy / RG)), game.regionTheme(Math.floor(cx / RG), Math.floor(cy / RG)));
       assert.deepEqual(genChunk(cx, cy).words, JSON.parse(JSON.stringify(game.genChunk(cx, cy).words)), `words differ in chunk ${cx},${cy}`);
     }
+  });
+
+  test('names territories as the game does, for the survey\'s log', () => {
+    const game = gameWorld();
+    for (let ry = -AREA * 4; ry < (AREA + 1) * 4; ry += 3) {
+      for (let rx = -AREA * 4; rx < (AREA + 1) * 4; rx++) assert.equal(regionName(rx, ry), game.regionName(rx, ry), `${rx},${ry}`);
+    }
+    for (const [rx, ry] of [[1e5, -3e4], [-98765, 4321]]) assert.equal(regionName(rx, ry), game.regionName(rx, ry));
   });
 
   test('splits the map into the same sectors and shared world as the game', () => {

@@ -20,7 +20,7 @@ from urllib.parse import parse_qs, urlparse
 from playwright.sync_api import BrowserContext, Page, Route
 
 API = "https://leaderboard.test"
-# LEADERBOARD_URL in the games and ROOMS_URL in war.html.
+# LEADERBOARD_URL in the games, ROOMS_URL in war.html and SURVEY_URL in letterfield-log.html.
 WORKER_URL = "https://games-leaderboard.mwarkentin.workers.dev"
 
 
@@ -118,9 +118,12 @@ class FakeLeaderboard:
 
 
 def stand_in_for_worker(context: BrowserContext) -> FakeLeaderboard:
-    """Answer the real Worker's URL in `context` with an empty fake."""
+    """Answer the real Worker's URL in `context` with an empty fake, the survey's log included."""
+    from fake_survey_log import FakeSurveyLog
+
     fake = FakeLeaderboard()
     context.route(f"{WORKER_URL}/**", fake.handle)
+    context.route(f"{WORKER_URL}/v1/survey/log/**", FakeSurveyLog().handle)  # later routes win
     return fake
 
 

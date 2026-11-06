@@ -27,6 +27,7 @@ Some useful tools live next door at
 ## Words
 
 - [Letterfield](https://games.michaelwarkentin.com/letterfield): an endless word search across a map of themed territories
+- [Letterfield survey log](https://games.michaelwarkentin.com/letterfield-log): every word charted in Letterfield's shared survey, hour by hour, or only the ones you charted first
 
 ## Cards
 

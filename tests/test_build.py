@@ -16,6 +16,7 @@ from common import (
     PREVIEW_SIZE,
     PREVIEWS,
     ROOT,
+    app_of,
     extract_meta,
     extract_meta_description,
     game_files,
@@ -23,6 +24,7 @@ from common import (
     inject_pwa,
     inject_social,
     music_files,
+    own_apps,
     preview_files,
 )
 from gather_links import extract_urls
@@ -106,7 +108,7 @@ def test_build_sitemap_lists_games_and_generated_pages():
 
 def test_site_contains_only_publishable_files(site_dir):
     published = {path.relative_to(site_dir).as_posix() for path in site_dir.rglob("*") if path.is_file()}
-    apps = [*(filename.removesuffix(".html") for filename in game_files()), HOME_APP]
+    apps = [*own_apps(), HOME_APP]
     expected = {
         *game_files(),
         "index.html",
@@ -141,8 +143,9 @@ def test_games_are_published_with_only_previews_telemetry_analytics_and_app_link
     for filename in game_files():
         source = (ROOT / filename).read_text("utf-8")
         published = (site_dir / filename).read_text("utf-8")
-        app = filename.removesuffix(".html")
-        social = inject_social(source, app, f"/{app}")
+        slug = filename.removesuffix(".html")
+        app = app_of(source, slug)
+        social = inject_social(source, app, f"/{slug}")
         assert published == inject_pwa(inject_analytics(inject_telemetry(social, telemetry, current_release())), app)
         assert (
             published.index('<meta property="og:title"')

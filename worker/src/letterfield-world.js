@@ -156,6 +156,15 @@ export const fdiv = (a, b) => Math.floor(a / b);
 const RSEED = SEED ^ 0x5bd1e995, DSEED = SEED ^ 0x2545f491;
 const mod = (a, n) => ((a % n) + n) % n;
 export const regionTheme = (rx, ry) => mod(rx + LAT_B * ry, NT);
+// Territory names, as the game shows them: one of the theme's words and a
+// landform (the survey's log names where each word was charted).
+const LANDFORMS = 'Hollow Reach Rise Flats Downs Heights Fields Vale Basin Ridge Point Crossing Common Green Row Lane Quarter Terrace Slope Banks Sound Strand Shallows Moor Marsh Wood Run Range Country Steppe Rim Verge Gulch Yard Works Corner Court Lands Cove Gate Spur Crest Hills Glen Dale Heath Wold Knoll Bluff Bend Haven End Fold Meadows Plains Shore Springs Cross Hook Hythe'.split(' ');
+const NAMED = THEMES.map((t) => t.words.filter((w) => w.length >= 4));
+export function regionName(rx, ry) {
+  const k = rx + LAT_B * ry, t = mod(k, NT), words = NAMED[t];
+  const w = words[h3(fdiv(k, NT), ry, RSEED) % words.length];
+  return w[0] + w.slice(1).toLowerCase() + ' ' + LANDFORMS[mod(ry + 7 * t, LANDFORMS.length)];
+}
 function deckOf(rx, ry) {
   const r = rng(h3(rx, ry, DSEED)), deck = THEMES[regionTheme(rx, ry)].words.slice();
   for (let i = deck.length - 1; i > 0; i--) { const j = Math.floor(r() * (i + 1)); const t = deck[i]; deck[i] = deck[j]; deck[j] = t; }

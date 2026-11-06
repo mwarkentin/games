@@ -8,6 +8,8 @@
 //                              and today's and yesterday's numbers (see Atlas.stats)
 //   POST /v1/survey/pass       a Turnstile token for a pass (survey-pass.js), while TURNSTILE_SECRET
 //                              is set; joins need one only once TURNSTILE_REQUIRED is "true"
+//   GET /v1/survey/log/...     the survey's log: every word charted, by hour (survey-log.js).
+//                              Each sector copies its new claims to D1 from an alarm (flushLog).
 //
 // The map is split into sectors of 4×4 territories (192×192 cells), and each
 // sector is its own Durable Object: one single-threaded room that holds the
@@ -61,6 +63,7 @@
 import { BLOCKED_INITIALS, INITIALS, corsHeaders, hashAddress, json } from './leaderboard.js';
 import { PASS_PATH, checkPass, handlePass } from './survey-pass.js';
 import { CH, DIRS, RC, VOCAB, chunk, fdiv, keyOf, letterAt } from './letterfield-world.js';
+import { LOG_BATCH, LOG_MS, LOG_RETRY_MAX_MS, writeLog } from './survey-log.js';
 
 export const SECTOR = RC * 4;         // cells per sector side
 export const MAX_PLAYERS = 750;       // sockets one sector accepts (bench/load.js: one sector saturates between 750 and 1,000)
@@ -242,9 +245,18 @@ export class Sector {
     this.overDay = -1;       // the UTC day `over` is for
     this.over = new Set();   // addresses past the daily cap today, as the Atlas last said
     this.overAt = 0;         // how many the Atlas had counted then; it only resends the list when this changes
+    this.logAt = 0;          // when the log alarm is set for, if this object set it since waking
+    this.logFails = 0;       // log writes that have failed in a row
+    this.logChecked = false; // whether this object has looked for claims the log is missing since waking
+    this.lastAt = null;      // the latest claim's time, read on the first claim after waking
     this.sql.exec(`CREATE TABLE IF NOT EXISTS claims (
       key TEXT PRIMARY KEY, w TEXT NOT NULL, x INTEGER NOT NULL, y INTEGER NOT NULL, d INTEGER NOT NULL,
       s INTEGER NOT NULL, initials TEXT NOT NULL, at INTEGER NOT NULL) WITHOUT ROWID`);
+    // The survey's log (survey-log.js): claims are copied to D1 in the order
+    // they were made, and `logged` holds the last one D1 has. A sector from
+    // before the log starts with none logged, so it sends its old claims too.
+    this.sql.exec('CREATE INDEX IF NOT EXISTS claims_by_time ON claims (at, key)');
+    this.sql.exec('CREATE TABLE IF NOT EXISTS logged (id INTEGER PRIMARY KEY CHECK (id = 0), at INTEGER NOT NULL)');
   }
 
   async fetch(request) {
@@ -297,6 +309,11 @@ export class Sector {
     const hello = JSON.stringify({ t: 'hello', you: id, sector: [sx, sy], claims: [] });
     try { ws.send(hello.replace('"claims":[]', `"claims":${this.claimsJson}`)); } catch { /* closing */ }
     if (this.world) send(ws, { t: 'world', ...this.world });
+    if (!this.logChecked) {
+      // The first join after waking: anything the log hasn't got goes soon.
+      this.logChecked = true;
+      if (this.env.LOG_DB && this.unlogged(2).some((r) => r.at > this.logMark())) this.logSoon(1000);
+    }
   }
 
   everyone() {
@@ -360,16 +377,21 @@ export class Sector {
     if (c.error) return send(ws, { t: 'error', key, error: c.error });
     // The insert runs as one statement with nothing awaited, so even if
     // another claim ran while the limiter answered, the first to get here wins.
+    // Its time is always after the sector's last claim, even if this object
+    // moved to a machine whose clock is behind, so the log (which copies
+    // claims in order of time) can't skip it.
+    const at = this.claimTime(now);
     const inserted = this.sql.exec(
       `INSERT INTO claims (key, w, x, y, d, s, initials, at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT (key) DO NOTHING RETURNING key`,
-      c.key, c.w, c.x, c.y, c.d, c.s, me.initials, now,
+      c.key, c.w, c.x, c.y, c.d, c.s, me.initials, at,
     ).toArray().length;
     if (!inserted) {
       const first = this.sql.exec('SELECT w, x, y, d, s, initials, at FROM claims WHERE key = ?', c.key).one();
       return send(ws, { t: 'taken', c: row(first) });
     }
-    const claimed = JSON.stringify([c.w, c.x, c.y, c.d, c.s, me.initials, now]);
+    this.lastAt = at;
+    const claimed = JSON.stringify([c.w, c.x, c.y, c.d, c.s, me.initials, at]);
     if (this.claimsJson) this.claimsJson = `${this.claimsJson.slice(0, -1)}${this.claimsJson === '[]' ? '' : ','}${claimed}]`;
     if (this.counts && !c.s) this.counts[this.territory(c.x, c.y)]++;
     this.hot = [c.x, c.y];
@@ -377,6 +399,64 @@ export class Sector {
     this.batch.push(`{"t":"claimed","c":${claimed},"by":${JSON.stringify(me.id)}}`);
     this.sendBatch();
     this.maybeReport();
+    this.logSoon();
+  }
+
+  claimTime(now) {
+    this.lastAt ??= this.sql.exec('SELECT MAX(at) AS at FROM claims').one().at ?? 0;
+    return Math.max(now, this.lastAt + 1);
+  }
+
+  // Claims D1 hasn't got yet, oldest first: those after the last one it has.
+  // Older sectors may hold claims made in the same millisecond, so the one
+  // at the mark goes again too, and D1 ignores the copy.
+  logMark() {
+    return this.sql.exec('SELECT at FROM logged WHERE id = 0').toArray()[0]?.at ?? -1;
+  }
+
+  unlogged(limit) {
+    return this.sql.exec('SELECT key, w, x, y, d, s, initials, at FROM claims WHERE at >= ? ORDER BY at, key LIMIT ?', this.logMark(), limit).toArray();
+  }
+
+  // Copies new claims to the log within LOG_MS, from an alarm. An alarm,
+  // unlike a timer, doesn't stop the sector hibernating, and it wakes the
+  // sector if it was evicted. Claims that come in before it goes off ride
+  // along with it.
+  logSoon(delay = LOG_MS) {
+    if (!this.env.LOG_DB) return;
+    const at = this.now() + delay;
+    if (this.logAt && this.logAt <= at) return;
+    this.logAt = at;
+    this.ctx.storage.setAlarm(at);
+  }
+
+  async alarm() {
+    this.logAt = 0;
+    let more;
+    try {
+      more = await this.flushLog();
+    } catch (error) {
+      // D1 didn't take them: they're still here, and go with a later try.
+      this.logFails++;
+      console.log({ survey: 'log failed', fails: this.logFails, error: String(error?.message ?? error) });
+      this.logSoon(Math.min(LOG_RETRY_MAX_MS, LOG_MS * 2 ** this.logFails));
+      return;
+    }
+    this.logFails = 0;
+    if (more) this.logSoon(1000);
+  }
+
+  // Sends up to LOG_BATCH claims to D1, and moves the mark past them once D1
+  // has them. Returns whether more are waiting.
+  async flushLog() {
+    if (!this.env.LOG_DB) return false;
+    const mark = this.logMark();
+    const rows = this.unlogged(LOG_BATCH);
+    // Only the claim at the mark itself, which D1 already has.
+    if (!rows.length || rows.at(-1).at === mark) return false;
+    await writeLog(this.env.LOG_DB, rows);
+    this.sql.exec('INSERT INTO logged (id, at) VALUES (0, ?) ON CONFLICT (id) DO UPDATE SET at = excluded.at', rows.at(-1).at);
+    return rows.length === LOG_BATCH;
   }
 
   async webSocketClose(ws) {
