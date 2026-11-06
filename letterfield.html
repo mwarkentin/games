@@ -740,16 +740,21 @@ const surveyEl = $('#survey'), surveyText = $('#surveyText'), surveyInput = $('#
 // A survey pass: the Worker's word that this browser passed Turnstile, good
 // for an hour from this address and for every sector joined in that time. It
 // is kept in localStorage so a reload doesn't ask again. If Turnstile can't
-// load or says no, the game carries on alone and asks again later.
+// load or says no, the game joins without a pass, which the Worker takes
+// until passes are required (TURNSTILE_REQUIRED). Once a sector has said
+// `unverified`, it doesn't: the game carries on alone and asks again later.
 const siteKey = (() => {
   if (!surveyApi) return '';
   let k = TURNSTILE_SITE_KEY;
   try { const q = new URLSearchParams(location.search).get('turnstile'); if (q && /^[\w-]{10,80}$/.test(q)) k = q; } catch (_) {}
   return k;
 })();
-let pass = null, passing = false, passFails = 0, passRetryAt = 0, turnstileLoad = null, widgetId = null;
+let pass = null, passing = false, passFails = 0, passRetryAt = 0, passRequired = false, turnstileLoad = null, widgetId = null;
 try { const p = JSON.parse(LS.get(K_PASS) || 'null'); if (p && typeof p.pass === 'string' && Number.isFinite(p.expires)) pass = p; } catch (_) {}
 const passGood = () => !siteKey || (pass && pass.expires - Date.now() > 60000);
+// Whether to join now: with a pass, or without one once a try for one has
+// failed, unless a sector has asked for one.
+const mayJoin = () => passGood() || (passFails > 0 && !passRequired);
 const surveyCheck = $('#surveyCheck');
 function loadTurnstile() {
   turnstileLoad ??= new Promise((resolve, reject) => {
@@ -810,6 +815,7 @@ function ensurePass() {
 // and get another. A pass refused straight after we got it counts as a failure,
 // so a fault can't loop through challenges.
 function dropPass() {
+  passRequired = true;
   if (!pass) return;
   if (pass.got && Date.now() - pass.got < 15000) { passFails++; passRetryAt = Date.now() + Math.min(600000, 30000 * 2 ** (passFails - 1)); }
   pass = null;
@@ -828,8 +834,8 @@ function sectorsInView() {
 function syncSurvey() {
   if (!surveyApi || spawning) return;
   const want = surveyPaused ? [] : sectorsInView(), keep = new Set(), now = Date.now();
-  const passed = passGood();
-  if (want.length && !passed) ensurePass();
+  if (want.length && !passGood()) ensurePass();
+  const passed = mayJoin();
   for (const { sx, sy } of want) {
     const k = sx + ',' + sy, l = links.get(k);
     keep.add(k);
@@ -848,8 +854,9 @@ function openLink(sx, sy) {
   let l = links.get(k);
   if (!l) { l = { k, sx, sy, ws: null, open: false, you: null, n: 0, counted: false, here: [], tries: 0, timer: 0, unwanted: 0, failed: false, full: false }; links.set(k, l); }
   let ws;
-  if (!passGood()) { links.delete(k); return; }  // syncSurvey opens it again once there's a pass
-  try { ws = new WebSocket(`${surveyApi}/v1/survey/${sx}/${sy}` + (siteKey ? '?pass=' + encodeURIComponent(pass.pass) : '')); } catch (_) { l.failed = true; return; }
+  if (!mayJoin()) { links.delete(k); return; }  // syncSurvey opens it again once there's a pass
+  const withPass = siteKey && passGood() ? '?pass=' + encodeURIComponent(pass.pass) : '';
+  try { ws = new WebSocket(`${surveyApi}/v1/survey/${sx}/${sy}` + withPass); } catch (_) { l.failed = true; return; }
   l.ws = ws;
   ws.onopen = () => {
     if (l.ws !== ws) return;
@@ -1023,7 +1030,7 @@ function renderSurvey() {
   }
   let firsts = 0;
   for (const e of found.values()) if (e.f) firsts++;
-  surveyEl.dataset.state = live ? 'live' : failed || (!passGood() && passFails && !passing) ? 'offline' : 'connecting';
+  surveyEl.dataset.state = live ? 'live' : failed || (!mayJoin() && passFails && !passing) ? 'offline' : 'connecting';
   // The live count ticks up with claims seen nearby between the Atlas's totals, and never runs backwards.
   if (world) worldShown = Math.min(world.total, Math.max(worldShown, world.charted + worldExtra));
   if (world && W >= 700) $('#brandSub').textContent = `${worldShown.toLocaleString()} of ${world.total.toLocaleString()} charted`;
@@ -1031,7 +1038,7 @@ function renderSurvey() {
     const home = links.get(sectorKey(Math.floor(cam.x), Math.floor(cam.y)));
     surveyText.textContent = surveyPaused ? 'Paused while this tab is hidden.'
       : !passGood() && passing ? 'Checking this is a person, not a bot…'
-      : !passGood() && passFails ? 'Couldn’t check this is a person, so you’re surveying alone for now. Your finds still save in this browser.'
+      : !mayJoin() && passFails ? 'Couldn’t check this is a person, so you’re surveying alone for now. Your finds still save in this browser.'
       : home && home.full === 'world' ? 'The survey is full right now. Your finds still save in this browser.'
       : home && home.full ? 'This part of the map is full right now. Your finds still save in this browser.'
       : failed ? 'Survey offline. Your finds still save in this browser.' : 'Joining the survey…';

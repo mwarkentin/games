@@ -42,7 +42,8 @@
 //                                   'daily limit' once its address has charted DAILY_CLAIMS today
 //   {t: 'presence', n, p}           players here ([id, initials, x, y]), about once a second
 //   {t: 'world', charted, total, players}   the whole world's totals, as they change
-//   {t: 'unverified'}               from the Worker, for a join without a good pass, which then
+//   {t: 'unverified'}               from the Worker, while TURNSTILE_REQUIRED is "true", for a join
+//                                   without a good pass, which then
 //                                   closes with code 4001: the game gets a new pass and retries
 //   {t: 'full', world}              no room in the sector (or, with world: true, in the whole
 //                                   survey), or the player's address holds or opens too many
@@ -79,6 +80,7 @@ export const QUIET = 32;              // a sector with fewer sockets than this s
 export const SAVE_POS_MS = 5000;      // a moving player's position is saved to their socket this often
 export const ADDRESS_SOCKETS = 40;    // sockets one address can hold in one sector (a classroom shares an address)
 export const ADDRESS_HEADER = 'X-Survey-Address';  // the hashed address, from the Worker to the sector
+export const UNPASSED_HEADER = 'X-Survey-Unpassed';  // '1' on a join without a good Turnstile pass, from the Worker
 export const DAILY_CLAIMS = 300;      // words one address can chart in the shared world each UTC day
 export const DAILY_LIST_MAX = 2000;   // addresses past the daily cap that the Atlas hands out, latest first
 const DAY_MS = 86400000;
@@ -119,8 +121,10 @@ export function checkClaim(claim, sx, sy) {
 // Answers the survey's paths, or returns null for any other path: a sector's
 // WebSocket goes to its Durable Object, and the world map comes from the
 // Atlas through a short cache. CORS doesn't cover WebSockets, so the origin
-// is checked here. With TURNSTILE_SECRET set, a sector join also needs a pass
-// from POST /v1/survey/pass (see survey-pass.js and TURNSTILE.md).
+// is checked here. With TURNSTILE_SECRET set, POST /v1/survey/pass hands out
+// passes (see survey-pass.js and TURNSTILE.md). A join without a good pass is
+// turned away only when TURNSTILE_REQUIRED is "true"; until then it goes
+// ahead, marked so its sector counts it.
 export function routeSurvey(request, env) {
   const url = new URL(request.url);
   const m = url.pathname.match(SECTOR_PATH);
@@ -140,16 +144,26 @@ export function routeSurvey(request, env) {
   const name = `${Number(m[1])},${Number(m[2])}`;
   return (async () => {
     const address = await addressHash(request, env);
-    if (env.TURNSTILE_SECRET && !(await checkPass(env.TURNSTILE_SECRET, address, url.searchParams.get('pass')))) return unverified();
-    // The pass stays here: the sector only needs the path and the address.
+    const unpassed = !!env.TURNSTILE_SECRET && !(await checkPass(env.TURNSTILE_SECRET, address, url.searchParams.get('pass')));
+    if (unpassed && turnstileRequired(env)) return unverified();
+    // The pass stays here: the sector only needs the path, the address and
+    // whether the join had a pass. The Worker sets both headers itself, so a
+    // player can't choose either.
     url.search = '';
     const headers = new Headers(request.headers);
     headers.set(ADDRESS_HEADER, address);
+    headers.delete(UNPASSED_HEADER);
+    if (unpassed) headers.set(UNPASSED_HEADER, '1');
     return env.SECTORS.get(env.SECTORS.idFromName(name)).fetch(new Request(url, { headers }));
   })();
 }
 
-// A join without a good pass is answered by the Worker itself, without waking
+// Whether joins without a pass are turned away: a var in wrangler.toml, so
+// passes can be handed out (and joins without one counted) before anyone is
+// refused.
+export const turnstileRequired = (env) => env.TURNSTILE_REQUIRED === true || env.TURNSTILE_REQUIRED === 'true';
+
+// A join without a good pass, while passes are required, is answered by the Worker itself, without waking
 // the sector, and in words the game can read: a browser learns nothing from a
 // refused WebSocket upgrade.
 function unverified() {
@@ -222,6 +236,7 @@ export class Sector {
     this.world = null;       // the last totals the Atlas sent back
     this.people = null;      // socket → its attachment, read from the sockets on first use after waking
     this.chartedBy = new Map();  // address → words it charted here since the last report
+    this.unpassed = 0;           // joins without a Turnstile pass since the last report (a bot signal)
     this.overDay = -1;       // the UTC day `over` is for
     this.over = new Set();   // addresses past the daily cap today, as the Atlas last said
     this.overAt = 0;         // how many the Atlas had counted then; it only resends the list when this changes
@@ -236,6 +251,7 @@ export class Sector {
     if (request.headers.get('Upgrade') !== 'websocket') return new Response('expected a WebSocket', { status: 426 });
     const [client, server] = Object.values(new WebSocketPair());
     const address = request.headers.get(ADDRESS_HEADER) || null;
+    if (request.headers.get(UNPASSED_HEADER) === '1') { this.unpassed++; this.reportDue = true; }
     if (this.world && this.world.players >= MAX_ONLINE) this.turnAway(server, true);
     else if (this.ctx.getWebSockets().length >= MAX_PLAYERS) this.turnAway(server, false);
     else if (address && this.fromAddress(address) >= ADDRESS_SOCKETS) this.turnAway(server, false);
@@ -484,8 +500,9 @@ export class Sector {
     this.reporting = true;
     // Words charted by each address since the last report: sent once, or
     // put back to go with the next report if this one fails.
-    const by = this.chartedBy;
+    const by = this.chartedBy, unpassed = this.unpassed;
     this.chartedBy = new Map();
+    this.unpassed = 0;
     this.overToday();
     let world;
     try {
@@ -493,13 +510,14 @@ export class Sector {
         method: 'POST',
         body: JSON.stringify({
           sx, sy, players: this.here().length, charted: this.chartedCounts(), hot: this.crowd() ?? this.hot,
-          by: [...by], day: this.overDay, overAt: this.overAt,
+          by: [...by], day: this.overDay, overAt: this.overAt, ...(unpassed ? { unpassed } : {}),
         }),
       });
       if (!res.ok) throw new Error(`atlas ${res.status}`);
       world = await res.json();
     } catch {
       for (const [address, n] of by) this.chartedBy.set(address, (this.chartedBy.get(address) ?? 0) + n);
+      this.unpassed += unpassed;
       return;  // the totals just go out later
     } finally {
       this.reporting = false;
@@ -537,6 +555,10 @@ export class Atlas {
     this.day = -1;
     this.chartedToday = new Map();
     this.overList = [];
+    // The UTC day's numbers, in memory like the counts above, and the day
+    // before's. So far only joins without a Turnstile pass (TURNSTILE.md).
+    this.stats = null;
+    this.yesterday = null;
     this.sql.exec(`CREATE TABLE IF NOT EXISTS sectors (
       sx INTEGER NOT NULL, sy INTEGER NOT NULL, charted TEXT NOT NULL, done INTEGER NOT NULL,
       PRIMARY KEY (sx, sy)) WITHOUT ROWID`);
@@ -562,9 +584,11 @@ export class Atlas {
       const ok = r && Number.isInteger(r.sx) && Number.isInteger(r.sy) && inArea(r.sx, r.sy) && isInt(r.players, 0, MAX_PLAYERS)
         && Array.isArray(r.charted) && r.charted.length === TERR * TERR && r.charted.every((n) => isInt(n, 0, 1000))
         && Array.isArray(by) && by.length <= MAX_PLAYERS * 4
-        && by.every((e) => Array.isArray(e) && typeof e[0] === 'string' && HASH.test(e[0]) && isInt(e[1], 1, TERR * TERR * 1000));
+        && by.every((e) => Array.isArray(e) && typeof e[0] === 'string' && HASH.test(e[0]) && isInt(e[1], 1, TERR * TERR * 1000))
+        && (r.unpassed === undefined || isInt(r.unpassed, 0, 1e6));
       if (!ok) return json({ error: 'bad report' }, 400);
       this.countCharted(by);
+      this.today().unpassed += r.unpassed ?? 0;
       const key = `${r.sx},${r.sy}`, done = r.charted.reduce((a, b) => a + b, 0), old = this.load().get(key);
       const inside = (v, s) => Number.isInteger(v) && fdiv(v, SECTOR) === s;
       const hot = Array.isArray(r.hot) && inside(r.hot[0], r.sx) && inside(r.hot[1], r.sy) ? r.hot.slice(0, 2) : old?.hot ?? null;
@@ -581,6 +605,16 @@ export class Atlas {
       return new Response(this.view.body, { headers: { 'Content-Type': 'application/json; charset=utf-8' } });
     }
     return json({ error: 'not found' }, 404);
+  }
+
+  // Today's stats, rolling the last day's into `yesterday` when the day turns.
+  today() {
+    const day = Math.floor(this.now() / DAY_MS);
+    if (this.stats?.day !== day) {
+      this.yesterday = this.stats?.day === day - 1 ? this.stats : { day: day - 1, unpassed: 0 };
+      this.stats = { day, unpassed: 0 };
+    }
+    return this.stats;
   }
 
   countCharted(by) {
@@ -634,7 +668,8 @@ export class Atlas {
     }
     let territories = '';
     for (const b of bytes) territories += String.fromCharCode(b);
-    return { ...this.totals(), area: AREA, territories: btoa(territories), sectors, spawn: this.spawn(live) };
+    const today = this.today();
+    return { ...this.totals(), area: AREA, territories: btoa(territories), sectors, spawn: this.spawn(live), today: { ...today }, yesterday: { ...this.yesterday } };
   }
 
   // Where a new player should start, as a cell: in the middle of the biggest

@@ -1,7 +1,9 @@
 // Survey passes: proof that a player passed a Turnstile check, so the survey
-// can turn away bots spread over many addresses (see TURNSTILE.md). It stays
-// off until the TURNSTILE_SECRET secret is set; without it every join goes
-// ahead as before.
+// can turn away bots spread over many addresses (see TURNSTILE.md). Without
+// the TURNSTILE_SECRET secret, there are no passes and every join goes ahead
+// as before. With it, passes are handed out and checked, but a join without
+// one is only counted (routeSurvey in survey.js) until TURNSTILE_REQUIRED is
+// "true" in wrangler.toml.
 //
 //   POST /v1/survey/pass   {"token": "<Turnstile token>"}
 //     → 200 {"pass", "expires"}

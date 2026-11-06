@@ -35,7 +35,7 @@ def world_map(charted=None, sectors=(), spawn=None, players=0):
 class FakeSurvey:
     """Answers each sector's WebSocket the way worker/src/survey.js does."""
 
-    def __init__(self, claims=(), presence=(), taken=(), world=None, totals=None, full=None, refuse=None, refuse_passes=()):
+    def __init__(self, claims=(), presence=(), taken=(), world=None, totals=None, full=None, refuse=None, refuse_passes=(), require_pass=False):
         self.claims = list(claims)        # [w, x, y, d, s, initials, at] already charted in sector 0,0
         self.presence = list(presence)    # [id, initials, x, y] of other players in sector 0,0
         self.taken = {tuple(c[:4]): c for c in taken}  # words someone else charts first, just before us
@@ -44,6 +44,7 @@ class FakeSurvey:
         self.full = full                  # "sector" or "world": every sector turns players away
         self.refuse = refuse              # "slow down" or "daily limit": every claim is refused with it
         self.refuse_passes = set(refuse_passes)  # survey passes the Worker turns away, as expired or another address's
+        self.require_pass = require_pass  # joins without a pass are turned away, as with TURNSTILE_REQUIRED = "true"
         self.urls: list[str] = []         # the URL of every connection
         self.sectors: list[str] = []      # path of every connection
         self.received: list[dict] = []    # every message from the game
@@ -53,7 +54,7 @@ class FakeSurvey:
         sector = re.search(r"/v1/survey/(-?\d+)/(-?\d+)(?:\?pass=([^&]*))?$", ws.url)
         key = f"{sector[1]},{sector[2]}"
         self.urls.append(ws.url)
-        if sector[3] is not None and sector[3] in self.refuse_passes:
+        if (sector[3] is None and self.require_pass) or (sector[3] is not None and sector[3] in self.refuse_passes):
             ws.send(json.dumps({"t": "unverified"}))  # the game closes it, as the Worker's close would
             return
         self.sectors.append(key)
@@ -570,9 +571,43 @@ def test_refused_pass_gets_a_new_one(page: Page, site_url, errors):
     assert errors == []
 
 
-def test_failed_check_leaves_you_surveying_alone(page: Page, site_url, errors):
+def test_failed_check_joins_without_a_pass_while_passes_arent_required(page: Page, site_url, errors):
+    # With TURNSTILE_REQUIRED off, the Worker takes the join and only counts it.
     with_turnstile(page, "fail")
     fake = FakeSurvey()
+    open_game(page, site_url, fake, f"&turnstile={SITE_KEY}")
+    expect(page.locator("#survey")).to_have_attribute("data-state", "live")
+    assert sorted(fake.sectors) == ["-1,-1", "-1,0", "0,-1", "0,0"]
+    assert all("?" not in url for url in fake.urls)
+    circle(page, hidden_words(page)[0])
+    eventually(page, lambda: len(fake.sent("claim")) == 1)
+    assert page.evaluate("window.__tsRenders.length") == 1  # it waits before asking again
+    assert errors == []
+
+
+def test_refused_token_joins_without_a_pass_while_passes_arent_required(page: Page, site_url):
+    # Skips the errors fixture: the browser logs the 403.
+    desk = with_turnstile(page, desk=FakePassDesk(status=403))
+    fake = FakeSurvey()
+    open_game(page, site_url, fake, f"&turnstile={SITE_KEY}")
+    expect(page.locator("#survey")).to_have_attribute("data-state", "live")
+    assert desk.tokens == [DUMMY_TOKEN]
+    assert all("?" not in url for url in fake.urls)
+
+
+def test_blocked_turnstile_joins_without_a_pass_while_passes_arent_required(page: Page, site_url):
+    # An ad blocker or a school network that blocks challenges.cloudflare.com.
+    # Skips the errors fixture: the browser logs the blocked script.
+    page.route(TURNSTILE_JS, lambda route: route.abort("blockedbyclient"))
+    fake = FakeSurvey()
+    open_game(page, site_url, fake, f"&turnstile={SITE_KEY}")
+    expect(page.locator("#survey")).to_have_attribute("data-state", "live")
+    assert all("?" not in url for url in fake.urls)
+
+
+def test_failed_check_leaves_you_surveying_alone_once_passes_are_required(page: Page, site_url, errors):
+    with_turnstile(page, "fail")
+    fake = FakeSurvey(require_pass=True)
     open_game(page, site_url, fake, f"&turnstile={SITE_KEY}")
     expect(page.locator("#surveyText")).to_have_text(
         "Couldn’t check this is a person, so you’re surveying alone for now. Your finds still save in this browser.")
@@ -581,24 +616,16 @@ def test_failed_check_leaves_you_surveying_alone(page: Page, site_url, errors):
     expect(page.locator("#notesBadge")).to_have_text("1")
     page.wait_for_timeout(2500)
     assert fake.sectors == []
-    assert page.evaluate("window.__tsRenders.length") == 1  # it waits before asking again
+    tried = len(fake.urls)
+    assert 1 <= tried <= 4  # one try without a pass per sector in view, then no more knocking
+    page.wait_for_timeout(2500)
+    assert len(fake.urls) == tried
     assert errors == []
 
 
-def test_refused_token_leaves_you_surveying_alone(page: Page, site_url, errors):
-    desk = with_turnstile(page, desk=FakePassDesk(status=403))
-    fake = FakeSurvey()
-    open_game(page, site_url, fake, f"&turnstile={SITE_KEY}")
-    expect(page.locator("#survey")).to_have_attribute("data-state", "offline")
-    assert desk.tokens == [DUMMY_TOKEN]
-    assert fake.sectors == []
-
-
-def test_blocked_turnstile_leaves_you_surveying_alone(page: Page, site_url):
-    # An ad blocker or a school network that blocks challenges.cloudflare.com.
-    # Skips the errors fixture: the browser logs the blocked script.
+def test_blocked_turnstile_leaves_you_surveying_alone_once_passes_are_required(page: Page, site_url):
     page.route(TURNSTILE_JS, lambda route: route.abort("blockedbyclient"))
-    fake = FakeSurvey()
+    fake = FakeSurvey(require_pass=True)
     open_game(page, site_url, fake, f"&turnstile={SITE_KEY}")
     expect(page.locator("#surveyText")).to_contain_text("Couldn’t check this is a person")
     circle(page, hidden_words(page)[0])

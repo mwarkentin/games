@@ -12,7 +12,9 @@ The same Worker hosts Letterfield's shared survey, an experiment in many
 players exploring one map at once: a Durable Object per sector of the map,
 reached over WebSockets. [SURVEY.md](SURVEY.md) covers its design, its API
 and how far it scales, and [TURNSTILE.md](TURNSTILE.md) an optional
-Turnstile check before joining, switched off until `TURNSTILE_SECRET` is set.
+Turnstile check before joining: passes are handed out once the
+`TURNSTILE_SECRET` secret is set, and required only once
+`TURNSTILE_REQUIRED` is `"true"` in `wrangler.toml`.
 
 ## API
 

@@ -3,15 +3,19 @@
 Whether a [Turnstile][ts] check before joining would keep bots out of
 Letterfield's shared survey ([SURVEY.md](SURVEY.md)), what it would cost
 players and us, and what it needs outside this repo. This branch includes a
-prototype that stays switched off until two keys are set:
+prototype, switched on in steps (see [Switching it on](#switching-it-on)):
 - the Worker: `src/survey-pass.js`, and the pass check in `routeSurvey` in
-  `src/survey.js`;
-- the game: `TURNSTILE_SITE_KEY` in `letterfield.html`.
+  `src/survey.js`. With the `TURNSTILE_SECRET` secret it hands out passes;
+  only with `TURNSTILE_REQUIRED = "true"` in `wrangler.toml` does it turn
+  away joins without one.
+- the game: `TURNSTILE_SITE_KEY` in `letterfield.html`. With a site key it
+  gets a pass before joining.
 
 Docs were read on 2026-11-06. Links are at the end.
 
-**Recommendation, in short:** merge the prototype switched off, and switch
-it on only if the survey is being charted by many addresses at once. On its
+**Recommendation, in short:** merge the prototype switched off. Hand out
+passes and count joins without one if you want the signal, but require
+passes only if the survey is being charted by many addresses at once. On its
 own Turnstile stops cheap scripts, but a determined bot pays a solver
 service about a tenth of a cent per address per day to get past it. The
 per-address limits already in place do most of the work. See
@@ -83,12 +87,18 @@ those addresses also prove it's a browser with a person at it.
      IPv6). Otherwise one solved challenge could be handed to a whole proxy
      pool, which is the attack this is for. A phone that moves from Wi-Fi to
      mobile data is asked again; for almost everyone that's invisible.
-   - **A join without a good pass** is answered by the Worker itself, never
-     waking the sector: it accepts the socket, sends `{t: 'unverified'}` and
-     closes with code 4001. A refused WebSocket upgrade tells a browser
-     nothing, so this is how the game learns to get a new pass. A pass
-     refused within 15 s of being issued counts as a failure, so a fault
-     can't loop the player through challenges.
+   - **A join without a good pass** goes ahead while `TURNSTILE_REQUIRED`
+     isn't `"true"`, and its sector counts it (see below). Once it is, the
+     Worker answers the join itself, never waking the sector: it accepts the
+     socket, sends `{t: 'unverified'}` and closes with code 4001. A refused
+     WebSocket upgrade tells a browser nothing, so this is how the game
+     learns to get a new pass. A pass refused within 15 s of being issued
+     counts as a failure, so a fault can't loop the player through
+     challenges.
+   - **The game always tries for a pass** when it has a site key. If it
+     can't get one (Turnstile blocked, refused or unreachable), it joins
+     without one, unless a sector has already answered `unverified`; then
+     it surveys alone and tries again later.
    - **The key** is derived from the Turnstile secret with an HMAC and its
      own label, so there's still one secret to manage, and rotating it ends
      every pass.
@@ -104,26 +114,70 @@ POST /v1/survey/pass  {"token": "..."}
   → 429 asked too often · 503 Turnstile unreachable · 404 while TURNSTILE_SECRET is unset
 ```
 
-While `TURNSTILE_SECRET` is unset the Worker behaves exactly as before, and
-while `TURNSTILE_SITE_KEY` is empty the game never loads Turnstile.
-`?turnstile=<site key>` turns it on in the game for testing, the way
-`?survey=` does.
+While `TURNSTILE_SECRET` is unset the Worker behaves exactly as before,
+whatever `TURNSTILE_REQUIRED` says, and while `TURNSTILE_SITE_KEY` is empty
+the game never loads Turnstile. `?turnstile=<site key>` turns it on in the
+game for testing, the way `?survey=` does.
 
-### Tests
+### Counting joins without a pass
+
+With the secret set and passes not yet required, the Worker marks each join
+without a good pass with an `X-Survey-Unpassed: 1` header on the request it
+forwards, after deleting any copy the player sent (as it does
+`X-Survey-Address`). The sector counts them and sends the number since its
+last report as `unpassed` in its Atlas report, and puts it back if the
+report fails. The Atlas adds them up for the UTC day, and
+`GET /v1/survey/world` shows the day so far and the day before:
+
+```
+"today":     {"day": 20398, "unpassed": 41},
+"yesterday": {"day": 20397, "unpassed": 12}
+```
+
+`day` is days since 1970, in UTC. The count lives in the Atlas's memory, so
+an eviction restarts the day; sectors outside the shared world don't report,
+so joins there aren't counted. Once the site key is in the game, nearly
+every player has a pass, so these joins are almost all scripts. A rising
+count is the signal to require passes; a count near zero says there's
+nothing to stop yet.
+
+## Switching it on
+
+1. **Infra apply** in mwarkentin/infra: the widget and the
+   `TURNSTILE_SECRET` Actions secret (see below).
+2. **Deploy** the Worker. It hands out passes and checks them, but enforces
+   nothing: every join still goes ahead, and the game doesn't ask for passes
+   yet, so the count is every join and means little.
+3. **Optionally, commit the site key** in `TURNSTILE_SITE_KEY`. The game now
+   gets a pass before joining, and `unpassed` fills in with the joins that
+   came without one: scripts, mostly, plus players whose browser blocks
+   Turnstile.
+4. **To enforce,** set `TURNSTILE_REQUIRED = "true"` in `wrangler.toml` and
+   deploy. Joins without a pass are turned away; players who can't pass
+   survey alone. Setting it back to `"false"` and deploying undoes it.
+
+Step 4 without step 3 would turn every player away, so do them in order.
+
+## Tests
 
 Nothing calls Cloudflare. `worker/test/survey-pass.test.js` fakes
 siteverify and uses Cloudflare's documented always-passes test secret
 (`1x0000000000000000000000000000000AA`) and dummy token
 (`XXXX.DUMMY.TOKEN.XXXX`) ([testing][testing]). It covers passes (address,
 expiry, tampering), siteverify's answers and retries, the endpoint, and
-joins with and without a pass. `tests/test_letterfield_survey.py` answers
+joins with and without a pass for each combination of secret and switch,
+including the `X-Survey-Unpassed` mark (set by the Worker, never passed on
+from the player). `worker/test/survey.test.js` checks that sectors count
+joins without a pass in their reports, keeping the count if a report fails,
+and that the Atlas adds them up per UTC day. `tests/test_letterfield_survey.py` answers
 `api.js` with a fake `turnstile` object given the invisible always-passes
 test site key (`1x00000000000000000000BB`), and checks that:
 - one check covers every sector, and a reload or roaming doesn't ask again;
 - the box shows only when the widget wants a tap;
 - a refused pass gets a new one;
 - a failed check, a refused token or a blocked `challenges.cloudflare.com`
-  leaves the player surveying alone, with their finds saved.
+  joins without a pass while passes aren't required, and leaves the player
+  surveying alone, with their finds saved, once a sector asks for one.
 
 `wrangler dev` with the test keys would run the real siteverify call, but
 this sandbox can't reach `challenges.cloudflare.com`, so it wasn't tried.
@@ -149,16 +203,18 @@ this sandbox can't reach `challenges.cloudflare.com`, so it wasn't tried.
   it's unsure. Cloudflare's plans page says WCAG 2.2 AAA and its overview
   says WCAG 2.2 AA ([plans][plans], [overview][ts]). The game's box sits at
   the bottom middle, clear of the safe area, with a line saying why it's
-  there. Players who can't pass are left surveying alone, never locked out
-  of the game.
+  there. Players who can't pass join without a pass until passes are
+  required, and after that survey alone, never locked out of the game.
 - **When it fails.** A blocked `challenges.cloudflare.com` (ad blockers,
   school and work filters, some privacy browsers) usually fails as error
   200500 or a script that never loads; a wrong device clock as 110600 or
   200100; an unsupported browser through `unsupported-callback`
   ([client-side errors][errors]). VPN and Tor users are more likely to be
-  challenged or refused. In every case the panel says "Couldn't check this
-  is a person, so you're surveying alone for now", the finds still save,
-  and the game asks again after 30 s, then 1, 2, 4 and up to 10 minutes.
+  challenged or refused. While passes aren't required, the game joins
+  without one and nothing changes for the player. Once they are, the panel
+  says "Couldn't check this is a person, so you're surveying alone for now"
+  and the finds still save. Either way the game asks Turnstile again after
+  30 s, then 1, 2, 4 and up to 10 minutes.
 - **Offline and solo.** Unchanged. Without a survey there's no Turnstile at
   all. Offline, the script fails to load and the game goes on alone, as it
   does now. The service worker leaves `challenges.cloudflare.com` alone,
@@ -230,6 +286,8 @@ output "letterfield_turnstile_sitekey" {
 - `.github/workflows/leaderboard.yml` uploads `TURNSTILE_SECRET` with
   `IP_SALT` when the Actions secret exists, and skips it when it doesn't,
   so deploys keep working before infra sets it.
+- `wrangler.toml` sets `TURNSTILE_REQUIRED = "false"`, the switch in step 4
+  of [Switching it on](#switching-it-on).
 - `wrangler.toml` sets `TURNSTILE_HOSTNAMES` to the site's hostname, so
   siteverify's `hostname` is checked too. For `wrangler dev` with test keys,
   set `TURNSTILE_HOSTNAMES=` and `TURNSTILE_SECRET=1x0000000000000000000000000000000AA`
@@ -311,17 +369,19 @@ GitHub Pages behind it):
 
 ## Recommendation
 
-1. **Merge the prototype, switched off.** Both keys empty means no change
-   for players or the Worker, and the tests keep it working.
+1. **Merge the prototype, switched off.** No secret and no site key means
+   no change for players or the Worker, and the tests keep it working.
 2. **Don't switch it on yet.** Launch with the per-address limits,
    and watch for the signs of a pool: many addresses each claiming near
-   the 6-a-minute limit, or the charted count climbing faster than the
-   players online could manage. A charted world is a vanity board; the cost
+   the 6-a-minute limit, the charted count climbing faster than the
+   players online could manage, or, after steps 1 to 3 of [Switching it
+   on](#switching-it-on), a rising `unpassed` count. A charted world is a vanity board; the cost
    of a bot is a less fun survey, not a bill, because `MAX_ONLINE` and the
    Durable Object limits already cap that.
-3. **If it's needed,** it's an infra apply (widget, secret), a deploy, and
-   one constant in `letterfield.html`. Expect it to stop scripts and cheap
-   proxies, not a bot willing to pay a solver.
+3. **If it's needed,** follow [Switching it on](#switching-it-on): an infra
+   apply, a deploy, the site key, then `TURNSTILE_REQUIRED = "true"` and
+   another deploy. Expect it to stop scripts and cheap proxies, not a bot
+   willing to pay a solver.
 
 [ts]: https://developers.cloudflare.com/turnstile/
 [modes]: https://developers.cloudflare.com/turnstile/concepts/widget/

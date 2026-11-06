@@ -9,7 +9,7 @@ import { describe, test } from 'node:test';
 
 import { hashAddress } from '../src/leaderboard.js';
 import { ACTION, PASS_MS, PASS_PATH, SITEVERIFY, checkPass, handlePass, issuePass, verifyToken } from '../src/survey-pass.js';
-import { ADDRESS_HEADER, addressOf, routeSurvey } from '../src/survey.js';
+import { ADDRESS_HEADER, UNPASSED_HEADER, addressOf, routeSurvey, turnstileRequired } from '../src/survey.js';
 
 const ORIGIN = 'https://games.michaelwarkentin.com';
 const SECRET = '1x0000000000000000000000000000000AA';   // Turnstile's test secret: always passes
@@ -150,11 +150,12 @@ describe('routeSurvey with Turnstile on', () => {
   const env = {
     ALLOWED_ORIGINS: ORIGIN,
     TURNSTILE_SECRET: SECRET,
+    TURNSTILE_REQUIRED: 'true',
     SECTORS: { idFromName: (name) => ({ name }), get: (id) => ({ fetch: async (request) => { forwarded.push([id.name, request]); return new Response('ok'); } }) },
   };
-  const join = (pass, ip = IP) => routeSurvey(new Request(`https://survey.test/v1/survey/0/0${pass ? `?pass=${encodeURIComponent(pass)}` : ''}`, {
-    headers: { Origin: ORIGIN, Upgrade: 'websocket', 'CF-Connecting-IP': ip },
-  }), env);
+  const join = (pass, ip = IP, on = env, extra = {}) => routeSurvey(new Request(`https://survey.test/v1/survey/0/0${pass ? `?pass=${encodeURIComponent(pass)}` : ''}`, {
+    headers: { Origin: ORIGIN, Upgrade: 'websocket', 'CF-Connecting-IP': ip, ...extra },
+  }), on);
 
   // Stand-ins for the runtime's WebSocketPair and its 101 responses, as in survey.test.js.
   async function refused(promise) {
@@ -177,7 +178,7 @@ describe('routeSurvey with Turnstile on', () => {
     }
   }
 
-  test('lets a join with a good pass through to its sector, without the pass', async () => {
+  test('lets a join with a good pass through to its sector, without the pass or a mark', async () => {
     const address = await hashAddress(addressOf(IP), env.IP_SALT);
     const { pass } = await issuePass(SECRET, address);
     assert.equal(await (await join(pass)).text(), 'ok');
@@ -186,9 +187,10 @@ describe('routeSurvey with Turnstile on', () => {
     assert.equal(new URL(request.url).search, '');
     assert.equal(request.headers.get(ADDRESS_HEADER), address);
     assert.equal(request.headers.get('Upgrade'), 'websocket');
+    assert.equal(request.headers.get(UNPASSED_HEADER), null);
   });
 
-  test('answers a join without a good pass itself, so the game knows to get one', async () => {
+  test('with the switch on, answers a join without a good pass itself, so the game knows to get one', async () => {
     const before = forwarded.length;
     const address = await hashAddress(addressOf(IP), env.IP_SALT);
     const { pass } = await issuePass(SECRET, address);
@@ -223,9 +225,44 @@ describe('routeSurvey with Turnstile on', () => {
     assert.equal((await routeSurvey(new Request(`https://survey.test${PASS_PATH}`, { headers: { Origin: ORIGIN } }), env)).status, 405);
   });
 
-  test('changes nothing while TURNSTILE_SECRET is unset', async () => {
-    const off = { ...env, TURNSTILE_SECRET: undefined };
-    const res = await routeSurvey(new Request('https://survey.test/v1/survey/0/0', { headers: { Origin: ORIGIN, Upgrade: 'websocket' } }), off);
-    assert.equal(await res.text(), 'ok');
+  test('changes nothing while TURNSTILE_SECRET is unset, whatever the switch says', async () => {
+    for (const required of ['true', 'false', undefined]) {
+      const off = { ...env, TURNSTILE_SECRET: undefined, TURNSTILE_REQUIRED: required };
+      assert.equal(await (await join(null, IP, off)).text(), 'ok');
+      assert.equal(forwarded.at(-1)[1].headers.get(UNPASSED_HEADER), null);
+    }
+  });
+
+  test('with the secret but the switch off, lets joins without a pass in, marked for counting', async () => {
+    const address = await hashAddress(addressOf(IP), env.IP_SALT);
+    const { pass } = await issuePass(SECRET, address);
+    for (const required of ['false', undefined, '', 'yes']) {
+      const staged = { ...env, TURNSTILE_REQUIRED: required };
+      for (const [attempt, marked] of [[null, '1'], ['junk', '1'], [pass, null]]) {
+        assert.equal(await (await join(attempt, IP, staged)).text(), 'ok');
+        assert.equal(forwarded.at(-1)[1].headers.get(UNPASSED_HEADER), marked, `${required} ${attempt}`);
+      }
+      // A pass from another address counts as none.
+      await join(pass, '198.51.100.9', staged);
+      assert.equal(forwarded.at(-1)[1].headers.get(UNPASSED_HEADER), '1');
+    }
+  });
+
+  test('never passes on a mark the player sent', async () => {
+    const address = await hashAddress(addressOf(IP), env.IP_SALT);
+    const { pass } = await issuePass(SECRET, address);
+    const staged = { ...env, TURNSTILE_REQUIRED: 'false' };
+    for (const on of [staged, { ...staged, TURNSTILE_SECRET: undefined }]) {
+      await join(pass, IP, on, { [UNPASSED_HEADER]: '1', [ADDRESS_HEADER]: 'chosen-by-me' });
+      assert.equal(forwarded.at(-1)[1].headers.get(UNPASSED_HEADER), null);
+      assert.equal(forwarded.at(-1)[1].headers.get(ADDRESS_HEADER), address);
+    }
+    await join(null, IP, staged, { [UNPASSED_HEADER]: 'no' });
+    assert.equal(forwarded.at(-1)[1].headers.get(UNPASSED_HEADER), '1');
+  });
+
+  test('reads the switch as "true" or true only', () => {
+    assert.deepEqual(['true', true, 'false', false, undefined, '', 'TRUE', '1'].map((v) => turnstileRequired({ TURNSTILE_REQUIRED: v })),
+      [true, true, false, false, false, false, false, false]);
   });
 });
