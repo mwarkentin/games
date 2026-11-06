@@ -4,7 +4,10 @@
 // ~30 s; the script reports how long claims take to come back and how
 // regularly positions arrive. Run with:
 //   node worker/bench/load.js http://127.0.0.1:8787 [players] [seconds] [origin]
-// The origin must be in the Worker's ALLOWED_ORIGINS.
+// The origin must be in the Worker's ALLOWED_ORIGINS. Each player claims to
+// come from its own IP address, so the survey's per-address limits don't
+// turn the crowd away; only wrangler dev believes that header, since
+// Cloudflare's edge sets it itself.
 
 import { performance } from 'node:perf_hooks';
 
@@ -24,7 +27,8 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 function player(i) {
   return new Promise((resolve) => {
-    const ws = new WebSocket(url, { headers: { Origin: origin } });
+    const ip = `10.${(i >> 16) & 255}.${(i >> 8) & 255}.${i & 255}`;
+    const ws = new WebSocket(url, { headers: { Origin: origin, 'CF-Connecting-IP': ip } });
     const pending = new Map();
     let x = 6 + Math.random() * 180, y = 6 + Math.random() * 180, lastPresence = 0, timers = [];
     ws.onopen = () => {

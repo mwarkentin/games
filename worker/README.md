@@ -169,7 +169,8 @@ keep their leaderboards hidden. After that:
    Actions tab, or push a change under `worker/`. It applies migrations,
    then deploys with `IP_SALT` as a Worker secret. Wrangler makes the
    Durable Object classes (War's rooms, and the survey's sectors and Atlas)
-   from the `[[migrations]]` in `wrangler.toml`. The Worker answers at
+   from the `[[migrations]]` in `wrangler.toml`, and the survey's
+   per-address rate limiters from its `[[ratelimits]]`. The Worker answers at
    `https://games-leaderboard.mwarkentin.workers.dev`.
 2. **The games already point at it:** `LEADERBOARD_URL` in
    `funnels-and-buckets.html`, `doodle-chomp.html` and

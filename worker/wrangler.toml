@@ -51,3 +51,24 @@ new_sqlite_classes = ["WarRoom"]
 [[migrations]]
 tag = "v2"
 new_sqlite_classes = ["Sector", "Atlas"]
+
+# Letterfield's survey limits each player's address, hashed with IP_SALT,
+# across every sector (see "Bots" in SURVEY.md). Counts are kept per
+# Cloudflare location and are approximate, which is enough to stop one
+# script charting the world. Periods can only be 10 or 60 seconds, and each
+# namespace_id must be unique in the account.
+[[ratelimits]]
+name = "SURVEY_CLAIMS"     # words claimed: 6 a minute, counted over a minute so a quick few all count
+namespace_id = "7301"
+
+  [ratelimits.simple]
+  limit = 6
+  period = 60
+
+[[ratelimits]]
+name = "SURVEY_JOINS"      # sockets opened: a player roaming opens about 10 an hour
+namespace_id = "7302"
+
+  [ratelimits.simple]
+  limit = 120
+  period = 60

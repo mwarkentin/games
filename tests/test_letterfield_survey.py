@@ -34,13 +34,14 @@ def world_map(charted=None, sectors=(), spawn=None, players=0):
 class FakeSurvey:
     """Answers each sector's WebSocket the way worker/src/survey.js does."""
 
-    def __init__(self, claims=(), presence=(), taken=(), world=None, totals=None, full=None):
+    def __init__(self, claims=(), presence=(), taken=(), world=None, totals=None, full=None, refuse=None):
         self.claims = list(claims)        # [w, x, y, d, s, initials, at] already charted in sector 0,0
         self.presence = list(presence)    # [id, initials, x, y] of other players in sector 0,0
         self.taken = {tuple(c[:4]): c for c in taken}  # words someone else charts first, just before us
         self.world = world or world_map()  # what GET /v1/survey/world answers
         self.totals = totals              # a {t: world} message each sector sends after hello
         self.full = full                  # "sector" or "world": every sector turns players away
+        self.refuse = refuse              # "slow down" or "daily limit": every claim is refused with it
         self.sectors: list[str] = []      # path of every connection
         self.received: list[dict] = []    # every message from the game
         self.sockets: dict[str, WebSocketRoute] = {}
@@ -68,7 +69,10 @@ class FakeSurvey:
             if msg["t"] != "claim":
                 return
             word = (msg["w"], msg["x"], msg["y"], msg["d"])
-            if word in self.taken:
+            if self.refuse:
+                word_key = f"{msg['w']}~{msg['x']}~{msg['y']}~{msg['d']}"
+                ws.send(json.dumps({"t": "error", "key": word_key, "error": self.refuse}))
+            elif word in self.taken:
                 ws.send(json.dumps({"t": "taken", "c": self.taken[word]}))
             else:
                 ws.send(json.dumps({"t": "claimed", "c": [*word, 0, "ZED", NOW_MS], "by": you}))
@@ -184,6 +188,32 @@ def test_second_to_a_word_hears_who_was_first(page: Page, site_url, errors):
     circle(page, word)
     expect(page.locator("#toast")).to_contain_text("Charted first by SIS")
     assert page.evaluate("window.__lf.found.values().next().value.f") == 0
+    assert errors == []
+
+
+def test_claiming_too_fast_says_so_and_keeps_the_word(page: Page, site_url, errors):
+    words = known_words(page, site_url)
+    fake = FakeSurvey(refuse="slow down")
+    open_game(page, site_url, fake)
+    expect(page.locator("#survey")).to_have_attribute("data-state", "live")
+    circle(page, words[0])
+    expect(page.locator("#toast")).to_contain_text("Too quick to chart · kept in your notes")
+    assert page.evaluate("window.__lf.found.size") == 1
+    assert page.evaluate("window.__lf.found.values().next().value.f") == 0
+    # Play carries on: the next word is found and claimed as usual.
+    circle(page, words[1])
+    eventually(page, lambda: len(fake.sent("claim")) == 2)
+    expect(page.locator("#survey")).to_have_attribute("data-state", "live")
+    assert errors == []
+
+
+def test_past_the_daily_limit_says_so_and_keeps_the_word(page: Page, site_url, errors):
+    words = known_words(page, site_url)
+    open_game(page, site_url, FakeSurvey(refuse="daily limit"))
+    expect(page.locator("#survey")).to_have_attribute("data-state", "live")
+    circle(page, words[0])
+    expect(page.locator("#toast")).to_contain_text("Today’s charting limit reached · kept in your notes")
+    assert page.evaluate("window.__lf.found.size") == 1
     assert errors == []
 
 
