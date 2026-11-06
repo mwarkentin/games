@@ -28,6 +28,8 @@ utilities; games live here so they get their own origin and their own rules.
   build fills in its list of pages and a version.
 - `icons/`: each app's icon, drawn as `<app>.svg` and rendered to the PNGs
   beside it by `scripts/render_icons.py`.
+- `music/`: public-domain MIDI files that games play, with a README of where
+  each came from. The build publishes them as they are.
 - `tests/`: pytest with Playwright.
 - `worker/`: the leaderboard API, a Cloudflare Worker with a D1 database,
   which also runs War's multiplayer rooms and Letterfield's shared survey as
@@ -53,6 +55,11 @@ utilities; games live here so they get their own origin and their own rules.
   controls clear of `env(safe-area-inset-*)`.
 - Respect `prefers-reduced-motion` and `prefers-color-scheme`. Give sound an
   off switch, and start audio only after the player's first tap or key.
+- Music gets an off switch of its own, apart from sound effects. Play it
+  from MIDI files in `music/` on voices made in the page, as War does (its
+  Music section): notes, not recordings, so it's small and works offline.
+  Only public-domain or CC0 pieces, each listed in `music/README.md` with
+  its source at a fixed commit; `tests/test_music.py` checks.
 - Pause when the tab is hidden (`visibilitychange`) if the game runs on a
   timer.
 - Keep scores and settings in `localStorage`, with keys prefixed by the
@@ -118,12 +125,13 @@ the whole site (`index`), which opens at the game list. Names, descriptions
 and colors come from each game's `<head>`.
 
 The build links each page to its manifest and icons and registers `sw.js`.
-It stores every page when it installs. After that, pages come from the
-network first and fall back to the stored copy when the network fails or
-takes more than four seconds. Google Fonts are stored too. Nothing else goes
-through it, so the leaderboard, War's rooms, Sentry and Counterscale behave
-as they would without it. A hash of the pages is the worker's version, so
-each deploy refreshes every stored page.
+It stores every page, and the music in `music/`, when it installs. After
+that, pages come from the network first and fall back to the stored copy
+when the network fails or takes more than four seconds; music comes from the
+stored copy. Google Fonts are stored too. Nothing else goes through it, so
+the leaderboard, War's rooms, Sentry and Counterscale behave as they would
+without it. A hash of the pages and music is the worker's version, so each
+deploy refreshes every stored copy.
 
 Each app's icon is `icons/<app>.svg`, a full-bleed 512×512 square with
 everything that matters inside the middle circle (radius 205), drawn with

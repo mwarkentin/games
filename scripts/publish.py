@@ -5,7 +5,8 @@ Games are copied as they are apart from three additions, inserted before
 </head>: telemetry.js (Sentry), analytics.js (Counterscale), and the links
 and script that make each game a home-screen app (see build_pwa.py). Nothing
 is drawn on top of them, because each one owns the whole screen. games.json
-is copied alongside them. Anything not listed here or in build_pwa.py
+is copied alongside them, and so are the MIDI files in music/ that games
+play. Anything not listed here or in build_pwa.py
 (scripts, tests, Markdown, the scripts' own files) never reaches the site.
 
 Usage: publish.py [SITE_DIR]
@@ -18,7 +19,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-from common import ROOT, game_files, inject_analytics, inject_pwa, inline_script
+from common import ROOT, game_files, inject_analytics, inject_pwa, inline_script, music_files
 
 TELEMETRY = "telemetry.js"
 
@@ -52,6 +53,9 @@ def publish(site_dir: Path, root: Path = ROOT) -> list[str]:
     games_json = root / "games.json"
     if games_json.exists():
         shutil.copy2(games_json, site_dir / "games.json")
+    for name in music_files(root):
+        (site_dir / name).parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(root / name, site_dir / name)
     return published
 
 

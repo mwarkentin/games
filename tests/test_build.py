@@ -17,6 +17,7 @@ from common import (
     game_files,
     inject_analytics,
     inject_pwa,
+    music_files,
 )
 from gather_links import extract_urls
 from publish import current_release, inject_telemetry
@@ -110,8 +111,9 @@ def test_site_contains_only_publishable_files(site_dir):
         "sw.js",
         *(f"manifests/{app}.webmanifest" for app in apps),
         *(f"icons/{app}-{size}.png" for app in apps for size in ICON_SIZES),
+        *music_files(),
     }
-    assert published == expected, "the site should hold the games, generated pages and their apps only"
+    assert published == expected, "the site should hold the games, generated pages, their apps and music only"
 
 
 def test_inject_telemetry_goes_before_head_end_once():
