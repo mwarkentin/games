@@ -5,11 +5,11 @@ from __future__ import annotations
 import json
 
 import survey_watch
-from survey_watch import CAPPED_ALERT, RATE_ALERT, RATE_MIN_WORDS, check, main
+from survey_watch import CAPPED_ALERT, RATE_ALERT, RATE_MIN_WORDS, UNPASSED_MIN_JOINS, UNPASSED_PER_HOUR, check, main, site_key_set
 
 
 def world(**yesterday):
-    day = {"day": 20389, "charted": 0, "addresses": 0, "capped": 0, "playerHours": 0, **yesterday}
+    day = {"day": 20389, "charted": 0, "addresses": 0, "capped": 0, "playerHours": 0, "unpassed": 0, **yesterday}
     return {"charted": 1, "total": 1_120_206, "players": 0, "today": {**day, "day": 20390}, "yesterday": day}
 
 
@@ -44,7 +44,7 @@ def test_prints_a_note_only_when_something_looks_wrong(tmp_path, capsys):
     assert main(["survey_watch.py", str(busy)]) == 0
     out = capsys.readouterr().out
     assert out.startswith("Yesterday's numbers")
-    assert "| 9,000 | 40 | 30 | 3 |" in out
+    assert "| 9,000 | 40 | 30 | 3 | 0 |" in out
     assert "TURNSTILE.md" in out
 
 
@@ -54,3 +54,30 @@ def test_an_unreachable_survey_prints_nothing(monkeypatch, capsys):
     captured = capsys.readouterr()
     assert captured.out == ""
     assert "::warning::" in captured.err
+
+
+def test_many_joins_without_a_turnstile_pass_once_the_game_has_a_site_key():
+    bots = world(charted=200, addresses=30, playerHours=40, unpassed=2_000)
+    [reason] = check(bots, site_key=True)
+    assert "2,000 sockets joined without a Turnstile pass" in reason
+    # Before the site key is in the game every join comes without a pass, so it says nothing.
+    assert check(bots, site_key=False) == []
+    # Players whose browsers block Turnstile, on a busy day: below UNPASSED_PER_HOUR.
+    assert check(world(playerHours=1_000, unpassed=UNPASSED_PER_HOUR * 1_000 - 1), site_key=True) == []
+    # A quiet day is too few joins to judge.
+    assert check(world(playerHours=0, unpassed=UNPASSED_MIN_JOINS - 1), site_key=True) == []
+    [reason] = check(world(playerHours=0, unpassed=UNPASSED_MIN_JOINS), site_key=True)
+    # Older days, before the count existed, have none.
+    day = world()
+    del day["yesterday"]["unpassed"]
+    assert check(day, site_key=True) == []
+
+
+def test_reads_the_site_key_from_the_game(tmp_path):
+    game = tmp_path / "letterfield.html"
+    game.write_text("const SURVEY_URL = '';\nconst TURNSTILE_SITE_KEY = '';\n")
+    assert site_key_set(game) is False
+    game.write_text("const TURNSTILE_SITE_KEY = '0x4AAAAAAAexample';\n")
+    assert site_key_set(game) is True
+    assert site_key_set(tmp_path / "missing.html") is False
+    assert isinstance(site_key_set(), bool)  # and reads the real game

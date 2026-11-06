@@ -15,8 +15,10 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import sys
 import urllib.request
+from pathlib import Path
 
 WORLD_URL = "https://games-leaderboard.mwarkentin.workers.dev/v1/survey/world"
 
@@ -27,10 +29,29 @@ CAPPED_ALERT = 20
 # where they are add words but no player-hours, so the rate climbs far past it.
 RATE_ALERT = 120
 RATE_MIN_WORDS = 500  # too few words to judge a rate by
+# Joins without a Turnstile pass (worker/TURNSTILE.md), counted only once the
+# game has a site key: before that, every join comes without one. A person
+# roaming opens about 10 sockets an hour, so this is as if half of all
+# player-hours came from browsers that block Turnstile, which would be far
+# more than ad blockers and school filters account for. Below
+# UNPASSED_MIN_JOINS (about 50 hours of one such player), a day is too
+# quiet to judge.
+UNPASSED_PER_HOUR = 5
+UNPASSED_MIN_JOINS = 500
+GAME = Path(__file__).resolve().parent.parent / "letterfield.html"
 
 
-def check(world: dict) -> list[str]:
-    """Reasons yesterday looks like bots, or none."""
+def site_key_set(game: Path = GAME) -> bool:
+    """Whether letterfield.html has a Turnstile site key, so players get passes."""
+    try:
+        m = re.search(r"^const TURNSTILE_SITE_KEY = '([^']*)';", game.read_text("utf-8"), re.M)
+    except OSError:
+        return False
+    return bool(m and m[1])
+
+
+def check(world: dict, site_key: bool | None = None) -> list[str]:
+    """Reasons yesterday looks like bots, or none. `site_key` defaults to what letterfield.html says."""
     day = world.get("yesterday") if isinstance(world, dict) else None
     today = world.get("today") if isinstance(world, dict) else None
     if not isinstance(day, dict):
@@ -50,6 +71,12 @@ def check(world: dict) -> list[str]:
                 f"{charted:,} words were charted in {hours:,} player-hours: {charted / hours:,.0f} an hour each "
                 f"(alert at {RATE_ALERT}; people manage about 60)."
             )
+    unpassed = day.get("unpassed", 0)
+    if unpassed >= UNPASSED_MIN_JOINS and unpassed >= UNPASSED_PER_HOUR * hours and (site_key_set() if site_key is None else site_key):
+        reasons.append(
+            f"{unpassed:,} sockets joined without a Turnstile pass in {hours:,} player-hours "
+            f"(alert at {UNPASSED_PER_HOUR} an hour and {UNPASSED_MIN_JOINS:,} in all; a player roaming opens about 10 an hour, nearly all with a pass)."
+        )
     return reasons
 
 
@@ -59,9 +86,10 @@ def note(world: dict, reasons: list[str]) -> str:
     lines += [f"- {r}" for r in reasons]
     lines += [
         "",
-        "| words charted | addresses charting | at the daily cap | player-hours |",
-        "| --- | --- | --- | --- |",
-        f"| {day.get('charted', 0):,} | {day.get('addresses', 0):,} | {day.get('capped', 0):,} | {day.get('playerHours', 0):,} |",
+        "| words charted | addresses charting | at the daily cap | player-hours | joins without a pass |",
+        "| --- | --- | --- | --- | --- |",
+        f"| {day.get('charted', 0):,} | {day.get('addresses', 0):,} | {day.get('capped', 0):,} | {day.get('playerHours', 0):,} "
+        f"| {day.get('unpassed', 0):,} |",
         "",
         "If it keeps up, see `worker/TURNSTILE.md` for switching on the Turnstile check.",
     ]

@@ -13,7 +13,7 @@ import worker from '../src/index.js';
 import { CH, DIRS, RG, THEMES, THEME_DATA, VOCAB, chunk, genChunk, keyOf, letterAt, regionTheme, wordEnd } from '../src/letterfield-world.js';
 import {
   ADDRESS_HEADER, ADDRESS_SOCKETS, AREA, AREA_WORDS, Atlas, BATCH_MS, DAILY_CLAIMS, DAILY_LIST_MAX, CLAIM_BURST, CLAIM_REFILL_MS, MAX_ONLINE, MAX_PLAYERS, ONLINE_MS, PRESENCE_MAX, PRESENCE_MS,
-  QUIET, REPORT_MS, SAVE_MS, SAVE_POS_MS, SECTOR, SPAWN_MAX, Sector, VIEW_MS, addressOf, checkClaim, routeSurvey,
+  QUIET, REPORT_MS, UNPASSED_HEADER, SAVE_MS, SAVE_POS_MS, SECTOR, SPAWN_MAX, Sector, VIEW_MS, addressOf, checkClaim, routeSurvey,
 } from '../src/survey.js';
 
 const ORIGIN = 'https://games.michaelwarkentin.com';
@@ -569,6 +569,58 @@ describe('Sector', () => {
     assert.deepEqual(reports.at(-1).by, [[hashed(2), 1]]);
   });
 
+  test('counts joins without a Turnstile pass in its reports, and keeps the count if a report fails', async () => {
+    const reports = [];
+    let fail = true;
+    sector = new Sector(state, {
+      ATLAS: {
+        idFromName: (name) => name,
+        get: () => ({
+          fetch: async (url, init) => {
+            if (fail) throw new Error('atlas evicted');
+            reports.push(JSON.parse(init.body));
+            return Response.json({ charted: 1, total: AREA_WORDS, players: 1, day: TODAY, overAt: 0 });
+          },
+        }),
+      },
+    });
+    sector.now = () => clock;
+    // Opens a socket as the Worker forwards it, with or without the Worker's mark.
+    async function open(unpassed) {
+      let pair;
+      globalThis.WebSocketPair = function WebSocketPair() { pair = [fakeSocket(), fakeSocket()]; return { 0: pair[0], 1: pair[1] }; };
+      const RealResponse = Response;
+      globalThis.Response = class { constructor(body, init) { Object.assign(this, init); } };
+      try {
+        const headers = { Upgrade: 'websocket', [ADDRESS_HEADER]: hashed(unpassed ? 1 : 2), ...(unpassed ? { [UNPASSED_HEADER]: '1' } : {}) };
+        await sector.fetch(new Request('https://survey.test/v1/survey/2/-3', { headers }));
+      } finally {
+        globalThis.Response = RealResponse;
+        delete globalThis.WebSocketPair;
+      }
+      return pair[1];
+    }
+    const bot = await open(true);
+    await open(true);
+    const player = await open(false);
+    assert.equal(bot.sent[0].t, 'hello');  // counted, not refused
+    await say(player, { t: 'pos', x: 400, y: -500 });
+    await settle();
+    assert.equal(reports.length, 0);  // that report failed
+    fail = false;
+    clock += REPORT_MS;
+    await say(player, { t: 'pos', x: 410, y: -500 });
+    await settle();
+    assert.equal(reports.at(-1).unpassed, 2);
+    // Nothing new: the report leaves it out.
+    await claim(player, words[0]);
+    clock += REPORT_MS;
+    await say(player, { t: 'pos', x: 420, y: -500 });
+    await settle();
+    assert.equal(reports.length, 2);
+    assert.equal('unpassed' in reports.at(-1), false);
+  });
+
   test('refuses claims from addresses past the daily cap, once the Atlas says so', async () => {
     const atlasObject = new Atlas(fakeState(), {});
     atlasObject.now = () => clock;
@@ -647,6 +699,21 @@ describe('Atlas', () => {
     return (await atlasObject.fetch(new Request('https://atlas/world'))).json();
   }
 
+  test('adds up joins without a pass for the UTC day, and keeps yesterday\'s', async () => {
+    await report({ sx: 0, sy: 0, players: 3, charted: counts(5), unpassed: 3 });
+    await report({ sx: 1, sy: 0, players: 1, charted: counts(1), unpassed: 2 });
+    await report({ sx: 1, sy: 0, players: 1, charted: counts(1) });  // older sectors send none
+    let map = await worldMap();
+    assert.equal(map.today.day, TODAY);
+    assert.equal(map.today.unpassed, 5);
+    clock += DAY;
+    await report({ sx: 0, sy: 0, players: 3, charted: counts(5), unpassed: 1 });
+    map = await worldMap();
+    assert.deepEqual([map.today.day, map.today.unpassed], [TODAY + 1, 1]);
+    assert.deepEqual([map.yesterday.day, map.yesterday.unpassed], [TODAY, 5]);
+    for (const unpassed of [-1, 1.5, '2', 1e7]) assert.equal((await report({ sx: 0, sy: 0, players: 0, charted: counts(), unpassed }))[0], 400);
+  });
+
   test('adds up what sectors report', async () => {
     assert.deepEqual(await report({ sx: 0, sy: 0, players: 3, charted: counts(5, 2) }), [200, { charted: 7, total: AREA_WORDS, players: 3 }]);
     assert.deepEqual((await report({ sx: -1, sy: 4, players: 2, charted: counts(1) }))[1], { charted: 8, total: AREA_WORDS, players: 5 });
@@ -688,7 +755,7 @@ describe('Atlas', () => {
     clock += 30 * 60000;  // both sectors went quiet, so their players stopped counting as online
     await report({ ...base, sx: 1, sy: 0, players: 0 });
     let map = await worldMap();
-    assert.deepEqual(map.today, { day: TODAY, charted: DAILY_CLAIMS + 2, addresses: 2, capped: 1, playerHours: 0.05 });
+    assert.deepEqual(map.today, { day: TODAY, charted: DAILY_CLAIMS + 2, addresses: 2, capped: 1, playerHours: 0.05, unpassed: 0 });
     assert.equal(map.yesterday, null);
 
     clock += DAY;
@@ -697,13 +764,13 @@ describe('Atlas', () => {
     map = await worldMap();
     assert.equal(map.yesterday.charted, DAILY_CLAIMS + 2);
     assert.equal(map.yesterday.capped, 1);
-    assert.deepEqual({ ...map.today, playerHours: 0 }, { day: TODAY + 1, charted: 0, addresses: 0, capped: 0, playerHours: 0 });
+    assert.deepEqual({ ...map.today, playerHours: 0 }, { day: TODAY + 1, charted: 0, addresses: 0, capped: 0, playerHours: 0, unpassed: 0 });
 
     // A day with nothing to hear about is a day of zeros, not a repeat of the last busy one.
     clock += 2 * DAY;
     await report({ ...base, sx: 0, sy: 0, players: 0 });
     clock += VIEW_MS;
-    assert.deepEqual((await worldMap()).yesterday, { day: TODAY + 2, charted: 0, addresses: 0, capped: 0, playerHours: 0 });
+    assert.deepEqual((await worldMap()).yesterday, { day: TODAY + 2, charted: 0, addresses: 0, capped: 0, playerHours: 0, unpassed: 0 });
   });
 
   test('logs each hour\'s numbers, and each address reaching the cap, never the address', async () => {

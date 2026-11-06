@@ -16,6 +16,14 @@ invocation_logs = false
 # Pages allowed to read and save scores. The localhost entries are for testing
 # the games against `wrangler dev`.
 ALLOWED_ORIGINS = "https://games.michaelwarkentin.com,http://localhost:8000,http://127.0.0.1:8000"
+# Pages a Turnstile check for Letterfield's survey may come from (see
+# TURNSTILE.md). It only matters once the TURNSTILE_SECRET secret is set; for
+# `wrangler dev` with Cloudflare's test keys, override it in .dev.vars.
+TURNSTILE_HOSTNAMES = "games.michaelwarkentin.com"
+# "true" turns away survey joins without a Turnstile pass. Until then, with
+# TURNSTILE_SECRET set, passes are handed out and joins without one are
+# only counted (the Atlas's `unpassed`), so it can be switched on in steps.
+TURNSTILE_REQUIRED = "false"
 
 [[d1_databases]]
 binding = "DB"

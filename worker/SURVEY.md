@@ -197,7 +197,9 @@ already send it:
   - words charted in the shared world;
   - how many addresses charted them;
   - how many reached the daily cap;
-  - player-hours, added up from the players online at each report.
+  - player-hours, added up from the players online at each report;
+  - sockets that joined without a Turnstile pass (`unpassed`, see
+    `TURNSTILE.md`), once the Worker hands out passes.
 - **Where they show up:**
   - The world map (`GET /v1/survey/world`) has `today` and `yesterday`.
   - Workers Logs gets an `{survey: 'hour'}` line with each hour's words,
@@ -210,11 +212,16 @@ already send it:
   - Far more words per player-hour than people manage. A person charts a
     word a minute at most. A bot that claims without sending positions adds
     words but no player-hours, so its rate climbs.
+  - Many joins without a Turnstile pass, once the game has a site key.
+    Nearly every player then has a pass, so those joins are scripts, plus
+    the few players whose browsers block Turnstile.
 - **Telling you:** the **Watch the survey for bots** workflow
   (`.github/workflows/survey-watch.yml`) reads the world map just after
   midnight UTC. If yesterday had 20 or more addresses at the cap, or 120 or
-  more words per player-hour over at least 500 words, it opens an issue
-  labelled `survey-bots`, or comments on the one that's open.
+  more words per player-hour over at least 500 words, or (with a site key
+  in `letterfield.html`) 500 or more joins without a pass and at least 5
+  per player-hour, it opens an issue labelled `survey-bots`, or comments on
+  the one that's open.
   `scripts/survey_watch.py` holds the thresholds. If the survey can't be
   reached, it only warns.
 - **Lost on eviction:** the numbers live in the Atlas's memory, like the
@@ -371,11 +378,12 @@ done yet").
   sandbox.
 - **Bots from many addresses.** Each address is limited (see "Limits per
   address"), but a botnet or a pool of proxies still gets those limits once
-  per address. "Watching for bots" says when it's happening. The next step
-  would be a [Turnstile][turnstile] check before joining, which is
-  evaluated, with a prototype, in PR #27. It needs
-  `challenges.cloudflare.com`, which the site's rules don't allow yet, and
-  a site key and secret made in mwarkentin/infra.
+  per address. "Watching for bots" says when it's happening. A
+  [Turnstile][turnstile] check before joining is built and switched off:
+  [TURNSTILE.md](TURNSTILE.md) covers how it works, what it costs and how
+  much it stops (scripts and cheap proxies, not a bot that pays a solver
+  service), and how to switch it on in steps. It needs a widget and secret
+  made in mwarkentin/infra.
 - **Smaller snapshots.** Hidden words are deterministic, so a claim could
   be one bit in its chunk's word list. A fully charted sector's snapshot
   would shrink from 68 KB to a few hundred bytes plus initials. eieio

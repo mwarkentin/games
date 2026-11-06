@@ -35,7 +35,8 @@ utilities; games live here so they get their own origin and their own rules.
 - `tests/`: pytest with Playwright.
 - `worker/`: the leaderboard API, a Cloudflare Worker with a D1 database,
   which also runs War's multiplayer rooms and Letterfield's shared survey as
-  Durable Objects (see `worker/SURVEY.md`). It deploys through its own
+  Durable Objects (see `worker/SURVEY.md`, and `worker/TURNSTILE.md` for its
+  optional bot check). It deploys through its own
   workflow and is never part of the site. See
   `worker/README.md`.
 
@@ -47,8 +48,11 @@ utilities; games live here so they get their own origin and their own rules.
 - Load libraries from `cdn.jsdelivr.net` or `cdnjs.cloudflare.com`, pinned
   to an exact version. Fonts may come from Google Fonts, with a system font
   later in every `font-family` so the game still works without them. The
-  only other hosts are `browser.sentry-cdn.com`, for `telemetry.js`, and
-  Counterscale's own address, for `analytics.js`.
+  only other hosts are `browser.sentry-cdn.com`, for `telemetry.js`,
+  Counterscale's own address, for `analytics.js`, and
+  `challenges.cloudflare.com`, for Turnstile on Letterfield's shared survey
+  (loaded only once `TURNSTILE_SITE_KEY` is set, never cached by `sw.js`;
+  see `worker/TURNSTILE.md`).
 - Phone first: playable at 375px wide in portrait with touch alone (an
   on-screen pad, taps or swipes), and with a keyboard on a computer. No
   sideways scrolling. Inputs, textareas and selects use `font-size: 16px`
