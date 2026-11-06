@@ -219,6 +219,24 @@ Object that holds the game and every player's WebSocket (`worker/src/war.js`).
 - Game tests fake a room with Playwright's `page.route_web_socket` and
   `tests/fake_war_room.py`; see `tests/test_war_rooms.py`.
 
+## Letterfield's shared survey
+
+Letterfield charts one shared map through the same Worker: a Durable Object
+per sector of the map, plus an Atlas for the world's totals
+(`worker/src/survey.js`; `worker/SURVEY.md` has the design and its costs).
+
+- A `SURVEY_URL` constant holds the Worker's URL. While it's empty,
+  Letterfield is single-player and connects nowhere. `?survey=<url>`
+  overrides it for local testing and for tests.
+- `worker/src/letterfield-world.js` is a copy of the game's map generator
+  and themes, so the Worker can check a claimed word is really there.
+  `worker/test/survey.test.js` runs the game's own code against it, so
+  change both.
+- Game tests fake the survey with `page.route_web_socket` and
+  `tests/fake_survey.py`; see `tests/test_letterfield_survey.py`. The real
+  Worker's stand-in answers the survey with an empty fake too, and
+  `without_worker()` blanks `SURVEY_URL` along with the other URLs.
+
 ## Adding or changing a game
 
 1. Create or update `foo.html` following the rules above.
