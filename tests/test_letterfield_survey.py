@@ -13,6 +13,7 @@ from __future__ import annotations
 import base64
 import json
 import re
+import time
 
 from playwright.sync_api import Page, Route, WebSocketRoute, expect
 
@@ -34,7 +35,7 @@ def world_map(charted=None, sectors=(), spawn=None, players=0):
 class FakeSurvey:
     """Answers each sector's WebSocket the way worker/src/survey.js does."""
 
-    def __init__(self, claims=(), presence=(), taken=(), world=None, totals=None, full=None, too_fast=False):
+    def __init__(self, claims=(), presence=(), taken=(), world=None, totals=None, full=None, too_fast=False, refuse=()):
         self.claims = list(claims)        # [w, x, y, d, s, initials, at] already charted in sector 0,0
         self.presence = list(presence)    # [id, initials, x, y] of other players in sector 0,0
         self.taken = {tuple(c[:4]): c for c in taken}  # words someone else charts first, just before us
@@ -42,13 +43,19 @@ class FakeSurvey:
         self.totals = totals              # a {t: world} message each sector sends after hello
         self.full = full                  # "sector" or "world": every sector turns players away
         self.too_fast = too_fast          # every claim is refused, as a busy address's would be
+        self.refuse = set(refuse)         # survey passes the Worker turns away, as expired or another address's
+        self.urls: list[str] = []         # the URL of every connection
         self.sectors: list[str] = []      # path of every connection
         self.received: list[dict] = []    # every message from the game
         self.sockets: dict[str, WebSocketRoute] = {}
 
     def handle(self, ws: WebSocketRoute) -> None:
-        sector = re.search(r"/v1/survey/(-?\d+)/(-?\d+)$", ws.url)
+        sector = re.search(r"/v1/survey/(-?\d+)/(-?\d+)(?:\?pass=([^&]*))?$", ws.url)
         key = f"{sector[1]},{sector[2]}"
+        self.urls.append(ws.url)
+        if sector[3] is not None and sector[3] in self.refuse:
+            ws.send(json.dumps({"t": "unverified"}))  # the game closes it, as the Worker's close would
+            return
         self.sectors.append(key)
         self.sockets[key] = ws
         you = f"you-{key}"
@@ -86,12 +93,12 @@ class FakeSurvey:
         return [m for m in self.received if m["t"] == kind]
 
 
-def open_game(page: Page, site_url: str, fake: FakeSurvey | None) -> None:
+def open_game(page: Page, site_url: str, fake: FakeSurvey | None, query: str = "") -> None:
     page.set_viewport_size({"width": 1280, "height": 900})
     if fake:
         page.route_web_socket(re.compile(r"^wss://survey\.test/"), fake.handle)
         page.route(f"{SURVEY}/v1/survey/world", fake.handle_world)
-        page.goto(f"{site_url}/letterfield?survey={SURVEY}#debug")
+        page.goto(f"{site_url}/letterfield?survey={SURVEY}{query}#debug")
     else:
         page.goto(f"{site_url}/letterfield#debug")
     if page.locator("#coach").is_visible():
@@ -431,3 +438,159 @@ def test_word_list_gives_no_hints_on_the_shared_survey(page: Page, site_url, err
     expect(page.locator("#legendList button")).to_have_count(0)
     expect(page.locator("#legendList [title]")).to_have_count(0)
     assert errors == []
+
+
+# ---------- Turnstile (worker/TURNSTILE.md) ----------
+# A site key in ?turnstile= turns the check on. challenges.cloudflare.com is
+# never reached: its script is answered with a fake `turnstile` that hands out
+# Cloudflare's documented dummy token, and POST /v1/survey/pass with a fake
+# Worker. The site key is Cloudflare's invisible always-passes test key.
+
+SITE_KEY = "1x00000000000000000000BB"
+DUMMY_TOKEN = "XXXX.DUMMY.TOKEN.XXXX"
+TURNSTILE_JS = "https://challenges.cloudflare.com/turnstile/v0/api.js*"
+FAKE_TURNSTILE = """
+(() => {
+  const mode = window.__tsMode || 'pass';  // 'pass', 'interactive' or 'fail'
+  window.__tsRenders = window.__tsRenders || [];
+  window.turnstile = {
+    render(el, o) {
+      window.__tsRenders.push({ el, sitekey: o.sitekey, action: o.action, appearance: o.appearance });
+      if (mode === 'fail') setTimeout(() => o['error-callback']('600010'), 10);
+      else if (mode === 'interactive') {
+        setTimeout(() => o['before-interactive-callback'](), 10);
+        window.__tsSolve = () => { o['after-interactive-callback'](); o.callback('%s'); };
+      } else setTimeout(() => o.callback('%s'), 10);
+      return 'w' + window.__tsRenders.length;
+    },
+    remove() {}, reset() {},
+  };
+  const onload = new URL(document.currentScript.src).searchParams.get('onload');
+  window[onload]();
+})();
+""" % (DUMMY_TOKEN, DUMMY_TOKEN)
+
+
+class FakePassDesk:
+    """POST /v1/survey/pass, as worker/src/survey-pass.js answers it."""
+
+    def __init__(self, status=200):
+        self.status = status
+        self.tokens: list[str] = []
+        self.issued: list[str] = []
+
+    def handle(self, route: Route) -> None:
+        self.tokens.append(json.loads(route.request.post_data)["token"])
+        cors = {"Access-Control-Allow-Origin": "*"}
+        if self.status != 200:
+            route.fulfill(status=self.status, json={"error": "not verified", "codes": []}, headers=cors)
+            return
+        pass_ = f"{NOW_MS + 3_600_000 + len(self.issued)}.pass{len(self.issued)}"
+        self.issued.append(pass_)
+        route.fulfill(json={"pass": pass_, "expires": int(time.time() * 1000) + 3_600_000}, headers=cors)
+
+
+def with_turnstile(page: Page, mode: str = "pass", desk: FakePassDesk | None = None) -> FakePassDesk:
+    desk = desk or FakePassDesk()
+    page.add_init_script(f"window.__tsMode = {json.dumps(mode)}")
+    page.route(TURNSTILE_JS, lambda route: route.fulfill(content_type="application/javascript", body=FAKE_TURNSTILE))
+    page.route(f"{SURVEY}/v1/survey/pass", desk.handle)
+    return desk
+
+
+def test_turnstile_stays_off_without_a_site_key(page: Page, site_url, errors):
+    scripts = []
+    page.on("request", lambda r: scripts.append(r.url) if "challenges.cloudflare.com" in r.url else None)
+    fake = FakeSurvey()
+    open_game(page, site_url, fake)
+    expect(page.locator("#survey")).to_have_attribute("data-state", "live")
+    assert scripts == []
+    assert all("?" not in url for url in fake.urls)
+    assert errors == []
+
+
+def test_turnstile_pass_lets_every_sector_in(page: Page, site_url, errors):
+    desk = with_turnstile(page)
+    fake = FakeSurvey()
+    open_game(page, site_url, fake, f"&turnstile={SITE_KEY}")
+    expect(page.locator("#survey")).to_have_attribute("data-state", "live")
+    renders = page.evaluate("window.__tsRenders")
+    assert renders == [{"el": "#surveyWidget", "sitekey": SITE_KEY, "action": "survey", "appearance": "interaction-only"}]
+    assert desk.tokens == [DUMMY_TOKEN]
+    # One check covers all four sectors in view.
+    assert sorted(fake.sectors) == ["-1,-1", "-1,0", "0,-1", "0,0"]
+    assert all(url.endswith(f"?pass={desk.issued[0]}") for url in fake.urls)
+    expect(page.locator("#surveyCheck")).not_to_have_class(re.compile("asking"))
+
+    # A reload, or travelling to new sectors, reuses the pass: no new challenge.
+    page.reload()
+    expect(page.locator("#survey")).to_have_attribute("data-state", "live")
+    page.evaluate("window.__lf.cam.x = 600; window.__lf.cam.y = 600")
+    eventually(page, lambda: "3,3" in fake.sectors, 6000)
+    assert page.evaluate("window.__tsRenders") is None  # Turnstile wasn't even loaded
+    assert desk.tokens == [DUMMY_TOKEN]
+    assert errors == []
+
+
+def test_turnstile_shows_its_box_only_when_it_wants_a_tap(page: Page, site_url, errors):
+    with_turnstile(page, "interactive")
+    fake = FakeSurvey()
+    open_game(page, site_url, fake, f"&turnstile={SITE_KEY}")
+    expect(page.locator("#surveyCheck")).to_have_class(re.compile("asking"))
+    expect(page.locator("#surveyCheck")).to_contain_text("One tap to join the shared survey")
+    expect(page.locator("#surveyText")).to_have_text("Checking this is a person, not a bot…")
+    assert fake.sectors == []
+    page.evaluate("window.__tsSolve()")
+    expect(page.locator("#survey")).to_have_attribute("data-state", "live")
+    expect(page.locator("#surveyCheck")).not_to_have_class(re.compile("asking"))
+    assert errors == []
+
+
+def test_refused_pass_gets_a_new_one(page: Page, site_url, errors):
+    # A pass from a stored session the Worker no longer takes, as when the player's address changed.
+    page.add_init_script("""localStorage.setItem('letterfield.surveyPass.v1',
+      JSON.stringify({ pass: 'old-pass', expires: Date.now() + 1800000 }))""")
+    desk = with_turnstile(page)
+    fake = FakeSurvey(refuse={"old-pass"})
+    open_game(page, site_url, fake, f"&turnstile={SITE_KEY}")
+    expect(page.locator("#survey")).to_have_attribute("data-state", "live")
+    assert desk.tokens == [DUMMY_TOKEN]
+    assert any(url.endswith("?pass=old-pass") for url in fake.urls)
+    assert fake.urls[-1].endswith(f"?pass={desk.issued[0]}")
+    assert errors == []
+
+
+def test_failed_check_leaves_you_surveying_alone(page: Page, site_url, errors):
+    with_turnstile(page, "fail")
+    fake = FakeSurvey()
+    open_game(page, site_url, fake, f"&turnstile={SITE_KEY}")
+    expect(page.locator("#surveyText")).to_have_text(
+        "Couldn’t check this is a person, so you’re surveying alone for now. Your finds still save in this browser.")
+    expect(page.locator("#survey")).to_have_attribute("data-state", "offline")
+    circle(page, hidden_words(page)[0])
+    expect(page.locator("#notesBadge")).to_have_text("1")
+    page.wait_for_timeout(2500)
+    assert fake.sectors == []
+    assert page.evaluate("window.__tsRenders.length") == 1  # it waits before asking again
+    assert errors == []
+
+
+def test_refused_token_leaves_you_surveying_alone(page: Page, site_url, errors):
+    desk = with_turnstile(page, desk=FakePassDesk(status=403))
+    fake = FakeSurvey()
+    open_game(page, site_url, fake, f"&turnstile={SITE_KEY}")
+    expect(page.locator("#survey")).to_have_attribute("data-state", "offline")
+    assert desk.tokens == [DUMMY_TOKEN]
+    assert fake.sectors == []
+
+
+def test_blocked_turnstile_leaves_you_surveying_alone(page: Page, site_url):
+    # An ad blocker or a school network that blocks challenges.cloudflare.com.
+    # Skips the errors fixture: the browser logs the blocked script.
+    page.route(TURNSTILE_JS, lambda route: route.abort("blockedbyclient"))
+    fake = FakeSurvey()
+    open_game(page, site_url, fake, f"&turnstile={SITE_KEY}")
+    expect(page.locator("#surveyText")).to_contain_text("Couldn’t check this is a person")
+    circle(page, hidden_words(page)[0])
+    expect(page.locator("#notesBadge")).to_have_text("1")
+    assert fake.sectors == []

@@ -5,6 +5,8 @@
 //
 //   GET /v1/survey/<sx>/<sy>   WebSocket for one sector of the map
 //   GET /v1/survey/world       the world map: charted territories, players, where to start
+//   POST /v1/survey/pass       a Turnstile token for a pass that sector joins need (survey-pass.js),
+//                              only while TURNSTILE_SECRET is set
 //
 // The map is split into sectors of 4×4 territories (192×192 cells), and each
 // sector is its own Durable Object: one single-threaded room that holds the
@@ -39,6 +41,8 @@
 //                                   when the socket or its address claims too fast
 //   {t: 'presence', n, p}           players here ([id, initials, x, y]), about once a second
 //   {t: 'world', charted, total, players}   the whole world's totals, as they change
+//   {t: 'unverified'}               from the Worker, for a join without a good pass, which then
+//                                   closes with code 4001: the game gets a new pass and retries
 //   {t: 'full', world}              no room in the sector (or, with world: true, in the whole
 //                                   survey), or the player's address holds or opens too many
 //                                   sockets; the socket then closes with code 4000
@@ -49,7 +53,8 @@
 // rate-limiting bindings, set in wrangler.toml, count joins and claims per
 // address across every sector.
 
-import { BLOCKED_INITIALS, INITIALS, corsHeaders, hashAddress } from './leaderboard.js';
+import { BLOCKED_INITIALS, INITIALS, corsHeaders, hashAddress, json } from './leaderboard.js';
+import { PASS_PATH, checkPass, handlePass } from './survey-pass.js';
 import { CH, DIRS, RC, VOCAB, chunk, fdiv, keyOf, letterAt } from './letterfield-world.js';
 
 export const SECTOR = RC * 4;         // cells per sector side
@@ -107,29 +112,51 @@ export function checkClaim(claim, sx, sy) {
 // Answers the survey's paths, or returns null for any other path: a sector's
 // WebSocket goes to its Durable Object, and the world map comes from the
 // Atlas through a short cache. CORS doesn't cover WebSockets, so the origin
-// is checked here.
+// is checked here. With TURNSTILE_SECRET set, a sector join also needs a pass
+// from POST /v1/survey/pass (see survey-pass.js and TURNSTILE.md).
 export function routeSurvey(request, env) {
-  const { pathname } = new URL(request.url);
-  const m = pathname.match(SECTOR_PATH);
-  const world = pathname === WORLD_PATH;
-  if (!(m && env.SECTORS) && !(world && env.ATLAS)) return null;
+  const url = new URL(request.url);
+  const m = url.pathname.match(SECTOR_PATH);
+  const world = url.pathname === WORLD_PATH;
+  const passing = url.pathname === PASS_PATH;
+  if (!(m && env.SECTORS) && !(world && env.ATLAS) && !(passing && env.SECTORS)) return null;
   const cors = corsHeaders(request, env);
   const text = (body, status) => new Response(body, { status, headers: { ...cors, 'Content-Type': 'text/plain' } });
+  if (passing) {
+    if (request.method !== 'POST') return text('method not allowed', 405);
+    return addressHash(request, env).then((address) => handlePass(request, env, address, cors, json));
+  }
   if (request.method !== 'GET') return text('method not allowed', 405);
   if (world) return worldMap(env, cors);
   if (!cors['Access-Control-Allow-Origin']) return text('origin not allowed', 403);
   if (request.headers.get('Upgrade') !== 'websocket') return text('expected a WebSocket', 426);
   const name = `${Number(m[1])},${Number(m[2])}`;
-  return addressed(request, env).then((forward) => env.SECTORS.get(env.SECTORS.idFromName(name)).fetch(forward));
+  return (async () => {
+    const address = await addressHash(request, env);
+    if (env.TURNSTILE_SECRET && !(await checkPass(env.TURNSTILE_SECRET, address, url.searchParams.get('pass')))) return unverified();
+    // The pass stays here: the sector only needs the path and the address.
+    url.search = '';
+    const headers = new Headers(request.headers);
+    headers.set(ADDRESS_HEADER, address);
+    return env.SECTORS.get(env.SECTORS.idFromName(name)).fetch(new Request(url, { headers }));
+  })();
 }
 
-// The request as the sector sees it: with the player's hashed address in a
-// header the Worker sets itself, so a player can't choose their own.
-async function addressed(request, env) {
-  const headers = new Headers(request.headers);
-  headers.set(ADDRESS_HEADER, await hashAddress(addressOf(request.headers.get('CF-Connecting-IP') || 'unknown'), env.IP_SALT));
-  return new Request(request, { headers });
+// A join without a good pass is answered by the Worker itself, without waking
+// the sector, and in words the game can read: a browser learns nothing from a
+// refused WebSocket upgrade.
+function unverified() {
+  const [client, server] = Object.values(new WebSocketPair());
+  server.accept();
+  send(server, { t: 'unverified' });
+  server.close(4001, 'survey pass needed');
+  return new Response(null, { status: 101, webSocket: client });
 }
+
+// The player's address as the survey counts it, salted and hashed. The
+// Worker sets the header the sector reads itself, so a player can't choose
+// their own.
+const addressHash = (request, env) => hashAddress(addressOf(request.headers.get('CF-Connecting-IP') || 'unknown'), env.IP_SALT);
 
 // The part of an IP address that names one household or device: all of an
 // IPv4 address, or the /64 network of an IPv6 one, since a device can pick
