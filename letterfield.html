@@ -98,7 +98,7 @@ body.docked .instruments{right:calc(var(--notes-w) + 16px)}
 .seg button[aria-pressed="true"]{background:var(--ink);color:var(--panel)}
 .seg svg{width:15px;height:15px}
 .zoom{display:flex;flex-direction:column;overflow:hidden}
-.zoom button{width:40px;height:40px;border:0;background:transparent;display:grid;place-items:center;cursor:pointer}
+.zoom button{flex:none;width:40px;height:40px;border:0;background:transparent;display:grid;place-items:center;cursor:pointer}
 .zoom button:hover{background:var(--hover)}
 .zoom button + button{border-top:1px solid var(--rule)}
 .zoom svg{width:17px;height:17px}
@@ -198,6 +198,9 @@ body.docked .nova{left:calc((100% - var(--notes-w)) / 2)}
 @keyframes nova{0%{opacity:0}5%{opacity:1}80%{opacity:1}100%{opacity:0}}
 @keyframes nova-word{0%{transform:scale(.35);letter-spacing:.7em;filter:blur(8px)}14%{transform:scale(1.07);filter:blur(0)}30%{transform:scale(1)}100%{transform:scale(1.05);letter-spacing:.18em}}
 #sound[aria-pressed="false"] .on,#sound[aria-pressed="true"] .off{display:none}
+#music[aria-pressed="false"] .on,#music[aria-pressed="true"] .off{display:none}
+#music[aria-pressed="true"] svg{animation:drift 7s ease-in-out infinite}
+@keyframes drift{0%,100%{opacity:1}50%{opacity:.55}}
 /* Hover card: who's behind a caret, or who charted a word */
 .peek{position:fixed;left:0;top:0;pointer-events:none;display:flex;align-items:center;gap:7px;padding:6px 9px;font:500 11px/1.2 var(--f-mono);white-space:nowrap}
 .peek i{width:8px;height:8px;border-radius:50%;background:var(--c);flex:none}
@@ -224,14 +227,20 @@ body.docked .nova{left:calc((100% - var(--notes-w)) / 2)}
   .instruments{left:var(--gl);bottom:calc(var(--bottom) + 84px);flex-direction:row;justify-content:space-between;align-items:flex-end}
   .zoom{flex-direction:row}
   .zoom button + button{border-top:0;border-left:1px solid var(--rule)}
+  .zoom button{width:38px}
+  .seg button{padding:8px}
   .notes{top:auto;left:0;width:100%;height:min(80%, 680px);border-left:0;border-top:1px solid var(--rule);border-radius:14px 14px 0 0;transform:translateY(100%);padding-left:env(safe-area-inset-left, 0px)}
   .coach{top:calc(var(--top) + 60px);right:var(--gr);width:auto}
   .toast{top:calc(var(--top) + 60px)}
+}
+@media (max-width: 374px){
+  .seg button{font-size:0;gap:0}
 }
 @media (prefers-reduced-motion: reduce){
   .notes,.toast,.instruments{transition:none}
   .nova.show b{animation:none}
   .sync-dot,.survey-dot{animation:none!important}
+  #music[aria-pressed="true"] svg{animation:none}
 }
 </style>
 </head>
@@ -281,6 +290,7 @@ body.docked .nova{left:calc((100% - var(--notes-w)) / 2)}
     <button type="button" id="zoomOut" aria-label="Zoom out"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M5 12h14"/></svg></button>
     <button type="button" id="home" aria-label="Return to the origin"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="6.5"/><circle cx="12" cy="12" r="1.6" fill="currentColor"/><path d="M12 2v4M12 18v4M2 12h4M18 12h4"/></svg></button>
     <button type="button" id="sound" aria-pressed="true" aria-label="Sound" title="Sound (M)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 9.5h3.5L12 6v12l-4.5-3.5H4z"/><path class="on" d="M15.5 9.2a4 4 0 0 1 0 5.6M18.2 6.6a7.6 7.6 0 0 1 0 10.8"/><path class="off" d="M16 9.5l5 5M21 9.5l-5 5"/></svg></button>
+    <button type="button" id="music" aria-pressed="false" aria-label="Music" title="Music (B)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 17.5V6l10-2v11.5"/><circle cx="6.5" cy="17.5" r="2.5"/><circle cx="16.5" cy="15.5" r="2.5"/><path class="off" d="M3.5 3.5l17 17"/></svg></button>
   </div>
 </div>
 
@@ -342,7 +352,7 @@ const DNAME = ['E','SE','S','SW','W','NW','N','NE'];
 const DARROW = ['→','↘','↓','↙','←','↖','↑','↗'];
 const DWEIGHT = [3,2,3,1,1,1,1,2], DW_TOTAL = 14;
 const NOTES_W = 340;
-const K_FINDS = 'letterfield.finds.v2', K_FINDS_V1 = 'letterfield.finds.v1', K_CAM = 'letterfield.cam.v1', K_COACH = 'letterfield.coach.v1', K_NOTES = 'letterfield.notes.v1', K_SOUND = 'letterfield.sound.v1';
+const K_FINDS = 'letterfield.finds.v2', K_FINDS_V1 = 'letterfield.finds.v1', K_CAM = 'letterfield.cam.v1', K_COACH = 'letterfield.coach.v1', K_NOTES = 'letterfield.notes.v1', K_SOUND = 'letterfield.sound.v1', K_MUSIC = 'letterfield.music.v1';
 const K_INITIALS = 'games.initials';  // shared with the other games' leaderboards
 // The shared survey (see worker/SURVEY.md): while SURVEY_URL is empty the game
 // is single-player and connects nowhere. ?survey=<url> overrides it for testing.
@@ -1250,12 +1260,14 @@ function novaOver(nv) {
 }
 
 /* ---------- Sound ---------- */
-// Only a supernova makes a sound. Nothing starts before the first tap or key,
-// and the speaker button (or M) turns it off.
-let soundOn = LS.get(K_SOUND) !== '0', gestured = false, ac = null, acOut = null;
+// A supernova makes a sound, and there's music to explore by. Nothing starts
+// before the first tap or key. The speaker button (or M) turns the sound off,
+// the note button (or B) turns the music on: it starts off.
+let soundOn = LS.get(K_SOUND) !== '0', musicOn = LS.get(K_MUSIC) === '1', gestured = false, ac = null, acOut = null;
 const novaBuses = new Set();
-function startAudio() {
-  if (!soundOn || !gestured) return null;
+// The audio context, made on first use and shared by sound and music.
+function audioCtx() {
+  if (!gestured || !(soundOn || musicOn)) return null;
   if (!ac) {
     const AC = window.AudioContext || window.webkitAudioContext;
     if (!AC) return null;
@@ -1265,6 +1277,7 @@ function startAudio() {
   if (ac.state === 'suspended' && !document.hidden) ac.resume().catch(() => {});
   return ac;
 }
+function startAudio() { return soundOn ? audioCtx() : null; }
 // Gain, then a compressor and a limiter, so a blast never clips.
 function audioOut(a) {
   const g = a.createGain(), comp = a.createDynamicsCompressor(), lim = a.createDynamicsCompressor();
@@ -1276,13 +1289,21 @@ function audioOut(a) {
 }
 function onGesture(e) {
   gestured = true;
-  if (!(e.target && e.target.closest && e.target.closest('#sound'))) startAudio();  // the button itself decides
+  if (e.target && e.target.closest && e.target.closest('#sound, #music')) return;  // the buttons decide
+  startAudio();
+  if (musicOn && !musicNow) startMusic();
 }
 window.addEventListener('pointerdown', onGesture, true);
 window.addEventListener('keydown', onGesture, true);
 document.addEventListener('visibilitychange', () => {
   if (!ac) return;
-  if (document.hidden) ac.suspend().catch(() => {}); else if (soundOn) ac.resume().catch(() => {});
+  if (document.hidden) {
+    if (musicNow) musicNow.hush();
+    setTimeout(() => { if (document.hidden) ac.suspend().catch(() => {}); }, musicNow ? 700 : 0);
+  } else if (soundOn || musicOn) {
+    ac.resume().catch(() => {});
+    if (musicNow) musicNow.wake();
+  }
 });
 function playNova(far) {
   const a = startAudio();
@@ -1301,6 +1322,225 @@ function setSound(on) {
 }
 soundBtn.setAttribute('aria-pressed', String(soundOn));
 soundBtn.addEventListener('click', () => setSound(!soundOn));
+
+/* ---------- Music ---------- */
+// Two pieces, made as they play, so neither loops or has a seam: Drift, slow
+// pads and bells over a drone, and Orbit, a pipe organ ticking over a deep
+// pedal. They take turns, four minutes each, crossfading. Each keeps to about
+// twenty oscillators, with a pair of delays for an echo instead of a reverb,
+// to go easy on phones.
+const MUSIC_LEVEL = .45, TRACK_TIME = 240;
+const hz = m => 440 * Math.pow(2, (m - 69) / 12);
+let musicNow = null;
+function glide(param, to, secs, a) {
+  const t = a.currentTime;
+  param.cancelScheduledValues(t);
+  param.setValueAtTime(param.value, t);
+  param.linearRampToValueAtTime(to, t + secs);
+}
+// What both pieces share: a bus into out, a list of the oscillators they've
+// started, and an echo, one delay each side feeding the other, dulled each
+// time round.
+function trackBase(a, out, [left, right, feedback, tone]) {
+  const nodes = new Set(), keep = n => { nodes.add(n); n.onended = () => nodes.delete(n); return n; };
+  const bus = a.createGain(); bus.gain.value = 0; bus.connect(out);
+  const send = a.createGain(), dl = a.createDelay(2), dr = a.createDelay(2), fb = a.createGain(), dull = a.createBiquadFilter();
+  const merge = a.createChannelMerger(2);
+  dl.delayTime.value = left; dr.delayTime.value = right; fb.gain.value = feedback; dull.type = 'lowpass'; dull.frequency.value = tone;
+  send.connect(dl); dl.connect(dr); dr.connect(dull); dull.connect(fb); fb.connect(dl);
+  dl.connect(merge, 0, 0); dr.connect(merge, 0, 1); merge.connect(bus);
+  function stop() {
+    for (const n of nodes) { try { n.stop(); } catch (_) {} }
+    nodes.clear();
+    bus.disconnect();
+  }
+  return { nodes, keep, bus, send, stop };
+}
+
+// Drift: a random walk through five chords over one pedal note, each chord
+// fading in over seven seconds and out over nine, and a soft bell high up now
+// and then, mostly heard in its echoes.
+const DRIFT_CHORDS = [[50, 57, 64, 66], [47, 54, 61, 66], [43, 55, 62, 66], [52, 59, 62, 66], [45, 57, 61, 64]];
+const DRIFT_BELLS = [74, 76, 78, 81, 83, 86, 88, 90];
+function driftTrack(a, out) {
+  const T = trackBase(a, out, [.74, 1.11, .48, 2400]), { keep, bus, send } = T;
+  // Pads go through one slowly breathing low-pass filter.
+  const pads = a.createBiquadFilter(); pads.type = 'lowpass'; pads.frequency.value = 900; pads.Q.value = .4; pads.connect(bus);
+  const lfo = keep(a.createOscillator()), lfoDepth = a.createGain();
+  lfo.frequency.value = .031; lfoDepth.gain.value = 450; lfo.connect(lfoDepth); lfoDepth.connect(pads.frequency);
+  const padSend = a.createGain(); padSend.gain.value = .18; pads.connect(padSend); padSend.connect(send);
+  // The drone: the pedal note and its fifth, with a slow swell.
+  const drone = a.createGain(); drone.gain.value = .09; drone.connect(bus);
+  const swell = keep(a.createOscillator()), swellDepth = a.createGain();
+  swell.frequency.value = .047; swellDepth.gain.value = .045; swell.connect(swellDepth); swellDepth.connect(drone.gain);
+  for (const [m, cents, v] of [[38, 0, .5], [38, 5, .35], [45, -3, .3]]) {
+    const o = keep(a.createOscillator()), g = a.createGain();
+    o.type = 'triangle'; o.frequency.value = hz(m); o.detune.value = cents; g.gain.value = v;
+    o.connect(g); g.connect(drone);
+  }
+  for (const n of T.nodes) n.start(a.currentTime);
+
+  function chord(t, notes, len = 22) {
+    for (const m of notes) {
+      const v = a.createGain();
+      v.gain.setValueAtTime(0, t);
+      v.gain.linearRampToValueAtTime(.032, t + 7);
+      v.gain.setValueAtTime(.032, t + len - 9);
+      v.gain.linearRampToValueAtTime(0, t + len);
+      v.connect(pads);
+      for (const cents of [-7, 6]) {
+        const o = keep(a.createOscillator());
+        o.type = 'sawtooth'; o.frequency.value = hz(m); o.detune.value = cents;
+        o.connect(v); o.start(t); o.stop(t + len + .1);
+      }
+    }
+  }
+  function bell(t, m) {
+    const o = keep(a.createOscillator()), g = a.createGain();
+    o.type = 'sine'; o.frequency.value = hz(m);
+    g.gain.setValueAtTime(0, t);
+    g.gain.linearRampToValueAtTime(.05, t + .08);
+    g.gain.exponentialRampToValueAtTime(.0001, t + 4.5);
+    o.connect(g);
+    let to = g;
+    if (a.createStereoPanner) { const p = a.createStereoPanner(); p.pan.value = Math.random() * 1.4 - .7; g.connect(p); to = p; }
+    to.connect(bus); to.connect(send);
+    o.start(t); o.stop(t + 4.6);
+  }
+  let at = a.currentTime + .05, bellAt = at + 6, last = -1;
+  return {
+    name: 'drift', bus, nodes: T.nodes, stop: T.stop,
+    play(until) {
+      while (at < until) {
+        let i;
+        do i = Math.floor(Math.random() * DRIFT_CHORDS.length); while (i === last);
+        chord(at, DRIFT_CHORDS[last = i]);
+        at += 15 + Math.random() * 4;
+      }
+      while (bellAt < until) { bell(bellAt, DRIFT_BELLS[Math.floor(Math.random() * DRIFT_BELLS.length)]); bellAt += 3 + Math.random() * 7; }
+    },
+    resync(now) { at = Math.max(at, now + .05); bellAt = Math.max(bellAt, now + 2); },
+  };
+}
+
+// Orbit: a pipe organ in A minor. A flute stop ticks out a steady figure,
+// eight notes to the bar, while full-organ chords and a deep pedal swell in
+// under it and fall away again over four rounds of four chords, about two
+// minutes. Each round picks one of two progressions.
+const ORBIT_EIGHTH = .42, ORBIT_CHORD = 16 * ORBIT_EIGHTH;
+const ORBIT_PROGS = [
+  // root, chord, ticking figure (low note, then three above it)
+  [[45, [57, 60, 64, 71], [69, 76, 72, 76]], [41, [57, 60, 64, 69], [69, 77, 72, 76]], [48, [55, 60, 64, 67], [67, 76, 72, 74]], [43, [55, 59, 62, 67], [67, 74, 71, 74]]],
+  [[45, [57, 60, 64, 69], [69, 76, 72, 79]], [38, [57, 62, 65, 69], [69, 74, 77, 74]], [40, [57, 59, 64, 69], [69, 76, 71, 76]], [40, [56, 59, 64, 68], [68, 76, 71, 74]]],
+];
+// How loud each part is in each round: ticking, chords, pedal, ticking an octave up.
+const ORBIT_ARC = [[.6, 0, .3, 0], [.8, .5, .6, 0], [1, 1, 1, .7], [.7, .3, .4, 0]];
+function organWave(a, amps) {
+  const re = new Float32Array(amps.length + 1), im = new Float32Array(amps.length + 1);
+  amps.forEach((v, i) => { im[i + 1] = v; });
+  return a.createPeriodicWave(re, im);
+}
+function orbitTrack(a, out) {
+  const T = trackBase(a, out, [.53, .8, .42, 2000]), { keep, bus, send } = T;
+  const tone = a.createBiquadFilter(); tone.type = 'lowpass'; tone.frequency.value = 2800; tone.Q.value = .3; tone.connect(bus);
+  const toEcho = a.createGain(); toEcho.gain.value = .35; tone.connect(toEcho); toEcho.connect(send);
+  const full = organWave(a, [1, .7, .35, .45, .1, .25, 0, .18]), flute = organWave(a, [1, .28, .08, .04]), pedalWave = organWave(a, [1, .55, .2, .25]);
+  const part = () => { const g = a.createGain(); g.gain.value = 0; g.connect(tone); return g; };
+  const tick = part(), chords = part(), pedal = part(), high = part();
+  const parts = [tick, chords, pedal, high], peaks = [.06, .026, .07, .026], levels = [0, 0, 0, 0];
+  function note(t, m, wave, to, len, attack, level, cents = 0) {
+    const o = keep(a.createOscillator()), g = a.createGain();
+    o.setPeriodicWave(wave); o.frequency.value = hz(m); o.detune.value = cents;
+    g.gain.setValueAtTime(0, t);
+    g.gain.linearRampToValueAtTime(level, t + attack);
+    g.gain.setValueAtTime(level, t + len - attack);
+    g.gain.linearRampToValueAtTime(0, t + len);
+    o.connect(g); g.connect(to); o.start(t); o.stop(t + len + .05);
+  }
+  let at = a.currentTime + .05, slot = 0, prog = ORBIT_PROGS[0];
+  function bar(t) {
+    const round = Math.floor(slot / 4) % 4, i = slot % 4;
+    if (i === 0) {
+      if (round === 0) prog = ORBIT_PROGS[Math.floor(Math.random() * ORBIT_PROGS.length)];
+      ORBIT_ARC[round].forEach((v, k) => {
+        parts[k].gain.setValueAtTime(levels[k], t);
+        parts[k].gain.linearRampToValueAtTime(levels[k] = v * peaks[k], t + ORBIT_CHORD);
+      });
+    }
+    const [root, chord, [lo, ...hi]] = prog[i];
+    const fig = [lo, hi[0], lo, hi[0], lo, hi[1], lo, hi[2]];
+    for (let k = 0; k < 16; k++) {
+      const m = fig[k % 8], s = t + k * ORBIT_EIGHTH;
+      note(s, m, flute, tick, ORBIT_EIGHTH * .95, .012, 1);
+      if (k % 2 === 0) note(s, m + 12, flute, high, ORBIT_EIGHTH * .9, .012, 1);
+    }
+    for (const m of chord) note(t, m, full, chords, ORBIT_CHORD + 1.2, 1.2, 1, Math.random() * 4 - 2);
+    note(t, root, pedalWave, pedal, ORBIT_CHORD + .8, .8, 1);
+    note(t, root - 12, pedalWave, pedal, ORBIT_CHORD + .8, .8, .7);
+    slot++;
+  }
+  return {
+    name: 'orbit', bus, nodes: T.nodes, stop: T.stop,
+    play(until) { while (at < until) { bar(at); at += ORBIT_CHORD; } },
+    resync(now) { at = Math.max(at, now + .05); },
+  };
+}
+
+const MUSIC_TRACKS = [driftTrack, orbitTrack];
+// Plays the music on the page's context: schedules a few seconds ahead from a
+// one-second timer, which stops while the tab is hidden, and hands over to
+// the other piece every few minutes.
+function playMusic(a) {
+  const master = a.createGain(); master.gain.value = 0; master.connect(acOut);
+  let n = Math.floor(Math.random() * MUSIC_TRACKS.length), track = MUSIC_TRACKS[n](a, master);
+  let timer = 0, ended = false, swapAt = a.currentTime + TRACK_TIME;
+  track.bus.gain.value = 1;
+  function swap() {
+    const old = track;
+    glide(old.bus.gain, 0, 8, a); setTimeout(old.stop, 9000);
+    n = (n + 1) % MUSIC_TRACKS.length; track = MUSIC_TRACKS[n](a, master);
+    glide(track.bus.gain, 1, 8, a);
+    swapAt = a.currentTime + TRACK_TIME;
+  }
+  function tick() {
+    if (a.currentTime >= swapAt) swap();
+    track.play(a.currentTime + 3);
+  }
+  function run() { clearInterval(timer); tick(); timer = setInterval(tick, 1000); }
+  run();
+  glide(master.gain, MUSIC_LEVEL, 4, a);
+  return {
+    track: () => track, master, swap,
+    hush() { clearInterval(timer); glide(master.gain, 0, .5, a); },
+    wake() {
+      if (ended) return;
+      track.resync(a.currentTime);
+      run(); glide(master.gain, MUSIC_LEVEL, 2.5, a);
+    },
+    end() {
+      ended = true; clearInterval(timer);
+      glide(master.gain, 0, 2.5, a);
+      const t = track;
+      setTimeout(() => { t.stop(); master.disconnect(); }, 2800);
+    },
+  };
+}
+function startMusic() {
+  const a = audioCtx();
+  if (!a || musicNow) return;
+  musicNow = playMusic(a);
+  if (document.hidden) musicNow.hush();
+}
+const musicBtn = $('#music');
+function setMusic(on) {
+  musicOn = on;
+  LS.set(K_MUSIC, on ? '1' : '0');
+  musicBtn.setAttribute('aria-pressed', String(on));
+  if (on) startMusic();
+  else if (musicNow) { musicNow.end(); musicNow = null; }
+}
+musicBtn.setAttribute('aria-pressed', String(musicOn));
+musicBtn.addEventListener('click', () => { gestured = true; setMusic(!musicOn); });
 
 const noiseBufs = new WeakMap(), roomBufs = new WeakMap();
 function noiseOf(a) {
@@ -1947,6 +2187,7 @@ window.addEventListener('keydown', e => {
     case '-': case '_': flyTo(cam.x, cam.y, cam.cs / 1.5, { min: 220, max: 320 }); break;
     case 'n': setNotes(!notesOpen); break;
     case 'm': setSound(!soundOn); break;
+    case 'b': setMusic(!musicOn); break;
     case 'h': goHome(); break;
     default: return;
   }
@@ -2193,7 +2434,7 @@ updateHud();
 invalidate();
 if (redrawn) setTimeout(() => toast(`<i></i><b>The map has been redrawn</b><span>${NT} themes now, every territory named · ${redrawn.kept ? `${redrawn.kept} of your ${redrawn.had} finds are still on it` : 'your old finds are not on it'}</span>`, null, 7000), 900);
 connectStore();
-if (location.hash === '#debug') window.__lf = { cam, found, claims, links, chunk, wordEnd, collect, territoryProgress, world: () => world, supernova, novaSound, audioOut, nova: () => nova };
+if (location.hash === '#debug') window.__lf = { cam, found, claims, links, chunk, wordEnd, collect, territoryProgress, world: () => world, supernova, novaSound, audioOut, musicTracks: MUSIC_TRACKS, music: () => musicNow && { state: ac.state, track: musicNow.track().name, nodes: musicNow.track().nodes.size, level: musicNow.master.gain.value, swap: musicNow.swap }, nova: () => nova };
 
 })();
 </script>
