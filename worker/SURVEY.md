@@ -59,7 +59,7 @@ From [Scaling One Million Checkboxes][omcb] and
 | Bandwidth was "my one unbounded cost" (OMCB capped its server at 250 Mbit/s) | Cloudflare doesn't charge for egress, and outgoing WebSocket messages are free |
 | "Bound my costs … instead of going serverless and scaling into bankruptcy" | `MAX_PLAYERS` per sector and `MAX_ONLINE` overall. Beyond them, players are told the survey is full; the bill can't run away |
 | Validate everything: someone checked box 100,000,000 and broke OMCB | every claim is checked against the server's copy of the map generator |
-| Bots pushed absurd traffic once the Go rewrite made things fast | a burst of 5 claims per socket, then one per 1.5 s, and about one a second per IP address however many sockets it opens (see "Limits per address") |
+| Bots pushed absurd traffic once the Go rewrite made things fast | a burst of 5 claims per socket, then one per 1.5 s; and per IP address, however many sockets it opens, 6 a minute and 300 a day (see "Limits per address") |
 | Rollback netcode, so moves feel instant | not needed: a circled word is always kept locally, and the server only decides who gets the credit |
 | One Go process on one box (16 cores, never above ~10% CPU, later shrunk to an ~$80/month box) | a Durable Object is one JavaScript thread, so the world is split by place into many objects |
 
@@ -129,12 +129,35 @@ survey also limits each IP address, wherever it plays:
   [rate-limiting binding][ratelimit] (`SURVEY_CLAIMS` in `wrangler.toml`),
   on top of each socket's own limit. A player rarely finds more than one
   word a minute, and counting over a minute rather than 10 s means a few
-  spotted together still all count. One address would take about 130 days
-  to chart the world, rather than minutes. The cost is to players who share
-  an address: a family, a classroom, or a mobile network that puts many
-  phones behind one IPv4 address share those 6. A refused claim
-  gets the same `slow down` as a socket claiming too fast, and the game says
-  "Too quick to chart · kept in your notes".
+  spotted together still all count. The cost is to players who share an
+  address: a family, a classroom, or a mobile network that puts many phones
+  behind one IPv4 address share those 6 (and the daily 300 below). A refused
+  claim gets the same `slow down` as a socket claiming too fast, and the
+  game says "Too quick to chart · kept in your notes".
+- **Words charted: 300 a day per address, in the shared world.** At 6 a
+  minute, a script left running all day would still chart 8,640 words a day.
+  A person charting one a minute would need five hours to reach 300. With
+  the cap, one address would take about 10 years to chart the world. The
+  rate-limiting binding only counts over 10 or 60 seconds, so the Atlas
+  keeps this count:
+  - Each sector's reports, which already go out at most every 10 s while
+    words are charted, also list how many words each address charted there
+    since the last report.
+  - The Atlas adds these up for the UTC day. It answers with the addresses
+    past the cap, the most recent 2,000, but only when that list has
+    changed since the sector last heard it.
+  - The sector refuses those addresses' claims with `daily limit`, and the
+    game says "Today's charting limit reached · kept in your notes".
+  - This costs no extra requests and adds no wait to a claim. A sector only
+    learns the list with its next report, so an address can chart a few
+    words past 300 before every sector knows. The 6-a-minute limit keeps
+    that small.
+  - The counts live only in the Atlas's memory. It's rarely evicted, since
+    sectors report to it every few seconds, but if it is, the day's counts
+    start again. Saving them would cost a row written per active address
+    every minute.
+  - Sectors outside the shared world don't report, so words charted there
+    aren't capped. They don't count toward the world's total.
 - **Sockets: 40 per address in a sector, and 120 new ones a minute per
   address.** A sector counts its own sockets exactly, so a few addresses
   can't fill it and lock everyone else out. A second binding
@@ -267,7 +290,9 @@ Usage per player-hour, from the design and the 700-player run:
 The per-address limits don't change these figures. A rate-limiting binding
 isn't a Durable Object, so it adds no Durable Object requests, and neither
 pricing page lists a charge for it. The hashed address is worked out once
-per connection, in the Worker.
+per connection, in the Worker. The daily cap rides on the reports sectors
+already send the Atlas: they grow by one entry per address that charted
+something in the last 10 s or so.
 
 For comparison, OMCB cost about $850 to run, on 8 VMs, Redis and bandwidth.
 One Million Chessboards cost "a few hundred dollars": a $450/month box,

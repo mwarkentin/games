@@ -35,8 +35,9 @@
 //   {t: 'hello', you, sector, claims}   on joining; claims are [w, x, y, d, s, initials, at]
 //   {t: 'claimed', c, by}           a new claim, to everyone; `by` is the claimer's id
 //   {t: 'taken', c}                 to a claimer who wasn't first
-//   {t: 'error', key, error}        to a claimer, for a word that isn't there, or 'slow down'
-//                                   when the socket or its address claims too fast
+//   {t: 'error', key, error}        to a claimer, for a word that isn't there, 'slow down'
+//                                   when the socket or its address claims too fast, or
+//                                   'daily limit' once its address has charted DAILY_CLAIMS today
 //   {t: 'presence', n, p}           players here ([id, initials, x, y]), about once a second
 //   {t: 'world', charted, total, players}   the whole world's totals, as they change
 //   {t: 'full', world}              no room in the sector (or, with world: true, in the whole
@@ -47,7 +48,9 @@
 // a salted hash of the player's IP address, never the address itself. A
 // sector takes at most ADDRESS_SOCKETS sockets from one address, and two
 // rate-limiting bindings, set in wrangler.toml, count joins and claims per
-// address across every sector.
+// address across every sector. For a daily cap, sectors in the shared world
+// add each address's charted words to their reports, and the Atlas answers
+// with the addresses past DAILY_CLAIMS today, which every sector then refuses.
 
 import { BLOCKED_INITIALS, INITIALS, corsHeaders, hashAddress } from './leaderboard.js';
 import { CH, DIRS, RC, VOCAB, chunk, fdiv, keyOf, letterAt } from './letterfield-world.js';
@@ -71,6 +74,10 @@ export const QUIET = 32;              // a sector with fewer sockets than this s
 export const SAVE_POS_MS = 5000;      // a moving player's position is saved to their socket this often
 export const ADDRESS_SOCKETS = 40;    // sockets one address can hold in one sector (a classroom shares an address)
 export const ADDRESS_HEADER = 'X-Survey-Address';  // the hashed address, from the Worker to the sector
+export const DAILY_CLAIMS = 300;      // words one address can chart in the shared world each UTC day
+export const DAILY_LIST_MAX = 2000;   // addresses past the daily cap that the Atlas hands out, latest first
+const DAY_MS = 86400000;
+const HASH = /^[0-9a-f]{64}$/;
 const TERR = SECTOR / RC;             // territories per sector side
 const MAX_MESSAGE = 256;
 const LIMIT = 1e9;                    // the game's map runs to ±1e9 cells
@@ -187,6 +194,10 @@ export class Sector {
     this.counts = null;      // hidden words charted in each of the sector's 16 territories, likewise
     this.world = null;       // the last totals the Atlas sent back
     this.people = null;      // socket → its attachment, read from the sockets on first use after waking
+    this.chartedBy = new Map();  // address → words it charted here since the last report
+    this.overDay = -1;       // the UTC day `over` is for
+    this.over = new Set();   // addresses past the daily cap today, as the Atlas last said
+    this.overAt = 0;         // how many the Atlas had counted then; it only resends the list when this changes
     this.sql.exec(`CREATE TABLE IF NOT EXISTS claims (
       key TEXT PRIMARY KEY, w TEXT NOT NULL, x INTEGER NOT NULL, y INTEGER NOT NULL, d INTEGER NOT NULL,
       s INTEGER NOT NULL, initials TEXT NOT NULL, at INTEGER NOT NULL) WITHOUT ROWID`);
@@ -299,6 +310,7 @@ export class Sector {
     // Every claim from the address counts, wherever it's made, so more
     // sockets in more sectors don't let a script claim any faster.
     if (!(await this.allowed('SURVEY_CLAIMS', me.address))) return send(ws, { t: 'error', key, error: 'slow down' });
+    if (me.address && this.overToday().has(me.address)) return send(ws, { t: 'error', key, error: 'daily limit' });
     const c = checkClaim(msg, me.sx, me.sy);
     if (c.error) return send(ws, { t: 'error', key, error: c.error });
     // The insert runs as one statement with nothing awaited, so even if
@@ -316,6 +328,7 @@ export class Sector {
     if (this.claimsJson) this.claimsJson = `${this.claimsJson.slice(0, -1)}${this.claimsJson === '[]' ? '' : ','}${claimed}]`;
     if (this.counts && !c.s) this.counts[this.territory(c.x, c.y)]++;
     this.hot = [c.x, c.y];
+    if (me.address && inArea(...this.coords())) this.chartedBy.set(me.address, (this.chartedBy.get(me.address) ?? 0) + 1);
     this.batch.push(`{"t":"claimed","c":${claimed},"by":${JSON.stringify(me.id)}}`);
     this.sendBatch();
     this.maybeReport();
@@ -404,6 +417,13 @@ export class Sector {
     return [median(here.map((p) => p.x)), median(here.map((p) => p.y))];
   }
 
+  // Addresses past the daily cap; a new UTC day starts with none.
+  overToday() {
+    const day = Math.floor(this.now() / DAY_MS);
+    if (day !== this.overDay) { this.overDay = day; this.over = new Set(); this.overAt = 0; }
+    return this.over;
+  }
+
   // Index of the sector's territory that holds cell (x, y), row by row.
   territory(x, y) {
     const [sx, sy] = this.coords();
@@ -435,17 +455,32 @@ export class Sector {
     this.reportedAt = this.now();
     this.reportDue = false;
     this.reporting = true;
+    // Words charted by each address since the last report: sent once, or
+    // put back to go with the next report if this one fails.
+    const by = this.chartedBy;
+    this.chartedBy = new Map();
+    this.overToday();
     let world;
     try {
       const res = await atlas(this.env).fetch('https://atlas/report', {
         method: 'POST',
-        body: JSON.stringify({ sx, sy, players: this.here().length, charted: this.chartedCounts(), hot: this.crowd() ?? this.hot }),
+        body: JSON.stringify({
+          sx, sy, players: this.here().length, charted: this.chartedCounts(), hot: this.crowd() ?? this.hot,
+          by: [...by], day: this.overDay, overAt: this.overAt,
+        }),
       });
+      if (!res.ok) throw new Error(`atlas ${res.status}`);
       world = await res.json();
     } catch {
+      for (const [address, n] of by) this.chartedBy.set(address, (this.chartedBy.get(address) ?? 0) + n);
       return;  // the totals just go out later
     } finally {
       this.reporting = false;
+    }
+    this.overToday();  // in case the day turned while the report was out
+    if (Array.isArray(world?.over) && world.day === this.overDay) {
+      this.over = new Set(world.over.filter((a) => typeof a === 'string' && HASH.test(a)));
+      this.overAt = isInt(world.overAt, 0, 1e9) ? world.overAt : 0;
     }
     if (!isInt(world?.charted, 0, AREA_WORDS) || !isInt(world?.players, 0, 1e9)) return;
     if (this.world && world.charted === this.world.charted && world.players === this.world.players) return;
@@ -468,6 +503,13 @@ export class Atlas {
     this.dirty = new Set();
     this.saveTimer = null;
     this.view = null;      // the world map as JSON, rebuilt at most every VIEW_MS
+    // Words each address charted today (UTC), and those past DAILY_CLAIMS in
+    // the order they got there. Kept in memory only: the Atlas hears from
+    // every busy sector every few seconds, so it's rarely evicted, and if it
+    // is, the day's counts start again.
+    this.day = -1;
+    this.chartedToday = new Map();
+    this.overList = [];
     this.sql.exec(`CREATE TABLE IF NOT EXISTS sectors (
       sx INTEGER NOT NULL, sy INTEGER NOT NULL, charted TEXT NOT NULL, done INTEGER NOT NULL,
       PRIMARY KEY (sx, sy)) WITHOUT ROWID`);
@@ -489,15 +531,22 @@ export class Atlas {
     if (request.method === 'POST' && pathname === '/report') {
       let r = null;
       try { r = await request.json(); } catch { /* answered below */ }
+      const by = r?.by ?? [];
       const ok = r && Number.isInteger(r.sx) && Number.isInteger(r.sy) && inArea(r.sx, r.sy) && isInt(r.players, 0, MAX_PLAYERS)
-        && Array.isArray(r.charted) && r.charted.length === TERR * TERR && r.charted.every((n) => isInt(n, 0, 1000));
+        && Array.isArray(r.charted) && r.charted.length === TERR * TERR && r.charted.every((n) => isInt(n, 0, 1000))
+        && Array.isArray(by) && by.length <= MAX_PLAYERS * 4
+        && by.every((e) => Array.isArray(e) && typeof e[0] === 'string' && HASH.test(e[0]) && isInt(e[1], 1, TERR * TERR * 1000));
       if (!ok) return json({ error: 'bad report' }, 400);
+      this.countCharted(by);
       const key = `${r.sx},${r.sy}`, done = r.charted.reduce((a, b) => a + b, 0), old = this.load().get(key);
       const inside = (v, s) => Number.isInteger(v) && fdiv(v, SECTOR) === s;
       const hot = Array.isArray(r.hot) && inside(r.hot[0], r.sx) && inside(r.hot[1], r.sy) ? r.hot.slice(0, 2) : old?.hot ?? null;
       this.rows.set(key, { sx: r.sx, sy: r.sy, players: r.players, charted: r.charted, done, hot, at: this.now() });
       if (!old || old.done !== done) this.save(key);
-      return json(this.totals());
+      // The list of addresses past the cap goes back only when it has
+      // changed since this sector last heard it.
+      const fresh = r.day === this.day && r.overAt === this.overList.length;
+      return json({ ...this.totals(), day: this.day, overAt: this.overList.length, ...(fresh ? {} : { over: this.overList.slice(-DAILY_LIST_MAX) }) });
     }
     if (request.method === 'GET' && pathname === '/world') {
       const now = this.now();
@@ -505,6 +554,16 @@ export class Atlas {
       return new Response(this.view.body, { headers: { 'Content-Type': 'application/json; charset=utf-8' } });
     }
     return json({ error: 'not found' }, 404);
+  }
+
+  countCharted(by) {
+    const day = Math.floor(this.now() / DAY_MS);
+    if (day !== this.day) { this.day = day; this.chartedToday = new Map(); this.overList = []; }
+    for (const [address, n] of by) {
+      const before = this.chartedToday.get(address) ?? 0;
+      this.chartedToday.set(address, before + n);
+      if (before < DAILY_CLAIMS && before + n >= DAILY_CLAIMS) this.overList.push(address);
+    }
   }
 
   // Charted counts only change storage once a minute per sector at most:

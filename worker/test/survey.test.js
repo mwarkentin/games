@@ -12,12 +12,15 @@ import vm from 'node:vm';
 import worker from '../src/index.js';
 import { CH, DIRS, RG, THEMES, THEME_DATA, VOCAB, chunk, genChunk, keyOf, letterAt, regionTheme, wordEnd } from '../src/letterfield-world.js';
 import {
-  ADDRESS_HEADER, ADDRESS_SOCKETS, AREA, AREA_WORDS, Atlas, BATCH_MS, CLAIM_BURST, CLAIM_REFILL_MS, MAX_ONLINE, MAX_PLAYERS, ONLINE_MS, PRESENCE_MAX, PRESENCE_MS,
+  ADDRESS_HEADER, ADDRESS_SOCKETS, AREA, AREA_WORDS, Atlas, BATCH_MS, DAILY_CLAIMS, DAILY_LIST_MAX, CLAIM_BURST, CLAIM_REFILL_MS, MAX_ONLINE, MAX_PLAYERS, ONLINE_MS, PRESENCE_MAX, PRESENCE_MS,
   QUIET, REPORT_MS, SAVE_MS, SAVE_POS_MS, SECTOR, SPAWN_MAX, Sector, VIEW_MS, addressOf, checkClaim, routeSurvey,
 } from '../src/survey.js';
 
 const ORIGIN = 'https://games.michaelwarkentin.com';
 const NOW = Date.UTC(2026, 9, 29, 12);
+const DAY = 86400000;
+const TODAY = Math.floor(NOW / DAY);  // the UTC day, as the daily cap counts it
+const hashed = (n) => n.toString(16).padStart(64, '0');  // a stand-in for a hashed address
 
 // Runs the world code from letterfield.html itself, from its world constants
 // up to its formatting helpers, so the copy in src/ can be compared with it.
@@ -485,7 +488,7 @@ describe('Sector', () => {
     const [a, b] = [join(2, -3), join(2, -3)];
     await claim(a, words[0]);
     await settle();
-    assert.deepEqual(reports, [{ sx: 2, sy: -3, players: 0, charted: countsFor(1), hot: [words[0].x, words[0].y] }]);
+    assert.deepEqual(reports, [{ sx: 2, sy: -3, players: 0, charted: countsFor(1), hot: [words[0].x, words[0].y], by: [], day: TODAY, overAt: 0 }]);
     assert.deepEqual(b.last('world'), { t: 'world', charted: 1001, total: AREA_WORDS, players: 40 });
 
     // Changes within REPORT_MS wait for the first message after it.
@@ -497,7 +500,7 @@ describe('Sector', () => {
     clock += REPORT_MS;
     await say(b, { t: 'pos', x: 401, y: -500 });
     await settle();
-    assert.deepEqual(reports[1], { sx: 2, sy: -3, players: 1, charted: countsFor(2), hot: [401, -500] });  // where the player is
+    assert.deepEqual(reports[1], { sx: 2, sy: -3, players: 1, charted: countsFor(2), hot: [401, -500], by: [], day: TODAY, overAt: 0 });  // where the player is
     assert.deepEqual(b.last('world'), { t: 'world', charted: 1002, total: AREA_WORDS, players: 40 });
     // Later joiners get the totals straight away.
     assert.deepEqual(join(2, -3).sent[1], { t: 'world', charted: 1002, total: AREA_WORDS, players: 40 });
@@ -531,6 +534,81 @@ describe('Sector', () => {
     assert.deepEqual(reports[1].charted, countsFor(2));
   });
 
+  test('counts words charted per address in its reports, and keeps them if a report fails', async () => {
+    const reports = [];
+    let fail = true;
+    sector = new Sector(state, {
+      ATLAS: {
+        idFromName: (name) => name,
+        get: () => ({
+          fetch: async (url, init) => {
+            if (fail) throw new Error('atlas evicted');
+            reports.push(JSON.parse(init.body));
+            return Response.json({ charted: 1, total: AREA_WORDS, players: 1, day: TODAY, overAt: 0 });
+          },
+        }),
+      },
+    });
+    sector.now = () => clock;
+    const [a, b] = [fakeSocket(), fakeSocket()];
+    sector.join(a, 2, -3, hashed(1));
+    sector.join(b, 2, -3, hashed(2));
+    await claim(a, words[0]);
+    await settle();
+    assert.equal(reports.length, 0);  // that report failed
+    fail = false;
+    clock += REPORT_MS;
+    await claim(a, words[1]);
+    await claim(b, words[2]);
+    await claim(b, words[2]);  // taken: charted only once
+    await settle();
+    assert.deepEqual(reports.at(-1).by, [[hashed(1), 2]]);  // the failed report's word, and the new one
+    clock += REPORT_MS;
+    await say(a, { t: 'pos', x: 400, y: -500 });
+    await settle();
+    assert.deepEqual(reports.at(-1).by, [[hashed(2), 1]]);
+  });
+
+  test('refuses claims from addresses past the daily cap, once the Atlas says so', async () => {
+    const atlasObject = new Atlas(fakeState(), {});
+    atlasObject.now = () => clock;
+    const env = { ATLAS: { idFromName: (name) => name, get: () => ({ fetch: (url, init) => atlasObject.fetch(new Request(url, init)) }) } };
+    const busy = hashed(1), other = hashed(2);
+    atlasObject.countCharted([[busy, DAILY_CLAIMS - 1]]);
+
+    // Sector 2,-3 credits the address's last word for today, reports it, and hears it's over.
+    sector = new Sector(state, env);
+    sector.now = () => clock;
+    const [mine, theirs] = [fakeSocket(), fakeSocket()];
+    sector.join(mine, 2, -3, busy);
+    sector.join(theirs, 2, -3, other);
+    await claim(mine, words[0]);
+    await settle();
+    assert.equal(mine.sent.filter((m) => m.t === 'claimed').length, 1);
+    await claim(mine, words[1]);
+    assert.deepEqual(mine.last('error'), { t: 'error', key: keyOf(words[1].w, words[1].x, words[1].y, words[1].d), error: 'daily limit' });
+    await claim(theirs, words[1]);
+    mock.timers.tick(BATCH_MS);
+    assert.equal(theirs.last('claimed').c[0], words[1].w);  // everyone else carries on
+
+    // Sector 0,0 learns the list with its own next report, so the address gets no further there.
+    const elsewhere = new Sector(fakeState(), env);
+    elsewhere.now = () => clock;
+    const [mineThere, theirsThere] = [fakeSocket(), fakeSocket()];
+    elsewhere.join(mineThere, 0, 0, busy);
+    elsewhere.join(theirsThere, 0, 0, other);
+    await elsewhere.webSocketMessage(theirsThere, JSON.stringify({ t: 'claim', ...placed(0, 0) }));
+    await settle();
+    await elsewhere.webSocketMessage(mineThere, JSON.stringify({ t: 'claim', ...placed(0, 0, 1) }));
+    assert.equal(mineThere.last('error').error, 'daily limit');
+
+    // A new day, a new count.
+    clock += DAY;
+    await claim(mine, words[2]);
+    mock.timers.tick(BATCH_MS);
+    assert.equal(mine.last('claimed').c[0], words[2].w);
+  });
+
   test('keeps sectors outside the shared world to themselves', async () => {
     const env = { ATLAS: { idFromName: () => 'atlas', get: () => assert.fail('reported') } };
     sector = new Sector(state, env);
@@ -555,9 +633,13 @@ describe('Atlas', () => {
   afterEach(() => mock.timers.reset());
 
   const counts = (...n) => [...n, ...Array(16 - n.length).fill(0)];
-  async function report(body) {
+  // A report, and the Atlas's answer: by default only the world's totals.
+  async function report(body, { all = false } = {}) {
     const response = await atlasObject.fetch(new Request('https://atlas/report', { method: 'POST', body: JSON.stringify(body) }));
-    return [response.status, await response.json()];
+    const answer = await response.json();
+    if (all || response.status !== 200) return [response.status, answer];
+    const { charted, total, players } = answer;
+    return [response.status, { charted, total, players }];
   }
   async function worldMap() {
     return (await atlasObject.fetch(new Request('https://atlas/world'))).json();
@@ -571,10 +653,42 @@ describe('Atlas', () => {
     assert.deepEqual((await report({ sx: 0, sy: 0, players: 0, charted: counts(6, 2) }))[1], { charted: 9, total: AREA_WORDS, players: 2 });
   });
 
+  test('counts what each address charts today, and lists those past the daily cap', async () => {
+    const base = { players: 1, charted: counts(), day: TODAY, overAt: 0 };
+    const [, first] = await report({ ...base, sx: 0, sy: 0, by: [[hashed(1), DAILY_CLAIMS - 100]] }, { all: true });
+    assert.deepEqual([first.day, first.overAt, first.over], [TODAY, 0, undefined]);  // nothing new for this sector
+    // Counts add up across sectors.
+    const [, second] = await report({ ...base, sx: 1, sy: 0, by: [[hashed(1), 100], [hashed(2), 5]] }, { all: true });
+    assert.deepEqual([second.overAt, second.over], [1, [hashed(1)]]);
+    assert.equal((await report({ ...base, sx: 1, sy: 0, overAt: 1 }, { all: true }))[1].over, undefined);  // already heard
+    assert.deepEqual((await report({ ...base, sx: 2, sy: 0 }, { all: true }))[1].over, [hashed(1)]);  // hasn't yet
+    // Going further past the cap doesn't list an address twice.
+    assert.equal((await report({ ...base, sx: 0, sy: 0, by: [[hashed(1), 3]] }, { all: true }))[1].overAt, 1);
+
+    clock += DAY;
+    const [, tomorrow] = await report({ ...base, sx: 0, sy: 0, day: TODAY, overAt: 1, by: [[hashed(2), 1]] }, { all: true });
+    assert.deepEqual([tomorrow.day, tomorrow.overAt, tomorrow.over], [TODAY + 1, 0, []]);
+  });
+
+  test('hands out only the latest addresses past the cap', async () => {
+    const many = Array.from({ length: DAILY_LIST_MAX + 5 }, (_, i) => [hashed(i + 1), DAILY_CLAIMS]);
+    atlasObject.countCharted(many);
+    const [, answer] = await report({ sx: 0, sy: 0, players: 0, charted: counts() }, { all: true });
+    assert.equal(answer.overAt, DAILY_LIST_MAX + 5);
+    assert.deepEqual(answer.over, many.slice(5).map(([a]) => a));
+  });
+
   test('stops counting players whose sector has gone quiet', async () => {
     await report({ sx: 0, sy: 0, players: 3, charted: counts(1) });
     clock += ONLINE_MS;
     assert.deepEqual((await report({ sx: 1, sy: 0, players: 1, charted: counts() }))[1], { charted: 1, total: AREA_WORDS, players: 1 });
+  });
+
+  test('refuses words charted by addresses it cannot read', async () => {
+    const base = { sx: 0, sy: 0, players: 0, charted: counts() };
+    for (const by of ['nope', [['not a hash', 1]], [[hashed(1), 0]], [[hashed(1), 1.5]], [[hashed(0xabc).toUpperCase(), 1]]]) {
+      assert.equal((await report({ ...base, by }))[0], 400, JSON.stringify(by));
+    }
   });
 
   test('refuses reports it cannot use', async () => {
