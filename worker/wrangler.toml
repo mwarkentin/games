@@ -97,7 +97,7 @@ TURNSTILE_REQUIRED = "false"
 [[previews.d1_databases]]
 binding = "DB"
 database_name = "games-leaderboard-previews"
-database_id = "PREVIEW_DATABASE_ID"
+database_id = "9e59972d-4633-4451-8485-9988082c9f38"
 migrations_dir = "migrations"
 
 # Each Preview gets Durable Objects of its own, empty to start: its rooms and
