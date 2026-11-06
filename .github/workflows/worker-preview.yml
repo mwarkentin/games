@@ -51,7 +51,9 @@ jobs:
       # which is fine for test scores; if they get in the way, empty or
       # replace the database (see worker/README.md).
       - name: Apply database migrations
-        run: npx --yes wrangler@4.151.0 d1 migrations apply games-leaderboard-previews --remote --config wrangler.previews-migrations.toml
+        run: |
+          npx --yes wrangler@4.151.0 d1 migrations apply games-leaderboard-previews --remote --config wrangler.previews-migrations.toml
+          npx --yes wrangler@4.151.0 d1 migrations apply games-survey-log-previews --remote --config wrangler.previews-migrations.toml
       # The salt goes up with the Preview, as with production's deploy.
       - name: Create or update the Preview
         id: preview
@@ -86,10 +88,10 @@ jobs:
 
           - [War, with friends]($site/war?rooms=$URL)
           - [Funnels & Buckets]($site/funnels-and-buckets?leaderboard=$URL), [Doodle Chomp]($site/doodle-chomp?leaderboard=$URL), [Air Traffic Controller]($site/air-traffic-controller?leaderboard=$URL)
-          - [Letterfield's shared survey]($site/letterfield?survey=$URL)
+          - [Letterfield's shared survey]($site/letterfield?survey=$URL), and [its log]($site/letterfield-log?survey=$URL)
 
           Those pages are \`main\`'s. To try this branch's pages too, serve them locally with the same overrides.
-          Scores go to the Previews' test database; rooms and the survey start empty and are this Preview's alone. It's deleted when this pull request closes."
+          Scores and the survey log go to the Previews' test databases; rooms and the survey start empty and are this Preview's alone. It's deleted when this pull request closes."
           id="$(gh api "repos/$GITHUB_REPOSITORY/issues/$PR/comments" --paginate \
             --jq "[.[] | select(.user.login == \"github-actions[bot]\" and (.body | startswith(\"$marker\")))][0].id // empty" | head -n 1)"
           if [ -n "$id" ]; then

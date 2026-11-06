@@ -223,6 +223,8 @@ phones before merging.
   `wrangler d1` reads only a config file's top-level databases. A branch's
   migrations stay on it after the branch closes; if that gets in the way,
   empty the database or replace it in mwarkentin/infra.
+- **The survey log** goes to `games-survey-log-previews` in the same way,
+  shared by every Preview and holding only test words.
 - **Settings** aren't inherited: `[previews]` in `wrangler.toml` sets the
   variables, the database, the Durable Object bindings and the rate limits
   (counted apart from production's) again. Keep it in step with the
