@@ -37,8 +37,9 @@ utilities; games live here so they get their own origin and their own rules.
   which also runs War's multiplayer rooms and Letterfield's shared survey as
   Durable Objects (see `worker/SURVEY.md`, and `worker/TURNSTILE.md` for its
   optional bot check). It deploys through its own
-  workflow and is never part of the site. See
-  `worker/README.md`.
+  workflow and is never part of the site. A pull request that changes it
+  gets a Worker Preview of its own, linked in a comment (see Previews in
+  `worker/README.md`).
 
 ## Rules for every game
 

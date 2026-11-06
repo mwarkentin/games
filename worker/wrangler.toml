@@ -80,3 +80,53 @@ namespace_id = "7302"
   [ratelimits.simple]
   limit = 120
   period = 60
+
+# Worker Previews: every pull request that touches worker/ gets its own copy
+# of this Worker at https://pr-<number>-games-leaderboard.mwarkentin.workers.dev
+# (see "Previews" in README.md). A Preview takes nothing above but the code,
+# compatibility date, Durable Object classes and migrations, and observability,
+# so its variables and bindings are set again here.
+[previews.vars]
+ALLOWED_ORIGINS = "https://games.michaelwarkentin.com,http://localhost:8000,http://127.0.0.1:8000"
+TURNSTILE_HOSTNAMES = "games.michaelwarkentin.com"
+TURNSTILE_REQUIRED = "false"
+
+# Previews share one database of test scores, never production's. It's made
+# with OpenTofu in mwarkentin/infra, and wrangler.previews-migrations.toml
+# names it too, for applying migrations.
+[[previews.d1_databases]]
+binding = "DB"
+database_name = "games-leaderboard-previews"
+database_id = "9e59972d-4633-4451-8485-9988082c9f38"
+migrations_dir = "migrations"
+
+# Each Preview gets Durable Objects of its own, empty to start: its rooms and
+# survey never touch production's.
+[[previews.durable_objects.bindings]]
+name = "WAR_ROOMS"
+class_name = "WarRoom"
+
+[[previews.durable_objects.bindings]]
+name = "SECTORS"
+class_name = "Sector"
+
+[[previews.durable_objects.bindings]]
+name = "ATLAS"
+class_name = "Atlas"
+
+# The same limits as production, counted apart from it (Previews share these).
+[[previews.ratelimits]]
+name = "SURVEY_CLAIMS"
+namespace_id = "7311"
+
+  [previews.ratelimits.simple]
+  limit = 6
+  period = 60
+
+[[previews.ratelimits]]
+name = "SURVEY_JOINS"
+namespace_id = "7312"
+
+  [previews.ratelimits.simple]
+  limit = 120
+  period = 60
