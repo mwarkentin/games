@@ -1324,13 +1324,12 @@ soundBtn.setAttribute('aria-pressed', String(soundOn));
 soundBtn.addEventListener('click', () => setSound(!soundOn));
 
 /* ---------- Music ---------- */
-// Slow pads over a drone, with a high bell now and then, echoing off into the
-// dark. It's made as it plays: a random walk through five chords over one
-// pedal note, so it never loops and has no seam. About twenty oscillators at
-// most, and no reverb but a pair of delays, to go easy on phones.
-const MUSIC_CHORDS = [[50, 57, 64, 66], [47, 54, 61, 66], [43, 55, 62, 66], [52, 59, 62, 66], [45, 57, 61, 64]];
-const MUSIC_BELLS = [74, 76, 78, 81, 83, 86, 88, 90];
-const MUSIC_LEVEL = .45, CHORD_LEN = 22, CHORD_STEP = 15;
+// Two pieces, made as they play, so neither loops or has a seam: Drift, slow
+// pads and bells over a drone, and Orbit, a pipe organ ticking over a deep
+// pedal. They take turns, four minutes each, crossfading. Each keeps to about
+// twenty oscillators, with a pair of delays for an echo instead of a reverb,
+// to go easy on phones.
+const MUSIC_LEVEL = .45, TRACK_TIME = 240;
 const hz = m => 440 * Math.pow(2, (m - 69) / 12);
 let musicNow = null;
 function glide(param, to, secs, a) {
@@ -1339,21 +1338,36 @@ function glide(param, to, secs, a) {
   param.setValueAtTime(param.value, t);
   param.linearRampToValueAtTime(to, t + secs);
 }
-// Builds the music on any audio context, offline ones too, into out. It plays
-// nothing until chord() and bell() are called; play() calls them as it goes.
-function musicGraph(a, out) {
+// What both pieces share: a bus into out, a list of the oscillators they've
+// started, and an echo, one delay each side feeding the other, dulled each
+// time round.
+function trackBase(a, out, [left, right, feedback, tone]) {
   const nodes = new Set(), keep = n => { nodes.add(n); n.onended = () => nodes.delete(n); return n; };
   const bus = a.createGain(); bus.gain.value = 0; bus.connect(out);
+  const send = a.createGain(), dl = a.createDelay(2), dr = a.createDelay(2), fb = a.createGain(), dull = a.createBiquadFilter();
+  const merge = a.createChannelMerger(2);
+  dl.delayTime.value = left; dr.delayTime.value = right; fb.gain.value = feedback; dull.type = 'lowpass'; dull.frequency.value = tone;
+  send.connect(dl); dl.connect(dr); dr.connect(dull); dull.connect(fb); fb.connect(dl);
+  dl.connect(merge, 0, 0); dr.connect(merge, 0, 1); merge.connect(bus);
+  function stop() {
+    for (const n of nodes) { try { n.stop(); } catch (_) {} }
+    nodes.clear();
+    bus.disconnect();
+  }
+  return { nodes, keep, bus, send, stop };
+}
+
+// Drift: a random walk through five chords over one pedal note, each chord
+// fading in over seven seconds and out over nine, and a soft bell high up now
+// and then, mostly heard in its echoes.
+const DRIFT_CHORDS = [[50, 57, 64, 66], [47, 54, 61, 66], [43, 55, 62, 66], [52, 59, 62, 66], [45, 57, 61, 64]];
+const DRIFT_BELLS = [74, 76, 78, 81, 83, 86, 88, 90];
+function driftTrack(a, out) {
+  const T = trackBase(a, out, [.74, 1.11, .48, 2400]), { keep, bus, send } = T;
   // Pads go through one slowly breathing low-pass filter.
   const pads = a.createBiquadFilter(); pads.type = 'lowpass'; pads.frequency.value = 900; pads.Q.value = .4; pads.connect(bus);
   const lfo = keep(a.createOscillator()), lfoDepth = a.createGain();
   lfo.frequency.value = .031; lfoDepth.gain.value = 450; lfo.connect(lfoDepth); lfoDepth.connect(pads.frequency);
-  // Echoes: one delay each side, feeding the other, dulled each time round.
-  const send = a.createGain(), dl = a.createDelay(2), dr = a.createDelay(2), fb = a.createGain(), dull = a.createBiquadFilter();
-  const merge = a.createChannelMerger(2);
-  send.gain.value = 1; dl.delayTime.value = .74; dr.delayTime.value = 1.11; fb.gain.value = .48; dull.type = 'lowpass'; dull.frequency.value = 2400;
-  send.connect(dl); dl.connect(dr); dr.connect(dull); dull.connect(fb); fb.connect(dl);
-  dl.connect(merge, 0, 0); dr.connect(merge, 0, 1); merge.connect(bus);
   const padSend = a.createGain(); padSend.gain.value = .18; pads.connect(padSend); padSend.connect(send);
   // The drone: the pedal note and its fifth, with a slow swell.
   const drone = a.createGain(); drone.gain.value = .09; drone.connect(bus);
@@ -1364,11 +1378,9 @@ function musicGraph(a, out) {
     o.type = 'triangle'; o.frequency.value = hz(m); o.detune.value = cents; g.gain.value = v;
     o.connect(g); g.connect(drone);
   }
-  const t0 = a.currentTime;
-  for (const n of nodes) n.start(t0);
+  for (const n of T.nodes) n.start(a.currentTime);
 
-  // A chord fades in over seven seconds, holds, and fades out over nine.
-  function chord(t, notes, len = CHORD_LEN) {
+  function chord(t, notes, len = 22) {
     for (const m of notes) {
       const v = a.createGain();
       v.gain.setValueAtTime(0, t);
@@ -1383,7 +1395,6 @@ function musicGraph(a, out) {
       }
     }
   }
-  // A soft bell high up, panned somewhere, mostly heard in its echoes.
   function bell(t, m) {
     const o = keep(a.createOscillator()), g = a.createGain();
     o.type = 'sine'; o.frequency.value = hz(m);
@@ -1396,46 +1407,121 @@ function musicGraph(a, out) {
     to.connect(bus); to.connect(send);
     o.start(t); o.stop(t + 4.6);
   }
-  function stop() {
-    for (const n of nodes) { try { n.stop(); } catch (_) {} }
-    nodes.clear();
-    bus.disconnect();
-  }
-  return { bus, chord, bell, stop, nodes };
+  let at = a.currentTime + .05, bellAt = at + 6, last = -1;
+  return {
+    name: 'drift', bus, nodes: T.nodes, stop: T.stop,
+    play(until) {
+      while (at < until) {
+        let i;
+        do i = Math.floor(Math.random() * DRIFT_CHORDS.length); while (i === last);
+        chord(at, DRIFT_CHORDS[last = i]);
+        at += 15 + Math.random() * 4;
+      }
+      while (bellAt < until) { bell(bellAt, DRIFT_BELLS[Math.floor(Math.random() * DRIFT_BELLS.length)]); bellAt += 3 + Math.random() * 7; }
+    },
+    resync(now) { at = Math.max(at, now + .05); bellAt = Math.max(bellAt, now + 2); },
+  };
 }
+
+// Orbit: a pipe organ in A minor. A flute stop ticks out a steady figure,
+// eight notes to the bar, while full-organ chords and a deep pedal swell in
+// under it and fall away again over four rounds of four chords, about two
+// minutes. Each round picks one of two progressions.
+const ORBIT_EIGHTH = .42, ORBIT_CHORD = 16 * ORBIT_EIGHTH;
+const ORBIT_PROGS = [
+  // root, chord, ticking figure (low note, then three above it)
+  [[45, [57, 60, 64, 71], [69, 76, 72, 76]], [41, [57, 60, 64, 69], [69, 77, 72, 76]], [48, [55, 60, 64, 67], [67, 76, 72, 74]], [43, [55, 59, 62, 67], [67, 74, 71, 74]]],
+  [[45, [57, 60, 64, 69], [69, 76, 72, 79]], [38, [57, 62, 65, 69], [69, 74, 77, 74]], [40, [57, 59, 64, 69], [69, 76, 71, 76]], [40, [56, 59, 64, 68], [68, 76, 71, 74]]],
+];
+// How loud each part is in each round: ticking, chords, pedal, ticking an octave up.
+const ORBIT_ARC = [[.6, 0, .3, 0], [.8, .5, .6, 0], [1, 1, 1, .7], [.7, .3, .4, 0]];
+function organWave(a, amps) {
+  const re = new Float32Array(amps.length + 1), im = new Float32Array(amps.length + 1);
+  amps.forEach((v, i) => { im[i + 1] = v; });
+  return a.createPeriodicWave(re, im);
+}
+function orbitTrack(a, out) {
+  const T = trackBase(a, out, [.53, .8, .42, 2000]), { keep, bus, send } = T;
+  const tone = a.createBiquadFilter(); tone.type = 'lowpass'; tone.frequency.value = 2800; tone.Q.value = .3; tone.connect(bus);
+  const toEcho = a.createGain(); toEcho.gain.value = .35; tone.connect(toEcho); toEcho.connect(send);
+  const full = organWave(a, [1, .7, .35, .45, .1, .25, 0, .18]), flute = organWave(a, [1, .28, .08, .04]), pedalWave = organWave(a, [1, .55, .2, .25]);
+  const part = () => { const g = a.createGain(); g.gain.value = 0; g.connect(tone); return g; };
+  const tick = part(), chords = part(), pedal = part(), high = part();
+  const parts = [tick, chords, pedal, high], peaks = [.06, .026, .07, .026], levels = [0, 0, 0, 0];
+  function note(t, m, wave, to, len, attack, level, cents = 0) {
+    const o = keep(a.createOscillator()), g = a.createGain();
+    o.setPeriodicWave(wave); o.frequency.value = hz(m); o.detune.value = cents;
+    g.gain.setValueAtTime(0, t);
+    g.gain.linearRampToValueAtTime(level, t + attack);
+    g.gain.setValueAtTime(level, t + len - attack);
+    g.gain.linearRampToValueAtTime(0, t + len);
+    o.connect(g); g.connect(to); o.start(t); o.stop(t + len + .05);
+  }
+  let at = a.currentTime + .05, slot = 0, prog = ORBIT_PROGS[0];
+  function bar(t) {
+    const round = Math.floor(slot / 4) % 4, i = slot % 4;
+    if (i === 0) {
+      if (round === 0) prog = ORBIT_PROGS[Math.floor(Math.random() * ORBIT_PROGS.length)];
+      ORBIT_ARC[round].forEach((v, k) => {
+        parts[k].gain.setValueAtTime(levels[k], t);
+        parts[k].gain.linearRampToValueAtTime(levels[k] = v * peaks[k], t + ORBIT_CHORD);
+      });
+    }
+    const [root, chord, [lo, ...hi]] = prog[i];
+    const fig = [lo, hi[0], lo, hi[0], lo, hi[1], lo, hi[2]];
+    for (let k = 0; k < 16; k++) {
+      const m = fig[k % 8], s = t + k * ORBIT_EIGHTH;
+      note(s, m, flute, tick, ORBIT_EIGHTH * .95, .012, 1);
+      if (k % 2 === 0) note(s, m + 12, flute, high, ORBIT_EIGHTH * .9, .012, 1);
+    }
+    for (const m of chord) note(t, m, full, chords, ORBIT_CHORD + 1.2, 1.2, 1, Math.random() * 4 - 2);
+    note(t, root, pedalWave, pedal, ORBIT_CHORD + .8, .8, 1);
+    note(t, root - 12, pedalWave, pedal, ORBIT_CHORD + .8, .8, .7);
+    slot++;
+  }
+  return {
+    name: 'orbit', bus, nodes: T.nodes, stop: T.stop,
+    play(until) { while (at < until) { bar(at); at += ORBIT_CHORD; } },
+    resync(now) { at = Math.max(at, now + .05); },
+  };
+}
+
+const MUSIC_TRACKS = [driftTrack, orbitTrack];
 // Plays the music on the page's context: schedules a few seconds ahead from a
-// one-second timer, which stops while the tab is hidden.
+// one-second timer, which stops while the tab is hidden, and hands over to
+// the other piece every few minutes.
 function playMusic(a) {
-  const g = musicGraph(a, acOut);
-  let timer = 0, at = a.currentTime + .05, bellAt = at + 6, last = -1, ended = false;
-  function pick() {
-    let i;
-    do i = Math.floor(Math.random() * MUSIC_CHORDS.length); while (i === last);
-    return MUSIC_CHORDS[last = i];
+  const master = a.createGain(); master.gain.value = 0; master.connect(acOut);
+  let n = Math.floor(Math.random() * MUSIC_TRACKS.length), track = MUSIC_TRACKS[n](a, master);
+  let timer = 0, ended = false, swapAt = a.currentTime + TRACK_TIME;
+  track.bus.gain.value = 1;
+  function swap() {
+    const old = track;
+    glide(old.bus.gain, 0, 8, a); setTimeout(old.stop, 9000);
+    n = (n + 1) % MUSIC_TRACKS.length; track = MUSIC_TRACKS[n](a, master);
+    glide(track.bus.gain, 1, 8, a);
+    swapAt = a.currentTime + TRACK_TIME;
   }
   function tick() {
-    const ahead = a.currentTime + 3;
-    while (at < ahead) { g.chord(at, pick()); at += CHORD_STEP + Math.random() * 4; }
-    while (bellAt < ahead) {
-      g.bell(bellAt, MUSIC_BELLS[Math.floor(Math.random() * MUSIC_BELLS.length)]);
-      bellAt += 3 + Math.random() * 7;
-    }
+    if (a.currentTime >= swapAt) swap();
+    track.play(a.currentTime + 3);
   }
   function run() { clearInterval(timer); tick(); timer = setInterval(tick, 1000); }
   run();
-  glide(g.bus.gain, MUSIC_LEVEL, 4, a);
+  glide(master.gain, MUSIC_LEVEL, 4, a);
   return {
-    graph: g,
-    hush() { clearInterval(timer); glide(g.bus.gain, 0, .5, a); },
+    track: () => track, master, swap,
+    hush() { clearInterval(timer); glide(master.gain, 0, .5, a); },
     wake() {
       if (ended) return;
-      at = Math.max(at, a.currentTime + .05); bellAt = Math.max(bellAt, a.currentTime + 2);
-      run(); glide(g.bus.gain, MUSIC_LEVEL, 2.5, a);
+      track.resync(a.currentTime);
+      run(); glide(master.gain, MUSIC_LEVEL, 2.5, a);
     },
     end() {
       ended = true; clearInterval(timer);
-      glide(g.bus.gain, 0, 2.5, a);
-      setTimeout(g.stop, 2800);
+      glide(master.gain, 0, 2.5, a);
+      const t = track;
+      setTimeout(() => { t.stop(); master.disconnect(); }, 2800);
     },
   };
 }
@@ -2348,7 +2434,7 @@ updateHud();
 invalidate();
 if (redrawn) setTimeout(() => toast(`<i></i><b>The map has been redrawn</b><span>${NT} themes now, every territory named · ${redrawn.kept ? `${redrawn.kept} of your ${redrawn.had} finds are still on it` : 'your old finds are not on it'}</span>`, null, 7000), 900);
 connectStore();
-if (location.hash === '#debug') window.__lf = { cam, found, claims, links, chunk, wordEnd, collect, territoryProgress, world: () => world, supernova, novaSound, audioOut, musicGraph, music: () => musicNow && { state: ac.state, nodes: musicNow.graph.nodes.size, level: musicNow.graph.bus.gain.value }, nova: () => nova };
+if (location.hash === '#debug') window.__lf = { cam, found, claims, links, chunk, wordEnd, collect, territoryProgress, world: () => world, supernova, novaSound, audioOut, musicTracks: MUSIC_TRACKS, music: () => musicNow && { state: ac.state, track: musicNow.track().name, nodes: musicNow.track().nodes.size, level: musicNow.master.gain.value, swap: musicNow.swap }, nova: () => nova };
 
 })();
 </script>

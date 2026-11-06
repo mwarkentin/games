@@ -184,3 +184,30 @@ def test_music_fades_out_while_the_tab_is_hidden(page: Page, site_url, errors):
     page.evaluate(hide, False)
     page.wait_for_function("window.__lf.music().state === 'running' && window.__lf.music().level > .1")
     assert errors == []
+
+
+def test_both_music_tracks_make_sound_and_take_turns(page: Page, site_url, errors):
+    page.add_init_script("localStorage.setItem('letterfield.coach.v1', '1'); localStorage.setItem('letterfield.music.v1', '1');")
+    page.goto(f"{site_url}/letterfield#debug")
+    page.wait_for_function("window.__lf")
+    # Each piece, rendered offline for a few seconds, is audible but quiet.
+    levels = page.evaluate(
+        """async () => {
+          const out = [];
+          for (const track of window.__lf.musicTracks) {
+            const a = new OfflineAudioContext(2, 44100 * 12, 44100), t = track(a, a.destination);
+            t.bus.gain.value = .45; t.play(12);
+            const d = (await a.startRendering()).getChannelData(0);
+            let s = 0; for (const x of d) s += x * x;
+            out.push(Math.sqrt(s / d.length));
+          }
+          return out;
+        }"""
+    )
+    assert all(0.001 < level < 0.2 for level in levels), levels
+    page.keyboard.press("Shift")
+    page.wait_for_function("window.__lf.music() !== null")
+    first = page.evaluate("window.__lf.music().track")
+    page.evaluate("window.__lf.music().swap()")
+    assert page.evaluate("window.__lf.music().track") != first
+    assert errors == []
