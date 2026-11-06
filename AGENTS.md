@@ -13,8 +13,8 @@ utilities; games live here so they get their own origin and their own rules.
 - `build.sh` and `scripts/`: assemble the site in `_site/` (never committed).
   The build also generates `index.html`, `colophon.html`, `sitemap.xml`,
   `games.json` and each page's web app manifest, so don't create those by
-  hand. Games are published as committed, apart from `telemetry.js`,
-  `analytics.js` and the home-screen app links (see below).
+  hand. Games are published as committed, apart from link-preview tags,
+  `telemetry.js`, `analytics.js` and the home-screen app links (see below).
 - `TIP_URL` in `scripts/common.py`: the Stripe Payment Link for tips. Once
   it's set, the header of the home page and colophon link to it as "Tip
   jar", tagged with `client_reference_id=games-home` or `games-colophon` so
@@ -26,6 +26,8 @@ utilities; games live here so they get their own origin and their own rules.
   every page's `<head>`, the home page and colophon included.
 - `sw.js`: the service worker that keeps every page working offline. The
   build fills in its list of pages and a version.
+- `previews/`: link-preview images, `<game>.jpg` at 1200×630 (see Link
+  previews).
 - `icons/`: each app's icon, drawn as `<app>.svg` and rendered to the PNGs
   beside it by `scripts/render_icons.py`.
 - `music/`: public-domain MIDI files that games play, with a README of where
@@ -151,6 +153,24 @@ The other tests block service workers so `page.route` sees every request;
 iPhones keep a Home Screen app's `localStorage` apart from Safari's, so
 scores, groups and initials saved in Safari don't carry over to it.
 
+## Link previews
+
+The build adds Open Graph and Twitter card tags to every page
+(`inject_social` in `scripts/common.py`), so a link shared in Slack,
+iMessage, Bluesky, Mastodon, Threads or Reddit shows a card. The title and
+description come from the page's own `<head>`, and every URL is absolute,
+built from `BASE_URL`.
+
+- A game with `previews/<game>.jpg` gets a large card with that image. Make
+  it 1200×630 and under 300 KB, since WhatsApp shows no image for bigger
+  ones; `tests/test_build.py` checks both. Each game's is a screenshot taken
+  mid-play at 2× with the game's real fonts, then scaled down. Shoot at a
+  1200×630 window, or a wider one of the same shape (War's is 1440×756) if
+  the game is cramped at that height.
+- A game without one gets a small card with its 512px icon. The home page
+  and colophon use `previews/index.jpg` if there is one, or the site's icon.
+- A page that writes its own `og:title` keeps its own tags.
+
 ## Games that started as claude.ai artifacts
 
 An artifact may call `window.claude` for shared storage or sign-in. That
@@ -236,7 +256,8 @@ Object that holds the game and every player's WebSocket (`worker/src/war.js`).
 2. Link it from `README.md` under the right heading:
    `- [Title](https://games.michaelwarkentin.com/foo): what it is`.
 3. Draw its icon as `icons/foo.svg` and run `uv run scripts/render_icons.py`
-   (see Home-screen apps).
+   (see Home-screen apps). Optionally add `previews/foo.jpg` for a large
+   link preview (see Link previews).
 4. Add `tests/test_foo.py` that starts the game and plays a little: press
    Start, make a move, check the score or board changed. A debug hook such
    as Funnels & Buckets' `#debug` / `window.__fb` makes this much easier.

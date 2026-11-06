@@ -24,7 +24,7 @@ import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
-from common import REPO_URL, ROOT, SITE_NAME, format_date, parse_date, render_page
+from common import GENERATED_PAGES, REPO_URL, ROOT, SITE_NAME, format_date, parse_date, render_page
 from gather_links import URL_TRAILING_PUNCTUATION
 
 TOKEN_PATTERN = re.compile(r"(https?://\S+)|(?<![\w/&])#(\d+)\b")
@@ -129,7 +129,13 @@ the chat or agent session behind each change.</p>
 <p class="muted">{len(articles)} game{"s" if len(articles) != 1 else ""}, most recently changed first.</p>
 {chr(10).join(articles)}
 {OPEN_FROM_HASH}"""
-    return render_page(f"Colophon · {SITE_NAME}", body, extra_css=EXTRA_CSS, tip_source="games-colophon")
+    return render_page(
+        f"Colophon · {SITE_NAME}",
+        body,
+        path=GENERATED_PAGES["colophon.html"],
+        extra_css=EXTRA_CSS,
+        tip_source="games-colophon",
+    )
 
 
 def main() -> None:
