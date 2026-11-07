@@ -179,7 +179,7 @@ def test_everyone_sees_each_players_deck(page: Page, browser, site_url, errors):
     # and the bot's in the same deck for both.
     page.wait_for_function(f"{STATE}.canSlam")
     page.evaluate("window.__war.slam(120)")
-    dana_on_bob = guest.locator("#opponents .tile").nth(0).locator(".card")
+    dana_on_bob = guest.locator("#opponents .tile").nth(0).locator(".tslot > .card")
     expect(dana_on_bob).to_have_class(re.compile(r"\bback\b"))
     expect(dana_on_bob).to_have_attribute("data-deck", "space")
     fake.broadcast({
@@ -189,18 +189,26 @@ def test_everyone_sees_each_players_deck(page: Page, browser, site_url, errors):
     })
     expect(dana_on_bob).to_have_attribute("aria-label", "red joker")
     expect(dana_on_bob.locator(".cc")).to_have_text("☄️")
-    expect(page.locator("#opponents .tile").nth(1).locator(".card")).to_have_attribute("data-deck", "candy")
-    expect(page.locator("#opponents .tile").nth(0).locator(".card")).to_have_attribute("data-deck", bot_deck)
-    expect(guest.locator("#opponents .tile").nth(1).locator(".card")).to_have_attribute("data-deck", bot_deck)
+    # When the next battle opens, the pot lands on Dana's heap on Bob's
+    # screen, each card in its player's deck, Bob's ace in his.
+    dana_heap = guest.locator("#opponents .tile").nth(0).locator(".heap .card")
+    expect(dana_heap).to_have_count(3)
+    expect(dana_heap.locator("xpath=self::*[@aria-label='ace of hearts']")).to_have_attribute("data-deck", "candy")
+    expect(dana_heap.locator("xpath=self::*[@aria-label='red joker']")).to_have_attribute("data-deck", "space")
+    expect(page.locator("#opponents .tile").nth(1).locator(".tslot > .card")).to_have_attribute("data-deck", "candy")
+    expect(page.locator("#opponents .tile").nth(0).locator(".tslot > .card")).to_have_attribute("data-deck", bot_deck)
+    expect(guest.locator("#opponents .tile").nth(1).locator(".tslot > .card")).to_have_attribute("data-deck", bot_deck)
     # Your own cards are in your deck, on your screen.
     expect(page.locator("#mySlot .card")).not_to_have_attribute("data-deck", re.compile("."))
     assert page.evaluate("document.documentElement.dataset.deck") == "space"
 
-    # A change mid-game redraws your cards on everyone's screen.
+    # A change mid-game shows on everyone's screen from your next card.
     guest.click("#menuBtn")
     guest.click("#pauseDecks button[data-deck=spooky]")
     guest.click("#resumeBtn")
-    expect(page.locator("#opponents .tile").nth(1).locator(".card")).to_have_attribute("data-deck", "spooky")
+    guest.wait_for_function(f"{STATE}.canSlam")
+    guest.evaluate("window.__war.slam(50)")
+    expect(page.locator("#opponents .tile").nth(1).locator(".tslot > .card")).to_have_attribute("data-deck", "spooky")
     guest_context.close()
     assert errors == []
 
