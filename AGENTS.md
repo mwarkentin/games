@@ -8,32 +8,49 @@ utilities; games live here so they get their own origin and their own rules.
 ## Layout
 
 - `*.html` at the top level: one file per game. The filename is the URL:
-  `foo.html` is served at `/foo`.
+  `foo.html` is served at `/foo`. A page that belongs to a game rather than
+  being one, like `letterfield-log.html` (the survey's history), is built and
+  tested the same way but says `<meta name="games:app" content="letterfield">`:
+  it joins that game's home-screen app, so it needs no icon or manifest of
+  its own and its path must start with the game's (see `app_of` in
+  `scripts/common.py`).
 - `README.md`: the game list. The build turns it into `index.html`.
+- `changelog/`: each game's changelog for players, `<game>.md`, which the
+  build turns into `/changelog/<game>` (see Changelogs).
 - `build.sh` and `scripts/`: assemble the site in `_site/` (never committed).
-  The build also generates `index.html`, `colophon.html`, `sitemap.xml`,
-  `games.json` and each page's web app manifest, so don't create those by
-  hand. Games are published as committed, apart from `telemetry.js`,
-  `analytics.js` and the home-screen app links (see below).
+  The build also generates `index.html`, `colophon.html`, the changelog
+  pages, `sitemap.xml`, `games.json` and each page's web app manifest, so
+  don't create those by hand. Games are published as committed, apart from
+  link-preview tags, `telemetry.js`, `analytics.js` and the home-screen app
+  links (see below).
 - `TIP_URL` in `scripts/common.py`: the Stripe Payment Link for tips. Once
-  it's set, the header of the home page and colophon link to it as "Tip
-  jar", tagged with `client_reference_id=games-home` or `games-colophon` so
-  each payment shows where it came from. Games themselves get no link,
-  since they own the whole screen.
+  it's set, the header of the home page, colophon and changelogs link to it
+  as "Tip jar", tagged with `client_reference_id=games-home`,
+  `games-colophon` or `games-changelog` so each payment shows where it came
+  from. Games themselves get no link, since they own the whole screen.
 - `telemetry.js`: error reporting, performance and session replays through
   Sentry. The build inlines it into every game's `<head>`.
 - `analytics.js`: page views through Counterscale. The build inlines it into
-  every page's `<head>`, the home page and colophon included.
+  every page's `<head>`, the home page, colophon and changelogs included.
 - `sw.js`: the service worker that keeps every page working offline. The
   build fills in its list of pages and a version.
+- `previews/`: link-preview images, `<game>.jpg` at 1200×630 (see Link
+  previews).
 - `icons/`: each app's icon, drawn as `<app>.svg` and rendered to the PNGs
   beside it by `scripts/render_icons.py`.
+- `music/`: public-domain MIDI files that games play, with a README of where
+  each came from. The build publishes them as they are.
 - `tests/`: pytest with Playwright.
 - `worker/`: the leaderboard API, a Cloudflare Worker with a D1 database,
   which also runs War's multiplayer rooms and Letterfield's shared survey as
-  Durable Objects (see `worker/SURVEY.md`). It deploys through its own
-  workflow and is never part of the site. See
-  `worker/README.md`.
+  Durable Objects (see `worker/SURVEY.md`, and `worker/TURNSTILE.md` for its
+  optional bot check). It deploys through its own
+  workflow and is never part of the site. A pull request that changes it
+  gets a Worker Preview of its own (see Previews below, and in
+  `worker/README.md`).
+- `preview/`: the `games-preview` Worker, which has no code and serves each
+  pull request's build of the site as a Worker Preview (see Previews). It's
+  never deployed to production.
 
 ## Rules for every game
 
@@ -43,8 +60,11 @@ utilities; games live here so they get their own origin and their own rules.
 - Load libraries from `cdn.jsdelivr.net` or `cdnjs.cloudflare.com`, pinned
   to an exact version. Fonts may come from Google Fonts, with a system font
   later in every `font-family` so the game still works without them. The
-  only other hosts are `browser.sentry-cdn.com`, for `telemetry.js`, and
-  Counterscale's own address, for `analytics.js`.
+  only other hosts are `browser.sentry-cdn.com`, for `telemetry.js`,
+  Counterscale's own address, for `analytics.js`, and
+  `challenges.cloudflare.com`, for Turnstile on Letterfield's shared survey
+  (loaded only once `TURNSTILE_SITE_KEY` is set, never cached by `sw.js`;
+  see `worker/TURNSTILE.md`).
 - Phone first: playable at 375px wide in portrait with touch alone (an
   on-screen pad, taps or swipes), and with a keyboard on a computer. No
   sideways scrolling. Inputs, textareas and selects use `font-size: 16px`
@@ -53,6 +73,14 @@ utilities; games live here so they get their own origin and their own rules.
   controls clear of `env(safe-area-inset-*)`.
 - Respect `prefers-reduced-motion` and `prefers-color-scheme`. Give sound an
   off switch, and start audio only after the player's first tap or key.
+- Music gets an off switch of its own, apart from sound effects. Play it
+  from MIDI files in `music/` on voices made in the page, as War does (its
+  Music section): notes, not recordings, so it's small and works offline.
+  Only public-domain or CC0 pieces, each listed in `music/README.md` with
+  its source at a fixed commit; `tests/test_music.py` checks.
+  Ambient music with no tune to score, like Letterfield's drones and pads,
+  can instead be generated in the page with the Web Audio API, still with
+  no audio files.
 - Pause when the tab is hidden (`visibilitychange`) if the game runs on a
   timer.
 - Keep scores and settings in `localStorage`, with keys prefixed by the
@@ -67,6 +95,31 @@ utilities; games live here so they get their own origin and their own rules.
   title is longer than 12 characters, add
   `<meta name="apple-mobile-web-app-title" content="...">` with a shorter
   name for the Home Screen.
+
+## Changelogs
+
+The colophon shows every commit, for whoever works on the games. Each game's
+changelog, `changelog/<game>.md`, is for players: what changed that they'd
+notice, in a sentence or two each, without file names or internals. A page
+that belongs to a game, like `letterfield-log.html`, goes in that game's.
+
+```markdown
+## 2026-11-06
+
+- Music from public-domain scores, with its own off switch.
+
+## 2026-11-03
+
+- Seven deck themes to pick from.
+```
+
+A day is the date the change reached the site (when it merged to `main`),
+newest first and one heading a day. Changes still switched off on the site,
+like a leaderboard before its URL is set, wait for the day they're switched
+on. `scripts/build_changelog.py` builds `/changelog/<game>` from it, and
+fails the build on text before the first day, a heading that isn't a date,
+an empty day or days out of order. The home page's recent dates and the
+colophon link to it. `tests/test_changelog.py` checks every game has one.
 
 ## Telemetry
 
@@ -118,12 +171,13 @@ the whole site (`index`), which opens at the game list. Names, descriptions
 and colors come from each game's `<head>`.
 
 The build links each page to its manifest and icons and registers `sw.js`.
-It stores every page when it installs. After that, pages come from the
-network first and fall back to the stored copy when the network fails or
-takes more than four seconds. Google Fonts are stored too. Nothing else goes
-through it, so the leaderboard, War's rooms, Sentry and Counterscale behave
-as they would without it. A hash of the pages is the worker's version, so
-each deploy refreshes every stored page.
+It stores every page, and the music in `music/`, when it installs. After
+that, pages come from the network first and fall back to the stored copy
+when the network fails or takes more than four seconds; music comes from the
+stored copy. Google Fonts are stored too. Nothing else goes through it, so
+the leaderboard, War's rooms, Sentry and Counterscale behave as they would
+without it. A hash of the pages and music is the worker's version, so each
+deploy refreshes every stored copy.
 
 Each app's icon is `icons/<app>.svg`, a full-bleed 512×512 square with
 everything that matters inside the middle circle (radius 205), drawn with
@@ -139,6 +193,70 @@ The other tests block service workers so `page.route` sees every request;
 
 iPhones keep a Home Screen app's `localStorage` apart from Safari's, so
 scores, groups and initials saved in Safari don't carry over to it.
+
+## Link previews
+
+The build adds Open Graph and Twitter card tags to every page
+(`inject_social` in `scripts/common.py`), so a link shared in Slack,
+iMessage, Bluesky, Mastodon, Threads or Reddit shows a card. The title and
+description come from the page's own `<head>`, and every URL is absolute,
+built from `BASE_URL`.
+
+- A game with `previews/<game>.jpg` gets a large card with that image. Make
+  it 1200×630 and under 300 KB, since WhatsApp shows no image for bigger
+  ones; `tests/test_build.py` checks both. Each game's is a screenshot taken
+  mid-play at 2× with the game's real fonts, then scaled down. Shoot at a
+  1200×630 window, or a wider one of the same shape (War's is 1440×756) if
+  the game is cramped at that height.
+- A game without one gets a small card with its 512px icon. The home page
+  and colophon use `previews/index.jpg` if there is one, or the site's icon.
+- A page that writes its own `og:title` keeps its own tags.
+
+## Previews
+
+Every pull request gets its own copy of the whole site, built from its
+branch, at `https://pr-<number>-games-preview.mwarkentin.workers.dev`, so
+it can be played on a phone before merging. The **Preview** workflow
+(`.github/workflows/preview.yml`) makes it on each push, comments on the pull
+request with its link and the games the pull request changes (one comment,
+kept up to date), and deletes it when the pull request closes.
+
+- **Hosting:** a [Worker Preview](https://developers.cloudflare.com/workers/previews/)
+  of `games-preview` (`preview/wrangler.toml`), a Worker with nothing but
+  static assets: the workflow runs `build.sh`, then `wrangler preview` uploads
+  `_site/`. `/war` serves `war.html`, as on GitHub Pages. It uses the same
+  Cloudflare token as the leaderboard Worker.
+- **Its own URLs:** `scripts/point_preview.py` rewrites the built site so the
+  live site's address (link previews, the sitemap, the game list) becomes
+  the preview's. Games need nothing for this; just keep naming the Worker
+  by its full URL (`WORKER_URL` in `scripts/common.py`). It also puts a
+  yellow strip atop the preview's home page, colophon and changelogs naming the pull
+  request and commit, linked to the pull request; games get none, but
+  every page's `<title>` starts with "PR <number> · ", so a game's tab
+  says it's a preview too.
+- **The Worker:** a pull request whose branch changes `worker/` (or
+  `preview.yml`) from `main`'s also gets a Worker Preview of the leaderboard Worker, made first, and
+  `point_preview.py` points the games' `LEADERBOARD_URL`, `ROOMS_URL` and the
+  survey log's `SURVEY_URL` at it, so the preview's War rooms, leaderboards
+  and survey log run against the pull request's own Worker. That Preview
+  also allows the site preview's origin in `ALLOWED_ORIGINS`, passed with
+  `--var` for that Preview only; `wrangler.toml` doesn't change.
+  Letterfield's survey still needs `?survey=`, which the comment links to.
+  It's `main` it compares against, not the pull request's base, so one
+  stacked on another pull request's branch gets a Worker Preview of its own
+  when that branch changes the Worker, built from everything it carries.
+- **Without one,** the preview keeps production's Worker, which only answers
+  the live site's origin: leaderboards say they can't be reached and War's
+  rooms can't start, and a preview can never write to production. Solo play
+  is unaffected.
+- **Apart from the live site:** each preview is its own origin, so its
+  `localStorage`, service worker and offline copy are its own. Telemetry and
+  analytics check the hostname, so they stay off. Turnstile's widget doesn't
+  allow preview hostnames, so the survey joins without a pass, which Worker
+  Previews accept.
+- Pull requests from forks get no secrets and no previews. Locally, the
+  same build serves with `cd preview && npx wrangler@4.151.0 dev` after
+  `uv run ./build.sh`.
 
 ## Games that started as claude.ai artifacts
 
@@ -234,22 +352,28 @@ per sector of the map, plus an Atlas for the world's totals
   change both.
 - Game tests fake the survey with `page.route_web_socket` and
   `tests/fake_survey.py`; see `tests/test_letterfield_survey.py`. The real
-  Worker's stand-in answers the survey with an empty fake too, and
-  `without_worker()` blanks `SURVEY_URL` along with the other URLs.
+  Worker's stand-in answers the survey with an empty fake too, and its
+  Turnstile check with a fake widget and pass, so no test reaches
+  challenges.cloudflare.com. `without_worker()` blanks `SURVEY_URL` along
+  with the other URLs.
 
 ## Adding or changing a game
 
 1. Create or update `foo.html` following the rules above.
 2. Link it from `README.md` under the right heading:
    `- [Title](https://games.michaelwarkentin.com/foo): what it is`.
-3. Draw its icon as `icons/foo.svg` and run `uv run scripts/render_icons.py`
-   (see Home-screen apps).
-4. Add `tests/test_foo.py` that starts the game and plays a little: press
+3. Note anything a player would notice in `changelog/foo.md`, under the day
+   it reaches the site (see Changelogs). A new game's first day says it's
+   here.
+4. Draw its icon as `icons/foo.svg` and run `uv run scripts/render_icons.py`
+   (see Home-screen apps). Optionally add `previews/foo.jpg` for a large
+   link preview (see Link previews).
+5. Add `tests/test_foo.py` that starts the game and plays a little: press
    Start, make a move, check the score or board changed. A debug hook such
    as Funnels & Buckets' `#debug` / `window.__fb` makes this much easier.
    `tests/test_games.py` already smoke-tests every game.
-5. Run `uv run pytest` and make sure it passes.
-6. In the commit message, say what changed and include the URL of the chat,
+6. Run `uv run pytest` and make sure it passes.
+7. In the commit message, say what changed and include the URL of the chat,
    artifact or agent session behind it.
 
 ## Commands

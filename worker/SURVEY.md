@@ -9,6 +9,8 @@ It's built and switched on:
 - the survey code in `letterfield.html`, which joins the Worker at
   `SURVEY_URL`
 
+Its history is a page of its own, `letterfield-log.html` (see "The log").
+
 ## One Million Words
 
 Letterfield already gives every player the same map, because every letter
@@ -58,7 +60,7 @@ From [Scaling One Million Checkboxes][omcb] and
 | Bandwidth was "my one unbounded cost" (OMCB capped its server at 250 Mbit/s) | Cloudflare doesn't charge for egress, and outgoing WebSocket messages are free |
 | "Bound my costs … instead of going serverless and scaling into bankruptcy" | `MAX_PLAYERS` per sector and `MAX_ONLINE` overall. Beyond them, players are told the survey is full; the bill can't run away |
 | Validate everything: someone checked box 100,000,000 and broke OMCB | every claim is checked against the server's copy of the map generator |
-| Bots pushed absurd traffic once the Go rewrite made things fast | a burst of 5 claims per socket, then one per 1.5 s; per-IP limits still to do |
+| Bots pushed absurd traffic once the Go rewrite made things fast | a burst of 5 claims per socket, then one per 1.5 s; and per IP address, however many sockets it opens, 6 a minute and 300 a day (see "Limits per address") |
 | Rollback netcode, so moves feel instant | not needed: a circled word is always kept locally, and the server only decides who gets the credit |
 | One Go process on one box (16 cores, never above ~10% CPU, later shrunk to an ~$80/month box) | a Durable Object is one JavaScript thread, so the world is split by place into many objects |
 
@@ -112,6 +114,288 @@ From [Scaling One Million Checkboxes][omcb] and
   positions are written to the attachment at most every 5 s.
 
 Messages are listed at the top of `src/survey.js`.
+
+### Limits per address
+
+The map comes from a fixed seed, and its generator is in the page, so a
+script can find every word without playing. Per-socket limits alone don't
+stop it: it can open as many sockets in as many sectors as it likes. So the
+survey also limits each IP address, wherever it plays:
+
+- **Addresses are hashed.** The Worker hashes the player's address with
+  `IP_SALT`, as the leaderboard does, and hands the sector only the hash, in
+  a header it sets itself. An IPv6 address counts by its /64, because a
+  device can pick any address in its /64.
+- **Claims: 6 a minute per address, across every sector.** That's a
+  [rate-limiting binding][ratelimit] (`SURVEY_CLAIMS` in `wrangler.toml`),
+  on top of each socket's own limit. A player rarely finds more than one
+  word a minute, and counting over a minute rather than 10 s means a few
+  spotted together still all count. The cost is to players who share an
+  address: a family, a classroom, or a mobile network that puts many phones
+  behind one IPv4 address share those 6 (and the daily 300 below). A refused
+  claim gets the same `slow down` as a socket claiming too fast, and the
+  game says "Too quick to chart · kept in your notes".
+- **Words charted: 300 a day per address, in the shared world.** At 6 a
+  minute, a script left running all day would still chart 8,640 words a day.
+  A person charting one a minute would need five hours to reach 300. With
+  the cap, one address would take about 10 years to chart the world. The
+  rate-limiting binding only counts over 10 or 60 seconds, so the Atlas
+  keeps this count:
+  - Each sector's reports, which already go out at most every 10 s while
+    words are charted, also list how many words each address charted there
+    since the last report.
+  - The Atlas adds these up for the UTC day. It answers with the addresses
+    past the cap, the most recent 2,000, but only when that list has
+    changed since the sector last heard it.
+  - The sector refuses those addresses' claims with `daily limit`, and the
+    game says "Today's charting limit reached · kept in your notes".
+  - This costs no extra requests and adds no wait to a claim. A sector only
+    learns the list with its next report, so an address can chart a few
+    words past 300 before every sector knows. The 6-a-minute limit keeps
+    that small.
+  - The counts live only in the Atlas's memory. It's rarely evicted, since
+    sectors report to it every few seconds, but if it is, the day's counts
+    start again. Saving them would cost a row written per active address
+    every minute.
+  - Sectors outside the shared world don't report, so words charted there
+    aren't capped. They don't count toward the world's total.
+- **Sockets: 40 per address in a sector, and 120 new ones a minute per
+  address.** A sector counts its own sockets exactly, so a few addresses
+  can't fill it and lock everyone else out. A second binding
+  (`SURVEY_JOINS`) counts sockets opened anywhere. A player roaming the map
+  opens about 10 an hour. Either limit is answered with `full`, and the
+  game tries again in a minute or so.
+- **Why a binding and not a Durable Object per address.** The binding keeps
+  its counts in each Cloudflare location, in memory, and answers without
+  waiting for other locations to agree. So it's approximate: counts are per
+  location, and a burst can slip past. That's fine for stopping one script
+  racing everyone else. A Durable Object per address would be exact, but
+  every claim would wait on a round trip to another object, and pay for it.
+  In the load test, claims took as long with the binding as without it
+  (p50 3.6 ms against 3.4 ms). If the binding fails, the sector lets the
+  claim through, and the per-socket and per-sector limits still hold.
+- **Not checked: whether a claim is near the player.** A claim is only
+  accepted in a sector the player has a socket in, and that's about as tight
+  as a distance check could be:
+  - The game only lets you circle words at 9 px a cell or closer. A
+    2560 px desktop window still reaches about 160 cells from its middle,
+    and a 5120 px ultrawide about 285. Positions also lag up to a second,
+    and go only to the sector under the middle of the view.
+  - A fair radius would be around 300 cells, wider than a sector
+    (192 cells).
+  - A script reports its own position anyway, and flying across the map is
+    normal play, so it could send a position next to each word first.
+
+### Watching for bots
+
+The limits slow down one address. A pool of addresses, a botnet or a
+proxy service, still gets them once per address, and that's when a
+Turnstile check would be worth switching on (see `TURNSTILE.md`). So the
+Atlas keeps the numbers that would show one, from the reports sectors
+already send it:
+
+- **For each UTC day:**
+  - words charted in the shared world;
+  - how many addresses charted them;
+  - how many reached the daily cap;
+  - player-hours, added up from the players online at each report;
+  - sockets that joined without a Turnstile pass (`unpassed`, see
+    `TURNSTILE.md`), once the Worker hands out passes.
+- **Where they show up:**
+  - The world map (`GET /v1/survey/world`) has `today` and `yesterday`.
+  - Workers Logs gets an `{survey: 'hour'}` line with each hour's words,
+    player-hours and words per player-hour.
+  - Workers Logs also gets an `{survey: 'daily cap'}` line whenever an
+    address reaches the cap. It holds the count only, never the address.
+- **What would look like a pool:**
+  - Many addresses at the cap in a day. One or two is a keen player or a
+    single script.
+  - Far more words per player-hour than people manage. A person charts a
+    word a minute at most. A bot that claims without sending positions adds
+    words but no player-hours, so its rate climbs.
+  - Many joins without a Turnstile pass, once the game has a site key.
+    Nearly every player then has a pass, so those joins are scripts, plus
+    the few players whose browsers block Turnstile.
+- **Telling you:** the **Watch the survey for bots** workflow
+  (`.github/workflows/survey-watch.yml`) reads the world map just after
+  midnight UTC. If yesterday had 20 or more addresses at the cap, or 120 or
+  more words per player-hour over at least 500 words, or (with a site key
+  in `letterfield.html`) 500 or more joins without a pass and at least 5
+  per player-hour, it opens an issue labelled `survey-bots`, or comments on
+  the one that's open.
+  `scripts/survey_watch.py` holds the thresholds. If the survey can't be
+  reached, it only warns.
+- **Lost on eviction:** the numbers live in the Atlas's memory, like the
+  daily counts per address, so an evicted Atlas starts the day again and
+  forgets yesterday.
+
+## The log
+
+[letterfield-log](https://games.michaelwarkentin.com/letterfield-log) is a
+page of the survey's history: every word charted first, with where, by whom
+(their initials) and when, a day at a time, hour by hour. Each word links to
+`/letterfield#f-<word>-<x>-<y>-<d>`, which flies the game to it. "Mine"
+narrows it to the words this browser charted first.
+
+### Where the history lives: D1, copied from each sector
+
+Sectors already keep every claim, but a log can't ask 625 objects what
+happened between 2 and 3 pm. The options were:
+
+| | for | against |
+| --- | --- | --- |
+| **D1, written by each sector** (chosen) | indexed SQL over the whole world; a page reads one hour with one query; `wrangler d1 execute` for moderation | one database runs one query at a time, so writes must be batched (and the log gets a database of its own) |
+| D1, written through the Atlas | the Atlas already hears from busy sectors every 10 s | only sectors in the shared world report; claims held in the Atlas's memory are lost if it's evicted, so sectors would have to keep them until it confirms anyway; one more load on one object |
+| a Durable Object for the log (or one per day) | no new storage product | every read is a Durable Object request to the same few objects the writes go to; a viral day of readers lands on one single-threaded object; no ad hoc queries |
+| each sector's own claims, read on demand | nothing to copy | an hour or a player's finds span up to 625 objects |
+
+D1 was ruled out above for *live* state: polling, positions, pushes. A log is
+the opposite load: rows appended a few times a minute per busy sector and read
+by a page that can be cached, which is what D1 is for.
+
+**How claims get there.** Each `Sector` copies its new claims to the
+`survey_log` table (`migrations-log/0001_survey_log.sql`) like an outbox:
+
+- A claim sets a Durable Object [alarm][alarms] for `LOG_MS` (30 s) later, if
+  none is set. Claims that come in before it goes off go with it. Unlike a
+  timer, an alarm doesn't stop the sector hibernating, and it wakes the
+  sector if it was evicted.
+- The alarm reads claims made since the last one D1 has (the sector's
+  `logged` mark, with an index on the claims' time) and writes up to 240 in
+  one D1 batch: 12 rows to an `INSERT` (D1 binds at most 100 values to a
+  statement) and one transaction for the lot. Only then does the mark move.
+- **If D1 fails**, nothing is lost: the claims are still in the sector, the
+  mark stays, and the alarm tries again after 1, 2, 4… minutes, up to 10.
+  Workers Logs gets a `{survey: 'log failed'}` line. A write that reached D1
+  but whose answer was lost is sent again; rows are keyed by `(at, key)`, so
+  D1 ignores the copy.
+- A claim's time is always after the sector's previous claim, even if the
+  object moved to a machine whose clock is behind, so the mark can't skip
+  one.
+- The table is `WITHOUT ROWID` and ordered by `(at, key)`, so reading an hour
+  reads just that hour's rows, and there's no other index to write: one row
+  written per claim. The tests check each query's plan.
+
+**Backfill.** None needed by hand. A sector that charted words before the log
+existed has no mark, so the first time it wakes after the deploy it sends
+every claim it holds, a batch a second, with their original times. Sectors
+nobody visits again keep theirs until someone does. Since `SURVEY_URL` was
+still empty on main when the log was built, that's only words charted by
+people trying `?survey=`.
+
+### The API
+
+```
+GET /v1/survey/log/day/<day>     (day = UTC days since 1970)
+  → {"day", "hours": [24 counts, one per UTC hour], "total"}
+GET /v1/survey/log/hour/<hour>   (hour = UTC hours since 1970)
+GET /v1/survey/log/hour/<hour>?after=<at>~<key>
+  → {"hour", "entries": [[w, x, y, d, s, initials, at, th], ...],
+     "places": {"rx,ry": "Monet Hollow"}, "themes": {"th": [name, hue]},
+     "next": "<at>~<key>" | null}
+```
+
+An hour comes oldest first, 500 entries a page; `next` is the `after` for the
+next page. A day or hour that hasn't started is a 400. The page shows the
+player's own days, so it asks for the one or two UTC days a local day
+overlaps, then each hour as it scrolls into view.
+
+**Caching.** Past hours and days don't change, but a claim can reach D1 up to
+`LOG_MS` late, or later while D1 is failing. So an hour or day that ended an
+hour ago (`SETTLED_MS`) is cached for a day, and the one still running for
+15 seconds:
+
+- `Cache-Control` on every answer, for browsers;
+- in each Worker instance's memory (up to 300 answers), so a crowd reading
+  the current hour costs one D1 query per instance every 15 s;
+- in Cloudflare's cache through the Cache API. It does nothing on
+  `workers.dev`, so it only starts helping once the Worker is on a custom
+  domain (see the Worker's README). The cached copy has no CORS headers; each
+  answer adds its own origin's.
+
+A backfilled sector's old claims can take up to a day to appear in hours that
+were already cached.
+
+### Where, readably
+
+Coordinates mean little, so each answer names the territories its entries
+are in (`places`, such as "Monet Hollow") and gives each theme's name and
+hue. The Worker works these out with `regionName`, now in
+`src/letterfield-world.js` beside the themes it already had (a test checks
+it names every territory in the shared world as the game does). The page
+holds none of the map's 40 KB of theme data.
+
+### "Mine"
+
+Initials are three letters anyone can type, so they can't say which words
+are yours. Two ways could:
+
+- **The finds already on the device** (chosen). The log is on the same
+  origin as the game, so it reads `letterfield.finds.v2`, where the game
+  marks each word a sector said you charted first (`f`). Mine is the day's
+  log narrowed to those words: the page fetches only the hours that hold
+  one, plus the hour either side when a find is within 10 minutes of it, in
+  case the device's clock was off. Everyone's log marks yours with "you".
+  Nothing about the player is sent or stored.
+- **A private player token**, like War's `war:token`, sent with each claim
+  and kept by the server as a hash. It would be the server's own record, so
+  a lost "you were first" answer wouldn't matter. But the token would live in
+  the same `localStorage` as the finds, so it reaches no further: a new
+  device or a cleared browser starts again either way. It would also add a
+  column to every sector's claims, a field to the protocol, and a lasting
+  pseudonymous ID for every claim, which would need keeping out of the API
+  just like hashed addresses and socket ids.
+
+The token would be worth it only with a way to carry it to another device
+(a sync code, say). On an iPhone the Home Screen app keeps its own storage,
+so the log is in Letterfield's app (see the build below) and opens there
+with the same finds.
+
+### How the page fits the site
+
+`letterfield-log.html` is a top-level page like a game, so it's published,
+listed in the README, smoke-tested at phone and desktop sizes, cached
+offline by `sw.js` and gets telemetry and analytics. It isn't a game of its
+own, though: `<meta name="games:app" content="letterfield">` puts it in
+Letterfield's home-screen app (`app_of` in `scripts/common.py`). It gets no
+manifest, icon or preview of its own, and since `/letterfield-log` starts
+with `/letterfield`, it's inside Letterfield's app scope. Letterfield's
+survey panel links to it. Its `SURVEY_URL` already points at the Worker,
+since it only reads; until the survey is on, the log is empty.
+
+### Cost
+
+On Workers Paid, per word charted: one D1 row written, one more row written
+in the sector (its time index), and a share of an alarm. Each busy sector's
+alarm runs at most every 30 s: one Durable Object request and two rows
+written (the alarm and the mark).
+
+| | whole world charted (1.12 M words) | a busy day (30,000 words) | the ceiling (all 625 sectors charting nonstop) |
+| --- | --- | --- | --- |
+| D1 rows written | 1.12 M (50 M a month included) | 30,000 | 75,000 batches an hour |
+| D1 storage | ~100 MB (5 GB included) | ~3 MB | |
+| alarms (DO requests) | | ≤ 2,880 per busy sector | ~$0.011 an hour |
+| rows written in sectors | 1.12 M + 2 per alarm | | ~$0.15 an hour past the included 50 M |
+| D1 rows read | each hour read reads its rows; cached as above | | |
+
+So the log adds nothing past the included allowances at the survey's
+expected sizes, and at the ceiling raises the worst case from about $0.75 to
+about $0.92 an hour. `LOG_MS` is the knob: 60 s would halve the alarm costs.
+Reading is cheap: 25 billion D1 rows read a month are included, and a
+settled hour is read from D1 about once a day per Worker instance.
+
+On the free plan, D1 and Durable Object storage each allow 100,000 rows
+written a day, so the log roughly halves the claims a day the free plan
+allows (see "On the free plan").
+
+**A database of its own.** The log lives in `games-survey-log` (the
+`LOG_DB` binding, with its migrations in `migrations-log/`), not in the
+leaderboard's database. A D1 database runs one query at a time, so this way
+a backfill, a busy day's batches or a crowd reading today's log never
+queue with score saves, and the log can be emptied or rebuilt without going
+near scores. D1 bills by rows, not by database, so it costs nothing extra.
+mwarkentin/infra makes it (`cloudflare.tf`). Without the binding, sectors
+don't log and the log's paths aren't answered.
 
 ## Do Workers and D1 scale for this?
 
@@ -215,6 +499,13 @@ Usage per player-hour, from the design and the 700-player run:
 | an eieio-style viral fortnight: 5,000 online on average, up to the cap | 1.68 M | ~$12 | ~$27 | ~$12.50 | **~$57** |
 | the ceiling: `MAX_ONLINE` (25,000) online all the time | 25,000 an hour | ~$0.22/h | ~$0.40/h | ~$0.11/h | **at most ~$0.75 an hour (~$18 a day)** |
 
+The per-address limits don't change these figures. A rate-limiting binding
+isn't a Durable Object, so it adds no Durable Object requests, and neither
+pricing page lists a charge for it. The hashed address is worked out once
+per connection, in the Worker. The daily cap rides on the reports sectors
+already send the Atlas: they grow by one entry per address that charted
+something in the last 10 s or so.
+
 For comparison, OMCB cost about $850 to run, on 8 VMs, Redis and bandwidth.
 One Million Chessboards cost "a few hundred dollars": a $450/month box,
 later $80/month, plus about a terabyte of traffic a month. On Cloudflare,
@@ -253,13 +544,14 @@ about 30 cents over the included million requests.
 - **Run `load.js` against a deployment.** That would confirm the per-sector
   limit and the 0.8 ms per player-second on Cloudflare's edge rather than a
   sandbox.
-- **Bots.** The map can be generated from the page source, so a script
-  could claim words as fast as the rate limit allows, from as many sockets
-  as it opens. Next steps:
-  - a limit per IP address across sectors (the Workers rate-limiting
-    binding, or a Durable Object keyed by hashed IP);
-  - a Turnstile check before joining;
-  - accepting claims only near where the player has said they are.
+- **Bots from many addresses.** Each address is limited (see "Limits per
+  address"), but a botnet or a pool of proxies still gets those limits once
+  per address. "Watching for bots" says when it's happening. A
+  [Turnstile][turnstile] check before joining is built and switched off:
+  [TURNSTILE.md](TURNSTILE.md) covers how it works, what it costs and how
+  much it stops (scripts and cheap proxies, not a bot that pays a solver
+  service), and how to switch it on in steps. It needs a widget and secret
+  made in mwarkentin/infra.
 - **Smaller snapshots.** Hidden words are deterministic, so a claim could
   be one bit in its chunk's word list. A fully charted sector's snapshot
   would shrink from 68 KB to a few hundred bytes plus initials. eieio
@@ -268,6 +560,11 @@ about 30 cents over the included million requests.
   custom domain, Cloudflare's cache could serve it as chessboards did.
 - **Zoomed-out views** only show live claims from the four nearest sectors.
   A cached per-sector snapshot could fill in the rest of the screen.
+- **The log, live.** The log page shows a day as it was when opened. It
+  could refetch the running hour every 15 s, or take claims from the
+  sector sockets the game already uses.
+- **The log by initials or by territory.** Each would need an index, so a
+  row written per claim more.
 - **Finds made offline stay personal.** Uploading them later would let
   anyone backdate a pile of claims at once.
 
@@ -278,6 +575,11 @@ cd worker
 npx wrangler@4.151.0 dev --port 8787     # the Worker and its Durable Objects, locally
 node bench/load.js http://127.0.0.1:8787 300 30   # 300 players for 30 s
 ```
+
+Each player in `load.js` sends its own `CF-Connecting-IP`, so the limits per
+address don't turn them away. Only `wrangler dev` believes that header:
+Cloudflare's edge sets it itself, so the same trick can't get round the
+limits on the real Worker.
 
 To play, serve the games from the repo root (`python3 -m http.server 8000`)
 and open `http://localhost:8000/letterfield.html?survey=http://localhost:8787`
@@ -295,3 +597,6 @@ Worker.
 [d1limits]: https://developers.cloudflare.com/d1/platform/limits/
 [wpricing]: https://developers.cloudflare.com/workers/platform/pricing/
 [dopricing]: https://developers.cloudflare.com/durable-objects/platform/pricing/
+[ratelimit]: https://developers.cloudflare.com/workers/runtime-apis/bindings/rate-limit/
+[turnstile]: https://developers.cloudflare.com/turnstile/
+[alarms]: https://developers.cloudflare.com/durable-objects/api/alarms/

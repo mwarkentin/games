@@ -10,14 +10,17 @@ import { afterEach, beforeEach, describe, mock, test } from 'node:test';
 import vm from 'node:vm';
 
 import worker from '../src/index.js';
-import { CH, DIRS, RG, THEMES, THEME_DATA, VOCAB, chunk, genChunk, keyOf, letterAt, regionTheme, wordEnd } from '../src/letterfield-world.js';
+import { CH, DIRS, RG, THEMES, THEME_DATA, VOCAB, chunk, genChunk, keyOf, letterAt, regionName, regionTheme, wordEnd } from '../src/letterfield-world.js';
 import {
-  AREA, AREA_WORDS, Atlas, BATCH_MS, CLAIM_BURST, CLAIM_REFILL_MS, MAX_ONLINE, MAX_PLAYERS, ONLINE_MS, PRESENCE_MAX, PRESENCE_MS,
-  QUIET, REPORT_MS, SAVE_MS, SAVE_POS_MS, SECTOR, SPAWN_MAX, Sector, VIEW_MS, checkClaim, routeSurvey,
+  ADDRESS_HEADER, ADDRESS_SOCKETS, AREA, AREA_WORDS, Atlas, BATCH_MS, DAILY_CLAIMS, DAILY_LIST_MAX, CLAIM_BURST, CLAIM_REFILL_MS, MAX_ONLINE, MAX_PLAYERS, ONLINE_MS, PRESENCE_MAX, PRESENCE_MS,
+  QUIET, REPORT_MS, UNPASSED_HEADER, SAVE_MS, SAVE_POS_MS, SECTOR, SPAWN_MAX, Sector, VIEW_MS, addressOf, checkClaim, routeSurvey,
 } from '../src/survey.js';
 
 const ORIGIN = 'https://games.michaelwarkentin.com';
 const NOW = Date.UTC(2026, 9, 29, 12);
+const DAY = 86400000;
+const TODAY = Math.floor(NOW / DAY);  // the UTC day, as the daily cap counts it
+const hashed = (n) => n.toString(16).padStart(64, '0');  // a stand-in for a hashed address
 
 // Runs the world code from letterfield.html itself, from its world constants
 // up to its formatting helpers, so the copy in src/ can be compared with it.
@@ -76,6 +79,14 @@ describe('the world copy', () => {
       assert.equal(regionTheme(Math.floor(cx / RG), Math.floor(cy / RG)), game.regionTheme(Math.floor(cx / RG), Math.floor(cy / RG)));
       assert.deepEqual(genChunk(cx, cy).words, JSON.parse(JSON.stringify(game.genChunk(cx, cy).words)), `words differ in chunk ${cx},${cy}`);
     }
+  });
+
+  test('names territories as the game does, for the survey\'s log', () => {
+    const game = gameWorld();
+    for (let ry = -AREA * 4; ry < (AREA + 1) * 4; ry += 3) {
+      for (let rx = -AREA * 4; rx < (AREA + 1) * 4; rx++) assert.equal(regionName(rx, ry), game.regionName(rx, ry), `${rx},${ry}`);
+    }
+    for (const [rx, ry] of [[1e5, -3e4], [-98765, 4321]]) assert.equal(regionName(rx, ry), game.regionName(rx, ry));
   });
 
   test('splits the map into the same sectors and shared world as the game', () => {
@@ -369,6 +380,92 @@ describe('Sector', () => {
     }
   });
 
+  // A stand-in for a rate-limiting binding: `max` calls per address, then no.
+  function fakeLimiter(max) {
+    const counts = new Map();
+    return {
+      counts,
+      limit: async ({ key }) => { counts.set(key, (counts.get(key) ?? 0) + 1); return { success: counts.get(key) <= max }; },
+    };
+  }
+
+  // Opens a socket the way the Worker does, from a hashed address; returns the server's end.
+  async function openFrom(address) {
+    let pair;
+    globalThis.WebSocketPair = function WebSocketPair() { pair = [fakeSocket(), fakeSocket()]; return { 0: pair[0], 1: pair[1] }; };
+    const RealResponse = Response;
+    globalThis.Response = class { constructor(body, init) { Object.assign(this, init); } };
+    try {
+      await sector.fetch(new Request('https://survey.test/v1/survey/0/0', { headers: { Upgrade: 'websocket', [ADDRESS_HEADER]: address } }));
+    } finally {
+      globalThis.Response = RealResponse;
+      delete globalThis.WebSocketPair;
+    }
+    return pair[1];
+  }
+
+  test('takes only so many sockets from one address', async () => {
+    const mine = [];
+    for (let i = 0; i < ADDRESS_SOCKETS; i++) mine.push(await openFrom('aaaa'));
+    assert.ok(mine.every((ws) => ws.sent[0].t === 'hello'));
+    const extra = await openFrom('aaaa');
+    assert.deepEqual(extra.sent, [{ t: 'full', world: false }]);
+    assert.equal(extra.code, 4000);
+    assert.equal((await openFrom('bbbb')).sent[0].t, 'hello');  // someone else still gets in
+
+    // When one leaves, the address has room again, including after the sector wakes.
+    mine[0].open = false;
+    await sector.webSocketClose(mine[0]);
+    sector = new Sector(state, {});
+    sector.now = () => clock;
+    assert.equal((await openFrom('aaaa')).sent[0].t, 'hello');
+    assert.equal((await openFrom('aaaa')).sent[0].t, 'full');
+  });
+
+  test('turns an address away when it opens sockets too fast, and lets everyone in if the limiter fails', async () => {
+    const joins = fakeLimiter(2);
+    sector = new Sector(state, { SURVEY_JOINS: joins });
+    assert.equal((await openFrom('aaaa')).sent[0].t, 'hello');
+    assert.equal((await openFrom('aaaa')).sent[0].t, 'hello');
+    assert.deepEqual((await openFrom('aaaa')).sent, [{ t: 'full', world: false }]);
+    assert.equal((await openFrom('bbbb')).sent[0].t, 'hello');
+    assert.deepEqual([...joins.counts], [['aaaa', 3], ['bbbb', 1]]);
+
+    sector = new Sector(state, { SURVEY_JOINS: { limit: async () => { throw new Error('limiter down'); } } });
+    assert.equal((await openFrom('aaaa')).sent[0].t, 'hello');
+  });
+
+  test('limits how fast one address can claim, across every sector', async () => {
+    const claims = fakeLimiter(3);
+    const env = { SURVEY_CLAIMS: claims };
+    sector = new Sector(state, env);
+    sector.now = () => clock;
+    const here = await openFrom('aaaa');
+    const otherState = fakeState();
+    const there = new Sector(otherState, env);
+    there.now = () => clock;
+    const far = fakeSocket();
+    there.join(far, 1, 0, 'aaaa');
+    const neighbour = await openFrom('bbbb');
+
+    // Each socket is well inside its own limit; together they pass the address's.
+    const words = chunk(0, 0).words, farWords = chunk(Math.floor(SECTOR / CH), 0).words;
+    await claim(here, words[0]);
+    await claim(here, words[1]);
+    await there.webSocketMessage(far, JSON.stringify({ t: 'claim', ...farWords[0] }));
+    await there.webSocketMessage(far, JSON.stringify({ t: 'claim', ...farWords[1] }));
+    await claim(here, words[2]);
+    mock.timers.tick(BATCH_MS);
+    assert.equal(here.sent.filter((m) => m.t === 'claimed').length, 2);
+    assert.equal(far.sent.filter((m) => m.t === 'claimed').length, 1);
+    assert.deepEqual(far.last('error'), { t: 'error', key: keyOf(farWords[1].w, farWords[1].x, farWords[1].y, farWords[1].d), error: 'slow down' });
+    assert.equal(here.last('error').error, 'slow down');
+    // The word is still there for whoever claims it next.
+    await claim(neighbour, words[2]);
+    mock.timers.tick(BATCH_MS);
+    assert.equal(neighbour.last('claimed').c[0], words[2].w);
+  });
+
   function reportingSector(reports) {
     const env = {
       ATLAS: {
@@ -399,7 +496,7 @@ describe('Sector', () => {
     const [a, b] = [join(2, -3), join(2, -3)];
     await claim(a, words[0]);
     await settle();
-    assert.deepEqual(reports, [{ sx: 2, sy: -3, players: 0, charted: countsFor(1), hot: [words[0].x, words[0].y] }]);
+    assert.deepEqual(reports, [{ sx: 2, sy: -3, players: 0, charted: countsFor(1), hot: [words[0].x, words[0].y], by: [], day: TODAY, overAt: 0 }]);
     assert.deepEqual(b.last('world'), { t: 'world', charted: 1001, total: AREA_WORDS, players: 40 });
 
     // Changes within REPORT_MS wait for the first message after it.
@@ -411,7 +508,7 @@ describe('Sector', () => {
     clock += REPORT_MS;
     await say(b, { t: 'pos', x: 401, y: -500 });
     await settle();
-    assert.deepEqual(reports[1], { sx: 2, sy: -3, players: 1, charted: countsFor(2), hot: [401, -500] });  // where the player is
+    assert.deepEqual(reports[1], { sx: 2, sy: -3, players: 1, charted: countsFor(2), hot: [401, -500], by: [], day: TODAY, overAt: 0 });  // where the player is
     assert.deepEqual(b.last('world'), { t: 'world', charted: 1002, total: AREA_WORDS, players: 40 });
     // Later joiners get the totals straight away.
     assert.deepEqual(join(2, -3).sent[1], { t: 'world', charted: 1002, total: AREA_WORDS, players: 40 });
@@ -445,6 +542,133 @@ describe('Sector', () => {
     assert.deepEqual(reports[1].charted, countsFor(2));
   });
 
+  test('counts words charted per address in its reports, and keeps them if a report fails', async () => {
+    const reports = [];
+    let fail = true;
+    sector = new Sector(state, {
+      ATLAS: {
+        idFromName: (name) => name,
+        get: () => ({
+          fetch: async (url, init) => {
+            if (fail) throw new Error('atlas evicted');
+            reports.push(JSON.parse(init.body));
+            return Response.json({ charted: 1, total: AREA_WORDS, players: 1, day: TODAY, overAt: 0 });
+          },
+        }),
+      },
+    });
+    sector.now = () => clock;
+    const [a, b] = [fakeSocket(), fakeSocket()];
+    sector.join(a, 2, -3, hashed(1));
+    sector.join(b, 2, -3, hashed(2));
+    await claim(a, words[0]);
+    await settle();
+    assert.equal(reports.length, 0);  // that report failed
+    fail = false;
+    clock += REPORT_MS;
+    await claim(a, words[1]);
+    await claim(b, words[2]);
+    await claim(b, words[2]);  // taken: charted only once
+    await settle();
+    assert.deepEqual(reports.at(-1).by, [[hashed(1), 2]]);  // the failed report's word, and the new one
+    clock += REPORT_MS;
+    await say(a, { t: 'pos', x: 400, y: -500 });
+    await settle();
+    assert.deepEqual(reports.at(-1).by, [[hashed(2), 1]]);
+  });
+
+  test('counts joins without a Turnstile pass in its reports, and keeps the count if a report fails', async () => {
+    const reports = [];
+    let fail = true;
+    sector = new Sector(state, {
+      ATLAS: {
+        idFromName: (name) => name,
+        get: () => ({
+          fetch: async (url, init) => {
+            if (fail) throw new Error('atlas evicted');
+            reports.push(JSON.parse(init.body));
+            return Response.json({ charted: 1, total: AREA_WORDS, players: 1, day: TODAY, overAt: 0 });
+          },
+        }),
+      },
+    });
+    sector.now = () => clock;
+    // Opens a socket as the Worker forwards it, with or without the Worker's mark.
+    async function open(unpassed) {
+      let pair;
+      globalThis.WebSocketPair = function WebSocketPair() { pair = [fakeSocket(), fakeSocket()]; return { 0: pair[0], 1: pair[1] }; };
+      const RealResponse = Response;
+      globalThis.Response = class { constructor(body, init) { Object.assign(this, init); } };
+      try {
+        const headers = { Upgrade: 'websocket', [ADDRESS_HEADER]: hashed(unpassed ? 1 : 2), ...(unpassed ? { [UNPASSED_HEADER]: '1' } : {}) };
+        await sector.fetch(new Request('https://survey.test/v1/survey/2/-3', { headers }));
+      } finally {
+        globalThis.Response = RealResponse;
+        delete globalThis.WebSocketPair;
+      }
+      return pair[1];
+    }
+    const bot = await open(true);
+    await open(true);
+    const player = await open(false);
+    assert.equal(bot.sent[0].t, 'hello');  // counted, not refused
+    await say(player, { t: 'pos', x: 400, y: -500 });
+    await settle();
+    assert.equal(reports.length, 0);  // that report failed
+    fail = false;
+    clock += REPORT_MS;
+    await say(player, { t: 'pos', x: 410, y: -500 });
+    await settle();
+    assert.equal(reports.at(-1).unpassed, 2);
+    // Nothing new: the report leaves it out.
+    await claim(player, words[0]);
+    clock += REPORT_MS;
+    await say(player, { t: 'pos', x: 420, y: -500 });
+    await settle();
+    assert.equal(reports.length, 2);
+    assert.equal('unpassed' in reports.at(-1), false);
+  });
+
+  test('refuses claims from addresses past the daily cap, once the Atlas says so', async () => {
+    const atlasObject = new Atlas(fakeState(), {});
+    atlasObject.now = () => clock;
+    const env = { ATLAS: { idFromName: (name) => name, get: () => ({ fetch: (url, init) => atlasObject.fetch(new Request(url, init)) }) } };
+    const busy = hashed(1), other = hashed(2);
+    atlasObject.countCharted([[busy, DAILY_CLAIMS - 1]]);
+
+    // Sector 2,-3 credits the address's last word for today, reports it, and hears it's over.
+    sector = new Sector(state, env);
+    sector.now = () => clock;
+    const [mine, theirs] = [fakeSocket(), fakeSocket()];
+    sector.join(mine, 2, -3, busy);
+    sector.join(theirs, 2, -3, other);
+    await claim(mine, words[0]);
+    await settle();
+    assert.equal(mine.sent.filter((m) => m.t === 'claimed').length, 1);
+    await claim(mine, words[1]);
+    assert.deepEqual(mine.last('error'), { t: 'error', key: keyOf(words[1].w, words[1].x, words[1].y, words[1].d), error: 'daily limit' });
+    await claim(theirs, words[1]);
+    mock.timers.tick(BATCH_MS);
+    assert.equal(theirs.last('claimed').c[0], words[1].w);  // everyone else carries on
+
+    // Sector 0,0 learns the list with its own next report, so the address gets no further there.
+    const elsewhere = new Sector(fakeState(), env);
+    elsewhere.now = () => clock;
+    const [mineThere, theirsThere] = [fakeSocket(), fakeSocket()];
+    elsewhere.join(mineThere, 0, 0, busy);
+    elsewhere.join(theirsThere, 0, 0, other);
+    await elsewhere.webSocketMessage(theirsThere, JSON.stringify({ t: 'claim', ...placed(0, 0) }));
+    await settle();
+    await elsewhere.webSocketMessage(mineThere, JSON.stringify({ t: 'claim', ...placed(0, 0, 1) }));
+    assert.equal(mineThere.last('error').error, 'daily limit');
+
+    // A new day, a new count.
+    clock += DAY;
+    await claim(mine, words[2]);
+    mock.timers.tick(BATCH_MS);
+    assert.equal(mine.last('claimed').c[0], words[2].w);
+  });
+
   test('keeps sectors outside the shared world to themselves', async () => {
     const env = { ATLAS: { idFromName: () => 'atlas', get: () => assert.fail('reported') } };
     sector = new Sector(state, env);
@@ -458,24 +682,45 @@ describe('Sector', () => {
 });
 
 describe('Atlas', () => {
-  let state, atlasObject, clock;
+  let state, atlasObject, clock, logged;
   beforeEach(() => {
+    logged = mock.method(console, 'log', () => {});
     mock.timers.enable({ apis: ['setTimeout'] });
     state = fakeState();
     atlasObject = new Atlas(state, {});
     clock = NOW;
     atlasObject.now = () => clock;
   });
-  afterEach(() => mock.timers.reset());
+  afterEach(() => { mock.timers.reset(); logged.mock.restore(); });
 
   const counts = (...n) => [...n, ...Array(16 - n.length).fill(0)];
-  async function report(body) {
+  const logs = (kind) => logged.mock.calls.map((c) => c.arguments[0]).filter((l) => l?.survey === kind);
+  // A report, and the Atlas's answer: by default only the world's totals.
+  async function report(body, { all = false } = {}) {
     const response = await atlasObject.fetch(new Request('https://atlas/report', { method: 'POST', body: JSON.stringify(body) }));
-    return [response.status, await response.json()];
+    const answer = await response.json();
+    if (all || response.status !== 200) return [response.status, answer];
+    const { charted, total, players } = answer;
+    return [response.status, { charted, total, players }];
   }
   async function worldMap() {
     return (await atlasObject.fetch(new Request('https://atlas/world'))).json();
   }
+
+  test('adds up joins without a pass for the UTC day, and keeps yesterday\'s', async () => {
+    await report({ sx: 0, sy: 0, players: 3, charted: counts(5), unpassed: 3 });
+    await report({ sx: 1, sy: 0, players: 1, charted: counts(1), unpassed: 2 });
+    await report({ sx: 1, sy: 0, players: 1, charted: counts(1) });  // older sectors send none
+    let map = await worldMap();
+    assert.equal(map.today.day, TODAY);
+    assert.equal(map.today.unpassed, 5);
+    clock += DAY;
+    await report({ sx: 0, sy: 0, players: 3, charted: counts(5), unpassed: 1 });
+    map = await worldMap();
+    assert.deepEqual([map.today.day, map.today.unpassed], [TODAY + 1, 1]);
+    assert.deepEqual([map.yesterday.day, map.yesterday.unpassed], [TODAY, 5]);
+    for (const unpassed of [-1, 1.5, '2', 1e7]) assert.equal((await report({ sx: 0, sy: 0, players: 0, charted: counts(), unpassed }))[0], 400);
+  });
 
   test('adds up what sectors report', async () => {
     assert.deepEqual(await report({ sx: 0, sy: 0, players: 3, charted: counts(5, 2) }), [200, { charted: 7, total: AREA_WORDS, players: 3 }]);
@@ -485,10 +730,88 @@ describe('Atlas', () => {
     assert.deepEqual((await report({ sx: 0, sy: 0, players: 0, charted: counts(6, 2) }))[1], { charted: 9, total: AREA_WORDS, players: 2 });
   });
 
+  test('counts what each address charts today, and lists those past the daily cap', async () => {
+    const base = { players: 1, charted: counts(), day: TODAY, overAt: 0 };
+    const [, first] = await report({ ...base, sx: 0, sy: 0, by: [[hashed(1), DAILY_CLAIMS - 100]] }, { all: true });
+    assert.deepEqual([first.day, first.overAt, first.over], [TODAY, 0, undefined]);  // nothing new for this sector
+    // Counts add up across sectors.
+    const [, second] = await report({ ...base, sx: 1, sy: 0, by: [[hashed(1), 100], [hashed(2), 5]] }, { all: true });
+    assert.deepEqual([second.overAt, second.over], [1, [hashed(1)]]);
+    assert.equal((await report({ ...base, sx: 1, sy: 0, overAt: 1 }, { all: true }))[1].over, undefined);  // already heard
+    assert.deepEqual((await report({ ...base, sx: 2, sy: 0 }, { all: true }))[1].over, [hashed(1)]);  // hasn't yet
+    // Going further past the cap doesn't list an address twice.
+    assert.equal((await report({ ...base, sx: 0, sy: 0, by: [[hashed(1), 3]] }, { all: true }))[1].overAt, 1);
+
+    clock += DAY;
+    const [, tomorrow] = await report({ ...base, sx: 0, sy: 0, day: TODAY, overAt: 1, by: [[hashed(2), 1]] }, { all: true });
+    assert.deepEqual([tomorrow.day, tomorrow.overAt, tomorrow.over], [TODAY + 1, 0, []]);
+  });
+
+  test('hands out only the latest addresses past the cap', async () => {
+    const many = Array.from({ length: DAILY_LIST_MAX + 5 }, (_, i) => [hashed(i + 1), DAILY_CLAIMS]);
+    atlasObject.countCharted(many);
+    const [, answer] = await report({ sx: 0, sy: 0, players: 0, charted: counts() }, { all: true });
+    assert.equal(answer.overAt, DAILY_LIST_MAX + 5);
+    assert.deepEqual(answer.over, many.slice(5).map(([a]) => a));
+  });
+
+  test('keeps the day\'s numbers for the world map, and yesterday\'s', async () => {
+    const base = { charted: counts(), day: TODAY, overAt: 0 };
+    await report({ ...base, sx: 0, sy: 0, players: 3, by: [[hashed(1), 40], [hashed(2), 2]] });
+    clock += 60000;  // 3 players for a minute
+    await report({ ...base, sx: 1, sy: 0, players: 1, by: [[hashed(1), DAILY_CLAIMS - 40]] });
+    clock += 30 * 60000;  // both sectors went quiet, so their players stopped counting as online
+    await report({ ...base, sx: 1, sy: 0, players: 0 });
+    let map = await worldMap();
+    assert.deepEqual(map.today, { day: TODAY, charted: DAILY_CLAIMS + 2, addresses: 2, capped: 1, playerHours: 0.05, unpassed: 0 });
+    assert.equal(map.yesterday, null);
+
+    clock += DAY;
+    await report({ ...base, sx: 0, sy: 0, players: 0 });
+    clock += VIEW_MS;
+    map = await worldMap();
+    assert.equal(map.yesterday.charted, DAILY_CLAIMS + 2);
+    assert.equal(map.yesterday.capped, 1);
+    assert.deepEqual({ ...map.today, playerHours: 0 }, { day: TODAY + 1, charted: 0, addresses: 0, capped: 0, playerHours: 0, unpassed: 0 });
+
+    // A day with nothing to hear about is a day of zeros, not a repeat of the last busy one.
+    clock += 2 * DAY;
+    await report({ ...base, sx: 0, sy: 0, players: 0 });
+    clock += VIEW_MS;
+    assert.deepEqual((await worldMap()).yesterday, { day: TODAY + 2, charted: 0, addresses: 0, capped: 0, playerHours: 0, unpassed: 0 });
+  });
+
+  test('logs each hour\'s numbers, and each address reaching the cap, never the address', async () => {
+    clock = Math.floor(NOW / 3600000) * 3600000;  // on the hour
+    const base = { charted: counts(), day: TODAY, overAt: 0 };
+    await report({ ...base, sx: 0, sy: 0, players: 2, by: [[hashed(7), DAILY_CLAIMS]] });
+    assert.deepEqual(logs('daily cap'), [{ survey: 'daily cap', capped: 1 }]);
+    assert.ok(!JSON.stringify(logged.mock.calls.map((c) => c.arguments)).includes(hashed(7)));
+    clock += 60000;
+    await report({ ...base, sx: 0, sy: 0, players: 2, by: [[hashed(8), 10]] });
+    assert.equal(logs('hour').length, 0);
+    clock += 3600000;
+    await report({ ...base, sx: 0, sy: 0, players: 2 });
+    const [hour] = logs('hour');
+    assert.equal(hour.hour, new Date(clock - 3600000 - 60000).toISOString());
+    // 310 words in 2 players' minute: a rate no person reaches.
+    assert.deepEqual({ ...hour, today: undefined }, {
+      survey: 'hour', hour: hour.hour, charted: DAILY_CLAIMS + 10, playerHours: 0.03, perPlayerHour: 9300, today: undefined,
+    });
+    assert.equal(hour.today.capped, 1);
+  });
+
   test('stops counting players whose sector has gone quiet', async () => {
     await report({ sx: 0, sy: 0, players: 3, charted: counts(1) });
     clock += ONLINE_MS;
     assert.deepEqual((await report({ sx: 1, sy: 0, players: 1, charted: counts() }))[1], { charted: 1, total: AREA_WORDS, players: 1 });
+  });
+
+  test('refuses words charted by addresses it cannot read', async () => {
+    const base = { sx: 0, sy: 0, players: 0, charted: counts() };
+    for (const by of ['nope', [['not a hash', 1]], [[hashed(1), 0]], [[hashed(1), 1.5]], [[hashed(0xabc).toUpperCase(), 1]]]) {
+      assert.equal((await report({ ...base, by }))[0], 400, JSON.stringify(by));
+    }
   });
 
   test('refuses reports it cannot use', async () => {
@@ -624,11 +947,10 @@ describe('routeSurvey', () => {
     ALLOWED_ORIGINS: ORIGIN,
     SECTORS: {
       idFromName: (name) => ({ name }),
-      get: (id) => ({ fetch: async (request) => { forwarded.push([id.name, request.url]); return new Response('ok'); } }),
+      get: (id) => ({ fetch: async (request) => { forwarded.push([id.name, request.url, request.headers]); return new Response('ok'); } }),
     },
   };
-  const open = (path, { origin = ORIGIN, upgrade = 'websocket', method = 'GET' } = {}) => {
-    const headers = {};
+  const open = (path, { origin = ORIGIN, upgrade = 'websocket', method = 'GET', headers = {} } = {}) => {
     if (origin) headers.Origin = origin;
     if (upgrade) headers.Upgrade = upgrade;
     return routeSurvey(new Request(`https://survey.test${path}`, { method, headers }), env);
@@ -639,6 +961,23 @@ describe('routeSurvey', () => {
     await open('/v1/survey/-3/12');
     await open('/v1/survey/-0/007');
     assert.deepEqual(forwarded.map(([name]) => name), ['0,0', '-3,12', '0,7']);
+  });
+
+  test('tells the sector who is connecting by a salted hash of their address, never the address', async () => {
+    const addressFor = async (ip, extra = {}) => {
+      await open('/v1/survey/0/0', { headers: { 'CF-Connecting-IP': ip, ...extra } });
+      return forwarded.at(-1)[2].get(ADDRESS_HEADER);
+    };
+    const a = await addressFor('203.0.113.7');
+    assert.match(a, /^[0-9a-f]{64}$/);
+    assert.equal(await addressFor('203.0.113.7', { [ADDRESS_HEADER]: 'chosen-by-me' }), a);
+    assert.notEqual(await addressFor('203.0.113.8'), a);
+    // Everything in one IPv6 /64 is one address.
+    const v6 = await addressFor('2001:db8:aa:bb:1:2:3:4');
+    assert.equal(await addressFor('2001:db8:aa:bb::9'), v6);
+    assert.notEqual(await addressFor('2001:db8:aa:bc::9'), v6);
+    env.IP_SALT = 'pepper';
+    try { assert.notEqual(await addressFor('203.0.113.7'), a); } finally { delete env.IP_SALT; }
   });
 
   test('turns away other origins and plain requests', async () => {
@@ -684,6 +1023,15 @@ describe('routeSurvey', () => {
     }
     assert.equal(routeSurvey(new Request('https://survey.test/v1/survey/0/0'), {}), null);
   });
+});
+
+test('addressOf keeps IPv4 addresses whole and IPv6 ones to their /64', () => {
+  assert.equal(addressOf('198.51.100.20'), '198.51.100.20');
+  assert.equal(addressOf('2001:DB8:0:1:aaaa:bbbb:cccc:dddd'), '2001:db8:0:1::/64');
+  assert.equal(addressOf('2001:db8::1'), '2001:db8:0:0::/64');
+  assert.equal(addressOf('::1'), '0:0:0:0::/64');
+  assert.equal(addressOf('2001:db8:0:1::'), '2001:db8:0:1::/64');
+  assert.equal(addressOf('nonsense:zz'), 'nonsense:zz');
 });
 
 test('a word never crosses a sector edge', () => {

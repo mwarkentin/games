@@ -387,3 +387,63 @@ def test_rooms_stay_hidden_without_a_server(page: Page, site_url, errors):
     expect(page.locator("#soloBtn")).to_be_visible()
     expect(page.locator("#friends")).to_be_hidden()
     assert errors == []
+
+
+MUSIC = "window.__war.music()"
+
+
+def test_every_song_plays_well_below_clipping(page: Page, site_url, errors):
+    page.goto(f"{site_url}/war#debug")
+    levels = page.evaluate("window.__war.musicLevels()")
+    assert sorted(levels) == sorted(page.evaluate(f"{MUSIC}.songs"))
+    for name, level in levels.items():
+        assert level["peak"] < 0.8, f"{name} is too loud"
+        assert level["rms"] > 0.02, f"{name} is too quiet"
+        assert level["seconds"] > 3, f"{name} is too short"
+    assert errors == []
+
+
+def test_music_follows_the_game_and_can_be_turned_off(page: Page, site_url, errors):
+    page.goto(f"{site_url}/war?seed=7#debug")
+    assert page.evaluate(f"{MUSIC}.playing") is None, "no music before the first tap"
+    page.click("#menu h1")
+    page.wait_for_function(f"{MUSIC}.playing === 'menu'")
+    page.click("#soloBtn")
+    page.wait_for_function(f"{MUSIC}.playing === 'battle'")
+    page.wait_for_function(f"{STATE}.canSlam")
+    # Seed 7: the first battle is a tie, then a double war.
+    page.evaluate("window.__war.slam(60)")
+    page.wait_for_function(f"{MUSIC}.playing === 'war'")
+    page.wait_for_function(f"{STATE}.stage === 1 && {STATE}.canSlam")
+    page.evaluate("window.__war.slam(60)")
+    page.wait_for_function(f"{MUSIC}.playing === 'war2'")
+
+    toggle = page.locator("#app .music-toggle")
+    toggle.click()
+    assert page.evaluate(f"{MUSIC}.playing") is None
+    expect(toggle).to_have_attribute("aria-label", "Music off")
+    expect(toggle).to_have_class(re.compile(r"\boff\b"))
+    assert page.evaluate("JSON.parse(localStorage.getItem('war:music'))") is False
+    toggle.click()
+    page.wait_for_function(f"{MUSIC}.playing === 'war2'")
+
+    page.evaluate("window.__war.finish()")
+    expect(page.locator("#over")).to_be_visible()
+    page.wait_for_function(f"['win', 'lose'].includes({MUSIC}.playing)")
+    page.wait_for_function(f"{MUSIC}.playing === null", timeout=15_000)  # a jingle plays once
+    page.click("#overMenuBtn")
+    page.wait_for_function(f"{MUSIC}.playing === 'menu'")
+    assert errors == []
+
+
+def test_music_stays_off_once_turned_off(page: Page, site_url, errors):
+    page.goto(f"{site_url}/war#debug")
+    page.click("#menu .music-toggle")
+    page.reload()
+    expect(page.locator("#menu .music-toggle")).to_have_attribute("aria-label", "Music off")
+    page.click("#soloBtn")
+    page.wait_for_function(f"{STATE}.canSlam")
+    assert page.evaluate(f"{MUSIC}.playing") is None
+    # Sound effects have a switch of their own.
+    expect(page.locator("#app .sound-toggle")).to_have_attribute("aria-label", "Sound effects on")
+    assert errors == []

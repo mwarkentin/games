@@ -1,0 +1,21 @@
+# Page previews: every pull request's own build of the site, served as static
+# assets by a Worker Preview of this Worker at
+# https://pr-<number>-games-preview.mwarkentin.workers.dev. The Preview
+# workflow (.github/workflows/preview.yml) builds _site/, points it at the
+# pull request's Worker Preview with scripts/point_preview.py, then runs
+# `wrangler preview` here. See "Previews" in AGENTS.md.
+#
+# This Worker is never deployed to production: the live site is GitHub
+# Pages. It has no code, only assets, so it needs no bindings or secrets.
+name = "games-preview"
+compatibility_date = "2026-10-01"
+
+# /war is served from war.html and /war.html redirects to /war, as on
+# GitHub Pages. Wrangler uploads the branch's own _site/ for each Preview.
+[assets]
+directory = "../_site"
+html_handling = "auto-trailing-slash"
+
+# Previews take nothing from the top level but the assets and compatibility
+# date, and there's nothing else to set.
+[previews]

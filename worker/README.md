@@ -11,8 +11,12 @@ played.
 
 The same Worker hosts Letterfield's shared survey, an experiment in many
 players exploring one map at once: a Durable Object per sector of the map,
-reached over WebSockets. [SURVEY.md](SURVEY.md) covers its design, its API
-and how far it scales.
+reached over WebSockets, with a log of every word charted in D1 for
+`letterfield-log.html`. [SURVEY.md](SURVEY.md) covers its design, its API
+(the log's under "The log") and how far it scales, and [TURNSTILE.md](TURNSTILE.md) an optional
+Turnstile check before joining: passes are handed out once the
+`TURNSTILE_SECRET` secret is set, and required only once
+`TURNSTILE_REQUIRED` is `"true"` in `wrangler.toml`.
 
 ## API
 
@@ -75,6 +79,13 @@ group.
 score is kept. A copy is a few hundred bytes with its indexes, so the free
 plan's 500 MB holds hundreds of thousands of saves.
 
+The survey's log is the `survey_log` table in a second database,
+`games-survey-log` (binding `LOG_DB`, migrations in `migrations-log/`), one
+row per word charted, copied there by each sector (see "The log" in
+SURVEY.md). The whole shared world would be about 1.1 million rows and
+100 MB. mwarkentin/infra makes it too; its id (the `survey_log_database_id`
+output) goes in `wrangler.toml`.
+
 D1 counts every row a query scans against the plan's allowance, so each
 view reads through an index of its own (named with `INDEXED BY` in
 `src/leaderboard.js`, and checked with `EXPLAIN QUERY PLAN` in the tests).
@@ -92,7 +103,7 @@ client's IP address included.
 `src/leaderboard.js` holds the logic and `src/index.js` only exports the
 Worker and the Durable Object classes: the runtime treats every
 export of the main module as an entry point, so constants exported for tests
-can't live there. `src/survey.js` and `src/letterfield-world.js` are the
+can't live there. `src/survey.js`, `src/survey-log.js` and `src/letterfield-world.js` are the
 survey.
 
 ## War rooms
@@ -169,7 +180,8 @@ keep their leaderboards hidden. After that:
    Actions tab, or push a change under `worker/`. It applies migrations,
    then deploys with `IP_SALT` as a Worker secret. Wrangler makes the
    Durable Object classes (War's rooms, and the survey's sectors and Atlas)
-   from the `[[migrations]]` in `wrangler.toml`. The Worker answers at
+   from the `[[migrations]]` in `wrangler.toml`, and the survey's
+   per-address rate limiters from its `[[ratelimits]]`. The Worker answers at
    `https://games-leaderboard.mwarkentin.workers.dev`.
 2. **The games already point at it:** `LEADERBOARD_URL` in
    `funnels-and-buckets.html`, `doodle-chomp.html` and
@@ -185,13 +197,67 @@ would put them back. To replace the token, see mwarkentin/infra's README.
 Optional: serve the Worker from your own domain (such as
 `api.games.michaelwarkentin.com`). That needs the domain's DNS on
 Cloudflare, which mwarkentin/infra would manage; the `workers.dev` URL
-works without it.
+works without it. On a custom domain the survey log's settled hours and
+days are also kept in Cloudflare's cache (the Cache API does nothing on
+`workers.dev`).
+
+## Previews
+
+Every pull request whose branch changes `worker/` from `main`'s, stacked
+pull requests included, gets a
+[Worker Preview](https://developers.cloudflare.com/workers/previews/): its
+own copy of the Worker at
+`https://pr-<number>-games-leaderboard.mwarkentin.workers.dev`. The
+**Preview** workflow (`.github/workflows/preview.yml`) makes it, then builds
+the pull request's own copy of the site at
+`https://pr-<number>-games-preview.mwarkentin.workers.dev` with its games
+pointed at the Worker Preview (see Previews in `AGENTS.md`), comments on the
+pull request with both, and deletes both when the pull request closes. It's
+the way to try War's rooms or the survey with real phones before merging.
+
+- **Origins:** the Worker Preview allows its own pull request's site
+  preview, on top of `ALLOWED_ORIGINS` in `[previews.vars]`: the workflow
+  passes the longer list with `--var` to that Preview alone. Production's
+  `ALLOWED_ORIGINS` never includes a preview, so previews of pages without a
+  Worker Preview can't write to production.
+
+- **Durable Objects** are the Preview's own: its rooms and survey start
+  empty and never touch production's, and go when it's deleted.
+- **Scores and groups** go to `games-leaderboard-previews`, a database of
+  test scores that all Previews share. The workflow applies the branch's
+  migrations to it first, with `wrangler.previews-migrations.toml`, since
+  `wrangler d1` reads only a config file's top-level databases. A branch's
+  migrations stay on it after the branch closes; if that gets in the way,
+  empty the database or replace it in mwarkentin/infra.
+- **The survey log** goes to `games-survey-log-previews` in the same way,
+  shared by every Preview and holding only test words.
+- **Settings** aren't inherited: `[previews]` in `wrangler.toml` sets the
+  variables, the database, the Durable Object bindings and the rate limits
+  (counted apart from production's) again. Keep it in step with the
+  production settings above it. Observability is inherited.
+- **Secrets:** each Preview gets `PREVIEW_IP_SALT` as its `IP_SALT`, never
+  production's salt. Turnstile stays off.
+
+mwarkentin/infra makes the database and the salt. The site previews'
+Worker, `games-preview` (`../preview/wrangler.toml`), needs nothing from it
+but the same token: the first Preview creates the Worker. Previews are public URLs,
+like production's, and only accept writes from `ALLOWED_ORIGINS`. The free
+plan keeps up to 100 per Worker, dropping the one deployed to least recently.
+To try one by hand from a branch, after applying migrations as the workflow
+does:
+
+```sh
+cd worker
+npx wrangler@4.151.0 preview --name my-branch
+npx wrangler@4.151.0 preview delete --name my-branch
+```
 
 ## Local development
 
 ```sh
 cd worker
 npx wrangler@4.151.0 d1 migrations apply games-leaderboard --local
+npx wrangler@4.151.0 d1 migrations apply games-survey-log --local
 echo "IP_SALT=dev" > .dev.vars
 npx wrangler@4.151.0 dev --port 8787
 ```

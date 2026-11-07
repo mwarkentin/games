@@ -4,7 +4,12 @@
 // Objects; tests import this module directly.
 //
 //   GET /v1/survey/<sx>/<sy>   WebSocket for one sector of the map
-//   GET /v1/survey/world       the world map: charted territories, players, where to start
+//   GET /v1/survey/world       the world map: charted territories, players, where to start,
+//                              and today's and yesterday's numbers (see Atlas.stats)
+//   POST /v1/survey/pass       a Turnstile token for a pass (survey-pass.js), while TURNSTILE_SECRET
+//                              is set; joins need one only once TURNSTILE_REQUIRED is "true"
+//   GET /v1/survey/log/...     the survey's log: every word charted, by hour (survey-log.js).
+//                              Each sector copies its new claims to D1 from an alarm (flushLog).
 //
 // The map is split into sectors of 4×4 territories (192×192 cells), and each
 // sector is its own Durable Object: one single-threaded room that holds the
@@ -35,14 +40,30 @@
 //   {t: 'hello', you, sector, claims}   on joining; claims are [w, x, y, d, s, initials, at]
 //   {t: 'claimed', c, by}           a new claim, to everyone; `by` is the claimer's id
 //   {t: 'taken', c}                 to a claimer who wasn't first
-//   {t: 'error', key, error}        to a claimer, for a word that isn't there
+//   {t: 'error', key, error}        to a claimer, for a word that isn't there, 'slow down'
+//                                   when the socket or its address claims too fast, or
+//                                   'daily limit' once its address has charted DAILY_CLAIMS today
 //   {t: 'presence', n, p}           players here ([id, initials, x, y]), about once a second
 //   {t: 'world', charted, total, players}   the whole world's totals, as they change
+//   {t: 'unverified'}               from the Worker, while TURNSTILE_REQUIRED is "true", for a join
+//                                   without a good pass, which then
+//                                   closes with code 4001: the game gets a new pass and retries
 //   {t: 'full', world}              no room in the sector (or, with world: true, in the whole
-//                                   survey); the socket then closes with code 4000
+//                                   survey), or the player's address holds or opens too many
+//                                   sockets; the socket then closes with code 4000
+//
+// Limits per address (see "Bots" in SURVEY.md): the Worker hands each sector
+// a salted hash of the player's IP address, never the address itself. A
+// sector takes at most ADDRESS_SOCKETS sockets from one address, and two
+// rate-limiting bindings, set in wrangler.toml, count joins and claims per
+// address across every sector. For a daily cap, sectors in the shared world
+// add each address's charted words to their reports, and the Atlas answers
+// with the addresses past DAILY_CLAIMS today, which every sector then refuses.
 
-import { BLOCKED_INITIALS, INITIALS, corsHeaders } from './leaderboard.js';
+import { BLOCKED_INITIALS, INITIALS, corsHeaders, hashAddress, json } from './leaderboard.js';
+import { PASS_PATH, checkPass, handlePass } from './survey-pass.js';
 import { CH, DIRS, RC, VOCAB, chunk, fdiv, keyOf, letterAt } from './letterfield-world.js';
+import { LOG_BATCH, LOG_MS, LOG_RETRY_MAX_MS, writeLog } from './survey-log.js';
 
 export const SECTOR = RC * 4;         // cells per sector side
 export const MAX_PLAYERS = 750;       // sockets one sector accepts (bench/load.js: one sector saturates between 750 and 1,000)
@@ -61,6 +82,14 @@ export const SPAWN_MAX = 300;         // new players join the biggest crowd with
 export const MAX_ONLINE = 25000;      // players the whole survey takes at once: a ceiling on the bill
 export const QUIET = 32;              // a sector with fewer sockets than this sets short timers
 export const SAVE_POS_MS = 5000;      // a moving player's position is saved to their socket this often
+export const ADDRESS_SOCKETS = 40;    // sockets one address can hold in one sector (a classroom shares an address)
+export const ADDRESS_HEADER = 'X-Survey-Address';  // the hashed address, from the Worker to the sector
+export const UNPASSED_HEADER = 'X-Survey-Unpassed';  // '1' on a join without a good Turnstile pass, from the Worker
+export const DAILY_CLAIMS = 300;      // words one address can chart in the shared world each UTC day
+export const DAILY_LIST_MAX = 2000;   // addresses past the daily cap that the Atlas hands out, latest first
+const DAY_MS = 86400000;
+const HOUR_MS = 3600000;
+const HASH = /^[0-9a-f]{64}$/;
 const TERR = SECTOR / RC;             // territories per sector side
 const MAX_MESSAGE = 256;
 const LIMIT = 1e9;                    // the game's map runs to ±1e9 cells
@@ -97,20 +126,75 @@ export function checkClaim(claim, sx, sy) {
 // Answers the survey's paths, or returns null for any other path: a sector's
 // WebSocket goes to its Durable Object, and the world map comes from the
 // Atlas through a short cache. CORS doesn't cover WebSockets, so the origin
-// is checked here.
+// is checked here. With TURNSTILE_SECRET set, POST /v1/survey/pass hands out
+// passes (see survey-pass.js and TURNSTILE.md). A join without a good pass is
+// turned away only when TURNSTILE_REQUIRED is "true"; until then it goes
+// ahead, marked so its sector counts it.
 export function routeSurvey(request, env) {
-  const { pathname } = new URL(request.url);
-  const m = pathname.match(SECTOR_PATH);
-  const world = pathname === WORLD_PATH;
-  if (!(m && env.SECTORS) && !(world && env.ATLAS)) return null;
+  const url = new URL(request.url);
+  const m = url.pathname.match(SECTOR_PATH);
+  const world = url.pathname === WORLD_PATH;
+  const passing = url.pathname === PASS_PATH;
+  if (!(m && env.SECTORS) && !(world && env.ATLAS) && !(passing && env.SECTORS)) return null;
   const cors = corsHeaders(request, env);
   const text = (body, status) => new Response(body, { status, headers: { ...cors, 'Content-Type': 'text/plain' } });
+  if (passing) {
+    if (request.method !== 'POST') return text('method not allowed', 405);
+    return addressHash(request, env).then((address) => handlePass(request, env, address, cors, json));
+  }
   if (request.method !== 'GET') return text('method not allowed', 405);
   if (world) return worldMap(env, cors);
   if (!cors['Access-Control-Allow-Origin']) return text('origin not allowed', 403);
   if (request.headers.get('Upgrade') !== 'websocket') return text('expected a WebSocket', 426);
   const name = `${Number(m[1])},${Number(m[2])}`;
-  return env.SECTORS.get(env.SECTORS.idFromName(name)).fetch(request);
+  return (async () => {
+    const address = await addressHash(request, env);
+    const unpassed = !!env.TURNSTILE_SECRET && !(await checkPass(env.TURNSTILE_SECRET, address, url.searchParams.get('pass')));
+    if (unpassed && turnstileRequired(env)) return unverified();
+    // The pass stays here: the sector only needs the path, the address and
+    // whether the join had a pass. The Worker sets both headers itself, so a
+    // player can't choose either.
+    url.search = '';
+    const headers = new Headers(request.headers);
+    headers.set(ADDRESS_HEADER, address);
+    headers.delete(UNPASSED_HEADER);
+    if (unpassed) headers.set(UNPASSED_HEADER, '1');
+    return env.SECTORS.get(env.SECTORS.idFromName(name)).fetch(new Request(url, { headers }));
+  })();
+}
+
+// Whether joins without a pass are turned away: a var in wrangler.toml, so
+// passes can be handed out (and joins without one counted) before anyone is
+// refused.
+export const turnstileRequired = (env) => env.TURNSTILE_REQUIRED === true || env.TURNSTILE_REQUIRED === 'true';
+
+// A join without a good pass, while passes are required, is answered by the Worker itself, without waking
+// the sector, and in words the game can read: a browser learns nothing from a
+// refused WebSocket upgrade.
+function unverified() {
+  const [client, server] = Object.values(new WebSocketPair());
+  server.accept();
+  send(server, { t: 'unverified' });
+  server.close(4001, 'survey pass needed');
+  return new Response(null, { status: 101, webSocket: client });
+}
+
+// The player's address as the survey counts it, salted and hashed. The
+// Worker sets the header the sector reads itself, so a player can't choose
+// their own.
+const addressHash = (request, env) => hashAddress(addressOf(request.headers.get('CF-Connecting-IP') || 'unknown'), env.IP_SALT);
+
+// The part of an IP address that names one household or device: all of an
+// IPv4 address, or the /64 network of an IPv6 one, since a device can pick
+// any address in its /64 and change it at will.
+export function addressOf(ip) {
+  if (!ip.includes(':')) return ip;
+  const [head, tail] = ip.toLowerCase().split('::');
+  const before = head ? head.split(':') : [];
+  const after = tail === undefined ? [] : tail ? tail.split(':') : [];
+  const groups = tail === undefined ? before : [...before, ...Array(Math.max(0, 8 - before.length - after.length)).fill('0'), ...after];
+  const prefix = groups.slice(0, 4).map((g) => parseInt(g, 16));
+  return prefix.length === 4 && prefix.every((g) => g >= 0 && g <= 0xffff) ? `${prefix.map((g) => g.toString(16)).join(':')}::/64` : ip;
 }
 
 // Each Worker instance asks the Atlas for the world map at most once per
@@ -156,9 +240,23 @@ export class Sector {
     this.counts = null;      // hidden words charted in each of the sector's 16 territories, likewise
     this.world = null;       // the last totals the Atlas sent back
     this.people = null;      // socket → its attachment, read from the sockets on first use after waking
+    this.chartedBy = new Map();  // address → words it charted here since the last report
+    this.unpassed = 0;           // joins without a Turnstile pass since the last report (a bot signal)
+    this.overDay = -1;       // the UTC day `over` is for
+    this.over = new Set();   // addresses past the daily cap today, as the Atlas last said
+    this.overAt = 0;         // how many the Atlas had counted then; it only resends the list when this changes
+    this.logAt = 0;          // when the log alarm is set for, if this object set it since waking
+    this.logFails = 0;       // log writes that have failed in a row
+    this.logChecked = false; // whether this object has looked for claims the log is missing since waking
+    this.lastAt = null;      // the latest claim's time, read on the first claim after waking
     this.sql.exec(`CREATE TABLE IF NOT EXISTS claims (
       key TEXT PRIMARY KEY, w TEXT NOT NULL, x INTEGER NOT NULL, y INTEGER NOT NULL, d INTEGER NOT NULL,
       s INTEGER NOT NULL, initials TEXT NOT NULL, at INTEGER NOT NULL) WITHOUT ROWID`);
+    // The survey's log (survey-log.js): claims are copied to D1 in the order
+    // they were made, and `logged` holds the last one D1 has. A sector from
+    // before the log starts with none logged, so it sends its old claims too.
+    this.sql.exec('CREATE INDEX IF NOT EXISTS claims_by_time ON claims (at, key)');
+    this.sql.exec('CREATE TABLE IF NOT EXISTS logged (id INTEGER PRIMARY KEY CHECK (id = 0), at INTEGER NOT NULL)');
   }
 
   async fetch(request) {
@@ -166,10 +264,29 @@ export class Sector {
     if (!m) return new Response('not found', { status: 404 });
     if (request.headers.get('Upgrade') !== 'websocket') return new Response('expected a WebSocket', { status: 426 });
     const [client, server] = Object.values(new WebSocketPair());
+    const address = request.headers.get(ADDRESS_HEADER) || null;
+    if (request.headers.get(UNPASSED_HEADER) === '1') { this.unpassed++; this.reportDue = true; }
     if (this.world && this.world.players >= MAX_ONLINE) this.turnAway(server, true);
     else if (this.ctx.getWebSockets().length >= MAX_PLAYERS) this.turnAway(server, false);
-    else this.join(server, Number(m[1]), Number(m[2]));
+    else if (address && this.fromAddress(address) >= ADDRESS_SOCKETS) this.turnAway(server, false);
+    else if (!(await this.allowed('SURVEY_JOINS', address))) this.turnAway(server, false);
+    else this.join(server, Number(m[1]), Number(m[2]), address);
     return new Response(null, { status: 101, webSocket: client });
+  }
+
+  fromAddress(address) {
+    let n = 0;
+    for (const p of this.everyone().values()) if (p.address === address) n++;
+    return n;
+  }
+
+  // Asks one of the per-address rate limiters (wrangler.toml) whether to go
+  // ahead. Without the binding, or if it fails, the answer is yes: the limits
+  // per socket and per sector still hold.
+  async allowed(binding, address) {
+    const limiter = this.env[binding];
+    if (!limiter || !address) return true;
+    try { return (await limiter.limit({ key: address })).success !== false; } catch { return true; }
   }
 
   // A full sector (or survey) still answers, so the game can say why it isn't joining.
@@ -179,11 +296,11 @@ export class Sector {
     ws.close(4000, world ? 'survey is full' : 'sector is full');
   }
 
-  join(ws, sx, sy) {
+  join(ws, sx, sy, address = null) {
     this.ctx.acceptWebSocket(ws);
     this.where ??= [sx, sy];
     const id = crypto.randomUUID().slice(0, 8);
-    const me = { id, sx, sy, initials: '', x: null, y: null, moved: 0, saved: 0, tokens: CLAIM_BURST, refilled: this.now() };
+    const me = { id, sx, sy, address, initials: '', x: null, y: null, moved: 0, saved: 0, tokens: CLAIM_BURST, refilled: this.now() };
     ws.serializeAttachment(me);
     this.everyone().set(ws, me);
     // When everyone reconnects at once (after a deploy, say), each join just
@@ -192,6 +309,11 @@ export class Sector {
     const hello = JSON.stringify({ t: 'hello', you: id, sector: [sx, sy], claims: [] });
     try { ws.send(hello.replace('"claims":[]', `"claims":${this.claimsJson}`)); } catch { /* closing */ }
     if (this.world) send(ws, { t: 'world', ...this.world });
+    if (!this.logChecked) {
+      // The first join after waking: anything the log hasn't got goes soon.
+      this.logChecked = true;
+      if (this.env.LOG_DB && this.unlogged(2).some((r) => r.at > this.logMark())) this.logSoon(1000);
+    }
   }
 
   everyone() {
@@ -234,12 +356,12 @@ export class Sector {
       if (away || me.moved - me.saved >= SAVE_POS_MS) this.save(ws, me);
       this.schedulePresence(away);
     } else if (msg.t === 'claim') {
-      this.claim(ws, me, msg);
+      await this.claim(ws, me, msg);
     }
     this.catchUp();
   }
 
-  claim(ws, me, msg) {
+  async claim(ws, me, msg) {
     const now = this.now();
     const key = typeof msg.w === 'string' ? keyOf(msg.w, msg.x, msg.y, msg.d) : null;
     me.tokens = Math.min(CLAIM_BURST, me.tokens + (now - me.refilled) / CLAIM_REFILL_MS);
@@ -247,25 +369,94 @@ export class Sector {
     if (me.tokens < 1) { this.save(ws, me); return send(ws, { t: 'error', key, error: 'slow down' }); }
     me.tokens -= 1;
     this.save(ws, me);
+    // Every claim from the address counts, wherever it's made, so more
+    // sockets in more sectors don't let a script claim any faster.
+    if (!(await this.allowed('SURVEY_CLAIMS', me.address))) return send(ws, { t: 'error', key, error: 'slow down' });
+    if (me.address && this.overToday().has(me.address)) return send(ws, { t: 'error', key, error: 'daily limit' });
     const c = checkClaim(msg, me.sx, me.sy);
     if (c.error) return send(ws, { t: 'error', key, error: c.error });
-    // The object handles one message at a time, so the first claim to arrive wins.
+    // The insert runs as one statement with nothing awaited, so even if
+    // another claim ran while the limiter answered, the first to get here wins.
+    // Its time is always after the sector's last claim, even if this object
+    // moved to a machine whose clock is behind, so the log (which copies
+    // claims in order of time) can't skip it.
+    const at = this.claimTime(now);
     const inserted = this.sql.exec(
       `INSERT INTO claims (key, w, x, y, d, s, initials, at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT (key) DO NOTHING RETURNING key`,
-      c.key, c.w, c.x, c.y, c.d, c.s, me.initials, now,
+      c.key, c.w, c.x, c.y, c.d, c.s, me.initials, at,
     ).toArray().length;
     if (!inserted) {
       const first = this.sql.exec('SELECT w, x, y, d, s, initials, at FROM claims WHERE key = ?', c.key).one();
       return send(ws, { t: 'taken', c: row(first) });
     }
-    const claimed = JSON.stringify([c.w, c.x, c.y, c.d, c.s, me.initials, now]);
+    this.lastAt = at;
+    const claimed = JSON.stringify([c.w, c.x, c.y, c.d, c.s, me.initials, at]);
     if (this.claimsJson) this.claimsJson = `${this.claimsJson.slice(0, -1)}${this.claimsJson === '[]' ? '' : ','}${claimed}]`;
     if (this.counts && !c.s) this.counts[this.territory(c.x, c.y)]++;
     this.hot = [c.x, c.y];
+    if (me.address && inArea(...this.coords())) this.chartedBy.set(me.address, (this.chartedBy.get(me.address) ?? 0) + 1);
     this.batch.push(`{"t":"claimed","c":${claimed},"by":${JSON.stringify(me.id)}}`);
     this.sendBatch();
     this.maybeReport();
+    this.logSoon();
+  }
+
+  claimTime(now) {
+    this.lastAt ??= this.sql.exec('SELECT MAX(at) AS at FROM claims').one().at ?? 0;
+    return Math.max(now, this.lastAt + 1);
+  }
+
+  // Claims D1 hasn't got yet, oldest first: those after the last one it has.
+  // Older sectors may hold claims made in the same millisecond, so the one
+  // at the mark goes again too, and D1 ignores the copy.
+  logMark() {
+    return this.sql.exec('SELECT at FROM logged WHERE id = 0').toArray()[0]?.at ?? -1;
+  }
+
+  unlogged(limit) {
+    return this.sql.exec('SELECT key, w, x, y, d, s, initials, at FROM claims WHERE at >= ? ORDER BY at, key LIMIT ?', this.logMark(), limit).toArray();
+  }
+
+  // Copies new claims to the log within LOG_MS, from an alarm. An alarm,
+  // unlike a timer, doesn't stop the sector hibernating, and it wakes the
+  // sector if it was evicted. Claims that come in before it goes off ride
+  // along with it.
+  logSoon(delay = LOG_MS) {
+    if (!this.env.LOG_DB) return;
+    const at = this.now() + delay;
+    if (this.logAt && this.logAt <= at) return;
+    this.logAt = at;
+    this.ctx.storage.setAlarm(at);
+  }
+
+  async alarm() {
+    this.logAt = 0;
+    let more;
+    try {
+      more = await this.flushLog();
+    } catch (error) {
+      // D1 didn't take them: they're still here, and go with a later try.
+      this.logFails++;
+      console.log({ survey: 'log failed', fails: this.logFails, error: String(error?.message ?? error) });
+      this.logSoon(Math.min(LOG_RETRY_MAX_MS, LOG_MS * 2 ** this.logFails));
+      return;
+    }
+    this.logFails = 0;
+    if (more) this.logSoon(1000);
+  }
+
+  // Sends up to LOG_BATCH claims to D1, and moves the mark past them once D1
+  // has them. Returns whether more are waiting.
+  async flushLog() {
+    if (!this.env.LOG_DB) return false;
+    const mark = this.logMark();
+    const rows = this.unlogged(LOG_BATCH);
+    // Only the claim at the mark itself, which D1 already has.
+    if (!rows.length || rows.at(-1).at === mark) return false;
+    await writeLog(this.env.LOG_DB, rows);
+    this.sql.exec('INSERT INTO logged (id, at) VALUES (0, ?) ON CONFLICT (id) DO UPDATE SET at = excluded.at', rows.at(-1).at);
+    return rows.length === LOG_BATCH;
   }
 
   async webSocketClose(ws) {
@@ -351,6 +542,13 @@ export class Sector {
     return [median(here.map((p) => p.x)), median(here.map((p) => p.y))];
   }
 
+  // Addresses past the daily cap; a new UTC day starts with none.
+  overToday() {
+    const day = Math.floor(this.now() / DAY_MS);
+    if (day !== this.overDay) { this.overDay = day; this.over = new Set(); this.overAt = 0; }
+    return this.over;
+  }
+
   // Index of the sector's territory that holds cell (x, y), row by row.
   territory(x, y) {
     const [sx, sy] = this.coords();
@@ -382,17 +580,34 @@ export class Sector {
     this.reportedAt = this.now();
     this.reportDue = false;
     this.reporting = true;
+    // Words charted by each address since the last report: sent once, or
+    // put back to go with the next report if this one fails.
+    const by = this.chartedBy, unpassed = this.unpassed;
+    this.chartedBy = new Map();
+    this.unpassed = 0;
+    this.overToday();
     let world;
     try {
       const res = await atlas(this.env).fetch('https://atlas/report', {
         method: 'POST',
-        body: JSON.stringify({ sx, sy, players: this.here().length, charted: this.chartedCounts(), hot: this.crowd() ?? this.hot }),
+        body: JSON.stringify({
+          sx, sy, players: this.here().length, charted: this.chartedCounts(), hot: this.crowd() ?? this.hot,
+          by: [...by], day: this.overDay, overAt: this.overAt, ...(unpassed ? { unpassed } : {}),
+        }),
       });
+      if (!res.ok) throw new Error(`atlas ${res.status}`);
       world = await res.json();
     } catch {
+      for (const [address, n] of by) this.chartedBy.set(address, (this.chartedBy.get(address) ?? 0) + n);
+      this.unpassed += unpassed;
       return;  // the totals just go out later
     } finally {
       this.reporting = false;
+    }
+    this.overToday();  // in case the day turned while the report was out
+    if (Array.isArray(world?.over) && world.day === this.overDay) {
+      this.over = new Set(world.over.filter((a) => typeof a === 'string' && HASH.test(a)));
+      this.overAt = isInt(world.overAt, 0, 1e9) ? world.overAt : 0;
     }
     if (!isInt(world?.charted, 0, AREA_WORDS) || !isInt(world?.players, 0, 1e9)) return;
     if (this.world && world.charted === this.world.charted && world.players === this.world.players) return;
@@ -415,6 +630,24 @@ export class Atlas {
     this.dirty = new Set();
     this.saveTimer = null;
     this.view = null;      // the world map as JSON, rebuilt at most every VIEW_MS
+    // Words each address charted today (UTC), and those past DAILY_CLAIMS in
+    // the order they got there. Kept in memory only: the Atlas hears from
+    // every busy sector every few seconds, so it's rarely evicted, and if it
+    // is, the day's counts start again.
+    this.day = -1;
+    this.chartedToday = new Map();
+    this.overList = [];
+    // The numbers that would show bots at work, for the UTC day so far and
+    // the day before (in the world map), and for the hour so far (in an
+    // hourly line in Workers Logs). Bots that claim without saying where
+    // they are add words charted but no player-hours, so words per
+    // player-hour climbs far past what people manage (about one a minute).
+    // Joins without a Turnstile pass (`unpassed`, see TURNSTILE.md) are
+    // almost all scripts once the game has a site key.
+    this.stats = this.newStats(-1);
+    this.yesterday = null;
+    this.hour = { at: -1, charted: 0, playerHours: 0 };
+    this.sampledAt = 0;
     this.sql.exec(`CREATE TABLE IF NOT EXISTS sectors (
       sx INTEGER NOT NULL, sy INTEGER NOT NULL, charted TEXT NOT NULL, done INTEGER NOT NULL,
       PRIMARY KEY (sx, sy)) WITHOUT ROWID`);
@@ -436,15 +669,25 @@ export class Atlas {
     if (request.method === 'POST' && pathname === '/report') {
       let r = null;
       try { r = await request.json(); } catch { /* answered below */ }
+      const by = r?.by ?? [];
       const ok = r && Number.isInteger(r.sx) && Number.isInteger(r.sy) && inArea(r.sx, r.sy) && isInt(r.players, 0, MAX_PLAYERS)
-        && Array.isArray(r.charted) && r.charted.length === TERR * TERR && r.charted.every((n) => isInt(n, 0, 1000));
+        && Array.isArray(r.charted) && r.charted.length === TERR * TERR && r.charted.every((n) => isInt(n, 0, 1000))
+        && Array.isArray(by) && by.length <= MAX_PLAYERS * 4
+        && by.every((e) => Array.isArray(e) && typeof e[0] === 'string' && HASH.test(e[0]) && isInt(e[1], 1, TERR * TERR * 1000))
+        && (r.unpassed === undefined || isInt(r.unpassed, 0, 1e6));
       if (!ok) return json({ error: 'bad report' }, 400);
+      this.tally();
+      this.countCharted(by);
+      this.stats.unpassed += r.unpassed ?? 0;  // tally() has rolled the day
       const key = `${r.sx},${r.sy}`, done = r.charted.reduce((a, b) => a + b, 0), old = this.load().get(key);
       const inside = (v, s) => Number.isInteger(v) && fdiv(v, SECTOR) === s;
       const hot = Array.isArray(r.hot) && inside(r.hot[0], r.sx) && inside(r.hot[1], r.sy) ? r.hot.slice(0, 2) : old?.hot ?? null;
       this.rows.set(key, { sx: r.sx, sy: r.sy, players: r.players, charted: r.charted, done, hot, at: this.now() });
       if (!old || old.done !== done) this.save(key);
-      return json(this.totals());
+      // The list of addresses past the cap goes back only when it has
+      // changed since this sector last heard it.
+      const fresh = r.day === this.day && r.overAt === this.overList.length;
+      return json({ ...this.totals(), day: this.day, overAt: this.overList.length, ...(fresh ? {} : { over: this.overList.slice(-DAILY_LIST_MAX) }) });
     }
     if (request.method === 'GET' && pathname === '/world') {
       const now = this.now();
@@ -452,6 +695,69 @@ export class Atlas {
       return new Response(this.view.body, { headers: { 'Content-Type': 'application/json; charset=utf-8' } });
     }
     return json({ error: 'not found' }, 404);
+  }
+
+  countCharted(by) {
+    this.rollDay();
+    for (const [address, n] of by) {
+      const before = this.chartedToday.get(address) ?? 0;
+      this.chartedToday.set(address, before + n);
+      this.stats.charted += n;
+      this.hour.charted += n;
+      if (before < DAILY_CLAIMS && before + n >= DAILY_CLAIMS) {
+        this.overList.push(address);
+        console.log({ survey: 'daily cap', capped: this.overList.length });  // never the address, hashed or not
+      }
+    }
+  }
+
+  newStats(day) {
+    return { day, charted: 0, addresses: 0, capped: 0, playerHours: 0, unpassed: 0 };
+  }
+
+  // A new UTC day: today's numbers become yesterday's, and the counts per address start again.
+  rollDay() {
+    const day = Math.floor(this.now() / DAY_MS);
+    if (day === this.day) return;
+    // Yesterday is the day before this one: if the Atlas heard nothing that
+    // day, it was a day of zeros, not the last day it did hear about.
+    if (this.day >= 0) this.yesterday = day - this.day === 1 ? this.statsNow() : this.newStats(day - 1);
+    this.day = day;
+    this.chartedToday = new Map();
+    this.overList = [];
+    this.stats = this.newStats(day);
+  }
+
+  statsNow() {
+    const s = { ...this.stats, addresses: this.chartedToday.size, capped: this.overList.length };
+    s.playerHours = Math.round(s.playerHours * 100) / 100;
+    return s;
+  }
+
+  // On each report: adds up player-hours since the last one (a gap counts
+  // for at most ONLINE_MS, after which nobody counts as online anyway), and
+  // once an hour writes the hour's numbers to the log.
+  tally() {
+    const now = this.now();
+    this.rollDay();
+    if (this.sampledAt) {
+      const hours = this.totals().players * Math.min(now - this.sampledAt, ONLINE_MS) / HOUR_MS;
+      this.stats.playerHours += hours;
+      this.hour.playerHours += hours;
+    }
+    this.sampledAt = now;
+    const hour = Math.floor(now / HOUR_MS);
+    if (hour === this.hour.at) return;
+    if (this.hour.at >= 0) {
+      const { charted, playerHours } = this.hour;
+      console.log({
+        survey: 'hour', hour: new Date(this.hour.at * HOUR_MS).toISOString(), charted,
+        playerHours: Math.round(playerHours * 100) / 100,
+        perPlayerHour: playerHours > 0 ? Math.round(charted / playerHours) : null,
+        today: this.statsNow(),
+      });
+    }
+    this.hour = { at: hour, charted: 0, playerHours: 0 };
   }
 
   // Charted counts only change storage once a minute per sector at most:
@@ -495,7 +801,11 @@ export class Atlas {
     }
     let territories = '';
     for (const b of bytes) territories += String.fromCharCode(b);
-    return { ...this.totals(), area: AREA, territories: btoa(territories), sectors, spawn: this.spawn(live) };
+    this.rollDay();
+    return {
+      ...this.totals(), area: AREA, territories: btoa(territories), sectors, spawn: this.spawn(live),
+      today: this.statsNow(), yesterday: this.yesterday,
+    };
   }
 
   // Where a new player should start, as a cell: in the middle of the biggest

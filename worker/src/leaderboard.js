@@ -142,9 +142,13 @@ async function readBody(request) {
   }
 }
 
-export async function hashIp(request, salt) {
-  const ip = request.headers.get('CF-Connecting-IP') || 'unknown';
-  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(`${salt || ''}:${ip}`));
+export function hashIp(request, salt) {
+  return hashAddress(request.headers.get('CF-Connecting-IP') || 'unknown', salt);
+}
+
+// A salted SHA-256 of an address, so no IP address is ever stored as it is.
+export async function hashAddress(address, salt) {
+  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(`${salt || ''}:${address}`));
   return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, '0')).join('');
 }
 

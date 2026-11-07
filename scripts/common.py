@@ -11,12 +11,19 @@ from urllib.parse import urlencode
 BASE_URL = "https://games.michaelwarkentin.com"
 SITE_NAME = "games.michaelwarkentin.com"
 REPO_URL = "https://github.com/mwarkentin/games"
+# The leaderboard Worker (worker/), which the games' LEADERBOARD_URL, ROOMS_URL
+# and the survey log's SURVEY_URL name. A pull request's preview points them at
+# its own Worker Preview instead (see scripts/point_preview.py).
+WORKER_URL = "https://games-leaderboard.mwarkentin.workers.dev"
 ROOT = Path(__file__).resolve().parent.parent
 # The Stripe Payment Link for tips. While it's empty, pages have no tip link.
 TIP_URL = "https://buy.stripe.com/4gM7sL3xucbG0ADgcd3Je00"
 
 # Pages the build generates. A game can't use these filenames.
 GENERATED_PAGES = {"index.html": "/", "colophon.html": "/colophon"}
+# Each app's changelog: changelog/<app>.md, built into /changelog/<app> by
+# build_changelog.py.
+CHANGELOGS = "changelog"
 # Counterscale page views, inlined into every page: games and generated pages.
 ANALYTICS = "analytics.js"
 # Home-screen apps (see scripts/build_pwa.py). Each game is its own app, named
@@ -24,6 +31,10 @@ ANALYTICS = "analytics.js"
 HOME_APP = "index"
 # icons/<app>-<size>.png: an apple-touch-icon, and the manifest's two icons.
 ICON_SIZES = (180, 192, 512)
+# Link previews: previews/<app>.jpg, 1200x630, shown when a link to the page
+# is shared. Apps without one use their 512px icon as a small card instead.
+PREVIEWS = "previews"
+PREVIEW_SIZE = (1200, 630)
 # Registers sw.js, which keeps an offline copy of every page.
 REGISTER_SERVICE_WORKER = """
 if ('serviceWorker' in navigator) {
@@ -64,19 +75,102 @@ def inject_pwa(text: str, app: str) -> str:
     return inline_script(insert_in_head(text, tags), "data-pwa", REGISTER_SERVICE_WORKER)
 
 
+def inject_social(text: str, app: str, path: str, root: Path | None = None) -> str:
+    """Add Open Graph and Twitter card tags, so a shared link shows a card.
+
+    Title and description come from the page's own <head>. The image is
+    previews/<app>.jpg as a large card if the app has one, or else its 512px
+    icon as a small one. Every URL is absolute, as link unfurlers need. A page
+    that already has og:title is left as it is.
+    """
+    if re.search(r"""property\s*=\s*["']og:title["']""", text, re.IGNORECASE):
+        return text
+    title = extract_title(text, app)
+    description = extract_meta_description(text)
+    if ((root or ROOT) / PREVIEWS / f"{app}.jpg").exists():
+        image, (width, height), card = f"{BASE_URL}/{PREVIEWS}/{app}.jpg", PREVIEW_SIZE, "summary_large_image"
+    else:
+        image, (width, height), card = f"{BASE_URL}/icons/{app}-512.png", (512, 512), "summary"
+    tags = [
+        ("property", "og:type", "website"),
+        ("property", "og:site_name", SITE_NAME),
+        ("property", "og:title", title),
+        *([("property", "og:description", description)] if description else []),
+        ("property", "og:url", f"{BASE_URL}{path}"),
+        ("property", "og:image", image),
+        ("property", "og:image:width", str(width)),
+        ("property", "og:image:height", str(height)),
+        ("name", "twitter:card", card),
+    ]
+    return insert_in_head(
+        text, "".join(f'<meta {kind}="{key}" content="{html.escape(value)}">\n' for kind, key, value in tags)
+    )
+
+
+def preview_files(root: Path = ROOT) -> list[str]:
+    """The link-preview images, as paths like previews/foo.jpg."""
+    return sorted(f"{PREVIEWS}/{path.name}" for path in (root / PREVIEWS).glob("*.jpg"))
+
+
 def inject_analytics(text: str, root: Path | None = None) -> str:
     """Inline analytics.js into a page."""
     script = ((root or ROOT) / ANALYTICS).read_text("utf-8")
     return inline_script(text, "data-analytics", script)
 
 
+def music_files(root: Path = ROOT) -> list[str]:
+    """The MIDI files games play, as paths like music/foo.mid (see music/README.md)."""
+    return sorted(f"music/{path.name}" for path in (root / "music").glob("*.mid"))
+
+
 def game_files(root: Path = ROOT) -> list[str]:
-    """Every game: the .html files at the top level of the repo."""
+    """Every game: the .html files at the top level of the repo.
+
+    That includes pages that belong to a game, like Letterfield's survey log:
+    they're published, listed and tested the same way, but join their game's
+    home-screen app (see app_of).
+    """
     return sorted(
         path.name
         for path in root.glob("*.html")
         if path.name not in GENERATED_PAGES
     )
+
+
+def changelog_apps(root: Path = ROOT) -> list[str]:
+    """The apps with a changelog, by slug."""
+    return sorted(path.stem for path in (root / CHANGELOGS).glob("*.md"))
+
+
+def changelog_path(app: str) -> str:
+    """Where an app's changelog is served."""
+    return f"/{CHANGELOGS}/{app}"
+
+
+def generated_pages(root: Path = ROOT) -> dict[str, str]:
+    """Every page the build generates, as {file in the site: path it's served at}:
+    the home page, the colophon and each app's changelog."""
+    return {
+        **GENERATED_PAGES,
+        **{f"{CHANGELOGS}/{app}.html": changelog_path(app) for app in changelog_apps(root)},
+    }
+
+
+def app_of(text: str, slug: str) -> str:
+    """The home-screen app a page belongs to: its own, named after its slug,
+    unless its <head> names a game's with <meta name="games:app" content="...">.
+
+    A page in another game's app shares that game's manifest, icons and link
+    preview, and opens inside it on a Home Screen, since its path starts with
+    the game's (/letterfield-log is in /letterfield's scope).
+    """
+    return extract_meta(text, "games:app") or slug
+
+
+def own_apps(root: Path = ROOT) -> list[str]:
+    """The games that are home-screen apps of their own, by slug."""
+    slugs = [filename.removesuffix(".html") for filename in game_files(root)]
+    return [slug for slug in slugs if app_of((root / f"{slug}.html").read_text("utf-8"), slug) == slug]
 
 
 def extract_title(text: str, fallback: str) -> str:
@@ -178,11 +272,12 @@ def tip_link(source: str) -> str:
 
 
 def render_page(
-    title: str, body: str, *, extra_css: str = "", description: str = "", tip_source: str = ""
+    title: str, body: str, *, path: str = "/", extra_css: str = "", description: str = "", tip_source: str = ""
 ) -> str:
     """Wrap generated content in the shared page chrome, with analytics.
 
-    Generated pages belong to the home-screen app for the whole site.
+    Generated pages belong to the home-screen app for the whole site, and
+    share its link preview. path is where the page is served, for og:url.
 
     tip_source labels the header's tip link, which appears once TIP_URL is set.
     """
@@ -219,4 +314,4 @@ def render_page(
 </body>
 </html>
 """
-    return inject_pwa(inject_analytics(page), HOME_APP)
+    return inject_pwa(inject_analytics(inject_social(page, HOME_APP, path)), HOME_APP)
