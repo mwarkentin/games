@@ -204,6 +204,7 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px s
 .card .ci b { display: block; font-weight: 400; }
 .card .ci i { display: block; font-style: normal; font-family: system-ui, sans-serif; font-size: .9em; }
 .card .cc { position: absolute; inset: 0; display: grid; place-items: center; font-size: calc(var(--w) * .5); font-family: system-ui, sans-serif; padding-top: 8%; }
+.card.joker .cc { font-size: calc(var(--w) * .56); padding-top: 4%; }
 .card.back {
   background: var(--deck-back);
   border: calc(var(--w) * .06) solid var(--deck-back-edge);
@@ -503,7 +504,7 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px s
     </div>
     <div class="title-cards" aria-hidden="true"></div>
     <h1>War!</h1>
-    <p><b>Slam Edition.</b> The card game where the highest card wins, and you can slam your card down as hard as you like. It won't help.</p>
+    <p><b>Slam Edition.</b> The card game where the highest card wins, jokers beat everything, and you can slam your card down as hard as you like. It won't help.</p>
     <h3>Play solo</h3>
     <label for="opponents" class="small" id="oppLabel">1 opponent</label>
     <input type="range" id="oppRange" min="1" max="49" value="1" aria-labelledby="oppLabel">
@@ -642,6 +643,7 @@ const WAR = {
   STYLES: 11,          // power-ups, 0 for bare hands
   AVATARS: 24,
   TIERS: 9,            // slam tiers, from boop to cosmic
+  DECK: 54,            // cards in a deck: the usual 52 and two jokers
   STAGE_MS: 8000,      // to slam before your card flops over by itself
   WAR_STAGE_MS: 20000, // the same in a war, where you slam every card you lay down
   NAPS: 2,             // flops in a row before a stage stops waiting for you
@@ -660,9 +662,16 @@ const WAR_BOT_LAST = [
   'Nugget', 'Meatball', 'Toast', 'Pebble', 'Beans', 'Squid', 'Crumpet', 'Tater', 'Wombat', 'Jellybean',
 ];
 
-// Cards are numbers: rank is card % 13 (0 is a two, 12 an ace) and suit is
-// floor(card / 13) % 4. There's a deck for every two players, so everyone
-// starts with about 26 cards however many play.
+// Cards are numbers, WAR.DECK to a deck. In each deck, card % WAR.DECK is
+// suit * 13 + rank for the usual 52 cards (rank 0 is a two, 12 an ace), and 52
+// and 53 are the jokers, which beat every other card: their rank is 13. Two
+// jokers tie, like any two cards of the same rank. There's a deck for every two
+// players, so everyone starts with about 27 cards however many play.
+function warRank(card) {
+  const face = card % WAR.DECK;
+  return face < 52 ? face % 13 : 13;
+}
+
 function warShuffle(cards, random) {
   for (let i = cards.length - 1; i > 0; i--) {
     const j = Math.floor(random() * (i + 1));
@@ -673,7 +682,7 @@ function warShuffle(cards, random) {
 
 function warDeal(count, random) {
   const decks = Math.max(1, Math.ceil(count / 2));
-  const cards = warShuffle(Array.from({ length: 52 * decks }, (_, i) => i), random);
+  const cards = warShuffle(Array.from({ length: WAR.DECK * decks }, (_, i) => i), random);
   const piles = Array.from({ length: count }, () => []);
   cards.forEach((card, i) => piles[i % count].push(card));
   return piles;
@@ -791,10 +800,10 @@ function warResolve(game, now, random) {
     game.pot.push(...pile.splice(0, down));
     const up = pile.shift();
     game.pot.push(up);
-    best = Math.max(best, up % 13);
+    best = Math.max(best, warRank(up));
     plays.push([seat, down, up, ...slam]);
   }
-  const tied = plays.filter((play) => play[2] % 13 === best).map((play) => play[0]);
+  const tied = plays.filter((play) => warRank(play[2]) === best).map((play) => play[0]);
   const able = tied.filter((seat) => game.piles[seat].length);
   let winner = tied.length === 1 ? tied[0] : able.length === 1 ? able[0] : null;
   const gods = tied.length > 1 && !able.length;
@@ -866,19 +875,21 @@ const STYLES = [
 ];
 const AVATARS = ['🦊', '🐸', '🐼', '🐙', '🦄', '🐯', '🐨', '🐵', '🦉', '🐢', '🦖', '🐳', '🦀', '🐝', '🦩', '🐧', '🦔', '🐮', '🐷', '🐰', '🦁', '🐲', '👽', '🤖'];
 const CHEERS = ['🔥', '😱', '😂', '👏', '🍅', '💤'];
-const RANKS = ['2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K', 'A'];
-const RANK_NAMES = ['two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten', 'jack', 'queen', 'king', 'ace'];
+// By rank (see warRank): two to ace, then the joker.
+const RANKS = ['2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K', 'A', '★'];
+const RANK_NAMES = ['two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten', 'jack', 'queen', 'king', 'ace', 'joker'];
 const SUITS = ['♠︎', '♥︎', '♦︎', '♣︎'];
-// Decks: [name, what it's like, jack, queen, king]. The looks are in the CSS,
-// under [data-deck].
+const JOKER = 13;
+// Decks: [name, what it's like, jack, queen, king, joker]. The looks are in
+// the CSS, under [data-deck].
 const DECKS = {
-  classic: ['Classic', 'Red stripes and cream cards.', '🤹', '👸', '👑'],
-  neon: ['Neon', 'Glows in the dark.', '🕺', '💃', '😎'],
-  pixel: ['8-bit', 'Chunky pixels, blown on before use.', '👾', '🎮', '🕹️'],
-  royal: ['Royal', 'Gold on green velvet.', '🛡️', '👸', '🤴'],
-  space: ['Space', 'Lost among the stars.', '🚀', '👽', '🛸'],
-  spooky: ['Spooky', 'Cobwebs, pumpkins and the undead.', '🧟', '🧛', '💀'],
-  candy: ['Candy', 'Very sweet. No nutritional value.', '🧁', '🍭', '🍩'],
+  classic: ['Classic', 'Red stripes and cream cards.', '🤹', '👸', '👑', '🤡'],
+  neon: ['Neon', 'Glows in the dark.', '🕺', '💃', '😎', '🤩'],
+  pixel: ['8-bit', 'Chunky pixels, blown on before use.', '👾', '🎮', '🕹️', '🐛'],
+  royal: ['Royal', 'Gold on green velvet.', '🛡️', '👸', '🤴', '🎭'],
+  space: ['Space', 'Lost among the stars.', '🚀', '👽', '🛸', '☄️'],
+  spooky: ['Spooky', 'Cobwebs, pumpkins and the undead.', '🧟', '🧛', '💀', '👻'],
+  candy: ['Candy', 'Very sweet. No nutritional value.', '🧁', '🍭', '🍩', '🦷'],
 };
 let deck = 'classic';  // the one you picked: see init()
 const LENGTH_LABELS = {
@@ -914,7 +925,8 @@ function el(tag, cls, text) {
 }
 const tierOf = (power) => { let t = 0; TIERS.forEach(([min], i) => { if (power >= min) t = i; }); return t; };
 const tierName = (power) => TIERS[tierOf(power)][1];
-const cardName = (card) => RANK_NAMES[card % 13];
+const cardName = (card) => RANK_NAMES[warRank(card)];
+const cardNames = (card) => cardName(card).replace(/x$/, 'xe') + 's';
 const aOrAn = (word) => (/^[aeiou]/.test(word) ? 'an ' : 'a ') + word;
 const pick = (list) => list[Math.floor(Math.random() * list.length)];
 const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
@@ -930,16 +942,30 @@ function seeded(seed) {
   };
 }
 
-function cardEl(card) {
+// A card: a number (see warRank), 'back' or null for an empty place. It's
+// drawn in your deck unless `look` names another, as for other players' cards.
+function cardEl(card, look) {
   const node = el('div', 'card');
+  if (look && DECKS[look]) node.dataset.deck = look;
   if (card === 'back') { node.classList.add('back'); return node; }
   if (card === null || card === undefined) { node.classList.add('empty'); return node; }
-  const rank = card % 13;
-  const suit = Math.floor(card / 13) % 4;
-  if (suit === 1 || suit === 2) node.classList.add('red');
+  const pictures = DECKS[look] || DECKS[deck];
+  const rank = warRank(card);
   const corner = el('span', 'ci');
+  if (rank === JOKER) {
+    // A red joker and a black one in every deck.
+    const red = card % WAR.DECK === 53;
+    node.classList.add('joker');
+    if (red) node.classList.add('red');
+    corner.append(el('b', '', RANKS[rank]));
+    node.append(corner, el('span', 'cc', pictures[5]));
+    node.setAttribute('aria-label', `${red ? 'red' : 'black'} joker`);
+    return node;
+  }
+  const suit = Math.floor((card % WAR.DECK) / 13);
+  if (suit === 1 || suit === 2) node.classList.add('red');
   corner.append(el('b', '', RANKS[rank]), el('i', '', SUITS[suit]));
-  node.append(corner, el('span', 'cc', rank >= 9 && rank <= 11 ? DECKS[deck][rank - 7] : SUITS[suit]));
+  node.append(corner, el('span', 'cc', rank >= 9 && rank <= 11 ? pictures[rank - 7] : SUITS[suit]));
   node.setAttribute('aria-label', `${RANK_NAMES[rank]} of ${['spades', 'hearts', 'diamonds', 'clubs'][suit]}`);
   return node;
 }
@@ -2015,12 +2041,14 @@ function narrate(m) {
   const winCard = m.plays.find((p) => p[0] === m.winner)[2];
   const winner = playerName(m.winner);
   const takes = m.stage ? `the whole pot of ${m.pot}` : plural(m.pot, 'card');
+  const joker = warRank(winCard) === JOKER && !m.gods;
   if (m.winner === me) {
     const [power, , auto] = mine.slice(3);
-    banner(m.stage ? 'WAR WON!' : 'YOU WIN!', false);
+    banner(joker ? 'JOKER!' : m.stage ? 'WAR WON!' : 'YOU WIN!', false);
     const lines = auto ? [`You dozed off, your ${cardName(winCard)} flopped over, and it won ${takes}. Effort is overrated.`]
       : m.gods ? [`Nobody had cards left to fight with. The war gods smile on you: ${takes}.`]
       : !m.tied.includes(me) ? [`The others ran out of cards mid-war. You take ${takes}.`]
+      : joker ? [`A joker! It beats everything, so it takes ${takes}.`, `Your joker takes ${takes}. Who’s laughing now? The joker.`]
       : power < 30 ? [`A gentle ${tierName(power)}, and your ${cardName(winCard)} takes ${takes}. Finesse.`, `You barely touched it. Your ${cardName(winCard)} wins ${takes} anyway.`]
       : [`${tierName(power).toUpperCase()}! Your ${cardName(winCard)} takes ${takes}. The slam had nothing to do with it.`, `Your ${cardName(winCard)} wins ${takes}. Scientists confirm the ${tierName(power)} was irrelevant.`];
     setText($('caption'), pick(lines));
@@ -2030,17 +2058,19 @@ function narrate(m) {
   }
   if (mine) {
     const [power, , auto] = mine.slice(3);
-    banner(m.out && m.out.includes(me) ? 'OUT OF CARDS' : '', false);
+    banner(m.out && m.out.includes(me) ? 'OUT OF CARDS' : joker ? 'JOKER!' : '', false);
     const yours = cardName(mine[2]);
+    const outranked = warRank(mine[2]) < warRank(winCard);
     const lines = auto ? [`You dozed off and your ${yours} flopped over. ${winner}'s ${cardName(winCard)} takes ${takes}.`]
       : m.gods ? [`Nobody had cards left to fight with. The war gods pick ${winner}.`]
-      : power >= 115 ? [`That ${tierName(power)} registered on seismographs. Your ${yours} still loses to ${aOrAn(cardName(winCard))}.`, `An incredible ${tierName(power)}. Sadly, ${yours}s are not aces.`]
+      : joker && outranked ? [`${winner}'s joker takes ${takes}. There is no defense against the joker.`, `Your ${yours} never stood a chance against ${winner}'s joker.`]
+      : power >= 115 && outranked ? [`That ${tierName(power)} registered on seismographs. Your ${yours} still loses to ${aOrAn(cardName(winCard))}.`, `An incredible ${tierName(power)}. Sadly, ${cardNames(mine[2])} are not ${cardNames(winCard)}.`]
       : [`A respectable ${tierName(power)}. ${winner}'s ${cardName(winCard)} takes ${takes}.`, `Your ${yours} loses to ${winner}'s ${cardName(winCard)}. Slam harder? (It won't help.)`];
     setText($('caption'), pick(lines));
     Sound.lose();
     return;
   }
-  banner('', false);
+  banner(joker ? 'JOKER!' : '', false);
   const how = m.gods ? 'The war gods pick' : '';
   setText($('caption'), how ? `${how} ${winner}, who takes ${takes}.` : `${winner} ${m.winner === me ? 'take' : 'takes'} ${takes} with ${aOrAn(cardName(winCard))}.`);
 }
@@ -2082,10 +2112,12 @@ function oddsFuture(counts, battle, limit) {
 }
 
 // Head to head: how your cards can change in one battle, as [change,
-// chance] pairs, when you hold `held` of the 52.
-const DECK = 52;
+// chance] pairs, when you hold `held` of the deck's 54.
+const DECK = WAR.DECK;
 function headsUpSteps(held) {
-  const TIE = 3 / 51;  // two random cards of the same rank
+  // Two random cards of the same rank: one of the 52 and one of the three
+  // others of its rank, or the two jokers.
+  const TIE = (52 * 3 + 2 * 1) / (DECK * (DECK - 1));
   const steps = new Map();
   const add = (change, p) => steps.set(change, (steps.get(change) || 0) + p);
   // a and b: cards each player still holds; inA and inB: cards each has put in.
@@ -2845,7 +2877,7 @@ function renderLobby() {
   renderLengths($('roomLength'), S.length, !host);
   const hostName = S.host !== null ? S.players[S.host]?.name : null;
   setText($('lobbyNote'), host
-    ? (S.players.length < 2 ? 'Waiting for friends. Or add some bots.' : `${plural(S.players.length, 'player')}, ${plural(Math.max(1, Math.ceil(S.players.length / 2)), 'deck')}. Everyone gets about 26 cards.`)
+    ? (S.players.length < 2 ? 'Waiting for friends. Or add some bots.' : `${plural(S.players.length, 'player')}, ${plural(Math.max(1, Math.ceil(S.players.length / 2)), 'deck')}. Everyone gets about 27 cards.`)
     : S.you === null ? 'This room is full. You can watch.' : `Waiting for ${hostName || 'the host'} to deal.`);
   setHidden($('dealBtn'), !host);
   $('dealBtn').disabled = S.players.length < 2;
@@ -3083,7 +3115,7 @@ function renderMenu() {
   renderInputs();
   renderDecks();
   const titleCards = document.querySelector('.title-cards');
-  if (!titleCards.childElementCount) titleCards.append(cardEl(12), cardEl(25 + 13), cardEl(11 + 13));
+  if (!titleCards.childElementCount) titleCards.append(cardEl(12), cardEl(53), cardEl(11 + 13));
 }
 
 function renderInputs() {

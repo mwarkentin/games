@@ -25,6 +25,7 @@ const WAR = {
   STYLES: 11,          // power-ups, 0 for bare hands
   AVATARS: 24,
   TIERS: 9,            // slam tiers, from boop to cosmic
+  DECK: 54,            // cards in a deck: the usual 52 and two jokers
   STAGE_MS: 8000,      // to slam before your card flops over by itself
   WAR_STAGE_MS: 20000, // the same in a war, where you slam every card you lay down
   NAPS: 2,             // flops in a row before a stage stops waiting for you
@@ -43,9 +44,16 @@ const WAR_BOT_LAST = [
   'Nugget', 'Meatball', 'Toast', 'Pebble', 'Beans', 'Squid', 'Crumpet', 'Tater', 'Wombat', 'Jellybean',
 ];
 
-// Cards are numbers: rank is card % 13 (0 is a two, 12 an ace) and suit is
-// floor(card / 13) % 4. There's a deck for every two players, so everyone
-// starts with about 26 cards however many play.
+// Cards are numbers, WAR.DECK to a deck. In each deck, card % WAR.DECK is
+// suit * 13 + rank for the usual 52 cards (rank 0 is a two, 12 an ace), and 52
+// and 53 are the jokers, which beat every other card: their rank is 13. Two
+// jokers tie, like any two cards of the same rank. There's a deck for every two
+// players, so everyone starts with about 27 cards however many play.
+function warRank(card) {
+  const face = card % WAR.DECK;
+  return face < 52 ? face % 13 : 13;
+}
+
 function warShuffle(cards, random) {
   for (let i = cards.length - 1; i > 0; i--) {
     const j = Math.floor(random() * (i + 1));
@@ -56,7 +64,7 @@ function warShuffle(cards, random) {
 
 function warDeal(count, random) {
   const decks = Math.max(1, Math.ceil(count / 2));
-  const cards = warShuffle(Array.from({ length: 52 * decks }, (_, i) => i), random);
+  const cards = warShuffle(Array.from({ length: WAR.DECK * decks }, (_, i) => i), random);
   const piles = Array.from({ length: count }, () => []);
   cards.forEach((card, i) => piles[i % count].push(card));
   return piles;
@@ -174,10 +182,10 @@ function warResolve(game, now, random) {
     game.pot.push(...pile.splice(0, down));
     const up = pile.shift();
     game.pot.push(up);
-    best = Math.max(best, up % 13);
+    best = Math.max(best, warRank(up));
     plays.push([seat, down, up, ...slam]);
   }
-  const tied = plays.filter((play) => play[2] % 13 === best).map((play) => play[0]);
+  const tied = plays.filter((play) => warRank(play[2]) === best).map((play) => play[0]);
   const able = tied.filter((seat) => game.piles[seat].length);
   let winner = tied.length === 1 ? tied[0] : able.length === 1 ? able[0] : null;
   const gods = tied.length > 1 && !able.length;
@@ -223,7 +231,7 @@ function warStandings(game) {
 // ---- END WAR CORE ----
 
 export {
-  WAR, warBotNames, warDeal, warDueAt, warNewGame, warOpenStage, warResolve, warShuffle, warSlam,
+  WAR, warBotNames, warDeal, warDueAt, warNewGame, warOpenStage, warRank, warResolve, warShuffle, warSlam,
   warStandings, warWaitingFor,
 };
 

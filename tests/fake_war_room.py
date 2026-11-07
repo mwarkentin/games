@@ -27,6 +27,11 @@ def card(rank: int, suit: int = 0) -> int:
     return suit * 13 + rank
 
 
+def joker(which: int = 0) -> int:
+    """One of the deck's two jokers, which beat every other card."""
+    return 52 + which
+
+
 class FakeWarRoom:
     def __init__(self, code: str = "K7QP", exists: bool = True):
         self.code = code
@@ -153,12 +158,12 @@ class FakeWarRoom:
             self.broadcast({"t": "cheer", "seat": seat, "e": message["e"]})
 
     def deal(self) -> None:
-        """Starts a game, with everyone holding 26 cards and the first battle open."""
+        """Starts a game, with everyone holding 27 cards and the first battle open."""
         n = len(self.players)
         limit = {"quick": 20, "standard": 60, "long": 150, "total": 5000}[self.length]
         self.phase = "playing"
         self.game = {
-            "battle": 1, "limit": limit, "stage": 0, "fighters": list(range(n)), "counts": [26] * n,
+            "battle": 1, "limit": limit, "stage": 0, "fighters": list(range(n)), "counts": [27] * n,
             "out": [0] * n, "pot": 0, "slams": {}, "opensIn": 0, "closesIn": 8000, "wars": 0, "over": None,
         }
         self.send_states()

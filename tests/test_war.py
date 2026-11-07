@@ -15,6 +15,9 @@ from fake_leaderboard import without_worker
 from playwright.sync_api import Page, expect
 
 STATE = "window.__war.state()"
+# Seed 589: both players turn over an eight in the first battle, then a three
+# in the war: a double war.
+WAR_SEED = 589
 
 
 def start_solo(page: Page, site_url: str, opponents: int = 1, length: str = "standard", seed: int = 7) -> None:
@@ -49,14 +52,13 @@ def test_hold_to_charge_and_release_to_slam(page: Page, site_url, errors):
     # The battle plays out once the bot has slammed too: a winner, or a war.
     page.wait_for_function(f"{STATE}.battle === 2 || {STATE}.stage === 1")
     counts = page.evaluate(f"{STATE}.counts")
-    assert 40 < sum(counts) <= 52, "cards in a war's pot belong to nobody yet"
+    assert 40 < sum(counts) <= 54, "cards in a war's pot belong to nobody yet"
     expect(page.locator("#caption")).not_to_be_empty()
     assert errors == []
 
 
 def test_a_war_means_slamming_every_card(page: Page, site_url, errors):
-    # Seed 7: both players turn over a five in the first battle.
-    start_solo(page, site_url, seed=7)
+    start_solo(page, site_url, seed=WAR_SEED)
     hold_slam(page, 400)
     page.wait_for_function(f"{STATE}.stage === 1 && {STATE}.canSlam")
     expect(page.locator("#caption")).to_contain_text("Slam all four of your cards!")
@@ -78,7 +80,7 @@ def test_a_war_means_slamming_every_card(page: Page, site_url, errors):
 
 
 def test_a_war_you_started_is_finished_before_the_clock_runs_out(page: Page, site_url, errors):
-    start_solo(page, site_url, seed=7)
+    start_solo(page, site_url, seed=WAR_SEED)
     page.evaluate("window.__war.slam(50)")
     page.wait_for_function(f"{STATE}.stage === 1 && {STATE}.canSlam")
     hold_slam(page, 300)
@@ -143,7 +145,9 @@ def test_how_you_slam_is_remembered(page: Page, site_url, errors):
 
 DECKS = ["classic", "neon", "pixel", "royal", "space", "spooky", "candy"]
 KINGS = {"classic": "👑", "neon": "😎", "pixel": "🕹️", "royal": "🤴", "space": "🛸", "spooky": "💀", "candy": "🍩"}
+JOKERS = {"classic": "🤡", "neon": "🤩", "pixel": "🐛", "royal": "🎭", "space": "☄️", "spooky": "👻", "candy": "🦷"}
 TITLE_KING = ".title-cards .card:nth-child(3) .cc"  # the king of hearts on the menu
+TITLE_JOKER = ".title-cards .card:nth-child(2)"     # and the red joker
 
 
 def test_every_deck_looks_different(page: Page, site_url, errors):
@@ -153,6 +157,7 @@ def test_every_deck_looks_different(page: Page, site_url, errors):
     for key in DECKS:
         page.evaluate(f"window.__war.deck('{key}')")
         expect(page.locator(TITLE_KING)).to_have_text(KINGS[key])
+        expect(page.locator(f"{TITLE_JOKER} .cc")).to_have_text(JOKERS[key])
         looks[key] = page.evaluate("""() => {
             const face = getComputedStyle(document.querySelector('.title-cards .card'));
             const back = getComputedStyle(document.querySelector('#menuDecks button[aria-pressed=true] .card'));
@@ -308,13 +313,17 @@ def test_the_science_measures_your_slams(page: Page, site_url, errors):
 
 
 def test_win_probability_follows_the_game_and_ignores_slams(page: Page, site_url, errors):
-    # Seed 2: your five loses to an ace in the first battle.
+    # Seed 2: your four loses to a joker in the first battle.
     start_solo(page, site_url, seed=2)
     expect(page.locator("#odds")).to_be_visible()
     expect(page.locator("#oddsYou")).to_have_text(re.compile(r"^You (\d+%|<1%|>99%)$"))
     expect(page.locator("#oddsFav")).to_contain_text("%")
     page.evaluate("window.__war.slam(150)")
     expect(page.locator("#oddsNote")).to_have_text("Slam impact on win probability: +0.0%")
+    joker = page.locator("#opponents .tile .card.joker")
+    expect(joker).to_be_visible()
+    expect(joker).to_have_attribute("aria-label", re.compile(r"^(red|black) joker$"))
+    expect(page.locator("#banner")).to_have_text("JOKER!")
     page.wait_for_function(f"{STATE}.odds.length === 2", timeout=15_000)
     (_, start), (_, after) = page.evaluate(f"{STATE}.odds")
     assert after < start, "losing a battle costs you"
@@ -326,12 +335,12 @@ def test_the_win_probability_model(page: Page, site_url):
     page.goto(f"{site_url}/war#debug")
     odds = lambda counts, battle, limit, sims=200: page.evaluate(f"window.__war.odds({counts}, {battle}, {limit}, {sims})")
     # Head to head it's worked out, not simulated.
-    assert odds([26, 26], 1, 60) == [pytest.approx(0.5), pytest.approx(0.5)]
-    assert odds([25, 27], 2, 60)[0] < 0.5
-    assert odds([45, 7], 55, 60)[0] > 0.99, "45 cards to 7 with six battles left is nearly certain"
-    assert odds([52, 0], 10, 60) == [1, 0]
+    assert odds([27, 27], 1, 60) == [pytest.approx(0.5), pytest.approx(0.5)]
+    assert odds([26, 28], 2, 60)[0] < 0.5
+    assert odds([47, 7], 55, 60)[0] > 0.99, "47 cards to 7 with six battles left is nearly certain"
+    assert odds([54, 0], 10, 60) == [1, 0]
     # ...and agrees with playing it out with the real rules.
-    for counts, battle, limit in [([30, 22], 40, 60), ([12, 40], 1, 400)]:
+    for counts, battle, limit in [([31, 23], 40, 60), ([12, 42], 1, 400)]:
         worked_out = odds(counts, battle, limit)[0]
         simulated = page.evaluate(f"window.__war.simulate({counts}, {battle}, {limit}, 4000)")[0]
         assert abs(worked_out - simulated) < 0.04, (counts, worked_out, simulated)
@@ -404,14 +413,14 @@ def test_every_song_plays_well_below_clipping(page: Page, site_url, errors):
 
 
 def test_music_follows_the_game_and_can_be_turned_off(page: Page, site_url, errors):
-    page.goto(f"{site_url}/war?seed=7#debug")
+    page.goto(f"{site_url}/war?seed={WAR_SEED}#debug")
     assert page.evaluate(f"{MUSIC}.playing") is None, "no music before the first tap"
     page.click("#menu h1")
     page.wait_for_function(f"{MUSIC}.playing === 'menu'")
     page.click("#soloBtn")
     page.wait_for_function(f"{MUSIC}.playing === 'battle'")
     page.wait_for_function(f"{STATE}.canSlam")
-    # Seed 7: the first battle is a tie, then a double war.
+    # The first battle is a tie, then a double war.
     page.evaluate("window.__war.slam(60)")
     page.wait_for_function(f"{MUSIC}.playing === 'war'")
     page.wait_for_function(f"{STATE}.stage === 1 && {STATE}.canSlam")
