@@ -95,6 +95,72 @@ def test_a_war_you_started_is_finished_before_the_clock_runs_out(page: Page, sit
     assert errors == []
 
 
+
+VERSUS = "window.__war.versus()"
+
+
+def test_a_war_gets_a_versus_intro_that_escalates(page: Page, site_url, errors):
+    start_solo(page, site_url, seed=WAR_SEED)
+    page.evaluate("window.__war.slam(60)")
+    # The fighters slide in, you on the left, and WAR slams down between them.
+    intro = page.locator("#fx .vs")
+    expect(intro).to_have_class(re.compile(r"\blv1\b"))
+    names = intro.locator(".vs-name")
+    expect(names).to_have_count(2)
+    expect(names.nth(0)).to_have_text("You")
+    expect(names.nth(1)).to_have_text("Grumpy Pancake")  # the bot seed 589 deals
+    pics = intro.locator(".vs-pic > span")
+    expect(pics).to_have_count(2)
+    assert all(pics.nth(i).inner_text().strip() for i in range(2)), "each fighter has a picture"
+    # Each holds the eight they tied on, in their own deck.
+    expect(intro.locator(".vs-pic .card")).to_have_count(2)
+    expect(intro.locator(".vs-word")).to_have_text("WAR!")
+    expect(intro.locator(".vs-round")).to_have_text("ROUND 1")
+    expect(page.locator("#banner")).to_have_text("WAR!")
+    assert page.evaluate(VERSUS)["kind"] == "full"
+    # It's only a picture: taps go straight through it.
+    assert page.evaluate("getComputedStyle(document.getElementById('fx')).pointerEvents") == "none"
+
+    # FIGHT! lands as the war opens, and you can slam while it does.
+    page.wait_for_function(f"{STATE}.stage === 1 && {STATE}.canSlam")
+    expect(page.locator("#fx .vs-fight")).to_have_text("FIGHT!")
+    expect(page.locator("#fx .vs")).to_have_count(0)
+    hold_slam(page, 250)
+    expect(page.locator("#myWar .wpile .card")).to_have_count(1)
+
+    # The war ties again: a double war is bigger.
+    page.evaluate("window.__war.slam(60)")
+    intro = page.locator("#fx .vs")
+    expect(intro).to_have_class(re.compile(r"\blv2\b"))
+    expect(intro.locator(".vs-pre")).to_have_text("DOUBLE")
+    expect(intro.locator(".vs-round")).to_have_text("ROUND 2")
+    expect(page.locator("#banner")).to_have_text("DOUBLE WAR!")
+    assert page.evaluate(VERSUS)["level"] == 2
+    size = lambda: page.evaluate("parseFloat(getComputedStyle(document.querySelector('#fx .vs')).getPropertyValue('--word-size').match(/[\\d.]+(?=vw)/)[0])")
+    assert size() > 27, "the double war's WAR is bigger than a war's"
+    assert errors == []
+
+
+def test_reduced_motion_gets_a_calm_versus(page: Page, site_url, errors):
+    page.emulate_media(reduced_motion="reduce")
+    start_solo(page, site_url, seed=WAR_SEED)
+    page.evaluate("window.__war.slam(60)")
+    intro = page.locator("#fx .vs")
+    expect(intro).to_have_class(re.compile(r"\bcalm\b"))
+    expect(intro.locator(".vs-name")).to_have_count(2)
+    expect(intro.locator(".vs-name").nth(0)).to_have_text("You")
+    expect(intro.locator(".vs-word")).to_be_visible()
+    # Nothing moves: no sliding, no shaking, no fireworks.
+    moving = page.evaluate("document.getAnimations().filter((a) => a.effect && a.effect.target && a.effect.target.closest && a.effect.target.closest('.vs')).length")
+    assert moving == 0
+    page.wait_for_timeout(1200)
+    assert page.locator("#fx .bit").count() == 0
+    assert page.evaluate("document.getElementById('app').classList.contains('shake')") is False
+    page.wait_for_function(f"{STATE}.stage === 1 && {STATE}.canSlam")
+    expect(page.locator("#fx .vs")).to_have_count(0)
+    assert page.evaluate(VERSUS)["kind"] == "calm"
+    assert errors == []
+
 def test_mash_to_slam(page: Page, site_url, errors):
     page.goto(f"{site_url}/war?seed=2#debug")
     page.click("#inputSeg button[data-input=mash]")
