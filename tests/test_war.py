@@ -295,6 +295,37 @@ def test_skipping_to_the_end_still_logs_every_battle(page: Page, site_url, error
     assert errors == []
 
 
+def test_opponents_pile_up_what_they_win_too(page: Page, site_url, errors):
+    # Seed 2: your four loses to the bot's joker in the first battle.
+    start_solo(page, site_url, seed=2)
+    bot_heap = page.locator("#opponents .tile .heap .card")
+    page.evaluate("window.__war.slam(80)")
+    page.wait_for_function(f"{STATE}.battle === 2")
+    # Your four flies over to the bot's heap, in your deck, and its joker
+    # lands on top, in its own.
+    expect(bot_heap).to_have_count(2)
+    labels = bot_heap.evaluate_all("cards => cards.map((c) => [c.getAttribute('aria-label'), c.dataset.deck, c.style.zIndex])")
+    assert labels[0][0].startswith("four") and labels[0][1] == page.evaluate("deck")
+    assert labels[1][0].endswith("joker") and labels[1][1] == page.evaluate("deckOf(1)")
+    assert int(labels[1][2]) > int(labels[0][2])
+    heaps = page.evaluate(f"{STATE}.heaps")
+    assert len(heaps["1"]) == 2 and not heaps.get("0"), heaps
+    expect(page.locator("#winnings")).to_be_hidden()
+    assert errors == []
+
+
+def test_others_heaps_only_at_a_small_table(page: Page, site_url, errors):
+    # Five players: only your own heap, to keep a busy table readable.
+    start_solo(page, site_url, opponents=4, seed=3)
+    page.evaluate("window.__war.pace(0.2)")
+    for _ in range(4):
+        page.wait_for_function(f"{STATE}.canSlam", timeout=15_000)
+        page.evaluate("window.__war.slam(60)")
+    page.wait_for_function(f"{STATE}.battle >= 4", timeout=15_000)
+    expect(page.locator("#opponents .tile .heap .card")).to_have_count(0)
+    assert errors == []
+
+
 def test_how_you_slam_is_remembered(page: Page, site_url, errors):
     start_solo(page, site_url)
     expect(page.locator("#inputBtn")).to_have_text("✊ Hold")
@@ -486,7 +517,7 @@ def test_win_probability_follows_the_game_and_ignores_slams(page: Page, site_url
     expect(page.locator("#oddsFav")).to_contain_text("%")
     page.evaluate("window.__war.slam(150)")
     expect(page.locator("#oddsNote")).to_have_text("Slam impact on win probability: +0.0%")
-    joker = page.locator("#opponents .tile .card.joker")
+    joker = page.locator("#opponents .tile .tslot > .card.joker")
     expect(joker).to_be_visible()
     expect(joker).to_have_attribute("aria-label", re.compile(r"^(red|black) joker$"))
     expect(page.locator("#banner")).to_have_text("JOKER!")

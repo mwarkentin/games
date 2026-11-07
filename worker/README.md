@@ -206,7 +206,8 @@ days are also kept in Cloudflare's cache (the Cache API does nothing on
 
 ## Previews
 
-Every pull request that touches `worker/` gets a
+Every pull request whose branch changes `worker/` from `main`'s, stacked
+pull requests included, gets a
 [Worker Preview](https://developers.cloudflare.com/workers/previews/): its
 own copy of the Worker at
 `https://pr-<number>-games-leaderboard.mwarkentin.workers.dev`. The
