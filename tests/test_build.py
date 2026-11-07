@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+import argparse
 import re
+import shutil
 import xml.etree.ElementTree as ET
 
 import build_index
+import pytest
 from build_colophon import format_message
 from build_sitemap import NAMESPACE, build_sitemap
 from common import (
@@ -16,6 +19,7 @@ from common import (
     PREVIEW_SIZE,
     PREVIEWS,
     ROOT,
+    WORKER_URL,
     app_of,
     extract_meta,
     extract_meta_description,
@@ -28,6 +32,7 @@ from common import (
     preview_files,
 )
 from gather_links import extract_urls
+from point_preview import origin, point_site, point_text
 from publish import current_release, inject_telemetry
 
 
@@ -232,3 +237,51 @@ def test_previews_are_1200x630_jpegs_small_enough_for_whatsapp():
         assert data[:2] == b"\xff\xd8", f"{name} isn't a JPEG"
         assert jpeg_size(data) == PREVIEW_SIZE, name
         assert len(data) < 300_000, f"{name} is {len(data) // 1000} KB"
+
+
+def test_point_text_moves_site_and_worker_urls_to_the_preview():
+    site, worker = "https://pr-7-games-preview.example.workers.dev", "https://pr-7-games-leaderboard.example.workers.dev"
+    text = (
+        f'<meta property="og:url" content="{BASE_URL}/war">'
+        f"<a href=\"{BASE_URL}\">home</a>"
+        f"const ROOMS_URL = '{WORKER_URL}';"
+        f"<a href=\"{BASE_URL}.evil.example/\">not ours</a>"
+        "if (location.hostname !== 'games.michaelwarkentin.com') return;"
+    )
+    pointed = point_text(text, site, worker)
+    assert f'content="{site}/war"' in pointed
+    assert f'href="{site}">home' in pointed
+    assert f"ROOMS_URL = '{worker}'" in pointed
+    # A longer hostname, and the bare hostname telemetry and analytics check, stay put.
+    assert f"{BASE_URL}.evil.example/" in pointed
+    assert "location.hostname !== 'games.michaelwarkentin.com'" in pointed
+    # Without a Worker Preview, the pages keep production's Worker.
+    assert f"ROOMS_URL = '{WORKER_URL}'" in point_text(text, site)
+
+
+def test_point_site_leaves_no_production_url_in_the_preview(site_dir, tmp_path):
+    preview = tmp_path / "site"
+    shutil.copytree(site_dir, preview)
+    site, worker = "https://pr-7-games-preview.example.workers.dev", "https://pr-7-games-leaderboard.example.workers.dev"
+    changed = {path.relative_to(preview).as_posix() for path in point_site(preview, site, worker)}
+    assert {"index.html", "war.html", "sitemap.xml", "robots.txt"} <= changed
+    for path in preview.rglob("*"):
+        if path.is_file() and path.suffix in {".html", ".js", ".json", ".txt", ".xml", ".webmanifest"}:
+            text = path.read_text("utf-8")
+            assert BASE_URL not in text, path
+            assert WORKER_URL not in text, path
+    war = (preview / "war.html").read_text("utf-8")
+    assert f"const ROOMS_URL = '{worker}';" in war
+    assert f'<meta property="og:url" content="{site}/war">' in war
+    # Images and music are copied untouched.
+    for name in [*music_files(), *preview_files()]:
+        assert (preview / name).read_bytes() == (ROOT / name).read_bytes()
+    # The site it came from is left as it was.
+    assert BASE_URL in (site_dir / "index.html").read_text("utf-8")
+
+
+def test_point_preview_takes_only_https_origins():
+    assert origin("https://pr-1-games-preview.mwarkentin.workers.dev/") == "https://pr-1-games-preview.mwarkentin.workers.dev"
+    for bad in ["http://example.com", "https://example.com/path", "example.com", "https://ex ample.com"]:
+        with pytest.raises(argparse.ArgumentTypeError):
+            origin(bad)

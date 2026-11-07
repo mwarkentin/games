@@ -209,11 +209,18 @@ Every pull request that touches `worker/` gets a
 [Worker Preview](https://developers.cloudflare.com/workers/previews/): its
 own copy of the Worker at
 `https://pr-<number>-games-leaderboard.mwarkentin.workers.dev`. The
-**Preview leaderboard worker** workflow makes it, comments on the pull
-request with its URL and links to the live games pointed at it (with
-`?leaderboard=`, `?rooms=` and `?survey=`), and deletes it when the pull
-request closes. It's the way to try War's rooms or the survey with real
-phones before merging.
+**Preview** workflow (`.github/workflows/preview.yml`) makes it, then builds
+the pull request's own copy of the site at
+`https://pr-<number>-games-preview.mwarkentin.workers.dev` with its games
+pointed at the Worker Preview (see Previews in `AGENTS.md`), comments on the
+pull request with both, and deletes both when the pull request closes. It's
+the way to try War's rooms or the survey with real phones before merging.
+
+- **Origins:** the Worker Preview allows its own pull request's site
+  preview, on top of `ALLOWED_ORIGINS` in `[previews.vars]`: the workflow
+  passes the longer list with `--var` to that Preview alone. Production's
+  `ALLOWED_ORIGINS` never includes a preview, so previews of pages without a
+  Worker Preview can't write to production.
 
 - **Durable Objects** are the Preview's own: its rooms and survey start
   empty and never touch production's, and go when it's deleted.
@@ -232,7 +239,9 @@ phones before merging.
 - **Secrets:** each Preview gets `PREVIEW_IP_SALT` as its `IP_SALT`, never
   production's salt. Turnstile stays off.
 
-mwarkentin/infra makes the database and the salt. Previews are public URLs,
+mwarkentin/infra makes the database and the salt. The site previews'
+Worker, `games-preview` (`../preview/wrangler.toml`), needs nothing from it
+but the same token: the first Preview creates the Worker. Previews are public URLs,
 like production's, and only accept writes from `ALLOWED_ORIGINS`. The free
 plan keeps up to 100 per Worker, dropping the one deployed to least recently.
 To try one by hand from a branch, after applying migrations as the workflow

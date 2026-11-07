@@ -43,8 +43,11 @@ utilities; games live here so they get their own origin and their own rules.
   Durable Objects (see `worker/SURVEY.md`, and `worker/TURNSTILE.md` for its
   optional bot check). It deploys through its own
   workflow and is never part of the site. A pull request that changes it
-  gets a Worker Preview of its own, linked in a comment (see Previews in
+  gets a Worker Preview of its own (see Previews below, and in
   `worker/README.md`).
+- `preview/`: the `games-preview` Worker, which has no code and serves each
+  pull request's build of the site as a Worker Preview (see Previews). It's
+  never deployed to production.
 
 ## Rules for every game
 
@@ -180,6 +183,45 @@ built from `BASE_URL`.
 - A game without one gets a small card with its 512px icon. The home page
   and colophon use `previews/index.jpg` if there is one, or the site's icon.
 - A page that writes its own `og:title` keeps its own tags.
+
+## Previews
+
+Every pull request gets its own copy of the whole site, built from its
+branch, at `https://pr-<number>-games-preview.mwarkentin.workers.dev`, so
+it can be played on a phone before merging. The **Preview** workflow
+(`.github/workflows/preview.yml`) makes it on each push, comments on the pull
+request with its link and the games the pull request changes (one comment,
+kept up to date), and deletes it when the pull request closes.
+
+- **Hosting:** a [Worker Preview](https://developers.cloudflare.com/workers/previews/)
+  of `games-preview` (`preview/wrangler.toml`), a Worker with nothing but
+  static assets: the workflow runs `build.sh`, then `wrangler preview` uploads
+  `_site/`. `/war` serves `war.html`, as on GitHub Pages. It uses the same
+  Cloudflare token as the leaderboard Worker.
+- **Its own URLs:** `scripts/point_preview.py` rewrites the built site so the
+  live site's address (link previews, the sitemap, the game list) becomes
+  the preview's. Games need nothing for this; just keep naming the Worker
+  by its full URL (`WORKER_URL` in `scripts/common.py`).
+- **The Worker:** a pull request that touches `worker/` (or `preview.yml`)
+  also gets a Worker Preview of the leaderboard Worker, made first, and
+  `point_preview.py` points the games' `LEADERBOARD_URL`, `ROOMS_URL` and the
+  survey log's `SURVEY_URL` at it, so the preview's War rooms, leaderboards
+  and survey log run against the pull request's own Worker. That Preview
+  also allows the site preview's origin in `ALLOWED_ORIGINS`, passed with
+  `--var` for that Preview only; `wrangler.toml` doesn't change.
+  Letterfield's survey still needs `?survey=`, which the comment links to.
+- **Without one,** the preview keeps production's Worker, which only answers
+  the live site's origin: leaderboards say they can't be reached and War's
+  rooms can't start, and a preview can never write to production. Solo play
+  is unaffected.
+- **Apart from the live site:** each preview is its own origin, so its
+  `localStorage`, service worker and offline copy are its own. Telemetry and
+  analytics check the hostname, so they stay off. Turnstile's widget doesn't
+  allow preview hostnames, so the survey joins without a pass, which Worker
+  Previews accept.
+- Pull requests from forks get no secrets and no previews. Locally, the
+  same build serves with `cd preview && npx wrangler@4.151.0 dev` after
+  `uv run ./build.sh`.
 
 ## Games that started as claude.ai artifacts
 
