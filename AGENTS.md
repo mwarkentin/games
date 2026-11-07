@@ -15,20 +15,23 @@ utilities; games live here so they get their own origin and their own rules.
   its own and its path must start with the game's (see `app_of` in
   `scripts/common.py`).
 - `README.md`: the game list. The build turns it into `index.html`.
+- `changelog/`: each game's changelog for players, `<game>.md`, which the
+  build turns into `/changelog/<game>` (see Changelogs).
 - `build.sh` and `scripts/`: assemble the site in `_site/` (never committed).
-  The build also generates `index.html`, `colophon.html`, `sitemap.xml`,
-  `games.json` and each page's web app manifest, so don't create those by
-  hand. Games are published as committed, apart from link-preview tags,
-  `telemetry.js`, `analytics.js` and the home-screen app links (see below).
+  The build also generates `index.html`, `colophon.html`, the changelog
+  pages, `sitemap.xml`, `games.json` and each page's web app manifest, so
+  don't create those by hand. Games are published as committed, apart from
+  link-preview tags, `telemetry.js`, `analytics.js` and the home-screen app
+  links (see below).
 - `TIP_URL` in `scripts/common.py`: the Stripe Payment Link for tips. Once
-  it's set, the header of the home page and colophon link to it as "Tip
-  jar", tagged with `client_reference_id=games-home` or `games-colophon` so
-  each payment shows where it came from. Games themselves get no link,
-  since they own the whole screen.
+  it's set, the header of the home page, colophon and changelogs link to it
+  as "Tip jar", tagged with `client_reference_id=games-home`,
+  `games-colophon` or `games-changelog` so each payment shows where it came
+  from. Games themselves get no link, since they own the whole screen.
 - `telemetry.js`: error reporting, performance and session replays through
   Sentry. The build inlines it into every game's `<head>`.
 - `analytics.js`: page views through Counterscale. The build inlines it into
-  every page's `<head>`, the home page and colophon included.
+  every page's `<head>`, the home page, colophon and changelogs included.
 - `sw.js`: the service worker that keeps every page working offline. The
   build fills in its list of pages and a version.
 - `previews/`: link-preview images, `<game>.jpg` at 1200×630 (see Link
@@ -43,8 +46,11 @@ utilities; games live here so they get their own origin and their own rules.
   Durable Objects (see `worker/SURVEY.md`, and `worker/TURNSTILE.md` for its
   optional bot check). It deploys through its own
   workflow and is never part of the site. A pull request that changes it
-  gets a Worker Preview of its own, linked in a comment (see Previews in
+  gets a Worker Preview of its own (see Previews below, and in
   `worker/README.md`).
+- `preview/`: the `games-preview` Worker, which has no code and serves each
+  pull request's build of the site as a Worker Preview (see Previews). It's
+  never deployed to production.
 
 ## Rules for every game
 
@@ -89,6 +95,31 @@ utilities; games live here so they get their own origin and their own rules.
   title is longer than 12 characters, add
   `<meta name="apple-mobile-web-app-title" content="...">` with a shorter
   name for the Home Screen.
+
+## Changelogs
+
+The colophon shows every commit, for whoever works on the games. Each game's
+changelog, `changelog/<game>.md`, is for players: what changed that they'd
+notice, in a sentence or two each, without file names or internals. A page
+that belongs to a game, like `letterfield-log.html`, goes in that game's.
+
+```markdown
+## 2026-11-06
+
+- Music from public-domain scores, with its own off switch.
+
+## 2026-11-03
+
+- Seven deck themes to pick from.
+```
+
+A day is the date the change reached the site (when it merged to `main`),
+newest first and one heading a day. Changes still switched off on the site,
+like a leaderboard before its URL is set, wait for the day they're switched
+on. `scripts/build_changelog.py` builds `/changelog/<game>` from it, and
+fails the build on text before the first day, a heading that isn't a date,
+an empty day or days out of order. The home page's recent dates and the
+colophon link to it. `tests/test_changelog.py` checks every game has one.
 
 ## Telemetry
 
@@ -181,6 +212,49 @@ built from `BASE_URL`.
   and colophon use `previews/index.jpg` if there is one, or the site's icon.
 - A page that writes its own `og:title` keeps its own tags.
 
+## Previews
+
+Every pull request gets its own copy of the whole site, built from its
+branch, at `https://pr-<number>-games-preview.mwarkentin.workers.dev`, so
+it can be played on a phone before merging. The **Preview** workflow
+(`.github/workflows/preview.yml`) makes it on each push, comments on the pull
+request with its link and the games the pull request changes (one comment,
+kept up to date), and deletes it when the pull request closes.
+
+- **Hosting:** a [Worker Preview](https://developers.cloudflare.com/workers/previews/)
+  of `games-preview` (`preview/wrangler.toml`), a Worker with nothing but
+  static assets: the workflow runs `build.sh`, then `wrangler preview` uploads
+  `_site/`. `/war` serves `war.html`, as on GitHub Pages. It uses the same
+  Cloudflare token as the leaderboard Worker.
+- **Its own URLs:** `scripts/point_preview.py` rewrites the built site so the
+  live site's address (link previews, the sitemap, the game list) becomes
+  the preview's. Games need nothing for this; just keep naming the Worker
+  by its full URL (`WORKER_URL` in `scripts/common.py`). It also puts a
+  yellow strip atop the preview's home page, colophon and changelogs naming the pull
+  request and commit, linked to the pull request; games get none, but
+  every page's `<title>` starts with "PR <number> · ", so a game's tab
+  says it's a preview too.
+- **The Worker:** a pull request that touches `worker/` (or `preview.yml`)
+  also gets a Worker Preview of the leaderboard Worker, made first, and
+  `point_preview.py` points the games' `LEADERBOARD_URL`, `ROOMS_URL` and the
+  survey log's `SURVEY_URL` at it, so the preview's War rooms, leaderboards
+  and survey log run against the pull request's own Worker. That Preview
+  also allows the site preview's origin in `ALLOWED_ORIGINS`, passed with
+  `--var` for that Preview only; `wrangler.toml` doesn't change.
+  Letterfield's survey still needs `?survey=`, which the comment links to.
+- **Without one,** the preview keeps production's Worker, which only answers
+  the live site's origin: leaderboards say they can't be reached and War's
+  rooms can't start, and a preview can never write to production. Solo play
+  is unaffected.
+- **Apart from the live site:** each preview is its own origin, so its
+  `localStorage`, service worker and offline copy are its own. Telemetry and
+  analytics check the hostname, so they stay off. Turnstile's widget doesn't
+  allow preview hostnames, so the survey joins without a pass, which Worker
+  Previews accept.
+- Pull requests from forks get no secrets and no previews. Locally, the
+  same build serves with `cd preview && npx wrangler@4.151.0 dev` after
+  `uv run ./build.sh`.
+
 ## Games that started as claude.ai artifacts
 
 An artifact may call `window.claude` for shared storage or sign-in. That
@@ -265,15 +339,18 @@ Object that holds the game and every player's WebSocket (`worker/src/war.js`).
 1. Create or update `foo.html` following the rules above.
 2. Link it from `README.md` under the right heading:
    `- [Title](https://games.michaelwarkentin.com/foo): what it is`.
-3. Draw its icon as `icons/foo.svg` and run `uv run scripts/render_icons.py`
+3. Note anything a player would notice in `changelog/foo.md`, under the day
+   it reaches the site (see Changelogs). A new game's first day says it's
+   here.
+4. Draw its icon as `icons/foo.svg` and run `uv run scripts/render_icons.py`
    (see Home-screen apps). Optionally add `previews/foo.jpg` for a large
    link preview (see Link previews).
-4. Add `tests/test_foo.py` that starts the game and plays a little: press
+5. Add `tests/test_foo.py` that starts the game and plays a little: press
    Start, make a move, check the score or board changed. A debug hook such
    as Funnels & Buckets' `#debug` / `window.__fb` makes this much easier.
    `tests/test_games.py` already smoke-tests every game.
-5. Run `uv run pytest` and make sure it passes.
-6. In the commit message, say what changed and include the URL of the chat,
+6. Run `uv run pytest` and make sure it passes.
+7. In the commit message, say what changed and include the URL of the chat,
    artifact or agent session behind it.
 
 ## Commands
