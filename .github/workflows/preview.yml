@@ -4,7 +4,8 @@ name: Preview
 # at https://pr-<number>-games-preview.mwarkentin.workers.dev: a Worker
 # Preview of the assets-only games-preview Worker (preview/wrangler.toml).
 #
-# A pull request that touches worker/ also gets a Worker Preview of the
+# A pull request whose branch changes worker/ from main's (stacked pull
+# requests included, whatever their base) also gets a Worker Preview of the
 # leaderboard Worker at
 # https://pr-<number>-games-leaderboard.mwarkentin.workers.dev, with Durable
 # Objects of its own and the Previews' test databases, and the site preview
@@ -44,15 +45,20 @@ jobs:
     outputs:
       worker: ${{ steps.diff.outputs.worker }}
     steps:
-      # The pull request's merge commit, whose first parent is the base
-      # branch: their difference is everything the pull request changes,
-      # across all its pushes so far.
+      # The pull request's merge commit against the default branch: what the
+      # preview would serve that production doesn't. For a pull request on
+      # main that's everything it changes; for one stacked on another pull
+      # request's branch, it counts that branch's changes too, since its
+      # pages need that branch's Worker as much as their own.
       - uses: actions/checkout@v7
         with:
-          fetch-depth: 2
+          fetch-depth: 0
       - id: diff
+        env:
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
         run: |
-          if git diff --name-only HEAD^1 HEAD | grep -qE '^(worker/|\.github/workflows/preview\.yml$)'; then
+          git fetch --quiet origin "$DEFAULT_BRANCH"
+          if git diff --name-only "origin/$DEFAULT_BRANCH...HEAD" | grep -qE '^(worker/|\.github/workflows/preview\.yml$)'; then
             echo "worker=true" >> "$GITHUB_OUTPUT"
           else
             echo "worker=false" >> "$GITHUB_OUTPUT"
@@ -193,11 +199,11 @@ jobs:
 
           **Worker Preview:** $WORKER
 
-          This pull request changes the Worker, so the preview's pages point at its Worker Preview: War's rooms, the leaderboards and Letterfield's log already use it, and [Letterfield's shared survey]($SITE/letterfield?survey=$WORKER) does with \`?survey=\`. Rooms and the survey start empty and are this Preview's alone; scores and the survey log go to the Previews' test databases."
+          This pull request's branch changes the Worker, so the preview's pages point at its Worker Preview: War's rooms, the leaderboards and Letterfield's log already use it, and [Letterfield's shared survey]($SITE/letterfield?survey=$WORKER) does with \`?survey=\`. Rooms and the survey start empty and are this Preview's alone; scores and the survey log go to the Previews' test databases."
           else
             body="$body
 
-          This pull request doesn't change \`worker/\`, so the preview's pages keep production's Worker, which only answers the live site: here the leaderboards say they can't be reached and War's rooms can't start. Solo play works as usual."
+          This pull request's branch doesn't change \`worker/\` from main's, so the preview's pages keep production's Worker, which only answers the live site: here the leaderboards say they can't be reached and War's rooms can't start. Solo play works as usual."
           fi
           body="$body
 
