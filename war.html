@@ -287,6 +287,22 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px s
   100% { transform: none; }
 }
 #mySlot.won .card:not(.back) { box-shadow: 0 0 0 3px var(--gold), 0 0 22px var(--gold); }
+#myPile { cursor: default; -webkit-touch-callout: none; border-radius: 12px; }
+#myPile:focus-visible { outline: 3px solid var(--gold); outline-offset: 4px; }
+/* Your turn: the deck bobs and glows, with a hint on how to slam it. */
+#me.ready #myPile { cursor: pointer; }
+#me.ready:not(.charging) #myPile .stack { animation: beckon calc(1400ms * var(--pace)) ease-in-out infinite; }
+@keyframes beckon {
+  0%, 100% { transform: translateY(0); filter: drop-shadow(0 0 0 transparent); }
+  50% { transform: translateY(-5px); filter: drop-shadow(0 0 12px var(--gold)); }
+}
+#myPile .stack.tapped { animation: tapped 120ms ease-out !important; }
+@keyframes tapped { 0% { transform: translateY(4px) scale(.95); } 100% { transform: none; } }
+#deckHint {
+  position: absolute; left: 50%; bottom: 12%; transform: translateX(-50%); z-index: 2; pointer-events: none;
+  font: 800 12px/1 system-ui, sans-serif; background: var(--gold); color: var(--gold-ink); padding: 6px 9px;
+  border-radius: 999px; white-space: nowrap; box-shadow: 0 2px 6px rgba(0, 0, 0, .3);
+}
 #me.charging #myPile .stack { animation: tremble calc(140ms - var(--power, 0) * .4ms) linear infinite; }
 #me.charging #myPile .stack .card { box-shadow: 0 0 calc(var(--power, 0) * .18px) calc(var(--power, 0) * .05px) var(--gold); }
 #meNote { position: absolute; inset: 0; display: grid; place-items: center; text-align: center; font-weight: 700; color: var(--felt-dim); padding: 0 20px; }
@@ -330,23 +346,20 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px s
 
 /* Controls */
 #controls { padding: 4px 12px 10px; display: grid; gap: 8px; width: 100%; max-width: 560px; justify-self: center; }
-#slamBtn {
-  position: relative; overflow: hidden; height: 64px; border: 0; border-radius: 20px;
-  background: var(--accent); color: var(--accent-ink); box-shadow: 0 5px 0 #b52a14, var(--shadow);
-  font-family: var(--display); font-size: 22px; letter-spacing: .03em; touch-action: none;
-  -webkit-touch-callout: none;
+/* What to do and how hard you're slamming. You slam on your deck itself. */
+#slamBar {
+  position: relative; overflow: hidden; height: 40px; border-radius: 14px; background: rgba(0, 0, 0, .22);
+  display: grid; place-items: center; color: var(--felt-dim); font-family: var(--display); font-size: 17px; letter-spacing: .03em;
 }
-#slamBtn:disabled { background: rgba(0, 0, 0, .25); color: var(--felt-dim); box-shadow: none; cursor: default; }
-#slamBtn.held { transform: translateY(3px); box-shadow: 0 2px 0 #b52a14, var(--shadow); }
+#slamBar.go { color: var(--felt-ink); background: rgba(0, 0, 0, .32); }
+#slamBar.hurry { color: #fff; background: rgba(255, 59, 48, .6); }
 #meterFill {
   position: absolute; left: 0; top: 0; bottom: 0; width: 0; pointer-events: none;
   background: linear-gradient(90deg, #ffd23d, #ff9a1f 45%, #ff3b30 70%, #c13cff 88%, #3cf0ff);
   background-size: 320px 100%; opacity: .95;
 }
 #slamText { position: relative; text-shadow: 0 2px 0 rgba(0, 0, 0, .25); white-space: nowrap; }
-#slamText.long { font-size: 17px; }
-#slamBtn.tapped { animation: tapped 120ms ease-out; }
-@keyframes tapped { 0% { transform: translateY(4px) scale(.97); } 100% { transform: none; } }
+#slamText.long { font-size: 14px; }
 #tools { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; justify-content: center; }
 .chip {
   border: 0; border-radius: 999px; padding: 8px 10px; background: rgba(0, 0, 0, .22); font-size: 13px; font-weight: 700;
@@ -536,14 +549,14 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px s
       <div class="heap" role="img" aria-label="Cards you've won"></div>
       <button id="tidyBtn" type="button" hidden>🧹 Clean up</button>
     </div>
-    <div id="myPile"><div class="stack"><div class="card back"></div></div><div id="myLabel"></div></div>
+    <div id="myPile" role="button" tabindex="0" aria-label="Your deck" aria-describedby="slamText"><div class="stack"><div class="card back"></div><span id="deckHint" hidden></span></div><div id="myLabel"></div></div>
     <div id="myWar" hidden><div class="wpile"></div><span class="wcount"></span></div>
     <div id="mySlot"><div class="card empty"></div></div>
     <div id="gain"></div>
     <div id="meNote" hidden></div>
   </section>
   <footer id="controls">
-    <button id="slamBtn" disabled><span id="meterFill"></span><span id="slamText">Hold to slam</span></button>
+    <div id="slamBar"><span id="meterFill"></span><span id="slamText">Hold your deck to slam</span></div>
     <div id="tools">
       <button class="chip" id="styleBtn">🖐️ Bare hands</button>
       <button class="chip" id="inputBtn" title="How you slam: tap to switch">✊ Hold</button>
@@ -2613,11 +2626,14 @@ function renderBar() {
 function renderControls() {
   const fighting = S.phase === 'playing' && S.you !== null && isFighting(S.you) && !S.pending;
   const can = fighting && !S.slams[S.you] && now() >= S.opensAt;
-  const btn = $('slamBtn');
   const busy = inputBusy();
-  if (btn.disabled !== !can && !busy) btn.disabled = !can;
+  setClass($('me'), 'ready', can);
+  const hint = $('deckHint');
+  setHidden(hint, !can || busy);
+  if (can) setText(hint, INPUTS[S.input][4]);
+  let hurry = false;
   if (!busy) {
-    let text = 'Hold to slam';
+    let text = INPUTS[S.input][2];
     if (S.phase !== 'playing' || S.you === null) text = S.phase === 'over' ? 'Game over' : 'Watching';
     else if (S.battle && S.out[S.you]) text = 'Out of cards';
     else if (S.slams[S.you] && fighting) text = `${tierName(S.slams[S.you][0])}!`;
@@ -2629,12 +2645,15 @@ function renderControls() {
       const plan = slamPlan();
       const left = Math.ceil((S.closesAt - now()) / 1000);
       const step = plan.need > 1 ? (plan.done.length + 1 < plan.need ? `Face-down ${plan.done.length + 1}/${plan.need - 1}` : 'The decider') : '';
-      text = left <= 4 ? `${step ? 'Hurry' : 'Slam'}! ${Math.max(0, left)}…` : step ? `${step} · ${INPUTS[S.input][3]}` : INPUTS[S.input][2];
+      hurry = left <= 4;
+      text = hurry ? `${step ? 'Hurry' : 'Slam'}! ${Math.max(0, left)}…` : step ? `${step} · ${INPUTS[S.input][3]}` : INPUTS[S.input][2];
     }
     setText($('slamText'), text);
-    setClass($('slamText'), 'long', text.length > 16);
+    setClass($('slamText'), 'long', text.length > 21);
     if ($('meterFill').style.width !== '0%') $('meterFill').style.width = '0%';
   }
+  setClass($('slamBar'), 'go', can || busy);
+  setClass($('slamBar'), 'hurry', hurry);
   const st = STYLES[S.style] || STYLES[0];
   setText($('styleBtn'), `${st[0]} ${st[1]}`);
   setText($('inputBtn'), `${INPUTS[S.input][0]} ${INPUTS[S.input][1]}`);
@@ -2780,16 +2799,17 @@ function renderHeap() {
 
 // ---- Slamming ----
 //
-// Three ways to slam, all for show: hold the button and let go, tap it as
-// fast as you can, or fling a card at the table. In a war you slam every card
+// Three ways to slam, all for show and all on your deck: hold it and let go,
+// tap it as fast as you can, or throw a card off it at the table. In a war you slam every card
 // you lay down, up to three face down and then the one that decides it; only
 // the last one goes to the room as your slam.
 
-// [emoji, name, what the button says, what it says in a war]
+// You slam on your deck: [emoji, name, what to do, what to do in a war, the
+// hint on your deck].
 const INPUTS = {
-  hold: ['✊', 'Hold', 'Hold to slam', 'hold'],
-  mash: ['👆', 'Mash', 'Tap fast to slam', 'tap fast'],
-  fling: ['🫳', 'Fling', 'Fling a card', 'fling'],
+  hold: ['✊', 'Hold', 'Hold your deck to slam', 'hold', 'Hold me'],
+  mash: ['👆', 'Mash', 'Tap your deck fast', 'tap fast', 'Tap me!'],
+  fling: ['🫳', 'Fling', 'Throw a card off your deck', 'throw', 'Throw me'],
 };
 const INPUT_HELP = { hold: 'Hold, let go', mash: 'Tap for 5 s', fling: 'Throw a card' };
 const MASH_MS = 5000;
@@ -2829,7 +2849,6 @@ function cancelInput() {
   mash = null;
   if (fling) { fling.ghost.remove(); fling = null; }
   Sound.stopCharge();
-  $('slamBtn').classList.remove('held');
   $('me').classList.remove('charging');
   renderControls();
 }
@@ -2860,7 +2879,6 @@ function startCharge(pointer) {
   Sound.unlock();
   if (inputBusy() || !canSlam()) return;
   charge = { start: now(), power: 0, tier: 0, pointer };
-  $('slamBtn').classList.add('held');
   $('me').classList.add('charging');
   Sound.startCharge();
   requestAnimationFrame(chargeFrame);
@@ -2899,10 +2917,10 @@ function mashTap() {
   }
   mash.taps++;
   Sound.tone(420 + Math.min(40, mash.taps) * 12, 0, 0.05, { type: 'square', gain: 0.035 });
-  const btn = $('slamBtn');
-  btn.classList.remove('tapped');
-  void btn.offsetWidth;
-  btn.classList.add('tapped');
+  const stack = $('myPile').querySelector('.stack');
+  stack.classList.remove('tapped');
+  void stack.offsetWidth;
+  stack.classList.add('tapped');
 }
 
 function mashFrame() {
@@ -2923,7 +2941,7 @@ function finishMash() {
   slamCard(power);
 }
 
-// Fling: grab a card, from your deck or the button, and throw it. Power is
+// Fling: grab a card off your deck and throw it. Power is
 // how fast it was going when you let go, plus a little for how far it went.
 function startFling(e) {
   Sound.unlock();
@@ -4035,27 +4053,19 @@ function init() {
     renderStyles();
   });
 
-  // The slam button: hold it, mash it, or drag a card off it. In fling mode
-  // your deck works too.
-  const btn = $('slamBtn');
-  btn.addEventListener('pointerdown', (e) => {
+  // Your deck: hold it, tap it fast, or throw a card off it.
+  const pile = $('myPile');
+  pile.addEventListener('pointerdown', (e) => {
     if (e.button > 0) return;
     e.preventDefault();
-    try { btn.setPointerCapture(e.pointerId); } catch (err) { /* fine */ }
+    try { pile.setPointerCapture(e.pointerId); } catch (err) { /* fine */ }
     if (S.input === 'mash') mashTap();
     else if (S.input === 'fling') startFling(e);
     else startCharge(e.pointerId);
   });
-  btn.addEventListener('pointerup', (e) => { if (charge && charge.pointer === e.pointerId) releaseCharge(); });
-  btn.addEventListener('pointercancel', () => { if (charge) releaseCharge(); });
-  btn.addEventListener('contextmenu', (e) => e.preventDefault());
-  const pile = $('myPile');
-  pile.addEventListener('pointerdown', (e) => {
-    if (S.input !== 'fling' || e.button > 0) return;
-    e.preventDefault();
-    try { pile.setPointerCapture(e.pointerId); } catch (err) { /* fine */ }
-    startFling(e);
-  });
+  pile.addEventListener('pointerup', (e) => { if (charge && charge.pointer === e.pointerId) releaseCharge(); });
+  pile.addEventListener('pointercancel', () => { if (charge) releaseCharge(); });
+  pile.addEventListener('contextmenu', (e) => e.preventDefault());
   document.addEventListener('pointermove', moveFling);
   document.addEventListener('pointerup', releaseFling);
   document.addEventListener('pointercancel', releaseFling);

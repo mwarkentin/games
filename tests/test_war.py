@@ -30,7 +30,7 @@ def start_solo(page: Page, site_url: str, opponents: int = 1, length: str = "sta
 
 
 def hold_slam(page: Page, ms: int) -> None:
-    box = page.locator("#slamBtn").bounding_box()
+    box = page.locator("#myPile .stack").bounding_box()
     page.mouse.move(box["x"] + box["width"] / 2, box["y"] + box["height"] / 2)
     page.mouse.down()
     page.wait_for_timeout(ms)
@@ -40,11 +40,16 @@ def hold_slam(page: Page, ms: int) -> None:
 def test_hold_to_charge_and_release_to_slam(page: Page, site_url, errors):
     start_solo(page, site_url)
     assert page.locator("#opponents .tile").count() == 1
-    box = page.locator("#slamBtn").bounding_box()
+    # It's your turn: your deck says how to slam it.
+    expect(page.locator("#me")).to_have_class(re.compile(r"\bready\b"))
+    expect(page.locator("#deckHint")).to_have_text("Hold me")
+    expect(page.locator("#slamText")).to_have_text("Hold your deck to slam")
+    box = page.locator("#myPile .stack").bounding_box()
     page.mouse.move(box["x"] + 40, box["y"] + 30)
     page.mouse.down()
     page.wait_for_timeout(900)
-    expect(page.locator("#slamText")).not_to_have_text("Hold to slam")
+    expect(page.locator("#slamText")).not_to_have_text("Hold your deck to slam")
+    expect(page.locator("#deckHint")).to_be_hidden()
     page.mouse.up()
 
     power = page.evaluate(f"{STATE}.slams[0][0]")
@@ -95,8 +100,9 @@ def test_mash_to_slam(page: Page, site_url, errors):
     page.click("#inputSeg button[data-input=mash]")
     page.click("#soloBtn")
     page.wait_for_function(f"{STATE}.canSlam")
-    expect(page.locator("#slamText")).to_have_text("Tap fast to slam")
-    box = page.locator("#slamBtn").bounding_box()
+    expect(page.locator("#slamText")).to_have_text("Tap your deck fast")
+    expect(page.locator("#deckHint")).to_have_text("Tap me!")
+    box = page.locator("#myPile .stack").bounding_box()
     for _ in range(25):
         page.mouse.click(box["x"] + box["width"] / 2, box["y"] + box["height"] / 2)
     expect(page.locator("#slamText")).to_contain_text("25 taps")
@@ -230,7 +236,7 @@ def test_how_you_slam_is_remembered(page: Page, site_url, errors):
     expect(page.locator("#inputBtn")).to_have_text("👆 Mash")
     page.click("#inputBtn")
     expect(page.locator("#inputBtn")).to_have_text("🫳 Fling")
-    expect(page.locator("#slamText")).to_have_text("Fling a card")
+    expect(page.locator("#slamText")).to_have_text("Throw a card off your deck")
     assert page.evaluate("JSON.parse(localStorage.getItem('war:input'))") == "fling"
     page.reload()
     expect(page.locator("#inputSeg button[data-input=fling]")).to_have_attribute("aria-pressed", "true")

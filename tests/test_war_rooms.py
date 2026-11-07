@@ -34,7 +34,7 @@ def join_room(page: Page, code: str, name: str) -> None:
 
 
 def hold_slam(page: Page, ms: int) -> None:
-    box = page.locator("#slamBtn").bounding_box()
+    box = page.locator("#myPile .stack").bounding_box()
     page.mouse.move(box["x"] + box["width"] / 2, box["y"] + box["height"] / 2)
     page.mouse.down()
     page.wait_for_timeout(ms)
@@ -217,7 +217,8 @@ def test_latecomers_watch(page: Page, site_url, errors):
     expect(page.locator("#app")).to_be_visible()
     expect(page.locator("#meNote")).to_contain_text("watching")
     expect(page.locator("#opponents .tile")).to_have_count(2)
-    expect(page.locator("#slamBtn")).to_be_disabled()
+    expect(page.locator("#myPile")).to_be_hidden()
+    expect(page.locator("#slamText")).to_have_text("Watching")
     # Watching a game that ends doesn't count as playing it.
     fake.broadcast({
         "t": "flip", "battle": 1, "stage": 0, "winner": 0, "tied": [0], "gods": False, "pot": 2,
