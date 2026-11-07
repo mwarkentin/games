@@ -3181,8 +3181,8 @@ setInterval(() => {
 // clears, landing every which way, messier the bigger it gets: yours beside
 // your card, and at a table of up to four, everyone else's behind the card on
 // their tile. When you lose, your card flies
-// to the winner's heap. Clean up sorts your heap into a neat stack, twos at
-// the bottom. All for show: won cards go into the winner's deck either way,
+// to the winner's heap. Clean up squares your heap into a neat stack in the
+// order it landed, the latest card still on top. All for show: won cards go into the winner's deck either way,
 // and a heap never shows more cards than its player holds.
 
 // Cards drawn at most: on your heap, and on others' at a table of up to four
@@ -3191,8 +3191,8 @@ const HEAP_MAX = { me: 36, 'size-l': 24, 'size-m': 16, 'size-s': 0, 'size-xs': 0
 const heaps = new Map();  // seat -> { cards: [{ card, look, seat, node }], bottom first; tidy; layer }
 let heapPending = null;   // { winner, cards }: the pot just won, until the table clears
 const TIDY_LINES = [
-  (n) => `Squared away ${plural(n, 'card')}, twos at the bottom. The war will shuffle them anyway.`,
-  (n) => `${plural(n, 'card')}, tidied and sorted. Your chances are exactly the same.`,
+  (n) => `Squared away ${plural(n, 'card')}, latest on top. The war will shuffle them anyway.`,
+  (n) => `${plural(n, 'card')}, tidied up in the order you won them. Your chances are exactly the same.`,
   (n) => `A neat stack of ${n}. Tidiness has been independently verified to change nothing.`,
 ];
 
@@ -3298,13 +3298,11 @@ function heapToss(seat, cards) {
   renderHeaps();
 }
 
-// Squares your heap up into a neat stack, sorted: face-down cards at the
-// bottom, then twos up to aces, and jokers on top.
+// Squares your heap up into a neat stack without reordering it: the oldest
+// card at the bottom and the latest still on top.
 function heapTidy() {
   const h = heaps.get(S.you);
   if (!h || h.tidy || h.cards.length < 2) return;
-  const key = (c) => (c.card === 'back' ? -1 : warRank(c.card) * WAR.DECK + (c.card % WAR.DECK));
-  h.cards.sort((a, b) => key(a) - key(b));
   h.cards.forEach((c, i) => {
     const s = c.node.style;
     c.node.classList.remove('toss');

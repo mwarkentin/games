@@ -259,7 +259,7 @@ def rank(card: int) -> int:
     return 13 if face >= 52 else face % 13
 
 
-def test_won_cards_pile_up_and_clean_up_sorts_them(page: Page, site_url, errors):
+def test_won_cards_pile_up_and_clean_up_keeps_their_order(page: Page, site_url, errors):
     # Seed 14: you win the first two battles, a joker over a queen, then an
     # ace over a queen.
     start_solo(page, site_url, seed=14)
@@ -285,17 +285,24 @@ def test_won_cards_pile_up_and_clean_up_sorts_them(page: Page, site_url, errors)
     expect(heap).to_have_count(4)
     assert len(set(heap.evaluate_all("cards => cards.map((c) => c.style.getPropertyValue('--r'))"))) > 1, "it's a mess"
 
+    # Thrown the bot's first and yours last, so your ace landed on top.
+    z_order = """cards => cards.slice().sort((a, b) => a.style.zIndex - b.style.zIndex)
+        .map((c) => c.getAttribute('aria-label'))"""
+    before = page.evaluate(f"{STATE}.heap")
+    assert [rank(c) for c in before] == [10, 13, 10, 12], "a queen, your joker, a queen, your ace"
+    stacked = heap.evaluate_all(z_order)
+    assert stacked[-1].startswith("ace"), stacked
+
     counts = page.evaluate(f"{STATE}.counts")
     page.click("#tidyBtn")
     expect(page.locator("#tidyBtn")).to_be_hidden()
     assert page.evaluate(f"{STATE}.tidy")
-    ranks = [rank(c) for c in page.evaluate(f"{STATE}.heap")]
-    assert ranks == [10, 10, 12, 13], "sorted, twos at the bottom and the joker on top"
+    assert page.evaluate(f"{STATE}.heap") == before, "the same order, not sorted"
+    assert heap.evaluate_all(z_order) == stacked, "the same cards on top of each other"
+    assert heap.evaluate_all(z_order)[-1].startswith("ace"), "your ace is still on top"
     angles = heap.evaluate_all("cards => cards.map((c) => c.style.getPropertyValue('--r'))")
     assert set(angles) == {"0deg"}
-    top = heap.evaluate_all("cards => cards.sort((a, b) => b.style.zIndex - a.style.zIndex)[0].getAttribute('aria-label')")
-    assert top.endswith("joker")
-    expect(page.locator("#caption")).to_contain_text(re.compile(r"Squared away|tidied and sorted|neat stack"))
+    expect(page.locator("#caption")).to_contain_text(re.compile(r"Squared away|tidied up|neat stack"))
     assert page.evaluate(f"{STATE}.counts") == counts, "tidying changes nothing"
     assert errors == []
 
