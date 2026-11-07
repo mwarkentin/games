@@ -12,6 +12,8 @@ from Safari's.
 
 The [colophon](https://games.michaelwarkentin.com/colophon) lists every
 game's history, with links to the chats and agent sessions that made them.
+Each game also has a changelog of what's new: follow a date below, or the
+changelog link beside the game in the colophon.
 The code lives in [mwarkentin/games](https://github.com/mwarkentin/games).
 Some useful tools live next door at
 [tools.michaelwarkentin.com](https://tools.michaelwarkentin.com).

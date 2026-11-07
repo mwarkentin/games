@@ -5,8 +5,8 @@ Writes two files to the repo root (both gitignored):
 
 - gathered_links.json: each game's commits and the URLs in their messages,
   read by build_colophon.py
-- games.json: one summary per game, read by build_index.py and
-  build_sitemap.py and published with the site
+- games.json: one summary per game, read by build_index.py,
+  build_changelog.py and build_sitemap.py and published with the site
 
 Adapted from gather_links.py in https://github.com/simonw/tools by Simon
 Willison, licensed under the Apache License 2.0 (see LICENSE). Changed:
@@ -21,7 +21,7 @@ import re
 import subprocess
 from pathlib import Path
 
-from common import ROOT, extract_meta_description, extract_title, game_files
+from common import CHANGELOGS, ROOT, app_of, changelog_path, extract_meta_description, extract_title, game_files
 
 URL_PATTERN = re.compile(r"https?://\S+")
 URL_TRAILING_PUNCTUATION = ".,;:!?)]}>\"'"
@@ -86,6 +86,9 @@ def gather(root: Path = ROOT) -> tuple[dict, list[dict]]:
 
         text = path.read_text("utf-8", errors="replace")
         slug = path.stem
+        # A page in another game's app shares that game's changelog.
+        app = app_of(text, slug)
+        changelog = changelog_path(app) if (root / CHANGELOGS / f"{app}.md").exists() else None
         games.append(
             {
                 "filename": filename,
@@ -94,6 +97,7 @@ def gather(root: Path = ROOT) -> tuple[dict, list[dict]]:
                 "description": extract_docs_description(path.with_suffix(".docs.md"))
                 or extract_meta_description(text),
                 "url": f"/{slug}",
+                "changelog": changelog,
                 "created": commits[-1]["date"] if commits else None,
                 "updated": commits[0]["date"] if commits else None,
             }
