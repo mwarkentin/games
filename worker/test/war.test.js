@@ -10,7 +10,7 @@ import { DatabaseSync } from 'node:sqlite';
 import { beforeEach, describe, test } from 'node:test';
 
 import {
-  EXPIRE_MS, MAX_SOCKETS, WAR, WarRoom, cleanName, handleWar, warDeal, warDueAt, warNewGame, warRank, warResolve,
+  EXPIRE_MS, MAX_SOCKETS, WAR, WarRoom, cleanDeck, cleanName, handleWar, warDeal, warDueAt, warNewGame, warRank, warResolve,
   warSlam, warStandings,
 } from '../src/war.js';
 
@@ -291,10 +291,10 @@ function newRoom(state = fakeState()) {
 
 const token = (name) => `token-${name}-0123456789`;
 
-async function join(room, name, avatar = 1) {
+async function join(room, name, avatar = 1, deck = undefined) {
   const ws = new FakeSocket();
   room.connect(ws);
-  await room.webSocketMessage(ws, JSON.stringify({ t: 'hello', name, avatar, token: token(name) }));
+  await room.webSocketMessage(ws, JSON.stringify({ t: 'hello', name, avatar, token: token(name), deck }));
   return ws;
 }
 
@@ -485,17 +485,45 @@ describe('rooms', () => {
     assert.equal(room.state.alarm, room.room.game.closesAt);
   });
 
+  test("everyone sees each player's deck, and can change theirs mid-game", async () => {
+    const dana = await join(room, 'Dana', 1, 'neon');
+    const bob = await join(room, 'Bob', 2, 'NOT a deck');
+    await say(room, dana, { t: 'bots', n: 1 });
+    assert.deepEqual(bob.last('state').players.map((p) => p.deck), ['neon', null, null], "bots and bad decks get none");
+    assert.equal(cleanDeck('candy'), 'candy');
+    assert.equal(cleanDeck('x'.repeat(17)), null);
+    assert.equal(cleanDeck(7), null);
+
+    await say(room, dana, { t: 'start' });
+    await say(room, dana, { t: 'deck', deck: 'candy' });
+    assert.deepEqual(bob.last('deck'), { t: 'deck', seat: 0, deck: 'candy' });
+    assert.equal(room.room.players[0].deck, 'candy');
+    await say(room, dana, { t: 'deck', deck: 'space' });
+    assert.equal(bob.all('deck').length, 1, 'at most one change a second');
+    room.clock += 1000;
+    await say(room, dana, { t: 'deck', deck: 'space' });
+    await say(room, bob, { t: 'deck', deck: '../../etc' });
+    assert.deepEqual(bob.all('deck').map((m) => m.deck), ['candy', 'space']);
+
+    // Rejoining mid-game brings your deck along.
+    room.clock += 1000;
+    const bob2 = await join(room, 'Bob', 2, 'royal');
+    assert.equal(bob2.last('state').players[1].deck, 'royal');
+  });
+
   test('newcomers watch a game in progress and are dealt into the next', async () => {
     const dana = await join(room, 'Dana');
     await say(room, dana, { t: 'bots', n: 1 });
     await say(room, dana, { t: 'start' });
-    const eve = await join(room, 'Eve');
+    const eve = await join(room, 'Eve', 1, 'spooky');
     const watching = eve.last('state');
     assert.equal(watching.you, null);
     assert.equal(watching.phase, 'playing');
     assert.equal(dana.last('online').watchers, 1);
     await say(room, eve, { t: 'slam', power: 100, style: 0 });
     assert.equal(dana.all('slam').length, 0, "spectators can't slam");
+    await say(room, eve, { t: 'deck', deck: 'candy' });
+    assert.equal(dana.all('deck').length, 0, "a spectator's deck is kept for the next game");
 
     room.room.game.limit = 1;
     await say(room, dana, { t: 'slam', power: 1, style: 0 });
@@ -509,6 +537,7 @@ describe('rooms', () => {
     assert.equal(next.phase, 'playing');
     assert.deepEqual(next.players.map((p) => p.name), ['Dana', 'Eve', room.room.players[2].name]);
     assert.equal(next.you, 1);
+    assert.equal(next.players[1].deck, 'candy');
   });
 
   test('a spectator can start the next game when no player is left', async () => {

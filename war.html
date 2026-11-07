@@ -399,6 +399,7 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px s
 .person.bot { font-weight: 400; color: var(--panel-dim); }
 .person.offline { opacity: .5; }
 .person.me { outline: 2px solid var(--accent); }
+.person .card { --w: 14px; }
 .stepper { display: flex; align-items: center; gap: 6px; }
 .stepper button { width: 44px; height: 44px; border-radius: 12px; border: 2px solid var(--panel-line); background: var(--panel-2); font-size: 20px; font-weight: 800; color: var(--panel-ink); }
 .stepper output { min-width: 2.2em; text-align: center; font-weight: 800; font-size: 18px; }
@@ -559,6 +560,9 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px s
       <h3>Length</h3>
       <div class="seg" id="roomLength"></div>
     </div>
+    <h3>Your deck</h3>
+    <div class="decks" id="lobbyDecks" role="group" aria-label="Deck"></div>
+    <p class="deck-note" id="lobbyDeckNote"></p>
     <p class="small dim" id="lobbyNote"></p>
     <div class="err" id="lobbyErr" aria-live="polite"></div>
     <div class="row" style="margin-top:8px">
@@ -1686,6 +1690,22 @@ const isFighting = (seat) => S.fighters.includes(seat);
 const playerName = (seat) => (seat === S.you ? 'You' : S.players[seat] ? S.players[seat].name : 'Someone');
 const avatarOf = (seat) => AVATARS[S.players[seat]?.avatar] || '🃏';
 
+// The deck someone's cards are drawn in: the one they picked (yours is the
+// page's), and for bots one that goes with their name, the same on every
+// screen. A deck this page doesn't know is drawn as the classic one.
+function deckOf(seat) {
+  if (seat === S.you) return deck;
+  const p = S.players[seat];
+  if (p && DECKS[p.deck]) return p.deck;
+  if (p && p.bot) {
+    const keys = Object.keys(DECKS);
+    let h = 7;
+    for (const ch of p.name) h = (h * 31 + ch.codePointAt(0)) >>> 0;
+    return keys[h % keys.length];
+  }
+  return 'classic';
+}
+
 // ---- Solo games: the core, run right here against bots ----
 
 class SoloRoom {
@@ -1840,6 +1860,15 @@ function receive(m) {
     case 'flip': return onFlip(m);
     case 'cheer':
       if (m.seat !== S.you || S.mode === 'solo') { floatCheer(m.seat, m.e); if (m.seat !== S.you) Sound.cheer(); }
+      return;
+    case 'deck':
+      // Someone picked another deck: their cards are redrawn in it.
+      if (S.players[m.seat] && m.seat !== S.you) {
+        S.players[m.seat].deck = m.deck;
+        $('warRow').dataset.key = '';
+        if (S.phase === 'lobby') renderLobby();
+        else renderAll();
+      }
       return;
     case 'timing':
       S.opensAt = now() + m.opensIn;
@@ -2328,7 +2357,7 @@ function others() {
 
 function buildTiles() {
   const seats = others();
-  const key = seats.map((s) => `${s}:${S.players[s].name}:${S.players[s].avatar}`).join('|');
+  const key = seats.map((s) => `${s}:${S.players[s].name}:${S.players[s].avatar}:${deckOf(s)}`).join('|');
   if (key === tileKey) return;
   tileKey = key;
   tiles.clear();
@@ -2351,7 +2380,7 @@ function buildTiles() {
     const stat = el('span', 'tstat', '');
     meta.append(count, stat);
     node.append(slot, info, meta);
-    node.title = p.bot ? `${p.name} (bot)` : p.name;
+    node.title = `${p.name}${p.bot ? ' (bot)' : ''} · ${DECKS[deckOf(seat)][0]} deck`;
     box.append(node);
     tiles.set(seat, { node, slot, count, stat, card, cardKey: 'empty', downs: null });
   }
@@ -2389,7 +2418,7 @@ function renderTile(seat) {
   setText(t.stat, label);
   const key = cardKeyFor(seat);
   if (key !== t.cardKey) {
-    const card = cardEl(key === 'back' ? 'back' : key === 'empty' ? null : Number(key));
+    const card = cardEl(key === 'back' ? 'back' : key === 'empty' ? null : Number(key), deckOf(seat));
     if (key !== 'back' && key !== 'empty' && !reduceMotion.matches) card.classList.add('flipin');
     t.card.replaceWith(card);
     t.card = card;
@@ -2478,7 +2507,7 @@ function renderWarRow() {
     const box = el('div', 'wf');
     const c = S.cards[seat];
     const downs = (c ? c.down : 0) + (S.thumps[seat] || 0);
-    box.append(cardEl(c && c.up !== undefined ? c.up : 'back'), el('span', '', `${downs ? `+${downs} · ` : ''}${avatarOf(seat)} ${playerName(seat)}`));
+    box.append(cardEl(c && c.up !== undefined ? c.up : 'back', deckOf(seat)), el('span', '', `${downs ? `+${downs} · ` : ''}${avatarOf(seat)} ${playerName(seat)}`));
     row.append(box);
   }
   if (fighters.length > 6) row.append(el('span', 'more', `+${fighters.length - 6}`));
@@ -2862,7 +2891,9 @@ function renderLobby() {
   people.replaceChildren();
   S.players.forEach((p, seat) => {
     const chip = el('span', `person${p.bot ? ' bot' : ''}${p.online ? '' : ' offline'}${seat === S.you ? ' me' : ''}`);
-    chip.append(el('b', '', AVATARS[p.avatar] || '🃏'), el('span', '', `${p.name}${seat === S.host ? ' (host)' : ''}${p.bot ? ' (bot)' : ''}`));
+    const look = deckOf(seat);
+    chip.title = `${DECKS[look][0]} deck`;
+    chip.append(cardEl('back', look), el('b', '', AVATARS[p.avatar] || '🃏'), el('span', '', `${p.name}${seat === S.host ? ' (host)' : ''}${p.bot ? ' (bot)' : ''}`));
     people.append(chip);
   });
   const humans = S.players.filter((p) => !p.bot).length;
@@ -2881,6 +2912,7 @@ function renderLobby() {
     : S.you === null ? 'This room is full. You can watch.' : `Waiting for ${hostName || 'the host'} to deal.`);
   setHidden($('dealBtn'), !host);
   $('dealBtn').disabled = S.players.length < 2;
+  renderDecks();
 }
 
 function renderLengths(box, value, locked) {
@@ -3133,7 +3165,7 @@ function renderInputs() {
 }
 
 function renderDecks() {
-  for (const [boxId, noteId] of [['menuDecks', 'menuDeckNote'], ['pauseDecks', 'pauseDeckNote']]) {
+  for (const [boxId, noteId] of [['menuDecks', 'menuDeckNote'], ['pauseDecks', 'pauseDeckNote'], ['lobbyDecks', 'lobbyDeckNote']]) {
     const box = $(boxId);
     if (!box.childElementCount) {
       for (const [key, [name]] of Object.entries(DECKS)) {
@@ -3157,6 +3189,11 @@ function setDeck(key) {
   deck = key;
   store.set('deck', key);
   document.documentElement.dataset.deck = key;
+  if (S.mode === 'room' && S.conn) {
+    S.conn.me.deck = key;
+    sendDeck();
+    if (S.phase === 'lobby') renderLobby();
+  }
   renderDecks();
   document.querySelector('.title-cards').replaceChildren();
   renderMenu();
@@ -3167,6 +3204,17 @@ function setDeck(key) {
     renderAll();
   }
 }
+
+// Tells the room which deck you picked. It takes one change a second, so
+// a quicker change waits, and only the latest goes.
+function sendDeck() {
+  clearTimeout(sendDeck.timer);
+  const wait = sendDeck.at + 1100 - Date.now();
+  if (wait > 0) { sendDeck.timer = setTimeout(sendDeck, wait); return; }
+  sendDeck.at = Date.now();
+  if (S.mode === 'room' && S.conn) S.conn.send({ t: 'deck', deck });
+}
+sendDeck.at = 0;
 
 function myName() {
   const name = $('nameInput').value.trim().replace(/\s+/g, ' ');
@@ -3225,7 +3273,7 @@ async function startRoom(code) {
   query.set('room', code);
   history.replaceState(null, '', `${location.pathname}?${query}${location.hash}`);
   setText(err, 'Connecting…');
-  S.conn = new NetRoom(code, { name, avatar, token });
+  S.conn = new NetRoom(code, { name, avatar, token, deck });
   setText($('lobbyCode'), code);
 }
 
@@ -3322,7 +3370,7 @@ function init() {
     S.conn.send({ t: 'start' });
   });
   $('overMenuBtn').addEventListener('click', () => backToMenu());
-  for (const id of ['menuDecks', 'pauseDecks']) {
+  for (const id of ['menuDecks', 'pauseDecks', 'lobbyDecks']) {
     $(id).addEventListener('click', (e) => {
       const b = e.target.closest('button');
       if (b) setDeck(b.dataset.deck);

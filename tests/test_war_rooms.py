@@ -6,8 +6,10 @@ fixture, because the browser logs those as console errors.
 
 from __future__ import annotations
 
+import re
+
 from fake_leaderboard import API
-from fake_war_room import FakeWarRoom, card
+from fake_war_room import FakeWarRoom, card, joker
 from playwright.sync_api import Page, expect
 
 STATE = "window.__war.state()"
@@ -138,6 +140,67 @@ def test_friends_join_with_the_code_and_see_each_other(page: Page, browser, site
     page.click("#againBtn")
     expect(guest.locator("#over")).to_be_hidden()
     guest.wait_for_function(f"{STATE}.battle === 1 && {STATE}.phase === 'playing'")
+    guest_context.close()
+    assert errors == []
+
+
+def test_everyone_sees_each_players_deck(page: Page, browser, site_url, errors):
+    fake = FakeWarRoom()
+    open_war(page, site_url, fake)
+    page.click("#menuDecks button[data-deck=neon]")
+    start_room(page, "Dana")
+    assert fake.messages("hello")[0]["deck"] == "neon"
+    page.click("#botMore")
+
+    guest_context = browser.new_context(viewport={"width": 375, "height": 740})
+    guest = guest_context.new_page()
+    open_war(guest, site_url, fake)
+    guest.click("#menuDecks button[data-deck=candy]")
+    join_room(guest, "k7qp", "Bob")
+    # In the lobby, each name has its deck beside it.
+    people = page.locator("#people .person")
+    expect(people).to_have_count(3)
+    expect(people.nth(0).locator(".card")).to_have_attribute("data-deck", "neon")
+    expect(people.nth(2).locator(".card")).to_have_attribute("data-deck", "candy")
+    bot_deck = people.nth(1).locator(".card").get_attribute("data-deck")
+    expect(guest.locator("#people .person").nth(1).locator(".card")).to_have_attribute("data-deck", bot_deck)
+
+    # Dana changes her mind in the lobby, twice, and Bob sees where she ends
+    # up: the room takes one change a second, so the second waits its turn.
+    page.click("#lobbyDecks button[data-deck=pixel]")
+    page.click("#lobbyDecks button[data-deck=space]")
+    expect(guest.locator("#people .person").nth(0).locator(".card")).to_have_attribute("data-deck", "pixel")
+    expect(guest.locator("#people .person").nth(0).locator(".card")).to_have_attribute("data-deck", "space")
+    assert [m["deck"] for m in fake.messages("deck")] == ["pixel", "space"]
+
+    page.click("#dealBtn")
+    expect(guest.locator("#opponents .tile")).to_have_count(2)
+    # Dana's cards land on Bob's screen in her deck, Bob's on hers in his,
+    # and the bot's in the same deck for both.
+    page.wait_for_function(f"{STATE}.canSlam")
+    page.evaluate("window.__war.slam(120)")
+    dana_on_bob = guest.locator("#opponents .tile").nth(0).locator(".card")
+    expect(dana_on_bob).to_have_class(re.compile(r"\bback\b"))
+    expect(dana_on_bob).to_have_attribute("data-deck", "space")
+    fake.broadcast({
+        "t": "flip", "battle": 1, "stage": 0, "winner": 0, "tied": [0], "gods": False, "pot": 3,
+        "plays": [[0, 0, joker(1), 120, 0, 0], [1, 0, card(3), 50, 1, 0], [2, 0, card(12, 1), 80, 0, 0]],
+        "counts": [29, 26, 26], "out": [], "next": fake.stage(2, opens_in=2400),
+    })
+    expect(dana_on_bob).to_have_attribute("aria-label", "red joker")
+    expect(dana_on_bob.locator(".cc")).to_have_text("☄️")
+    expect(page.locator("#opponents .tile").nth(1).locator(".card")).to_have_attribute("data-deck", "candy")
+    expect(page.locator("#opponents .tile").nth(0).locator(".card")).to_have_attribute("data-deck", bot_deck)
+    expect(guest.locator("#opponents .tile").nth(1).locator(".card")).to_have_attribute("data-deck", bot_deck)
+    # Your own cards are in your deck, on your screen.
+    expect(page.locator("#mySlot .card")).not_to_have_attribute("data-deck", re.compile("."))
+    assert page.evaluate("document.documentElement.dataset.deck") == "space"
+
+    # A change mid-game redraws your cards on everyone's screen.
+    guest.click("#menuBtn")
+    guest.click("#pauseDecks button[data-deck=spooky]")
+    guest.click("#resumeBtn")
+    expect(page.locator("#opponents .tile").nth(1).locator(".card")).to_have_attribute("data-deck", "spooky")
     guest_context.close()
     assert errors == []
 
