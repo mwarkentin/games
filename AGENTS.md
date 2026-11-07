@@ -234,14 +234,17 @@ kept up to date), and deletes it when the pull request closes.
   request and commit, linked to the pull request; games get none, but
   every page's `<title>` starts with "PR <number> · ", so a game's tab
   says it's a preview too.
-- **The Worker:** a pull request that touches `worker/` (or `preview.yml`)
-  also gets a Worker Preview of the leaderboard Worker, made first, and
+- **The Worker:** a pull request whose branch changes `worker/` (or
+  `preview.yml`) from `main`'s also gets a Worker Preview of the leaderboard Worker, made first, and
   `point_preview.py` points the games' `LEADERBOARD_URL`, `ROOMS_URL` and the
   survey log's `SURVEY_URL` at it, so the preview's War rooms, leaderboards
   and survey log run against the pull request's own Worker. That Preview
   also allows the site preview's origin in `ALLOWED_ORIGINS`, passed with
   `--var` for that Preview only; `wrangler.toml` doesn't change.
   Letterfield's survey still needs `?survey=`, which the comment links to.
+  It's `main` it compares against, not the pull request's base, so one
+  stacked on another pull request's branch gets a Worker Preview of its own
+  when that branch changes the Worker, built from everything it carries.
 - **Without one,** the preview keeps production's Worker, which only answers
   the live site's origin: leaderboards say they can't be reached and War's
   rooms can't start, and a preview can never write to production. Solo play
