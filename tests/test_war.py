@@ -15,6 +15,9 @@ from fake_leaderboard import without_worker
 from playwright.sync_api import Page, expect
 
 STATE = "window.__war.state()"
+# Seed 589: both players turn over an eight in the first battle, then a three
+# in the war: a double war.
+WAR_SEED = 589
 
 
 def start_solo(page: Page, site_url: str, opponents: int = 1, length: str = "standard", seed: int = 7) -> None:
@@ -27,7 +30,7 @@ def start_solo(page: Page, site_url: str, opponents: int = 1, length: str = "sta
 
 
 def hold_slam(page: Page, ms: int) -> None:
-    box = page.locator("#slamBtn").bounding_box()
+    box = page.locator("#myPile .stack").bounding_box()
     page.mouse.move(box["x"] + box["width"] / 2, box["y"] + box["height"] / 2)
     page.mouse.down()
     page.wait_for_timeout(ms)
@@ -37,11 +40,16 @@ def hold_slam(page: Page, ms: int) -> None:
 def test_hold_to_charge_and_release_to_slam(page: Page, site_url, errors):
     start_solo(page, site_url)
     assert page.locator("#opponents .tile").count() == 1
-    box = page.locator("#slamBtn").bounding_box()
+    # It's your turn: your deck says how to slam it.
+    expect(page.locator("#me")).to_have_class(re.compile(r"\bready\b"))
+    expect(page.locator("#deckHint")).to_have_text("Hold me")
+    expect(page.locator("#slamText")).to_have_text("Hold your deck to slam")
+    box = page.locator("#myPile .stack").bounding_box()
     page.mouse.move(box["x"] + 40, box["y"] + 30)
     page.mouse.down()
     page.wait_for_timeout(900)
-    expect(page.locator("#slamText")).not_to_have_text("Hold to slam")
+    expect(page.locator("#slamText")).not_to_have_text("Hold your deck to slam")
+    expect(page.locator("#deckHint")).to_be_hidden()
     page.mouse.up()
 
     power = page.evaluate(f"{STATE}.slams[0][0]")
@@ -49,14 +57,13 @@ def test_hold_to_charge_and_release_to_slam(page: Page, site_url, errors):
     # The battle plays out once the bot has slammed too: a winner, or a war.
     page.wait_for_function(f"{STATE}.battle === 2 || {STATE}.stage === 1")
     counts = page.evaluate(f"{STATE}.counts")
-    assert 40 < sum(counts) <= 52, "cards in a war's pot belong to nobody yet"
+    assert 40 < sum(counts) <= 54, "cards in a war's pot belong to nobody yet"
     expect(page.locator("#caption")).not_to_be_empty()
     assert errors == []
 
 
 def test_a_war_means_slamming_every_card(page: Page, site_url, errors):
-    # Seed 7: both players turn over a five in the first battle.
-    start_solo(page, site_url, seed=7)
+    start_solo(page, site_url, seed=WAR_SEED)
     hold_slam(page, 400)
     page.wait_for_function(f"{STATE}.stage === 1 && {STATE}.canSlam")
     expect(page.locator("#caption")).to_contain_text("Slam all four of your cards!")
@@ -78,7 +85,7 @@ def test_a_war_means_slamming_every_card(page: Page, site_url, errors):
 
 
 def test_a_war_you_started_is_finished_before_the_clock_runs_out(page: Page, site_url, errors):
-    start_solo(page, site_url, seed=7)
+    start_solo(page, site_url, seed=WAR_SEED)
     page.evaluate("window.__war.slam(50)")
     page.wait_for_function(f"{STATE}.stage === 1 && {STATE}.canSlam")
     hold_slam(page, 300)
@@ -88,13 +95,80 @@ def test_a_war_you_started_is_finished_before_the_clock_runs_out(page: Page, sit
     assert errors == []
 
 
+
+VERSUS = "window.__war.versus()"
+
+
+def test_a_war_gets_a_versus_intro_that_escalates(page: Page, site_url, errors):
+    start_solo(page, site_url, seed=WAR_SEED)
+    page.evaluate("window.__war.slam(60)")
+    # The fighters slide in, you on the left, and WAR slams down between them.
+    intro = page.locator("#fx .vs")
+    expect(intro).to_have_class(re.compile(r"\blv1\b"))
+    names = intro.locator(".vs-name")
+    expect(names).to_have_count(2)
+    expect(names.nth(0)).to_have_text("You")
+    expect(names.nth(1)).to_have_text("Grumpy Pancake")  # the bot seed 589 deals
+    pics = intro.locator(".vs-pic > span")
+    expect(pics).to_have_count(2)
+    assert all(pics.nth(i).inner_text().strip() for i in range(2)), "each fighter has a picture"
+    # Each holds the eight they tied on, in their own deck.
+    expect(intro.locator(".vs-pic .card")).to_have_count(2)
+    expect(intro.locator(".vs-word")).to_have_text("WAR!")
+    expect(intro.locator(".vs-round")).to_have_text("ROUND 1")
+    expect(page.locator("#banner")).to_have_text("WAR!")
+    assert page.evaluate(VERSUS)["kind"] == "full"
+    # It's only a picture: taps go straight through it.
+    assert page.evaluate("getComputedStyle(document.getElementById('fx')).pointerEvents") == "none"
+
+    # FIGHT! lands as the war opens, and you can slam while it does.
+    page.wait_for_function(f"{STATE}.stage === 1 && {STATE}.canSlam")
+    expect(page.locator("#fx .vs-fight")).to_have_text("FIGHT!")
+    expect(page.locator("#fx .vs")).to_have_count(0)
+    hold_slam(page, 250)
+    expect(page.locator("#myWar .wpile .card")).to_have_count(1)
+
+    # The war ties again: a double war is bigger.
+    page.evaluate("window.__war.slam(60)")
+    intro = page.locator("#fx .vs")
+    expect(intro).to_have_class(re.compile(r"\blv2\b"))
+    expect(intro.locator(".vs-pre")).to_have_text("DOUBLE")
+    expect(intro.locator(".vs-round")).to_have_text("ROUND 2")
+    expect(page.locator("#banner")).to_have_text("DOUBLE WAR!")
+    assert page.evaluate(VERSUS)["level"] == 2
+    size = lambda: page.evaluate("parseFloat(getComputedStyle(document.querySelector('#fx .vs')).getPropertyValue('--word-size').match(/[\\d.]+(?=vw)/)[0])")
+    assert size() > 27, "the double war's WAR is bigger than a war's"
+    assert errors == []
+
+
+def test_reduced_motion_gets_a_calm_versus(page: Page, site_url, errors):
+    page.emulate_media(reduced_motion="reduce")
+    start_solo(page, site_url, seed=WAR_SEED)
+    page.evaluate("window.__war.slam(60)")
+    intro = page.locator("#fx .vs")
+    expect(intro).to_have_class(re.compile(r"\bcalm\b"))
+    expect(intro.locator(".vs-name")).to_have_count(2)
+    expect(intro.locator(".vs-name").nth(0)).to_have_text("You")
+    expect(intro.locator(".vs-word")).to_be_visible()
+    # Nothing moves: no sliding, no shaking, no fireworks.
+    moving = page.evaluate("document.getAnimations().filter((a) => a.effect && a.effect.target && a.effect.target.closest && a.effect.target.closest('.vs')).length")
+    assert moving == 0
+    page.wait_for_timeout(1200)
+    assert page.locator("#fx .bit").count() == 0
+    assert page.evaluate("document.getElementById('app').classList.contains('shake')") is False
+    page.wait_for_function(f"{STATE}.stage === 1 && {STATE}.canSlam")
+    expect(page.locator("#fx .vs")).to_have_count(0)
+    assert page.evaluate(VERSUS)["kind"] == "calm"
+    assert errors == []
+
 def test_mash_to_slam(page: Page, site_url, errors):
     page.goto(f"{site_url}/war?seed=2#debug")
     page.click("#inputSeg button[data-input=mash]")
     page.click("#soloBtn")
     page.wait_for_function(f"{STATE}.canSlam")
-    expect(page.locator("#slamText")).to_have_text("Tap fast to slam")
-    box = page.locator("#slamBtn").bounding_box()
+    expect(page.locator("#slamText")).to_have_text("Tap your deck fast")
+    expect(page.locator("#deckHint")).to_have_text("Tap me!")
+    box = page.locator("#myPile .stack").bounding_box()
     for _ in range(25):
         page.mouse.click(box["x"] + box["width"] / 2, box["y"] + box["height"] / 2)
     expect(page.locator("#slamText")).to_contain_text("25 taps")
@@ -127,6 +201,131 @@ def test_fling_to_slam(page: Page, site_url, errors):
     assert errors == []
 
 
+def rank(card: int) -> int:
+    """A card's rank, as the page has it: 0 is a two, 12 an ace, 13 a joker."""
+    face = card % 54
+    return 13 if face >= 52 else face % 13
+
+
+def test_won_cards_pile_up_and_clean_up_sorts_them(page: Page, site_url, errors):
+    # Seed 14: you win the first two battles, a joker over a queen, then an
+    # ace over a queen.
+    start_solo(page, site_url, seed=14)
+    heap = page.locator("#winnings .heap .card")
+    expect(page.locator("#winnings")).to_be_hidden()
+    page.evaluate("window.__war.slam(80)")
+    page.wait_for_function(f"{STATE}.battle === 2 && {STATE}.canSlam")
+    # The table clears, and what you won lands on the heap: the bot's queen in
+    # the bot's deck, your joker in yours.
+    expect(heap).to_have_count(2)
+    expect(page.locator("#tidyBtn")).to_be_visible()
+    # They were thrown from the table at the size they were there (bigger than
+    # on the heap), the bot's first and then yours, landing on top.
+    thrown = heap.evaluate_all("""cards => cards.map((c) => [
+        c.getAttribute('aria-label'), Number(c.style.getPropertyValue('--fs')), parseInt(c.style.getPropertyValue('--d'))])""")
+    assert thrown[0][0].startswith("queen") and thrown[1][0].endswith("joker"), thrown
+    assert all(scale > 1 for _, scale, _ in thrown)
+    assert thrown[0][2] < thrown[1][2]
+    bot_deck = page.evaluate("deckOf(1)")
+    expect(page.locator("#winnings .heap .card[aria-label^=queen]")).to_have_attribute("data-deck", bot_deck)
+    page.evaluate("window.__war.slam(80)")
+    page.wait_for_function(f"{STATE}.battle === 3")
+    expect(heap).to_have_count(4)
+    assert len(set(heap.evaluate_all("cards => cards.map((c) => c.style.getPropertyValue('--r'))"))) > 1, "it's a mess"
+
+    counts = page.evaluate(f"{STATE}.counts")
+    page.click("#tidyBtn")
+    expect(page.locator("#tidyBtn")).to_be_hidden()
+    assert page.evaluate(f"{STATE}.tidy")
+    ranks = [rank(c) for c in page.evaluate(f"{STATE}.heap")]
+    assert ranks == [10, 10, 12, 13], "sorted, twos at the bottom and the joker on top"
+    angles = heap.evaluate_all("cards => cards.map((c) => c.style.getPropertyValue('--r'))")
+    assert set(angles) == {"0deg"}
+    top = heap.evaluate_all("cards => cards.sort((a, b) => b.style.zIndex - a.style.zIndex)[0].getAttribute('aria-label')")
+    assert top.endswith("joker")
+    expect(page.locator("#caption")).to_contain_text(re.compile(r"Squared away|tidied and sorted|neat stack"))
+    assert page.evaluate(f"{STATE}.counts") == counts, "tidying changes nothing"
+    assert errors == []
+
+
+def test_the_end_screen_tells_the_game_battle_by_battle_and_shares_a_picture(page: Page, site_url, errors):
+    start_solo(page, site_url, opponents=1, length="quick", seed=WAR_SEED)
+    page.evaluate("window.__war.pace(0.05)")
+    page.click("#autoBtn")
+    page.wait_for_selector("#over:not([hidden])", timeout=60_000)
+    over = page.evaluate(f"{STATE}.over")
+    log = page.evaluate("window.__war.log()")
+    assert [e["b"] for e in log] == list(range(1, over["battles"] + 1))
+    rows = page.locator("#battleLog li")
+    expect(rows).to_have_count(over["battles"])
+    # The double war that opens the game: eights, threes, then the decider.
+    assert len(log[0]["stages"]) == 3
+    expect(rows.nth(0).locator(".lw")).to_have_text(["WAR", "DOUBLE WAR"])
+    expect(rows.nth(0).locator(".mc")).to_have_count(6)
+    expect(rows.nth(0).locator(".mc").nth(0)).to_have_text(re.compile(r"^8"))
+    expect(rows.nth(0).locator(".mc").nth(2)).to_have_text(re.compile(r"^3"))
+    # What each battle did to your pile adds up to what you ended with.
+    deltas = [int(t.replace("−", "-") or 0) for t in rows.locator(".ld").all_text_contents()]
+    assert sum(deltas) == over["counts"][0] - 27
+
+    with page.expect_download() as download:
+        page.click("#shareImgBtn")
+    assert re.fullmatch(r"war-\d{4}-\d{2}-\d{2}\.png", download.value.suggested_filename)
+    png = open(download.value.path(), "rb").read()
+    assert png[:8] == b"\x89PNG\r\n\x1a\n"
+    assert (int.from_bytes(png[16:20], "big"), int.from_bytes(png[20:24], "big")) == (1080, 1350)
+    expect(page.locator("#shareImgNote")).to_have_text("Saved the picture. Send it to whoever needs to know.")
+    assert errors == []
+
+
+def test_skipping_to_the_end_still_logs_every_battle(page: Page, site_url, errors):
+    start_solo(page, site_url, opponents=3, seed=5)
+    page.evaluate("window.__war.slam(50)")
+    page.wait_for_function(f"{STATE}.battle >= 2")
+    page.click("#menuBtn")
+    page.click("#skipBtn")
+    expect(page.locator("#over")).to_be_visible()
+    battles = page.evaluate(f"{STATE}.over.battles")
+    log = page.evaluate("window.__war.log()")
+    assert [e["b"] for e in log] == list(range(1, battles + 1))
+    expect(page.locator("#battleLog li")).to_have_count(battles)
+    # At a bigger table, each row has your card and the one that won.
+    expect(page.locator("#battleLog li").nth(0).locator(".lc")).to_contain_text("you")
+    assert page.evaluate("window.__war.picture()").startswith("data:image/png;base64,")
+    assert errors == []
+
+
+def test_opponents_pile_up_what_they_win_too(page: Page, site_url, errors):
+    # Seed 2: your four loses to the bot's joker in the first battle.
+    start_solo(page, site_url, seed=2)
+    bot_heap = page.locator("#opponents .tile .heap .card")
+    page.evaluate("window.__war.slam(80)")
+    page.wait_for_function(f"{STATE}.battle === 2")
+    # Your four flies over to the bot's heap, in your deck, and its joker
+    # lands on top, in its own.
+    expect(bot_heap).to_have_count(2)
+    labels = bot_heap.evaluate_all("cards => cards.map((c) => [c.getAttribute('aria-label'), c.dataset.deck, c.style.zIndex])")
+    assert labels[0][0].startswith("four") and labels[0][1] == page.evaluate("deck")
+    assert labels[1][0].endswith("joker") and labels[1][1] == page.evaluate("deckOf(1)")
+    assert int(labels[1][2]) > int(labels[0][2])
+    heaps = page.evaluate(f"{STATE}.heaps")
+    assert len(heaps["1"]) == 2 and not heaps.get("0"), heaps
+    expect(page.locator("#winnings")).to_be_hidden()
+    assert errors == []
+
+
+def test_others_heaps_only_at_a_small_table(page: Page, site_url, errors):
+    # Five players: only your own heap, to keep a busy table readable.
+    start_solo(page, site_url, opponents=4, seed=3)
+    page.evaluate("window.__war.pace(0.2)")
+    for _ in range(4):
+        page.wait_for_function(f"{STATE}.canSlam", timeout=15_000)
+        page.evaluate("window.__war.slam(60)")
+    page.wait_for_function(f"{STATE}.battle >= 4", timeout=15_000)
+    expect(page.locator("#opponents .tile .heap .card")).to_have_count(0)
+    assert errors == []
+
+
 def test_how_you_slam_is_remembered(page: Page, site_url, errors):
     start_solo(page, site_url)
     expect(page.locator("#inputBtn")).to_have_text("✊ Hold")
@@ -134,7 +333,7 @@ def test_how_you_slam_is_remembered(page: Page, site_url, errors):
     expect(page.locator("#inputBtn")).to_have_text("👆 Mash")
     page.click("#inputBtn")
     expect(page.locator("#inputBtn")).to_have_text("🫳 Fling")
-    expect(page.locator("#slamText")).to_have_text("Fling a card")
+    expect(page.locator("#slamText")).to_have_text("Throw a card off your deck")
     assert page.evaluate("JSON.parse(localStorage.getItem('war:input'))") == "fling"
     page.reload()
     expect(page.locator("#inputSeg button[data-input=fling]")).to_have_attribute("aria-pressed", "true")
@@ -143,7 +342,9 @@ def test_how_you_slam_is_remembered(page: Page, site_url, errors):
 
 DECKS = ["classic", "neon", "pixel", "royal", "space", "spooky", "candy"]
 KINGS = {"classic": "👑", "neon": "😎", "pixel": "🕹️", "royal": "🤴", "space": "🛸", "spooky": "💀", "candy": "🍩"}
+JOKERS = {"classic": "🤡", "neon": "🤩", "pixel": "🐛", "royal": "🎭", "space": "☄️", "spooky": "👻", "candy": "🦷"}
 TITLE_KING = ".title-cards .card:nth-child(3) .cc"  # the king of hearts on the menu
+TITLE_JOKER = ".title-cards .card:nth-child(2)"     # and the red joker
 
 
 def test_every_deck_looks_different(page: Page, site_url, errors):
@@ -153,6 +354,7 @@ def test_every_deck_looks_different(page: Page, site_url, errors):
     for key in DECKS:
         page.evaluate(f"window.__war.deck('{key}')")
         expect(page.locator(TITLE_KING)).to_have_text(KINGS[key])
+        expect(page.locator(f"{TITLE_JOKER} .cc")).to_have_text(JOKERS[key])
         looks[key] = page.evaluate("""() => {
             const face = getComputedStyle(document.querySelector('.title-cards .card'));
             const back = getComputedStyle(document.querySelector('#menuDecks button[aria-pressed=true] .card'));
@@ -308,13 +510,17 @@ def test_the_science_measures_your_slams(page: Page, site_url, errors):
 
 
 def test_win_probability_follows_the_game_and_ignores_slams(page: Page, site_url, errors):
-    # Seed 2: your five loses to an ace in the first battle.
+    # Seed 2: your four loses to a joker in the first battle.
     start_solo(page, site_url, seed=2)
     expect(page.locator("#odds")).to_be_visible()
     expect(page.locator("#oddsYou")).to_have_text(re.compile(r"^You (\d+%|<1%|>99%)$"))
     expect(page.locator("#oddsFav")).to_contain_text("%")
     page.evaluate("window.__war.slam(150)")
     expect(page.locator("#oddsNote")).to_have_text("Slam impact on win probability: +0.0%")
+    joker = page.locator("#opponents .tile .tslot > .card.joker")
+    expect(joker).to_be_visible()
+    expect(joker).to_have_attribute("aria-label", re.compile(r"^(red|black) joker$"))
+    expect(page.locator("#banner")).to_have_text("JOKER!")
     page.wait_for_function(f"{STATE}.odds.length === 2", timeout=15_000)
     (_, start), (_, after) = page.evaluate(f"{STATE}.odds")
     assert after < start, "losing a battle costs you"
@@ -326,12 +532,12 @@ def test_the_win_probability_model(page: Page, site_url):
     page.goto(f"{site_url}/war#debug")
     odds = lambda counts, battle, limit, sims=200: page.evaluate(f"window.__war.odds({counts}, {battle}, {limit}, {sims})")
     # Head to head it's worked out, not simulated.
-    assert odds([26, 26], 1, 60) == [pytest.approx(0.5), pytest.approx(0.5)]
-    assert odds([25, 27], 2, 60)[0] < 0.5
-    assert odds([45, 7], 55, 60)[0] > 0.99, "45 cards to 7 with six battles left is nearly certain"
-    assert odds([52, 0], 10, 60) == [1, 0]
+    assert odds([27, 27], 1, 60) == [pytest.approx(0.5), pytest.approx(0.5)]
+    assert odds([26, 28], 2, 60)[0] < 0.5
+    assert odds([47, 7], 55, 60)[0] > 0.99, "47 cards to 7 with six battles left is nearly certain"
+    assert odds([54, 0], 10, 60) == [1, 0]
     # ...and agrees with playing it out with the real rules.
-    for counts, battle, limit in [([30, 22], 40, 60), ([12, 40], 1, 400)]:
+    for counts, battle, limit in [([31, 23], 40, 60), ([12, 42], 1, 400)]:
         worked_out = odds(counts, battle, limit)[0]
         simulated = page.evaluate(f"window.__war.simulate({counts}, {battle}, {limit}, 4000)")[0]
         assert abs(worked_out - simulated) < 0.04, (counts, worked_out, simulated)
@@ -404,14 +610,14 @@ def test_every_song_plays_well_below_clipping(page: Page, site_url, errors):
 
 
 def test_music_follows_the_game_and_can_be_turned_off(page: Page, site_url, errors):
-    page.goto(f"{site_url}/war?seed=7#debug")
+    page.goto(f"{site_url}/war?seed={WAR_SEED}#debug")
     assert page.evaluate(f"{MUSIC}.playing") is None, "no music before the first tap"
     page.click("#menu h1")
     page.wait_for_function(f"{MUSIC}.playing === 'menu'")
     page.click("#soloBtn")
     page.wait_for_function(f"{MUSIC}.playing === 'battle'")
     page.wait_for_function(f"{STATE}.canSlam")
-    # Seed 7: the first battle is a tie, then a double war.
+    # The first battle is a tie, then a double war.
     page.evaluate("window.__war.slam(60)")
     page.wait_for_function(f"{MUSIC}.playing === 'war'")
     page.wait_for_function(f"{STATE}.stage === 1 && {STATE}.canSlam")

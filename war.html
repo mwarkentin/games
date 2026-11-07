@@ -9,7 +9,7 @@
 <meta name="theme-color" content="#166240">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bungee&family=Press+Start+2P&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Black+Ops+One&family=Bungee&family=Press+Start+2P&display=swap">
 <style>
 :root {
   --felt: #1f7d4f; --felt-2: #145a39; --felt-ink: #fdf8ec; --felt-dim: rgba(253, 248, 236, .74);
@@ -65,7 +65,7 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px s
 }
 #battleInfo { flex: 1; min-width: 0; text-align: center; font-family: var(--display); font-size: 15px; letter-spacing: .02em; }
 #battleInfo small { display: block; font: 600 11px/1.2 system-ui, sans-serif; color: var(--felt-dim); letter-spacing: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-#roomTag { font: 700 12px/1 system-ui, sans-serif; padding: 6px 8px; border-radius: 10px; background: rgba(0, 0, 0, .22); letter-spacing: .08em; }
+#roomTag { font: 700 12px/1 system-ui, sans-serif; padding: 8px 9px; border: 0; border-radius: 10px; background: rgba(0, 0, 0, .22); letter-spacing: .08em; min-height: 36px; }
 
 /* Win probability */
 #odds { padding: 0 14px 4px; display: grid; gap: 3px; width: 100%; max-width: 560px; justify-self: center; }
@@ -204,6 +204,7 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px s
 .card .ci b { display: block; font-weight: 400; }
 .card .ci i { display: block; font-style: normal; font-family: system-ui, sans-serif; font-size: .9em; }
 .card .cc { position: absolute; inset: 0; display: grid; place-items: center; font-size: calc(var(--w) * .5); font-family: system-ui, sans-serif; padding-top: 8%; }
+.card.joker .cc { font-size: calc(var(--w) * .56); padding-top: 4%; }
 .card.back {
   background: var(--deck-back);
   border: calc(var(--w) * .06) solid var(--deck-back-edge);
@@ -254,7 +255,7 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px s
 @media (min-width: 700px) { #me { --cw: 104px; } }
 #myPile { touch-action: none; }
 /* The war pile: every card you lay face down in a war, slammed one by one. */
-#myWar { display: grid; justify-items: center; gap: 4px; }
+#myWar { position: relative; display: grid; justify-items: center; gap: 4px; }
 #myWar .wpile { position: relative; width: var(--cw); height: calc(var(--cw) * 1.4); }
 #myWar .wpile:empty { border: 2px dashed rgba(255, 80, 70, .7); border-radius: 9px; }
 #myWar .wpile .card { position: absolute; inset: 0; transform: translate(var(--dx), var(--dy)) rotate(var(--r)); }
@@ -286,32 +287,94 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px s
   100% { transform: none; }
 }
 #mySlot.won .card:not(.back) { box-shadow: 0 0 0 3px var(--gold), 0 0 22px var(--gold); }
+#myPile { cursor: default; -webkit-touch-callout: none; border-radius: 12px; }
+#myPile:focus-visible { outline: 3px solid var(--gold); outline-offset: 4px; }
+/* Your turn: the deck bobs and glows, with a hint on how to slam it. */
+#me.ready #myPile { cursor: pointer; }
+#me.ready:not(.charging) #myPile .stack { animation: beckon calc(1400ms * var(--pace)) ease-in-out infinite; }
+@keyframes beckon {
+  0%, 100% { transform: translateY(0); filter: drop-shadow(0 0 0 transparent); }
+  50% { transform: translateY(-5px); filter: drop-shadow(0 0 12px var(--gold)); }
+}
+#myPile .stack.tapped { animation: tapped 120ms ease-out !important; }
+@keyframes tapped { 0% { transform: translateY(4px) scale(.95); } 100% { transform: none; } }
+#deckHint {
+  position: absolute; left: 50%; bottom: 12%; transform: translateX(-50%); z-index: 2; pointer-events: none;
+  font: 800 12px/1 system-ui, sans-serif; background: var(--gold); color: var(--gold-ink); padding: 6px 9px;
+  border-radius: 999px; white-space: nowrap; box-shadow: 0 2px 6px rgba(0, 0, 0, .3);
+}
 #me.charging #myPile .stack { animation: tremble calc(140ms - var(--power, 0) * .4ms) linear infinite; }
 #me.charging #myPile .stack .card { box-shadow: 0 0 calc(var(--power, 0) * .18px) calc(var(--power, 0) * .05px) var(--gold); }
 #meNote { position: absolute; inset: 0; display: grid; place-items: center; text-align: center; font-weight: 700; color: var(--felt-dim); padding: 0 20px; }
+/* Winnings: the cards each player wins, on a messy heap. Yours sits beside
+   your card, behind everything else, and fades while you fight a war.
+   Everyone else's peeks out from behind the card on their tile. */
+#winnings {
+  position: absolute; bottom: 6px; width: 76px; display: grid; justify-items: center; gap: 4px;
+  left: min(calc(50% + var(--cw) + 24px), calc(100% - 88px - env(safe-area-inset-right)));
+  transition: opacity .3s;
+}
+#me.warring #winnings { opacity: .22; pointer-events: none; }
+#winnings .heap { position: relative; width: 60px; height: 84px; cursor: pointer; }
+/* A heap's cards sit on its middle, each at its own angle. */
+.heap .card {
+  position: absolute; left: 50%; top: 50%; margin: calc(var(--w) * -.7) 0 0 calc(var(--w) * -.5);
+  transform: translate(var(--x), var(--y)) rotate(var(--r));
+  transition: transform calc(420ms * var(--pace)) cubic-bezier(.3, .7, .3, 1) calc(var(--i, 0) * 14ms);
+}
+#winnings .heap .card { --w: 40px; }
+/* On a tile, the heap is a point near the right edge of the card, behind it.
+   Cards fly to it over everything (see heapFly), since the tiles' scrolling
+   box would hide them on the way. */
+.tile .heap { position: absolute; z-index: 0; left: calc(100% - 6px); top: 56%; width: 0; height: 0; pointer-events: none; }
+.card.flyer { position: absolute; z-index: 1; will-change: transform; }
+.size-l .heap .card { --w: 46px; }
+.size-m .heap .card { --w: 34px; }
+.size-s .heap, .size-xs .heap { display: none; }
+@media (min-width: 700px) {
+  .size-l .heap .card { --w: 54px; }
+  .size-m .heap .card { --w: 40px; }
+}
+/* Each card is thrown from where it lay on the table, at its size there: up
+   in an arc, then down faster onto the heap. They go one after another. */
+.heap .card.toss {
+  animation: toss calc(640ms * var(--pace)) linear calc(var(--d, 0ms) * var(--pace)) backwards;
+}
+@keyframes toss {
+  0% {
+    transform: translate(var(--fx), var(--fy)) rotate(0deg) scale(var(--fs));
+    animation-timing-function: cubic-bezier(.25, .6, .45, 1);
+  }
+  45% {
+    transform: translate(calc(var(--fx) * .4 + var(--x)), calc(var(--fy) * .4 + var(--y) - 48px)) rotate(calc(var(--r) * 1.6)) scale(calc(var(--fs) * .55 + .55));
+    animation-timing-function: cubic-bezier(.55, 0, .8, .3);
+  }
+  100% { transform: translate(var(--x), var(--y)) rotate(var(--r)) scale(1); }
+}
+#tidyBtn {
+  border: 0; border-radius: 999px; padding: 6px 9px; min-height: 30px; background: rgba(0, 0, 0, .3);
+  font: 700 12px/1 system-ui, sans-serif; white-space: nowrap;
+}
 #gain { position: absolute; left: 50%; top: 10px; font-family: var(--display); color: var(--gold); font-size: 22px; pointer-events: none; opacity: 0; }
 #gain.show { animation: rise calc(1100ms * var(--pace)) ease-out; }
 @keyframes rise { 0% { opacity: 0; transform: translate(-50%, 10px); } 20% { opacity: 1; } 100% { opacity: 0; transform: translate(-50%, -40px); } }
 
 /* Controls */
 #controls { padding: 4px 12px 10px; display: grid; gap: 8px; width: 100%; max-width: 560px; justify-self: center; }
-#slamBtn {
-  position: relative; overflow: hidden; height: 64px; border: 0; border-radius: 20px;
-  background: var(--accent); color: var(--accent-ink); box-shadow: 0 5px 0 #b52a14, var(--shadow);
-  font-family: var(--display); font-size: 22px; letter-spacing: .03em; touch-action: none;
-  -webkit-touch-callout: none;
+/* What to do and how hard you're slamming. You slam on your deck itself. */
+#slamBar {
+  position: relative; overflow: hidden; height: 40px; border-radius: 14px; background: rgba(0, 0, 0, .22);
+  display: grid; place-items: center; color: var(--felt-dim); font-family: var(--display); font-size: 17px; letter-spacing: .03em;
 }
-#slamBtn:disabled { background: rgba(0, 0, 0, .25); color: var(--felt-dim); box-shadow: none; cursor: default; }
-#slamBtn.held { transform: translateY(3px); box-shadow: 0 2px 0 #b52a14, var(--shadow); }
+#slamBar.go { color: var(--felt-ink); background: rgba(0, 0, 0, .32); }
+#slamBar.hurry { color: #fff; background: rgba(255, 59, 48, .6); }
 #meterFill {
   position: absolute; left: 0; top: 0; bottom: 0; width: 0; pointer-events: none;
   background: linear-gradient(90deg, #ffd23d, #ff9a1f 45%, #ff3b30 70%, #c13cff 88%, #3cf0ff);
   background-size: 320px 100%; opacity: .95;
 }
 #slamText { position: relative; text-shadow: 0 2px 0 rgba(0, 0, 0, .25); white-space: nowrap; }
-#slamText.long { font-size: 17px; }
-#slamBtn.tapped { animation: tapped 120ms ease-out; }
-@keyframes tapped { 0% { transform: translateY(4px) scale(.97); } 100% { transform: none; } }
+#slamText.long { font-size: 14px; }
 #tools { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; justify-content: center; }
 .chip {
   border: 0; border-radius: 999px; padding: 8px 10px; background: rgba(0, 0, 0, .22); font-size: 13px; font-weight: 700;
@@ -333,6 +396,156 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px s
 @keyframes floaty { 0% { transform: translate(-50%, 0) scale(.6); opacity: 0; } 15% { opacity: 1; transform: translate(-50%, -20px) scale(1.1); } 100% { opacity: 0; transform: translate(calc(-50% + var(--dx)), -170px) scale(1); } }
 .flash { position: absolute; inset: 0; animation: flash calc(380ms * var(--pace)) ease-out forwards; }
 @keyframes flash { from { opacity: .75; } to { opacity: 0; } }
+
+/* The versus intro: when a war breaks out, the fighters slide in from either
+   side and a huge WAR slams down between them, fighting-game style. It's
+   only a picture: it sits in #fx, which takes no taps, and it's gone by the
+   time the war opens. --k scales its timeline to the room's reveal time
+   (3 seconds, less in Fast mode). Levels 1 to 3 are a war, a double war and
+   a triple war or deeper, each bigger and louder than the last. */
+.vs {
+  --k: 1; --hit: 620ms; --out: 2550ms;
+  --word-a: #fff4b0; --word-b: #ffc93d; --word-c: #ff6a1f; --word-edge: #5a0b05; --glow: rgba(255, 120, 40, .8);
+  --band-a: rgba(120, 10, 6, .94); --band-b: rgba(20, 2, 2, .94); --band-line: #ffc93d;
+  --word-size: min(27vw, 150px); --pic: 84px;
+  position: absolute; inset: 0; display: grid; place-items: center;
+  padding: 0 calc(env(safe-area-inset-right) + 8px) 0 calc(env(safe-area-inset-left) + 8px);
+}
+.vs.lv2 {
+  --hit: 900ms; --word-a: #ffffff; --word-b: #ffd0c4; --word-c: #ff2a1a; --word-edge: #3a0000; --glow: rgba(255, 40, 20, .95);
+  --band-a: rgba(170, 6, 0, .95); --band-b: rgba(30, 0, 0, .95); --band-line: #fff; --word-size: min(30vw, 170px);
+}
+.vs.lv3 {
+  --hit: 900ms; --word-a: #ffffff; --word-b: #9ff6ff; --word-c: #d13cff; --word-edge: #12002e; --glow: rgba(150, 230, 255, 1);
+  --band-a: rgba(60, 0, 110, .96); --band-b: rgba(4, 0, 20, .96); --band-line: #9ff6ff; --word-size: min(32vw, 185px);
+}
+.vs.many { --pic: 58px; }
+.vs-stage { position: relative; width: min(100%, 720px); height: 340px; display: grid; place-items: center; }
+.vs-band {
+  position: absolute; left: -50vw; right: -50vw; top: 96px; height: 240px;
+  background:
+    repeating-linear-gradient(100deg, transparent 0 38px, rgba(255, 255, 255, .06) 38px 40px),
+    linear-gradient(180deg, var(--band-a), var(--band-b));
+  clip-path: polygon(0 14%, 100% 0, 100% 86%, 0 100%);
+  box-shadow: inset 0 3px 0 var(--band-line), inset 0 -3px 0 var(--band-line);
+  animation:
+    vs-band calc(240ms * var(--k)) cubic-bezier(.2, .8, .3, 1) both,
+    vs-band-out calc(300ms * var(--k)) ease-in calc(var(--out) * var(--k)) forwards;
+}
+@keyframes vs-band { from { transform: scaleY(0) skewY(-4deg); } to { transform: none; } }
+@keyframes vs-band-out { to { transform: scaleY(0); opacity: 0; } }
+.vs-side { position: absolute; top: 4px; display: flex; flex-direction: column; gap: 6px; max-width: 46%; }
+.vs-side.l { left: 0; align-items: flex-start; animation: vs-in-l calc(380ms * var(--k)) cubic-bezier(.2, 1.4, .4, 1) calc(60ms * var(--k)) both, vs-out-l calc(320ms * var(--k)) ease-in calc(var(--out) * var(--k)) forwards; }
+.vs-side.r { right: 0; align-items: flex-end; animation: vs-in-r calc(380ms * var(--k)) cubic-bezier(.2, 1.4, .4, 1) calc(140ms * var(--k)) both, vs-out-r calc(320ms * var(--k)) ease-in calc(var(--out) * var(--k)) forwards; }
+@keyframes vs-in-l { from { transform: translateX(-110vw) skewX(-12deg); } to { transform: none; } }
+@keyframes vs-in-r { from { transform: translateX(110vw) skewX(12deg); } to { transform: none; } }
+@keyframes vs-out-l { to { transform: translateX(-110vw); } }
+@keyframes vs-out-r { to { transform: translateX(110vw); } }
+.vs-f { display: flex; align-items: center; gap: 8px; min-width: 0; max-width: 100%; }
+.vs-side.r .vs-f { flex-direction: row-reverse; }
+/* Head to head, each name sits under its picture, with room to be read. */
+.vs:not(.many) .vs-f { flex-direction: column; align-items: center; gap: 6px; }
+.vs:not(.many) { --pic: 96px; }
+.vs:not(.many) .vs-name { max-width: 100%; }
+.vs:not(.many) .vs-side { max-width: 48%; }
+.vs-pic {
+  position: relative; width: var(--pic); height: var(--pic); flex: none; border-radius: 50%;
+  display: grid; place-items: center; font-size: calc(var(--pic) * .6); line-height: 1;
+  background: var(--deck-back); border: 4px solid var(--deck-back-edge);
+  box-shadow: 0 0 0 3px rgba(0, 0, 0, .55), 0 6px 18px rgba(0, 0, 0, .5);
+}
+.vs-pic span { filter: drop-shadow(0 3px 2px rgba(0, 0, 0, .5)); }
+.vs-pic .card { --w: calc(var(--pic) * .44); position: absolute; bottom: -8px; right: -12px; transform: rotate(14deg); }
+.vs-side.r .vs-pic .card { right: auto; left: -12px; transform: rotate(-14deg); }
+.vs-name {
+  font: 400 15px/1.1 var(--display); color: #fff; text-shadow: 0 2px 0 #000, 0 0 8px rgba(0, 0, 0, .8);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; max-width: 9em;
+  background: var(--deck-back-solid); border: 2px solid var(--deck-back-edge); border-radius: 8px; padding: 4px 7px 3px;
+}
+.vs.many .vs-name { font-size: 13px; max-width: 7em; }
+.vs-mid { position: absolute; left: 50%; top: 138px; transform: translateX(-50%); display: grid; justify-items: center; width: max-content; max-width: calc(100vw - 16px); }
+.vs-pre, .vs-word, .vs-round, .vs-fight b {
+  font-family: "Black Ops One", Impact, "Arial Black", system-ui, sans-serif; font-weight: 400; line-height: .9;
+  white-space: nowrap; letter-spacing: .01em;
+}
+.vs-word {
+  position: relative; font-size: var(--word-size); padding: 0 .06em;
+  color: var(--word-b);
+  background: linear-gradient(180deg, var(--word-a) 0 30%, var(--word-b) 48%, var(--word-c) 80%);
+  -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent;
+  -webkit-text-stroke: max(3px, .035em) var(--word-edge); paint-order: stroke fill;
+  filter: drop-shadow(0 .05em 0 var(--word-edge)) drop-shadow(0 0 .12em var(--glow));
+  animation:
+    vs-slam calc(220ms * var(--k)) cubic-bezier(.6, 0, .9, .4) calc((var(--hit) - 220ms) * var(--k)) both,
+    vs-out calc(300ms * var(--k)) ease-in calc(var(--out) * var(--k)) forwards;
+}
+.vs.lv3 .vs-word {
+  animation:
+    vs-slam calc(220ms * var(--k)) cubic-bezier(.6, 0, .9, .4) calc((var(--hit) - 220ms) * var(--k)) both,
+    vs-jitter calc(90ms * var(--k)) steps(2) calc(var(--hit) * var(--k)) 14,
+    vs-out calc(300ms * var(--k)) ease-in calc(var(--out) * var(--k)) forwards;
+}
+@keyframes vs-slam {
+  0% { transform: scale(4.5) rotate(-8deg); opacity: 0; }
+  60% { opacity: 1; }
+  100% { transform: skewX(-8deg); opacity: 1; }
+}
+@keyframes vs-jitter { 0% { translate: -3px 2px; } 100% { translate: 3px -2px; } }
+@keyframes vs-out { to { transform: skewX(-8deg) scale(1.6); opacity: 0; } }
+.vs-pre {
+  font-size: min(11vw, 54px); color: #fff; text-shadow: 0 3px 0 var(--word-edge), 0 0 14px var(--glow);
+  transform: skewX(-8deg); margin-bottom: -.05em;
+  animation:
+    vs-pre calc(200ms * var(--k)) cubic-bezier(.6, 0, .9, .4) calc(380ms * var(--k)) both,
+    vs-out calc(300ms * var(--k)) ease-in calc(var(--out) * var(--k)) forwards;
+}
+@keyframes vs-pre { from { transform: translateY(-60px) skewX(-8deg) scale(2.2); opacity: 0; } to { transform: skewX(-8deg); opacity: 1; } }
+.vs-round {
+  margin-top: .25em; font-size: 20px; color: var(--word-edge); background: var(--band-line);
+  padding: .25em .6em .2em; transform: skewX(-12deg); box-shadow: 0 3px 0 rgba(0, 0, 0, .45);
+  animation:
+    vs-pop calc(260ms * var(--k)) cubic-bezier(.2, 1.6, .4, 1) calc((var(--hit) + 120ms) * var(--k)) both,
+    vs-out calc(300ms * var(--k)) ease-in calc(var(--out) * var(--k)) forwards;
+}
+.vs-more { font: 400 15px/1 var(--display); color: #fff; background: rgba(0, 0, 0, .55); padding: 5px 9px 4px; border-radius: 99px; }
+@keyframes vs-pop { from { transform: skewX(-12deg) scale(0); } to { transform: skewX(-12deg); } }
+/* The war opens: FIGHT! lands and is gone in under a second. */
+.vs-fight {
+  position: absolute; inset: 0; display: grid; place-items: center;
+  animation: vs-fight-out calc(260ms * var(--pace)) ease-in calc(620ms * var(--pace)) forwards;
+}
+.vs-fight b {
+  font-size: min(24vw, 140px); color: #fff;
+  -webkit-text-stroke: max(3px, .035em) #5a0b05; paint-order: stroke fill;
+  text-shadow: 0 .05em 0 #5a0b05, 0 0 .25em rgba(255, 200, 60, .9);
+  animation: vs-fight calc(240ms * var(--pace)) cubic-bezier(.2, 1.5, .4, 1) both;
+}
+.vs-fight.lv2 b { text-shadow: 0 .05em 0 #3a0000, 0 0 .3em rgba(255, 40, 20, 1); }
+.vs-fight.lv3 b { text-shadow: 0 .05em 0 #12002e, 0 0 .3em rgba(150, 230, 255, 1); }
+@keyframes vs-fight { from { transform: scale(.2) rotate(-6deg); opacity: 0; } to { transform: skewX(-8deg); opacity: 1; } }
+@keyframes vs-fight-out { to { opacity: 0; transform: scale(1.3); } }
+/* Someone else's war at a big table: a quick strip, no shaking. */
+.vs-lite {
+  position: absolute; left: 50%; top: 40%; transform: translate(-50%, -50%);
+  display: flex; align-items: center; gap: 6px; padding: 6px 14px 6px 10px; max-width: calc(100vw - 24px);
+  background: linear-gradient(90deg, rgba(120, 10, 6, .92), rgba(20, 2, 2, .92)); border: 2px solid var(--gold);
+  border-radius: 12px; transform-origin: 0 50%; box-shadow: var(--shadow); white-space: nowrap;
+  animation: vs-lite calc(1100ms * var(--k)) ease-in-out both;
+}
+.vs-lite span { font-size: 24px; line-height: 1; }
+.vs-lite b { font: 400 20px/1 "Black Ops One", Impact, "Arial Black", system-ui, sans-serif; color: var(--gold); margin: 0 4px; }
+.vs-lite small { font: 700 13px/1 system-ui, sans-serif; color: #fff; }
+@keyframes vs-lite {
+  0% { transform: translate(-50%, -50%) scaleX(0); opacity: 0; }
+  15%, 80% { transform: translate(-50%, -50%); opacity: 1; }
+  100% { transform: translate(-50%, -50%) translateY(-12px); opacity: 0; }
+}
+/* Reduced motion: the same news, standing still. */
+.vs.calm .vs-band, .vs.calm .vs-side, .vs.calm .vs-word, .vs.calm .vs-pre, .vs.calm .vs-round, .vs-fight.calm, .vs-fight.calm b, .vs-lite.calm { animation: none; }
+.vs.calm .vs-band { clip-path: none; top: 90px; height: 250px; }
+.vs.calm .vs-word, .vs.calm .vs-pre { transform: none; filter: none; }
+.vs.calm .vs-word { font-size: min(22vw, 120px); }
+.vs-fight.calm b { transform: none; font-size: min(16vw, 90px); }
 
 /* Overlays */
 .overlay {
@@ -391,6 +604,16 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px s
 .decks .card { --w: 30px; }
 .deck-note { margin: 6px 0 0; font-size: 13px; color: var(--panel-dim); }
 .seg button:disabled { cursor: default; }
+/* Room invites: the link as a QR code, black on white whatever the theme so
+   cameras read it. */
+.invite-qr { display: flex; gap: 12px; align-items: center; margin-top: 8px; }
+.invite-qr p { margin: 0; }
+.qr { flex: none; width: 112px; aspect-ratio: 1; border-radius: 10px; overflow: hidden; background: #fff; }
+.qr:empty { display: none; }
+.qr svg { display: block; width: 100%; height: 100%; shape-rendering: crispEdges; }
+.qr.big { width: min(240px, 70%); margin: 10px auto; }
+#friends.invited { margin-top: 12px; padding: 2px 12px 10px; border: 2px solid var(--accent); border-radius: 16px; background: var(--panel-2); }
+#friends.invited h3 { color: var(--accent); font-size: 15px; }
 .code-big { font-family: var(--display); font-size: 44px; letter-spacing: .12em; color: var(--accent); line-height: 1; }
 .people { display: flex; flex-wrap: wrap; gap: 6px; max-height: 210px; overflow-y: auto; }
 .person { display: inline-flex; align-items: center; gap: 4px; padding: 5px 9px; border-radius: 999px; background: var(--panel-2); font-size: 14px; font-weight: 600; max-width: 100%; }
@@ -398,6 +621,7 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px s
 .person.bot { font-weight: 400; color: var(--panel-dim); }
 .person.offline { opacity: .5; }
 .person.me { outline: 2px solid var(--accent); }
+.person .card { --w: 14px; }
 .stepper { display: flex; align-items: center; gap: 6px; }
 .stepper button { width: 44px; height: 44px; border-radius: 12px; border: 2px solid var(--panel-line); background: var(--panel-2); font-size: 20px; font-weight: 800; color: var(--panel-ink); }
 .stepper output { min-width: 2.2em; text-align: center; font-weight: 800; font-size: 18px; }
@@ -410,6 +634,29 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px s
 .stat-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 6px; }
 .stat-grid div { background: var(--panel-2); border-radius: 10px; padding: 8px; font-size: 13px; }
 .stat-grid b { display: block; font-size: 18px; }
+/* The battle log on the end screen: one row a battle, cards as little chips. */
+.blog {
+  list-style: none; margin: 0; padding: 4px; display: grid; gap: 2px; max-height: 270px; overflow-y: auto;
+  background: var(--panel-2); border-radius: 12px; overscroll-behavior: contain;
+}
+.blog li { display: grid; grid-template-columns: 3.3em minmax(0, 1fr) auto; gap: 6px; align-items: center; padding: 5px 6px; border-radius: 8px; font-size: 13px; }
+.blog li.won { background: rgba(255, 201, 61, .2); }
+.blog li.gap { display: block; text-align: center; color: var(--panel-dim); font-style: italic; }
+.blog .ln { font-variant-numeric: tabular-nums; color: var(--panel-dim); font-weight: 700; font-size: 12px; }
+.blog .lc { display: flex; flex-wrap: wrap; gap: 3px; align-items: center; }
+.blog .lr { font-size: 12px; color: var(--panel-dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.blog .ld { font-weight: 800; font-variant-numeric: tabular-nums; min-width: 2.4em; text-align: right; }
+.blog .ld.up { color: #1f8a4c; }
+.blog .ld.down { color: var(--accent); }
+@media (prefers-color-scheme: dark) { .blog .ld.up { color: #6fdc98; } }
+.mc {
+  display: inline-block; min-width: 2.2em; padding: 1px 4px; border-radius: 5px; text-align: center; line-height: 1.35;
+  background: #fffdf6; color: #1d1d1f; border: 1px solid #d6ccb8; font-weight: 700; font-size: 12px;
+}
+.mc.red { color: #d1262a; }
+#overButtons { flex-wrap: nowrap; }
+#overButtons .btn { padding-inline: 10px; white-space: nowrap; }
+.lw { font: 700 10px/1 system-ui, sans-serif; color: #fff; background: var(--war); padding: 4px 5px; border-radius: 6px; white-space: nowrap; }
 .science { background: var(--panel-2); border-left: 4px solid var(--accent); padding: 8px 10px; border-radius: 8px; font-size: 14px; margin: 10px 0; }
 .unlock { background: var(--gold); color: var(--gold-ink); padding: 10px 12px; border-radius: 12px; font-weight: 700; margin: 10px 0; }
 .menu-tools { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
@@ -458,7 +705,7 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px s
   <header id="bar">
     <button class="icon-btn" id="menuBtn" aria-label="Pause menu">☰</button>
     <div id="battleInfo"><span id="battleNum">Battle 1</span><small id="battleSub"></small></div>
-    <span id="roomTag" hidden></span>
+    <button id="roomTag" type="button" hidden></button>
     <button class="icon-btn music-toggle" aria-label="Music on">🎵</button>
     <button class="icon-btn sound-toggle" aria-label="Sound effects on">🔊</button>
   </header>
@@ -473,14 +720,18 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px s
     <div id="caption"></div>
   </section>
   <section id="me">
-    <div id="myPile"><div class="stack"><div class="card back"></div></div><div id="myLabel"></div></div>
+    <div id="winnings" hidden>
+      <div class="heap" role="img" aria-label="Cards you've won"></div>
+      <button id="tidyBtn" type="button" hidden>🧹 Clean up</button>
+    </div>
+    <div id="myPile" role="button" tabindex="0" aria-label="Your deck" aria-describedby="slamText"><div class="stack"><div class="card back"></div><span id="deckHint" hidden></span></div><div id="myLabel"></div></div>
     <div id="myWar" hidden><div class="wpile"></div><span class="wcount"></span></div>
     <div id="mySlot"><div class="card empty"></div></div>
     <div id="gain"></div>
     <div id="meNote" hidden></div>
   </section>
   <footer id="controls">
-    <button id="slamBtn" disabled><span id="meterFill"></span><span id="slamText">Hold to slam</span></button>
+    <div id="slamBar"><span id="meterFill"></span><span id="slamText">Hold your deck to slam</span></div>
     <div id="tools">
       <button class="chip" id="styleBtn">🖐️ Bare hands</button>
       <button class="chip" id="inputBtn" title="How you slam: tap to switch">✊ Hold</button>
@@ -503,8 +754,8 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px s
     </div>
     <div class="title-cards" aria-hidden="true"></div>
     <h1>War!</h1>
-    <p><b>Slam Edition.</b> The card game where the highest card wins, and you can slam your card down as hard as you like. It won't help.</p>
-    <h3>Play solo</h3>
+    <p><b>Slam Edition.</b> The card game where the highest card wins, jokers beat everything, and you can slam your card down as hard as you like. It won't help.</p>
+    <h3 id="soloTitle">Play solo</h3>
     <label for="opponents" class="small" id="oppLabel">1 opponent</label>
     <input type="range" id="oppRange" min="1" max="49" value="1" aria-labelledby="oppLabel">
     <div class="seg" id="soloLength" style="margin-top:8px"></div>
@@ -512,7 +763,7 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px s
     <button class="btn primary wide" id="soloBtn">Deal me in</button>
 
     <div id="friends" hidden>
-      <h3>Play with friends</h3>
+      <h3 id="friendsTitle">Play with friends</h3>
       <label class="small" for="nameInput">Your name</label>
       <input type="text" id="nameInput" maxlength="16" autocomplete="nickname" spellcheck="false" placeholder="Name">
       <div class="avatars" id="avatars" style="margin-top:8px" role="group" aria-label="Your animal"></div>
@@ -547,6 +798,10 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px s
       <button class="btn" id="shareBtn">Invite</button>
     </div>
     <p class="small dim" id="shareNote">Friends join at this page with the code, or with your invite link.</p>
+    <div class="invite-qr">
+      <div class="qr" id="lobbyQr"></div>
+      <p class="small dim">Someone right here? They can scan this with their phone’s camera to join.</p>
+    </div>
     <h3 id="peopleTitle">Players</h3>
     <div class="people" id="people"></div>
     <div id="hostControls">
@@ -558,6 +813,9 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px s
       <h3>Length</h3>
       <div class="seg" id="roomLength"></div>
     </div>
+    <h3>Your deck</h3>
+    <div class="decks" id="lobbyDecks" role="group" aria-label="Deck"></div>
+    <p class="deck-note" id="lobbyDeckNote"></p>
     <p class="small dim" id="lobbyNote"></p>
     <div class="err" id="lobbyErr" aria-live="polite"></div>
     <div class="row" style="margin-top:8px">
@@ -573,6 +831,7 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px s
     <h2 id="pauseTitle">Paused</h2>
     <p class="dim small" id="pauseNote"></p>
     <button class="btn primary wide" id="resumeBtn">Back to the table</button>
+    <button class="btn wide" id="pauseInviteBtn" hidden>➕ Invite someone</button>
     <button class="btn wide" id="skipBtn">Skip to the end</button>
     <button class="btn wide" id="quitBtn">Quit to menu</button>
     <div>
@@ -596,13 +855,32 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px s
     </div>
     <h3>The war in numbers</h3>
     <div class="stat-grid" id="overStats"></div>
+    <div id="logSection" hidden>
+      <h3 id="logTitle">Battle by battle</h3>
+      <ol class="blog" id="battleLog"></ol>
+    </div>
     <div class="science" id="science"></div>
     <div class="unlock" id="unlock" hidden></div>
     <p class="small dim" id="overNote"></p>
-    <div class="row" style="margin-top:8px">
+    <button class="btn wide" id="overInviteBtn" hidden>➕ Invite someone to the next game</button>
+    <div class="row" id="overButtons" style="margin-top:8px">
       <button class="btn" id="overMenuBtn">Menu</button>
+      <button class="btn" id="shareImgBtn" aria-label="Share a picture of the game">📸 Share</button>
       <button class="btn primary grow" id="againBtn">Play again</button>
     </div>
+    <p class="small dim" id="shareImgNote" aria-live="polite"></p>
+  </div>
+</div>
+
+<!-- Invite: the room's link, to send or to scan -->
+<div class="overlay" id="inviteOv" hidden>
+  <div class="panel">
+    <h2>Invite to room <span id="inviteCode"></span></h2>
+    <p class="small dim" id="inviteHelp"></p>
+    <div class="qr big" id="inviteQr"></div>
+    <button class="btn gold wide" id="inviteShareBtn">Send the link</button>
+    <p class="small dim" id="inviteNote" aria-live="polite"></p>
+    <button class="btn primary wide" id="inviteDone">Done</button>
   </div>
 </div>
 
@@ -642,6 +920,7 @@ const WAR = {
   STYLES: 11,          // power-ups, 0 for bare hands
   AVATARS: 24,
   TIERS: 9,            // slam tiers, from boop to cosmic
+  DECK: 54,            // cards in a deck: the usual 52 and two jokers
   STAGE_MS: 8000,      // to slam before your card flops over by itself
   WAR_STAGE_MS: 20000, // the same in a war, where you slam every card you lay down
   NAPS: 2,             // flops in a row before a stage stops waiting for you
@@ -660,9 +939,16 @@ const WAR_BOT_LAST = [
   'Nugget', 'Meatball', 'Toast', 'Pebble', 'Beans', 'Squid', 'Crumpet', 'Tater', 'Wombat', 'Jellybean',
 ];
 
-// Cards are numbers: rank is card % 13 (0 is a two, 12 an ace) and suit is
-// floor(card / 13) % 4. There's a deck for every two players, so everyone
-// starts with about 26 cards however many play.
+// Cards are numbers, WAR.DECK to a deck. In each deck, card % WAR.DECK is
+// suit * 13 + rank for the usual 52 cards (rank 0 is a two, 12 an ace), and 52
+// and 53 are the jokers, which beat every other card: their rank is 13. Two
+// jokers tie, like any two cards of the same rank. There's a deck for every two
+// players, so everyone starts with about 27 cards however many play.
+function warRank(card) {
+  const face = card % WAR.DECK;
+  return face < 52 ? face % 13 : 13;
+}
+
 function warShuffle(cards, random) {
   for (let i = cards.length - 1; i > 0; i--) {
     const j = Math.floor(random() * (i + 1));
@@ -673,7 +959,7 @@ function warShuffle(cards, random) {
 
 function warDeal(count, random) {
   const decks = Math.max(1, Math.ceil(count / 2));
-  const cards = warShuffle(Array.from({ length: 52 * decks }, (_, i) => i), random);
+  const cards = warShuffle(Array.from({ length: WAR.DECK * decks }, (_, i) => i), random);
   const piles = Array.from({ length: count }, () => []);
   cards.forEach((card, i) => piles[i % count].push(card));
   return piles;
@@ -791,10 +1077,10 @@ function warResolve(game, now, random) {
     game.pot.push(...pile.splice(0, down));
     const up = pile.shift();
     game.pot.push(up);
-    best = Math.max(best, up % 13);
+    best = Math.max(best, warRank(up));
     plays.push([seat, down, up, ...slam]);
   }
-  const tied = plays.filter((play) => play[2] % 13 === best).map((play) => play[0]);
+  const tied = plays.filter((play) => warRank(play[2]) === best).map((play) => play[0]);
   const able = tied.filter((seat) => game.piles[seat].length);
   let winner = tied.length === 1 ? tied[0] : able.length === 1 ? able[0] : null;
   const gods = tied.length > 1 && !able.length;
@@ -866,19 +1152,21 @@ const STYLES = [
 ];
 const AVATARS = ['🦊', '🐸', '🐼', '🐙', '🦄', '🐯', '🐨', '🐵', '🦉', '🐢', '🦖', '🐳', '🦀', '🐝', '🦩', '🐧', '🦔', '🐮', '🐷', '🐰', '🦁', '🐲', '👽', '🤖'];
 const CHEERS = ['🔥', '😱', '😂', '👏', '🍅', '💤'];
-const RANKS = ['2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K', 'A'];
-const RANK_NAMES = ['two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten', 'jack', 'queen', 'king', 'ace'];
+// By rank (see warRank): two to ace, then the joker.
+const RANKS = ['2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K', 'A', '★'];
+const RANK_NAMES = ['two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten', 'jack', 'queen', 'king', 'ace', 'joker'];
 const SUITS = ['♠︎', '♥︎', '♦︎', '♣︎'];
-// Decks: [name, what it's like, jack, queen, king]. The looks are in the CSS,
-// under [data-deck].
+const JOKER = 13;
+// Decks: [name, what it's like, jack, queen, king, joker]. The looks are in
+// the CSS, under [data-deck].
 const DECKS = {
-  classic: ['Classic', 'Red stripes and cream cards.', '🤹', '👸', '👑'],
-  neon: ['Neon', 'Glows in the dark.', '🕺', '💃', '😎'],
-  pixel: ['8-bit', 'Chunky pixels, blown on before use.', '👾', '🎮', '🕹️'],
-  royal: ['Royal', 'Gold on green velvet.', '🛡️', '👸', '🤴'],
-  space: ['Space', 'Lost among the stars.', '🚀', '👽', '🛸'],
-  spooky: ['Spooky', 'Cobwebs, pumpkins and the undead.', '🧟', '🧛', '💀'],
-  candy: ['Candy', 'Very sweet. No nutritional value.', '🧁', '🍭', '🍩'],
+  classic: ['Classic', 'Red stripes and cream cards.', '🤹', '👸', '👑', '🤡'],
+  neon: ['Neon', 'Glows in the dark.', '🕺', '💃', '😎', '🤩'],
+  pixel: ['8-bit', 'Chunky pixels, blown on before use.', '👾', '🎮', '🕹️', '🐛'],
+  royal: ['Royal', 'Gold on green velvet.', '🛡️', '👸', '🤴', '🎭'],
+  space: ['Space', 'Lost among the stars.', '🚀', '👽', '🛸', '☄️'],
+  spooky: ['Spooky', 'Cobwebs, pumpkins and the undead.', '🧟', '🧛', '💀', '👻'],
+  candy: ['Candy', 'Very sweet. No nutritional value.', '🧁', '🍭', '🍩', '🦷'],
 };
 let deck = 'classic';  // the one you picked: see init()
 const LENGTH_LABELS = {
@@ -914,7 +1202,8 @@ function el(tag, cls, text) {
 }
 const tierOf = (power) => { let t = 0; TIERS.forEach(([min], i) => { if (power >= min) t = i; }); return t; };
 const tierName = (power) => TIERS[tierOf(power)][1];
-const cardName = (card) => RANK_NAMES[card % 13];
+const cardName = (card) => RANK_NAMES[warRank(card)];
+const cardNames = (card) => cardName(card).replace(/x$/, 'xe') + 's';
 const aOrAn = (word) => (/^[aeiou]/.test(word) ? 'an ' : 'a ') + word;
 const pick = (list) => list[Math.floor(Math.random() * list.length)];
 const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
@@ -930,16 +1219,30 @@ function seeded(seed) {
   };
 }
 
-function cardEl(card) {
+// A card: a number (see warRank), 'back' or null for an empty place. It's
+// drawn in your deck unless `look` names another, as for other players' cards.
+function cardEl(card, look) {
   const node = el('div', 'card');
+  if (look && DECKS[look]) node.dataset.deck = look;
   if (card === 'back') { node.classList.add('back'); return node; }
   if (card === null || card === undefined) { node.classList.add('empty'); return node; }
-  const rank = card % 13;
-  const suit = Math.floor(card / 13) % 4;
-  if (suit === 1 || suit === 2) node.classList.add('red');
+  const pictures = DECKS[look] || DECKS[deck];
+  const rank = warRank(card);
   const corner = el('span', 'ci');
+  if (rank === JOKER) {
+    // A red joker and a black one in every deck.
+    const red = card % WAR.DECK === 53;
+    node.classList.add('joker');
+    if (red) node.classList.add('red');
+    corner.append(el('b', '', RANKS[rank]));
+    node.append(corner, el('span', 'cc', pictures[5]));
+    node.setAttribute('aria-label', `${red ? 'red' : 'black'} joker`);
+    return node;
+  }
+  const suit = Math.floor((card % WAR.DECK) / 13);
+  if (suit === 1 || suit === 2) node.classList.add('red');
   corner.append(el('b', '', RANKS[rank]), el('i', '', SUITS[suit]));
-  node.append(corner, el('span', 'cc', rank >= 9 && rank <= 11 ? DECKS[deck][rank - 7] : SUITS[suit]));
+  node.append(corner, el('span', 'cc', rank >= 9 && rank <= 11 ? pictures[rank - 7] : SUITS[suit]));
   node.setAttribute('aria-label', `${RANK_NAMES[rank]} of ${['spades', 'hearts', 'diamonds', 'clubs'][suit]}`);
   return node;
 }
@@ -1058,11 +1361,40 @@ const Sound = {
   flip() { this.noise(0, 0.05, 0.25, 5000); },
   win() { [523, 659, 784, 1046].forEach((f, i) => this.tone(f, i * 0.09, 0.22, { type: 'triangle', gain: 0.14 })); },
   lose() { this.tone(330, 0, 0.3, { type: 'triangle', gain: 0.12, to: 290 }); this.tone(277, 0.3, 0.55, { type: 'triangle', gain: 0.12, to: 220 }); },
-  war() {
-    this.noise(0, 0.9, 0.35, 180);
-    [[220, 277, 330], [247, 311, 370], [294, 370, 440]].forEach((chord, i) => chord.forEach((f) => this.tone(f, i * 0.28, i === 2 ? 0.6 : 0.3, { type: 'sawtooth', gain: 0.05 })));
+  war(quiet) {
+    const loud = quiet ? 0.4 : 1;
+    this.noise(0, 0.9, 0.35 * loud, 180);
+    [[220, 277, 330], [247, 311, 370], [294, 370, 440]].forEach((chord, i) => chord.forEach((f) => this.tone(f, i * 0.28, i === 2 ? 0.6 : 0.3, { type: 'sawtooth', gain: 0.05 * loud })));
+  },
+  // The versus intro: a whoosh as the fighters slide in, a thud for DOUBLE
+  // (at `pre` seconds), then the hit as WAR lands (at `hit`), bigger and
+  // higher each level, with a stab of brass.
+  versus(level, hit, pre) {
+    this.noise(0, 0.35, 0.12, 1400);
+    this.noise(0.12, 0.3, 0.1, 2400);
+    if (pre) { this.noise(pre, 0.25, 0.4, 500); this.tone(110, pre, 0.3, { gain: 0.35, to: 50 }); }
+    this.noise(hit, 0.5 + level * 0.25, 0.55 + level * 0.1, 700 + level * 500);
+    this.tone(130, hit, 0.5 + level * 0.15, { gain: 0.55, to: 32 });
+    if (level >= 2) this.tone(65, hit + 0.02, 0.8, { type: 'triangle', gain: 0.35, to: 30 });
+    const up = [1, 1.122, 1.26][level - 1];
+    [220, 277, 330, 440].forEach((f) => this.tone(f * up, hit + 0.03, 0.55 + level * 0.15, { type: 'sawtooth', gain: 0.045 }));
+    if (level >= 3) for (let i = 0; i < 5; i++) this.noise(hit + 0.12 + i * 0.09, 0.05, 0.22, 6000);
+  },
+  // FIGHT!: a sharp crack and a rising horn.
+  fight(level) {
+    this.noise(0, 0.18, 0.5, 4000);
+    this.tone(90, 0, 0.25, { gain: 0.4, to: 45 });
+    const up = [1, 1.122, 1.26][level - 1] || 1;
+    this.tone(392 * up, 0.02, 0.32, { type: 'square', gain: 0.07, to: 784 * up });
+    this.tone(523 * up, 0.08, 0.3, { type: 'sawtooth', gain: 0.05 });
   },
   blip(tier) { this.tone(300 + tier * 90, 0, 0.06, { type: 'square', gain: 0.04 }); },
+  swish() { this.noise(0, 0.14, 0.07, 1800); },
+  // A deck squared up: a riffle, then a tap on the table.
+  riffle() {
+    for (let i = 0; i < 9; i++) this.noise(i * 0.03, 0.025, 0.1, 3000 + i * 250);
+    this.noise(0.3, 0.07, 0.18, 900);
+  },
   cheer() { this.tone(880, 0, 0.08, { type: 'triangle', gain: 0.06, to: 1200 }); },
 };
 
@@ -1572,16 +1904,6 @@ function burst(x, y, style, power, small) {
   }
 }
 
-// A war breaks out: the table flashes red and jumps.
-function warFlash() {
-  if (reduceMotion.matches) return;
-  const flash = el('div', 'flash');
-  flash.style.background = 'radial-gradient(ellipse at center, rgba(255, 60, 40, .15) 30%, rgba(255, 30, 20, .6))';
-  flash.addEventListener('animationend', () => flash.remove(), { once: true });
-  $('fx').append(flash);
-  shake(160);
-}
-
 function shake(power) {
   if (reduceMotion.matches || power < 30) return;
   const app = $('app');
@@ -1603,6 +1925,130 @@ function banner(text, war) {
   node.classList.remove('pop');
   if (text && !reduceMotion.matches) { void node.offsetWidth; node.classList.add('pop'); }
 }
+
+// ---- The versus intro ----
+//
+// When a war breaks out, the fighters slide in from either side and a huge
+// WAR slams down between them, then FIGHT! lands as the war opens. It's all
+// for show: it lives in #fx, which takes no taps, it waits for nothing, and
+// the room opens the war on its own clock. At a big table only your own wars
+// get the full show; anyone else's gets a quick strip (see warDepth).
+
+const WAR_WORDS = ['WAR!', 'DOUBLE WAR!', 'TRIPLE WAR!'];
+// The banner for a war `depth` deep among `n` fighters.
+function warTitle(depth, n) {
+  if (n > 2) return `${n}-WAY WAR!`;
+  return WAR_WORDS[depth - 1] || 'MEGA WAR!';
+}
+const VS_PRE = ['', 'DOUBLE', 'TRIPLE'];
+const VS_SHOWN = 4;   // fighters pictured; the rest are "+N"
+const VS_HIT = [620, 900, 900];   // when WAR lands at each level, ms; as in the CSS (--hit)
+
+const Versus = {
+  last: null,      // what the last intro showed, for tests: see __war.versus()
+  fightFor: null,  // the war stage that gets a FIGHT! when it opens
+  clear() {
+    for (const node of $('fx').querySelectorAll('.vs, .vs-fight, .vs-lite')) node.remove();
+    this.fightFor = null;
+  },
+  // A war broke out: m is the flip that tied.
+  show(m) {
+    const next = m.next;
+    const depth = next.stage;
+    const level = Math.min(3, depth);
+    const fighters = next.fighters;
+    const n = fighters.length;
+    // The intro fits the time before the war opens: 3 seconds, less when fast.
+    const k = Math.max(0.15, Math.min(1.5, next.opensIn / WAR.WAR_REVEAL_MS));
+    const full = S.players.length <= 4 || fighters.includes(S.you);
+    const calm = reduceMotion.matches;
+    this.clear();
+    // You're always on the left.
+    const order = fighters.includes(S.you) ? [S.you, ...fighters.filter((s) => s !== S.you)] : fighters.slice();
+    const shown = order.slice(0, full ? VS_SHOWN : 3);
+    const more = n - shown.length;
+    this.last = { kind: !full ? 'lite' : calm ? 'calm' : 'full', level, depth, fighters: shown.map(playerName), more };
+    if (!full) {
+      const strip = el('div', 'vs-lite' + (calm ? ' calm' : ''));
+      strip.style.setProperty('--k', k);
+      strip.setAttribute('aria-hidden', 'true');
+      shown.forEach((seat, i) => {
+        if (i) strip.append(el('small', '', 'vs'));
+        strip.append(el('span', '', avatarOf(seat)));
+      });
+      strip.append(el('b', '', depth > 1 ? `${VS_PRE[level - 1] || 'MEGA'} WAR!` : 'WAR!'));
+      if (more > 0) strip.append(el('small', '', `+${more}`));
+      strip.addEventListener('animationend', () => strip.remove(), { once: true });
+      if (calm) later(() => strip.remove(), 1100 * k);
+      $('fx').append(strip);
+      Sound.war(true);
+      return;
+    }
+    const card = (seat) => m.plays.find((p) => p[0] === seat)?.[2];
+    const fighter = (seat) => {
+      const look = deckOf(seat);
+      const node = el('div', 'vs-f');
+      node.dataset.deck = look;
+      node.dataset.seat = seat;
+      const pic = el('div', 'vs-pic');
+      pic.append(el('span', '', avatarOf(seat)));
+      const tied = card(seat);
+      if (tied !== undefined) pic.append(cardEl(tied, look));
+      node.append(pic, el('div', 'vs-name', playerName(seat)));
+      return node;
+    };
+    const root = el('div', `vs lv${level}` + (shown.length > 2 ? ' many' : '') + (calm ? ' calm' : ''));
+    root.style.setProperty('--k', k);
+    root.setAttribute('aria-hidden', 'true');  // #banner and the caption say it all
+    const stage = el('div', 'vs-stage');
+    const left = el('div', 'vs-side l');
+    const right = el('div', 'vs-side r');
+    const half = Math.ceil(shown.length / 2);
+    shown.forEach((seat, i) => (i < half ? left : right).append(fighter(seat)));
+    const mid = el('div', 'vs-mid');
+    const pre = [depth > 1 ? VS_PRE[level - 1] || 'MEGA' : '', n > 2 ? `${n}-WAY` : ''].filter(Boolean).join(' ');
+    if (pre) mid.append(el('div', 'vs-pre', pre));
+    mid.append(el('div', 'vs-word', 'WAR!'));
+    mid.append(el('div', 'vs-round', `ROUND ${depth}`));
+    if (more > 0) mid.append(el('div', 'vs-more', `+${more} more`));
+    stage.append(el('div', 'vs-band'), left, right, mid);
+    root.append(stage);
+    $('fx').append(root);
+    later(() => root.remove(), next.opensIn);
+    this.fightFor = { battle: next.battle, stage: depth, level, calm };
+    const hit = VS_HIT[level - 1] * k;
+    Sound.versus(level, hit / 1000, pre ? (380 + 200) * k / 1000 : 0);
+    if (calm) return;
+    if (pre) later(() => shake(60), (380 + 200) * k);
+    later(() => {
+      if (!root.isConnected) return;
+      const flash = el('div', 'flash');
+      flash.style.background = level >= 3 ? 'radial-gradient(circle, #fff 20%, rgba(160, 230, 255, .9))'
+        : level === 2 ? 'radial-gradient(circle, #fff 15%, rgba(255, 40, 20, .85))'
+        : 'radial-gradient(ellipse at center, rgba(255, 240, 200, .5) 20%, rgba(255, 30, 20, .6))';
+      flash.addEventListener('animationend', () => flash.remove(), { once: true });
+      $('fx').append(flash);
+      shake(110 + level * 45);
+      const word = root.querySelector('.vs-word');
+      const [x, y] = centerOf(word);
+      burst(x, y, 0, 60 + level * 45);
+      if (level >= 2) burst(x, y, level >= 3 ? 2 : 1, 40 + level * 30);
+    }, hit);
+  },
+  // The war opened: FIGHT!
+  fight(m) {
+    const f = this.fightFor;
+    if (!f || f.battle !== m.battle || f.stage !== m.stage) return;
+    this.fightFor = null;
+    const node = el('div', `vs-fight lv${f.level}` + (f.calm ? ' calm' : ''));
+    node.setAttribute('aria-hidden', 'true');
+    node.append(el('b', '', 'FIGHT!'));
+    if (f.calm) later(() => node.remove(), 800 * pace());
+    else node.addEventListener('animationend', (e) => { if (e.target === node) node.remove(); });
+    $('fx').append(node);
+    Sound.fight(f.level);
+  },
+};
 
 function floatCheer(seat, e) {
   const tile = seat === S.you ? $('myPile') : tiles.get(seat)?.node;
@@ -1646,6 +2092,7 @@ const S = {
   input: store.get('input', 'hold'),  // how you slam: hold, mash or fling
   plan: null,            // the cards you're slamming this stage (see slamPlan)
   thumps: {},            // seat -> face-down cards others have slammed this war stage
+  potCards: [],          // the cards in this battle's pot, for the heap: { card, look, seat }
 };
 const timers = new Set();
 function later(fn, ms) {
@@ -1659,6 +2106,22 @@ const now = () => performance.now();
 const isFighting = (seat) => S.fighters.includes(seat);
 const playerName = (seat) => (seat === S.you ? 'You' : S.players[seat] ? S.players[seat].name : 'Someone');
 const avatarOf = (seat) => AVATARS[S.players[seat]?.avatar] || '🃏';
+
+// The deck someone's cards are drawn in: the one they picked (yours is the
+// page's), and for bots one that goes with their name, the same on every
+// screen. A deck this page doesn't know is drawn as the classic one.
+function deckOf(seat) {
+  if (seat === S.you) return deck;
+  const p = S.players[seat];
+  if (p && DECKS[p.deck]) return p.deck;
+  if (p && p.bot) {
+    const keys = Object.keys(DECKS);
+    let h = 7;
+    for (const ch of p.name) h = (h * 31 + ch.codePointAt(0)) >>> 0;
+    return keys[h % keys.length];
+  }
+  return 'classic';
+}
 
 // ---- Solo games: the core, run right here against bots ----
 
@@ -1736,7 +2199,7 @@ class SoloRoom {
     if (!this.game || this.game.over) return;
     clearTimeout(this.timer);
     this.pausedAt = 0;
-    while (!this.game.over) warResolve(this.game, Date.now(), this.random);
+    while (!this.game.over) logFlip(warResolve(this.game, Date.now(), this.random));
     receive(this.snapshot());
   }
   close() { clearTimeout(this.timer); this.game = null; }
@@ -1815,6 +2278,15 @@ function receive(m) {
     case 'cheer':
       if (m.seat !== S.you || S.mode === 'solo') { floatCheer(m.seat, m.e); if (m.seat !== S.you) Sound.cheer(); }
       return;
+    case 'deck':
+      // Someone picked another deck: their cards are redrawn in it.
+      if (S.players[m.seat] && m.seat !== S.you) {
+        S.players[m.seat].deck = m.deck;
+        $('warRow').dataset.key = '';
+        if (S.phase === 'lobby') renderLobby();
+        else renderAll();
+      }
+      return;
     case 'timing':
       S.opensAt = now() + m.opensIn;
       S.closesAt = now() + m.closesIn;
@@ -1841,9 +2313,11 @@ function onState(m) {
     const g = m.game;
     // A new game, or a snapshot of a different moment in this one.
     const fresh = m.phase === 'playing' && (wasPhase !== 'playing' || g.battle < S.battle);
-    if (fresh) { S.mine = []; S.overShown = false; S.naps = 0; S.plan = null; Odds.reset(); }
+    if (fresh) { S.mine = []; S.overShown = false; S.naps = 0; S.plan = null; S.potCards = []; Odds.reset(); heapClear(); logReset(g.counts); }
     if (fresh || S.battle !== g.battle || S.stage !== g.stage) {
+      if (!g.over) Log.stages = [];
       clearLater();
+      Versus.clear();
       S.cards = {};
       S.result = null;
     }
@@ -1908,6 +2382,7 @@ function openStage() {
   S.thumps = m.thumps;
   S.charging = {};
   if (m.stage === 0) {
+    if (heapPending) { const { winner, cards } = heapPending; heapPending = null; heapToss(winner, cards); }
     S.cards = {};
     S.result = null;
     S.pot = 0;
@@ -1915,6 +2390,7 @@ function openStage() {
     banner(final ? 'FINAL BATTLE' : '', false);
     setText($('caption'), isFighting(S.you) ? (final ? 'Last chance. Slam like it matters. (It does not.)' : pick(OPEN_LINES)) : '');
   }
+  if (m.stage > 0) Versus.fight(m);
   renderAll();
   syncMusic();
   if (S.auto && isFighting(S.you)) later(autoSlam, (250 + Math.random() * 700) * pace());
@@ -1967,6 +2443,7 @@ function onFlip(m) {
   const wait = S.animUntil - now();
   if (wait > 0) { later(() => onFlip(m), wait); return; }
   if (S.pending && S.pending.battle === m.battle && S.pending.stage === m.stage) openStage();
+  logFlip(m);
   S.result = m;
   S.counts = m.counts.slice();
   S.pot = m.pot;
@@ -1974,6 +2451,13 @@ function onFlip(m) {
     const before = S.cards[seat];
     S.cards[seat] = { up, down: (before ? before.down : 0) + down, stage: m.stage };
     if (!S.slams[seat]) S.slams[seat] = [power, style];
+    const look = deckOf(seat);
+    for (let i = 0; i < down; i++) S.potCards.push({ card: 'back', look, seat });
+    S.potCards.push({ card: up, look, seat });
+  }
+  if (m.winner !== null) {
+    if (!m.over) heapPending = { winner: m.winner, cards: S.potCards };
+    S.potCards = [];
   }
   if (m.winner !== null) recordResult(m);
   const mine = m.plays.find((p) => p[0] === S.you);
@@ -2002,25 +2486,26 @@ function narrate(m) {
     const n = m.next.fighters.length;
     const names = m.next.fighters.map(playerName);
     const word = cardName(m.plays.find((p) => p[0] === m.tied[0])[2]);
-    banner(n === 2 ? (m.stage ? 'DOUBLE WAR!' : 'WAR!') : `${n}-WAY WAR!`, true);
+    banner(warTitle(m.next.stage, n), true);
     const who = names.length > 3 ? `${names.slice(0, 3).join(', ')} and ${names.length - 3} more` : names.join(' and ');
     const mineToSlam = m.next.fighters.includes(me) ? Math.min(3, Math.max(0, (S.counts[me] ?? 0) - 1)) + 1 : 0;
     const call = mineToSlam > 1 ? `Slam all ${['', 'one', 'two', 'three', 'four'][mineToSlam]} of your cards!`
       : mineToSlam ? 'You have one card left. Make it count.' : 'Three face down, one face up.';
     setText($('caption'), `${who} ${names.length === 2 ? 'both' : 'all'} turned over ${aOrAn(word)}. ${call}`);
-    Sound.war();
-    warFlash();
+    Versus.show(m);
     return;
   }
   const winCard = m.plays.find((p) => p[0] === m.winner)[2];
   const winner = playerName(m.winner);
   const takes = m.stage ? `the whole pot of ${m.pot}` : plural(m.pot, 'card');
+  const joker = warRank(winCard) === JOKER && !m.gods;
   if (m.winner === me) {
     const [power, , auto] = mine.slice(3);
-    banner(m.stage ? 'WAR WON!' : 'YOU WIN!', false);
+    banner(joker ? 'JOKER!' : m.stage ? 'WAR WON!' : 'YOU WIN!', false);
     const lines = auto ? [`You dozed off, your ${cardName(winCard)} flopped over, and it won ${takes}. Effort is overrated.`]
       : m.gods ? [`Nobody had cards left to fight with. The war gods smile on you: ${takes}.`]
       : !m.tied.includes(me) ? [`The others ran out of cards mid-war. You take ${takes}.`]
+      : joker ? [`A joker! It beats everything, so it takes ${takes}.`, `Your joker takes ${takes}. Who’s laughing now? The joker.`]
       : power < 30 ? [`A gentle ${tierName(power)}, and your ${cardName(winCard)} takes ${takes}. Finesse.`, `You barely touched it. Your ${cardName(winCard)} wins ${takes} anyway.`]
       : [`${tierName(power).toUpperCase()}! Your ${cardName(winCard)} takes ${takes}. The slam had nothing to do with it.`, `Your ${cardName(winCard)} wins ${takes}. Scientists confirm the ${tierName(power)} was irrelevant.`];
     setText($('caption'), pick(lines));
@@ -2030,17 +2515,19 @@ function narrate(m) {
   }
   if (mine) {
     const [power, , auto] = mine.slice(3);
-    banner(m.out && m.out.includes(me) ? 'OUT OF CARDS' : '', false);
+    banner(m.out && m.out.includes(me) ? 'OUT OF CARDS' : joker ? 'JOKER!' : '', false);
     const yours = cardName(mine[2]);
+    const outranked = warRank(mine[2]) < warRank(winCard);
     const lines = auto ? [`You dozed off and your ${yours} flopped over. ${winner}'s ${cardName(winCard)} takes ${takes}.`]
       : m.gods ? [`Nobody had cards left to fight with. The war gods pick ${winner}.`]
-      : power >= 115 ? [`That ${tierName(power)} registered on seismographs. Your ${yours} still loses to ${aOrAn(cardName(winCard))}.`, `An incredible ${tierName(power)}. Sadly, ${yours}s are not aces.`]
+      : joker && outranked ? [`${winner}'s joker takes ${takes}. There is no defense against the joker.`, `Your ${yours} never stood a chance against ${winner}'s joker.`]
+      : power >= 115 && outranked ? [`That ${tierName(power)} registered on seismographs. Your ${yours} still loses to ${aOrAn(cardName(winCard))}.`, `An incredible ${tierName(power)}. Sadly, ${cardNames(mine[2])} are not ${cardNames(winCard)}.`]
       : [`A respectable ${tierName(power)}. ${winner}'s ${cardName(winCard)} takes ${takes}.`, `Your ${yours} loses to ${winner}'s ${cardName(winCard)}. Slam harder? (It won't help.)`];
     setText($('caption'), pick(lines));
     Sound.lose();
     return;
   }
-  banner('', false);
+  banner(joker ? 'JOKER!' : '', false);
   const how = m.gods ? 'The war gods pick' : '';
   setText($('caption'), how ? `${how} ${winner}, who takes ${takes}.` : `${winner} ${m.winner === me ? 'take' : 'takes'} ${takes} with ${aOrAn(cardName(winCard))}.`);
 }
@@ -2082,10 +2569,12 @@ function oddsFuture(counts, battle, limit) {
 }
 
 // Head to head: how your cards can change in one battle, as [change,
-// chance] pairs, when you hold `held` of the 52.
-const DECK = 52;
+// chance] pairs, when you hold `held` of the deck's 54.
+const DECK = WAR.DECK;
 function headsUpSteps(held) {
-  const TIE = 3 / 51;  // two random cards of the same rank
+  // Two random cards of the same rank: one of the 52 and one of the three
+  // others of its rank, or the two jokers.
+  const TIE = (52 * 3 + 2 * 1) / (DECK * (DECK - 1));
   const steps = new Map();
   const add = (change, p) => steps.set(change, (steps.get(change) || 0) + p);
   // a and b: cards each player still holds; inA and inB: cards each has put in.
@@ -2287,7 +2776,7 @@ function oddsChart() {
 
 // ---- Drawing the table ----
 
-const tiles = new Map();  // seat -> { node, slot, name, count, stat, card }
+const tiles = new Map();  // seat -> { node, slot, count, stat, card, heap, ... }
 let tileKey = '';
 
 function others() {
@@ -2296,7 +2785,7 @@ function others() {
 
 function buildTiles() {
   const seats = others();
-  const key = seats.map((s) => `${s}:${S.players[s].name}:${S.players[s].avatar}`).join('|');
+  const key = seats.map((s) => `${s}:${S.players[s].name}:${S.players[s].avatar}:${deckOf(s)}`).join('|');
   if (key === tileKey) return;
   tileKey = key;
   tiles.clear();
@@ -2311,7 +2800,10 @@ function buildTiles() {
     const node = el('div', 'tile');
     const slot = el('div', 'tslot');
     const card = cardEl(null);
-    slot.append(card);
+    const heap = el('div', 'heap');
+    heap.setAttribute('aria-hidden', 'true');
+    heap.append(...(heaps.get(seat)?.cards || []).map((c) => c.node));
+    slot.append(heap, card);
     const info = el('div', 'tname');
     info.textContent = `${AVATARS[p.avatar] || '🃏'} ${p.name}`;
     const meta = el('div', 'tmeta');
@@ -2319,9 +2811,9 @@ function buildTiles() {
     const stat = el('span', 'tstat', '');
     meta.append(count, stat);
     node.append(slot, info, meta);
-    node.title = p.bot ? `${p.name} (bot)` : p.name;
+    node.title = `${p.name}${p.bot ? ' (bot)' : ''} · ${DECKS[deckOf(seat)][0]} deck`;
     box.append(node);
-    tiles.set(seat, { node, slot, count, stat, card, cardKey: 'empty', downs: null });
+    tiles.set(seat, { node, slot, count, stat, card, heap, cardKey: 'empty', downs: null });
   }
 }
 
@@ -2357,7 +2849,7 @@ function renderTile(seat) {
   setText(t.stat, label);
   const key = cardKeyFor(seat);
   if (key !== t.cardKey) {
-    const card = cardEl(key === 'back' ? 'back' : key === 'empty' ? null : Number(key));
+    const card = cardEl(key === 'back' ? 'back' : key === 'empty' ? null : Number(key), deckOf(seat));
     if (key !== 'back' && key !== 'empty' && !reduceMotion.matches) card.classList.add('flipin');
     t.card.replaceWith(card);
     t.card = card;
@@ -2431,6 +2923,7 @@ function renderWarPile() {
     pile.append(card);
   }
   setText(box.querySelector('.wcount'), downs ? `${downs} face down` : 'Face down here');
+  setClass($('me'), 'warring', !box.hidden);
 }
 
 function renderWarRow() {
@@ -2446,7 +2939,7 @@ function renderWarRow() {
     const box = el('div', 'wf');
     const c = S.cards[seat];
     const downs = (c ? c.down : 0) + (S.thumps[seat] || 0);
-    box.append(cardEl(c && c.up !== undefined ? c.up : 'back'), el('span', '', `${downs ? `+${downs} · ` : ''}${avatarOf(seat)} ${playerName(seat)}`));
+    box.append(cardEl(c && c.up !== undefined ? c.up : 'back', deckOf(seat)), el('span', '', `${downs ? `+${downs} · ` : ''}${avatarOf(seat)} ${playerName(seat)}`));
     row.append(box);
   }
   if (fighters.length > 6) row.append(el('span', 'more', `+${fighters.length - 6}`));
@@ -2461,17 +2954,23 @@ function renderBar() {
   setText($('battleSub'), sub);
   const tag = $('roomTag');
   setHidden(tag, !S.code);
-  if (S.code) setText(tag, S.code);
+  if (S.code) {
+    setText(tag, `＋ ${S.code}`);
+    setAttr(tag, 'aria-label', `Invite someone to room ${S.code}`);
+  }
 }
 
 function renderControls() {
   const fighting = S.phase === 'playing' && S.you !== null && isFighting(S.you) && !S.pending;
   const can = fighting && !S.slams[S.you] && now() >= S.opensAt;
-  const btn = $('slamBtn');
   const busy = inputBusy();
-  if (btn.disabled !== !can && !busy) btn.disabled = !can;
+  setClass($('me'), 'ready', can);
+  const hint = $('deckHint');
+  setHidden(hint, !can || busy);
+  if (can) setText(hint, INPUTS[S.input][4]);
+  let hurry = false;
   if (!busy) {
-    let text = 'Hold to slam';
+    let text = INPUTS[S.input][2];
     if (S.phase !== 'playing' || S.you === null) text = S.phase === 'over' ? 'Game over' : 'Watching';
     else if (S.battle && S.out[S.you]) text = 'Out of cards';
     else if (S.slams[S.you] && fighting) text = `${tierName(S.slams[S.you][0])}!`;
@@ -2483,12 +2982,15 @@ function renderControls() {
       const plan = slamPlan();
       const left = Math.ceil((S.closesAt - now()) / 1000);
       const step = plan.need > 1 ? (plan.done.length + 1 < plan.need ? `Face-down ${plan.done.length + 1}/${plan.need - 1}` : 'The decider') : '';
-      text = left <= 4 ? `${step ? 'Hurry' : 'Slam'}! ${Math.max(0, left)}…` : step ? `${step} · ${INPUTS[S.input][3]}` : INPUTS[S.input][2];
+      hurry = left <= 4;
+      text = hurry ? `${step ? 'Hurry' : 'Slam'}! ${Math.max(0, left)}…` : step ? `${step} · ${INPUTS[S.input][3]}` : INPUTS[S.input][2];
     }
     setText($('slamText'), text);
-    setClass($('slamText'), 'long', text.length > 16);
+    setClass($('slamText'), 'long', text.length > 21);
     if ($('meterFill').style.width !== '0%') $('meterFill').style.width = '0%';
   }
+  setClass($('slamBar'), 'go', can || busy);
+  setClass($('slamBar'), 'hurry', hurry);
   const st = STYLES[S.style] || STYLES[0];
   setText($('styleBtn'), `${st[0]} ${st[1]}`);
   setText($('inputBtn'), `${INPUTS[S.input][0]} ${INPUTS[S.input][1]}`);
@@ -2506,6 +3008,7 @@ function renderAll() {
   buildTiles();
   for (const seat of tiles.keys()) renderTile(seat);
   renderMe();
+  renderHeaps();
   renderWarRow();
   renderBar();
   renderControls();
@@ -2521,18 +3024,178 @@ setInterval(() => {
   renderControls();
 }, 200);
 
+// ---- Winnings ----
+//
+// The cards each player wins are swept onto a messy heap when the table
+// clears, landing every which way, messier the bigger it gets: yours beside
+// your card, and at a table of up to four, everyone else's behind the card on
+// their tile. When you lose, your card flies
+// to the winner's heap. Clean up sorts your heap into a neat stack, twos at
+// the bottom. All for show: won cards go into the winner's deck either way,
+// and a heap never shows more cards than its player holds.
+
+// Cards drawn at most: on your heap, and on others' at a table of up to four
+// (bigger tables have smaller tiles, and it all gets too busy).
+const HEAP_MAX = { me: 36, 'size-l': 24, 'size-m': 16, 'size-s': 0, 'size-xs': 0 };
+const heaps = new Map();  // seat -> { cards: [{ card, look, seat, node }], bottom first; tidy; layer }
+let heapPending = null;   // { winner, cards }: the pot just won, until the table clears
+const TIDY_LINES = [
+  (n) => `Squared away ${plural(n, 'card')}, twos at the bottom. The war will shuffle them anyway.`,
+  (n) => `${plural(n, 'card')}, tidied and sorted. Your chances are exactly the same.`,
+  (n) => `A neat stack of ${n}. Tidiness has been independently verified to change nothing.`,
+];
+
+const myHeapNode = () => document.querySelector('#winnings .heap');
+const heapNode = (seat) => (seat === S.you ? myHeapNode() : tiles.get(seat)?.heap || null);
+const heapMax = (seat) => (seat === S.you ? HEAP_MAX.me : HEAP_MAX[$('opponents').className] ?? 0);
+const heapShown = () => S.phase === 'playing' || S.phase === 'over';
+
+function heapOf(seat) {
+  if (!heaps.has(seat)) heaps.set(seat, { cards: [], tidy: true, layer: 0 });
+  return heaps.get(seat);
+}
+
+function heapClear() {
+  heaps.clear();
+  heapPending = null;
+  myHeapNode().replaceChildren();
+  for (const t of tiles.values()) t.heap.replaceChildren();
+  renderHeaps();
+}
+
+// Where a card lay on the table, relative to a heap's middle, and how much
+// bigger it was there than on the heap: [x, y, scale].
+function heapFrom(c, heapBox, size) {
+  const pile = c.card === 'back' && c.seat === S.you ? $('myWar').querySelector('.wpile .card') : null;
+  const from = pile || (c.seat === S.you ? $('mySlot').querySelector('.card') : tiles.get(c.seat)?.card);
+  const box = from && from.offsetParent ? from.getBoundingClientRect() : null;
+  const middle = [heapBox.left + heapBox.width / 2, heapBox.top + heapBox.height / 2];
+  if (!box || !box.width) {
+    const arena = $('arena').getBoundingClientRect();
+    return [arena.left + arena.width / 2 - middle[0], arena.top + arena.height / 2 - middle[1], 1];
+  }
+  return [box.left + box.width / 2 - middle[0], box.top + box.height / 2 - middle[1], box.width / size];
+}
+
+// Flies a copy of a card from where it lay on the table to its place on a
+// tile's heap, over everything, and shows the card itself once it lands.
+function heapFly(node, c, heapBox, size, delay) {
+  const [fx, fy, fs] = heapFrom(c, heapBox, size);
+  const x = parseFloat(node.style.getPropertyValue('--x')) || 0;
+  const y = parseFloat(node.style.getPropertyValue('--y')) || 0;
+  const r = parseFloat(node.style.getPropertyValue('--r')) || 0;
+  const flyer = cardEl(c.card, c.look);
+  flyer.classList.add('flyer');
+  flyer.style.setProperty('--w', `${size}px`);
+  flyer.style.left = `${heapBox.left + heapBox.width / 2 - size / 2}px`;
+  flyer.style.top = `${heapBox.top + heapBox.height / 2 - size * 0.7}px`;
+  $('fx').append(flyer);
+  node.style.visibility = 'hidden';
+  const landed = () => { flyer.remove(); node.style.visibility = ''; };
+  flyer.animate([
+    { transform: `translate(${fx}px, ${fy}px) rotate(0deg) scale(${fs})`, easing: 'cubic-bezier(.25, .6, .45, 1)' },
+    { transform: `translate(${fx * 0.4 + x}px, ${fy * 0.4 + y - 48}px) rotate(${r * 1.6}deg) scale(${fs * 0.55 + 0.55})`, offset: 0.45, easing: 'cubic-bezier(.55, 0, .8, .3)' },
+    { transform: `translate(${x}px, ${y}px) rotate(${r}deg) scale(1)` },
+  ], { duration: 640 * pace(), delay: delay * pace(), fill: 'backwards' }).finished.then(landed, landed);
+}
+
+// Sweeps a pot onto its winner's heap: every card in its player's deck, the
+// face-down ones still face down, flying in from where it was played, the
+// winner's own last so they land on top.
+function heapToss(seat, cards) {
+  const heap = heapNode(seat);
+  const max = heap ? heapMax(seat) : 0;
+  if (!max || !heapShown() || !cards.length || !(S.counts[seat] > 0)) return;
+  if (seat === S.you) {
+    setHidden($('winnings'), false);
+    setClass($('me'), 'warring', false);  // the war's over: no fading
+  }
+  const h = heapOf(seat);
+  const heapBox = heap.getBoundingClientRect();
+  const fly = !reduceMotion.matches && heap.offsetParent !== null;
+  const thrown = cards.slice(-max).sort((a, b) => (a.seat === seat) - (b.seat === seat));
+  const gap = Math.min(70, 420 / Math.max(1, thrown.length - 1));
+  thrown.forEach((c, i) => {
+    const node = cardEl(c.card, c.look);
+    node.style.transition = 'none';  // it lands where it lands, without sliding there
+    heap.append(node);
+    const size = node.offsetWidth || 40;
+    const unit = size / 40;
+    const mess = Math.min(1, h.cards.length / 20);
+    const s = node.style;
+    s.setProperty('--x', `${Math.round((Math.random() - 0.5) * (8 + 12 * mess) * unit)}px`);
+    s.setProperty('--y', `${Math.round((Math.random() - 0.5) * (12 + 22 * mess) * unit)}px`);
+    s.setProperty('--r', `${Math.round((Math.random() - 0.5) * (50 + 40 * mess))}deg`);
+    s.zIndex = String(++h.layer);
+    if (fly && seat !== S.you) {
+      heapFly(node, c, heapBox, size, Math.round(i * gap));
+    } else if (fly) {
+      const [fx, fy, fs] = heapFrom(c, heapBox, size);
+      s.setProperty('--fx', `${Math.round(fx)}px`);
+      s.setProperty('--fy', `${Math.round(fy)}px`);
+      s.setProperty('--fs', fs.toFixed(2));
+      s.setProperty('--d', `${Math.round(i * gap)}ms`);
+      node.classList.add('toss');
+      node.addEventListener('animationend', () => node.classList.remove('toss'), { once: true });
+    }
+    void node.offsetWidth;
+    s.transition = '';
+    h.cards.push({ ...c, node });
+  });
+  h.tidy = false;
+  if (seat === S.you || S.players.length <= 4) Sound.swish();
+  renderHeaps();
+}
+
+// Squares your heap up into a neat stack, sorted: face-down cards at the
+// bottom, then twos up to aces, and jokers on top.
+function heapTidy() {
+  const h = heaps.get(S.you);
+  if (!h || h.tidy || h.cards.length < 2) return;
+  const key = (c) => (c.card === 'back' ? -1 : warRank(c.card) * WAR.DECK + (c.card % WAR.DECK));
+  h.cards.sort((a, b) => key(a) - key(b));
+  h.cards.forEach((c, i) => {
+    const s = c.node.style;
+    c.node.classList.remove('toss');
+    s.setProperty('--i', String(i));
+    s.setProperty('--x', '0px');
+    s.setProperty('--y', `${-Math.round(Math.min(i, 30) * 0.7)}px`);
+    s.setProperty('--r', '0deg');
+    s.zIndex = String(i + 1);
+  });
+  h.layer = h.cards.length;
+  h.tidy = true;
+  setText($('caption'), pick(TIDY_LINES)(h.cards.length));
+  Sound.riffle();
+  renderHeaps();
+}
+
+function renderHeaps() {
+  // Never more cards than their player holds: the oldest slip out from underneath.
+  for (const [seat, h] of heaps) {
+    const keep = heapNode(seat) && heapShown() ? Math.min(heapMax(seat), S.counts[seat] ?? 0) : 0;
+    while (h.cards.length > keep) h.cards.shift().node.remove();
+  }
+  const mine = S.you !== null ? heaps.get(S.you) : null;
+  const n = mine ? mine.cards.length : 0;
+  setHidden($('winnings'), !n);
+  setHidden($('tidyBtn'), !mine || mine.tidy || n < 2);
+  setAttr(myHeapNode(), 'aria-label', `${plural(n, 'card')} you’ve won, ${mine && mine.tidy ? 'in a neat stack' : 'in a messy heap'}`);
+}
+
 // ---- Slamming ----
 //
-// Three ways to slam, all for show: hold the button and let go, tap it as
-// fast as you can, or fling a card at the table. In a war you slam every card
+// Three ways to slam, all for show and all on your deck: hold it and let go,
+// tap it as fast as you can, or throw a card off it at the table. In a war you slam every card
 // you lay down, up to three face down and then the one that decides it; only
 // the last one goes to the room as your slam.
 
-// [emoji, name, what the button says, what it says in a war]
+// You slam on your deck: [emoji, name, what to do, what to do in a war, the
+// hint on your deck].
 const INPUTS = {
-  hold: ['✊', 'Hold', 'Hold to slam', 'hold'],
-  mash: ['👆', 'Mash', 'Tap fast to slam', 'tap fast'],
-  fling: ['🫳', 'Fling', 'Fling a card', 'fling'],
+  hold: ['✊', 'Hold', 'Hold your deck to slam', 'hold', 'Hold me'],
+  mash: ['👆', 'Mash', 'Tap your deck fast', 'tap fast', 'Tap me!'],
+  fling: ['🫳', 'Fling', 'Throw a card off your deck', 'throw', 'Throw me'],
 };
 const INPUT_HELP = { hold: 'Hold, let go', mash: 'Tap for 5 s', fling: 'Throw a card' };
 const MASH_MS = 5000;
@@ -2572,7 +3235,6 @@ function cancelInput() {
   mash = null;
   if (fling) { fling.ghost.remove(); fling = null; }
   Sound.stopCharge();
-  $('slamBtn').classList.remove('held');
   $('me').classList.remove('charging');
   renderControls();
 }
@@ -2603,7 +3265,6 @@ function startCharge(pointer) {
   Sound.unlock();
   if (inputBusy() || !canSlam()) return;
   charge = { start: now(), power: 0, tier: 0, pointer };
-  $('slamBtn').classList.add('held');
   $('me').classList.add('charging');
   Sound.startCharge();
   requestAnimationFrame(chargeFrame);
@@ -2642,10 +3303,10 @@ function mashTap() {
   }
   mash.taps++;
   Sound.tone(420 + Math.min(40, mash.taps) * 12, 0, 0.05, { type: 'square', gain: 0.035 });
-  const btn = $('slamBtn');
-  btn.classList.remove('tapped');
-  void btn.offsetWidth;
-  btn.classList.add('tapped');
+  const stack = $('myPile').querySelector('.stack');
+  stack.classList.remove('tapped');
+  void stack.offsetWidth;
+  stack.classList.add('tapped');
 }
 
 function mashFrame() {
@@ -2666,7 +3327,7 @@ function finishMash() {
   slamCard(power);
 }
 
-// Fling: grab a card, from your deck or the button, and throw it. Power is
+// Fling: grab a card off your deck and throw it. Power is
 // how fast it was going when you let go, plus a little for how far it went.
 function startFling(e) {
   Sound.unlock();
@@ -2813,10 +3474,12 @@ function backToMenu(message) {
   S.phase = null;
   S.code = null;
   clearLater();
+  Versus.clear();
   cancelInput();
   Odds.reset();
+  heapClear();
   tileKey = '';
-  for (const id of ['app', 'lobby', 'pause', 'over']) setHidden($(id), true);
+  for (const id of ['app', 'lobby', 'pause', 'over', 'inviteOv']) setHidden($(id), true);
   setHidden($('menu'), false);
   history.replaceState(null, '', location.pathname + (params.get('rooms') ? `?rooms=${encodeURIComponent(params.get('rooms'))}` : '') + location.hash);
   renderMenu();
@@ -2830,7 +3493,9 @@ function renderLobby() {
   people.replaceChildren();
   S.players.forEach((p, seat) => {
     const chip = el('span', `person${p.bot ? ' bot' : ''}${p.online ? '' : ' offline'}${seat === S.you ? ' me' : ''}`);
-    chip.append(el('b', '', AVATARS[p.avatar] || '🃏'), el('span', '', `${p.name}${seat === S.host ? ' (host)' : ''}${p.bot ? ' (bot)' : ''}`));
+    const look = deckOf(seat);
+    chip.title = `${DECKS[look][0]} deck`;
+    chip.append(cardEl('back', look), el('b', '', AVATARS[p.avatar] || '🃏'), el('span', '', `${p.name}${seat === S.host ? ' (host)' : ''}${p.bot ? ' (bot)' : ''}`));
     people.append(chip);
   });
   const humans = S.players.filter((p) => !p.bot).length;
@@ -2845,10 +3510,12 @@ function renderLobby() {
   renderLengths($('roomLength'), S.length, !host);
   const hostName = S.host !== null ? S.players[S.host]?.name : null;
   setText($('lobbyNote'), host
-    ? (S.players.length < 2 ? 'Waiting for friends. Or add some bots.' : `${plural(S.players.length, 'player')}, ${plural(Math.max(1, Math.ceil(S.players.length / 2)), 'deck')}. Everyone gets about 26 cards.`)
+    ? (S.players.length < 2 ? 'Waiting for friends. Or add some bots.' : `${plural(S.players.length, 'player')}, ${plural(Math.max(1, Math.ceil(S.players.length / 2)), 'deck')}. Everyone gets about 27 cards.`)
     : S.you === null ? 'This room is full. You can watch.' : `Waiting for ${hostName || 'the host'} to deal.`);
   setHidden($('dealBtn'), !host);
   $('dealBtn').disabled = S.players.length < 2;
+  renderDecks();
+  if (S.code) drawQr($('lobbyQr'), inviteUrl());
 }
 
 function renderLengths(box, value, locked) {
@@ -2910,6 +3577,8 @@ function showOver() {
     $('oddsChart').replaceChildren(chart.svg);
     setText($('oddsVerdict'), chart.verdict);
   }
+  renderLog();
+  setText($('shareImgNote'), '');
   $('science').replaceChildren(...science());
   if (me !== null) {
     const life = store.get('stats', { games: 0, wins: 0, slams: 0, best: 0 });
@@ -2994,6 +3663,422 @@ function renderHistory() {
   }
 }
 
+// ---- The battle log ----
+//
+// Every battle of the game as you saw it, for the end screen and the picture
+// you can share: the cards turned over, any wars, who took the pot and how
+// many cards everyone held afterwards. At a big table it keeps only the cards
+// that mattered: yours, the winner's and those that tied.
+
+const Log = {
+  battles: [],  // { b, stages, winner, pot, gods, counts }, a stage being { plays: [[seat, up, down]], n, way, tied }
+  stages: [],   // the stages of the battle being played
+  start: null,  // everyone's cards when the log started
+  jokers: 0,    // jokers turned over
+};
+const LOG_SHOWN = 400;  // rows on the end screen; a longer game shows its start and its end
+
+function logReset(counts) {
+  Object.assign(Log, { battles: [], stages: [], start: counts ? counts.slice() : null, jokers: 0 });
+}
+
+function logFlip(m) {
+  const all = m.plays.length <= 6;
+  const keep = (seat) => all || seat === S.you || seat === m.winner || m.tied.includes(seat);
+  for (const p of m.plays) if (warRank(p[2]) === JOKER) Log.jokers++;
+  Log.stages.push({
+    plays: m.plays.filter((p) => keep(p[0])).map(([seat, down, up]) => [seat, up, down]),
+    n: m.plays.length,
+    way: m.winner === null && m.next ? m.next.fighters.length : 0,
+    tied: m.winner === null ? m.tied.slice() : [],
+  });
+  if (m.winner === null) return;
+  Log.battles.push({ b: m.battle, stages: Log.stages, winner: m.winner, pot: m.pot, gods: m.gods, counts: Uint16Array.from(m.counts) });
+  Log.stages = [];
+}
+
+// A card as a little chip of text: its rank and suit, or a joker.
+function miniCard(card) {
+  if (card === undefined || card === null) return el('span', 'mc', '–');
+  const rank = warRank(card);
+  if (rank === JOKER) {
+    const node = el('span', `mc${card % WAR.DECK === 53 ? ' red' : ''}`, '🃏');
+    node.title = `${card % WAR.DECK === 53 ? 'Red' : 'Black'} joker`;
+    return node;
+  }
+  const suit = Math.floor((card % WAR.DECK) / 13);
+  return el('span', `mc${suit === 1 || suit === 2 ? ' red' : ''}`, `${RANKS[rank]}${SUITS[suit]}`);
+}
+
+const warWord = (stage, way) => `${way > 2 ? `${way}-way ` : ''}${['', 'war', 'double war', 'triple war'][stage] || `${stage}× war`}`.toUpperCase();
+
+// One battle on the end screen: the cards, then who took the pot, and what it
+// did to your pile.
+function logRow(e, before) {
+  const me = S.you;
+  const li = el('li', e.winner === me ? 'won' : '');
+  const cards = el('div', 'lc');
+  const headsUp = S.players.length === 2;
+  e.stages.forEach((st, i) => {
+    if (i) cards.append(el('span', 'lw', warWord(i, e.stages[i - 1].way)));
+    const played = (seat) => st.plays.find((p) => p[0] === seat);
+    if (headsUp) {
+      const seats = me === 1 ? [1, 0] : [0, 1];
+      seats.forEach((seat) => { const p = played(seat); if (p) cards.append(miniCard(p[1])); });
+      return;
+    }
+    const mine = me !== null ? played(me) : null;
+    if (mine) cards.append(document.createTextNode('you'), miniCard(mine[1]));
+    const last = i === e.stages.length - 1;
+    const best = last ? played(e.winner) : played(st.tied.find((seat) => seat !== me));
+    if (best && best[0] !== me) cards.append(document.createTextNode(last ? 'top' : 'tied'), miniCard(best[1]));
+  });
+  const who = e.winner === me ? 'You take' : `${avatarOf(e.winner)} ${playerName(e.winner)} takes`;
+  const how = e.gods ? ' (the war gods picked)' : '';
+  const result = el('div', 'lr', `${who} ${plural(e.pot, 'card')}${how}`);
+  const main = el('div');
+  main.append(cards, result);
+  const delta = me !== null && before ? e.counts[me] - before[me] : 0;
+  const d = el('span', `ld${delta > 0 ? ' up' : delta < 0 ? ' down' : ''}`, delta ? `${delta > 0 ? '+' : '−'}${Math.abs(delta)}` : '');
+  if (delta) d.title = `${delta > 0 ? 'Gained' : 'Lost'} ${plural(Math.abs(delta), 'card')}`;
+  li.append(el('span', 'ln', `#${fmt(e.b)}`), main, d);
+  return li;
+}
+
+function renderLog() {
+  const list = $('battleLog');
+  list.replaceChildren();
+  const all = Log.battles;
+  setHidden($('logSection'), !all.length);
+  if (!all.length) return;
+  const wars = all.filter((e) => e.stages.length > 1).length;
+  const from = all[0].b > 1 ? ` from battle ${fmt(all[0].b)}, when you arrived` : '';
+  setText($('logTitle'), `Battle by battle${from}`);
+  const rows = [];
+  all.forEach((e, i) => {
+    if (all.length > LOG_SHOWN && i === LOG_SHOWN / 2) rows.push(el('li', 'gap', `…${fmt(all.length - LOG_SHOWN)} more battles…`));
+    if (all.length > LOG_SHOWN && i >= LOG_SHOWN / 2 && i < all.length - LOG_SHOWN / 2) return;
+    rows.push(logRow(e, i ? all[i - 1].counts : Log.start));
+  });
+  list.append(...rows);
+  list.setAttribute('aria-label', `${plural(all.length, 'battle')}, ${plural(wars, 'war')}`);
+}
+
+// ---- A picture of the game ----
+//
+// The end screen as one picture to send around: the result, the standings,
+// everyone's cards through the game, and the numbers, drawn on a canvas.
+
+// A deck's colors and font, as the CSS has them.
+function deckLook(look) {
+  const probe = cardEl('back', look);
+  probe.classList.remove('back');
+  probe.style.cssText = 'position:absolute;visibility:hidden;left:-999px';
+  document.body.append(probe);
+  const cs = getComputedStyle(probe);
+  const v = (name) => cs.getPropertyValue(name).trim();
+  const colors = {
+    face: cs.backgroundColor, ink: cs.color, red: v('--deck-red') || '#d1262a', edge: v('--deck-edge') || '#d6ccb8',
+    font: v('--deck-font') || 'Impact, sans-serif', radius: Number(v('--deck-radius')) || 0.1,
+  };
+  probe.remove();
+  return colors;
+}
+
+const PIC_BODY = 'system-ui, -apple-system, "Segoe UI", Roboto, sans-serif';
+const PIC_DISPLAY = '"Bungee", Impact, "Arial Black", sans-serif';
+
+function picRound(g, x, y, w, h, r) {
+  g.beginPath();
+  g.moveTo(x + r, y);
+  g.arcTo(x + w, y, x + w, y + h, r);
+  g.arcTo(x + w, y + h, x, y + h, r);
+  g.arcTo(x, y + h, x, y, r);
+  g.arcTo(x, y, x + w, y, r);
+  g.closePath();
+}
+
+// Shortens text with an ellipsis until it fits.
+function picFit(g, text, width) {
+  if (g.measureText(text).width <= width) return text;
+  let t = text;
+  while (t.length > 1 && g.measureText(t + '…').width > width) t = t.slice(0, -1);
+  return t + '…';
+}
+
+// Sets the largest font size, down to `min`, at which text fits, and returns
+// the text, shortened if it still doesn't.
+function picSize(g, text, width, size, min, family) {
+  for (; size > min; size -= 2) {
+    g.font = `${size}px ${family}`;
+    if (g.measureText(text).width <= width) return text;
+  }
+  g.font = `${min}px ${family}`;
+  return picFit(g, text, width);
+}
+
+function picCard(g, card, look, x, y, w, angle) {
+  const c = deckLook(look);
+  const h = w * 1.4;
+  g.save();
+  g.translate(x, y);
+  g.rotate(angle);
+  g.shadowColor = 'rgba(0, 0, 0, .35)';
+  g.shadowBlur = 18;
+  g.shadowOffsetY = 8;
+  picRound(g, -w / 2, -h / 2, w, h, Math.max(2, w * c.radius));
+  g.fillStyle = c.face;
+  g.fill();
+  g.shadowColor = 'transparent';
+  g.lineWidth = Math.max(2, w * 0.02);
+  g.strokeStyle = c.edge;
+  g.stroke();
+  const rank = warRank(card);
+  const joker = rank === JOKER;
+  const suit = Math.floor((card % WAR.DECK) / 13);
+  g.fillStyle = (joker ? card % WAR.DECK === 53 : suit === 1 || suit === 2) ? c.red : c.ink;
+  g.textAlign = 'left';
+  g.textBaseline = 'top';
+  g.font = `${Math.round(w * 0.24)}px ${c.font}`;
+  g.fillText(RANKS[rank], -w / 2 + w * 0.08, -h / 2 + w * 0.06);
+  if (!joker) {
+    g.font = `${Math.round(w * 0.2)}px ${PIC_BODY}`;
+    g.fillText(SUITS[suit], -w / 2 + w * 0.09, -h / 2 + w * 0.32);
+  }
+  g.textAlign = 'center';
+  g.textBaseline = 'middle';
+  g.font = `${Math.round(w * (joker ? 0.56 : 0.5))}px ${PIC_BODY}`;
+  const pictures = DECKS[look] || DECKS.classic;
+  g.fillText(joker ? pictures[5] : rank >= 9 && rank <= 11 ? pictures[rank - 7] : SUITS[suit], 0, h * 0.05);
+  g.restore();
+}
+
+// The picture itself, 1080 by 1350.
+async function summaryImage() {
+  const W = 1080, H = 1350, PAD = 60;
+  const o = S.over;
+  const me = S.you;
+  const canvas = document.createElement('canvas');
+  canvas.width = W;
+  canvas.height = H;
+  const g = canvas.getContext('2d');
+  try {
+    await Promise.race([document.fonts.load('80px Bungee'), new Promise((resolve) => setTimeout(resolve, 1500))]);
+  } catch (e) { /* Impact, then */ }
+
+  // The felt.
+  const felt = g.createRadialGradient(W / 2, H * 0.35, 80, W / 2, H * 0.45, H * 0.85);
+  felt.addColorStop(0, '#1f7d4f');
+  felt.addColorStop(1, '#0e4329');
+  g.fillStyle = felt;
+  g.fillRect(0, 0, W, H);
+  g.save();
+  g.globalAlpha = 0.035;
+  g.strokeStyle = '#fff';
+  g.lineWidth = 3;
+  for (let x = -H; x < W; x += 16) { g.beginPath(); g.moveTo(x, 0); g.lineTo(x + H, H); g.stroke(); }
+  g.restore();
+
+  // The title, and a fan of cards in your deck.
+  g.textAlign = 'left';
+  g.textBaseline = 'alphabetic';
+  g.fillStyle = 'rgba(0, 0, 0, .3)';
+  g.font = `130px ${PIC_DISPLAY}`;
+  g.fillText('WAR!', PAD, 178);
+  g.fillStyle = '#ffc93d';
+  g.fillText('WAR!', PAD, 170);
+  g.fillStyle = 'rgba(253, 248, 236, .8)';
+  g.font = `700 30px ${PIC_BODY}`;
+  g.fillText('SLAM EDITION', PAD + 6, 218);
+  picCard(g, 12, deck, W - 330, 142, 115, -0.22);
+  picCard(g, 53, deck, W - 210, 128, 125, 0);
+  picCard(g, 11 + 13, deck, W - 92, 142, 115, 0.22);
+
+  // The result and the standings, on a panel.
+  const won = me !== null && o.winners.includes(me);
+  const shared = o.winners.length > 1;
+  const names = o.winners.map(playerName);
+  const title = won ? (shared ? 'Shared victory!' : 'Victory!') : shared ? 'A shared victory' : `${names[0]} wins!`;
+  const rows = o.order.slice(0, me !== null && o.order.indexOf(me) > 3 ? 3 : 4);
+  if (me !== null && !rows.includes(me)) rows.push(me);
+  let y = 270;
+  const panelH = 172 + rows.length * 58;
+  g.fillStyle = '#fffaf0';
+  picRound(g, PAD, y, W - PAD * 2, panelH, 36);
+  g.fill();
+  g.fillStyle = '#ff4d2e';
+  g.fillText(picSize(g, title, W - PAD * 2 - 80, 72, 40, PIC_DISPLAY), PAD + 40, y + 92);
+  g.fillStyle = '#6f6052';
+  g.font = `30px ${PIC_BODY}`;
+  const alive = o.counts.filter(Boolean).length;
+  const sub = alive <= 1 ? `${names[0]} took every card in ${plural(o.battles, 'battle')}.`
+    : `${plural(o.battles, 'battle')}, ${plural(S.players.length, 'player')}${S.mode === 'room' ? ', in a room' : ''}. The most cards wins.`;
+  g.fillText(picFit(g, sub, W - PAD * 2 - 80), PAD + 40, y + 138);
+  y += 200;
+  for (const seat of rows) {
+    const mine = seat === me;
+    if (mine) {
+      g.fillStyle = 'rgba(255, 77, 46, .12)';
+      picRound(g, PAD + 24, y - 40, W - PAD * 2 - 48, 52, 14);
+      g.fill();
+    }
+    g.fillStyle = o.winners.includes(seat) ? '#ff4d2e' : '#6f6052';
+    g.font = `36px ${PIC_DISPLAY}`;
+    g.fillText(`#${o.order.indexOf(seat) + 1}`, PAD + 40, y);
+    g.fillStyle = '#2b2118';
+    g.font = `${mine ? 800 : 600} 32px ${PIC_BODY}`;
+    const right = o.counts[seat] ? plural(o.counts[seat], 'card') : `out in battle ${o.out[seat]}`;
+    g.textAlign = 'right';
+    g.fillText(right, W - PAD - 40, y);
+    const rightW = g.measureText(right).width;
+    g.textAlign = 'left';
+    g.fillText(picFit(g, `${avatarOf(seat)} ${playerName(seat)}`, W - PAD * 2 - 220 - rightW), PAD + 140, y);
+    y += 58;
+  }
+  y = 270 + panelH + 28;
+
+  // Everyone's cards, battle by battle: you in orange, the leaders in white.
+  // It takes the room the standings leave above the numbers.
+  const th = 112, tilesTop = H - 96 - 2 * th - 20;
+  const chartH = tilesTop - 24 - y;
+  g.fillStyle = 'rgba(0, 0, 0, .22)';
+  picRound(g, PAD, y, W - PAD * 2, chartH, 30);
+  g.fill();
+  g.fillStyle = 'rgba(253, 248, 236, .8)';
+  g.font = `700 24px ${PIC_BODY}`;
+  g.fillText('CARDS HELD, BATTLE BY BATTLE', PAD + 34, y + 48);
+  const points = Log.start ? [{ b: Log.battles.length ? Log.battles[0].b - 1 : 0, counts: Log.start }, ...Log.battles] : Log.battles;
+  if (points.length >= 2) {
+    const x0 = PAD + 34, x1 = W - PAD - 34, top = y + 78, bottom = y + chartH - 50;
+    const most = Math.max(1, ...points.map((p) => Math.max(...p.counts)));
+    const fx = (i) => x0 + (i / (points.length - 1)) * (x1 - x0);
+    const fy = (n) => bottom - (n / most) * (bottom - top);
+    g.strokeStyle = 'rgba(253, 248, 236, .18)';
+    g.lineWidth = 2;
+    g.beginPath(); g.moveTo(x0, bottom); g.lineTo(x1, bottom); g.stroke();
+    const lead = o.order.filter((seat) => seat !== me).slice(0, me === null ? 4 : 3);
+    const line = (seat, color, width) => {
+      g.strokeStyle = color;
+      g.lineWidth = width;
+      g.lineJoin = 'round';
+      g.beginPath();
+      points.forEach((p, i) => (i ? g.lineTo(fx(i), fy(p.counts[seat])) : g.moveTo(fx(i), fy(p.counts[seat]))));
+      g.stroke();
+    };
+    lead.forEach((seat, i) => line(seat, i === 0 && me === null ? '#ffc93d' : 'rgba(253, 248, 236, .55)', 4));
+    if (me !== null) {
+      line(me, '#ff4d2e', 8);
+      // Wars you fought in, as red dots on your line.
+      g.fillStyle = '#ffc93d';
+      points.forEach((p, i) => {
+        if (i && p.stages && p.stages.length > 1 && p.stages[1].plays.some((q) => q[0] === me)) {
+          g.beginPath(); g.arc(fx(i), fy(p.counts[me]), 8, 0, Math.PI * 2); g.fill();
+        }
+      });
+      // The key, top right.
+      g.font = `600 22px ${PIC_BODY}`;
+      let kx = x1;
+      for (const [label, color] of [['your wars', '#ffc93d'], ['you', '#ff4d2e']]) {
+        g.textAlign = 'right';
+        g.fillStyle = 'rgba(253, 248, 236, .8)';
+        g.fillText(label, kx, y + 48);
+        kx -= g.measureText(label).width + 12;
+        g.fillStyle = color;
+        g.beginPath(); g.arc(kx, y + 40, 9, 0, Math.PI * 2); g.fill();
+        kx -= 32;
+      }
+    }
+    g.fillStyle = 'rgba(253, 248, 236, .7)';
+    g.font = `22px ${PIC_BODY}`;
+    g.textAlign = 'left';
+    g.fillText(`Battle ${fmt(points[0].b + 1)}`, x0, bottom + 34);
+    g.textAlign = 'right';
+    g.fillText(`Battle ${fmt(points[points.length - 1].b)}`, x1, bottom + 34);
+    g.textAlign = 'left';
+  } else {
+    g.fillStyle = 'rgba(253, 248, 236, .7)';
+    g.font = `28px ${PIC_BODY}`;
+    g.fillText('Over before it began.', PAD + 34, y + 170);
+  }
+  y = tilesTop;
+
+  // The numbers.
+  const biggestPot = Log.battles.reduce((best, e) => (e.pot > (best ? best.pot : 0) ? e : best), null);
+  const mightiest = me !== null && S.mine.length ? tierName(Math.max(...S.mine.map((x) => x[0]))).toUpperCase() : '—';
+  const deep = ['—', 'Single', 'Double', 'Triple', 'Quadruple'][o.deepest] || `${o.deepest}×`;
+  const tiles = [
+    [fmt(o.battles), o.battles === 1 ? 'battle' : 'battles'], [fmt(o.wars), o.wars === 1 ? 'war' : 'wars'],
+    [deep, 'deepest war'], [biggestPot ? fmt(biggestPot.pot) : '—', 'biggest pot'],
+    [fmt(Log.jokers), Log.jokers === 1 ? 'joker played' : 'jokers played'], [mightiest, 'mightiest slam'],
+  ];
+  const tw = (W - PAD * 2 - 2 * 20) / 3;
+  tiles.forEach(([big, small], i) => {
+    const tx = PAD + (i % 3) * (tw + 20), ty = y + Math.floor(i / 3) * (th + 20);
+    g.fillStyle = 'rgba(0, 0, 0, .22)';
+    picRound(g, tx, ty, tw, th, 22);
+    g.fill();
+    g.fillStyle = '#ffc93d';
+    g.fillText(picSize(g, big, tw - 44, 44, 24, PIC_DISPLAY), tx + 22, ty + 58);
+    g.fillStyle = 'rgba(253, 248, 236, .8)';
+    g.font = `600 24px ${PIC_BODY}`;
+    g.fillText(small, tx + 22, ty + 94);
+  });
+
+  // Where it's from.
+  g.textAlign = 'center';
+  g.fillStyle = 'rgba(253, 248, 236, .75)';
+  g.font = `600 26px ${PIC_BODY}`;
+  g.fillText(`games.michaelwarkentin.com/war · ${new Date().toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' })}`, W / 2, H - 46);
+  g.textAlign = 'left';
+  return canvas;
+}
+
+function shareText() {
+  const o = S.over;
+  const me = S.you;
+  const best = me !== null && S.mine.length ? tierName(Math.max(...S.mine.map((x) => x[0]))) : null;
+  const result = me === null ? `I watched ${playerName(o.winners[0])} win` : o.winners.includes(me) ? 'I won' : `I came ${ordinal(o.order.indexOf(me) + 1)} of ${S.players.length}`;
+  return `${result} a ${plural(o.battles, 'battle')} game of War: Slam Edition.${best ? ` My mightiest slam was a ${best}, which did nothing.` : ''}`;
+}
+
+// Shares the picture where a phone can, and saves it everywhere else.
+async function shareSummary() {
+  const btn = $('shareImgBtn');
+  if (!S.over || btn.disabled) return;
+  btn.disabled = true;
+  setText($('shareImgNote'), 'Drawing…');
+  try {
+    const canvas = await summaryImage();
+    const blob = await new Promise((resolve) => canvas.toBlob(resolve, 'image/png'));
+    if (!blob) throw new Error('no picture');
+    const name = `war-${new Date().toISOString().slice(0, 10)}.png`;
+    const file = new File([blob], name, { type: 'image/png' });
+    const touch = window.matchMedia && matchMedia('(pointer: coarse)').matches;
+    if (touch && navigator.canShare && navigator.canShare({ files: [file] })) {
+      try {
+        await navigator.share({ files: [file], title: 'War: Slam Edition', text: shareText() });
+        setText($('shareImgNote'), '');
+        return;
+      } catch (e) {
+        if (e.name === 'AbortError') { setText($('shareImgNote'), ''); return; }
+      }
+    }
+    const url = URL.createObjectURL(blob);
+    const a = el('a');
+    a.href = url;
+    a.download = name;
+    document.body.append(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 30000);
+    setText($('shareImgNote'), 'Saved the picture. Send it to whoever needs to know.');
+  } catch (e) {
+    setText($('shareImgNote'), 'Couldn’t draw the picture, sorry.');
+  } finally {
+    btn.disabled = false;
+  }
+}
+
 // Whoever runs the room deals the next game; everyone else waits for them.
 function renderOverButtons() {
   const me = S.you;
@@ -3001,6 +4086,7 @@ function renderOverButtons() {
   setText($('againBtn'), S.mode === 'solo' ? 'Play again' : 'Deal again');
   setHidden($('againBtn'), !host);
   setText($('overMenuBtn'), S.mode === 'room' ? 'Leave' : 'Menu');
+  setHidden($('overInviteBtn'), S.mode !== 'room');
   setText($('overNote'), host ? '' : `Waiting for ${S.players[S.host]?.name || 'the host'} to deal again…`);
 }
 
@@ -3083,7 +4169,7 @@ function renderMenu() {
   renderInputs();
   renderDecks();
   const titleCards = document.querySelector('.title-cards');
-  if (!titleCards.childElementCount) titleCards.append(cardEl(12), cardEl(25 + 13), cardEl(11 + 13));
+  if (!titleCards.childElementCount) titleCards.append(cardEl(12), cardEl(53), cardEl(11 + 13));
 }
 
 function renderInputs() {
@@ -3101,7 +4187,7 @@ function renderInputs() {
 }
 
 function renderDecks() {
-  for (const [boxId, noteId] of [['menuDecks', 'menuDeckNote'], ['pauseDecks', 'pauseDeckNote']]) {
+  for (const [boxId, noteId] of [['menuDecks', 'menuDeckNote'], ['pauseDecks', 'pauseDeckNote'], ['lobbyDecks', 'lobbyDeckNote']]) {
     const box = $(boxId);
     if (!box.childElementCount) {
       for (const [key, [name]] of Object.entries(DECKS)) {
@@ -3125,6 +4211,11 @@ function setDeck(key) {
   deck = key;
   store.set('deck', key);
   document.documentElement.dataset.deck = key;
+  if (S.mode === 'room' && S.conn) {
+    S.conn.me.deck = key;
+    sendDeck();
+    if (S.phase === 'lobby') renderLobby();
+  }
   renderDecks();
   document.querySelector('.title-cards').replaceChildren();
   renderMenu();
@@ -3135,6 +4226,17 @@ function setDeck(key) {
     renderAll();
   }
 }
+
+// Tells the room which deck you picked. It takes one change a second, so
+// a quicker change waits, and only the latest goes.
+function sendDeck() {
+  clearTimeout(sendDeck.timer);
+  const wait = sendDeck.at + 1100 - Date.now();
+  if (wait > 0) { sendDeck.timer = setTimeout(sendDeck, wait); return; }
+  sendDeck.at = Date.now();
+  if (S.mode === 'room' && S.conn) S.conn.send({ t: 'deck', deck });
+}
+sendDeck.at = 0;
 
 function myName() {
   const name = $('nameInput').value.trim().replace(/\s+/g, ' ');
@@ -3193,7 +4295,7 @@ async function startRoom(code) {
   query.set('room', code);
   history.replaceState(null, '', `${location.pathname}?${query}${location.hash}`);
   setText(err, 'Connecting…');
-  S.conn = new NetRoom(code, { name, avatar, token });
+  S.conn = new NetRoom(code, { name, avatar, token, deck });
   setText($('lobbyCode'), code);
 }
 
@@ -3204,16 +4306,85 @@ function inviteUrl() {
   return url.toString();
 }
 
-async function share() {
+// Sends the invite link: the share sheet on a phone, the clipboard
+// elsewhere, and the link itself if neither works. `note` says what happened.
+async function share(note) {
   const url = inviteUrl();
   const text = `Join my game of War! Room ${S.code}`;
   try {
     if (navigator.share && matchMedia('(pointer: coarse)').matches) { await navigator.share({ title: 'War: Slam Edition', text, url }); return; }
     await navigator.clipboard.writeText(url);
-    setText($('shareNote'), 'Invite link copied. Paste it to your friends.');
+    setText(note, 'Invite link copied. Paste it to your friends.');
   } catch (e) {
-    setText($('shareNote'), `Share this link: ${url}`);
+    if (e && e.name === 'AbortError') return;
+    setText(note, `Share this link: ${url}`);
   }
+}
+
+// The invite link as a QR code, for anyone in the same room as you to scan.
+// The library loads the first time one's needed; without it, there's still
+// the link to send.
+const QR_LIBRARY = 'https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.js';
+const QR_INTEGRITY = 'sha384-8FWZA6BGMXhsfO+BLtrJK0We6gg5o1JyO8xQm6peWDEUs17ACA5ziE/NIAkl9z2k';
+let qrLoading = null;
+function loadQr() {
+  qrLoading ??= new Promise((resolve, reject) => {
+    const script = document.createElement('script');
+    script.src = QR_LIBRARY;
+    script.integrity = QR_INTEGRITY;
+    script.crossOrigin = 'anonymous';
+    script.onload = () => (window.qrcode ? resolve(window.qrcode) : reject(new Error('no qrcode')));
+    script.onerror = () => { qrLoading = null; script.remove(); reject(new Error('qrcode did not load')); };
+    document.head.append(script);
+  });
+  return qrLoading;
+}
+
+async function drawQr(box, url) {
+  if (box.dataset.url === url) return;
+  box.dataset.url = url;
+  let qr;
+  try {
+    qr = (await loadQr())(0, 'M');
+    qr.addData(url);
+    qr.make();
+  } catch (e) {
+    box.dataset.url = '';
+    box.replaceChildren();
+    return;
+  }
+  if (box.dataset.url !== url) return;
+  const NS = 'http://www.w3.org/2000/svg';
+  const n = qr.getModuleCount(), quiet = 2;
+  let d = '';
+  for (let r = 0; r < n; r++) for (let c = 0; c < n; c++) if (qr.isDark(r, c)) d += `M${c + quiet} ${r + quiet}h1v1h-1z`;
+  const svg = document.createElementNS(NS, 'svg');
+  svg.setAttribute('viewBox', `0 0 ${n + quiet * 2} ${n + quiet * 2}`);
+  svg.setAttribute('role', 'img');
+  svg.setAttribute('aria-label', `QR code for ${url}`);
+  const path = document.createElementNS(NS, 'path');
+  path.setAttribute('d', d);
+  path.setAttribute('fill', '#000');
+  svg.append(path);
+  box.replaceChildren(svg);
+}
+
+// Invite someone mid-game: they watch this one and are dealt into the next.
+function openInvite() {
+  if (S.mode !== 'room' || !S.code) return;
+  setText($('inviteCode'), S.code);
+  const scan = 'Scan this with a phone’s camera, or send the link.';
+  setText($('inviteHelp'), S.phase === 'lobby' ? scan
+    : S.phase === 'over' ? `${scan} Whoever joins is dealt into the next game.`
+      : `${scan} Whoever joins watches this game and is dealt into the next one.`);
+  setText($('inviteNote'), '');
+  drawQr($('inviteQr'), inviteUrl());
+  setHidden($('pause'), true);
+  setHidden($('inviteOv'), false);
+}
+
+function closeInvite() {
+  setHidden($('inviteOv'), true);
 }
 
 // ---- Wiring ----
@@ -3226,6 +4397,7 @@ function openPause() {
   setText($('pauseNote'), solo ? 'The war waits for you.' : 'The game carries on without you while you’re here: your cards flop over by themselves.');
   setHidden($('skipBtn'), !solo || !S.conn.game || S.phase !== 'playing');
   setText($('quitBtn'), solo ? 'Quit to menu' : 'Leave the room');
+  setHidden($('pauseInviteBtn'), solo);
   setHidden($('pause'), false);
 }
 
@@ -3245,9 +4417,16 @@ function init() {
   renderMenu();
   const code = (params.get('room') || '').toUpperCase();
   if (/^[A-HJKMNP-Z2-9]{4}$/.test(code) && roomsUrl()) {
+    // An invite link: joining the room comes first, solo play after.
+    const friends = $('friends');
+    friends.classList.add('invited');
+    $('soloTitle').before(friends);
+    setText($('friendsTitle'), `You’re invited to room ${code}`);
+    setHidden($('newRoomBtn'), true);
+    $('joinBtn').classList.add('primary');
     $('codeInput').value = code;
     setText($('joinBtn'), `Join room ${code}`);
-    setText($('friendsErr'), $('nameInput').value ? '' : 'Pick a name, then join.');
+    setText($('friendsErr'), $('nameInput').value ? '' : 'Pick a name and an animal, then join.');
   }
 
   $('oppRange').addEventListener('input', renderMenu);
@@ -3271,7 +4450,12 @@ function init() {
     startRoom(code);
   });
   $('codeInput').addEventListener('keydown', (e) => { if (e.key === 'Enter') $('joinBtn').click(); });
-  $('shareBtn').addEventListener('click', share);
+  $('shareBtn').addEventListener('click', () => share($('shareNote')));
+  $('roomTag').addEventListener('click', openInvite);
+  $('pauseInviteBtn').addEventListener('click', openInvite);
+  $('overInviteBtn').addEventListener('click', openInvite);
+  $('inviteShareBtn').addEventListener('click', () => share($('inviteNote')));
+  $('inviteDone').addEventListener('click', closeInvite);
   $('botLess').addEventListener('click', () => S.conn.send({ t: 'bots', n: S.players.filter((p) => p.bot).length - 1 }));
   $('botMore').addEventListener('click', () => S.conn.send({ t: 'bots', n: S.players.filter((p) => p.bot).length + 1 }));
   $('botFill').addEventListener('click', () => S.conn.send({ t: 'bots', n: WAR.MAX_PLAYERS }));
@@ -3281,6 +4465,8 @@ function init() {
   for (const b of document.querySelectorAll('.sound-toggle')) b.addEventListener('click', () => Sound.toggle());
   for (const b of document.querySelectorAll('.music-toggle')) b.addEventListener('click', () => Music.toggle());
   $('menuBtn').addEventListener('click', openPause);
+  $('tidyBtn').addEventListener('click', heapTidy);
+  myHeapNode().addEventListener('click', heapTidy);
   $('resumeBtn').addEventListener('click', closePause);
   $('quitBtn').addEventListener('click', () => backToMenu());
   $('skipBtn').addEventListener('click', () => { setHidden($('pause'), true); clearLater(); S.conn.finish(); });
@@ -3290,7 +4476,8 @@ function init() {
     S.conn.send({ t: 'start' });
   });
   $('overMenuBtn').addEventListener('click', () => backToMenu());
-  for (const id of ['menuDecks', 'pauseDecks']) {
+  $('shareImgBtn').addEventListener('click', shareSummary);
+  for (const id of ['menuDecks', 'pauseDecks', 'lobbyDecks']) {
     $(id).addEventListener('click', (e) => {
       const b = e.target.closest('button');
       if (b) setDeck(b.dataset.deck);
@@ -3337,27 +4524,19 @@ function init() {
     renderStyles();
   });
 
-  // The slam button: hold it, mash it, or drag a card off it. In fling mode
-  // your deck works too.
-  const btn = $('slamBtn');
-  btn.addEventListener('pointerdown', (e) => {
+  // Your deck: hold it, tap it fast, or throw a card off it.
+  const pile = $('myPile');
+  pile.addEventListener('pointerdown', (e) => {
     if (e.button > 0) return;
     e.preventDefault();
-    try { btn.setPointerCapture(e.pointerId); } catch (err) { /* fine */ }
+    try { pile.setPointerCapture(e.pointerId); } catch (err) { /* fine */ }
     if (S.input === 'mash') mashTap();
     else if (S.input === 'fling') startFling(e);
     else startCharge(e.pointerId);
   });
-  btn.addEventListener('pointerup', (e) => { if (charge && charge.pointer === e.pointerId) releaseCharge(); });
-  btn.addEventListener('pointercancel', () => { if (charge) releaseCharge(); });
-  btn.addEventListener('contextmenu', (e) => e.preventDefault());
-  const pile = $('myPile');
-  pile.addEventListener('pointerdown', (e) => {
-    if (S.input !== 'fling' || e.button > 0) return;
-    e.preventDefault();
-    try { pile.setPointerCapture(e.pointerId); } catch (err) { /* fine */ }
-    startFling(e);
-  });
+  pile.addEventListener('pointerup', (e) => { if (charge && charge.pointer === e.pointerId) releaseCharge(); });
+  pile.addEventListener('pointercancel', () => { if (charge) releaseCharge(); });
+  pile.addEventListener('contextmenu', (e) => e.preventDefault());
   document.addEventListener('pointermove', moveFling);
   document.addEventListener('pointerup', releaseFling);
   document.addEventListener('pointercancel', releaseFling);
@@ -3370,6 +4549,8 @@ function init() {
       if (!e.repeat) { if (S.input === 'mash') mashTap(); else startCharge('key'); }
     } else if (e.key === 'Escape' && !$('historyOv').hidden) {
       setHidden($('historyOv'), true);
+    } else if (e.key === 'Escape' && !$('inviteOv').hidden) {
+      closeInvite();
     } else if (e.key === 'Escape' && !$('app').hidden) {
       if (!$('stylesOv').hidden) setHidden($('stylesOv'), true);
       else if (!$('pause').hidden) closePause();
@@ -3391,7 +4572,7 @@ function init() {
 
 // The table is up, with nothing over it.
 function tableUp() {
-  return !$('app').hidden && $('pause').hidden && $('over').hidden && $('stylesOv').hidden && $('lobby').hidden;
+  return !$('app').hidden && $('pause').hidden && $('over').hidden && $('stylesOv').hidden && $('lobby').hidden && $('inviteOv').hidden;
 }
 
 function openStyles() {
@@ -3436,6 +4617,8 @@ if (DEBUG) {
       chances: Odds.seats && Odds.seats.slice(),
       input: S.input,
       plan: S.plan && { need: S.plan.need, done: S.plan.done.slice() },
+      heap: (heaps.get(S.you)?.cards || []).map((c) => c.card), tidy: heaps.get(S.you)?.tidy ?? true,
+      heaps: Object.fromEntries([...heaps].map(([seat, h]) => [seat, h.cards.map((c) => c.card)])),
     }),
     slam: (power) => {
       if (!canSlam()) return false;
@@ -3444,6 +4627,7 @@ if (DEBUG) {
     },
     input: (mode) => setInput(mode),
     deck: (key) => setDeck(key),
+    versus: () => Versus.last,
     music: () => ({ on: Music.on, song: Music.want, playing: Music.song, songs: Object.keys(SONGS) }),
     // How loud each song gets: rendered offline, as the game would play it.
     musicLevels: async () => {
@@ -3464,6 +4648,8 @@ if (DEBUG) {
       return levels;
     },
     hurry: () => { S.closesAt = now() + 600; },
+    log: () => Log.battles.map((e) => ({ ...e, counts: [...e.counts] })),
+    picture: async () => (await summaryImage()).toDataURL('image/png'),
     finish: () => S.conn && S.conn.finish && S.conn.finish(),
     pace: (p) => { if (S.conn && S.conn.setPace) S.conn.setPace(p); },
     odds: (counts, battle, limit, sims) => oddsFor(counts, battle, limit, sims || 200),

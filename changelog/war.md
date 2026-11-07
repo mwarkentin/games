@@ -1,3 +1,21 @@
+## 2026-11-07
+
+- Jokers: every deck has two, and a joker beats every other card. Two jokers
+  tie, so they start a war. Each deck theme has a joker of its own.
+- In a room, everyone's cards show in the deck they picked, bots bring decks
+  of their own, and you can pick yours in the lobby.
+- The cards you win pile up in a messy heap beside your card, and Clean up
+  sorts them into a neat stack. At a table of up to four, everyone's winnings
+  pile up behind their cards, and the cards fly there from the table.
+- Slam on your deck itself: hold it, tap it fast or throw a card off it. The
+  big button is gone, and a slim bar shows the countdown and how hard you're
+  slamming.
+- The end screen tells the game battle by battle, and Share makes a picture
+  of the game to send.
+- Easier invites: an invite link opens straight to joining, the lobby shows
+  a QR code to scan with a phone camera, and tapping the room code at the
+  top of the table invites someone to the next game.
+
 ## 2026-11-05
 
 - Music: five public-domain pieces played on the chip voices of an old game
