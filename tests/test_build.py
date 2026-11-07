@@ -10,7 +10,6 @@ from build_colophon import format_message
 from build_sitemap import NAMESPACE, build_sitemap
 from common import (
     BASE_URL,
-    GENERATED_PAGES,
     HOME_APP,
     ICON_SIZES,
     PREVIEW_SIZE,
@@ -20,6 +19,7 @@ from common import (
     extract_meta,
     extract_meta_description,
     game_files,
+    generated_pages,
     inject_analytics,
     inject_pwa,
     inject_social,
@@ -73,9 +73,9 @@ def test_build_index_fills_recent_section(monkeypatch):
     monkeypatch.setattr(build_index, "RECENT_LIMIT", 1)
     readme = "# Games\n\n<!-- recently starts -->\n<!-- recently stops -->\n\n## All\n"
     games = [
-        {"slug": "old", "filename": "old.html", "title": "Old", "url": "/old",
+        {"slug": "old", "filename": "old.html", "title": "Old", "url": "/old", "changelog": "/changelog/old",
          "created": "2026-01-01T10:00:00-05:00", "updated": "2026-03-01T10:00:00-05:00"},
-        {"slug": "new", "filename": "new.html", "title": "New", "url": "/new",
+        {"slug": "new", "filename": "new.html", "title": "New", "url": "/new", "changelog": None,
          "created": "2026-02-01T10:00:00-05:00", "updated": "2026-02-01T10:00:00-05:00"},
     ]
     page = build_index.build_index(readme, games)
@@ -84,6 +84,8 @@ def test_build_index_fills_recent_section(monkeypatch):
     assert '<a href="/new">New</a>' in added
     assert '<a class="muted" href="/colophon#new.html">Feb 1, 2026</a>' in added
     assert '<a href="/old">Old</a>' in updated
+    # Dates lead to what changed: the changelog, or the colophon without one.
+    assert '<a class="muted" href="/changelog/old">Mar 1, 2026</a>' in updated
 
 
 def test_build_sitemap_lists_games_and_generated_pages():
@@ -91,7 +93,7 @@ def test_build_sitemap_lists_games_and_generated_pages():
         {"url": "/b-game", "updated": "2026-10-01T09:00:00-04:00"},
         {"url": "/a-game", "updated": "2026-10-20T09:00:00-04:00"},
     ]
-    root = ET.fromstring(build_sitemap(games))
+    root = ET.fromstring(build_sitemap(games, {"/changelog/a-game": "2026-10-19"}))
     entries = {
         url.findtext(f"{{{NAMESPACE}}}loc"): url.findtext(f"{{{NAMESPACE}}}lastmod")
         for url in root
@@ -100,9 +102,11 @@ def test_build_sitemap_lists_games_and_generated_pages():
         f"{BASE_URL}/",
         f"{BASE_URL}/a-game",
         f"{BASE_URL}/b-game",
+        f"{BASE_URL}/changelog/a-game",
         f"{BASE_URL}/colophon",
     ]
     assert entries[f"{BASE_URL}/"] == "2026-10-20"
+    assert entries[f"{BASE_URL}/changelog/a-game"] == "2026-10-19"
     assert entries[f"{BASE_URL}/b-game"] == "2026-10-01"
 
 
@@ -111,8 +115,7 @@ def test_site_contains_only_publishable_files(site_dir):
     apps = [*own_apps(), HOME_APP]
     expected = {
         *game_files(),
-        "index.html",
-        "colophon.html",
+        *generated_pages(),
         "games.json",
         "sitemap.xml",
         "robots.txt",
@@ -158,7 +161,7 @@ def test_games_are_published_with_only_previews_telemetry_analytics_and_app_link
 
 
 def test_generated_pages_get_analytics_but_not_telemetry(site_dir):
-    for filename in GENERATED_PAGES:
+    for filename in generated_pages():
         page = (site_dir / filename).read_text("utf-8")
         assert page.count("<script data-analytics>") == 1
         assert page.index("<script data-analytics>") < page.index("</head>")
@@ -204,7 +207,7 @@ def test_inject_social_leaves_a_page_with_its_own_tags_alone():
 
 def test_every_page_has_a_link_preview_whose_image_is_published(site_dir):
     pages = {f"/{name.removesuffix('.html')}": name for name in game_files()}
-    pages.update({path: name for name, path in GENERATED_PAGES.items()})
+    pages.update({path: name for name, path in generated_pages().items()})
     for path, filename in pages.items():
         head = (site_dir / filename).read_text("utf-8").split("</head>")[0]
         tags = dict(re.findall(r'<meta property="(og:[a-z:_]+)" content="([^"]*)">', head))
