@@ -255,7 +255,7 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px s
 @media (min-width: 700px) { #me { --cw: 104px; } }
 #myPile { touch-action: none; }
 /* The war pile: every card you lay face down in a war, slammed one by one. */
-#myWar { display: grid; justify-items: center; gap: 4px; }
+#myWar { position: relative; display: grid; justify-items: center; gap: 4px; }
 #myWar .wpile { position: relative; width: var(--cw); height: calc(var(--cw) * 1.4); }
 #myWar .wpile:empty { border: 2px dashed rgba(255, 80, 70, .7); border-radius: 9px; }
 #myWar .wpile .card { position: absolute; inset: 0; transform: translate(var(--dx), var(--dy)) rotate(var(--r)); }
@@ -290,6 +290,26 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px s
 #me.charging #myPile .stack { animation: tremble calc(140ms - var(--power, 0) * .4ms) linear infinite; }
 #me.charging #myPile .stack .card { box-shadow: 0 0 calc(var(--power, 0) * .18px) calc(var(--power, 0) * .05px) var(--gold); }
 #meNote { position: absolute; inset: 0; display: grid; place-items: center; text-align: center; font-weight: 700; color: var(--felt-dim); padding: 0 20px; }
+/* Winnings: the cards you win, tossed on a messy heap beside your card,
+   behind everything else, and faded while you're fighting a war. */
+#winnings {
+  position: absolute; bottom: 6px; width: 76px; display: grid; justify-items: center; gap: 4px;
+  left: min(calc(50% + var(--cw) + 24px), calc(100% - 88px - env(safe-area-inset-right)));
+  transition: opacity .3s;
+}
+#me.warring #winnings { opacity: .22; pointer-events: none; }
+#winnings .heap { position: relative; width: 60px; height: 84px; cursor: pointer; }
+#winnings .heap .card {
+  --w: 40px; position: absolute; left: 10px; top: 14px;
+  transform: translate(var(--x), var(--y)) rotate(var(--r));
+  transition: transform calc(420ms * var(--pace)) cubic-bezier(.3, .7, .3, 1) calc(var(--i, 0) * 14ms);
+}
+#winnings .heap .card.toss { animation: toss calc(560ms * var(--pace)) cubic-bezier(.2, .7, .3, 1); }
+@keyframes toss { from { transform: translate(var(--fx), var(--fy)) rotate(calc(var(--r) * 4)) scale(1.3); opacity: .3; } }
+#tidyBtn {
+  border: 0; border-radius: 999px; padding: 6px 9px; min-height: 30px; background: rgba(0, 0, 0, .3);
+  font: 700 12px/1 system-ui, sans-serif; white-space: nowrap;
+}
 #gain { position: absolute; left: 50%; top: 10px; font-family: var(--display); color: var(--gold); font-size: 22px; pointer-events: none; opacity: 0; }
 #gain.show { animation: rise calc(1100ms * var(--pace)) ease-out; }
 @keyframes rise { 0% { opacity: 0; transform: translate(-50%, 10px); } 20% { opacity: 1; } 100% { opacity: 0; transform: translate(-50%, -40px); } }
@@ -475,6 +495,10 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px s
     <div id="caption"></div>
   </section>
   <section id="me">
+    <div id="winnings" hidden>
+      <div class="heap" role="img" aria-label="Cards you've won"></div>
+      <button id="tidyBtn" type="button" hidden>🧹 Clean up</button>
+    </div>
     <div id="myPile"><div class="stack"><div class="card back"></div></div><div id="myLabel"></div></div>
     <div id="myWar" hidden><div class="wpile"></div><span class="wcount"></span></div>
     <div id="mySlot"><div class="card empty"></div></div>
@@ -1093,6 +1117,12 @@ const Sound = {
     [[220, 277, 330], [247, 311, 370], [294, 370, 440]].forEach((chord, i) => chord.forEach((f) => this.tone(f, i * 0.28, i === 2 ? 0.6 : 0.3, { type: 'sawtooth', gain: 0.05 })));
   },
   blip(tier) { this.tone(300 + tier * 90, 0, 0.06, { type: 'square', gain: 0.04 }); },
+  swish() { this.noise(0, 0.14, 0.07, 1800); },
+  // A deck squared up: a riffle, then a tap on the table.
+  riffle() {
+    for (let i = 0; i < 9; i++) this.noise(i * 0.03, 0.025, 0.1, 3000 + i * 250);
+    this.noise(0.3, 0.07, 0.18, 900);
+  },
   cheer() { this.tone(880, 0, 0.08, { type: 'triangle', gain: 0.06, to: 1200 }); },
 };
 
@@ -1676,6 +1706,7 @@ const S = {
   input: store.get('input', 'hold'),  // how you slam: hold, mash or fling
   plan: null,            // the cards you're slamming this stage (see slamPlan)
   thumps: {},            // seat -> face-down cards others have slammed this war stage
+  potCards: [],          // the cards in this battle's pot, for the heap: { card, look, seat }
 };
 const timers = new Set();
 function later(fn, ms) {
@@ -1896,7 +1927,7 @@ function onState(m) {
     const g = m.game;
     // A new game, or a snapshot of a different moment in this one.
     const fresh = m.phase === 'playing' && (wasPhase !== 'playing' || g.battle < S.battle);
-    if (fresh) { S.mine = []; S.overShown = false; S.naps = 0; S.plan = null; Odds.reset(); }
+    if (fresh) { S.mine = []; S.overShown = false; S.naps = 0; S.plan = null; S.potCards = []; Odds.reset(); heapClear(); }
     if (fresh || S.battle !== g.battle || S.stage !== g.stage) {
       clearLater();
       S.cards = {};
@@ -1963,6 +1994,7 @@ function openStage() {
   S.thumps = m.thumps;
   S.charging = {};
   if (m.stage === 0) {
+    if (Heap.pending) { const won = Heap.pending; Heap.pending = null; heapToss(won); }
     S.cards = {};
     S.result = null;
     S.pot = 0;
@@ -2029,6 +2061,13 @@ function onFlip(m) {
     const before = S.cards[seat];
     S.cards[seat] = { up, down: (before ? before.down : 0) + down, stage: m.stage };
     if (!S.slams[seat]) S.slams[seat] = [power, style];
+    const look = deckOf(seat);
+    for (let i = 0; i < down; i++) S.potCards.push({ card: 'back', look, seat });
+    S.potCards.push({ card: up, look, seat });
+  }
+  if (m.winner !== null) {
+    if (m.winner === S.you && !m.over) Heap.pending = S.potCards;
+    S.potCards = [];
   }
   if (m.winner !== null) recordResult(m);
   const mine = m.plays.find((p) => p[0] === S.you);
@@ -2492,6 +2531,7 @@ function renderWarPile() {
     pile.append(card);
   }
   setText(box.querySelector('.wcount'), downs ? `${downs} face down` : 'Face down here');
+  setClass($('me'), 'warring', !box.hidden);
 }
 
 function renderWarRow() {
@@ -2567,6 +2607,7 @@ function renderAll() {
   buildTiles();
   for (const seat of tiles.keys()) renderTile(seat);
   renderMe();
+  renderHeap();
   renderWarRow();
   renderBar();
   renderControls();
@@ -2581,6 +2622,104 @@ setInterval(() => {
   beatTheClock();
   renderControls();
 }, 200);
+
+// ---- Winnings ----
+//
+// The cards you win are swept onto a messy heap beside your card when the
+// table clears, landing every which way, messier the bigger it gets. Clean up
+// sorts it into a neat stack, twos at the bottom. All for show: the cards you
+// win go into your deck either way, and the heap never shows more cards than
+// you hold.
+
+const HEAP_MAX = 36;  // cards on the heap at most; older ones slip out from under
+const Heap = {
+  cards: [],      // { card, look, seat, node }, bottom first
+  tidy: true,
+  pending: null,  // the pot you just won, until the table clears
+  layer: 0,       // the z-index of the card on top
+};
+const TIDY_LINES = [
+  (n) => `Squared away ${plural(n, 'card')}, twos at the bottom. The war will shuffle them anyway.`,
+  (n) => `${plural(n, 'card')}, tidied and sorted. Your chances are exactly the same.`,
+  (n) => `A neat stack of ${n}. Tidiness has been independently verified to change nothing.`,
+];
+
+const heapNode = () => document.querySelector('#winnings .heap');
+const heapAllowed = () => S.you !== null && (S.phase === 'playing' || S.phase === 'over') && !(S.battle > 0 && S.out[S.you] > 0);
+
+function heapClear() {
+  Object.assign(Heap, { cards: [], tidy: true, pending: null, layer: 0 });
+  heapNode().replaceChildren();
+  renderHeap();
+}
+
+// Where a card was played, relative to the middle of the heap.
+function heapFrom(seat, heapBox) {
+  const from = seat === S.you ? $('mySlot') : tiles.get(seat)?.slot;
+  const box = (from && from.offsetParent ? from : $('arena')).getBoundingClientRect();
+  return [box.left + box.width / 2 - (heapBox.left + heapBox.width / 2), box.top + box.height / 2 - (heapBox.top + heapBox.height / 2)];
+}
+
+// Sweeps a pot you won onto the heap: every card in its player's deck, the
+// face-down ones still face down, flying in from where it was played.
+function heapToss(cards) {
+  if (!heapAllowed() || !cards.length) return;
+  setHidden($('winnings'), false);
+  const heap = heapNode();
+  const heapBox = heap.getBoundingClientRect();
+  const fly = !reduceMotion.matches && heapBox.width > 0;
+  for (const c of cards.slice(-HEAP_MAX)) {
+    const node = cardEl(c.card, c.look);
+    const mess = Math.min(1, Heap.cards.length / 20);
+    node.style.setProperty('--x', `${Math.round((Math.random() - 0.5) * (8 + 12 * mess))}px`);
+    node.style.setProperty('--y', `${Math.round((Math.random() - 0.5) * (12 + 22 * mess))}px`);
+    node.style.setProperty('--r', `${Math.round((Math.random() - 0.5) * (50 + 40 * mess))}deg`);
+    node.style.zIndex = String(++Heap.layer);
+    if (fly) {
+      const [fx, fy] = heapFrom(c.seat, heapBox);
+      node.style.setProperty('--fx', `${Math.round(fx)}px`);
+      node.style.setProperty('--fy', `${Math.round(fy)}px`);
+      node.classList.add('toss');
+      node.addEventListener('animationend', () => node.classList.remove('toss'), { once: true });
+    }
+    heap.append(node);
+    Heap.cards.push({ ...c, node });
+  }
+  Heap.tidy = false;
+  Sound.swish();
+  renderHeap();
+}
+
+// Squares the heap up into a neat stack, sorted: face-down cards at the
+// bottom, then twos up to aces, and jokers on top.
+function heapTidy() {
+  if (Heap.tidy || Heap.cards.length < 2) return;
+  const key = (c) => (c.card === 'back' ? -1 : warRank(c.card) * WAR.DECK + (c.card % WAR.DECK));
+  Heap.cards.sort((a, b) => key(a) - key(b));
+  Heap.cards.forEach((c, i) => {
+    const s = c.node.style;
+    c.node.classList.remove('toss');
+    s.setProperty('--i', String(i));
+    s.setProperty('--x', '0px');
+    s.setProperty('--y', `${-Math.round(Math.min(i, 30) * 0.7)}px`);
+    s.setProperty('--r', '0deg');
+    s.zIndex = String(i + 1);
+  });
+  Heap.layer = Heap.cards.length;
+  Heap.tidy = true;
+  setText($('caption'), pick(TIDY_LINES)(Heap.cards.length));
+  Sound.riffle();
+  renderHeap();
+}
+
+function renderHeap() {
+  // Never more cards than you hold: the oldest slip out from underneath.
+  const keep = heapAllowed() ? Math.min(HEAP_MAX, S.counts[S.you] ?? 0) : 0;
+  while (Heap.cards.length > keep) Heap.cards.shift().node.remove();
+  setHidden($('winnings'), !Heap.cards.length);
+  setHidden($('tidyBtn'), Heap.tidy || Heap.cards.length < 2);
+  setAttr(heapNode(), 'aria-label', `${plural(Heap.cards.length, 'card')} you’ve won, ${Heap.tidy ? 'in a neat stack' : 'in a messy heap'}`);
+}
 
 // ---- Slamming ----
 //
@@ -2876,6 +3015,7 @@ function backToMenu(message) {
   clearLater();
   cancelInput();
   Odds.reset();
+  heapClear();
   tileKey = '';
   for (const id of ['app', 'lobby', 'pause', 'over']) setHidden($(id), true);
   setHidden($('menu'), false);
@@ -3361,6 +3501,8 @@ function init() {
   for (const b of document.querySelectorAll('.sound-toggle')) b.addEventListener('click', () => Sound.toggle());
   for (const b of document.querySelectorAll('.music-toggle')) b.addEventListener('click', () => Music.toggle());
   $('menuBtn').addEventListener('click', openPause);
+  $('tidyBtn').addEventListener('click', heapTidy);
+  heapNode().addEventListener('click', heapTidy);
   $('resumeBtn').addEventListener('click', closePause);
   $('quitBtn').addEventListener('click', () => backToMenu());
   $('skipBtn').addEventListener('click', () => { setHidden($('pause'), true); clearLater(); S.conn.finish(); });
@@ -3516,6 +3658,7 @@ if (DEBUG) {
       chances: Odds.seats && Odds.seats.slice(),
       input: S.input,
       plan: S.plan && { need: S.plan.need, done: S.plan.done.slice() },
+      heap: Heap.cards.map((c) => c.card), tidy: Heap.tidy,
     }),
     slam: (power) => {
       if (!canSlam()) return false;

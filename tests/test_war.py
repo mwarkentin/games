@@ -129,6 +129,46 @@ def test_fling_to_slam(page: Page, site_url, errors):
     assert errors == []
 
 
+def rank(card: int) -> int:
+    """A card's rank, as the page has it: 0 is a two, 12 an ace, 13 a joker."""
+    face = card % 54
+    return 13 if face >= 52 else face % 13
+
+
+def test_won_cards_pile_up_and_clean_up_sorts_them(page: Page, site_url, errors):
+    # Seed 14: you win the first two battles, a joker over a queen, then an
+    # ace over a queen.
+    start_solo(page, site_url, seed=14)
+    heap = page.locator("#winnings .heap .card")
+    expect(page.locator("#winnings")).to_be_hidden()
+    page.evaluate("window.__war.slam(80)")
+    page.wait_for_function(f"{STATE}.battle === 2 && {STATE}.canSlam")
+    # The table clears, and what you won lands on the heap: the bot's queen in
+    # the bot's deck, your joker in yours.
+    expect(heap).to_have_count(2)
+    expect(page.locator("#tidyBtn")).to_be_visible()
+    bot_deck = page.evaluate("deckOf(1)")
+    expect(page.locator("#winnings .heap .card[aria-label^=queen]")).to_have_attribute("data-deck", bot_deck)
+    page.evaluate("window.__war.slam(80)")
+    page.wait_for_function(f"{STATE}.battle === 3")
+    expect(heap).to_have_count(4)
+    assert len(set(heap.evaluate_all("cards => cards.map((c) => c.style.getPropertyValue('--r'))"))) > 1, "it's a mess"
+
+    counts = page.evaluate(f"{STATE}.counts")
+    page.click("#tidyBtn")
+    expect(page.locator("#tidyBtn")).to_be_hidden()
+    assert page.evaluate(f"{STATE}.tidy")
+    ranks = [rank(c) for c in page.evaluate(f"{STATE}.heap")]
+    assert ranks == [10, 10, 12, 13], "sorted, twos at the bottom and the joker on top"
+    angles = heap.evaluate_all("cards => cards.map((c) => c.style.getPropertyValue('--r'))")
+    assert set(angles) == {"0deg"}
+    top = heap.evaluate_all("cards => cards.sort((a, b) => b.style.zIndex - a.style.zIndex)[0].getAttribute('aria-label')")
+    assert top.endswith("joker")
+    expect(page.locator("#caption")).to_contain_text(re.compile(r"Squared away|tidied and sorted|neat stack"))
+    assert page.evaluate(f"{STATE}.counts") == counts, "tidying changes nothing"
+    assert errors == []
+
+
 def test_how_you_slam_is_remembered(page: Page, site_url, errors):
     start_solo(page, site_url)
     expect(page.locator("#inputBtn")).to_have_text("✊ Hold")
