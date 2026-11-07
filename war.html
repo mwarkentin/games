@@ -65,7 +65,7 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px s
 }
 #battleInfo { flex: 1; min-width: 0; text-align: center; font-family: var(--display); font-size: 15px; letter-spacing: .02em; }
 #battleInfo small { display: block; font: 600 11px/1.2 system-ui, sans-serif; color: var(--felt-dim); letter-spacing: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-#roomTag { font: 700 12px/1 system-ui, sans-serif; padding: 6px 8px; border-radius: 10px; background: rgba(0, 0, 0, .22); letter-spacing: .08em; }
+#roomTag { font: 700 12px/1 system-ui, sans-serif; padding: 8px 9px; border: 0; border-radius: 10px; background: rgba(0, 0, 0, .22); letter-spacing: .08em; min-height: 36px; }
 
 /* Win probability */
 #odds { padding: 0 14px 4px; display: grid; gap: 3px; width: 100%; max-width: 560px; justify-self: center; }
@@ -439,6 +439,16 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px s
 .decks .card { --w: 30px; }
 .deck-note { margin: 6px 0 0; font-size: 13px; color: var(--panel-dim); }
 .seg button:disabled { cursor: default; }
+/* Room invites: the link as a QR code, black on white whatever the theme so
+   cameras read it. */
+.invite-qr { display: flex; gap: 12px; align-items: center; margin-top: 8px; }
+.invite-qr p { margin: 0; }
+.qr { flex: none; width: 112px; aspect-ratio: 1; border-radius: 10px; overflow: hidden; background: #fff; }
+.qr:empty { display: none; }
+.qr svg { display: block; width: 100%; height: 100%; shape-rendering: crispEdges; }
+.qr.big { width: min(240px, 70%); margin: 10px auto; }
+#friends.invited { margin-top: 12px; padding: 2px 12px 10px; border: 2px solid var(--accent); border-radius: 16px; background: var(--panel-2); }
+#friends.invited h3 { color: var(--accent); font-size: 15px; }
 .code-big { font-family: var(--display); font-size: 44px; letter-spacing: .12em; color: var(--accent); line-height: 1; }
 .people { display: flex; flex-wrap: wrap; gap: 6px; max-height: 210px; overflow-y: auto; }
 .person { display: inline-flex; align-items: center; gap: 4px; padding: 5px 9px; border-radius: 999px; background: var(--panel-2); font-size: 14px; font-weight: 600; max-width: 100%; }
@@ -530,7 +540,7 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px s
   <header id="bar">
     <button class="icon-btn" id="menuBtn" aria-label="Pause menu">☰</button>
     <div id="battleInfo"><span id="battleNum">Battle 1</span><small id="battleSub"></small></div>
-    <span id="roomTag" hidden></span>
+    <button id="roomTag" type="button" hidden></button>
     <button class="icon-btn music-toggle" aria-label="Music on">🎵</button>
     <button class="icon-btn sound-toggle" aria-label="Sound effects on">🔊</button>
   </header>
@@ -580,7 +590,7 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px s
     <div class="title-cards" aria-hidden="true"></div>
     <h1>War!</h1>
     <p><b>Slam Edition.</b> The card game where the highest card wins, jokers beat everything, and you can slam your card down as hard as you like. It won't help.</p>
-    <h3>Play solo</h3>
+    <h3 id="soloTitle">Play solo</h3>
     <label for="opponents" class="small" id="oppLabel">1 opponent</label>
     <input type="range" id="oppRange" min="1" max="49" value="1" aria-labelledby="oppLabel">
     <div class="seg" id="soloLength" style="margin-top:8px"></div>
@@ -588,7 +598,7 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px s
     <button class="btn primary wide" id="soloBtn">Deal me in</button>
 
     <div id="friends" hidden>
-      <h3>Play with friends</h3>
+      <h3 id="friendsTitle">Play with friends</h3>
       <label class="small" for="nameInput">Your name</label>
       <input type="text" id="nameInput" maxlength="16" autocomplete="nickname" spellcheck="false" placeholder="Name">
       <div class="avatars" id="avatars" style="margin-top:8px" role="group" aria-label="Your animal"></div>
@@ -623,6 +633,10 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px s
       <button class="btn" id="shareBtn">Invite</button>
     </div>
     <p class="small dim" id="shareNote">Friends join at this page with the code, or with your invite link.</p>
+    <div class="invite-qr">
+      <div class="qr" id="lobbyQr"></div>
+      <p class="small dim">Someone right here? They can scan this with their phone’s camera to join.</p>
+    </div>
     <h3 id="peopleTitle">Players</h3>
     <div class="people" id="people"></div>
     <div id="hostControls">
@@ -652,6 +666,7 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px s
     <h2 id="pauseTitle">Paused</h2>
     <p class="dim small" id="pauseNote"></p>
     <button class="btn primary wide" id="resumeBtn">Back to the table</button>
+    <button class="btn wide" id="pauseInviteBtn" hidden>➕ Invite someone</button>
     <button class="btn wide" id="skipBtn">Skip to the end</button>
     <button class="btn wide" id="quitBtn">Quit to menu</button>
     <div>
@@ -682,12 +697,25 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px s
     <div class="science" id="science"></div>
     <div class="unlock" id="unlock" hidden></div>
     <p class="small dim" id="overNote"></p>
+    <button class="btn wide" id="overInviteBtn" hidden>➕ Invite someone to the next game</button>
     <div class="row" id="overButtons" style="margin-top:8px">
       <button class="btn" id="overMenuBtn">Menu</button>
       <button class="btn" id="shareImgBtn" aria-label="Share a picture of the game">📸 Share</button>
       <button class="btn primary grow" id="againBtn">Play again</button>
     </div>
     <p class="small dim" id="shareImgNote" aria-live="polite"></p>
+  </div>
+</div>
+
+<!-- Invite: the room's link, to send or to scan -->
+<div class="overlay" id="inviteOv" hidden>
+  <div class="panel">
+    <h2>Invite to room <span id="inviteCode"></span></h2>
+    <p class="small dim" id="inviteHelp"></p>
+    <div class="qr big" id="inviteQr"></div>
+    <button class="btn gold wide" id="inviteShareBtn">Send the link</button>
+    <p class="small dim" id="inviteNote" aria-live="polite"></p>
+    <button class="btn primary wide" id="inviteDone">Done</button>
   </div>
 </div>
 
@@ -2620,7 +2648,10 @@ function renderBar() {
   setText($('battleSub'), sub);
   const tag = $('roomTag');
   setHidden(tag, !S.code);
-  if (S.code) setText(tag, S.code);
+  if (S.code) {
+    setText(tag, `＋ ${S.code}`);
+    setAttr(tag, 'aria-label', `Invite someone to room ${S.code}`);
+  }
 }
 
 function renderControls() {
@@ -3092,7 +3123,7 @@ function backToMenu(message) {
   Odds.reset();
   heapClear();
   tileKey = '';
-  for (const id of ['app', 'lobby', 'pause', 'over']) setHidden($(id), true);
+  for (const id of ['app', 'lobby', 'pause', 'over', 'inviteOv']) setHidden($(id), true);
   setHidden($('menu'), false);
   history.replaceState(null, '', location.pathname + (params.get('rooms') ? `?rooms=${encodeURIComponent(params.get('rooms'))}` : '') + location.hash);
   renderMenu();
@@ -3128,6 +3159,7 @@ function renderLobby() {
   setHidden($('dealBtn'), !host);
   $('dealBtn').disabled = S.players.length < 2;
   renderDecks();
+  if (S.code) drawQr($('lobbyQr'), inviteUrl());
 }
 
 function renderLengths(box, value, locked) {
@@ -3698,6 +3730,7 @@ function renderOverButtons() {
   setText($('againBtn'), S.mode === 'solo' ? 'Play again' : 'Deal again');
   setHidden($('againBtn'), !host);
   setText($('overMenuBtn'), S.mode === 'room' ? 'Leave' : 'Menu');
+  setHidden($('overInviteBtn'), S.mode !== 'room');
   setText($('overNote'), host ? '' : `Waiting for ${S.players[S.host]?.name || 'the host'} to deal again…`);
 }
 
@@ -3917,16 +3950,85 @@ function inviteUrl() {
   return url.toString();
 }
 
-async function share() {
+// Sends the invite link: the share sheet on a phone, the clipboard
+// elsewhere, and the link itself if neither works. `note` says what happened.
+async function share(note) {
   const url = inviteUrl();
   const text = `Join my game of War! Room ${S.code}`;
   try {
     if (navigator.share && matchMedia('(pointer: coarse)').matches) { await navigator.share({ title: 'War: Slam Edition', text, url }); return; }
     await navigator.clipboard.writeText(url);
-    setText($('shareNote'), 'Invite link copied. Paste it to your friends.');
+    setText(note, 'Invite link copied. Paste it to your friends.');
   } catch (e) {
-    setText($('shareNote'), `Share this link: ${url}`);
+    if (e && e.name === 'AbortError') return;
+    setText(note, `Share this link: ${url}`);
   }
+}
+
+// The invite link as a QR code, for anyone in the same room as you to scan.
+// The library loads the first time one's needed; without it, there's still
+// the link to send.
+const QR_LIBRARY = 'https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.js';
+const QR_INTEGRITY = 'sha384-8FWZA6BGMXhsfO+BLtrJK0We6gg5o1JyO8xQm6peWDEUs17ACA5ziE/NIAkl9z2k';
+let qrLoading = null;
+function loadQr() {
+  qrLoading ??= new Promise((resolve, reject) => {
+    const script = document.createElement('script');
+    script.src = QR_LIBRARY;
+    script.integrity = QR_INTEGRITY;
+    script.crossOrigin = 'anonymous';
+    script.onload = () => (window.qrcode ? resolve(window.qrcode) : reject(new Error('no qrcode')));
+    script.onerror = () => { qrLoading = null; script.remove(); reject(new Error('qrcode did not load')); };
+    document.head.append(script);
+  });
+  return qrLoading;
+}
+
+async function drawQr(box, url) {
+  if (box.dataset.url === url) return;
+  box.dataset.url = url;
+  let qr;
+  try {
+    qr = (await loadQr())(0, 'M');
+    qr.addData(url);
+    qr.make();
+  } catch (e) {
+    box.dataset.url = '';
+    box.replaceChildren();
+    return;
+  }
+  if (box.dataset.url !== url) return;
+  const NS = 'http://www.w3.org/2000/svg';
+  const n = qr.getModuleCount(), quiet = 2;
+  let d = '';
+  for (let r = 0; r < n; r++) for (let c = 0; c < n; c++) if (qr.isDark(r, c)) d += `M${c + quiet} ${r + quiet}h1v1h-1z`;
+  const svg = document.createElementNS(NS, 'svg');
+  svg.setAttribute('viewBox', `0 0 ${n + quiet * 2} ${n + quiet * 2}`);
+  svg.setAttribute('role', 'img');
+  svg.setAttribute('aria-label', `QR code for ${url}`);
+  const path = document.createElementNS(NS, 'path');
+  path.setAttribute('d', d);
+  path.setAttribute('fill', '#000');
+  svg.append(path);
+  box.replaceChildren(svg);
+}
+
+// Invite someone mid-game: they watch this one and are dealt into the next.
+function openInvite() {
+  if (S.mode !== 'room' || !S.code) return;
+  setText($('inviteCode'), S.code);
+  const scan = 'Scan this with a phone’s camera, or send the link.';
+  setText($('inviteHelp'), S.phase === 'lobby' ? scan
+    : S.phase === 'over' ? `${scan} Whoever joins is dealt into the next game.`
+      : `${scan} Whoever joins watches this game and is dealt into the next one.`);
+  setText($('inviteNote'), '');
+  drawQr($('inviteQr'), inviteUrl());
+  setHidden($('pause'), true);
+  setHidden($('inviteOv'), false);
+}
+
+function closeInvite() {
+  setHidden($('inviteOv'), true);
 }
 
 // ---- Wiring ----
@@ -3939,6 +4041,7 @@ function openPause() {
   setText($('pauseNote'), solo ? 'The war waits for you.' : 'The game carries on without you while you’re here: your cards flop over by themselves.');
   setHidden($('skipBtn'), !solo || !S.conn.game || S.phase !== 'playing');
   setText($('quitBtn'), solo ? 'Quit to menu' : 'Leave the room');
+  setHidden($('pauseInviteBtn'), solo);
   setHidden($('pause'), false);
 }
 
@@ -3958,9 +4061,16 @@ function init() {
   renderMenu();
   const code = (params.get('room') || '').toUpperCase();
   if (/^[A-HJKMNP-Z2-9]{4}$/.test(code) && roomsUrl()) {
+    // An invite link: joining the room comes first, solo play after.
+    const friends = $('friends');
+    friends.classList.add('invited');
+    $('soloTitle').before(friends);
+    setText($('friendsTitle'), `You’re invited to room ${code}`);
+    setHidden($('newRoomBtn'), true);
+    $('joinBtn').classList.add('primary');
     $('codeInput').value = code;
     setText($('joinBtn'), `Join room ${code}`);
-    setText($('friendsErr'), $('nameInput').value ? '' : 'Pick a name, then join.');
+    setText($('friendsErr'), $('nameInput').value ? '' : 'Pick a name and an animal, then join.');
   }
 
   $('oppRange').addEventListener('input', renderMenu);
@@ -3984,7 +4094,12 @@ function init() {
     startRoom(code);
   });
   $('codeInput').addEventListener('keydown', (e) => { if (e.key === 'Enter') $('joinBtn').click(); });
-  $('shareBtn').addEventListener('click', share);
+  $('shareBtn').addEventListener('click', () => share($('shareNote')));
+  $('roomTag').addEventListener('click', openInvite);
+  $('pauseInviteBtn').addEventListener('click', openInvite);
+  $('overInviteBtn').addEventListener('click', openInvite);
+  $('inviteShareBtn').addEventListener('click', () => share($('inviteNote')));
+  $('inviteDone').addEventListener('click', closeInvite);
   $('botLess').addEventListener('click', () => S.conn.send({ t: 'bots', n: S.players.filter((p) => p.bot).length - 1 }));
   $('botMore').addEventListener('click', () => S.conn.send({ t: 'bots', n: S.players.filter((p) => p.bot).length + 1 }));
   $('botFill').addEventListener('click', () => S.conn.send({ t: 'bots', n: WAR.MAX_PLAYERS }));
@@ -4078,6 +4193,8 @@ function init() {
       if (!e.repeat) { if (S.input === 'mash') mashTap(); else startCharge('key'); }
     } else if (e.key === 'Escape' && !$('historyOv').hidden) {
       setHidden($('historyOv'), true);
+    } else if (e.key === 'Escape' && !$('inviteOv').hidden) {
+      closeInvite();
     } else if (e.key === 'Escape' && !$('app').hidden) {
       if (!$('stylesOv').hidden) setHidden($('stylesOv'), true);
       else if (!$('pause').hidden) closePause();
@@ -4099,7 +4216,7 @@ function init() {
 
 // The table is up, with nothing over it.
 function tableUp() {
-  return !$('app').hidden && $('pause').hidden && $('over').hidden && $('stylesOv').hidden && $('lobby').hidden;
+  return !$('app').hidden && $('pause').hidden && $('over').hidden && $('stylesOv').hidden && $('lobby').hidden && $('inviteOv').hidden;
 }
 
 function openStyles() {

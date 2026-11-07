@@ -57,7 +57,7 @@ def test_start_a_room_add_bots_and_play_a_battle(page: Page, site_url, errors):
     expect(page.locator("#roomLength button[data-length=quick]")).to_have_attribute("aria-pressed", "true")
     page.click("#dealBtn")
     expect(page.locator("#app")).to_be_visible()
-    expect(page.locator("#roomTag")).to_have_text("K7QP")
+    expect(page.locator("#roomTag")).to_have_text("＋ K7QP")
     expect(page.locator("#battleSub")).to_contain_text("of 20")
 
     page.wait_for_function(f"{STATE}.canSlam")
@@ -236,10 +236,52 @@ def test_latecomers_watch(page: Page, site_url, errors):
     assert errors == []
 
 
-def test_an_invite_link_fills_in_the_code(page: Page, site_url, errors):
+def test_an_invite_link_opens_straight_to_joining(page: Page, site_url, errors):
     open_war(page, site_url, FakeWarRoom(), "&room=k7qp")
+    # Joining comes first, above solo play, with nothing else to pick.
+    expect(page.locator("#friendsTitle")).to_have_text("You’re invited to room K7QP")
     expect(page.locator("#codeInput")).to_have_value("K7QP")
     expect(page.locator("#joinBtn")).to_have_text("Join room K7QP")
+    expect(page.locator("#newRoomBtn")).to_be_hidden()
+    assert page.locator("#friends").bounding_box()["y"] < page.locator("#soloBtn").bounding_box()["y"]
+    expect(page.locator("#friendsErr")).to_have_text("Pick a name and an animal, then join.")
+    page.fill("#nameInput", "Grandma")
+    page.click("#joinBtn")
+    expect(page.locator("#lobby")).to_be_visible()
+    expect(page.locator("#people")).to_contain_text("Grandma")
+    assert errors == []
+
+
+def test_invite_by_qr_code_or_link_from_the_lobby_or_mid_game(page: Page, site_url, errors):
+    fake = FakeWarRoom()
+    open_war(page, site_url, fake)
+    start_room(page)
+    # The lobby shows the invite link as a QR code to scan.
+    qr = page.locator("#lobbyQr svg")
+    expect(qr).to_be_visible()
+    expect(qr).to_have_attribute("aria-label", re.compile(r"^QR code for http.*/war\?room=K7QP"))
+    page.click("#botMore")
+    page.click("#dealBtn")
+    expect(page.locator("#app")).to_be_visible()
+
+    # Mid-game, the room code in the top bar invites someone to the next game.
+    page.click("#roomTag")
+    expect(page.locator("#inviteOv")).to_be_visible()
+    expect(page.locator("#inviteCode")).to_have_text("K7QP")
+    expect(page.locator("#inviteHelp")).to_contain_text("dealt into the next one")
+    expect(page.locator("#inviteQr svg")).to_be_visible()
+    page.click("#inviteShareBtn")
+    expect(page.locator("#inviteNote")).to_have_text(re.compile(r"Invite link copied|room=K7QP"))
+    page.keyboard.press("Escape")
+    expect(page.locator("#inviteOv")).to_be_hidden()
+    # So does the menu.
+    page.click("#menuBtn")
+    page.click("#pauseInviteBtn")
+    expect(page.locator("#inviteOv")).to_be_visible()
+    expect(page.locator("#pause")).to_be_hidden()
+    page.click("#inviteDone")
+    expect(page.locator("#inviteOv")).to_be_hidden()
+    assert errors == []
 
 
 def test_a_name_is_needed(page: Page, site_url, errors):
