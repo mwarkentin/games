@@ -176,7 +176,7 @@ def test_a_seven_over_a_six_is_a_six_seven(page: Page, site_url, errors):
     expect(show.locator(".ss-hand")).to_have_count(2)
     # The banner still says who won, and the caption has a line of its own.
     expect(page.locator("#banner")).to_have_text("YOU WIN!")
-    expect(page.locator("#caption")).to_contain_text("Six… ")
+    expect(page.locator("#caption")).to_contain_text(re.compile(r"six… seven", re.I))
     expect(page.locator("#caption")).to_contain_text("Sir Wombat's six")
     assert page.evaluate(SIX_SEVEN) == {"kind": "full", "winner": 0, "six": 1, "k": 1}
     # It bobs, takes no taps, fits the phone and is gone before the next battle.
