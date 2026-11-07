@@ -547,6 +547,89 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px s
 .vs.calm .vs-word { font-size: min(22vw, 120px); }
 .vs-fight.calm b { transform: none; font-size: min(16vw, 90px); }
 
+/* The joker war: when the tied cards are jokers, a giant pixel jester takes
+   over from the versus intro and laughs until the war opens. Like the intro
+   it's only a picture in #fx, and --k scales it to the time before the war
+   opens. Its canvases are drawn at one pixel per sprite pixel and scaled up;
+   the jaw drops in whole sprite pixels (--row is one row's height). Level 2
+   is a joker war that ties on jokers again: red eyes and two more jesters. */
+.jk {
+  --k: 1; --out: 2550ms; --row: calc(100% / 52); --eye: #b8ff3a; --eye-glow: rgba(150, 255, 40, .9);
+  --sky-a: rgba(40, 6, 52, .82); --sky-b: rgba(4, 0, 10, .9);
+  position: absolute; inset: 0; display: grid; place-items: center; align-content: center; gap: 4px;
+  padding: calc(env(safe-area-inset-top) + 8px) calc(env(safe-area-inset-right) + 8px) calc(env(safe-area-inset-bottom) + 8px) calc(env(safe-area-inset-left) + 8px);
+  animation: jk-out calc(300ms * var(--k)) ease-in calc(var(--out) * var(--k)) forwards;
+}
+.jk.lv2 { --eye: #ff4a3a; --eye-glow: rgba(255, 50, 30, .95); --sky-a: rgba(70, 0, 20, .86); --sky-b: rgba(10, 0, 4, .92); }
+.jk-sky {
+  position: absolute; inset: 0; background: radial-gradient(ellipse at 50% 42%, var(--sky-a), var(--sky-b) 75%);
+  animation: jk-sky calc(260ms * var(--k)) ease-out both;
+}
+@keyframes jk-sky { from { opacity: 0; } }
+@keyframes jk-out { to { opacity: 0; transform: scale(1.08); } }
+.jk-fig {
+  position: relative; height: min(56vh, 480px, 125vw); aspect-ratio: 40 / 52;
+  transform-origin: 50% 85%;
+  animation:
+    jk-rise calc(420ms * var(--k)) cubic-bezier(.2, 1.3, .4, 1) both,
+    jk-shake max(240ms, calc(420ms * var(--k))) ease-in-out calc(420ms * var(--k)) infinite;
+}
+.jk-fig canvas { position: absolute; inset: 0; width: 100%; height: 100%; image-rendering: pixelated; image-rendering: crisp-edges; }
+.jk-jaw { animation: jk-jaw max(200ms, calc(300ms * var(--k))) steps(1) calc(380ms * var(--k)) infinite; }
+.jk-eyes { filter: drop-shadow(0 0 6px var(--eye-glow)); animation: jk-eyes 1300ms steps(1) infinite; }
+@keyframes jk-rise { from { transform: translateY(60vh) scale(.5); } }
+@keyframes jk-shake {
+  0%, 100% { rotate: -4deg; }
+  50% { rotate: 4deg; }
+}
+@keyframes jk-jaw {
+  0% { transform: translateY(calc(var(--row) * 4)); }
+  50% { transform: none; }
+}
+/* Two dips a cycle, so the eyes flicker less than twice a second. */
+@keyframes jk-eyes {
+  0%, 30%, 40%, 72%, 80% { opacity: 1; }
+  32% { opacity: .25; }
+  74% { opacity: .5; }
+}
+.jk.lv2 .jk-fig { height: min(60vh, 520px, 130vw); }
+.jk-twin { position: absolute; top: 18%; height: min(34vh, 300px); aspect-ratio: 40 / 52; opacity: .85; }
+.jk-twin canvas { position: absolute; inset: 0; width: 100%; height: 100%; image-rendering: pixelated; image-rendering: crisp-edges; }
+.jk-twin.l { left: -6%; animation: jk-twin-l calc(500ms * var(--k)) cubic-bezier(.2, 1.3, .4, 1) calc(200ms * var(--k)) both; }
+.jk-twin.r { right: -6%; animation: jk-twin-r calc(500ms * var(--k)) cubic-bezier(.2, 1.3, .4, 1) calc(320ms * var(--k)) both; }
+.jk-twin .jk-jaw { animation-duration: max(170ms, calc(260ms * var(--k))); }
+@keyframes jk-twin-l { from { transform: translateX(-60vw) rotate(-30deg); } to { transform: rotate(-12deg); } }
+@keyframes jk-twin-r { from { transform: translateX(60vw) rotate(30deg); } to { transform: rotate(12deg); } }
+.jk-word {
+  position: relative; font: 400 min(13vw, 72px)/.9 "Black Ops One", Impact, "Arial Black", system-ui, sans-serif;
+  color: #fff; white-space: nowrap; text-align: center; max-width: calc(100vw - 16px);
+  -webkit-text-stroke: max(2px, .04em) #12001a; paint-order: stroke fill;
+  text-shadow: 0 .06em 0 #12001a, 0 0 .3em var(--eye-glow);
+  animation: jk-word calc(260ms * var(--k)) cubic-bezier(.2, 1.6, .4, 1) calc(300ms * var(--k)) both;
+}
+.jk-pre { font-size: min(8vw, 40px); display: block; }
+@keyframes jk-word { from { transform: scale(0) rotate(-8deg); } }
+.jk-cards { position: relative; display: flex; justify-content: center; gap: 6px; animation: jk-word calc(260ms * var(--k)) cubic-bezier(.2, 1.6, .4, 1) calc(420ms * var(--k)) both; }
+.jk-cards .card { --w: min(13vw, 54px); }
+.jk-cards .card:nth-child(odd) { rotate: -8deg; }
+.jk-cards .card:nth-child(even) { rotate: 8deg; }
+.jk-ha {
+  position: absolute; font: 400 min(10vw, 44px)/1 "Black Ops One", Impact, "Arial Black", system-ui, sans-serif;
+  color: var(--eye); -webkit-text-stroke: 2px #12001a; paint-order: stroke fill; white-space: nowrap;
+  animation: jk-ha calc(900ms * var(--k)) ease-out both;
+}
+@keyframes jk-ha {
+  0% { transform: scale(0) rotate(var(--r)); opacity: 0; }
+  25% { transform: scale(1.15) rotate(var(--r)); opacity: 1; }
+  70% { opacity: 1; }
+  100% { transform: translateY(-30px) scale(1) rotate(var(--r)); opacity: 0; }
+}
+/* Someone else's joker war at a big table: the strip, with a joker in it. */
+.vs-lite canvas { width: 30px; height: 39px; image-rendering: pixelated; image-rendering: crisp-edges; }
+/* Reduced motion: the joker grins, standing still. */
+.jk.calm, .jk.calm * { animation: none; }
+.jk.calm .jk-jaw { transform: translateY(calc(var(--row) * 2)); }
+
 /* Overlays */
 .overlay {
   position: fixed; inset: 0; z-index: 20; display: flex; flex-direction: column; align-items: center; overflow-y: auto;
@@ -1388,6 +1471,65 @@ const Sound = {
     this.tone(392 * up, 0.02, 0.32, { type: 'square', gain: 0.07, to: 784 * up });
     this.tone(523 * up, 0.08, 0.3, { type: 'sawtooth', gain: 0.05 });
   },
+  // The joker's laugh: "ha"s on a buzzy voice through two vowel filters,
+  // each lower than the last, the last one held, in an echoing hall. Level 2
+  // is deeper and longer, with a growl an octave down. `k` squeezes it into
+  // a fast game.
+  laugh(level, k = 1, quiet = false) {
+    const ctx = this.ready();
+    if (!ctx) return;
+    const t0 = ctx.currentTime + 0.03;
+    const out = ctx.createGain();
+    out.gain.value = quiet ? 0.35 : 1;
+    const echo = ctx.createDelay(1);
+    echo.delayTime.value = 0.21;
+    const back = ctx.createGain();
+    back.gain.value = 0.32;
+    const wet = ctx.createGain();
+    wet.gain.value = 0.45;
+    out.connect(ctx.destination);
+    out.connect(echo);
+    echo.connect(back).connect(echo);
+    echo.connect(wet).connect(ctx.destination);
+    const step = 0.17 * Math.max(0.65, Math.min(1, k));
+    const has = level >= 2 ? 9 : 6;
+    const voices = level >= 2 ? [[150, 'sawtooth', 0.7], [75, 'square', 0.28]] : [[230, 'sawtooth', 0.8]];
+    for (let i = 0; i < has; i++) {
+      const last = i === has - 1;
+      const t = t0 + i * step + (last ? step * 0.4 : 0);
+      const len = last ? 0.6 : step * 0.75;
+      for (const [base, type, gain] of voices) {
+        const f = base * (1.45 - (i / has) * 0.5);
+        const osc = ctx.createOscillator();
+        osc.type = type;
+        osc.frequency.setValueAtTime(f * 1.12, t);
+        osc.frequency.exponentialRampToValueAtTime(f * (last ? 0.7 : 0.88), t + len);
+        const wobble = ctx.createOscillator();
+        const depth = ctx.createGain();
+        wobble.frequency.value = last ? 6 : 9;
+        depth.gain.value = f * 0.05;
+        wobble.connect(depth).connect(osc.frequency);
+        const amp = ctx.createGain();
+        amp.gain.setValueAtTime(0.0001, t);
+        amp.gain.exponentialRampToValueAtTime(gain, t + 0.02);
+        amp.gain.exponentialRampToValueAtTime(0.0001, t + len);
+        for (const [hz, q] of [[780, 5], [1180, 6]]) {
+          const vowel = ctx.createBiquadFilter();
+          vowel.type = 'bandpass';
+          vowel.frequency.value = hz;
+          vowel.Q.value = q;
+          osc.connect(vowel).connect(amp);
+        }
+        amp.connect(out);
+        osc.start(t);
+        wobble.start(t);
+        osc.stop(t + len + 0.05);
+        wobble.stop(t + len + 0.05);
+      }
+      // The h of each ha: a breath.
+      this.noise(t - ctx.currentTime - 0.015, 0.05, quiet ? 0.02 : 0.05, 2600);
+    }
+  },
   blip(tier) { this.tone(300 + tier * 90, 0, 0.06, { type: 'square', gain: 0.04 }); },
   swish() { this.noise(0, 0.14, 0.07, 1800); },
   // A deck squared up: a riffle, then a tap on the table.
@@ -1947,8 +2089,9 @@ const VS_HIT = [620, 900, 900];   // when WAR lands at each level, ms; as in the
 const Versus = {
   last: null,      // what the last intro showed, for tests: see __war.versus()
   fightFor: null,  // the war stage that gets a FIGHT! when it opens
+  jokers: null,    // the last tie on jokers, { battle, stage, level }, to spot one that ties again
   clear() {
-    for (const node of $('fx').querySelectorAll('.vs, .vs-fight, .vs-lite')) node.remove();
+    for (const node of $('fx').querySelectorAll('.vs, .vs-fight, .vs-lite, .jk')) node.remove();
     this.fightFor = null;
   },
   // A war broke out: m is the flip that tied.
@@ -1967,24 +2110,35 @@ const Versus = {
     const order = fighters.includes(S.you) ? [S.you, ...fighters.filter((s) => s !== S.you)] : fighters.slice();
     const shown = order.slice(0, full ? VS_SHOWN : 3);
     const more = n - shown.length;
-    this.last = { kind: !full ? 'lite' : calm ? 'calm' : 'full', level, depth, fighters: shown.map(playerName), more };
+    const card = (seat) => m.plays.find((p) => p[0] === seat)?.[2];
+    // Tied on jokers? Then the joker takes over, bigger if the last war tied
+    // on jokers too.
+    const isJoker = (seat) => { const c = card(seat); return c !== undefined && warRank(c) === JOKER; };
+    const was = this.jokers;
+    const joker = m.tied.length && m.tied.every(isJoker)
+      ? (was && was.battle === m.battle && was.stage === m.stage - 1 ? 2 : 1) : 0;
+    this.jokers = joker ? { battle: m.battle, stage: m.stage, level: joker } : null;
+    this.last = { kind: !full ? 'lite' : calm ? 'calm' : 'full', level, depth, fighters: shown.map(playerName), more, joker };
     if (!full) {
-      const strip = el('div', 'vs-lite' + (calm ? ' calm' : ''));
+      const strip = el('div', 'vs-lite' + (calm ? ' calm' : '') + (joker ? ' joker' : ''));
       strip.style.setProperty('--k', k);
       strip.setAttribute('aria-hidden', 'true');
+      if (joker) strip.append(jokerLayer('still', deckOf(order[0]), JK_EYES[joker - 1]));
       shown.forEach((seat, i) => {
         if (i) strip.append(el('small', '', 'vs'));
         strip.append(el('span', '', avatarOf(seat)));
       });
-      strip.append(el('b', '', depth > 1 ? `${VS_PRE[level - 1] || 'MEGA'} WAR!` : 'WAR!'));
+      const word = joker ? 'JOKER WAR!' : 'WAR!';
+      strip.append(el('b', '', depth > 1 ? `${VS_PRE[level - 1] || 'MEGA'} ${word}` : word));
       if (more > 0) strip.append(el('small', '', `+${more}`));
       strip.addEventListener('animationend', () => strip.remove(), { once: true });
       if (calm) later(() => strip.remove(), 1100 * k);
       $('fx').append(strip);
-      Sound.war(true);
+      if (joker) Sound.laugh(joker, k, true);
+      else Sound.war(true);
       return;
     }
-    const card = (seat) => m.plays.find((p) => p[0] === seat)?.[2];
+    if (joker) { this.joker(m, { k, calm, order, shown, depth, level, n, card, joker }); return; }
     const fighter = (seat) => {
       const look = deckOf(seat);
       const node = el('div', 'vs-f');
@@ -2048,7 +2202,168 @@ const Versus = {
     $('fx').append(node);
     Sound.fight(f.level);
   },
+  // A war tied on jokers: the giant jester laughs in place of the intro, and
+  // FIGHT! still lands as the war opens.
+  joker(m, { k, calm, order, shown, depth, level, n, card, joker }) {
+    const next = m.next;
+    const eye = JK_EYES[joker - 1];
+    const root = el('div', `jk lv${joker}` + (calm ? ' calm' : ''));
+    root.style.setProperty('--k', k);
+    root.setAttribute('aria-hidden', 'true');  // #banner and the caption say it all
+    root.append(el('div', 'jk-sky'));
+    // Its cap is in your deck's colors, or the first fighter's if you're watching.
+    if (joker >= 2) {
+      root.append(jokerFigure('jk-twin l', deckOf(order[1] ?? order[0]), eye));
+      root.append(jokerFigure('jk-twin r', deckOf(order[2] ?? order[1] ?? order[0]), eye));
+    }
+    root.append(jokerFigure('jk-fig', deckOf(order[0]), eye));
+    const word = el('div', 'jk-word');
+    const pre = [depth > 1 ? VS_PRE[level - 1] || 'MEGA' : '', n > 2 ? `${n}-WAY` : ''].filter(Boolean).join(' ');
+    if (pre) word.append(el('span', 'jk-pre', pre));
+    word.append(document.createTextNode('JOKER WAR!'));
+    // The jokers that tied, each in its owner's deck.
+    const cards = el('div', 'jk-cards');
+    for (const seat of shown) { const c = card(seat); if (c !== undefined) cards.append(cardEl(c, deckOf(seat))); }
+    root.append(word, cards);
+    $('fx').append(root);
+    later(() => root.remove(), next.opensIn);
+    this.fightFor = { battle: next.battle, stage: depth, level, calm };
+    Sound.laugh(joker, k);
+    if (calm) return;
+    later(() => { if (root.isConnected) shake(70 + joker * 30); }, 380 * k);
+    const has = joker >= 2 ? 6 : 3;
+    for (let i = 0; i < has; i++) {
+      later(() => {
+        if (!root.isConnected) return;
+        const ha = el('span', 'jk-ha', JK_HA[i % JK_HA.length]);
+        const left = i % 2 === 0;
+        ha.style.left = (left ? 4 + Math.random() * 18 : 52 + Math.random() * 18) + '%';
+        ha.style.top = (14 + ((i * 17) % 40)) + '%';
+        ha.style.setProperty('--r', (left ? -1 : 1) * (6 + Math.random() * 12) + 'deg');
+        ha.addEventListener('animationend', () => ha.remove(), { once: true });
+        root.append(ha);
+      }, (480 + (i * 1700) / has) * k);
+    }
+  },
 };
+
+// ---- The joker war ----
+//
+// When the cards that tie are jokers, a giant pixel jester takes over from
+// the versus intro and laughs until the war opens. A joker war that ties on
+// jokers again gets level 2: red eyes and two more jesters. Like the intro
+// it's only a picture, and at a big table someone else's joker war gets the
+// strip with a little joker in it.
+
+// The jester, drawn as the left half of a 40 by 52 picture and mirrored.
+// K outline, A/a cap, B/b flaps, D band, Y/y bells, W/w face, E eyes (drawn
+// dark here and lit on a layer of their own, so they can flicker), R red,
+// M mouth, r tongue, T teeth, C/c ruff.
+const JK_HEAD = [
+  '..................KY',
+  '.................KYy',
+  '.................KYy',
+  '..................KK',
+  '..................KA',
+  '..KKKKK..........KAA',
+  '.KBBBBBKK.......KAAA',
+  'KBBbbbBBBKK....KAAAa',
+  'KBbKKKKbBBBK..KAAAAa',
+  'KBK....KKbBBKKAAAAAa',
+  'KBK......KbBBKAAAAAa',
+  'KKK......KbBBKAAAAAa',
+  'KYYK.....KbBBKAAAAAa',
+  'KYyK....KDDDDDDDDDDD',
+  '.KK.....KDYDDDDYDDDD',
+  '........KKKKKKKKKKKK',
+  '.......KWWWWWWWWWWWW',
+  '......KWWWWWWWWWWWWW',
+  '......KWWKWWWWWWWWWW',
+  '.....KWWWKKKWWWWWWWW',
+  '.....KWWWWKKKKWWWWWW',
+  '.....KWWWKEEEKKWWWWW',
+  '.....KWWWKEEKEKKWWWW',
+  '.....KWWWwKEKEKwWWWW',
+  '.....KWWWWwKKKwWWWWW',
+  '.....KWRRWWwwwWWWWRR',
+  '.....KWRRWWWWWWWWRRR',
+  '.....KWKWWWWWWWWWWRR',
+  '.....KWWKWWWWWWWWWWW',
+  '.....KWWKKWWWWWWWWWW',
+  '.....KWWKMKKWWWWWWWW',
+  '.....KWWKMTTKKKKWWWW',
+  '.....KWWKMMTTTTTKKKK',
+  '.....KWWKMMMTTTTTTTT',
+  '.....KWWKMMMMTMMTMMT',
+  '.....KWWKMMMMMMMMMMM',
+  '.....KWWKMMMMMMMrrrr',
+  '.....KWWKMMMMMrrrrrr',
+  '.....KWWKMMMMMrrrrrr',
+];
+const JK_SPLIT = 35;  // the row where the jaw starts
+const JK_JAW = [
+  '.....KWWKMMMMMTMMTMM',
+  '.....KWWKKMMTTTTTTTT',
+  '.....KWWWKKKTTTTTTTT',
+  '.....KWWWWWKKKKKKKKK',
+  '......KWWWWWWWWWWWWW',
+  '......KKWWWWWWWWWWWW',
+  '.......KKKWWWWWWWWWW',
+  '......KCKKKKWWWWWWWW',
+  '.....KCCcCCKKKKKKKKK',
+  '....KCCcCCcCCcCCcCCc',
+  '...KCCcCCcCCcCCcCCcC',
+  '...KKKKKKKKKKKKKKKKK',
+];
+const JK_W = 40, JK_H = 52;
+const JK_INK = {
+  K: '#1a0a1e', D: '#ffc93d', Y: '#ffd84a', y: '#c79a1e', W: '#f3e9d8', w: '#cbbfae', E: '#2a0610',
+  R: '#e0303a', M: '#3a0612', r: '#c2304a', T: '#fffbe8', C: '#fffdf6',
+};
+// Each deck's colors for the cap, the flaps and the ruff's checks.
+const JK_CAPS = {
+  classic: ['#c8322e', '#8f1c19', '#2b2b33', '#141418'],
+  neon: ['#ff2fd0', '#a3108a', '#20e3ff', '#0b8fb0'],
+  pixel: ['#3ec43e', '#1f7a1f', '#ffd23d', '#c79a1e'],
+  royal: ['#1f6b45', '#0f4028', '#d9a521', '#9c7410'],
+  space: ['#6a3cff', '#3a1aa8', '#1ad1c4', '#0d8a81'],
+  spooky: ['#ff7a1a', '#b44c06', '#5b2a86', '#361650'],
+  candy: ['#ff6fb5', '#c43d84', '#7fe0c3', '#3fa98a'],
+};
+
+// One layer of the jester as a canvas: 'head', 'jaw' or 'eyes', or 'still'
+// for all of it in one, mouth shut and eyes lit.
+function jokerLayer(layer, look, eye) {
+  const canvas = document.createElement('canvas');
+  canvas.width = JK_W;
+  canvas.height = JK_H;
+  canvas.className = 'jk-' + layer;
+  const ctx = canvas.getContext && canvas.getContext('2d');
+  if (!ctx) return canvas;
+  const [A, a, B, b] = JK_CAPS[look] || JK_CAPS.classic;
+  const ink = { ...JK_INK, A, a, B, b, c: A };
+  if (eye) ink.E = eye;
+  const paint = (rows, top) => rows.forEach((half, y) => {
+    const row = half + [...half].reverse().join('');
+    [...row].forEach((ch, x) => {
+      if (ch === '.' || (layer === 'eyes' && ch !== 'E')) return;
+      ctx.fillStyle = ink[ch];
+      ctx.fillRect(x, top + y, 1, 1);
+    });
+  });
+  if (layer !== 'jaw') paint(JK_HEAD, 0);
+  if (layer === 'jaw' || layer === 'still') paint(JK_JAW, JK_SPLIT);
+  return canvas;
+}
+
+// The whole jester, its layers stacked, eyes lit in `eye`.
+function jokerFigure(cls, look, eye) {
+  const fig = el('div', cls);
+  fig.append(jokerLayer('head', look), jokerLayer('jaw', look), jokerLayer('eyes', look, eye));
+  return fig;
+}
+const JK_EYES = ['#b8ff3a', '#ff4a3a'];  // by level, as in the CSS (--eye)
+const JK_HA = ['HA!', 'HA HA!', 'HEE HEE!', 'HA!', 'HAAA!', 'HO HO!'];
 
 function floatCheer(seat, e) {
   const tile = seat === S.you ? $('myPile') : tiles.get(seat)?.node;
@@ -4598,8 +4913,8 @@ function renderStyles() {
 
 init();
 
-// #debug exposes hooks for tests: music() says what's playing and
-// musicLevels() measures every song; state() reads the table, slam(power) slams
+// #debug exposes hooks for tests: music() says what's playing,
+// musicLevels() measures every song and laughLevels() the joker's laugh; state() reads the table, slam(power) slams
 // right away (every card, in a war), input(mode) picks how you slam, hurry()
 // runs your clock down to its last moment,
 // finish() plays a solo game out, pace(p) speeds a solo game up,
@@ -4627,6 +4942,21 @@ if (DEBUG) {
     deck: (key) => setDeck(key),
     versus: () => Versus.last,
     music: () => ({ on: Music.on, song: Music.want, playing: Music.song, songs: Object.keys(SONGS) }),
+    // How loud the joker's laugh gets at each level: rendered offline.
+    laughLevels: async () => {
+      const levels = {};
+      const real = Sound.ready;
+      for (const level of [1, 2]) {
+        const ctx = new OfflineAudioContext(1, 22050 * 3, 22050);
+        Sound.ready = () => ctx;
+        try { Sound.laugh(level); } finally { Sound.ready = real; }
+        const audio = (await ctx.startRendering()).getChannelData(0);
+        let peak = 0, sum = 0;
+        for (const v of audio) { peak = Math.max(peak, Math.abs(v)); sum += v * v; }
+        levels[level] = { peak, rms: Math.sqrt(sum / audio.length) };
+      }
+      return levels;
+    },
     // How loud each song gets: rendered offline, as the game would play it.
     musicLevels: async () => {
       const levels = {};

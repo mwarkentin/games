@@ -616,6 +616,15 @@ def test_every_song_plays_well_below_clipping(page: Page, site_url, errors):
     assert errors == []
 
 
+def test_the_jokers_laugh_is_loud_but_not_clipping(page: Page, site_url, errors):
+    page.goto(f"{site_url}/war#debug")
+    levels = page.evaluate("window.__war.laughLevels()")
+    for level in ("1", "2"):
+        assert levels[level]["peak"] < 0.9, f"level {level} is too loud"
+        assert levels[level]["rms"] > 0.01, f"level {level} is too quiet"
+    assert errors == []
+
+
 def test_music_follows_the_game_and_can_be_turned_off(page: Page, site_url, errors):
     page.goto(f"{site_url}/war?seed={WAR_SEED}#debug")
     assert page.evaluate(f"{MUSIC}.playing") is None, "no music before the first tap"

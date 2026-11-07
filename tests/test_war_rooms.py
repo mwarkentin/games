@@ -365,3 +365,140 @@ def test_a_many_way_war_at_a_big_table(page: Page, site_url, errors):
     expect(page.locator("#fx .vs")).to_have_count(0)
     assert page.evaluate("window.__war.versus()")["kind"] == "lite"
     assert errors == []
+
+
+VERSUS = "window.__war.versus()"
+
+
+def deal_head_to_head(page: Page, site_url, fake: FakeWarRoom) -> None:
+    open_war(page, site_url, fake)
+    start_room(page)
+    page.click("#botMore")
+    expect(page.locator("#people .person")).to_have_count(2)
+    page.click("#dealBtn")
+    page.wait_for_function(f"{STATE}.canSlam")
+    page.evaluate("window.__war.slam(90)")
+
+
+def tie(fake: FakeWarRoom, up: list[int], battle: int = 1, stage: int = 0, opens_in: int = 3000) -> None:
+    """The room says both players tied on these cards, so a war breaks out."""
+    downs = 3 if stage else 0
+    fake.broadcast({
+        "t": "flip", "battle": battle, "stage": stage, "winner": None, "tied": [0, 1], "gods": False, "pot": 2 + stage * 8,
+        "plays": [[s, downs, up[s], 90, 1, 0] for s in (0, 1)], "counts": [26 - stage * 4] * 2, "out": [],
+        "next": fake.stage(battle, stage=stage + 1, fighters=[0, 1], opens_in=opens_in),
+    })
+
+
+def test_a_joker_war_brings_out_the_giant_joker(page: Page, site_url, errors):
+    fake = FakeWarRoom()
+    deal_head_to_head(page, site_url, fake)
+
+    # The red and the black joker meet: the giant joker laughs instead of the
+    # usual versus intro.
+    tie(fake, [joker(0), joker(1)])
+    expect(page.locator("#banner")).to_have_text("WAR!")
+    show = page.locator("#fx .jk")
+    expect(show).to_have_class(re.compile(r"\blv1\b"))
+    expect(show.locator(".jk-fig canvas")).to_have_count(3)
+    expect(show.locator(".jk-word")).to_have_text("JOKER WAR!")
+    expect(show.locator(".jk-cards .card.joker")).to_have_count(2)
+    expect(page.locator("#fx .vs")).to_have_count(0)
+    assert page.evaluate(VERSUS)["joker"] == 1
+    # It's drawn in the page, pixel by pixel: the cap and the glowing eyes.
+    lit = page.evaluate("""(() => {
+        const eyes = document.querySelector('#fx .jk .jk-eyes').getContext('2d').getImageData(0, 0, 40, 52).data;
+        let n = 0; for (let i = 3; i < eyes.length; i += 4) if (eyes[i]) n++;
+        return n;
+    })()""")
+    assert lit > 6, "the eyes glow"
+    assert page.evaluate("getComputedStyle(document.getElementById('fx')).pointerEvents") == "none"
+    # It fits a phone without anything scrolling sideways.
+    assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
+
+    # The war opens on time and slamming works while the joker's still going.
+    page.wait_for_function(f"{STATE}.stage === 1 && {STATE}.canSlam")
+    hold_slam(page, 250)
+    expect(page.locator("#myWar .wpile .card")).to_have_count(1)
+    expect(page.locator("#fx .jk")).to_have_count(0)
+    page.evaluate("window.__war.slam(90)")
+
+    # The war ties on jokers again: an even bigger joker war, with company.
+    tie(fake, [joker(0), joker(1)], stage=1)
+    show = page.locator("#fx .jk")
+    expect(show).to_have_class(re.compile(r"\blv2\b"))
+    expect(show.locator(".jk-twin")).to_have_count(2)
+    expect(show.locator(".jk-pre")).to_have_text("DOUBLE")
+    assert page.evaluate(VERSUS)["joker"] == 2
+    assert errors == []
+
+
+def test_jokers_can_tie_while_the_joker_is_still_laughing(page: Page, site_url, errors):
+    fake = FakeWarRoom()
+    deal_head_to_head(page, site_url, fake)
+    tie(fake, [joker(1), joker(0)], opens_in=1200)
+    expect(page.locator("#fx .jk")).to_have_count(1)
+    # Slam the moment the war opens, before the joker would have finished in a
+    # slower game: nothing waits for it.
+    page.wait_for_function(f"{STATE}.stage === 1 && {STATE}.canSlam")
+    assert page.evaluate("window.__war.slam(120)") is True
+    assert [m["n"] for m in fake.messages("card")] == [0, 1, 2]
+    assert errors == []
+
+
+def test_an_ordinary_war_keeps_the_versus_intro(page: Page, site_url, errors):
+    fake = FakeWarRoom()
+    deal_head_to_head(page, site_url, fake)
+    tie(fake, [card(11), card(11, 2)])  # two kings
+    expect(page.locator("#fx .vs")).to_have_count(1)
+    expect(page.locator("#fx .jk")).to_have_count(0)
+    assert page.evaluate(VERSUS)["joker"] == 0
+    assert errors == []
+
+
+def test_reduced_motion_gets_a_still_joker(page: Page, site_url, errors):
+    page.emulate_media(reduced_motion="reduce")
+    fake = FakeWarRoom()
+    deal_head_to_head(page, site_url, fake)
+    tie(fake, [joker(0), joker(1)])
+    show = page.locator("#fx .jk")
+    expect(show).to_have_class(re.compile(r"\bcalm\b"))
+    expect(show.locator(".jk-fig")).to_be_visible()
+    expect(show.locator(".jk-word")).to_have_text("JOKER WAR!")
+    # Nothing moves: no rising, laughing, shaking or flickering.
+    moving = page.evaluate("document.getAnimations().filter((a) => a.effect && a.effect.target && a.effect.target.closest && a.effect.target.closest('.jk')).length")
+    assert moving == 0
+    page.wait_for_timeout(1200)
+    assert page.locator("#fx .jk-ha").count() == 0
+    assert page.evaluate("document.getElementById('app').classList.contains('shake')") is False
+    page.wait_for_function(f"{STATE}.stage === 1 && {STATE}.canSlam")
+    expect(page.locator("#fx .jk")).to_have_count(0)
+    assert errors == []
+
+
+def test_someone_elses_joker_war_at_a_big_table_is_a_strip(page: Page, site_url, errors):
+    fake = FakeWarRoom()
+    open_war(page, site_url, fake)
+    start_room(page)
+    for n in range(5):
+        page.click("#botMore")
+        expect(page.locator("#people .person")).to_have_count(n + 2)
+    page.click("#dealBtn")
+    page.wait_for_function(f"{STATE}.canSlam")
+    page.evaluate("window.__war.slam(90)")
+    # Two bots turn over jokers; you don't. A big table has more decks, so
+    # more jokers.
+    plays = [[0, 0, card(5), 90, 1, 0], [1, 0, joker(0), 90, 1, 0], [2, 0, joker(1) + 54, 90, 1, 0]]
+    plays += [[s, 0, card(2, s % 4), 90, 1, 0] for s in range(3, 6)]
+    fake.broadcast({
+        "t": "flip", "battle": 1, "stage": 0, "winner": None, "tied": [1, 2], "gods": False, "pot": 6,
+        "plays": plays, "counts": [26] * 6, "out": [],
+        "next": fake.stage(1, stage=1, fighters=[1, 2], opens_in=3000),
+    })
+    strip = page.locator("#fx .vs-lite")
+    expect(strip).to_have_class(re.compile(r"\bjoker\b"))
+    expect(strip.locator("canvas")).to_have_count(1)
+    expect(strip.locator("b")).to_have_text("JOKER WAR!")
+    expect(page.locator("#fx .jk")).to_have_count(0)
+    assert page.evaluate(VERSUS)["kind"] == "lite"
+    assert errors == []
