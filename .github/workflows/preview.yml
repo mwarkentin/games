@@ -148,7 +148,8 @@ jobs:
           output="$(npx --yes wrangler@4.151.0 preview --name "$PREVIEW" \
             --message "${{ github.event.pull_request.head.sha }}" --json)"
           printf '%s\n' "$output"
-          url="$(printf '%s' "$output" | jq -er '.preview.urls[0]')"
+          # With assets, wrangler logs the upload on stdout before the JSON.
+          url="$(printf '%s\n' "$output" | sed -n '/^{$/,$p' | jq -er '.preview.urls[0]')"
           url="${url%/}"
           expected="https://$PREVIEW-games-preview.$WORKERS_DEV"
           if [ "$url" != "$expected" ]; then
