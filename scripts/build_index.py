@@ -3,6 +3,7 @@
 
 The recent lists replace whatever sits between the
 <!-- recently starts --> and <!-- recently stops --> markers in README.md.
+Each date links to the game's changelog, or its colophon entry if it has none.
 
 Adapted from build_index.py in https://github.com/simonw/tools by Simon
 Willison, licensed under the Apache License 2.0 (see LICENSE). Changed: shares
@@ -57,7 +58,8 @@ def render_recent(games: list[dict]) -> str:
             continue
         items = "\n".join(
             f'<li><a href="{game["url"]}">{html.escape(game["title"])}</a>'
-            f' <a class="muted" href="/colophon#{game["filename"]}">{format_date(game["when"])}</a></li>'
+            f' <a class="muted" href="{game.get("changelog") or "/colophon#" + game["filename"]}">'
+            f'{format_date(game["when"])}</a></li>'
             for game in entries
         )
         sections.append(f"<section><h2>{heading}</h2>\n<ul>\n{items}\n</ul></section>")

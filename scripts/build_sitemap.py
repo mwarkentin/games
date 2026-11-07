@@ -16,7 +16,8 @@ import xml.etree.ElementTree as ET
 from pathlib import Path
 from urllib.parse import quote
 
-from common import BASE_URL, GENERATED_PAGES, ROOT, parse_date
+from build_changelog import read_changelog
+from common import BASE_URL, GENERATED_PAGES, ROOT, changelog_apps, changelog_path, parse_date
 
 NAMESPACE = "http://www.sitemaps.org/schemas/sitemap/0.9"
 
@@ -26,12 +27,14 @@ def lastmod(value: str | None) -> str | None:
     return parsed.date().isoformat() if parsed else None
 
 
-def build_sitemap(games: list[dict]) -> str:
+def build_sitemap(games: list[dict], changelogs: dict[str, str] | None = None) -> str:
+    """changelogs maps each changelog's path to the date of its newest day."""
     entries = {game["url"]: lastmod(game.get("updated")) for game in games}
-    # Generated pages change whenever any game does.
+    # The home page and colophon change whenever any game does.
     newest = max((date for date in entries.values() if date), default=None)
     for path in GENERATED_PAGES.values():
         entries[path] = newest
+    entries.update(changelogs or {})
 
     ET.register_namespace("", NAMESPACE)
     urlset = ET.Element(f"{{{NAMESPACE}}}urlset")
@@ -47,9 +50,10 @@ def build_sitemap(games: list[dict]) -> str:
 def main() -> None:
     site_dir = Path(sys.argv[1] if len(sys.argv) > 1 else "_site")
     games = json.loads((ROOT / "games.json").read_text("utf-8"))
-    (site_dir / "sitemap.xml").write_text(build_sitemap(games), "utf-8")
+    changelogs = {changelog_path(app): read_changelog(app)[0][0].isoformat() for app in changelog_apps()}
+    (site_dir / "sitemap.xml").write_text(build_sitemap(games, changelogs), "utf-8")
     (site_dir / "robots.txt").write_text(f"Sitemap: {BASE_URL}/sitemap.xml\n", "utf-8")
-    print(f"Built sitemap.xml with {len(games) + len(GENERATED_PAGES)} URLs")
+    print(f"Built sitemap.xml with {len(games) + len(GENERATED_PAGES) + len(changelogs)} URLs")
 
 
 if __name__ == "__main__":

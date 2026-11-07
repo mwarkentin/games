@@ -7,7 +7,7 @@ import re
 import pytest
 from playwright.sync_api import Page
 
-from common import BASE_URL, ROOT, game_files
+from common import BASE_URL, ROOT, game_files, generated_pages
 from fake_leaderboard import WORKER_URL
 from page_changes import repeated_no_op_writes
 
@@ -93,7 +93,7 @@ def test_game_doesnt_keep_rewriting_its_page(page: Page, site_url, filename):
     assert repeated_no_op_writes(page) == {}, "only write what changed (see tests/page_changes.py)"
 
 
-@pytest.mark.parametrize("path", ["/", "/colophon"])
+@pytest.mark.parametrize("path", generated_pages().values())
 def test_generated_page_loads(page: Page, site_url, errors, path):
     page.set_viewport_size(SCREENS["phone"])
     page.goto(f"{site_url}{path}", wait_until="networkidle")
