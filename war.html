@@ -547,6 +547,79 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px s
 .vs.calm .vs-word { font-size: min(22vw, 120px); }
 .vs-fight.calm b { transform: none; font-size: min(16vw, 90px); }
 
+/* Six… seven!: a seven beat a six, so two palms weigh a big 6 and a big 7,
+   up and down in turn, and 6-7! pops between them. It's only a picture in
+   #fx, centred on the arena (--y) and gone before the next battle opens.
+   --k scales its 1.8-second timeline (less in Fast mode). */
+.ss {
+  --k: 1; --y: 40vh; --num: min(25vw, 128px); --hand: min(30vw, 150px);
+  position: absolute; left: 50%; top: var(--y); transform: translate(-50%, -50%);
+  width: min(calc(100vw - 16px - env(safe-area-inset-left) - env(safe-area-inset-right)), 420px);
+  height: calc(var(--num) + var(--hand) * .7 + 20px);
+  animation: ss-out calc(260ms * var(--k)) ease-in calc(1540ms * var(--k)) forwards;
+}
+/* A soft dim behind it, so the banner and caption underneath don't clash. */
+.ss::before {
+  content: ""; position: absolute; left: 50%; top: 50%; width: 150vw; height: 170%; transform: translate(-50%, -50%);
+  background: radial-gradient(closest-side, rgba(10, 4, 20, .62), rgba(10, 4, 20, .4) 60%, transparent);
+}
+.ss-side { position: absolute; bottom: 0; width: 46%; display: grid; justify-items: center; will-change: transform; }
+.ss-side.l { left: 0; animation: ss-l calc(1800ms * var(--k)) cubic-bezier(.45, 0, .55, 1) both; }
+.ss-side.r { right: 0; animation: ss-r calc(1800ms * var(--k)) cubic-bezier(.45, 0, .55, 1) both; }
+.ss-num {
+  font: 400 var(--num)/.85 "Black Ops One", Impact, "Arial Black", system-ui, sans-serif;
+  color: #ffe36b; -webkit-text-stroke: max(3px, .04em) #3b1500; paint-order: stroke fill;
+  text-shadow: 0 .06em 0 #3b1500, 0 0 .2em rgba(255, 170, 40, .85); margin-bottom: -.12em; position: relative; z-index: 1;
+}
+.ss-side.r .ss-num { color: #8ff0ff; text-shadow: 0 .06em 0 #3b1500, 0 0 .2em rgba(60, 200, 255, .85); }
+.ss-hand { width: var(--hand); height: calc(var(--hand) * .62); display: block; filter: drop-shadow(0 4px 3px rgba(0, 0, 0, .45)); }
+.ss-side.l .ss-hand { transform: scaleX(-1); }
+.ss-word {
+  position: absolute; left: 50%; top: 4%; transform: translateX(-50%); z-index: 2; white-space: nowrap;
+  font: 400 min(15vw, 76px)/1 "Black Ops One", Impact, "Arial Black", system-ui, sans-serif;
+  color: #fff; -webkit-text-stroke: max(3px, .05em) #6a0d4a; paint-order: stroke fill;
+  text-shadow: 0 .06em 0 #6a0d4a, 0 0 .25em rgba(255, 80, 200, .9);
+  animation: ss-pop calc(360ms * var(--k)) cubic-bezier(.2, 1.7, .4, 1) calc(1120ms * var(--k)) both;
+}
+.ss-say {
+  position: absolute; top: -6px; z-index: 2; font: 400 18px/1 var(--display); color: #fff; white-space: nowrap;
+  background: #2a0f3a; border: 2px solid #ffe36b; border-radius: 99px; padding: 4px 9px 3px; opacity: 0;
+}
+.ss-say.l { left: 2%; animation: ss-say calc(420ms * var(--k)) ease-out calc(260ms * var(--k)) both; }
+.ss-say.r { right: 2%; border-color: #8ff0ff; animation: ss-say calc(420ms * var(--k)) ease-out calc(520ms * var(--k)) both; }
+/* The 6 goes up as the 7 comes down, three times over, then both lift. */
+@keyframes ss-l {
+  0% { transform: translateY(60%) scale(.5); opacity: 0; }
+  10% { transform: translateY(0); opacity: 1; }
+  18% { transform: translateY(-24%) rotate(-4deg); }
+  26% { transform: translateY(8%) rotate(3deg); }
+  34% { transform: translateY(-24%) rotate(-4deg); }
+  42% { transform: translateY(8%) rotate(3deg); }
+  50% { transform: translateY(-24%) rotate(-4deg); }
+  58% { transform: translateY(8%) rotate(3deg); }
+  66%, 84% { transform: translateY(-14%) rotate(-8deg) scale(1.06); }
+  100% { transform: translateY(-14%) rotate(-8deg) scale(1.06); }
+}
+@keyframes ss-r {
+  0% { transform: translateY(60%) scale(.5); opacity: 0; }
+  10% { transform: translateY(0); opacity: 1; }
+  18% { transform: translateY(8%) rotate(-3deg); }
+  26% { transform: translateY(-24%) rotate(4deg); }
+  34% { transform: translateY(8%) rotate(-3deg); }
+  42% { transform: translateY(-24%) rotate(4deg); }
+  50% { transform: translateY(8%) rotate(-3deg); }
+  58% { transform: translateY(-24%) rotate(4deg); }
+  66%, 84% { transform: translateY(-14%) rotate(8deg) scale(1.06); }
+  100% { transform: translateY(-14%) rotate(8deg) scale(1.06); }
+}
+@keyframes ss-pop { from { transform: translateX(-50%) scale(.1) rotate(-14deg); opacity: 0; } to { transform: translateX(-50%) rotate(-4deg); opacity: 1; } }
+@keyframes ss-say { 0% { opacity: 0; transform: translateY(10px) scale(.6); } 30% { opacity: 1; transform: none; } 75% { opacity: 1; } 100% { opacity: 0; transform: translateY(-8px); } }
+@keyframes ss-out { to { opacity: 0; transform: translate(-50%, -50%) scale(.85); } }
+/* Reduced motion: the 6 and the 7 on their palms, standing still. */
+.ss.calm, .ss.calm .ss-side, .ss.calm .ss-word { animation: none; }
+.ss.calm .ss-say { display: none; }
+.ss.calm .ss-word { transform: translateX(-50%); }
+
 /* Overlays */
 .overlay {
   position: fixed; inset: 0; z-index: 20; display: flex; flex-direction: column; align-items: center; overflow-y: auto;
@@ -1388,6 +1461,14 @@ const Sound = {
     this.tone(392 * up, 0.02, 0.32, { type: 'square', gain: 0.07, to: 784 * up });
     this.tone(523 * up, 0.08, 0.3, { type: 'sawtooth', gain: 0.05 });
   },
+  // Six… seven!: a bouncy note each time a palm goes up, the six low and the
+  // seven high, then a springy boing as 6-7! pops. `k` scales it with the picture.
+  sixSeven(k) {
+    [0.324, 0.612, 0.9].forEach((t) => this.tone(392, t * k, 0.16, { type: 'square', gain: 0.06, to: 470 }));
+    [0.468, 0.756, 1.044].forEach((t) => this.tone(523, t * k, 0.16, { type: 'square', gain: 0.06, to: 628 }));
+    this.tone(330, 1.12 * k, 0.4, { type: 'triangle', gain: 0.16, to: 990 });
+    this.tone(659, 1.16 * k, 0.3, { type: 'square', gain: 0.04, to: 784 });
+  },
   blip(tier) { this.tone(300 + tier * 90, 0, 0.06, { type: 'square', gain: 0.04 }); },
   swish() { this.noise(0, 0.14, 0.07, 1800); },
   // A deck squared up: a riffle, then a tap on the table.
@@ -2050,6 +2131,73 @@ const Versus = {
   },
 };
 
+// ---- Six… seven! ----
+//
+// When a seven wins and the next best card turned up is a six (a 6 v 7, head
+// to head), two palms weigh a big 6 and a big 7, up and down in turn, and
+// 6-7! pops between them. Like the versus intro it's only a picture: it lives
+// in #fx, which takes no taps, waits for nothing and is gone before the next
+// battle opens. The banner says who won as ever; the caption gets its own line.
+
+// A palm held up, side on, fingers pointing right; the left one is mirrored.
+const SS_HAND = '<svg class="ss-hand" viewBox="0 0 160 100" aria-hidden="true">'
+  + '<path d="M18 100 L34 62 L62 62 L52 100 Z" fill="#3f6fd8" stroke="#1d2a55" stroke-width="4" stroke-linejoin="round"/>'
+  + '<path d="M30 66 C30 52 38 46 52 46 L136 46 C150 46 154 52 154 58 C154 64 150 68 140 68 L60 70 C44 72 34 72 30 66 Z" fill="#ffc83d" stroke="#6b3a00" stroke-width="4" stroke-linejoin="round"/>'
+  + '<path d="M50 48 C46 36 50 26 60 24 C68 22 72 30 72 38 L74 47" fill="#ffc83d" stroke="#6b3a00" stroke-width="4" stroke-linejoin="round"/>'
+  + '<path d="M96 52 L144 52 M92 60 L140 61" stroke="#c98a12" stroke-width="3" stroke-linecap="round" fill="none"/>'
+  + '</svg>';
+const SS_MS = 1800;  // the whole show at normal speed, ms; as in the CSS
+
+// Whether the flip m is a six… seven: a seven won it, and the best card
+// anyone else turned up is a six.
+function isSixSeven(m) {
+  if (m.winner === null || m.winner === undefined || m.gods) return false;
+  const win = m.plays.find((p) => p[0] === m.winner);
+  if (!win || typeof win[2] !== 'number' || warRank(win[2]) !== 5) return false;
+  let best = -1;
+  for (const p of m.plays) if (p[0] !== m.winner && typeof p[2] === 'number') best = Math.max(best, warRank(p[2]));
+  return best === 4;
+}
+
+const SixSeven = {
+  last: null,  // what the last one showed, for tests: see __war.sixSeven()
+  clear() { for (const node of $('fx').querySelectorAll('.ss')) node.remove(); },
+  show(m) {
+    const six = m.plays.find((p) => p[0] !== m.winner && typeof p[2] === 'number' && warRank(p[2]) === 4)[0];
+    const sixes = m.plays.filter((p) => p[0] !== m.winner && typeof p[2] === 'number' && warRank(p[2]) === 4).length;
+    const calm = reduceMotion.matches;
+    // It fits in the time before the next battle opens: 1.8 seconds, less when fast.
+    const room = m.next ? m.next.opensIn - 150 : SS_MS * pace();
+    const k = Math.max(0.2, Math.min(pace(), room / SS_MS));
+    this.clear();
+    for (const node of $('fx').querySelectorAll('.vs-fight')) node.remove();  // FIGHT! is old news
+    const root = el('div', 'ss' + (calm ? ' calm' : ''));
+    root.style.setProperty('--k', k);
+    const arena = $('arena');
+    if (arena.offsetParent !== null) root.style.setProperty('--y', centerOf(arena)[1] + 'px');
+    root.setAttribute('aria-hidden', 'true');  // the caption says it
+    const side = (cls, num) => {
+      const node = el('div', 'ss-side ' + cls);
+      node.append(el('div', 'ss-num', num));
+      node.insertAdjacentHTML('beforeend', SS_HAND);
+      return node;
+    };
+    root.append(side('l', '6'), side('r', '7'), el('div', 'ss-say l', 'SIX…'), el('div', 'ss-say r', 'SEVEN!'), el('div', 'ss-word', '6-7!'));
+    $('fx').append(root);
+    later(() => root.remove(), (calm ? 1400 : SS_MS) * k);
+    this.last = { kind: calm ? 'calm' : 'full', winner: m.winner, six, k };
+    const me = S.you;
+    const seven = m.winner === me ? 'your seven' : `${playerName(m.winner)}'s seven`;
+    const victim = six === me ? 'your six' : sixes > 1 ? 'a six' : `${playerName(six)}'s six`;
+    setText($('caption'), pick([
+      `Six… seven! ${seven[0].toUpperCase() + seven.slice(1)} edges out ${victim}.`,
+      `Six… SEVEN! ${seven[0].toUpperCase() + seven.slice(1)} weighs more than ${victim}. Barely.`,
+      `It’s a six… seven! ${seven[0].toUpperCase() + seven.slice(1)} takes it by one.`,
+    ]));
+    Sound.sixSeven(k);
+  },
+};
+
 function floatCheer(seat, e) {
   const tile = seat === S.you ? $('myPile') : tiles.get(seat)?.node;
   const [x, y] = tile && tile.isConnected && tile.offsetParent ? centerOf(tile) : [window.innerWidth / 2, window.innerHeight - 120];
@@ -2318,6 +2466,7 @@ function onState(m) {
       if (!g.over) Log.stages = [];
       clearLater();
       Versus.clear();
+      SixSeven.clear();
       S.cards = {};
       S.result = null;
     }
@@ -2382,6 +2531,7 @@ function openStage() {
   S.thumps = m.thumps;
   S.charging = {};
   if (m.stage === 0) {
+    SixSeven.clear();
     if (heapPending) { const { winner, cards } = heapPending; heapPending = null; heapToss(winner, cards); }
     S.cards = {};
     S.result = null;
@@ -2467,6 +2617,7 @@ function onFlip(m) {
   S.thumps = {};  // the face-down cards are in S.cards now
   Sound.flip();
   narrate(m);
+  if (isSixSeven(m)) SixSeven.show(m);
   if (m.next) onStage(m.next);
   if (m.winner !== null && m.next) Odds.update(m.counts, m.next.battle, S.limit);
   syncMusic();
@@ -3475,6 +3626,7 @@ function backToMenu(message) {
   S.code = null;
   clearLater();
   Versus.clear();
+  SixSeven.clear();
   cancelInput();
   Odds.reset();
   heapClear();
@@ -4628,6 +4780,7 @@ if (DEBUG) {
     input: (mode) => setInput(mode),
     deck: (key) => setDeck(key),
     versus: () => Versus.last,
+    sixSeven: () => SixSeven.last,
     music: () => ({ on: Music.on, song: Music.want, playing: Music.song, songs: Object.keys(SONGS) }),
     // How loud each song gets: rendered offline, as the game would play it.
     musicLevels: async () => {

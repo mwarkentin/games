@@ -1,5 +1,7 @@
 ## 2026-11-07
 
+- When a seven beats a six, two palms weigh a big 6 and a big 7, up and down
+  in turn, and 6-7! pops between them. It stands still with reduced motion.
 - Jokers: every deck has two, and a joker beats every other card. Two jokers
   tie, so they start a war. Each deck theme has a joker of its own.
 - In a room, everyone's cards show in the deck they picked, bots bring decks

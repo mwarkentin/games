@@ -161,6 +161,51 @@ def test_reduced_motion_gets_a_calm_versus(page: Page, site_url, errors):
     assert page.evaluate(VERSUS)["kind"] == "calm"
     assert errors == []
 
+# Seed 309: your seven beats Sir Wombat's six in the first battle.
+SIX_SEVEN_SEED = 309
+SIX_SEVEN = "window.__war.sixSeven()"
+
+
+def test_a_seven_over_a_six_is_a_six_seven(page: Page, site_url, errors):
+    start_solo(page, site_url, seed=SIX_SEVEN_SEED)
+    page.evaluate("window.__war.slam(60)")
+    show = page.locator("#fx .ss")
+    expect(show).to_have_count(1)
+    expect(show.locator(".ss-num")).to_have_text(["6", "7"])
+    expect(show.locator(".ss-word")).to_have_text("6-7!")
+    expect(show.locator(".ss-hand")).to_have_count(2)
+    # The banner still says who won, and the caption has a line of its own.
+    expect(page.locator("#banner")).to_have_text("YOU WIN!")
+    expect(page.locator("#caption")).to_contain_text("Six… ")
+    expect(page.locator("#caption")).to_contain_text("Sir Wombat's six")
+    assert page.evaluate(SIX_SEVEN) == {"kind": "full", "winner": 0, "six": 1, "k": 1}
+    # It bobs, takes no taps, fits the phone and is gone before the next battle.
+    assert page.evaluate("document.getAnimations().filter((a) => a.effect?.target?.closest?.('.ss')).length") >= 4
+    assert page.evaluate("getComputedStyle(document.getElementById('fx')).pointerEvents") == "none"
+    box = show.bounding_box()
+    assert box["x"] >= 0 and box["x"] + box["width"] <= page.viewport_size["width"]
+    page.wait_for_function(f"{STATE}.battle === 2 && {STATE}.canSlam")
+    expect(page.locator("#fx .ss")).to_have_count(0)
+    assert page.evaluate("document.documentElement.scrollWidth") <= page.viewport_size["width"]
+    assert errors == []
+
+
+def test_reduced_motion_gets_a_calm_six_seven(page: Page, site_url, errors):
+    page.emulate_media(reduced_motion="reduce")
+    start_solo(page, site_url, seed=SIX_SEVEN_SEED)
+    page.evaluate("window.__war.slam(60)")
+    show = page.locator("#fx .ss")
+    expect(show).to_have_class(re.compile(r"\bcalm\b"))
+    expect(show.locator(".ss-word")).to_be_visible()
+    expect(show.locator(".ss-num")).to_have_text(["6", "7"])
+    # Nothing moves.
+    assert page.evaluate("document.getAnimations().filter((a) => a.effect?.target?.closest?.('.ss')).length") == 0
+    assert page.evaluate(SIX_SEVEN)["kind"] == "calm"
+    page.wait_for_function(f"{STATE}.battle === 2")
+    expect(page.locator("#fx .ss")).to_have_count(0)
+    assert errors == []
+
+
 def test_mash_to_slam(page: Page, site_url, errors):
     page.goto(f"{site_url}/war?seed=2#debug")
     page.click("#inputSeg button[data-input=mash]")
