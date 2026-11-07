@@ -547,15 +547,16 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px s
 .vs.calm .vs-word { font-size: min(22vw, 120px); }
 .vs-fight.calm b { transform: none; font-size: min(16vw, 90px); }
 
-/* Six… seven!: a seven beat a six, so two palms weigh a big 6 and a big 7,
-   up and down in turn, and 6-7! pops between them. It's only a picture in
-   #fx, centred on the arena (--y) and gone before the next battle opens.
-   --k scales its 1.8-second timeline (less in Fast mode). */
+/* Six… seven!: a seven beat a six, so the very six and seven from the table,
+   each in its player's deck, ride up and down on two palms in turn, as if
+   being weighed, and 6-7! pops between them. It's only a picture in #fx,
+   centred on the arena (--y) and gone before the next battle opens. --k
+   scales its 1.8-second timeline (less in Fast mode). */
 .ss {
-  --k: 1; --y: 40vh; --num: min(25vw, 128px); --hand: min(30vw, 150px);
+  --k: 1; --y: 40vh; --cw: min(24vw, 112px); --hand: min(30vw, 140px);
   position: absolute; left: 50%; top: var(--y); transform: translate(-50%, -50%);
   width: min(calc(100vw - 16px - env(safe-area-inset-left) - env(safe-area-inset-right)), 420px);
-  height: calc(var(--num) + var(--hand) * .7 + 20px);
+  height: calc(var(--cw) * 1.4 + var(--hand) * .62 + 52px);
   animation: ss-out calc(260ms * var(--k)) ease-in calc(1540ms * var(--k)) forwards;
 }
 /* A soft dim behind it, so the banner and caption underneath don't clash. */
@@ -566,12 +567,10 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px s
 .ss-side { position: absolute; bottom: 0; width: 46%; display: grid; justify-items: center; will-change: transform; }
 .ss-side.l { left: 0; animation: ss-l calc(1800ms * var(--k)) cubic-bezier(.45, 0, .55, 1) both; }
 .ss-side.r { right: 0; animation: ss-r calc(1800ms * var(--k)) cubic-bezier(.45, 0, .55, 1) both; }
-.ss-num {
-  font: 400 var(--num)/.85 "Black Ops One", Impact, "Arial Black", system-ui, sans-serif;
-  color: #ffe36b; -webkit-text-stroke: max(3px, .04em) #3b1500; paint-order: stroke fill;
-  text-shadow: 0 .06em 0 #3b1500, 0 0 .2em rgba(255, 170, 40, .85); margin-bottom: -.12em; position: relative; z-index: 1;
-}
-.ss-side.r .ss-num { color: #8ff0ff; text-shadow: 0 .06em 0 #3b1500, 0 0 .2em rgba(60, 200, 255, .85); }
+/* Each card stands on its palm, tipped out a little. */
+.ss-side .card { --w: var(--cw); z-index: 1; margin-bottom: calc(var(--cw) * -.22); box-shadow: 0 8px 16px rgba(0, 0, 0, .5); }
+.ss-side.l .card { transform: rotate(-7deg); }
+.ss-side.r .card { transform: rotate(7deg); }
 .ss-hand { width: var(--hand); height: calc(var(--hand) * .62); display: block; filter: drop-shadow(0 4px 3px rgba(0, 0, 0, .45)); }
 .ss-side.l .ss-hand { transform: scaleX(-1); }
 .ss-word {
@@ -587,7 +586,7 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px s
 }
 .ss-say.l { left: 2%; animation: ss-say calc(420ms * var(--k)) ease-out calc(260ms * var(--k)) both; }
 .ss-say.r { right: 2%; border-color: #8ff0ff; animation: ss-say calc(420ms * var(--k)) ease-out calc(520ms * var(--k)) both; }
-/* The 6 goes up as the 7 comes down, three times over, then both lift. */
+/* The six goes up as the seven comes down, three times over, then both lift. */
 @keyframes ss-l {
   0% { transform: translateY(60%) scale(.5); opacity: 0; }
   10% { transform: translateY(0); opacity: 1; }
@@ -615,7 +614,7 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px s
 @keyframes ss-pop { from { transform: translateX(-50%) scale(.1) rotate(-14deg); opacity: 0; } to { transform: translateX(-50%) rotate(-4deg); opacity: 1; } }
 @keyframes ss-say { 0% { opacity: 0; transform: translateY(10px) scale(.6); } 30% { opacity: 1; transform: none; } 75% { opacity: 1; } 100% { opacity: 0; transform: translateY(-8px); } }
 @keyframes ss-out { to { opacity: 0; transform: translate(-50%, -50%) scale(.85); } }
-/* Reduced motion: the 6 and the 7 on their palms, standing still. */
+/* Reduced motion: the six and the seven on their palms, standing still. */
 .ss.calm, .ss.calm .ss-side, .ss.calm .ss-word { animation: none; }
 .ss.calm .ss-say { display: none; }
 .ss.calm .ss-word { transform: translateX(-50%); }
@@ -2134,8 +2133,8 @@ const Versus = {
 // ---- Six… seven! ----
 //
 // When a seven wins and the next best card turned up is a six (a 6 v 7, head
-// to head), two palms weigh a big 6 and a big 7, up and down in turn, and
-// 6-7! pops between them. Like the versus intro it's only a picture: it lives
+// to head), the very six and seven from the table, each in its player's deck,
+// ride up and down on two palms in turn, and 6-7! pops between them. Like the versus intro it's only a picture: it lives
 // in #fx, which takes no taps, waits for nothing and is gone before the next
 // battle opens. The banner says who won as ever; the caption gets its own line.
 
@@ -2176,13 +2175,14 @@ const SixSeven = {
     const arena = $('arena');
     if (arena.offsetParent !== null) root.style.setProperty('--y', centerOf(arena)[1] + 'px');
     root.setAttribute('aria-hidden', 'true');  // the caption says it
-    const side = (cls, num) => {
+    // A copy of the card someone played, on a palm.
+    const side = (cls, seat) => {
       const node = el('div', 'ss-side ' + cls);
-      node.append(el('div', 'ss-num', num));
+      node.append(cardEl(m.plays.find((p) => p[0] === seat)[2], deckOf(seat)));
       node.insertAdjacentHTML('beforeend', SS_HAND);
       return node;
     };
-    root.append(side('l', '6'), side('r', '7'), el('div', 'ss-say l', 'SIX…'), el('div', 'ss-say r', 'SEVEN!'), el('div', 'ss-word', '6-7!'));
+    root.append(side('l', six), side('r', m.winner), el('div', 'ss-say l', 'SIX…'), el('div', 'ss-say r', 'SEVEN!'), el('div', 'ss-word', '6-7!'));
     $('fx').append(root);
     later(() => root.remove(), (calm ? 1400 : SS_MS) * k);
     this.last = { kind: calm ? 'calm' : 'full', winner: m.winner, six, k };

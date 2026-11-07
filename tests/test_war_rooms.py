@@ -389,6 +389,9 @@ def test_a_seven_over_a_six_is_a_six_seven_and_nothing_else_is(page: Page, site_
     flip(1, [4, 5, 1], 1)
     expect(page.locator("#fx .ss")).to_have_count(1)
     expect(page.locator("#fx .ss .ss-word")).to_have_text("6-7!")
+    held = page.locator("#fx .ss .ss-side .card")
+    expect(held.nth(0)).to_have_attribute("aria-label", "six of spades")
+    expect(held.nth(1)).to_have_attribute("aria-label", "seven of hearts")
     expect(page.locator("#caption")).to_contain_text("Bot 1's seven")
     expect(page.locator("#caption")).to_contain_text("your six")
     assert page.evaluate("window.__war.sixSeven()")["six"] == 0

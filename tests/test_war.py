@@ -171,7 +171,14 @@ def test_a_seven_over_a_six_is_a_six_seven(page: Page, site_url, errors):
     page.evaluate("window.__war.slam(60)")
     show = page.locator("#fx .ss")
     expect(show).to_have_count(1)
-    expect(show.locator(".ss-num")).to_have_text(["6", "7"])
+    # The very cards from the table ride on the palms, each in its own deck.
+    held = show.locator(".ss-side .card")
+    expect(held).to_have_count(2)
+    expect(held.nth(0)).to_have_attribute("aria-label", re.compile(r"^six of "))
+    expect(held.nth(1)).to_have_attribute("aria-label", re.compile(r"^seven of "))
+    theirs = page.locator("#opponents .tile .card[aria-label]").first.get_attribute("data-deck")
+    assert held.nth(0).get_attribute("data-deck") == theirs
+    assert held.nth(1).get_attribute("data-deck") == page.evaluate("deck"), "your seven is in your deck"
     expect(show.locator(".ss-word")).to_have_text("6-7!")
     expect(show.locator(".ss-hand")).to_have_count(2)
     # The banner still says who won, and the caption has a line of its own.
@@ -197,7 +204,7 @@ def test_reduced_motion_gets_a_calm_six_seven(page: Page, site_url, errors):
     show = page.locator("#fx .ss")
     expect(show).to_have_class(re.compile(r"\bcalm\b"))
     expect(show.locator(".ss-word")).to_be_visible()
-    expect(show.locator(".ss-num")).to_have_text(["6", "7"])
+    expect(show.locator(".ss-side .card")).to_have_count(2)
     # Nothing moves.
     assert page.evaluate("document.getAnimations().filter((a) => a.effect?.target?.closest?.('.ss')).length") == 0
     assert page.evaluate(SIX_SEVEN)["kind"] == "calm"
