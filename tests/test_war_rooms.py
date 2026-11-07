@@ -318,3 +318,50 @@ def test_an_unreachable_server_says_so_and_solo_still_works(page: Page, site_url
     expect(page.locator("#friendsErr")).to_have_text("The War server is unavailable right now. Try solo instead.")
     page.click("#soloBtn")
     expect(page.locator("#app")).to_be_visible()
+
+
+def test_a_many_way_war_at_a_big_table(page: Page, site_url, errors):
+    fake = FakeWarRoom()
+    open_war(page, site_url, fake)
+    start_room(page)
+    for n in range(6):
+        page.click("#botMore")
+        expect(page.locator("#people .person")).to_have_count(n + 2)
+    page.click("#dealBtn")
+    page.wait_for_function(f"{STATE}.canSlam")
+    page.evaluate("window.__war.slam(90)")
+
+    # Six of the seven turn over a nine. You're one, so you get the full
+    # show, with four pictured and the rest counted.
+    fighters = [0, 1, 2, 3, 4, 5]
+    plays = [[s, 0, card(7, s % 4), 90, 1, 0] for s in fighters] + [[6, 0, card(2), 90, 1, 0]]
+    fake.broadcast({
+        "t": "flip", "battle": 1, "stage": 0, "winner": None, "tied": fighters, "gods": False, "pot": 7,
+        "plays": plays, "counts": [26] * 7, "out": [],
+        "next": fake.stage(1, stage=1, fighters=fighters, opens_in=3000),
+    })
+    expect(page.locator("#banner")).to_have_text("6-WAY WAR!")
+    intro = page.locator("#fx .vs")
+    expect(intro).to_have_class(re.compile(r"\bmany\b"))
+    expect(intro.locator(".vs-name")).to_have_count(4)
+    expect(intro.locator(".vs-name").nth(0)).to_have_text("You")
+    expect(intro.locator(".vs-pre")).to_have_text("6-WAY")
+    expect(intro.locator(".vs-more")).to_have_text("+2 more")
+    assert page.evaluate("window.__war.versus()")["more"] == 2
+
+    # The war opens and you slam through FIGHT!. Then three others tie again
+    # without you: someone else's war at a big table is only a quick strip.
+    page.wait_for_function(f"{STATE}.stage === 1 && {STATE}.canSlam")
+    expect(page.locator("#fx .vs-fight")).to_have_count(1)
+    page.evaluate("window.__war.slam(90)")
+    again = [1, 2, 3]
+    fake.broadcast({
+        "t": "flip", "battle": 1, "stage": 1, "winner": None, "tied": again, "gods": False, "pot": 31,
+        "plays": [[s, 3, card(4, s % 4), 90, 1, 0] for s in fighters], "counts": [22, 22, 22, 22, 22, 22, 26], "out": [],
+        "next": fake.stage(1, stage=2, fighters=again, opens_in=3000),
+    })
+    expect(page.locator("#banner")).to_have_text("3-WAY WAR!")
+    expect(page.locator("#fx .vs-lite")).to_have_count(1)
+    expect(page.locator("#fx .vs")).to_have_count(0)
+    assert page.evaluate("window.__war.versus()")["kind"] == "lite"
+    assert errors == []
