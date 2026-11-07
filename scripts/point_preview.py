@@ -15,12 +15,15 @@ rewrites, in every text file:
 
 With --banner, the home page and colophon also get a strip along the top
 naming the preview (the pull request and commit), linked to --banner-link.
-Games are left without one: they own the whole screen.
+Games are left without one: they own the whole screen. With --title-prefix,
+every page's <title> starts with it instead, so a game opened straight from a
+link still says it's a preview in its tab and history. Link-preview cards and
+Home Screen names keep the page's own title.
 
 Telemetry and analytics check the bare hostname, not these URLs, so they
 stay off on a preview either way.
 
-Usage: point_preview.py SITE_DIR --site URL [--worker URL] [--banner TEXT --banner-link URL]
+Usage: point_preview.py SITE_DIR --site URL [--worker URL] [--banner TEXT --banner-link URL] [--title-prefix TEXT]
 """
 
 from __future__ import annotations
@@ -69,8 +72,20 @@ def add_banner(text: str, banner: str, link: str = "") -> str:
     return re.sub(r"(<body[^>]*>)", lambda m: f"{m.group(1)}\n{strip}", text, count=1)
 
 
+def prefix_title(text: str, prefix: str) -> str:
+    """Put prefix at the start of the page's <title>, once."""
+    return re.sub(
+        r"(<title[^>]*>)", lambda m: m.group(1) + html.escape(prefix, quote=False), text, count=1
+    )
+
+
 def point_site(
-    site_dir: Path, site: str, worker: str = "", banner: str = "", banner_link: str = ""
+    site_dir: Path,
+    site: str,
+    worker: str = "",
+    banner: str = "",
+    banner_link: str = "",
+    title_prefix: str = "",
 ) -> list[Path]:
     """Rewrite the site in place; returns the files that changed."""
     changed = []
@@ -81,6 +96,8 @@ def point_site(
         pointed = point_text(text, site, worker)
         if banner and path.parent == site_dir and path.name in GENERATED_PAGES:
             pointed = add_banner(pointed, banner, banner_link)
+        if title_prefix and path.suffix == ".html":
+            pointed = prefix_title(pointed, title_prefix)
         if pointed != text:
             path.write_text(pointed, "utf-8")
             changed.append(path)
@@ -95,8 +112,9 @@ def main() -> None:
     parser.add_argument("--worker", type=origin, help="the Worker Preview's origin, if any")
     parser.add_argument("--banner", default="", help="text for a strip atop the home page and colophon")
     parser.add_argument("--banner-link", default="", help="where the strip links to")
+    parser.add_argument("--title-prefix", default="", help="text to start every page's <title> with")
     args = parser.parse_args()
-    changed = point_site(args.site_dir, args.site, args.worker or "", args.banner, args.banner_link)
+    changed = point_site(args.site_dir, args.site, args.worker or "", args.banner, args.banner_link, args.title_prefix)
     target = args.worker or f"{WORKER_URL} (production's Worker)"
     print(f"Pointed {len(changed)} files at {args.site}, with {target}")
 

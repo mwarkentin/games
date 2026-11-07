@@ -203,7 +203,9 @@ kept up to date), and deletes it when the pull request closes.
   the preview's. Games need nothing for this; just keep naming the Worker
   by its full URL (`WORKER_URL` in `scripts/common.py`). It also puts a
   yellow strip atop the preview's home page and colophon naming the pull
-  request and commit, linked to the pull request; games get none.
+  request and commit, linked to the pull request; games get none, but
+  every page's `<title>` starts with "PR <number> · ", so a game's tab
+  says it's a preview too.
 - **The Worker:** a pull request that touches `worker/` (or `preview.yml`)
   also gets a Worker Preview of the leaderboard Worker, made first, and
   `point_preview.py` points the games' `LEADERBOARD_URL`, `ROOMS_URL` and the

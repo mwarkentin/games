@@ -317,3 +317,18 @@ def test_point_preview_runs_without_a_worker_preview(site_dir, tmp_path):
     assert f"const ROOMS_URL = '{WORKER_URL}';" in war
     assert f'content="{site}/war"' in war
     assert "Preview of #7" in (preview / "index.html").read_text("utf-8")
+
+
+def test_point_site_prefixes_every_page_title_but_not_link_previews(site_dir, tmp_path):
+    preview = tmp_path / "site"
+    shutil.copytree(site_dir, preview)
+    point_site(preview, "https://pr-7-games-preview.example.workers.dev", title_prefix="PR 7 · ")
+    for name in [*game_files(), *GENERATED_PAGES]:
+        before = (site_dir / name).read_text("utf-8")
+        after = (preview / name).read_text("utf-8")
+        title = re.search(r"<title>(.*?)</title>", before).group(1)
+        assert f"<title>PR 7 · {title}</title>" in after, name
+        assert after.count("PR 7 · ") == 1, name
+        og_title = re.compile(r'<meta property="og:title" content="([^"]*)"')
+        assert og_title.search(after).group(1) == og_title.search(before).group(1)
+        assert not og_title.search(after).group(1).startswith("PR 7")

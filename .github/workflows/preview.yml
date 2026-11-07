@@ -143,7 +143,8 @@ jobs:
         run: |
           uv run --locked --no-dev scripts/point_preview.py _site \
             --site "https://$PREVIEW-games-preview.$WORKERS_DEV" ${WORKER:+--worker "$WORKER"} \
-            --banner "Preview of pull request #$PR at ${SHA:0:7}" --banner-link "$PR_URL"
+            --banner "Preview of pull request #$PR at ${SHA:0:7}" --banner-link "$PR_URL" \
+            --title-prefix "PR $PR · "
       - name: Create or update the Preview
         id: preview
         working-directory: preview
