@@ -165,6 +165,14 @@ nothing to stop yet.
 
 Step 4 without step 3 would turn every player away, so do them in order.
 
+Where it stands: steps 1 to 3 are done. mwarkentin/infra#8 made the widget
+and the secret, a deploy gave the Worker the secret, and the widget's site
+key is committed in `letterfield.html`. Passes aren't required. Until
+`SURVEY_URL` is set, the survey itself, and so Turnstile, stays off on the
+live site. On `localhost` the real key fails, because the widget only
+allows games.michaelwarkentin.com, and the game then joins without a pass.
+Test locally with `?turnstile=1x00000000000000000000BB` (see below).
+
 ## Tests
 
 Nothing calls Cloudflare. `worker/test/survey-pass.test.js` fakes
@@ -178,7 +186,10 @@ from the player). `worker/test/survey.test.js` checks that sectors count
 joins without a pass in their reports, keeping the count if a report fails,
 and that the Atlas adds them up per UTC day. `tests/test_letterfield_survey.py` answers
 `api.js` with a fake `turnstile` object given the invisible always-passes
-test site key (`1x00000000000000000000BB`), and checks that:
+test site key (`1x00000000000000000000BB`). Its other tests serve the game
+with `TURNSTILE_SITE_KEY` blanked (`without_turnstile`), and one checks that
+the game uses the key it's published with when `?turnstile=` isn't given.
+They check that:
 - one check covers every sector, and a reload or roaming doesn't ask again;
 - the box shows only when the widget wants a tap;
 - a refused pass gets a new one;

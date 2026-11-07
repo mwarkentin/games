@@ -14,6 +14,8 @@ import base64
 import json
 import re
 import time
+from pathlib import Path
+from urllib.parse import urlparse
 
 from playwright.sync_api import Page, Route, WebSocketRoute, expect
 
@@ -94,8 +96,27 @@ class FakeSurvey:
         return [m for m in self.received if m["t"] == kind]
 
 
-def open_game(page: Page, site_url: str, fake: FakeSurvey | None, query: str = "") -> None:
+def without_turnstile(page: Page) -> None:
+    """Serve the game with TURNSTILE_SITE_KEY blanked, so the survey joins without Cloudflare's check.
+
+    The real key would load challenges.cloudflare.com, which tests never reach. The
+    Turnstile tests below turn it back on with ?turnstile= and a fake widget.
+    """
+
+    def handle(route: Route) -> None:
+        response = route.fetch()
+        body = re.sub(r"\b(TURNSTILE_SITE_KEY = )'[^']*'", r"\1''", response.text())
+        route.fulfill(response=response, body=body)
+
+    page.route(lambda url: urlparse(url).path == "/letterfield", handle)
+
+
+def open_game(page: Page, site_url: str, fake: FakeSurvey | None, query: str = "", own_site_key: bool = False) -> None:
+    """Opens the game, against `fake` if given. Its own Turnstile site key is blanked
+    unless `own_site_key` is set or `query` brings one (?turnstile=)."""
     page.set_viewport_size({"width": 1280, "height": 900})
+    if not own_site_key and "turnstile=" not in query:
+        without_turnstile(page)
     if fake:
         page.route_web_socket(re.compile(r"^wss://survey\.test/"), fake.handle)
         page.route(f"{SURVEY}/v1/survey/world", fake.handle_world)
@@ -517,6 +538,19 @@ def test_turnstile_stays_off_without_a_site_key(page: Page, site_url, errors):
     expect(page.locator("#survey")).to_have_attribute("data-state", "live")
     assert scripts == []
     assert all("?" not in url for url in fake.urls)
+    assert errors == []
+
+
+def test_the_game_runs_turnstile_with_its_own_site_key(page: Page, site_url, errors):
+    # Without ?turnstile=, the game uses the key it was published with.
+    key = re.search(r"const TURNSTILE_SITE_KEY = '([^']*)'", (Path(__file__).parent.parent / "letterfield.html").read_text("utf-8"))[1]
+    assert re.fullmatch(r"0x[\w-]{10,}", key), "letterfield.html should carry the widget's public site key"
+    desk = with_turnstile(page)
+    fake = FakeSurvey()
+    open_game(page, site_url, fake, own_site_key=True)
+    expect(page.locator("#survey")).to_have_attribute("data-state", "live")
+    assert [r["sitekey"] for r in page.evaluate("window.__tsRenders.map(r => ({ sitekey: r.sitekey }))")] == [key]
+    assert desk.tokens == [DUMMY_TOKEN]
     assert errors == []
 
 
