@@ -129,17 +129,18 @@ WebSocket, pages send JSON messages:
 
 | Message | Means |
 | --- | --- |
-| `{"t":"hello","name","avatar","token"}` | join, or rejoin the same seat with the same token |
+| `{"t":"hello","name","avatar","token","deck"}` | join, or rejoin the same seat with the same token; `deck` is the deck theme your cards are drawn in |
 | `{"t":"length","length"}`, `{"t":"bots","n"}`, `{"t":"start"}` | the host sets up the game and deals |
 | `{"t":"charge","tier"}`, `{"t":"slam","power","style"}` | charging up, then slamming (for show only) |
 | `{"t":"card","n","power"}` | in a war, slamming face-down card `n` (0 to 2) before the last one, which is the `slam` (for show only) |
 | `{"t":"cheer","e"}` | an emoji for everyone, at most every 0.4 seconds |
+| `{"t":"deck","deck"}` | change deck theme, even mid-game, at most once a second |
 | `{"t":"leave"}` | leave the lobby |
 
 The room answers with `state` (everything, sent on joining and when the
 lobby changes), `online`, `stage` (a battle or war opens, with the bots'
 slams), `charge`, `card`, `slam`, `flip` (the cards turn over, with the next
-stage or the final standings), `cheer` and `error`. Players get 8 seconds to
+stage or the final standings), `cheer`, `deck` (someone changed deck) and `error`. Players get 8 seconds to
 slam in a battle and 20 in a war, where they slam every card they lay down.
 
 The first player still connected is the host. Up to 50 play (people take

@@ -10,7 +10,7 @@ import { DatabaseSync } from 'node:sqlite';
 import { beforeEach, describe, test } from 'node:test';
 
 import {
-  EXPIRE_MS, MAX_SOCKETS, WAR, WarRoom, cleanName, handleWar, warDeal, warDueAt, warNewGame, warResolve,
+  EXPIRE_MS, MAX_SOCKETS, WAR, WarRoom, cleanDeck, cleanName, handleWar, warDeal, warDueAt, warNewGame, warRank, warResolve,
   warSlam, warStandings,
 } from '../src/war.js';
 
@@ -28,7 +28,9 @@ function seeded(seed) {
 }
 
 // A card of the given rank (0 is a two, 12 an ace) from the given deck and suit.
-const card = (rank, suit = 0, deck = 0) => deck * 52 + suit * 13 + rank;
+const card = (rank, suit = 0, deck = 0) => deck * WAR.DECK + suit * 13 + rank;
+// One of a deck's two jokers.
+const joker = (which = 0, deck = 0) => deck * WAR.DECK + 52 + which;
 
 // A game with chosen piles, top card first, in its first battle.
 function rigged(piles, { bots, limit = 60 } = {}) {
@@ -41,13 +43,35 @@ function rigged(piles, { bots, limit = 60 } = {}) {
 }
 
 describe('the rules', () => {
-  test('there is a deck for every two players, dealt evenly', () => {
+  test('there is a deck for every two players, jokers included, dealt evenly', () => {
     const sizes = (n) => warDeal(n, seeded(n)).map((p) => p.length);
-    assert.deepEqual(sizes(2), [26, 26]);
-    assert.deepEqual(sizes(3), [35, 35, 34]);
-    assert.deepEqual(new Set(sizes(50)), new Set([26]));
+    assert.equal(WAR.DECK, 54);
+    assert.deepEqual(sizes(2), [27, 27]);
+    assert.deepEqual(sizes(3), [36, 36, 36]);
+    assert.deepEqual(new Set(sizes(50)), new Set([27]));
     const all = warDeal(50, seeded(9)).flat().sort((a, b) => a - b);
-    assert.deepEqual(all, Array.from({ length: 52 * 25 }, (_, i) => i));
+    assert.deepEqual(all, Array.from({ length: 54 * 25 }, (_, i) => i));
+    assert.equal(all.filter((c) => warRank(c) === 13).length, 50, 'two jokers in each of the 25 decks');
+  });
+
+  test('cards rank two to ace in every suit and deck, and jokers above them all', () => {
+    for (const deck of [0, 1, 24]) {
+      for (let suit = 0; suit < 4; suit++) {
+        for (let rank = 0; rank < 13; rank++) assert.equal(warRank(card(rank, suit, deck)), rank);
+      }
+      assert.equal(warRank(joker(0, deck)), 13);
+      assert.equal(warRank(joker(1, deck)), 13);
+    }
+  });
+
+  test('a joker beats an ace, and two jokers make a war', () => {
+    const beaten = rigged([[card(12), card(2)], [joker(), card(3)]]);
+    assert.equal(warResolve(beaten, NOW, seeded(2)).winner, 1);
+    const war = rigged([[joker(0), card(2), card(3), card(4), card(5)], [joker(1, 1), card(6), card(7), card(8), card(9)]]);
+    const flip = warResolve(war, NOW, seeded(2));
+    assert.equal(flip.winner, null);
+    assert.deepEqual(flip.next.fighters, [0, 1]);
+    assert.equal(warResolve(war, NOW, seeded(2)).winner, 1, 'the war is won by the higher card, a jack over a six');
   });
 
   test('the highest card takes every card played', () => {
@@ -195,7 +219,7 @@ describe('the rules', () => {
       let last;
       while (!game.over) last = warResolve(game, NOW, random);
       assert.ok(last.over.battles <= WAR.LENGTHS.total);
-      assert.equal(last.counts.reduce((a, b) => a + b), 52 * Math.ceil(players / 2));
+      assert.equal(last.counts.reduce((a, b) => a + b), WAR.DECK * Math.ceil(players / 2));
     }
   });
 });
@@ -267,10 +291,10 @@ function newRoom(state = fakeState()) {
 
 const token = (name) => `token-${name}-0123456789`;
 
-async function join(room, name, avatar = 1) {
+async function join(room, name, avatar = 1, deck = undefined) {
   const ws = new FakeSocket();
   room.connect(ws);
-  await room.webSocketMessage(ws, JSON.stringify({ t: 'hello', name, avatar, token: token(name) }));
+  await room.webSocketMessage(ws, JSON.stringify({ t: 'hello', name, avatar, token: token(name), deck }));
   return ws;
 }
 
@@ -373,7 +397,7 @@ describe('rooms', () => {
     assert.equal(room.room.phase, 'playing');
     const state = bob.last('state');
     assert.equal(state.game.battle, 1);
-    assert.deepEqual(state.game.counts, [26, 26, 26, 26]);
+    assert.deepEqual(state.game.counts, [27, 27, 27, 27]);
     const stage = bob.last('stage');
     assert.deepEqual(stage.fighters, [0, 1, 2, 3]);
     assert.deepEqual(stage.bots.map(([seat]) => seat), [2, 3]);
@@ -394,7 +418,7 @@ describe('rooms', () => {
     assert.equal(flip.battle, 1);
     assert.deepEqual(flip.plays.map((p) => [p[0], p[3], p[5]]), [[0, 150, 0], [1, 3, 0], [2, flip.plays[2][3], 0], [3, flip.plays[3][3], 0]]);
     assert.deepEqual(dana.last('flip'), flip);
-    assert.equal(flip.counts.reduce((a, b) => a + b), 52 * 2);
+    assert.equal(flip.counts.reduce((a, b) => a + b), WAR.DECK * 2);
     assert.ok(flip.next);
   });
 
@@ -461,17 +485,45 @@ describe('rooms', () => {
     assert.equal(room.state.alarm, room.room.game.closesAt);
   });
 
+  test("everyone sees each player's deck, and can change theirs mid-game", async () => {
+    const dana = await join(room, 'Dana', 1, 'neon');
+    const bob = await join(room, 'Bob', 2, 'NOT a deck');
+    await say(room, dana, { t: 'bots', n: 1 });
+    assert.deepEqual(bob.last('state').players.map((p) => p.deck), ['neon', null, null], "bots and bad decks get none");
+    assert.equal(cleanDeck('candy'), 'candy');
+    assert.equal(cleanDeck('x'.repeat(17)), null);
+    assert.equal(cleanDeck(7), null);
+
+    await say(room, dana, { t: 'start' });
+    await say(room, dana, { t: 'deck', deck: 'candy' });
+    assert.deepEqual(bob.last('deck'), { t: 'deck', seat: 0, deck: 'candy' });
+    assert.equal(room.room.players[0].deck, 'candy');
+    await say(room, dana, { t: 'deck', deck: 'space' });
+    assert.equal(bob.all('deck').length, 1, 'at most one change a second');
+    room.clock += 1000;
+    await say(room, dana, { t: 'deck', deck: 'space' });
+    await say(room, bob, { t: 'deck', deck: '../../etc' });
+    assert.deepEqual(bob.all('deck').map((m) => m.deck), ['candy', 'space']);
+
+    // Rejoining mid-game brings your deck along.
+    room.clock += 1000;
+    const bob2 = await join(room, 'Bob', 2, 'royal');
+    assert.equal(bob2.last('state').players[1].deck, 'royal');
+  });
+
   test('newcomers watch a game in progress and are dealt into the next', async () => {
     const dana = await join(room, 'Dana');
     await say(room, dana, { t: 'bots', n: 1 });
     await say(room, dana, { t: 'start' });
-    const eve = await join(room, 'Eve');
+    const eve = await join(room, 'Eve', 1, 'spooky');
     const watching = eve.last('state');
     assert.equal(watching.you, null);
     assert.equal(watching.phase, 'playing');
     assert.equal(dana.last('online').watchers, 1);
     await say(room, eve, { t: 'slam', power: 100, style: 0 });
     assert.equal(dana.all('slam').length, 0, "spectators can't slam");
+    await say(room, eve, { t: 'deck', deck: 'candy' });
+    assert.equal(dana.all('deck').length, 0, "a spectator's deck is kept for the next game");
 
     room.room.game.limit = 1;
     await say(room, dana, { t: 'slam', power: 1, style: 0 });
@@ -485,6 +537,7 @@ describe('rooms', () => {
     assert.equal(next.phase, 'playing');
     assert.deepEqual(next.players.map((p) => p.name), ['Dana', 'Eve', room.room.players[2].name]);
     assert.equal(next.you, 1);
+    assert.equal(next.players[1].deck, 'candy');
   });
 
   test('a spectator can start the next game when no player is left', async () => {
@@ -649,11 +702,10 @@ describe('routes', () => {
 });
 
 test('a player whose card flops over twice in a row is not waited for until they slam', () => {
-  const { game } = warNewGame([false, false], 'standard', seeded(3), NOW);
+  // No ties, so no wars: each battle is one stage.
+  const game = rigged([[card(12), card(11), card(10), card(9)], [card(2), card(3), card(4), card(5)]]);
   const online = new Set([0, 1]);
-  const play = () => {
-    while (warResolve(game, NOW, seeded(3)).winner === null) { /* play the war out */ }
-  };
+  const play = () => assert.equal(warResolve(game, NOW, seeded(3)).winner, 0);
   warSlam(game, 0, 50, 0);
   play();
   assert.equal(warDueAt(game, online), game.closesAt, 'one flop: still waited for');

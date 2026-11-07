@@ -25,6 +25,7 @@ const WAR = {
   STYLES: 11,          // power-ups, 0 for bare hands
   AVATARS: 24,
   TIERS: 9,            // slam tiers, from boop to cosmic
+  DECK: 54,            // cards in a deck: the usual 52 and two jokers
   STAGE_MS: 8000,      // to slam before your card flops over by itself
   WAR_STAGE_MS: 20000, // the same in a war, where you slam every card you lay down
   NAPS: 2,             // flops in a row before a stage stops waiting for you
@@ -43,9 +44,16 @@ const WAR_BOT_LAST = [
   'Nugget', 'Meatball', 'Toast', 'Pebble', 'Beans', 'Squid', 'Crumpet', 'Tater', 'Wombat', 'Jellybean',
 ];
 
-// Cards are numbers: rank is card % 13 (0 is a two, 12 an ace) and suit is
-// floor(card / 13) % 4. There's a deck for every two players, so everyone
-// starts with about 26 cards however many play.
+// Cards are numbers, WAR.DECK to a deck. In each deck, card % WAR.DECK is
+// suit * 13 + rank for the usual 52 cards (rank 0 is a two, 12 an ace), and 52
+// and 53 are the jokers, which beat every other card: their rank is 13. Two
+// jokers tie, like any two cards of the same rank. There's a deck for every two
+// players, so everyone starts with about 27 cards however many play.
+function warRank(card) {
+  const face = card % WAR.DECK;
+  return face < 52 ? face % 13 : 13;
+}
+
 function warShuffle(cards, random) {
   for (let i = cards.length - 1; i > 0; i--) {
     const j = Math.floor(random() * (i + 1));
@@ -56,7 +64,7 @@ function warShuffle(cards, random) {
 
 function warDeal(count, random) {
   const decks = Math.max(1, Math.ceil(count / 2));
-  const cards = warShuffle(Array.from({ length: 52 * decks }, (_, i) => i), random);
+  const cards = warShuffle(Array.from({ length: WAR.DECK * decks }, (_, i) => i), random);
   const piles = Array.from({ length: count }, () => []);
   cards.forEach((card, i) => piles[i % count].push(card));
   return piles;
@@ -174,10 +182,10 @@ function warResolve(game, now, random) {
     game.pot.push(...pile.splice(0, down));
     const up = pile.shift();
     game.pot.push(up);
-    best = Math.max(best, up % 13);
+    best = Math.max(best, warRank(up));
     plays.push([seat, down, up, ...slam]);
   }
-  const tied = plays.filter((play) => play[2] % 13 === best).map((play) => play[0]);
+  const tied = plays.filter((play) => warRank(play[2]) === best).map((play) => play[0]);
   const able = tied.filter((seat) => game.piles[seat].length);
   let winner = tied.length === 1 ? tied[0] : able.length === 1 ? able[0] : null;
   const gods = tied.length > 1 && !able.length;
@@ -223,7 +231,7 @@ function warStandings(game) {
 // ---- END WAR CORE ----
 
 export {
-  WAR, warBotNames, warDeal, warDueAt, warNewGame, warOpenStage, warResolve, warShuffle, warSlam,
+  WAR, warBotNames, warDeal, warDueAt, warNewGame, warOpenStage, warRank, warResolve, warShuffle, warSlam,
   warStandings, warWaitingFor,
 };
 
@@ -233,8 +241,13 @@ export const MAX_SOCKETS = 60;       // players and spectators
 const MAX_MESSAGE = 1024;
 const CHEERS = 6;
 const CHEER_GAP_MS = 400;
+const DECK_GAP_MS = 1000;
 const NAME = /^[\p{L}\p{N}][\p{L}\p{N} '&.,!?-]{0,15}$/u;
 const TOKEN = /^[A-Za-z0-9-]{16,64}$/;
+// The deck a player's cards are drawn in, one of war.html's DECKS. Rooms only
+// check that it looks like one, so a new deck needs no change here; pages draw
+// a deck they don't know as the classic one.
+const DECK = /^[a-z0-9]{1,16}$/;
 const CLOSING = 2;
 
 const roomStub = (env, code) => env.WAR_ROOMS.get(env.WAR_ROOMS.idFromName(code));
@@ -246,6 +259,10 @@ function newCode() {
 export function cleanName(value) {
   const name = typeof value === 'string' ? value.trim().replace(/\s+/g, ' ') : '';
   return NAME.test(name) ? name : null;
+}
+
+export function cleanDeck(value) {
+  return typeof value === 'string' && DECK.test(value) ? value : null;
 }
 
 // One room. Its state is a single storage value, saved when something
@@ -262,6 +279,7 @@ export class WarRoom {
     this.alarmAt = null;
     this.gone = new WeakSet();
     this.cheered = new WeakMap();
+    this.decked = new WeakMap();
     this.now = () => Date.now();
     this.random = Math.random;
   }
@@ -364,7 +382,9 @@ export class WarRoom {
     return {
       t: 'state', code: room.code, phase: room.phase, length: room.length, you: this.seatOf(ws),
       host: this.hostSeat(), watchers: this.sockets().filter((s) => this.seatOf(s) === null).length,
-      players: room.players.map((p, seat) => ({ name: p.name, avatar: p.avatar, bot: p.bot, online: p.bot || online.has(seat) })),
+      players: room.players.map((p, seat) => ({
+        name: p.name, avatar: p.avatar, deck: p.deck ?? null, bot: p.bot, online: p.bot || online.has(seat),
+      })),
       game: game && {
         battle: game.battle, limit: game.limit, stage: game.stage, fighters: game.fighters,
         counts: game.piles.map((pile) => pile.length), out: game.out, pot: game.pot.length,
@@ -439,6 +459,12 @@ export class WarRoom {
         this.cheered.set(ws, now);
         return this.broadcast({ t: 'cheer', seat, e: message.e });
       }
+      case 'deck': {
+        const now = this.now();
+        if (now - (this.decked.get(ws) || 0) < DECK_GAP_MS) return;
+        this.decked.set(ws, now);
+        return this.setDeck(ws, seat, cleanDeck(message.deck));
+      }
       default:
     }
   }
@@ -449,21 +475,23 @@ export class WarRoom {
     const room = this.room;
     const name = cleanName(message.name);
     const avatar = Number.isInteger(message.avatar) && message.avatar >= 0 && message.avatar < WAR.AVATARS ? message.avatar : 0;
+    const deck = cleanDeck(message.deck);
     if (!name) return this.send(ws, { t: 'error', error: 'Pick a name of up to 16 letters or numbers.' });
     if (typeof message.token !== 'string' || !TOKEN.test(message.token)) return this.send(ws, { t: 'error', error: 'Bad token.' });
     let player = room.players.find((p) => p.token === message.token);
     if (player && room.phase !== 'playing') Object.assign(player, { name, avatar });
+    if (player) player.deck = deck;  // only for show, so it can change mid-game
     if (!player && room.phase === 'lobby') {
       // People take the place of bots once the room is full.
       const bot = room.players.findLastIndex((p) => p.bot);
       if (room.players.length >= WAR.MAX_PLAYERS && bot >= 0) room.players.splice(bot, 1);
       if (room.players.length < WAR.MAX_PLAYERS) {
-        player = { name, avatar, bot: false, token: message.token };
+        player = { name, avatar, deck, bot: false, token: message.token };
         room.players.push(player);
       }
     }
     // Spectators carry their name, for the next game.
-    ws.serializeAttachment(player ? { token: message.token } : { token: message.token, name, avatar });
+    ws.serializeAttachment(player ? { token: message.token } : { token: message.token, name, avatar, deck });
     if (room.pausedAt) {
       const paused = this.now() - room.pausedAt;
       if (room.game) { room.game.opensAt += paused; room.game.closesAt += paused; }
@@ -490,6 +518,22 @@ export class WarRoom {
     return this.closed(ws);
   }
 
+  // A player picked another deck: everyone sees their cards in it from now
+  // on. A spectator's is kept for the next game.
+  async setDeck(ws, seat, deck) {
+    if (!deck) return;
+    if (seat === null) {
+      const a = ws.deserializeAttachment();
+      if (a?.name) ws.serializeAttachment({ ...a, deck });
+      return;
+    }
+    const player = this.room.players[seat];
+    if (player.deck === deck) return;
+    player.deck = deck;
+    await this.save();
+    this.broadcast({ t: 'deck', seat, deck });
+  }
+
   async setBots(n) {
     const room = this.room;
     const humans = room.players.filter((p) => !p.bot);
@@ -513,7 +557,7 @@ export class WarRoom {
     for (const ws of sockets) {
       const a = ws.deserializeAttachment();
       if (a?.token && a.name && !humans.some((p) => p.token === a.token)) {
-        humans.push({ name: a.name, avatar: a.avatar, bot: false, token: a.token });
+        humans.push({ name: a.name, avatar: a.avatar, deck: a.deck ?? null, bot: false, token: a.token });
         ws.serializeAttachment({ token: a.token });
       }
     }

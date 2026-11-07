@@ -4,7 +4,7 @@ war.html reads the server's URL from ?rooms=, so tests point it at
 https://leaderboard.test: page.route answers its HTTP requests and
 page.route_web_socket stands in for the room's WebSocket. The fake runs the
 lobby the way the real room does (players, host, bots, length, dealing) and
-passes slams and cheers on; the battles themselves are up to each test,
+passes slams, cheers and deck changes on; the battles themselves are up to each test,
 which sends the room's messages with broadcast(). The real room is tested in
 worker/test/war.test.js.
 """
@@ -27,13 +27,18 @@ def card(rank: int, suit: int = 0) -> int:
     return suit * 13 + rank
 
 
+def joker(which: int = 0) -> int:
+    """One of the deck's two jokers, which beat every other card."""
+    return 52 + which
+
+
 class FakeWarRoom:
     def __init__(self, code: str = "K7QP", exists: bool = True):
         self.code = code
         self.rooms = {code} if exists else set()
         self.phase = "lobby"
         self.length = "standard"
-        self.players: list[dict] = []    # {name, avatar, bot, token}
+        self.players: list[dict] = []    # {name, avatar, deck, bot, token}
         self.sockets: list[dict] = []    # {ws, token, open}
         self.received: list[dict] = []   # every message from a page
         self.game: dict | None = None
@@ -100,7 +105,7 @@ class FakeWarRoom:
             "you": self.seat_of(conn), "host": self.host(),
             "watchers": sum(1 for c in self.open_sockets() if self.seat_of(c) is None),
             "players": [
-                {"name": p["name"], "avatar": p["avatar"], "bot": p["bot"], "online": p["bot"] or seat in online}
+                {"name": p["name"], "avatar": p["avatar"], "deck": p.get("deck"), "bot": p["bot"], "online": p["bot"] or seat in online}
                 for seat, p in enumerate(self.players)
             ],
             "game": self.game,
@@ -129,8 +134,14 @@ class FakeWarRoom:
         is_host = seat is not None and seat == self.host()
         if kind == "hello":
             conn["token"] = message["token"]
-            if self.seat_of(conn) is None and self.phase == "lobby":
-                self.players.append({"name": message["name"], "avatar": message["avatar"], "bot": False, "token": message["token"]})
+            seat = self.seat_of(conn)
+            if seat is None and self.phase == "lobby":
+                self.players.append({
+                    "name": message["name"], "avatar": message["avatar"], "deck": message.get("deck"),
+                    "bot": False, "token": message["token"],
+                })
+            elif seat is not None:
+                self.players[seat]["deck"] = message.get("deck")
             self.send_states()
         elif kind == "leave":
             if seat is not None and self.phase == "lobby":
@@ -151,14 +162,17 @@ class FakeWarRoom:
             self.broadcast({"t": kind, "seat": seat, **{k: v for k, v in message.items() if k != "t"}})
         elif kind == "cheer":
             self.broadcast({"t": "cheer", "seat": seat, "e": message["e"]})
+        elif kind == "deck" and seat is not None:
+            self.players[seat]["deck"] = message["deck"]
+            self.broadcast({"t": "deck", "seat": seat, "deck": message["deck"]})
 
     def deal(self) -> None:
-        """Starts a game, with everyone holding 26 cards and the first battle open."""
+        """Starts a game, with everyone holding 27 cards and the first battle open."""
         n = len(self.players)
         limit = {"quick": 20, "standard": 60, "long": 150, "total": 5000}[self.length]
         self.phase = "playing"
         self.game = {
-            "battle": 1, "limit": limit, "stage": 0, "fighters": list(range(n)), "counts": [26] * n,
+            "battle": 1, "limit": limit, "stage": 0, "fighters": list(range(n)), "counts": [27] * n,
             "out": [0] * n, "pot": 0, "slams": {}, "opensIn": 0, "closesIn": 8000, "wars": 0, "over": None,
         }
         self.send_states()

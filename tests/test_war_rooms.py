@@ -6,8 +6,10 @@ fixture, because the browser logs those as console errors.
 
 from __future__ import annotations
 
+import re
+
 from fake_leaderboard import API
-from fake_war_room import FakeWarRoom, card
+from fake_war_room import FakeWarRoom, card, joker
 from playwright.sync_api import Page, expect
 
 STATE = "window.__war.state()"
@@ -32,7 +34,7 @@ def join_room(page: Page, code: str, name: str) -> None:
 
 
 def hold_slam(page: Page, ms: int) -> None:
-    box = page.locator("#slamBtn").bounding_box()
+    box = page.locator("#myPile .stack").bounding_box()
     page.mouse.move(box["x"] + box["width"] / 2, box["y"] + box["height"] / 2)
     page.mouse.down()
     page.wait_for_timeout(ms)
@@ -55,7 +57,7 @@ def test_start_a_room_add_bots_and_play_a_battle(page: Page, site_url, errors):
     expect(page.locator("#roomLength button[data-length=quick]")).to_have_attribute("aria-pressed", "true")
     page.click("#dealBtn")
     expect(page.locator("#app")).to_be_visible()
-    expect(page.locator("#roomTag")).to_have_text("K7QP")
+    expect(page.locator("#roomTag")).to_have_text("＋ K7QP")
     expect(page.locator("#battleSub")).to_contain_text("of 20")
 
     page.wait_for_function(f"{STATE}.canSlam")
@@ -142,6 +144,75 @@ def test_friends_join_with_the_code_and_see_each_other(page: Page, browser, site
     assert errors == []
 
 
+def test_everyone_sees_each_players_deck(page: Page, browser, site_url, errors):
+    fake = FakeWarRoom()
+    open_war(page, site_url, fake)
+    page.click("#menuDecks button[data-deck=neon]")
+    start_room(page, "Dana")
+    assert fake.messages("hello")[0]["deck"] == "neon"
+    page.click("#botMore")
+
+    guest_context = browser.new_context(viewport={"width": 375, "height": 740})
+    guest = guest_context.new_page()
+    open_war(guest, site_url, fake)
+    guest.click("#menuDecks button[data-deck=candy]")
+    join_room(guest, "k7qp", "Bob")
+    # In the lobby, each name has its deck beside it.
+    people = page.locator("#people .person")
+    expect(people).to_have_count(3)
+    expect(people.nth(0).locator(".card")).to_have_attribute("data-deck", "neon")
+    expect(people.nth(2).locator(".card")).to_have_attribute("data-deck", "candy")
+    bot_deck = people.nth(1).locator(".card").get_attribute("data-deck")
+    expect(guest.locator("#people .person").nth(1).locator(".card")).to_have_attribute("data-deck", bot_deck)
+
+    # Dana changes her mind in the lobby, twice, and Bob sees where she ends
+    # up: the room takes one change a second, so the second waits its turn.
+    page.click("#lobbyDecks button[data-deck=pixel]")
+    page.click("#lobbyDecks button[data-deck=space]")
+    expect(guest.locator("#people .person").nth(0).locator(".card")).to_have_attribute("data-deck", "pixel")
+    expect(guest.locator("#people .person").nth(0).locator(".card")).to_have_attribute("data-deck", "space")
+    assert [m["deck"] for m in fake.messages("deck")] == ["pixel", "space"]
+
+    page.click("#dealBtn")
+    expect(guest.locator("#opponents .tile")).to_have_count(2)
+    # Dana's cards land on Bob's screen in her deck, Bob's on hers in his,
+    # and the bot's in the same deck for both.
+    page.wait_for_function(f"{STATE}.canSlam")
+    page.evaluate("window.__war.slam(120)")
+    dana_on_bob = guest.locator("#opponents .tile").nth(0).locator(".tslot > .card")
+    expect(dana_on_bob).to_have_class(re.compile(r"\bback\b"))
+    expect(dana_on_bob).to_have_attribute("data-deck", "space")
+    fake.broadcast({
+        "t": "flip", "battle": 1, "stage": 0, "winner": 0, "tied": [0], "gods": False, "pot": 3,
+        "plays": [[0, 0, joker(1), 120, 0, 0], [1, 0, card(3), 50, 1, 0], [2, 0, card(12, 1), 80, 0, 0]],
+        "counts": [29, 26, 26], "out": [], "next": fake.stage(2, opens_in=2400),
+    })
+    expect(dana_on_bob).to_have_attribute("aria-label", "red joker")
+    expect(dana_on_bob.locator(".cc")).to_have_text("☄️")
+    # When the next battle opens, the pot lands on Dana's heap on Bob's
+    # screen, each card in its player's deck, Bob's ace in his.
+    dana_heap = guest.locator("#opponents .tile").nth(0).locator(".heap .card")
+    expect(dana_heap).to_have_count(3)
+    expect(dana_heap.locator("xpath=self::*[@aria-label='ace of hearts']")).to_have_attribute("data-deck", "candy")
+    expect(dana_heap.locator("xpath=self::*[@aria-label='red joker']")).to_have_attribute("data-deck", "space")
+    expect(page.locator("#opponents .tile").nth(1).locator(".tslot > .card")).to_have_attribute("data-deck", "candy")
+    expect(page.locator("#opponents .tile").nth(0).locator(".tslot > .card")).to_have_attribute("data-deck", bot_deck)
+    expect(guest.locator("#opponents .tile").nth(1).locator(".tslot > .card")).to_have_attribute("data-deck", bot_deck)
+    # Your own cards are in your deck, on your screen.
+    expect(page.locator("#mySlot .card")).not_to_have_attribute("data-deck", re.compile("."))
+    assert page.evaluate("document.documentElement.dataset.deck") == "space"
+
+    # A change mid-game shows on everyone's screen from your next card.
+    guest.click("#menuBtn")
+    guest.click("#pauseDecks button[data-deck=spooky]")
+    guest.click("#resumeBtn")
+    guest.wait_for_function(f"{STATE}.canSlam")
+    guest.evaluate("window.__war.slam(50)")
+    expect(page.locator("#opponents .tile").nth(1).locator(".tslot > .card")).to_have_attribute("data-deck", "spooky")
+    guest_context.close()
+    assert errors == []
+
+
 def test_latecomers_watch(page: Page, site_url, errors):
     fake = FakeWarRoom()
     fake.players = [{"name": "Dana", "avatar": 0, "bot": False, "token": "dana-token-123456"},
@@ -154,7 +225,8 @@ def test_latecomers_watch(page: Page, site_url, errors):
     expect(page.locator("#app")).to_be_visible()
     expect(page.locator("#meNote")).to_contain_text("watching")
     expect(page.locator("#opponents .tile")).to_have_count(2)
-    expect(page.locator("#slamBtn")).to_be_disabled()
+    expect(page.locator("#myPile")).to_be_hidden()
+    expect(page.locator("#slamText")).to_have_text("Watching")
     # Watching a game that ends doesn't count as playing it.
     fake.broadcast({
         "t": "flip", "battle": 1, "stage": 0, "winner": 0, "tied": [0], "gods": False, "pot": 2,
@@ -163,15 +235,61 @@ def test_latecomers_watch(page: Page, site_url, errors):
                  "battles": 1, "wars": 0, "biggest": 0, "deepest": 0},
     })
     expect(page.locator("#over")).to_be_visible()
+    # The battle log has what Eve saw, with no pile of her own to count.
+    expect(page.locator("#battleLog li")).to_have_count(1)
+    expect(page.locator("#battleLog li .lr")).to_have_text("🦊 Dana takes 2 cards")
+    expect(page.locator("#battleLog li .ld")).to_have_text("")
     assert page.evaluate("localStorage.getItem('war:history')") is None
     assert page.evaluate("localStorage.getItem('war:stats')") is None
     assert errors == []
 
 
-def test_an_invite_link_fills_in_the_code(page: Page, site_url, errors):
+def test_an_invite_link_opens_straight_to_joining(page: Page, site_url, errors):
     open_war(page, site_url, FakeWarRoom(), "&room=k7qp")
+    # Joining comes first, above solo play, with nothing else to pick.
+    expect(page.locator("#friendsTitle")).to_have_text("You’re invited to room K7QP")
     expect(page.locator("#codeInput")).to_have_value("K7QP")
     expect(page.locator("#joinBtn")).to_have_text("Join room K7QP")
+    expect(page.locator("#newRoomBtn")).to_be_hidden()
+    assert page.locator("#friends").bounding_box()["y"] < page.locator("#soloBtn").bounding_box()["y"]
+    expect(page.locator("#friendsErr")).to_have_text("Pick a name and an animal, then join.")
+    page.fill("#nameInput", "Grandma")
+    page.click("#joinBtn")
+    expect(page.locator("#lobby")).to_be_visible()
+    expect(page.locator("#people")).to_contain_text("Grandma")
+    assert errors == []
+
+
+def test_invite_by_qr_code_or_link_from_the_lobby_or_mid_game(page: Page, site_url, errors):
+    fake = FakeWarRoom()
+    open_war(page, site_url, fake)
+    start_room(page)
+    # The lobby shows the invite link as a QR code to scan.
+    qr = page.locator("#lobbyQr svg")
+    expect(qr).to_be_visible()
+    expect(qr).to_have_attribute("aria-label", re.compile(r"^QR code for http.*/war\?room=K7QP"))
+    page.click("#botMore")
+    page.click("#dealBtn")
+    expect(page.locator("#app")).to_be_visible()
+
+    # Mid-game, the room code in the top bar invites someone to the next game.
+    page.click("#roomTag")
+    expect(page.locator("#inviteOv")).to_be_visible()
+    expect(page.locator("#inviteCode")).to_have_text("K7QP")
+    expect(page.locator("#inviteHelp")).to_contain_text("dealt into the next one")
+    expect(page.locator("#inviteQr svg")).to_be_visible()
+    page.click("#inviteShareBtn")
+    expect(page.locator("#inviteNote")).to_have_text(re.compile(r"Invite link copied|room=K7QP"))
+    page.keyboard.press("Escape")
+    expect(page.locator("#inviteOv")).to_be_hidden()
+    # So does the menu.
+    page.click("#menuBtn")
+    page.click("#pauseInviteBtn")
+    expect(page.locator("#inviteOv")).to_be_visible()
+    expect(page.locator("#pause")).to_be_hidden()
+    page.click("#inviteDone")
+    expect(page.locator("#inviteOv")).to_be_hidden()
+    assert errors == []
 
 
 def test_a_name_is_needed(page: Page, site_url, errors):
