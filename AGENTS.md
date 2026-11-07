@@ -230,7 +230,7 @@ kept up to date), and deletes it when the pull request closes.
   live site's address (link previews, the sitemap, the game list) becomes
   the preview's. Games need nothing for this; just keep naming the Worker
   by its full URL (`WORKER_URL` in `scripts/common.py`). It also puts a
-  yellow strip atop the preview's home page and colophon naming the pull
+  yellow strip atop the preview's home page, colophon and changelogs naming the pull
   request and commit, linked to the pull request; games get none, but
   every page's `<title>` starts with "PR <number> · ", so a game's tab
   says it's a preview too.

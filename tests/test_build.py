@@ -297,11 +297,11 @@ def test_point_site_adds_a_banner_to_generated_pages_only(site_dir, tmp_path):
     shutil.copytree(site_dir, preview)
     link = "https://github.com/mwarkentin/games/pull/7"
     point_site(preview, "https://pr-7-games-preview.example.workers.dev", banner="Preview of #7 <x>", banner_link=link)
-    for name in GENERATED_PAGES:
+    for name in generated_pages():
         text = (preview / name).read_text("utf-8")
         assert text.count('class="preview-banner"') == 1
         assert f'<a href="{link}">Preview of #7 &lt;x&gt;</a>' in text
-        assert text.index("<body>") < text.index('class="preview-banner"')
+        assert text.index("<body") < text.index('class="preview-banner"')
     for filename in game_files():
         assert "preview-banner" not in (preview / filename).read_text("utf-8")
 
@@ -326,7 +326,7 @@ def test_point_site_prefixes_every_page_title_but_not_link_previews(site_dir, tm
     preview = tmp_path / "site"
     shutil.copytree(site_dir, preview)
     point_site(preview, "https://pr-7-games-preview.example.workers.dev", title_prefix="PR 7 · ")
-    for name in [*game_files(), *GENERATED_PAGES]:
+    for name in [*game_files(), *generated_pages()]:
         before = (site_dir / name).read_text("utf-8")
         after = (preview / name).read_text("utf-8")
         title = re.search(r"<title>(.*?)</title>", before).group(1)

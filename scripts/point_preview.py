@@ -13,7 +13,7 @@ rewrites, in every text file:
   Worker, which answers only the live site's origin, so a preview can never
   write to production's scores or rooms.
 
-With --banner, the home page and colophon also get a strip along the top
+With --banner, the generated pages (home page, colophon, changelogs) get a strip along the top
 naming the preview (the pull request and commit), linked to --banner-link.
 Games are left without one: they own the whole screen. With --title-prefix,
 every page's <title> starts with it instead, so a game opened straight from a
@@ -33,7 +33,7 @@ import html
 import re
 from pathlib import Path
 
-from common import BASE_URL, GENERATED_PAGES, WORKER_URL
+from common import BASE_URL, WORKER_URL, generated_pages
 
 # Everything the build writes as text. Images, icons and MIDI files are left alone.
 TEXT_SUFFIXES = {".html", ".js", ".json", ".txt", ".xml", ".webmanifest"}
@@ -89,12 +89,13 @@ def point_site(
 ) -> list[Path]:
     """Rewrite the site in place; returns the files that changed."""
     changed = []
+    generated = set(generated_pages())
     for path in sorted(site_dir.rglob("*")):
         if not path.is_file() or path.suffix not in TEXT_SUFFIXES:
             continue
         text = path.read_text("utf-8")
         pointed = point_text(text, site, worker)
-        if banner and path.parent == site_dir and path.name in GENERATED_PAGES:
+        if banner and path.relative_to(site_dir).as_posix() in generated:
             pointed = add_banner(pointed, banner, banner_link)
         if title_prefix and path.suffix == ".html":
             pointed = prefix_title(pointed, title_prefix)
@@ -110,7 +111,7 @@ def main() -> None:
     parser.add_argument("--site", type=origin, required=True, help="the preview's own origin")
     # No default: argparse would run origin() on it.
     parser.add_argument("--worker", type=origin, help="the Worker Preview's origin, if any")
-    parser.add_argument("--banner", default="", help="text for a strip atop the home page and colophon")
+    parser.add_argument("--banner", default="", help="text for a strip atop the generated pages")
     parser.add_argument("--banner-link", default="", help="where the strip links to")
     parser.add_argument("--title-prefix", default="", help="text to start every page's <title> with")
     args = parser.parse_args()
