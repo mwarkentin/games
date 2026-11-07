@@ -169,6 +169,53 @@ def test_won_cards_pile_up_and_clean_up_sorts_them(page: Page, site_url, errors)
     assert errors == []
 
 
+def test_the_end_screen_tells_the_game_battle_by_battle_and_shares_a_picture(page: Page, site_url, errors):
+    start_solo(page, site_url, opponents=1, length="quick", seed=WAR_SEED)
+    page.evaluate("window.__war.pace(0.05)")
+    page.click("#autoBtn")
+    page.wait_for_selector("#over:not([hidden])", timeout=60_000)
+    over = page.evaluate(f"{STATE}.over")
+    log = page.evaluate("window.__war.log()")
+    assert [e["b"] for e in log] == list(range(1, over["battles"] + 1))
+    rows = page.locator("#battleLog li")
+    expect(rows).to_have_count(over["battles"])
+    # The double war that opens the game: eights, threes, then the decider.
+    assert len(log[0]["stages"]) == 3
+    expect(rows.nth(0).locator(".lw")).to_have_text(["WAR", "DOUBLE WAR"])
+    expect(rows.nth(0).locator(".mc")).to_have_count(6)
+    expect(rows.nth(0).locator(".mc").nth(0)).to_have_text(re.compile(r"^8"))
+    expect(rows.nth(0).locator(".mc").nth(2)).to_have_text(re.compile(r"^3"))
+    # What each battle did to your pile adds up to what you ended with.
+    deltas = [int(t.replace("−", "-") or 0) for t in rows.locator(".ld").all_text_contents()]
+    assert sum(deltas) == over["counts"][0] - 27
+
+    with page.expect_download() as download:
+        page.click("#shareImgBtn")
+    assert re.fullmatch(r"war-\d{4}-\d{2}-\d{2}\.png", download.value.suggested_filename)
+    png = open(download.value.path(), "rb").read()
+    assert png[:8] == b"\x89PNG\r\n\x1a\n"
+    assert (int.from_bytes(png[16:20], "big"), int.from_bytes(png[20:24], "big")) == (1080, 1350)
+    expect(page.locator("#shareImgNote")).to_have_text("Saved the picture. Send it to whoever needs to know.")
+    assert errors == []
+
+
+def test_skipping_to_the_end_still_logs_every_battle(page: Page, site_url, errors):
+    start_solo(page, site_url, opponents=3, seed=5)
+    page.evaluate("window.__war.slam(50)")
+    page.wait_for_function(f"{STATE}.battle >= 2")
+    page.click("#menuBtn")
+    page.click("#skipBtn")
+    expect(page.locator("#over")).to_be_visible()
+    battles = page.evaluate(f"{STATE}.over.battles")
+    log = page.evaluate("window.__war.log()")
+    assert [e["b"] for e in log] == list(range(1, battles + 1))
+    expect(page.locator("#battleLog li")).to_have_count(battles)
+    # At a bigger table, each row has your card and the one that won.
+    expect(page.locator("#battleLog li").nth(0).locator(".lc")).to_contain_text("you")
+    assert page.evaluate("window.__war.picture()").startswith("data:image/png;base64,")
+    assert errors == []
+
+
 def test_how_you_slam_is_remembered(page: Page, site_url, errors):
     start_solo(page, site_url)
     expect(page.locator("#inputBtn")).to_have_text("✊ Hold")

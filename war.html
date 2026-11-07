@@ -432,6 +432,29 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px s
 .stat-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 6px; }
 .stat-grid div { background: var(--panel-2); border-radius: 10px; padding: 8px; font-size: 13px; }
 .stat-grid b { display: block; font-size: 18px; }
+/* The battle log on the end screen: one row a battle, cards as little chips. */
+.blog {
+  list-style: none; margin: 0; padding: 4px; display: grid; gap: 2px; max-height: 270px; overflow-y: auto;
+  background: var(--panel-2); border-radius: 12px; overscroll-behavior: contain;
+}
+.blog li { display: grid; grid-template-columns: 3.3em minmax(0, 1fr) auto; gap: 6px; align-items: center; padding: 5px 6px; border-radius: 8px; font-size: 13px; }
+.blog li.won { background: rgba(255, 201, 61, .2); }
+.blog li.gap { display: block; text-align: center; color: var(--panel-dim); font-style: italic; }
+.blog .ln { font-variant-numeric: tabular-nums; color: var(--panel-dim); font-weight: 700; font-size: 12px; }
+.blog .lc { display: flex; flex-wrap: wrap; gap: 3px; align-items: center; }
+.blog .lr { font-size: 12px; color: var(--panel-dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.blog .ld { font-weight: 800; font-variant-numeric: tabular-nums; min-width: 2.4em; text-align: right; }
+.blog .ld.up { color: #1f8a4c; }
+.blog .ld.down { color: var(--accent); }
+@media (prefers-color-scheme: dark) { .blog .ld.up { color: #6fdc98; } }
+.mc {
+  display: inline-block; min-width: 2.2em; padding: 1px 4px; border-radius: 5px; text-align: center; line-height: 1.35;
+  background: #fffdf6; color: #1d1d1f; border: 1px solid #d6ccb8; font-weight: 700; font-size: 12px;
+}
+.mc.red { color: #d1262a; }
+#overButtons { flex-wrap: nowrap; }
+#overButtons .btn { padding-inline: 10px; white-space: nowrap; }
+.lw { font: 700 10px/1 system-ui, sans-serif; color: #fff; background: var(--war); padding: 4px 5px; border-radius: 6px; white-space: nowrap; }
 .science { background: var(--panel-2); border-left: 4px solid var(--accent); padding: 8px 10px; border-radius: 8px; font-size: 14px; margin: 10px 0; }
 .unlock { background: var(--gold); color: var(--gold-ink); padding: 10px 12px; border-radius: 12px; font-weight: 700; margin: 10px 0; }
 .menu-tools { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
@@ -625,13 +648,19 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px s
     </div>
     <h3>The war in numbers</h3>
     <div class="stat-grid" id="overStats"></div>
+    <div id="logSection" hidden>
+      <h3 id="logTitle">Battle by battle</h3>
+      <ol class="blog" id="battleLog"></ol>
+    </div>
     <div class="science" id="science"></div>
     <div class="unlock" id="unlock" hidden></div>
     <p class="small dim" id="overNote"></p>
-    <div class="row" style="margin-top:8px">
+    <div class="row" id="overButtons" style="margin-top:8px">
       <button class="btn" id="overMenuBtn">Menu</button>
+      <button class="btn" id="shareImgBtn" aria-label="Share a picture of the game">📸 Share</button>
       <button class="btn primary grow" id="againBtn">Play again</button>
     </div>
+    <p class="small dim" id="shareImgNote" aria-live="polite"></p>
   </div>
 </div>
 
@@ -1813,7 +1842,7 @@ class SoloRoom {
     if (!this.game || this.game.over) return;
     clearTimeout(this.timer);
     this.pausedAt = 0;
-    while (!this.game.over) warResolve(this.game, Date.now(), this.random);
+    while (!this.game.over) logFlip(warResolve(this.game, Date.now(), this.random));
     receive(this.snapshot());
   }
   close() { clearTimeout(this.timer); this.game = null; }
@@ -1927,8 +1956,9 @@ function onState(m) {
     const g = m.game;
     // A new game, or a snapshot of a different moment in this one.
     const fresh = m.phase === 'playing' && (wasPhase !== 'playing' || g.battle < S.battle);
-    if (fresh) { S.mine = []; S.overShown = false; S.naps = 0; S.plan = null; S.potCards = []; Odds.reset(); heapClear(); }
+    if (fresh) { S.mine = []; S.overShown = false; S.naps = 0; S.plan = null; S.potCards = []; Odds.reset(); heapClear(); logReset(g.counts); }
     if (fresh || S.battle !== g.battle || S.stage !== g.stage) {
+      if (!g.over) Log.stages = [];
       clearLater();
       S.cards = {};
       S.result = null;
@@ -2054,6 +2084,7 @@ function onFlip(m) {
   const wait = S.animUntil - now();
   if (wait > 0) { later(() => onFlip(m), wait); return; }
   if (S.pending && S.pending.battle === m.battle && S.pending.stage === m.stage) openStage();
+  logFlip(m);
   S.result = m;
   S.counts = m.counts.slice();
   S.pot = m.pot;
@@ -3114,6 +3145,8 @@ function showOver() {
     $('oddsChart').replaceChildren(chart.svg);
     setText($('oddsVerdict'), chart.verdict);
   }
+  renderLog();
+  setText($('shareImgNote'), '');
   $('science').replaceChildren(...science());
   if (me !== null) {
     const life = store.get('stats', { games: 0, wins: 0, slams: 0, best: 0 });
@@ -3195,6 +3228,422 @@ function renderHistory() {
     ].filter(Boolean).join(' · ');
     li.append(top, el('div', 'g-detail', line1), el('div', 'g-detail', line2));
     list.append(li);
+  }
+}
+
+// ---- The battle log ----
+//
+// Every battle of the game as you saw it, for the end screen and the picture
+// you can share: the cards turned over, any wars, who took the pot and how
+// many cards everyone held afterwards. At a big table it keeps only the cards
+// that mattered: yours, the winner's and those that tied.
+
+const Log = {
+  battles: [],  // { b, stages, winner, pot, gods, counts }, a stage being { plays: [[seat, up, down]], n, way, tied }
+  stages: [],   // the stages of the battle being played
+  start: null,  // everyone's cards when the log started
+  jokers: 0,    // jokers turned over
+};
+const LOG_SHOWN = 400;  // rows on the end screen; a longer game shows its start and its end
+
+function logReset(counts) {
+  Object.assign(Log, { battles: [], stages: [], start: counts ? counts.slice() : null, jokers: 0 });
+}
+
+function logFlip(m) {
+  const all = m.plays.length <= 6;
+  const keep = (seat) => all || seat === S.you || seat === m.winner || m.tied.includes(seat);
+  for (const p of m.plays) if (warRank(p[2]) === JOKER) Log.jokers++;
+  Log.stages.push({
+    plays: m.plays.filter((p) => keep(p[0])).map(([seat, down, up]) => [seat, up, down]),
+    n: m.plays.length,
+    way: m.winner === null && m.next ? m.next.fighters.length : 0,
+    tied: m.winner === null ? m.tied.slice() : [],
+  });
+  if (m.winner === null) return;
+  Log.battles.push({ b: m.battle, stages: Log.stages, winner: m.winner, pot: m.pot, gods: m.gods, counts: Uint16Array.from(m.counts) });
+  Log.stages = [];
+}
+
+// A card as a little chip of text: its rank and suit, or a joker.
+function miniCard(card) {
+  if (card === undefined || card === null) return el('span', 'mc', '–');
+  const rank = warRank(card);
+  if (rank === JOKER) {
+    const node = el('span', `mc${card % WAR.DECK === 53 ? ' red' : ''}`, '🃏');
+    node.title = `${card % WAR.DECK === 53 ? 'Red' : 'Black'} joker`;
+    return node;
+  }
+  const suit = Math.floor((card % WAR.DECK) / 13);
+  return el('span', `mc${suit === 1 || suit === 2 ? ' red' : ''}`, `${RANKS[rank]}${SUITS[suit]}`);
+}
+
+const warWord = (stage, way) => `${way > 2 ? `${way}-way ` : ''}${['', 'war', 'double war', 'triple war'][stage] || `${stage}× war`}`.toUpperCase();
+
+// One battle on the end screen: the cards, then who took the pot, and what it
+// did to your pile.
+function logRow(e, before) {
+  const me = S.you;
+  const li = el('li', e.winner === me ? 'won' : '');
+  const cards = el('div', 'lc');
+  const headsUp = S.players.length === 2;
+  e.stages.forEach((st, i) => {
+    if (i) cards.append(el('span', 'lw', warWord(i, e.stages[i - 1].way)));
+    const played = (seat) => st.plays.find((p) => p[0] === seat);
+    if (headsUp) {
+      const seats = me === 1 ? [1, 0] : [0, 1];
+      seats.forEach((seat) => { const p = played(seat); if (p) cards.append(miniCard(p[1])); });
+      return;
+    }
+    const mine = me !== null ? played(me) : null;
+    if (mine) cards.append(document.createTextNode('you'), miniCard(mine[1]));
+    const last = i === e.stages.length - 1;
+    const best = last ? played(e.winner) : played(st.tied.find((seat) => seat !== me));
+    if (best && best[0] !== me) cards.append(document.createTextNode(last ? 'top' : 'tied'), miniCard(best[1]));
+  });
+  const who = e.winner === me ? 'You take' : `${avatarOf(e.winner)} ${playerName(e.winner)} takes`;
+  const how = e.gods ? ' (the war gods picked)' : '';
+  const result = el('div', 'lr', `${who} ${plural(e.pot, 'card')}${how}`);
+  const main = el('div');
+  main.append(cards, result);
+  const delta = me !== null && before ? e.counts[me] - before[me] : 0;
+  const d = el('span', `ld${delta > 0 ? ' up' : delta < 0 ? ' down' : ''}`, delta ? `${delta > 0 ? '+' : '−'}${Math.abs(delta)}` : '');
+  if (delta) d.title = `${delta > 0 ? 'Gained' : 'Lost'} ${plural(Math.abs(delta), 'card')}`;
+  li.append(el('span', 'ln', `#${fmt(e.b)}`), main, d);
+  return li;
+}
+
+function renderLog() {
+  const list = $('battleLog');
+  list.replaceChildren();
+  const all = Log.battles;
+  setHidden($('logSection'), !all.length);
+  if (!all.length) return;
+  const wars = all.filter((e) => e.stages.length > 1).length;
+  const from = all[0].b > 1 ? ` from battle ${fmt(all[0].b)}, when you arrived` : '';
+  setText($('logTitle'), `Battle by battle${from}`);
+  const rows = [];
+  all.forEach((e, i) => {
+    if (all.length > LOG_SHOWN && i === LOG_SHOWN / 2) rows.push(el('li', 'gap', `…${fmt(all.length - LOG_SHOWN)} more battles…`));
+    if (all.length > LOG_SHOWN && i >= LOG_SHOWN / 2 && i < all.length - LOG_SHOWN / 2) return;
+    rows.push(logRow(e, i ? all[i - 1].counts : Log.start));
+  });
+  list.append(...rows);
+  list.setAttribute('aria-label', `${plural(all.length, 'battle')}, ${plural(wars, 'war')}`);
+}
+
+// ---- A picture of the game ----
+//
+// The end screen as one picture to send around: the result, the standings,
+// everyone's cards through the game, and the numbers, drawn on a canvas.
+
+// A deck's colors and font, as the CSS has them.
+function deckLook(look) {
+  const probe = cardEl('back', look);
+  probe.classList.remove('back');
+  probe.style.cssText = 'position:absolute;visibility:hidden;left:-999px';
+  document.body.append(probe);
+  const cs = getComputedStyle(probe);
+  const v = (name) => cs.getPropertyValue(name).trim();
+  const colors = {
+    face: cs.backgroundColor, ink: cs.color, red: v('--deck-red') || '#d1262a', edge: v('--deck-edge') || '#d6ccb8',
+    font: v('--deck-font') || 'Impact, sans-serif', radius: Number(v('--deck-radius')) || 0.1,
+  };
+  probe.remove();
+  return colors;
+}
+
+const PIC_BODY = 'system-ui, -apple-system, "Segoe UI", Roboto, sans-serif';
+const PIC_DISPLAY = '"Bungee", Impact, "Arial Black", sans-serif';
+
+function picRound(g, x, y, w, h, r) {
+  g.beginPath();
+  g.moveTo(x + r, y);
+  g.arcTo(x + w, y, x + w, y + h, r);
+  g.arcTo(x + w, y + h, x, y + h, r);
+  g.arcTo(x, y + h, x, y, r);
+  g.arcTo(x, y, x + w, y, r);
+  g.closePath();
+}
+
+// Shortens text with an ellipsis until it fits.
+function picFit(g, text, width) {
+  if (g.measureText(text).width <= width) return text;
+  let t = text;
+  while (t.length > 1 && g.measureText(t + '…').width > width) t = t.slice(0, -1);
+  return t + '…';
+}
+
+// Sets the largest font size, down to `min`, at which text fits, and returns
+// the text, shortened if it still doesn't.
+function picSize(g, text, width, size, min, family) {
+  for (; size > min; size -= 2) {
+    g.font = `${size}px ${family}`;
+    if (g.measureText(text).width <= width) return text;
+  }
+  g.font = `${min}px ${family}`;
+  return picFit(g, text, width);
+}
+
+function picCard(g, card, look, x, y, w, angle) {
+  const c = deckLook(look);
+  const h = w * 1.4;
+  g.save();
+  g.translate(x, y);
+  g.rotate(angle);
+  g.shadowColor = 'rgba(0, 0, 0, .35)';
+  g.shadowBlur = 18;
+  g.shadowOffsetY = 8;
+  picRound(g, -w / 2, -h / 2, w, h, Math.max(2, w * c.radius));
+  g.fillStyle = c.face;
+  g.fill();
+  g.shadowColor = 'transparent';
+  g.lineWidth = Math.max(2, w * 0.02);
+  g.strokeStyle = c.edge;
+  g.stroke();
+  const rank = warRank(card);
+  const joker = rank === JOKER;
+  const suit = Math.floor((card % WAR.DECK) / 13);
+  g.fillStyle = (joker ? card % WAR.DECK === 53 : suit === 1 || suit === 2) ? c.red : c.ink;
+  g.textAlign = 'left';
+  g.textBaseline = 'top';
+  g.font = `${Math.round(w * 0.24)}px ${c.font}`;
+  g.fillText(RANKS[rank], -w / 2 + w * 0.08, -h / 2 + w * 0.06);
+  if (!joker) {
+    g.font = `${Math.round(w * 0.2)}px ${PIC_BODY}`;
+    g.fillText(SUITS[suit], -w / 2 + w * 0.09, -h / 2 + w * 0.32);
+  }
+  g.textAlign = 'center';
+  g.textBaseline = 'middle';
+  g.font = `${Math.round(w * (joker ? 0.56 : 0.5))}px ${PIC_BODY}`;
+  const pictures = DECKS[look] || DECKS.classic;
+  g.fillText(joker ? pictures[5] : rank >= 9 && rank <= 11 ? pictures[rank - 7] : SUITS[suit], 0, h * 0.05);
+  g.restore();
+}
+
+// The picture itself, 1080 by 1350.
+async function summaryImage() {
+  const W = 1080, H = 1350, PAD = 60;
+  const o = S.over;
+  const me = S.you;
+  const canvas = document.createElement('canvas');
+  canvas.width = W;
+  canvas.height = H;
+  const g = canvas.getContext('2d');
+  try {
+    await Promise.race([document.fonts.load('80px Bungee'), new Promise((resolve) => setTimeout(resolve, 1500))]);
+  } catch (e) { /* Impact, then */ }
+
+  // The felt.
+  const felt = g.createRadialGradient(W / 2, H * 0.35, 80, W / 2, H * 0.45, H * 0.85);
+  felt.addColorStop(0, '#1f7d4f');
+  felt.addColorStop(1, '#0e4329');
+  g.fillStyle = felt;
+  g.fillRect(0, 0, W, H);
+  g.save();
+  g.globalAlpha = 0.035;
+  g.strokeStyle = '#fff';
+  g.lineWidth = 3;
+  for (let x = -H; x < W; x += 16) { g.beginPath(); g.moveTo(x, 0); g.lineTo(x + H, H); g.stroke(); }
+  g.restore();
+
+  // The title, and a fan of cards in your deck.
+  g.textAlign = 'left';
+  g.textBaseline = 'alphabetic';
+  g.fillStyle = 'rgba(0, 0, 0, .3)';
+  g.font = `130px ${PIC_DISPLAY}`;
+  g.fillText('WAR!', PAD, 178);
+  g.fillStyle = '#ffc93d';
+  g.fillText('WAR!', PAD, 170);
+  g.fillStyle = 'rgba(253, 248, 236, .8)';
+  g.font = `700 30px ${PIC_BODY}`;
+  g.fillText('SLAM EDITION', PAD + 6, 218);
+  picCard(g, 12, deck, W - 330, 142, 115, -0.22);
+  picCard(g, 53, deck, W - 210, 128, 125, 0);
+  picCard(g, 11 + 13, deck, W - 92, 142, 115, 0.22);
+
+  // The result and the standings, on a panel.
+  const won = me !== null && o.winners.includes(me);
+  const shared = o.winners.length > 1;
+  const names = o.winners.map(playerName);
+  const title = won ? (shared ? 'Shared victory!' : 'Victory!') : shared ? 'A shared victory' : `${names[0]} wins!`;
+  const rows = o.order.slice(0, me !== null && o.order.indexOf(me) > 3 ? 3 : 4);
+  if (me !== null && !rows.includes(me)) rows.push(me);
+  let y = 270;
+  const panelH = 172 + rows.length * 58;
+  g.fillStyle = '#fffaf0';
+  picRound(g, PAD, y, W - PAD * 2, panelH, 36);
+  g.fill();
+  g.fillStyle = '#ff4d2e';
+  g.fillText(picSize(g, title, W - PAD * 2 - 80, 72, 40, PIC_DISPLAY), PAD + 40, y + 92);
+  g.fillStyle = '#6f6052';
+  g.font = `30px ${PIC_BODY}`;
+  const alive = o.counts.filter(Boolean).length;
+  const sub = alive <= 1 ? `${names[0]} took every card in ${plural(o.battles, 'battle')}.`
+    : `${plural(o.battles, 'battle')}, ${plural(S.players.length, 'player')}${S.mode === 'room' ? ', in a room' : ''}. The most cards wins.`;
+  g.fillText(picFit(g, sub, W - PAD * 2 - 80), PAD + 40, y + 138);
+  y += 200;
+  for (const seat of rows) {
+    const mine = seat === me;
+    if (mine) {
+      g.fillStyle = 'rgba(255, 77, 46, .12)';
+      picRound(g, PAD + 24, y - 40, W - PAD * 2 - 48, 52, 14);
+      g.fill();
+    }
+    g.fillStyle = o.winners.includes(seat) ? '#ff4d2e' : '#6f6052';
+    g.font = `36px ${PIC_DISPLAY}`;
+    g.fillText(`#${o.order.indexOf(seat) + 1}`, PAD + 40, y);
+    g.fillStyle = '#2b2118';
+    g.font = `${mine ? 800 : 600} 32px ${PIC_BODY}`;
+    const right = o.counts[seat] ? plural(o.counts[seat], 'card') : `out in battle ${o.out[seat]}`;
+    g.textAlign = 'right';
+    g.fillText(right, W - PAD - 40, y);
+    const rightW = g.measureText(right).width;
+    g.textAlign = 'left';
+    g.fillText(picFit(g, `${avatarOf(seat)} ${playerName(seat)}`, W - PAD * 2 - 220 - rightW), PAD + 140, y);
+    y += 58;
+  }
+  y = 270 + panelH + 28;
+
+  // Everyone's cards, battle by battle: you in orange, the leaders in white.
+  // It takes the room the standings leave above the numbers.
+  const th = 112, tilesTop = H - 96 - 2 * th - 20;
+  const chartH = tilesTop - 24 - y;
+  g.fillStyle = 'rgba(0, 0, 0, .22)';
+  picRound(g, PAD, y, W - PAD * 2, chartH, 30);
+  g.fill();
+  g.fillStyle = 'rgba(253, 248, 236, .8)';
+  g.font = `700 24px ${PIC_BODY}`;
+  g.fillText('CARDS HELD, BATTLE BY BATTLE', PAD + 34, y + 48);
+  const points = Log.start ? [{ b: Log.battles.length ? Log.battles[0].b - 1 : 0, counts: Log.start }, ...Log.battles] : Log.battles;
+  if (points.length >= 2) {
+    const x0 = PAD + 34, x1 = W - PAD - 34, top = y + 78, bottom = y + chartH - 50;
+    const most = Math.max(1, ...points.map((p) => Math.max(...p.counts)));
+    const fx = (i) => x0 + (i / (points.length - 1)) * (x1 - x0);
+    const fy = (n) => bottom - (n / most) * (bottom - top);
+    g.strokeStyle = 'rgba(253, 248, 236, .18)';
+    g.lineWidth = 2;
+    g.beginPath(); g.moveTo(x0, bottom); g.lineTo(x1, bottom); g.stroke();
+    const lead = o.order.filter((seat) => seat !== me).slice(0, me === null ? 4 : 3);
+    const line = (seat, color, width) => {
+      g.strokeStyle = color;
+      g.lineWidth = width;
+      g.lineJoin = 'round';
+      g.beginPath();
+      points.forEach((p, i) => (i ? g.lineTo(fx(i), fy(p.counts[seat])) : g.moveTo(fx(i), fy(p.counts[seat]))));
+      g.stroke();
+    };
+    lead.forEach((seat, i) => line(seat, i === 0 && me === null ? '#ffc93d' : 'rgba(253, 248, 236, .55)', 4));
+    if (me !== null) {
+      line(me, '#ff4d2e', 8);
+      // Wars you fought in, as red dots on your line.
+      g.fillStyle = '#ffc93d';
+      points.forEach((p, i) => {
+        if (i && p.stages && p.stages.length > 1 && p.stages[1].plays.some((q) => q[0] === me)) {
+          g.beginPath(); g.arc(fx(i), fy(p.counts[me]), 8, 0, Math.PI * 2); g.fill();
+        }
+      });
+      // The key, top right.
+      g.font = `600 22px ${PIC_BODY}`;
+      let kx = x1;
+      for (const [label, color] of [['your wars', '#ffc93d'], ['you', '#ff4d2e']]) {
+        g.textAlign = 'right';
+        g.fillStyle = 'rgba(253, 248, 236, .8)';
+        g.fillText(label, kx, y + 48);
+        kx -= g.measureText(label).width + 12;
+        g.fillStyle = color;
+        g.beginPath(); g.arc(kx, y + 40, 9, 0, Math.PI * 2); g.fill();
+        kx -= 32;
+      }
+    }
+    g.fillStyle = 'rgba(253, 248, 236, .7)';
+    g.font = `22px ${PIC_BODY}`;
+    g.textAlign = 'left';
+    g.fillText(`Battle ${fmt(points[0].b + 1)}`, x0, bottom + 34);
+    g.textAlign = 'right';
+    g.fillText(`Battle ${fmt(points[points.length - 1].b)}`, x1, bottom + 34);
+    g.textAlign = 'left';
+  } else {
+    g.fillStyle = 'rgba(253, 248, 236, .7)';
+    g.font = `28px ${PIC_BODY}`;
+    g.fillText('Over before it began.', PAD + 34, y + 170);
+  }
+  y = tilesTop;
+
+  // The numbers.
+  const biggestPot = Log.battles.reduce((best, e) => (e.pot > (best ? best.pot : 0) ? e : best), null);
+  const mightiest = me !== null && S.mine.length ? tierName(Math.max(...S.mine.map((x) => x[0]))).toUpperCase() : '—';
+  const deep = ['—', 'Single', 'Double', 'Triple', 'Quadruple'][o.deepest] || `${o.deepest}×`;
+  const tiles = [
+    [fmt(o.battles), o.battles === 1 ? 'battle' : 'battles'], [fmt(o.wars), o.wars === 1 ? 'war' : 'wars'],
+    [deep, 'deepest war'], [biggestPot ? fmt(biggestPot.pot) : '—', 'biggest pot'],
+    [fmt(Log.jokers), Log.jokers === 1 ? 'joker played' : 'jokers played'], [mightiest, 'mightiest slam'],
+  ];
+  const tw = (W - PAD * 2 - 2 * 20) / 3;
+  tiles.forEach(([big, small], i) => {
+    const tx = PAD + (i % 3) * (tw + 20), ty = y + Math.floor(i / 3) * (th + 20);
+    g.fillStyle = 'rgba(0, 0, 0, .22)';
+    picRound(g, tx, ty, tw, th, 22);
+    g.fill();
+    g.fillStyle = '#ffc93d';
+    g.fillText(picSize(g, big, tw - 44, 44, 24, PIC_DISPLAY), tx + 22, ty + 58);
+    g.fillStyle = 'rgba(253, 248, 236, .8)';
+    g.font = `600 24px ${PIC_BODY}`;
+    g.fillText(small, tx + 22, ty + 94);
+  });
+
+  // Where it's from.
+  g.textAlign = 'center';
+  g.fillStyle = 'rgba(253, 248, 236, .75)';
+  g.font = `600 26px ${PIC_BODY}`;
+  g.fillText(`games.michaelwarkentin.com/war · ${new Date().toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' })}`, W / 2, H - 46);
+  g.textAlign = 'left';
+  return canvas;
+}
+
+function shareText() {
+  const o = S.over;
+  const me = S.you;
+  const best = me !== null && S.mine.length ? tierName(Math.max(...S.mine.map((x) => x[0]))) : null;
+  const result = me === null ? `I watched ${playerName(o.winners[0])} win` : o.winners.includes(me) ? 'I won' : `I came ${ordinal(o.order.indexOf(me) + 1)} of ${S.players.length}`;
+  return `${result} a ${plural(o.battles, 'battle')} game of War: Slam Edition.${best ? ` My mightiest slam was a ${best}, which did nothing.` : ''}`;
+}
+
+// Shares the picture where a phone can, and saves it everywhere else.
+async function shareSummary() {
+  const btn = $('shareImgBtn');
+  if (!S.over || btn.disabled) return;
+  btn.disabled = true;
+  setText($('shareImgNote'), 'Drawing…');
+  try {
+    const canvas = await summaryImage();
+    const blob = await new Promise((resolve) => canvas.toBlob(resolve, 'image/png'));
+    if (!blob) throw new Error('no picture');
+    const name = `war-${new Date().toISOString().slice(0, 10)}.png`;
+    const file = new File([blob], name, { type: 'image/png' });
+    const touch = window.matchMedia && matchMedia('(pointer: coarse)').matches;
+    if (touch && navigator.canShare && navigator.canShare({ files: [file] })) {
+      try {
+        await navigator.share({ files: [file], title: 'War: Slam Edition', text: shareText() });
+        setText($('shareImgNote'), '');
+        return;
+      } catch (e) {
+        if (e.name === 'AbortError') { setText($('shareImgNote'), ''); return; }
+      }
+    }
+    const url = URL.createObjectURL(blob);
+    const a = el('a');
+    a.href = url;
+    a.download = name;
+    document.body.append(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 30000);
+    setText($('shareImgNote'), 'Saved the picture. Send it to whoever needs to know.');
+  } catch (e) {
+    setText($('shareImgNote'), 'Couldn’t draw the picture, sorry.');
+  } finally {
+    btn.disabled = false;
   }
 }
 
@@ -3512,6 +3961,7 @@ function init() {
     S.conn.send({ t: 'start' });
   });
   $('overMenuBtn').addEventListener('click', () => backToMenu());
+  $('shareImgBtn').addEventListener('click', shareSummary);
   for (const id of ['menuDecks', 'pauseDecks', 'lobbyDecks']) {
     $(id).addEventListener('click', (e) => {
       const b = e.target.closest('button');
@@ -3687,6 +4137,8 @@ if (DEBUG) {
       return levels;
     },
     hurry: () => { S.closesAt = now() + 600; },
+    log: () => Log.battles.map((e) => ({ ...e, counts: [...e.counts] })),
+    picture: async () => (await summaryImage()).toDataURL('image/png'),
     finish: () => S.conn && S.conn.finish && S.conn.finish(),
     pace: (p) => { if (S.conn && S.conn.setPace) S.conn.setPace(p); },
     odds: (counts, battle, limit, sims) => oddsFor(counts, battle, limit, sims || 200),

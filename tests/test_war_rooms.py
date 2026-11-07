@@ -226,6 +226,10 @@ def test_latecomers_watch(page: Page, site_url, errors):
                  "battles": 1, "wars": 0, "biggest": 0, "deepest": 0},
     })
     expect(page.locator("#over")).to_be_visible()
+    # The battle log has what Eve saw, with no pile of her own to count.
+    expect(page.locator("#battleLog li")).to_have_count(1)
+    expect(page.locator("#battleLog li .lr")).to_have_text("🦊 Dana takes 2 cards")
+    expect(page.locator("#battleLog li .ld")).to_have_text("")
     assert page.evaluate("localStorage.getItem('war:history')") is None
     assert page.evaluate("localStorage.getItem('war:stats')") is None
     assert errors == []
