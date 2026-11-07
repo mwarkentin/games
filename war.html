@@ -330,12 +330,10 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px s
 .card.flyer { position: absolute; z-index: 1; will-change: transform; }
 .size-l .heap .card { --w: 46px; }
 .size-m .heap .card { --w: 34px; }
-.size-s .heap .card { --w: 26px; }
-.size-xs .heap { display: none; }
+.size-s .heap, .size-xs .heap { display: none; }
 @media (min-width: 700px) {
   .size-l .heap .card { --w: 54px; }
   .size-m .heap .card { --w: 40px; }
-  .size-s .heap .card { --w: 30px; }
 }
 /* Each card is thrown from where it lay on the table, at its size there: up
    in an arc, then down faster onto the heap. They go one after another. */
@@ -2742,13 +2740,15 @@ setInterval(() => {
 //
 // The cards each player wins are swept onto a messy heap when the table
 // clears, landing every which way, messier the bigger it gets: yours beside
-// your card, everyone else's behind the card on their tile (except at the
-// biggest tables, where tiles are too small). When you lose, your card flies
+// your card, and at a table of up to four, everyone else's behind the card on
+// their tile. When you lose, your card flies
 // to the winner's heap. Clean up sorts your heap into a neat stack, twos at
 // the bottom. All for show: won cards go into the winner's deck either way,
 // and a heap never shows more cards than its player holds.
 
-const HEAP_MAX = { me: 36, 'size-l': 24, 'size-m': 16, 'size-s': 10, 'size-xs': 0 };  // cards drawn at most
+// Cards drawn at most: on your heap, and on others' at a table of up to four
+// (bigger tables have smaller tiles, and it all gets too busy).
+const HEAP_MAX = { me: 36, 'size-l': 24, 'size-m': 16, 'size-s': 0, 'size-xs': 0 };
 const heaps = new Map();  // seat -> { cards: [{ card, look, seat, node }], bottom first; tidy; layer }
 let heapPending = null;   // { winner, cards }: the pot just won, until the table clears
 const TIDY_LINES = [

@@ -248,8 +248,9 @@ def test_opponents_pile_up_what_they_win_too(page: Page, site_url, errors):
     assert errors == []
 
 
-def test_no_heaps_on_the_tiniest_tiles(page: Page, site_url, errors):
-    start_solo(page, site_url, opponents=12, seed=3)
+def test_others_heaps_only_at_a_small_table(page: Page, site_url, errors):
+    # Five players: only your own heap, to keep a busy table readable.
+    start_solo(page, site_url, opponents=4, seed=3)
     page.evaluate("window.__war.pace(0.2)")
     for _ in range(4):
         page.wait_for_function(f"{STATE}.canSlam", timeout=15_000)
