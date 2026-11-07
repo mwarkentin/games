@@ -4,10 +4,10 @@
 Each game gets a web app manifest, so adding it to the Home Screen gives that
 game an app of its own, opening full screen at the game. A page that belongs
 to a game, like Letterfield's survey log, joins that game's app instead (see
-app_of in common.py). The home page and
-colophon share a manifest for the whole collection. Names, descriptions and
-colors come from each game's <head>: its <title>, description, theme-color
-and, for a short label under the icon, apple-mobile-web-app-title.
+app_of in common.py). The home page, colophon and changelogs share a manifest
+for the whole collection. Names, descriptions and colors come from each
+game's <head>: its <title>, description, theme-color and, for a short label
+under the icon, apple-mobile-web-app-title.
 
 Icons are the PNGs in icons/, drawn from the SVGs there by render_icons.py.
 sw.js keeps an offline copy of every page, and of the music in music/. It's
@@ -28,7 +28,6 @@ import sys
 from pathlib import Path
 
 from common import (
-    GENERATED_PAGES,
     HOME_APP,
     ICON_SIZES,
     ROOT,
@@ -37,6 +36,7 @@ from common import (
     extract_meta_description,
     extract_title,
     game_files,
+    generated_pages,
     music_files,
     own_apps,
 )
@@ -141,9 +141,10 @@ def publish_pwa(site_dir: Path, root: Path = ROOT) -> dict[str, dict]:
                 icon = root / "icons" / f"{HOME_APP}-{size}.png"
             shutil.copy2(icon, site_dir / "icons" / f"{app}-{size}.png")
 
-    pages = [*GENERATED_PAGES.values(), *(f"/{filename.removesuffix('.html')}" for filename in game_files(root))]
+    generated = generated_pages(root)
+    pages = [*generated.values(), *(f"/{filename.removesuffix('.html')}" for filename in game_files(root))]
     music = [f"/{name}" for name in music_files(root)]
-    files = [site_dir / name for name in [*GENERATED_PAGES, *game_files(root)]]
+    files = [site_dir / name for name in generated] + [site_dir / name for name in game_files(root)]
     files += [root / name for name in music_files(root)]
     template = (root / SERVICE_WORKER).read_text("utf-8")
     worker = build_service_worker(template, pages, music, page_version([*files, root / SERVICE_WORKER]))
