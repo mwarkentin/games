@@ -201,7 +201,9 @@ kept up to date), and deletes it when the pull request closes.
 - **Its own URLs:** `scripts/point_preview.py` rewrites the built site so the
   live site's address (link previews, the sitemap, the game list) becomes
   the preview's. Games need nothing for this; just keep naming the Worker
-  by its full URL (`WORKER_URL` in `scripts/common.py`).
+  by its full URL (`WORKER_URL` in `scripts/common.py`). It also puts a
+  yellow strip atop the preview's home page and colophon naming the pull
+  request and commit, linked to the pull request; games get none.
 - **The Worker:** a pull request that touches `worker/` (or `preview.yml`)
   also gets a Worker Preview of the leaderboard Worker, made first, and
   `point_preview.py` points the games' `LEADERBOARD_URL`, `ROOMS_URL` and the

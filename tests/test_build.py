@@ -5,6 +5,8 @@ from __future__ import annotations
 import argparse
 import re
 import shutil
+import subprocess
+import sys
 import xml.etree.ElementTree as ET
 
 import build_index
@@ -285,3 +287,33 @@ def test_point_preview_takes_only_https_origins():
     for bad in ["http://example.com", "https://example.com/path", "example.com", "https://ex ample.com"]:
         with pytest.raises(argparse.ArgumentTypeError):
             origin(bad)
+
+
+def test_point_site_adds_a_banner_to_generated_pages_only(site_dir, tmp_path):
+    preview = tmp_path / "site"
+    shutil.copytree(site_dir, preview)
+    link = "https://github.com/mwarkentin/games/pull/7"
+    point_site(preview, "https://pr-7-games-preview.example.workers.dev", banner="Preview of #7 <x>", banner_link=link)
+    for name in GENERATED_PAGES:
+        text = (preview / name).read_text("utf-8")
+        assert text.count('class="preview-banner"') == 1
+        assert f'<a href="{link}">Preview of #7 &lt;x&gt;</a>' in text
+        assert text.index("<body>") < text.index('class="preview-banner"')
+    for filename in game_files():
+        assert "preview-banner" not in (preview / filename).read_text("utf-8")
+
+
+def test_point_preview_runs_without_a_worker_preview(site_dir, tmp_path):
+    """As the workflow runs it for a pull request that doesn't touch worker/."""
+    preview = tmp_path / "site"
+    shutil.copytree(site_dir, preview)
+    site = "https://pr-7-games-preview.example.workers.dev"
+    subprocess.run(
+        [sys.executable, str(ROOT / "scripts" / "point_preview.py"), str(preview), "--site", site,
+         "--banner", "Preview of #7", "--banner-link", "https://github.com/mwarkentin/games/pull/7"],
+        check=True,
+    )
+    war = (preview / "war.html").read_text("utf-8")
+    assert f"const ROOMS_URL = '{WORKER_URL}';" in war
+    assert f'content="{site}/war"' in war
+    assert "Preview of #7" in (preview / "index.html").read_text("utf-8")

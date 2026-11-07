@@ -13,19 +13,24 @@ rewrites, in every text file:
   Worker, which answers only the live site's origin, so a preview can never
   write to production's scores or rooms.
 
+With --banner, the home page and colophon also get a strip along the top
+naming the preview (the pull request and commit), linked to --banner-link.
+Games are left without one: they own the whole screen.
+
 Telemetry and analytics check the bare hostname, not these URLs, so they
 stay off on a preview either way.
 
-Usage: point_preview.py SITE_DIR --site URL [--worker URL]
+Usage: point_preview.py SITE_DIR --site URL [--worker URL] [--banner TEXT --banner-link URL]
 """
 
 from __future__ import annotations
 
 import argparse
+import html
 import re
 from pathlib import Path
 
-from common import BASE_URL, WORKER_URL
+from common import BASE_URL, GENERATED_PAGES, WORKER_URL
 
 # Everything the build writes as text. Images, icons and MIDI files are left alone.
 TEXT_SUFFIXES = {".html", ".js", ".json", ".txt", ".xml", ".webmanifest"}
@@ -49,7 +54,24 @@ def point_text(text: str, site: str, worker: str = "") -> str:
     return text
 
 
-def point_site(site_dir: Path, site: str, worker: str = "") -> list[Path]:
+def add_banner(text: str, banner: str, link: str = "") -> str:
+    """A strip at the top of a generated page, saying it's a preview and of what."""
+    label = html.escape(banner)
+    if link:
+        label = f'<a href="{html.escape(link)}">{label}</a>'
+    strip = (
+        '<div class="preview-banner" style="background:#ffd84d;color:#1b1b1b;'
+        'text-align:center;font-weight:600;padding:0.4rem 16px;overflow-wrap:anywhere">'
+        f"{label}</div>"
+    )
+    style = "<style>.preview-banner a { color: inherit; }</style>"
+    text = text.replace("</head>", f"{style}\n</head>", 1)
+    return re.sub(r"(<body[^>]*>)", lambda m: f"{m.group(1)}\n{strip}", text, count=1)
+
+
+def point_site(
+    site_dir: Path, site: str, worker: str = "", banner: str = "", banner_link: str = ""
+) -> list[Path]:
     """Rewrite the site in place; returns the files that changed."""
     changed = []
     for path in sorted(site_dir.rglob("*")):
@@ -57,6 +79,8 @@ def point_site(site_dir: Path, site: str, worker: str = "") -> list[Path]:
             continue
         text = path.read_text("utf-8")
         pointed = point_text(text, site, worker)
+        if banner and path.parent == site_dir and path.name in GENERATED_PAGES:
+            pointed = add_banner(pointed, banner, banner_link)
         if pointed != text:
             path.write_text(pointed, "utf-8")
             changed.append(path)
@@ -67,9 +91,12 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     parser.add_argument("site_dir", type=Path)
     parser.add_argument("--site", type=origin, required=True, help="the preview's own origin")
-    parser.add_argument("--worker", type=origin, default="", help="the Worker Preview's origin, if any")
+    # No default: argparse would run origin() on it.
+    parser.add_argument("--worker", type=origin, help="the Worker Preview's origin, if any")
+    parser.add_argument("--banner", default="", help="text for a strip atop the home page and colophon")
+    parser.add_argument("--banner-link", default="", help="where the strip links to")
     args = parser.parse_args()
-    changed = point_site(args.site_dir, args.site, args.worker)
+    changed = point_site(args.site_dir, args.site, args.worker or "", args.banner, args.banner_link)
     target = args.worker or f"{WORKER_URL} (production's Worker)"
     print(f"Pointed {len(changed)} files at {args.site}, with {target}")
 

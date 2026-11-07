@@ -137,9 +137,13 @@ jobs:
       - name: Point it at this pull request's Previews
         env:
           WORKER: ${{ needs.worker.outputs.url }}
+          PR: ${{ github.event.pull_request.number }}
+          SHA: ${{ github.event.pull_request.head.sha }}
+          PR_URL: ${{ github.event.pull_request.html_url }}
         run: |
           uv run --locked --no-dev scripts/point_preview.py _site \
-            --site "https://$PREVIEW-games-preview.$WORKERS_DEV" ${WORKER:+--worker "$WORKER"}
+            --site "https://$PREVIEW-games-preview.$WORKERS_DEV" ${WORKER:+--worker "$WORKER"} \
+            --banner "Preview of pull request #$PR at ${SHA:0:7}" --banner-link "$PR_URL"
       - name: Create or update the Preview
         id: preview
         working-directory: preview
