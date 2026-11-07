@@ -304,8 +304,22 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px s
   transform: translate(var(--x), var(--y)) rotate(var(--r));
   transition: transform calc(420ms * var(--pace)) cubic-bezier(.3, .7, .3, 1) calc(var(--i, 0) * 14ms);
 }
-#winnings .heap .card.toss { animation: toss calc(560ms * var(--pace)) cubic-bezier(.2, .7, .3, 1); }
-@keyframes toss { from { transform: translate(var(--fx), var(--fy)) rotate(calc(var(--r) * 4)) scale(1.3); opacity: .3; } }
+/* Each card is thrown from where it lay on the table, at its size there: up
+   in an arc, then down faster onto the heap. They go one after another. */
+#winnings .heap .card.toss {
+  animation: toss calc(640ms * var(--pace)) linear calc(var(--d, 0ms) * var(--pace)) backwards;
+}
+@keyframes toss {
+  0% {
+    transform: translate(var(--fx), var(--fy)) rotate(0deg) scale(var(--fs));
+    animation-timing-function: cubic-bezier(.25, .6, .45, 1);
+  }
+  45% {
+    transform: translate(calc(var(--fx) * .4 + var(--x)), calc(var(--fy) * .4 + var(--y) - 48px)) rotate(calc(var(--r) * 1.6)) scale(calc(var(--fs) * .55 + .55));
+    animation-timing-function: cubic-bezier(.55, 0, .8, .3);
+  }
+  100% { transform: translate(var(--x), var(--y)) rotate(var(--r)) scale(1); }
+}
 #tidyBtn {
   border: 0; border-radius: 999px; padding: 6px 9px; min-height: 30px; background: rgba(0, 0, 0, .3);
   font: 700 12px/1 system-ui, sans-serif; white-space: nowrap;
@@ -2684,11 +2698,17 @@ function heapClear() {
   renderHeap();
 }
 
-// Where a card was played, relative to the middle of the heap.
-function heapFrom(seat, heapBox) {
-  const from = seat === S.you ? $('mySlot') : tiles.get(seat)?.slot;
-  const box = (from && from.offsetParent ? from : $('arena')).getBoundingClientRect();
-  return [box.left + box.width / 2 - (heapBox.left + heapBox.width / 2), box.top + box.height / 2 - (heapBox.top + heapBox.height / 2)];
+// Where a card lay on the table, relative to the middle of the heap, and how
+// much bigger it was there: [x, y, scale].
+function heapFrom(c, heapBox) {
+  const pile = c.card === 'back' && c.seat === S.you ? $('myWar').querySelector('.wpile .card') : null;
+  const from = pile || (c.seat === S.you ? $('mySlot').querySelector('.card') : tiles.get(c.seat)?.card);
+  const box = from && from.offsetParent ? from.getBoundingClientRect() : null;
+  if (!box || !box.width) {
+    const arena = $('arena').getBoundingClientRect();
+    return [arena.left + arena.width / 2 - (heapBox.left + heapBox.width / 2), arena.top + arena.height / 2 - (heapBox.top + heapBox.height / 2), 1];
+  }
+  return [box.left + box.width / 2 - (heapBox.left + heapBox.width / 2), box.top + box.height / 2 - (heapBox.top + heapBox.height / 2), box.width / 40];
 }
 
 // Sweeps a pot you won onto the heap: every card in its player's deck, the
@@ -2696,10 +2716,14 @@ function heapFrom(seat, heapBox) {
 function heapToss(cards) {
   if (!heapAllowed() || !cards.length) return;
   setHidden($('winnings'), false);
+  setClass($('me'), 'warring', false);  // the war's over: no fading
   const heap = heapNode();
   const heapBox = heap.getBoundingClientRect();
   const fly = !reduceMotion.matches && heapBox.width > 0;
-  for (const c of cards.slice(-HEAP_MAX)) {
+  // Everyone else's cards first, then yours, landing on top.
+  const thrown = cards.slice(-HEAP_MAX).sort((a, b) => (a.seat === S.you) - (b.seat === S.you));
+  const gap = Math.min(70, 420 / Math.max(1, thrown.length - 1));
+  thrown.forEach((c, i) => {
     const node = cardEl(c.card, c.look);
     const mess = Math.min(1, Heap.cards.length / 20);
     node.style.setProperty('--x', `${Math.round((Math.random() - 0.5) * (8 + 12 * mess))}px`);
@@ -2707,15 +2731,17 @@ function heapToss(cards) {
     node.style.setProperty('--r', `${Math.round((Math.random() - 0.5) * (50 + 40 * mess))}deg`);
     node.style.zIndex = String(++Heap.layer);
     if (fly) {
-      const [fx, fy] = heapFrom(c.seat, heapBox);
+      const [fx, fy, fs] = heapFrom(c, heapBox);
       node.style.setProperty('--fx', `${Math.round(fx)}px`);
       node.style.setProperty('--fy', `${Math.round(fy)}px`);
+      node.style.setProperty('--fs', fs.toFixed(2));
+      node.style.setProperty('--d', `${Math.round(i * gap)}ms`);
       node.classList.add('toss');
       node.addEventListener('animationend', () => node.classList.remove('toss'), { once: true });
     }
     heap.append(node);
     Heap.cards.push({ ...c, node });
-  }
+  });
   Heap.tidy = false;
   Sound.swish();
   renderHeap();

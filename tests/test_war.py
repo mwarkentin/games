@@ -147,6 +147,13 @@ def test_won_cards_pile_up_and_clean_up_sorts_them(page: Page, site_url, errors)
     # the bot's deck, your joker in yours.
     expect(heap).to_have_count(2)
     expect(page.locator("#tidyBtn")).to_be_visible()
+    # They were thrown from the table at the size they were there (bigger than
+    # on the heap), the bot's first and then yours, landing on top.
+    thrown = heap.evaluate_all("""cards => cards.map((c) => [
+        c.getAttribute('aria-label'), Number(c.style.getPropertyValue('--fs')), parseInt(c.style.getPropertyValue('--d'))])""")
+    assert thrown[0][0].startswith("queen") and thrown[1][0].endswith("joker"), thrown
+    assert all(scale > 1 for _, scale, _ in thrown)
+    assert thrown[0][2] < thrown[1][2]
     bot_deck = page.evaluate("deckOf(1)")
     expect(page.locator("#winnings .heap .card[aria-label^=queen]")).to_have_attribute("data-deck", bot_deck)
     page.evaluate("window.__war.slam(80)")
