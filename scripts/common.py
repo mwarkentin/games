@@ -21,6 +21,9 @@ TIP_URL = "https://buy.stripe.com/4gM7sL3xucbG0ADgcd3Je00"
 
 # Pages the build generates. A game can't use these filenames.
 GENERATED_PAGES = {"index.html": "/", "colophon.html": "/colophon"}
+# Each app's changelog: changelog/<app>.md, built into /changelog/<app> by
+# build_changelog.py.
+CHANGELOGS = "changelog"
 # Counterscale page views, inlined into every page: games and generated pages.
 ANALYTICS = "analytics.js"
 # Home-screen apps (see scripts/build_pwa.py). Each game is its own app, named
@@ -132,6 +135,25 @@ def game_files(root: Path = ROOT) -> list[str]:
         for path in root.glob("*.html")
         if path.name not in GENERATED_PAGES
     )
+
+
+def changelog_apps(root: Path = ROOT) -> list[str]:
+    """The apps with a changelog, by slug."""
+    return sorted(path.stem for path in (root / CHANGELOGS).glob("*.md"))
+
+
+def changelog_path(app: str) -> str:
+    """Where an app's changelog is served."""
+    return f"/{CHANGELOGS}/{app}"
+
+
+def generated_pages(root: Path = ROOT) -> dict[str, str]:
+    """Every page the build generates, as {file in the site: path it's served at}:
+    the home page, the colophon and each app's changelog."""
+    return {
+        **GENERATED_PAGES,
+        **{f"{CHANGELOGS}/{app}.html": changelog_path(app) for app in changelog_apps(root)},
+    }
 
 
 def app_of(text: str, slug: str) -> str:

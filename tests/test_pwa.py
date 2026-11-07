@@ -17,7 +17,7 @@ import pytest
 from playwright.sync_api import Browser, BrowserContext, Page
 
 from build_pwa import build_service_worker
-from common import GENERATED_PAGES, HOME_APP, ICON_SIZES, ROOT, app_of, extract_meta, extract_title, game_files, music_files, own_apps
+from common import HOME_APP, ICON_SIZES, ROOT, app_of, extract_meta, extract_title, game_files, generated_pages, music_files, own_apps
 from fake_leaderboard import stand_in_for_worker
 from render_icons import render
 
@@ -25,7 +25,7 @@ GAMES = game_files()
 APPS = [*own_apps(), HOME_APP]
 # Pages that belong to a game's app rather than having their own (see app_of).
 PARTS = [filename for filename in GAMES if filename.removesuffix(".html") not in APPS]
-PAGES = [*GENERATED_PAGES.values(), *(f"/{filename.removesuffix('.html')}" for filename in GAMES)]
+PAGES = [*generated_pages().values(), *(f"/{filename.removesuffix('.html')}" for filename in GAMES)]
 # iOS cuts off longer labels under a Home Screen icon.
 SHORT_NAME_LIMIT = 12
 
@@ -122,7 +122,7 @@ def test_letterfields_survey_log_is_part_of_letterfield():
     assert "letterfield-log.html" in PARTS
 
 
-@pytest.mark.parametrize("filename", GENERATED_PAGES)
+@pytest.mark.parametrize("filename", generated_pages())
 def test_generated_pages_belong_to_the_home_app(site_dir, filename):
     manifest = json.loads((site_dir / "manifests" / f"{HOME_APP}.webmanifest").read_text("utf-8"))
     assert manifest["start_url"] == manifest["scope"] == "/"
@@ -175,6 +175,7 @@ def test_every_page_opens_offline_after_visiting_one(sw_context: BrowserContext,
     go_offline(sw_context, site_url)
 
     titles = {"/": "games.michaelwarkentin.com", "/colophon": "Colophon · games.michaelwarkentin.com"}
+    titles["/changelog/war"] = "War: Slam Edition changelog · games.michaelwarkentin.com"
     titles |= {f"/{f.removesuffix('.html')}": extract_title((ROOT / f).read_text("utf-8"), f) for f in GAMES}
     for path, title in titles.items():
         response = page.goto(f"{site_url}{path}")
