@@ -5,7 +5,8 @@
 - In a room, everyone's cards show in the deck they picked, bots bring decks
   of their own, and you can pick yours in the lobby.
 - The cards you win pile up in a messy heap beside your card, and Clean up
-  sorts them into a neat stack. At a table of up to four, everyone's winnings
+  squares them into a neat stack, in the order you won them with the latest
+  on top. At a table of up to four, everyone's winnings
   pile up behind their cards, and the cards fly there from the table.
 - Slam on your deck itself: hold it, tap it fast or throw a card off it. The
   big button is gone, and a slim bar shows the countdown and how hard you're
