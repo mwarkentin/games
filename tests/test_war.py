@@ -145,6 +145,32 @@ def test_a_war_means_slamming_every_card(page: Page, site_url, errors):
     assert errors == []
 
 
+def test_in_a_war_of_wars_the_cards_that_tied_stay_on_the_table(page: Page, site_url, errors):
+    # Seed 589: both turn over an eight, then a three in the war.
+    start_solo(page, site_url, seed=WAR_SEED)
+    page.evaluate("window.__war.slam(60)")
+    page.wait_for_function(f"{STATE}.stage === 1 && {STATE}.canSlam")
+    page.evaluate("window.__war.slam(60)")
+    page.wait_for_function(f"{STATE}.stage === 2 && {STATE}.canSlam")
+    # The double war opens with each three on top, and each eight still
+    # there, face up under the three face-down cards.
+    bot_up = page.locator("#spots .tdowns .card:not(.back)")
+    expect(bot_up).to_have_count(1)
+    expect(bot_up).to_have_attribute("aria-label", re.compile(r"^eight of "))
+    expect(page.locator("#spots .tdowns .card.back")).to_have_count(3)
+    expect(page.locator("#spots .spot .tslot > .card")).to_have_attribute("aria-label", re.compile(r"^three of "))
+    my_up = page.locator("#myWar .wpile .card:not(.back)")
+    expect(my_up).to_have_count(1)
+    expect(my_up).to_have_attribute("aria-label", re.compile(r"^eight of "))
+    expect(page.locator("#myWar .wpile .card.back")).to_have_count(3)
+    # When the bot slams its next card, its three joins the pile, face up.
+    page.wait_for_function("document.querySelectorAll('#spots .tdowns .card:not(.back)').length === 2", timeout=10_000)
+    labels = bot_up.evaluate_all("cards => cards.map((c) => c.getAttribute('aria-label'))")
+    assert labels[0].startswith("eight") and labels[1].startswith("three"), labels
+    expect(page.locator("#spots .tdowns .card.back")).to_have_count(6)
+    assert errors == []
+
+
 def test_a_war_you_started_is_finished_before_the_clock_runs_out(page: Page, site_url, errors):
     start_solo(page, site_url, seed=WAR_SEED)
     page.evaluate("window.__war.slam(50)")

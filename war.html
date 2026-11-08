@@ -234,20 +234,22 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px s
   .size-l .card { --w: 110px; }
 }
 .downs { position: absolute; right: -6px; bottom: -4px; z-index: 2; background: var(--war); color: #fff; font: 700 10px/1 system-ui, sans-serif; padding: 3px 5px; border-radius: 8px; }
-/* Someone else's face-down cards in a war: a messy fan peeking out from under
-   their card, one for each card, so you can count them as they go down. The
-   fan tightens as it grows (--k, a share of the card's width per card). */
+/* The cards under someone else's in a war: a messy fan peeking out to the
+   left of their card, one for each, so you can count them as they go down,
+   and in a war of wars the cards that tied face up among them, far enough
+   out to show their corners. --x is how far out, a share of the card's
+   width (see pileUnder); --i is 0 for the newest, which lies on top. */
 .tdowns { position: absolute; inset: 0; z-index: 0; pointer-events: none; }
 .tdowns .card {
-  --step: calc(var(--w) * var(--k, .16)); z-index: calc(20 - var(--i));
+  z-index: calc(20 - var(--i));
   position: absolute; left: 50%; top: 50%; margin: calc(var(--w) * -.7) 0 0 calc(var(--w) * -.5);
-  transform: translate(calc(var(--step) * (var(--i) + 1) * -1), var(--dy)) rotate(var(--r));
+  transform: translate(calc(var(--w) * var(--x) * -1), var(--dy)) rotate(var(--r));
   transition: transform calc(250ms * var(--pace)) ease-out;
 }
 .tdowns .card.thump { animation: thump calc(320ms * var(--pace)) cubic-bezier(.5, 0, .75, 0) both; }
 @keyframes thump {
-  0% { opacity: 0; transform: translate(calc(var(--step) * (var(--i) + 1) * -1), calc(var(--dy) - 26px)) rotate(calc(var(--r) - 20deg)) scale(1.3); }
-  100% { opacity: 1; transform: translate(calc(var(--step) * (var(--i) + 1) * -1), var(--dy)) rotate(var(--r)); }
+  0% { opacity: 0; transform: translate(calc(var(--w) * var(--x) * -1), calc(var(--dy) - 26px)) rotate(calc(var(--r) - 20deg)) scale(1.3); }
+  100% { opacity: 1; transform: translate(calc(var(--w) * var(--x) * -1), var(--dy)) rotate(var(--r)); }
 }
 
 /* Arena */
@@ -4137,7 +4139,8 @@ const S = {
   slams: {},             // seat -> [power, style] this stage
   ups: {},               // seat -> the card their slam turned face up this stage
   charging: {},          // seat -> tier, for others charging up
-  cards: {},             // seat -> { up, down } on the table this battle
+  cards: {},             // seat -> { up, down, stage, seq } on the table this battle; seq is
+                         // every card they've laid, in order: { card, up } ('back' when face down)
   result: null,          // the last flip
   opensAt: 0, closesAt: 0,
   pending: null,         // the next stage, until it opens
@@ -4610,7 +4613,8 @@ function onFlip(m) {
   S.pot = m.pot;
   for (const [seat, down, up, power, style] of m.plays) {
     const before = S.cards[seat];
-    S.cards[seat] = { up, down: (before ? before.down : 0) + down, stage: m.stage };
+    const seq = [...(before ? before.seq : []), ...Array.from({ length: down }, () => ({ card: 'back', up: false })), { card: up, up: true }];
+    S.cards[seat] = { up, down: (before ? before.down : 0) + down, stage: m.stage, seq };
     if (!S.slams[seat]) S.slams[seat] = [power, style];
     const look = deckOf(seat);
     // The cards laid face down in a war go to the winner's heap face up. A
@@ -5010,9 +5014,55 @@ function buildTiles() {
     node.title = `${p.name}${p.bot ? ' (bot)' : ''} · ${DECKS[deckOf(seat)][0]} deck`;
     box.append(node);
     tiles.set(seat, {
-      node, slot, count, stat, card, heap, lootCount, deck: deckBox, deckCount, spot, cardKey: 'empty', downs: null, wpile: null, wn: 0,
+      node, slot, count, stat, card, heap, lootCount, deck: deckBox, deckCount, spot, cardKey: 'empty', downs: null, wpile: null,
     });
   }
+}
+
+// The cards someone has laid this battle, oldest first, apart from the one
+// on top (cardKeyFor): in a war, the cards that tied stay face up among the
+// face-down ones. backs is how many face-down cards they've laid so far in
+// the war being fought.
+function pileUnder(seat, backs) {
+  const c = S.cards[seat];
+  const list = c ? c.seq.slice() : [];
+  if (S.phase === 'playing' && isFighting(seat) && !S.pending && (!c || c.stage < S.stage)) {
+    for (let i = 0; i < backs; i++) list.push({ card: 'back', up: false });
+    if (landed(seat)) list.push({ card: S.ups[seat] !== undefined ? S.ups[seat] : 'back', up: true });
+  }
+  for (let i = list.length - 1; i >= 0; i--) if (list[i].up) { list.splice(i, 1); break; }
+  return list;
+}
+
+// Draws a pile into box: one card per item, keeping the cards already there
+// when the pile only grew (the new ones arrive with the `fresh` class), and
+// calling place(node, index, count) on every card.
+function drawPile(box, items, look, fresh, place) {
+  const keys = items.map((x) => String(x.card));
+  const had = box._keys || [];
+  const grew = keys.length >= had.length && had.every((k, i) => k === keys[i]);
+  if (!grew) { box.replaceChildren(); box._keys = []; }
+  for (let i = box.childElementCount; i < items.length; i++) {
+    const node = cardEl(items[i].card === 'back' ? 'back' : items[i].card, look);
+    if (grew && !reduceMotion.matches) node.classList.add(fresh);
+    box.append(node);
+  }
+  box._keys = keys;
+  [...box.children].forEach((node, i) => place(node, i, items.length));
+}
+
+// How far out each card of a pile lies from under the card on top, as a
+// share of a card's width, so every one shows: a face-up card by `up`, far
+// enough to show its corner, a face-down one by `back`, squeezed so the
+// whole pile stays within `most`.
+function fanOut(items, up, back, most) {
+  const steps = items.map((x) => (x.up ? up : back));
+  const total = steps.reduce((a, b) => a + b, 0);
+  const k = total > most ? most / total : 1;
+  const out = new Array(steps.length);
+  let x = 0;
+  for (let i = steps.length - 1; i >= 0; i--) { x += steps[i] * k; out[i] = x; }
+  return out;
 }
 
 // How thick a deck of n cards looks, as a share of its card's width: a lone
@@ -5102,24 +5152,19 @@ function renderTile(seat) {
     setHidden(t.downs, !downs);
     setText(t.downs, `+${downs}`);
   }
-  // Their face-down cards, fanned out under their card, each thumping down
-  // as they slam it.
-  const fan = Math.min(downs, 12);
-  if (fan !== t.wn) {
+  // The cards under theirs, fanned out from under it: the newest closest and
+  // on top, each face-down one thumping down as they slam it, and in a war
+  // of wars the cards that tied face up among them.
+  const under = pileUnder(seat, thumps).slice(-12);
+  if (under.length || t.wpile) {
     if (!t.wpile) { t.wpile = el('div', 'tdowns'); t.slot.prepend(t.wpile); }
-    const pile = t.wpile;
-    while (pile.childElementCount > fan) pile.lastElementChild.remove();
-    while (pile.childElementCount < fan) {
-      const i = pile.childElementCount;
-      const back = cardEl('back', deckOf(seat));
-      back.style.setProperty('--i', String(i));
-      back.style.setProperty('--r', `${((i * 37) % 17) - 8}deg`);
-      back.style.setProperty('--dy', `${((i * 23) % 9) - 4}px`);
-      if (!reduceMotion.matches) back.classList.add('thump');
-      pile.append(back);
-    }
-    pile.style.setProperty('--k', Math.min(0.16, 0.6 / Math.max(1, fan)).toFixed(3));
-    t.wn = fan;
+    const out = fanOut(under, 0.28, 0.1, 0.9);
+    drawPile(t.wpile, under, deckOf(seat), 'thump', (node, i, n) => {
+      node.style.setProperty('--i', String(n - 1 - i));
+      node.style.setProperty('--x', out[i].toFixed(3));
+      node.style.setProperty('--r', `${((i * 37) % 17) - 8}deg`);
+      node.style.setProperty('--dy', `${((i * 23) % 9) - 4}px`);
+    });
   }
 }
 
@@ -5166,7 +5211,7 @@ function renderMe() {
   renderWarPile();
 }
 
-// Your face-down cards in a war, landing one slam at a time.
+// Your war pile: the cards under yours in a war, landing one slam at a time.
 function renderWarPile() {
   const me = S.you;
   const box = $('myWar');
@@ -5177,18 +5222,19 @@ function renderWarPile() {
   const local = plan && !flipped ? Math.min(plan.done.length, plan.need - 1) : 0;
   const downs = (c ? c.down : 0) + local;
   setHidden(box, me === null || S.out[me] > 0 || !(downs || (plan && plan.need > 1)));
-  const pile = box.querySelector('.wpile');
-  const shown = Math.min(downs, 9);
-  while (pile.childElementCount > shown) pile.lastElementChild.remove();
-  while (pile.childElementCount < shown) {
-    const i = pile.childElementCount;
-    const card = cardEl('back');
-    card.style.setProperty('--r', `${((i * 47) % 25) - 12}deg`);
-    card.style.setProperty('--dx', `${((i * 29) % 11) - 5}px`);
-    card.style.setProperty('--dy', `${-i * 3}px`);
-    if (!reduceMotion.matches) card.classList.add('slam');
-    pile.append(card);
-  }
+  // Your face-down cards, landing one slam at a time, and in a war of wars
+  // the cards you tied with, face up among them.
+  const under = me === null ? [] : pileUnder(me, local).slice(-12);
+  // The face-down cards make a messy stack; each card you tied with sticks
+  // up out of everything on top of it, showing its corner.
+  const out = fanOut(under, 0.22, 0, 0.5);
+  const cw = $('mySlot').querySelector('.card')?.offsetWidth || 88;
+  drawPile(box.querySelector('.wpile'), under, null, 'slam', (node, i) => {
+    const tied = under[i].up;
+    node.style.setProperty('--r', `${tied ? ((i * 13) % 9) - 4 : ((i * 47) % 25) - 12}deg`);
+    node.style.setProperty('--dx', `${Math.round(((i * 29) % 11) - 5 - out[i] * cw * 0.2)}px`);
+    node.style.setProperty('--dy', `${Math.round(-Math.min(i, 9) * 3 - out[i] * cw * 1.4)}px`);
+  });
   setText(box.querySelector('.wcount'), downs ? `${downs} face down` : 'Face down here');
   setClass($('me'), 'warring', !box.hidden);
 }

@@ -37,7 +37,8 @@
 - Every deck is as thick as it's full, and thins as it runs down.
 - In a war, the cards everyone else lays face down fan out messily from
   under their card on the table, one for each card, so you can count them
-  as they go down.
+  as they go down. In a double war or more, the cards that tied stay in
+  view too, face up among them, in your pile as well as everyone else's.
 
 ## 2026-11-07
 
