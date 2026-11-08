@@ -2947,10 +2947,22 @@ const Joker = (() => {
   const HAS = [['HA!', 'HA!', 'HEE!', 'HA!', 'HAHA!', 'HA!', 'HA!', 'HA!'], ['HA!', 'HAHA!', 'HEE!', 'HA!', 'HOO!', 'HAHA!', 'HA!', 'HEH!', 'HA!', 'HA!']];
   // Where more eyes open in the dark in a double joker war: [x, y, size].
   const PEEKS = [[0.14, 0.12, 0.7], [0.86, 0.17, 0.8], [0.1, 0.62, 0.9], [0.9, 0.58, 0.75], [0.5, 0.06, 0.6], [0.2, 0.86, 0.65], [0.82, 0.85, 0.7]];
+  // The timeline, in the seconds of a normal-paced war (it opens at 3): few
+  // beats, each given time to land.
+  const T = {
+    eyes: [0.3, 0.7],    // two eyes open in the dark
+    grin: [0.85, 1.2],   // the grin shows
+    hand: [1.0, 1.55],   // a gloved hand brings up the lantern
+    flame: [1.3, 1.65],  // it catches and grows
+    title: 1.45,         // JOKER WAR! eases in
+    laugh: [1.7, 2.62],  // HA… HA… HA!
+    snuff: 2.66,         // the lantern is blown out
+    close: [2.78, 2.9],  // the eyes close last
+  };
   // Sounds at set moments: the lights going out, the lantern catching, and
   // it being blown out.
-  const CUES = [[0, 'lightsOut'], [1.28, 'flame'], [2.54, 'snuff']];
-  const CALM_AT = 1.9;  // reduced motion: this moment, standing still
+  const CUES = [[0, 'lightsOut'], [T.flame[0], 'flame'], [T.snuff, 'snuff']];
+  const CALM_AT = 2.2;  // reduced motion: this moment, standing still
   let current = null;
 
   class Show {
@@ -2961,7 +2973,7 @@ const Joker = (() => {
       this.fx = fx; this.level = level; this.k = k; this.calm = calm;
       this.u = 0; this.held = false; this.beat = -1; this.bubbles = [];
       this.cues = calm ? [] : CUES.slice();
-      this.period = Math.max(level >= 2 ? 0.22 : 0.25, 0.15 / k);  // a laugh's beat, never quicker than 0.15 s
+      this.period = Math.max(level >= 2 ? 0.3 : 0.34, 0.15 / k);  // a laugh's beat, never quicker than 0.15 s
       this.root = el('div', `jk lv${level}` + (calm ? ' calm' : ''));
       this.root.setAttribute('aria-hidden', 'true');  // #banner and the caption say it all
       this.dark = el('div', 'jk-dark');
@@ -2970,7 +2982,7 @@ const Joker = (() => {
       this.M = Jester.materials(this.look);
       this.LM = lanternMats(this.look);
       this.rig = new CapRig();
-      this.peeks = level >= 2 ? PEEKS.map(([x, y, s], i) => ({ L: this.peekEyes(), x, y, s, at: 0.5 + i * 0.13 })) : [];
+      this.peeks = level >= 2 ? PEEKS.map(([x, y, s], i) => ({ L: this.peekEyes(), x, y, s, at: 0.6 + i * 0.16 })) : [];
       this.main = layer(this.root, 128, 150, 'bust');
       this.foot = el('div', 'jk-foot');
       const word = el('div', 'jk-word');
@@ -3022,34 +3034,32 @@ const Joker = (() => {
     frame(u, du) {
       const L = this.main, cv = L.cv, look = this.look, LM = this.LM;
       while (this.cues.length && u >= this.cues[0][0]) Sound[this.cues.shift()[1]]();
-      const o = laugh(u, 1.5, 2.45, this.period);
-      const sway = Math.sin((TAU * (u - 0.6)) / 1.3);
-      // Eyes open in the dark at 0.4 s, look left and right, blink, and close
-      // last of all.
-      const blink = u < 0.36 ? 1 : u < 0.48 ? 1 - (u - 0.36) / 0.12 : u > 1.0 && u < 1.1 ? Math.sin(((u - 1.0) / 0.1) * Math.PI) : u > 2.72 ? clamp((u - 2.72) / 0.1, 0, 1) : 0;
+      const o = laugh(u, T.laugh[0], T.laugh[1], this.period);
+      const sway = Math.sin((TAU * (u - 0.6)) / 2.4);
+      // The eyes open slowly, glance aside once and come back, and close last
+      // of all.
+      const blink = u < T.eyes[0] ? 1 : u < T.eyes[1] ? 1 - ease.out((u - T.eyes[0]) / (T.eyes[1] - T.eyes[0])) : clamp((u - T.close[0]) / (T.close[1] - T.close[0]), 0, 1);
       const pose = {
         open: o, brow: 0.3 + 0.9 * o, squint: 0.42 * o, blink,
-        gaze: keyed(u, [[0.55, 0], [0.68, -1], [0.85, -1], [0.98, 1], [1.15, 1], [1.3, 0]]),
+        gaze: keyed(u, [[0.8, 0], [1.1, -0.9], [1.22, -0.9], [1.45, 0]]),
       };
-      // A gloved hand brings up the lantern at 1.1 s; it catches at 1.28 and
-      // is blown out at 2.54.
-      const handUp = ease.out((u - 1.1) / 0.32) * (1 - ease.in((u - 2.62) / 0.3));
-      const flame = clamp((u - 1.28) / 0.18, 0, 1) * (1 - clamp((u - 2.54) / 0.1, 0, 1));
-      const flicker = 0.9 + 0.1 * wander(u * 4, 3);
+      const handUp = ease.out((u - T.hand[0]) / (T.hand[1] - T.hand[0])) * (1 - ease.in((u - 2.7) / 0.3));
+      const flame = ease.out((u - T.flame[0]) / (T.flame[1] - T.flame[0])) * (1 - clamp((u - T.snuff) / 0.12, 0, 1));
+      const flicker = 0.9 + 0.1 * wander(u * 2.5, 3);
       this.eyes = 1 - blink;
       this.lit = flame;
       cv.begin();
-      const P = new Place(64 + 2.2 * sway, 78 - 3.6 * o, 0.09 * sway + 0.02 * o * Math.sin(u * 37), 1 - 0.025 * o, 1 + 0.05 * o);
+      const P = new Place(64 + 2.2 * sway, 78 - 3.6 * o, 0.09 * sway + 0.02 * o * Math.sin(u * 24), 1 - 0.025 * o, 1 + 0.05 * o);
       this.rig.step(du, P);
       // Dark but for the lantern below the chin, and a little moonlight on
       // the jester's edges.
-      const lx = 70 + 3 * Math.sin(u * 2.3), ly = 150 - 42 * handUp + 1.5 * Math.sin(u * 5.1) - 1.2 * o;
+      const lx = 70 + 3 * Math.sin(u * 1.6), ly = 150 - 42 * handUp + 1.5 * Math.sin(u * 3.2) - 1.2 * o;
       cv.amb = 0.07;
       cv.light.point = { x: lx, y: ly - 1, z: 22, reach: 60, power: 2.3 * flame * flicker };
       cv.rim.color = PX.hexU32('#5d4fa8');
-      look.teeth = clamp((u - 0.98) / 0.15, 0, 1) * 0.45 + flame * 0.55;  // the grin shows before the light
+      look.teeth = clamp((u - T.grin[0]) / (T.grin[1] - T.grin[0]), 0, 1) * 0.45 + flame * 0.55;  // the grin shows before the light
       look.flame = flame * flicker;
-      look.eyeBoost = (u > 0.42 ? Math.max(0, 0.5 - (u - 0.42) * 1.4) : 0) + 0.06 * Math.sin(u * 7);
+      look.eyeBoost = 0.45 * Math.sin(clamp((u - T.eyes[0]) / 1, 0, 1) * Math.PI) + 0.05 * Math.sin(u * 4);  // the glow swells as they open
       Jester.draw(cv, P, { ...pose, tips: this.rig.tips(P.rot), bodyPlace: new Place(64 + 0.6 * sway, 78 - 1.2 * o), ruff: -0.8 * o, glowAt: (x, y) => cv.glow(x, y, 10 + 6 * flame) }, look, this.M);
       if (handUp > 0.01) {
         const I = new Place(0, 0), add = (sh, m, opt) => cv.add(sh, m, I, opt);
@@ -3057,12 +3067,12 @@ const Joker = (() => {
         add(tube(curve([lx - 4.5, ly - 9], [lx - 4.5, ly - 16], [lx + 4.5, ly - 16], [lx + 4.5, ly - 9], 0.9, 0.9, 8)), LM.metal);
         add(poly([[lx - 6.5, ly - 6.5], [lx + 6.5, ly - 6.5], [lx + 3.5, ly - 10], [lx - 3.5, ly - 10]], 1), LM.metal);
         add(roundRect(lx - 5.6, ly - 6.6, lx + 5.6, ly + 6, 2, 2), LM.glass);
-        const fh = 6.2 * flame * (0.85 + 0.15 * wander(u * 9, 1));
+        const fh = 6.2 * flame * (0.85 + 0.15 * wander(u * 6, 1));
         if (fh > 0.4) {
           add(custom(lx - 3, ly - 7, lx + 3, ly + 4, (x, y) => {
             const t = (y - (ly + 3)) / -(fh + 1.6);
             if (t < 0 || t > 1) return false;
-            const w = 2.1 * Math.sin(Math.PI * Math.pow(t, 0.7)) * (1 - t * 0.35), dx = x - lx - Math.sin(u * 13) * 0.4 * t;
+            const w = 2.1 * Math.sin(Math.PI * Math.pow(t, 0.7)) * (1 - t * 0.35), dx = x - lx - Math.sin(u * 9) * 0.4 * t;
             if (Math.abs(dx) > w) return false;
             setN(0, 0, 1, (Math.abs(dx) / Math.max(0.5, w)) * 0.6 + t * 0.4);
             return true;
@@ -3072,36 +3082,36 @@ const Joker = (() => {
         add(poly([[lx - 7, ly + 9], [lx + 7, ly + 9], [lx + 6, ly + 5.6], [lx - 6, ly + 5.6]], 1), LM.metal, { group: 91 });
       }
       L.render();
-      L.at(this.W / 2, this.H * 0.44, 1, 1, ease.out(u / 0.3) * (1 - ease.in((u - 2.74) / 0.12)));
+      L.at(this.W / 2, this.H * 0.44, 1, 1, ease.out(u / 0.35) * (1 - ease.in((u - 2.8) / 0.15)));
       for (const pk of this.peeks) {
-        const a = (u - pk.at) / 0.12;
-        const open = this.calm ? 1 : a < 0 ? 0 : a < 1 ? a : Math.sin(u * 3 + pk.at * 20) > 0.97 ? 0.1 : 1;
-        pk.L.at(this.W * pk.x, this.H * pk.y, 1, open, this.calm ? 1 : u > 2.7 ? 1 - clamp((u - 2.7) / 0.15, 0, 1) : a < 0 ? 0 : 1);
+        const a = (u - pk.at) / 0.25;
+        const open = this.calm ? 1 : a < 0 ? 0 : a < 1 ? ease.out(a) : Math.sin(u * 2 + pk.at * 20) > 0.985 ? 0.1 : 1;
+        pk.L.at(this.W * pk.x, this.H * pk.y, 1, open, this.calm ? 1 : a < 0 ? 0 : 1 - clamp((u - 2.75) / 0.18, 0, 1));
       }
-      this.dark.style.opacity = this.calm ? 1 : ease.out(u / 0.18) - ease.inOut((u - 2.76) / 0.26);
+      this.dark.style.opacity = this.calm ? 1 : ease.inOut(u / 0.35) - ease.inOut((u - 2.8) / 0.22);
       this.title(u);
-      if (!this.calm && u > 1.5 && u < 2.5) this.ha(u);
+      if (!this.calm && u > T.laugh[0] && u < T.laugh[1]) this.ha(u);
       this.bubbles = this.bubbles.filter((b) => {
-        const a = (u - b.born) / 0.7;
+        const a = u - b.born;
         if (a > 1 || a < 0) { b.node.remove(); return false; }
-        b.node.style.opacity = (a < 0.7 ? 1 : 1 - (a - 0.7) / 0.3) * (1 - ease.in((u - 2.55) / 0.25));
-        b.node.style.transform = `translate(${b.x.toFixed(1)}px, ${(b.y - a * this.H * 0.06).toFixed(1)}px) translate(-50%, -50%) rotate(${b.rot}deg) scale(${(a < 0.25 ? ease.back(a / 0.25) : 1).toFixed(3)})`;
+        b.node.style.opacity = (a < 0.7 ? 1 : 1 - (a - 0.7) / 0.3) * (1 - ease.in((u - 2.62) / 0.25));
+        b.node.style.transform = `translate(${b.x.toFixed(1)}px, ${(b.y - a * this.H * 0.05).toFixed(1)}px) translate(-50%, -50%) rotate(${b.rot}deg) scale(${(a < 0.3 ? ease.back(a / 0.3) : 1).toFixed(3)})`;
         return true;
       });
     }
-    // JOKER WAR! and the tied jokers slam in as the lantern catches.
+    // JOKER WAR! and the tied jokers ease in once the lantern has caught.
     title(u) {
       const s = this.foot.style;
       if (this.calm) { s.opacity = 1; s.transform = 'translateX(-50%)'; return; }
-      const t = (u - 1.32) / 0.24, out = ease.in((u - 2.55) / 0.22);
-      s.opacity = t < 0 ? 0 : 1 - out;
-      s.transform = `translate(-50%, ${(out * 30).toFixed(1)}px) scale(${((t < 0 ? 0 : 1 + (1 - ease.back(t)) * 1.6) * (1 - out * 0.2)).toFixed(3)})`;
-      const shake = t > 0 && t < 3 ? Math.exp(-t * 1.6) * 5 : 0;
+      const t = (u - T.title) / 0.4, out = ease.in((u - 2.62) / 0.22);
+      s.opacity = t < 0 ? 0 : ease.out(t * 1.6) * (1 - out);
+      s.transform = `translate(-50%, ${(out * 30).toFixed(1)}px) scale(${((t < 0 ? 0 : 1 + (1 - ease.back(t)) * 0.8) * (1 - out * 0.2)).toFixed(3)})`;
+      const shake = t > 0.4 && t < 3 ? Math.exp(-(t - 0.4) * 2) * 2.5 : 0;
       this.root.style.transform = shake ? `translate(${(Math.sin(u * 90) * shake).toFixed(1)}px, ${(Math.cos(u * 77) * shake).toFixed(1)}px)` : '';
     }
     // A "HA!" for every beat of the laugh, on alternate sides, and one "ha".
     ha(u) {
-      const n = Math.floor((u - 1.5) / this.period);
+      const n = Math.floor((u - T.laugh[0]) / this.period);
       if (n === this.beat) return;
       this.beat = n;
       Sound.ha(n, this.level, this.period * this.k * 0.8);
