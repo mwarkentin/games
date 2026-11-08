@@ -233,9 +233,12 @@ already send it:
 
 [letterfield-log](https://games.michaelwarkentin.com/letterfield-log) is a
 page of the survey's history: every word charted first, with where, by whom
-(their initials) and when, a day at a time, hour by hour. Each word links to
-`/letterfield#f-<word>-<x>-<y>-<d>`, which flies the game to it. "Mine"
-narrows it to the words this browser charted first.
+(their initials) and when, by the day, week, month, year or all time, and
+any hour minute by minute. Each word links to
+`/letterfield#f-<word>-<x>-<y>-<d>`, which flies the game to it, and its
+surveyor, territory and theme each open a view of their own, with an
+address to share. "Mine" narrows it to the words this browser charted
+first.
 
 ### Where the history lives: D1, copied from each sector
 
@@ -293,12 +296,33 @@ GET /v1/survey/log/hour/<hour>?after=<at>~<key>
   → {"hour", "entries": [[w, x, y, d, s, initials, at, th], ...],
      "places": {"rx,ry": "Monet Hollow"}, "themes": {"th": [name, hue]},
      "next": "<at>~<key>" | null}
+GET /v1/survey/log/month/<month> (month = UTC months since January 1970)
+  → {"month", "hours": [[hour, words, world], ...]}   hours with none left out
+GET /v1/survey/log/top/<from>/<to>   (UTC days from..to-1, at most 3,660)
+  → {"from", "to", "surveyors": [[initials, words], ...10],
+     "territories": [[rx, ry, name, th, words], ...10],
+     "themes": [[th, name, hue, words], ...], "hidden"}
+GET /v1/survey/log/surveyor/<initials>/<from>/<to>   (UTC hours from..to-1)
+GET /v1/survey/log/theme/<th>/<from>/<to>
+GET /v1/survey/log/…/<from>/<to>?before=<at>~<key>
+  → {"kind", "key", "from", "to", "words", "world",
+     "hours": [[hour, words, world], ...],          hours with none left out
+     "topTerritories": [[rx, ry, name, th, words], ...10],
+     "topThemes": [[th, name, hue, words], ...]     a surveyor's
+     "topSurveyors": [[initials, words], ...10]     a theme's
+     "name", "hue"                                  a theme's
+     "entries", "places", "themes", "next"}         newest first, 100 a page
+GET /v1/survey/log/territory/<rx>/<ry>
+  → {"rx", "ry", "name", "th", "total", "charted",
+     "topSurveyors": [[initials, words], ...10], "entries", "places", "themes"}
 ```
 
 An hour comes oldest first, 500 entries a page; `next` is the `after` for the
-next page. A day or hour that hasn't started is a 400. The page shows the
-player's own days, so it asks for the one or two UTC days a local day
-overlaps, then each hour as it scrolls into view.
+next page. A day, hour or month that hasn't started is a 400. `world` counts
+the hidden words in the shared world, which go toward its 1,120,206. Top
+lists count hidden and stray words for surveyors, but only hidden words for
+territories and themes, since a stray's theme is its word's, not its
+territory's. The day endpoint is still there for older copies of the page.
 
 **Caching.** Past hours and days don't change, but a claim can reach D1 up to
 `LOG_MS` late, or later while D1 is failing. So an hour or day that ended an
@@ -315,6 +339,115 @@ hour ago (`SETTLED_MS`) is cached for a day, and the one still running for
 
 A backfilled sector's old claims can take up to a day to appear in hours that
 were already cached.
+
+### Periods
+
+The page has tabs for a day, a week (Monday to Sunday), a month, a year and
+all time, each in the player's own time zone, with arrows to the one before
+or after. Each shows three numbers (words charted, the busiest piece of the
+period, and how many were hidden words in the shared world), a chart, and
+then what's in it:
+
+| period | chart | below it |
+| --- | --- | --- |
+| hour | a column a minute | every word, newest first |
+| day | a column an hour | each hour's words, loaded as they scroll into view |
+| week, month | a column a day | top surveyors, territories and themes; each day as a row |
+| year | twelve month calendars, a cell a day, in four shades of one hue by rank among the year's days with words (so one huge day doesn't wash out the rest) | the top lists; each month as a row |
+| all time | a column a month, a meter of the shared world charted, and, from the second month, a line of it filling in | the top lists; each month as a row |
+
+Tapping a column, cell or row opens the shorter period inside it, down to an
+hour. The rows say what the chart says without hovering, which is the
+chart's table view; hovering or focusing a column shows its number too.
+
+**The hour, minute by minute,** opens from a day (its column, or "Minute by
+minute" on an hour's heading) rather than having a tab: most hours hold a
+handful of words, and a day already lists them. It's there for a busy
+hour. The hour still running says Live and reloads every 20 seconds while
+the page is on screen; nothing else reloads by itself.
+
+**Counts, not rows.** A week or a year of the log itself could be a
+million rows to read, and the running ones change constantly, so the longer
+periods never read it. A second migration
+(`migrations-log/0002_survey_log_counts.sql`) keeps three tables of running
+totals, updated by triggers in the same transaction as each row of the log:
+
+- `survey_log_hours`: words per UTC hour, and how many were hidden words in
+  the shared world;
+- `survey_log_surveyors`: words per UTC day per set of initials;
+- `survey_log_territories`: hidden words per UTC day per territory.
+
+`INSERT OR IGNORE` doesn't fire a trigger for a row it skips, so a resent
+batch counts nothing twice, and a delete takes its word back out. The
+migration fills the tables from the rows already logged, after creating the
+triggers, with absolute numbers, so a word logged while it runs is counted
+once either way.
+
+The page draws every chart from hourly counts, a UTC month at a time (at
+most 744 rows read for a month, whatever happened in it), and puts each hour
+in the local day, week, month or year it starts in. In a time zone a half
+hour off UTC, an hour that starts at 11:30 pm counts toward that day.
+Top lists come from the daily tables, so they cover whole UTC days and can
+run a few hours past a local week's edges; the page says which days.
+
+"Mine" for a week or longer counts this browser's finds by when they were
+found, without asking the server. It has no top lists: they'd only ever say
+"you".
+
+**Caching the counts.** A month or a top list that ended an hour ago is
+cached for a day, like an hour. The running month is cached for 15 seconds,
+and a running top list over more than two days for 10 minutes: it changes
+slowly and reads every day's rows in its range.
+
+### Surveyors, territories and themes
+
+Every name in the log opens a view of its own: a word's initials, its
+territory and its theme, and every row of the top lists. Each view's
+address says what it is, so it can be shared or bookmarked:
+
+| view | address | periods | shows |
+| --- | --- | --- | --- |
+| a surveyor | `?surveyor=ZED` | all of them, all time first | words signed ZED: chart, top territories and themes, the words by day |
+| a theme | `?theme=<n>` | all of them, all time first | hidden words in its territories: chart, top surveyors and territories, the words |
+| a territory | `?territory=<rx>,<ry>` | none: all time | how many of its hidden words are charted (a meter), top surveyors, every word, and a link to fly there |
+
+A surveyor's or theme's view opened from a period keeps it, so ZED from this
+week's top list is ZED's week; the period tabs then move through ZED's
+history the same way as everyone's. Going into a view, or back to
+everyone's, is a new entry in the browser's history, so Back returns to
+where it came from; moving between periods replaces the address as before.
+A view's Share button uses the phone's share sheet, or copies the link.
+Link previews are still the page's own, since the site is static.
+
+Initials aren't unique, so "ZED" is everyone who typed ZED, and the view
+says so. A stray word's theme is its word's, not its territory's, so a theme
+counts hidden words only, like the top lists, and strays don't link to one.
+
+**Indexes, not counts.** These read rows of the log, not the count tables,
+since a surveyor's words or a territory's are a small slice of it. A third
+migration (`migrations-log/0003_survey_log_lookups.sql`) adds three indexes,
+one for each:
+
+- `survey_log_by_initials (initials, at)`, leaving out unsigned words;
+- `survey_log_by_territory (rx, ry, at)`;
+- `survey_log_by_theme (th, at)`, hidden words only.
+
+A word's territory and theme aren't stored: they're virtual columns worked
+out from its start cell as the game does (floor division by 48, and
+`(rx + 21 ry) mod 116`), so only the indexes hold them. A test checks the
+SQL matches `regionTheme` for random cells, negative ones included. Each
+query names its index with `INDEXED BY` and pages in `(at, key)` order,
+which the index already holds (an index on a `WITHOUT ROWID` table carries
+the primary key), so a page of words never sorts. The tests check every
+plan.
+
+A surveyor's or theme's answer is three queries over its rows in the range
+(per hour, per territory, and a page of words), plus its top surveyors for a
+theme. A territory's reads all its words at once: about 110 are hidden in
+each, so even fully charted that's a short list, and the Worker counts its
+hidden words from the map. Settled ranges are cached for a day, as
+elsewhere; a running one for 15 seconds, or 2 minutes over more than two
+days, and a territory for 15 seconds.
 
 ### Where, readably
 
@@ -365,28 +498,43 @@ since it only reads; until the survey is on, the log is empty.
 
 ### Cost
 
-On Workers Paid, per word charted: one D1 row written, one more row written
-in the sector (its time index), and a share of an alarm. Each busy sector's
+On Workers Paid, per word charted: up to seven D1 rows written (the log's
+row, an update each to the hour's, the surveyor's and the territory's
+counts, and a row in each of the three indexes; no initials or a stray word
+skips two), one more row written in the sector (its time index), and a
+share of an alarm. Each busy sector's
 alarm runs at most every 30 s: one Durable Object request and two rows
 written (the alarm and the mark).
 
 | | whole world charted (1.12 M words) | a busy day (30,000 words) | the ceiling (all 625 sectors charting nonstop) |
 | --- | --- | --- | --- |
-| D1 rows written | 1.12 M (50 M a month included) | 30,000 | 75,000 batches an hour |
-| D1 storage | ~100 MB (5 GB included) | ~3 MB | |
+| D1 rows written | ~8 M (50 M a month included) | ~210,000 | 75,000 batches an hour |
+| D1 storage | ~100 MB for the log, ~50 MB of indexes, a few MB of counts (5 GB included) | ~4 MB | |
 | alarms (DO requests) | | ≤ 2,880 per busy sector | ~$0.011 an hour |
 | rows written in sectors | 1.12 M + 2 per alarm | | ~$0.15 an hour past the included 50 M |
-| D1 rows read | each hour read reads its rows; cached as above | | |
+| D1 rows read | see below | | |
 
 So the log adds nothing past the included allowances at the survey's
 expected sizes, and at the ceiling raises the worst case from about $0.75 to
 about $0.92 an hour. `LOG_MS` is the knob: 60 s would halve the alarm costs.
-Reading is cheap: 25 billion D1 rows read a month are included, and a
-settled hour is read from D1 about once a day per Worker instance.
+The whole world, charted, would take about 8 million of the 50 million D1
+rows written included each month.
+
+Reading is cheap: 25 billion D1 rows read a month are included. An hour
+reads its own rows, a month at most 744, and a settled one is read about
+once a day per Worker instance. Top lists read every row of their range in
+the daily tables: a busy day might have a few hundred sets of initials and
+a thousand territories, so a running year's list could read a few hundred
+thousand rows, at most every 10 minutes per instance. If that ever shows in
+the bill, the next step is a monthly level of the same counts. A surveyor's
+or theme's view reads its rows in the range three times: all time for
+someone with 10,000 words is about 30,000 rows, at most every 2 minutes per
+instance while it's running.
 
 On the free plan, D1 and Durable Object storage each allow 100,000 rows
-written a day, so the log roughly halves the claims a day the free plan
-allows (see "On the free plan").
+written a day, so the log, with its counts and indexes (seven D1 rows a
+word), cuts the claims a day the free plan allows to about a seventh (see
+"On the free plan").
 
 **A database of its own.** The log lives in `games-survey-log` (the
 `LOG_DB` binding, with its migrations in `migrations-log/`), not in the
@@ -560,11 +708,12 @@ about 30 cents over the included million requests.
   custom domain, Cloudflare's cache could serve it as chessboards did.
 - **Zoomed-out views** only show live claims from the four nearest sectors.
   A cached per-sector snapshot could fill in the rest of the screen.
-- **The log, live.** The log page shows a day as it was when opened. It
-  could refetch the running hour every 15 s, or take claims from the
-  sector sockets the game already uses.
-- **The log by initials or by territory.** Each would need an index, so a
-  row written per claim more.
+- **The log, live, beyond the hour.** The running hour reloads every 20
+  seconds; a running day, week or longer shows what it had when opened. It
+  could take claims from the sector sockets the game already uses.
+- **The log's words by initials or by territory.** Top lists count both,
+  but listing a surveyor's or a territory's words would need an index on
+  the log, so a row written per claim more.
 - **Finds made offline stay personal.** Uploading them later would let
   anyone backdate a pile of claims at once.
 
@@ -587,6 +736,20 @@ in a few windows. The deploy workflow's `wrangler deploy` creates the
 `Sector` and `Atlas` classes from the migration in `wrangler.toml`, and
 `SURVEY_URL` in `letterfield.html` points the live game at the deployed
 Worker.
+
+To try the log's weeks, months and years without weeks of play,
+`bench/seed-log.js` prints made-up history (real words at their real places,
+over the last 45 days by default) as SQL for a test database:
+
+```sh
+node worker/bench/seed-log.js 45 > /tmp/seed.sql
+cd worker
+npx wrangler@4.151.0 d1 execute games-survey-log --local --file /tmp/seed.sql   # with wrangler dev
+npx wrangler@4.151.0 d1 execute games-survey-log-previews --remote \
+  --config wrangler.previews-migrations.toml --file /tmp/seed.sql             # every Worker Preview's log
+```
+
+Never point it at `games-survey-log` with `--remote`: that's the real log.
 
 [omcb]: https://eieio.games/blog/scaling-one-million-checkboxes
 [chess]: https://eieio.games/blog/a-million-realtime-chess-boards-in-a-single-process
