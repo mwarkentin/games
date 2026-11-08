@@ -338,7 +338,7 @@ then what's in it:
 | hour | a column a minute | every word, newest first |
 | day | a column an hour | each hour's words, loaded as they scroll into view |
 | week, month | a column a day | top surveyors, territories and themes; each day as a row |
-| year | twelve month calendars, a cell a day, in four shades of one hue | the top lists; each month as a row |
+| year | twelve month calendars, a cell a day, in four shades of one hue by rank among the year's days with words (so one huge day doesn't wash out the rest) | the top lists; each month as a row |
 | all time | a column a month, a meter of the shared world charted, and, from the second month, a line of it filling in | the top lists; each month as a row |
 
 Tapping a column, cell or row opens the shorter period inside it, down to an

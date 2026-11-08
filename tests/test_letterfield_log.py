@@ -152,7 +152,8 @@ def test_a_month_and_a_year(page: Page, site_url, errors):
     expect(page.locator(".mcal .cell:not(.pad)")).to_have_count(365)
     nov6 = page.get_by_role("button", name="Fri, Nov 6: 2 words")
     expect(nov6).to_have_class("cell l4 go")
-    expect(page.get_by_role("button", name="Thu, Nov 5: 1 word")).to_have_class("cell l2 go")
+    # Shades go by rank among the year's days with words: the quietest is the palest.
+    expect(page.get_by_role("button", name="Thu, Nov 5: 1 word")).to_have_class("cell l1 go")
     expect(page.get_by_role("button", name="Sat, Nov 7: still to come")).to_have_class("cell later")
     # A year's rows are its months.
     expect(page.locator(".row .when").first).to_have_text("November 2026")
@@ -196,7 +197,7 @@ def test_all_time_draws_the_world_filling_in_month_by_month(page: Page, site_url
     expect(marks).to_have_count(3)
     expect(marks.nth(0)).to_have_attribute("aria-label", "By the end of November 2026: 4 · <0.01%")
     expect(marks.nth(2)).to_have_attribute("aria-label", "By the end of January 2027: 10 · <0.01%")
-    expect(page.locator("#chart .ticks span").first).to_have_text("Nov 2026")
+    expect(page.locator("#chart .ticks span").first).to_have_text("Nov ’26")
     expect(page.locator("#navLabel")).to_have_text("Since the log began on Nov 6, 2026")
     # Eight themes, then the rest folded into one row with no bar of its own.
     themes_card = page.locator(".card", has_text="Themes")

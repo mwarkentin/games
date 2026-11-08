@@ -323,7 +323,7 @@ function tickLabel(p, b, i, count) {
   if (p === 'week') return weekdayFmt.format(b.from);
   if (u === 'day') return [1, 8, 15, 22, 29].includes(d.getDate()) ? String(d.getDate()) : '';
   const every = count > 24 ? 6 : count > 12 ? 3 : 1;
-  return i % every === 0 ? (d.getMonth() === 0 || i === 0 ? `${monthShort.format(b.from)} ${d.getFullYear()}` : monthShort.format(b.from)) : '';
+  return i % every === 0 ? (d.getMonth() === 0 || i === 0 ? `${monthShort.format(b.from)} ’${String(d.getFullYear()).slice(2)}` : monthShort.format(b.from)) : '';
 }
 
 /* ---------- Data ---------- */
@@ -493,12 +493,16 @@ function columnChart(p, buckets, go) {
 }
 
 // The year as twelve month calendars, a cell a day, darker for more words:
-// one hue, in four steps up to the year's busiest day.
+// one hue in four steps, by rank among the year's days with words, so one
+// huge day doesn't leave every other day the palest step. The busiest day is
+// always the darkest.
 function yearCalendar(year, buckets, openDay, openMonth) {
   const wrap = el('div');
   const grid = el('div', 'year');
   const top = Math.max(1, ...buckets.map(b => b.n)), now = Date.now();
-  const level = n => !n ? '' : ' l' + Math.min(4, Math.max(1, Math.ceil(4 * n / top)));
+  const busy = buckets.map(b => b.n).filter(n => n > 0).sort((a, b) => a - b);
+  const below = n => { let lo = 0, hi = busy.length; while (lo < hi) { const mid = (lo + hi) >> 1; if (busy[mid] < n) lo = mid + 1; else hi = mid; } return lo; };
+  const level = n => !n ? '' : ' l' + (1 + Math.min(3, Math.floor(4 * below(n) / Math.max(1, busy.length - 1))));
   for (let m = 0; m < 12; m++) {
     const first = new Date(year, m, 1).getTime();
     const cal = el('div', 'mcal');
