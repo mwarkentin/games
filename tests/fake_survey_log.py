@@ -11,6 +11,8 @@ from __future__ import annotations
 
 import json
 import re
+from collections import Counter
+from datetime import datetime, timezone
 
 from playwright.sync_api import Route
 
@@ -18,6 +20,18 @@ SURVEY = "https://survey.test"
 HOUR_MS = 3_600_000
 DAY_MS = 86_400_000
 PAGE = 500
+AREA_CELLS = (-12 * 192, 13 * 192)  # the shared world, x and y from..to-1
+
+
+def in_world(e) -> bool:
+    return e[4] == 0 and all(AREA_CELLS[0] <= v < AREA_CELLS[1] for v in (e[1], e[2]))
+
+
+def month_hours(m: int) -> tuple[int, int]:
+    """A UTC month's first and last-plus-one hour, months since January 1970."""
+    def start(k: int) -> int:
+        return int(datetime(1970 + k // 12, k % 12 + 1, 1, tzinfo=timezone.utc).timestamp()) * 1000 // HOUR_MS
+    return start(m), start(m + 1)
 
 
 class FakeSurveyLog:
@@ -39,13 +53,44 @@ class FakeSurveyLog:
             return
         day = re.search(r"/v1/survey/log/day/(\d+)$", url)
         hour = re.search(r"/v1/survey/log/hour/(\d+)(?:\?after=(\d+))?$", url)
+        month = re.search(r"/v1/survey/log/month/(\d+)$", url)
+        top = re.search(r"/v1/survey/log/top/(\d+)/(\d+)$", url)
         future = self.now_ms is not None and (
             (day and int(day[1]) > self.now_ms // DAY_MS) or (hour and int(hour[1]) > self.now_ms // HOUR_MS)
+            or (month and month_hours(int(month[1]))[0] > self.now_ms // HOUR_MS)
+            or (top and int(top[1]) > self.now_ms // DAY_MS)
         )
         if future:
             route.fulfill(status=400, headers=headers, body=json.dumps({"error": "that day has not started"}))
             return
-        if day:
+        if month:
+            first, last = month_hours(int(month[1]))
+            counts = Counter(e[6] // HOUR_MS for e in self.entries if first <= e[6] // HOUR_MS < last)
+            world = Counter(e[6] // HOUR_MS for e in self.entries if first <= e[6] // HOUR_MS < last and in_world(e))
+            body = {"month": int(month[1]), "hours": [[h, n, world[h]] for h, n in sorted(counts.items())]}
+        elif top:
+            first, last = int(top[1]), int(top[2])
+            rows = [e for e in self.entries if first <= e[6] // DAY_MS < last]
+            surveyors = Counter(e[5] for e in rows if e[5])
+            # Hidden words only, by territory; a hidden word's theme is its territory's.
+            places = Counter((e[1] // 48, e[2] // 48) for e in rows if e[4] == 0)
+            theme_of = {(e[1] // 48, e[2] // 48): e[7] for e in rows if e[4] == 0}
+            themes = Counter()
+            for place, n in places.items():
+                themes[theme_of[place]] += n
+            body = {
+                "from": first, "to": last, "hidden": sum(places.values()),
+                "surveyors": [[i, n] for i, n in sorted(surveyors.items(), key=lambda r: (-r[1], r[0]))[:10]],
+                "territories": [
+                    [rx, ry, self.places.get(f"{rx},{ry}", f"Place {rx},{ry}"), theme_of[(rx, ry)], n]
+                    for (rx, ry), n in sorted(places.items(), key=lambda r: (-r[1], r[0][1], r[0][0]))[:10]
+                ],
+                "themes": [
+                    [th, *self.themes.get(th, [f"Theme {th}", 200]), n]
+                    for th, n in sorted(themes.items(), key=lambda r: (-r[1], r[0]))
+                ],
+            }
+        elif day:
             d = int(day[1])
             hours = [0] * 24
             for e in self.entries:

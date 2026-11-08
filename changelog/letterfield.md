@@ -1,3 +1,10 @@
+## 2026-11-08
+
+- The survey log has weeks, months, years and all time as well as days, each
+  with a chart, the top surveyors, territories and themes, and how much of
+  the shared world has been charted. Tap any day in a chart to open it, and
+  any hour of a day to see it minute by minute, live while it's running.
+
 ## 2026-11-06
 
 - The survey log, a page of every word charted in the shared survey, hour by
