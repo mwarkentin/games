@@ -49,7 +49,10 @@ class FakeSurveyLog:
         self.requests: list[str] = []  # path and query of every request
 
     def handle(self, route: Route) -> None:
+        # The page adds ?v=<CACHE_VERSION> (or &v=) to every request, for browsers' caches.
         url = route.request.url
+        assert re.search(r"[?&]v=\d+$", url), url
+        url = re.sub(r"[?&]v=\d+$", "", url)
         self.requests.append(url.split("/v1/survey/log", 1)[1])
         headers = {"Access-Control-Allow-Origin": "*", "Content-Type": "application/json"}
         if self.fail:

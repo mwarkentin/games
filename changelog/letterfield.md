@@ -1,5 +1,7 @@
 ## 2026-11-08
 
+- Fixed the survey log's months and years showing made-up numbers from a
+  test copy of the log for a few hours.
 - A Share button on the note that pops up when you find a word, and beside
   every word in your field notes. It sends the word, the territory it's in
   and a link that flies straight to it; a word you charted first on the

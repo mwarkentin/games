@@ -47,10 +47,12 @@
 //
 // Hours, days and months that are over don't change, so once one ended
 // SETTLED_MS ago its answer is cached for a day: in browsers, in each Worker
-// instance, and in Cloudflare's cache when the Worker is on a custom domain
-// (the Cache API does nothing on workers.dev). One still running is cached
-// for a few seconds, or a few minutes for top lists over more than a couple
-// of days, which change slowly and read more.
+// instance, and in Cloudflare's cache. One still running is cached for a few
+// seconds, or a few minutes for top lists over more than a couple of days,
+// which change slowly and read more. Cloudflare's cache is shared by every
+// Worker on the same zone, and all of workers.dev's for this account are one
+// zone, Worker Previews included, so each answer is kept under its own
+// Worker's host: a preview's test history never stands in for production's.
 
 import { corsHeaders, json } from './leaderboard.js';
 import { RC, RG, THEMES, VOCAB, chunk, fdiv, regionName, regionTheme } from './letterfield-world.js';
@@ -263,11 +265,11 @@ export async function readTop(db, from, to) {
   };
 }
 
-// Answers kept by this Worker instance: url → {body, until, maxAge}.
+// Answers kept by this Worker instance: host/path → {body, until}.
 const memo = new Map();
 export const forgetLog = () => memo.clear();  // for tests
 
-// Cloudflare's cache, which only holds anything on a custom domain.
+// Cloudflare's cache.
 function edgeCache() {
   try { return globalThis.caches?.default ?? null; } catch { return null; }
 }
@@ -282,11 +284,13 @@ export function routeLog(request, env, now = Date.now()) {
   if (!(day || hour || month || top || span || surveyor || theme || territory) || !env.LOG_DB) return null;
   const cors = corsHeaders(request, env);
   if (request.method !== 'GET') return json({ error: 'method not allowed' }, 405, cors);
+  // Every answer is kept under this Worker's own host (see the top of this file).
+  const answer = (key, maxAge, read) => keep(`${url.host}/${key}`, maxAge, read, cors, now);
   let ends, read, key, live = LIVE_CACHE_S;
-  if (span) return answer('span', SPAN_CACHE_S, () => readSpan(env.LOG_DB), cors, now);
+  if (span) return answer('span', SPAN_CACHE_S, () => readSpan(env.LOG_DB));
   if (territory) {
     const rx = Number(territory[1]), ry = Number(territory[2]);
-    return answer(`territory/${rx}/${ry}`, LIVE_CACHE_S, () => readTerritory(env.LOG_DB, rx, ry), cors, now);
+    return answer(`territory/${rx}/${ry}`, LIVE_CACHE_S, () => readTerritory(env.LOG_DB, rx, ry));
   }
   if (surveyor || theme) {
     const [, key, a, b] = surveyor ?? theme, from = Number(a), to = Number(b);
@@ -304,7 +308,7 @@ export function routeLog(request, env, now = Date.now()) {
     const settled = now >= to * HOUR_MS + SETTLED_MS;
     const live = to - from > 48 ? SLICE_SLOW_CACHE_S : LIVE_CACHE_S;
     return answer(`${kind}/${k}/${from}/${to}${cursor ? `?before=${after}` : ''}`, settled ? 86400 : live,
-      () => readSlice(env.LOG_DB, kind, k, from, to, cursor), cors, now);
+      () => readSlice(env.LOG_DB, kind, k, from, to, cursor));
   }
   if (month) {
     const m = Number(month[1]), [from, to] = monthHours(m);
@@ -341,17 +345,19 @@ export function routeLog(request, env, now = Date.now()) {
     key = `hour/${h}${cursor ? `?after=${after}` : ''}`;
   }
   const settled = now >= ends + SETTLED_MS;
-  return answer(key, settled ? 86400 : live, read, cors, now);
+  return answer(key, settled ? 86400 : live, read);
 }
 
-async function answer(key, maxAge, read, cors, now) {
+// An answer from this instance's memory, Cloudflare's cache or `read`, kept
+// in both. `key` starts with the Worker's host.
+async function keep(key, maxAge, read, cors, now) {
   const reply = (body) => new Response(body, {
     headers: { ...cors, 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': `public, max-age=${maxAge}` },
   });
   const kept = memo.get(key);
   if (kept && kept.until > now) return reply(kept.body);
   memo.delete(key);
-  const cache = edgeCache(), cacheKey = new Request(`https://survey-log.cache/${key}`);
+  const cache = edgeCache(), cacheKey = new Request(`https://${key.replace('/', '/_cache/survey-log/')}`);
   let body = null;
   if (cache) {
     try { const hit = await cache.match(cacheKey); if (hit) body = await hit.text(); } catch { /* treated as a miss */ }

@@ -381,10 +381,14 @@ function myFirsts() {
 }
 const minePoints = firsts => [...firsts.values()].map(f => [f.t, 1, !f.s && inWorld(f.x, f.y) ? 1 : 0]).sort((a, b) => a[0] - b[0]);
 
+// Browsers keep settled answers for a day. Bumping this makes them forget
+// the ones they have: 2 dropped months a Worker Preview's test history had
+// put in Cloudflare's cache for production (see "Caching" in SURVEY.md).
+const CACHE_VERSION = 2;
 async function getJSON(path) {
   const ctl = new AbortController(), timer = setTimeout(() => ctl.abort(), 10000);
   try {
-    const res = await fetch(api + path, { signal: ctl.signal });
+    const res = await fetch(api + path + (path.includes('?') ? '&' : '?') + 'v=' + CACHE_VERSION, { signal: ctl.signal });
     if (!res.ok) throw new Error('status ' + res.status);
     return await res.json();
   } finally { clearTimeout(timer); }
