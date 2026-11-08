@@ -417,8 +417,7 @@ def test_how_you_slam_is_remembered(page: Page, site_url, errors):
 
 
 DECKS = ["classic", "neon", "pixel", "royal", "space", "spooky", "candy"]
-KINGS = {"classic": "👑", "neon": "😎", "pixel": "🕹️", "royal": "🤴", "space": "🛸", "spooky": "💀", "candy": "🍩"}
-JOKERS = {"classic": "🤡", "neon": "🤩", "pixel": "🐛", "royal": "🎭", "space": "☄️", "spooky": "👻", "candy": "🦷"}
+FACES = ["jack", "queen", "king", "joker"]
 TITLE_KING = ".title-cards .card:nth-child(3) .cc"  # the king of hearts on the menu
 TITLE_JOKER = ".title-cards .card:nth-child(2)"     # and the red joker
 
@@ -429,14 +428,58 @@ def test_every_deck_looks_different(page: Page, site_url, errors):
     looks = {}
     for key in DECKS:
         page.evaluate(f"window.__war.deck('{key}')")
-        expect(page.locator(TITLE_KING)).to_have_text(KINGS[key])
-        expect(page.locator(f"{TITLE_JOKER} .cc")).to_have_text(JOKERS[key])
+        expect(page.locator(TITLE_KING)).to_have_attribute("data-pic", f"{key}-king")
+        expect(page.locator(f"{TITLE_JOKER} .cc")).to_have_attribute("data-pic", f"{key}-joker")
         looks[key] = page.evaluate("""() => {
             const face = getComputedStyle(document.querySelector('.title-cards .card'));
             const back = getComputedStyle(document.querySelector('#menuDecks button[aria-pressed=true] .card'));
             return [face.backgroundColor, face.fontFamily, back.backgroundImage].join(' | ');
         }""")
     assert len(set(looks.values())) == len(DECKS), looks
+    assert errors == []
+
+
+def test_every_deck_has_pictures_of_its_own(page: Page, site_url, errors):
+    # Each deck's jack, queen, king and joker are pixel art drawn in the
+    # page: none blank, no two alike, and the cards show them.
+    page.goto(f"{site_url}/war#debug")
+    pictures = page.evaluate("""(faces) => Object.keys(DECKS).flatMap((key) => faces.map((face) => {
+        const c = Pictures.canvas(key, face);
+        const px = c.getContext('2d').getImageData(0, 0, c.width, c.height).data;
+        let solid = 0;
+        for (let i = 3; i < px.length; i += 4) if (px[i] === 255) solid++;
+        return [key, face, solid, Pictures.url(key, face)];
+    }))""", FACES)
+    assert [(key, face) for key, face, *_ in pictures] == [(key, face) for key in DECKS for face in FACES]
+    for key, face, solid, url in pictures:
+        assert solid > 200, f"{key} {face} has only {solid} solid pixels"
+        assert url.startswith("data:image/png;base64,")
+    urls = {(key, face): url for key, face, _, url in pictures}
+    assert len(set(urls.values())) == len(pictures)
+
+    for key in DECKS:
+        page.evaluate(f"window.__war.deck('{key}')")
+        king = page.locator(TITLE_KING)
+        expect(king).to_have_attribute("data-pic", f"{key}-king")
+        expect(king).to_have_text("")
+        shown = king.evaluate("(node) => getComputedStyle(node).backgroundImage")
+        assert shown == f'url("{urls[(key, "king")]}")'
+    assert errors == []
+
+
+def test_cards_fall_back_to_emoji_without_pictures(page: Page, site_url, errors):
+    # Where the browser can't draw a picture, a card shows its deck's emoji.
+    page.add_init_script("""{
+        const getContext = HTMLCanvasElement.prototype.getContext;
+        HTMLCanvasElement.prototype.getContext = function (...args) {
+            return this.width === 36 && this.height === 45 ? null : getContext.apply(this, args);
+        };
+    }""")
+    page.goto(f"{site_url}/war#debug")
+    page.evaluate("window.__war.deck('candy')")
+    expect(page.locator(TITLE_KING)).to_have_text("🍩")
+    expect(page.locator(f"{TITLE_JOKER} .cc")).to_have_text("🦷")
+    expect(page.locator(".cc.pic")).to_have_count(0)
     assert errors == []
 
 
@@ -461,7 +504,7 @@ def test_pick_a_deck_in_the_menu_or_mid_game(page: Page, site_url, errors):
 
     page.reload()
     assert page.evaluate("document.documentElement.dataset.deck") == "candy"
-    expect(page.locator(TITLE_KING)).to_have_text("🍩")
+    expect(page.locator(TITLE_KING)).to_have_attribute("data-pic", "candy-king")
     expect(page.locator("#menuDecks button[data-deck=candy]")).to_have_attribute("aria-pressed", "true")
     assert errors == []
 
