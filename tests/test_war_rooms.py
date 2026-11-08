@@ -502,3 +502,47 @@ def test_someone_elses_joker_war_at_a_big_table_is_a_strip(page: Page, site_url,
     expect(page.locator("#fx .jk")).to_have_count(0)
     assert page.evaluate(VERSUS)["kind"] == "lite"
     assert errors == []
+
+
+def test_a_seven_over_a_six_is_a_six_seven_and_nothing_else_is(page: Page, site_url, errors):
+    fake = FakeWarRoom()
+    open_war(page, site_url, fake)
+    start_room(page)
+    page.click("#botMore")
+    page.click("#botMore")
+    expect(page.locator("#people .person")).to_have_count(3)
+    page.click("#dealBtn")
+
+    def flip(battle: int, ranks: list[int], winner: int) -> None:
+        page.wait_for_function(f"{STATE}.battle === {battle} && {STATE}.canSlam")
+        page.evaluate("window.__war.slam(90)")
+        fake.broadcast({
+            "t": "flip", "battle": battle, "stage": 0, "winner": winner, "tied": [winner], "gods": False, "pot": 3,
+            "plays": [[s, 0, card(r, s), 90, 1, 0] for s, r in enumerate(ranks)],
+            "counts": [27, 27, 27], "out": [], "next": fake.stage(battle + 1, opens_in=2400),
+        })
+
+    # Bot 1's seven beats your six and Bot 2's three: a six… seven.
+    flip(1, [4, 5, 1], 1)
+    expect(page.locator("#fx .ss")).to_have_count(1)
+    expect(page.locator("#fx .ss .ss-word")).to_have_text("6-7!")
+    held = page.locator("#fx .ss .ss-side .card")
+    expect(held.nth(0)).to_have_attribute("aria-label", "six of spades")
+    expect(held.nth(1)).to_have_attribute("aria-label", "seven of hearts")
+    expect(page.locator("#caption")).to_contain_text("Bot 1's seven")
+    expect(page.locator("#caption")).to_contain_text("your six")
+    assert page.evaluate("window.__war.sixSeven()")["six"] == 0
+    # It's gone as the next battle opens.
+    page.wait_for_function(f"{STATE}.battle === 2")
+    expect(page.locator("#fx .ss")).to_have_count(0)
+
+    # A seven over a five, or an eight over a six, is just a battle.
+    flip(2, [5, 3, 2], 0)
+    expect(page.locator("#banner")).to_have_text("YOU WIN!")
+    page.wait_for_function(f"{STATE}.battle === 3")
+    flip(3, [4, 6, 2], 1)
+    expect(page.locator("#caption")).to_contain_text("eight")
+    page.wait_for_timeout(300)
+    expect(page.locator("#fx .ss")).to_have_count(0)
+    assert page.evaluate("window.__war.sixSeven()")["six"] == 0, "only the first battle was a six… seven"
+    assert errors == []
