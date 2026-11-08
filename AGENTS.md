@@ -95,6 +95,67 @@ utilities; games live here so they get their own origin and their own rules.
   title is longer than 12 characters, add
   `<meta name="apple-mobile-web-app-title" content="...">` with a shorter
   name for the Home Screen.
+- Keep each mode the game can be in (its screens, a save in flight, a
+  connection) in an explicit state machine, not in flags (see State
+  machines).
+
+## State machines
+
+A game is always in one of a few modes: on the menu, playing, paused or
+over; a score offered, saving or saved; a socket connecting, open or
+reconnecting. The bugs that hurt players most have come from modes kept
+implicitly, spread over booleans, `hidden` attributes and the order things
+happen in, where a timer, a reply or a key press lands after the player has
+moved on. So a mode with more than two states, or one that waiting work
+(timers, fetches, sockets) can move, lives in an explicit state machine:
+
+```js
+const Screen = machine('screen', {
+  menu: ['playing'],
+  playing: ['paused', 'ending'],
+  paused: ['playing', 'menu'],
+  ending: ['over'],
+  over: ['playing', 'menu'],
+}, 'menu', { onMove: showScreen });
+```
+
+- `machine()` is a few lines kept between `BEGIN STATE MACHINE` and `END
+  STATE MACHINE` markers, the same in every page that uses it.
+  `tests/test_state_machines.py` checks the copies match and that the helper
+  keeps its promises, so change every copy together.
+- The table is the one place to see how a game flows. `go(to)` makes a
+  listed move and nothing else. Any other move is a bug: it's refused with a
+  console error, which fails the tests, while the player carries on.
+- Guard a move by the states it may start from, then make it:
+  `if (!Screen.is('paused')) return;` and then `Screen.go('playing')`. Read
+  the state with `is()` or `.state`, never a flag of your own.
+- Derive what follows from the state in `onMove`, in one place: which
+  overlay shows, which layer is `inert` (only the top one takes focus and
+  taps), the wake lock. Don't toggle those wherever the state changes.
+- Anything that waits checks nothing moved before it acts: keep
+  `const at = Machine.seq`, and give up if `Machine.seq !== at` when the
+  timer fires or the reply comes back, or check `is()` for the state it
+  expects.
+- The state shows as a `data-` attribute on `<html>`, named after the
+  machine: `<html data-screen="over" data-save="offered">`. CSS can style
+  by it, and tests and agents can read it without knowing the code:
+  `expect(page.locator("html")).to_have_attribute("data-screen", "over")`.
+  A machine for one element of many passes `el` to show it there instead,
+  or `el: null` for nowhere. Debug hooks report each machine's state too.
+- A fix for a state machine bug comes with a test that fails without it.
+  `Held` in `tests/fake_leaderboard.py` holds back replies to answer them
+  later in any order, for testing what a page does while a request is out.
+- Leave alone modes that are fine as they are: a single boolean, a
+  countdown in game time, a request counter that keeps only the newest
+  reply, a render that checks its run number after each await.
+
+The machines each page keeps:
+
+| Page | Machine (`data-` name) | States |
+|---|---|---|
+| `funnels-and-buckets.html` | `screen` | menu, playing, paused, ending, over |
+| | `save` (the game-over card's offer) | none, checking, ineligible, offered, saving, saved |
+| | `board` (the leaderboard screen) | closed, open |
 
 ## Changelogs
 
