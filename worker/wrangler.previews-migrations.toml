@@ -18,4 +18,4 @@ migrations_dir = "migrations"
 binding = "LOG_DB"
 database_name = "games-survey-log-previews"
 database_id = "81cc1740-76a6-4c32-bfde-95477df4ddbf"
-migrations_dir = "migrations-log"
+migrations_dir = "migrations-log-seed"  # TEMPORARY: the made-up history only; back to migrations-log before merging
