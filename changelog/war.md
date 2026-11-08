@@ -1,3 +1,11 @@
+## 2026-11-08
+
+- In a room, Clean up shows on everyone's screen: at a table of up to four,
+  the others see your winnings squared up behind your card too.
+- When jokers tie and start a war, a giant pixel jester takes over the screen
+  and cackles until the war opens. If that war ties on jokers again, it brings
+  friends.
+
 ## 2026-11-07
 
 - When a seven beats a six, the two cards ride up and down on a pair of palms
@@ -16,9 +24,6 @@
   slamming.
 - The end screen tells the game battle by battle, and Share makes a picture
   of the game to send.
-- When jokers tie and start a war, a giant pixel jester takes over the screen
-  and cackles until the war opens. If that war ties on jokers again, it brings
-  friends.
 - Easier invites: an invite link opens straight to joining, the lobby shows
   a QR code to scan with a phone camera, and tapping the room code at the
   top of the table invites someone to the next game.

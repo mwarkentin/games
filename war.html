@@ -2740,6 +2740,10 @@ function receive(m) {
     case 'cheer':
       if (m.seat !== S.you || S.mode === 'solo') { floatCheer(m.seat, m.e); if (m.seat !== S.you) Sound.cheer(); }
       return;
+    case 'tidy':
+      // Someone cleaned up their winnings: their heap squares up on their tile.
+      if (m.seat !== S.you) heapSquare(m.seat);
+      return;
     case 'deck':
       // Someone picked another deck: their cards are redrawn in it.
       if (S.players[m.seat] && m.seat !== S.you) {
@@ -3496,8 +3500,9 @@ setInterval(() => {
 // your card, and at a table of up to four, everyone else's behind the card on
 // their tile. When you lose, your card flies
 // to the winner's heap. Clean up squares your heap into a neat stack in the
-// order it landed, the latest card still on top. All for show: won cards go into the winner's deck either way,
-// and a heap never shows more cards than its player holds.
+// order it landed, the latest card still on top, and in a room everyone sees
+// it happen on your tile. All for show: won cards go into the winner's deck
+// either way, and a heap never shows more cards than its player holds.
 
 // Cards drawn at most: on your heap, and on others' at a table of up to four
 // (bigger tables have smaller tiles, and it all gets too busy).
@@ -3612,25 +3617,35 @@ function heapToss(seat, cards) {
   renderHeaps();
 }
 
-// Squares your heap up into a neat stack without reordering it: the oldest
-// card at the bottom and the latest still on top.
-function heapTidy() {
-  const h = heaps.get(S.you);
-  if (!h || h.tidy || h.cards.length < 2) return;
+// Squares a heap up into a neat stack without reordering it: the oldest card
+// at the bottom and the latest still on top. Says whether there was anything
+// to square up.
+function heapSquare(seat) {
+  const h = heaps.get(seat);
+  if (!h || h.tidy || h.cards.length < 2) return false;
+  const unit = (h.cards[0].node.offsetWidth || 40) / 40;
   h.cards.forEach((c, i) => {
     const s = c.node.style;
     c.node.classList.remove('toss');
     s.setProperty('--i', String(i));
     s.setProperty('--x', '0px');
-    s.setProperty('--y', `${-Math.round(Math.min(i, 30) * 0.7)}px`);
+    s.setProperty('--y', `${-Math.round(Math.min(i, 30) * 0.7 * unit)}px`);
     s.setProperty('--r', '0deg');
     s.zIndex = String(i + 1);
   });
   h.layer = h.cards.length;
   h.tidy = true;
-  setText($('caption'), pick(TIDY_LINES)(h.cards.length));
   Sound.riffle();
   renderHeaps();
+  return true;
+}
+
+// Clean up: squares your heap, and in a room tells everyone, so they see it
+// squared up on your tile too.
+function heapTidy() {
+  if (S.you === null || !heapSquare(S.you)) return;
+  setText($('caption'), pick(TIDY_LINES)(heaps.get(S.you).cards.length));
+  if (S.mode === 'room' && S.conn) S.conn.send({ t: 'tidy' });
 }
 
 function renderHeaps() {
