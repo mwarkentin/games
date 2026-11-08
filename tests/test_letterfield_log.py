@@ -9,6 +9,7 @@ so "this week" is Monday, November 2, to Sunday, November 8.
 from __future__ import annotations
 
 import json
+import re
 from datetime import datetime, timezone
 
 from playwright.sync_api import Page, expect
@@ -17,6 +18,8 @@ from fake_survey_log import SURVEY, FakeSurveyLog
 
 NOW_MS = int(datetime(2026, 11, 6, 20, 30, tzinfo=timezone.utc).timestamp() * 1000)  # 3:30 PM in Toronto
 MINUTE = 60_000
+HOUR_MS = 3_600_000
+DAY_MS = 86_400_000
 PLACES = {"0,0": "Acorn Hollow", "1,0": "Monet Reach", "-1,2": "Zeus Point"}
 THEMES = {11: ["Forest", 40], 0: ["Old Masters", 56], 17: ["Olympus", 25]}
 
@@ -32,6 +35,11 @@ def open_log(page: Page, site_url: str, fake: FakeSurveyLog, query: str = "", fi
     fake.now_ms = NOW_MS
     page.route(f"{SURVEY}/v1/survey/log/**", fake.handle)
     page.goto(f"{site_url}/letterfield-log?survey={SURVEY}{query}")
+
+
+def entry(page: Page, word: str):
+    """The row of one word (a place's name can hold another word's letters)."""
+    return page.locator(".entry").filter(has=page.locator("a.fly", has_text=re.compile(f"^{word}$")))
 
 
 def tile(page: Page, n: int):
@@ -60,7 +68,7 @@ def test_shows_the_days_words_hour_by_hour_newest_first(page: Page, site_url, er
     acorn = page.locator(".entry", has_text="ACORN")
     expect(acorn).to_contain_text("2:10 PM · ZED")
     expect(acorn).to_contain_text("Acorn Hollow · 5E · 7S · → E · Forest")
-    expect(acorn.locator("a")).to_have_attribute("href", "/letterfield#f-acorn-5-7-0")
+    expect(acorn.locator("a.fly")).to_have_attribute("href", "/letterfield#f-acorn-5-7-0")
     monet = page.locator(".entry", has_text="MONET")
     expect(monet).to_have_class("entry mark stray")
     expect(monet).to_contain_text("3:05 PM · —")
@@ -275,6 +283,145 @@ def test_reads_every_page_of_a_busy_hour(page: Page, site_url, errors):
     expect(page.locator(".entry .word")).to_have_text(list(reversed(words)))
     assert len([r for r in fake.requests if "/hour/" in r]) == 3
     assert errors == []
+
+
+# Sharing without a share sheet copies the link; this keeps what's copied.
+NO_SHARE_SHEET = """
+  Object.defineProperty(Navigator.prototype, 'share', { value: undefined, configurable: true });
+  Object.defineProperty(navigator, 'clipboard', { value: { writeText: t => { window.__copied = t; return Promise.resolve(); } } });
+"""
+
+
+def test_a_surveyor_opens_from_a_top_list_with_an_address_to_share(page: Page, site_url, errors):
+    page.set_viewport_size({"width": 375, "height": 740})
+    birch = ["BIRCH", 100, 7, 0, 0, "ZED", NOW_MS - 20 * DAY_MS, 11]  # October 17
+    fake = FakeSurveyLog([birch, ACORN, MONET, ZEUS], PLACES, THEMES)
+    page.add_init_script(NO_SHARE_SHEET)
+    open_log(page, site_url, fake, query="&period=week")
+    page.locator(".card", has_text="Top surveyors").get_by_role("link", name="ZED").click()
+
+    expect(page.locator("#focusKind")).to_have_text("Surveyor")
+    expect(page.locator("#focusName")).to_have_text("ZED")
+    expect(page.locator("#focusNote")).to_contain_text("Initials aren’t unique")
+    expect(page).to_have_title("ZED · Letterfield survey log")
+    expect(page.locator("#whose")).to_be_hidden()
+    # It keeps the week it came from.
+    expect(page.locator("#sumTitle")).to_have_text("This week")
+    assert "surveyor=ZED" in page.url and "period=week" in page.url
+    week = NOW_MS // HOUR_MS - 4 * 24 - 15  # Monday, midnight in Toronto, in UTC hours
+    assert f"/surveyor/ZED/{week}/{week + 7 * 24}" in fake.requests
+    expect(tile(page, 0)).to_contain_text("Words charted1")
+    expect(page.locator(".entry .word")).to_have_text(["ACORN"])
+    expect(page.locator(".hour h3")).to_have_text(["Friday, November 61 word"])
+    cards = page.locator(".card")
+    expect(cards.nth(0)).to_contain_text("Top territories")
+    expect(cards.nth(0).locator(".rank .lbl")).to_have_text(["Acorn Hollow"])
+    expect(cards.nth(1).locator(".rank .lbl")).to_have_text(["Forest"])
+    assert page.evaluate("document.documentElement.scrollWidth") <= 375
+
+    page.click("#share")
+    expect(page.locator("#share")).to_have_text("Link copied")
+    assert page.evaluate("window.__copied") == page.url
+    # All time is a surveyor's own view's first, so its address needs no period.
+    page.click("#periods [data-p=all]")
+    expect(page.locator(".entry .word")).to_have_text(["ACORN", "BIRCH"])
+    expect(page.locator(".hour h3")).to_have_count(2)
+    assert "surveyor=ZED" in page.url and "period" not in page.url
+    # Back is everyone's week again.
+    page.go_back()
+    expect(page.locator("#focus")).to_be_hidden()
+    expect(page.locator("#whose")).to_be_visible()
+    expect(page.locator("#sumTitle")).to_have_text("This week")
+    expect(page.locator(".card").nth(0).locator(".rank .lbl")).to_have_text(["ABC", "ZED"])
+    expect(page).to_have_title("Letterfield survey log")
+    assert errors == []
+
+
+def test_a_surveyors_day_opens_hour_by_hour(page: Page, site_url, errors):
+    fake = FakeSurveyLog([ACORN, MONET, ZEUS], PLACES, THEMES)
+    open_log(page, site_url, fake, query="&surveyor=ZED&period=day")
+    expect(page.locator("#sumTitle")).to_have_text("Today")
+    expect(page.locator("#chart .bar.some")).to_have_count(1)
+    page.locator("#chart .bar").nth(14).click()
+    expect(page.locator("#sumTitle")).to_have_text("2:00 PM – 3:00 PM")
+    expect(page.locator("#chart .bar.some")).to_have_attribute("aria-label", "2:10 PM: 1 word")
+    expect(page.locator(".entry .word")).to_have_text(["ACORN"])
+    assert "surveyor=ZED" in page.url and "hour=14" in page.url
+    assert errors == []
+
+
+def test_a_words_theme_and_territory_open_their_own_views(page: Page, site_url, errors):
+    page.set_viewport_size({"width": 375, "height": 740})
+    fern = ["FERN", 10, 20, 0, 0, "AMY", NOW_MS - 30 * MINUTE, 11]  # 3:00 PM, in Acorn Hollow too
+    fake = FakeSurveyLog([ACORN, MONET, ZEUS, fern], PLACES, THEMES, totals={"0,0": 110})
+    open_log(page, site_url, fake)
+    entry(page, "ACORN").get_by_role("link", name="Forest").click()
+
+    expect(page.locator("#focusKind")).to_have_text("Theme")
+    expect(page.locator("#focusName")).to_have_text("Forest")
+    expect(page.locator("#sumTitle")).to_have_text("Today")
+    assert "theme=11" in page.url and "period=day" in page.url
+    expect(tile(page, 0)).to_contain_text("Hidden words charted2")
+    expect(page.locator(".entry .word")).to_have_text(["FERN", "ACORN"])
+    cards = page.locator(".card")
+    expect(cards.nth(0).locator(".rank .lbl")).to_have_text(["AMY", "ZED"])
+    expect(cards.nth(1).locator(".rank .lbl")).to_have_text(["Acorn Hollow"])
+    # On the theme's own view, its name isn't a link; the territory still is.
+    acorn = entry(page, "ACORN")
+    expect(acorn.get_by_role("link", name="Forest")).to_have_count(0)
+    acorn.get_by_role("link", name="Acorn Hollow").click()
+
+    expect(page.locator("#focusKind")).to_have_text("Territory")
+    expect(page.locator("#focusName")).to_have_text("Acorn Hollow")
+    expect(page.locator("#focusNote")).to_have_text("24E · 24S, at its middle · Forest")
+    expect(page.locator("#periods")).to_be_hidden()
+    expect(page.locator(".nav")).to_be_hidden()
+    assert "territory=0,0" in page.url and "period" not in page.url
+    expect(page.locator("#sumTitle")).to_have_text("Charted so far")
+    expect(tile(page, 0)).to_contain_text("Hidden words charted2 of 110")
+    expect(tile(page, 1)).to_contain_text("Surveyors2")
+    expect(page.locator("#chart .meter")).to_have_attribute("aria-valuenow", "2")
+    expect(page.locator("#fly")).to_have_attribute("href", "/letterfield#f-fern-10-20-0")
+    expect(page.locator(".entry .word")).to_have_text(["FERN", "ACORN"])
+    expect(page.locator(".card .rank .lbl")).to_have_text(["AMY", "ZED"])
+    assert page.evaluate("document.documentElement.scrollWidth") <= 375
+
+    # Its theme opens from the bar, over all time, since a territory has no periods.
+    page.locator("#focusNote").get_by_role("link", name="Forest").click()
+    expect(page.locator("#focusName")).to_have_text("Forest")
+    expect(page.locator("#sumTitle")).to_have_text("All time")
+    page.click("#everyone")
+    expect(page.locator("#focus")).to_be_hidden()
+    expect(page.locator("#sumTitle")).to_have_text("All time")
+    # Back goes through each view in turn.
+    page.go_back()
+    expect(page.locator("#focusName")).to_have_text("Forest")
+    page.go_back()
+    expect(page.locator("#focusName")).to_have_text("Acorn Hollow")
+    page.go_back()
+    expect(page.locator("#focusName")).to_have_text("Forest")
+    expect(page.locator("#sumTitle")).to_have_text("Today")
+    assert errors == []
+
+
+def test_a_busy_surveyors_words_come_a_hundred_at_a_time(page: Page, site_url, errors):
+    words = [["BIRCH", i, 0, 0, 0, "ZED", NOW_MS - (i + 1) * 5 * MINUTE, 11] for i in range(130)]
+    fake = FakeSurveyLog(words, PLACES, THEMES)
+    open_log(page, site_url, fake, query="&surveyor=ZED&period=month")
+    expect(tile(page, 0)).to_contain_text("Words charted130")
+    expect(page.locator(".entry")).to_have_count(100)
+    page.click(".more")
+    expect(page.locator(".entry")).to_have_count(130)
+    expect(page.locator(".more")).to_have_count(0)
+    # The second page carries on under the same day.
+    expect(page.locator(".hour h3")).to_have_text(["Friday, November 6130 words"])
+    assert any(r.endswith("?before=100") for r in fake.requests)
+    assert errors == []
+
+
+def test_a_theme_that_isnt_one_says_so(page: Page, site_url):
+    open_log(page, site_url, FakeSurveyLog([ACORN], PLACES, THEMES), query="&theme=500")
+    expect(page.locator(".status strong")).to_have_text("Not in the log")
 
 
 def test_says_so_when_the_log_cannot_be_reached(page: Page, site_url):

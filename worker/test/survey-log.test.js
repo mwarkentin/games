@@ -13,8 +13,9 @@ import worker from '../src/index.js';
 import { RC, THEMES, VOCAB, chunk, fdiv, keyOf, regionName, regionTheme } from '../src/letterfield-world.js';
 import {
   DAY_MS, HOURS_SQL, HOUR_AFTER_SQL, HOUR_MS, HOUR_SQL, LIVE_CACHE_S, LOG_BATCH, LOG_MS, LOG_PAGE, LOG_RETRY_MAX_MS, SETTLED_MS,
-  FIRST_SQL, LAST_SQL, SPAN_CACHE_S, SURVEYORS_SQL, TERRITORIES_SQL, TOP_MAX_DAYS, TOP_N, TOP_SLOW_CACHE_S,
-  forgetLog, monthHours, readDay, readHour, readMonth, readSpan, readTop, routeLog, writeLog,
+  FIRST_SQL, LAST_SQL, SLICES, SLICE_MAX_HOURS, SLICE_PAGE, SLICE_SLOW_CACHE_S, SPAN_CACHE_S, SURVEYORS_SQL, TERRITORIES_SQL,
+  TOP_MAX_DAYS, TOP_N, TOP_SLOW_CACHE_S, forgetLog, monthHours, readDay, readHour, readMonth, readSlice, readSpan, readTerritory,
+  readTop, routeLog, sliceSql, writeLog,
 } from '../src/survey-log.js';
 import { AREA, SECTOR, Sector } from '../src/survey.js';
 
@@ -246,6 +247,96 @@ describe('the log\'s counts', () => {
   });
 });
 
+describe('one surveyor, theme or territory', () => {
+  let db;
+  beforeEach(() => { db = fakeD1(); forgetLog(); });
+  const at = (x, y, time, { s = 0, initials = 'ZED', w = 'ACORN' } = {}) => ({ key: keyOf(w, x, y, 0), w, x, y, d: 0, s, initials, at: time });
+
+  test('work out each word\'s territory and theme in SQL as the game does', async () => {
+    let seed = 7;
+    const next = () => { seed = (seed * 1103515245 + 12345) % 2147483648; return seed; };
+    const rows = [];
+    for (let i = 0; i < 400; i++) rows.push(at((next() % 20000) - 10000, (next() % 20000) - 10000, NOW + i));
+    rows.push(at(-1, -1, NOW + 500), at(-48, -49, NOW + 501), at(47, 48, NOW + 502), at(0, 0, NOW + 503));
+    await writeLog(db, rows);
+    for (const r of db.raw.prepare('SELECT x, y, rx, ry, th FROM survey_log').all()) {
+      const rx = fdiv(r.x, RC), ry = fdiv(r.y, RC);
+      assert.deepEqual([r.rx, r.ry, r.th], [rx, ry, regionTheme(rx, ry)], `${r.x},${r.y}`);
+    }
+  });
+
+  test('give one surveyor\'s words over a range of hours, newest first, a page at a time', async () => {
+    const rows = [];
+    for (let i = 0; i < SLICE_PAGE + 5; i++) rows.push(at(i, 0, NOW - i * 60000));       // 0,0 and 1,0 and 2,0
+    rows.push(at(5, 5, NOW + 1, { s: 1, w: 'BARK' }), at(3000, 0, NOW + 2));            // a stray, a word outside the world
+    rows.push(at(0, 9, NOW + 3, { initials: 'AMY' }), at(0, 10, NOW - 3 * DAY_MS));      // someone else, and a word too early
+    await writeLog(db, rows);
+    const from = HOUR - 24, to = HOUR + 1;
+    const one = await readSlice(db, 'surveyor', 'ZED', from, to);
+    assert.equal(one.words, SLICE_PAGE + 7);
+    assert.equal(one.world, SLICE_PAGE + 5);
+    assert.equal(one.hours.reduce((a, h) => a + h[1], 0), one.words);
+    assert.ok(one.hours.every((h, i) => i === 0 || h[0] > one.hours[i - 1][0]));
+    assert.deepEqual(one.topTerritories[0], [0, 0, regionName(0, 0), regionTheme(0, 0), 48]);
+    assert.equal(one.topThemes.reduce((a, r) => a + r[3], 0), SLICE_PAGE + 6);  // hidden words only
+    assert.equal(one.topSurveyors, undefined);
+    assert.equal(one.entries.length, SLICE_PAGE);
+    assert.deepEqual(one.entries.slice(0, 3).map((e) => e[0]), ['ACORN', 'BARK', 'ACORN']);
+    assert.ok(one.entries.every((e) => e[5] === 'ZED'));
+    assert.ok(one.entries.every((e, i) => i === 0 || e[6] < one.entries[i - 1][6]));
+    assert.ok(one.next);
+    const [atMs, ...key] = one.next.split('~');
+    const two = await readSlice(db, 'surveyor', 'ZED', from, to, { at: Number(atMs), key: key.join('~') });
+    assert.equal(two.entries.length, 7);
+    assert.equal(two.next, null);
+    assert.equal(new Set([...one.entries, ...two.entries].map((e) => e[6])).size, SLICE_PAGE + 7);
+    assert.equal((await readSlice(db, 'surveyor', 'NOB', from, to)).words, 0);
+  });
+
+  test('give one theme\'s hidden words, with who charted them', async () => {
+    const th = regionTheme(0, 0), far = [116 * 2, 0];  // another territory with the same theme
+    assert.equal(regionTheme(far[0], far[1]), th);
+    await writeLog(db, [
+      at(1, 1, NOW), at(2, 2, NOW + 1, { initials: 'AMY' }), at(far[0] * RC, 0, NOW + 2, { initials: 'AMY' }),
+      at(3, 3, NOW + 3, { s: 1, w: 'BARK' }), at(48, 0, NOW + 4), at(4, 4, NOW + 5, { initials: '' }),
+    ]);
+    const one = await readSlice(db, 'theme', th, HOUR, HOUR + 1);
+    assert.equal(one.words, 4);
+    assert.deepEqual(one.topSurveyors, [['AMY', 2], ['ZED', 1]]);
+    assert.deepEqual(one.topTerritories.map((r) => [r[0], r[1], r[4]]), [[0, 0, 3], [far[0], 0, 1]]);
+    assert.equal(one.topThemes, undefined);
+    assert.deepEqual([one.name, one.hue], [THEMES[th].name, THEMES[th].hue]);
+    assert.ok(one.entries.every((e) => e[7] === th && e[4] === 0));
+  });
+
+  test('give everything charted in a territory, with how many words it hides', async () => {
+    const [w0, w1] = chunk(0, 0).words;
+    await writeLog(db, [
+      stored(0, 0, 0, NOW), stored(0, 0, 1, NOW + 1, 'AMY'), stored(3, 3, 0, NOW + 2, 'AMY'),
+      at(5, 5, NOW + 3, { s: 1, w: 'BARK' }), stored(4, 0, 0, NOW + 4),
+    ]);
+    const t = await readTerritory(db, 0, 0);
+    let total = 0;
+    for (let cy = 0; cy < 4; cy++) for (let cx = 0; cx < 4; cx++) total += chunk(cx, cy).words.length;
+    assert.deepEqual([t.rx, t.ry, t.name, t.th, t.total, t.charted], [0, 0, regionName(0, 0), regionTheme(0, 0), total, 3]);
+    assert.deepEqual(t.topSurveyors, [['AMY', 2], ['ZED', 2]]);
+    assert.deepEqual(t.entries.map((e) => e[0]), ['BARK', chunk(3, 3).words[0].w, w1.w, w0.w]);
+    assert.ok(t.themes[regionTheme(0, 0)]);
+    assert.equal((await readTerritory(db, -7, 3)).charted, 0);
+  });
+
+  test('read only the rows of the surveyor, theme or territory asked for', () => {
+    for (const [kind, { index }] of Object.entries(SLICES)) {
+      const sql = sliceSql(kind), args = kind === 'territory' ? [0, 0, 1, 2] : [1, 1, 2];
+      for (const [part, q] of Object.entries({ ...sql, after: sliceSql(kind, true).entries })) {
+        const p = plan(db, q, ...args, ...(part === 'after' ? [1, 'A'] : []), ...(/LIMIT \?$/.test(q) ? [10] : []));
+        assert.match(p, new RegExp(`SEARCH survey_log USING (COVERING )?INDEX ${index} \\(`), `${kind} ${part}: ${p}`);
+        if (part === 'entries' || part === 'after') assert.doesNotMatch(p, /TEMP B-TREE/, `${kind} ${part}: ${p}`);
+      }
+    }
+  });
+});
+
 describe('routeLog', () => {
   let env;
   beforeEach(async () => {
@@ -316,6 +407,31 @@ describe('routeLog', () => {
     assert.equal((await get(`/v1/survey/log/top/${DAY + 1}/${DAY + 2}`)).status, 400);
     assert.equal((await get(`/v1/survey/log/top/${DAY}/${DAY}`)).status, 400);
     assert.equal((await get(`/v1/survey/log/top/${DAY - TOP_MAX_DAYS - 1}/${DAY}`)).status, 400);
+  });
+
+  test('answers a surveyor, a theme and a territory, cached by how settled and how long they are', async () => {
+    const one = await get(`/v1/survey/log/surveyor/ZED/${HOUR - 24}/${HOUR + 1}`);
+    assert.equal(one.headers.get('Cache-Control'), `public, max-age=${LIVE_CACHE_S}`);
+    assert.equal((await one.json()).words, 1);
+    const week = await get(`/v1/survey/log/surveyor/ZED/${HOUR - 24 * 7}/${HOUR + 1}`);
+    assert.equal(week.headers.get('Cache-Control'), `public, max-age=${SLICE_SLOW_CACHE_S}`);
+    assert.equal((await week.json()).words, 2);
+    assert.equal((await get(`/v1/survey/log/surveyor/ZED/${HOUR - 72}/${HOUR - 2}`)).headers.get('Cache-Control'), 'public, max-age=86400');
+    const th = regionTheme(0, 0);
+    const theme = await (await get(`/v1/survey/log/theme/${th}/${HOUR - 1}/${HOUR + 1}`)).json();
+    assert.deepEqual([theme.kind, theme.key, theme.words], ['theme', th, 1]);
+    const page = await get(`/v1/survey/log/surveyor/ZED/${HOUR - 1}/${HOUR + 1}?before=${NOW}~ACORN~1~-2~3`);
+    assert.equal(page.status, 200);
+    const place = await get('/v1/survey/log/territory/0/0');
+    assert.equal(place.headers.get('Cache-Control'), `public, max-age=${LIVE_CACHE_S}`);
+    assert.equal((await place.json()).charted, 2);  // chunks 0,0 and 1,0 are both in it
+    assert.equal((await (await get('/v1/survey/log/territory/-3/-12')).json()).name, regionName(-3, -12));
+    assert.equal((await get(`/v1/survey/log/theme/${THEMES.length}/${HOUR}/${HOUR + 1}`)).status, 400);
+    assert.equal((await get(`/v1/survey/log/surveyor/ZED/${HOUR + 1}/${HOUR + 2}`)).status, 400);
+    assert.equal((await get(`/v1/survey/log/surveyor/ZED/${HOUR}/${HOUR}`)).status, 400);
+    assert.equal((await get(`/v1/survey/log/surveyor/ZED/${HOUR - SLICE_MAX_HOURS - 1}/${HOUR}`)).status, 400);
+    assert.equal((await get(`/v1/survey/log/surveyor/ZED/${HOUR}/${HOUR + 1}?before=nope`)).status, 400);
+    assert.equal(get(`/v1/survey/log/surveyor/zed/${HOUR}/${HOUR + 1}`), null);
   });
 
   test('answers the span, cached for minutes', async () => {

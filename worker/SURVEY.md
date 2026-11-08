@@ -235,8 +235,10 @@ already send it:
 page of the survey's history: every word charted first, with where, by whom
 (their initials) and when, by the day, week, month, year or all time, and
 any hour minute by minute. Each word links to
-`/letterfield#f-<word>-<x>-<y>-<d>`, which flies the game to it. "Mine"
-narrows it to the words this browser charted first.
+`/letterfield#f-<word>-<x>-<y>-<d>`, which flies the game to it, and its
+surveyor, territory and theme each open a view of their own, with an
+address to share. "Mine" narrows it to the words this browser charted
+first.
 
 ### Where the history lives: D1, copied from each sector
 
@@ -300,6 +302,19 @@ GET /v1/survey/log/top/<from>/<to>   (UTC days from..to-1, at most 3,660)
   → {"from", "to", "surveyors": [[initials, words], ...10],
      "territories": [[rx, ry, name, th, words], ...10],
      "themes": [[th, name, hue, words], ...], "hidden"}
+GET /v1/survey/log/surveyor/<initials>/<from>/<to>   (UTC hours from..to-1)
+GET /v1/survey/log/theme/<th>/<from>/<to>
+GET /v1/survey/log/…/<from>/<to>?before=<at>~<key>
+  → {"kind", "key", "from", "to", "words", "world",
+     "hours": [[hour, words, world], ...],          hours with none left out
+     "topTerritories": [[rx, ry, name, th, words], ...10],
+     "topThemes": [[th, name, hue, words], ...]     a surveyor's
+     "topSurveyors": [[initials, words], ...10]     a theme's
+     "name", "hue"                                  a theme's
+     "entries", "places", "themes", "next"}         newest first, 100 a page
+GET /v1/survey/log/territory/<rx>/<ry>
+  → {"rx", "ry", "name", "th", "total", "charted",
+     "topSurveyors": [[initials, words], ...10], "entries", "places", "themes"}
 ```
 
 An hour comes oldest first, 500 entries a page; `next` is the `after` for the
@@ -384,6 +399,56 @@ cached for a day, like an hour. The running month is cached for 15 seconds,
 and a running top list over more than two days for 10 minutes: it changes
 slowly and reads every day's rows in its range.
 
+### Surveyors, territories and themes
+
+Every name in the log opens a view of its own: a word's initials, its
+territory and its theme, and every row of the top lists. Each view's
+address says what it is, so it can be shared or bookmarked:
+
+| view | address | periods | shows |
+| --- | --- | --- | --- |
+| a surveyor | `?surveyor=ZED` | all of them, all time first | words signed ZED: chart, top territories and themes, the words by day |
+| a theme | `?theme=<n>` | all of them, all time first | hidden words in its territories: chart, top surveyors and territories, the words |
+| a territory | `?territory=<rx>,<ry>` | none: all time | how many of its hidden words are charted (a meter), top surveyors, every word, and a link to fly there |
+
+A surveyor's or theme's view opened from a period keeps it, so ZED from this
+week's top list is ZED's week; the period tabs then move through ZED's
+history the same way as everyone's. Going into a view, or back to
+everyone's, is a new entry in the browser's history, so Back returns to
+where it came from; moving between periods replaces the address as before.
+A view's Share button uses the phone's share sheet, or copies the link.
+Link previews are still the page's own, since the site is static.
+
+Initials aren't unique, so "ZED" is everyone who typed ZED, and the view
+says so. A stray word's theme is its word's, not its territory's, so a theme
+counts hidden words only, like the top lists, and strays don't link to one.
+
+**Indexes, not counts.** These read rows of the log, not the count tables,
+since a surveyor's words or a territory's are a small slice of it. A third
+migration (`migrations-log/0003_survey_log_lookups.sql`) adds three indexes,
+one for each:
+
+- `survey_log_by_initials (initials, at)`, leaving out unsigned words;
+- `survey_log_by_territory (rx, ry, at)`;
+- `survey_log_by_theme (th, at)`, hidden words only.
+
+A word's territory and theme aren't stored: they're virtual columns worked
+out from its start cell as the game does (floor division by 48, and
+`(rx + 21 ry) mod 116`), so only the indexes hold them. A test checks the
+SQL matches `regionTheme` for random cells, negative ones included. Each
+query names its index with `INDEXED BY` and pages in `(at, key)` order,
+which the index already holds (an index on a `WITHOUT ROWID` table carries
+the primary key), so a page of words never sorts. The tests check every
+plan.
+
+A surveyor's or theme's answer is three queries over its rows in the range
+(per hour, per territory, and a page of words), plus its top surveyors for a
+theme. A territory's reads all its words at once: about 110 are hidden in
+each, so even fully charted that's a short list, and the Worker counts its
+hidden words from the map. Settled ranges are cached for a day, as
+elsewhere; a running one for 15 seconds, or 2 minutes over more than two
+days, and a territory for 15 seconds.
+
 ### Where, readably
 
 Coordinates mean little, so each answer names the territories its entries
@@ -433,17 +498,18 @@ since it only reads; until the survey is on, the log is empty.
 
 ### Cost
 
-On Workers Paid, per word charted: up to four D1 rows written (the log's
-row, and an update each to the hour's, the surveyor's and the territory's
-counts; no initials or a stray word skips one), one more row written in
-the sector (its time index), and a share of an alarm. Each busy sector's
+On Workers Paid, per word charted: up to seven D1 rows written (the log's
+row, an update each to the hour's, the surveyor's and the territory's
+counts, and a row in each of the three indexes; no initials or a stray word
+skips two), one more row written in the sector (its time index), and a
+share of an alarm. Each busy sector's
 alarm runs at most every 30 s: one Durable Object request and two rows
 written (the alarm and the mark).
 
 | | whole world charted (1.12 M words) | a busy day (30,000 words) | the ceiling (all 625 sectors charting nonstop) |
 | --- | --- | --- | --- |
-| D1 rows written | ~4.5 M (50 M a month included) | ~120,000 | 75,000 batches an hour |
-| D1 storage | ~100 MB for the log, a few MB of counts (5 GB included) | ~3 MB | |
+| D1 rows written | ~8 M (50 M a month included) | ~210,000 | 75,000 batches an hour |
+| D1 storage | ~100 MB for the log, ~50 MB of indexes, a few MB of counts (5 GB included) | ~4 MB | |
 | alarms (DO requests) | | ≤ 2,880 per busy sector | ~$0.011 an hour |
 | rows written in sectors | 1.12 M + 2 per alarm | | ~$0.15 an hour past the included 50 M |
 | D1 rows read | see below | | |
@@ -451,7 +517,7 @@ written (the alarm and the mark).
 So the log adds nothing past the included allowances at the survey's
 expected sizes, and at the ceiling raises the worst case from about $0.75 to
 about $0.92 an hour. `LOG_MS` is the knob: 60 s would halve the alarm costs.
-The whole world, charted, would take about 4.5 million of the 50 million D1
+The whole world, charted, would take about 8 million of the 50 million D1
 rows written included each month.
 
 Reading is cheap: 25 billion D1 rows read a month are included. An hour
@@ -460,12 +526,15 @@ once a day per Worker instance. Top lists read every row of their range in
 the daily tables: a busy day might have a few hundred sets of initials and
 a thousand territories, so a running year's list could read a few hundred
 thousand rows, at most every 10 minutes per instance. If that ever shows in
-the bill, the next step is a monthly level of the same counts.
+the bill, the next step is a monthly level of the same counts. A surveyor's
+or theme's view reads its rows in the range three times: all time for
+someone with 10,000 words is about 30,000 rows, at most every 2 minutes per
+instance while it's running.
 
 On the free plan, D1 and Durable Object storage each allow 100,000 rows
-written a day, so the log, with its counts (four D1 rows a word), cuts the
-claims a day the free plan allows to about a quarter (see "On the free
-plan").
+written a day, so the log, with its counts and indexes (seven D1 rows a
+word), cuts the claims a day the free plan allows to about a seventh (see
+"On the free plan").
 
 **A database of its own.** The log lives in `games-survey-log` (the
 `LOG_DB` binding, with its migrations in `migrations-log/`), not in the

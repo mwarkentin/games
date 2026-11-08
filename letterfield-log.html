@@ -128,6 +128,11 @@ header p{margin:8px 0 0;color:var(--muted);max-width:36ch}
 .card .note{margin:8px 0 0;font:400 10.5px/1.4 var(--f-mono);color:var(--muted)}
 .rank{list-style:none;margin:0;padding:0}
 .rank li{display:grid;grid-template-columns:minmax(0,9rem) minmax(0,1fr) auto;align-items:center;gap:8px;padding:4px 0;font-size:13px}
+.rank li.go{position:relative;border-radius:4px}
+.rank li.go:hover{background:var(--hover)}
+.rank li.go a{color:inherit;text-decoration:none}
+.rank li.go a::after{content:"";position:absolute;inset:-2px -6px;border-radius:4px}
+.rank li.go:hover .lbl a span{text-decoration-style:solid}
 .rank .lbl{display:flex;align-items:center;gap:6px;min-width:0;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
 .rank .lbl .dot{flex:none}
 .rank .lbl span{overflow:hidden;text-overflow:ellipsis}
@@ -140,6 +145,17 @@ header p{margin:8px 0 0;color:var(--muted);max-width:36ch}
 .row:disabled{cursor:default;color:var(--muted)}
 .row .when{font:700 18px/1 var(--f-display);letter-spacing:.05em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 
+.focus{display:flex;flex-wrap:wrap;align-items:center;gap:10px 12px;margin-top:14px;padding:12px 14px;background:var(--panel);border:1px solid var(--rule);border-radius:8px}
+.focus .head{flex:1 1 12rem;min-width:0}
+.focus h2{margin:4px 0 0;display:flex;align-items:center;gap:8px;font:800 30px/1 var(--f-display);letter-spacing:.06em;text-transform:uppercase;overflow-wrap:anywhere}
+.focus h2 .dot{width:14px;height:14px}
+.focus p{margin:6px 0 0;color:var(--muted);font:400 11.5px/1.5 var(--f-mono)}
+.focus p a{color:var(--ink)}
+.focus .acts{display:flex;gap:6px;flex-wrap:wrap}
+.pill{display:inline-flex;align-items:center;gap:6px;height:36px;padding:0 12px;border:1px solid var(--rule);border-radius:999px;background:var(--paper);color:var(--ink);font:500 12px/1 var(--f-mono);text-decoration:none;cursor:pointer;white-space:nowrap}
+.pill:hover{background:var(--hover)}
+.pill.main{background:var(--ink);color:var(--paper);border-color:var(--ink)}
+.more{display:block;margin:10px auto 0;border:1px solid var(--rule);background:var(--panel);border-radius:999px;padding:10px 16px;cursor:pointer;font:500 12px/1 var(--f-mono)}
 .status{color:var(--muted);padding:18px 2px;max-width:40ch}
 .status strong{display:block;color:var(--ink);font:700 20px/1.1 var(--f-display);letter-spacing:.05em;text-transform:uppercase;margin-bottom:6px}
 .status button{margin-top:10px;border:1px solid var(--rule);background:var(--panel);border-radius:999px;padding:8px 14px;cursor:pointer;font:500 12px/1 var(--f-mono)}
@@ -149,8 +165,15 @@ header p{margin:8px 0 0;color:var(--muted);max-width:36ch}
 .hour h3 span{font:400 11px/1 var(--f-mono);letter-spacing:0;color:var(--muted);display:flex;align-items:baseline;gap:8px}
 .hour h3 button{border:1px solid var(--rule);background:var(--panel);border-radius:999px;padding:5px 9px;font:500 10.5px/1 var(--f-mono);cursor:pointer;color:var(--ink)}
 .entries{list-style:none;margin:0;padding:4px 0}
-.entry a{display:grid;grid-template-columns:10px minmax(0,1fr) auto;column-gap:12px;row-gap:5px;align-items:baseline;padding:10px 8px;border-radius:6px;color:inherit;text-decoration:none}
-.entry a:hover{background:var(--hover)}
+.entry{position:relative;display:grid;grid-template-columns:10px minmax(0,1fr) auto;column-gap:12px;row-gap:5px;align-items:baseline;padding:10px 8px;border-radius:6px}
+.entry:hover{background:var(--hover)}
+/* The word flies to the map, from anywhere on its row; who, where and which
+   theme sit above that and open their own views. */
+.entry a.fly{color:inherit;text-decoration:none;min-width:0}
+.entry a.fly::after{content:"";position:absolute;inset:0;border-radius:6px}
+.entry a.to{position:relative;z-index:1;color:inherit;text-decoration:none;border-radius:4px;padding:6px 3px;margin:-6px -3px}
+.entry a.to,.rank li.go .lbl a span,.focus p a{text-decoration:underline dotted;text-decoration-color:color-mix(in srgb, currentColor 50%, transparent);text-underline-offset:3px}
+.entry a.to:hover{text-decoration-style:solid}
 .dot{width:10px;height:10px;border-radius:50%;background:var(--c);align-self:center}
 .entry.stray .dot{background:transparent;border:2px dashed var(--c)}
 .word{font:700 21px/1 var(--f-display);letter-spacing:.07em;min-width:0;overflow:hidden;text-overflow:ellipsis}
@@ -172,13 +195,26 @@ header p{margin:8px 0 0;color:var(--muted);max-width:36ch}
     <div>
       <div class="eyebrow">Letterfield · the shared survey</div>
       <h1>Survey log</h1>
-      <p>Every word charted first, by the hour, day, week, month or year. Tap a word to fly there on the map.</p>
+      <p>Every word charted first, by the hour, day, week, month or year. Tap a word to fly there on the map, or its surveyor, territory or theme to see all of theirs.</p>
     </div>
     <a class="back" href="/letterfield">← The map</a>
   </header>
 
+  <section class="focus" id="focus" hidden aria-labelledby="focusName">
+    <div class="head">
+      <div class="eyebrow" id="focusKind"></div>
+      <h2 id="focusName"></h2>
+      <p id="focusNote"></p>
+    </div>
+    <div class="acts">
+      <button type="button" class="pill main" id="share">Share</button>
+      <a class="pill" id="fly" hidden>Fly there</a>
+      <a class="pill" id="everyone" href="?">✕ Everyone</a>
+    </div>
+  </section>
+
   <div class="controls">
-    <div class="seg" role="group" aria-label="Whose words">
+    <div class="seg" role="group" aria-label="Whose words" id="whose">
       <button type="button" id="viewAll" aria-pressed="true">Everyone</button>
       <button type="button" id="viewMine" aria-pressed="false">Mine</button>
     </div>
@@ -209,7 +245,7 @@ header p{margin:8px 0 0;color:var(--muted);max-width:36ch}
 
   <div id="log"></div>
 
-  <p class="foot">Times are yours, in <span id="zone"></span>. Top lists count whole days in UTC, and initials are whatever each surveyor typed in, so they aren’t unique. “Mine” lists the words this browser charted first, from Letterfield’s field notes; nothing about you is sent to find them.</p>
+  <p class="foot">Times are yours, in <span id="zone"></span>. Top lists count whole days in UTC, and initials are whatever each surveyor typed in, so they aren’t unique. “Mine” lists the words this browser charted first, from Letterfield’s field notes; nothing about you is sent to find them. A surveyor’s, territory’s or theme’s own view has an address of its own to share.</p>
 </main>
 <div class="tip" id="tip" role="tooltip" hidden></div>
 <script>
@@ -243,6 +279,7 @@ const fmtCoord = (x, y) => `${Math.abs(x)}${x < 0 ? 'W' : 'E'} · ${Math.abs(y)}
 const timeFmt = new Intl.DateTimeFormat(undefined, { hour: 'numeric', minute: '2-digit' });
 const hourFmt = new Intl.DateTimeFormat(undefined, { hour: 'numeric' });
 const dayFmt = new Intl.DateTimeFormat(undefined, { weekday: 'long', month: 'long', day: 'numeric' });
+const dayYearFmt = new Intl.DateTimeFormat(undefined, { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' });
 const shortDay = new Intl.DateTimeFormat(undefined, { weekday: 'short', month: 'short', day: 'numeric' });
 const monthDay = new Intl.DateTimeFormat(undefined, { month: 'short', day: 'numeric' });
 const fullDate = new Intl.DateTimeFormat(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
@@ -417,30 +454,71 @@ async function entriesBetween(from, to) {
 }
 
 /* ---------- Pieces of the page ---------- */
+const flyHref = (w, x, y, d) => `/letterfield#f-${w.toLowerCase()}-${hashNum(x)}-${hashNum(y)}-${d}`;
+const sameFocus = (a, b) => !!a && !!b && a.kind === b.kind && a.key === b.key && a.rx === b.rx && a.ry === b.ry;
+// A link to one surveyor's, territory's or theme's own view, or just its
+// text on that view itself.
+function toFocus(f, node, cls = 'to') {
+  if (sameFocus(f, state.focus)) return node;
+  const a = el('a', cls);
+  a.href = focusHref(f);
+  a.dataset.go = '';
+  a.append(node);
+  return a;
+}
+
+// One word: tapping it flies to the map; its surveyor, territory and theme
+// open their own views.
 function entryRow(e, data, mine) {
   const [w, x, y, d, s, initials, at, th] = e;
-  const key = keyOf(w, x, y, d);
+  const key = keyOf(w, x, y, d), signed = /^[A-Z]{3}$/.test(initials || '');
   const li = el('li', 'entry mark' + (s ? ' stray' : ''));
   const theme = data.themes[th];
   if (theme && Number.isFinite(theme[1])) li.style.setProperty('--h', theme[1]);
-  const a = el('a');
-  a.href = `/letterfield#f-${w.toLowerCase()}-${hashNum(x)}-${hashNum(y)}-${d}`;
-  a.append(el('i', 'dot'), el('span', 'word', w));
+  const a = el('a', 'fly word', w);
+  a.href = flyHref(w, x, y, d);
+  a.title = `${w}: charted first${signed ? ' by ' + initials : ''}, ${new Date(at).toLocaleString()}. Fly there on the map.`;
+  li.append(el('i', 'dot'), a);
   const who = el('span', 'who');
   who.append(timeFmt.format(at) + ' · ');
-  who.append(el('b', '', /^[A-Z]{3}$/.test(initials || '') ? initials : '—'));
+  who.append(signed ? toFocus({ kind: 'surveyor', key: initials }, el('b', '', initials)) : el('b', '', '—'));
   if (mine.has(key)) who.append(el('span', 'you', 'you'));
-  a.append(who);
+  li.append(who);
   const meta = el('span', 'meta');
-  const place = data.places[`${fdiv(x, RC)},${fdiv(y, RC)}`];
-  if (typeof place === 'string') meta.append(el('b', '', place), ' · ');
+  const rx = fdiv(x, RC), ry = fdiv(y, RC), place = data.places[`${rx},${ry}`];
+  if (typeof place === 'string') meta.append(toFocus({ kind: 'territory', rx, ry }, el('b', '', place)), ' · ');
   meta.append(`${fmtCoord(x, y)} · ${DARROW[d]} ${DNAME[d]}`);
-  const kind = theme && typeof theme[0] === 'string' ? (s ? 'stray ' + theme[0].toLowerCase() + ' word' : theme[0]) : (s ? 'stray' : '');
-  if (kind) meta.append(' · ' + kind);
-  a.append(meta);
-  a.title = `${w}: charted first${/^[A-Z]{3}$/.test(initials || '') ? ' by ' + initials : ''}, ${new Date(at).toLocaleString()}`;
-  li.append(a);
+  if (theme && typeof theme[0] === 'string') {
+    // A stray's theme is its word's, not the territory's: the theme's own
+    // view counts hidden words only, so a stray doesn't link there.
+    if (s) meta.append(' · stray ' + theme[0].toLowerCase() + ' word');
+    else meta.append(' · ', toFocus({ kind: 'theme', key: th }, document.createTextNode(theme[0])));
+  } else if (s) meta.append(' · stray');
+  li.append(meta);
   return li;
+}
+
+// Words grouped under a heading for each hour or day, newest first. More can
+// be added later, carrying on under the last heading.
+function wordGroups(unit, firsts, countOf) {
+  const box = el('div');
+  let last = null;
+  box.add = (entries, data) => {
+    for (const e of entries) {
+      const from = startOf(unit, e[6]);
+      if (!last || last.from !== from) {
+        const to = shift(unit, from, 1), n = countOf(from, to);
+        const s = el('section', 'hour');
+        const head = el('h3', '', unit === 'hour' ? hourRange(from, to) : (new Date(from).getFullYear() === new Date().getFullYear() ? dayFmt : dayYearFmt).format(from));
+        if (n) head.append(el('span', '', plural(n, 'word')));
+        last = { from, list: el('ol', 'entries') };
+        s.append(head, last.list);
+        box.append(s);
+      }
+      last.list.append(entryRow(e, data, firsts));
+    }
+  };
+  return box;
 }
 
 // One tooltip for every chart: the value first, then what it's for. It only
@@ -610,8 +688,9 @@ function rankCard(title, rows, note) {
     const li = el('li');
     const lbl = el('span', 'lbl' + (r.hue !== undefined ? ' mark' : ''));
     if (r.hue !== undefined) { lbl.style.setProperty('--h', r.hue); lbl.append(el('i', 'dot')); }
-    lbl.append(el('span', '', r.label));
+    lbl.append(r.focus ? toFocus(r.focus, el('span', '', r.label), '') : el('span', '', r.label));
     lbl.title = r.label;
+    if (r.focus && !sameFocus(r.focus, state.focus)) li.className = 'go';
     const track = el('span', 'track');
     if (!r.rest) { const bar = el('i'); bar.style.width = Math.max(1, Math.round(r.n / top * 100)) + '%'; track.append(bar); }
     li.append(lbl, track, el('span', 'num', r.n.toLocaleString()));
@@ -644,34 +723,87 @@ function pieceRows(unit, buckets, open) {
 }
 
 /* ---------- State ---------- */
-const state = { period: 'day', start: startOf('day', Date.now()), mine: false, run: 0 };
-try {
-  const q = new URLSearchParams(location.search);
-  const p = q.get('period');
-  if (PERIODS.includes(p)) state.period = p;
-  let t = parseDay(q.get('day'));
-  const h = Number(q.get('hour'));
-  if (t !== null && state.period === 'hour' && Number.isInteger(h) && h >= 0 && h < 24) t = new Date(new Date(t).setHours(h)).getTime();
-  if (state.period === 'hour' && t === null) t = Date.now();
-  state.start = startOf(state.period, t !== null && t <= Date.now() ? t : Date.now());
-  state.mine = q.get('view') === 'mine';
-} catch (_) {}
-const logEl = $('#log'), chartEl = $('#chart'), cardsEl = $('#cards'), dayInput = $('#dayInput');
-$('#zone').textContent = Intl.DateTimeFormat().resolvedOptions().timeZone || 'your time zone';
-let observer = null, liveTimer = 0;
-
-function saveUrl() {
+// The view is all in the address, so any of it can be shared or bookmarked:
+// ?period=, ?day= and ?hour= say when, and one of ?surveyor=<initials>,
+// ?theme=<n> or ?territory=<rx>,<ry> narrows it to theirs. Everyone's opens
+// on today; theirs on all time, which a territory always shows.
+const state = { period: 'day', start: startOf('day', Date.now()), mine: false, focus: null, run: 0 };
+const FOCUS_KEYS = ['surveyor', 'theme', 'territory'];
+const defaultPeriod = f => f ? 'all' : 'day';
+function focusOf(q) {
+  const initials = (q.get('surveyor') || '').toUpperCase();
+  if (/^[A-Z]{3}$/.test(initials)) return { kind: 'surveyor', key: initials };
+  const th = q.get('theme') || '';
+  if (/^\d{1,3}$/.test(th)) return { kind: 'theme', key: Number(th) };
+  const m = /^(-?\d{1,8}),(-?\d{1,8})$/.exec(q.get('territory') || '');
+  if (m) return { kind: 'territory', rx: Number(m[1]), ry: Number(m[2]) };
+  return null;
+}
+function readUrl() {
+  state.focus = null; state.mine = false;
+  state.period = 'day'; state.start = startOf('day', Date.now());
   try {
     const q = new URLSearchParams(location.search);
-    const { period, start } = state, here = period === 'all' || start === startOf(period, Date.now());
-    if (period === 'day') q.delete('period'); else q.set('period', period);
-    if (here) q.delete('day'); else q.set('day', isoDay(start));
-    if (period === 'hour' && !here) q.set('hour', String(new Date(start).getHours())); else q.delete('hour');
-    if (state.mine) q.set('view', 'mine'); else q.delete('view');
-    const s = q.toString();
-    history.replaceState(null, '', location.pathname + (s ? '?' + s : '') + location.hash);
+    state.focus = focusOf(q);
+    const p = q.get('period');
+    state.period = PERIODS.includes(p) ? p : defaultPeriod(state.focus);
+    if (state.focus?.kind === 'territory') state.period = 'all';
+    let t = parseDay(q.get('day'));
+    const h = Number(q.get('hour'));
+    if (t !== null && state.period === 'hour' && Number.isInteger(h) && h >= 0 && h < 24) t = new Date(new Date(t).setHours(h)).getTime();
+    if (state.period === 'hour' && t === null) t = Date.now();
+    state.start = startOf(state.period, t !== null && t <= Date.now() ? t : Date.now());
+    state.mine = !state.focus && q.get('view') === 'mine';
   } catch (_) {}
 }
+readUrl();
+const logEl = $('#log'), chartEl = $('#chart'), cardsEl = $('#cards'), dayInput = $('#dayInput');
+$('#zone').textContent = Intl.DateTimeFormat().resolvedOptions().timeZone || 'your time zone';
+const BASE_TITLE = document.title;
+let observer = null, liveTimer = 0;
+
+// The address of a view: this one, changed by whatever's given.
+function urlFor({ focus = state.focus, period = state.period, start = state.start, mine = state.mine } = {}) {
+  const q = new URLSearchParams(location.search);
+  for (const k of [...FOCUS_KEYS, 'period', 'day', 'hour', 'view']) q.delete(k);
+  if (focus?.kind === 'surveyor') q.set('surveyor', focus.key);
+  else if (focus?.kind === 'theme') q.set('theme', String(focus.key));
+  else if (focus?.kind === 'territory') q.set('territory', `${focus.rx},${focus.ry}`);
+  if (focus?.kind !== 'territory') {
+    const here = period === 'all' || start === startOf(period, Date.now());
+    if (period !== defaultPeriod(focus)) q.set('period', period);
+    if (!here) q.set('day', isoDay(start));
+    if (period === 'hour' && !here) q.set('hour', String(new Date(start).getHours()));
+    if (mine && !focus) q.set('view', 'mine');
+  }
+  const s = q.toString().replace(/%2C/g, ',');
+  return location.pathname + (s ? '?' + s : '');
+}
+// Someone's own view keeps the period on screen, so ZED's week follows from
+// this week's top list; from or to a territory, which has no periods, it's
+// all time.
+function focusHref(f) {
+  const keep = f && f.kind !== 'territory' && state.focus?.kind !== 'territory';
+  return urlFor(keep ? { focus: f } : { focus: f, period: defaultPeriod(f), start: allStart() });
+}
+function saveUrl() {
+  try { history.replaceState(null, '', urlFor() + location.hash); } catch (_) {}
+}
+// Into someone's view, or back to everyone's: a new entry in the browser's
+// history, so Back returns to where it came from.
+function go(href) {
+  try { history.pushState(null, '', href); } catch (_) { location.href = href; return; }
+  readUrl();
+  render();
+  window.scrollTo({ top: 0 });
+}
+document.addEventListener('click', e => {
+  const a = e.target.closest('a[data-go]');
+  if (!a || e.defaultPrevented || e.button || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+  e.preventDefault();
+  go(a.getAttribute('href'));
+});
+addEventListener('popstate', () => { readUrl(); render(); });
 // Opens a period at a moment: today's when the period holds now, else its start.
 function open(period, t) {
   state.period = period;
@@ -700,8 +832,59 @@ function titles(p, s, e) {
   return ['All time', `Since ${logFirst < LOG_BEGAN ? 'the first word, on' : 'the log began on'} ${new Intl.DateTimeFormat(undefined, { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' }).format(logFirst)}`];
 }
 
+// Names seen so far, so a view of one can say whose it is before its own
+// answer arrives: 'rx,ry' → [name, theme] and theme → [name, hue].
+const known = { places: {}, themes: {} };
+function learn(data) {
+  for (const [k, v] of Object.entries(data?.places || {})) if (typeof v === 'string') known.places[k] = [v, known.places[k]?.[1]];
+  for (const [k, v] of Object.entries(data?.themes || {})) if (Array.isArray(v) && typeof v[0] === 'string') known.themes[k] = v;
+}
+const learnPlace = (rx, ry, name, th) => { if (typeof name === 'string') known.places[`${rx},${ry}`] = [name, th]; };
+
+// The bar atop someone's own view: whose it is, a way to share it, and the
+// way back to everyone's.
+function focusBar() {
+  const f = state.focus;
+  $('#focus').hidden = !f;
+  $('#fly').hidden = true;
+  if (!f) { document.title = BASE_TITLE; return; }
+  let kind, label, hue, note;
+  if (f.kind === 'surveyor') {
+    kind = 'Surveyor';
+    label = f.key;
+    note = [`Every word signed ${f.key}. Initials aren’t unique, so that’s everyone who typed them.`];
+  } else if (f.kind === 'theme') {
+    const t = known.themes[f.key];
+    kind = 'Theme';
+    label = t ? t[0] : `Theme ${f.key}`;
+    hue = t?.[1];
+    note = ['Hidden words charted in territories with this theme.'];
+  } else {
+    const [name, th] = known.places[`${f.rx},${f.ry}`] || [];
+    const t = th !== undefined ? known.themes[th] : null;
+    kind = 'Territory';
+    label = name || 'A territory';
+    hue = t?.[1];
+    note = [`${fmtCoord(f.rx * RC + RC / 2, f.ry * RC + RC / 2)}, at its middle`];
+    if (t) note.push(' · ', toFocus({ kind: 'theme', key: th }, document.createTextNode(t[0]), ''));
+  }
+  $('#focusKind').textContent = kind;
+  const name = $('#focusName');
+  name.className = hue !== undefined ? 'mark' : '';
+  if (hue !== undefined) name.style.setProperty('--h', hue);
+  name.replaceChildren(...(hue !== undefined ? [el('i', 'dot')] : []), label);
+  $('#focusNote').replaceChildren(...note);
+  $('#everyone').href = urlFor({ focus: null, period: f.kind === 'territory' ? 'day' : state.period, start: f.kind === 'territory' ? startOf('day', Date.now()) : state.start });
+  $('#everyone').dataset.go = '';
+  document.title = `${label} · ${BASE_TITLE}`;
+}
+
 function chrome() {
-  const { period, start } = state, end = endOf(period, start), now = Date.now();
+  const { period, start, focus } = state, end = endOf(period, start), now = Date.now();
+  focusBar();
+  $('#whose').hidden = !!focus;
+  $('#periods').hidden = focus?.kind === 'territory';
+  document.querySelector('.nav').hidden = focus?.kind === 'territory';
   $('#viewAll').setAttribute('aria-pressed', String(!state.mine));
   $('#viewMine').setAttribute('aria-pressed', String(state.mine));
   for (const b of $('#periods').children) b.setAttribute('aria-selected', String(b.dataset.p === period || (period === 'hour' && b.dataset.p === 'day')));
@@ -747,14 +930,17 @@ async function render(quiet = false) {
   if (!quiet) chartEl.style.opacity = '.5';
   if (!logEl.querySelector('.entries, .rows')) logEl.replaceChildren(el('p', 'loading', 'Loading the log…'));
   try {
-    if (period === 'hour') await renderHour(run, start, end, firsts, mine);
+    if (state.focus?.kind === 'territory') await renderTerritory(run, state.focus, firsts);
+    else if (state.focus) await renderSlice(run, state.focus, period, start, end, firsts);
+    else if (period === 'hour') await renderHour(run, start, end, firsts, mine);
     else if (period === 'day' && mine) await renderMineDay(run, start, end, firsts);
     else if (period === 'day') await renderDay(run, start, end, firsts);
     else await renderLong(run, period, start, end, firsts, mine);
-  } catch (_) {
+  } catch (err) {
     if (run !== state.run) return;
-    tiles([]); chartEl.replaceChildren();
-    status('Can’t reach the log', 'The survey’s server didn’t answer. Your own finds are safe in Letterfield’s field notes.', true);
+    tiles([]); chartEl.replaceChildren(); cardsEl.replaceChildren();
+    if (state.focus && /status 400/.test(err?.message)) status('Not in the log', 'There’s no such surveyor, theme or territory to show.');
+    else status('Can’t reach the log', 'The survey’s server didn’t answer. Your own finds are safe in Letterfield’s field notes.', true);
   } finally {
     if (run === state.run) chartEl.style.opacity = '';
   }
@@ -764,11 +950,11 @@ function busiest(p, buckets) {
   const b = buckets.reduce((a, c) => (c.n > (a ? a.n : 0) ? c : a), null);
   return b ? [UNIT[p] === 'hour' ? hourRange(b.from, b.to) : bucketLabel(p, b), plural(b.n, 'word')] : ['—', ''];
 }
-function summaryTiles(p, buckets, mine) {
+function summaryTiles(p, buckets, mine, label = 'Words charted') {
   const total = buckets.reduce((a, b) => a + b.n, 0), world = buckets.reduce((a, b) => a + b.world, 0);
   const [when, much] = busiest(p, buckets);
   tiles([
-    [mine ? 'Charted first by you' : 'Words charted', total.toLocaleString(), ''],
+    [mine ? 'Charted first by you' : label, total.toLocaleString(), ''],
     [`Busiest ${UNIT[p]}`, when, much],
     ['In the shared world', world.toLocaleString(), `${pct(world)} of its hidden words`],
   ]);
@@ -904,18 +1090,153 @@ async function loadTops(run, start, end) {
   }
   if (run !== state.run || !top || !Array.isArray(top.surveyors)) return;
   const ok = (r, n) => Array.isArray(r) && Number.isInteger(r[n]);
-  const surveyors = top.surveyors.filter(r => ok(r, 1) && /^[A-Z]{3}$/.test(r[0])).map(r => ({ label: r[0], n: r[1] }));
-  const territories = (top.territories || []).filter(r => ok(r, 4) && typeof r[2] === 'string').map(r => ({ label: r[2], n: r[4], hue: (top.themes || []).find(t => t[0] === r[3])?.[2] }));
-  const themes = (top.themes || []).filter(r => ok(r, 3) && typeof r[1] === 'string').map(r => ({ label: r[1], n: r[3], hue: r[2] }));
-  const shownThemes = themes.slice(0, 8), rest = themes.slice(8);
-  if (rest.length) shownThemes.push({ label: `${rest.length} other theme${rest.length === 1 ? '' : 's'}`, n: rest.reduce((a, r) => a + r.n, 0), rest: true });
   const span = to - from === 1 ? fullDate.format(from * DAY + DAY / 2) : `${monthDay.format(from * DAY + DAY / 2)} – ${fullDate.format((to - 1) * DAY + DAY / 2)}`;
   cardsEl.replaceChildren(
-    rankCard('Top surveyors', surveyors, `By initials, which anyone can share · UTC days ${span}`),
-    rankCard('Top territories', territories, 'Hidden words charted in each'),
-    rankCard('Themes', shownThemes, 'Hidden words, by their territory’s theme'),
+    rankCard('Top surveyors', surveyorRows(top.surveyors), `By initials, which anyone can share · UTC days ${span}`),
+    rankCard('Top territories', territoryRows(top.territories, top.themes), 'Hidden words charted in each'),
+    rankCard('Themes', themeRows(top.themes), 'Hidden words, by their territory’s theme'),
   );
 }
+// Top lists' rows as rank cards show them, each opening its own view.
+const okRow = (r, n) => Array.isArray(r) && Number.isInteger(r[n]);
+const surveyorRows = rows => (Array.isArray(rows) ? rows : []).filter(r => okRow(r, 1) && /^[A-Z]{3}$/.test(r[0]))
+  .map(r => ({ label: r[0], n: r[1], focus: { kind: 'surveyor', key: r[0] } }));
+function territoryRows(rows, themes) {
+  for (const t of Array.isArray(themes) ? themes : []) if (okRow(t, 0) && typeof t[1] === 'string') known.themes[t[0]] = [t[1], t[2]];
+  return (Array.isArray(rows) ? rows : []).filter(r => okRow(r, 4) && okRow(r, 3) && typeof r[2] === 'string').map(r => {
+    learnPlace(r[0], r[1], r[2], r[3]);
+    return { label: r[2], n: r[4], hue: known.themes[r[3]]?.[1], focus: { kind: 'territory', rx: r[0], ry: r[1] } };
+  });
+}
+function themeRows(rows) {
+  const themes = (Array.isArray(rows) ? rows : []).filter(r => okRow(r, 3) && okRow(r, 0) && typeof r[1] === 'string').map(r => {
+    known.themes[r[0]] = [r[1], r[2]];
+    return { label: r[1], n: r[3], hue: r[2], focus: { kind: 'theme', key: r[0] } };
+  });
+  const shown = themes.slice(0, 8), rest = themes.slice(8);
+  if (rest.length) shown.push({ label: `${rest.length} other theme${rest.length === 1 ? '' : 's'}`, n: rest.reduce((a, r) => a + r.n, 0), rest: true });
+  return shown;
+}
+
+/* ---------- One surveyor, theme or territory ---------- */
+const SLICE_PAGES = 20;  // pages (100 each) of one hour a view of one reads for its minutes
+// A surveyor's or theme's period, from its own answer: the chart, who or
+// where most, and its words, a hundred at a time.
+async function renderSlice(run, f, p, start, end, firsts) {
+  const base = `/v1/survey/log/${f.kind}/${f.key}/${fdiv(start, HOUR)}/${fdiv(end - 1, HOUR) + 1}`, live = isLive(end);
+  const page = async before => {
+    const a = await cachedJSON(base + (before ? '?before=' + encodeURIComponent(before) : ''), live);
+    if (!a || !Array.isArray(a.hours) || !Array.isArray(a.entries)) throw new Error('bad answer');
+    learn(a);
+    return a;
+  };
+  const first = await page(null);
+  if (run !== state.run) return;
+  if (f.kind === 'theme' && typeof first.name === 'string') known.themes[f.key] = [first.name, first.hue];
+  for (const r of first.topTerritories || []) if (okRow(r, 3)) learnPlace(r[0], r[1], r[2], r[3]);
+  focusBar();
+  const data = { places: { ...first.places }, themes: { ...first.themes } };
+  let entries = first.entries.filter(okEntry), next = first.next;
+  // An hour's chart is minute by minute, so it needs all of the hour's words.
+  for (let n = 1; p === 'hour' && typeof next === 'string' && n < SLICE_PAGES; n++) {
+    const more = await page(next);
+    if (run !== state.run) return;
+    entries.push(...more.entries.filter(okEntry));
+    Object.assign(data.places, more.places); Object.assign(data.themes, more.themes);
+    next = more.next;
+  }
+  const points = p === 'hour'
+    ? entries.map(e => [e[6], 1, !e[4] && inWorld(e[1], e[2]) ? 1 : 0]).reverse()
+    : first.hours.filter(r => Array.isArray(r) && [r[0], r[1], r[2]].every(Number.isInteger)).map(r => [r[0] * HOUR, r[1], r[2]]);
+  const buckets = tally(bucketsOf(p, start, end), points);
+  const total = summaryTiles(p, buckets, false, f.kind === 'theme' ? 'Hidden words charted' : 'Words charted');
+  const openPiece = t => open(UNIT[p] === 'month' ? 'month' : 'day', t);
+  if (p === 'year') chartEl.replaceChildren(yearCalendar(new Date(start).getFullYear(), buckets, t => open('day', t), t => open('month', t)));
+  else chartEl.replaceChildren(columnChart(p, buckets, p === 'hour' ? null : p === 'day' ? b => open('hour', b.from) : b => openPiece(b.from)));
+  const places = territoryRows(first.topTerritories, null);
+  cardsEl.replaceChildren(...(total ? f.kind === 'surveyor'
+    ? [rankCard('Top territories', places, 'Hidden words charted in each'), rankCard('Themes', themeRows(first.topThemes), 'Hidden words, by their territory’s theme')]
+    : [rankCard('Top surveyors', surveyorRows(first.topSurveyors), 'By initials, which anyone can share'), rankCard('Top territories', places, 'Hidden words charted in each')]
+    : []));
+  entries = entries.filter(e => e[6] >= start && e[6] < end);
+  if (!entries.length) {
+    return status('Nothing charted', f.kind === 'surveyor' ? `No words signed ${f.key} in this period.` : 'No hidden words with this theme charted in this period.');
+  }
+  // Words under each hour of a day or hour, else under each day.
+  const unit = p === 'hour' || p === 'day' ? 'hour' : 'day';
+  const groups = wordGroups(unit, firsts, (from, to) => points.reduce((a, [t, n]) => a + (t >= from && t < to ? n : 0), 0));
+  groups.add(entries, data);
+  logEl.replaceChildren(groups);
+  if (p !== 'hour' && typeof next === 'string') logEl.append(moreButton(run, page, next, groups, data, start, end));
+}
+function moreButton(run, page, next, groups, data, start, end) {
+  const b = el('button', 'more', 'Show more');
+  b.type = 'button';
+  b.onclick = async () => {
+    b.disabled = true;
+    b.textContent = 'Loading…';
+    let a;
+    try { a = await page(next); } catch (_) { b.disabled = false; b.textContent = 'Couldn’t load more. Try again'; return; }
+    if (run !== state.run) return;
+    Object.assign(data.places, a.places); Object.assign(data.themes, a.themes);
+    groups.add(a.entries.filter(okEntry).filter(e => e[6] >= start && e[6] < end), data);
+    if (typeof a.next === 'string') { next = a.next; b.disabled = false; b.textContent = 'Show more'; }
+    else b.remove();
+  };
+  return b;
+}
+
+// A territory, all time: how much of it is charted, by whom, and every word.
+async function renderTerritory(run, f, firsts) {
+  const t = await cachedJSON(`/v1/survey/log/territory/${f.rx}/${f.ry}`, true);
+  if (run !== state.run) return;
+  if (!t || !Array.isArray(t.entries) || !Number.isInteger(t.total) || !Number.isInteger(t.charted)) throw new Error('bad answer');
+  learn(t);
+  learnPlace(f.rx, f.ry, t.name, t.th);
+  focusBar();
+  const entries = t.entries.filter(okEntry), data = { places: t.places || {}, themes: t.themes || {} };
+  if (entries.length) {
+    const fly = $('#fly'), e = entries.find(e => !e[4]) || entries[0];
+    fly.href = flyHref(e[0], e[1], e[2], e[3]);
+    fly.hidden = false;
+  }
+  $('#sumTitle').textContent = 'Charted so far';
+  $('#sumText').replaceChildren(entries.length ? `Since ${fullDate.format(entries.at(-1)[6])}` : '');
+  const people = new Set(entries.map(e => e[5]).filter(i => /^[A-Z]{3}$/.test(i)));
+  const share = n => t.total ? `${Math.round(100 * n / t.total)}%` : '—';
+  tiles([
+    ['Hidden words charted', `${t.charted.toLocaleString()} of ${t.total.toLocaleString()}`, `${share(t.charted)} of the territory`],
+    ['Surveyors', people.size.toLocaleString(), 'by their initials'],
+    ['Latest', entries.length ? monthDay.format(entries[0][6]) : '—', entries.length ? timeFmt.format(entries[0][6]) : ''],
+  ]);
+  const meter = el('div', 'meter'), fill = el('i');
+  fill.style.width = (t.total ? Math.min(100, 100 * t.charted / t.total) : 0) + '%';
+  meter.append(fill);
+  meter.setAttribute('role', 'meter');
+  meter.setAttribute('aria-label', 'Share of the territory’s hidden words charted');
+  meter.setAttribute('aria-valuemin', '0');
+  meter.setAttribute('aria-valuemax', String(t.total));
+  meter.setAttribute('aria-valuenow', String(t.charted));
+  const wrap = el('div', 'chart');
+  wrap.append(el('div', 'ymax', `${t.charted.toLocaleString()} of its ${t.total.toLocaleString()} hidden words`), meter);
+  chartEl.replaceChildren(wrap);
+  cardsEl.replaceChildren(...(entries.length ? [rankCard('Top surveyors', surveyorRows(t.topSurveyors), 'Words charted here, by initials')] : []));
+  if (!entries.length) return status('Nothing charted yet', 'Nobody has charted a word in this territory yet.');
+  const perDay = new Map();
+  for (const e of entries) { const d = startOf('day', e[6]); perDay.set(d, (perDay.get(d) || 0) + 1); }
+  const groups = wordGroups('day', firsts, from => perDay.get(from) || 0);
+  groups.add(entries, data);
+  logEl.replaceChildren(groups);
+}
+
+$('#share').onclick = async () => {
+  const b = $('#share'), url = location.href;
+  const said = text => { b.textContent = text; setTimeout(() => { b.textContent = 'Share'; }, 2500); };
+  if (navigator.share) {
+    try { await navigator.share({ title: document.title, url }); return; } catch (e) { if (e?.name === 'AbortError') return; }
+  }
+  try { await navigator.clipboard.writeText(url); said('Link copied'); } catch (_) { said('Copy the address'); }
+};
 
 $('#viewAll').onclick = () => { if (state.mine) { state.mine = false; render(); } };
 $('#viewMine').onclick = () => { if (!state.mine) { state.mine = true; render(); } };

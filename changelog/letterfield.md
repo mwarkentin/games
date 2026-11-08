@@ -4,6 +4,10 @@
   with a chart, the top surveyors, territories and themes, and how much of
   the shared world has been charted. Tap any day in a chart to open it, and
   any hour of a day to see it minute by minute, live while it's running.
+- Tap a surveyor's initials, a territory or a theme anywhere in the log to
+  see everything theirs: every word ZED charted, how much of a territory is
+  charted and by whom, or a theme's words over any period. Each has a link
+  to share.
 
 ## 2026-11-06
 

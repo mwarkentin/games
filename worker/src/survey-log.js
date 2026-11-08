@@ -10,6 +10,16 @@
 //                                    January 1970), hours with none left out:
 //                                    {month, hours: [[hour, words, world], ...]}, where world is
 //                                    how many were hidden words in the shared world
+//   GET /v1/survey/log/surveyor/<initials>/<from>/<to>   one surveyor's words over UTC hours
+//   GET /v1/survey/log/theme/<th>/<from>/<to>            one theme's hidden words over UTC hours
+//       [?before=<at>~<key>]         from..to-1 (hours since 1970): {kind, key, from, to, words,
+//                                    world, hours: [[hour, words, world], ...], topTerritories,
+//                                    name and hue (a theme's),
+//                                    topThemes (a surveyor's), topSurveyors (a theme's),
+//                                    entries (newest first, SLICE_PAGE a page), places, themes, next}
+//   GET /v1/survey/log/territory/<rx>/<ry>   every word charted in a territory, newest first, with
+//                                    its name, theme, how many hidden words it has and how many
+//                                    are charted, and its top surveyors
 //   GET /v1/survey/log/span          the first and latest UTC hours with words in them, or nulls:
 //                                    {first, last}, where all time starts
 //   GET /v1/survey/log/top/<from>/<to>   the most charted over UTC days from..to-1 (days since
@@ -43,7 +53,7 @@
 // of days, which change slowly and read more.
 
 import { corsHeaders, json } from './leaderboard.js';
-import { RC, THEMES, VOCAB, fdiv, regionName, regionTheme } from './letterfield-world.js';
+import { RC, RG, THEMES, VOCAB, chunk, fdiv, regionName, regionTheme } from './letterfield-world.js';
 
 export const LOG_MS = 30000;            // a sector copies new claims to D1 at most this often
 export const LOG_BATCH = 240;           // claims copied at once; more go a second later
@@ -60,6 +70,13 @@ export const LOG_HOUR_PATH = /^\/v1\/survey\/log\/hour\/(\d{1,8})$/;
 export const LOG_MONTH_PATH = /^\/v1\/survey\/log\/month\/(\d{1,5})$/;
 export const LOG_TOP_PATH = /^\/v1\/survey\/log\/top\/(\d{1,6})\/(\d{1,6})$/;
 export const LOG_SPAN_PATH = '/v1/survey/log/span';
+export const LOG_SURVEYOR_PATH = /^\/v1\/survey\/log\/surveyor\/([A-Z]{3})\/(\d{1,8})\/(\d{1,8})$/;
+export const LOG_THEME_PATH = /^\/v1\/survey\/log\/theme\/(\d{1,3})\/(\d{1,8})\/(\d{1,8})$/;
+export const LOG_TERRITORY_PATH = /^\/v1\/survey\/log\/territory\/(-?\d{1,8})\/(-?\d{1,8})$/;
+export const SLICE_PAGE = 100;          // words in a page of a surveyor's or theme's
+export const SLICE_MAX_HOURS = 24 * 3660;  // the longest range a surveyor's or theme's view covers
+export const SLICE_SLOW_CACHE_S = 120;  // seconds a running view of one over more than 2 days is cached for
+export const TERRITORY_MAX = 1000;      // words a territory's view lists (a territory hides about 110)
 export const SPAN_CACHE_S = 300;        // seconds the span is cached for: its latest hour can lag this much
 export const TOP_N = 10;                // surveyors and territories in a top list
 export const TOP_MAX_DAYS = 3660;       // the longest range a top list covers
@@ -86,6 +103,26 @@ export const HOUR_AFTER_SQL = `SELECT at, key, w, x, y, d, s, initials FROM surv
   WHERE at >= ? AND at < ? AND (at, key) > (?, ?) ORDER BY at, key LIMIT ?`;
 export const HOURS_SQL = `SELECT hour, n, world FROM survey_log_hours
   WHERE hour >= ? AND hour < ? AND n > 0 ORDER BY hour`;
+// Ways into the log other than by time (migrations-log/0003_survey_log_lookups.sql).
+// Each names its index, so a plan can't drift onto a scan of the whole log.
+export const SLICES = {
+  surveyor: { index: 'survey_log_by_initials', where: "initials = ? AND initials <> ''" },
+  theme: { index: 'survey_log_by_theme', where: 's = 0 AND th = ?' },
+  territory: { index: 'survey_log_by_territory', where: 'rx = ? AND ry = ?' },
+};
+// Hidden words in the shared world: sectors -12 to 12 (AREA in survey.js), 4 territories a side.
+const WORLD = `(s = 0 AND x >= ${-12 * 4 * RC} AND x < ${13 * 4 * RC} AND y >= ${-12 * 4 * RC} AND y < ${13 * 4 * RC})`;
+export const sliceSql = (kind, after = false) => {
+  const { index, where } = SLICES[kind];
+  const from = `FROM survey_log INDEXED BY ${index} WHERE ${where} AND at >= ? AND at < ?`;
+  return {
+    hours: `SELECT at / ${HOUR_MS} AS hour, COUNT(*) AS n, SUM(${WORLD}) AS world ${from} GROUP BY at / ${HOUR_MS}`,
+    places: `SELECT rx, ry, COUNT(*) AS n ${from} AND s = 0 GROUP BY rx, ry`,
+    people: `SELECT initials, COUNT(*) AS n ${from} AND initials <> '' GROUP BY initials ORDER BY COUNT(*) DESC, initials LIMIT ${TOP_N}`,
+    entries: `SELECT at, key, w, x, y, d, s, initials ${from}${after ? ' AND (at, key) < (?, ?)' : ''} ORDER BY at DESC, key DESC LIMIT ?`,
+  };
+};
+
 export const FIRST_SQL = 'SELECT hour FROM survey_log_hours WHERE n > 0 ORDER BY hour LIMIT 1';
 export const LAST_SQL = 'SELECT hour FROM survey_log_hours WHERE n > 0 ORDER BY hour DESC LIMIT 1';
 export const SURVEYORS_SQL = `SELECT initials, SUM(n) AS n FROM survey_log_surveyors
@@ -103,15 +140,78 @@ export async function readHour(db, hour, after = null) {
   const more = rows.length > LOG_PAGE;
   if (more) rows.length = LOG_PAGE;
   const places = {}, themes = {};
-  const entries = rows.map((r) => {
-    const rx = fdiv(r.x, RC), ry = fdiv(r.y, RC), place = `${rx},${ry}`;
-    const th = r.s ? VOCAB.get(r.w) : regionTheme(rx, ry);
-    places[place] ??= regionName(rx, ry);
-    themes[th] ??= [THEMES[th].name, THEMES[th].hue];
-    return [r.w, r.x, r.y, r.d, r.s, r.initials, r.at, th];
-  });
+  const entries = rows.map((r) => entryOf(r, places, themes));
   const last = rows.at(-1);
   return { hour, entries, places, themes, next: more ? `${last.at}~${last.key}` : null };
+}
+
+// A row of the log as the page shows it, naming its place and theme once in
+// `places` and `themes`.
+function entryOf(r, places, themes) {
+  const rx = fdiv(r.x, RC), ry = fdiv(r.y, RC);
+  const th = r.s ? VOCAB.get(r.w) : regionTheme(rx, ry);
+  places[`${rx},${ry}`] ??= regionName(rx, ry);
+  themes[th] ??= [THEMES[th].name, THEMES[th].hue];
+  return [r.w, r.x, r.y, r.d, r.s, r.initials, r.at, th];
+}
+
+const ranked = (rows) => rows.sort((a, b) => b.n - a.n || a.ry - b.ry || a.rx - b.rx);
+const territoryRow = (r) => [r.rx, r.ry, regionName(r.rx, r.ry), regionTheme(r.rx, r.ry), r.n];
+
+// One surveyor's words, or one theme's hidden words, over UTC hours from..to:
+// how many in each hour, where (and for a surveyor, in which themes), who
+// (for a theme), and the newest, a page at a time. Reads the rows of that
+// surveyor or theme in the range, through its own index.
+export async function readSlice(db, kind, key, fromHour, toHour, before = null) {
+  const sql = sliceSql(kind, !!before), range = [key, fromHour * HOUR_MS, toHour * HOUR_MS];
+  const [hours, places, people, rows] = await Promise.all([
+    db.prepare(sql.hours).bind(...range).all(),
+    db.prepare(sql.places).bind(...range).all(),
+    kind === 'theme' ? db.prepare(sql.people).bind(...range).all() : null,
+    db.prepare(sql.entries).bind(...range, ...(before ? [before.at, before.key] : []), SLICE_PAGE + 1).all(),
+  ]);
+  const list = rows.results, more = list.length > SLICE_PAGE;
+  if (more) list.length = SLICE_PAGE;
+  const placeNames = {}, themeNames = {};
+  const entries = list.map((r) => entryOf(r, placeNames, themeNames));
+  const byTheme = new Map();
+  for (const r of places.results) {
+    const th = regionTheme(r.rx, r.ry);
+    byTheme.set(th, (byTheme.get(th) ?? 0) + r.n);
+  }
+  const last = list.at(-1);
+  return {
+    kind, key, from: fromHour, to: toHour,
+    ...(kind === 'theme' ? { name: THEMES[key].name, hue: THEMES[key].hue } : {}),
+    words: hours.results.reduce((a, r) => a + r.n, 0),
+    world: hours.results.reduce((a, r) => a + r.world, 0),
+    hours: hours.results.sort((a, b) => a.hour - b.hour).map((r) => [r.hour, r.n, r.world]),
+    topTerritories: ranked(places.results).slice(0, TOP_N).map(territoryRow),
+    ...(kind === 'surveyor' ? { topThemes: [...byTheme].sort((a, b) => b[1] - a[1] || a[0] - b[0]).map(([th, n]) => [th, THEMES[th].name, THEMES[th].hue, n]) } : {}),
+    ...(people ? { topSurveyors: people.results.map((r) => [r.initials, r.n]) } : {}),
+    entries, places: placeNames, themes: themeNames, next: more ? `${last.at}~${last.key}` : null,
+  };
+}
+
+// Everything charted in one territory, all time: it hides about 110 words, so
+// that's never many rows. With how many hidden words it has, from the map.
+export async function readTerritory(db, rx, ry) {
+  const sql = sliceSql('territory'), range = [rx, ry, 0, Number.MAX_SAFE_INTEGER];
+  const [rows, people] = await Promise.all([
+    db.prepare(sql.entries).bind(...range, TERRITORY_MAX).all(),
+    db.prepare(sql.people).bind(...range).all(),
+  ]);
+  let total = 0;
+  for (let cy = ry * RG; cy < ry * RG + RG; cy++) for (let cx = rx * RG; cx < rx * RG + RG; cx++) total += chunk(cx, cy).words.length;
+  const places = {}, themes = {}, th = regionTheme(rx, ry);
+  const entries = rows.results.map((r) => entryOf(r, places, themes));
+  themes[th] ??= [THEMES[th].name, THEMES[th].hue];
+  return {
+    rx, ry, name: regionName(rx, ry), th, total,
+    charted: new Set(rows.results.filter((r) => !r.s).map((r) => r.key)).size,
+    topSurveyors: people.results.map((r) => [r.initials, r.n]),
+    entries, places, themes,
+  };
 }
 
 // How many words were charted in each hour of a UTC day.
@@ -155,11 +255,10 @@ export async function readTop(db, from, to) {
     byTheme.set(th, (byTheme.get(th) ?? 0) + r.n);
     hidden += r.n;
   }
-  const top = territories.results.sort((a, b) => b.n - a.n || a.ry - b.ry || a.rx - b.rx).slice(0, TOP_N);
   return {
     from, to, hidden,
     surveyors: surveyors.results.map((r) => [r.initials, r.n]),
-    territories: top.map((r) => [r.rx, r.ry, regionName(r.rx, r.ry), regionTheme(r.rx, r.ry), r.n]),
+    territories: ranked(territories.results).slice(0, TOP_N).map(territoryRow),
     themes: [...byTheme].sort((a, b) => b[1] - a[1] || a[0] - b[0]).map(([th, n]) => [th, THEMES[th].name, THEMES[th].hue, n]),
   };
 }
@@ -178,11 +277,35 @@ export function routeLog(request, env, now = Date.now()) {
   const url = new URL(request.url);
   const day = url.pathname.match(LOG_DAY_PATH), hour = url.pathname.match(LOG_HOUR_PATH);
   const month = url.pathname.match(LOG_MONTH_PATH), top = url.pathname.match(LOG_TOP_PATH), span = url.pathname === LOG_SPAN_PATH;
-  if (!(day || hour || month || top || span) || !env.LOG_DB) return null;
+  const surveyor = url.pathname.match(LOG_SURVEYOR_PATH), theme = url.pathname.match(LOG_THEME_PATH);
+  const territory = url.pathname.match(LOG_TERRITORY_PATH);
+  if (!(day || hour || month || top || span || surveyor || theme || territory) || !env.LOG_DB) return null;
   const cors = corsHeaders(request, env);
   if (request.method !== 'GET') return json({ error: 'method not allowed' }, 405, cors);
   let ends, read, key, live = LIVE_CACHE_S;
   if (span) return answer('span', SPAN_CACHE_S, () => readSpan(env.LOG_DB), cors, now);
+  if (territory) {
+    const rx = Number(territory[1]), ry = Number(territory[2]);
+    return answer(`territory/${rx}/${ry}`, LIVE_CACHE_S, () => readTerritory(env.LOG_DB, rx, ry), cors, now);
+  }
+  if (surveyor || theme) {
+    const [, key, a, b] = surveyor ?? theme, from = Number(a), to = Number(b);
+    if (theme && !(Number(key) < THEMES.length)) return json({ error: 'no such theme' }, 400, cors);
+    if (!(from < to) || to - from > SLICE_MAX_HOURS) return json({ error: 'bad range of hours' }, 400, cors);
+    if (from > fdiv(now, HOUR_MS)) return json({ error: 'that hour has not started' }, 400, cors);
+    const after = url.searchParams.get('before');
+    let cursor = null;
+    if (after !== null) {
+      const m = after.match(CURSOR);
+      if (!m) return json({ error: 'bad cursor' }, 400, cors);
+      cursor = { at: Number(m[1]), key: m[2] };
+    }
+    const kind = surveyor ? 'surveyor' : 'theme', k = surveyor ? key : Number(key);
+    const settled = now >= to * HOUR_MS + SETTLED_MS;
+    const live = to - from > 48 ? SLICE_SLOW_CACHE_S : LIVE_CACHE_S;
+    return answer(`${kind}/${k}/${from}/${to}${cursor ? `?before=${after}` : ''}`, settled ? 86400 : live,
+      () => readSlice(env.LOG_DB, kind, k, from, to, cursor), cors, now);
+  }
   if (month) {
     const m = Number(month[1]), [from, to] = monthHours(m);
     if (from > fdiv(now, HOUR_MS)) return json({ error: 'that month has not started' }, 400, cors);
