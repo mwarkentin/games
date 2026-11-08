@@ -1153,9 +1153,11 @@ async function renderSlice(run, f, p, start, end, firsts) {
   const openPiece = t => open(UNIT[p] === 'month' ? 'month' : 'day', t);
   if (p === 'year') chartEl.replaceChildren(yearCalendar(new Date(start).getFullYear(), buckets, t => open('day', t), t => open('month', t)));
   else chartEl.replaceChildren(columnChart(p, buckets, p === 'hour' ? null : p === 'day' ? b => open('hour', b.from) : b => openPiece(b.from)));
+  // A surveyor's themes first, so each of their territories has its theme's hue.
+  const themes = f.kind === 'surveyor' ? themeRows(first.topThemes) : [];
   const places = territoryRows(first.topTerritories, null);
   cardsEl.replaceChildren(...(total ? f.kind === 'surveyor'
-    ? [rankCard('Top territories', places, 'Hidden words charted in each'), rankCard('Themes', themeRows(first.topThemes), 'Hidden words, by their territory’s theme')]
+    ? [rankCard('Top territories', places, 'Hidden words charted in each'), rankCard('Themes', themes, 'Hidden words, by their territory’s theme')]
     : [rankCard('Top surveyors', surveyorRows(first.topSurveyors), 'By initials, which anyone can share'), rankCard('Top territories', places, 'Hidden words charted in each')]
     : []));
   entries = entries.filter(e => e[6] >= start && e[6] < end);

@@ -337,6 +337,18 @@ def test_a_surveyor_opens_from_a_top_list_with_an_address_to_share(page: Page, s
     assert errors == []
 
 
+def test_a_surveyors_territories_take_their_themes_hue(page: Page, site_url, errors):
+    # Only the newest word is on the first page, so Zeus Point's theme comes from the top themes.
+    zeus = ["ZEUS", -40, 100, 6, 0, "ZED", NOW_MS - 24 * 60 * MINUTE, 17]
+    fake = FakeSurveyLog([ACORN, zeus], PLACES, THEMES, slice_page=1)
+    open_log(page, site_url, fake, query="&surveyor=ZED")
+    places = page.locator(".card", has_text="Top territories")
+    expect(places.locator(".rank .lbl")).to_have_text(["Acorn Hollow", "Zeus Point"])
+    expect(places.locator(".rank .lbl .dot")).to_have_count(2)
+    expect(page.locator(".entry")).to_have_count(1)
+    assert errors == []
+
+
 def test_a_surveyors_day_opens_hour_by_hour(page: Page, site_url, errors):
     fake = FakeSurveyLog([ACORN, MONET, ZEUS], PLACES, THEMES)
     open_log(page, site_url, fake, query="&surveyor=ZED&period=day")
