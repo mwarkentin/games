@@ -292,6 +292,7 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px s
 #myWar .wpile { position: relative; width: var(--cw); height: calc(var(--cw) * 1.4); }
 #myWar .wpile:empty { border: 2px dashed rgba(255, 80, 70, .7); border-radius: 9px; }
 #myWar .wpile .card { position: absolute; inset: 0; transform: translate(var(--dx), var(--dy)) rotate(var(--r)); }
+#myWar.won .wpile .card:last-child:not(.back) { box-shadow: 0 0 0 3px var(--gold), 0 0 22px var(--gold); }
 #myWar .wpile .card.slam { animation: wslam calc(380ms * var(--pace)) cubic-bezier(.5, 0, .75, 0) both; }
 @keyframes wslam {
   0% { transform: translate(var(--dx), calc(var(--dy) - 70px)) rotate(calc(var(--r) - 30deg)) scale(1.5); opacity: .3; }
@@ -4623,7 +4624,7 @@ function onFlip(m) {
     for (let i = 0; i < down; i++) {
       S.potCards.push({ card: Number.isInteger(laid[i]) ? laid[i] : 'back', look, seat, down: true });
     }
-    S.potCards.push({ card: up, look, seat });
+    S.potCards.push({ card: up, look, seat, war: m.stage > 0 });
   }
   if (m.winner !== null) {
     if (!m.over) {
@@ -5034,6 +5035,20 @@ function pileUnder(seat, backs) {
   return list;
 }
 
+// Every card you've laid in this battle's war, oldest first, ending with the
+// one that decides it once you've slammed it: local is how many face-down
+// cards you've slammed in the war being fought.
+function myWarCards(local) {
+  const me = S.you;
+  const c = S.cards[me];
+  const list = c ? c.seq.slice(1) : [];
+  if (S.phase === 'playing' && S.stage > 0 && isFighting(me) && !S.pending && (!c || c.stage < S.stage)) {
+    for (let i = 0; i < local; i++) list.push({ card: 'back', up: false });
+    if (landed(me)) list.push({ card: S.ups[me] !== undefined ? S.ups[me] : 'back', up: true });
+  }
+  return list;
+}
+
 // Draws a pile into box: one card per item, keeping the cards already there
 // when the pile only grew (the new ones arrive with the `fresh` class), and
 // calling place(node, index, count) on every card.
@@ -5198,7 +5213,9 @@ function renderMe() {
   }
   const slot = $('mySlot');
   const c = S.cards[me];
-  const key = cardKeyFor(me);
+  // The card you played in the battle. In a war, everything after it goes on
+  // your war pile (see renderWarPile), the card that decides it on top.
+  const key = c ? String(c.seq[0].card) : S.stage > 0 ? 'empty' : cardKeyFor(me);
   if (slot.dataset.key !== key) {
     const card = cardEl(key === 'back' ? 'back' : key === 'empty' ? null : Number(key));
     // A card you slam lands with a thump; one already down turns over.
@@ -5207,11 +5224,14 @@ function renderMe() {
     slot.replaceChildren(card);
     slot.dataset.key = key;
   }
-  setClass(slot, 'won', S.result && S.result.winner === me && c);
+  const warred = c && c.seq.length > 1;
+  setClass(slot, 'won', S.result && S.result.winner === me && c && !warred);
   renderWarPile();
 }
 
-// Your war pile: the cards under yours in a war, landing one slam at a time.
+// Your war pile: every card you lay in a war, landing one slam at a time, the
+// face-down ones in a messy stack and the card that decides the war on top.
+// In a war of wars, the cards that tied before stick up out of the stack.
 function renderWarPile() {
   const me = S.you;
   const box = $('myWar');
@@ -5221,20 +5241,19 @@ function renderWarPile() {
   const plan = inWar ? slamPlan() : null;
   const local = plan && !flipped ? Math.min(plan.done.length, plan.need - 1) : 0;
   const downs = (c ? c.down : 0) + local;
-  setHidden(box, me === null || S.out[me] > 0 || !(downs || (plan && plan.need > 1)));
-  // Your face-down cards, landing one slam at a time, and in a war of wars
-  // the cards you tied with, face up among them.
-  const under = me === null ? [] : pileUnder(me, local).slice(-12);
-  // The face-down cards make a messy stack; each card you tied with sticks
-  // up out of everything on top of it, showing its corner.
-  const out = fanOut(under, 0.22, 0, 0.5);
+  const pile = me === null ? [] : myWarCards(local).slice(-12);
+  setHidden(box, me === null || S.out[me] > 0 || !(pile.length || plan));
+  const n = pile.length;
+  const top = n && pile[n - 1].up ? n - 1 : -1;
+  const out = fanOut(pile.map((x, i) => ({ up: x.up && i !== top })), 0.22, 0, 0.5);
   const cw = $('mySlot').querySelector('.card')?.offsetWidth || 88;
-  drawPile(box.querySelector('.wpile'), under, null, 'slam', (node, i) => {
-    const tied = under[i].up;
-    node.style.setProperty('--r', `${tied ? ((i * 13) % 9) - 4 : ((i * 47) % 25) - 12}deg`);
-    node.style.setProperty('--dx', `${Math.round(((i * 29) % 11) - 5 - out[i] * cw * 0.2)}px`);
+  drawPile(box.querySelector('.wpile'), pile, null, 'slam', (node, i) => {
+    const tied = pile[i].up;
+    node.style.setProperty('--r', `${i === top ? 0 : tied ? ((i * 13) % 9) - 4 : ((i * 47) % 25) - 12}deg`);
+    node.style.setProperty('--dx', `${i === top ? 0 : Math.round(((i * 29) % 11) - 5 - out[i] * cw * 0.2)}px`);
     node.style.setProperty('--dy', `${Math.round(-Math.min(i, 9) * 3 - out[i] * cw * 1.4)}px`);
   });
+  setClass(box, 'won', Boolean(S.result && S.result.winner === me && top >= 0 && c && c.seq.length > 1));
   setText(box.querySelector('.wcount'), downs ? `${downs} face down` : 'Face down here');
   setClass($('me'), 'warring', !box.hidden);
 }
@@ -5458,7 +5477,7 @@ function heapClear() {
 // Where a card lay on the table, relative to a heap's middle, and how much
 // bigger it was there than on the heap: [x, y, scale].
 function heapFrom(c, heapBox, size) {
-  const pile = c.down && c.seat === S.you ? $('myWar').querySelector('.wpile .card') : null;
+  const pile = (c.down || c.war) && c.seat === S.you ? $('myWar').querySelector('.wpile .card') : null;
   const from = pile || (c.seat === S.you ? $('mySlot').querySelector('.card') : tiles.get(c.seat)?.card);
   const box = from && from.offsetParent ? from.getBoundingClientRect() : null;
   const middle = [heapBox.left + heapBox.width / 2, heapBox.top + heapBox.height / 2];
@@ -5855,7 +5874,7 @@ function releaseFling(e) {
     return;
   }
   const plan = slamPlan();
-  const target = (plan.done.length + 1 < plan.need ? $('myWar') : $('mySlot')).getBoundingClientRect();
+  const target = (S.stage ? $('myWar') : $('mySlot')).getBoundingClientRect();
   ghost.style.transition = `transform ${reduceMotion.matches ? 0 : Math.round(160 * pace())}ms ease-in`;
   ghost.style.transform = `translate(${target.left + target.width / 2 - 44}px, ${target.top + target.height / 2 - 62}px) rotate(0deg) scale(1)`;
   setTimeout(() => ghost.remove(), reduceMotion.matches ? 0 : 170 * pace());
@@ -5888,7 +5907,7 @@ function slamCard(power) {
   // In a war, each card lands harder than the last.
   const boost = S.stage ? 1 + n * 0.3 + (last ? 0.4 : 0) : 1;
   later(() => {
-    const [x, y] = centerOf(last ? $('mySlot') : $('myWar'));
+    const [x, y] = centerOf(last && !S.stage ? $('mySlot') : $('myWar'));
     burst(x, y, style, Math.min(WAR.MAX_POWER, Math.round(power * boost)), false);
     shake(power * boost);
     Sound.slam(power, style, false);

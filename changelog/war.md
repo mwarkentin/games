@@ -39,6 +39,8 @@
   under their card on the table, one for each card, so you can count them
   as they go down. In a double war or more, the cards that tied stay in
   view too, face up among them, in your pile as well as everyone else's.
+- In a war, the card you slam to decide it lands face up on top of your war
+  pile, and the card you tied with stays where you played it.
 
 ## 2026-11-07
 

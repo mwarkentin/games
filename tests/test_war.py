@@ -159,15 +159,35 @@ def test_in_a_war_of_wars_the_cards_that_tied_stay_on_the_table(page: Page, site
     expect(bot_up).to_have_attribute("aria-label", re.compile(r"^eight of "))
     expect(page.locator("#spots .tdowns .card.back")).to_have_count(3)
     expect(page.locator("#spots .spot .tslot > .card")).to_have_attribute("aria-label", re.compile(r"^three of "))
+    # Yours: the eight stays where you played it, and your war pile has your
+    # three face-down cards with the three that tied on top.
+    expect(page.locator("#mySlot .card")).to_have_attribute("aria-label", re.compile(r"^eight of "))
     my_up = page.locator("#myWar .wpile .card:not(.back)")
     expect(my_up).to_have_count(1)
-    expect(my_up).to_have_attribute("aria-label", re.compile(r"^eight of "))
+    expect(my_up).to_have_attribute("aria-label", re.compile(r"^three of "))
+    expect(page.locator("#myWar .wpile .card:last-child")).to_have_attribute("aria-label", re.compile(r"^three of "))
     expect(page.locator("#myWar .wpile .card.back")).to_have_count(3)
     # When the bot slams its next card, its three joins the pile, face up.
     page.wait_for_function("document.querySelectorAll('#spots .tdowns .card:not(.back)').length === 2", timeout=10_000)
     labels = bot_up.evaluate_all("cards => cards.map((c) => c.getAttribute('aria-label'))")
     assert labels[0].startswith("eight") and labels[1].startswith("three"), labels
     expect(page.locator("#spots .tdowns .card.back")).to_have_count(6)
+    assert errors == []
+
+
+def test_your_war_card_lands_on_top_of_your_war_pile(page: Page, site_url, errors):
+    start_solo(page, site_url, seed=WAR_SEED)
+    page.evaluate("window.__war.slam(60)")
+    page.wait_for_function(f"{STATE}.stage === 1 && {STATE}.canSlam")
+    landed = page.evaluate("""() => {
+        window.__war.slam(60);
+        const pile = [...document.querySelectorAll('#myWar .wpile .card')];
+        return { pile: pile.map((c) => c.getAttribute('aria-label')), slot: document.querySelector('#mySlot .card').getAttribute('aria-label') };
+    }""")
+    # Three face down and the one that decides it on top, face up; the eight
+    # you tied with stays where you played it.
+    assert landed["pile"][:3] == [None, None, None] and landed["pile"][3], landed
+    assert landed["slot"].startswith("eight"), landed
     assert errors == []
 
 
