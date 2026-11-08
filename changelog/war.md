@@ -30,6 +30,9 @@
   by themselves.
 - Winnings can be shuffled on their way back instead, as plenty of people
   play: pick it in the menu, or as host in a room's lobby.
+- At a table of up to six, everyone else has a loot pile of their own beside
+  their card, with a count. A pot you win only counts once its cards have
+  landed on your loot pile.
 
 ## 2026-11-07
 

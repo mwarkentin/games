@@ -339,17 +339,28 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px s
   transition: transform calc(420ms * var(--pace)) cubic-bezier(.3, .7, .3, 1) calc(var(--i, 0) * 14ms);
 }
 #winnings .heap .card { --w: 40px; }
-/* On a tile, the heap is a point near the right edge of the card, behind it.
-   Cards fly to it over everything (see heapFly), since the tiles' scrolling
-   box would hide them on the way. */
-.tile .heap { position: absolute; z-index: 0; left: calc(100% - 6px); top: 56%; width: 0; height: 0; pointer-events: none; }
+/* On a tile, at a table of up to six, the player's loot pile sits beside
+   their card, with a count; the room for it is kept even while it's empty,
+   so the card doesn't jump. Cards fly to it over everything (see heapFly),
+   since the tiles' scrolling box would hide them on the way. */
+.tile .tcards { display: flex; align-items: center; gap: 3px; }
+.tile .tloot { position: relative; flex: none; width: calc(var(--lw) * 1.2); height: calc(var(--lw) * 1.75); }
+#opponents:not(.loots) .tloot { display: none; }
+.tile .tloot .heap { position: absolute; inset: 0; pointer-events: none; }
+.tile .heap .card { --w: var(--lw); }
+.tile .tloot .count {
+  position: absolute; top: -4px; right: -6px; z-index: 999; min-width: 18px; padding: 2px 4px; border-radius: 999px;
+  font: 800 10px/1 system-ui, sans-serif; text-align: center; background: rgba(0, 0, 0, .55); color: #fff;
+}
 .card.flyer { position: absolute; z-index: 1; will-change: transform; }
-.size-l .heap .card { --w: 46px; }
-.size-m .heap .card { --w: 34px; }
-.size-s .heap, .size-xs .heap { display: none; }
+.size-l { --lw: 46px; }
+.size-m { --lw: 30px; }
+.size-s { --lw: 22px; }
 @media (min-width: 700px) {
-  .size-l .heap .card { --w: 54px; }
-  .size-m .heap .card { --w: 40px; }
+  .size-l { --lw: 54px; }
+  .size-m { --lw: 40px; }
+  .size-s { --lw: 26px; }
+  #opponents.size-m { grid-template-columns: repeat(var(--cols), minmax(0, 150px)); }
 }
 /* Each card is thrown from where it lay on the table, at its size there: up
    in an arc, then down faster onto the heap. They go one after another. */
@@ -4069,6 +4080,7 @@ const S = {
   slow: false,           // this game has no clock (see CLOCK_LABELS)
   shuffle: false,        // this game shuffles winnings on their way back (see WINNINGS_LABELS)
   roomShuffle: false,    // the room's setting for its next game
+  incoming: {},          // seat -> cards they've won that haven't landed on their loot pile yet
   decks: null,           // seat -> cards in their deck; the rest of what they hold is winnings.
                          // null from a room server that doesn't say, which counts it all as deck
   roomSlow: false,       // the room's setting for its next game
@@ -4363,6 +4375,7 @@ function onState(m) {
     S.slow = Boolean(g.slow);
     S.shuffle = Boolean(g.shuffle);
     S.decks = Array.isArray(g.decks) ? g.decks.slice() : null;
+    S.incoming = {};
     S.dozes = (g.naps || []).slice();
     S.charging = {};
     S.thumps = {};
@@ -4430,7 +4443,12 @@ function openStage() {
   S.charging = {};
   if (m.stage === 0) {
     SixSeven.clear();
-    if (heapPending) { const { winner, cards } = heapPending; heapPending = null; heapToss(winner, cards); }
+    if (heapPending) {
+      const { winner, cards } = heapPending;
+      heapPending = null;
+      // The pot counts once it's on the winner's loot pile.
+      later(() => { delete S.incoming[winner]; renderAll(); }, heapToss(winner, cards));
+    }
     S.cards = {};
     S.result = null;
     S.pot = 0;
@@ -4560,7 +4578,10 @@ function onFlip(m) {
     S.potCards.push({ card: up, look, seat });
   }
   if (m.winner !== null) {
-    if (!m.over) heapPending = { winner: m.winner, cards: S.potCards };
+    if (!m.over) {
+      heapPending = { winner: m.winner, cards: S.potCards };
+      S.incoming = { [m.winner]: m.pot };
+    }
     S.potCards = [];
   }
   if (m.winner !== null) recordResult(m);
@@ -4899,7 +4920,8 @@ function buildTiles() {
   box.replaceChildren();
   const n = seats.length;
   const size = n <= 1 ? 'size-l' : n <= 3 ? 'size-m' : n <= 8 ? 'size-s' : 'size-xs';
-  box.className = size;
+  // Loot piles of their own for everyone else, at a table of up to six.
+  box.className = size + (n <= 5 ? ' loots' : '');
   box.style.setProperty('--cols', String(n <= 4 ? n : Math.min(4, Math.ceil(n / 2))));
   for (const seat of seats) {
     const p = S.players[seat];
@@ -4909,17 +4931,23 @@ function buildTiles() {
     const heap = el('div', 'heap');
     heap.setAttribute('aria-hidden', 'true');
     heap.append(...(heaps.get(seat)?.cards || []).map((c) => c.node));
-    slot.append(heap, card);
+    slot.append(card);
+    const loot = el('div', 'tloot');
+    const lootCount = el('span', 'count', '');
+    lootCount.hidden = true;
+    loot.append(heap, lootCount);
+    const cards = el('div', 'tcards');
+    cards.append(slot, loot);
     const info = el('div', 'tname');
     info.textContent = `${AVATARS[p.avatar] || '🃏'} ${p.name}`;
     const meta = el('div', 'tmeta');
     const count = el('span', 'tcount', '');
     const stat = el('span', 'tstat', '');
     meta.append(count, stat);
-    node.append(slot, info, meta);
+    node.append(cards, info, meta);
     node.title = `${p.name}${p.bot ? ' (bot)' : ''} · ${DECKS[deckOf(seat)][0]} deck`;
     box.append(node);
-    tiles.set(seat, { node, slot, count, stat, card, heap, cardKey: 'empty', downs: null });
+    tiles.set(seat, { node, slot, count, stat, card, heap, lootCount, cardKey: 'empty', downs: null });
   }
 }
 
@@ -4954,10 +4982,13 @@ function renderTile(seat) {
   const charging = S.charging[seat];
   setClass(t.node, 'charging', charging !== undefined && !S.slams[seat]);
   if (charging !== undefined && t.glow !== charging) { t.glow = charging; t.node.style.setProperty('--glow', String(2 + charging * 2)); }
-  setText(t.count, S.battle ? String(S.counts[seat] ?? 0) : '');
+  setText(t.count, S.battle ? String(shownCount(seat)) : '');
+  const won = shownLoot(seat);
+  setText(t.lootCount, won > 0 ? String(won) : '');
+  setHidden(t.lootCount, !(won > 0));
   if (S.battle) {
     const loot = lootOf(seat);
-    setAttr(t.count, 'title', plural(S.counts[seat] ?? 0, 'card') + (loot ? `: ${S.decks[seat]} in the deck, ${loot} won` : ''));
+    setAttr(t.count, 'title', plural(shownCount(seat), 'card') + (loot ? `: ${S.decks[seat]} in the deck, ${shownLoot(seat)} won` : ''));
   }
   const slam = S.slams[seat];
   const thumps = S.thumps[seat] || 0;
@@ -5005,7 +5036,7 @@ function renderMe() {
   setAttr($('myPile'), 'aria-label', S.decks && S.battle > 0 ? `Your deck: ${plural(inDeck, 'card')}` : 'Your deck');
   const label = $('myLabel');
   const top = `${AVATARS[p.avatar] || '🃏'} ${p.name}`;
-  const sub = S.battle ? plural(count, 'card') : '';
+  const sub = S.battle ? plural(shownCount(me), 'card') : '';
   if (label.dataset.v !== top + sub) {
     label.dataset.v = top + sub;
     label.replaceChildren(document.createTextNode(top), el('small', '', sub));
@@ -5225,8 +5256,8 @@ setInterval(() => {
 //
 // The cards each player wins are swept onto a messy heap when the table
 // clears, landing every which way, messier the bigger it gets: yours beside
-// your card, and at a table of up to four, everyone else's behind the card on
-// their tile. When you lose, your card flies
+// your card, and at a table of up to six, everyone else's beside the card on
+// their tile. They count once they've landed. When you lose, your card flies
 // to the winner's heap. Clean up squares your heap into a neat stack in the
 // order it landed, the latest card still on top, and in a room everyone sees
 // it happen on your tile. The heap is the player's winnings, kept apart from
@@ -5234,9 +5265,9 @@ setInterval(() => {
 // stage, and it goes under the deck as it lies (see warGather). It shows the
 // latest of them, never more than they hold.
 
-// Cards drawn at most: on your heap, and on others' at a table of up to four
+// Cards drawn at most: on your heap, and on others' at a table of up to six
 // (bigger tables have smaller tiles, and it all gets too busy).
-const HEAP_MAX = { me: 36, 'size-l': 24, 'size-m': 16, 'size-s': 0, 'size-xs': 0 };
+const HEAP_MAX = { me: 36, 'size-l': 24, 'size-m': 16, 'size-s': 10, 'size-xs': 0 };
 const heaps = new Map();  // seat -> { cards: [{ card, look, seat, node }], bottom first; tidy; layer }
 let heapPending = null;   // { winner, cards }: the pot just won, until the table clears
 const TIDY_LINES = [
@@ -5247,7 +5278,11 @@ const TIDY_LINES = [
 
 const myHeapNode = () => document.querySelector('#winnings .heap');
 const heapNode = (seat) => (seat === S.you ? myHeapNode() : tiles.get(seat)?.heap || null);
-const heapMax = (seat) => (seat === S.you ? HEAP_MAX.me : HEAP_MAX[$('opponents').className] ?? 0);
+const heapMax = (seat) => {
+  if (seat === S.you) return HEAP_MAX.me;
+  const box = $('opponents');
+  return box.classList.contains('loots') ? HEAP_MAX[[...box.classList].find((c) => c.startsWith('size-'))] ?? 0 : 0;
+};
 const heapShown = () => S.phase === 'playing' || S.phase === 'over';
 
 function heapOf(seat) {
@@ -5258,6 +5293,7 @@ function heapOf(seat) {
 function heapClear() {
   heaps.clear();
   heapPending = null;
+  S.incoming = {};
   for (const node of myHeapNode().querySelectorAll('.card')) node.remove();
   for (const t of tiles.values()) t.heap.replaceChildren();
   renderHeaps();
@@ -5305,7 +5341,7 @@ function heapFly(node, c, heapBox, size, delay) {
 function heapToss(seat, cards, quiet = false) {
   const heap = heapNode(seat);
   const max = heap ? heapMax(seat) : 0;
-  if (!max || !heapShown() || !cards.length || !(S.counts[seat] > 0)) return;
+  if (!max || !heapShown() || !cards.length || !(S.counts[seat] > 0)) return 0;
   if (seat === S.you && !quiet) {
     setHidden($('winnings'), false);
     setClass($('me'), 'warring', false);  // the war's over: no fading
@@ -5343,8 +5379,10 @@ function heapToss(seat, cards, quiet = false) {
     h.cards.push({ ...c, node });
   });
   h.tidy = false;
-  if (!quiet && (seat === S.you || S.players.length <= 4)) Sound.swish();
+  if (!quiet && (seat === S.you || S.players.length <= 6)) Sound.swish();
   renderHeaps();
+  // When the last card lands.
+  return fly ? Math.round((640 + (thrown.length - 1) * gap) * pace()) : 0;
 }
 
 // Picks a heap up: after `delay` ms, its cards fly into their player's deck,
@@ -5380,7 +5418,7 @@ function heapGather(seat, delay) {
       ], { duration: 420 * pace(), delay: Math.min(i, 30) * 12 * pace(), easing: 'cubic-bezier(.4, 0, .6, 1)', fill: 'backwards' })
         .finished.then(done, done);
     });
-    if (seat === S.you || S.players.length <= 4) Sound.riffle();
+    if (seat === S.you || S.players.length <= 6) Sound.riffle();
   }, delay);
 }
 
@@ -5421,6 +5459,15 @@ function lootOf(seat) {
   return S.decks ? Math.max(0, (S.counts[seat] ?? 0) - (S.decks[seat] ?? 0)) : null;
 }
 
+// What a player is shown to hold, and to have won: a pot only counts once
+// its cards have landed on their loot pile.
+function shownCount(seat) {
+  return Math.max(0, (S.counts[seat] ?? 0) - (S.incoming[seat] || 0));
+}
+function shownLoot(seat) {
+  return Math.max(0, (lootOf(seat) ?? 0) - (S.incoming[seat] || 0));
+}
+
 function renderHeaps() {
   // Never more cards than their player has won (or, from a room server that
   // doesn't say, holds): the oldest slip out from underneath.
@@ -5431,8 +5478,8 @@ function renderHeaps() {
   }
   const mine = S.you !== null ? heaps.get(S.you) : null;
   const n = mine ? mine.cards.length : 0;
-  const loot = S.you !== null ? lootOf(S.you) : null;
-  const pick = S.phase === 'playing' && loot > 0;
+  const loot = S.you !== null && S.decks ? shownLoot(S.you) : null;
+  const pick = S.phase === 'playing' && (loot > 0 || mustGather());
   setHidden($('winnings'), !n && !pick);
   setHidden($('gatherBtn'), !pick);
   setClass($('gatherBtn'), 'due', pick && (mustGather() || S.decks[S.you] === 0));

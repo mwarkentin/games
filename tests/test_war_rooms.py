@@ -318,9 +318,14 @@ def test_winnings_go_back_under_your_deck_by_hand_or_when_it_runs_out(page: Page
         })
 
     # You win: the two cards sit beside your deck, and you pick them up.
-    battle(1, card(12), card(3, 1), [28, 26], [26, 26])
+    # They only count once they've landed there, as the next battle opens.
+    battle(1, card(12), card(3, 1), [28, 26], [26, 26], reveal=2400)
+    page.wait_for_function(f"Object.keys({STATE}.table).length === 2 && {STATE}.battle === 1")
+    expect(page.locator("#myLabel")).to_contain_text("26 cards")  # your ace is on the table, the pot on its way
+    expect(page.locator("#lootCount")).to_be_hidden()
     page.wait_for_function(f"{STATE}.battle === 2")
     expect(page.locator("#lootCount")).to_have_text("2")
+    expect(page.locator("#myLabel")).to_contain_text("28 cards")
     expect(page.locator("#deckCount")).to_have_text("26")
     page.click("#gatherBtn")
     assert fake.messages("gather") == [{"t": "gather"}]

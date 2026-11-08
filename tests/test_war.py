@@ -523,18 +523,28 @@ def test_opponents_pile_up_what_they_win_too(page: Page, site_url, errors):
     heaps = page.evaluate(f"{STATE}.heaps")
     assert len(heaps["1"]) == 2 and not heaps.get("0"), heaps
     expect(page.locator("#winnings")).to_be_hidden()
+    # The bot's loot pile is its own, beside its card, with a count.
+    expect(page.locator("#opponents .tile .tloot .count")).to_have_text("2")
     assert errors == []
 
 
-def test_others_heaps_only_at_a_small_table(page: Page, site_url, errors):
-    # Five players: only your own heap, to keep a busy table readable.
-    start_solo(page, site_url, opponents=4, seed=3)
-    page.evaluate("window.__war.pace(0.2)")
-    for _ in range(4):
-        page.wait_for_function(f"{STATE}.canSlam", timeout=15_000)
-        page.evaluate("window.__war.slam(60)")
-    page.wait_for_function(f"{STATE}.battle >= 4", timeout=15_000)
-    expect(page.locator("#opponents .tile .heap .card")).to_have_count(0)
+def test_others_get_loot_piles_at_a_table_of_up_to_six(page: Page, site_url, errors):
+    def play(opponents: int, seed: int) -> int:
+        start_solo(page, site_url, opponents=opponents, seed=seed)
+        page.evaluate("window.__war.pace(0.3)")
+        for _ in range(6):
+            page.wait_for_function(f"{STATE}.canSlam", timeout=15_000)
+            page.evaluate("window.__war.slam(60)")
+        page.wait_for_function(f"{STATE}.battle >= 6 && {STATE}.canSlam", timeout=15_000)
+        page.wait_for_timeout(1200)
+        return page.locator("#opponents .tile .tloot .heap .card").count()
+
+    # Six players: everyone else's winnings pile up beside their card.
+    assert play(5, 3) > 0
+    expect(page.locator("#opponents")).to_have_class(re.compile(r"\bloots\b"))
+    # Seven: only your own, to keep a busy table readable.
+    assert play(6, 4) == 0
+    expect(page.locator("#opponents")).not_to_have_class(re.compile(r"\bloots\b"))
     assert errors == []
 
 
