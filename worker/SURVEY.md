@@ -668,6 +668,20 @@ in a few windows. The deploy workflow's `wrangler deploy` creates the
 `SURVEY_URL` in `letterfield.html` points the live game at the deployed
 Worker.
 
+To try the log's weeks, months and years without weeks of play,
+`bench/seed-log.js` prints made-up history (real words at their real places,
+over the last 45 days by default) as SQL for a test database:
+
+```sh
+node worker/bench/seed-log.js 45 > /tmp/seed.sql
+cd worker
+npx wrangler@4.151.0 d1 execute games-survey-log --local --file /tmp/seed.sql   # with wrangler dev
+npx wrangler@4.151.0 d1 execute games-survey-log-previews --remote \
+  --config wrangler.previews-migrations.toml --file /tmp/seed.sql             # every Worker Preview's log
+```
+
+Never point it at `games-survey-log` with `--remote`: that's the real log.
+
 [omcb]: https://eieio.games/blog/scaling-one-million-checkboxes
 [chess]: https://eieio.games/blog/a-million-realtime-chess-boards-in-a-single-process
 [do]: https://developers.cloudflare.com/durable-objects/
