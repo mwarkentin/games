@@ -1219,16 +1219,21 @@ function warFlop(game, seat) {
 // highest rank takes the pot. A tie is a war between the tied players who
 // still have cards: if only one does, they win; if none do, the war gods pick.
 // Anyone who hasn't slammed flops their card over anyway. Returns the message
-// describing it all, with the next stage or the end of the game.
+// describing it all, with the next stage or the end of the game. In a war,
+// downs has the cards each fighter laid face down, so whoever wins the pot
+// can see every card in it.
 function warResolve(game, now, random) {
   const plays = [];
+  const downs = {};
   let best = -1;
   for (const seat of game.fighters) {
     const pile = game.piles[seat];
     const slam = game.slams[seat] || [0, 0, 1];
     if (slam[2]) game.naps[seat]++;
     const down = game.stage ? Math.min(3, pile.length - 1) : 0;
-    game.pot.push(...pile.splice(0, down));
+    const laid = pile.splice(0, down);
+    game.pot.push(...laid);
+    if (down) downs[seat] = laid;
     const up = pile.shift();
     game.pot.push(up);
     best = Math.max(best, warRank(up));
@@ -1240,6 +1245,7 @@ function warResolve(game, now, random) {
   const gods = tied.length > 1 && !able.length;
   if (gods) winner = tied[Math.floor(random() * tied.length)];
   const message = { t: 'flip', battle: game.battle, stage: game.stage, plays, tied, winner, gods, pot: game.pot.length };
+  if (game.stage) message.downs = downs;
   if (winner === null) {
     if (!game.stage) game.wars++;
     game.biggest = Math.max(game.biggest, able.length);
@@ -3316,7 +3322,7 @@ const S = {
   input: store.get('input', 'hold'),  // how you slam: hold, mash or fling
   plan: null,            // the cards you're slamming this stage (see slamPlan)
   thumps: {},            // seat -> face-down cards others have slammed this war stage
-  potCards: [],          // the cards in this battle's pot, for the heap: { card, look, seat }
+  potCards: [],          // the cards in this battle's pot, for the heap: { card, look, seat, down }
 };
 const timers = new Set();
 function later(fn, ms) {
@@ -3723,7 +3729,12 @@ function onFlip(m) {
     S.cards[seat] = { up, down: (before ? before.down : 0) + down, stage: m.stage };
     if (!S.slams[seat]) S.slams[seat] = [power, style];
     const look = deckOf(seat);
-    for (let i = 0; i < down; i++) S.potCards.push({ card: 'back', look, seat });
+    // The cards laid face down in a war go to the winner's heap face up. A
+    // room server that doesn't say which they were leaves them face down.
+    const laid = m.downs && Array.isArray(m.downs[seat]) ? m.downs[seat] : [];
+    for (let i = 0; i < down; i++) {
+      S.potCards.push({ card: Number.isInteger(laid[i]) ? laid[i] : 'back', look, seat, down: true });
+    }
     S.potCards.push({ card: up, look, seat });
   }
   if (m.winner !== null) {
@@ -4419,7 +4430,7 @@ function heapClear() {
 // Where a card lay on the table, relative to a heap's middle, and how much
 // bigger it was there than on the heap: [x, y, scale].
 function heapFrom(c, heapBox, size) {
-  const pile = c.card === 'back' && c.seat === S.you ? $('myWar').querySelector('.wpile .card') : null;
+  const pile = c.down && c.seat === S.you ? $('myWar').querySelector('.wpile .card') : null;
   const from = pile || (c.seat === S.you ? $('mySlot').querySelector('.card') : tiles.get(c.seat)?.card);
   const box = from && from.offsetParent ? from.getBoundingClientRect() : null;
   const middle = [heapBox.left + heapBox.width / 2, heapBox.top + heapBox.height / 2];

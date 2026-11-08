@@ -261,6 +261,39 @@ def test_a_slow_room_waits_for_everyone_and_they_can_be_nudged(page: Page, brows
     assert errors == []
 
 
+def test_after_a_war_every_card_in_your_loot_is_face_up(page: Page, site_url, errors):
+    fake = FakeWarRoom()
+    open_war(page, site_url, fake)
+    start_room(page)
+    page.click("#botMore")
+    page.click("#dealBtn")
+    page.wait_for_function(f"{STATE}.canSlam")
+    page.evaluate("window.__war.slam(90)")
+    fake.broadcast({
+        "t": "flip", "battle": 1, "stage": 0, "winner": None, "tied": [0, 1], "gods": False, "pot": 2,
+        "plays": [[0, 0, card(9), 90, 0, 0], [1, 0, card(9, 1), 100, 1, 0]],
+        "counts": [26, 26], "next": fake.stage(1, stage=1, fighters=[0, 1], opens_in=300),
+    })
+    page.wait_for_function(f"{STATE}.stage === 1 && {STATE}.canSlam")
+    page.evaluate("window.__war.slam(90)")
+    # You win the war. The room says which cards were laid face down, and they
+    # land in your loot face up with the rest, not mixed in face down.
+    fake.broadcast({
+        "t": "flip", "battle": 1, "stage": 1, "winner": 0, "tied": [0], "gods": False, "pot": 10,
+        "plays": [[0, 3, card(12), 90, 0, 0], [1, 3, card(4, 1), 100, 1, 0]],
+        "downs": {"0": [card(0), card(1), card(2)], "1": [card(5, 1), card(6, 1), card(7, 1)]},
+        "counts": [32, 22], "out": [], "next": fake.stage(2, opens_in=300),
+    })
+    page.wait_for_function(f"{STATE}.battle === 2")
+    heap = page.locator("#winnings .heap .card")
+    expect(heap.first).to_be_visible()
+    expect(page.locator("#winnings .heap .card.back")).to_have_count(0)
+    loot = page.evaluate(f"{STATE}.heap")
+    assert card(0) in loot and card(7, 1) in loot, loot
+    assert all(isinstance(c, int) for c in loot), loot
+    assert errors == []
+
+
 def test_everyone_sees_each_players_deck(page: Page, browser, site_url, errors):
     fake = FakeWarRoom()
     open_war(page, site_url, fake)

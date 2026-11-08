@@ -150,7 +150,7 @@ The room answers with these:
 | `charge`, `card` | someone charging up, or slamming a face-down card in a war |
 | `slam` | `{"seat","power","style","up"}`: someone slammed the card that counts, and `up` is that card, face up at once; with `"flopped":true`, the host flipped it over for them |
 | `nudge` | `{"seats","by"}`: someone (`by` is null for a spectator) nudged the players in `seats` |
-| `flip` | the stage is played out: every card, `plays` as `[seat, down, up, power, style, flopped]`, the winner and pot, and the next stage or the final standings |
+| `flip` | the stage is played out: every card, `plays` as `[seat, down, up, power, style, flopped]`, the winner and pot, and the next stage or the final standings; in a war, `downs` has the cards each seat laid face down, which show face up in the winner's loot |
 | `cheer`, `deck`, `tidy` | someone cheered, changed deck or cleaned up their winnings |
 | `error` | something went wrong, in words for the player |
 

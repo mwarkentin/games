@@ -110,8 +110,11 @@ describe('the rules', () => {
     assert.equal(tie.next.opensIn, WAR.WAR_REVEAL_MS);
     assert.equal(game.wars, 1);
 
+    assert.equal(tie.downs, undefined, 'nothing is laid face down in a battle');
     const war = warResolve(game, NOW, seeded(3));
     assert.deepEqual(war.plays.map(([seat, down, up]) => [seat, down, up]), [[0, 3, card(12)], [1, 3, card(11)]]);
+    assert.deepEqual(war.downs, { 0: [card(2), card(3), card(4)], 1: [card(5), card(6), card(7)] },
+      'the cards laid face down, so the winner can see every card in the pot');
     assert.equal(war.winner, 0);
     assert.deepEqual(war.counts, [11, 0, 1]);
     assert.deepEqual(war.out, [1]);
@@ -123,6 +126,7 @@ describe('the rules', () => {
     warResolve(game, NOW, seeded(4));
     const war = warResolve(game, NOW, seeded(4));
     assert.deepEqual(war.plays.map(([seat, down]) => [seat, down]), [[0, 1], [1, 3]]);
+    assert.deepEqual(war.downs, { 0: [card(2)], 1: [card(3), card(4), card(5)] });
     assert.equal(war.winner, 1);
     assert.ok(war.over, 'player 0 is out of cards, so the game is over');
     assert.deepEqual(war.over.winners, [1]);

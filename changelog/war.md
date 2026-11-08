@@ -15,6 +15,8 @@
   over by itself. In a room, everyone sees who the table is waiting for and
   can give them a nudge, which shakes their deck; after a long wait the host
   can flip their card over for them.
+- After a war, every card in the winner's loot pile is face up, the ones
+  laid face down too.
 
 ## 2026-11-07
 

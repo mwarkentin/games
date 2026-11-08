@@ -198,16 +198,21 @@ function warFlop(game, seat) {
 // highest rank takes the pot. A tie is a war between the tied players who
 // still have cards: if only one does, they win; if none do, the war gods pick.
 // Anyone who hasn't slammed flops their card over anyway. Returns the message
-// describing it all, with the next stage or the end of the game.
+// describing it all, with the next stage or the end of the game. In a war,
+// downs has the cards each fighter laid face down, so whoever wins the pot
+// can see every card in it.
 function warResolve(game, now, random) {
   const plays = [];
+  const downs = {};
   let best = -1;
   for (const seat of game.fighters) {
     const pile = game.piles[seat];
     const slam = game.slams[seat] || [0, 0, 1];
     if (slam[2]) game.naps[seat]++;
     const down = game.stage ? Math.min(3, pile.length - 1) : 0;
-    game.pot.push(...pile.splice(0, down));
+    const laid = pile.splice(0, down);
+    game.pot.push(...laid);
+    if (down) downs[seat] = laid;
     const up = pile.shift();
     game.pot.push(up);
     best = Math.max(best, warRank(up));
@@ -219,6 +224,7 @@ function warResolve(game, now, random) {
   const gods = tied.length > 1 && !able.length;
   if (gods) winner = tied[Math.floor(random() * tied.length)];
   const message = { t: 'flip', battle: game.battle, stage: game.stage, plays, tied, winner, gods, pot: game.pot.length };
+  if (game.stage) message.downs = downs;
   if (winner === null) {
     if (!game.stage) game.wars++;
     game.biggest = Math.max(game.biggest, able.length);
