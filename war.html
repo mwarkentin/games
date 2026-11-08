@@ -242,6 +242,20 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px s
 #banner.war { color: #fff; text-shadow: 0 0 12px var(--war), 0 3px 0 var(--war); }
 #banner.pop { animation: pop calc(600ms * var(--pace)) cubic-bezier(.2, 1.6, .4, 1); }
 @keyframes pop { 0% { transform: scale(.3); opacity: 0; } 60% { transform: scale(1.15); opacity: 1; } 100% { transform: scale(1); } }
+/* A slow game: who the table is waiting for, and a nudge for them. */
+#waitRow { display: flex; gap: 6px; align-items: center; justify-content: center; flex-wrap: wrap; font-size: 13px; color: var(--felt-ink); max-width: 100%; }
+#waitRow[hidden] { display: none; }
+#waitText { font-weight: 700; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#waitRow .chip { min-height: 32px; padding: 6px 10px; }
+.tile.waiting { border-style: dashed; }
+.tile.nudged, #myPile.nudged .stack { animation: nudge calc(500ms * var(--pace)) ease-in-out 2; }
+@keyframes nudge {
+  0%, 100% { transform: rotate(0); }
+  20% { transform: rotate(-9deg) translateX(-4px); }
+  40% { transform: rotate(7deg) translateX(4px); }
+  60% { transform: rotate(-5deg) translateX(-2px); }
+  80% { transform: rotate(3deg); }
+}
 #caption { font-size: 14px; color: var(--felt-ink); max-width: 34em; min-height: 2.7em; text-wrap: balance; }
 #warRow { display: flex; gap: 6px; justify-content: center; flex-wrap: wrap; max-width: 100%; }
 #warRow .wf { display: flex; flex-direction: column; align-items: center; gap: 2px; font-size: 11px; max-width: 64px; }
@@ -790,6 +804,11 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px s
     <div id="banner"></div>
     <div id="warRow"></div>
     <div id="caption"></div>
+    <div id="waitRow" hidden>
+      <span id="waitText"></span>
+      <button class="chip" id="nudgeBtn" type="button">👉 Nudge</button>
+      <button class="chip" id="flopBtn" type="button" hidden>🫳 Flip it for them</button>
+    </div>
   </section>
   <section id="me">
     <div id="winnings" hidden>
@@ -831,6 +850,7 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px s
     <label for="opponents" class="small" id="oppLabel">1 opponent</label>
     <input type="range" id="oppRange" min="1" max="49" value="1" aria-labelledby="oppLabel">
     <div class="seg" id="soloLength" style="margin-top:8px"></div>
+    <div class="seg" id="soloClock" style="margin-top:6px" role="group" aria-label="Clock"></div>
     <p class="small dim" id="soloNote"></p>
     <button class="btn primary wide" id="soloBtn">Deal me in</button>
 
@@ -884,6 +904,8 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px s
       </div>
       <h3>Length</h3>
       <div class="seg" id="roomLength"></div>
+      <h3>Clock</h3>
+      <div class="seg" id="roomClock" role="group" aria-label="Clock"></div>
     </div>
     <h3>Your deck</h3>
     <div class="decks" id="lobbyDecks" role="group" aria-label="Deck"></div>
@@ -996,6 +1018,8 @@ const WAR = {
   STAGE_MS: 8000,      // to slam before your card flops over by itself
   WAR_STAGE_MS: 20000, // the same in a war, where you slam every card you lay down
   NAPS: 2,             // flops in a row before a stage stops waiting for you
+  NUDGE_MS: 5000,      // in a slow game, how long a stage waits before you can nudge someone
+  FLOP_MS: 30000,      // and before the host can flip their card over for them
   BOT_MS: 1300,        // the shortest a stage lasts, while the bots slam
   WAR_BOT_MS: 2600,    // the same in a war, while the bots slam all their cards
   REVEAL_MS: 2400,     // to watch the cards turn over before the next battle
@@ -1057,8 +1081,10 @@ function warBotPower(random) {
 }
 
 // A new game for seats 0..n-1, where bots[seat] is true for a bot. Returns
-// the game and the message opening its first battle.
-function warNewGame(bots, length, random, now, pace) {
+// the game and the message opening its first battle. A slow game has no
+// clock: each stage waits until everyone has played, like a game at a real
+// table, and nobody's card flops over by itself.
+function warNewGame(bots, length, random, now, pace, slow) {
   const game = {
     limit: WAR.LENGTHS[length] || WAR.LENGTHS.standard,
     piles: warDeal(bots.length, random),
@@ -1066,7 +1092,7 @@ function warNewGame(bots, length, random, now, pace) {
     out: bots.map(() => 0),  // the battle each player ran out of cards in
     naps: bots.map(() => 0), // stages in a row each player's card flopped over by itself
     battle: 0, stage: 0, fighters: [], slams: {}, pot: [],
-    opensAt: 0, closesAt: 0, pace: pace || 1,
+    opensAt: 0, closesAt: 0, pace: pace || 1, slow: Boolean(slow),
     wars: 0, biggest: 0, deepest: 0, over: null,
   };
   return { game, stage: warOpenStage(game, now, random, null, 0) };
@@ -1104,7 +1130,7 @@ function warOpenStage(game, now, random, fighters, delay) {
   }
   game.slams = {};
   game.opensAt = now + Math.round(delay * game.pace);
-  game.closesAt = game.opensAt + (game.stage ? WAR.WAR_STAGE_MS : WAR.STAGE_MS);
+  game.closesAt = game.slow ? Infinity : game.opensAt + (game.stage ? WAR.WAR_STAGE_MS : WAR.STAGE_MS);
   const bots = [];
   for (const seat of game.fighters) {
     if (!game.bots[seat]) continue;
@@ -1116,7 +1142,7 @@ function warOpenStage(game, now, random, fighters, delay) {
   }
   return {
     t: 'stage', battle: game.battle, stage: game.stage, limit: game.limit, fighters: game.fighters.slice(),
-    opensIn: game.opensAt - now, closesIn: game.closesAt - now, bots,
+    opensIn: game.opensAt - now, closesIn: game.slow ? null : game.closesAt - now, bots,
   };
 }
 
@@ -1128,7 +1154,8 @@ function warWaitingFor(game, online) {
 }
 
 // When to play the stage out: once everyone online has slammed and the bots
-// have had their moment, or when time runs out.
+// have had their moment, or when time runs out. In a slow game time never
+// runs out: Infinity, until everyone online has played.
 function warDueAt(game, online) {
   return warWaitingFor(game, online).length ? game.closesAt : game.opensAt + warBotMs(game);
 }
@@ -1143,6 +1170,15 @@ function warSlam(game, seat, power, style) {
   game.slams[seat] = [power, style, 0];
   game.naps[seat] = 0;
   return { t: 'slam', seat, power, style, up: warUpCard(game, seat) };
+}
+
+// In a slow game, someone the table has waited a long time for gets their
+// card flipped over for them, as if it had flopped. Returns the slam to pass
+// on, or null when it doesn't count.
+function warFlop(game, seat) {
+  if (game.over || !game.fighters.includes(seat) || game.slams[seat]) return null;
+  game.slams[seat] = [0, 0, 1];
+  return { t: 'slam', seat, power: 0, style: 0, up: warUpCard(game, seat), flopped: true };
 }
 
 // Plays the stage out. Every fighter turns over their top card (in a war,
@@ -1258,6 +1294,9 @@ const LENGTH_LABELS = {
   quick: ['Skirmish', '20 battles'], standard: ['Battle', '60 battles'],
   long: ['Campaign', '150 battles'], total: ['Total war', 'until one has every card'],
 };
+// Timed: slam within seconds or your card flops over by itself. Slow: no
+// clock, and the table waits for everyone, like real life.
+const CLOCK_LABELS = { timed: ['⏱️ Timed', 'Slam within seconds'], slow: ['🐢 Slow', 'No clock. Like real life.'] };
 const FAST_PACE = 0.3;
 
 // ---- Small helpers ----
@@ -1489,6 +1528,11 @@ const Sound = {
     this.noise(0.3, 0.07, 0.18, 900);
   },
   cheer() { this.tone(880, 0, 0.08, { type: 'triangle', gain: 0.06, to: 1200 }); },
+  // Someone nudged you: a friendly knock-knock.
+  nudge() {
+    this.tone(520, 0, 0.09, { type: 'triangle', gain: 0.16, to: 440 });
+    this.tone(660, 0.16, 0.12, { type: 'triangle', gain: 0.16, to: 520 });
+  },
 };
 
 function renderSound() {
@@ -2232,6 +2276,10 @@ const S = {
   you: null,
   host: null,
   length: store.get('length', 'standard'),
+  slow: false,           // this game has no clock (see CLOCK_LABELS)
+  roomSlow: false,       // the room's setting for its next game
+  dozes: [],             // seat -> cards in a row that flopped over by themselves
+  nudgedAt: -Infinity,   // when you last nudged someone
   players: [],
   watchers: 0,
   battle: 0, limit: 0, stage: 0,
@@ -2293,9 +2341,10 @@ function warUps(game) {
 }
 
 class SoloRoom {
-  constructor({ opponents, length, name, avatar, random }) {
+  constructor({ opponents, length, slow, name, avatar, random }) {
     this.random = random;
     this.length = length;
+    this.slow = Boolean(slow);
     this.players = [{ name, avatar, bot: false, online: true }];
     for (const bot of warBotNames(opponents, random, [name])) {
       this.players.push({ name: bot, avatar: Math.floor(random() * AVATARS.length), bot: true, online: true });
@@ -2305,7 +2354,7 @@ class SoloRoom {
     this.pausedAt = 0;
   }
   start() {
-    const made = warNewGame(this.players.map((p) => p.bot), this.length, this.random, Date.now(), pace());
+    const made = warNewGame(this.players.map((p) => p.bot), this.length, this.random, Date.now(), pace(), this.slow);
     this.game = made.game;
     receive(this.snapshot());
     receive(made.stage);
@@ -2314,12 +2363,12 @@ class SoloRoom {
   snapshot() {
     const g = this.game;
     return {
-      t: 'state', code: null, phase: g.over ? 'over' : 'playing', length: this.length, you: 0, host: 0, watchers: 0,
+      t: 'state', code: null, phase: g.over ? 'over' : 'playing', length: this.length, slow: this.slow, you: 0, host: 0, watchers: 0,
       players: this.players,
       game: {
         battle: g.battle, limit: g.limit, stage: g.stage, fighters: g.fighters, counts: g.piles.map((p) => p.length),
         out: g.out, pot: g.pot.length, slams: g.slams, ups: warUps(g), opensIn: Math.max(0, g.opensAt - Date.now()),
-        closesIn: Math.max(0, g.closesAt - Date.now()), wars: g.wars, over: g.over,
+        closesIn: g.slow ? null : Math.max(0, g.closesAt - Date.now()), naps: g.naps, slow: g.slow, wars: g.wars, over: g.over,
       },
     };
   }
@@ -2358,7 +2407,7 @@ class SoloRoom {
     this.pausedAt = 0;
     this.game.opensAt += paused;
     this.game.closesAt += paused;
-    receive({ t: 'timing', opensIn: this.game.opensAt - Date.now(), closesIn: this.game.closesAt - Date.now() });
+    receive({ t: 'timing', opensIn: this.game.opensAt - Date.now(), closesIn: this.game.slow ? null : this.game.closesAt - Date.now() });
     this.schedule();
   }
   // Plays every remaining battle at once, with nobody slamming.
@@ -2431,6 +2480,9 @@ async function roomRequest(method, path) {
 
 // ---- Messages from the room ----
 
+// When the stage closes, from the room's closesIn: never, in a slow game.
+const closesAtFrom = (ms) => (typeof ms === 'number' && Number.isFinite(ms) ? now() + ms : Infinity);
+
 function receive(m) {
   switch (m.t) {
     case 'state': return onState(m);
@@ -2460,8 +2512,9 @@ function receive(m) {
       return;
     case 'timing':
       S.opensAt = now() + m.opensIn;
-      S.closesAt = now() + m.closesIn;
+      S.closesAt = closesAtFrom(m.closesIn);
       return;
+    case 'nudge': return onNudge(m);
     case 'error':
       if (!$('menu').hidden) setText($('friendsErr'), m.error);
       else if (!$('lobby').hidden) setText($('lobbyErr'), m.error);
@@ -2478,6 +2531,8 @@ function onState(m) {
   S.you = m.you;
   S.host = m.host;
   S.length = m.length;
+  S.roomSlow = Boolean(m.slow);
+  if (!m.game) S.slow = S.roomSlow;
   S.watchers = m.watchers || 0;
   S.players = m.players.map((p) => ({ ...p }));
   if (m.game) {
@@ -2502,7 +2557,9 @@ function onState(m) {
     S.ups = {};
     for (const [seat, up] of Object.entries(g.ups || {})) if (Number.isInteger(up)) S.ups[seat] = up;
     S.opensAt = now() + g.opensIn;
-    S.closesAt = now() + g.closesIn;
+    S.closesAt = closesAtFrom(g.closesIn);
+    S.slow = Boolean(g.slow);
+    S.dozes = (g.naps || []).slice();
     S.charging = {};
     S.thumps = {};
     if (g.over) { if (Odds.seats) Odds.settle(g.over); }
@@ -2528,7 +2585,7 @@ function onStage(m) {
   S.pending = { ...m, slams: {}, ups: {}, thumps: {} };
   S.limit = m.limit;
   S.opensAt = now() + m.opensIn;
-  S.closesAt = now() + m.closesIn;
+  S.closesAt = closesAtFrom(m.closesIn);
   later(openStage, m.opensIn);
   // Each bot's card lands face up as it slams. A room server from before
   // cards showed early sends no card, and the slam lands face down.
@@ -2606,12 +2663,23 @@ function onSlam(m) {
     if (turned && !early) { if (m.seat === S.you) renderMe(); else renderTile(m.seat); renderWarRow(); }
     return;
   }
-  slams[m.seat] = [m.power, m.style];
+  slams[m.seat] = [m.power, m.style, m.flopped ? 1 : 0];
   delete S.charging[m.seat];
-  if (m.seat === S.you) return;
+  if (!m.flopped) S.dozes[m.seat] = 0;
+  if (m.seat === S.you) {
+    // The table waited a long time for you, and the host flipped your card.
+    if (m.flopped) {
+      cancelInput();
+      setText($('caption'), 'The table waited a long time, so your card was flipped over for you.');
+      renderMe();
+      renderControls();
+    }
+    return;
+  }
   renderTile(m.seat);
   if (early) return;
   renderWarRow();
+  if (m.flopped) { renderWait(); return; }
   const tile = tiles.get(m.seat);
   if (tile && tile.node.offsetParent) {
     const [x, y] = centerOf(tile.slot);
@@ -2651,6 +2719,7 @@ function onFlip(m) {
   if (m.winner !== null) recordResult(m);
   const mine = m.plays.find((p) => p[0] === S.you);
   if (mine) S.naps = mine[5] ? S.naps + 1 : 0;
+  for (const [seat, , , , , flopped] of m.plays) S.dozes[seat] = flopped ? (S.dozes[seat] || 0) + 1 : 0;
   if (m.out) for (const seat of m.out) S.out[seat] = m.battle;
   S.charging = {};
   S.thumps = {};  // the face-down cards are in S.cards now
@@ -3034,6 +3103,7 @@ function renderTile(seat) {
   setClass(t.node, 'war', fighting && S.stage > 0);
   setClass(t.node, 'won', r && r.winner === seat && S.cards[seat]);
   setClass(t.node, 'slammed', Boolean(S.slams[seat]));
+  setClass(t.node, 'waiting', waitingFor().includes(seat));
   const charging = S.charging[seat];
   setClass(t.node, 'charging', charging !== undefined && !S.slams[seat]);
   if (charging !== undefined && t.glow !== charging) { t.glow = charging; t.node.style.setProperty('--glow', String(2 + charging * 2)); }
@@ -3041,8 +3111,8 @@ function renderTile(seat) {
   if (S.battle) setAttr(t.count, 'title', plural(S.counts[seat] ?? 0, 'card'));
   const slam = S.slams[seat];
   const thumps = S.thumps[seat] || 0;
-  const label = out ? 'out' : slam ? `${STYLES[slam[1]]?.[0] || ''} ${tierName(slam[0])}`.trim()
-    : thumps ? `${thumps} face down…` : charging !== undefined ? 'charging…' : '';
+  const label = out ? 'out' : slam && slam[2] ? 'flipped over' : slam ? `${STYLES[slam[1]]?.[0] || ''} ${tierName(slam[0])}`.trim()
+    : thumps ? `${thumps} face down…` : charging !== undefined ? 'charging…' : waitingFor().includes(seat) ? 'thinking…' : '';
   setText(t.stat, label);
   const key = cardKeyFor(seat);
   if (key !== t.cardKey) {
@@ -3147,6 +3217,65 @@ function renderWarRow() {
   if (fighters.length > 6) row.append(el('span', 'more', `+${fighters.length - 6}`));
 }
 
+// In a slow room, the players the table is waiting for: online, not bots,
+// not yet slammed and not dozed off, the same as the room works it out.
+function waitingFor() {
+  if (!S.slow || S.mode !== 'room' || S.phase !== 'playing' || S.pending || now() < S.opensAt) return [];
+  const online = new Set(S.players.map((p, seat) => (p.online ? seat : null)).filter((seat) => seat !== null));
+  return warWaitingFor({ fighters: S.fighters, bots: S.players.map((p) => p.bot), slams: S.slams, naps: S.dozes }, online);
+}
+
+function namesOf(seats) {
+  const names = seats.map(playerName);
+  return names.length > 3 ? `${names.slice(0, 3).join(', ')} and ${names.length - 3} more` : names.join(' and ');
+}
+
+// Who a slow room is waiting for, with a nudge for them once they've had a
+// moment, and for the host, after a long wait, a way to flip their cards.
+function renderWait() {
+  const row = $('waitRow');
+  const waiting = waitingFor();
+  const others = waiting.filter((seat) => seat !== S.you);
+  const t = now();
+  // Tiles say who's thinking: redraw the ones that changed.
+  const before = renderWait.seats || [];
+  renderWait.seats = waiting;
+  for (const seat of new Set([...before, ...waiting])) {
+    if (before.includes(seat) !== waiting.includes(seat) && seat !== S.you) renderTile(seat);
+  }
+  setHidden(row, !waiting.length);
+  if (!waiting.length) return;
+  setText($('waitText'), others.length ? `Waiting for ${namesOf(others)}…` : 'Everyone else has played. No rush.');
+  const open = t - S.opensAt;
+  setHidden($('nudgeBtn'), !others.length || open < WAR.NUDGE_MS);
+  const nudge = $('nudgeBtn');
+  const resting = t - S.nudgedAt < 3000;
+  if (nudge.disabled !== resting) nudge.disabled = resting;
+  setText(nudge, resting ? '👉 Nudged' : '👉 Nudge');
+  setHidden($('flopBtn'), !others.length || S.you === null || S.you !== S.host || open < WAR.FLOP_MS);
+  setText($('flopBtn'), others.length > 1 ? '🫳 Flip theirs over' : `🫳 Flip ${playerName(others[0] ?? 0)}’s over`);
+}
+
+// Someone nudged the players the table is waiting for. If that's you, your
+// deck shakes and knocks; otherwise their tiles wiggle.
+function onNudge(m) {
+  if (!Array.isArray(m.seats)) return;
+  const by = Number.isInteger(m.by) ? playerName(m.by) : 'Someone';
+  for (const seat of m.seats) {
+    const node = seat === S.you ? $('myPile') : tiles.get(seat)?.node;
+    if (!node) continue;
+    node.classList.remove('nudged');
+    void node.offsetWidth;
+    node.classList.add('nudged');
+    later(() => node.classList.remove('nudged'), 1100 * pace());
+  }
+  if (m.seats.includes(S.you)) {
+    Sound.nudge();
+    if (navigator.vibrate) { try { navigator.vibrate([60, 80, 60]); } catch (e) { /* not allowed */ } }
+    toast(`👉 ${by} nudged you. Your turn!`);
+  }
+}
+
 function renderBar() {
   const playing = S.phase === 'playing' || S.phase === 'over';
   setText($('battleNum'), playing ? (S.stage > 0 && S.phase === 'playing' ? `Battle ${fmt(S.battle)} · War ${S.stage}` : `Battle ${fmt(S.battle)}`) : 'War!');
@@ -3182,10 +3311,15 @@ function renderControls() {
     else if (S.naps >= WAR.NAPS) text = 'You dozed off. Slam to wake up!';
     else {
       const plan = slamPlan();
-      const left = Math.ceil((S.closesAt - now()) / 1000);
       const step = plan.need > 1 ? (plan.done.length + 1 < plan.need ? `Face-down ${plan.done.length + 1}/${plan.need - 1}` : 'The decider') : '';
-      hurry = left <= 4;
-      text = hurry ? `${step ? 'Hurry' : 'Slam'}! ${Math.max(0, left)}…` : step ? `${step} · ${INPUTS[S.input][3]}` : INPUTS[S.input][2];
+      if (S.slow) {
+        // No clock: nothing counts down and nothing flops.
+        text = step ? `${step} · ${INPUTS[S.input][3]}` : 'Your turn. Take your time.';
+      } else {
+        const left = Math.ceil((S.closesAt - now()) / 1000);
+        hurry = left <= 4;
+        text = hurry ? `${step ? 'Hurry' : 'Slam'}! ${Math.max(0, left)}…` : step ? `${step} · ${INPUTS[S.input][3]}` : INPUTS[S.input][2];
+      }
     }
     setText($('slamText'), text);
     setClass($('slamText'), 'long', text.length > 21);
@@ -3215,6 +3349,7 @@ function renderAll() {
   renderBar();
   renderControls();
   renderOdds();
+  renderWait();
   document.documentElement.style.setProperty('--pace', String(pace()));
 }
 
@@ -3224,6 +3359,7 @@ setInterval(() => {
   if (S.phase !== 'playing' || document.hidden) return;
   beatTheClock();
   renderControls();
+  renderWait();
 }, 200);
 
 // ---- Winnings ----
@@ -3650,7 +3786,7 @@ function autoSlam() {
 // progress and slam any face-down cards left, so a war you've begun doesn't
 // end in a flop. A stage you never touched still flops.
 function beatTheClock() {
-  if (!canSlam() || S.closesAt - now() > 700) return;
+  if (S.slow || !canSlam() || S.closesAt - now() > 700) return;
   if (charge) releaseCharge();
   else if (mash) finishMash();
   else if (fling) releaseFling(null);
@@ -3720,10 +3856,12 @@ function renderLobby() {
   $('botMore').disabled = S.players.length >= WAR.MAX_PLAYERS;
   $('botFill').disabled = S.players.length >= WAR.MAX_PLAYERS;
   renderLengths($('roomLength'), S.length, !host);
+  renderClocks($('roomClock'), S.roomSlow, !host);
   const hostName = S.host !== null ? S.players[S.host]?.name : null;
-  setText($('lobbyNote'), host
+  const note = host
     ? (S.players.length < 2 ? 'Waiting for friends. Or add some bots.' : `${plural(S.players.length, 'player')}, ${plural(Math.max(1, Math.ceil(S.players.length / 2)), 'deck')}. Everyone gets about 27 cards.`)
-    : S.you === null ? 'This room is full. You can watch.' : `Waiting for ${hostName || 'the host'} to deal.`);
+    : S.you === null ? 'This room is full. You can watch.' : `Waiting for ${hostName || 'the host'} to deal.`;
+  setText($('lobbyNote'), note + (S.roomSlow && !host ? ' A slow game: no clock, the table waits for everyone.' : ''));
   setHidden($('dealBtn'), !host);
   $('dealBtn').disabled = S.players.length < 2;
   renderDecks();
@@ -3742,6 +3880,22 @@ function renderLengths(box, value, locked) {
   }
   for (const b of box.children) {
     setAttr(b, 'aria-pressed', String(b.dataset.length === value));
+    if (b.disabled !== locked) b.disabled = locked;
+  }
+}
+
+function renderClocks(box, slow, locked) {
+  if (!box.childElementCount) {
+    for (const [key, [name, sub]] of Object.entries(CLOCK_LABELS)) {
+      const b = el('button', '');
+      b.type = 'button';
+      b.dataset.clock = key;
+      b.append(document.createTextNode(name), el('small', '', sub));
+      box.append(b);
+    }
+  }
+  for (const b of box.children) {
+    setAttr(b, 'aria-pressed', String((b.dataset.clock === 'slow') === slow));
     if (b.disabled !== locked) b.disabled = locked;
   }
 }
@@ -4351,12 +4505,14 @@ function bump(what) {
 // ---- Menu ----
 
 let menuLength = store.get('length', 'standard');
+let menuSlow = store.get('slow', false) === true;
 let avatar = store.get('avatar', Math.floor(Math.random() * AVATARS.length));
 
 function renderMenu() {
   const n = Number($('oppRange').value);
   setText($('oppLabel'), `${plural(n, 'opponent')} · ${plural(Math.ceil((n + 1) / 2), 'deck')}`);
   renderLengths($('soloLength'), menuLength, false);
+  renderClocks($('soloClock'), menuSlow, false);
   setText($('soloNote'), menuLength === 'total' && n > 3
     ? `With ${n + 1} players, total war could take thousands of battles. Autopilot and Fast help.`
     : n >= 20 ? 'A big table: expect a lot of many-way wars.' : '');
@@ -4461,13 +4617,14 @@ function startSolo() {
   const random = seed ? seeded(Number(seed) || 1) : Math.random;
   const opponents = Number($('oppRange').value);
   store.set('length', menuLength);
+  store.set('slow', menuSlow);
   store.set('opponents', opponents);
   S.mode = 'solo';
   S.fast = false;
   S.battle = 0;
   S.phase = null;
   tileKey = '';
-  S.conn = new SoloRoom({ opponents, length: menuLength, name: 'You', avatar, random });
+  S.conn = new SoloRoom({ opponents, length: menuLength, slow: menuSlow, name: 'You', avatar, random });
   S.conn.start();
 }
 
@@ -4606,7 +4763,9 @@ function openPause() {
   cancelInput();
   const solo = S.mode === 'solo';
   setText($('pauseTitle'), solo ? 'Paused' : 'Menu');
-  setText($('pauseNote'), solo ? 'The war waits for you.' : 'The game carries on without you while you’re here: your cards flop over by themselves.');
+  setText($('pauseNote'), solo ? 'The war waits for you.'
+    : S.slow ? 'The table waits for you while you’re here. Take your time.'
+      : 'The game carries on without you while you’re here: your cards flop over by themselves.');
   setHidden($('skipBtn'), !solo || !S.conn.game || S.phase !== 'playing');
   setText($('quitBtn'), solo ? 'Quit to menu' : 'Leave the room');
   setHidden($('pauseInviteBtn'), solo);
@@ -4646,6 +4805,20 @@ function init() {
     const b = e.target.closest('button');
     if (b) { menuLength = b.dataset.length; renderMenu(); }
   });
+  $('soloClock').addEventListener('click', (e) => {
+    const b = e.target.closest('button');
+    if (b) { menuSlow = b.dataset.clock === 'slow'; renderMenu(); }
+  });
+  $('roomClock').addEventListener('click', (e) => {
+    const b = e.target.closest('button');
+    if (b && !b.disabled) S.conn.send({ t: 'slow', slow: b.dataset.clock === 'slow' });
+  });
+  $('nudgeBtn').addEventListener('click', () => {
+    S.nudgedAt = now();
+    S.conn.send({ t: 'nudge' });
+    renderWait();
+  });
+  $('flopBtn').addEventListener('click', () => S.conn.send({ t: 'flop' }));
   $('roomLength').addEventListener('click', (e) => {
     const b = e.target.closest('button');
     if (b && !b.disabled) S.conn.send({ t: 'length', length: b.dataset.length });
@@ -4815,7 +4988,8 @@ init();
 // #debug exposes hooks for tests: music() says what's playing and
 // musicLevels() measures every song; state() reads the table, slam(power) slams
 // right away (every card, in a war), input(mode) picks how you slam, hurry()
-// runs your clock down to its last moment,
+// runs your clock down to its last moment, waited(ms) pretends the stage
+// opened ms ago,
 // finish() plays a solo game out, pace(p) speeds a solo game up,
 // odds(counts, battle, limit, sims) runs the win probability model and
 // simulate() runs its simulations, even head to head.
@@ -4824,6 +4998,7 @@ if (DEBUG) {
     state: () => ({
       mode: S.mode, phase: S.phase, you: S.you, battle: S.battle, stage: S.stage, fighters: S.fighters.slice(),
       counts: S.counts.slice(), slams: { ...S.slams }, canSlam: canSlam(), over: S.over, players: S.players.length,
+      slow: S.slow, waiting: waitingFor(),
       ups: { ...S.ups }, table: Object.fromEntries(Object.entries(S.cards).map(([seat, c]) => [seat, c.up])),
       mine: S.mine.map((x) => x.slice()),
       odds: Odds.history.map((x) => x.slice()),
@@ -4862,6 +5037,8 @@ if (DEBUG) {
       return levels;
     },
     hurry: () => { S.closesAt = now() + 600; },
+    // Makes this page think the stage opened ms ago, for a slow room's nudges.
+    waited: (ms) => { S.opensAt = now() - ms; renderWait(); },
     log: () => Log.battles.map((e) => ({ ...e, counts: [...e.counts] })),
     picture: async () => (await summaryImage()).toDataURL('image/png'),
     finish: () => S.conn && S.conn.finish && S.conn.finish(),

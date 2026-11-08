@@ -5,6 +5,11 @@
 - Cards land face up as soon as they're played: yours the moment you slam
   it, everyone else's the moment they slam theirs, bots' too. Face-down war
   cards stay face down, and the winner still comes when everyone has played.
+- Slow games, with no clock: pick one in the menu, or as host in a room's
+  lobby. The table waits until everyone has played, and nobody's card flops
+  over by itself. In a room, everyone sees who the table is waiting for and
+  can give them a nudge, which shakes their deck; after a long wait the host
+  can flip their card over for them.
 
 ## 2026-11-07
 

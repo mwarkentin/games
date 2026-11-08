@@ -11,7 +11,7 @@ import { beforeEach, describe, test } from 'node:test';
 
 import {
   EXPIRE_MS, MAX_SOCKETS, WAR, WarRoom, cleanDeck, cleanName, handleWar, warDeal, warDueAt, warNewGame, warRank, warResolve,
-  warSlam, warStandings, warUpCard,
+  warFlop, warSlam, warStandings, warUpCard,
 } from '../src/war.js';
 
 const ORIGIN = 'https://games.michaelwarkentin.com';
@@ -240,6 +240,33 @@ describe('the rules', () => {
     warSlam(game, 0, 10, 0);
     assert.equal(warDueAt(game, new Set([0])), game.opensAt + WAR.BOT_MS);
     assert.equal(warDueAt(game, new Set([0, 3])), game.closesAt);
+  });
+
+  test('a slow game has no clock: a stage waits for everyone online, and the bots still play', () => {
+    const { game, stage } = warNewGame([false, true, false], 'standard', seeded(12), NOW, 1, true);
+    assert.equal(stage.closesIn, null);
+    assert.equal(game.closesAt, Infinity);
+    assert.equal(warDueAt(game, new Set([0, 2])), Infinity, 'waits for both people, however long');
+    assert.deepEqual(Object.keys(game.slams), ['1'], 'the bot slams as the stage opens');
+    warSlam(game, 0, 10, 0);
+    assert.equal(warDueAt(game, new Set([0, 2])), Infinity);
+    assert.equal(warDueAt(game, new Set([0])), game.opensAt + WAR.BOT_MS, 'not for someone who has left');
+    warSlam(game, 2, 10, 0);
+    assert.equal(warDueAt(game, new Set([0, 2])), game.opensAt + WAR.BOT_MS);
+    const flip = warResolve(game, NOW, seeded(12));
+    assert.deepEqual(flip.plays.map((p) => p[5]), [0, 0, 0], 'nobody flopped');
+    assert.equal((flip.next || {}).closesIn ?? null, null, 'the next stage has no clock either');
+  });
+
+  test("a slow game's card flipped for someone counts as a flop, once", () => {
+    const game = rigged([[card(2)], [card(3)]]);
+    game.slow = true;
+    assert.deepEqual(warFlop(game, 1), { t: 'slam', seat: 1, power: 0, style: 0, up: card(3), flopped: true });
+    assert.equal(warFlop(game, 1), null);
+    assert.equal(warSlam(game, 1, 50, 0), null, 'too late to slam it yourself');
+    const flip = warResolve(game, NOW, seeded(1));
+    assert.deepEqual(flip.plays[1].slice(2), [card(3), 0, 0, 1]);
+    assert.deepEqual(game.naps, [1, 1]);
   });
 
   test('every game ends, however many play', () => {
@@ -633,6 +660,147 @@ describe('rooms', () => {
     room.clock += 1000;
     await say(room, bob, { t: 'tidy' });
     assert.equal(dana.all('tidy').length, 2);
+  });
+
+  test('the host picks a slow game in the lobby, and everyone hears', async () => {
+    const dana = await join(room, 'Dana');
+    const bob = await join(room, 'Bob');
+    assert.equal(bob.last('state').slow, false);
+    await say(room, bob, { t: 'slow', slow: true });
+    assert.equal(room.room.slow, false, 'only the host');
+    await say(room, dana, { t: 'slow', slow: 'yes' });
+    assert.equal(room.room.slow, false);
+    await say(room, dana, { t: 'slow', slow: true });
+    assert.equal(bob.last('state').slow, true);
+    await say(room, dana, { t: 'start' });
+    assert.equal(bob.last('stage').closesIn, null);
+    assert.equal(bob.last('state').game.closesIn, null);
+    assert.equal(bob.last('state').game.slow, true);
+    await say(room, dana, { t: 'slow', slow: false });
+    assert.equal(room.room.slow, true, 'not mid-game');
+  });
+
+  // A slow room with Dana, Bob and a bot, dealt and waiting for the first stage.
+  async function slowRoom() {
+    const dana = await join(room, 'Dana');
+    const bob = await join(room, 'Bob');
+    await say(room, dana, { t: 'slow', slow: true });
+    await say(room, dana, { t: 'bots', n: 1 });
+    await say(room, dana, { t: 'start' });
+    return { dana, bob };
+  }
+
+  test('a slow room waits for everyone online, however long', async () => {
+    const { dana, bob } = await slowRoom();
+    assert.equal(room.state.alarm, room.room.touchedAt + EXPIRE_MS, 'no stage deadline, only the idle check');
+    await say(room, dana, { t: 'slam', power: 80, style: 0 });
+    room.clock += 5 * 60 * 60 * 1000;
+    await fireAlarm(room);
+    assert.equal(bob.all('flip').length, 0, 'five hours later, still waiting for Bob');
+    assert.ok(room.state.alarm > room.clock, 'and the alarm looks again later, rather than spinning');
+    await say(room, bob, { t: 'slam', power: 20, style: 0 });
+    await fireAlarm(room);
+    const flip = bob.last('flip');
+    assert.deepEqual(flip.plays.map((p) => p[5]), [0, 0, 0], 'nobody flopped, and the bot played');
+    assert.equal(flip.next.closesIn, null);
+  });
+
+  test("a slow room doesn't wait for someone who has left", async () => {
+    const { dana, bob } = await slowRoom();
+    await say(room, dana, { t: 'slam', power: 80, style: 0 });
+    bob.close();
+    await room.webSocketClose(bob);
+    await fireAlarm(room);
+    assert.deepEqual(dana.last('flip').plays.map((p) => p[5]), [0, 1, 0]);
+
+    // Back at the table, Bob is waited for again.
+    room.clock += 1000;
+    const back = await join(room, 'Bob');
+    room.clock = room.room.game.opensAt;
+    await say(room, dana, { t: 'slam', power: 80, style: 0 });
+    await fireAlarm(room);
+    assert.equal(dana.all('flip').length, 1);
+    await say(room, back, { t: 'slam', power: 80, style: 0 });
+    await fireAlarm(room);
+    assert.equal(dana.all('flip').length, 2);
+  });
+
+  test('in a slow room, anyone can nudge the players it waits for, once they have had a moment', async () => {
+    const { dana, bob } = await slowRoom();
+    const eve = await join(room, 'Eve');
+    await say(room, dana, { t: 'slam', power: 80, style: 0 });
+    await say(room, dana, { t: 'nudge' });
+    assert.equal(bob.all('nudge').length, 0, 'too soon');
+    room.clock = room.room.game.opensAt + WAR.NUDGE_MS;
+    await say(room, dana, { t: 'nudge' });
+    assert.deepEqual(bob.last('nudge'), { t: 'nudge', seats: [1], by: 0 });
+    await say(room, dana, { t: 'nudge' });
+    assert.equal(bob.all('nudge').length, 1, 'not too often');
+    await say(room, eve, { t: 'nudge' });
+    assert.deepEqual(bob.last('nudge'), { t: 'nudge', seats: [1], by: null }, 'spectators can nudge too');
+    room.clock += 3000;
+    await say(room, bob, { t: 'nudge' });
+    assert.equal(bob.all('nudge').length, 2, "nobody else to nudge: Bob can't nudge himself");
+  });
+
+  test('in a slow room, after a long wait, the host can flip their cards over for them', async () => {
+    const { dana, bob } = await slowRoom();
+    // An ace for Dana, so the first battle is no war and everyone fights the next.
+    room.room.game.piles = [[card(12), card(9), card(9, 1)], [card(2), card(3), card(4)], [card(5), card(6), card(7)]];
+    const flopped = () => bob.all('slam').filter((m) => m.flopped);
+    await say(room, bob, { t: 'slam', power: 80, style: 0 });
+    room.clock = room.room.game.opensAt + WAR.FLOP_MS;
+    await say(room, bob, { t: 'flop' });
+    assert.equal(flopped().length, 0, 'only the host');
+    await say(room, dana, { t: 'flop' });
+    assert.equal(flopped().length, 0, "nobody to flip but Dana herself, and she doesn't");
+    await say(room, dana, { t: 'slam', power: 80, style: 0 });
+    await fireAlarm(room);
+    assert.equal(bob.last('flip').winner, 0);
+
+    const next = room.room.game;
+    room.clock = next.opensAt + 1000;
+    await say(room, dana, { t: 'slam', power: 80, style: 0 });
+    await say(room, dana, { t: 'flop' });
+    assert.equal(flopped().length, 0, 'too soon');
+    room.clock = next.opensAt + WAR.FLOP_MS;
+    await say(room, dana, { t: 'flop' });
+    assert.deepEqual(flopped(), [{ t: 'slam', seat: 1, power: 0, style: 0, up: card(3), flopped: true }]);
+    await fireAlarm(room);
+    const flip = bob.last('flip');
+    assert.deepEqual(flip.plays[1].slice(2), [card(3), 0, 0, 1], "Bob's card flopped over");
+    assert.equal(flip.battle, 2);
+  });
+
+  test("a slow room keeps its slams through hibernation, and still expires when idle", async () => {
+    const { dana, bob } = await slowRoom();
+    await say(room, dana, { t: 'slam', power: 80, style: 0 });
+    const woken = newRoom(room.state);
+    woken.clock = room.clock;
+    await woken.webSocketMessage(bob, JSON.stringify({ t: 'slam', power: 5, style: 0 }));
+    woken.clock = room.state.alarm;
+    await woken.alarm();
+    assert.deepEqual(bob.last('flip').plays.map((p) => p[5]), [0, 0, 0], "Dana's slam was saved");
+
+    dana.close();
+    await woken.webSocketClose(dana);
+    bob.close();
+    await woken.webSocketClose(bob);
+    woken.clock += EXPIRE_MS;
+    await woken.alarm();
+    assert.equal(woken.room, null);
+  });
+
+  test('a timed room has no nudges or flipping for others: its clock does that', async () => {
+    const dana = await join(room, 'Dana');
+    const bob = await join(room, 'Bob');
+    await say(room, dana, { t: 'start' });
+    await say(room, dana, { t: 'slam', power: 80, style: 0 });
+    room.clock = room.room.game.opensAt + WAR.FLOP_MS - 1;
+    await say(room, dana, { t: 'nudge' });
+    await say(room, dana, { t: 'flop' });
+    assert.equal(bob.all('nudge').length, 0);
+    assert.equal(bob.all('slam').length, 1);
   });
 
   test('junk messages are ignored', async () => {

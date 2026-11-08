@@ -193,6 +193,74 @@ def test_cards_land_face_up_as_they_are_played(page: Page, browser, site_url, er
     assert errors == []
 
 
+def test_a_slow_room_waits_for_everyone_and_they_can_be_nudged(page: Page, browser, site_url, errors):
+    fake = FakeWarRoom()
+    fake.ups = {0: card(12), 1: card(3, 1)}
+    open_war(page, site_url, fake)
+    start_room(page, "Dana")
+    guest_context = browser.new_context(viewport={"width": 375, "height": 740})
+    guest = guest_context.new_page()
+    open_war(guest, site_url, fake)
+    join_room(guest, "k7qp", "Bob")
+
+    # The host picks a slow game in the lobby, and Bob is told.
+    expect(page.locator("#roomClock button[data-clock=timed]")).to_have_attribute("aria-pressed", "true")
+    page.click("#roomClock button[data-clock=slow]")
+    expect(page.locator("#roomClock button[data-clock=slow]")).to_have_attribute("aria-pressed", "true")
+    assert fake.messages("slow") == [{"t": "slow", "slow": True}]
+    expect(guest.locator("#lobbyNote")).to_contain_text("A slow game")
+    expect(guest.locator("#roomClock")).to_be_hidden()
+    page.click("#dealBtn")
+
+    # No clock: a calm word instead of a countdown.
+    guest.wait_for_function(f"{STATE}.canSlam")
+    page.wait_for_function(f"{STATE}.canSlam")
+    expect(guest.locator("#slamText")).to_have_text("Your turn. Take your time.")
+
+    # Bob plays first, and sees the table waiting for Dana. He can nudge her
+    # once she's had a moment, but only the host can flip a card over.
+    guest.evaluate("window.__war.slam(60)")
+    expect(guest.locator("#waitText")).to_have_text("Waiting for Dana…")
+    expect(guest.locator("#opponents .tile").nth(0)).to_have_class(re.compile(r"\bwaiting\b"))
+    expect(guest.locator("#nudgeBtn")).to_be_hidden()
+    guest.evaluate("window.__war.waited(31000)")
+    expect(guest.locator("#nudgeBtn")).to_be_visible()
+    expect(guest.locator("#flopBtn")).to_be_hidden()
+    expect(page.locator("#waitText")).to_have_text("Everyone else has played. No rush.")
+    guest.click("#nudgeBtn")
+    assert fake.messages("nudge") == [{"t": "nudge"}]
+    expect(guest.locator("#nudgeBtn")).to_be_disabled()
+    # Dana's deck shakes, with a word about who nudged her.
+    expect(page.locator("#myPile")).to_have_class(re.compile(r"\bnudged\b"))
+    expect(page.locator("#toast")).to_have_text("👉 Bob nudged you. Your turn!")
+    page.evaluate("window.__war.slam(90)")
+    expect(guest.locator("#waitRow")).to_be_hidden()
+    fake.broadcast({
+        "t": "flip", "battle": 1, "stage": 0, "winner": 0, "tied": [0], "gods": False, "pot": 2,
+        "plays": [[0, 0, card(12), 90, 0, 0], [1, 0, card(3, 1), 60, 0, 0]],
+        "counts": [28, 26], "out": [], "next": fake.stage(2, opens_in=500),
+    })
+
+    # The next battle: Dana plays, and after a long wait flips Bob's card
+    # over for him. It lands face up on both screens.
+    page.wait_for_function(f"{STATE}.battle === 2 && {STATE}.canSlam")
+    guest.wait_for_function(f"{STATE}.battle === 2 && {STATE}.canSlam")
+    page.evaluate("window.__war.slam(90)")
+    expect(page.locator("#waitText")).to_have_text("Waiting for Bob…")
+    expect(page.locator("#flopBtn")).to_be_hidden()
+    page.evaluate("window.__war.waited(31000)")
+    expect(page.locator("#flopBtn")).to_have_text("🫳 Flip Bob’s over")
+    page.click("#flopBtn")
+    assert fake.messages("flop") == [{"t": "flop"}]
+    expect(guest.locator("#mySlot .card")).to_have_attribute("aria-label", "five of hearts")
+    expect(guest.locator("#caption")).to_contain_text("flipped over for you")
+    assert not guest.evaluate(f"{STATE}.canSlam")
+    expect(page.locator("#opponents .tile").nth(0).locator(".tstat")).to_have_text("flipped over")
+    expect(page.locator("#waitRow")).to_be_hidden()
+    guest_context.close()
+    assert errors == []
+
+
 def test_everyone_sees_each_players_deck(page: Page, browser, site_url, errors):
     fake = FakeWarRoom()
     open_war(page, site_url, fake)

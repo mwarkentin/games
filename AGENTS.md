@@ -331,6 +331,10 @@ Object that holds the game and every player's WebSocket (`worker/src/war.js`).
   the page. The rules sit between `BEGIN WAR CORE` and `END WAR CORE`
   markers, word for word the same in `war.html` and `worker/src/war.js`, and
   `worker/test/war.test.js` checks they match, so change both.
+- A slam says which card it turns over, so cards show face up as they're
+  played. A game can be slow, with no clock: the room waits for everyone
+  connected, and the host can flip over the cards of anyone holding it up
+  (see `worker/README.md`).
 - Rooms have four-character codes from the same alphabet as groups, and
   invite links are `?room=<code>`. Players rejoin their seat with a random
   token kept in `localStorage` (`war:token`).

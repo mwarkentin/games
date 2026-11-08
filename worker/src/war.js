@@ -29,6 +29,8 @@ const WAR = {
   STAGE_MS: 8000,      // to slam before your card flops over by itself
   WAR_STAGE_MS: 20000, // the same in a war, where you slam every card you lay down
   NAPS: 2,             // flops in a row before a stage stops waiting for you
+  NUDGE_MS: 5000,      // in a slow game, how long a stage waits before you can nudge someone
+  FLOP_MS: 30000,      // and before the host can flip their card over for them
   BOT_MS: 1300,        // the shortest a stage lasts, while the bots slam
   WAR_BOT_MS: 2600,    // the same in a war, while the bots slam all their cards
   REVEAL_MS: 2400,     // to watch the cards turn over before the next battle
@@ -90,8 +92,10 @@ function warBotPower(random) {
 }
 
 // A new game for seats 0..n-1, where bots[seat] is true for a bot. Returns
-// the game and the message opening its first battle.
-function warNewGame(bots, length, random, now, pace) {
+// the game and the message opening its first battle. A slow game has no
+// clock: each stage waits until everyone has played, like a game at a real
+// table, and nobody's card flops over by itself.
+function warNewGame(bots, length, random, now, pace, slow) {
   const game = {
     limit: WAR.LENGTHS[length] || WAR.LENGTHS.standard,
     piles: warDeal(bots.length, random),
@@ -99,7 +103,7 @@ function warNewGame(bots, length, random, now, pace) {
     out: bots.map(() => 0),  // the battle each player ran out of cards in
     naps: bots.map(() => 0), // stages in a row each player's card flopped over by itself
     battle: 0, stage: 0, fighters: [], slams: {}, pot: [],
-    opensAt: 0, closesAt: 0, pace: pace || 1,
+    opensAt: 0, closesAt: 0, pace: pace || 1, slow: Boolean(slow),
     wars: 0, biggest: 0, deepest: 0, over: null,
   };
   return { game, stage: warOpenStage(game, now, random, null, 0) };
@@ -137,7 +141,7 @@ function warOpenStage(game, now, random, fighters, delay) {
   }
   game.slams = {};
   game.opensAt = now + Math.round(delay * game.pace);
-  game.closesAt = game.opensAt + (game.stage ? WAR.WAR_STAGE_MS : WAR.STAGE_MS);
+  game.closesAt = game.slow ? Infinity : game.opensAt + (game.stage ? WAR.WAR_STAGE_MS : WAR.STAGE_MS);
   const bots = [];
   for (const seat of game.fighters) {
     if (!game.bots[seat]) continue;
@@ -149,7 +153,7 @@ function warOpenStage(game, now, random, fighters, delay) {
   }
   return {
     t: 'stage', battle: game.battle, stage: game.stage, limit: game.limit, fighters: game.fighters.slice(),
-    opensIn: game.opensAt - now, closesIn: game.closesAt - now, bots,
+    opensIn: game.opensAt - now, closesIn: game.slow ? null : game.closesAt - now, bots,
   };
 }
 
@@ -161,7 +165,8 @@ function warWaitingFor(game, online) {
 }
 
 // When to play the stage out: once everyone online has slammed and the bots
-// have had their moment, or when time runs out.
+// have had their moment, or when time runs out. In a slow game time never
+// runs out: Infinity, until everyone online has played.
 function warDueAt(game, online) {
   return warWaitingFor(game, online).length ? game.closesAt : game.opensAt + warBotMs(game);
 }
@@ -176,6 +181,15 @@ function warSlam(game, seat, power, style) {
   game.slams[seat] = [power, style, 0];
   game.naps[seat] = 0;
   return { t: 'slam', seat, power, style, up: warUpCard(game, seat) };
+}
+
+// In a slow game, someone the table has waited a long time for gets their
+// card flipped over for them, as if it had flopped. Returns the slam to pass
+// on, or null when it doesn't count.
+function warFlop(game, seat) {
+  if (game.over || !game.fighters.includes(seat) || game.slams[seat]) return null;
+  game.slams[seat] = [0, 0, 1];
+  return { t: 'slam', seat, power: 0, style: 0, up: warUpCard(game, seat), flopped: true };
 }
 
 // Plays the stage out. Every fighter turns over their top card (in a war,
@@ -244,7 +258,7 @@ function warStandings(game) {
 // ---- END WAR CORE ----
 
 export {
-  WAR, warBotNames, warDeal, warDueAt, warNewGame, warOpenStage, warRank, warResolve, warShuffle, warSlam,
+  WAR, warBotNames, warDeal, warDueAt, warFlop, warNewGame, warOpenStage, warRank, warResolve, warShuffle, warSlam,
   warStandings, warUpCard, warWaitingFor,
 };
 
@@ -256,6 +270,7 @@ const CHEERS = 6;
 const CHEER_GAP_MS = 400;
 const DECK_GAP_MS = 1000;
 const TIDY_GAP_MS = 1000;
+const NUDGE_GAP_MS = 3000;
 const NAME = /^[\p{L}\p{N}][\p{L}\p{N} '&.,!?-]{0,15}$/u;
 const TOKEN = /^[A-Za-z0-9-]{16,64}$/;
 // The deck a player's cards are drawn in, one of war.html's DECKS. Rooms only
@@ -280,11 +295,17 @@ export function cleanDeck(value) {
 }
 
 // One room. Its state is a single storage value, saved when something
-// changes for good (a player joins, a stage is played out); slams in the
-// current stage live only in memory, so a room woken from hibernation
-// forgets them and those cards flop over when time runs out. The alarm
+// changes for good (a player joins, a stage is played out); in a timed game,
+// slams in the current stage live only in memory, so a room woken from
+// hibernation forgets them and those cards flop over when time runs out. A
+// slow game has no clock to flop them, so it saves every slam. The alarm
 // closes each stage and, once a room is idle, deletes it. While nobody is
 // connected, a game in progress waits for someone to come back.
+//
+// A slow game waits for everyone connected, so one sleepy player can't stall
+// it for good: players who've left aren't waited for, everyone sees who is,
+// anyone can nudge them after WAR.NUDGE_MS, and after WAR.FLOP_MS the host
+// can flip their cards over for them.
 export class WarRoom {
   constructor(state, env) {
     this.state = state;
@@ -295,6 +316,7 @@ export class WarRoom {
     this.cheered = new WeakMap();
     this.decked = new WeakMap();
     this.tidied = new WeakMap();
+    this.nudged = new WeakMap();
     this.now = () => Date.now();
     this.random = Math.random;
   }
@@ -332,7 +354,9 @@ export class WarRoom {
     const room = await this.load();
     const now = this.now();
     if (room && now - room.touchedAt < EXPIRE_MS) return false;
-    this.room = { code, createdAt: now, touchedAt: now, phase: 'lobby', length: 'standard', players: [], game: null, pausedAt: 0 };
+    this.room = {
+      code, createdAt: now, touchedAt: now, phase: 'lobby', length: 'standard', slow: false, players: [], game: null, pausedAt: 0,
+    };
     await this.save();
     return true;
   }
@@ -395,7 +419,7 @@ export class WarRoom {
     const online = this.onlineSeats();
     const game = room.game;
     return {
-      t: 'state', code: room.code, phase: room.phase, length: room.length, you: this.seatOf(ws),
+      t: 'state', code: room.code, phase: room.phase, length: room.length, slow: Boolean(room.slow), you: this.seatOf(ws),
       host: this.hostSeat(), watchers: this.sockets().filter((s) => this.seatOf(s) === null).length,
       players: room.players.map((p, seat) => ({
         name: p.name, avatar: p.avatar, deck: p.deck ?? null, bot: p.bot, online: p.bot || online.has(seat),
@@ -406,8 +430,8 @@ export class WarRoom {
         slams: Object.fromEntries(Object.entries(game.slams).map(([seat, [power, style]]) => [seat, [power, style]])),
         // The cards those slams turned face up.
         ups: game.over ? {} : Object.fromEntries(Object.keys(game.slams).map((seat) => [seat, warUpCard(game, Number(seat))])),
-        opensIn: Math.max(0, game.opensAt - now), closesIn: Math.max(0, game.closesAt - now),
-        wars: game.wars, over: game.over,
+        opensIn: Math.max(0, game.opensAt - now), closesIn: game.slow ? null : Math.max(0, game.closesAt - now),
+        naps: game.naps, slow: Boolean(game.slow), wars: game.wars, over: game.over,
       },
     };
   }
@@ -443,6 +467,11 @@ export class WarRoom {
         room.length = message.length;
         await this.save();
         return this.sendStates();
+      case 'slow':
+        if (!host || !setup || typeof message.slow !== 'boolean') return;
+        room.slow = message.slow;
+        await this.save();
+        return this.sendStates();
       case 'bots':
         if (!host || !setup || !Number.isInteger(message.n)) return;
         return this.setBots(message.n);
@@ -467,6 +496,28 @@ export class WarRoom {
         const slam = warSlam(room.game, seat, message.power, message.style);
         if (!slam) return;
         this.broadcast(slam);
+        if (room.game.slow) await this.save();
+        return this.tick();
+      }
+      case 'nudge': {
+        // In a slow game, anyone can give the players the table is waiting
+        // for a nudge: their deck shakes and makes a noise, on their screen.
+        const now = this.now();
+        if (room.phase !== 'playing' || !room.game.slow || now < room.game.opensAt + WAR.NUDGE_MS) return;
+        if (now - (this.nudged.get(ws) || 0) < NUDGE_GAP_MS) return;
+        const seats = warWaitingFor(room.game, this.onlineSeats()).filter((s) => s !== seat);
+        if (!seats.length) return;
+        this.nudged.set(ws, now);
+        return this.broadcast({ t: 'nudge', seats, by: seat });
+      }
+      case 'flop': {
+        // After a long wait, the host flips over the cards of everyone the
+        // table is still waiting for, as if they'd flopped.
+        if (room.phase !== 'playing' || !host || !room.game.slow || this.now() < room.game.opensAt + WAR.FLOP_MS) return;
+        const seats = warWaitingFor(room.game, this.onlineSeats()).filter((s) => s !== seat);
+        if (!seats.length) return;
+        for (const s of seats) this.broadcast(warFlop(room.game, s));
+        await this.save();
         return this.tick();
       }
       case 'cheer': {
@@ -517,6 +568,10 @@ export class WarRoom {
     }
     // Spectators carry their name, for the next game.
     ws.serializeAttachment(player ? { token: message.token } : { token: message.token, name, avatar, deck });
+    // Back at a slow table, you're waited for again, even if your cards
+    // flopped over while you were gone.
+    const seat = player ? room.players.indexOf(player) : -1;
+    if (seat >= 0 && room.phase === 'playing' && room.game.slow) room.game.naps[seat] = 0;
     if (room.pausedAt) {
       const paused = this.now() - room.pausedAt;
       if (room.game) { room.game.opensAt += paused; room.game.closesAt += paused; }
@@ -591,7 +646,7 @@ export class WarRoom {
       return this.broadcast({ t: 'error', error: 'You need at least two players. Add some bots!' });
     }
     room.players = players;
-    const { game, stage } = warNewGame(players.map((p) => p.bot), room.length, this.random, now);
+    const { game, stage } = warNewGame(players.map((p) => p.bot), room.length, this.random, now, 1, room.slow);
     room.game = game;
     room.phase = 'playing';
     await this.save();
@@ -612,11 +667,14 @@ export class WarRoom {
     return this.schedule();
   }
 
+  // The alarm goes off when the stage is due, or else (in the lobby, after a
+  // game, while paused, or while a slow stage waits for someone) when the room
+  // has been idle long enough to delete. If people are still connected then,
+  // it looks again in an hour.
   async schedule() {
     const room = this.room;
-    const at = room.phase === 'playing' && !room.pausedAt
-      ? warDueAt(room.game, this.onlineSeats())
-      : room.touchedAt + EXPIRE_MS;
+    const due = room.phase === 'playing' && !room.pausedAt ? warDueAt(room.game, this.onlineSeats()) : Infinity;
+    const at = Number.isFinite(due) ? due : Math.max(room.touchedAt + EXPIRE_MS, this.now() + HOUR);
     if (at === this.alarmAt) return;
     this.alarmAt = at;
     await this.state.storage.setAlarm(at);

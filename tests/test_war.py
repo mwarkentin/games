@@ -88,6 +88,39 @@ def test_cards_land_face_up_as_they_are_played(page: Page, site_url, errors):
     assert errors == []
 
 
+def test_a_slow_game_never_flops_your_card(page: Page, site_url, errors):
+    page.goto(f"{site_url}/war?seed=7#debug")
+    page.click("#soloClock button[data-clock=slow]")
+    page.click("#soloBtn")
+    page.wait_for_function(f"{STATE}.canSlam")
+    assert page.evaluate(f"{STATE}.slow")
+    page.evaluate("window.__war.pace(0.2)")
+    expect(page.locator("#slamText")).to_have_text("Your turn. Take your time.")
+    page.evaluate("window.__war.slam(90)")
+    page.wait_for_function(f"{STATE}.canSlam && ({STATE}.battle === 2 || {STATE}.stage === 1)")
+    where = page.evaluate(f"[{STATE}.battle, {STATE}.stage]")
+
+    # Longer than a timed game's clock, and then some: nothing counts down,
+    # nothing hurries, and your card stays in your hand.
+    page.wait_for_timeout(9000)
+    page.evaluate("window.__war.hurry()")
+    page.wait_for_timeout(1000)
+    assert page.evaluate(f"[{STATE}.battle, {STATE}.stage]") == where
+    assert page.evaluate(f"{STATE}.canSlam"), "still your turn"
+    expect(page.locator("#slamBar")).not_to_have_class(re.compile(r"\bhurry\b"))
+    expect(page.locator("#slamText")).to_have_text(re.compile(r"Your turn\. Take your time\.|Face-down 1/3"))
+    expect(page.locator("#waitRow")).to_be_hidden()
+    page.evaluate("window.__war.slam(90)")
+    page.wait_for_function(f"[{STATE}.battle, {STATE}.stage].join() !== {where!r}.join()".replace("'", ""))
+    assert page.evaluate(f"{STATE}.mine.every(([power]) => power === 90)"), "every card was yours, none flopped"
+
+    # The menu remembers the choice.
+    page.click("#menuBtn")
+    page.click("#quitBtn")
+    expect(page.locator("#soloClock button[data-clock=slow]")).to_have_attribute("aria-pressed", "true")
+    assert errors == []
+
+
 def test_a_war_means_slamming_every_card(page: Page, site_url, errors):
     start_solo(page, site_url, seed=WAR_SEED)
     hold_slam(page, 400)
