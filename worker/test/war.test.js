@@ -74,6 +74,16 @@ describe('the rules', () => {
     assert.equal(warResolve(war, NOW, seeded(2)).winner, 1, 'the war is won by the higher card, a jack over a six');
   });
 
+  test('a war on jokers waits longer to open than other wars, for its show', () => {
+    const game = rigged([[joker(0), card(2), card(3), card(4), card(5)], [joker(1, 1), card(6), card(7), card(8), card(9)]]);
+    const flip = warResolve(game, NOW, seeded(2));
+    assert.equal(flip.winner, null);
+    assert.equal(flip.next.opensIn, WAR.JOKER_REVEAL_MS);
+    assert.ok(WAR.JOKER_REVEAL_MS > WAR.WAR_REVEAL_MS);
+    const kings = rigged([[card(11), card(2), card(3), card(4), card(5)], [card(11, 1), card(6), card(7), card(8), card(9)]]);
+    assert.equal(warResolve(kings, NOW, seeded(2)).next.opensIn, WAR.WAR_REVEAL_MS);
+  });
+
   test('the highest card takes every card played', () => {
     const game = rigged([[card(5), card(2)], [card(9), card(3)], [card(7), card(4)]]);
     const flip = warResolve(game, NOW, seeded(2));

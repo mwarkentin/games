@@ -200,6 +200,23 @@ def test_a_war_gets_a_versus_intro_that_escalates(page: Page, site_url, errors):
     assert errors == []
 
 
+# Seed 359: the first battle against one bot is joker against joker.
+JOKER_SEED = 359
+
+
+def test_a_joker_war_turns_out_the_lights_and_waits_longer_to_open(page: Page, site_url, errors):
+    start_solo(page, site_url, seed=JOKER_SEED)
+    page.evaluate("window.__war.slam(60)")
+    expect(page.locator("#fx .jk")).to_have_count(1)
+    assert page.evaluate(VERSUS)["joker"] == 1
+    tied = page.evaluate("performance.now()")
+    page.wait_for_function(f"{STATE}.stage === 1", timeout=10000)
+    waited = page.evaluate("performance.now()") - tied
+    assert waited > 4000, f"a joker war opens 4.5 seconds after the tie, not 3 ({waited:.0f} ms)"
+    expect(page.locator("#fx .jk")).to_have_count(0)
+    assert errors == []
+
+
 def test_reduced_motion_gets_a_calm_versus(page: Page, site_url, errors):
     page.emulate_media(reduced_motion="reduce")
     start_solo(page, site_url, seed=WAR_SEED)
@@ -724,6 +741,15 @@ def test_every_song_plays_well_below_clipping(page: Page, site_url, errors):
         assert level["peak"] < 0.8, f"{name} is too loud"
         assert level["rms"] > 0.02, f"{name} is too quiet"
         assert level["seconds"] > 3, f"{name} is too short"
+    assert errors == []
+
+
+def test_the_jokers_laugh_is_loud_but_not_clipping(page: Page, site_url, errors):
+    page.goto(f"{site_url}/war#debug")
+    levels = page.evaluate("window.__war.laughLevels()")
+    for level in ("1", "2"):
+        assert levels[level]["peak"] < 0.9, f"level {level} is too loud"
+        assert levels[level]["rms"] > 0.01, f"level {level} is too quiet"
     assert errors == []
 
 

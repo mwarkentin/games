@@ -561,6 +561,38 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px s
 .vs.calm .vs-word { font-size: min(22vw, 120px); }
 .vs-fight.calm b { transform: none; font-size: min(16vw, 90px); }
 
+/* The joker war: when the tied cards are jokers, the table goes dark, two
+   eyes open and look around, a grin appears, then a lantern lights a giant
+   pixel jester from below as it laughs, until the war opens. Like the versus
+   intro it's only a picture in #fx, gone by the time the war opens. Its
+   pixels are drawn in the page every frame (see Joker), so only their
+   layout is here. */
+.jk { position: absolute; inset: 0; overflow: hidden; }
+.jk-dark { position: absolute; inset: 0; opacity: 0; background: radial-gradient(ellipse at 50% 45%, rgba(16, 5, 22, .975), rgba(2, 0, 4, .995) 70%); }
+.jk.lv2 .jk-dark { background: radial-gradient(ellipse at 50% 45%, rgba(38, 0, 12, .975), rgba(5, 0, 2, .995) 70%); }
+.jk-fig { position: absolute; left: 0; top: 0; will-change: transform, opacity; }
+.jk-fig canvas { position: absolute; inset: 0; width: 100%; height: 100%; image-rendering: pixelated; image-rendering: crisp-edges; }
+/* Whatever glows (the eyes, the lantern) again, blurred, for a soft bloom. */
+.jk-fig .glow { filter: blur(5px) brightness(1.5); mix-blend-mode: screen; opacity: .9; }
+.jk-fig.peek .glow { filter: blur(3px) brightness(1.6); }
+.jk-fig.bust { -webkit-mask-image: linear-gradient(#000 76%, transparent 96%); mask-image: linear-gradient(#000 76%, transparent 96%); }
+.jk-foot { position: absolute; left: 50%; top: 73%; display: grid; justify-items: center; gap: 12px; opacity: 0; transform-origin: 50% 30%; }
+.jk-word {
+  font: 400 min(6.6vw, 32px)/1.3 "Press Start 2P", ui-monospace, Menlo, monospace; color: #fff6c2; white-space: nowrap; text-align: center;
+  text-shadow: 0 .12em 0 #ff7a1a, 0 .24em 0 #a3122a, 0 .36em 0 #22061a, .12em 0 0 #22061a, -.12em 0 0 #22061a, 0 -.12em 0 #22061a, .12em .36em 0 #22061a, -.12em .36em 0 #22061a;
+}
+.jk-pre { display: block; font-size: .6em; letter-spacing: .1em; }
+.jk-cards { display: flex; justify-content: center; gap: 6px; }
+.jk-cards .card { --w: min(12vw, 50px); }
+.jk-cards .card:nth-child(odd) { rotate: -8deg; }
+.jk-cards .card:nth-child(even) { rotate: 8deg; }
+.jk-ha {
+  position: absolute; left: 0; top: 0; white-space: nowrap; font: 400 min(5vw, 22px)/1 "Press Start 2P", ui-monospace, Menlo, monospace; color: #ffb347;
+  text-shadow: 3px 3px 0 #2a1004, -2px 0 0 #2a1004, 2px 0 0 #2a1004, 0 -2px 0 #2a1004, 0 2px 0 #2a1004;
+}
+.jk.lv2 .jk-ha { color: #ff7a5a; text-shadow: 3px 3px 0 #2a0608, -2px 0 0 #2a0608, 2px 0 0 #2a0608, 0 -2px 0 #2a0608, 0 2px 0 #2a0608; }
+/* Someone else's joker war at a big table: the strip, with a little jester in it. */
+.vs-lite canvas { width: 30px; height: 35px; image-rendering: pixelated; image-rendering: crisp-edges; }
 /* Six… seven!: a seven beat a six, so the very six and seven from the table,
    each in its player's deck, ride up and down on two palms in turn, as if
    being weighed, and 6-7! pops between them. It's only a picture in #fx,
@@ -1024,6 +1056,7 @@ const WAR = {
   WAR_BOT_MS: 2600,    // the same in a war, while the bots slam all their cards
   REVEAL_MS: 2400,     // to watch the cards turn over before the next battle
   WAR_REVEAL_MS: 3000, // the same before a war
+  JOKER_REVEAL_MS: 4500, // and before a war on jokers, which the pages put on a show for
 };
 
 const WAR_BOT_FIRST = [
@@ -1212,7 +1245,8 @@ function warResolve(game, now, random) {
     game.biggest = Math.max(game.biggest, able.length);
     game.deepest = Math.max(game.deepest, game.stage + 1);
     message.counts = game.piles.map((pile) => pile.length);
-    message.next = warOpenStage(game, now, random, able, WAR.WAR_REVEAL_MS);
+    // A war on jokers (rank 13) waits longer to open, for its show.
+    message.next = warOpenStage(game, now, random, able, best === 13 ? WAR.JOKER_REVEAL_MS : WAR.WAR_REVEAL_MS);
     return message;
   }
   game.piles[winner].push(...warShuffle(game.pot, random));
@@ -1512,6 +1546,69 @@ const Sound = {
     this.tone(392 * up, 0.02, 0.32, { type: 'square', gain: 0.07, to: 784 * up });
     this.tone(523 * up, 0.08, 0.3, { type: 'sawtooth', gain: 0.05 });
   },
+  // The joker's laugh, one "ha" at a time: a buzzy voice through two vowel
+  // filters with a breath before it, lower with each `n`, in an echoing hall.
+  // Level 2 is deeper, with a growl an octave down. It starts `at` seconds
+  // from now and lasts `len`.
+  ha(n, level, len, at = 0, quiet = false) {
+    const ctx = this.ready();
+    if (!ctx) return;
+    const t = ctx.currentTime + 0.01 + at, hall = this.hall(ctx), loud = quiet ? 0.35 : 1;
+    const voices = level >= 2 ? [[150, 'sawtooth', 0.7], [75, 'square', 0.28]] : [[230, 'sawtooth', 0.8]];
+    for (const [base, type, gain] of voices) {
+      const f = base * (1.4 - Math.min(n, 9) * 0.045);
+      const osc = ctx.createOscillator(), wobble = ctx.createOscillator(), depth = ctx.createGain(), amp = ctx.createGain();
+      osc.type = type;
+      osc.frequency.setValueAtTime(f * 1.12, t);
+      osc.frequency.exponentialRampToValueAtTime(f * 0.86, t + len);
+      wobble.frequency.value = 9;
+      depth.gain.value = f * 0.05;
+      wobble.connect(depth).connect(osc.frequency);
+      amp.gain.setValueAtTime(0.0001, t);
+      amp.gain.exponentialRampToValueAtTime(gain * loud, t + 0.02);
+      amp.gain.exponentialRampToValueAtTime(0.0001, t + len);
+      for (const [hz, q] of [[780, 5], [1180, 6]]) {
+        const vowel = ctx.createBiquadFilter();
+        vowel.type = 'bandpass';
+        vowel.frequency.value = hz;
+        vowel.Q.value = q;
+        osc.connect(vowel).connect(amp);
+      }
+      amp.connect(hall);
+      osc.start(t);
+      wobble.start(t);
+      osc.stop(t + len + 0.05);
+      wobble.stop(t + len + 0.05);
+    }
+    this.noise(0.005 + at, 0.05, quiet ? 0.02 : 0.05, 2600);
+  },
+  // The laugh's echoing hall, made once for each audio context.
+  hall(ctx) {
+    if (this.hallBus && this.hallBus.context === ctx) return this.hallBus;
+    const bus = ctx.createGain(), echo = ctx.createDelay(1), back = ctx.createGain(), wet = ctx.createGain();
+    echo.delayTime.value = 0.21;
+    back.gain.value = 0.32;
+    wet.gain.value = 0.45;
+    bus.connect(ctx.destination);
+    bus.connect(echo);
+    echo.connect(back).connect(echo);
+    echo.connect(wet).connect(ctx.destination);
+    return (this.hallBus = bus);
+  },
+  // A whole laugh at once, the last "ha" held: the strip at a big table plays
+  // it. `k` squeezes it into a fast game.
+  laugh(level, k = 1, quiet = false) {
+    const step = 0.25 * Math.max(0.6, Math.min(1, k)), has = level >= 2 ? 8 : 6;
+    for (let i = 0; i < has; i++) this.ha(i, level, i === has - 1 ? step * 2 : step * 0.8, i * step, quiet);
+  },
+  // The joker war's lights going out: a low swell.
+  lightsOut() {
+    this.noise(0, 0.6, 0.12, 300);
+    this.tone(55, 0, 0.7, { type: 'sawtooth', gain: 0.06, to: 41 });
+  },
+  // The lantern catching, and being blown out.
+  flame() { this.noise(0, 0.35, 0.3, 900); this.tone(90, 0, 0.3, { gain: 0.2, to: 60 }); },
+  snuff() { this.noise(0, 0.2, 0.25, 700); },
   // Six… seven!: a bouncy note each time a palm goes up, the six low and the
   // seven high, then a springy boing as 6-7! pops. `k` scales it with the picture.
   sixSeven(k) {
@@ -2084,8 +2181,9 @@ const VS_HIT = [620, 900, 900];   // when WAR lands at each level, ms; as in the
 const Versus = {
   last: null,      // what the last intro showed, for tests: see __war.versus()
   fightFor: null,  // the war stage that gets a FIGHT! when it opens
+  jokers: null,    // the last tie on jokers, { battle, stage, level }, to spot one that ties again
   clear() {
-    for (const node of $('fx').querySelectorAll('.vs, .vs-fight, .vs-lite')) node.remove();
+    for (const node of $('fx').querySelectorAll('.vs, .vs-fight, .vs-lite, .jk')) node.remove();
     this.fightFor = null;
   },
   // A war broke out: m is the flip that tied.
@@ -2095,8 +2193,6 @@ const Versus = {
     const level = Math.min(3, depth);
     const fighters = next.fighters;
     const n = fighters.length;
-    // The intro fits the time before the war opens: 3 seconds, less when fast.
-    const k = Math.max(0.15, Math.min(1.5, next.opensIn / WAR.WAR_REVEAL_MS));
     const full = S.players.length <= 4 || fighters.includes(S.you);
     const calm = reduceMotion.matches;
     this.clear();
@@ -2104,24 +2200,38 @@ const Versus = {
     const order = fighters.includes(S.you) ? [S.you, ...fighters.filter((s) => s !== S.you)] : fighters.slice();
     const shown = order.slice(0, full ? VS_SHOWN : 3);
     const more = n - shown.length;
-    this.last = { kind: !full ? 'lite' : calm ? 'calm' : 'full', level, depth, fighters: shown.map(playerName), more };
+    const card = (seat) => m.plays.find((p) => p[0] === seat)?.[2];
+    // Tied on jokers? Then the joker takes over, bigger if the last war tied
+    // on jokers too.
+    const isJoker = (seat) => { const c = card(seat); return c !== undefined && warRank(c) === JOKER; };
+    const was = this.jokers;
+    const joker = m.tied.length && m.tied.every(isJoker)
+      ? (was && was.battle === m.battle && was.stage === m.stage - 1 ? 2 : 1) : 0;
+    this.jokers = joker ? { battle: m.battle, stage: m.stage, level: joker } : null;
+    // The intro fits the time before the war opens: 3 seconds, or 4.5 for a
+    // war on jokers, less when fast.
+    const k = Math.max(0.15, Math.min(1.5, next.opensIn / (joker ? WAR.JOKER_REVEAL_MS : WAR.WAR_REVEAL_MS)));
+    this.last = { kind: !full ? 'lite' : calm ? 'calm' : 'full', level, depth, fighters: shown.map(playerName), more, joker };
     if (!full) {
-      const strip = el('div', 'vs-lite' + (calm ? ' calm' : ''));
+      const strip = el('div', 'vs-lite' + (calm ? ' calm' : '') + (joker ? ' joker' : ''));
       strip.style.setProperty('--k', k);
       strip.setAttribute('aria-hidden', 'true');
+      if (joker) strip.append(Joker.mini(deckOf(order[0]), joker));
       shown.forEach((seat, i) => {
         if (i) strip.append(el('small', '', 'vs'));
         strip.append(el('span', '', avatarOf(seat)));
       });
-      strip.append(el('b', '', depth > 1 ? `${VS_PRE[level - 1] || 'MEGA'} WAR!` : 'WAR!'));
+      const word = joker ? 'JOKER WAR!' : 'WAR!';
+      strip.append(el('b', '', depth > 1 ? `${VS_PRE[level - 1] || 'MEGA'} ${word}` : word));
       if (more > 0) strip.append(el('small', '', `+${more}`));
       strip.addEventListener('animationend', () => strip.remove(), { once: true });
       if (calm) later(() => strip.remove(), 1100 * k);
       $('fx').append(strip);
-      Sound.war(true);
+      if (joker) Sound.laugh(joker, k, true);
+      else Sound.war(true);
       return;
     }
-    const card = (seat) => m.plays.find((p) => p[0] === seat)?.[2];
+    if (joker) { this.joker(m, { k, calm, order, shown, depth, level, n, card, joker }); return; }
     const fighter = (seat) => {
       const look = deckOf(seat);
       const node = el('div', 'vs-f');
@@ -2185,7 +2295,911 @@ const Versus = {
     $('fx').append(node);
     Sound.fight(f.level);
   },
+  // A war tied on jokers: the lights go out and the jester laughs in place of
+  // the intro (see Joker), and FIGHT! still lands as the war opens.
+  joker(m, { k, calm, order, shown, depth, level, n, card, joker }) {
+    const next = m.next;
+    const pre = [depth > 1 ? VS_PRE[level - 1] || 'MEGA' : '', n > 2 ? `${n}-WAY` : ''].filter(Boolean).join(' ');
+    // The jokers that tied, each in its owner's deck.
+    const cards = shown.map((seat) => [card(seat), deckOf(seat)]).filter(([c]) => c !== undefined);
+    // Its cap is in your deck's colors, or the first fighter's if you're watching.
+    const show = new Joker.Show($('fx'), { deckKey: deckOf(order[0]), level: joker, k, calm, pre, cards });
+    later(() => show.remove(), next.opensIn);
+    this.fightFor = { battle: next.battle, stage: depth, level, calm };
+  },
 };
+
+// ---- The joker war ----
+//
+// When the cards that tie are jokers, the table goes dark, two glowing eyes
+// open and look around, a grin appears, then a lantern lights a giant pixel
+// jester from below as it laughs, until the war opens. A joker war that ties
+// on jokers again gets red eyes, and more eyes open in the dark. Like the
+// versus intro it's only a picture, and at a big table someone else's joker
+// war gets the strip with a little jester in it.
+//
+// The pixels are drawn in the page every frame: PX shades and outlines simple
+// shapes into pixel art, Jester is made of them, and Joker runs the show.
+
+// A small renderer for pixel art made of shaded shapes. Every frame it fills a
+// low-resolution buffer: each shape tests the pixels in its box, a light
+// shades them into a few tones of its colors with an ordered dither between
+// tones, then edges get dark lines and the silhouette a 1px outline. Shapes
+// are drawn back to front. Because the picture is drawn fresh each frame,
+// parts can move by any amount: the smoothness of vector animation with the
+// crisp look of pixel art.
+const PX = (() => {
+  const BAYER = [0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5].map((v) => (v + 0.5) / 16);
+  const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
+  // What a shape's test leaves behind: its normal and one number of its own.
+  let NX = 0, NY = 0, NZ = 1, UU = 0;
+
+  // ---- Colors ----
+  const hexRgb = (c) => { const n = parseInt(c.slice(1), 16); return [(n >> 16) & 255, (n >> 8) & 255, n & 255]; };
+  const u32 = (r, g, b, a = 255) => ((a << 24) | (b << 16) | (g << 8) | r) >>> 0;
+  const hexU32 = (c) => u32(...hexRgb(c));
+  function rgbHsl(r, g, b) {
+    r /= 255; g /= 255; b /= 255;
+    const mx = Math.max(r, g, b), mn = Math.min(r, g, b), l = (mx + mn) / 2;
+    if (mx === mn) return [0, 0, l];
+    const d = mx - mn, s = l > 0.5 ? d / (2 - mx - mn) : d / (mx + mn);
+    const h = mx === r ? (g - b) / d + (g < b ? 6 : 0) : mx === g ? (b - r) / d + 2 : (r - g) / d + 4;
+    return [h * 60, s, l];
+  }
+  function hslRgb(h, s, l) {
+    h = (((h % 360) + 360) % 360) / 360;
+    if (!s) { const v = Math.round(l * 255); return [v, v, v]; }
+    const q = l < 0.5 ? l * (1 + s) : l + s - l * s, p = 2 * l - q;
+    const f = (t) => { t = (t + 1) % 1; return t < 1 / 6 ? p + (q - p) * 6 * t : t < 1 / 2 ? q : t < 2 / 3 ? p + (q - p) * (2 / 3 - t) * 6 : p; };
+    return [Math.round(f(h + 1 / 3) * 255), Math.round(f(h) * 255), Math.round(f(h - 1 / 3) * 255)];
+  }
+  const hueToward = (h, to, deg) => h + clamp(((to - h + 540) % 360) - 180, -deg, deg);
+  // n tones from dark to light around a base color, the base a little above
+  // the middle: shadows lean to violet and highlights to warm yellow.
+  function ramp(base, n = 5) {
+    let [h, s, l] = rgbHsl(...hexRgb(base));
+    l = Math.max(l, 0.26);
+    // The base color is the second lightest tone, where most of the light
+    // lands; the tones below it darken and cool, the one above warms.
+    const mid = n - 2, minL = Math.max(0.05, l - 0.44), out = [];
+    for (let i = 0; i < n; i++) {
+      if (i <= mid) {
+        const t = i / mid;
+        out.push(hslRgb(hueToward(h, 268, (1 - t) * 38), clamp(s * (1 + (1 - t) * 0.25), 0, 1), minL + (l - minL) * t));
+      } else {
+        const t = (i - mid) / (n - 1 - mid);
+        out.push(hslRgb(hueToward(h, 52, 12 * t), clamp(s * (1 + 0.15 * t), 0, 1), clamp(l + (0.16 * (1 - l) + 0.03) * t, 0, 0.95)));
+      }
+    }
+    return out.map((c) => u32(...c));
+  }
+  function mix(a, b, t) {
+    const ar = a & 255, ag = (a >> 8) & 255, ab = (a >> 16) & 255, br = b & 255, bg = (b >> 8) & 255, bb = (b >> 16) & 255;
+    return u32(Math.round(ar + (br - ar) * t), Math.round(ag + (bg - ag) * t), Math.round(ab + (bb - ab) * t));
+  }
+  const DARK = hexU32('#0c0612');
+  const darker = (c, t = 0.5) => mix(c, DARK, t);
+
+  // A material: tones dark to light, and how they're picked.
+  //   line   the color of its edge against shapes behind it
+  //   ol     the color of the outline it gets outside the silhouette
+  //   spec   a highlight color where the light glints, past specAt
+  //   emit   lit from within: `lum` (or fn) picks the tone, no shading
+  //   fn(uu, lx, ly) gives the brightness itself
+  //   flat   always this tone
+  //   alt + pat(lx, ly)  a second set of tones where the pattern says
+  function mat(o) {
+    const m = { amb: 0.22, dif: 0.95, specAt: 0.94, rim: true, ...o };
+    m.ramp = m.ramp.map((c) => (typeof c === 'string' ? hexU32(c) : c));
+    if (m.alt) m.alt = m.alt.map((c) => (typeof c === 'string' ? hexU32(c) : c));
+    if (typeof m.spec === 'string') m.spec = hexU32(m.spec);
+    m.line = typeof m.line === 'string' ? hexU32(m.line) : m.line ?? darker(m.ramp[0], 0.45);
+    m.ol = typeof m.ol === 'string' ? hexU32(m.ol) : m.ol ?? darker(m.ramp[0], 0.6);
+    if (m.glowTo) m.glowRamp = m.ramp.map((c, i) => mix(c, hexU32(m.glowTo), 0.42 + i * 0.03));
+    return m;
+  }
+
+  // ---- Placement ----
+  // Where a shape's own coordinates land on the canvas: moved, turned and
+  // stretched (a negative stretch mirrors it).
+  class Place {
+    constructor(tx = 0, ty = 0, rot = 0, sx = 1, sy = sx) { this.tx = tx; this.ty = ty; this.rot = rot; this.sx = sx; this.sy = sy; this.c = Math.cos(rot); this.s = Math.sin(rot); }
+    x(x, y) { return this.tx + x * this.sx * this.c - y * this.sy * this.s; }
+    y(x, y) { return this.ty + x * this.sx * this.s + y * this.sy * this.c; }
+  }
+
+  // ---- Shapes ----
+  // Each has a box in its own coordinates (x0..y1) and test(x, y, ix, iy),
+  // which says whether a point is inside and leaves its normal in NX/NY/NZ.
+  function ellipse(cx, cy, rx, ry, rot = 0, dz = 1) {
+    const c = Math.cos(rot), s = Math.sin(rot), r = Math.max(rx, ry) + 1;
+    return {
+      x0: cx - r, x1: cx + r, y0: cy - r, y1: cy + r,
+      test(x, y) {
+        const dx = x - cx, dy = y - cy;
+        const u = (dx * c + dy * s) / rx, v = (-dx * s + dy * c) / ry, q = u * u + v * v;
+        if (q > 1) return false;
+        const w = Math.sqrt(1 - q) * dz, lx = u * c - v * s, ly = u * s + v * c;
+        const k = 1 / Math.sqrt(lx * lx + ly * ly + w * w);
+        NX = lx * k; NY = ly * k; NZ = w * k; UU = q;
+        return true;
+      },
+    };
+  }
+  // A tube along points [x, y, radius], round like a sausage. UU is how far
+  // along it the point is, 0 to 1.
+  function tube(pts, dz = 1) {
+    let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+    for (const [x, y, r] of pts) { x0 = Math.min(x0, x - r); y0 = Math.min(y0, y - r); x1 = Math.max(x1, x + r); y1 = Math.max(y1, y + r); }
+    const n = pts.length - 1, seg = new Float64Array(n * 11);
+    // Each segment: start, direction, 1/length², radii, and its own box.
+    for (let i = 0; i < n; i++) {
+      const [ax, ay, ar] = pts[i], [bx, by, br] = pts[i + 1], ex = bx - ax, ey = by - ay, r = Math.max(ar, br) + 0.5, o = i * 11;
+      seg[o] = ax; seg[o + 1] = ay; seg[o + 2] = ex; seg[o + 3] = ey; seg[o + 4] = 1 / (ex * ex + ey * ey || 1e-6); seg[o + 5] = ar; seg[o + 6] = br - ar;
+      seg[o + 7] = Math.min(ax, bx) - r; seg[o + 8] = Math.max(ax, bx) + r; seg[o + 9] = Math.min(ay, by) - r; seg[o + 10] = Math.max(ay, by) + r;
+    }
+    return {
+      x0: x0 - 1, y0: y0 - 1, x1: x1 + 1, y1: y1 + 1,
+      test(x, y) {
+        let best = 2, bx = 0, by = 0, bt = 0;
+        for (let i = 0, o = 0; i < n; i++, o += 11) {
+          if (x < seg[o + 7] || x > seg[o + 8] || y < seg[o + 9] || y > seg[o + 10]) continue;
+          const px = x - seg[o], py = y - seg[o + 1], ex = seg[o + 2], ey = seg[o + 3];
+          let t = (px * ex + py * ey) * seg[o + 4];
+          t = t < 0 ? 0 : t > 1 ? 1 : t;
+          const dx = px - ex * t, dy = py - ey * t, d = Math.sqrt(dx * dx + dy * dy);
+          const q = d / (seg[o + 5] + seg[o + 6] * t);
+          if (q < best) { best = q; bx = d ? dx / d : 0; by = d ? dy / d : 0; bt = (i + t) / n; }
+        }
+        if (best > 1) return false;
+        const z = Math.sqrt(1 - best * best) * dz, lx = bx * best, ly = by * best;
+        const k = 1 / Math.sqrt(lx * lx + ly * ly + z * z);
+        NX = lx * k; NY = ly * k; NZ = z * k; UU = bt;
+        return true;
+      },
+    };
+  }
+  // Points along a cubic curve, with the radius eased from r0 to r1.
+  function curve(p0, p1, p2, p3, r0, r1, n = 10, ease = 1) {
+    const out = [];
+    for (let i = 0; i <= n; i++) {
+      const t = i / n, u = 1 - t;
+      const x = u * u * u * p0[0] + 3 * u * u * t * p1[0] + 3 * u * t * t * p2[0] + t * t * t * p3[0];
+      const y = u * u * u * p0[1] + 3 * u * u * t * p1[1] + 3 * u * t * t * p2[1] + t * t * t * p3[1];
+      out.push([x, y, r0 + (r1 - r0) * Math.pow(t, ease)]);
+    }
+    return out;
+  }
+  // A polygon, flat unless `bevel` rounds its edges over that many pixels.
+  function poly(pts, bevel = 0, n = [0, 0, 1]) {
+    let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+    for (const [x, y] of pts) { x0 = Math.min(x0, x); y0 = Math.min(y0, y); x1 = Math.max(x1, x); y1 = Math.max(y1, y); }
+    const m = pts.length;
+    return {
+      x0, y0, x1, y1,
+      test(x, y) {
+        let inside = false;
+        for (let i = 0, j = m - 1; i < m; j = i++) {
+          const [xi, yi] = pts[i], [xj, yj] = pts[j];
+          if ((yi > y) !== (yj > y) && x < ((xj - xi) * (y - yi)) / (yj - yi) + xi) inside = !inside;
+        }
+        if (!inside) return false;
+        NX = n[0]; NY = n[1]; NZ = n[2]; UU = 0;
+        if (bevel) {
+          let best = Infinity, ox = 0, oy = 0;
+          for (let i = 0, j = m - 1; i < m; j = i++) {
+            const [ax, ay] = pts[j], [bx, by] = pts[i];
+            const ex = bx - ax, ey = by - ay, L2 = ex * ex + ey * ey || 1e-6;
+            const t = clamp(((x - ax) * ex + (y - ay) * ey) / L2, 0, 1);
+            const dx = ax + ex * t - x, dy = ay + ey * t - y, d = Math.sqrt(dx * dx + dy * dy);
+            if (d < best) { best = d; ox = d ? dx / d : 0; oy = d ? dy / d : 0; }
+          }
+          UU = best;
+          if (best < bevel) {
+            const q = 1 - best / bevel, lat = q * 0.85, z = Math.sqrt(1 - lat * lat);
+            NX = ox * lat; NY = oy * lat; NZ = z;
+          }
+        }
+        return true;
+      },
+    };
+  }
+  // A rounded rectangle, its edges rounded over `bevel` pixels.
+  function roundRect(x0, y0, x1, y1, r, bevel = 2) {
+    return {
+      x0, y0, x1, y1,
+      test(x, y) {
+        if (x < x0 || x > x1 || y < y0 || y > y1) return false;
+        const cx = clamp(x, x0 + r, x1 - r), cy = clamp(y, y0 + r, y1 - r), dx = x - cx, dy = y - cy;
+        const dc = Math.sqrt(dx * dx + dy * dy);
+        if (dc > r) return false;
+        // Distance to the edge, and which way is out.
+        let d, ox, oy;
+        if (dc > 0) { d = r - dc; ox = dx / dc; oy = dy / dc; }
+        else {
+          const e = [x - x0, x1 - x, y - y0, y1 - y], k = e.indexOf(Math.min(...e));
+          d = e[k]; ox = [-1, 1, 0, 0][k]; oy = [0, 0, -1, 1][k];
+        }
+        UU = d;
+        if (d < bevel) { const lat = (1 - d / bevel) * 0.8; NX = ox * lat; NY = oy * lat; NZ = Math.sqrt(1 - lat * lat); }
+        else { NX = 0; NY = 0; NZ = 1; }
+        return true;
+      },
+    };
+  }
+  // A shape of your own: test(x, y, ix, iy) sets the normal with setN.
+  const custom = (x0, y0, x1, y1, test) => ({ x0, y0, x1, y1, test });
+  function setN(x, y, z, u = 0) { const k = 1 / Math.sqrt(x * x + y * y + z * z); NX = x * k; NY = y * k; NZ = z * k; UU = u; }
+  const dither = (ix, iy) => BAYER[(iy & 3) * 4 + (ix & 3)];
+
+  // ---- The canvas ----
+  class Canvas {
+    constructor(w, h) {
+      this.w = w; this.h = h;
+      const n = w * h;
+      this.col = new Uint32Array(n);
+      this.pid = new Uint16Array(n);
+      this.out = new Uint32Array(n);
+      this.glowBuf = new Uint32Array(n);
+      this.prims = [];
+      this.glows = [];
+      // A light from the upper left, a little in front.
+      this.light = { x: -0.5, y: -0.62, z: 0.6, point: null };
+      this.rim = { x: 0.9, y: 0.1, color: hexU32('#b77bff'), at: 0.3 };
+      // Ambient light, as a share of each material's own. Below 1 the scene
+      // is in the dark: flat colors dim too, by how much light reaches them.
+      this.amb = 1;
+    }
+    begin() { this.prims.length = 0; this.glows.length = 0; }
+    // Draws `shape` (in `place`'s coordinates) in `m`. Options: edge (a dark
+    // line where it overlaps what's behind, default on), out (an outline
+    // outside the silhouette, default on), group (no lines between shapes of
+    // one group).
+    add(shape, m, place, o = {}) {
+      this.prims.push({ shape, m, place, edge: o.edge ?? true, out: o.out ?? true, group: o.group ?? this.prims.length + 1000 });
+    }
+    // A glow on materials that take one (glowTo), around (x, y) in canvas
+    // pixels, r pixels wide.
+    glow(x, y, r) { this.glows.push([x, y, r]); }
+    render(ctx, glowCtx) {
+      const { w, h, col, pid, out, prims, glowBuf } = this;
+      col.fill(0); pid.fill(0); glowBuf.fill(0);
+      const Lp = this.light;
+      let lx = Lp.x, ly = Lp.y, lz = Lp.z;
+      { const k = 1 / Math.hypot(lx, ly, lz); lx *= k; ly *= k; lz *= k; }
+      let hx = lx, hy = ly, hz = lz + 1;
+      { const k = 1 / Math.hypot(hx, hy, hz); hx *= k; hy *= k; hz *= k; }
+      const rim = this.rim, glows = this.glows;
+      for (let k = 0; k < prims.length; k++) {
+        const { shape: sh, m, place: P } = prims[k];
+        // The shape's box on the canvas.
+        let bx0 = Infinity, by0 = Infinity, bx1 = -Infinity, by1 = -Infinity;
+        for (let q = 0; q < 4; q++) {
+          const ax = q & 1 ? sh.x1 : sh.x0, ay = q & 2 ? sh.y1 : sh.y0, X = P.x(ax, ay), Y = P.y(ax, ay);
+          if (X < bx0) bx0 = X; if (X > bx1) bx1 = X; if (Y < by0) by0 = Y; if (Y > by1) by1 = Y;
+        }
+        const x0 = Math.max(0, Math.floor(bx0)), x1 = Math.min(w - 1, Math.ceil(bx1));
+        const y0 = Math.max(0, Math.floor(by0)), y1 = Math.min(h - 1, Math.ceil(by1));
+        const c = P.c, s = P.s, isx = 1 / P.sx, isy = 1 / P.sy, fx = P.sx < 0 ? -1 : 1, fy = P.sy < 0 ? -1 : 1;
+        const r = m.ramp, n = r.length;
+        for (let iy = y0; iy <= y1; iy++) {
+          for (let ix = x0; ix <= x1; ix++) {
+            const dx = ix + 0.5 - P.tx, dy = iy + 0.5 - P.ty;
+            const sx = (dx * c + dy * s) * isx, sy = (-dx * s + dy * c) * isy;
+            if (!sh.test(sx, sy, ix, iy)) continue;
+            const NXf = NX * fx, NYf = NY * fy;
+            const nx = NXf * c - NYf * s, ny = NXf * s + NYf * c, nz = NZ;
+            let lum, color = 0;
+            if (m.flat !== undefined) {
+              color = r[m.flat];
+              if (this.amb < 1 && !m.emit) {
+                let I = this.amb;
+                if (Lp.point) { const p = Lp.point, dd = Math.hypot(p.x - ix - 0.5, p.y - iy - 0.5) / p.reach; I += p.power / (1 + dd * dd); }
+                const lv = I * 2.2 + BAYER[(iy & 3) * 4 + (ix & 3)] * 0.5;
+                color = lv > 1.6 ? color : lv > 0.9 ? mix(color, DARK, 0.5) : mix(color, DARK, 0.85);
+              }
+            }
+            else {
+              if (m.fn) lum = m.fn(UU, sx, sy, nx, ny, nz, ix, iy);
+              else if (m.emit) lum = m.lum ?? 1;
+              else {
+                let d;
+                if (Lp.point) {
+                  const p = Lp.point;
+                  let qx = p.x - (ix + 0.5), qy = p.y - (iy + 0.5), qz = p.z - nz * 6;
+                  const dist = Math.sqrt(qx * qx + qy * qy + qz * qz);
+                  qx /= dist; qy /= dist; qz /= dist;
+                  const fall = 1 / (1 + (dist / p.reach) * (dist / p.reach));
+                  d = Math.max(0, nx * qx + ny * qy + nz * qz) * fall * p.power;
+                } else d = Math.max(0, nx * lx + ny * ly + nz * lz);
+                lum = m.amb * this.amb + d * m.dif;
+              }
+              if (lum === null) continue;  // a hole the material asked for
+              let v = lum * n - 0.5;
+              let i = Math.floor(v);
+              const f = v - i;
+              if ((f - 0.5) / 0.34 + 0.5 > BAYER[(iy & 3) * 4 + (ix & 3)]) i++;
+              i = i < 0 ? 0 : i > n - 1 ? n - 1 : i;
+              let tonesNow = m.alt && m.pat(sx, sy) ? m.alt : r;
+              if (m.glowRamp && glows.length) {
+                for (const [gx, gy, gr] of glows) {
+                  const ddx = ix + 0.5 - gx, ddy = iy + 0.5 - gy;
+                  const g = 1 - Math.sqrt(ddx * ddx + ddy * ddy) / gr;
+                  if (g > BAYER[(iy & 3) * 4 + (ix & 3)] * 0.9 + 0.05) { tonesNow = m.glowRamp; break; }
+                }
+              }
+              color = tonesNow[i];
+              // In the dark, what the light misses sinks to almost black.
+              if (this.amb < 1 && i === 0 && !m.emit) color = mix(color, DARK, 0.78);
+              if (m.spec && !m.emit && !Lp.point && nx * hx + ny * hy + nz * hz > m.specAt) color = m.spec;
+              else if (rim.color && m.rim && !m.emit && nz < rim.at && nx * rim.x + ny * rim.y > 0.55) color = m.rimColor ?? rim.color;
+            }
+            const idx = iy * w + ix;
+            col[idx] = color;
+            pid[idx] = k + 1;
+            glowBuf[idx] = m.emit || m.glows ? color : 0;
+          }
+        }
+      }
+      // Edges: a shape's pixels next to a shape behind it get its line color.
+      out.set(col);
+      for (let iy = 0; iy < h; iy++) {
+        for (let ix = 0; ix < w; ix++) {
+          const i = iy * w + ix, p = pid[i];
+          if (!p) {
+            // Outline: an empty pixel beside a shape that wants one.
+            let q = 0;
+            if (ix > 0 && pid[i - 1] && prims[pid[i - 1] - 1].out) q = pid[i - 1];
+            else if (ix < w - 1 && pid[i + 1] && prims[pid[i + 1] - 1].out) q = pid[i + 1];
+            else if (iy > 0 && pid[i - w] && prims[pid[i - w] - 1].out) q = pid[i - w];
+            else if (iy < h - 1 && pid[i + w] && prims[pid[i + w] - 1].out) q = pid[i + w];
+            if (q) out[i] = prims[q - 1].m.ol;
+            continue;
+          }
+          const P = prims[p - 1];
+          if (!P.edge) continue;
+          const g = P.group;
+          let q;
+          if ((ix > 0 && (q = pid[i - 1]) && q < p && prims[q - 1].group !== g) ||
+              (ix < w - 1 && (q = pid[i + 1]) && q < p && prims[q - 1].group !== g) ||
+              (iy > 0 && (q = pid[i - w]) && q < p && prims[q - 1].group !== g) ||
+              (iy < h - 1 && (q = pid[i + w]) && q < p && prims[q - 1].group !== g)) out[i] = P.m.line;
+        }
+      }
+      if (ctx) {
+        if (!this.image || this.image.width !== w) this.image = ctx.createImageData(w, h);
+        new Uint32Array(this.image.data.buffer).set(out);
+        ctx.putImageData(this.image, 0, 0);
+      }
+      if (glowCtx) {
+        if (!this.glowImage || this.glowImage.width !== w) this.glowImage = glowCtx.createImageData(w, h);
+        new Uint32Array(this.glowImage.data.buffer).set(glowBuf);
+        glowCtx.putImageData(this.glowImage, 0, 0);
+      }
+    }
+  }
+
+  // ---- Motion ----
+  // A spring for parts that lag and wobble behind what carries them. Stepped
+  // in small fixed steps, so it behaves the same at any frame rate.
+  class Spring {
+    constructor(stiff = 120, damp = 9) { this.k = stiff; this.c = damp; this.x = 0; this.y = 0; this.vx = 0; this.vy = 0; }
+    reset() { this.x = this.y = this.vx = this.vy = 0; }
+    // Moves for dt seconds while whatever carries it accelerates by (ax, ay).
+    step(dt, ax, ay) {
+      const n = Math.max(1, Math.ceil(dt / 0.004)), h = dt / n;
+      for (let i = 0; i < n; i++) {
+        this.vx += (-this.k * this.x - this.c * this.vx - ax) * h;
+        this.vy += (-this.k * this.y - this.c * this.vy - ay) * h;
+        this.x += this.vx * h; this.y += this.vy * h;
+      }
+    }
+  }
+  const ease = {
+    out: (t) => 1 - Math.pow(1 - clamp(t, 0, 1), 3),
+    in: (t) => Math.pow(clamp(t, 0, 1), 3),
+    inOut: (t) => { t = clamp(t, 0, 1); return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2; },
+    back: (t) => { t = clamp(t, 0, 1); const c1 = 1.9, c3 = c1 + 1; return 1 + c3 * Math.pow(t - 1, 3) + c1 * Math.pow(t - 1, 2); },
+    // A damped wobble that settles on 1.
+    spring: (t, f = 3, d = 5) => (t <= 0 ? 0 : 1 - Math.exp(-d * t) * Math.cos(2 * Math.PI * f * t)),
+  };
+  // Smooth random wandering in -1..1, the same for the same seed.
+  function wander(t, seed = 0) {
+    return (Math.sin(t * 1.7 + seed * 12.9) * 0.5 + Math.sin(t * 2.9 + seed * 7.3) * 0.3 + Math.sin(t * 5.3 + seed * 3.1) * 0.2);
+  }
+
+  const uu = () => UU;
+  return { Canvas, Place, Spring, mat, ramp, darker, hexU32, ellipse, tube, curve, poly, roundRect, custom, setN, dither, clamp, ease, wander, uu };
+})();
+
+// The jester: a head in a three-pointed cap with bells, diamond face paint,
+// glowing eyes and a wide grin full of sharp teeth, over a ruff and
+// harlequin shoulders. Drawn with PX at about 128 pixels across, centered on
+// the head; `pose` says how it moves and `look` what colors it wears. It's
+// an original jester, spooky the way a Halloween decoration is.
+const Jester = (() => {
+  const { ellipse, tube, curve, poly, custom, setN, mat, ramp, dither, clamp } = PX;
+  const L = (() => { const x = -0.5, y = -0.62, z = 0.6, k = 1 / Math.hypot(x, y, z); return [x * k, y * k, z * k]; })();
+  const lambert = (nx, ny, nz) => Math.max(0, nx * L[0] + ny * L[1] + nz * L[2]);
+
+  const EYES = {
+    green: ['#173d0c', '#2f7a12', '#6cc41c', '#b4f548', '#effcc0'],
+    red: ['#3d0710', '#8a1218', '#de3622', '#ff9150', '#fff0bf'],
+  };
+
+  // Materials for a look: { a, b } cap colors, eyes: 'green' | 'red'.
+  function materials(look) {
+    const eye = EYES[look.eyes || 'green'];
+    const glowTo = eye[3];
+    return {
+      skin: mat({ ramp: ['#2a1838', '#563a62', '#957792', '#cdb8bb', '#efe3d6', '#fffaf1'], glowTo, line: '#24122e', ol: '#160a1e' }),
+      paint: mat({ ramp: [PX.darker(ramp(look.b, 5)[1], 0.35)], flat: 0, glowTo, rim: false }),
+      capA: mat({ ramp: ramp(look.a, 5), spec: null }),
+      capB: mat({ ramp: ramp(look.b, 5) }),
+      gold: mat({ ramp: ['#3a1a06', '#7a400e', '#be7c18', '#eeb832', '#fff0a6'], spec: '#ffffff', specAt: 0.9, line: '#2a1206' }),
+      slot: mat({ ramp: ['#1a0a04'], flat: 0, rim: false }),
+      gem: mat({ ramp: ramp(look.a, 4), spec: '#ffffff', specAt: 0.85 }),
+      eye: mat({ ramp: eye, emit: true, fn: (uu) => 1.0 - uu * 0.62 + (look.eyeBoost || 0), rim: false, line: '#0c0610', ol: '#0c0610' }),
+      pupil: mat({ ramp: ['#0a0408'], flat: 0, rim: false }),
+      brow: mat({ ramp: ['#0e0614', '#22122e', '#3a2248'], amb: 0.1, rim: false }),
+      nose: mat({ ramp: ['#40081a', '#86132e', '#cf2a3a', '#ff6b52', '#ffc9a6'], spec: '#ffffff', specAt: 0.9 }),
+      blush: mat({ ramp: ['#ff8aa6'], flat: 0, rim: false }),
+      lips: mat({ ramp: ['#3a0618', '#6a0c2a', '#94183a'], flat: 1, rim: false }),
+      mouth: mat({ ramp: ['#0b0208', '#21061a', '#3a0c26', '#561430'], fn: (uu, x) => 0.08 + uu * 0.55 - Math.pow(Math.abs(x) / 19, 4) * 0.3, rim: false, line: '#0b0208' }),
+      tongue: mat({ ramp: ['#4a0c26', '#8c1e40', '#cd3f5e', '#f07a8a'], rim: false }),
+      teeth: mat({
+        ramp: ['#5e5060', '#9c8c96', '#d6cbc6', '#fbf6ee'],
+        fn: (uu, x, y, nx, ny, nz) => (0.32 + 0.72 * lambert(nx, ny, nz)) * (1 - 0.6 * Math.pow(Math.min(1, Math.abs(x) / 19), 5)) * (look.teeth ?? 1),
+        rim: false, line: '#2a1a26',
+      }),
+      crease: mat({ ramp: ['#957792'], flat: 0, rim: false }),
+      ruffA: mat({ ramp: ['#3c2f4c', '#7a6c8c', '#c3b9cc', '#efeaee', '#ffffff'] }),
+      ruffB: mat({ ramp: ramp(look.a, 5) }),
+      body: mat({ ramp: ramp(look.a, 5), alt: ramp(look.b, 5), pat: (x, y) => ((Math.floor((x + y) / 12) + Math.floor((x - y) / 12)) & 1) === 1 }),
+      glove: mat({ ramp: ['#3c2f4c', '#7a6c8c', '#c3b9cc', '#efeaee', '#ffffff'] }),
+    };
+  }
+
+  // The mouth: a crescent between two curves that meet at its corners.
+  const MW = 19, CORNER = 8.5;
+  const mouthTop = (x) => CORNER + 4.6 * (1 - (x / MW) ** 2);
+  const mouthBot = (x, open) => CORNER + (7.5 + open * 13) * Math.pow(Math.max(0, 1 - (x / MW) ** 2), 0.8);
+
+  // The face: the skull and the jaw, blended into one smooth surface.
+  function face(open) {
+    const jy = 13 + open * 6.5, jry = 16 + open * 5.5;
+    const smax = (p, q, k) => { const t = clamp(0.5 + (0.5 * (p - q)) / k, 0, 1); return q + (p - q) * t + k * t * (1 - t); };
+    const dome = (x, y, cx, cy, rx, ry, rz) => { const v = 1 - ((x - cx) / rx) ** 2 - ((y - cy) / ry) ** 2; return v > 0 ? rz * Math.sqrt(v) : -1; };
+    const cy = 6 - open * 1.2;
+    const h = (x, y) => {
+      let v = smax(dome(x, y, 0, -3, 27, 28, 24), dome(x, y, 0, jy, 22, jry, 18), 7);
+      v = smax(v, dome(x, y, -15, cy, 10, 7.5, 23), 3);
+      return smax(v, dome(x, y, 15, cy, 10, 7.5, 23), 3);
+    };
+    return custom(-28, -32, 28, jy + jry + 1, (x, y) => {
+      const a = 1 - (x / 27) ** 2 - ((y + 3) / 28) ** 2, b = 1 - (x / 22) ** 2 - ((y - jy) / jry) ** 2;
+      if (a <= 0 && b <= 0) return false;
+      const e = 0.7, h0 = h(x, y), dx = (h(x + e, y) - h0) / e, dy = (h(x, y + e) - h0) / e;
+      setN(-dx, -dy, 1);
+      return true;
+    });
+  }
+
+  // An almond-shaped eye, tilted, with lids that close from the top as it
+  // squints or blinks. UU is how far from its middle a point is.
+  function almond(cx, cy, a, b, rot, lid) {
+    const R = (a * a + b * b) / (2 * b), off = R - b, c = Math.cos(rot), s = Math.sin(rot);
+    return custom(cx - a - 1, cy - a - 1, cx + a + 1, cy + a + 1, (x, y) => {
+      const dx = x - cx, dy = y - cy, u = dx * c + dy * s, v = -dx * s + dy * c;
+      if (u * u + (v - off) * (v - off) > R * R || u * u + (v + off) * (v + off) > R * R) return false;
+      if (v < -b + 2 * b * lid) return false;
+      setN(0, 0, 1, (u / a) ** 2 + (v / b) ** 2);
+      return true;
+    });
+  }
+
+  // Everything, added to canvas `cv` at place `P`.
+  function draw(cv, P, pose, look, M = materials(look)) {
+    const open = pose.open || 0, tips = pose.tips || [[0, 0], [0, 0], [0, 0]];
+    const add = (shape, m, o) => cv.add(shape, m, P, o);
+
+    // Shoulders and ruff, behind the head, on a place of their own if given.
+    if (pose.body !== false) {
+      const PB = pose.bodyPlace || P, addB = (shape, m, o) => cv.add(shape, m, PB, o);
+      if (pose.shoulders !== false) addB(ellipse(0, 60 + (pose.ruff || 0) * 0.5, 50, 27, 0, 0.9), M.body);
+      const puffs = [];
+      for (let i = 0; i < 9; i++) {
+        const f = Math.PI * (i + 0.5) / 9;
+        puffs.push([38 * Math.cos(f), 27 + 8.5 * Math.sin(f) + (pose.ruff || 0), i]);
+      }
+      puffs.sort((p, q) => Math.abs(q[0]) - Math.abs(p[0]));
+      for (const [x, y, i] of puffs) addB(ellipse(x, y, 8.6, 6.6, 0, 0.8), i % 2 ? M.ruffB : M.ruffA);
+    }
+
+    // The face.
+    add(face(open), M.skin, { group: 1 });
+
+    // The cap: two side points that flop out to bells, one that curls up.
+    const side = (dir, [ox, oy]) => {
+      const pts = curve([18 * dir, -27], [34 * dir, -47], [(55 + ox * 0.5) * dir, -46 + oy * 0.5], [(58 + ox) * dir, -20 + oy], 10, 1.8, 12, 0.9);
+      add(tube(pts), M.capA, { group: 2 });
+      return pts[pts.length - 1];
+    };
+    const [lx, ly] = side(-1, [-tips[0][0], tips[0][1]]);
+    const [rx, ry] = side(1, tips[2]);
+    const cpts = curve([0, -30], [0, -54], [4 + tips[1][0] * 0.4, -68 + tips[1][1] * 0.4], [17 + tips[1][0], -73 + tips[1][1]], 11.5, 1.8, 12, 0.9);
+    add(tube(cpts), M.capB, { group: 3 });
+    const [cx, cy] = cpts[cpts.length - 1];
+    // The dome over the skull, cut off at the band.
+    const bandY = (x) => -20 + 4.5 * (x / 30) ** 2;
+    const dome = ellipse(0, -24, 30.5, 14.5);
+    add(custom(-32, -40, 32, -8, (x, y) => (y < bandY(x) + 1 && dome.test(x, y))), M.capB, { group: 3 });
+    // The band, with gems.
+    add(tube(curve([-31.5, -15.3], [-12, -20.5], [12, -20.5], [31.5, -15.3], 4.6, 4.6, 12)), M.gold);
+    for (let i = -2; i <= 2; i++) {
+      const x = i * 12;
+      add(ellipse(x, bandY(x) - 0.3, 2.1, 2.1), i % 2 ? M.gold : M.gem, { edge: true, out: false });
+    }
+    // Bells hanging from the tips.
+    const bell = (x, y) => {
+      add(ellipse(x, y, 4.4, 4.4), M.gold);
+      add(ellipse(x, y + 2.4, 2.5, 1.0), M.slot, { edge: false, out: false });
+    };
+    bell(lx, ly + 4.2);
+    bell(rx, ry + 4.2);
+    bell(cx + 3.2, cy + 3.2);
+
+    // Face paint: a dark diamond through each eye.
+    for (const d of [-1, 1]) add(poly([[11 * d, -17], [20 * d, -2], [11 * d, 14.5], [2.6 * d, -2]]), M.paint, { edge: false, out: false });
+    // Eyes and slit pupils.
+    const lid = Math.max(pose.blink || 0, (pose.squint || 0) * 0.5);
+    for (const d of [-1, 1]) {
+      const ex = 11 * d, ey = -1.6, rot = 0.24 * -d;
+      const eye = almond(ex, ey, 7.4, 3.9, rot, lid);
+      add(eye, M.eye, { edge: false, out: false });
+      const px = ex + (pose.gaze || 0) * 2.6, py = ey + (pose.gazeY || 0) * 1.2;
+      const slit = ellipse(px, py, 1.1, 3.1, rot);
+      add(custom(px - 4, py - 4, px + 4, py + 4, (x, y) => eye.test(x, y) && slit.test(x, y)), M.pupil, { edge: false, out: false });
+      if (pose.glowAt) pose.glowAt(P.x(ex, ey), P.y(ex, ey));
+    }
+    // Brows, angled down to the middle, raised by pose.brow.
+    for (const d of [-1, 1]) {
+      const up = (pose.brow || 0) * 2.6;
+      add(tube([[21 * d, -11 - up * 0.6, 1.8], [12.5 * d, -9.2 - up, 2.5], [3.8 * d, -4.8 - up * 0.8, 1.4]]), M.brow);
+    }
+    // Blush, nose.
+    for (const d of [-1, 1]) {
+      const b = ellipse(20.5 * d, 5.5, 4.4, 2.8);
+      add(custom(15 * d - 6, 2, 15 * d + 12, 9, (x, y, ix, iy) => b.test(x, y) && (PX.uu() < 0.4 || dither(ix, iy) > (PX.uu() - 0.4) / 0.6)), M.blush, { edge: false, out: false });
+    }
+    add(ellipse(0, 5.2, 4.3, 4.1), M.nose);
+    // The mouth: lips, the inside, the tongue, the teeth.
+    const lipShape = custom(-MW - 2, CORNER - 3, MW + 2, CORNER + 25, (x, y) => {
+      const ax = Math.abs(x) / (MW + 1.7);
+      if (ax >= 1) return false;
+      const f = 1 - ax * ax;
+      return y > CORNER - 1 + (mouthTop(x * 0.92) - CORNER) * f - 0.6 && y < CORNER + 1 + (mouthBot(x * 0.92, open) - CORNER) * Math.pow(f, 0.8) + 0.4;
+    });
+    add(lipShape, M.lips, { edge: false, out: false });
+    const inMouth = (x, y) => Math.abs(x) < MW && y > mouthTop(x) && y < mouthBot(x, open);
+    add(custom(-MW, CORNER - 1, MW, CORNER + 24, (x, y) => {
+      if (!inMouth(x, y)) return false;
+      const t = mouthTop(x), b = mouthBot(x, open);
+      setN(0, 0, 1, (y - t) / Math.max(1, b - t));
+      return true;
+    }), M.mouth, { edge: false, out: false });
+    const tg = ellipse(0, mouthBot(0, open) - 2.2, 9.5, 4.6);
+    add(custom(-11, CORNER, 11, CORNER + 26, (x, y) => inMouth(x, y) && y > mouthTop(x) + 3 && tg.test(x, y)), M.tongue, { edge: false, out: false });
+    const NU = 12, NL = 11;
+    add(custom(-MW, CORNER - 1, MW, CORNER + 24, (x, y) => {
+      if (!inMouth(x, y)) return false;
+      // Upper teeth hang from the top lip, lower ones stand on the bottom.
+      let f = ((x + MW) / (2 * MW)) * NU, k = Math.floor(f), fr = f - k;
+      let xc = ((k + 0.5) / NU) * 2 * MW - MW;
+      let len = 1.8 + 3.4 * (1 - (xc / MW) ** 2);
+      if (y < mouthTop(x) + len * (1 - Math.abs(2 * fr - 1))) { setN((2 * fr - 1) * 0.7, -0.2, 1, 0); return true; }
+      f = ((x + MW) / (2 * MW)) * NL + 0.5; k = Math.floor(f); fr = f - k;
+      xc = ((k) / NL) * 2 * MW - MW;
+      len = 1.5 + 3.0 * (1 - (xc / MW) ** 2);
+      if (y > mouthBot(x, open) - len * (1 - Math.abs(2 * fr - 1))) { setN((2 * fr - 1) * 0.7, 0.25, 1, 1); return true; }
+      return false;
+    }), M.teeth, { edge: false, out: false });
+    // Creases at the corners of the grin.
+    for (const d of [-1, 1]) add(tube([[19.8 * d, CORNER + 0.4, 0.65], [21.8 * d, CORNER - 2.4, 0.8], [21.4 * d, CORNER - 5.4, 0.55]]), M.crease, { edge: false, out: false });
+  }
+
+  // A gloved hand, wrist at the origin and fingers up, in a ruffled cuff.
+  // pose: spread, curl (0 open .. 1 a fist), wiggle (four numbers), thumb.
+  function hand(cv, P, pose, M) {
+    const add = (shape, m, o) => cv.add(shape, m, P, o);
+    add(ellipse(0, 5.2, 7.6, 3.6, 0, 0.8), M.ruffB, { group: 50 });
+    add(ellipse(0, -3.6, 6.3, 6.6), M.glove, { group: 51 });
+    const fingers = [[-4.5, 7.4, -0.28], [-1.5, 8.6, -0.09], [1.5, 8.2, 0.08], [4.4, 6.6, 0.27]];
+    fingers.forEach(([x, len, a], i) => {
+      const w = pose.wiggle ? pose.wiggle[i] : 0;
+      const ang = a * (1 + (pose.spread || 0)) + w * 0.22;
+      const curl = clamp((pose.curl || 0) + w * 0.25, 0, 1);
+      const l1 = len * 0.55 * (1 - curl * 0.25), l2 = len * 0.45 * (1 - curl * 0.7);
+      const ky = -8.6, mx = x + Math.sin(ang) * l1, my = ky - Math.cos(ang) * l1;
+      const a2 = ang - curl * 0.5 * Math.sign(x);
+      add(tube([[x, ky, 2.15], [mx, my, 2.0], [mx + Math.sin(a2) * l2, my - Math.cos(a2) * l2, 1.75]]), M.glove, { group: 52 + i });
+    });
+    const ta = -1.0 - (pose.thumb || 0) * 0.5;
+    add(tube([[-5, -2.2, 2.2], [-5 + Math.sin(ta) * 4.4, -2.2 - Math.cos(ta) * 4.4, 2.0], [-5 + Math.sin(ta) * 7.6, -2.6 - Math.cos(ta) * 7.6, 1.7]]), M.glove, { group: 56 });
+    // Stitching on the back of the glove.
+    for (const x of [-2.3, 0, 2.3]) add(tube([[x, -1.2, 0.5], [x * 1.08, -6.2, 0.5]]), M.crease, { edge: false, out: false });
+  }
+
+  return { draw, hand, almond, materials };
+})();
+
+// The show itself. Its clock, u, runs in the seconds of a normal-paced joker
+// war, which opens at 4.5 (WAR.JOKER_REVEAL_MS), and `k` (the time to the war
+// over that) squeezes it in Fast mode. Everything is drawn again each frame.
+const Joker = (() => {
+  const { Canvas, Place, Spring, ease, wander, clamp, tube, curve, poly, roundRect, custom, setN, mat } = PX;
+  const TAU = Math.PI * 2;
+  const lerp = (a, b, t) => a + (b - a) * t;
+  // Eased steps between keyed values: keys [[u, value], ...].
+  const keyed = (u, keys) => {
+    if (u <= keys[0][0]) return keys[0][1];
+    for (let i = 1; i < keys.length; i++) if (u < keys[i][0]) return lerp(keys[i - 1][1], keys[i][1], ease.inOut((u - keys[i - 1][0]) / (keys[i][0] - keys[i - 1][0])));
+    return keys[keys.length - 1][1];
+  };
+  // One "HA" after another: each opens the jaw fast and lets it close slower.
+  function laugh(u, start, end, period) {
+    if (u < start || u > end + period) return 0;
+    const p = (u - start) / period, f = p - Math.floor(p);
+    const o = f < 0.3 ? ease.out(f / 0.3) : 1 - ease.inOut((f - 0.3) / 0.7);
+    return u > end ? o * (1 - (u - end) / period) : o;
+  }
+
+  // Springs for the three cap tips. Each is pushed by how its resting spot
+  // speeds up and slows down, so the bells swing after every move.
+  class CapRig {
+    constructor() { this.s = [new Spring(150, 6.5), new Spring(120, 5.5), new Spring(150, 6.5)]; this.prev = null; this.vel = null; }
+    step(dt, P) {
+      const anchors = [[P.x(-58, -18), P.y(-58, -18)], [P.x(17, -73), P.y(17, -73)], [P.x(58, -18), P.y(58, -18)]];
+      if (dt <= 0) { this.prev = anchors; return; }
+      const vel = anchors.map((a, i) => (this.prev ? [(a[0] - this.prev[i][0]) / dt, (a[1] - this.prev[i][1]) / dt] : [0, 0]));
+      const acc = vel.map((v, i) => (this.vel ? [(v[0] - this.vel[i][0]) / dt, (v[1] - this.vel[i][1]) / dt] : [0, 0]));
+      this.prev = anchors; this.vel = vel;
+      acc.forEach((a, i) => this.s[i].step(dt, clamp(a[0] * 0.32, -2500, 2500), clamp(a[1] * 0.32, -2500, 2500)));
+    }
+    // The tips' offsets in the head's own coordinates.
+    tips(rot) { const c = Math.cos(-rot), s = Math.sin(-rot); return this.s.map((sp) => [sp.x * c - sp.y * s, sp.x * s + sp.y * c]); }
+  }
+
+  // A canvas of pixels and its glow, in a box the show moves around.
+  function layer(parent, w, h, cls) {
+    const box = el('div', 'jk-fig ' + cls), px = el('canvas', 'px'), gl = el('canvas', 'glow');
+    for (const c of [px, gl]) { c.width = w; c.height = h; }
+    box.append(px, gl);
+    parent.append(box);
+    const L = {
+      box, px, gl, cv: new Canvas(w, h), ctx: px.getContext('2d'), gctx: gl.getContext('2d'),
+      size(H) { box.style.width = (H * w) / h + 'px'; box.style.height = H + 'px'; },
+      // Centered at (x, y), stretched, faded.
+      at(x, y, sx = 1, sy = sx, opacity = 1) {
+        box.style.transform = `translate(${x.toFixed(2)}px, ${y.toFixed(2)}px) translate(-50%, -50%) scale(${sx.toFixed(4)}, ${sy.toFixed(4)})`;
+        box.style.opacity = opacity;
+      },
+      render() { L.cv.render(L.ctx, L.gctx); },
+    };
+    return L;
+  }
+
+  // Each deck's jester wears its own two colors on the cap, ruff and shoulders.
+  const LOOKS = {
+    classic: ['#c8322e', '#2b2b33'], neon: ['#ff2fd0', '#20e3ff'], pixel: ['#3ec43e', '#ffd23d'], royal: ['#1f6b45', '#d9a521'],
+    space: ['#6a3cff', '#1ad1c4'], spooky: ['#ff7a1a', '#5b2a86'], candy: ['#ff6fb5', '#7fe0c3'],
+  };
+  const lookOf = (deckKey, level) => {
+    const [a, b] = LOOKS[deckKey] || LOOKS.classic;
+    return { a, b, eyes: level >= 2 ? 'red' : 'green', eyeBoost: 0, teeth: 1, flame: 0 };
+  };
+  // The lantern: dark metal, glass that glows with the flame, the flame.
+  const lanternMats = (look) => ({
+    metal: mat({ ramp: ['#120c18', '#2c2232', '#54445a', '#8a7a86'], amb: 0.25 }),
+    glass: mat({ ramp: ['#3a1a08', '#8a4612', '#d88a24', '#ffcf6a', '#fff4d0'], emit: true, fn: (uu) => look.flame * (0.42 + Math.min(1, uu / 3) * 0.2) + 0.08, rim: false, line: '#120c18', ol: '#0c0612' }),
+    flame: mat({ ramp: ['#ff6a10', '#ffb030', '#fff1a0', '#ffffff'], emit: true, fn: (uu) => 1 - uu * 0.7, rim: false, line: '#ff6a10' }),
+  });
+  const HAS = [['HA!', 'HA!', 'HEE!', 'HA!', 'HAHA!', 'HA!', 'HA!', 'HA!'], ['HA!', 'HAHA!', 'HEE!', 'HA!', 'HOO!', 'HAHA!', 'HA!', 'HEH!', 'HA!', 'HA!']];
+  // Where more eyes open in the dark in a double joker war: [x, y, size].
+  const PEEKS = [[0.14, 0.12, 0.7], [0.86, 0.17, 0.8], [0.1, 0.62, 0.9], [0.9, 0.58, 0.75], [0.5, 0.06, 0.6], [0.2, 0.86, 0.65], [0.82, 0.85, 0.7]];
+  // The timeline, in seconds: few beats, each given time to land.
+  const T = {
+    dark: 0.4,            // the lights go out
+    eyes: [0.45, 0.95],   // two eyes open in the dark
+    look: [[1.05, 0], [1.35, -1], [1.6, -1], [1.95, 1], [2.2, 1], [2.45, 0]],  // one way, then the other
+    blink: [2.22, 2.4],   // a slow blink
+    grin: [1.4, 1.9],     // the grin spreads
+    hand: [2.0, 2.65],    // a gloved hand brings up the lantern
+    flame: [2.3, 2.7],    // it catches and grows
+    title: 2.5,           // JOKER WAR! eases in
+    laugh: [2.75, 4.05],  // HA… HA… HA… HA!
+    snuff: 4.1,           // the lantern is blown out
+    close: [4.22, 4.36],  // the eyes close last
+    end: 4.5,             // the war opens
+  };
+  // Sounds at set moments: the lights going out, the lantern catching, and
+  // it being blown out.
+  const CUES = [[0, 'lightsOut'], [T.flame[0], 'flame'], [T.snuff, 'snuff']];
+  const CALM_AT = 3.3;  // reduced motion: this moment, standing still
+  let current = null;
+
+  class Show {
+    // In #fx: deckKey colors the jester, level is 2 for a joker war that tied
+    // on jokers again, pre is a line over JOKER WAR! (DOUBLE, 3-WAY…) and
+    // cards the tied jokers, [card, deck] each.
+    constructor(fx, { deckKey, level, k, calm, pre, cards }) {
+      this.fx = fx; this.level = level; this.k = k; this.calm = calm;
+      this.u = 0; this.held = false; this.beat = -1; this.bubbles = [];
+      this.cues = calm ? [] : CUES.slice();
+      this.period = Math.max(level >= 2 ? 0.3 : 0.34, 0.15 / k);  // a laugh's beat, never quicker than 0.15 s
+      this.root = el('div', `jk lv${level}` + (calm ? ' calm' : ''));
+      this.root.setAttribute('aria-hidden', 'true');  // #banner and the caption say it all
+      this.dark = el('div', 'jk-dark');
+      this.root.append(this.dark);
+      this.look = lookOf(deckKey, level);
+      this.M = Jester.materials(this.look);
+      this.LM = lanternMats(this.look);
+      this.rig = new CapRig();
+      this.peeks = level >= 2 ? PEEKS.map(([x, y, s], i) => ({ L: this.peekEyes(), x, y, s, at: 0.8 + i * 0.2 })) : [];
+      this.main = layer(this.root, 128, 150, 'bust');
+      this.foot = el('div', 'jk-foot');
+      const word = el('div', 'jk-word');
+      if (pre) word.append(el('span', 'jk-pre', pre));
+      word.append(document.createTextNode('JOKER WAR!'));
+      const row = el('div', 'jk-cards');
+      for (const [c, d] of cards) row.append(cardEl(c, d));
+      this.foot.append(word, row);
+      this.root.append(this.foot);
+      fx.append(this.root);
+      this.size();
+      current = this;
+      this.frame(calm ? CALM_AT : 0, 0);
+      if (!calm) this.loop();
+    }
+    size() {
+      this.W = this.fx.clientWidth || innerWidth;
+      this.H = this.fx.clientHeight || innerHeight;
+      this.main.size(Math.min(this.H * 0.68, this.W * 1.12));
+      for (const p of this.peeks) p.L.size(this.W * 0.065 * p.s);
+    }
+    // A pair of eyes for the dark, drawn once.
+    peekEyes() {
+      const L = layer(this.root, 40, 14, 'peek'), P = new Place(20, 7, 0, 1.3);
+      L.cv.begin();
+      for (const d of [-1, 1]) L.cv.add(Jester.almond(6.2 * d, 0, 6, 3.6, 0.24 * -d, 0), this.M.eye, P, { edge: false });
+      L.render();
+      return L;
+    }
+    loop() {
+      let last = performance.now();
+      const tick = (now) => {
+        if (!this.root.isConnected || this.u > T.end + 0.1) return;
+        const du = Math.min(0.25, (now - last) / 1000 / this.k);
+        last = now;
+        if (!this.held) this.step(du);
+        requestAnimationFrame(tick);
+      };
+      requestAnimationFrame(tick);
+    }
+    step(du) { this.u += du; this.frame(this.u, du); }
+    // Held still by a test, it stays until let go.
+    hold(on) { this.held = on; if (!on && this.removeWhenFree) this.root.remove(); }
+    remove() { if (this.held) this.removeWhenFree = true; else this.root.remove(); }
+    // What it shows now, for tests.
+    state() {
+      return { u: this.calm ? CALM_AT : this.u, level: this.level, calm: this.calm, eyes: this.eyes, lit: this.lit, bubbles: this.bubbles.length };
+    }
+    frame(u, du) {
+      const L = this.main, cv = L.cv, look = this.look, LM = this.LM;
+      while (this.cues.length && u >= this.cues[0][0]) Sound[this.cues.shift()[1]]();
+      const o = laugh(u, T.laugh[0], T.laugh[1], this.period);
+      const sway = Math.sin((TAU * (u - 0.6)) / 2.4);
+      // The eyes open slowly, look one way and the other, blink, and close
+      // last of all.
+      const blink = u < T.eyes[0] ? 1 : u < T.eyes[1] ? 1 - ease.out((u - T.eyes[0]) / (T.eyes[1] - T.eyes[0]))
+        : u > T.blink[0] && u < T.blink[1] ? Math.sin(((u - T.blink[0]) / (T.blink[1] - T.blink[0])) * Math.PI) : clamp((u - T.close[0]) / (T.close[1] - T.close[0]), 0, 1);
+      const pose = { open: o, brow: 0.3 + 0.9 * o, squint: 0.42 * o, blink, gaze: keyed(u, T.look) };
+      const handUp = ease.out((u - T.hand[0]) / (T.hand[1] - T.hand[0])) * (1 - ease.in((u - T.snuff - 0.05) / 0.3));
+      const flame = ease.out((u - T.flame[0]) / (T.flame[1] - T.flame[0])) * (1 - clamp((u - T.snuff) / 0.12, 0, 1));
+      const flicker = 0.9 + 0.1 * wander(u * 2.5, 3);
+      this.eyes = 1 - blink;
+      this.lit = flame;
+      cv.begin();
+      const P = new Place(64 + 2.2 * sway, 78 - 3.6 * o, 0.09 * sway + 0.02 * o * Math.sin(u * 24), 1 - 0.025 * o, 1 + 0.05 * o);
+      this.rig.step(du, P);
+      // Dark but for the lantern below the chin, and a little moonlight on
+      // the jester's edges.
+      const lx = 70 + 3 * Math.sin(u * 1.6), ly = 150 - 42 * handUp + 1.5 * Math.sin(u * 3.2) - 1.2 * o;
+      cv.amb = 0.07;
+      cv.light.point = { x: lx, y: ly - 1, z: 22, reach: 60, power: 2.3 * flame * flicker };
+      cv.rim.color = PX.hexU32('#5d4fa8');
+      look.teeth = clamp((u - T.grin[0]) / (T.grin[1] - T.grin[0]), 0, 1) * 0.45 + flame * 0.55;  // the grin shows before the light
+      look.flame = flame * flicker;
+      look.eyeBoost = 0.45 * Math.sin(clamp((u - T.eyes[0]) / 1, 0, 1) * Math.PI) + 0.05 * Math.sin(u * 4);  // the glow swells as they open
+      Jester.draw(cv, P, { ...pose, tips: this.rig.tips(P.rot), bodyPlace: new Place(64 + 0.6 * sway, 78 - 1.2 * o), ruff: -0.8 * o, glowAt: (x, y) => cv.glow(x, y, 10 + 6 * flame) }, look, this.M);
+      if (handUp > 0.01) {
+        const I = new Place(0, 0), add = (sh, m, opt) => cv.add(sh, m, I, opt);
+        Jester.hand(cv, new Place(lx + 1, ly + 21, -0.08, 0.95), { curl: 0.42, spread: 0.1 }, this.M);
+        add(tube(curve([lx - 4.5, ly - 9], [lx - 4.5, ly - 16], [lx + 4.5, ly - 16], [lx + 4.5, ly - 9], 0.9, 0.9, 8)), LM.metal);
+        add(poly([[lx - 6.5, ly - 6.5], [lx + 6.5, ly - 6.5], [lx + 3.5, ly - 10], [lx - 3.5, ly - 10]], 1), LM.metal);
+        add(roundRect(lx - 5.6, ly - 6.6, lx + 5.6, ly + 6, 2, 2), LM.glass);
+        const fh = 6.2 * flame * (0.85 + 0.15 * wander(u * 6, 1));
+        if (fh > 0.4) {
+          add(custom(lx - 3, ly - 7, lx + 3, ly + 4, (x, y) => {
+            const t = (y - (ly + 3)) / -(fh + 1.6);
+            if (t < 0 || t > 1) return false;
+            const w = 2.1 * Math.sin(Math.PI * Math.pow(t, 0.7)) * (1 - t * 0.35), dx = x - lx - Math.sin(u * 9) * 0.4 * t;
+            if (Math.abs(dx) > w) return false;
+            setN(0, 0, 1, (Math.abs(dx) / Math.max(0.5, w)) * 0.6 + t * 0.4);
+            return true;
+          }), LM.flame, { edge: false, out: false });
+        }
+        for (const bx of [-5.6, 0, 5.6]) add(tube([[lx + bx, ly - 6.6, 0.7], [lx + bx, ly + 6, 0.7]]), LM.metal, { group: 90, out: false });
+        add(poly([[lx - 7, ly + 9], [lx + 7, ly + 9], [lx + 6, ly + 5.6], [lx - 6, ly + 5.6]], 1), LM.metal, { group: 91 });
+      }
+      L.render();
+      L.at(this.W / 2, this.H * 0.44, 1, 1, ease.out(u / T.dark) * (1 - ease.in((u - T.end + 0.25) / 0.15)));
+      for (const pk of this.peeks) {
+        const a = (u - pk.at) / 0.25;
+        const open = this.calm ? 1 : a < 0 ? 0 : a < 1 ? ease.out(a) : Math.sin(u * 2 + pk.at * 20) > 0.985 ? 0.1 : 1;
+        pk.L.at(this.W * pk.x, this.H * pk.y, 1, open, this.calm ? 1 : a < 0 ? 0 : 1 - clamp((u - T.end + 0.3) / 0.18, 0, 1));
+      }
+      this.dark.style.opacity = this.calm ? 1 : ease.inOut(u / T.dark) - ease.inOut((u - T.end + 0.25) / 0.25);
+      this.title(u);
+      if (!this.calm && u > T.laugh[0] && u < T.laugh[1]) this.ha(u);
+      this.bubbles = this.bubbles.filter((b) => {
+        const a = u - b.born;
+        if (a > 1 || a < 0) { b.node.remove(); return false; }
+        b.node.style.opacity = (a < 0.7 ? 1 : 1 - (a - 0.7) / 0.3) * (1 - ease.in((u - T.laugh[1]) / 0.25));
+        b.node.style.transform = `translate(${b.x.toFixed(1)}px, ${(b.y - a * this.H * 0.05).toFixed(1)}px) translate(-50%, -50%) rotate(${b.rot}deg) scale(${(a < 0.3 ? ease.back(a / 0.3) : 1).toFixed(3)})`;
+        return true;
+      });
+    }
+    // JOKER WAR! and the tied jokers ease in once the lantern has caught.
+    title(u) {
+      const s = this.foot.style;
+      if (this.calm) { s.opacity = 1; s.transform = 'translateX(-50%)'; return; }
+      const t = (u - T.title) / 0.45, out = ease.in((u - T.laugh[1]) / 0.22);
+      s.opacity = t < 0 ? 0 : ease.out(t * 1.6) * (1 - out);
+      s.transform = `translate(-50%, ${(out * 30).toFixed(1)}px) scale(${((t < 0 ? 0 : 1 + (1 - ease.back(t)) * 0.8) * (1 - out * 0.2)).toFixed(3)})`;
+      const shake = t > 0.4 && t < 3 ? Math.exp(-(t - 0.4) * 2) * 2.5 : 0;
+      this.root.style.transform = shake ? `translate(${(Math.sin(u * 90) * shake).toFixed(1)}px, ${(Math.cos(u * 77) * shake).toFixed(1)}px)` : '';
+    }
+    // A "HA!" for every beat of the laugh, on alternate sides, and one "ha".
+    ha(u) {
+      const n = Math.floor((u - T.laugh[0]) / this.period);
+      if (n === this.beat) return;
+      this.beat = n;
+      Sound.ha(n, this.level, this.period * this.k * 0.8);
+      const words = HAS[this.level >= 2 ? 1 : 0], side = n % 2 ? 1 : -1;
+      const b = {
+        born: u, node: el('div', 'jk-ha', words[n % words.length]), rot: side * (6 + ((n * 5) % 4) * 3),
+        x: clamp(this.W / 2 + side * this.W * (0.27 + 0.06 * ((n * 7) % 3)), this.W * 0.2, this.W * 0.8),
+        y: this.H * 0.22 + ((n * 13) % 5) * this.H * 0.025,
+      };
+      this.root.append(b.node);
+      this.bubbles.push(b);
+    }
+  }
+
+  // A little still jester for the strip at a big table.
+  function mini(deckKey, level) {
+    const c = el('canvas');
+    c.width = 40; c.height = 46;
+    const cv = new Canvas(40, 46), look = lookOf(deckKey, level);
+    cv.begin();
+    Jester.draw(cv, new Place(20, 27, 0, 0.3), { body: false, open: 0.3 }, look, Jester.materials(look));
+    cv.render(c.getContext('2d'), null);
+    return c;
+  }
+
+  return { Show, mini, get current() { return current; } };
+})();
 
 // ---- Six… seven! ----
 //
@@ -4985,8 +5999,10 @@ function renderStyles() {
 
 init();
 
-// #debug exposes hooks for tests: music() says what's playing and
-// musicLevels() measures every song; state() reads the table, slam(power) slams
+// #debug exposes hooks for tests: music() says what's playing,
+// musicLevels() measures every song and laughLevels() the joker's laugh;
+// joker() says what the joker war shows, jokerHold(on) holds it still and
+// jokerStep(du) moves it on by hand; state() reads the table, slam(power) slams
 // right away (every card, in a war), input(mode) picks how you slam, hurry()
 // runs your clock down to its last moment, waited(ms) pretends the stage
 // opened ms ago,
@@ -5018,6 +6034,24 @@ if (DEBUG) {
     versus: () => Versus.last,
     sixSeven: () => SixSeven.last,
     music: () => ({ on: Music.on, song: Music.want, playing: Music.song, songs: Object.keys(SONGS) }),
+    // How loud the joker's laugh gets at each level: rendered offline.
+    joker: () => (Joker.current && Joker.current.root.isConnected ? Joker.current.state() : null),
+    jokerHold: (on) => { if (Joker.current) Joker.current.hold(on); },
+    jokerStep: (du) => { if (Joker.current) Joker.current.step(du); },
+    laughLevels: async () => {
+      const levels = {};
+      const real = Sound.ready;
+      for (const level of [1, 2]) {
+        const ctx = new OfflineAudioContext(1, 22050 * 3, 22050);
+        Sound.ready = () => ctx;
+        try { Sound.laugh(level); } finally { Sound.ready = real; }
+        const audio = (await ctx.startRendering()).getChannelData(0);
+        let peak = 0, sum = 0;
+        for (const v of audio) { peak = Math.max(peak, Math.abs(v)); sum += v * v; }
+        levels[level] = { peak, rms: Math.sqrt(sum / audio.length) };
+      }
+      return levels;
+    },
     // How loud each song gets: rendered offline, as the game would play it.
     musicLevels: async () => {
       const levels = {};

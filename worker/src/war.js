@@ -35,6 +35,7 @@ const WAR = {
   WAR_BOT_MS: 2600,    // the same in a war, while the bots slam all their cards
   REVEAL_MS: 2400,     // to watch the cards turn over before the next battle
   WAR_REVEAL_MS: 3000, // the same before a war
+  JOKER_REVEAL_MS: 4500, // and before a war on jokers, which the pages put on a show for
 };
 
 const WAR_BOT_FIRST = [
@@ -223,7 +224,8 @@ function warResolve(game, now, random) {
     game.biggest = Math.max(game.biggest, able.length);
     game.deepest = Math.max(game.deepest, game.stage + 1);
     message.counts = game.piles.map((pile) => pile.length);
-    message.next = warOpenStage(game, now, random, able, WAR.WAR_REVEAL_MS);
+    // A war on jokers (rank 13) waits longer to open, for its show.
+    message.next = warOpenStage(game, now, random, able, best === 13 ? WAR.JOKER_REVEAL_MS : WAR.WAR_REVEAL_MS);
     return message;
   }
   game.piles[winner].push(...warShuffle(game.pot, random));
