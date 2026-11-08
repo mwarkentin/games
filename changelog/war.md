@@ -1,3 +1,8 @@
+## 2026-11-08
+
+- In a room, Clean up shows on everyone's screen: at a table of up to four,
+  the others see your winnings squared up behind your card too.
+
 ## 2026-11-07
 
 - When a seven beats a six, the two cards ride up and down on a pair of palms

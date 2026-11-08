@@ -242,6 +242,7 @@ const MAX_MESSAGE = 1024;
 const CHEERS = 6;
 const CHEER_GAP_MS = 400;
 const DECK_GAP_MS = 1000;
+const TIDY_GAP_MS = 1000;
 const NAME = /^[\p{L}\p{N}][\p{L}\p{N} '&.,!?-]{0,15}$/u;
 const TOKEN = /^[A-Za-z0-9-]{16,64}$/;
 // The deck a player's cards are drawn in, one of war.html's DECKS. Rooms only
@@ -280,6 +281,7 @@ export class WarRoom {
     this.gone = new WeakSet();
     this.cheered = new WeakMap();
     this.decked = new WeakMap();
+    this.tidied = new WeakMap();
     this.now = () => Date.now();
     this.random = Math.random;
   }
@@ -464,6 +466,14 @@ export class WarRoom {
         if (now - (this.decked.get(ws) || 0) < DECK_GAP_MS) return;
         this.decked.set(ws, now);
         return this.setDeck(ws, seat, cleanDeck(message.deck));
+      }
+      case 'tidy': {
+        // A player cleaned up the cards they've won, for show: everyone sees
+        // that player's heap squared into a neat stack.
+        const now = this.now();
+        if (room.phase === 'lobby' || seat === null || now - (this.tidied.get(ws) || 0) < TIDY_GAP_MS) return;
+        this.tidied.set(ws, now);
+        return this.broadcast({ t: 'tidy', seat });
       }
       default:
     }

@@ -4,7 +4,7 @@ war.html reads the server's URL from ?rooms=, so tests point it at
 https://leaderboard.test: page.route answers its HTTP requests and
 page.route_web_socket stands in for the room's WebSocket. The fake runs the
 lobby the way the real room does (players, host, bots, length, dealing) and
-passes slams, cheers and deck changes on; the battles themselves are up to each test,
+passes slams, cheers, deck changes and clean-ups on; the battles themselves are up to each test,
 which sends the room's messages with broadcast(). The real room is tested in
 worker/test/war.test.js.
 """
@@ -165,6 +165,8 @@ class FakeWarRoom:
         elif kind == "deck" and seat is not None:
             self.players[seat]["deck"] = message["deck"]
             self.broadcast({"t": "deck", "seat": seat, "deck": message["deck"]})
+        elif kind == "tidy" and seat is not None:
+            self.broadcast({"t": "tidy", "seat": seat})
 
     def deal(self) -> None:
         """Starts a game, with everyone holding 27 cards and the first battle open."""
