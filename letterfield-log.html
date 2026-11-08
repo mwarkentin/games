@@ -253,13 +253,13 @@ header p{margin:8px 0 0;color:var(--muted);max-width:36ch}
 // The survey's server (worker/src/survey-log.js). ?survey=<url> overrides it
 // for testing, as in letterfield.html.
 const SURVEY_URL = 'https://games-leaderboard.mwarkentin.workers.dev';
-const K_FINDS = 'letterfield.finds.v2';  // Letterfield's field notes, on this origin
+const K_FINDS = 'letterfield.finds.v3';  // Letterfield's field notes, on this origin (K_FINDS in letterfield.html)
 const HOUR = 3600000, DAY = 86400000, MINUTE = 60000;
 const DARROW = ['→','↘','↓','↙','←','↖','↑','↗'];
 const DNAME = ['E','SE','S','SW','W','NW','N','NE'];
 const RC = 48;            // cells per territory side
 const AREA_CELLS = [-12 * 192, 13 * 192];  // the shared world, x and y from..to-1 (sectors -12 to 12)
-const WORLD_WORDS = 1120206;  // hidden words in the shared world
+const WORLD_WORDS = 1119763;  // hidden words in the shared world
 const LOG_BEGAN = Date.UTC(2026, 10, 6);  // the day the log began, until the Worker says where its words start
 const MAX_PAGES = 40;     // pages of one hour the page reads (500 each)
 const LIVE_REFRESH_MS = 20000;  // the hour still running reloads this often while it's on screen

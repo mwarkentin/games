@@ -241,6 +241,19 @@ describe('the log\'s counts', () => {
     for (const sql of [FIRST_SQL, LAST_SQL]) assert.doesNotMatch(plan(db, sql), /TEMP B-TREE/);
   });
 
+  test('start over with the new map: the log and its counts emptied, and counting again after', async () => {
+    db = fakeD1(3);
+    await writeLog(db, [at(0, 0, NOW), at(48, 0, NOW + 1, { initials: 'AMY' }), at(5, 5, NOW + 2, { s: 1 })]);
+    db.raw.exec(migrations()[3]);
+    for (const table of ['survey_log', 'survey_log_hours', 'survey_log_surveyors', 'survey_log_territories']) {
+      assert.equal(db.raw.prepare(`SELECT COUNT(*) AS n FROM ${table}`).get().n, 0, table);
+    }
+    await writeLog(db, [at(0, 0, NOW + 3), at(1, 1, NOW + 4, { w: 'BARK' })]);
+    db.raw.exec(`DELETE FROM survey_log WHERE w = 'BARK'`);
+    assert.deepEqual(hours(), [{ hour: HOUR, n: 1, world: 1 }]);
+    assert.deepEqual(counts('survey_log_territories'), [{ day: DAY, rx: 0, ry: 0, n: 1 }]);
+  });
+
   test('read only the counts asked for', () => {
     for (const p of [plan(db, HOURS_SQL, 1, 2)]) assert.match(p, /SEARCH survey_log_hours USING PRIMARY KEY \(hour>\? AND hour<\?\)/);
     assert.match(plan(db, SURVEYORS_SQL, 1, 2), /SEARCH survey_log_surveyors USING PRIMARY KEY \(day>\? AND day<\?\)/);

@@ -15,7 +15,7 @@ Its history is a page of its own, `letterfield-log.html` (see "The log").
 
 Letterfield already gives every player the same map, because every letter
 comes from a fixed seed. The middle of that map, 100×100 territories around
-the origin, hides **1,120,206 words**. The shared survey turns them into one
+the origin, hides **1,119,763 words**. The shared survey turns them into one
 job for everyone: chart them all.
 
 - **The first player to circle a word charts it.** Everyone else sees it
@@ -23,7 +23,7 @@ job for everyone: chart them all.
   ("Charted first by SIS · 3m ago"). You can still circle it for your own
   field notes, and the game tells you who beat you to it.
 - **One number for the whole world.** The header shows "412,883 of
-  1,120,206 charted", and it ticks up as words are charted nearby. The
+  1,119,763 charted", and it ticks up as words are charted nearby. The
   current territory has its own count ("83/120 charted"), and a territory
   goes supernova when its last hidden word is charted.
 - **You can see the crowd.** Each other player is a coloured caret, like a
@@ -114,6 +114,36 @@ From [Scaling One Million Checkboxes][omcb] and
   positions are written to the attachment at most every 5 s.
 
 Messages are listed at the top of `src/survey.js`.
+
+### A new map
+
+The map is the game's themes and the way it deals their words, so changing
+either redraws every territory, and a claim names a word that's no longer
+there. `MAP_VERSION` in `src/letterfield-world.js` says which map this is,
+and changing it starts the survey over:
+
+- **Sectors and the Atlas** keep the version they last ran with in a table
+  of their own (`map`). When one wakes on a newer map it deletes what it
+  held for the old one: a sector its claims and its log mark, the Atlas its
+  charted counts. Storage from before maps had versions counts as map 2. A
+  sector nobody visits keeps its old claims until someone does, but nothing
+  reads them until then, and the Atlas has already forgotten its counts.
+- **The log** is emptied by a migration
+  (`migrations-log/0004_survey_log_new_map.sql`), which runs before the new
+  Worker deploys. A sector still on the old code could log a claim in that
+  gap of a few seconds.
+- **Field notes** move to a new key in the game (`letterfield.finds.v3`),
+  carrying over only the finds whose word is still where it was, without
+  being charted first, and the game says the map has been redrawn.
+
+Map 3 has 116 themes of 146 to 184 words (17,671 in all), up from about 47.
+A territory deals its 16 chunks from one shuffled deck of its theme, nine
+cards each (`DEAL`), and a chunk places six to eight of its own nine, so no
+word comes up twice in a territory (a test checks every territory in the
+shared world). Each word now turns up about 63 times in the shared world,
+not 200. With three times the words, the letters spell far more of them by
+chance, so a stray now needs six letters (`STRAY_MIN`): about 14 a
+territory, where four letters would allow some 370.
 
 ### Limits per address
 
@@ -319,7 +349,7 @@ GET /v1/survey/log/territory/<rx>/<ry>
 
 An hour comes oldest first, 500 entries a page; `next` is the `after` for the
 next page. A day, hour or month that hasn't started is a 400. `world` counts
-the hidden words in the shared world, which go toward its 1,120,206. Top
+the hidden words in the shared world, which go toward its 1,119,763. Top
 lists count hidden and stray words for surveyors, but only hidden words for
 territories and themes, since a stray's theme is its word's, not its
 territory's. The day endpoint is still there for older copies of the page.
@@ -461,7 +491,7 @@ are in (`places`, such as "Monet Hollow") and gives each theme's name and
 hue. The Worker works these out with `regionName`, now in
 `src/letterfield-world.js` beside the themes it already had (a test checks
 it names every territory in the shared world as the game does). The page
-holds none of the map's 40 KB of theme data.
+holds none of the map's 140 KB of theme data.
 
 ### "Mine"
 

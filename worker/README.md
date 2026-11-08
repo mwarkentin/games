@@ -86,7 +86,8 @@ SURVEY.md). Triggers keep running counts beside it, per hour, per day per
 set of initials and per day per territory, for the log page's weeks,
 months, years and top lists, and three indexes find one surveyor's,
 territory's or theme's words. The whole shared world would be about 1.1
-million rows and 150 MB. mwarkentin/infra makes it too; its id (the
+million rows and 150 MB. A new map (see "A new map" in SURVEY.md) empties
+it with a migration. mwarkentin/infra makes it too; its id (the
 `survey_log_database_id` output) goes in `wrangler.toml`.
 
 D1 counts every row a query scans against the plan's allowance, so each

@@ -18,7 +18,7 @@
 // thousands of players: no object sees more than the players near it.
 //
 // The middle of the map, 100×100 territories around the origin, is the world
-// everyone charts together: it hides 1,120,206 words. One Atlas object keeps
+// everyone charts together: it hides 1,119,763 words. One Atlas object keeps
 // the totals and the world map. Sectors in that area report their numbers to
 // it every few seconds while busy; players only read its cached world map.
 //
@@ -62,7 +62,7 @@
 
 import { BLOCKED_INITIALS, INITIALS, corsHeaders, hashAddress, json } from './leaderboard.js';
 import { PASS_PATH, checkPass, handlePass } from './survey-pass.js';
-import { CH, DIRS, RC, VOCAB, chunk, fdiv, keyOf, letterAt } from './letterfield-world.js';
+import { CH, DIRS, MAP_VERSION, RC, STRAY_MIN, VOCAB, chunk, fdiv, keyOf, letterAt } from './letterfield-world.js';
 import { LOG_BATCH, LOG_MS, LOG_RETRY_MAX_MS, writeLog } from './survey-log.js';
 
 export const SECTOR = RC * 4;         // cells per sector side
@@ -73,7 +73,7 @@ export const PRESENCE_MAX = 64;       // positions per update; `n` still counts 
 export const CLAIM_BURST = 5;         // claims a socket can make at once,
 export const CLAIM_REFILL_MS = 1500;  // then one per this many milliseconds
 export const AREA = 12;               // the shared world: sectors -12 to 12 each way
-export const AREA_WORDS = 1120206;    // hidden words in it (test/survey.test.js recounts them)
+export const AREA_WORDS = 1119763;    // hidden words in it (test/survey.test.js recounts them)
 export const REPORT_MS = 10000;       // a busy sector reports to the atlas at most this often
 export const SAVE_MS = 60000;         // the atlas writes changed numbers to storage at most this often
 export const VIEW_MS = 5000;          // the world map is rebuilt, and cached, for this long
@@ -103,6 +103,17 @@ const isInt = (v, min, max) => Number.isInteger(v) && v >= min && v <= max;
 export const inArea = (sx, sy) => Math.abs(sx) <= AREA && Math.abs(sy) <= AREA;
 const atlas = (env) => env.ATLAS.get(env.ATLAS.idFromName('atlas'));
 
+// Whether a Durable Object's storage was last used with an older map
+// (MAP_VERSION), recording this one if so. Storage from before maps had
+// versions was on map 2. A new object records the version with nothing to clear.
+export function onOlderMap(sql) {
+  sql.exec('CREATE TABLE IF NOT EXISTS map (id INTEGER PRIMARY KEY CHECK (id = 0), version INTEGER NOT NULL)');
+  const version = sql.exec('SELECT version FROM map WHERE id = 0').toArray()[0]?.version ?? 2;
+  if (version === MAP_VERSION) return false;
+  sql.exec('INSERT INTO map (id, version) VALUES (0, ?) ON CONFLICT (id) DO UPDATE SET version = excluded.version', MAP_VERSION);
+  return true;
+}
+
 // The word a claim names, checked against the map: {key, w, x, y, d, s} with
 // s = 1 for a stray (a word the letters spell by chance), or {error}.
 export function checkClaim(claim, sx, sy) {
@@ -117,9 +128,9 @@ export function checkClaim(claim, sx, sy) {
     if (letterAt(x + dx * i, y + dy * i) !== w.charCodeAt(i) - 65) return { error: 'word is not there' };
   }
   const key = keyOf(w, x, y, d);
-  // Hidden words sit inside one chunk; strays count from four letters, as in the game.
+  // Hidden words sit inside one chunk; strays count from STRAY_MIN letters, as in the game.
   const placed = chunk(fdiv(x, CH), fdiv(y, CH)).words.some((p) => p.key === key);
-  if (!placed && w.length < 4) return { error: 'word is not there' };
+  if (!placed && w.length < STRAY_MIN) return { error: 'word is not there' };
   return { key, w, x, y, d, s: placed ? 0 : 1 };
 }
 
@@ -257,6 +268,11 @@ export class Sector {
     // before the log starts with none logged, so it sends its old claims too.
     this.sql.exec('CREATE INDEX IF NOT EXISTS claims_by_time ON claims (at, key)');
     this.sql.exec('CREATE TABLE IF NOT EXISTS logged (id INTEGER PRIMARY KEY CHECK (id = 0), at INTEGER NOT NULL)');
+    // Claims from an older map name words that aren't there any more.
+    if (onOlderMap(this.sql)) {
+      this.sql.exec('DELETE FROM claims');
+      this.sql.exec('DELETE FROM logged');
+    }
   }
 
   async fetch(request) {
@@ -305,7 +321,7 @@ export class Sector {
     this.everyone().set(ws, me);
     // When everyone reconnects at once (after a deploy, say), each join just
     // reuses the claims already turned into JSON.
-    this.claimsJson ??= JSON.stringify(this.sql.exec('SELECT w, x, y, d, s, initials, at FROM claims').toArray().map(row));
+    this.claimsJson ??= JSON.stringify(this.sql.exec('SELECT w, x, y, d, s, initials, at FROM claims ORDER BY at, key').toArray().map(row));
     const hello = JSON.stringify({ t: 'hello', you: id, sector: [sx, sy], claims: [] });
     try { ws.send(hello.replace('"claims":[]', `"claims":${this.claimsJson}`)); } catch { /* closing */ }
     if (this.world) send(ws, { t: 'world', ...this.world });
@@ -651,6 +667,8 @@ export class Atlas {
     this.sql.exec(`CREATE TABLE IF NOT EXISTS sectors (
       sx INTEGER NOT NULL, sy INTEGER NOT NULL, charted TEXT NOT NULL, done INTEGER NOT NULL,
       PRIMARY KEY (sx, sy)) WITHOUT ROWID`);
+    // Sectors' counts from an older map; each sector reports afresh once it wakes.
+    if (onOlderMap(this.sql)) this.sql.exec('DELETE FROM sectors');
   }
 
   load() {

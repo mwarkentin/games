@@ -108,7 +108,7 @@ def test_shared_map_shows_other_surveyors_and_their_words(page: Page, site_url, 
     open_game(page, site_url, fake)
     expect(page.locator("#survey")).to_be_visible()
     expect(page.locator("#surveyText")).to_have_text(re.compile(
-        r"^Live · 2 other surveyors nearby\nWorld: 0 of 1,120,206 charted · 0 online\n"
+        r"^Live · 2 other surveyors nearby\nWorld: 0 of 1,119,763 charted · 0 online\n"
         r"\w[\w ]+: 1 of \d+ charted\n0 words charted first by you$"
     ))
     assert sorted(fake.sectors) == ["-1,-1", "-1,0", "0,-1", "0,0"]
@@ -144,11 +144,11 @@ def test_a_word_charted_first_shares_where_it_came_in_the_worlds_count(page: Pag
       Object.defineProperty(navigator, 'share', { value: data => { window.__shared.push(data); return Promise.resolve(); }, configurable: true });
     """)
     open_game(page, site_url, fake)
-    expect(page.locator("#brandSub")).to_have_text("412,883 of 1,120,206 charted")
+    expect(page.locator("#brandSub")).to_have_text("412,883 of 1,119,763 charted")
     circle(page, word)
     expect(page.locator("#toast")).to_contain_text("First to chart it")
     page.click("#toast .share")
-    pattern = rf"I just found {word[0]} in [A-Z][a-z]+ [A-Z][a-z]+ in Letterfield, before anyone else\. That was word 412,884 of 1,120,206 on the shared map\."
+    pattern = rf"I just found {word[0]} in [A-Z][a-z]+ [A-Z][a-z]+ in Letterfield, before anyone else\. That was word 412,884 of 1,119,763 on the shared map\."
     assert re.fullmatch(pattern, page.evaluate("window.__shared[0].text"))
     assert page.evaluate("window.__shared[0].url").endswith(f"/letterfield?survey={SURVEY}#f-{word[0].lower()}-{word[1]}-{word[2]}-{word[3]}")
     # Where it came is kept with the find, so the field notes share it later too.
@@ -270,10 +270,10 @@ def test_world_counter_ticks_up_as_words_are_charted(page: Page, site_url, error
     words = known_words(page, site_url)
     fake = FakeSurvey(totals={"charted": 412_883, "total": AREA_WORDS, "players": 3_201})
     open_game(page, site_url, fake)
-    expect(page.locator("#surveyText")).to_contain_text("World: 412,883 of 1,120,206 charted · 3,201 online")
-    expect(page.locator("#brandSub")).to_have_text("412,883 of 1,120,206 charted")
+    expect(page.locator("#surveyText")).to_contain_text("World: 412,883 of 1,119,763 charted · 3,201 online")
+    expect(page.locator("#brandSub")).to_have_text("412,883 of 1,119,763 charted")
     circle(page, words[3])
-    expect(page.locator("#brandSub")).to_have_text("412,884 of 1,120,206 charted")
+    expect(page.locator("#brandSub")).to_have_text("412,884 of 1,119,763 charted")
     assert errors == []
 
 
@@ -284,7 +284,7 @@ def test_world_map_shows_where_people_are_and_flies_there(page: Page, site_url, 
     open_notes(page)
     page.click("#surveyMap summary")
     expect(page.locator("#worldNote")).to_have_text("57 surveyors in 2 sectors")
-    expect(page.locator("#surveyText")).to_contain_text("World: 177 of 1,120,206 charted · 57 online")
+    expect(page.locator("#surveyText")).to_contain_text("World: 177 of 1,119,763 charted · 57 online")
     # Darker where charted: the territory at the origin is drawn stronger than an untouched one.
     shade = """([tx, ty]) => { const c = document.getElementById('worldMap'), g = c.getContext('2d');
       const cell = c.width / 100, [r, gr, b] = g.getImageData((tx + 48.5) * cell, (ty + 48.5) * cell, 1, 1).data;

@@ -10,7 +10,7 @@ import { afterEach, beforeEach, describe, mock, test } from 'node:test';
 import vm from 'node:vm';
 
 import worker from '../src/index.js';
-import { CH, DIRS, RG, THEMES, THEME_DATA, VOCAB, chunk, genChunk, keyOf, letterAt, regionName, regionTheme, wordEnd } from '../src/letterfield-world.js';
+import { CH, DEAL, DIRS, MAP_VERSION, RC, RG, STRAY_MIN, THEMES, THEME_DATA, VOCAB, chunk, genChunk, keyOf, letterAt, regionName, regionTheme, wordEnd } from '../src/letterfield-world.js';
 import {
   ADDRESS_HEADER, ADDRESS_SOCKETS, AREA, AREA_WORDS, Atlas, BATCH_MS, DAILY_CLAIMS, DAILY_LIST_MAX, CLAIM_BURST, CLAIM_REFILL_MS, MAX_ONLINE, MAX_PLAYERS, ONLINE_MS, PRESENCE_MAX, PRESENCE_MS,
   QUIET, REPORT_MS, UNPASSED_HEADER, SAVE_MS, SAVE_POS_MS, SECTOR, SPAWN_MAX, Sector, VIEW_MS, addressOf, checkClaim, routeSurvey,
@@ -39,15 +39,16 @@ function placed(cx, cy, n = 0) {
   return { w, x, y, d };
 }
 
-// A word the letters spell by chance, found by reading the map near the origin.
-function findStray() {
+// A word the letters spell by chance, found by reading the map near the origin,
+// of `min` to `max` letters.
+function findStray(min = STRAY_MIN, max = 12) {
   for (let y = 0; y < 96; y++) {
     for (let x = 0; x < 96; x++) {
       for (let d = 0; d < 8; d++) {
         let s = '';
-        for (let i = 0; i < 12; i++) {
+        for (let i = 0; i < max; i++) {
           s += String.fromCharCode(65 + letterAt(x + DIRS[d][0] * i, y + DIRS[d][1] * i));
-          if (s.length >= 4 && VOCAB.has(s) && !chunk(Math.floor(x / CH), Math.floor(y / CH)).words.some((p) => p.key === keyOf(s, x, y, d))) {
+          if (s.length >= min && VOCAB.has(s) && !chunk(Math.floor(x / CH), Math.floor(y / CH)).words.some((p) => p.key === keyOf(s, x, y, d))) {
             return { w: s, x, y, d };
           }
         }
@@ -104,10 +105,13 @@ describe('checkClaim', () => {
     assert.equal(checkClaim(far, Math.floor(far.x / SECTOR), Math.floor(far.y / SECTOR)).s, 0);
   });
 
-  test('accepts a stray word of four letters or more', () => {
+  test('accepts a stray word of STRAY_MIN letters or more, and no shorter', () => {
     const stray = findStray();
     assert.ok(stray, 'no stray word near the origin');
     assert.equal(checkClaim(stray, 0, 0).s, 1);
+    const short = findStray(3, STRAY_MIN - 1);
+    assert.ok(short, 'no short stray near the origin');
+    assert.deepEqual(checkClaim(short, 0, 0), { error: 'word is not there' });
   });
 
   test('rejects words that are not on the map', () => {
@@ -889,10 +893,10 @@ describe('Atlas', () => {
 });
 
 describe('the map', () => {
-  test('has well-formed themes: 40 words or more, A to Z, 3 to 10 letters, each in one theme', () => {
+  test('has well-formed themes: enough words to deal a territory, A to Z, 3 to 10 letters, each in one theme', () => {
     const seen = new Map();
     for (const t of THEMES) {
-      assert.ok(t.words.length >= 40, `${t.name} has ${t.words.length} words`);
+      assert.ok(t.words.length >= RG * RG * DEAL, `${t.name} has ${t.words.length} words`);
       assert.ok(Number.isInteger(t.hue) && t.hue >= 0 && t.hue < 360, `${t.name} hue`);
       for (const w of t.words) {
         assert.match(w, /^[A-Z]{3,10}$/, `${t.name}: ${w}`);
@@ -920,6 +924,22 @@ describe('the map', () => {
     }
   });
 
+  test('never repeats a word within a territory of the shared world', () => {
+    for (let ry = -AREA * RG; ry < (AREA + 1) * RG; ry++) {
+      for (let rx = -AREA * RG; rx < (AREA + 1) * RG; rx++) {
+        const seen = new Set();
+        for (let cy = ry * RG; cy < ry * RG + RG; cy++) {
+          for (let cx = rx * RG; cx < rx * RG + RG; cx++) {
+            for (const { w } of chunk(cx, cy).words) {
+              assert.ok(!seen.has(w), `${w} twice in territory ${rx},${ry}`);
+              seen.add(w);
+            }
+          }
+        }
+      }
+    }
+  });
+
   test('names every territory in the shared world, with repeats at least 60 apart', () => {
     const { regionName } = gameWorld();
     const where = new Map();
@@ -932,6 +952,39 @@ describe('the map', () => {
       }
     }
     assert.ok(where.size > 0.99 * (2 * AREA + 1) ** 2 * 16);
+  });
+});
+
+describe('a new map', () => {
+  const count = (sql, table) => sql.exec(`SELECT COUNT(*) AS n FROM ${table}`).one().n;
+
+  test('clears a sector\'s claims and log mark from an older map, once', () => {
+    const state = fakeState(), sql = state.storage.sql;
+    // A sector from map 2, before maps had versions: a claim, logged.
+    new Sector(state, {});
+    sql.exec('DROP TABLE map');
+    sql.exec("INSERT INTO claims VALUES ('ACORN~1~2~0', 'ACORN', 1, 2, 0, 0, 'ZED', 5)");
+    sql.exec('INSERT INTO logged VALUES (0, 5)');
+    new Sector(state, {});
+    assert.equal(count(sql, 'claims'), 0);
+    assert.equal(count(sql, 'logged'), 0);
+    assert.equal(sql.exec('SELECT version FROM map').one().version, MAP_VERSION);
+    // Claims on this map stay when it wakes again.
+    sql.exec("INSERT INTO claims VALUES ('BARK~1~2~0', 'BARK', 1, 2, 0, 0, 'ZED', 6)");
+    new Sector(state, {});
+    assert.equal(count(sql, 'claims'), 1);
+  });
+
+  test('clears the Atlas\'s counts from an older map', () => {
+    const state = fakeState(), sql = state.storage.sql;
+    new Atlas(state, {});
+    sql.exec("INSERT INTO sectors VALUES (0, 0, '1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0', 1)");
+    sql.exec('UPDATE map SET version = ?', MAP_VERSION - 1);
+    const atlasObject = new Atlas(state, {});
+    assert.equal(count(sql, 'sectors'), 0);
+    assert.equal(atlasObject.totals().charted, 0);
+    sql.exec("INSERT INTO sectors VALUES (0, 0, '1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0', 1)");
+    assert.equal(new Atlas(state, {}).totals().charted, 1);
   });
 });
 
