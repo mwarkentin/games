@@ -1,5 +1,9 @@
 ## 2026-11-08
 
+- A Share button on the note that pops up when you find a word, and beside
+  every word in your field notes. It sends the word, the territory it's in
+  and a link that flies straight to it; a word you charted first on the
+  shared map also says where it came in the world's count.
 - The survey log has weeks, months, years and all time as well as days, each
   with a chart, the top surveyors, territories and themes, and how much of
   the shared world has been charted. Tap any day in a chart to open it, and

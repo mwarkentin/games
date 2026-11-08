@@ -215,3 +215,64 @@ def test_both_music_tracks_make_sound_and_take_turns(page: Page, site_url, error
     page.evaluate("window.__lf.music().swap()")
     assert page.evaluate("window.__lf.music().track") != first
     assert errors == []
+
+
+# A share sheet that keeps what it's given, for checking what a find shares.
+SHARE_SHEET = """
+  window.__shared = [];
+  Object.defineProperty(navigator, 'share', { value: data => { window.__shared.push(data); return Promise.resolve(); }, configurable: true });
+"""
+
+
+def test_a_find_shares_what_it_is_where_and_a_link_to_it(page: Page, site_url, errors):
+    without_worker(page, site_url, "letterfield")
+    page.add_init_script(SHARE_SHEET)
+    page.set_viewport_size({"width": 375, "height": 740})
+    page.goto(f"{site_url}/letterfield#debug")
+    page.click("#coachOk")
+    page.wait_for_function("window.__lf")
+    words = page.evaluate("window.__lf.chunk(0, 0).words.slice(0, 2).map(o => [o.w, o.x, o.y, o.d])")
+    page.evaluate("([w, x, y, d]) => window.__lf.collect(w, x, y, d, false)", words[0])
+    toast = page.locator("#toast")
+    expect(toast).to_contain_text(words[0][0])
+    place = toast.locator("span").inner_text().split(" · ")[1]
+    toast.get_by_role("button", name=f"Share {words[0][0]}").click()
+    shared = page.evaluate("window.__shared")
+    w, x, y, d = words[0]
+    assert shared == [{
+        "title": "Letterfield",
+        "text": f"I just found {w} in {place} in Letterfield. That’s word 1 in my field notes.",
+        "url": f"{site_url}/letterfield#f-{w.lower()}-{x}-{y}-{d}",
+    }]
+    assert page.evaluate("document.documentElement.scrollWidth") <= 375
+
+    # Every find in the field notes can be shared too, counted by when it was found.
+    page.evaluate("([w, x, y, d]) => window.__lf.collect(w, x, y, d, false)", words[1])
+    page.click("#notesToggle")
+    notes = page.locator("#finds")
+    notes.get_by_role("button", name=f"Share {words[1][0]}").click()
+    notes.get_by_role("button", name=f"Share {w}").click()
+    texts = [s["text"] for s in page.evaluate("window.__shared")[1:]]
+    assert texts[0].endswith("That’s word 2 in my field notes.")
+    assert texts[1].endswith("That’s word 1 in my field notes.")
+    assert errors == []
+
+
+def test_without_a_share_sheet_a_find_is_copied(page: Page, site_url, errors):
+    without_worker(page, site_url, "letterfield")
+    page.add_init_script("""
+      Object.defineProperty(Navigator.prototype, 'share', { value: undefined, configurable: true });
+      Object.defineProperty(navigator, 'clipboard', { value: { writeText: t => { window.__copied = t; return Promise.resolve(); } } });
+    """)
+    page.set_viewport_size({"width": 1280, "height": 900})
+    page.goto(f"{site_url}/letterfield#debug")
+    page.click("#coachOk")
+    page.wait_for_function("window.__lf")
+    w, x, y, d = page.evaluate("(() => { const o = window.__lf.chunk(0, 0).words[0]; return [o.w, o.x, o.y, o.d]; })()")
+    page.evaluate("([w, x, y, d]) => window.__lf.collect(w, x, y, d, false)", [w, x, y, d])
+    page.click("#toast .share")
+    expect(page.locator("#toast")).to_contain_text("Copied")
+    copied = page.evaluate("window.__copied")
+    assert copied.startswith(f"I just found {w} in ")
+    assert copied.endswith(f" {site_url}/letterfield#f-{w.lower()}-{x}-{y}-{d}")
+    assert errors == []
