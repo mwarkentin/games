@@ -2907,36 +2907,56 @@ const Pictures = (() => {
         '.KGK.KGK.KGK.',
         '..K...K...K..',
       ], { K: '#111111', G: '#2fbf4a', L: '#8ef09a', W: '#ffffff', Y: '#ffe14d' }),
-      // A gamepad.
+      // Princess Plum, holding her namesake.
       queen: bitmap([
-        '..KKKKKKKKKKKK..',
-        '.KAAAAAAAAAAAAK.',
-        'KAAAKAAAAAAAAAAK',
-        'KAAKKKAAAAARAAAK',
-        'KAAAKAAAAARARAAK',
-        'KAAAAAAKKAARAAAK',
-        'KAAAAAAAAAAAAAAK',
-        '.KAAAAKKKKAAAAK.',
-        '..KKKK....KKKK..',
-      ], { K: '#111111', A: '#9a9aa8', R: '#d01c1c' }),
-      // An arcade joystick.
+        '...K...KK...K...',
+        '..KYK.KYYK.KYK..',
+        '..KYYKYYYYKYYK..',
+        '..KYYYYYYYYYYK..',
+        '..KYRYYBBYYRYK..',
+        '.KHKKKKKKKKKKHK.',
+        '.KHHSSSSSSSSHHK.',
+        'KHHSSKSSSSKSSHHK',
+        'KHHSSKSSSSKSSHHK',
+        'KHHSCSSSSSSCSHHK',
+        'KHHSSSSRRSSSSHHK',
+        'KHHHSSSSSSSSHHHK',
+        'KHHHHKSSSSKHHHHK',
+        'KHHHKPPSSPPKHHHK',
+        'KHHKPPPSSPPPKHHK',
+        'KHKPPPPKGPPPPKHK',
+        '.KPPPSKFFKSPPPK.',
+        '.KPPSKFWFFKSPPK.',
+        '.KPPSKFFFFKSPPK.',
+        'KPPPLPKFFKPLPPPK',
+        'KPPPLPPKKPPLPPPK',
+        'KPPPLPPPPPPLPPPK',
+      ], { K: '#111111', Y: '#ffe14d', R: '#d01c1c', B: '#2f6fe0', H: '#8b4513', S: '#ffc8a0', C: '#ff8fa0', P: '#178a8a', L: '#5fd8cc', F: '#5a2a9c', G: '#2fbf4a', W: '#ffffff' }),
+      // A jolly king in red robes and a big white beard.
       king: bitmap([
-        '.....KKKK.....',
-        '....KRRWRK....',
-        '....KRRRRK....',
-        '....KRRRRK....',
-        '.....KKKK.....',
-        '......KK......',
-        '......KK......',
-        '......KK......',
-        '......KK......',
-        '......KK......',
-        '..KKKKKKKKKK..',
-        '.KYKAAAAAAAAK.',
-        'KAAAAAAAAAAAAK',
-        'KAAAAAAAAAAAAK',
-        'KKKKKKKKKKKKKK',
-      ], { K: '#111111', R: '#d01c1c', W: '#ffffff', A: '#6a6a78', Y: '#ffe14d' }),
+        '...K...KK...K...',
+        '..KYK.KYYK.KYK..',
+        '..KYYKRYYRKYYK..',
+        '..KYYYYYYYYYYK..',
+        '..KYBYYRRYYBYK..',
+        '.KWKKKKKKKKKKWK.',
+        '.KWWSSSSSSSSWWK.',
+        'KWWSSKSSSSKSSWWK',
+        'KWWSSKSSSSKSSWWK',
+        'KWWSNSSNNSSNSWWK',
+        'KWWWWWWSSWWWWWWK',
+        'KWWWWKRRRRKWWWWK',
+        'KGWWWWKKKKWWWWGK',
+        '.KGWWWWWWWWWWGK.',
+        'KRKGWWWWWWWWGKRK',
+        'KRRKGWWWWWWGKRRK',
+        'KRRRKGWWWWGKRRRK',
+        'KWKWKKGWWGKKWKWK',
+        'KWWWWWKGGKWWWWWK',
+        'KRRDRRRKKRRRDRRK',
+        'KRRDRRRRRRRRDRRK',
+        'KRRDRRRYYRRRDRRK',
+      ], { K: '#111111', Y: '#ffe14d', R: '#d01c1c', D: '#8a1010', B: '#2f6fe0', W: '#ffffff', G: '#b8b8c8', S: '#ffc8a0', N: '#ff8f8f' }),
       // A bug, glitching.
       joker: bitmap([
         '...K......K...',
@@ -3281,7 +3301,8 @@ const Pictures = (() => {
     if (!ctx) c = null;
     else if (draw.rows) {
       const { rows, palette, scale } = draw;
-      const ox = Math.floor((W - rows[0].length * scale) / 2), oy = Math.round(H * 0.55 - (rows.length * scale) / 2);
+      // Centered a little low, or on the bottom edge if it's tall.
+      const ox = Math.floor((W - rows[0].length * scale) / 2), oy = Math.min(H - rows.length * scale, Math.round(H * 0.55 - (rows.length * scale) / 2));
       rows.forEach((row, y) => [...row].forEach((ch, x) => {
         if (!palette[ch]) return;
         ctx.fillStyle = palette[ch];
