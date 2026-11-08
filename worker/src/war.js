@@ -101,9 +101,9 @@ function warBotPower(random) {
 //
 // Each player has a deck, face down, played from the top (piles), and the
 // cards they've won, face up beside it (loot), the latest last. Winnings go
-// back under the deck when the player picks them up (warGather), or by
-// themselves when the deck can't cover a stage. Either way the cards come
-// round in the same order, so picking up early changes nothing.
+// back under the deck when the player picks them up (warGather): players do
+// that themselves, bots when their deck can't cover a stage. Either way the
+// cards come round in the same order, so picking up early changes nothing.
 function warNewGame(bots, length, random, now, options = {}) {
   const game = {
     limit: WAR.LENGTHS[length] || WAR.LENGTHS.standard,
@@ -136,6 +136,13 @@ function warGather(game, seat, random) {
   return loot.length;
 }
 
+// Whether a player has to pick up their winnings before they can play this
+// stage: their deck can't cover it (a card in a battle, four in a war) and
+// they have winnings to pick up.
+function warShort(game, seat) {
+  return game.loot[seat].length > 0 && game.piles[seat].length < (game.stage ? 4 : 1);
+}
+
 // How long the bots take to slam: a moment in a battle, longer in a war,
 // where they slam every card they lay down.
 function warBotMs(game) {
@@ -153,9 +160,9 @@ function warUpCard(game, seat) {
 }
 
 // Opens the next stage: a new battle for everyone still holding cards, or,
-// when fighters is given, a war between them. A fighter whose deck can't
-// cover the stage (a card in a battle, four in a war) picks up their winnings
-// first; gathered says who. Bots slam straight away; the pages show their
+// when fighters is given, a war between them. A bot whose deck can't cover
+// the stage picks up its winnings first; gathered says which. Players pick up
+// their own, before they slam. Bots slam straight away; the pages show their
 // slams one by one while the stage opens, each bot's card face up as it lands.
 function warOpenStage(game, now, random, fighters, delay) {
   if (fighters) {
@@ -168,8 +175,7 @@ function warOpenStage(game, now, random, fighters, delay) {
     game.pot = [];
     game.potBy = [];
   }
-  const gathered = game.fighters.filter((seat) => game.piles[seat].length < (game.stage ? 4 : 1)
-    && warGather(game, seat, random));
+  const gathered = game.fighters.filter((seat) => game.bots[seat] && warShort(game, seat) && warGather(game, seat, random));
   game.slams = {};
   game.opensAt = now + Math.round(delay * game.pace);
   game.closesAt = game.slow ? Infinity : game.opensAt + (game.stage ? WAR.WAR_STAGE_MS : WAR.STAGE_MS);
@@ -204,23 +210,31 @@ function warDueAt(game, online) {
 
 // Records a slam. Returns the message to pass on, with the card it turns
 // over, or null when it doesn't count: the game is over, the seat isn't
-// fighting, or it already slammed.
-function warSlam(game, seat, power, style) {
+// fighting, or it already slammed. The pages have the player pick up their
+// winnings first when they must; a slam that comes without picks them up
+// (gathered: true).
+function warSlam(game, seat, power, style, random = Math.random) {
   if (game.over || !game.fighters.includes(seat) || game.slams[seat]) return null;
   power = Math.max(0, Math.min(WAR.MAX_POWER, Math.round(Number(power)) || 0));
   style = Number.isInteger(style) && style >= 0 && style < WAR.STYLES ? style : 0;
+  const gathered = warShort(game, seat) && warGather(game, seat, random) > 0;
   game.slams[seat] = [power, style, 0];
   game.naps[seat] = 0;
-  return { t: 'slam', seat, power, style, up: warUpCard(game, seat) };
+  const slam = { t: 'slam', seat, power, style, up: warUpCard(game, seat) };
+  if (gathered) slam.gathered = true;
+  return slam;
 }
 
 // In a slow game, someone the table has waited a long time for gets their
 // card flipped over for them, as if it had flopped. Returns the slam to pass
 // on, or null when it doesn't count.
-function warFlop(game, seat) {
+function warFlop(game, seat, random = Math.random) {
   if (game.over || !game.fighters.includes(seat) || game.slams[seat]) return null;
+  const gathered = warShort(game, seat) && warGather(game, seat, random) > 0;
   game.slams[seat] = [0, 0, 1];
-  return { t: 'slam', seat, power: 0, style: 0, up: warUpCard(game, seat), flopped: true };
+  const slam = { t: 'slam', seat, power: 0, style: 0, up: warUpCard(game, seat), flopped: true };
+  if (gathered) slam.gathered = true;
+  return slam;
 }
 
 // Plays the stage out. Every fighter turns over their top card (in a war,
@@ -233,10 +247,12 @@ function warFlop(game, seat) {
 // can see every card in it. The pot goes onto the winner's winnings as it
 // lies: everyone else's cards in the order they were played, then the
 // winner's own on top. counts is every card each player holds, decks the
-// ones in their deck.
+// ones in their deck. A card that flops over from a deck that couldn't
+// cover the stage picks up its player's winnings first; gathered says whose.
 function warResolve(game, now, random) {
   const plays = [];
   const downs = {};
+  const gathered = game.fighters.filter((seat) => warShort(game, seat) && warGather(game, seat, random));
   let best = -1;
   for (const seat of game.fighters) {
     const pile = game.piles[seat];
@@ -255,7 +271,9 @@ function warResolve(game, now, random) {
   let winner = tied.length === 1 ? tied[0] : able.length === 1 ? able[0] : null;
   const gods = tied.length > 1 && !able.length;
   if (gods) winner = tied[Math.floor(random() * tied.length)];
-  const message = { t: 'flip', battle: game.battle, stage: game.stage, plays, tied, winner, gods, pot: game.pot.length };
+  const message = {
+    t: 'flip', battle: game.battle, stage: game.stage, plays, tied, winner, gods, pot: game.pot.length, gathered,
+  };
   if (game.stage) message.downs = downs;
   if (winner === null) {
     if (!game.stage) game.wars++;
@@ -303,7 +321,7 @@ function warStandings(game) {
 // ---- END WAR CORE ----
 
 export {
-  WAR, warBotNames, warDeal, warDueAt, warFlop, warGather, warHeld, warNewGame, warOpenStage, warRank, warResolve,
+  WAR, warBotNames, warDeal, warDueAt, warFlop, warGather, warHeld, warNewGame, warShort, warOpenStage, warRank, warResolve,
   warShuffle, warSlam, warStandings, warUpCard, warWaitingFor,
 };
 
@@ -560,7 +578,7 @@ export class WarRoom {
         });
       case 'slam': {
         if (room.phase !== 'playing' || seat === null) return;
-        const slam = warSlam(room.game, seat, message.power, message.style);
+        const slam = warSlam(room.game, seat, message.power, message.style, this.random);
         if (!slam) return;
         this.broadcast(slam);
         if (room.game.slow) await this.save();
@@ -583,7 +601,7 @@ export class WarRoom {
         if (room.phase !== 'playing' || !host || !room.game.slow || this.now() < room.game.opensAt + WAR.FLOP_MS) return;
         const seats = warWaitingFor(room.game, this.onlineSeats()).filter((s) => s !== seat);
         if (!seats.length) return;
-        for (const s of seats) this.broadcast(warFlop(room.game, s));
+        for (const s of seats) this.broadcast(warFlop(room.game, s, this.random));
         await this.save();
         return this.tick();
       }

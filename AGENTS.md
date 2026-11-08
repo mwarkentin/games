@@ -334,8 +334,8 @@ Object that holds the game and every player's WebSocket (`worker/src/war.js`).
 - A slam says which card it turns over, so cards show face up as they're
   played. A game can be slow, with no clock: the room waits for everyone
   connected, and the host can flip over the cards of anyone holding it up.
-  Each player's winnings stay beside their deck until they pick them up or
-  the deck runs short (see `worker/README.md`).
+  Each player's winnings stay beside their deck until they pick them up
+  (see `worker/README.md`).
 - Rooms have four-character codes from the same alphabet as groups, and
   invite links are `?room=<code>`. Players rejoin their seat with a random
   token kept in `localStorage` (`war:token`).

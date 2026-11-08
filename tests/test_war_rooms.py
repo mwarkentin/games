@@ -328,13 +328,20 @@ def test_winnings_go_back_under_your_deck_by_hand_or_when_it_runs_out(page: Page
     expect(page.locator("#deckCount")).to_have_text("28")
     expect(page.locator("#winnings .heap .card")).to_have_count(0)
 
-    # You win with the last card in your deck: it's empty until the next
-    # battle opens, and then your winnings go under it by themselves.
-    battle(2, card(11), card(4, 1), [29, 25], [0, 25], gathered=[0], reveal=2400)
-    expect(page.locator("#myPile")).to_have_class(re.compile(r"\bempty\b"))
-    expect(page.locator("#gatherBtn")).to_have_class(re.compile(r"\bdue\b"))
+    # You win with the last card in your deck. It's empty, and the next
+    # battle waits for you to pick your winnings up: tapping your deck does.
+    battle(2, card(11), card(4, 1), [29, 25], [0, 25], reveal=600)
     page.wait_for_function(f"{STATE}.battle === 3")
-    expect(page.locator("#toast")).to_contain_text("Your deck ran out")
+    expect(page.locator("#myPile")).to_have_class(re.compile(r"\bempty\b"))
+    expect(page.locator("#slamText")).to_have_text("Pick up your winnings to play")
+    expect(page.locator("#gatherBtn")).to_have_class(re.compile(r"\bdue\b"))
+    page.wait_for_timeout(500)
+    assert not page.evaluate(f"{STATE}.canSlam"), "nothing picks them up for you"
+    assert len(fake.messages("gather")) == 1
+    box = page.locator("#myPile").bounding_box()
+    page.mouse.click(box["x"] + box["width"] / 2, box["y"] + 40)
+    page.wait_for_function(f"{STATE}.canSlam")
+    assert len(fake.messages("gather")) == 2
     expect(page.locator("#deckCount")).to_have_text("29")
     expect(page.locator("#myPile")).not_to_have_class(re.compile(r"\bempty\b"))
     expect(page.locator("#gatherBtn")).to_be_hidden()

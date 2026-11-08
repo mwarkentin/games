@@ -1135,9 +1135,9 @@ function warBotPower(random) {
 //
 // Each player has a deck, face down, played from the top (piles), and the
 // cards they've won, face up beside it (loot), the latest last. Winnings go
-// back under the deck when the player picks them up (warGather), or by
-// themselves when the deck can't cover a stage. Either way the cards come
-// round in the same order, so picking up early changes nothing.
+// back under the deck when the player picks them up (warGather): players do
+// that themselves, bots when their deck can't cover a stage. Either way the
+// cards come round in the same order, so picking up early changes nothing.
 function warNewGame(bots, length, random, now, options = {}) {
   const game = {
     limit: WAR.LENGTHS[length] || WAR.LENGTHS.standard,
@@ -1170,6 +1170,13 @@ function warGather(game, seat, random) {
   return loot.length;
 }
 
+// Whether a player has to pick up their winnings before they can play this
+// stage: their deck can't cover it (a card in a battle, four in a war) and
+// they have winnings to pick up.
+function warShort(game, seat) {
+  return game.loot[seat].length > 0 && game.piles[seat].length < (game.stage ? 4 : 1);
+}
+
 // How long the bots take to slam: a moment in a battle, longer in a war,
 // where they slam every card they lay down.
 function warBotMs(game) {
@@ -1187,9 +1194,9 @@ function warUpCard(game, seat) {
 }
 
 // Opens the next stage: a new battle for everyone still holding cards, or,
-// when fighters is given, a war between them. A fighter whose deck can't
-// cover the stage (a card in a battle, four in a war) picks up their winnings
-// first; gathered says who. Bots slam straight away; the pages show their
+// when fighters is given, a war between them. A bot whose deck can't cover
+// the stage picks up its winnings first; gathered says which. Players pick up
+// their own, before they slam. Bots slam straight away; the pages show their
 // slams one by one while the stage opens, each bot's card face up as it lands.
 function warOpenStage(game, now, random, fighters, delay) {
   if (fighters) {
@@ -1202,8 +1209,7 @@ function warOpenStage(game, now, random, fighters, delay) {
     game.pot = [];
     game.potBy = [];
   }
-  const gathered = game.fighters.filter((seat) => game.piles[seat].length < (game.stage ? 4 : 1)
-    && warGather(game, seat, random));
+  const gathered = game.fighters.filter((seat) => game.bots[seat] && warShort(game, seat) && warGather(game, seat, random));
   game.slams = {};
   game.opensAt = now + Math.round(delay * game.pace);
   game.closesAt = game.slow ? Infinity : game.opensAt + (game.stage ? WAR.WAR_STAGE_MS : WAR.STAGE_MS);
@@ -1238,23 +1244,31 @@ function warDueAt(game, online) {
 
 // Records a slam. Returns the message to pass on, with the card it turns
 // over, or null when it doesn't count: the game is over, the seat isn't
-// fighting, or it already slammed.
-function warSlam(game, seat, power, style) {
+// fighting, or it already slammed. The pages have the player pick up their
+// winnings first when they must; a slam that comes without picks them up
+// (gathered: true).
+function warSlam(game, seat, power, style, random = Math.random) {
   if (game.over || !game.fighters.includes(seat) || game.slams[seat]) return null;
   power = Math.max(0, Math.min(WAR.MAX_POWER, Math.round(Number(power)) || 0));
   style = Number.isInteger(style) && style >= 0 && style < WAR.STYLES ? style : 0;
+  const gathered = warShort(game, seat) && warGather(game, seat, random) > 0;
   game.slams[seat] = [power, style, 0];
   game.naps[seat] = 0;
-  return { t: 'slam', seat, power, style, up: warUpCard(game, seat) };
+  const slam = { t: 'slam', seat, power, style, up: warUpCard(game, seat) };
+  if (gathered) slam.gathered = true;
+  return slam;
 }
 
 // In a slow game, someone the table has waited a long time for gets their
 // card flipped over for them, as if it had flopped. Returns the slam to pass
 // on, or null when it doesn't count.
-function warFlop(game, seat) {
+function warFlop(game, seat, random = Math.random) {
   if (game.over || !game.fighters.includes(seat) || game.slams[seat]) return null;
+  const gathered = warShort(game, seat) && warGather(game, seat, random) > 0;
   game.slams[seat] = [0, 0, 1];
-  return { t: 'slam', seat, power: 0, style: 0, up: warUpCard(game, seat), flopped: true };
+  const slam = { t: 'slam', seat, power: 0, style: 0, up: warUpCard(game, seat), flopped: true };
+  if (gathered) slam.gathered = true;
+  return slam;
 }
 
 // Plays the stage out. Every fighter turns over their top card (in a war,
@@ -1267,10 +1281,12 @@ function warFlop(game, seat) {
 // can see every card in it. The pot goes onto the winner's winnings as it
 // lies: everyone else's cards in the order they were played, then the
 // winner's own on top. counts is every card each player holds, decks the
-// ones in their deck.
+// ones in their deck. A card that flops over from a deck that couldn't
+// cover the stage picks up its player's winnings first; gathered says whose.
 function warResolve(game, now, random) {
   const plays = [];
   const downs = {};
+  const gathered = game.fighters.filter((seat) => warShort(game, seat) && warGather(game, seat, random));
   let best = -1;
   for (const seat of game.fighters) {
     const pile = game.piles[seat];
@@ -1289,7 +1305,9 @@ function warResolve(game, now, random) {
   let winner = tied.length === 1 ? tied[0] : able.length === 1 ? able[0] : null;
   const gods = tied.length > 1 && !able.length;
   if (gods) winner = tied[Math.floor(random() * tied.length)];
-  const message = { t: 'flip', battle: game.battle, stage: game.stage, plays, tied, winner, gods, pot: game.pot.length };
+  const message = {
+    t: 'flip', battle: game.battle, stage: game.stage, plays, tied, winner, gods, pot: game.pot.length, gathered,
+  };
   if (game.stage) message.downs = downs;
   if (winner === null) {
     if (!game.stage) game.wars++;
@@ -3456,7 +3474,7 @@ class SoloRoom {
   send(message) {
     if (!this.game) return;
     if (message.t === 'slam') {
-      const slam = warSlam(this.game, 0, message.power, message.style);
+      const slam = warSlam(this.game, 0, message.power, message.style, this.random);
       if (slam) { receive(slam); this.schedule(); }
     } else if (message.t === 'start') {
       this.start();
@@ -3722,18 +3740,14 @@ function openStage() {
     setText($('caption'), isFighting(S.you) ? (final ? 'Last chance. Slam like it matters. (It does not.)' : pick(OPEN_LINES)) : '');
   }
   if (m.stage > 0) Versus.fight(m);
-  // Decks that couldn't cover this stage took their winnings under them, once
-  // the pot just won has landed.
+  // Bots whose decks couldn't cover this stage took their winnings under
+  // them, once the pot just won has landed.
   for (const seat of m.gathered || []) {
-    const short = S.decks ? S.decks[seat] : 0;
     if (S.decks) S.decks[seat] = S.counts[seat] ?? 0;
     heapGather(seat, m.stage ? 0 : 700 * pace());
-    if (seat === S.you) {
-      const how = S.shuffle ? ', shuffled' : ', in the order you won them';
-      toast(short ? `📥 Your deck is short for the war, so your winnings go under it${how}.`
-        : `📥 Your deck ran out, so your winnings go under it${how}.`, 3200);
-    }
   }
+  // Yours wait for you to pick them up, unless you're in a hurry.
+  if (S.fast && mustGather()) pickUp();
   renderAll();
   syncMusic();
   if (S.auto && isFighting(S.you)) later(autoSlam, (250 + Math.random() * 700) * pace());
@@ -3772,6 +3786,12 @@ function onCard(m) {
 // Someone slammed the card that counts, and it lands face up: the room says
 // which card it is. Your own slam comes back from the room too, with yours.
 function onSlam(m) {
+  // A slam that came without picking up first picked up.
+  if (m.gathered && S.decks && Number.isInteger(m.seat)) {
+    S.decks[m.seat] = S.counts[m.seat] ?? 0;
+    heapGather(m.seat, 0);
+    if (m.seat === S.you) renderHeaps();
+  }
   // A slam can beat this page to the next stage opening, by a few milliseconds.
   const early = S.pending && S.pending.fighters.includes(m.seat);
   const slams = early ? S.pending.slams : S.slams;
@@ -3824,6 +3844,9 @@ function onFlip(m) {
   S.result = m;
   S.counts = m.counts.slice();
   S.decks = Array.isArray(m.decks) ? m.decks.slice() : null;
+  // Cards that flopped from a deck that couldn't cover the stage took their
+  // player's winnings under it first.
+  for (const seat of m.gathered || []) heapGather(seat, 0);
   S.pot = m.pot;
   for (const [seat, down, up, power, style] of m.plays) {
     const before = S.cards[seat];
@@ -4445,6 +4468,7 @@ function renderControls() {
     else if (S.pending) text = S.pending.stage > 0 && !S.pending.fighters.includes(S.you) ? 'War in progress…' : 'Get ready…';
     else if (!fighting) text = 'War in progress…';
     else if (now() < S.opensAt) text = 'Get ready…';
+    else if (mustGather()) text = S.stage ? 'Pick up your winnings for the war' : 'Pick up your winnings to play';
     else if (S.naps >= WAR.NAPS) text = 'You dozed off. Slam to wake up!';
     else {
       const plan = slamPlan();
@@ -4713,7 +4737,7 @@ function renderHeaps() {
   const pick = S.phase === 'playing' && loot > 0;
   setHidden($('winnings'), !n && !pick);
   setHidden($('gatherBtn'), !pick);
-  setClass($('gatherBtn'), 'due', pick && S.decks[S.you] === 0);
+  setClass($('gatherBtn'), 'due', pick && (mustGather() || S.decks[S.you] === 0));
   setText($('lootCount'), loot > 0 ? String(loot) : '');
   setHidden($('lootCount'), !(loot > 0));
   setHidden($('tidyBtn'), !mine || mine.tidy || n < 2);
@@ -4743,7 +4767,21 @@ let mash = null;    // mash: { start, taps, window, tier }
 let fling = null;   // fling: { pointer, x0, y0, points, ghost, tier }
 
 function canSlam() {
-  return S.phase === 'playing' && S.you !== null && isFighting(S.you) && !S.pending && !S.slams[S.you] && now() >= S.opensAt;
+  return S.phase === 'playing' && S.you !== null && isFighting(S.you) && !S.pending && !S.slams[S.you] && now() >= S.opensAt
+    && !mustGather();
+}
+
+// Your deck can't cover this stage (a card in a battle, four in a war) and
+// your winnings are waiting: pick them up before you slam. Only Fast and
+// Auto do it for you.
+function mustGather() {
+  const me = S.you;
+  if (!S.decks || me === null || S.phase !== 'playing' || S.pending || !isFighting(me) || S.slams[me]) return false;
+  return lootOf(me) > 0 && (S.decks[me] ?? 0) < (S.stage ? 4 : 1);
+}
+
+function pickUp() {
+  if (S.conn && S.you !== null && lootOf(S.you) > 0) S.conn.send({ t: 'gather' });
 }
 
 // The cards you slam this stage: one in a battle; in a war, up to three face
@@ -4968,6 +5006,7 @@ function warCardLine(plan, n, power, last) {
 }
 
 function autoSlam() {
+  if (S.auto && mustGather() && !inputBusy()) { pickUp(); later(autoSlam, 300 * pace()); return; }
   if (!S.auto || !canSlam() || inputBusy()) return;
   slamCard(20 + Math.floor(Math.random() * 170));
 }
@@ -6024,7 +6063,7 @@ function init() {
     const b = e.target.closest('button');
     if (b && !b.disabled) S.conn.send({ t: 'shuffle', shuffle: b.dataset.winnings === 'shuffled' });
   });
-  $('gatherBtn').addEventListener('click', () => { if (S.conn && lootOf(S.you) > 0) S.conn.send({ t: 'gather' }); });
+  $('gatherBtn').addEventListener('click', pickUp);
   $('soloClock').addEventListener('click', (e) => {
     const b = e.target.closest('button');
     if (b) { menuSlow = b.dataset.clock === 'slow'; renderMenu(); }
@@ -6104,6 +6143,7 @@ function init() {
   $('fastBtn').addEventListener('click', () => {
     S.fast = !S.fast;
     if (S.mode === 'solo') S.conn.setPace(pace());
+    if (S.fast && mustGather()) pickUp();
     renderAll();
   });
   const cheers = $('cheers');
@@ -6135,6 +6175,7 @@ function init() {
     if (e.button > 0) return;
     e.preventDefault();
     try { pile.setPointerCapture(e.pointerId); } catch (err) { /* fine */ }
+    if (mustGather()) { pickUp(); return; }
     if (S.input === 'mash') mashTap();
     else if (S.input === 'fling') startFling(e);
     else startCharge(e.pointerId);
@@ -6151,7 +6192,7 @@ function init() {
     if ((e.key === ' ' || e.key === 'Enter') && tableUp()) {
       e.preventDefault();
       // Mash counts key presses; hold and fling hold the key to charge.
-      if (!e.repeat) { if (S.input === 'mash') mashTap(); else startCharge('key'); }
+      if (!e.repeat) { if (mustGather()) pickUp(); else if (S.input === 'mash') mashTap(); else startCharge('key'); }
     } else if (e.key === 'Escape' && !$('historyOv').hidden) {
       setHidden($('historyOv'), true);
     } else if (e.key === 'Escape' && !$('inviteOv').hidden) {

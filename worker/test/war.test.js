@@ -11,7 +11,7 @@ import { beforeEach, describe, test } from 'node:test';
 
 import {
   EXPIRE_MS, MAX_SOCKETS, WAR, WarRoom, cleanDeck, cleanName, handleWar, warDeal, warDueAt, warNewGame, warRank, warResolve,
-  warFlop, warGather, warSlam, warStandings, warUpCard,
+  warFlop, warGather, warShort, warSlam, warStandings, warUpCard,
 } from '../src/war.js';
 
 const ORIGIN = 'https://games.michaelwarkentin.com';
@@ -97,34 +97,56 @@ describe('the rules', () => {
     assert.deepEqual(flip.next.fighters, [0, 1, 2]);
   });
 
-  test('winnings go back under the deck as they lie, the oldest first, when the deck runs out', () => {
+  test('winnings go back under the deck as they lie, the oldest first', () => {
     const game = rigged([[card(9), card(8), card(7)], [card(2), card(3), card(4), card(5), card(6)]]);
     const log = [];
     for (let i = 0; i < 4; i++) {
       const flip = warResolve(game, NOW, seeded(1));
-      log.push([flip.winner, flip.counts, flip.decks, flip.next.gathered]);
+      log.push([flip.winner, flip.counts, flip.decks, flip.gathered, flip.next.gathered]);
     }
     assert.deepEqual(log, [
-      [0, [4, 4], [2, 4], []],
-      [0, [5, 3], [1, 3], []],
-      [0, [6, 2], [0, 2], [0]],  // seat 0's deck is out, so its winnings go under it as the next battle opens
-      [1, [5, 3], [5, 1], []],   // and the oldest comes up first: the two it won in the first battle
+      [0, [4, 4], [2, 4], [], []],
+      [0, [5, 3], [1, 3], [], []],
+      [0, [6, 2], [0, 2], [], []],  // seat 0's deck is out, but a player picks up their own winnings
+      [1, [5, 3], [5, 1], [0], []], // they didn't, so their card flopped from them, the oldest first
     ]);
     assert.deepEqual(game.piles[0], [card(9), card(3), card(8), card(4), card(7)]);
     assert.deepEqual(game.loot[0], []);
     assert.deepEqual(game.loot[1], [card(2), card(5)]);
   });
 
-  test("a war's deck that can't cover four cards picks up its winnings as the war opens", () => {
+  test("a player picks up before they slam, and a bot by itself as the stage opens", () => {
+    const piles = () => [[card(9)], [card(2), card(3)]];
+    const game = rigged(piles());
+    game.loot[0] = [card(4), card(5)];
+    warResolve(game, NOW, seeded(1));
+    assert.equal(warShort(game, 0), true, 'out of deck, with winnings waiting');
+    assert.deepEqual(game.piles[0], []);
+    const slam = warSlam(game, 0, 50, 0);
+    assert.deepEqual(slam, { t: 'slam', seat: 0, power: 50, style: 0, up: card(4), gathered: true },
+      "a slam that comes without picking up picks up");
+
+    const bots = rigged(piles(), { bots: [true, false] });
+    bots.loot[0] = [card(4), card(5)];
+    const flip = warResolve(bots, NOW, seeded(1));
+    assert.deepEqual(flip.next.gathered, [0]);
+    assert.deepEqual(flip.next.bots[0][4], card(4), "the bot's card comes from its winnings");
+    assert.equal(warShort(bots, 0), false);
+  });
+
+  test("a war's deck that can't cover four cards picks up before its player slams", () => {
     const game = rigged([[card(9), card(1)], [card(9, 1), card(2), card(3), card(4), card(5)]]);
     game.loot[0] = [card(6), card(7), card(8)];
     const tie = warResolve(game, NOW, seeded(1));
     assert.deepEqual(tie.decks, [1, 4], 'the decks as the battle ends');
-    assert.deepEqual(tie.next.gathered, [0]);
+    assert.deepEqual(tie.next.gathered, []);
+    assert.equal(warShort(game, 0), true);
+    assert.equal(warGather(game, 0, seeded(1)), 3);
     assert.deepEqual(game.piles[0], [card(1), card(6), card(7), card(8)]);
     assert.equal(warUpCard(game, 0), card(8), 'three face down, and the fourth comes from the winnings');
     const war = warResolve(game, NOW, seeded(1));
     assert.deepEqual(war.plays.map((p) => [p[1], p[2]]), [[3, card(8)], [3, card(5)]]);
+    assert.deepEqual(war.gathered, []);
     assert.equal(war.winner, 0);
   });
 

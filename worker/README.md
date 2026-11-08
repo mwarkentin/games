@@ -148,11 +148,11 @@ The room answers with these:
 | --- | --- |
 | `state` | everything, sent on joining and when the lobby changes: `slow` and `shuffle` are the room's settings; mid-game, `game.counts` has every card each seat holds, `game.decks` the ones in their deck and `game.loot` the cards they've won (the latest last), `game.ups` the card each slam so far turned face up, `game.naps` how many cards in a row flopped for each seat, and `game.slow` and `game.shuffle` this game's settings, with `closesIn` null in a slow one |
 | `online` | who's connected, and who's host |
-| `stage` | a battle or war opens; `bots` is `[seat, power, style, delay, up]` for each bot, its slam and the card it turns face up; `gathered` lists the seats whose decks couldn't cover the stage, so their winnings went under them as it opened; `closesIn` is null in a slow game |
+| `stage` | a battle or war opens; `bots` is `[seat, power, style, delay, up]` for each bot, its slam and the card it turns face up; `gathered` lists the bots whose decks couldn't cover the stage, so their winnings went under them as it opened; `closesIn` is null in a slow game |
 | `charge`, `card` | someone charging up, or slamming a face-down card in a war |
-| `slam` | `{"seat","power","style","up"}`: someone slammed the card that counts, and `up` is that card, face up at once; with `"flopped":true`, the host flipped it over for them |
+| `slam` | `{"seat","power","style","up"}`: someone slammed the card that counts, and `up` is that card, face up at once; with `"flopped":true`, the host flipped it over for them; with `"gathered":true`, their deck couldn't cover the stage, so their winnings went under it first |
 | `nudge` | `{"seats","by"}`: someone (`by` is null for a spectator) nudged the players in `seats` |
-| `flip` | the stage is played out: every card, `plays` as `[seat, down, up, power, style, flopped]`, the winner and pot, and the next stage or the final standings; `counts` is every card each seat holds and `decks` the ones in their deck; in a war, `downs` has the cards each seat laid face down, which show face up in the winner's loot |
+| `flip` | the stage is played out: every card, `plays` as `[seat, down, up, power, style, flopped]`, the winner and pot, and the next stage or the final standings; `counts` is every card each seat holds and `decks` the ones in their deck; `gathered` lists the seats whose cards flopped from a deck that couldn't cover the stage, so their winnings went under it first; in a war, `downs` has the cards each seat laid face down, which show face up in the winner's loot |
 | `gather` | `{"seat"}`: someone put their winnings under their deck |
 | `cheer`, `deck`, `tidy` | someone cheered, changed deck or cleaned up their winnings |
 | `error` | something went wrong, in words for the player |
@@ -167,10 +167,14 @@ at the `flip`. War has no decisions, so seeing a card early helps nobody.
 they've won, face up beside it. A pot goes on its winner's winnings as it
 lies: everyone else's cards in the order they were played, then the
 winner's own on top. Winnings go back under the deck when the player picks
-them up (`gather`), or by themselves when a stage opens that their deck
-can't cover (a card in a battle, four in a war). They go under as they lie,
-the oldest first, unless the host picked shuffled winnings, which is how
-plenty of people play. Picking up early changes no card to come, so it's a
+them up (`gather`), and only then: when a stage opens that a player's deck
+can't cover (a card in a battle, four in a war), the page has them pick up
+before they can slam (in solo, Fast and Auto pick up for them). Bots pick
+up by themselves as the stage opens. A slam, a host's flip or a card that
+flops at the end of the clock from a deck that can't cover the stage picks
+up first, so a stage always has its cards. They go under as they lie, the
+oldest first, unless the host picked shuffled winnings, which is how plenty
+of people play. Picking up early changes no card to come, so it's a
 player's own business. Kept in order, a long game can come round to where it
 was and go in circles; total war's 5,000-battle limit ends it.
 

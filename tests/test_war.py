@@ -409,6 +409,33 @@ def test_winnings_stay_apart_until_you_pick_them_up(page: Page, site_url, errors
     assert errors == []
 
 
+def test_an_empty_deck_waits_for_you_to_pick_up_unless_you_are_in_a_hurry(page: Page, site_url, errors):
+    # Seed 14: you win the first two battles. Leave just the top card in your
+    # deck, the rest as winnings, so the deck is out after one battle.
+    start_solo(page, site_url, seed=14)
+    rig = "S.conn.game.loot[0] = S.conn.game.piles[0].splice(1)"
+    page.evaluate(rig)
+    page.evaluate("window.__war.slam(80)")
+    page.wait_for_function(f"{STATE}.battle === 2")
+    assert page.evaluate(f"{STATE}.decks[0]") == 0
+    expect(page.locator("#slamText")).to_have_text("Pick up your winnings to play")
+    page.wait_for_timeout(600)
+    assert not page.evaluate(f"{STATE}.canSlam")
+    assert page.evaluate("window.__war.slam(80)") is False, "you can't slam an empty deck"
+    page.keyboard.press("Space")
+    page.wait_for_function(f"{STATE}.canSlam")
+    assert page.evaluate(f"{STATE}.decks[0]") == 28
+
+    # In Fast mode, your winnings come up by themselves.
+    page.evaluate(rig)
+    page.click("#fastBtn")
+    page.evaluate("window.__war.slam(80)")
+    page.wait_for_function(f"{STATE}.battle === 3 && {STATE}.canSlam")
+    assert page.evaluate(f"[{STATE}.decks[0], {STATE}.loot[0]]") == [29, 0]
+    expect(page.locator("#caption")).to_contain_text("back under your deck")
+    assert errors == []
+
+
 def test_winnings_can_be_shuffled_on_their_way_back(page: Page, site_url, errors):
     page.goto(f"{site_url}/war?seed=14#debug")
     expect(page.locator("#soloWinnings button[data-winnings=kept]")).to_have_attribute("aria-pressed", "true")
