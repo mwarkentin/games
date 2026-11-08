@@ -59,6 +59,7 @@ function stored(cx, cy, n, at, initials = 'ZED') {
   return { key: keyOf(w, x, y, d), w, x, y, d, s: 0, initials, at };
 }
 
+const stored0 = (i, at) => stored(i, 0, 0, at);  // a hidden word in chunk (i, 0)
 const plan = (db, sql, ...params) => db.raw.prepare(`EXPLAIN QUERY PLAN ${sql}`).all(...params).map((r) => r.detail).join(' | ');
 
 describe('writeLog', () => {
@@ -390,6 +391,22 @@ describe('routeLog', () => {
     assert.equal(env.LOG_DB.log.length, 0);
     assert.equal((await again.json()).total, 1);
     assert.equal(again.headers.get('Access-Control-Allow-Origin'), null);  // not in ALLOWED_ORIGINS here
+  });
+
+  test('keeps each Worker\'s answers apart in Cloudflare\'s cache, so a preview never answers for production', async () => {
+    // Every workers.dev Worker on the account shares one zone's cache, Worker Previews included.
+    const stored = new Map();
+    globalThis.caches = { default: { match: async (r) => stored.get(r.url)?.clone(), put: async (r, res) => { stored.set(r.url, res); } } };
+    const preview = { LOG_DB: fakeD1(), ALLOWED_ORIGINS: ORIGIN };
+    for (let i = 0; i < 5; i++) await writeLog(preview.LOG_DB, [stored0(i, NOW - 3 * DAY_MS + i)]);
+    const ask = (host, which) => routeLog(new Request(`https://${host}/v1/survey/log/day/${DAY - 3}`, { headers: { Origin: ORIGIN } }), which, NOW);
+    assert.equal((await (await ask('pr-43-games-leaderboard.example.workers.dev', preview)).json()).total, 5);
+    forgetLog();  // another Worker instance
+    assert.equal((await (await ask('games-leaderboard.example.workers.dev', env)).json()).total, 0);
+    assert.deepEqual([...stored.keys()].sort(), [
+      `https://games-leaderboard.example.workers.dev/_cache/survey-log/day/${DAY - 3}`,
+      `https://pr-43-games-leaderboard.example.workers.dev/_cache/survey-log/day/${DAY - 3}`,
+    ]);
   });
 
   test('answers a month and a top list, cached by how settled and how long they are', async () => {

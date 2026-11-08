@@ -332,10 +332,15 @@ hour ago (`SETTLED_MS`) is cached for a day, and the one still running for
 - `Cache-Control` on every answer, for browsers;
 - in each Worker instance's memory (up to 300 answers), so a crowd reading
   the current hour costs one D1 query per instance every 15 s;
-- in Cloudflare's cache through the Cache API. It does nothing on
-  `workers.dev`, so it only starts helping once the Worker is on a custom
-  domain (see the Worker's README). The cached copy has no CORS headers; each
-  answer adds its own origin's.
+- in Cloudflare's cache through the Cache API. The cached copy has no CORS
+  headers; each answer adds its own origin's. That cache is shared by every
+  Worker on the same zone, and all of this account's `workers.dev` Workers,
+  Worker Previews included, are one zone, so each answer is kept under its
+  own Worker's host (`<host>/_cache/survey-log/<path>`). Before that was so,
+  a pull request's preview put its test history's months in the cache and
+  production read them back for a day; the page's requests carry a version
+  (`CACHE_VERSION` in `letterfield-log.html`) so browsers dropped the copies
+  they'd kept.
 
 A backfilled sector's old claims can take up to a day to appear in hours that
 were already cached.

@@ -203,9 +203,7 @@ would put them back. To replace the token, see mwarkentin/infra's README.
 Optional: serve the Worker from your own domain (such as
 `api.games.michaelwarkentin.com`). That needs the domain's DNS on
 Cloudflare, which mwarkentin/infra would manage; the `workers.dev` URL
-works without it. On a custom domain the survey log's settled hours and
-days are also kept in Cloudflare's cache (the Cache API does nothing on
-`workers.dev`).
+works without it.
 
 ## Previews
 
