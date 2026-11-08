@@ -430,44 +430,58 @@ def tie(fake: FakeWarRoom, up: list[int], battle: int = 1, stage: int = 0, opens
     })
 
 
-def test_a_joker_war_brings_out_the_giant_joker(page: Page, site_url, errors):
+JOKER = "(window.__war.joker() || {})"
+# How bright a canvas is, on average: the jester in the dark, then lit.
+BRIGHTNESS = """(sel) => {
+    const c = document.querySelector(sel), d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data;
+    let sum = 0;
+    for (let i = 0; i < d.length; i += 4) sum += ((d[i] + d[i + 1] + d[i + 2]) * d[i + 3]) / 255;
+    return sum / (c.width * c.height);
+}"""
+
+
+def test_a_joker_war_turns_out_the_lights(page: Page, site_url, errors):
     fake = FakeWarRoom()
     deal_head_to_head(page, site_url, fake)
 
-    # The red and the black joker meet: the giant joker laughs instead of the
+    # The red and the black joker meet: the lights go out instead of the
     # usual versus intro.
     tie(fake, [joker(0), joker(1)])
     expect(page.locator("#banner")).to_have_text("WAR!")
     show = page.locator("#fx .jk")
     expect(show).to_have_class(re.compile(r"\blv1\b"))
-    expect(show.locator(".jk-fig canvas")).to_have_count(3)
+    expect(show.locator(".jk-fig.bust canvas")).to_have_count(2)
     expect(show.locator(".jk-word")).to_have_text("JOKER WAR!")
     expect(show.locator(".jk-cards .card.joker")).to_have_count(2)
     expect(page.locator("#fx .vs")).to_have_count(0)
     assert page.evaluate(VERSUS)["joker"] == 1
-    # It's drawn in the page, pixel by pixel: the cap and the glowing eyes.
-    lit = page.evaluate("""(() => {
-        const eyes = document.querySelector('#fx .jk .jk-eyes').getContext('2d').getImageData(0, 0, 40, 52).data;
-        let n = 0; for (let i = 3; i < eyes.length; i += 4) if (eyes[i]) n++;
-        return n;
-    })()""")
-    assert lit > 6, "the eyes glow"
     assert page.evaluate("getComputedStyle(document.getElementById('fx')).pointerEvents") == "none"
     # It fits a phone without anything scrolling sideways.
     assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
 
-    # The war opens on time and slamming works while the joker's still going.
+    # Two eyes open in the dark, then a lantern lights the jester from below.
+    # It's drawn in the page, pixel by pixel.
+    page.wait_for_function(f"{JOKER}.eyes > 0.9")
+    dark = page.evaluate(BRIGHTNESS, "#fx .jk-fig.bust .px")
+    page.wait_for_function(f"{JOKER}.lit > 0.8")
+    page.wait_for_timeout(100)
+    lit = page.evaluate(BRIGHTNESS, "#fx .jk-fig.bust .px")
+    assert lit > dark * 1.5, f"the lantern lights it up ({dark:.1f} then {lit:.1f})"
+    # It laughs, a HA! for every beat.
+    page.wait_for_function(f"{JOKER}.bubbles > 0")
+
+    # The war opens on time and slamming works.
     page.wait_for_function(f"{STATE}.stage === 1 && {STATE}.canSlam")
     hold_slam(page, 250)
     expect(page.locator("#myWar .wpile .card")).to_have_count(1)
     expect(page.locator("#fx .jk")).to_have_count(0)
     page.evaluate("window.__war.slam(90)")
 
-    # The war ties on jokers again: an even bigger joker war, with company.
+    # The war ties on jokers again: red eyes, and more of them open in the dark.
     tie(fake, [joker(0), joker(1)], stage=1)
     show = page.locator("#fx .jk")
     expect(show).to_have_class(re.compile(r"\blv2\b"))
-    expect(show.locator(".jk-twin")).to_have_count(2)
+    expect(show.locator(".jk-fig.peek")).to_have_count(7)
     expect(show.locator(".jk-pre")).to_have_text("DOUBLE")
     assert page.evaluate(VERSUS)["joker"] == 2
     assert errors == []
@@ -503,12 +517,17 @@ def test_reduced_motion_gets_a_still_joker(page: Page, site_url, errors):
     tie(fake, [joker(0), joker(1)])
     show = page.locator("#fx .jk")
     expect(show).to_have_class(re.compile(r"\bcalm\b"))
-    expect(show.locator(".jk-fig")).to_be_visible()
+    expect(show.locator(".jk-fig.bust")).to_be_visible()
     expect(show.locator(".jk-word")).to_have_text("JOKER WAR!")
-    # Nothing moves: no rising, laughing, shaking or flickering.
+    # A still picture of the jester lit by its lantern, and nothing moves,
+    # not even a pixel.
+    assert page.evaluate(f"{JOKER}.lit") == 1
     moving = page.evaluate("document.getAnimations().filter((a) => a.effect && a.effect.target && a.effect.target.closest && a.effect.target.closest('.jk')).length")
     assert moving == 0
+    picture = "document.querySelector('#fx .jk-fig.bust .px').toDataURL()"
+    before = page.evaluate(picture)
     page.wait_for_timeout(1200)
+    assert page.evaluate(picture) == before
     assert page.locator("#fx .jk-ha").count() == 0
     assert page.evaluate("document.getElementById('app').classList.contains('shake')") is False
     page.wait_for_function(f"{STATE}.stage === 1 && {STATE}.canSlam")
