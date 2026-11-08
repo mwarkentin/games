@@ -55,7 +55,7 @@
 // Worker's host: a preview's test history never stands in for production's.
 
 import { corsHeaders, json } from './leaderboard.js';
-import { RC, RG, THEMES, VOCAB, chunk, fdiv, regionName, regionTheme } from './letterfield-world.js';
+import { RC, RG, THEMES, chunk, fdiv, regionName, regionTheme, strayTheme } from './letterfield-world.js';
 
 export const LOG_MS = 30000;            // a sector copies new claims to D1 at most this often
 export const LOG_BATCH = 240;           // claims copied at once; more go a second later
@@ -151,7 +151,7 @@ export async function readHour(db, hour, after = null) {
 // `places` and `themes`.
 function entryOf(r, places, themes) {
   const rx = fdiv(r.x, RC), ry = fdiv(r.y, RC);
-  const th = r.s ? VOCAB.get(r.w) : regionTheme(rx, ry);
+  const th = r.s ? strayTheme(r.w, rx, ry) : regionTheme(rx, ry);
   places[`${rx},${ry}`] ??= regionName(rx, ry);
   themes[th] ??= [THEMES[th].name, THEMES[th].hue];
   return [r.w, r.x, r.y, r.d, r.s, r.initials, r.at, th];

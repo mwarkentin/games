@@ -146,8 +146,11 @@ export const THEMES = THEME_DATA.trim().split('\n').map((line) => {
   return { name, hue: Number(hue), words: words.split(' ') };
 });
 const NT = THEMES.length, LAT_B = 21;
-export const VOCAB = new Map();
-THEMES.forEach((t, i) => t.words.forEach((w) => VOCAB.set(w, i)));
+// Every word, with the first theme that has it: a word can be in up to three
+// themes. HOLDERS counts the themes each word is in.
+export const VOCAB = new Map(), HOLDERS = new Map();
+THEMES.forEach((t, i) => t.words.forEach((w) => { if (!VOCAB.has(w)) VOCAB.set(w, i); HOLDERS.set(w, (HOLDERS.get(w) || 0) + 1); }));
+const THEME_SETS = THEMES.map((t) => new Set(t.words));
 
 function h3(a, b, c) {
   let h = Math.imul(a | 0, 0x27d4eb2d) ^ Math.imul(b | 0, 0x165667b1) ^ (c | 0);
@@ -168,10 +171,13 @@ export const fdiv = (a, b) => Math.floor(a / b);
 const RSEED = SEED ^ 0x5bd1e995, DSEED = SEED ^ 0x2545f491;
 const mod = (a, n) => ((a % n) + n) % n;
 export const regionTheme = (rx, ry) => mod(rx + LAT_B * ry, NT);
+// A stray's theme: its territory's, if that theme has the word, else the first that does.
+export const strayTheme = (w, rx, ry) => { const t = regionTheme(rx, ry); return THEME_SETS[t].has(w) ? t : VOCAB.get(w); };
 // Territory names, as the game shows them: one of the theme's words and a
 // landform (the survey's log names where each word was charted).
 const LANDFORMS = 'Hollow Reach Rise Flats Downs Heights Fields Vale Basin Ridge Point Crossing Common Green Row Lane Quarter Terrace Slope Banks Sound Strand Shallows Moor Marsh Wood Run Range Country Steppe Rim Verge Gulch Yard Works Corner Court Lands Cove Gate Spur Crest Hills Glen Dale Heath Wold Knoll Bluff Bend Haven End Fold Meadows Plains Shore Springs Cross Hook Hythe'.split(' ');
-const NAMED = THEMES.map((t) => t.words.filter((w) => w.length >= 4));
+// Names use only a theme's own words, in no other theme, so two themes never share one.
+const NAMED = THEMES.map((t) => t.words.filter((w) => w.length >= 4 && HOLDERS.get(w) === 1));
 export function regionName(rx, ry) {
   const k = rx + LAT_B * ry, t = mod(k, NT), words = NAMED[t];
   const w = words[h3(fdiv(k, NT), ry, RSEED) % words.length];

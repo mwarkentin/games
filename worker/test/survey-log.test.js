@@ -308,7 +308,7 @@ describe('one surveyor, theme or territory', () => {
   });
 
   test('give one theme\'s hidden words, with who charted them', async () => {
-    const th = regionTheme(0, 0), far = [116 * 2, 0];  // another territory with the same theme
+    const th = regionTheme(0, 0), far = [THEMES.length, 0];  // another territory with the same theme
     assert.equal(regionTheme(far[0], far[1]), th);
     await writeLog(db, [
       at(1, 1, NOW), at(2, 2, NOW + 1, { initials: 'AMY' }), at(far[0] * RC, 0, NOW + 2, { initials: 'AMY' }),

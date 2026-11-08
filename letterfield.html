@@ -535,12 +535,16 @@ const THEMES = THEME_DATA.trim().split('\n').map(line => {
   return { name, hue: Number(hue), words: words.split(' ') };
 });
 const NT = THEMES.length, LAT_B = 21;
-const VOCAB = new Map();
-THEMES.forEach((t, i) => t.words.forEach(w => VOCAB.set(w, i)));
+// Every word, with the first theme that has it: a word can be in up to three
+// themes. HOLDERS counts the themes each word is in.
+const VOCAB = new Map(), HOLDERS = new Map();
+THEMES.forEach((t, i) => t.words.forEach(w => { if (!VOCAB.has(w)) VOCAB.set(w, i); HOLDERS.set(w, (HOLDERS.get(w) || 0) + 1); }));
+const THEME_SETS = THEMES.map(t => new Set(t.words));
 // Territory names: one of the theme's words and a landform. A theme's landform
 // moves on a step each row, so no two of its territories within 60 rows share a name.
 const LANDFORMS = 'Hollow Reach Rise Flats Downs Heights Fields Vale Basin Ridge Point Crossing Common Green Row Lane Quarter Terrace Slope Banks Sound Strand Shallows Moor Marsh Wood Run Range Country Steppe Rim Verge Gulch Yard Works Corner Court Lands Cove Gate Spur Crest Hills Glen Dale Heath Wold Knoll Bluff Bend Haven End Fold Meadows Plains Shore Springs Cross Hook Hythe'.split(' ');
-const NAMED = THEMES.map(t => t.words.filter(w => w.length >= 4));
+// Names use only a theme's own words, in no other theme, so two themes never share one.
+const NAMED = THEMES.map(t => t.words.filter(w => w.length >= 4 && HOLDERS.get(w) === 1));
 
 /* ---------- Deterministic generation ---------- */
 function h3(a, b, c) {
@@ -563,6 +567,8 @@ const clamp = (v, a, b) => v < a ? a : v > b ? b : v;
 const RSEED = SEED ^ 0x5bd1e995, DSEED = SEED ^ 0x2545f491;
 const mod = (a, n) => ((a % n) + n) % n;
 const regionTheme = (rx, ry) => mod(rx + LAT_B * ry, NT);
+// A stray's theme: its territory's, if that theme has the word, else the first that does.
+const strayTheme = (w, rx, ry) => { const t = regionTheme(rx, ry); return THEME_SETS[t].has(w) ? t : VOCAB.get(w); };
 function regionName(rx, ry) {
   const k = rx + LAT_B * ry, t = mod(k, NT), words = NAMED[t];
   const w = words[h3(fdiv(k, NT), ry, RSEED) % words.length];
@@ -674,7 +680,7 @@ function sanitize(o) {
   const f = o.f ? 1 : 0;
   const n = f && Number.isInteger(o.n) && o.n > 0 && o.n < 1e8 ? o.n : 0;  // where a word charted first came in the world's count
   const t = Number.isFinite(Number(o.t)) ? Number(o.t) : Date.now();
-  const th = s ? VOCAB.get(w) : regionTheme(fdiv(x, RC), fdiv(y, RC));
+  const th = s ? strayTheme(w, fdiv(x, RC), fdiv(y, RC)) : regionTheme(fdiv(x, RC), fdiv(y, RC));
   return { key, w, x, y, d, t, s, f, n, th, born: 0 };
 }
 let redrawn = null;  // {kept, had} the first time a player from an older map comes back
@@ -2648,7 +2654,7 @@ if (surveyApi) {
 }
 updateHud();
 invalidate();
-if (redrawn) setTimeout(() => toast(`<i></i><b>The map has been redrawn</b><span>About ${Math.round(VOCAB.size / NT / 10) * 10} words a theme now, so a territory never repeats one · ${redrawn.kept ? `${redrawn.kept} of your ${redrawn.had} finds are still on it` : 'your old finds are not on it'}</span>`, null, 8000), 900);
+if (redrawn) setTimeout(() => toast(`<i></i><b>The map has been redrawn</b><span>${NT} themes of about ${Math.round(THEMES.reduce((a, t) => a + t.words.length, 0) / NT / 10) * 10} words now, so a territory never repeats one · ${redrawn.kept ? `${redrawn.kept} of your ${redrawn.had} finds are still on it` : 'your old finds are not on it'}</span>`, null, 8000), 900);
 connectStore();
 if (location.hash === '#debug') window.__lf = { cam, found, claims, links, chunk, wordEnd, collect, territoryProgress, world: () => world, supernova, novaSound, audioOut, musicTracks: MUSIC_TRACKS, music: () => musicNow && { state: ac.state, track: musicNow.track().name, nodes: musicNow.track().nodes.size, level: musicNow.master.gain.value, swap: musicNow.swap }, nova: () => nova };
 
