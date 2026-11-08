@@ -167,7 +167,8 @@ def test_all_time_shows_how_much_of_the_world_is_charted(page: Page, site_url, e
     fake = FakeSurveyLog([ACORN, MONET, ZEUS], PLACES, THEMES)
     open_log(page, site_url, fake, query="&period=all")
     expect(page.locator("#sumTitle")).to_have_text("All time")
-    expect(page.locator("#navLabel")).to_have_text("Since the log began on Nov 6, 2026")
+    # ZEUS, the day before the log began, came from a sector sending its older words.
+    expect(page.locator("#navLabel")).to_have_text("Since the first word, on Nov 5, 2026")
     expect(page.locator("#prev")).to_be_hidden()
     expect(page.locator(".chart .ymax").nth(1)).to_have_text("2 of 1,120,206 hidden words in the shared world · <0.01%")
     expect(page.locator(".meter")).to_have_attribute("aria-valuenow", "2")
@@ -196,11 +197,24 @@ def test_all_time_draws_the_world_filling_in_month_by_month(page: Page, site_url
     expect(marks.nth(0)).to_have_attribute("aria-label", "By the end of November 2026: 4 · <0.01%")
     expect(marks.nth(2)).to_have_attribute("aria-label", "By the end of January 2027: 10 · <0.01%")
     expect(page.locator("#chart .ticks span").first).to_have_text("Nov 2026")
+    expect(page.locator("#navLabel")).to_have_text("Since the log began on Nov 6, 2026")
     # Eight themes, then the rest folded into one row with no bar of its own.
     themes_card = page.locator(".card", has_text="Themes")
     expect(themes_card.locator(".rank li")).to_have_count(9)
     expect(themes_card.locator(".rank li").last).to_contain_text("2 other themes")
     expect(themes_card.locator(".rank li").last.locator(".track i")).to_have_count(0)
+    assert errors == []
+
+
+def test_all_time_starts_with_the_first_word_logged(page: Page, site_url, errors):
+    # Words a sector held from before the log began, sent when it woke.
+    early = [["ACORN", 5, 7, 0, 0, "OLD", int(datetime(2026, 9, 20, tzinfo=timezone.utc).timestamp() * 1000), 11]]
+    fake = FakeSurveyLog(early + [ACORN, MONET], PLACES, THEMES)
+    open_log(page, site_url, fake, query="&period=all")
+    expect(page.locator("#navLabel")).to_have_text("Since the first word, on Sep 20, 2026")
+    expect(page.locator("#chart .bar")).to_have_count(3)
+    expect(page.locator(".row .when")).to_have_text(["November 2026", "October 2026", "September 2026"])
+    expect(page.locator("svg.line")).to_have_count(1)
     assert errors == []
 
 

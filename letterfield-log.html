@@ -224,7 +224,7 @@ const DNAME = ['E','SE','S','SW','W','NW','N','NE'];
 const RC = 48;            // cells per territory side
 const AREA_CELLS = [-12 * 192, 13 * 192];  // the shared world, x and y from..to-1 (sectors -12 to 12)
 const WORLD_WORDS = 1120206;  // hidden words in the shared world
-const LOG_BEGAN = Date.UTC(2026, 10, 6);  // the first day of the log
+const LOG_BEGAN = Date.UTC(2026, 10, 6);  // the day the log began, until the Worker says where its words start
 const MAX_PAGES = 40;     // pages of one hour the page reads (500 each)
 const LIVE_REFRESH_MS = 20000;  // the hour still running reloads this often while it's on screen
 const PERIODS = ['hour', 'day', 'week', 'month', 'year', 'all'];
@@ -260,7 +260,16 @@ const hourRange = (a, b) => `${timeFmt.format(a)} – ${timeFmt.format(b)}`;
 // Periods are the player's own, in local time: a day runs midnight to
 // midnight (23 or 25 hours around a clock change), a week Monday to Monday.
 // All time runs from the month the log began to the end of this month.
-const allStart = () => { const d = new Date(LOG_BEGAN); return new Date(d.getFullYear(), d.getMonth(), 1).getTime(); };
+// All time runs from the month of the first word logged, which can be before
+// the log began: sectors send their older words the first time they wake.
+let logFirst = LOG_BEGAN, spanAsked = null;
+const allStart = () => { const d = new Date(logFirst); return new Date(d.getFullYear(), d.getMonth(), 1).getTime(); };
+function askSpan() {
+  spanAsked ??= cachedJSON('/v1/survey/log/span', false).then(span => {
+    if (span && Number.isInteger(span.first)) logFirst = Math.min(LOG_BEGAN, span.first * HOUR);
+  }, () => { spanAsked = null; });
+  return spanAsked;
+}
 function startOf(p, t) {
   const d = new Date(t), y = d.getFullYear(), m = d.getMonth(), day = d.getDate();
   if (p === 'hour') return new Date(y, m, day, d.getHours()).getTime();
@@ -684,7 +693,7 @@ function titles(p, s, e) {
   }
   if (p === 'month') return [monthFmt.format(s), ''];
   if (p === 'year') return [String(new Date(s).getFullYear()), ''];
-  return ['All time', `Since the log began on ${new Intl.DateTimeFormat(undefined, { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' }).format(LOG_BEGAN)}`];
+  return ['All time', `Since ${logFirst < LOG_BEGAN ? 'the first word, on' : 'the log began on'} ${new Intl.DateTimeFormat(undefined, { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' }).format(logFirst)}`];
 }
 
 function chrome() {
@@ -714,6 +723,11 @@ function chrome() {
 /* ---------- Rendering ---------- */
 async function render(quiet = false) {
   const run = ++state.run;
+  if (state.period === 'all' && api) {
+    await askSpan();
+    if (run !== state.run) return;
+    state.start = allStart();
+  }
   const { period, start, mine } = state;
   saveUrl();
   hideTip();

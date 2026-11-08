@@ -63,7 +63,10 @@ class FakeSurveyLog:
         if future:
             route.fulfill(status=400, headers=headers, body=json.dumps({"error": "that day has not started"}))
             return
-        if month:
+        if url.split("?")[0].endswith("/v1/survey/log/span"):
+            hours = [e[6] // HOUR_MS for e in self.entries]
+            body = {"first": min(hours, default=None), "last": max(hours, default=None)}
+        elif month:
             first, last = month_hours(int(month[1]))
             counts = Counter(e[6] // HOUR_MS for e in self.entries if first <= e[6] // HOUR_MS < last)
             world = Counter(e[6] // HOUR_MS for e in self.entries if first <= e[6] // HOUR_MS < last and in_world(e))

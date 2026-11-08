@@ -13,8 +13,8 @@ import worker from '../src/index.js';
 import { RC, THEMES, VOCAB, chunk, fdiv, keyOf, regionName, regionTheme } from '../src/letterfield-world.js';
 import {
   DAY_MS, HOURS_SQL, HOUR_AFTER_SQL, HOUR_MS, HOUR_SQL, LIVE_CACHE_S, LOG_BATCH, LOG_MS, LOG_PAGE, LOG_RETRY_MAX_MS, SETTLED_MS,
-  SURVEYORS_SQL, TERRITORIES_SQL, TOP_MAX_DAYS, TOP_N, TOP_SLOW_CACHE_S,
-  forgetLog, monthHours, readDay, readHour, readMonth, readTop, routeLog, writeLog,
+  FIRST_SQL, LAST_SQL, SPAN_CACHE_S, SURVEYORS_SQL, TERRITORIES_SQL, TOP_MAX_DAYS, TOP_N, TOP_SLOW_CACHE_S,
+  forgetLog, monthHours, readDay, readHour, readMonth, readSpan, readTop, routeLog, writeLog,
 } from '../src/survey-log.js';
 import { AREA, SECTOR, Sector } from '../src/survey.js';
 
@@ -35,6 +35,7 @@ function fakeD1(applied = Infinity) {
     sql, params,
     bind: (...values) => statement(sql, values),
     all: async () => { log.push({ sql, params }); return { results: db.prepare(sql).all(...params) }; },
+    first: async (column) => { log.push({ sql, params }); const row = db.prepare(sql).get(...params); return row ? (column ? row[column] : row) : null; },
     run: () => db.prepare(sql).run(...params),
   });
   const d1 = {
@@ -228,6 +229,16 @@ describe('the log\'s counts', () => {
     assert.equal((await readTop(db, DAY - 3, DAY + 1)).surveyors.find(([i]) => i === 'OLD')[1], 1);
   });
 
+  test('say where the log starts and ends, words logged late included', async () => {
+    assert.deepEqual(await readSpan(db), { first: null, last: null });
+    await writeLog(db, [at(0, 0, NOW), at(1, 1, NOW - 40 * DAY_MS), at(2, 2, NOW + HOUR_MS)]);
+    assert.deepEqual(await readSpan(db), { first: HOUR - 40 * 24, last: HOUR + 1 });
+    // A word taken back out doesn't hold the start where it was.
+    db.raw.exec(`DELETE FROM survey_log WHERE x = 1`);
+    assert.deepEqual(await readSpan(db), { first: HOUR, last: HOUR + 1 });
+    for (const sql of [FIRST_SQL, LAST_SQL]) assert.doesNotMatch(plan(db, sql), /TEMP B-TREE/);
+  });
+
   test('read only the counts asked for', () => {
     for (const p of [plan(db, HOURS_SQL, 1, 2)]) assert.match(p, /SEARCH survey_log_hours USING PRIMARY KEY \(hour>\? AND hour<\?\)/);
     assert.match(plan(db, SURVEYORS_SQL, 1, 2), /SEARCH survey_log_surveyors USING PRIMARY KEY \(day>\? AND day<\?\)/);
@@ -305,6 +316,12 @@ describe('routeLog', () => {
     assert.equal((await get(`/v1/survey/log/top/${DAY + 1}/${DAY + 2}`)).status, 400);
     assert.equal((await get(`/v1/survey/log/top/${DAY}/${DAY}`)).status, 400);
     assert.equal((await get(`/v1/survey/log/top/${DAY - TOP_MAX_DAYS - 1}/${DAY}`)).status, 400);
+  });
+
+  test('answers the span, cached for minutes', async () => {
+    const res = await get('/v1/survey/log/span');
+    assert.equal(res.headers.get('Cache-Control'), `public, max-age=${SPAN_CACHE_S}`);
+    assert.deepEqual(await res.json(), { first: Math.floor((NOW - 2 * DAY_MS) / HOUR_MS), last: Math.floor((NOW - 1000) / HOUR_MS) });
   });
 
   test('turns away times to come, bad cursors and writes', async () => {

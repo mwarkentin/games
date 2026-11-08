@@ -10,6 +10,8 @@
 //                                    January 1970), hours with none left out:
 //                                    {month, hours: [[hour, words, world], ...]}, where world is
 //                                    how many were hidden words in the shared world
+//   GET /v1/survey/log/span          the first and latest UTC hours with words in them, or nulls:
+//                                    {first, last}, where all time starts
 //   GET /v1/survey/log/top/<from>/<to>   the most charted over UTC days from..to-1 (days since
 //                                    1970): {from, to, surveyors: [[initials, words], ...],
 //                                    territories: [[rx, ry, name, th, words], ...],
@@ -57,6 +59,8 @@ export const LOG_DAY_PATH = /^\/v1\/survey\/log\/day\/(\d{1,6})$/;
 export const LOG_HOUR_PATH = /^\/v1\/survey\/log\/hour\/(\d{1,8})$/;
 export const LOG_MONTH_PATH = /^\/v1\/survey\/log\/month\/(\d{1,5})$/;
 export const LOG_TOP_PATH = /^\/v1\/survey\/log\/top\/(\d{1,6})\/(\d{1,6})$/;
+export const LOG_SPAN_PATH = '/v1/survey/log/span';
+export const SPAN_CACHE_S = 300;        // seconds the span is cached for: its latest hour can lag this much
 export const TOP_N = 10;                // surveyors and territories in a top list
 export const TOP_MAX_DAYS = 3660;       // the longest range a top list covers
 export const TOP_SLOW_CACHE_S = 600;    // seconds a running top list over more than 2 days is cached for
@@ -82,6 +86,8 @@ export const HOUR_AFTER_SQL = `SELECT at, key, w, x, y, d, s, initials FROM surv
   WHERE at >= ? AND at < ? AND (at, key) > (?, ?) ORDER BY at, key LIMIT ?`;
 export const HOURS_SQL = `SELECT hour, n, world FROM survey_log_hours
   WHERE hour >= ? AND hour < ? AND n > 0 ORDER BY hour`;
+export const FIRST_SQL = 'SELECT hour FROM survey_log_hours WHERE n > 0 ORDER BY hour LIMIT 1';
+export const LAST_SQL = 'SELECT hour FROM survey_log_hours WHERE n > 0 ORDER BY hour DESC LIMIT 1';
 export const SURVEYORS_SQL = `SELECT initials, SUM(n) AS n FROM survey_log_surveyors
   WHERE day >= ? AND day < ? GROUP BY initials HAVING SUM(n) > 0 ORDER BY SUM(n) DESC, initials LIMIT ${TOP_N}`;
 export const TERRITORIES_SQL = `SELECT rx, ry, SUM(n) AS n FROM survey_log_territories
@@ -125,6 +131,14 @@ export async function readMonth(db, month) {
   return { month, hours: rows.map((r) => [r.hour, r.n, r.world]) };
 }
 
+// The first and latest hours with words in them. The log began on
+// November 6, 2026, but sectors send words from before then the first time
+// they wake, so all time starts wherever the words do.
+export async function readSpan(db) {
+  const [first, last] = await Promise.all([db.prepare(FIRST_SQL).first('hour'), db.prepare(LAST_SQL).first('hour')]);
+  return { first: first ?? null, last: last ?? null };
+}
+
 // The most charted over a run of UTC days: surveyors by their initials,
 // territories by hidden words charted in them, and every theme those
 // territories have. Initials aren't unique, so a "surveyor" is everyone who
@@ -163,11 +177,12 @@ function edgeCache() {
 export function routeLog(request, env, now = Date.now()) {
   const url = new URL(request.url);
   const day = url.pathname.match(LOG_DAY_PATH), hour = url.pathname.match(LOG_HOUR_PATH);
-  const month = url.pathname.match(LOG_MONTH_PATH), top = url.pathname.match(LOG_TOP_PATH);
-  if (!(day || hour || month || top) || !env.LOG_DB) return null;
+  const month = url.pathname.match(LOG_MONTH_PATH), top = url.pathname.match(LOG_TOP_PATH), span = url.pathname === LOG_SPAN_PATH;
+  if (!(day || hour || month || top || span) || !env.LOG_DB) return null;
   const cors = corsHeaders(request, env);
   if (request.method !== 'GET') return json({ error: 'method not allowed' }, 405, cors);
   let ends, read, key, live = LIVE_CACHE_S;
+  if (span) return answer('span', SPAN_CACHE_S, () => readSpan(env.LOG_DB), cors, now);
   if (month) {
     const m = Number(month[1]), [from, to] = monthHours(m);
     if (from > fdiv(now, HOUR_MS)) return json({ error: 'that month has not started' }, 400, cors);
