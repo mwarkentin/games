@@ -111,9 +111,20 @@ function warBotMs(game) {
   return Math.round((game.stage ? WAR.WAR_BOT_MS : WAR.BOT_MS) * game.pace);
 }
 
+// The card a fighter will turn over this stage: their top card, or in a war
+// the one after the (up to three) they lay face down. A stage's cards are
+// fixed once it opens, since piles only change when it's played out, so a
+// slam can show its card face up at once. War has no decisions, so seeing
+// cards early gives nobody an edge.
+function warUpCard(game, seat) {
+  const pile = game.piles[seat];
+  return pile[game.stage ? Math.min(3, pile.length - 1) : 0];
+}
+
 // Opens the next stage: a new battle for everyone still holding cards, or,
 // when fighters is given, a war between them. Bots slam straight away; the
-// pages show their slams one by one while the stage opens.
+// pages show their slams one by one while the stage opens, each bot's card
+// face up as it lands.
 function warOpenStage(game, now, random, fighters, delay) {
   if (fighters) {
     game.stage++;
@@ -133,7 +144,8 @@ function warOpenStage(game, now, random, fighters, delay) {
     const power = warBotPower(random);
     const style = Math.floor(random() * WAR.STYLES);
     game.slams[seat] = [power, style, 0];
-    bots.push([seat, power, style, Math.round(100 * game.pace + random() * (warBotMs(game) - 300 * game.pace))]);
+    const delay = Math.round(100 * game.pace + random() * (warBotMs(game) - 300 * game.pace));
+    bots.push([seat, power, style, delay, warUpCard(game, seat)]);
   }
   return {
     t: 'stage', battle: game.battle, stage: game.stage, limit: game.limit, fighters: game.fighters.slice(),
@@ -154,15 +166,16 @@ function warDueAt(game, online) {
   return warWaitingFor(game, online).length ? game.closesAt : game.opensAt + warBotMs(game);
 }
 
-// Records a slam. Returns the message to pass on, or null when it doesn't
-// count: the game is over, the seat isn't fighting, or it already slammed.
+// Records a slam. Returns the message to pass on, with the card it turns
+// over, or null when it doesn't count: the game is over, the seat isn't
+// fighting, or it already slammed.
 function warSlam(game, seat, power, style) {
   if (game.over || !game.fighters.includes(seat) || game.slams[seat]) return null;
   power = Math.max(0, Math.min(WAR.MAX_POWER, Math.round(Number(power)) || 0));
   style = Number.isInteger(style) && style >= 0 && style < WAR.STYLES ? style : 0;
   game.slams[seat] = [power, style, 0];
   game.naps[seat] = 0;
-  return { t: 'slam', seat, power, style };
+  return { t: 'slam', seat, power, style, up: warUpCard(game, seat) };
 }
 
 // Plays the stage out. Every fighter turns over their top card (in a war,
@@ -232,7 +245,7 @@ function warStandings(game) {
 
 export {
   WAR, warBotNames, warDeal, warDueAt, warNewGame, warOpenStage, warRank, warResolve, warShuffle, warSlam,
-  warStandings, warWaitingFor,
+  warStandings, warUpCard, warWaitingFor,
 };
 
 const HOUR = 60 * 60 * 1000;
@@ -391,6 +404,8 @@ export class WarRoom {
         battle: game.battle, limit: game.limit, stage: game.stage, fighters: game.fighters,
         counts: game.piles.map((pile) => pile.length), out: game.out, pot: game.pot.length,
         slams: Object.fromEntries(Object.entries(game.slams).map(([seat, [power, style]]) => [seat, [power, style]])),
+        // The cards those slams turned face up.
+        ups: game.over ? {} : Object.fromEntries(Object.keys(game.slams).map((seat) => [seat, warUpCard(game, Number(seat))])),
         opensIn: Math.max(0, game.opensAt - now), closesIn: Math.max(0, game.closesAt - now),
         wars: game.wars, over: game.over,
       },

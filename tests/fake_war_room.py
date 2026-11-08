@@ -7,6 +7,11 @@ lobby the way the real room does (players, host, bots, length, dealing) and
 passes slams, cheers, deck changes and clean-ups on; the battles themselves are up to each test,
 which sends the room's messages with broadcast(). The real room is tested in
 worker/test/war.test.js.
+
+The real room says which card each slam turns face up. The fake only does
+for the seats a test puts in `ups` (seat -> card), in slams and in the bots'
+slams when a stage opens; for the rest it sends none, as a room server from
+before cards showed early would.
 """
 
 from __future__ import annotations
@@ -42,6 +47,7 @@ class FakeWarRoom:
         self.sockets: list[dict] = []    # {ws, token, open}
         self.received: list[dict] = []   # every message from a page
         self.game: dict | None = None
+        self.ups: dict[int, int] = {}    # seat -> the card its slam turns face up
 
     def route(self, page: Page) -> None:
         page.route(f"{API}/**", self.handle_http)
@@ -159,7 +165,10 @@ class FakeWarRoom:
         elif kind == "start" and is_host:
             self.deal()
         elif kind in ("slam", "charge", "card") and seat is not None:
-            self.broadcast({"t": kind, "seat": seat, **{k: v for k, v in message.items() if k != "t"}})
+            relayed = {"t": kind, "seat": seat, **{k: v for k, v in message.items() if k != "t"}}
+            if kind == "slam" and seat in self.ups:
+                relayed["up"] = self.ups[seat]
+            self.broadcast(relayed)
         elif kind == "cheer":
             self.broadcast({"t": "cheer", "seat": seat, "e": message["e"]})
         elif kind == "deck" and seat is not None:
@@ -182,7 +191,8 @@ class FakeWarRoom:
 
     def stage(self, battle: int, stage: int = 0, fighters=None, opens_in: int = 0) -> dict:
         fighters = list(range(len(self.players))) if fighters is None else fighters
-        bots = [[seat, 100, 1, 200] for seat in fighters if self.players[seat]["bot"]]
+        bots = [[seat, 100, 1, 200, *([self.ups[seat]] if seat in self.ups else [])]
+                for seat in fighters if self.players[seat]["bot"]]
         return {
             "t": "stage", "battle": battle, "stage": stage, "limit": self.game["limit"], "fighters": fighters,
             "opensIn": opens_in, "closesIn": opens_in + 8000, "bots": bots,

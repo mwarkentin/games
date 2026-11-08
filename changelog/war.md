@@ -2,6 +2,9 @@
 
 - In a room, Clean up shows on everyone's screen: at a table of up to four,
   the others see your winnings squared up behind your card too.
+- Cards land face up as soon as they're played: yours the moment you slam
+  it, everyone else's the moment they slam theirs, bots' too. Face-down war
+  cards stay face down, and the winner still comes when everyone has played.
 
 ## 2026-11-07
 

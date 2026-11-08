@@ -138,12 +138,24 @@ WebSocket, pages send JSON messages:
 | `{"t":"tidy"}` | clean up the cards you've won into a neat stack, during or after a game, at most once a second (for show only) |
 | `{"t":"leave"}` | leave the lobby |
 
-The room answers with `state` (everything, sent on joining and when the
-lobby changes), `online`, `stage` (a battle or war opens, with the bots'
-slams), `charge`, `card`, `slam`, `flip` (the cards turn over, with the next
-stage or the final standings), `cheer`, `deck` (someone changed deck), `tidy`
-(someone cleaned up their winnings) and `error`. Players get 8 seconds to
-slam in a battle and 20 in a war, where they slam every card they lay down.
+The room answers with these:
+
+| Message | Means |
+| --- | --- |
+| `state` | everything, sent on joining and when the lobby changes; mid-game, `game.ups` has the card each slam so far turned face up |
+| `online` | who's connected, and who's host |
+| `stage` | a battle or war opens; `bots` is `[seat, power, style, delay, up]` for each bot, its slam and the card it turns face up |
+| `charge`, `card` | someone charging up, or slamming a face-down card in a war |
+| `slam` | `{"seat","power","style","up"}`: someone slammed the card that counts, and `up` is that card, face up at once |
+| `flip` | the stage is played out: every card, `plays` as `[seat, down, up, power, style, flopped]`, the winner and pot, and the next stage or the final standings |
+| `cheer`, `deck`, `tidy` | someone cheered, changed deck or cleaned up their winnings |
+| `error` | something went wrong, in words for the player |
+
+Players get 8 seconds to slam in a battle and 20 in a war, where they slam
+every card they lay down. A stage's cards are fixed once it opens, so a slam
+says which card it turns over: everyone sees it face up straight away, and
+the winner comes with `flip`. Cards that flop over by themselves only show
+at the `flip`. War has no decisions, so seeing a card early helps nobody.
 
 The first player still connected is the host. Up to 50 play (people take
 the place of bots in a full lobby) and up to 60 can be connected, the rest

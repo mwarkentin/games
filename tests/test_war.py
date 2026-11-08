@@ -62,6 +62,32 @@ def test_hold_to_charge_and_release_to_slam(page: Page, site_url, errors):
     assert errors == []
 
 
+def test_cards_land_face_up_as_they_are_played(page: Page, site_url, errors):
+    start_solo(page, site_url)
+    # The bot slams first: its card is face up straight away, though the
+    # battle waits for you.
+    bot = page.locator("#opponents .tile .tslot > .card")
+    expect(bot).to_have_attribute("aria-label", re.compile("."))
+    assert page.evaluate(f"{STATE}.table") == {}, "nothing has been played out"
+    expect(page.locator("#mySlot .card")).to_have_class(re.compile(r"\bempty\b"))
+
+    # Your card lands face up the moment you slam it, before the flip.
+    landed = page.evaluate(f"""() => {{
+        window.__war.slam(90);
+        const card = document.querySelector('#mySlot .card');
+        return {{ label: card.getAttribute('aria-label'), back: card.classList.contains('back'), table: {STATE}.table }};
+    }}""")
+    assert not landed["back"] and landed["label"], landed
+    assert landed["table"] == {}, "the flip hasn't come yet"
+
+    # The flip turns over the same cards, and brings the winner.
+    page.wait_for_function(f"Object.keys({STATE}.table).length === 2")
+    expect(page.locator("#mySlot .card")).to_have_attribute("aria-label", landed["label"])
+    ups = page.evaluate(f"{STATE}.ups")
+    assert page.evaluate(f"{STATE}.table") == ups
+    assert errors == []
+
+
 def test_a_war_means_slamming_every_card(page: Page, site_url, errors):
     start_solo(page, site_url, seed=WAR_SEED)
     hold_slam(page, 400)

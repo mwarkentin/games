@@ -1078,9 +1078,20 @@ function warBotMs(game) {
   return Math.round((game.stage ? WAR.WAR_BOT_MS : WAR.BOT_MS) * game.pace);
 }
 
+// The card a fighter will turn over this stage: their top card, or in a war
+// the one after the (up to three) they lay face down. A stage's cards are
+// fixed once it opens, since piles only change when it's played out, so a
+// slam can show its card face up at once. War has no decisions, so seeing
+// cards early gives nobody an edge.
+function warUpCard(game, seat) {
+  const pile = game.piles[seat];
+  return pile[game.stage ? Math.min(3, pile.length - 1) : 0];
+}
+
 // Opens the next stage: a new battle for everyone still holding cards, or,
 // when fighters is given, a war between them. Bots slam straight away; the
-// pages show their slams one by one while the stage opens.
+// pages show their slams one by one while the stage opens, each bot's card
+// face up as it lands.
 function warOpenStage(game, now, random, fighters, delay) {
   if (fighters) {
     game.stage++;
@@ -1100,7 +1111,8 @@ function warOpenStage(game, now, random, fighters, delay) {
     const power = warBotPower(random);
     const style = Math.floor(random() * WAR.STYLES);
     game.slams[seat] = [power, style, 0];
-    bots.push([seat, power, style, Math.round(100 * game.pace + random() * (warBotMs(game) - 300 * game.pace))]);
+    const delay = Math.round(100 * game.pace + random() * (warBotMs(game) - 300 * game.pace));
+    bots.push([seat, power, style, delay, warUpCard(game, seat)]);
   }
   return {
     t: 'stage', battle: game.battle, stage: game.stage, limit: game.limit, fighters: game.fighters.slice(),
@@ -1121,15 +1133,16 @@ function warDueAt(game, online) {
   return warWaitingFor(game, online).length ? game.closesAt : game.opensAt + warBotMs(game);
 }
 
-// Records a slam. Returns the message to pass on, or null when it doesn't
-// count: the game is over, the seat isn't fighting, or it already slammed.
+// Records a slam. Returns the message to pass on, with the card it turns
+// over, or null when it doesn't count: the game is over, the seat isn't
+// fighting, or it already slammed.
 function warSlam(game, seat, power, style) {
   if (game.over || !game.fighters.includes(seat) || game.slams[seat]) return null;
   power = Math.max(0, Math.min(WAR.MAX_POWER, Math.round(Number(power)) || 0));
   style = Number.isInteger(style) && style >= 0 && style < WAR.STYLES ? style : 0;
   game.slams[seat] = [power, style, 0];
   game.naps[seat] = 0;
-  return { t: 'slam', seat, power, style };
+  return { t: 'slam', seat, power, style, up: warUpCard(game, seat) };
 }
 
 // Plays the stage out. Every fighter turns over their top card (in a war,
@@ -2224,6 +2237,7 @@ const S = {
   battle: 0, limit: 0, stage: 0,
   fighters: [], counts: [], out: [], pot: 0, wars: 0,
   slams: {},             // seat -> [power, style] this stage
+  ups: {},               // seat -> the card their slam turned face up this stage
   charging: {},          // seat -> tier, for others charging up
   cards: {},             // seat -> { up, down } on the table this battle
   result: null,          // the last flip
@@ -2273,6 +2287,11 @@ function deckOf(seat) {
 
 // ---- Solo games: the core, run right here against bots ----
 
+// The cards turned face up by the slams so far this stage, for a snapshot.
+function warUps(game) {
+  return game.over ? {} : Object.fromEntries(Object.keys(game.slams).map((seat) => [seat, warUpCard(game, Number(seat))]));
+}
+
 class SoloRoom {
   constructor({ opponents, length, name, avatar, random }) {
     this.random = random;
@@ -2299,7 +2318,7 @@ class SoloRoom {
       players: this.players,
       game: {
         battle: g.battle, limit: g.limit, stage: g.stage, fighters: g.fighters, counts: g.piles.map((p) => p.length),
-        out: g.out, pot: g.pot.length, slams: g.slams, opensIn: Math.max(0, g.opensAt - Date.now()),
+        out: g.out, pot: g.pot.length, slams: g.slams, ups: warUps(g), opensIn: Math.max(0, g.opensAt - Date.now()),
         closesIn: Math.max(0, g.closesAt - Date.now()), wars: g.wars, over: g.over,
       },
     };
@@ -2480,6 +2499,8 @@ function onState(m) {
     });
     S.slams = {};
     for (const [seat, slam] of Object.entries(g.slams || {})) S.slams[seat] = slam.slice(0, 2);
+    S.ups = {};
+    for (const [seat, up] of Object.entries(g.ups || {})) if (Number.isInteger(up)) S.ups[seat] = up;
     S.opensAt = now() + g.opensIn;
     S.closesAt = now() + g.closesIn;
     S.charging = {};
@@ -2487,7 +2508,7 @@ function onState(m) {
     if (g.over) { if (Odds.seats) Odds.settle(g.over); }
     else if (g.stage === 0 && (fresh || !Odds.seats)) Odds.update(g.counts, g.battle, g.limit);
   } else {
-    Object.assign(S, { battle: 0, stage: 0, fighters: [], counts: [], out: [], over: null, cards: {}, result: null, slams: {} });
+    Object.assign(S, { battle: 0, stage: 0, fighters: [], counts: [], out: [], over: null, cards: {}, result: null, slams: {}, ups: {} });
   }
   showScreen();
   renderAll();
@@ -2504,12 +2525,14 @@ function onOnline(m) {
 }
 
 function onStage(m) {
-  S.pending = { ...m, slams: {}, thumps: {} };
+  S.pending = { ...m, slams: {}, ups: {}, thumps: {} };
   S.limit = m.limit;
   S.opensAt = now() + m.opensIn;
   S.closesAt = now() + m.closesIn;
   later(openStage, m.opensIn);
-  for (const [seat, power, style, delay] of m.bots) {
+  // Each bot's card lands face up as it slams. A room server from before
+  // cards showed early sends no card, and the slam lands face down.
+  for (const [seat, power, style, delay, up] of m.bots) {
     // In a war, bots slam each face-down card before the one that counts.
     const downs = m.stage ? Math.min(3, Math.max(0, (S.counts[seat] ?? 0) - 1)) : 0;
     for (let i = 0; i < downs; i++) {
@@ -2518,7 +2541,7 @@ function onStage(m) {
     }
     const glow = m.stage ? 60 : Math.max(0, delay - 450 * pace());
     later(() => { S.charging[seat] = Math.min(WAR.TIERS - 1, tierOf(power) + 1); renderTile(seat); }, m.opensIn + glow);
-    later(() => receive({ t: 'slam', seat, power, style }), m.opensIn + delay);
+    later(() => receive({ t: 'slam', seat, power, style, up }), m.opensIn + delay);
   }
 }
 
@@ -2532,6 +2555,7 @@ function openStage() {
   S.stage = m.stage;
   S.fighters = m.fighters.slice();
   S.slams = m.slams;
+  S.ups = m.ups;
   S.thumps = m.thumps;
   S.charging = {};
   if (m.stage === 0) {
@@ -2568,15 +2592,26 @@ function onCard(m) {
   if (S.players.length <= 6) Sound.slam(m.power, 0, true);
 }
 
+// Someone slammed the card that counts, and it lands face up: the room says
+// which card it is. Your own slam comes back from the room too, with yours.
 function onSlam(m) {
   // A slam can beat this page to the next stage opening, by a few milliseconds.
-  const target = S.pending && S.pending.fighters.includes(m.seat) ? S.pending.slams : S.slams;
-  if (target[m.seat]) return;
-  target[m.seat] = [m.power, m.style];
+  const early = S.pending && S.pending.fighters.includes(m.seat);
+  const slams = early ? S.pending.slams : S.slams;
+  const ups = early ? S.pending.ups : S.ups;
+  const turned = Number.isInteger(m.up) && ups[m.seat] === undefined;
+  if (turned) ups[m.seat] = m.up;
+  if (slams[m.seat]) {
+    // Already slammed (your own, most likely): now its card turns face up.
+    if (turned && !early) { if (m.seat === S.you) renderMe(); else renderTile(m.seat); renderWarRow(); }
+    return;
+  }
+  slams[m.seat] = [m.power, m.style];
   delete S.charging[m.seat];
   if (m.seat === S.you) return;
   renderTile(m.seat);
-  if (target !== S.slams) return;
+  if (early) return;
+  renderWarRow();
   const tile = tiles.get(m.seat);
   if (tile && tile.node.offsetParent) {
     const [x, y] = centerOf(tile.slot);
@@ -2972,11 +3007,18 @@ function buildTiles() {
   }
 }
 
-// What's in front of a player: the card they turned over, or face-down cards
-// they've slammed but nobody has seen yet.
+// Whether a player has slammed this stage's card but the stage hasn't been
+// played out yet.
+function landed(seat) {
+  const c = S.cards[seat];
+  return S.phase === 'playing' && isFighting(seat) && Boolean(S.slams[seat]) && !S.pending && (!c || c.stage < S.stage);
+}
+
+// What's in front of a player: the card they turned over, face up as soon as
+// they slam it, or face down if the room didn't say which it is.
 function cardKeyFor(seat) {
   const c = S.cards[seat];
-  if (S.phase === 'playing' && isFighting(seat) && S.slams[seat] && !S.pending && (!c || c.stage < S.stage)) return 'back';
+  if (landed(seat)) return S.ups[seat] !== undefined ? String(S.ups[seat]) : 'back';
   return c ? String(c.up) : 'empty';
 }
 
@@ -3045,8 +3087,9 @@ function renderMe() {
   const key = cardKeyFor(me);
   if (slot.dataset.key !== key) {
     const card = cardEl(key === 'back' ? 'back' : key === 'empty' ? null : Number(key));
-    if (key === 'back' && !reduceMotion.matches) card.classList.add('slam');
-    else if (key !== 'empty' && !reduceMotion.matches) card.classList.add('flipin');
+    // A card you slam lands with a thump; one already down turns over.
+    if (landed(me) && slot.dataset.key !== 'back' && !reduceMotion.matches) card.classList.add('slam');
+    else if (key !== 'empty' && key !== 'back' && !reduceMotion.matches) card.classList.add('flipin');
     slot.replaceChildren(card);
     slot.dataset.key = key;
   }
@@ -3085,7 +3128,11 @@ function renderWarRow() {
   const row = $('warRow');
   const war = S.phase === 'playing' && S.stage > 0;
   const fighters = war ? S.fighters.filter((s) => s !== S.you) : [];
-  const key = war ? `${S.battle}.${S.stage}:${fighters.map((s) => `${s}=${S.cards[s] ? S.cards[s].up : ''}/${S.thumps[s] || 0}`).join(',')}` : '';
+  const shown = (seat) => {
+    const key = cardKeyFor(seat);
+    return key === 'empty' ? 'back' : key === 'back' && S.cards[seat] ? S.cards[seat].up : key === 'back' ? 'back' : Number(key);
+  };
+  const key = war ? `${S.battle}.${S.stage}:${fighters.map((s) => `${s}=${shown(s)}/${S.thumps[s] || 0}`).join(',')}` : '';
   if (row.dataset.key === key) return;
   row.dataset.key = key;
   row.replaceChildren();
@@ -3094,7 +3141,7 @@ function renderWarRow() {
     const box = el('div', 'wf');
     const c = S.cards[seat];
     const downs = (c ? c.down : 0) + (S.thumps[seat] || 0);
-    box.append(cardEl(c && c.up !== undefined ? c.up : 'back', deckOf(seat)), el('span', '', `${downs ? `+${downs} · ` : ''}${avatarOf(seat)} ${playerName(seat)}`));
+    box.append(cardEl(shown(seat), deckOf(seat)), el('span', '', `${downs ? `+${downs} · ` : ''}${avatarOf(seat)} ${playerName(seat)}`));
     row.append(box);
   }
   if (fighters.length > 6) row.append(el('span', 'more', `+${fighters.length - 6}`));
@@ -4777,6 +4824,7 @@ if (DEBUG) {
     state: () => ({
       mode: S.mode, phase: S.phase, you: S.you, battle: S.battle, stage: S.stage, fighters: S.fighters.slice(),
       counts: S.counts.slice(), slams: { ...S.slams }, canSlam: canSlam(), over: S.over, players: S.players.length,
+      ups: { ...S.ups }, table: Object.fromEntries(Object.entries(S.cards).map(([seat, c]) => [seat, c.up])),
       mine: S.mine.map((x) => x.slice()),
       odds: Odds.history.map((x) => x.slice()),
       chances: Odds.seats && Odds.seats.slice(),

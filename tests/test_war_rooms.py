@@ -144,6 +144,55 @@ def test_friends_join_with_the_code_and_see_each_other(page: Page, browser, site
     assert errors == []
 
 
+def test_cards_land_face_up_as_they_are_played(page: Page, browser, site_url, errors):
+    fake = FakeWarRoom()
+    fake.ups = {0: card(12), 1: card(3, 1), 2: joker()}
+    open_war(page, site_url, fake)
+    start_room(page, "Dana")
+    guest_context = browser.new_context(viewport={"width": 375, "height": 740})
+    guest = guest_context.new_page()
+    open_war(guest, site_url, fake)
+    join_room(guest, "k7qp", "Bob")
+    page.click("#botMore")
+    expect(page.locator("#people .person")).to_have_count(3)
+    page.click("#dealBtn")
+
+    # The bot slams first, and its joker is face up on both screens at once.
+    bot_on_dana = page.locator("#opponents .tile").nth(1).locator(".tslot > .card")
+    expect(bot_on_dana).to_have_attribute("aria-label", "black joker")
+    expect(guest.locator("#opponents .tile").nth(1).locator(".tslot > .card")).to_have_attribute("aria-label", "black joker")
+
+    # Dana slams: her ace lands face up on her screen as soon as the room
+    # answers, and on Bob's, while Bob's own card is still in his hand.
+    page.wait_for_function(f"{STATE}.canSlam")
+    page.evaluate("window.__war.slam(120)")
+    expect(page.locator("#mySlot .card")).to_have_attribute("aria-label", "ace of spades")
+    dana_on_bob = guest.locator("#opponents .tile").nth(0).locator(".tslot > .card")
+    expect(dana_on_bob).to_have_attribute("aria-label", "ace of spades")
+    expect(guest.locator("#mySlot .card")).to_have_class(re.compile(r"\bempty\b"))
+    bob_on_dana = page.locator("#opponents .tile").nth(0).locator(".tslot > .card")
+    expect(bob_on_dana).not_to_have_attribute("aria-label", re.compile("."))
+
+    # Then Bob's five, face up on Dana's screen. Nobody has won yet.
+    guest.wait_for_function(f"{STATE}.canSlam")
+    guest.evaluate("window.__war.slam(60)")
+    expect(guest.locator("#mySlot .card")).to_have_attribute("aria-label", "five of hearts")
+    expect(bob_on_dana).to_have_attribute("aria-label", "five of hearts")
+    assert page.evaluate(f"{STATE}.table") == {}, "nothing has been played out"
+    expect(page.locator("#banner")).not_to_have_text("YOU WIN!")
+
+    # The flip brings the winner; the cards are already where they were.
+    fake.broadcast({
+        "t": "flip", "battle": 1, "stage": 0, "winner": 2, "tied": [2], "gods": False, "pot": 3,
+        "plays": [[0, 0, card(12), 120, 0, 0], [1, 0, card(3, 1), 60, 0, 0], [2, 0, joker(), 100, 1, 0]],
+        "counts": [26, 26, 29], "out": [], "next": fake.stage(2, opens_in=2400),
+    })
+    expect(page.locator("#opponents .tile").nth(1)).to_have_class(re.compile(r"\bwon\b"))
+    expect(page.locator("#mySlot .card")).to_have_attribute("aria-label", "ace of spades")
+    guest_context.close()
+    assert errors == []
+
+
 def test_everyone_sees_each_players_deck(page: Page, browser, site_url, errors):
     fake = FakeWarRoom()
     open_war(page, site_url, fake)
@@ -179,6 +228,8 @@ def test_everyone_sees_each_players_deck(page: Page, browser, site_url, errors):
     # and the bot's in the same deck for both.
     page.wait_for_function(f"{STATE}.canSlam")
     page.evaluate("window.__war.slam(120)")
+    # The fake doesn't say which card Dana turned over, as a room server from
+    # before cards showed early wouldn't, so it lands face down until the flip.
     dana_on_bob = guest.locator("#opponents .tile").nth(0).locator(".tslot > .card")
     expect(dana_on_bob).to_have_class(re.compile(r"\bback\b"))
     expect(dana_on_bob).to_have_attribute("data-deck", "space")

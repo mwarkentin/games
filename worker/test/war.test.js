@@ -11,7 +11,7 @@ import { beforeEach, describe, test } from 'node:test';
 
 import {
   EXPIRE_MS, MAX_SOCKETS, WAR, WarRoom, cleanDeck, cleanName, handleWar, warDeal, warDueAt, warNewGame, warRank, warResolve,
-  warSlam, warStandings,
+  warSlam, warStandings, warUpCard,
 } from '../src/war.js';
 
 const ORIGIN = 'https://games.michaelwarkentin.com';
@@ -175,10 +175,41 @@ describe('the rules', () => {
 
   test('a slam counts once, only from someone fighting, and is kept in range', () => {
     const game = rigged([[card(2)], [card(3)], []]);
-    assert.deepEqual(warSlam(game, 0, 999, 4), { t: 'slam', seat: 0, power: WAR.MAX_POWER, style: 4 });
+    assert.deepEqual(warSlam(game, 0, 999, 4), { t: 'slam', seat: 0, power: WAR.MAX_POWER, style: 4, up: card(2) });
     assert.equal(warSlam(game, 0, 50, 1), null);
     assert.equal(warSlam(game, 2, 50, 1), null);
-    assert.deepEqual(warSlam(game, 1, 'lots', 99), { t: 'slam', seat: 1, power: 0, style: 0 });
+    assert.deepEqual(warSlam(game, 1, 'lots', 99), { t: 'slam', seat: 1, power: 0, style: 0, up: card(3) });
+  });
+
+  test("a slam turns over the card the flip shows, in a battle and in a war", () => {
+    const game = rigged([
+      [card(9), card(1), card(2), card(3), card(12)],
+      [card(9, 1), card(5), card(6)],
+      [card(4), card(7)],
+    ]);
+    const ups = game.fighters.map((seat) => warSlam(game, seat, 50, 0).up);
+    assert.deepEqual(ups, [card(9), card(9, 1), card(4)]);
+    const tie = warResolve(game, NOW, seeded(1));
+    assert.deepEqual(tie.plays.map((p) => p[2]), ups);
+
+    // In the war, the card that counts comes after those laid face down:
+    // three for seat 0, and the one seat 1 can spare from its two.
+    assert.deepEqual([warUpCard(game, 0), warUpCard(game, 1)], [card(12), card(6)]);
+    const war = [warSlam(game, 0, 80, 1).up, warSlam(game, 1, 80, 1).up];
+    const flip = warResolve(game, NOW, seeded(1));
+    assert.deepEqual(flip.plays.map((p) => [p[1], p[2]]), [[3, war[0]], [1, war[1]]]);
+  });
+
+  test("the bots' cards come with their slams, and match the flip", () => {
+    const random = seeded(77);
+    let { game, stage } = warNewGame([false, true, true, true], 'standard', random, NOW);
+    for (let i = 0; i < 40 && !game.over; i++) {
+      const bots = Object.fromEntries(stage.bots.map(([seat, , , , up]) => [seat, up]));
+      for (const seat of game.fighters) warSlam(game, seat, 10, 0);
+      const flip = warResolve(game, NOW, random);
+      for (const [seat, , up] of flip.plays) if (seat in bots) assert.equal(bots[seat], up);
+      stage = flip.next;
+    }
   });
 
   test('cards nobody slammed flop over by themselves', () => {
@@ -405,8 +436,10 @@ describe('rooms', () => {
 
     await say(room, dana, { t: 'charge', tier: 4 });
     assert.deepEqual(bob.last('charge'), { t: 'charge', seat: 0, tier: 4 });
+    const top = room.room.game.piles[0][0];
     await say(room, dana, { t: 'slam', power: 150, style: 2 });
-    assert.deepEqual(bob.last('slam'), { t: 'slam', seat: 0, power: 150, style: 2 });
+    assert.deepEqual(bob.last('slam'), { t: 'slam', seat: 0, power: 150, style: 2, up: top });
+    assert.deepEqual(dana.last('slam'), bob.last('slam'), 'your own slam comes back with your card');
     await say(room, dana, { t: 'slam', power: 10, style: 2 });
     assert.equal(bob.all('slam').length, 1, 'one slam per stage');
     assert.equal(bob.all('flip').length, 0);
@@ -418,6 +451,8 @@ describe('rooms', () => {
     assert.equal(flip.battle, 1);
     assert.deepEqual(flip.plays.map((p) => [p[0], p[3], p[5]]), [[0, 150, 0], [1, 3, 0], [2, flip.plays[2][3], 0], [3, flip.plays[3][3], 0]]);
     assert.deepEqual(dana.last('flip'), flip);
+    assert.equal(flip.plays[0][2], top, 'the card Dana slammed face up is the one the flip shows');
+    assert.deepEqual(stage.bots.map((b) => b[4]), [flip.plays[2][2], flip.plays[3][2]]);
     assert.equal(flip.counts.reduce((a, b) => a + b), WAR.DECK * 2);
     assert.ok(flip.next);
   });
@@ -481,6 +516,9 @@ describe('rooms', () => {
 
     const back = await join(room, 'Dana');
     assert.equal(back.last('state').you, 0);
+    const { game } = back.last('state');
+    assert.deepEqual(Object.keys(game.ups), Object.keys(game.slams), 'rejoining shows the cards already slammed');
+    for (const seat of Object.keys(game.ups)) assert.equal(game.ups[seat], room.room.game.piles[seat][0]);
     assert.equal(room.room.game.opensAt, left + 60_000, 'the stage picks up where it was');
     assert.equal(room.state.alarm, room.room.game.closesAt);
   });
