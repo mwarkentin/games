@@ -580,6 +580,23 @@ describe('rooms', () => {
     assert.equal(bob.all('cheer').length, 2);
   });
 
+  test('cleaning up is passed on to everyone, from players only, and not too often', async () => {
+    const dana = await join(room, 'Dana');
+    const bob = await join(room, 'Bob');
+    await say(room, dana, { t: 'tidy' });
+    assert.equal(bob.all('tidy').length, 0, 'nothing to clean up in the lobby');
+    await say(room, dana, { t: 'start' });
+    const eve = await join(room, 'Eve');
+    await say(room, bob, { t: 'tidy' });
+    await say(room, bob, { t: 'tidy' });
+    await say(room, eve, { t: 'tidy' });
+    assert.deepEqual(dana.all('tidy'), [{ t: 'tidy', seat: 1 }]);
+    assert.deepEqual(eve.all('tidy'), [{ t: 'tidy', seat: 1 }], 'spectators see it, but have no heap to clean up');
+    room.clock += 1000;
+    await say(room, bob, { t: 'tidy' });
+    assert.equal(dana.all('tidy').length, 2);
+  });
+
   test('junk messages are ignored', async () => {
     const dana = await join(room, 'Dana');
     await room.webSocketMessage(dana, 'not json');

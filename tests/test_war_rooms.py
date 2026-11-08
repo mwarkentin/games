@@ -213,6 +213,46 @@ def test_everyone_sees_each_players_deck(page: Page, browser, site_url, errors):
     assert errors == []
 
 
+def test_cleaning_up_shows_on_everyone_elses_screen(page: Page, browser, site_url, errors):
+    fake = FakeWarRoom()
+    open_war(page, site_url, fake)
+    start_room(page, "Dana")
+    guest_context = browser.new_context(viewport={"width": 375, "height": 740})
+    guest = guest_context.new_page()
+    open_war(guest, site_url, fake)
+    join_room(guest, "k7qp", "Bob")
+    page.click("#dealBtn")
+    page.wait_for_function(f"{STATE}.canSlam")
+    page.evaluate("window.__war.slam(120)")
+    # Dana's ace takes Bob's five, and when the next battle opens both cards
+    # land on her heap: beside her card on her screen, behind her tile on
+    # Bob's, his five first and her ace on top.
+    fake.broadcast({
+        "t": "flip", "battle": 1, "stage": 0, "winner": 0, "tied": [0], "gods": False, "pot": 2,
+        "plays": [[0, 0, card(12), 120, 0, 0], [1, 0, card(3, 1), 50, 0, 0]],
+        "counts": [28, 26], "out": [], "next": fake.stage(2, opens_in=1200),
+    })
+    dana_on_bob = guest.locator("#opponents .tile").nth(0).locator(".heap .card")
+    expect(dana_on_bob).to_have_count(2)
+    expect(page.locator("#tidyBtn")).to_be_visible()
+    z_order = """cards => cards.slice().sort((a, b) => a.style.zIndex - b.style.zIndex)
+        .map((c) => c.getAttribute('aria-label'))"""
+    stacked = dana_on_bob.evaluate_all(z_order)
+    assert stacked == ["five of hearts", "ace of spades"], stacked
+
+    # Dana cleans up, and the room tells Bob: her heap squares up on his
+    # screen too, in the same order.
+    page.click("#tidyBtn")
+    expect(page.locator("#tidyBtn")).to_be_hidden()
+    assert fake.messages("tidy") == [{"t": "tidy"}]
+    expect(dana_on_bob.nth(0)).to_have_css("--r", "0deg")
+    expect(dana_on_bob.nth(1)).to_have_css("--r", "0deg")
+    assert dana_on_bob.evaluate_all(z_order) == stacked
+    expect(guest.locator("#tidyBtn")).to_be_hidden()
+    guest_context.close()
+    assert errors == []
+
+
 def test_latecomers_watch(page: Page, site_url, errors):
     fake = FakeWarRoom()
     fake.players = [{"name": "Dana", "avatar": 0, "bot": False, "token": "dana-token-123456"},
