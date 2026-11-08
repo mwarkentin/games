@@ -42,6 +42,7 @@ def test_circling_a_word_adds_it_to_field_notes(page: Page, site_url, errors):
 
 
 def test_finds_from_an_older_map_carry_over_if_still_there(page: Page, site_url, errors):
+    page.set_viewport_size({"width": 375, "height": 740})
     page.goto(f"{site_url}/letterfield#debug")
     page.wait_for_function("window.__lf")
     # One hidden word on today's map, and the same word somewhere it isn't. The
@@ -61,6 +62,9 @@ def test_finds_from_an_older_map_carry_over_if_still_there(page: Page, site_url,
     expect(page.locator("#toast")).to_contain_text("The map has been redrawn")
     expect(page.locator("#toast")).to_contain_text("1 of your 2 finds are still on it")
     expect(page.locator("#notesBadge")).to_have_text("1")
+    # A long note stays on a phone's screen, padding and all.
+    box = page.locator("#toast").bounding_box()
+    assert box["x"] >= 16 and box["x"] + box["width"] <= 375 - 16, box
     saved = page.evaluate("() => [localStorage.getItem('letterfield.finds.v2'), JSON.parse(localStorage.getItem('letterfield.finds.v3'))]")
     assert len(saved[1]) == 1 and saved[1][0]["w"] == word["w"]
     assert "f" not in saved[1][0] and "n" not in saved[1][0]

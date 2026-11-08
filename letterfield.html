@@ -191,7 +191,7 @@ body.docked .notes{box-shadow:none}
 .btn{font:600 13px/1 var(--f-ui);padding:9px 14px;border:0;border-radius:6px;background:var(--accent);color:var(--on-accent);cursor:pointer}
 /* Centred between the edges (and the docked notes) by auto margins rather than
    left:50%, which would squeeze a long toast into half the screen. */
-.toast{position:fixed;top:var(--top);left:16px;right:16px;margin:0 auto;width:max-content;max-width:calc(100% - 32px);transform:translateY(-8px);opacity:0;pointer-events:none;display:grid;grid-template-columns:auto auto;align-items:center;column-gap:10px;row-gap:4px;padding:10px 16px 10px 14px;transition:opacity .2s ease, transform .2s ease}
+.toast{position:fixed;top:var(--top);left:16px;right:16px;margin:0 auto;width:max-content;max-width:calc(100% - 32px);box-sizing:border-box;transform:translateY(-8px);opacity:0;pointer-events:none;display:grid;grid-template-columns:auto auto;align-items:center;column-gap:10px;row-gap:4px;padding:10px 16px 10px 14px;transition:opacity .2s ease, transform .2s ease}
 body.docked .toast{right:calc(var(--notes-w) + 16px);max-width:calc(100% - var(--notes-w) - 32px);top:calc(var(--top) + 70px)}
 .toast.show{opacity:1;transform:translateY(0)}
 .toast i{grid-row:span 2;width:10px;height:10px;border-radius:50%;background:var(--c)}
