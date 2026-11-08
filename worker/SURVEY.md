@@ -3,13 +3,13 @@
 What Letterfield could look like as a massively multiplayer game in the
 spirit of [eieio.games](https://eieio.games/) (One Million Checkboxes, One
 Million Chessboards), and whether Cloudflare Workers and D1 can carry it.
-This branch includes a working prototype:
-- the server: `src/survey.js`
+It's built and switched on:
+- the server: `src/survey.js`, on the leaderboard Worker
 - the map, shared with the game: `src/letterfield-world.js`
-- the survey code in `letterfield.html`
+- the survey code in `letterfield.html`, which joins the Worker at
+  `SURVEY_URL`
 
-It stays switched off until `SURVEY_URL` is set. Its history is a page of
-its own, `letterfield-log.html` (see "The log").
+Its history is a page of its own, `letterfield-log.html` (see "The log").
 
 ## One Million Words
 
@@ -515,12 +515,12 @@ The first version, with timers, would have been billed for every second
 every busy sector existed: ~$0.0056 per sector-hour. That's ~$84 a day for
 625 busy sectors, before counting the quiet ones.
 
-### On the free plan
+### Why Workers Paid
 
-This account runs on Workers Free, where every limit is per day, shared by
-the whole account (the leaderboards and War's rooms included), and reset at
-00:00 UTC. Past a limit, requests fail rather than cost money
-([Durable Objects][dopricing], [Workers][wpricing]):
+The account moved to Workers Paid for the survey. On Workers Free, every
+limit is per day, shared by the whole account (the leaderboards and War's
+rooms included), and reset at 00:00 UTC. Past a limit, requests fail rather
+than cost money ([Durable Objects][dopricing], [Workers][wpricing]):
 
 | free plan, per day | allowance | survey use per player-hour | enough for |
 | --- | --- | --- | --- |
@@ -529,19 +529,18 @@ the whole account (the leaderboards and War's rooms included), and reset at
 | Durable Object time | 13,000 GB-s | ~0.35 GB-s | ~37,000 player-hours |
 | SQLite rows written | 100,000 | ≤ words charted | 100,000 claims |
 
-So Durable Object requests run out first, at about 940 player-hours a day:
-100 people playing for 9 hours, or 450 for 2. When they do, every Durable
-Object on the account stops answering until midnight UTC, War's rooms
-included. Before turning the survey on for everyone, either move to Workers
-Paid ($5 a month, costed above) or give the survey a daily budget (see "Not
-done yet").
+So on Free, Durable Object requests would run out first, at about 940
+player-hours a day: 100 people playing for 9 hours, or 450 for 2. Every
+Durable Object on the account would then stop answering until midnight UTC,
+War's rooms included. On Paid, a day that busy every day of the month costs
+about 30 cents over the included million requests.
 
 ## Not done yet
 
-- **A daily budget on the free plan.** The Atlas already hears from every
-  busy sector. It could count the day's player-time and, near the free
-  plan's limits, tell sectors to turn new players away (the `full` message
-  the game already handles), so War and the leaderboards keep working.
+- **A spending alert.** Workers Paid has no spending cap; `MAX_ONLINE`
+  keeps the worst case near $18 a day. A scheduled check of Cloudflare's
+  analytics API could open a GitHub issue when the month's usage passes a
+  threshold.
 - **Run `load.js` against a deployment.** That would confirm the per-sector
   limit and the 0.8 ms per player-second on Cloudflare's edge rather than a
   sandbox.
@@ -585,8 +584,9 @@ limits on the real Worker.
 To play, serve the games from the repo root (`python3 -m http.server 8000`)
 and open `http://localhost:8000/letterfield.html?survey=http://localhost:8787`
 in a few windows. The deploy workflow's `wrangler deploy` creates the
-`Sector` and `Atlas` classes from the migration in `wrangler.toml`. After
-deploying, set `SURVEY_URL` in `letterfield.html` to the Worker's URL.
+`Sector` and `Atlas` classes from the migration in `wrangler.toml`, and
+`SURVEY_URL` in `letterfield.html` points the live game at the deployed
+Worker.
 
 [omcb]: https://eieio.games/blog/scaling-one-million-checkboxes
 [chess]: https://eieio.games/blog/a-million-realtime-chess-boards-in-a-single-process

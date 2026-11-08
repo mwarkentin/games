@@ -4,9 +4,10 @@ A [Cloudflare Worker](https://developers.cloudflare.com/workers/) with a
 [D1](https://developers.cloudflare.com/d1/) (SQLite) database that stores
 global high scores for the games, and a
 [Durable Object](https://developers.cloudflare.com/durable-objects/) per
-room for War's multiplayer games (see [War rooms](#war-rooms)). It runs on
-Cloudflare's free plan: the leaderboard uses a handful of requests and
-database rows per game played.
+room for War's multiplayer games (see [War rooms](#war-rooms)). The account
+is on Workers Paid ($5 a month), for Letterfield's survey (see SURVEY.md); the
+leaderboard alone uses a handful of requests and database rows per game
+played.
 
 The same Worker hosts Letterfield's shared survey, an experiment in many
 players exploring one map at once: a Durable Object per sector of the map,
@@ -85,8 +86,8 @@ SURVEY.md). The whole shared world would be about 1.1 million rows and
 100 MB. mwarkentin/infra makes it too; its id (the `survey_log_database_id`
 output) goes in `wrangler.toml`.
 
-D1 counts every row a query scans against the free plan's 5 million a day,
-so each view reads through an index of its own (named with `INDEXED BY` in
+D1 counts every row a query scans against the plan's allowance, so each
+view reads through an index of its own (named with `INDEXED BY` in
 `src/leaderboard.js`, and checked with `EXPLAIN QUERY PLAN` in the tests).
 An all-time top 10 reads about 10 rows, and a period view reads only that
 period's scores. The Worker checks that a
@@ -191,12 +192,11 @@ The rules between `BEGIN WAR CORE` and `END WAR CORE` in `src/war.js` are
 also in `war.html`, for solo games; `test/war.test.js` checks the two copies
 match.
 
-**Cost.** The free plan allows SQLite-backed Durable Objects only, which
-`wrangler.toml`'s migration asks for. A room writes its storage once per
-battle (slams in progress stay in memory, except in a slow game, which
-saves each one), and WebSocket messages from
-pages count as one request per 20. A busy evening of games is well within
-the free plan.
+**Cost.** Rooms are SQLite-backed Durable Objects, as `wrangler.toml`'s
+migration asks. A room writes its storage once per battle (slams in progress
+stay in memory, except in a slow game, which saves each one), and WebSocket
+messages from pages count as one request per 20. A busy evening of games is
+well within the plan's included usage.
 
 ## Setup
 
@@ -223,13 +223,11 @@ keep their leaderboards hidden. After that:
    `https://games-leaderboard.mwarkentin.workers.dev`.
 2. **The games already point at it:** `LEADERBOARD_URL` in
    `funnels-and-buckets.html`, `doodle-chomp.html` and
-   `air-traffic-controller.html`, and `ROOMS_URL` in `war.html`. Until the
-   first deploy they say the leaderboard can't be reached and carry on. If
-   the URL ever changes, change it there and in `WORKER_URL` in
-   `tests/fake_leaderboard.py`, which keeps tests off the real Worker.
-3. **Letterfield's shared survey stays off** until `SURVEY_URL` in
-   `letterfield.html` is set to the same URL. Before that, try it on the
-   live site with `?survey=https://games-leaderboard.mwarkentin.workers.dev`.
+   `air-traffic-controller.html`, `ROOMS_URL` in `war.html` and
+   `SURVEY_URL` in `letterfield.html`. If the Worker can't be reached they
+   say so and carry on. If the URL ever changes, change it there and in
+   `WORKER_URL` in `tests/fake_leaderboard.py`, which keeps tests off the
+   real Worker.
 
 Don't change the salt or the token here by hand: the next OpenTofu apply
 would put them back. To replace the token, see mwarkentin/infra's README.
