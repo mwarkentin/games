@@ -7,7 +7,8 @@ page.route. The real Worker is tested in worker/test/.
 Without ?leaderboard=, games call the real Worker (WORKER_URL). Every test
 context routes it to an empty fake with stand_in_for_worker(), so no test
 reads or writes real scores, and the smoke tests don't depend on the Worker
-being up or on its CORS rules, which only allow the real site.
+being up or on its CORS rules, which only allow the real site. The stand-in
+answers Letterfield's survey too, WebSockets included (see fake_survey.py).
 """
 
 from __future__ import annotations
@@ -19,8 +20,11 @@ from urllib.parse import parse_qs, urlparse
 
 from playwright.sync_api import BrowserContext, Page, Route
 
+from fake_survey import FAKE_TURNSTILE, TURNSTILE_JS, FakePassDesk, FakeSurvey
+
 API = "https://leaderboard.test"
-# LEADERBOARD_URL in the games, ROOMS_URL in war.html and SURVEY_URL in letterfield-log.html.
+# LEADERBOARD_URL in the games, ROOMS_URL in war.html and SURVEY_URL in letterfield.html and
+# letterfield-log.html.
 WORKER_URL = "https://games-leaderboard.mwarkentin.workers.dev"
 
 
@@ -123,16 +127,25 @@ def stand_in_for_worker(context: BrowserContext) -> FakeLeaderboard:
 
     fake = FakeLeaderboard()
     context.route(f"{WORKER_URL}/**", fake.handle)
+    # Letterfield joins its survey as soon as it loads: an empty world, and
+    # sectors nobody has charted, after Turnstile's check, answered by a fake
+    # widget and pass desk so challenges.cloudflare.com is never reached.
+    # Later routes win, so these go after the catch-all.
+    survey = FakeSurvey()
+    context.route(f"{WORKER_URL}/v1/survey/world", survey.handle_world)
+    context.route_web_socket(re.compile("^wss://" + re.escape(urlparse(WORKER_URL).netloc) + "/v1/survey/"), survey.handle)
+    context.route(TURNSTILE_JS, lambda route: route.fulfill(content_type="application/javascript", body=FAKE_TURNSTILE))
+    context.route(f"{WORKER_URL}/v1/survey/pass", FakePassDesk().handle)
     context.route(f"{WORKER_URL}/v1/survey/log/**", FakeSurveyLog().handle)  # later routes win
     return fake
 
 
 def without_worker(page: Page, site_url: str, game: str) -> None:
-    """Serve `game` with LEADERBOARD_URL and ROOMS_URL blanked, as it runs with no Worker set up."""
+    """Serve `game` with LEADERBOARD_URL, ROOMS_URL and SURVEY_URL blanked, as it runs with no Worker set up."""
 
     def handle(route: Route) -> None:
         response = route.fetch()
-        body = re.sub(r"\b((?:LEADERBOARD|ROOMS)_URL = )'[^']*'", r"\1''", response.text())
+        body = re.sub(r"\b((?:LEADERBOARD|ROOMS|SURVEY)_URL = )'[^']*'", r"\1''", response.text())
         route.fulfill(response=response, body=body)
 
     page.route(lambda url: urlparse(url).path == f"/{game}", handle)

@@ -45,7 +45,7 @@ database_id = "c1bc9a0a-5e40-4116-85be-9544a9fae77d"
 migrations_dir = "migrations-log"
 
 # War rooms: one Durable Object per room, holding the game and every player's
-# WebSocket (see src/war.js). The free plan allows SQLite-backed classes only.
+# WebSocket (see src/war.js). Every class here is SQLite-backed.
 [[durable_objects.bindings]]
 name = "WAR_ROOMS"
 class_name = "WarRoom"

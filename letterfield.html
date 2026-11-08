@@ -364,9 +364,10 @@ const NOTES_W = 340;
 const K_FINDS = 'letterfield.finds.v2', K_FINDS_V1 = 'letterfield.finds.v1', K_CAM = 'letterfield.cam.v1', K_COACH = 'letterfield.coach.v1', K_NOTES = 'letterfield.notes.v1', K_SOUND = 'letterfield.sound.v1', K_MUSIC = 'letterfield.music.v1';
 const K_INITIALS = 'games.initials';  // shared with the other games' leaderboards
 const K_PASS = 'letterfield.surveyPass.v1';
-// The shared survey (see worker/SURVEY.md): while SURVEY_URL is empty the game
-// is single-player and connects nowhere. ?survey=<url> overrides it for testing.
-const SURVEY_URL = '';
+// The shared survey (see worker/SURVEY.md), on the leaderboard Worker. With
+// SURVEY_URL empty the game is single-player and connects nowhere.
+// ?survey=<url> overrides it for testing.
+const SURVEY_URL = 'https://games-leaderboard.mwarkentin.workers.dev';
 // Turnstile (see worker/TURNSTILE.md): with a site key, the game passes
 // Cloudflare's bot check once before joining the survey, and loads its script
 // from challenges.cloudflare.com only then. While it's empty, joins need no
