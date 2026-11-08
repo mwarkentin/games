@@ -5035,14 +5035,25 @@ function pileUnder(seat, backs) {
   return list;
 }
 
-// Every card you've laid in this battle's war, oldest first, ending with the
-// one that decides it once you've slammed it: local is how many face-down
-// cards you've slammed in the war being fought.
+// Whether you're in a war this battle, fighting it or done with it: then all
+// your cards are on one pile, your war pile, until the next battle.
+function inMyWar() {
+  const me = S.you;
+  const c = S.cards[me];
+  if (me === null || !c) return false;
+  return c.seq.length > 1 || (S.phase === 'playing' && S.stage > 0 && isFighting(me) && !S.pending);
+}
+
+// Every card you've laid in a battle that went to war, oldest first: the one
+// you tied with, then the war's, ending with the one that decides it once
+// you've slammed it. local is how many face-down cards you've slammed in the
+// war being fought.
 function myWarCards(local) {
   const me = S.you;
   const c = S.cards[me];
-  const list = c ? c.seq.slice(1) : [];
-  if (S.phase === 'playing' && S.stage > 0 && isFighting(me) && !S.pending && (!c || c.stage < S.stage)) {
+  if (!inMyWar()) return [];
+  const list = c.seq.slice();
+  if (S.phase === 'playing' && S.stage > 0 && isFighting(me) && !S.pending && c.stage < S.stage) {
     for (let i = 0; i < local; i++) list.push({ card: 'back', up: false });
     if (landed(me)) list.push({ card: S.ups[me] !== undefined ? S.ups[me] : 'back', up: true });
   }
@@ -5188,7 +5199,8 @@ function renderMe() {
   const watching = me === null;
   const out = !watching && S.battle > 0 && S.out[me] > 0;
   setHidden($('myPile'), watching);
-  setHidden($('mySlot'), watching || out);
+  // In a war, your card goes onto your war pile with the rest (see renderWarPile).
+  setHidden($('mySlot'), watching || out || inMyWar());
   const note = $('meNote');
   setHidden(note, !(watching || out));
   if (watching) setText(note, S.phase === 'over' ? 'Watching. You’re in the next game.' : 'You’re watching this one. You’ll be dealt into the next game.');
@@ -5213,8 +5225,7 @@ function renderMe() {
   }
   const slot = $('mySlot');
   const c = S.cards[me];
-  // The card you played in the battle. In a war, everything after it goes on
-  // your war pile (see renderWarPile), the card that decides it on top.
+  // The card you played in the battle, until it goes to war.
   const key = c ? String(c.seq[0].card) : S.stage > 0 ? 'empty' : cardKeyFor(me);
   if (slot.dataset.key !== key) {
     const card = cardEl(key === 'back' ? 'back' : key === 'empty' ? null : Number(key));
@@ -5229,9 +5240,10 @@ function renderMe() {
   renderWarPile();
 }
 
-// Your war pile: every card you lay in a war, landing one slam at a time, the
-// face-down ones in a messy stack and the card that decides the war on top.
-// In a war of wars, the cards that tied before stick up out of the stack.
+// Your war pile: in a war, all your cards on one pile, from the one you tied
+// with to the one that decides it on top, landing one slam at a time. The
+// face-down ones make a messy stack, and the cards that tied stick up out of
+// it, showing their corners.
 function renderWarPile() {
   const me = S.you;
   const box = $('myWar');
@@ -5477,7 +5489,7 @@ function heapClear() {
 // Where a card lay on the table, relative to a heap's middle, and how much
 // bigger it was there than on the heap: [x, y, scale].
 function heapFrom(c, heapBox, size) {
-  const pile = (c.down || c.war) && c.seat === S.you ? $('myWar').querySelector('.wpile .card') : null;
+  const pile = c.seat === S.you && !$('myWar').hidden ? $('myWar').querySelector('.wpile .card') : null;
   const from = pile || (c.seat === S.you ? $('mySlot').querySelector('.card') : tiles.get(c.seat)?.card);
   const box = from && from.offsetParent ? from.getBoundingClientRect() : null;
   const middle = [heapBox.left + heapBox.width / 2, heapBox.top + heapBox.height / 2];

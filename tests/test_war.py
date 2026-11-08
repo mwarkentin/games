@@ -130,7 +130,7 @@ def test_a_war_means_slamming_every_card(page: Page, site_url, errors):
     for n in (1, 2, 3):
         expect(page.locator("#slamText")).to_have_text(f"Face-down {n}/3 · hold")
         hold_slam(page, 300)
-        expect(page.locator("#myWar .wpile .card")).to_have_count(n)
+        expect(page.locator("#myWar .wpile .card.back")).to_have_count(n)
         assert page.evaluate(f"{STATE}.canSlam"), "the war isn't slammed until the last card"
     expect(page.locator("#myWar .wcount")).to_have_text("3 face down")
     expect(page.locator("#slamText")).to_have_text("The decider · hold")
@@ -159,12 +159,12 @@ def test_in_a_war_of_wars_the_cards_that_tied_stay_on_the_table(page: Page, site
     expect(bot_up).to_have_attribute("aria-label", re.compile(r"^eight of "))
     expect(page.locator("#spots .tdowns .card.back")).to_have_count(3)
     expect(page.locator("#spots .spot .tslot > .card")).to_have_attribute("aria-label", re.compile(r"^three of "))
-    # Yours: the eight stays where you played it, and your war pile has your
-    # three face-down cards with the three that tied on top.
-    expect(page.locator("#mySlot .card")).to_have_attribute("aria-label", re.compile(r"^eight of "))
+    # Yours are all on your war pile: the eight, your three face-down cards,
+    # and the three that tied on top.
+    expect(page.locator("#mySlot")).to_be_hidden()
     my_up = page.locator("#myWar .wpile .card:not(.back)")
-    expect(my_up).to_have_count(1)
-    expect(my_up).to_have_attribute("aria-label", re.compile(r"^three of "))
+    expect(my_up).to_have_count(2)
+    assert [l.split(" ")[0] for l in my_up.evaluate_all("cs => cs.map((c) => c.getAttribute('aria-label'))")] == ["eight", "three"]
     expect(page.locator("#myWar .wpile .card:last-child")).to_have_attribute("aria-label", re.compile(r"^three of "))
     expect(page.locator("#myWar .wpile .card.back")).to_have_count(3)
     # When the bot slams its next card, its three joins the pile, face up.
@@ -175,19 +175,20 @@ def test_in_a_war_of_wars_the_cards_that_tied_stay_on_the_table(page: Page, site
     assert errors == []
 
 
-def test_your_war_card_lands_on_top_of_your_war_pile(page: Page, site_url, errors):
+def test_in_a_war_all_your_cards_are_on_one_pile(page: Page, site_url, errors):
     start_solo(page, site_url, seed=WAR_SEED)
     page.evaluate("window.__war.slam(60)")
     page.wait_for_function(f"{STATE}.stage === 1 && {STATE}.canSlam")
     landed = page.evaluate("""() => {
         window.__war.slam(60);
         const pile = [...document.querySelectorAll('#myWar .wpile .card')];
-        return { pile: pile.map((c) => c.getAttribute('aria-label')), slot: document.querySelector('#mySlot .card').getAttribute('aria-label') };
+        return { pile: pile.map((c) => c.getAttribute('aria-label')) };
     }""")
-    # Three face down and the one that decides it on top, face up; the eight
-    # you tied with stays where you played it.
-    assert landed["pile"][:3] == [None, None, None] and landed["pile"][3], landed
-    assert landed["slot"].startswith("eight"), landed
+    # One pile: the eight you tied with, three face down and the one that
+    # decides it on top, face up.
+    assert landed["pile"][0].startswith("eight"), landed
+    assert landed["pile"][1:4] == [None, None, None] and landed["pile"][4], landed
+    expect(page.locator("#mySlot")).to_be_hidden()
     assert errors == []
 
 
@@ -233,7 +234,7 @@ def test_a_war_gets_a_versus_intro_that_escalates(page: Page, site_url, errors):
     expect(page.locator("#fx .vs-fight")).to_have_text("FIGHT!")
     expect(page.locator("#fx .vs")).to_have_count(0)
     hold_slam(page, 250)
-    expect(page.locator("#myWar .wpile .card")).to_have_count(1)
+    expect(page.locator("#myWar .wpile .card.back")).to_have_count(1)
 
     # The war ties again: a double war is bigger.
     page.evaluate("window.__war.slam(60)")

@@ -685,7 +685,7 @@ def test_a_joker_war_turns_out_the_lights(page: Page, site_url, errors):
     # The war opens on time and slamming works.
     page.wait_for_function(f"{STATE}.stage === 1 && {STATE}.canSlam")
     hold_slam(page, 250)
-    expect(page.locator("#myWar .wpile .card")).to_have_count(1)
+    expect(page.locator("#myWar .wpile .card.back")).to_have_count(1)
     expect(page.locator("#fx .jk")).to_have_count(0)
     page.evaluate("window.__war.slam(90)")
 
