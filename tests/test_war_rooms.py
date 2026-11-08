@@ -445,8 +445,8 @@ def test_a_joker_war_turns_out_the_lights(page: Page, site_url, errors):
     deal_head_to_head(page, site_url, fake)
 
     # The red and the black joker meet: the lights go out instead of the
-    # usual versus intro.
-    tie(fake, [joker(0), joker(1)])
+    # usual versus intro, for the 4.5 seconds a joker war waits to open.
+    tie(fake, [joker(0), joker(1)], opens_in=4500)
     expect(page.locator("#banner")).to_have_text("WAR!")
     show = page.locator("#fx .jk")
     expect(show).to_have_class(re.compile(r"\blv1\b"))
@@ -478,7 +478,7 @@ def test_a_joker_war_turns_out_the_lights(page: Page, site_url, errors):
     page.evaluate("window.__war.slam(90)")
 
     # The war ties on jokers again: red eyes, and more of them open in the dark.
-    tie(fake, [joker(0), joker(1)], stage=1)
+    tie(fake, [joker(0), joker(1)], stage=1, opens_in=4500)
     show = page.locator("#fx .jk")
     expect(show).to_have_class(re.compile(r"\blv2\b"))
     expect(show.locator(".jk-fig.peek")).to_have_count(7)

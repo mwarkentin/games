@@ -1032,6 +1032,7 @@ const WAR = {
   WAR_BOT_MS: 2600,    // the same in a war, while the bots slam all their cards
   REVEAL_MS: 2400,     // to watch the cards turn over before the next battle
   WAR_REVEAL_MS: 3000, // the same before a war
+  JOKER_REVEAL_MS: 4500, // and before a war on jokers, which the pages put on a show for
 };
 
 const WAR_BOT_FIRST = [
@@ -1195,7 +1196,8 @@ function warResolve(game, now, random) {
     game.biggest = Math.max(game.biggest, able.length);
     game.deepest = Math.max(game.deepest, game.stage + 1);
     message.counts = game.piles.map((pile) => pile.length);
-    message.next = warOpenStage(game, now, random, able, WAR.WAR_REVEAL_MS);
+    // A war on jokers (rank 13) waits longer to open, for its show.
+    message.next = warOpenStage(game, now, random, able, best === 13 ? WAR.JOKER_REVEAL_MS : WAR.WAR_REVEAL_MS);
     return message;
   }
   game.piles[winner].push(...warShuffle(game.pot, random));
@@ -2134,8 +2136,6 @@ const Versus = {
     const level = Math.min(3, depth);
     const fighters = next.fighters;
     const n = fighters.length;
-    // The intro fits the time before the war opens: 3 seconds, less when fast.
-    const k = Math.max(0.15, Math.min(1.5, next.opensIn / WAR.WAR_REVEAL_MS));
     const full = S.players.length <= 4 || fighters.includes(S.you);
     const calm = reduceMotion.matches;
     this.clear();
@@ -2151,6 +2151,9 @@ const Versus = {
     const joker = m.tied.length && m.tied.every(isJoker)
       ? (was && was.battle === m.battle && was.stage === m.stage - 1 ? 2 : 1) : 0;
     this.jokers = joker ? { battle: m.battle, stage: m.stage, level: joker } : null;
+    // The intro fits the time before the war opens: 3 seconds, or 4.5 for a
+    // war on jokers, less when fast.
+    const k = Math.max(0.15, Math.min(1.5, next.opensIn / (joker ? WAR.JOKER_REVEAL_MS : WAR.WAR_REVEAL_MS)));
     this.last = { kind: !full ? 'lite' : calm ? 'calm' : 'full', level, depth, fighters: shown.map(playerName), more, joker };
     if (!full) {
       const strip = el('div', 'vs-lite' + (calm ? ' calm' : '') + (joker ? ' joker' : ''));
@@ -2873,9 +2876,9 @@ const Jester = (() => {
   return { draw, hand, almond, materials };
 })();
 
-// The show itself. Its clock, u, runs in the seconds of a normal-paced war:
-// the war opens at 3, and `k` (the time to the war over 3 seconds) squeezes
-// it in Fast mode. Everything is drawn again each frame.
+// The show itself. Its clock, u, runs in the seconds of a normal-paced joker
+// war, which opens at 4.5 (WAR.JOKER_REVEAL_MS), and `k` (the time to the war
+// over that) squeezes it in Fast mode. Everything is drawn again each frame.
 const Joker = (() => {
   const { Canvas, Place, Spring, ease, wander, clamp, tube, curve, poly, roundRect, custom, setN, mat } = PX;
   const TAU = Math.PI * 2;
@@ -2947,22 +2950,25 @@ const Joker = (() => {
   const HAS = [['HA!', 'HA!', 'HEE!', 'HA!', 'HAHA!', 'HA!', 'HA!', 'HA!'], ['HA!', 'HAHA!', 'HEE!', 'HA!', 'HOO!', 'HAHA!', 'HA!', 'HEH!', 'HA!', 'HA!']];
   // Where more eyes open in the dark in a double joker war: [x, y, size].
   const PEEKS = [[0.14, 0.12, 0.7], [0.86, 0.17, 0.8], [0.1, 0.62, 0.9], [0.9, 0.58, 0.75], [0.5, 0.06, 0.6], [0.2, 0.86, 0.65], [0.82, 0.85, 0.7]];
-  // The timeline, in the seconds of a normal-paced war (it opens at 3): few
-  // beats, each given time to land.
+  // The timeline, in seconds: few beats, each given time to land.
   const T = {
-    eyes: [0.3, 0.7],    // two eyes open in the dark
-    grin: [0.85, 1.2],   // the grin shows
-    hand: [1.0, 1.55],   // a gloved hand brings up the lantern
-    flame: [1.3, 1.65],  // it catches and grows
-    title: 1.45,         // JOKER WAR! eases in
-    laugh: [1.7, 2.62],  // HA… HA… HA!
-    snuff: 2.66,         // the lantern is blown out
-    close: [2.78, 2.9],  // the eyes close last
+    dark: 0.4,            // the lights go out
+    eyes: [0.45, 0.95],   // two eyes open in the dark
+    look: [[1.05, 0], [1.35, -1], [1.6, -1], [1.95, 1], [2.2, 1], [2.45, 0]],  // one way, then the other
+    blink: [2.22, 2.4],   // a slow blink
+    grin: [1.4, 1.9],     // the grin spreads
+    hand: [2.0, 2.65],    // a gloved hand brings up the lantern
+    flame: [2.3, 2.7],    // it catches and grows
+    title: 2.5,           // JOKER WAR! eases in
+    laugh: [2.75, 4.05],  // HA… HA… HA… HA!
+    snuff: 4.1,           // the lantern is blown out
+    close: [4.22, 4.36],  // the eyes close last
+    end: 4.5,             // the war opens
   };
   // Sounds at set moments: the lights going out, the lantern catching, and
   // it being blown out.
   const CUES = [[0, 'lightsOut'], [T.flame[0], 'flame'], [T.snuff, 'snuff']];
-  const CALM_AT = 2.2;  // reduced motion: this moment, standing still
+  const CALM_AT = 3.3;  // reduced motion: this moment, standing still
   let current = null;
 
   class Show {
@@ -2982,7 +2988,7 @@ const Joker = (() => {
       this.M = Jester.materials(this.look);
       this.LM = lanternMats(this.look);
       this.rig = new CapRig();
-      this.peeks = level >= 2 ? PEEKS.map(([x, y, s], i) => ({ L: this.peekEyes(), x, y, s, at: 0.6 + i * 0.16 })) : [];
+      this.peeks = level >= 2 ? PEEKS.map(([x, y, s], i) => ({ L: this.peekEyes(), x, y, s, at: 0.8 + i * 0.2 })) : [];
       this.main = layer(this.root, 128, 150, 'bust');
       this.foot = el('div', 'jk-foot');
       const word = el('div', 'jk-word');
@@ -3015,7 +3021,7 @@ const Joker = (() => {
     loop() {
       let last = performance.now();
       const tick = (now) => {
-        if (!this.root.isConnected || this.u > 3.1) return;
+        if (!this.root.isConnected || this.u > T.end + 0.1) return;
         const du = Math.min(0.25, (now - last) / 1000 / this.k);
         last = now;
         if (!this.held) this.step(du);
@@ -3036,14 +3042,12 @@ const Joker = (() => {
       while (this.cues.length && u >= this.cues[0][0]) Sound[this.cues.shift()[1]]();
       const o = laugh(u, T.laugh[0], T.laugh[1], this.period);
       const sway = Math.sin((TAU * (u - 0.6)) / 2.4);
-      // The eyes open slowly, glance aside once and come back, and close last
-      // of all.
-      const blink = u < T.eyes[0] ? 1 : u < T.eyes[1] ? 1 - ease.out((u - T.eyes[0]) / (T.eyes[1] - T.eyes[0])) : clamp((u - T.close[0]) / (T.close[1] - T.close[0]), 0, 1);
-      const pose = {
-        open: o, brow: 0.3 + 0.9 * o, squint: 0.42 * o, blink,
-        gaze: keyed(u, [[0.8, 0], [1.1, -0.9], [1.22, -0.9], [1.45, 0]]),
-      };
-      const handUp = ease.out((u - T.hand[0]) / (T.hand[1] - T.hand[0])) * (1 - ease.in((u - 2.7) / 0.3));
+      // The eyes open slowly, look one way and the other, blink, and close
+      // last of all.
+      const blink = u < T.eyes[0] ? 1 : u < T.eyes[1] ? 1 - ease.out((u - T.eyes[0]) / (T.eyes[1] - T.eyes[0]))
+        : u > T.blink[0] && u < T.blink[1] ? Math.sin(((u - T.blink[0]) / (T.blink[1] - T.blink[0])) * Math.PI) : clamp((u - T.close[0]) / (T.close[1] - T.close[0]), 0, 1);
+      const pose = { open: o, brow: 0.3 + 0.9 * o, squint: 0.42 * o, blink, gaze: keyed(u, T.look) };
+      const handUp = ease.out((u - T.hand[0]) / (T.hand[1] - T.hand[0])) * (1 - ease.in((u - T.snuff - 0.05) / 0.3));
       const flame = ease.out((u - T.flame[0]) / (T.flame[1] - T.flame[0])) * (1 - clamp((u - T.snuff) / 0.12, 0, 1));
       const flicker = 0.9 + 0.1 * wander(u * 2.5, 3);
       this.eyes = 1 - blink;
@@ -3082,19 +3086,19 @@ const Joker = (() => {
         add(poly([[lx - 7, ly + 9], [lx + 7, ly + 9], [lx + 6, ly + 5.6], [lx - 6, ly + 5.6]], 1), LM.metal, { group: 91 });
       }
       L.render();
-      L.at(this.W / 2, this.H * 0.44, 1, 1, ease.out(u / 0.35) * (1 - ease.in((u - 2.8) / 0.15)));
+      L.at(this.W / 2, this.H * 0.44, 1, 1, ease.out(u / T.dark) * (1 - ease.in((u - T.end + 0.25) / 0.15)));
       for (const pk of this.peeks) {
         const a = (u - pk.at) / 0.25;
         const open = this.calm ? 1 : a < 0 ? 0 : a < 1 ? ease.out(a) : Math.sin(u * 2 + pk.at * 20) > 0.985 ? 0.1 : 1;
-        pk.L.at(this.W * pk.x, this.H * pk.y, 1, open, this.calm ? 1 : a < 0 ? 0 : 1 - clamp((u - 2.75) / 0.18, 0, 1));
+        pk.L.at(this.W * pk.x, this.H * pk.y, 1, open, this.calm ? 1 : a < 0 ? 0 : 1 - clamp((u - T.end + 0.3) / 0.18, 0, 1));
       }
-      this.dark.style.opacity = this.calm ? 1 : ease.inOut(u / 0.35) - ease.inOut((u - 2.8) / 0.22);
+      this.dark.style.opacity = this.calm ? 1 : ease.inOut(u / T.dark) - ease.inOut((u - T.end + 0.25) / 0.25);
       this.title(u);
       if (!this.calm && u > T.laugh[0] && u < T.laugh[1]) this.ha(u);
       this.bubbles = this.bubbles.filter((b) => {
         const a = u - b.born;
         if (a > 1 || a < 0) { b.node.remove(); return false; }
-        b.node.style.opacity = (a < 0.7 ? 1 : 1 - (a - 0.7) / 0.3) * (1 - ease.in((u - 2.62) / 0.25));
+        b.node.style.opacity = (a < 0.7 ? 1 : 1 - (a - 0.7) / 0.3) * (1 - ease.in((u - T.laugh[1]) / 0.25));
         b.node.style.transform = `translate(${b.x.toFixed(1)}px, ${(b.y - a * this.H * 0.05).toFixed(1)}px) translate(-50%, -50%) rotate(${b.rot}deg) scale(${(a < 0.3 ? ease.back(a / 0.3) : 1).toFixed(3)})`;
         return true;
       });
@@ -3103,7 +3107,7 @@ const Joker = (() => {
     title(u) {
       const s = this.foot.style;
       if (this.calm) { s.opacity = 1; s.transform = 'translateX(-50%)'; return; }
-      const t = (u - T.title) / 0.4, out = ease.in((u - 2.62) / 0.22);
+      const t = (u - T.title) / 0.45, out = ease.in((u - T.laugh[1]) / 0.22);
       s.opacity = t < 0 ? 0 : ease.out(t * 1.6) * (1 - out);
       s.transform = `translate(-50%, ${(out * 30).toFixed(1)}px) scale(${((t < 0 ? 0 : 1 + (1 - ease.back(t)) * 0.8) * (1 - out * 0.2)).toFixed(3)})`;
       const shake = t > 0.4 && t < 3 ? Math.exp(-(t - 0.4) * 2) * 2.5 : 0;
