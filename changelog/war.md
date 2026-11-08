@@ -7,6 +7,12 @@
   pixel jester cackling until the war opens. A joker war waits a moment longer
   to open than other wars, so the show has time. If that war ties on jokers
   again, its eyes turn red and more eyes open in the dark.
+- Face cards and jokers have pixel art drawn for each deck in place of emoji:
+  a juggling knave, a queen with a rose, a bearded king and a jester in
+  Classic, glowing signs in Neon, a little alien, Princess Plum, a jolly king
+  and a jester in 8-bit, a shield, a princess, a prince and masks in Royal, a
+  rocket, an alien, a flying saucer and a comet in Space, the undead in
+  Spooky, and sweets in Candy.
 - Cards land face up as soon as they're played: yours the moment you slam
   it, everyone else's the moment they slam theirs, bots' too. Face-down war
   cards stay face down, and the winner still comes when everyone has played.

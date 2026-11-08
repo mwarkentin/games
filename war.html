@@ -205,6 +205,8 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px s
 .card .ci i { display: block; font-style: normal; font-family: system-ui, sans-serif; font-size: .9em; }
 .card .cc { position: absolute; inset: 0; display: grid; place-items: center; font-size: calc(var(--w) * .5); font-family: system-ui, sans-serif; padding-top: 8%; }
 .card.joker .cc { font-size: calc(var(--w) * .56); padding-top: 4%; }
+.card .cc.pic { background-repeat: no-repeat; background-position: center bottom; background-size: auto 60%; image-rendering: pixelated; }
+.card.joker .cc.pic { background-size: auto 64%; }
 .card.back {
   background: var(--deck-back);
   border: calc(var(--w) * .06) solid var(--deck-back-edge);
@@ -1387,11 +1389,12 @@ const RANK_NAMES = ['two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'ni
 const SUITS = ['♠︎', '♥︎', '♦︎', '♣︎'];
 const JOKER = 13;
 // Decks: [name, what it's like, jack, queen, king, joker]. The looks are in
-// the CSS, under [data-deck].
+// the CSS, under [data-deck], and the pictures in Pictures; the emoji here
+// stand in for a picture where one can't be drawn.
 const DECKS = {
   classic: ['Classic', 'Red stripes and cream cards.', '🤹', '👸', '👑', '🤡'],
   neon: ['Neon', 'Glows in the dark.', '🕺', '💃', '😎', '🤩'],
-  pixel: ['8-bit', 'Chunky pixels, blown on before use.', '👾', '🎮', '🕹️', '🐛'],
+  pixel: ['8-bit', 'Chunky pixels, blown on before use.', '👾', '👸', '👑', '🃏'],
   royal: ['Royal', 'Gold on green velvet.', '🛡️', '👸', '🤴', '🎭'],
   space: ['Space', 'Lost among the stars.', '🚀', '👽', '🛸', '☄️'],
   spooky: ['Spooky', 'Cobwebs, pumpkins and the undead.', '🧟', '🧛', '💀', '👻'],
@@ -1461,7 +1464,7 @@ function cardEl(card, look) {
   if (look && DECKS[look]) node.dataset.deck = look;
   if (card === 'back') { node.classList.add('back'); return node; }
   if (card === null || card === undefined) { node.classList.add('empty'); return node; }
-  const pictures = DECKS[look] || DECKS[deck];
+  const key = DECKS[look] ? look : deck;
   const rank = warRank(card);
   const corner = el('span', 'ci');
   if (rank === JOKER) {
@@ -1470,15 +1473,37 @@ function cardEl(card, look) {
     node.classList.add('joker');
     if (red) node.classList.add('red');
     corner.append(el('b', '', RANKS[rank]));
-    node.append(corner, el('span', 'cc', pictures[5]));
+    node.append(corner, picEl(key, rank, DECKS[key][5]));
     node.setAttribute('aria-label', `${red ? 'red' : 'black'} joker`);
     return node;
   }
   const suit = Math.floor((card % WAR.DECK) / 13);
   if (suit === 1 || suit === 2) node.classList.add('red');
   corner.append(el('b', '', RANKS[rank]), el('i', '', SUITS[suit]));
-  node.append(corner, el('span', 'cc', rank >= 9 && rank <= 11 ? pictures[rank - 7] : SUITS[suit]));
+  node.append(corner, rank >= 9 && rank <= 11 ? picEl(key, rank, DECKS[key][rank - 7]) : el('span', 'cc', SUITS[suit]));
   node.setAttribute('aria-label', `${RANK_NAMES[rank]} of ${['spades', 'hearts', 'diamonds', 'clubs'][suit]}`);
+  return node;
+}
+
+// The picture in the middle of a face card or joker: its deck's pixel art
+// (see Pictures), or the deck's emoji where that can't be drawn. A picture
+// goes into a stylesheet rule the first time a card shows it, so every card
+// shares one copy.
+const picShown = new Map();
+let picSheet = null;
+function picEl(key, rank, emoji) {
+  const name = `${key}-${RANK_NAMES[rank]}`;
+  if (!picShown.has(name)) {
+    const src = Pictures.url(key, RANK_NAMES[rank]);
+    if (src) {
+      picSheet = picSheet || document.head.appendChild(document.createElement('style')).sheet;
+      picSheet.insertRule(`.card .cc[data-pic="${name}"] { background-image: url("${src}"); }`);
+    }
+    picShown.set(name, Boolean(src));
+  }
+  if (!picShown.get(name)) return el('span', 'cc', emoji);
+  const node = el('span', 'cc pic');
+  node.dataset.pic = name;
   return node;
 }
 
@@ -2386,25 +2411,16 @@ const Versus = {
   },
 };
 
-// ---- The joker war ----
+// ---- Pixel art ----
 //
-// When the cards that tie are jokers, the table goes dark, two glowing eyes
-// open and look around, a grin appears, then a lantern lights a giant pixel
-// jester from below as it laughs, until the war opens. A joker war that ties
-// on jokers again gets red eyes, and more eyes open in the dark. Like the
-// versus intro it's only a picture, and at a big table someone else's joker
-// war gets the strip with a little jester in it.
-//
-// The pixels are drawn in the page every frame: PX shades and outlines simple
-// shapes into pixel art, Jester is made of them, and Joker runs the show.
-
-// A small renderer for pixel art made of shaded shapes. Every frame it fills a
+// A small renderer for pixel art made of shaded shapes, for the pictures on
+// face cards and jokers and for the joker war. A drawing fills a
 // low-resolution buffer: each shape tests the pixels in its box, a light
 // shades them into a few tones of its colors with an ordered dither between
 // tones, then edges get dark lines and the silhouette a 1px outline. Shapes
-// are drawn back to front. Because the picture is drawn fresh each frame,
-// parts can move by any amount: the smoothness of vector animation with the
-// crisp look of pixel art.
+// are drawn back to front. The joker war draws its pictures fresh each
+// frame, so parts can move by any amount: the smoothness of vector animation
+// with the crisp look of pixel art.
 const PX = (() => {
   const BAYER = [0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5].map((v) => (v + 0.5) / 16);
   const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
@@ -2626,6 +2642,8 @@ const PX = (() => {
       // Ambient light, as a share of each material's own. Below 1 the scene
       // is in the dark: flat colors dim too, by how much light reaches them.
       this.amb = 1;
+      // How wide the dithered blend between two tones is: 0 for hard bands.
+      this.dither = 0.34;
     }
     begin() { this.prims.length = 0; this.glows.length = 0; }
     // Draws `shape` (in `place`'s coordinates) in `m`. Options: edge (a dark
@@ -2639,7 +2657,7 @@ const PX = (() => {
     // pixels, r pixels wide.
     glow(x, y, r) { this.glows.push([x, y, r]); }
     render(ctx, glowCtx) {
-      const { w, h, col, pid, out, prims, glowBuf } = this;
+      const { w, h, col, pid, out, prims, glowBuf, dither } = this;
       col.fill(0); pid.fill(0); glowBuf.fill(0);
       const Lp = this.light;
       let lx = Lp.x, ly = Lp.y, lz = Lp.z;
@@ -2695,7 +2713,7 @@ const PX = (() => {
               let v = lum * n - 0.5;
               let i = Math.floor(v);
               const f = v - i;
-              if ((f - 0.5) / 0.34 + 0.5 > BAYER[(iy & 3) * 4 + (ix & 3)]) i++;
+              if ((f - 0.5) / dither + 0.5 > BAYER[(iy & 3) * 4 + (ix & 3)]) i++;
               i = i < 0 ? 0 : i > n - 1 ? n - 1 : i;
               let tonesNow = m.alt && m.pat(sx, sy) ? m.alt : r;
               if (m.glowRamp && glows.length) {
@@ -2788,6 +2806,687 @@ const PX = (() => {
   const uu = () => UU;
   return { Canvas, Place, Spring, mat, ramp, darker, hexU32, ellipse, tube, curve, poly, roundRect, custom, setN, dither, clamp, ease, wander, uu };
 })();
+
+// ---- Card pictures ----
+//
+// Every deck has pixel art of its own for the jack, queen, king and joker,
+// in place of the emoji in DECKS: Classic's knave, queen, king and jester,
+// Neon's signs, 8-bit's sprites, Royal's shield, princess, prince and masks,
+// Space's rocket, alien, saucer and comet, Spooky's undead and Candy's
+// sweets. Each is drawn with PX (8-bit's as a grid of flat pixels) into a
+// canvas 36 by 45 the first time a card needs it. Cards show it scaled up
+// with its pixels kept square (see picEl), and so does the picture of the
+// game.
+const Pictures = (() => {
+  const { Canvas, Place, mat, ellipse, tube, curve, poly, roundRect, custom, setN, dither } = PX;
+  const W = 36, H = 45;
+  const HERE = new Place(0, 0);
+
+  // Shared colors, each as tones from dark to light.
+  const C = {
+    skin: ['#5a2e22', '#a8623f', '#e3a27c', '#ffd3b0'],
+    pale: ['#5c4a5e', '#a596a6', '#e6dcdc', '#fffaf2'],
+    gold: ['#5a3008', '#a86a14', '#e8b030', '#fff0a0'],
+    red: ['#4a0812', '#8e1624', '#cf2e34', '#f2705a'],
+    white: ['#5a5a6e', '#a8a8ba', '#e6e6ee', '#ffffff'],
+    gray: ['#4c4c5c', '#8e8ea0', '#cfd0dc', '#f6f6fa'],
+    brown: ['#1a0e0a', '#3c2216', '#6a3e26', '#94603c'],
+    black: ['#0c0a12', '#26222e', '#46404e', '#6a6274'],
+    blue: ['#0c1a4a', '#1e3a9a', '#4a7ae0', '#a8c8ff'],
+    green: ['#0c2a12', '#1e6a2a', '#3ea84a', '#9ee07a'],
+    pink: ['#6a1a3a', '#c43d74', '#ff7aa8', '#ffc2d8'],
+  };
+  const flat = (c) => mat({ ramp: [c], flat: 0, rim: false });
+  const M = {};
+  for (const [k, tones] of Object.entries(C)) M[k] = mat({ ramp: tones, rim: false, amb: 0.35, dif: 0.85 });
+  M.eye = flat('#1a0e14');
+  M.blush = flat('#ff9db4');
+  M.lips = flat('#c8283c');
+  M.mouth = flat('#5a0a18');
+  M.hole = flat('#05030c');
+  // Ermine, with black flecks, and a knave's tunic, half red, half black.
+  M.ermine = mat({ ramp: C.white, rim: false, amb: 0.35, dif: 0.85, alt: ['#0c0a12', '#0c0a12', '#26222e', '#26222e'], pat: (x, y) => (Math.floor(x + 0.5) * 7 + Math.floor(y + 0.5) * 13) % 11 === 0 });
+  M.split = mat({ ramp: C.red, rim: false, amb: 0.35, dif: 0.85, alt: C.black, pat: (x) => x < 18 });
+
+  // A ring, shaded like a bent tube.
+  const ring = (cx, cy, r, w) => custom(cx - r - w, cy - r - w, cx + r + w, cy + r + w, (x, y) => {
+    const dx = x - cx, dy = y - cy, d = Math.sqrt(dx * dx + dy * dy), q = (d - r) / w;
+    if (Math.abs(q) > 1) return false;
+    setN((dx / (d || 1)) * q, (dy / (d || 1)) * q, Math.sqrt(1 - q * q), 0);
+    return true;
+  });
+  // Points around an arc, for a tube.
+  const arc = (cx, cy, r, a0, a1, w, n = 10) => [...Array(n + 1)].map((_, i) => { const a = a0 + ((a1 - a0) * i) / n; return [cx + Math.cos(a) * r, cy + Math.sin(a) * r, w]; });
+  // A star of k points, its inner corners at `inner` of its radius.
+  const star = (cx, cy, r, inner = 0.45, k = 5, rot = -Math.PI / 2) => poly([...Array(k * 2)].map((_, i) => { const a = rot + (i * Math.PI) / k, rr = i % 2 ? r * inner : r; return [cx + Math.cos(a) * rr, cy + Math.sin(a) * rr]; }));
+  // A twinkle: a cross of single pixels with arms `arm` long, brightest in
+  // the middle.
+  const twinkle = (cx, cy, arm) => {
+    const x0 = Math.floor(cx) + 0.5, y0 = Math.floor(cy) + 0.5;
+    return custom(x0 - arm - 1, y0 - arm - 1, x0 + arm + 1, y0 + arm + 1, (x, y) => {
+      const dx = Math.abs(x - x0), dy = Math.abs(y - y0);
+      if (!((dx < 0.5 && dy < arm + 0.5) || (dy < 0.5 && dx < arm + 0.5))) return false;
+      setN(0, 0, dx + dy < 0.5 ? 1 : 0.62, 0);
+      return true;
+    });
+  };
+  // Neon: tubes lit from inside, brightest along the middle.
+  const neon = (tones) => mat({ ramp: tones, emit: true, fn: (uu, x, y, nx, ny, nz) => 0.2 + 0.8 * nz, rim: false, ol: tones[0], line: tones[0] });
+  const N = {
+    cyan: neon(['#0b4a5a', '#18a8c0', '#5ff7ff', '#e8ffff']),
+    pink: neon(['#5a0a4a', '#c02aa0', '#ff4fd8', '#ffd8f6']),
+    yellow: neon(['#5a4a08', '#c0a018', '#fff36b', '#fffde0']),
+    violet: neon(['#2a0a5a', '#6a2ac0', '#b07aff', '#efe2ff']),
+  };
+  const neonOpt = { edge: false, out: false };  // light has no outline
+  // 8-bit: a picture as rows of letters, each a flat 2px square of its color.
+  const bitmap = (rows, palette, scale = 2) => ({ rows, palette, scale });
+
+  // A neck and a low neckline, for the queens.
+  const NECK = [[15.2, 26], [20.8, 26], [20.8, 34.6], [25.6, 37.4], [18, 42.2], [10.4, 37.4], [15.2, 34.6]];
+  // Points flipped left to right, for the other half of a face.
+  const mirror = (pts) => pts.map(([x, y, r]) => (r === undefined ? [36 - x, y] : [36 - x, y, r]));
+  // Only the part of a shape where keep(x, y).
+  const cut = (sh, keep) => custom(sh.x0, sh.y0, sh.x1, sh.y1, (x, y, ix, iy) => keep(x, y) && sh.test(x, y, ix, iy));
+
+  // ---- The decks ----
+  const ART = {
+    classic: {
+      // The jack: a knave in a feathered cap, juggling.
+      jack(add) {
+        add(ellipse(18, 47.5, 15, 11.5), M.split);
+        add(ellipse(12.2, 26.5, 2.3, 4.2), M.brown);
+        add(ellipse(23.8, 26.5, 2.3, 4.2), M.brown);
+        add(ellipse(18, 26.8, 6.4, 7.4), M.skin);
+        add(tube(curve([20.5, 19], [24, 15], [28, 13.5], [31, 15.5], 1.3, 0.5, 8)), M.white);
+        add(ellipse(17.2, 20.2, 8.4, 3.4), M.red);
+        add(ellipse(15.6, 26.4, 0.8, 1.1), M.eye);
+        add(ellipse(20.4, 26.4, 0.8, 1.1), M.eye);
+        add(tube(curve([15.4, 30.2], [16.6, 31.6], [19.4, 31.6], [20.6, 30.2], 0.55, 0.55, 6)), M.mouth, { edge: false, out: false });
+        add(ellipse(8.5, 9.5, 2.5, 2.5), M.red);
+        add(ellipse(18, 5.2, 2.5, 2.5), M.gold);
+        add(ellipse(27.5, 9.5, 2.5, 2.5), M.blue);
+      },
+      // The queen: crowned, long dark hair, with a rose.
+      queen(add) {
+        add(ellipse(18, 47, 15.5, 12), M.red);
+        add(poly(NECK), M.skin, { edge: false });
+        add(tube([[9.4, 37.2, 1.1], [18, 42.6, 1.1], [26.6, 37.2, 1.1]]), M.gold);
+        add(ellipse(18, 18.6, 8.6, 7.4), M.brown);
+        add(ellipse(11.2, 28, 3.4, 10.6), M.brown);
+        add(ellipse(24.8, 28, 3.4, 10.6), M.brown);
+        add(ellipse(18, 22.4, 6.8, 8.2), M.skin);
+        add(cut(ellipse(18, 16.2, 7.6, 4.8), (x, y) => y < 18.4), M.brown);
+        add(ellipse(15.6, 21.8, 0.8, 1.1), M.eye);
+        add(ellipse(20.4, 21.8, 0.8, 1.1), M.eye);
+        add(ellipse(14, 24.6, 1.2, 0.8), M.blush, { edge: false, out: false });
+        add(ellipse(22, 24.6, 1.2, 0.8), M.blush, { edge: false, out: false });
+        add(ellipse(18, 27, 1.7, 0.85), M.lips, { edge: false, out: false });
+        add(poly([[12, 15.4], [12, 10.6], [14.4, 12.8], [16.2, 8.6], [18, 11.8], [19.8, 8.6], [21.6, 12.8], [24, 10.6], [24, 15.4]], 0.8), M.gold);
+        for (const [x, y] of [[12, 10.2], [16.2, 8.2], [19.8, 8.2], [24, 10.2]]) add(ellipse(x, y, 0.9, 0.9), M.white);
+        add(ellipse(18, 13.8, 1.1, 1), M.red);
+        add(tube([[27.4, 44.8, 0.6], [28, 39.6, 0.6]]), M.green);
+        add(ellipse(26.6, 42.4, 1.6, 0.8, -0.6), M.green);
+        add(ellipse(28.2, 38, 2.4, 2.2), M.red);
+      },
+      // The king: a great crown, a white beard, an ermine collar.
+      king(add) {
+        add(ellipse(18, 47, 17, 12), M.red);
+        add(ellipse(18, 39.6, 12.5, 4.2), M.ermine);
+        add(ellipse(11.2, 21, 2.4, 4.5), M.gray);
+        add(ellipse(24.8, 21, 2.4, 4.5), M.gray);
+        add(ellipse(18, 21.5, 7.2, 8.2), M.skin);
+        add(cut(ellipse(18, 30, 8.6, 8), (x, y) => y > 24.4), M.gray);
+        add(ellipse(18, 27.8, 1.6, 0.7), M.mouth, { edge: false, out: false });
+        add(tube([[13.8, 26.2, 1.2], [16.4, 25.2, 1.4], [18, 25.6, 1.1]]), M.gray);
+        add(tube(mirror([[13.8, 26.2, 1.2], [16.4, 25.2, 1.4], [18, 25.6, 1.1]])), M.gray);
+        add(ellipse(18, 23.6, 1.4, 1.7), M.skin);
+        add(ellipse(15.6, 20.6, 0.85, 1.1), M.eye);
+        add(ellipse(20.4, 20.6, 0.85, 1.1), M.eye);
+        add(tube([[13.6, 18.4, 0.9], [16.6, 18, 0.8]]), M.gray);
+        add(tube(mirror([[13.6, 18.4, 0.9], [16.6, 18, 0.8]])), M.gray);
+        add(poly([[10.4, 16.2], [10.4, 9.5], [13.2, 12.6], [15.6, 7.2], [18, 11.2], [20.4, 7.2], [22.8, 12.6], [25.6, 9.5], [25.6, 16.2]], 0.8), M.gold);
+        add(roundRect(10, 13.4, 26, 16.6, 0.8, 1), M.gold);
+        add(ellipse(18, 15, 1.4, 1.2), M.red);
+        add(ellipse(13.4, 15, 1, 0.9), M.blue);
+        add(ellipse(22.6, 15, 1, 0.9), M.blue);
+        for (const [x, y] of [[10.4, 9.2], [15.6, 6.8], [20.4, 6.8], [25.6, 9.2]]) add(ellipse(x, y, 1.1, 1.1), M.gold);
+      },
+      // The joker: a jester in red and black, with bells.
+      joker(add) {
+        for (let i = 0; i < 5; i++) add(ellipse(6 + i * 6, 41.5 - (i % 2) * 0.6, 3.6, 3), i % 2 ? M.red : M.white);
+        add(ellipse(18, 26.8, 7, 8), M.pale);
+        add(tube(curve([14, 19.5], [9, 13], [4, 14], [3.6, 20.5], 3.6, 1, 8)), M.red);
+        add(tube(curve([22, 19.5], [27, 13], [32, 14], [32.4, 20.5], 3.6, 1, 8)), M.red);
+        add(tube(curve([18, 18.5], [18, 11], [20, 6], [24.6, 5], 3.8, 1, 8)), M.black);
+        add(cut(ellipse(18, 18.8, 8.4, 3.6), (x, y) => y < 20), M.black);
+        add(tube([[9.6, 20.6, 1.4], [18, 19.3, 1.4], [26.4, 20.6, 1.4]]), M.gold);
+        for (const [x, y] of [[3.6, 22.2], [32.4, 22.2], [26.2, 6]]) add(ellipse(x, y, 1.6, 1.6), M.gold);
+        add(poly([[15.2, 22.6], [16.5, 25.2], [15.2, 27.8], [13.9, 25.2]]), M.black, { edge: false, out: false });
+        add(poly(mirror([[15.2, 22.6], [16.5, 25.2], [15.2, 27.8], [13.9, 25.2]])), M.black, { edge: false, out: false });
+        add(cut(ellipse(18, 30.2, 5.6, 3.6), (x, y) => y > 30.2), M.mouth, { edge: false, out: false });
+        add(cut(ellipse(18, 30.2, 5.6, 3.6), (x, y) => y > 30.2 && y < 31.6 && Math.abs(x - 18) < 4.6 && Math.floor(x) % 2 === 0), M.white, { edge: false, out: false });
+        add(ellipse(18, 27.9, 1.5, 1.4), M.red);
+      },
+    },
+
+    // Neon: signs of glowing tubes on the dark card.
+    neon: {
+      dither: 0,
+      halo: true,
+      // A dancer striking a pose, one arm to the sky.
+      jack(add) {
+        const t = 1.3;
+        add(ring(16.6, 10.8, 3.2, t), N.cyan, neonOpt);
+        add(tube([[16.8, 15.2, t], [16.2, 21.5, t], [15.6, 27, t]]), N.cyan, neonOpt);
+        add(tube([[16.8, 17, t], [21.8, 12.6, t], [25.8, 5.4, t]]), N.cyan, neonOpt);
+        add(tube([[16.4, 17.8, t], [11.2, 21, t], [13.2, 25.6, t]]), N.cyan, neonOpt);
+        add(tube([[15.6, 27, t], [21, 33, t], [23.8, 41.4, t]]), N.pink, neonOpt);
+        add(tube([[15.6, 27, t], [10.8, 34, t], [6.8, 40.6, t]]), N.pink, neonOpt);
+        add(ellipse(27.2, 33.2, 1.9, 1.5, -0.35), N.yellow, neonOpt);
+        add(tube([[28.8, 32.6, 0.75], [28.8, 25.8, 0.75], [31.6, 28, 0.75]]), N.yellow, neonOpt);
+        add(twinkle(6.4, 8, 2), N.yellow, neonOpt);
+      },
+      // A dancer in a swirling skirt, arms raised.
+      queen(add) {
+        const t = 1.2;
+        add(ring(18, 10, 3, t), N.pink, neonOpt);
+        add(ellipse(18, 5, 1.7, 1.5), N.pink, neonOpt);
+        add(tube([[18, 14.2, t], [18, 23, t]]), N.pink, neonOpt);
+        add(tube([[18, 16, t], [13, 12, t], [10.6, 5.6, t]]), N.pink, neonOpt);
+        add(tube([[18, 16, t], [23, 12, t], [25.4, 5.6, t]]), N.pink, neonOpt);
+        add(tube([[18, 23, t], [9.2, 37.4, t], [13.8, 38.6, t], [18.4, 37, t], [23, 38.6, t], [27.6, 37.2, t], [18, 23, t]]), N.violet, neonOpt);
+        add(tube([[15, 38.6, 1.1], [14, 43.6, 1.1]]), N.cyan, neonOpt);
+        add(tube([[21, 38.6, 1.1], [22.4, 43.6, 1.1]]), N.cyan, neonOpt);
+      },
+      // The coolest king: shades and a glowing crown.
+      king(add) {
+        add(ring(18, 26, 10.5, 1.2), N.cyan, neonOpt);
+        add(tube([[10.6, 24.6, 1.0], [25.4, 24.6, 1.0]]), N.cyan, neonOpt);
+        add(roundRect(10.8, 22.8, 17, 28.2, 1.6, 1), M.hole, neonOpt);
+        add(roundRect(19, 22.8, 25.2, 28.2, 1.6, 1), M.hole, neonOpt);
+        add(tube([[10.8, 22.8, 0.8], [17, 22.8, 0.8], [16.4, 28, 0.8], [11.4, 28, 0.8], [10.8, 22.8, 0.8]]), N.pink, neonOpt);
+        add(tube(mirror([[10.8, 22.8, 0.8], [17, 22.8, 0.8], [16.4, 28, 0.8], [11.4, 28, 0.8], [10.8, 22.8, 0.8]])), N.pink, neonOpt);
+        add(tube(curve([14.5, 32.5], [17, 34], [20.5, 33.8], [23, 31.5], 0.9, 0.9, 8)), N.pink, neonOpt);
+        add(tube([[10.5, 13.8, 1.0], [10.5, 6.5, 1.0], [14.2, 10.6, 1.0], [18, 4.5, 1.0], [21.8, 10.6, 1.0], [25.5, 6.5, 1.0], [25.5, 13.8, 1.0], [10.5, 13.8, 1.0]]), N.yellow, neonOpt);
+      },
+      // Star-struck: stars for eyes and a grin from ear to ear.
+      joker(add) {
+        add(ring(18, 25, 11, 1.2), N.pink, neonOpt);
+        add(star(13.6, 22.2, 3.6, 0.45), N.yellow, neonOpt);
+        add(star(22.4, 22.2, 3.6, 0.45), N.yellow, neonOpt);
+        add(tube(arc(18, 26.5, 6.6, 0.25, Math.PI - 0.25, 1.1, 12)), N.cyan, neonOpt);
+        add(tube([[11.6, 28.2, 1.0], [24.4, 28.2, 1.0]]), N.cyan, neonOpt);
+        add(twinkle(5.5, 7.5, 2), N.yellow, neonOpt);
+        add(twinkle(30.5, 9.5, 1), N.cyan, neonOpt);
+        add(twinkle(29.5, 41, 1), N.violet, neonOpt);
+      },
+    },
+
+    // 8-bit: chunky pixels, two to a dot, flat colors.
+    pixel: {
+      // A little alien of our own.
+      jack: bitmap([
+        '..Y.......Y..',
+        '...K.....K...',
+        '....K...K....',
+        '...KLLGGGK...',
+        '..KLGGGGGGK..',
+        '.KGWWGGGWWGK.',
+        '.KGWKGGGWKGK.',
+        'KGGGGGGGGGGGK',
+        'KGGGKGGGKGGGK',
+        'KGGGGKKKGGGGK',
+        '.KGGKGGGKGGK.',
+        '.KGK.KGK.KGK.',
+        '..K...K...K..',
+      ], { K: '#111111', G: '#2fbf4a', L: '#8ef09a', W: '#ffffff', Y: '#ffe14d' }),
+      // Princess Plum, holding her namesake.
+      queen: bitmap([
+        '...K...KK...K...',
+        '..KYK.KYYK.KYK..',
+        '..KYYKYYYYKYYK..',
+        '..KYYYYYYYYYYK..',
+        '..KYRYYBBYYRYK..',
+        '.KHKKKKKKKKKKHK.',
+        '.KHHSSSSSSSSHHK.',
+        'KHHSSKSSSSKSSHHK',
+        'KHHSSKSSSSKSSHHK',
+        'KHHSCSSSSSSCSHHK',
+        'KHHSSSSRRSSSSHHK',
+        'KHHHSSSSSSSSHHHK',
+        'KHHHHKSSSSKHHHHK',
+        'KHHHKPPSSPPKHHHK',
+        'KHHKPPPSSPPPKHHK',
+        'KHKPPPPKGPPPPKHK',
+        '.KPPPSKFFKSPPPK.',
+        '.KPPSKFWFFKSPPK.',
+        '.KPPSKFFFFKSPPK.',
+        'KPPPLPKFFKPLPPPK',
+        'KPPPLPPKKPPLPPPK',
+        'KPPPLPPPPPPLPPPK',
+      ], { K: '#111111', Y: '#ffe14d', R: '#d01c1c', B: '#2f6fe0', H: '#8b4513', S: '#ffc8a0', C: '#ff8fa0', P: '#178a8a', L: '#5fd8cc', F: '#5a2a9c', G: '#2fbf4a', W: '#ffffff' }),
+      // A jolly king in red robes and a big white beard.
+      king: bitmap([
+        '...K...KK...K...',
+        '..KYK.KYYK.KYK..',
+        '..KYYKRYYRKYYK..',
+        '..KYYYYYYYYYYK..',
+        '..KYBYYRRYYBYK..',
+        '.KWKKKKKKKKKKWK.',
+        '.KWWSSSSSSSSWWK.',
+        'KWWSSKSSSSKSSWWK',
+        'KWWSSKSSSSKSSWWK',
+        'KWWSNSSNNSSNSWWK',
+        'KWWWWWWSSWWWWWWK',
+        'KWWWWKRRRRKWWWWK',
+        'KGWWWWKKKKWWWWGK',
+        '.KGWWWWWWWWWWGK.',
+        'KRKGWWWWWWWWGKRK',
+        'KRRKGWWWWWWGKRRK',
+        'KRRRKGWWWWGKRRRK',
+        'KWKWKKGWWGKKWKWK',
+        'KWWWWWKGGKWWWWWK',
+        'KRRDRRRKKRRRDRRK',
+        'KRRDRRRRRRRRDRRK',
+        'KRRDRRRYYRRRDRRK',
+      ], { K: '#111111', Y: '#ffe14d', R: '#d01c1c', D: '#8a1010', B: '#2f6fe0', W: '#ffffff', G: '#b8b8c8', S: '#ffc8a0', N: '#ff8f8f' }),
+      // A jester in green and yellow, like the joker war's for this deck.
+      joker: bitmap([
+        '.KK.....KK.....KK.',
+        'KOOK...KOOK...KOOK',
+        'KOOK...KOOK...KOOK',
+        '.KKGK..KYYK..KGKK.',
+        '..KGGK.KYYK.KGGK..',
+        '..KGGGKKYYKKGGGK..',
+        '...KGGGKYYKGGGK...',
+        '...KGGGGYYGGGGK...',
+        '...KGGGYYYYGGGK...',
+        '...KYYYYYYYYYYK...',
+        '...KSSSSSSSSSSK...',
+        '...KSSKSSSSKSSK...',
+        '...KSSKSSSSKSSK...',
+        '...KSPGSRRSGPSK...',
+        '...KSKSSSSSSKSK...',
+        '...KSSKWWWWKSSK...',
+        '....KSSKKKKSSK....',
+        '...KYYGGYYGGYYK...',
+        '..KYYKGGKKGGKYYK..',
+        '.KGGGGGGKYYYYYYYK.',
+        'KGGGGGGGKYYYYYYYYK',
+        'KGGGGGGGKYYYYYYYYK',
+      ], { K: '#111111', O: '#f0a020', G: '#3ec43e', Y: '#ffd23d', W: '#ffffff', R: '#d01c1c', P: '#ff8fa0', S: '#ffc8a0' }),
+    },
+
+    // Royal: gold on deep green, burgundy and navy.
+    royal: {
+      // A shield of arms.
+      jack(add) {
+        const shield = [[8, 6], [28, 6], [28, 22], [18, 41], [8, 22]];
+        add(poly(shield, 1.4), M.gold);
+        const field = poly([[9.8, 7.8], [26.2, 7.8], [26.2, 21.6], [18, 38.2], [9.8, 21.6]]);
+        add(custom(9.6, 7.6, 26.4, 38.4, (x, y) => {
+          if (!field.test(x, y)) return false;
+          setN(0, 0, 1, (x < 18) !== (y < 20) ? 1 : 0);
+          return true;
+        }), mat({ ramp: ['#0b1a3a', '#1b2f6a'], fn: (uu) => (uu ? 0.75 : 0.2), rim: false, alt: ['#4a0a14', '#9b1d2a'], pat: (x, y) => (x < 18) !== (y < 20) }), { edge: false });
+        add(poly([[11.4, 26.4], [11.4, 18.8], [14.4, 21.8], [18, 15.4], [21.6, 21.8], [24.6, 18.8], [24.6, 26.4]], 0.8), M.gold);
+        for (const [x, y] of [[11.4, 18.4], [18, 15], [24.6, 18.4]]) add(ellipse(x, y, 1.1, 1.1), M.gold);
+        add(ellipse(18, 23.8, 1.3, 1.2), M.red);
+      },
+      // The princess: a golden tiara, green velvet, pearls.
+      queen(add) {
+        const blond = mat({ ramp: ['#5a3a0a', '#a8781a', '#e8b84a', '#fff0a8'], rim: false, amb: 0.35, dif: 0.85 });
+        add(ellipse(18, 47, 15.5, 12), mat({ ramp: ['#062014', '#0b3a22', '#16603a', '#2e8a54'], rim: false, amb: 0.35, dif: 0.85 }));
+        add(poly(NECK), M.skin, { edge: false });
+        add(tube([[9.4, 37.2, 1.0], [18, 42.6, 1.0], [26.6, 37.2, 1.0]]), M.gold);
+        add(ellipse(18, 18.6, 8.6, 7.4), blond);
+        for (const sx of [-1, 1]) {
+          add(ellipse(18 + sx * 7.6, 24.6, 3.2, 5.4), blond);
+          add(ellipse(18 + sx * 8.2, 31.6, 3, 4.6), blond);
+          add(ellipse(18 + sx * 8.6, 37.4, 2.6, 3.2), blond);
+        }
+        add(ellipse(18, 22.4, 6.8, 8.2), M.skin);
+        add(cut(ellipse(18, 16.4, 7.6, 4.6), (x, y) => y < 18.2), blond);
+        for (let i = 0; i < 5; i++) { const t = (i - 2) / 2; add(ellipse(18 + t * 3.4, 34.8 + (1 - t * t) * 1.3, 0.9, 0.9), M.white); }
+        add(ellipse(15.6, 21.8, 0.8, 1.1), M.eye);
+        add(ellipse(20.4, 21.8, 0.8, 1.1), M.eye);
+        add(ellipse(14, 24.6, 1.2, 0.8), M.blush, { edge: false, out: false });
+        add(ellipse(22, 24.6, 1.2, 0.8), M.blush, { edge: false, out: false });
+        add(ellipse(18, 27, 1.6, 0.8), M.lips, { edge: false, out: false });
+        add(tube([[12.4, 13.6, 0.9], [18, 11.8, 0.9], [23.6, 13.6, 0.9]]), M.gold);
+        add(poly([[15.4, 12.6], [18, 7.4], [20.6, 12.6]], 0.6), M.gold);
+        add(ellipse(18, 11, 1, 1.1), M.red);
+      },
+      // The prince: a crown, a fine moustache, a navy cape.
+      king(add) {
+        add(ellipse(18, 47, 17, 12), mat({ ramp: ['#060c24', '#0e1c4a', '#1e3478', '#3a58a8'], rim: false, amb: 0.35, dif: 0.85 }));
+        add(tube([[9, 38.8, 1.0], [18, 42.6, 1.0], [27, 38.8, 1.0]]), M.gold);
+        add(ellipse(18, 42.8, 1.8, 1.8), M.gold);
+        add(ellipse(18, 22, 7, 8.2), M.skin);
+        add(cut(ellipse(18, 17.4, 7.8, 5.6), (x, y) => y < 19.4), M.brown);
+        add(ellipse(11.4, 21.5, 1.6, 3.6), M.brown);
+        add(ellipse(24.6, 21.5, 1.6, 3.6), M.brown);
+        add(ellipse(15.6, 21.6, 0.8, 1.1), M.eye);
+        add(ellipse(20.4, 21.6, 0.8, 1.1), M.eye);
+        add(tube([[14.6, 26.6, 0.8], [16.8, 25.6, 1.0], [18, 26, 0.8]]), M.brown);
+        add(tube(mirror([[14.6, 26.6, 0.8], [16.8, 25.6, 1.0], [18, 26, 0.8]])), M.brown);
+        add(ellipse(18, 28.4, 1.4, 0.6), M.mouth, { edge: false, out: false });
+        add(poly([[11, 15.6], [11, 9.4], [14.4, 12.4], [18, 7], [21.6, 12.4], [25, 9.4], [25, 15.6]], 0.8), M.gold);
+        add(ellipse(18, 13.4, 1.2, 1.1), mat({ ramp: ['#062014', '#0b6a3a', '#2ec46a', '#bfffd8'], rim: false }));
+      },
+      // The masks of comedy and tragedy.
+      joker(add) {
+        const face = (cx, cy, rot, tones, happy) => {
+          const m = mat({ ramp: tones, rim: false, amb: 0.35, dif: 0.85 });
+          add(ellipse(cx, cy, 7.2, 8.6, rot), m);
+          const c = Math.cos(rot), s2 = Math.sin(rot), at = (x, y) => [cx + x * c - y * s2, cy + x * s2 + y * c];
+          const [e1x, e1y] = at(-2.8, -1.8), [e2x, e2y] = at(2.8, -1.8);
+          add(ellipse(e1x, e1y, 1.5, 1.0, rot + (happy ? 0.3 : -0.3)), M.hole, { edge: false, out: false });
+          add(ellipse(e2x, e2y, 1.5, 1.0, rot - (happy ? 0.3 : -0.3)), M.hole, { edge: false, out: false });
+          const mouth = happy ? arc(0, 1.6, 3.4, 0.3, Math.PI - 0.3, 0.9, 8) : arc(0, 6.6, 3.4, Math.PI + 0.35, 2 * Math.PI - 0.35, 0.9, 8);
+          add(tube(mouth.map(([x, y, r]) => [...at(x, y), r])), M.hole, { edge: false, out: false });
+        };
+        add(tube(curve([5, 31], [8, 37], [14, 37], [16, 33], 1.0, 0.8, 8)), M.red);
+        add(tube(curve([31, 31], [28, 37], [22, 37], [20, 33], 1.0, 0.8, 8)), M.red);
+        face(13, 18, -0.28, C.gray, false);
+        face(23, 22, 0.24, C.gold, true);
+      },
+    },
+
+    // Space: bright things against the dark card.
+    space: {
+      // A rocket, climbing.
+      jack(add) {
+        const P = new Place(18, 22, 0.65), at = (sh, m, o) => add(sh, m, o, P);
+        const flame = mat({ ramp: ['#ff4a10', '#ff9a20', '#ffe066', '#ffffff'], emit: true, fn: (uu, x, y, nx, ny, nz) => 0.15 + 0.85 * nz * (1 - uu * 0.6), rim: false, out: false });
+        at(tube([[0, 9, 3.4], [0, 15, 2.2], [0, 21, 0.6]]), flame, { out: false, edge: false });
+        at(poly([[-4.6, 4], [-8.6, 10], [-3.6, 8]], 0.8), M.red);
+        at(poly([[4.6, 4], [8.6, 10], [3.6, 8]], 0.8), M.red);
+        at(ellipse(0, -1, 4.8, 11), M.white);
+        at(cut(ellipse(0, -1, 4.8, 11), (x, y) => y < -7.5), M.red);
+        at(ring(0, -1.5, 2.2, 0.8), M.gray);
+        at(ellipse(0, -1.5, 1.6, 1.6), M.blue);
+        add(twinkle(6, 8, 2), N.yellow, neonOpt);
+        add(twinkle(30, 33, 1), N.cyan, neonOpt);
+        add(star(8, 36, 1.0), N.yellow, neonOpt);
+      },
+      // A friendly alien.
+      queen(add) {
+        const skin = mat({ ramp: ['#0a3a2a', '#1a7a52', '#3ec48a', '#a8ffd0'], rim: false, amb: 0.35, dif: 0.85 });
+        add(ellipse(18, 47, 13, 10), mat({ ramp: ['#1a0a3a', '#3a1a7a', '#6a3ac0', '#a87aff'], rim: false, amb: 0.35, dif: 0.85 }));
+        add(tube([[13.5, 13, 0.7], [11, 6, 0.6]]), skin);
+        add(tube([[22.5, 13, 0.7], [25, 6, 0.6]]), skin);
+        add(ellipse(10.8, 5.4, 1.5, 1.5), N.pink, neonOpt);
+        add(ellipse(25.2, 5.4, 1.5, 1.5), N.pink, neonOpt);
+        const brow = ellipse(18, 21.6, 10, 10.4), chin = ellipse(18, 28.6, 6, 6.6);
+        add(custom(7, 10, 29, 36, (x, y, ix, iy) => brow.test(x, y, ix, iy) || chin.test(x, y, ix, iy)), skin);
+        add(ellipse(13.6, 22.5, 3.2, 4.4, 0.45), M.hole, { edge: false, out: false });
+        add(ellipse(22.4, 22.5, 3.2, 4.4, -0.45), M.hole, { edge: false, out: false });
+        add(ellipse(12.6, 21, 0.9, 1.1), mat({ ramp: ['#ffffff'], flat: 0, rim: false }), { edge: false, out: false });
+        add(ellipse(21.4, 21, 0.9, 1.1), mat({ ramp: ['#ffffff'], flat: 0, rim: false }), { edge: false, out: false });
+        add(tube(curve([16, 30.4], [17, 31.4], [19, 31.4], [20, 30.4], 0.5, 0.5, 6)), M.hole, { edge: false, out: false });
+      },
+      // A flying saucer, beaming something up.
+      king(add) {
+        const beam = mat({ ramp: ['#1f6a5c', '#3fb89c', '#9affe0'], emit: true, fn: (uu) => (uu ? 0.95 : 0.5), rim: false });
+        add(custom(6, 24, 30, 45, (x, y, ix, iy) => {
+          const half = 3.4 + (y - 24) * 0.46, ax = Math.abs(x - 18), rim = ax > half - 1;
+          if (ax > half) return false;
+          if (!rim && (iy % 3 || dither(ix, iy) > 1.1 - (y - 24) * 0.05)) return false;
+          setN(0, 0, 1, rim ? 1 : 0);
+          return true;
+        }), beam, { edge: false, out: false });
+        const cow = new Place(18, 34, -0.3, 1.2), at = (sh, m, o) => add(sh, m, o, cow);
+        at(tube([[-2.4, 1, 0.6], [-2.6, 3.6, 0.6]]), M.white);
+        at(tube([[2.2, 1, 0.6], [2.4, 3.6, 0.6]]), M.white);
+        at(roundRect(-3.8, -1.9, 3.4, 1.9, 1.2, 1), M.white);
+        at(ellipse(-1.2, -0.4, 1.4, 1.1), M.black, { edge: false, out: false });
+        at(ellipse(4.4, -1.6, 1.7, 1.5), M.white);
+        at(ellipse(5.4, -1.1, 0.9, 0.8), M.pink, { edge: false, out: false });
+        add(ellipse(18, 15.5, 6.4, 6.2), neon(['#0b4a5a', '#18a8c0', '#8ff9ff', '#ffffff']), { edge: true });
+        add(ellipse(18, 21, 15.5, 4.6), M.gray);
+        add(ellipse(18, 23.2, 9, 2.2), M.white);
+        for (const x of [8, 13, 18, 23, 28]) add(ellipse(x, 21.2, 1, 1), N.yellow, neonOpt);
+        add(twinkle(5, 6, 2), N.yellow, neonOpt);
+        add(star(31, 9, 1.1), N.cyan, neonOpt);
+      },
+      // A comet, tail ablaze.
+      joker(add) {
+        const tail = mat({ ramp: ['#5a0a10', '#c0301a', '#ff8a3d', '#ffd070', '#ffffff'], emit: true, fn: (uu, x, y, nx, ny, nz) => (0.25 + 0.75 * nz) * (1 - uu * 0.75), rim: false });
+        add(tube(curve([24, 16], [17, 22], [10, 30], [3, 42], 6.4, 0.6, 12)), tail, { edge: false, out: false });
+        add(tube(curve([24, 16], [20, 24], [14, 34], [9, 44], 3.6, 0.4, 12)), tail, { edge: false, out: false });
+        add(ellipse(24.6, 15.4, 5.2, 5.2), mat({ ramp: ['#c08a20', '#ffe066', '#fff8d0', '#ffffff'], emit: true, fn: (uu) => 1 - uu * 0.55, rim: false }), { edge: false, out: false });
+        add(twinkle(8, 8, 2), N.yellow, neonOpt);
+        add(twinkle(31, 33, 1), N.cyan, neonOpt);
+        add(star(15, 5, 1.0), N.yellow, neonOpt);
+      },
+    },
+
+    // Spooky: the undead, on old parchment.
+    spooky: {
+      // A zombie, stitched and shambling.
+      jack(add) {
+        const rot = mat({ ramp: ['#1a2a0a', '#3a6a1a', '#7aa83a', '#c4e07a'], rim: false, amb: 0.35, dif: 0.85 });
+        add(ellipse(18, 47.5, 15, 11.5), mat({ ramp: ['#1a1030', '#3a2a5a', '#5a4a7a', '#8a7aaa'], rim: false, amb: 0.35, dif: 0.85 }));
+        add(poly([[11, 37], [14, 41], [16, 37.5], [18, 41.5], [20, 37.5], [22, 41], [25, 37], [25, 45], [11, 45]]), M.white);
+        add(ellipse(18, 25, 7.6, 9), rot);
+        for (const [x, y, r] of [[11, 18, 2.6], [14, 15.4, 2.8], [18, 14.6, 3], [22, 15.4, 2.8], [25, 18, 2.6]]) add(ellipse(x, y, r, r * 0.9), M.black);
+        add(ellipse(15, 24, 1.6, 1.6), M.white);
+        add(ellipse(15, 24.2, 0.7, 0.7), M.eye);
+        add(ellipse(21.2, 25, 1.4, 1.0), M.white);
+        add(ellipse(21.2, 25.3, 0.6, 0.5), M.eye);
+        add(tube([[14, 30.6, 0.6], [17, 31.4, 0.6], [20, 30.2, 0.6], [22.4, 31, 0.6]]), M.mouth, { edge: false, out: false });
+        add(tube([[22.5, 19.5, 0.45], [24.6, 22.4, 0.45]]), M.mouth, { edge: false, out: false });
+        for (const t of [0.25, 0.55, 0.85]) add(tube([[22.5 + 2.1 * t - 0.8, 19.5 + 2.9 * t + 0.6, 0.35], [22.5 + 2.1 * t + 0.8, 19.5 + 2.9 * t - 0.6, 0.35]]), M.mouth, { edge: false, out: false });
+      },
+      // A vampire with a high collar and a sharp smile.
+      queen(add) {
+        add(poly([[3, 45], [5, 30], [12, 36], [18, 40], [24, 36], [31, 30], [33, 45]], 1), mat({ ramp: ['#30060c', '#7a1020', '#c41e3a', '#ff5a6a'], rim: false, amb: 0.35, dif: 0.85 }));
+        add(ellipse(18, 19, 8.6, 7.6), M.black);
+        add(ellipse(11, 27, 3.2, 9), M.black);
+        add(ellipse(25, 27, 3.2, 9), M.black);
+        add(poly([[7, 45], [8.5, 34], [18, 41], [27.5, 34], [29, 45]], 1), M.black);
+        add(ellipse(18, 22.4, 7, 8.6), M.pale);
+        const hair = ellipse(18, 18.4, 7.8, 6.6);
+        add(custom(10, 12, 26, 21, (x, y) => {
+          if (!hair.test(x, y)) return false;
+          const ax = Math.abs(x - 18);
+          return y < 15.4 + 2.8 * Math.max(0, 1 - ax / 2.4) || ax > 5.2 + (y - 15) * 0.25;
+        }), M.black);
+        add(ellipse(18, 41.6, 1.4, 1.3), M.red);
+        add(ellipse(15.4, 22.2, 1.0, 1.0), mat({ ramp: ['#c41e3a'], flat: 0, rim: false }), { edge: false, out: false });
+        add(ellipse(20.6, 22.2, 1.0, 1.0), mat({ ramp: ['#c41e3a'], flat: 0, rim: false }), { edge: false, out: false });
+        add(tube([[13.8, 19.6, 0.6], [16.6, 20.6, 0.6]]), M.black, { edge: false, out: false });
+        add(tube(mirror([[13.8, 19.6, 0.6], [16.6, 20.6, 0.6]])), M.black, { edge: false, out: false });
+        add(ellipse(18, 27.2, 2.4, 0.9), M.lips, { edge: false, out: false });
+        add(poly([[16.4, 27.6], [17.2, 27.6], [16.8, 29.4]]), M.white, { edge: false, out: false });
+        add(poly([[18.8, 27.6], [19.6, 27.6], [19.2, 29.4]]), M.white, { edge: false, out: false });
+      },
+      // The skull king.
+      king(add) {
+        const bone = mat({ ramp: ['#4a3a2a', '#9a8a6a', '#dcd2b0', '#fffaea'], rim: false, amb: 0.35, dif: 0.85 });
+        add(ellipse(18, 24, 10, 10), bone);
+        add(roundRect(12.4, 28, 23.6, 36, 2.2, 1.2), bone);
+        add(ellipse(14, 24.4, 2.6, 3), M.hole, { edge: false, out: false });
+        add(ellipse(22, 24.4, 2.6, 3), M.hole, { edge: false, out: false });
+        add(poly([[18, 27.4], [19.4, 30.2], [16.6, 30.2]]), M.hole, { edge: false, out: false });
+        for (const x of [14.6, 17, 19.4, 21.8]) add(tube([[x, 32.4, 0.4], [x, 35.6, 0.4]]), M.hole, { edge: false, out: false });
+        add(poly([[9.6, 16.6], [9.6, 8.6], [13, 12], [15.6, 6.4], [18, 10.6], [20.4, 6.4], [23, 12], [26.4, 8.6], [26.4, 16.6]], 0.8), M.gold);
+        add(ellipse(18, 14.6, 1.3, 1.2), mat({ ramp: ['#30062a', '#7a1a6a', '#c43ab0', '#ffb0f0'], rim: false }));
+        add(tube([[6, 40, 1.4], [30, 44, 1.4]]), bone);
+        add(tube([[6, 44, 1.4], [30, 40, 1.4]]), bone);
+      },
+      // A ghost in a jester's cap.
+      joker(add) {
+        const ghost = mat({ ramp: ['#5a5070', '#a8a0c0', '#ece8f6', '#ffffff'], rim: false, amb: 0.4, dif: 0.8 });
+        const top = ellipse(18, 24, 11, 11), r = 11;
+        add(custom(6, 12, 30, 44, (x, y) => {
+          const bottom = 40 + Math.sin((x - 7) * 0.95) * 1.8;
+          if (y < 24) return top.test(x, y);
+          if (Math.abs(x - 18) > r || y > bottom) return false;
+          setN((x - 18) / r * 0.8, 0.1, Math.sqrt(Math.max(0.05, 1 - ((x - 18) / r) ** 2 * 0.64)), 0);
+          return true;
+        }), ghost);
+        add(ellipse(14.4, 25, 1.8, 2.4), M.hole, { edge: false, out: false });
+        add(ellipse(21.6, 25, 1.8, 2.4), M.hole, { edge: false, out: false });
+        add(ellipse(18, 31, 2.2, 2.6), M.hole, { edge: false, out: false });
+        add(tube(curve([13, 15.5], [9, 10], [5, 11], [4.2, 16.5], 3, 0.9, 8)), mat({ ramp: ['#5a1a06', '#b44c06', '#ff7a1a', '#ffb070'], rim: false, amb: 0.35, dif: 0.85 }));
+        add(tube(curve([23, 15.5], [27, 10], [31, 11], [31.8, 16.5], 3, 0.9, 8)), mat({ ramp: ['#5a1a06', '#b44c06', '#ff7a1a', '#ffb070'], rim: false, amb: 0.35, dif: 0.85 }));
+        add(tube(curve([18, 14.5], [18, 8], [20, 3.6], [24, 3], 3.2, 0.9, 8)), mat({ ramp: ['#1a0a30', '#361650', '#5b2a86', '#8a5ab8'], rim: false, amb: 0.35, dif: 0.85 }));
+        add(tube([[10.4, 16.2, 1.2], [18, 14.6, 1.2], [25.6, 16.2, 1.2]]), M.gold);
+        for (const [x, y] of [[4.2, 18], [31.8, 18], [25.4, 4]]) add(ellipse(x, y, 1.5, 1.5), M.gold);
+      },
+    },
+
+    // Candy: sweet, pink and mint.
+    candy: {
+      // A cupcake with a cherry on top.
+      jack(add) {
+        add(poly([[8, 27], [28, 27], [25, 42], [11, 42]], 1), mat({ ramp: ['#3a1a5a', '#6a3d9a', '#a87ad8', '#d8c0ff'], rim: false, amb: 0.4, dif: 0.8, alt: ['#6a1a3a', '#c43d74', '#ff7aa8', '#ffc2d8'], pat: (x) => Math.floor((x - 18) / 2.6 + 100) % 2 === 0 }));
+        const frost = mat({ ramp: ['#8a2a5a', '#e05a9a', '#ff9ac8', '#ffe0f0'], rim: false, amb: 0.4, dif: 0.8 });
+        add(ellipse(18, 25, 12, 5), frost);
+        add(ellipse(18, 19.5, 9, 4.6), frost);
+        add(ellipse(18, 14.5, 5.6, 3.8), frost);
+        add(tube([[18.8, 10.6, 0.5], [21, 5.6, 0.5]]), M.green);
+        add(ellipse(18.4, 9.4, 2.6, 2.4), M.red);
+        for (const [x, y, c] of [[12, 24, '#5ff7ff'], [16, 21, '#fff36b'], [22, 24, '#5ff7ff'], [20, 17, '#6a3d9a'], [14.5, 17.5, '#3ec48a'], [24, 21, '#fff36b']]) add(roundRect(x - 0.7, y - 0.45, x + 0.7, y + 0.45, 0.3, 0.1), mat({ ramp: [c], flat: 0, rim: false }), { edge: false, out: false });
+      },
+      // A swirly lollipop with a bow.
+      queen(add) {
+        add(roundRect(16.9, 24, 19.1, 44, 0.8, 0.8), M.white);
+        add(custom(6, 3, 30, 27, (x, y) => {
+          const dx = x - 18, dy = y - 15, d = Math.sqrt(dx * dx + dy * dy);
+          if (d > 11.5) return false;
+          const a = Math.atan2(dy, dx), band = Math.floor(((a / (2 * Math.PI) + 1) * 3 + d / 3.4) % 3);
+          const q = d / 11.5;
+          setN((dx / (d || 1)) * q * 0.9, (dy / (d || 1)) * q * 0.9, Math.sqrt(1 - q * q * 0.81), band);
+          return true;
+        }), mat({ ramp: ['#8a2a5a', '#e05a9a', '#ff9ac8', '#ffe0f0'], rim: false, amb: 0.4, dif: 0.8, alt: ['#1a6a5a', '#3ab89a', '#8fe3cf', '#d8fff4'], pat: (x, y) => { const dx = x - 18, dy = y - 15, d = Math.sqrt(dx * dx + dy * dy), a = Math.atan2(dy, dx); return Math.floor(((a / (2 * Math.PI) + 1) * 2 + d / 3.6) % 2) === 0; } }));
+        add(poly([[18, 30], [11, 26.6], [11.4, 33.4]], 0.8), M.pink);
+        add(poly([[18, 30], [25, 26.6], [24.6, 33.4]], 0.8), M.pink);
+        add(ellipse(18, 30, 1.6, 1.6), M.pink);
+      },
+      // The donut king.
+      king(add) {
+        const dough = mat({ ramp: ['#5a3010', '#a86a2a', '#e0a860', '#ffe0a8'], rim: false, amb: 0.4, dif: 0.8 });
+        add(ring(18, 28, 8.6, 5.4), dough);
+        const icing = mat({ ramp: ['#8a2a5a', '#e05a9a', '#ff9ac8', '#ffe0f0'], rim: false, amb: 0.4, dif: 0.8 });
+        add(custom(5, 15, 31, 41, (x, y) => {
+          const dx = x - 18, dy = y - 28, d = Math.sqrt(dx * dx + dy * dy), a = Math.atan2(dy, dx);
+          if (d < 4.6 + Math.sin(a * 5) * 0.3 || d > 12 + Math.sin(a * 6 + 0.5) * 0.9 + Math.sin(a * 11) * 0.35) return false;
+          const q = (d - 8.6) / 5;
+          setN((dx / (d || 1)) * q * 0.8, (dy / (d || 1)) * q * 0.8, Math.sqrt(Math.max(0.1, 1 - q * q * 0.64)), 0);
+          return true;
+        }), icing);
+        for (const [x, y, a, c] of [[11.5, 24, 0.6, '#5ff7ff'], [15, 19.8, -0.4, '#fff36b'], [21, 19.6, 0.5, '#6a3d9a'], [25, 23.5, -0.7, '#3ec48a'], [10.6, 29, -0.3, '#fff36b'], [25.6, 29.4, 0.4, '#5ff7ff'], [14, 34.6, 0.3, '#6a3d9a'], [22.4, 34.4, -0.5, '#fff36b'], [18, 37.2, 0.1, '#3ec48a']]) add(tube([[x - Math.cos(a) * 0.9, y - Math.sin(a) * 0.9, 0.45], [x + Math.cos(a) * 0.9, y + Math.sin(a) * 0.9, 0.45]]), mat({ ramp: [c], flat: 0, rim: false }), { edge: false, out: false });
+        add(poly([[12.4, 16.4], [12.4, 10.4], [15, 13], [18, 8], [21, 13], [23.6, 10.4], [23.6, 16.4]], 0.8), M.gold);
+        add(ellipse(18, 14.6, 1.1, 1.0), M.red);
+      },
+      // A sweet tooth, very pleased with itself.
+      joker(add) {
+        const enamel = mat({ ramp: ['#6a5a6a', '#b8aab8', '#efe8f0', '#ffffff'], rim: false, amb: 0.4, dif: 0.8 });
+        const crown = ellipse(18, 20, 11, 10);
+        add(custom(7, 8, 29, 43, (x, y) => {
+          if (y < 22) return crown.test(x, y);
+          const root = (cx) => { const w = 3.6 - (y - 22) * 0.12; return Math.abs(x - cx) < w && y < 41 - Math.abs(cx - 18) * 0.2; };
+          if (y < 27) { if (Math.abs(x - 18) < 11 - (y - 22) * 0.5) { setN((x - 18) / 14, 0.2, 0.9, 0); return true; } return false; }
+          if (root(12.6) || root(23.4)) { setN((x - 18) / 12, 0.1, 0.92, 0); return true; }
+          return false;
+        }), enamel);
+        add(ellipse(14.2, 18.4, 1.0, 1.4), M.eye);
+        add(tube(arc(21.8, 18.8, 1.4, Math.PI + 0.3, 2 * Math.PI - 0.3, 0.5, 6)), M.eye, { edge: false, out: false });
+        add(tube(arc(18, 22, 3.6, 0.3, Math.PI - 0.3, 0.6, 8)), M.mouth, { edge: false, out: false });
+        add(ellipse(19.4, 25.4, 1.4, 1.0), M.pink, { edge: false, out: false });
+        add(ellipse(11.6, 21.6, 1.3, 0.8), M.blush, { edge: false, out: false });
+        add(ellipse(24.4, 21.6, 1.3, 0.8), M.blush, { edge: false, out: false });
+        add(twinkle(28.6, 8.6, 2), M.gold);
+        add(twinkle(7.4, 33.4, 1), M.gold);
+      },
+    },
+  };
+
+  // A glow around neon tubes: each empty pixel within two of a tube takes
+  // the nearest one's color at full strength, faintly, fainter further out.
+  // `px` is a picture's pixels as 0xAABBGGRR.
+  function halo(px) {
+    const src = px.slice();
+    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+      const i = y * W + x;
+      if (src[i] >>> 24) continue;
+      let best = 0, at = -1;
+      for (let dy = -2; dy <= 2; dy++) for (let dx = -2; dx <= 2; dx++) {
+        const xx = x + dx, yy = y + dy, dd = dx * dx + dy * dy;
+        if (xx < 0 || yy < 0 || xx >= W || yy >= H || dd > 5 || !(src[yy * W + xx] >>> 24)) continue;
+        const a = dd <= 1 ? 0.55 : dd <= 2 ? 0.34 : 0.16;
+        if (a > best) { best = a; at = yy * W + xx; }
+      }
+      if (at < 0) continue;
+      const c = src[at], r = c & 255, g = (c >> 8) & 255, b = (c >> 16) & 255, k = 255 / Math.max(1, r, g, b);
+      px[i] = (((best * 255) << 24) | ((b * k) << 16) | ((g * k) << 8) | (r * k)) >>> 0;
+    }
+  }
+
+  const cache = new Map();
+  // A deck's picture for a face ('jack', 'queen', 'king' or 'joker'), as a
+  // canvas W by H, drawn the first time it's asked for. Null if the browser
+  // can't draw one.
+  function canvas(key, face) {
+    const name = `${key}-${face}`;
+    if (cache.has(name)) return cache.get(name);
+    const deck = ART[key] || ART.classic, draw = deck[face];
+    let c = document.createElement('canvas');
+    c.width = W;
+    c.height = H;
+    const ctx = c.getContext('2d');
+    if (!ctx) c = null;
+    else if (draw.rows) {
+      const { rows, palette, scale } = draw;
+      // Centered a little low, or on the bottom edge if it's tall.
+      const ox = Math.floor((W - rows[0].length * scale) / 2), oy = Math.min(H - rows.length * scale, Math.round(H * 0.55 - (rows.length * scale) / 2));
+      rows.forEach((row, y) => [...row].forEach((ch, x) => {
+        if (!palette[ch]) return;
+        ctx.fillStyle = palette[ch];
+        ctx.fillRect(ox + x * scale, oy + y * scale, scale, scale);
+      }));
+    } else {
+      const cv = new Canvas(W, H);
+      cv.rim.color = 0;
+      cv.dither = deck.dither ?? 0.12;
+      cv.begin();
+      draw((shape, m, o, place = HERE) => cv.add(shape, m, place, o));
+      cv.render(null, null);
+      if (deck.halo) halo(cv.out);
+      const img = ctx.createImageData(W, H);
+      new Uint32Array(img.data.buffer).set(cv.out);
+      ctx.putImageData(img, 0, 0);
+    }
+    cache.set(name, c);
+    return c;
+  }
+
+  const urls = new Map();
+  // The same picture as a PNG data URL, or null.
+  function url(key, face) {
+    const name = `${key}-${face}`;
+    if (!urls.has(name)) { const c = canvas(key, face); urls.set(name, c && c.toDataURL('image/png')); }
+    return urls.get(name);
+  }
+
+  return { canvas, url, W, H, decks: () => Object.keys(ART) };
+})();
+
+// ---- The joker war ----
+//
+// When the cards that tie are jokers, the table goes dark, two glowing eyes
+// open and look around, a grin appears, then a lantern lights a giant pixel
+// jester from below as it laughs, until the war opens. A joker war that ties
+// on jokers again gets red eyes, and more eyes open in the dark. Like the
+// versus intro it's only a picture, and at a big table someone else's joker
+// war gets the strip with a little jester in it.
+//
+// The pixels are drawn in the page every frame with PX: Jester is made of
+// its shapes, and Joker runs the show.
 
 // The jester: a head in a three-pointed cap with bells, diamond face paint,
 // glowing eyes and a wide grin full of sharp teeth, over a ruff and
@@ -5438,16 +6137,29 @@ function picCard(g, card, look, x, y, w, angle) {
   g.shadowColor = 'rgba(0, 0, 0, .35)';
   g.shadowBlur = 18;
   g.shadowOffsetY = 8;
-  picRound(g, -w / 2, -h / 2, w, h, Math.max(2, w * c.radius));
+  const r = Math.max(2, w * c.radius);
+  picRound(g, -w / 2, -h / 2, w, h, r);
   g.fillStyle = c.face;
   g.fill();
   g.shadowColor = 'transparent';
-  g.lineWidth = Math.max(2, w * 0.02);
-  g.strokeStyle = c.edge;
-  g.stroke();
   const rank = warRank(card);
   const joker = rank === JOKER;
   const suit = Math.floor((card % WAR.DECK) / 13);
+  const face = joker || (rank >= 9 && rank <= 11);
+  const pic = face && Pictures.canvas(DECKS[look] ? look : 'classic', RANK_NAMES[rank]);
+  if (pic) {
+    // As on a card: at the bottom, 60% of its height (64% for a joker).
+    const ph = h * (joker ? 0.64 : 0.6), pw = (ph * Pictures.W) / Pictures.H;
+    g.save();
+    g.clip();
+    g.imageSmoothingEnabled = false;
+    g.drawImage(pic, -pw / 2, h / 2 - ph, pw, ph);
+    g.restore();
+    picRound(g, -w / 2, -h / 2, w, h, r);
+  }
+  g.lineWidth = Math.max(2, w * 0.02);
+  g.strokeStyle = c.edge;
+  g.stroke();
   g.fillStyle = (joker ? card % WAR.DECK === 53 : suit === 1 || suit === 2) ? c.red : c.ink;
   g.textAlign = 'left';
   g.textBaseline = 'top';
@@ -5457,11 +6169,13 @@ function picCard(g, card, look, x, y, w, angle) {
     g.font = `${Math.round(w * 0.2)}px ${PIC_BODY}`;
     g.fillText(SUITS[suit], -w / 2 + w * 0.09, -h / 2 + w * 0.32);
   }
-  g.textAlign = 'center';
-  g.textBaseline = 'middle';
-  g.font = `${Math.round(w * (joker ? 0.56 : 0.5))}px ${PIC_BODY}`;
-  const pictures = DECKS[look] || DECKS.classic;
-  g.fillText(joker ? pictures[5] : rank >= 9 && rank <= 11 ? pictures[rank - 7] : SUITS[suit], 0, h * 0.05);
+  if (!pic) {
+    g.textAlign = 'center';
+    g.textBaseline = 'middle';
+    g.font = `${Math.round(w * (joker ? 0.56 : 0.5))}px ${PIC_BODY}`;
+    const pictures = DECKS[look] || DECKS.classic;
+    g.fillText(joker ? pictures[5] : face ? pictures[rank - 7] : SUITS[suit], 0, h * 0.05);
+  }
   g.restore();
 }
 

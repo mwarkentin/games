@@ -82,9 +82,12 @@ plan's 500 MB holds hundreds of thousands of saves.
 The survey's log is the `survey_log` table in a second database,
 `games-survey-log` (binding `LOG_DB`, migrations in `migrations-log/`), one
 row per word charted, copied there by each sector (see "The log" in
-SURVEY.md). The whole shared world would be about 1.1 million rows and
-100 MB. mwarkentin/infra makes it too; its id (the `survey_log_database_id`
-output) goes in `wrangler.toml`.
+SURVEY.md). Triggers keep running counts beside it, per hour, per day per
+set of initials and per day per territory, for the log page's weeks,
+months, years and top lists, and three indexes find one surveyor's,
+territory's or theme's words. The whole shared world would be about 1.1
+million rows and 150 MB. mwarkentin/infra makes it too; its id (the
+`survey_log_database_id` output) goes in `wrangler.toml`.
 
 D1 counts every row a query scans against the plan's allowance, so each
 view reads through an index of its own (named with `INDEXED BY` in
@@ -285,7 +288,8 @@ the way to try War's rooms or the survey with real phones before merging.
   migrations stay on it after the branch closes; if that gets in the way,
   empty the database or replace it in mwarkentin/infra.
 - **The survey log** goes to `games-survey-log-previews` in the same way,
-  shared by every Preview and holding only test words.
+  shared by every Preview and holding only test words. To give it some
+  history to look at, see `bench/seed-log.js` ("Trying it" in SURVEY.md).
 - **Settings** aren't inherited: `[previews]` in `wrangler.toml` sets the
   variables, the database, the Durable Object bindings and the rate limits
   (counted apart from production's) again. Keep it in step with the

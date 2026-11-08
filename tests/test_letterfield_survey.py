@@ -136,6 +136,29 @@ def test_shared_map_shows_other_surveyors_and_their_words(page: Page, site_url, 
     assert errors == []
 
 
+def test_a_word_charted_first_shares_where_it_came_in_the_worlds_count(page: Page, site_url, errors):
+    word = known_words(page, site_url)[3]
+    fake = FakeSurvey(totals={"charted": 412_883, "total": AREA_WORDS, "players": 3_201})
+    page.add_init_script("""
+      window.__shared = [];
+      Object.defineProperty(navigator, 'share', { value: data => { window.__shared.push(data); return Promise.resolve(); }, configurable: true });
+    """)
+    open_game(page, site_url, fake)
+    expect(page.locator("#brandSub")).to_have_text("412,883 of 1,120,206 charted")
+    circle(page, word)
+    expect(page.locator("#toast")).to_contain_text("First to chart it")
+    page.click("#toast .share")
+    pattern = rf"I just found {word[0]} in [A-Z][a-z]+ [A-Z][a-z]+ in Letterfield, before anyone else\. That was word 412,884 of 1,120,206 on the shared map\."
+    assert re.fullmatch(pattern, page.evaluate("window.__shared[0].text"))
+    assert page.evaluate("window.__shared[0].url").endswith(f"/letterfield?survey={SURVEY}#f-{word[0].lower()}-{word[1]}-{word[2]}-{word[3]}")
+    # Where it came is kept with the find, so the field notes share it later too.
+    page.reload()
+    open_notes(page)
+    page.locator("#finds").get_by_role("button", name=f"Share {word[0]}").click()
+    assert re.fullmatch(pattern, page.evaluate("window.__shared[0].text"))
+    assert errors == []
+
+
 def test_second_to_a_word_hears_who_was_first(page: Page, site_url, errors):
     word = known_words(page, site_url)[2]
     fake = FakeSurvey(taken=[[*word, 0, "SIS", NOW_MS]])

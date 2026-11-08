@@ -394,7 +394,7 @@ def test_everyone_sees_each_players_deck(page: Page, browser, site_url, errors):
         "counts": [29, 26, 26], "out": [], "next": fake.stage(2, opens_in=2400),
     })
     expect(dana_on_bob).to_have_attribute("aria-label", "red joker")
-    expect(dana_on_bob.locator(".cc")).to_have_text("☄️")
+    expect(dana_on_bob.locator(".cc")).to_have_attribute("data-pic", "space-joker")
     # When the next battle opens, the pot lands on Dana's heap on Bob's
     # screen, each card in its player's deck, Bob's ace in his.
     dana_heap = guest.locator("#opponents .tile").nth(0).locator(".heap .card")

@@ -3,11 +3,11 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<meta name="description" content="Every word charted in Letterfield's shared survey, hour by hour: what, where, by whom and when.">
+<meta name="description" content="Every word charted in Letterfield's shared survey, by the hour, day, week, month or year: what, where, by whom and when.">
 <meta name="theme-color" media="(prefers-color-scheme: light)" content="#EBEEE7">
 <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#0F171A">
 <meta name="apple-mobile-web-app-title" content="Survey log">
-<!-- Part of Letterfield's home-screen app rather than an app of its own (see games_app in scripts/common.py). -->
+<!-- Part of Letterfield's home-screen app rather than an app of its own (see app_of in scripts/common.py). -->
 <meta name="games:app" content="letterfield">
 <title>Letterfield survey log</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -15,7 +15,8 @@
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Big+Shoulders+Display:wght@700;800&family=Martian+Mono:wght@400;500&family=Schibsted+Grotesk:wght@400;500;600&display=swap">
 <style>
 /* A page of the survey's history, not a game: it scrolls like a document, in
-   Letterfield's colours and type. Days, then hours newest first, then each word. */
+   Letterfield's colours and type. A period (hour, day, week, month, year or
+   all time), its chart and numbers, then what's in it. */
 :root{
   --paper:#EBEEE7; --panel:#F7F8F4; --ink:#1B2428; --muted:#59656A; --rule:#C6CFC6;
   --accent:#2A43C2; --on-accent:#FFFFFF; --hover:rgba(27,36,40,.055);
@@ -54,41 +55,125 @@ button:focus-visible,a:focus-visible,input:focus-visible{outline:2px solid var(-
 
 header{display:flex;flex-wrap:wrap;align-items:flex-end;justify-content:space-between;gap:10px 16px;padding-bottom:14px;border-bottom:1px solid var(--rule)}
 header h1{margin:6px 0 0;font:800 40px/.9 var(--f-display);letter-spacing:.04em;text-transform:uppercase}
-header p{margin:8px 0 0;color:var(--muted);max-width:34ch}
+header p{margin:8px 0 0;color:var(--muted);max-width:36ch}
 .back{font:500 12px/1 var(--f-mono);text-decoration:none;padding:10px 12px;border:1px solid var(--rule);border-radius:999px;color:var(--ink);white-space:nowrap}
 .back:hover{background:var(--hover)}
 
-.controls{display:flex;flex-wrap:wrap;gap:10px;align-items:center;justify-content:space-between;padding:14px 0}
-.seg{display:flex;border:1px solid var(--rule);border-radius:999px;padding:3px;background:var(--panel)}
-.seg button{border:0;background:transparent;border-radius:999px;padding:8px 14px;font:500 12px/1 var(--f-mono);letter-spacing:.06em;text-transform:uppercase;cursor:pointer;color:var(--muted)}
-.seg button[aria-pressed="true"]{background:var(--ink);color:var(--paper)}
-.day{display:flex;align-items:center;gap:6px}
-.day button{width:40px;height:40px;border-radius:50%;border:1px solid var(--rule);background:var(--panel);cursor:pointer;font-size:18px;line-height:1}
-.day button:disabled{opacity:.35;cursor:default}
-.day input{font-size:16px;height:40px;padding:0 10px;border:1px solid var(--rule);border-radius:8px;background:var(--panel);min-width:0;width:11.5em}
+.controls{display:flex;flex-wrap:wrap;gap:10px;align-items:center;justify-content:space-between;padding:14px 0 10px}
+.seg{display:flex;border:1px solid var(--rule);border-radius:999px;padding:3px;background:var(--panel);max-width:100%}
+.seg button{border:0;background:transparent;border-radius:999px;padding:8px 12px;font:500 12px/1 var(--f-mono);letter-spacing:.06em;text-transform:uppercase;cursor:pointer;color:var(--muted);white-space:nowrap}
+.seg button[aria-pressed="true"],.seg button[aria-selected="true"]{background:var(--ink);color:var(--paper)}
+.periods{display:flex;width:100%}
+.periods button{flex:1;padding:8px 4px}
+.nav{display:flex;flex-wrap:wrap;align-items:center;gap:6px;padding-bottom:12px}
+.nav button{width:40px;height:40px;flex:none;border-radius:50%;border:1px solid var(--rule);background:var(--panel);cursor:pointer;font-size:18px;line-height:1}
+.nav button:disabled{opacity:.35;cursor:default}
+.nav input{font-size:16px;height:40px;padding:0 10px;border:1px solid var(--rule);border-radius:8px;background:var(--panel);min-width:0;width:11.5em}
+.nav .label{flex:1;min-width:0;text-align:center;font:500 12px/1.3 var(--f-mono);color:var(--muted)}
+.nav .up{width:auto;margin-left:auto;border-radius:999px;padding:0 12px;font:500 12px/1 var(--f-mono);white-space:nowrap}
 
-.summary{background:var(--panel);border:1px solid var(--rule);border-radius:8px;padding:14px 14px 10px;margin-bottom:8px}
+.summary{background:var(--panel);border:1px solid var(--rule);border-radius:8px;padding:14px 14px 12px;margin-bottom:8px}
 .summary h2{margin:0;font:700 24px/1 var(--f-display);letter-spacing:.05em;text-transform:uppercase}
-.summary p{margin:6px 0 0;color:var(--muted);font:400 12px/1.5 var(--f-mono)}
-.bars{display:grid;grid-template-columns:repeat(24,minmax(0,1fr));gap:2px;align-items:end;height:48px;margin-top:12px}
-.bars button{border:0;padding:0;background:var(--rule);border-radius:2px 2px 0 0;min-height:2px;cursor:pointer}
-.bars button.some{background:var(--accent)}
-.bars button:disabled{cursor:default}
-.axis{display:flex;justify-content:space-between;font:400 10px/1 var(--f-mono);color:var(--muted);margin-top:4px}
-.days{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}
-.days button{border:1px solid var(--rule);background:transparent;border-radius:999px;padding:6px 10px;font:500 11px/1 var(--f-mono);cursor:pointer;color:var(--muted)}
-.days button[aria-current="true"]{border-color:var(--ink);color:var(--ink);background:var(--hover)}
+.summary .caption{margin:6px 0 0;color:var(--muted);font:400 12px/1.5 var(--f-mono)}
+.live{display:inline-block;margin-left:6px;padding:2px 6px;border-radius:999px;border:1px solid var(--accent);color:var(--accent);font:500 9px/1.2 var(--f-mono);letter-spacing:.08em;text-transform:uppercase;vertical-align:2px}
+.tiles{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin-top:12px}
+.tile{min-width:0;border-top:1px solid var(--rule);padding-top:8px}
+.tile span{display:block;font:400 10.5px/1.3 var(--f-mono);color:var(--muted)}
+.tile b{display:block;margin-top:4px;font:700 24px/1 var(--f-display);letter-spacing:.04em;font-variant-numeric:tabular-nums;overflow-wrap:anywhere}
+.tile small{display:block;margin-top:3px;font:400 10.5px/1.3 var(--f-mono);color:var(--muted);overflow-wrap:anywhere}
 
+/* Charts: one series, in the accent; recessive axes. */
+.chart{position:relative;margin-top:14px}
+.chart .ymax{display:flex;align-items:center;gap:6px;font:400 10px/1 var(--f-mono);color:var(--muted);margin-bottom:3px}
+.chart .ymax::after{content:"";flex:1;border-top:1px solid var(--rule)}
+.plot{display:grid;gap:2px;align-items:stretch;height:96px;border-bottom:1px solid var(--rule)}
+.bar{position:relative;border:0;padding:0;background:transparent;display:flex;align-items:flex-end;justify-content:center;cursor:default;min-width:0}
+.bar i{display:block;width:100%;max-width:24px;min-height:2px;background:var(--rule);border-radius:4px 4px 0 0}
+.bar.some i{background:var(--accent)}
+.bar.go{cursor:pointer}
+.bar:hover i,.bar:focus-visible i{filter:brightness(1.18)}
+.ticks{display:grid;gap:2px;margin-top:4px;font:400 10px/1 var(--f-mono);color:var(--muted)}
+.ticks span{white-space:nowrap;overflow:visible;min-width:0}
+.line{display:block;width:100%;height:96px;overflow:visible}
+.line .area{fill:var(--accent);opacity:.1}
+.line .stroke{fill:none;stroke:var(--accent);stroke-width:2;stroke-linejoin:round;stroke-linecap:round;vector-effect:non-scaling-stroke}
+.overlay{position:absolute;left:0;right:0;bottom:0;height:96px;display:grid}
+.overlay button{border:0;background:transparent;padding:0;cursor:default}
+.overlay button:hover,.overlay button:focus-visible{background:var(--hover)}
+.meter{height:8px;border-radius:4px;background:color-mix(in srgb, var(--accent) 18%, var(--panel));margin-top:8px;overflow:hidden}
+.meter i{display:block;height:100%;background:var(--accent);border-radius:4px;min-width:2px}
+.tip{position:absolute;z-index:5;pointer-events:none;background:var(--ink);color:var(--paper);border-radius:6px;padding:6px 8px;font:400 11px/1.35 var(--f-mono);white-space:nowrap;transform:translate(-50%, calc(-100% - 8px))}
+.tip b{display:block;font-weight:500;font-size:13px}
+
+/* The year: twelve small month calendars, one cell a day, darker for more. */
+.year{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px 10px;margin-top:14px}
+.mcal button.mname{border:0;background:transparent;padding:0 0 4px;font:500 11px/1 var(--f-mono);color:var(--ink);cursor:pointer;text-transform:uppercase;letter-spacing:.06em}
+.mcal button.mname:disabled{color:var(--muted);cursor:default}
+.cells{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:2px}
+.cell{aspect-ratio:1;border:0;padding:0;border-radius:2px;background:color-mix(in srgb, var(--rule) 55%, var(--panel));cursor:default;min-width:0}
+.cell.l1{background:color-mix(in srgb, var(--accent) 28%, var(--panel))}
+.cell.l2{background:color-mix(in srgb, var(--accent) 52%, var(--panel))}
+.cell.l3{background:color-mix(in srgb, var(--accent) 76%, var(--panel))}
+.cell.l4{background:var(--accent)}
+.cell.go{cursor:pointer}
+.cell.later{background:transparent;outline:1px dashed var(--rule);outline-offset:-1px}
+.cell.pad{visibility:hidden}
+.cell:hover:not(.pad):not(.later),.cell:focus-visible{outline:2px solid var(--ink);outline-offset:0}
+.scale{display:flex;align-items:center;justify-content:flex-end;gap:3px;margin-top:10px;font:400 10px/1 var(--f-mono);color:var(--muted)}
+.scale i{width:10px;height:10px;border-radius:2px}
+
+.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(15rem,1fr));gap:8px;margin-bottom:8px}
+.card{background:var(--panel);border:1px solid var(--rule);border-radius:8px;padding:12px 14px;min-width:0}
+.card h3{margin:0 0 8px;font:700 18px/1 var(--f-display);letter-spacing:.05em;text-transform:uppercase}
+.card .note{margin:8px 0 0;font:400 10.5px/1.4 var(--f-mono);color:var(--muted)}
+.rank{list-style:none;margin:0;padding:0}
+.rank li{display:grid;grid-template-columns:minmax(0,9rem) minmax(0,1fr) auto;align-items:center;gap:8px;padding:4px 0;font-size:13px}
+.rank li.go{position:relative;border-radius:4px}
+.rank li.go:hover{background:var(--hover)}
+.rank li.go a{color:inherit;text-decoration:none}
+.rank li.go a::after{content:"";position:absolute;inset:-2px -6px;border-radius:4px}
+.rank li.go:hover .lbl a span{text-decoration-style:solid}
+.rank .lbl{display:flex;align-items:center;gap:6px;min-width:0;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+.rank .lbl .dot{flex:none}
+.rank .lbl span{overflow:hidden;text-overflow:ellipsis}
+.track{height:8px;min-width:0}
+.track i{display:block;height:100%;max-width:100%;background:var(--accent);border-radius:0 4px 4px 0;min-width:2px}
+.num{font:500 12px/1 var(--f-mono);font-variant-numeric:tabular-nums;text-align:right}
+.rows{list-style:none;margin:0;padding:4px 0}
+.row{width:100%;display:grid;grid-template-columns:minmax(0,9.5rem) minmax(0,1fr) 4.5rem;align-items:center;gap:10px;padding:10px 8px;border:0;border-radius:6px;background:transparent;text-align:left;cursor:pointer}
+.row:hover{background:var(--hover)}
+.row:disabled{cursor:default;color:var(--muted)}
+.row .when{font:700 18px/1 var(--f-display);letter-spacing:.05em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+
+.focus{display:flex;flex-wrap:wrap;align-items:center;gap:10px 12px;margin-top:14px;padding:12px 14px;background:var(--panel);border:1px solid var(--rule);border-radius:8px}
+.focus .head{flex:1 1 12rem;min-width:0}
+.focus h2{margin:4px 0 0;display:flex;align-items:center;gap:8px;font:800 30px/1 var(--f-display);letter-spacing:.06em;text-transform:uppercase;overflow-wrap:anywhere}
+.focus h2 .dot{width:14px;height:14px}
+.focus p{margin:6px 0 0;color:var(--muted);font:400 11.5px/1.5 var(--f-mono)}
+.focus p a{color:var(--ink)}
+.focus .acts{display:flex;gap:6px;flex-wrap:wrap}
+.pill{display:inline-flex;align-items:center;gap:6px;height:36px;padding:0 12px;border:1px solid var(--rule);border-radius:999px;background:var(--paper);color:var(--ink);font:500 12px/1 var(--f-mono);text-decoration:none;cursor:pointer;white-space:nowrap}
+.pill:hover{background:var(--hover)}
+.pill.main{background:var(--ink);color:var(--paper);border-color:var(--ink)}
+.more{display:block;margin:10px auto 0;border:1px solid var(--rule);background:var(--panel);border-radius:999px;padding:10px 16px;cursor:pointer;font:500 12px/1 var(--f-mono)}
 .status{color:var(--muted);padding:18px 2px;max-width:40ch}
 .status strong{display:block;color:var(--ink);font:700 20px/1.1 var(--f-display);letter-spacing:.05em;text-transform:uppercase;margin-bottom:6px}
 .status button{margin-top:10px;border:1px solid var(--rule);background:var(--panel);border-radius:999px;padding:8px 14px;cursor:pointer;font:500 12px/1 var(--f-mono)}
 
 .hour{margin-top:6px}
 .hour h3{position:sticky;top:0;z-index:1;margin:0;display:flex;justify-content:space-between;align-items:baseline;gap:10px;padding:calc(env(safe-area-inset-top,0px) + 10px) 2px 8px;background:var(--paper);border-bottom:1px solid var(--rule);font:700 20px/1 var(--f-display);letter-spacing:.06em}
-.hour h3 span{font:400 11px/1 var(--f-mono);letter-spacing:0;color:var(--muted)}
+.hour h3 span{font:400 11px/1 var(--f-mono);letter-spacing:0;color:var(--muted);display:flex;align-items:baseline;gap:8px}
+.hour h3 button{border:1px solid var(--rule);background:var(--panel);border-radius:999px;padding:5px 9px;font:500 10.5px/1 var(--f-mono);cursor:pointer;color:var(--ink)}
 .entries{list-style:none;margin:0;padding:4px 0}
-.entry a{display:grid;grid-template-columns:10px minmax(0,1fr) auto;column-gap:12px;row-gap:5px;align-items:baseline;padding:10px 8px;border-radius:6px;color:inherit;text-decoration:none}
-.entry a:hover{background:var(--hover)}
+.entry{position:relative;display:grid;grid-template-columns:10px minmax(0,1fr) auto;column-gap:12px;row-gap:5px;align-items:baseline;padding:10px 8px;border-radius:6px}
+.entry:hover{background:var(--hover)}
+/* The word flies to the map, from anywhere on its row; who, where and which
+   theme sit above that and open their own views. */
+.entry a.fly{color:inherit;text-decoration:none;min-width:0}
+.entry a.fly::after{content:"";position:absolute;inset:0;border-radius:6px}
+.entry a.to{position:relative;z-index:1;color:inherit;text-decoration:none;border-radius:4px;padding:6px 3px;margin:-6px -3px}
+.entry a.to,.rank li.go .lbl a span,.focus p a{text-decoration:underline dotted;text-decoration-color:color-mix(in srgb, currentColor 50%, transparent);text-underline-offset:3px}
+.entry a.to:hover{text-decoration-style:solid}
 .dot{width:10px;height:10px;border-radius:50%;background:var(--c);align-self:center}
 .entry.stray .dot{background:transparent;border:2px dashed var(--c)}
 .word{font:700 21px/1 var(--f-display);letter-spacing:.07em;min-width:0;overflow:hidden;text-overflow:ellipsis}
@@ -100,7 +185,8 @@ header p{margin:8px 0 0;color:var(--muted);max-width:34ch}
 .loading{color:var(--muted);font:400 12px/1 var(--f-mono);padding:12px 8px}
 .foot{margin-top:28px;padding-top:12px;border-top:1px solid var(--rule);color:var(--muted);font-size:13px}
 @media (prefers-reduced-motion: no-preference){html{scroll-behavior:smooth}}
-@media (max-width:420px){header h1{font-size:34px}.day input{width:10em}}
+@media (min-width:640px){.year{grid-template-columns:repeat(4,minmax(0,1fr))}.plot,.overlay,.line{height:120px}}
+@media (max-width:420px){header h1{font-size:34px}.nav input{width:10em}.seg button{padding:8px 10px}.tile b{font-size:21px}.rank li{grid-template-columns:minmax(0,7.5rem) minmax(0,1fr) auto}.row{grid-template-columns:minmax(0,8rem) minmax(0,1fr) 4rem}}
 </style>
 </head>
 <body>
@@ -109,46 +195,75 @@ header p{margin:8px 0 0;color:var(--muted);max-width:34ch}
     <div>
       <div class="eyebrow">Letterfield · the shared survey</div>
       <h1>Survey log</h1>
-      <p>Every word charted first, hour by hour. Tap one to fly there on the map.</p>
+      <p>Every word charted first, by the hour, day, week, month or year. Tap a word to fly there on the map, or its surveyor, territory or theme to see all of theirs.</p>
     </div>
     <a class="back" href="/letterfield">← The map</a>
   </header>
 
+  <section class="focus" id="focus" hidden aria-labelledby="focusName">
+    <div class="head">
+      <div class="eyebrow" id="focusKind"></div>
+      <h2 id="focusName"></h2>
+      <p id="focusNote"></p>
+    </div>
+    <div class="acts">
+      <button type="button" class="pill main" id="share">Share</button>
+      <a class="pill" id="fly" hidden>Fly there</a>
+      <a class="pill" id="everyone" href="?">✕ Everyone</a>
+    </div>
+  </section>
+
   <div class="controls">
-    <div class="seg" role="group" aria-label="Whose words">
+    <div class="seg" role="group" aria-label="Whose words" id="whose">
       <button type="button" id="viewAll" aria-pressed="true">Everyone</button>
       <button type="button" id="viewMine" aria-pressed="false">Mine</button>
     </div>
-    <div class="day">
-      <button type="button" id="prevDay" aria-label="Day before">‹</button>
-      <input type="date" id="dayInput" aria-label="Day">
-      <button type="button" id="nextDay" aria-label="Day after">›</button>
+    <div class="seg periods" role="tablist" aria-label="Period" id="periods">
+      <button type="button" role="tab" data-p="day">Day</button>
+      <button type="button" role="tab" data-p="week">Week</button>
+      <button type="button" role="tab" data-p="month">Month</button>
+      <button type="button" role="tab" data-p="year">Year</button>
+      <button type="button" role="tab" data-p="all">All time</button>
     </div>
+  </div>
+  <div class="nav">
+    <button type="button" id="prev" aria-label="Before">‹</button>
+    <input type="date" id="dayInput" aria-label="Day">
+    <span class="label" id="navLabel"></span>
+    <button type="button" id="next" aria-label="After">›</button>
+    <button type="button" class="up" id="up" aria-label="The whole day" hidden>↑ Day</button>
   </div>
 
   <section class="summary" id="summary" aria-live="polite">
     <h2 id="sumTitle">…</h2>
-    <p id="sumText"></p>
-    <div class="bars" id="bars" aria-label="Words charted in each hour"></div>
-    <div class="axis"><span>0:00</span><span>6:00</span><span>12:00</span><span>18:00</span><span>24:00</span></div>
-    <div class="days" id="myDays" hidden></div>
+    <p class="caption" id="sumText"></p>
+    <div class="tiles" id="tiles"></div>
+    <div id="chart"></div>
   </section>
+
+  <div class="cards" id="cards"></div>
 
   <div id="log"></div>
 
-  <p class="foot">Times are yours, in <span id="zone"></span>. “Mine” lists the words this browser charted first, from Letterfield’s field notes; nothing about you is sent to find them. Initials are whatever each surveyor typed in, so they aren’t unique.</p>
+  <p class="foot">Times are yours, in <span id="zone"></span>. Top lists count whole days in UTC, and initials are whatever each surveyor typed in, so they aren’t unique. “Mine” lists the words this browser charted first, from Letterfield’s field notes; nothing about you is sent to find them. A surveyor’s, territory’s or theme’s own view has an address of its own to share.</p>
 </main>
+<div class="tip" id="tip" role="tooltip" hidden></div>
 <script>
 'use strict';
 // The survey's server (worker/src/survey-log.js). ?survey=<url> overrides it
 // for testing, as in letterfield.html.
 const SURVEY_URL = 'https://games-leaderboard.mwarkentin.workers.dev';
 const K_FINDS = 'letterfield.finds.v2';  // Letterfield's field notes, on this origin
-const HOUR = 3600000, DAY = 86400000;
+const HOUR = 3600000, DAY = 86400000, MINUTE = 60000;
 const DARROW = ['→','↘','↓','↙','←','↖','↑','↗'];
 const DNAME = ['E','SE','S','SW','W','NW','N','NE'];
-const RC = 48;  // cells per territory side
-const MAX_PAGES = 40;  // pages of one hour the page reads (500 each)
+const RC = 48;            // cells per territory side
+const AREA_CELLS = [-12 * 192, 13 * 192];  // the shared world, x and y from..to-1 (sectors -12 to 12)
+const WORLD_WORDS = 1120206;  // hidden words in the shared world
+const LOG_BEGAN = Date.UTC(2026, 10, 6);  // the day the log began, until the Worker says where its words start
+const MAX_PAGES = 40;     // pages of one hour the page reads (500 each)
+const LIVE_REFRESH_MS = 20000;  // the hour still running reloads this often while it's on screen
+const PERIODS = ['hour', 'day', 'week', 'month', 'year', 'all'];
 
 const $ = s => document.querySelector(s);
 const api = (() => {
@@ -159,21 +274,96 @@ const api = (() => {
 const fdiv = (a, b) => Math.floor(a / b);
 const keyOf = (w, x, y, d) => `${w}~${x}~${y}~${d}`;
 const hashNum = v => v < 0 ? 'm' + (-v) : String(v);
+const inWorld = (x, y) => x >= AREA_CELLS[0] && x < AREA_CELLS[1] && y >= AREA_CELLS[0] && y < AREA_CELLS[1];
 const fmtCoord = (x, y) => `${Math.abs(x)}${x < 0 ? 'W' : 'E'} · ${Math.abs(y)}${y < 0 ? 'N' : 'S'}`;
 const timeFmt = new Intl.DateTimeFormat(undefined, { hour: 'numeric', minute: '2-digit' });
+const hourFmt = new Intl.DateTimeFormat(undefined, { hour: 'numeric' });
 const dayFmt = new Intl.DateTimeFormat(undefined, { weekday: 'long', month: 'long', day: 'numeric' });
-const shortDay = new Intl.DateTimeFormat(undefined, { month: 'short', day: 'numeric' });
+const dayYearFmt = new Intl.DateTimeFormat(undefined, { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' });
+const shortDay = new Intl.DateTimeFormat(undefined, { weekday: 'short', month: 'short', day: 'numeric' });
+const monthDay = new Intl.DateTimeFormat(undefined, { month: 'short', day: 'numeric' });
+const fullDate = new Intl.DateTimeFormat(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+const weekdayFmt = new Intl.DateTimeFormat(undefined, { weekday: 'short' });
+const monthFmt = new Intl.DateTimeFormat(undefined, { month: 'long', year: 'numeric' });
+const monthShort = new Intl.DateTimeFormat(undefined, { month: 'short' });
 const plural = (n, one, many = one + 's') => `${n.toLocaleString()} ${n === 1 ? one : many}`;
+const pct = n => { const p = 100 * n / WORLD_WORDS; return (p === 0 ? '0' : p < .01 ? '<0.01' : p < 1 ? p.toFixed(2) : p.toFixed(1)) + '%'; };
 const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text !== undefined) e.textContent = text; return e; };
-
-// Days are the player's own: a local day runs from one midnight to the next,
-// which can be 23 or 25 hours around a clock change.
-const dayStart = t => { const d = new Date(t); return new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime(); };
-const nextDay = t => { const d = new Date(t); return new Date(d.getFullYear(), d.getMonth(), d.getDate() + 1).getTime(); };
-const prevDayOf = t => { const d = new Date(t); return new Date(d.getFullYear(), d.getMonth(), d.getDate() - 1).getTime(); };
 const isoDay = t => { const d = new Date(t); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
 const parseDay = s => { const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(s || ''); return m ? new Date(+m[1], +m[2] - 1, +m[3]).getTime() : null; };
+const hourRange = (a, b) => `${timeFmt.format(a)} – ${timeFmt.format(b)}`;
 
+/* ---------- Periods ---------- */
+// Periods are the player's own, in local time: a day runs midnight to
+// midnight (23 or 25 hours around a clock change), a week Monday to Monday.
+// All time runs from the month the log began to the end of this month.
+// All time runs from the month of the first word logged, which can be before
+// the log began: sectors send their older words the first time they wake.
+let logFirst = LOG_BEGAN, spanAsked = null;
+const allStart = () => { const d = new Date(logFirst); return new Date(d.getFullYear(), d.getMonth(), 1).getTime(); };
+function askSpan() {
+  spanAsked ??= cachedJSON('/v1/survey/log/span', false).then(span => {
+    if (span && Number.isInteger(span.first)) logFirst = Math.min(LOG_BEGAN, span.first * HOUR);
+  }, () => { spanAsked = null; });
+  return spanAsked;
+}
+function startOf(p, t) {
+  const d = new Date(t), y = d.getFullYear(), m = d.getMonth(), day = d.getDate();
+  if (p === 'hour') return new Date(y, m, day, d.getHours()).getTime();
+  if (p === 'day') return new Date(y, m, day).getTime();
+  if (p === 'week') return new Date(y, m, day - (d.getDay() + 6) % 7).getTime();
+  if (p === 'month') return new Date(y, m, 1).getTime();
+  if (p === 'year') return new Date(y, 0, 1).getTime();
+  return allStart();
+}
+function shift(p, s, k) {
+  const d = new Date(s), y = d.getFullYear(), m = d.getMonth(), day = d.getDate();
+  if (p === 'hour') return s + k * HOUR;
+  if (p === 'day') return new Date(y, m, day + k).getTime();
+  if (p === 'week') return new Date(y, m, day + 7 * k).getTime();
+  if (p === 'month') return new Date(y, m + k, 1).getTime();
+  if (p === 'year') return new Date(y + k, 0, 1).getTime();
+  return s;
+}
+const endOf = (p, s) => p === 'all' ? shift('month', startOf('month', Date.now()), 1) : shift(p, s, 1);
+// The pieces a period's chart is drawn in: minutes of an hour, hours of a
+// day, days of a week, month or year, months of all time.
+const UNIT = { hour: 'minute', day: 'hour', week: 'day', month: 'day', year: 'day', all: 'month' };
+function bucketsOf(p, s, e) {
+  const step = p === 'hour' ? t => t + MINUTE : p === 'day' ? t => t + HOUR
+    : p === 'all' ? t => shift('month', t, 1) : t => shift('day', t, 1);
+  const out = [];
+  for (let t = s; t < e; t = step(t)) out.push({ from: t, to: Math.min(step(t), e), n: 0, world: 0 });
+  return out;
+}
+// Adds sorted points [t, words, world] into the buckets they fall in.
+function tally(buckets, points) {
+  let i = 0;
+  for (const [t, n, w] of points) {
+    while (i < buckets.length && t >= buckets[i].to) i++;
+    if (i >= buckets.length) break;
+    if (t >= buckets[i].from) { buckets[i].n += n; buckets[i].world += w; }
+  }
+  return buckets;
+}
+function bucketLabel(p, b) {
+  const u = UNIT[p];
+  if (u === 'minute') return timeFmt.format(b.from);
+  if (u === 'hour') return hourRange(b.from, b.to);
+  if (u === 'day') return shortDay.format(b.from);
+  return monthFmt.format(b.from);
+}
+function tickLabel(p, b, i, count) {
+  const u = UNIT[p], d = new Date(b.from);
+  if (u === 'minute') return i % 15 === 0 ? timeFmt.format(b.from) : '';
+  if (u === 'hour') return i % 6 === 0 ? hourFmt.format(b.from) : '';
+  if (p === 'week') return weekdayFmt.format(b.from);
+  if (u === 'day') return [1, 8, 15, 22, 29].includes(d.getDate()) ? String(d.getDate()) : '';
+  const every = count > 24 ? 6 : count > 12 ? 3 : 1;
+  return i % every === 0 ? (d.getMonth() === 0 || i === 0 ? `${monthShort.format(b.from)} ’${String(d.getFullYear()).slice(2)}` : monthShort.format(b.from)) : '';
+}
+
+/* ---------- Data ---------- */
 // The words this browser charted first: Letterfield marks a find `f` when a
 // sector says it was first. Read only, and only here.
 function myFirsts() {
@@ -185,10 +375,11 @@ function myFirsts() {
     if (!o || !o.f || typeof o.w !== 'string' || !/^[A-Z]{3,12}$/.test(o.w)) continue;
     const x = Number(o.x), y = Number(o.y), d = Number(o.d), t = Number(o.t);
     if (![x, y, d, t].every(Number.isFinite) || !Number.isInteger(x) || !Number.isInteger(y) || d < 0 || d > 7) continue;
-    out.set(keyOf(o.w, x, y, d), { w: o.w, x, y, d, t });
+    out.set(keyOf(o.w, x, y, d), { w: o.w, x, y, d, t, s: o.s ? 1 : 0 });
   }
   return out;
 }
+const minePoints = firsts => [...firsts.values()].map(f => [f.t, 1, !f.s && inWorld(f.x, f.y) ? 1 : 0]).sort((a, b) => a[0] - b[0]);
 
 async function getJSON(path) {
   const ctl = new AbortController(), timer = setTimeout(() => ctl.abort(), 10000);
@@ -199,7 +390,8 @@ async function getJSON(path) {
   } finally { clearTimeout(timer); }
 }
 // Answers are cached by the Worker and the browser; this keeps them for the
-// page's own lifetime too, so going back and forth between days is instant.
+// page's own lifetime too, so going back and forth is instant. Ones still
+// changing are asked again after 15 seconds.
 const memo = new Map();
 const cachedJSON = (path, live) => {
   const kept = memo.get(path);
@@ -211,25 +403,31 @@ const cachedJSON = (path, live) => {
 };
 const isLive = endMs => Date.now() < endMs + HOUR;
 
-// Counts for each UTC hour that overlaps the local day: the day summary
-// comes per UTC day, so a local day can need two.
-async function hourCounts(from, to) {
-  const days = [];
-  // Not a UTC day that hasn't started: the Worker won't answer for one.
-  for (let d = fdiv(from, DAY); d <= Math.min(fdiv(to - 1, DAY), fdiv(Date.now(), DAY)); d++) days.push(d);
-  const answers = await Promise.all(days.map(d => cachedJSON(`/v1/survey/log/day/${d}`, isLive((d + 1) * DAY))));
-  const counts = new Map();
-  answers.forEach(a => {
-    if (!a || !Array.isArray(a.hours) || !Number.isInteger(a.day)) throw new Error('bad day');
-    a.hours.forEach((n, i) => { const h = a.day * 24 + i; if ((h + 1) * HOUR > from && h * HOUR < to && Number.isInteger(n)) counts.set(h, n); });
-  });
-  return counts;
+// Words charted in each UTC hour from..to, as sorted points [start, words,
+// world], from the Worker's months. Hours are UTC, so in a time zone half an
+// hour off, an hour counts toward the local day it starts in.
+const monthIndex = t => { const d = new Date(t); return (d.getUTCFullYear() - 1970) * 12 + d.getUTCMonth(); };
+async function hourly(from, to) {
+  const last = monthIndex(Math.min(to, Date.now() + 1) - 1), months = [];
+  for (let m = monthIndex(from); m <= last; m++) months.push(m);
+  const answers = await Promise.all(months.map(m => cachedJSON(`/v1/survey/log/month/${m}`, isLive(Date.UTC(1970, m + 1, 1)))));
+  const points = [];
+  for (const a of answers) {
+    if (!a || !Array.isArray(a.hours)) throw new Error('bad month');
+    for (const r of a.hours) {
+      if (!Array.isArray(r) || ![r[0], r[1], r[2]].every(Number.isInteger)) continue;
+      const t = r[0] * HOUR;
+      if (t + HOUR > from && t < to) points.push([t, r[1], r[2]]);
+    }
+  }
+  return points.sort((a, b) => a[0] - b[0]);
 }
 
 // Every entry of one UTC hour, newest first.
 async function hourEntries(h) {
   const live = isLive((h + 1) * HOUR);
-  let after = null, all = { entries: [], places: {}, themes: {} };
+  let after = null;
+  const all = { entries: [], places: {}, themes: {} };
   for (let page = 0; page < MAX_PAGES; page++) {
     const a = await cachedJSON(`/v1/survey/log/hour/${h}` + (after ? '?after=' + encodeURIComponent(after) : ''), live);
     if (!a || !Array.isArray(a.entries)) throw new Error('bad hour');
@@ -244,161 +442,576 @@ async function hourEntries(h) {
 }
 const okEntry = e => Array.isArray(e) && typeof e[0] === 'string' && /^[A-Z]{3,12}$/.test(e[0])
   && [e[1], e[2], e[3], e[6], e[7]].every(Number.isInteger) && e[3] >= 0 && e[3] <= 7;
+// Everything charted from..to, from the UTC hours that cover it, newest first.
+async function entriesBetween(from, to) {
+  const hours = [];
+  for (let h = fdiv(from, HOUR); h <= fdiv(Math.min(to, Date.now() + 1) - 1, HOUR); h++) hours.push(h);
+  const parts = await Promise.all(hours.map(hourEntries));
+  const out = { entries: [], places: {}, themes: {} };
+  for (const p of parts) { out.entries.push(...p.entries); Object.assign(out.places, p.places); Object.assign(out.themes, p.themes); }
+  out.entries = out.entries.filter(e => e[6] >= from && e[6] < to).sort((a, b) => b[6] - a[6]);
+  return out;
+}
 
+/* ---------- Pieces of the page ---------- */
+const flyHref = (w, x, y, d) => `/letterfield#f-${w.toLowerCase()}-${hashNum(x)}-${hashNum(y)}-${d}`;
+const sameFocus = (a, b) => !!a && !!b && a.kind === b.kind && a.key === b.key && a.rx === b.rx && a.ry === b.ry;
+// A link to one surveyor's, territory's or theme's own view, or just its
+// text on that view itself.
+function toFocus(f, node, cls = 'to') {
+  if (sameFocus(f, state.focus)) return node;
+  const a = el('a', cls);
+  a.href = focusHref(f);
+  a.dataset.go = '';
+  a.append(node);
+  return a;
+}
+
+// One word: tapping it flies to the map; its surveyor, territory and theme
+// open their own views.
 function entryRow(e, data, mine) {
   const [w, x, y, d, s, initials, at, th] = e;
-  const key = keyOf(w, x, y, d);
+  const key = keyOf(w, x, y, d), signed = /^[A-Z]{3}$/.test(initials || '');
   const li = el('li', 'entry mark' + (s ? ' stray' : ''));
   const theme = data.themes[th];
   if (theme && Number.isFinite(theme[1])) li.style.setProperty('--h', theme[1]);
-  const a = el('a');
-  a.href = `/letterfield#f-${w.toLowerCase()}-${hashNum(x)}-${hashNum(y)}-${d}`;
-  a.append(el('i', 'dot'), el('span', 'word', w));
+  const a = el('a', 'fly word', w);
+  a.href = flyHref(w, x, y, d);
+  a.title = `${w}: charted first${signed ? ' by ' + initials : ''}, ${new Date(at).toLocaleString()}. Fly there on the map.`;
+  li.append(el('i', 'dot'), a);
   const who = el('span', 'who');
   who.append(timeFmt.format(at) + ' · ');
-  who.append(el('b', '', /^[A-Z]{3}$/.test(initials || '') ? initials : '—'));
+  who.append(signed ? toFocus({ kind: 'surveyor', key: initials }, el('b', '', initials)) : el('b', '', '—'));
   if (mine.has(key)) who.append(el('span', 'you', 'you'));
-  a.append(who);
+  li.append(who);
   const meta = el('span', 'meta');
-  const place = data.places[`${fdiv(x, RC)},${fdiv(y, RC)}`];
-  if (typeof place === 'string') meta.append(el('b', '', place), ' · ');
+  const rx = fdiv(x, RC), ry = fdiv(y, RC), place = data.places[`${rx},${ry}`];
+  if (typeof place === 'string') meta.append(toFocus({ kind: 'territory', rx, ry }, el('b', '', place)), ' · ');
   meta.append(`${fmtCoord(x, y)} · ${DARROW[d]} ${DNAME[d]}`);
-  const kind = theme && typeof theme[0] === 'string' ? (s ? 'stray ' + theme[0].toLowerCase() + ' word' : theme[0]) : (s ? 'stray' : '');
-  if (kind) meta.append(' · ' + kind);
-  a.append(meta);
-  a.title = `${w}: charted first${/^[A-Z]{3}$/.test(initials || '') ? ' by ' + initials : ''}, ${new Date(at).toLocaleString()}`;
-  li.append(a);
+  if (theme && typeof theme[0] === 'string') {
+    // A stray's theme is its word's, not the territory's: the theme's own
+    // view counts hidden words only, so a stray doesn't link there.
+    if (s) meta.append(' · stray ' + theme[0].toLowerCase() + ' word');
+    else meta.append(' · ', toFocus({ kind: 'theme', key: th }, document.createTextNode(theme[0])));
+  } else if (s) meta.append(' · stray');
+  li.append(meta);
   return li;
 }
 
-function hourLabel(h) {
-  return `${timeFmt.format(h * HOUR)} – ${timeFmt.format((h + 1) * HOUR)}`;
+// Words grouped under a heading for each hour or day, newest first. More can
+// be added later, carrying on under the last heading.
+function wordGroups(unit, firsts, countOf) {
+  const box = el('div');
+  let last = null;
+  box.add = (entries, data) => {
+    for (const e of entries) {
+      const from = startOf(unit, e[6]);
+      if (!last || last.from !== from) {
+        const to = shift(unit, from, 1), n = countOf(from, to);
+        const s = el('section', 'hour');
+        const head = el('h3', '', unit === 'hour' ? hourRange(from, to) : (new Date(from).getFullYear() === new Date().getFullYear() ? dayFmt : dayYearFmt).format(from));
+        if (n) head.append(el('span', '', plural(n, 'word')));
+        last = { from, list: el('ol', 'entries') };
+        s.append(head, last.list);
+        box.append(s);
+      }
+      last.list.append(entryRow(e, data, firsts));
+    }
+  };
+  return box;
 }
 
-/* ---------- State and rendering ---------- */
-const state = { day: dayStart(Date.now()), mine: false, run: 0 };
-try {
-  const q = new URLSearchParams(location.search);
-  const d = parseDay(q.get('day'));
-  if (d !== null && d <= Date.now()) state.day = d;
-  state.mine = q.get('view') === 'mine';
-} catch (_) {}
-const logEl = $('#log'), bars = $('#bars'), dayInput = $('#dayInput');
-$('#zone').textContent = Intl.DateTimeFormat().resolvedOptions().timeZone || 'your time zone';
-let observer = null;
+// One tooltip for every chart: the value first, then what it's for. It only
+// repeats what the lists below the chart already say.
+const tip = $('#tip');
+function showTip(target, value, label) {
+  tip.replaceChildren(el('b', '', value), label);
+  tip.hidden = false;
+  const r = target.getBoundingClientRect();
+  const x = Math.min(Math.max(r.left + r.width / 2, 70), document.documentElement.clientWidth - 70);
+  tip.style.left = (x + scrollX) + 'px';
+  tip.style.top = (r.top + scrollY) + 'px';
+}
+const hideTip = () => { tip.hidden = true; };
+function hoverable(node, value, label) {
+  node.addEventListener('pointerenter', () => showTip(node, value, label));
+  node.addEventListener('pointerleave', hideTip);
+  node.addEventListener('focus', () => showTip(node, value, label));
+  node.addEventListener('blur', hideTip);
+}
 
-function saveUrl() {
+// A column chart of words per piece of the period. Tapping a column opens
+// that piece, where there's a smaller period to open.
+function columnChart(p, buckets, go) {
+  const wrap = el('div', 'chart');
+  const top = Math.max(1, ...buckets.map(b => b.n));
+  wrap.append(el('div', 'ymax', top.toLocaleString()));
+  const plot = el('div', 'plot'), ticks = el('div', 'ticks');
+  plot.setAttribute('role', 'group');
+  plot.setAttribute('aria-label', `Words charted in each ${UNIT[p]}`);
+  const cols = `repeat(${buckets.length}, minmax(0, 1fr))`;
+  plot.style.gridTemplateColumns = ticks.style.gridTemplateColumns = cols;
+  const now = Date.now();
+  buckets.forEach((b, i) => {
+    const bar = el('button', 'bar' + (b.n ? ' some' : ''));
+    bar.type = 'button';
+    const mark = el('i');
+    mark.style.height = b.n ? Math.max(3, Math.round(b.n / top * 100)) + '%' : '2px';
+    bar.append(mark);
+    const label = bucketLabel(p, b), value = plural(b.n, 'word');
+    bar.setAttribute('aria-label', `${label}: ${value}`);
+    hoverable(bar, value, label);
+    if (go && b.from <= now) { bar.classList.add('go'); bar.onclick = () => { hideTip(); go(b); }; }
+    else bar.tabIndex = b.n ? 0 : -1;
+    plot.append(bar);
+    ticks.append(el('span', '', tickLabel(p, b, i, buckets.length)));
+  });
+  wrap.append(plot, ticks);
+  return wrap;
+}
+
+// The year as twelve month calendars, a cell a day, darker for more words:
+// one hue in four steps, by rank among the year's days with words, so one
+// huge day doesn't leave every other day the palest step. The busiest day is
+// always the darkest.
+function yearCalendar(year, buckets, openDay, openMonth) {
+  const wrap = el('div');
+  const grid = el('div', 'year');
+  const top = Math.max(1, ...buckets.map(b => b.n)), now = Date.now();
+  const busy = buckets.map(b => b.n).filter(n => n > 0).sort((a, b) => a - b);
+  const below = n => { let lo = 0, hi = busy.length; while (lo < hi) { const mid = (lo + hi) >> 1; if (busy[mid] < n) lo = mid + 1; else hi = mid; } return lo; };
+  const level = n => !n ? '' : ' l' + (1 + Math.min(3, Math.floor(4 * below(n) / Math.max(1, busy.length - 1))));
+  for (let m = 0; m < 12; m++) {
+    const first = new Date(year, m, 1).getTime();
+    const cal = el('div', 'mcal');
+    const name = el('button', 'mname', monthShort.format(first));
+    name.type = 'button';
+    name.disabled = first > now;
+    name.setAttribute('aria-label', monthFmt.format(first));
+    name.onclick = () => openMonth(first);
+    const cells = el('div', 'cells');
+    for (let i = 0; i < (new Date(first).getDay() + 6) % 7; i++) cells.append(el('span', 'cell pad'));
+    for (const b of buckets) {
+      if (new Date(b.from).getMonth() !== m) continue;
+      const later = b.from > now;
+      const cell = el('button', 'cell' + (later ? ' later' : level(b.n)));
+      cell.type = 'button';
+      const label = shortDay.format(b.from), value = later ? 'still to come' : plural(b.n, 'word');
+      cell.setAttribute('aria-label', `${label}: ${value}`);
+      hoverable(cell, value, label);
+      if (!later) { cell.classList.add('go'); cell.onclick = () => { hideTip(); openDay(b.from); }; }
+      else cell.tabIndex = -1;
+      cells.append(cell);
+    }
+    cal.append(name, cells);
+    grid.append(cal);
+  }
+  const scale = el('div', 'scale');
+  scale.append('Fewer');
+  for (const c of ['cell', 'cell l1', 'cell l2', 'cell l3', 'cell l4']) scale.append(el('i', c));
+  scale.append(`More (busiest: ${top.toLocaleString()})`);
+  wrap.append(grid, scale);
+  return wrap;
+}
+
+// All time's running total of hidden words charted in the shared world, as a
+// line rising toward the whole world, with a meter for how far it's got.
+function progressChart(buckets) {
+  const wrap = el('div', 'chart');
+  let sum = 0;
+  const now = Date.now();
+  const points = buckets.filter(b => b.from <= now).map(b => ({ b, v: (sum += b.world) }));
+  const top = Math.max(1, sum);
+  const head = el('div', 'ymax', `${sum.toLocaleString()} of ${WORLD_WORDS.toLocaleString()} hidden words in the shared world · ${pct(sum)}`);
+  const meter = el('div', 'meter');
+  const fill = el('i');
+  fill.style.width = Math.min(100, 100 * sum / WORLD_WORDS) + '%';
+  meter.append(fill);
+  meter.setAttribute('role', 'meter');
+  meter.setAttribute('aria-label', 'Share of the shared world charted');
+  meter.setAttribute('aria-valuemin', '0');
+  meter.setAttribute('aria-valuemax', String(WORLD_WORDS));
+  meter.setAttribute('aria-valuenow', String(sum));
+  wrap.append(head, meter);
+  // A line needs two months to say anything; until then the meter does.
+  if (points.length < 2) return wrap;
+  const ns = 'http://www.w3.org/2000/svg', n = points.length;
+  const svg = document.createElementNS(ns, 'svg');
+  svg.setAttribute('class', 'line');
+  svg.setAttribute('viewBox', `0 0 ${n} 100`);
+  svg.setAttribute('preserveAspectRatio', 'none');
+  svg.setAttribute('aria-hidden', 'true');
+  const xy = points.map((q, i) => [i + .5, 100 - 100 * q.v / top]);
+  const area = document.createElementNS(ns, 'path'), line = document.createElementNS(ns, 'polyline');
+  area.setAttribute('class', 'area');
+  area.setAttribute('d', xy.length ? `M${xy[0][0]},100 ` + xy.map(([x, y]) => `L${x},${y}`).join(' ') + ` L${xy.at(-1)[0]},100 Z` : '');
+  line.setAttribute('class', 'stroke');
+  line.setAttribute('points', xy.map(([x, y]) => `${x},${y}`).join(' '));
+  svg.append(area, line);
+  const plot = el('div');
+  plot.style.position = 'relative';
+  const overlay = el('div', 'overlay'), ticks = el('div', 'ticks');
+  overlay.style.gridTemplateColumns = ticks.style.gridTemplateColumns = `repeat(${n}, minmax(0, 1fr))`;
+  points.forEach((q, i) => {
+    const hit = el('button');
+    hit.type = 'button';
+    const label = `By the end of ${monthFmt.format(q.b.from)}`, value = `${q.v.toLocaleString()} · ${pct(q.v)}`;
+    hit.setAttribute('aria-label', `${label}: ${value}`);
+    hoverable(hit, value, label);
+    overlay.append(hit);
+    ticks.append(el('span', '', tickLabel('all', q.b, i, points.length)));
+  });
+  plot.style.marginTop = '12px';
+  plot.append(svg, overlay);
+  wrap.append(plot, ticks);
+  return wrap;
+}
+
+function tiles(list) {
+  const box = $('#tiles');
+  box.replaceChildren(...list.map(([label, value, sub]) => {
+    const t = el('div', 'tile');
+    t.append(el('span', '', label), el('b', '', value));
+    if (sub) t.append(el('small', '', sub));
+    return t;
+  }));
+}
+
+// A ranked list with a bar each, one hue, longest first.
+function rankCard(title, rows, note) {
+  const card = el('section', 'card');
+  card.append(el('h3', '', title));
+  if (!rows.length) { card.append(el('p', 'note', 'None in this period.')); return card; }
+  const top = Math.max(1, ...rows.filter(r => !r.rest).map(r => r.n));
+  const list = el('ol', 'rank');
+  for (const r of rows) {
+    const li = el('li');
+    const lbl = el('span', 'lbl' + (r.hue !== undefined ? ' mark' : ''));
+    if (r.hue !== undefined) { lbl.style.setProperty('--h', r.hue); lbl.append(el('i', 'dot')); }
+    lbl.append(r.focus ? toFocus(r.focus, el('span', '', r.label), '') : el('span', '', r.label));
+    lbl.title = r.label;
+    if (r.focus && !sameFocus(r.focus, state.focus)) li.className = 'go';
+    const track = el('span', 'track');
+    if (!r.rest) { const bar = el('i'); bar.style.width = Math.max(1, Math.round(r.n / top * 100)) + '%'; track.append(bar); }
+    li.append(lbl, track, el('span', 'num', r.n.toLocaleString()));
+    list.append(li);
+  }
+  card.append(list);
+  if (note) card.append(el('p', 'note', note));
+  return card;
+}
+
+// The period's pieces as rows, newest first, each opening that piece: the
+// chart's numbers as a list, with nothing that needs hovering.
+function pieceRows(unit, buckets, open) {
+  const list = el('ol', 'rows');
+  const top = Math.max(1, ...buckets.map(b => b.n)), now = Date.now();
+  for (const b of buckets.filter(b => b.from <= now).reverse()) {
+    const li = el('li'), row = el('button', 'row');
+    row.type = 'button';
+    const when = unit === 'month' ? monthFmt.format(b.from) : shortDay.format(b.from);
+    const track = el('span', 'track'), bar = el('i');
+    bar.style.width = b.n ? Math.max(1, Math.round(b.n / top * 100)) + '%' : '0';
+    track.append(bar);
+    row.append(el('span', 'when', when), track, el('span', 'num', b.n ? b.n.toLocaleString() : '—'));
+    row.setAttribute('aria-label', `${when}: ${plural(b.n, 'word')}`);
+    row.onclick = () => open(b.from);
+    li.append(row);
+    list.append(li);
+  }
+  return list;
+}
+
+/* ---------- State ---------- */
+// The view is all in the address, so any of it can be shared or bookmarked:
+// ?period=, ?day= and ?hour= say when, and one of ?surveyor=<initials>,
+// ?theme=<n> or ?territory=<rx>,<ry> narrows it to theirs. Everyone's opens
+// on today; theirs on all time, which a territory always shows.
+const state = { period: 'day', start: startOf('day', Date.now()), mine: false, focus: null, run: 0 };
+const FOCUS_KEYS = ['surveyor', 'theme', 'territory'];
+const defaultPeriod = f => f ? 'all' : 'day';
+function focusOf(q) {
+  const initials = (q.get('surveyor') || '').toUpperCase();
+  if (/^[A-Z]{3}$/.test(initials)) return { kind: 'surveyor', key: initials };
+  const th = q.get('theme') || '';
+  if (/^\d{1,3}$/.test(th)) return { kind: 'theme', key: Number(th) };
+  const m = /^(-?\d{1,8}),(-?\d{1,8})$/.exec(q.get('territory') || '');
+  if (m) return { kind: 'territory', rx: Number(m[1]), ry: Number(m[2]) };
+  return null;
+}
+function readUrl() {
+  state.focus = null; state.mine = false;
+  state.period = 'day'; state.start = startOf('day', Date.now());
   try {
     const q = new URLSearchParams(location.search);
-    if (state.day === dayStart(Date.now())) q.delete('day'); else q.set('day', isoDay(state.day));
-    if (state.mine) q.set('view', 'mine'); else q.delete('view');
-    const s = q.toString();
-    history.replaceState(null, '', location.pathname + (s ? '?' + s : '') + location.hash);
+    state.focus = focusOf(q);
+    const p = q.get('period');
+    state.period = PERIODS.includes(p) ? p : defaultPeriod(state.focus);
+    if (state.focus?.kind === 'territory') state.period = 'all';
+    let t = parseDay(q.get('day'));
+    const h = Number(q.get('hour'));
+    if (t !== null && state.period === 'hour' && Number.isInteger(h) && h >= 0 && h < 24) t = new Date(new Date(t).setHours(h)).getTime();
+    if (state.period === 'hour' && t === null) t = Date.now();
+    state.start = startOf(state.period, t !== null && t <= Date.now() ? t : Date.now());
+    state.mine = !state.focus && q.get('view') === 'mine';
   } catch (_) {}
 }
+readUrl();
+const logEl = $('#log'), chartEl = $('#chart'), cardsEl = $('#cards'), dayInput = $('#dayInput');
+$('#zone').textContent = Intl.DateTimeFormat().resolvedOptions().timeZone || 'your time zone';
+const BASE_TITLE = document.title;
+let observer = null, liveTimer = 0;
 
+// The address of a view: this one, changed by whatever's given.
+function urlFor({ focus = state.focus, period = state.period, start = state.start, mine = state.mine } = {}) {
+  const q = new URLSearchParams(location.search);
+  for (const k of [...FOCUS_KEYS, 'period', 'day', 'hour', 'view']) q.delete(k);
+  if (focus?.kind === 'surveyor') q.set('surveyor', focus.key);
+  else if (focus?.kind === 'theme') q.set('theme', String(focus.key));
+  else if (focus?.kind === 'territory') q.set('territory', `${focus.rx},${focus.ry}`);
+  if (focus?.kind !== 'territory') {
+    const here = period === 'all' || start === startOf(period, Date.now());
+    if (period !== defaultPeriod(focus)) q.set('period', period);
+    if (!here) q.set('day', isoDay(start));
+    if (period === 'hour' && !here) q.set('hour', String(new Date(start).getHours()));
+    if (mine && !focus) q.set('view', 'mine');
+  }
+  const s = q.toString().replace(/%2C/g, ',');
+  return location.pathname + (s ? '?' + s : '');
+}
+// Someone's own view keeps the period on screen, so ZED's week follows from
+// this week's top list; from or to a territory, which has no periods, it's
+// all time.
+function focusHref(f) {
+  const keep = f && f.kind !== 'territory' && state.focus?.kind !== 'territory';
+  return urlFor(keep ? { focus: f } : { focus: f, period: defaultPeriod(f), start: allStart() });
+}
+function saveUrl() {
+  try { history.replaceState(null, '', urlFor() + location.hash); } catch (_) {}
+}
+// Into someone's view, or back to everyone's: a new entry in the browser's
+// history, so Back returns to where it came from.
+function go(href) {
+  try { history.pushState(null, '', href); } catch (_) { location.href = href; return; }
+  readUrl();
+  render();
+  window.scrollTo({ top: 0 });
+}
+document.addEventListener('click', e => {
+  const a = e.target.closest('a[data-go]');
+  if (!a || e.defaultPrevented || e.button || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+  e.preventDefault();
+  go(a.getAttribute('href'));
+});
+addEventListener('popstate', () => { readUrl(); render(); });
+// Opens a period at a moment: today's when the period holds now, else its start.
+function open(period, t) {
+  state.period = period;
+  state.start = startOf(period, t);
+  render();
+  window.scrollTo({ top: 0 });
+}
 function status(title, text, retry) {
   const box = el('div', 'status');
   box.append(el('strong', '', title), text);
-  if (retry) { const b = el('button', '', 'Try again'); b.type = 'button'; b.onclick = render; box.append(el('br'), b); }
+  if (retry) { const b = el('button', '', 'Try again'); b.type = 'button'; b.onclick = () => render(); box.append(el('br'), b); }
   logEl.replaceChildren(box);
 }
 
-function drawBars(from, to, counts, mineCounts) {
-  const hours = [];
-  for (let t = from; t < to; t += HOUR) hours.push(fdiv(t, HOUR));
-  const shown = hours.map(h => (mineCounts ? mineCounts.get(h) || 0 : counts.get(h) || 0));
-  const top = Math.max(1, ...shown);
-  bars.style.gridTemplateColumns = `repeat(${hours.length}, minmax(0, 1fr))`;
-  bars.replaceChildren(...hours.map((h, i) => {
-    const b = el('button');
-    b.type = 'button';
-    const n = shown[i];
-    b.style.height = Math.max(4, Math.round((n / top) * 100)) + '%';
-    b.className = n ? 'some' : '';
-    b.disabled = !n;
-    b.setAttribute('aria-label', `${hourLabel(h)}: ${plural(n, 'word')}`);
-    b.title = `${hourLabel(h)} · ${plural(n, 'word')}`;
-    b.onclick = () => { const s = document.getElementById('h' + h); if (s) s.scrollIntoView({ block: 'start' }); };
-    return b;
-  }));
+function titles(p, s, e) {
+  const now = Date.now(), today = startOf('day', now);
+  if (p === 'hour') return [hourRange(s, e), dayFmt.format(s)];
+  if (p === 'day') return [s === today ? 'Today' : s === shift('day', today, -1) ? 'Yesterday' : dayFmt.format(s), ''];
+  const span = `${monthDay.format(s)} – ${fullDate.format(shift('day', e, -1))}`;
+  if (p === 'week') {
+    const thisWeek = startOf('week', now);
+    return [s === thisWeek ? 'This week' : s === shift('week', thisWeek, -1) ? 'Last week' : `Week of ${monthDay.format(s)}`, span];
+  }
+  if (p === 'month') return [monthFmt.format(s), ''];
+  if (p === 'year') return [String(new Date(s).getFullYear()), ''];
+  return ['All time', `Since ${logFirst < LOG_BEGAN ? 'the first word, on' : 'the log began on'} ${new Intl.DateTimeFormat(undefined, { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' }).format(logFirst)}`];
 }
 
-function drawMyDays(firsts) {
-  const box = $('#myDays');
-  box.hidden = !state.mine || !firsts.size;
-  if (box.hidden) return;
-  const byDay = new Map();
-  for (const f of firsts.values()) { const d = dayStart(f.t); byDay.set(d, (byDay.get(d) || 0) + 1); }
-  const days = [...byDay].sort((a, b) => b[0] - a[0]).slice(0, 14);
-  box.replaceChildren(...days.map(([d, n]) => {
-    const b = el('button', '', `${shortDay.format(d)} · ${n}`);
-    b.type = 'button';
-    if (d === state.day) b.setAttribute('aria-current', 'true');
-    b.onclick = () => { state.day = d; render(); };
-    return b;
-  }));
+// Names seen so far, so a view of one can say whose it is before its own
+// answer arrives: 'rx,ry' → [name, theme] and theme → [name, hue].
+const known = { places: {}, themes: {} };
+function learn(data) {
+  for (const [k, v] of Object.entries(data?.places || {})) if (typeof v === 'string') known.places[k] = [v, known.places[k]?.[1]];
+  for (const [k, v] of Object.entries(data?.themes || {})) if (Array.isArray(v) && typeof v[0] === 'string') known.themes[k] = v;
+}
+const learnPlace = (rx, ry, name, th) => { if (typeof name === 'string') known.places[`${rx},${ry}`] = [name, th]; };
+
+// The bar atop someone's own view: whose it is, a way to share it, and the
+// way back to everyone's.
+function focusBar() {
+  const f = state.focus;
+  $('#focus').hidden = !f;
+  $('#fly').hidden = true;
+  if (!f) { document.title = BASE_TITLE; return; }
+  let kind, label, hue, note;
+  if (f.kind === 'surveyor') {
+    kind = 'Surveyor';
+    label = f.key;
+    note = [`Every word signed ${f.key}. Initials aren’t unique, so that’s everyone who typed them.`];
+  } else if (f.kind === 'theme') {
+    const t = known.themes[f.key];
+    kind = 'Theme';
+    label = t ? t[0] : `Theme ${f.key}`;
+    hue = t?.[1];
+    note = ['Hidden words charted in territories with this theme.'];
+  } else {
+    const [name, th] = known.places[`${f.rx},${f.ry}`] || [];
+    const t = th !== undefined ? known.themes[th] : null;
+    kind = 'Territory';
+    label = name || 'A territory';
+    hue = t?.[1];
+    note = [`${fmtCoord(f.rx * RC + RC / 2, f.ry * RC + RC / 2)}, at its middle`];
+    if (t) note.push(' · ', toFocus({ kind: 'theme', key: th }, document.createTextNode(t[0]), ''));
+  }
+  $('#focusKind').textContent = kind;
+  const name = $('#focusName');
+  name.className = hue !== undefined ? 'mark' : '';
+  if (hue !== undefined) name.style.setProperty('--h', hue);
+  name.replaceChildren(...(hue !== undefined ? [el('i', 'dot')] : []), label);
+  $('#focusNote').replaceChildren(...note);
+  $('#everyone').href = urlFor({ focus: null, period: f.kind === 'territory' ? 'day' : state.period, start: f.kind === 'territory' ? startOf('day', Date.now()) : state.start });
+  $('#everyone').dataset.go = '';
+  document.title = `${label} · ${BASE_TITLE}`;
 }
 
-async function render() {
-  const run = ++state.run;
-  const from = state.day, to = nextDay(state.day), today = dayStart(Date.now());
-  saveUrl();
-  if (observer) observer.disconnect();
+function chrome() {
+  const { period, start, focus } = state, end = endOf(period, start), now = Date.now();
+  focusBar();
+  $('#whose').hidden = !!focus;
+  $('#periods').hidden = focus?.kind === 'territory';
+  document.querySelector('.nav').hidden = focus?.kind === 'territory';
   $('#viewAll').setAttribute('aria-pressed', String(!state.mine));
   $('#viewMine').setAttribute('aria-pressed', String(state.mine));
-  dayInput.value = isoDay(state.day);
-  dayInput.max = isoDay(today);
-  $('#nextDay').disabled = state.day >= today;
-  $('#sumTitle').textContent = state.day === today ? 'Today' : state.day === prevDayOf(today) ? 'Yesterday' : dayFmt.format(state.day);
-  const firsts = myFirsts();
-  drawMyDays(firsts);
+  for (const b of $('#periods').children) b.setAttribute('aria-selected', String(b.dataset.p === period || (period === 'hour' && b.dataset.p === 'day')));
+  const dated = period === 'day' || period === 'hour';
+  dayInput.hidden = !dated;
+  dayInput.value = isoDay(start);
+  dayInput.max = isoDay(now);
+  $('#navLabel').hidden = dated;
+  $('#up').hidden = period !== 'hour';
+  $('#prev').hidden = $('#next').hidden = period === 'all';
+  $('#next').disabled = end > now;
+  $('#prev').setAttribute('aria-label', `${period === 'all' ? '' : 'The ' + period} before`);
+  $('#next').setAttribute('aria-label', `${period === 'all' ? '' : 'The ' + period} after`);
+  const [title, caption] = titles(period, start, end);
+  $('#sumTitle').textContent = title;
+  $('#navLabel').textContent = caption || title;
+  const sum = $('#sumText');
+  sum.replaceChildren(dated ? caption : '');
+  if (end > now && period !== 'all') sum.append(el('span', 'live', 'Live'));
+  return end;
+}
+
+/* ---------- Rendering ---------- */
+async function render(quiet = false) {
+  const run = ++state.run;
+  if (state.period === 'all' && api) {
+    await askSpan();
+    if (run !== state.run) return;
+    state.start = allStart();
+  }
+  const { period, start, mine } = state;
+  saveUrl();
+  hideTip();
+  if (observer) observer.disconnect();
+  clearTimeout(liveTimer);
+  const end = chrome(), firsts = myFirsts();
+  cardsEl.replaceChildren();
   if (!api) {
-    $('#sumText').textContent = '';
-    bars.replaceChildren();
+    tiles([]); chartEl.replaceChildren();
     return status('Not open yet', 'The shared survey isn’t running yet, so there’s nothing to log.');
   }
-  $('#sumText').textContent = 'Loading…';
-  logEl.replaceChildren(el('p', 'loading', 'Loading the log…'));
-  let counts;
-  try { counts = await hourCounts(from, to); } catch (_) {
+  // While reloading, the last chart stays, faded, rather than jumping.
+  if (!quiet) chartEl.style.opacity = '.5';
+  if (!logEl.querySelector('.entries, .rows')) logEl.replaceChildren(el('p', 'loading', 'Loading the log…'));
+  try {
+    if (state.focus?.kind === 'territory') await renderTerritory(run, state.focus, firsts);
+    else if (state.focus) await renderSlice(run, state.focus, period, start, end, firsts);
+    else if (period === 'hour') await renderHour(run, start, end, firsts, mine);
+    else if (period === 'day' && mine) await renderMineDay(run, start, end, firsts);
+    else if (period === 'day') await renderDay(run, start, end, firsts);
+    else await renderLong(run, period, start, end, firsts, mine);
+  } catch (err) {
     if (run !== state.run) return;
-    $('#sumText').textContent = '';
-    drawBars(from, to, new Map());
-    return status('Can’t reach the log', 'The survey’s server didn’t answer. Your own finds are safe in Letterfield’s field notes.', true);
+    tiles([]); chartEl.replaceChildren(); cardsEl.replaceChildren();
+    if (state.focus && /status 400/.test(err?.message)) status('Not in the log', 'There’s no such surveyor, theme or territory to show.');
+    else status('Can’t reach the log', 'The survey’s server didn’t answer. Your own finds are safe in Letterfield’s field notes.', true);
+  } finally {
+    if (run === state.run) chartEl.style.opacity = '';
   }
+}
+
+function busiest(p, buckets) {
+  const b = buckets.reduce((a, c) => (c.n > (a ? a.n : 0) ? c : a), null);
+  return b ? [UNIT[p] === 'hour' ? hourRange(b.from, b.to) : bucketLabel(p, b), plural(b.n, 'word')] : ['—', ''];
+}
+function summaryTiles(p, buckets, mine, label = 'Words charted') {
+  const total = buckets.reduce((a, b) => a + b.n, 0), world = buckets.reduce((a, b) => a + b.world, 0);
+  const [when, much] = busiest(p, buckets);
+  tiles([
+    [mine ? 'Charted first by you' : label, total.toLocaleString(), ''],
+    [`Busiest ${UNIT[p]}`, when, much],
+    ['In the shared world', world.toLocaleString(), `${pct(world)} of its hidden words`],
+  ]);
+  return total;
+}
+
+// An hour, minute by minute, with every word in it. The hour still running
+// reloads every LIVE_REFRESH_MS while the page is on screen.
+async function renderHour(run, start, end, firsts, mine) {
+  const data = await entriesBetween(start, end);
   if (run !== state.run) return;
-  const hours = [...counts.keys()].filter(h => counts.get(h) > 0 && (h + 1) * HOUR > from && h * HOUR < to).sort((a, b) => b - a);
-  const total = hours.reduce((a, h) => a + counts.get(h), 0);
-  if (state.mine) return renderMine(run, from, to, counts, firsts);
-  drawBars(from, to, counts);
-  const busiest = hours.reduce((a, h) => (counts.get(h) > (counts.get(a) || 0) ? h : a), hours[0]);
-  $('#sumText').textContent = total
-    ? `${plural(total, 'word')} charted · busiest ${hourLabel(busiest)}`
-    : 'No words charted.';
-  if (!total) return status('Nothing charted', state.day === today ? 'No words charted yet today. Be the first: open the map and circle one.' : 'Nobody charted a word this day.');
-  logEl.replaceChildren(...hours.map(h => hourSection(h, counts.get(h))));
-  // Each hour loads as it scrolls into view.
+  const shown = mine ? data.entries.filter(e => firsts.has(keyOf(e[0], e[1], e[2], e[3]))) : data.entries;
+  const points = shown.map(e => [e[6], 1, !e[4] && inWorld(e[1], e[2]) ? 1 : 0]).reverse();
+  const buckets = tally(bucketsOf('hour', start, end), points);
+  summaryTiles('hour', buckets, mine);
+  chartEl.replaceChildren(columnChart('hour', buckets, null));
+  if (!shown.length) status(mine ? 'None this hour' : 'Nothing charted', mine ? 'You didn’t chart a word first this hour in this browser.' : 'Nobody charted a word this hour.');
+  else { const list = el('ol', 'entries'); list.append(...shown.map(e => entryRow(e, data, firsts))); logEl.replaceChildren(list); }
+  if (end > Date.now() && !document.hidden) liveTimer = setTimeout(() => { if (run === state.run) render(true); }, LIVE_REFRESH_MS);
+}
+
+// A day, hour by hour. Each hour's words load as they scroll into view, and
+// tapping an hour opens it minute by minute.
+async function renderDay(run, start, end, firsts) {
+  const points = await hourly(start, end);
+  if (run !== state.run) return;
+  const buckets = tally(bucketsOf('day', start, end), points);
+  const total = summaryTiles('day', buckets, false);
+  chartEl.replaceChildren(columnChart('day', buckets, b => open('hour', b.from)));
+  if (!total) return status('Nothing charted', start === startOf('day', Date.now()) ? 'No words charted yet today. Be the first: open the map and circle one.' : 'Nobody charted a word this day.');
+  const hours = buckets.filter(b => b.n).reverse();
+  logEl.replaceChildren(...hours.map(b => hourSection(b, b.n)));
   observer = new IntersectionObserver(seen => {
     for (const s of seen) if (s.isIntersecting) { observer.unobserve(s.target); fillHour(run, s.target, firsts); }
   }, { rootMargin: '800px 0px' });
   logEl.querySelectorAll('.hour').forEach(s => observer.observe(s));
 }
 
-function hourSection(h, n) {
+function hourSection(b, n) {
   const s = el('section', 'hour');
-  s.id = 'h' + h;
-  s.dataset.h = h;
-  const head = el('h3', '', hourLabel(h));
-  head.append(el('span', '', plural(n, 'word')));
+  s.id = 'h' + b.from;
+  s.dataset.from = b.from;
+  s.dataset.to = b.to;
+  const head = el('h3', '', hourRange(b.from, b.to));
+  const side = el('span', '', plural(n, 'word'));
+  const zoom = el('button', '', 'Minute by minute');
+  zoom.type = 'button';
+  zoom.onclick = () => open('hour', b.from);
+  side.append(zoom);
+  head.append(side);
   s.append(head, el('p', 'loading', 'Loading…'));
   return s;
 }
 
 async function fillHour(run, s, firsts) {
-  const h = Number(s.dataset.h);
   let data;
-  try { data = await hourEntries(h); } catch (_) {
+  try { data = await entriesBetween(Number(s.dataset.from), Number(s.dataset.to)); } catch (_) {
     if (run !== state.run) return;
     const p = s.querySelector('.loading');
     p.textContent = 'Couldn’t load this hour. ';
@@ -413,56 +1026,242 @@ async function fillHour(run, s, firsts) {
   s.querySelector('.loading').replaceWith(list);
 }
 
-// Mine: the day's log, narrowed to the words this browser charted first.
-// Only the hours that hold one are read, and the hour either side of a find
-// made near the turn of an hour, in case this device's clock was off.
-async function renderMine(run, from, to, counts, firsts) {
-  const SKEW = 10 * 60000;
-  const todays = [...firsts.values()].filter(f => f.t >= from - SKEW && f.t < to + SKEW);
+// Mine, for a day: the day's log, narrowed to the words this browser charted
+// first. Only the hours that hold one are read, and the hour either side of
+// a find made near the turn of an hour, in case this device's clock was off.
+async function renderMineDay(run, start, end, firsts) {
+  const SKEW = 10 * MINUTE;
+  const todays = [...firsts.values()].filter(f => f.t >= start - SKEW && f.t < end + SKEW);
+  const counts = new Map((await hourly(start, end)).map(([t, n]) => [fdiv(t, HOUR), n]));
+  if (run !== state.run) return;
   const want = new Set();
   for (const f of todays) for (const t of [f.t - SKEW, f.t, f.t + SKEW]) if (counts.get(fdiv(t, HOUR)) > 0) want.add(fdiv(t, HOUR));
   let found = [];
   const data = { places: {}, themes: {} };
-  try {
-    const parts = await Promise.all([...want].map(h => hourEntries(h)));
-    for (const p of parts) {
-      Object.assign(data.places, p.places); Object.assign(data.themes, p.themes);
-      found.push(...p.entries.filter(e => firsts.has(keyOf(e[0], e[1], e[2], e[3]))));
-    }
-  } catch (_) {
-    if (run !== state.run) return;
-    return status('Can’t reach the log', 'The survey’s server didn’t answer. Your own finds are safe in Letterfield’s field notes.', true);
+  for (const p of await Promise.all([...want].map(hourEntries))) {
+    Object.assign(data.places, p.places); Object.assign(data.themes, p.themes);
+    found.push(...p.entries.filter(e => firsts.has(keyOf(e[0], e[1], e[2], e[3]))));
   }
   if (run !== state.run) return;
-  found = found.filter(e => e[6] >= from && e[6] < to).sort((a, b) => b[6] - a[6]);
-  const mineCounts = new Map();
-  for (const e of found) mineCounts.set(fdiv(e[6], HOUR), (mineCounts.get(fdiv(e[6], HOUR)) || 0) + 1);
-  drawBars(from, to, counts, mineCounts);
-  const dayFirsts = todays.filter(f => f.t >= from && f.t < to).length;
-  const missing = Math.max(0, dayFirsts - found.length);
-  $('#sumText').textContent = !firsts.size ? 'No words charted first in this browser yet.'
-    : `${plural(found.length, 'word')} charted first by you` + (missing ? ` · ${missing} more in your notes aren’t in the log yet` : '');
+  found = found.filter(e => e[6] >= start && e[6] < end).sort((a, b) => b[6] - a[6]);
+  const buckets = tally(bucketsOf('day', start, end), found.map(e => [e[6], 1, !e[4] && inWorld(e[1], e[2]) ? 1 : 0]).reverse());
+  summaryTiles('day', buckets, true);
+  chartEl.replaceChildren(columnChart('day', buckets, b => open('hour', b.from)));
+  const missing = Math.max(0, todays.filter(f => f.t >= start && f.t < end).length - found.length);
+  if (missing) $('#sumText').append(` ${missing} more in your notes aren’t in the log yet.`);
   if (!firsts.size) return status('None yet', 'Words you chart first in Letterfield show up here: join the survey and circle a word nobody has found. This uses the field notes saved in this browser.');
-  if (!found.length) return status('None this day', 'You didn’t chart a word first this day in this browser. Pick a day above.');
-  const hours = [...new Set(found.map(e => fdiv(e[6], HOUR)))].sort((a, b) => b - a);
-  logEl.replaceChildren(...hours.map(h => {
-    const s = hourSection(h, mineCounts.get(h));
+  if (!found.length) return status('None this day', 'You didn’t chart a word first this day in this browser. Try the week or the month.');
+  const hours = buckets.filter(b => b.n).reverse();
+  logEl.replaceChildren(...hours.map(b => {
+    const s = hourSection(b, b.n);
     const list = el('ol', 'entries');
-    list.append(...found.filter(e => fdiv(e[6], HOUR) === h).map(e => entryRow(e, data, firsts)));
+    list.append(...found.filter(e => e[6] >= b.from && e[6] < b.to).map(e => entryRow(e, data, firsts)));
     s.querySelector('.loading').replaceWith(list);
     return s;
   }));
 }
 
+// A week, month, year or all time: the chart, then who and where charted
+// most (everyone's only), then the period's days or months.
+async function renderLong(run, p, start, end, firsts, mine) {
+  const points = mine ? minePoints(firsts).filter(([t]) => t >= start && t < end) : await hourly(start, end);
+  if (run !== state.run) return;
+  const buckets = tally(bucketsOf(p, start, end), points);
+  const total = summaryTiles(p, buckets, mine);
+  const openPiece = t => open(UNIT[p] === 'month' ? 'month' : 'day', t);
+  if (p === 'year') chartEl.replaceChildren(yearCalendar(new Date(start).getFullYear(), buckets, t => open('day', t), t => open('month', t)));
+  else chartEl.replaceChildren(columnChart(p, buckets, b => openPiece(b.from)));
+  if (p === 'all') chartEl.append(progressChart(buckets));
+  if (mine && !firsts.size) return status('None yet', 'Words you chart first in Letterfield show up here: join the survey and circle a word nobody has found. This uses the field notes saved in this browser.');
+  // A year's rows are its months; the calendar already shows its days.
+  if (p === 'year') logEl.replaceChildren(pieceRows('month', tally(bucketsOf('all', start, end), points), t => open('month', t)));
+  else logEl.replaceChildren(pieceRows(UNIT[p], buckets, openPiece));
+  if (!mine && total) loadTops(run, start, end);
+}
+
+// Top lists come from whole UTC days, so they can run a few hours past the
+// period's own edges.
+async function loadTops(run, start, end) {
+  const from = fdiv(start, DAY), to = fdiv(Math.min(end, Date.now() + 1) - 1, DAY) + 1;
+  let top;
+  try { top = await cachedJSON(`/v1/survey/log/top/${from}/${to}`, isLive(to * DAY)); } catch (_) {
+    if (run === state.run) cardsEl.replaceChildren(el('p', 'loading', 'Couldn’t load who charted most.'));
+    return;
+  }
+  if (run !== state.run || !top || !Array.isArray(top.surveyors)) return;
+  const ok = (r, n) => Array.isArray(r) && Number.isInteger(r[n]);
+  const span = to - from === 1 ? fullDate.format(from * DAY + DAY / 2) : `${monthDay.format(from * DAY + DAY / 2)} – ${fullDate.format((to - 1) * DAY + DAY / 2)}`;
+  cardsEl.replaceChildren(
+    rankCard('Top surveyors', surveyorRows(top.surveyors), `By initials, which anyone can share · UTC days ${span}`),
+    rankCard('Top territories', territoryRows(top.territories, top.themes), 'Hidden words charted in each'),
+    rankCard('Themes', themeRows(top.themes), 'Hidden words, by their territory’s theme'),
+  );
+}
+// Top lists' rows as rank cards show them, each opening its own view.
+const okRow = (r, n) => Array.isArray(r) && Number.isInteger(r[n]);
+const surveyorRows = rows => (Array.isArray(rows) ? rows : []).filter(r => okRow(r, 1) && /^[A-Z]{3}$/.test(r[0]))
+  .map(r => ({ label: r[0], n: r[1], focus: { kind: 'surveyor', key: r[0] } }));
+function territoryRows(rows, themes) {
+  for (const t of Array.isArray(themes) ? themes : []) if (okRow(t, 0) && typeof t[1] === 'string') known.themes[t[0]] = [t[1], t[2]];
+  return (Array.isArray(rows) ? rows : []).filter(r => okRow(r, 4) && okRow(r, 3) && typeof r[2] === 'string').map(r => {
+    learnPlace(r[0], r[1], r[2], r[3]);
+    return { label: r[2], n: r[4], hue: known.themes[r[3]]?.[1], focus: { kind: 'territory', rx: r[0], ry: r[1] } };
+  });
+}
+function themeRows(rows) {
+  const themes = (Array.isArray(rows) ? rows : []).filter(r => okRow(r, 3) && okRow(r, 0) && typeof r[1] === 'string').map(r => {
+    known.themes[r[0]] = [r[1], r[2]];
+    return { label: r[1], n: r[3], hue: r[2], focus: { kind: 'theme', key: r[0] } };
+  });
+  const shown = themes.slice(0, 8), rest = themes.slice(8);
+  if (rest.length) shown.push({ label: `${rest.length} other theme${rest.length === 1 ? '' : 's'}`, n: rest.reduce((a, r) => a + r.n, 0), rest: true });
+  return shown;
+}
+
+/* ---------- One surveyor, theme or territory ---------- */
+const SLICE_PAGES = 20;  // pages (100 each) of one hour a view of one reads for its minutes
+// A surveyor's or theme's period, from its own answer: the chart, who or
+// where most, and its words, a hundred at a time.
+async function renderSlice(run, f, p, start, end, firsts) {
+  const base = `/v1/survey/log/${f.kind}/${f.key}/${fdiv(start, HOUR)}/${fdiv(end - 1, HOUR) + 1}`, live = isLive(end);
+  const page = async before => {
+    const a = await cachedJSON(base + (before ? '?before=' + encodeURIComponent(before) : ''), live);
+    if (!a || !Array.isArray(a.hours) || !Array.isArray(a.entries)) throw new Error('bad answer');
+    learn(a);
+    return a;
+  };
+  const first = await page(null);
+  if (run !== state.run) return;
+  if (f.kind === 'theme' && typeof first.name === 'string') known.themes[f.key] = [first.name, first.hue];
+  for (const r of first.topTerritories || []) if (okRow(r, 3)) learnPlace(r[0], r[1], r[2], r[3]);
+  focusBar();
+  const data = { places: { ...first.places }, themes: { ...first.themes } };
+  let entries = first.entries.filter(okEntry), next = first.next;
+  // An hour's chart is minute by minute, so it needs all of the hour's words.
+  for (let n = 1; p === 'hour' && typeof next === 'string' && n < SLICE_PAGES; n++) {
+    const more = await page(next);
+    if (run !== state.run) return;
+    entries.push(...more.entries.filter(okEntry));
+    Object.assign(data.places, more.places); Object.assign(data.themes, more.themes);
+    next = more.next;
+  }
+  const points = p === 'hour'
+    ? entries.map(e => [e[6], 1, !e[4] && inWorld(e[1], e[2]) ? 1 : 0]).reverse()
+    : first.hours.filter(r => Array.isArray(r) && [r[0], r[1], r[2]].every(Number.isInteger)).map(r => [r[0] * HOUR, r[1], r[2]]);
+  const buckets = tally(bucketsOf(p, start, end), points);
+  const total = summaryTiles(p, buckets, false, f.kind === 'theme' ? 'Hidden words charted' : 'Words charted');
+  const openPiece = t => open(UNIT[p] === 'month' ? 'month' : 'day', t);
+  if (p === 'year') chartEl.replaceChildren(yearCalendar(new Date(start).getFullYear(), buckets, t => open('day', t), t => open('month', t)));
+  else chartEl.replaceChildren(columnChart(p, buckets, p === 'hour' ? null : p === 'day' ? b => open('hour', b.from) : b => openPiece(b.from)));
+  // A surveyor's themes first, so each of their territories has its theme's hue.
+  const themes = f.kind === 'surveyor' ? themeRows(first.topThemes) : [];
+  const places = territoryRows(first.topTerritories, null);
+  cardsEl.replaceChildren(...(total ? f.kind === 'surveyor'
+    ? [rankCard('Top territories', places, 'Hidden words charted in each'), rankCard('Themes', themes, 'Hidden words, by their territory’s theme')]
+    : [rankCard('Top surveyors', surveyorRows(first.topSurveyors), 'By initials, which anyone can share'), rankCard('Top territories', places, 'Hidden words charted in each')]
+    : []));
+  entries = entries.filter(e => e[6] >= start && e[6] < end);
+  if (!entries.length) {
+    return status('Nothing charted', f.kind === 'surveyor' ? `No words signed ${f.key} in this period.` : 'No hidden words with this theme charted in this period.');
+  }
+  // Words under each hour of a day or hour, else under each day.
+  const unit = p === 'hour' || p === 'day' ? 'hour' : 'day';
+  const groups = wordGroups(unit, firsts, (from, to) => points.reduce((a, [t, n]) => a + (t >= from && t < to ? n : 0), 0));
+  groups.add(entries, data);
+  logEl.replaceChildren(groups);
+  if (p !== 'hour' && typeof next === 'string') logEl.append(moreButton(run, page, next, groups, data, start, end));
+}
+function moreButton(run, page, next, groups, data, start, end) {
+  const b = el('button', 'more', 'Show more');
+  b.type = 'button';
+  b.onclick = async () => {
+    b.disabled = true;
+    b.textContent = 'Loading…';
+    let a;
+    try { a = await page(next); } catch (_) { b.disabled = false; b.textContent = 'Couldn’t load more. Try again'; return; }
+    if (run !== state.run) return;
+    Object.assign(data.places, a.places); Object.assign(data.themes, a.themes);
+    groups.add(a.entries.filter(okEntry).filter(e => e[6] >= start && e[6] < end), data);
+    if (typeof a.next === 'string') { next = a.next; b.disabled = false; b.textContent = 'Show more'; }
+    else b.remove();
+  };
+  return b;
+}
+
+// A territory, all time: how much of it is charted, by whom, and every word.
+async function renderTerritory(run, f, firsts) {
+  const t = await cachedJSON(`/v1/survey/log/territory/${f.rx}/${f.ry}`, true);
+  if (run !== state.run) return;
+  if (!t || !Array.isArray(t.entries) || !Number.isInteger(t.total) || !Number.isInteger(t.charted)) throw new Error('bad answer');
+  learn(t);
+  learnPlace(f.rx, f.ry, t.name, t.th);
+  focusBar();
+  const entries = t.entries.filter(okEntry), data = { places: t.places || {}, themes: t.themes || {} };
+  if (entries.length) {
+    const fly = $('#fly'), e = entries.find(e => !e[4]) || entries[0];
+    fly.href = flyHref(e[0], e[1], e[2], e[3]);
+    fly.hidden = false;
+  }
+  $('#sumTitle').textContent = 'Charted so far';
+  $('#sumText').replaceChildren(entries.length ? `Since ${fullDate.format(entries.at(-1)[6])}` : '');
+  const people = new Set(entries.map(e => e[5]).filter(i => /^[A-Z]{3}$/.test(i)));
+  const share = n => t.total ? `${Math.round(100 * n / t.total)}%` : '—';
+  tiles([
+    ['Hidden words charted', `${t.charted.toLocaleString()} of ${t.total.toLocaleString()}`, `${share(t.charted)} of the territory`],
+    ['Surveyors', people.size.toLocaleString(), 'by their initials'],
+    ['Latest', entries.length ? monthDay.format(entries[0][6]) : '—', entries.length ? timeFmt.format(entries[0][6]) : ''],
+  ]);
+  const meter = el('div', 'meter'), fill = el('i');
+  fill.style.width = (t.total ? Math.min(100, 100 * t.charted / t.total) : 0) + '%';
+  meter.append(fill);
+  meter.setAttribute('role', 'meter');
+  meter.setAttribute('aria-label', 'Share of the territory’s hidden words charted');
+  meter.setAttribute('aria-valuemin', '0');
+  meter.setAttribute('aria-valuemax', String(t.total));
+  meter.setAttribute('aria-valuenow', String(t.charted));
+  const wrap = el('div', 'chart');
+  wrap.append(el('div', 'ymax', `${t.charted.toLocaleString()} of its ${t.total.toLocaleString()} hidden words`), meter);
+  chartEl.replaceChildren(wrap);
+  cardsEl.replaceChildren(...(entries.length ? [rankCard('Top surveyors', surveyorRows(t.topSurveyors), 'Words charted here, by initials')] : []));
+  if (!entries.length) return status('Nothing charted yet', 'Nobody has charted a word in this territory yet.');
+  const perDay = new Map();
+  for (const e of entries) { const d = startOf('day', e[6]); perDay.set(d, (perDay.get(d) || 0) + 1); }
+  const groups = wordGroups('day', firsts, from => perDay.get(from) || 0);
+  groups.add(entries, data);
+  logEl.replaceChildren(groups);
+}
+
+$('#share').onclick = async () => {
+  const b = $('#share'), url = location.href;
+  const said = text => { b.textContent = text; setTimeout(() => { b.textContent = 'Share'; }, 2500); };
+  if (navigator.share) {
+    try { await navigator.share({ title: document.title, url }); return; } catch (e) { if (e?.name === 'AbortError') return; }
+  }
+  try { await navigator.clipboard.writeText(url); said('Link copied'); } catch (_) { said('Copy the address'); }
+};
+
 $('#viewAll').onclick = () => { if (state.mine) { state.mine = false; render(); } };
 $('#viewMine').onclick = () => { if (!state.mine) { state.mine = true; render(); } };
-$('#prevDay').onclick = () => { state.day = prevDayOf(state.day); render(); };
-$('#nextDay').onclick = () => { const n = nextDay(state.day); if (n <= Date.now()) { state.day = n; render(); } };
-dayInput.onchange = () => { const d = parseDay(dayInput.value); if (d !== null && d <= Date.now()) { state.day = d; render(); } };
+$('#periods').addEventListener('click', e => {
+  const b = e.target.closest('button[data-p]');
+  if (!b) return;
+  // Into a shorter period: today's if the period on screen holds today, else its first.
+  const now = Date.now(), end = endOf(state.period, state.start);
+  open(b.dataset.p, state.start <= now && now < end ? now : state.start);
+});
+$('#prev').onclick = () => { state.start = shift(state.period, state.start, -1); render(); };
+$('#next').onclick = () => { const n = shift(state.period, state.start, 1); if (n <= Date.now()) { state.start = n; render(); } };
+$('#up').onclick = () => open('day', state.start);
+dayInput.onchange = () => { const d = parseDay(dayInput.value); if (d !== null && d <= Date.now()) open('day', d); };
 // Field notes change in Letterfield's own tab: "Mine" follows.
 addEventListener('storage', e => { if (e.key === K_FINDS && state.mine) render(); });
+// The live hour pauses while the tab is hidden, and catches up when it's back.
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) clearTimeout(liveTimer);
+  else if (state.period === 'hour' && endOf('hour', state.start) > Date.now()) render(true);
+});
 render();
-if (location.hash === '#debug') window.__log = { state, render, myFirsts };
+if (location.hash === '#debug') window.__log = { state, render, myFirsts, open };
 </script>
 </body>
 </html>
