@@ -2,6 +2,11 @@
 
 - In a room, Clean up shows on everyone's screen: at a table of up to four,
   the others see your winnings squared up behind your card too.
+- When jokers tie and start a war, the lights go out: two glowing eyes open
+  in the dark and look around, a grin appears, and a lantern lights up a giant
+  pixel jester cackling until the war opens. A joker war waits a moment longer
+  to open than other wars, so the show has time. If that war ties on jokers
+  again, its eyes turn red and more eyes open in the dark.
 
 ## 2026-11-07
 
