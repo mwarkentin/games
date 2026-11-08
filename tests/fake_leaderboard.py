@@ -121,6 +121,47 @@ class FakeLeaderboard:
                 reply(404, {"error": "unknown group"})
 
 
+class Held:
+    """Holds back `fake`'s replies to the requests that `match`, to answer them later.
+
+    For testing what a page does while a request is out, which is where
+    state machines go wrong: route the page to `held.handle` instead of
+    `fake.handle`, act while wait_for() says the request is held, then
+    answer() them one at a time or release() the lot.
+
+        held = Held(fake, lambda r: r.method == "POST")
+        page.route(f"{API}/**", held.handle)
+    """
+
+    def __init__(self, fake: FakeLeaderboard, match):
+        self.fake, self.match = fake, match
+        self.routes: list[Route] = []
+        self.holding = True
+
+    def handle(self, route: Route) -> None:
+        if self.holding and self.match(route.request):
+            self.routes.append(route)
+        else:
+            self.fake.handle(route)
+
+    def wait_for(self, page: Page, count: int = 1, timeout_ms: int = 5000) -> None:
+        """Wait until `count` requests are being held."""
+        deadline = time.monotonic() + timeout_ms / 1000
+        while len(self.routes) < count:
+            assert time.monotonic() < deadline, f"only {len(self.routes)} of {count} requests arrived"
+            page.wait_for_timeout(20)  # lets Playwright hand the route over
+
+    def answer(self, index: int = 0) -> None:
+        """Answer one held request, the oldest unless `index` says otherwise, and keep holding."""
+        self.fake.handle(self.routes.pop(index))
+
+    def release(self) -> None:
+        """Answer every held request, oldest first, and stop holding."""
+        self.holding = False
+        while self.routes:
+            self.fake.handle(self.routes.pop(0))
+
+
 def stand_in_for_worker(context: BrowserContext) -> FakeLeaderboard:
     """Answer the real Worker's URL in `context` with an empty fake, the survey's log included."""
     from fake_survey_log import FakeSurveyLog

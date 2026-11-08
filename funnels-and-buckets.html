@@ -853,7 +853,7 @@ h2 { margin: 0; font-family: var(--font-display); font-weight: 400; font-size: 3
 
   /* ================= DOM ================= */
   const els = {
-    field: $('#field'), cv: $('#cv'),
+    app: $('#app'), field: $('#field'), cv: $('#cv'),
     score: $('#hudScore'), level: $('#hudLevel'), best: $('#hudBest'), effect: $('#hudEffect'),
     pauseBtn: $('#pauseBtn'), muteBtn: $('#muteBtn'), icoSound: $('#icoSound'), icoMute: $('#icoMute'),
     readout: $('#readout'), roVal: $('#roVal'), roPh: $('#roPh'), roHint: $('#roHint'), keypad: $('#keypad'),
@@ -877,10 +877,74 @@ h2 { margin: 0; font-family: var(--font-display); font-weight: 400; font-size: 3
   };
   const setText = (el, t) => { if (el.textContent !== t) el.textContent = t; };
 
+  // ---- BEGIN STATE MACHINE ----
+  // The same in every page that has one (tests/test_state_machines.py checks).
+  // An explicit state machine, as "State machines" in AGENTS.md describes: the
+  // states something can be in, and the moves it may make from each. go(to)
+  // makes a listed move and nothing else. It shows the new state as el's
+  // data-<name> attribute (on <html> unless el says otherwise), for CSS, tests
+  // and anyone reading the page, then calls onMove(to, from, ...args). Any
+  // other move, like a state the table doesn't name, is a bug: it's refused
+  // with a console error, which fails the tests, and the player carries on as
+  // if it had never been tried. seq counts the moves made, so a timer or a
+  // reply that waited can tell whether anything moved in the meantime.
+  function machine(name, moves, state, { el = document.documentElement, onMove } = {}) {
+    const known = (s) => s in moves || (console.error(`${name}: no state called ${s}`), false);
+    Object.values(moves).flat().forEach(known);
+    known(state);
+    let seq = 0;
+    if (el) el.dataset[name] = state;
+    return {
+      get state() { return state; },
+      get seq() { return seq; },
+      is: (...states) => states.filter(known).includes(state),
+      can: (to) => known(to) && moves[state].includes(to),
+      go(to, ...args) {
+        if (!moves[state].includes(to)) {
+          console.error(`${name}: no move from ${state} to ${to}`);
+          return false;
+        }
+        const from = state;
+        state = to;
+        seq += 1;
+        if (el) el.dataset[name] = to;
+        if (onMove) onMove(to, from, ...args);
+        return true;
+      },
+    };
+  }
+  // ---- END STATE MACHINE ----
+
   /* ================= state ================= */
   let settings = sanitize(DEFAULTS), bests = { normal: 0, easy: 0 }, muted = false;
   const modeKey = () => (settings.solo ? 'easy' : 'normal');
-  let state = 'menu';            // menu | playing | paused | ending | over
+  // Which screen the game is on. Each overlay shows on its own screen and only
+  // there, the game below takes no focus while a card covers it, and the
+  // screen stays awake only while playing. The leaderboard screen (#lbOv)
+  // opens on top of the menu or the game-over card without leaving them.
+  const Screen = machine('screen', {
+    menu: ['playing'],
+    playing: ['paused', 'ending'],
+    paused: ['playing', 'menu'],
+    ending: ['over'],
+    over: ['playing', 'menu'],
+  }, 'menu', { onMove: showScreen });
+  function showScreen(to, from) {
+    if (from === 'over' && !Save.is('none')) Save.go('none');   // the offer goes with its card
+    els.menu.hidden = to !== 'menu';
+    els.pauseOv.hidden = to !== 'paused';
+    els.overOv.hidden = to !== 'over';
+    if (to === 'over') els.overOv.scrollTop = 0;
+    layer();
+    if (to === 'playing') requestWake(); else releaseWake();
+  }
+  // Only the top layer takes focus and taps: the leaderboard screen when it's
+  // open, else the card on screen, else the game.
+  function layer() {
+    const board = Board.is('open');
+    els.app.inert = board || !Screen.is('playing', 'ending');
+    els.menu.inert = els.overOv.inert = els.pauseOv.inert = board;
+  }
   let score = 0, level = 1, popped = 0, wrongs = 0, missed = 0, missedList = [], gameTime = 0;
   let bubbles = [], parts = [], texts = [];
   let fills = [0, 0, 0, 0], fillAnim = [0, 0, 0, 0], splash = [0, 0, 0, 0], dripT = [0, 0, 0, 0];
@@ -1319,7 +1383,7 @@ h2 { margin: 0; font-family: var(--font-display); font-weight: 400; font-size: 3
     drawFunnel();
     for (let i = 0; i < LANES; i++) drawWater(i);
     ctx.drawImage(fgLayer, 0, 0, W, H);
-    if (state !== 'menu') for (let i = 0; i < LANES; i++) if (fills[i] >= CAP) drawFull(i);
+    if (!Screen.is('menu')) for (let i = 0; i < LANES; i++) if (fills[i] >= CAP) drawFull(i);
     drawParts();
     drawTexts();
     drawBanner();
@@ -1473,20 +1537,20 @@ h2 { margin: 0; font-family: var(--font-display); font-weight: 400; font-size: 3
   // A press that changes nothing still answers with a soft knock, so every key feels alive.
   function dud() { Sound.dud(); Haptics.fire('light'); }
   function pressDigit(d) {
-    if (state !== 'playing') return;
+    if (!Screen.is('playing')) return;
     const now = performance.now();
     if (now < lockUntil || !bubbles.length || input.length >= 4) { dud(); return; }
     input += d; idleSince = now;
     if (evaluate(false) === 'wait') { strike(); Sound.key(input.length - 1); Haptics.fire('tick'); }
   }
   function pressBack() {
-    if (state !== 'playing') return;
+    if (!Screen.is('playing')) return;
     if (!input) { dud(); return; }
     input = input.slice(0, -1); idleSince = performance.now();
     Sound.back(); Haptics.fire('tick');
   }
   function pressEnter() {
-    if (state !== 'playing') return;
+    if (!Screen.is('playing')) return;
     if (!input || performance.now() < lockUntil) { dud(); return; }
     evaluate(true);
   }
@@ -1514,7 +1578,7 @@ h2 { margin: 0; font-family: var(--font-display); font-weight: 400; font-size: 3
       const b = bubbles[i];
       b.age += dt; b.t += b.speed * dt;
       if (b.hit) b.hit = Math.max(0, b.hit - dt / 0.36);
-      if (b.t >= 1) { bubbles.splice(i, 1); land(b); if (state !== 'playing') return; }
+      if (b.t >= 1) { bubbles.splice(i, 1); land(b); if (!Screen.is('playing')) return; }
     }
     stepVisitor(dt);
     const now = performance.now();
@@ -1537,14 +1601,14 @@ h2 { margin: 0; font-family: var(--font-display); font-weight: 400; font-size: 3
     }
   }
   function step(dt) {
-    if (state === 'playing') stepPlay(dt);
-    else if (state === 'menu') stepDemo(dt);
-    else if (state === 'ending') { funnel.vx = 0; endTimer -= dt; if (endTimer <= 0) finishGame(); }
+    if (Screen.is('playing')) stepPlay(dt);
+    else if (Screen.is('menu')) stepDemo(dt);
+    else if (Screen.is('ending')) { funnel.vx = 0; endTimer -= dt; if (endTimer <= 0) finishGame(); }
     if (banner) { banner.t += dt; if (banner.t >= banner.dur) banner = null; }
     for (let i = 0; i < LANES; i++) {
       fillAnim[i] += (fills[i] / CAP - fillAnim[i]) * Math.min(1, dt * 4);
       splash[i] = Math.max(0, splash[i] - dt * 1.5);
-      if (fills[i] >= CAP && state !== 'menu' && !reduced) {
+      if (fills[i] >= CAP && !Screen.is('menu') && !reduced) {
         dripT[i] -= dt;
         if (dripT[i] <= 0) { dripT[i] = rand(0.5, 1.3); drip(i); }
       }
@@ -1564,9 +1628,9 @@ h2 { margin: 0; font-family: var(--font-display); font-weight: 400; font-size: 3
     setText(els.score, score.toLocaleString());
     setText(els.level, String(level));
     setText(els.best, Math.max(bests[modeKey()], score).toLocaleString());
-    const noPause = !(state === 'playing' || state === 'paused');
+    const noPause = !Screen.is('playing', 'paused');
     if (els.pauseBtn.disabled !== noPause) els.pauseBtn.disabled = noPause;
-    const eff = state === 'playing' ? activeVisitor() || '' : '';
+    const eff = Screen.is('playing') ? activeVisitor() || '' : '';
     if (eff !== lastEffect) {
       lastEffect = eff;
       els.effect.hidden = !eff;
@@ -1592,19 +1656,28 @@ h2 { margin: 0; font-family: var(--font-display); font-weight: 400; font-size: 3
     let dt = Math.min(0.05, Math.max(0, (now - last) / 1000));
     last = now;
     dt *= timeScale;
-    if (state !== 'paused') { clock += dt; step(dt); }
+    if (!Screen.is('paused')) { clock += dt; step(dt); }
     draw();
     syncUI();
     requestAnimationFrame(frame);
   }
 
   /* ================= flow ================= */
+  // showScreen asks for a wake lock on playing and lets it go on every other
+  // screen. One granted after the game has stopped playing is let go at once.
   async function requestWake() {
-    try { if ('wakeLock' in navigator && !wakeLock) wakeLock = await navigator.wakeLock.request('screen'); } catch (e) { wakeLock = null; }
+    if (!('wakeLock' in navigator) || wakeLock) return;
+    try {
+      const lock = await navigator.wakeLock.request('screen');
+      if (wakeLock || !Screen.is('playing')) { lock.release(); return; }
+      wakeLock = lock;
+      lock.addEventListener('release', () => { if (wakeLock === lock) wakeLock = null; });
+    } catch (e) { /* not allowed right now */ }
   }
   function releaseWake() { try { if (wakeLock) wakeLock.release(); } catch (e) { /* ignore */ } wakeLock = null; }
 
   function startGame() {
+    if (!Screen.is('menu', 'over')) return;
     settings = readForm(); store.set('fb.settings', settings);
     Sound.init();
     score = 0; level = 1; popped = 0; wrongs = 0; missed = 0; missedList = []; gameTime = 0;
@@ -1615,34 +1688,35 @@ h2 { margin: 0; font-family: var(--font-display); font-weight: 400; font-size: 3
     funnel.lane = Math.random() < 0.5 ? 1 : 2; funnel.target = (funnel.lane + 0.5) / LANES;
     spawnTimer = 1.5;
     showBanner('Ready', settings.solo ? 'One problem at a time' : 'Type answers to pop bubbles', 1.4);
-    els.menu.hidden = true; els.overOv.hidden = true; els.pauseOv.hidden = true;
-    state = 'playing';
-    requestWake();
+    Screen.go('playing');
   }
   function pauseGame() {
-    if (state !== 'playing') return;
-    state = 'paused'; els.pauseOv.hidden = false; releaseWake();
+    if (Screen.is('playing')) Screen.go('paused');
   }
   function resumeGame() {
-    if (state !== 'paused') return;
-    els.pauseOv.hidden = true; state = 'playing'; last = performance.now();
-    Sound.init(); requestWake();
+    if (!Screen.is('paused')) return;
+    // Time spent paused isn't time spent hesitating over a typed answer.
+    last = idleSince = performance.now();
+    Screen.go('playing');
+    Sound.init();
   }
   function toMenu() {
-    state = 'menu';
+    if (!Screen.is('paused', 'over')) return;
     bubbles = []; visitor = null; banner = null; input = ''; flash = null;
     fills = [0, 0, 0, 0]; demoTimer = 1;
-    els.pauseOv.hidden = true; els.overOv.hidden = true; els.menu.hidden = false;
-    updateMenuBest(); releaseWake();
+    score = 0; level = 1;   // the HUD behind the menu shows no game
+    Screen.go('menu');
+    updateMenuBest();
   }
   function beginEnd() {
-    state = 'ending'; endTimer = 1.3;
+    if (!Screen.go('ending')) return;
+    endTimer = 1.3;
     for (const b of bubbles) burst(b);
-    bubbles = []; visitor = null; input = ''; flash = null;
-    Sound.over(); Haptics.fire('over'); releaseWake();
+    bubbles = []; visitor = null; banner = null; input = ''; flash = null;
+    Sound.over(); Haptics.fire('over');
   }
   function finishGame() {
-    state = 'over';
+    if (!Screen.go('over')) return;
     const k = modeKey(), prev = bests[k], isBest = score > prev;
     if (isBest) { bests[k] = score; store.set(BEST_KEYS[k], score); }
     els.ovScore.textContent = score.toLocaleString();
@@ -1664,8 +1738,6 @@ h2 { margin: 0; font-family: var(--font-display); font-weight: 400; font-size: 3
       els.practiceList.append(li);
     }
     els.practiceWrap.hidden = !missedList.length;
-    els.overOv.hidden = false;
-    els.overOv.scrollTop = 0;
     showOverBoard();
   }
   function updateMenuBest() {
@@ -1762,6 +1834,21 @@ h2 { margin: 0; font-family: var(--font-display); font-weight: 400; font-size: 3
 
   let menuRequest = 0, overRequest = 0, screenRequest = 0;
   let lastGame = null;      // the finished game, kept so its score can be saved
+  // Whether the game-over card offers to save lastGame: checking until it's
+  // known whether the score makes the board, then ineligible or offered, and
+  // saving and saved after that. A failed save goes back to offered with the
+  // reason. Every list the card loads and every group joined or left asks
+  // again (decideSave), and the card's note says what the save is doing, if
+  // anything, before what its list is doing.
+  const Save = machine('save', {
+    none: ['checking'],
+    checking: ['offered', 'ineligible', 'none'],
+    ineligible: ['offered', 'none'],
+    offered: ['saving', 'ineligible', 'none'],
+    saving: ['saved', 'offered', 'none'],
+    saved: ['none'],
+  }, 'none', { onMove: showSave });
+  let saveProblem = '', savedNote = '';
 
   function renderRanks(list, scores, { mine = null, tags = false } = {}) {
     list.replaceChildren(...scores.map((s) => {
@@ -1853,59 +1940,88 @@ h2 { margin: 0; font-family: var(--font-display); font-weight: 400; font-size: 3
     renderScopes(els.menuLbScopes, scope, (code) => { setLbView({ scope: code }); updateMenuBoard(); });
     const scores = await loadList(els.menuLbList, els.menuLbNote, { scope, period, ...board }, () => request === menuRequest,
       `No scores${during(period)} yet. Yours could be first.`);
-    if (scores) renderRanks(els.menuLbList, scores.slice(0, 5));
+    if (scores) renderRanks(els.menuLbList, scores.slice(0, 5), { mine: lastGame && lastGame.entry });
   }
 
   /* game over: this game's board, and initials for a score worth saving */
-  async function showOverBoard() {
+  function showOverBoard() {
     if (!Leaderboard.api) return;
     const board = boardOf(settings);
     lastGame = board && score > 0
       ? { ...board, score, level, popped, seconds: Math.max(1, Math.round(gameTime)), entry: null }
       : null;
     els.overLb.hidden = false;
-    els.lbForm.hidden = true;
     els.overLbWhich.textContent = '';
     els.overLbScopes.hidden = true;
     renderRanks(els.overLbList, []);
+    if (lastGame) Save.go('checking');
     if (!board) { els.overLbNote.textContent = SINGLE_TABLE_NOTE; return; }
-    const scores = await refreshOverList();
-    if (!scores || !lastGame || lastGame.entry) return;
-    // In a group, every score is worth saving. Otherwise (and then the list
-    // is the public one) it has to make the top 10, where ties go to whoever
-    // got there first.
-    const worthIt = myGroups().length > 0 || scores.length < 10 || lastGame.score > scores[scores.length - 1].score;
-    if (!worthIt) return;
-    els.lbForm.hidden = false;
-    els.lbPublicRow.hidden = !myGroups().length;
-    els.lbPublic.checked = store.get('games.public', true) !== false;
-    els.lbInitials.value = store.get('games.initials', '');
-    els.overLbNote.textContent = myGroups().length ? 'Add your initials to save this score.' : `That’s a top-10 score${during(lbView().period)}! Add your initials.`;
+    decideSave(null);
+    refreshOverList();
   }
   async function refreshOverList() {
     const board = boardOf(settings), { scope, period } = lbView(), request = ++overRequest;
     if (!board) return null;   // one times table: practice, off the board
     els.overLbWhich.textContent = `${boardName(board)} · ${PERIODS[period]}`;
     renderScopes(els.overLbScopes, scope, (code) => { setLbView({ scope: code }); refreshOverList(); });
-    els.overLbNote.textContent = 'Loading scores…';
-    return loadList(els.overLbList, els.overLbNote, { scope, period, ...board }, () => request === overRequest,
+    els.overLbNote.textContent = saveNote() ?? 'Loading scores…';
+    const scores = await loadList(els.overLbList, els.overLbNote, { scope, period, ...board }, () => request === overRequest,
       `No scores ${scope === PUBLIC ? 'on this board' : `in ${scopeName(scope)}`}${during(period)} yet.`);
+    if (request !== overRequest) return null;
+    decideSave(scores);
+    if (scores) showSaveNote();   // a list that failed to load says why instead
+    return scores;
+  }
+  // In a group, every score is worth saving. Otherwise the card's list is the
+  // public one, and the score has to make its top 10, where ties go to
+  // whoever got there first. Without a group or a list, it waits for one.
+  function decideSave(scores) {
+    if (!Save.is('checking', 'ineligible', 'offered')) return;
+    const inGroup = myGroups().length > 0;
+    if (inGroup || scores) {
+      const worthIt = inGroup || scores.length < 10 || lastGame.score > scores[scores.length - 1].score;
+      const next = worthIt ? 'offered' : 'ineligible';
+      if (!Save.is(next)) Save.go(next);
+    }
+    els.lbPublicRow.hidden = !inGroup;
+  }
+  function showSave(to, from) {
+    els.lbForm.hidden = !(to === 'offered' || to === 'saving');
+    els.lbSave.disabled = to === 'saving';
+    if (to === 'offered' && from !== 'saving') {   // a new offer starts from last time's choices
+      els.lbPublic.checked = store.get('games.public', true) !== false;
+      els.lbInitials.value = store.get('games.initials', '');
+    }
+    els.lbPublicRow.hidden = !myGroups().length;
+    if (to !== 'offered') saveProblem = '';
+    showSaveNote();
+  }
+  // What the save is doing, or null when it's doing nothing worth a word.
+  function saveNote() {
+    if (Save.is('offered')) {
+      return saveProblem || (myGroups().length ? 'Add your initials to save this score.' : `That’s a top-10 score${during(lbView().period)}! Add your initials.`);
+    }
+    return Save.is('saving') ? 'Saving…' : Save.is('saved') ? savedNote : null;
+  }
+  function showSaveNote() {
+    const note = saveNote();
+    if (note !== null) els.overLbNote.textContent = note;
   }
 
   async function saveToBoard(e) {
     e.preventDefault();
     const game = lastGame;
-    if (!game || game.entry) return;
+    if (!game || !Save.is('offered')) return;
     const initials = els.lbInitials.value.toUpperCase().replace(/[^A-Z]/g, '');
     if (initials.length !== 3) {
-      els.overLbNote.textContent = 'Initials are three letters, A to Z.';
+      saveProblem = 'Initials are three letters, A to Z.';
+      showSaveNote();
       els.lbInitials.focus();
       return;
     }
     const groups = myGroups();
     const isPublic = !groups.length || els.lbPublic.checked;
-    els.lbSave.disabled = true;
-    els.overLbNote.textContent = 'Saving…';
+    Save.go('saving');
     try {
       const { difficulty, mode, score: s, level: l, popped: p, seconds } = game;
       const { period } = lbView();
@@ -1916,39 +2032,52 @@ h2 { margin: 0; font-family: var(--font-display); font-weight: 400; font-size: 3
       game.entry = body.entry;
       store.set('games.initials', initials);
       if (groups.length) store.set('games.public', isPublic);
-      if (game !== lastGame) return;
-      els.lbForm.hidden = true;
+      if (game !== lastGame || !Save.is('saving')) return;
+      savedNote = savedText(body, period);
       if (!(lbView().scope in body.ranks)) setLbView({ scope: Object.keys(body.ranks)[0] });
-      await refreshOverList();
-      els.overLbNote.textContent = savedText(body, period);
+      Save.go('saved');
+      refreshOverList();
     } catch (err) {
-      if (game === lastGame) {
-        els.overLbNote.textContent = err.fromServer
+      if (game === lastGame && Save.is('saving')) {
+        saveProblem = err.fromServer
           ? `Couldn’t save: ${err.message}.`
           : 'Couldn’t reach the leaderboard. Try again in a moment.';
+        Save.go('offered');
       }
-    } finally {
-      els.lbSave.disabled = false;
     }
   }
 
   /* leaderboard screen: any view, plus joining, starting and leaving groups */
+  // The leaderboard screen, open on top of the menu or the game-over card.
+  // Its seq tells a reply that comes back after the screen was closed (and
+  // maybe opened again) that its note is no longer wanted.
+  const Board = machine('board', { closed: ['open'], open: ['closed'] }, 'closed', { onMove: showBoard });
+  function showBoard(to) {
+    els.lbOv.hidden = to !== 'open';
+    layer();
+    if (to === 'open') {
+      els.lbOv.scrollTop = 0;
+      const v = lbView();
+      els.lbDifficulty.value = v.difficulty;
+      els.lbMode.value = v.mode;
+      renderMyGroups();
+      refreshScreen();
+      els.lbClose.focus();
+    } else {
+      els.lbGroupNote.textContent = '';
+      refreshCards();
+    }
+  }
   function openBoardScreen() {
-    if (!Leaderboard.api) return;
-    els.lbOv.hidden = false;
-    els.lbOv.scrollTop = 0;
-    const v = lbView();
-    els.lbDifficulty.value = v.difficulty;
-    els.lbMode.value = v.mode;
-    renderMyGroups();
-    refreshScreen();
-    els.lbClose.focus();
+    if (Leaderboard.api && Board.is('closed')) Board.go('open');
   }
   function closeBoardScreen() {
-    els.lbOv.hidden = true;
-    els.lbGroupNote.textContent = '';
+    if (Board.is('open')) Board.go('closed');
+  }
+  // The menu's and the game-over card's lists, after a change of view or groups.
+  function refreshCards() {
     updateMenuBoard();
-    if (state === 'over' && !els.overLb.hidden) refreshOverList();
+    if (Screen.is('over') && !els.overLb.hidden) refreshOverList();
   }
   function refreshScreen() {
     const v = lbView(), request = ++screenRequest;
@@ -2010,11 +2139,15 @@ h2 { margin: 0; font-family: var(--font-display); font-weight: 400; font-size: 3
     }
     setTimeout(() => { button.textContent = 'Share'; }, 1500);
   }
+  // A group joined or left changes which scores are worth saving, and if the
+  // leaderboard screen has closed meanwhile, the lists on the card below too.
   function addGroup(g) {
     store.set('games.groups', [...myGroups().filter((x) => x.code !== g.code), { code: g.code, name: g.name }]);
     setLbView({ scope: g.code });
     renderMyGroups();
     refreshScreen();
+    decideSave(null);
+    if (Board.is('closed')) refreshCards();
   }
   function leaveGroup(g) {
     if (!confirm(`Leave ${g.name}? You can rejoin later with code ${g.code}.`)) return;
@@ -2023,11 +2156,20 @@ h2 { margin: 0; font-family: var(--font-display); font-weight: 400; font-size: 3
     els.lbGroupNote.textContent = `Left ${g.name}.`;
     renderMyGroups();
     refreshScreen();
+    decideSave(null);
   }
 
+  // Joining or starting a group waits for the Worker, one request at a time,
+  // so a second tap can't start a second group.
+  let groupsBusy = false;
+  function busyGroups(on) {
+    groupsBusy = on;
+    for (const form of [els.lbJoinForm, els.lbCreateForm]) form.querySelector('button').disabled = on;
+  }
   const normalizeCode = (value) => value.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 4);
   async function joinGroup(e) {
     e.preventDefault();
+    if (groupsBusy) return;
     const code = normalizeCode(els.lbJoinCode.value);
     if (!GROUP_CODE.test(code)) {
       els.lbGroupNote.textContent = 'Group codes are four letters and numbers, like K7QP.';
@@ -2038,30 +2180,43 @@ h2 { margin: 0; font-family: var(--font-display); font-weight: 400; font-size: 3
       return;
     }
     els.lbGroupNote.textContent = 'Looking up the group…';
+    const opened = Board.seq;
+    busyGroups(true);
     try {
       const g = await Leaderboard.group(code);
       addGroup(g);
+      if (Board.seq !== opened) return;
       els.lbJoinCode.value = '';
       els.lbGroupNote.textContent = `Joined ${g.name}. Scores you save from now on go to ${g.name} too.`;
     } catch (err) {
+      if (Board.seq !== opened) return;
       els.lbGroupNote.textContent = err.status === 404 ? `There’s no group with code ${code}.` : 'Couldn’t reach the leaderboard. Try again in a moment.';
+    } finally {
+      busyGroups(false);
     }
   }
   async function createGroup(e) {
     e.preventDefault();
+    if (groupsBusy) return;
     const name = els.lbGroupName.value.trim();
     if (!name) {
       els.lbGroupNote.textContent = 'Give the group a name, like Family.';
       return;
     }
     els.lbGroupNote.textContent = 'Starting the group…';
+    const opened = Board.seq;
+    busyGroups(true);
     try {
       const g = await Leaderboard.createGroup(name);
       addGroup(g);
+      if (Board.seq !== opened) return;
       els.lbGroupName.value = '';
       els.lbGroupNote.textContent = `Started ${g.name}. Share code ${g.code} so others can join.`;
     } catch (err) {
+      if (Board.seq !== opened) return;
       els.lbGroupNote.textContent = err.fromServer ? `Couldn’t start the group: ${err.message}.` : 'Couldn’t reach the leaderboard. Try again in a moment.';
+    } finally {
+      busyGroups(false);
     }
   }
 
@@ -2079,11 +2234,18 @@ h2 { margin: 0; font-family: var(--font-display); font-weight: 400; font-size: 3
       els.lbGroupNote.textContent = `You’re already in ${groupName(code)}.`;
       return;
     }
+    if (myGroups().length >= MAX_GROUPS) {
+      els.lbGroupNote.textContent = `You’re in ${MAX_GROUPS} groups already, the most there can be. Leave one to join another.`;
+      return;
+    }
+    // The player may join, or close the screen, before the lookup answers.
+    const opened = Board.seq;
+    const stale = () => Board.seq !== opened || groupsBusy || myGroups().some((g) => g.code === code);
     try {
       const g = await Leaderboard.group(code);
-      els.lbGroupNote.textContent = `You’re invited to ${g.name}. Tap Join to add it.`;
+      if (!stale()) els.lbGroupNote.textContent = `You’re invited to ${g.name}. Tap Join to add it.`;
     } catch (err) {
-      els.lbGroupNote.textContent = err.status === 404 ? `There’s no group with code ${code}.` : UNAVAILABLE;
+      if (!stale()) els.lbGroupNote.textContent = err.status === 404 ? `There’s no group with code ${code}.` : UNAVAILABLE;
     }
   }
 
@@ -2148,18 +2310,18 @@ h2 { margin: 0; font-family: var(--font-display); font-weight: 400; font-size: 3
   function onKeyDown(e) {
     if (e.metaKey || e.ctrlKey || e.altKey) return;
     const k = e.key;
-    if (!els.lbOv.hidden) {
+    if (Board.is('open')) {
       if (k === 'Escape') { e.preventDefault(); closeBoardScreen(); }
       return;
     }
-    if (state === 'playing') {
+    if (Screen.is('playing')) {
       if (k.length === 1 && k >= '0' && k <= '9') { e.preventDefault(); keyVisual(k); handleKey(k); }
       else if (k === 'Backspace' || k === 'Delete') { e.preventDefault(); keyVisual('back'); handleKey('back'); }
       else if (k === 'Enter') { e.preventDefault(); keyVisual('enter'); handleKey('enter'); }
       else if (k === 'Escape' || k === 'p' || k === 'P') { e.preventDefault(); pauseGame(); }
-    } else if (state === 'paused') {
+    } else if (Screen.is('paused')) {
       if (k === 'Escape' || k === 'p' || k === 'P') { e.preventDefault(); resumeGame(); }
-    } else if (state === 'menu') {
+    } else if (Screen.is('menu')) {
       if (k === 'Enter' && (!document.activeElement || document.activeElement === document.body)) { e.preventDefault(); startGame(); }
     }
   }
@@ -2186,7 +2348,7 @@ h2 { margin: 0; font-family: var(--font-display); font-weight: 400; font-size: 3
     els.settingsBtn.addEventListener('click', toMenu);
     els.quitBtn.addEventListener('click', toMenu);
     els.resumeBtn.addEventListener('click', resumeGame);
-    els.pauseBtn.addEventListener('click', () => (state === 'paused' ? resumeGame() : pauseGame()));
+    els.pauseBtn.addEventListener('click', () => (Screen.is('paused') ? resumeGame() : pauseGame()));
     els.muteBtn.addEventListener('click', toggleMute);
     els.lbForm.addEventListener('submit', saveToBoard);
     els.lbInitials.addEventListener('input', () => {
@@ -2216,7 +2378,7 @@ h2 { margin: 0; font-family: var(--font-display); font-weight: 400; font-size: 3
     });
     document.addEventListener('visibilitychange', () => {
       if (document.hidden) pauseGame();
-      else if (wakeLock === null && state === 'playing') requestWake();
+      else if (wakeLock === null && Screen.is('playing')) requestWake();
     });
     // On desktop, clicking away from the game pauses it; phones rely on visibilitychange.
     if (window.matchMedia('(hover: hover) and (pointer: fine)').matches) window.addEventListener('blur', pauseGame);
@@ -2241,6 +2403,7 @@ h2 { margin: 0; font-family: var(--font-display); font-weight: 400; font-size: 3
     setupHaptics(data.haptics != null ? !!data.haptics : store.get('fb.haptics', true) !== false);
     writeForm(settings);
     updateMenuBest();
+    layer();
     readPalette();
     resize();
     if (window.ResizeObserver) new ResizeObserver(resize).observe(els.field);
@@ -2256,10 +2419,10 @@ h2 { margin: 0; font-family: var(--font-display); font-weight: 400; font-size: 3
     try { if (window.claude && window.claude.hot && window.claude.hot.snapshot) window.claude.hot.snapshot(() => ({ settings, bests, muted, haptics: Haptics.on })); } catch (e) { /* ignore */ }
     if (DEBUG) {
       window.__fb = {
-        peek: () => ({ state, score, level, popped, wrongs, missed, input, fills: fills.slice(), visitor: visitor && visitor.kind,
+        peek: () => ({ state: Screen.state, save: Save.state, board: Board.state, score, level, popped, wrongs, missed, input, fills: fills.slice(), visitor: visitor && visitor.kind,
           bubbles: bubbles.map((b) => ({ text: b.p.text, ans: b.p.ans, t: +b.t.toFixed(3), lane: b.lane })) }),
         fillAlmost: () => { fills = [CAP, CAP, CAP, CAP - 1]; },
-        end: () => { if (state === 'playing') beginEnd(); },
+        end: () => { if (Screen.is('playing')) beginEnd(); },
         visitor: (kind) => { visitor = { kind, side: 'right', t: 0, dur: 30 }; },
         speed: (k) => { timeScale = k; },
         queue: (list) => { debugQueue = list.map(([op, a, b]) => ({ op, a, b, ans: { add: a + b, sub: a - b, mul: a * b, div: a / b }[op], text: `${a} ${OPS[op].sym} ${b}` })); },

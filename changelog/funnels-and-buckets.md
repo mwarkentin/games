@@ -1,3 +1,21 @@
+## 2026-11-08
+
+- A score worth saving is always offered a spot on the leaderboard: tapping
+  a board's tab, or opening and closing the leaderboard, while the game-over
+  board was still loading could lose the offer. Joining a group from the
+  game-over screen now offers to save that game's score too, with the
+  public-board choice showing.
+- "Saved!" and your ranks stay put when you switch boards, and the menu's
+  top 5 marks your score.
+- A second tap on Start makes one group, not two, and an invite link no
+  longer says "Tap Join" after you've joined, or when you're in five groups
+  already.
+- Resuming from a pause no longer sends a half-typed answer straight away.
+- With the leaderboard open, the keyboard stays on it: Enter can't start a
+  game hidden behind it.
+- The screen no longer stays awake while you're paused, and the menu no
+  longer shows your last game's score.
+
 ## 2026-11-05
 
 - A global leaderboard. A top-10 score asks for your initials, and boards
