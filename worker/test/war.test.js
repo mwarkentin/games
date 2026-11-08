@@ -11,7 +11,7 @@ import { beforeEach, describe, test } from 'node:test';
 
 import {
   EXPIRE_MS, MAX_SOCKETS, WAR, WarRoom, cleanDeck, cleanName, handleWar, warDeal, warDueAt, warNewGame, warRank, warResolve,
-  warFlop, warSlam, warStandings, warUpCard,
+  warFlop, warGather, warSlam, warStandings, warUpCard,
 } from '../src/war.js';
 
 const ORIGIN = 'https://games.michaelwarkentin.com';
@@ -90,10 +90,70 @@ describe('the rules', () => {
     assert.equal(flip.winner, 1);
     assert.deepEqual(flip.tied, [1]);
     assert.deepEqual(flip.counts, [1, 4, 1]);
-    assert.deepEqual(game.piles[1].slice(0, 1), [card(3)]);
-    assert.deepEqual(game.piles[1].slice(1).sort((a, b) => a - b), [card(5), card(7), card(9)].sort((a, b) => a - b));
+    assert.deepEqual(flip.decks, [1, 1, 1]);
+    assert.deepEqual(game.piles[1], [card(3)], 'the winnings stay apart from the deck');
+    assert.deepEqual(game.loot[1], [card(5), card(7), card(9)], "everyone else's cards as played, then the winner's on top");
     assert.equal(flip.next.battle, 2);
     assert.deepEqual(flip.next.fighters, [0, 1, 2]);
+  });
+
+  test('winnings go back under the deck as they lie, the oldest first, when the deck runs out', () => {
+    const game = rigged([[card(9), card(8), card(7)], [card(2), card(3), card(4), card(5), card(6)]]);
+    const log = [];
+    for (let i = 0; i < 4; i++) {
+      const flip = warResolve(game, NOW, seeded(1));
+      log.push([flip.winner, flip.counts, flip.decks, flip.next.gathered]);
+    }
+    assert.deepEqual(log, [
+      [0, [4, 4], [2, 4], []],
+      [0, [5, 3], [1, 3], []],
+      [0, [6, 2], [0, 2], [0]],  // seat 0's deck is out, so its winnings go under it as the next battle opens
+      [1, [5, 3], [5, 1], []],   // and the oldest comes up first: the two it won in the first battle
+    ]);
+    assert.deepEqual(game.piles[0], [card(9), card(3), card(8), card(4), card(7)]);
+    assert.deepEqual(game.loot[0], []);
+    assert.deepEqual(game.loot[1], [card(2), card(5)]);
+  });
+
+  test("a war's deck that can't cover four cards picks up its winnings as the war opens", () => {
+    const game = rigged([[card(9), card(1)], [card(9, 1), card(2), card(3), card(4), card(5)]]);
+    game.loot[0] = [card(6), card(7), card(8)];
+    const tie = warResolve(game, NOW, seeded(1));
+    assert.deepEqual(tie.decks, [1, 4], 'the decks as the battle ends');
+    assert.deepEqual(tie.next.gathered, [0]);
+    assert.deepEqual(game.piles[0], [card(1), card(6), card(7), card(8)]);
+    assert.equal(warUpCard(game, 0), card(8), 'three face down, and the fourth comes from the winnings');
+    const war = warResolve(game, NOW, seeded(1));
+    assert.deepEqual(war.plays.map((p) => [p[1], p[2]]), [[3, card(8)], [3, card(5)]]);
+    assert.equal(war.winner, 0);
+  });
+
+  test('picking up early changes no card to come', () => {
+    const play = (early) => {
+      const random = seeded(31);
+      const { game } = warNewGame([false, true, true], 'standard', random, NOW);
+      const log = [];
+      while (!game.over) {
+        if (early) for (let seat = 0; seat < 3; seat++) warGather(game, seat, random);
+        const flip = warResolve(game, NOW, random);
+        log.push([flip.winner, flip.counts, flip.plays.map((p) => p[2])]);
+      }
+      return log;
+    };
+    assert.deepEqual(play(true), play(false));
+  });
+
+  test('a game that shuffles winnings shuffles them on the way under, and only then', () => {
+    const { game } = warNewGame([false, false], 'standard', seeded(5), NOW, { shuffle: true });
+    game.piles = [[card(2)], [card(3)]];
+    const won = Array.from({ length: 20 }, (_, i) => card(i % 13, Math.floor(i / 13) + 1));
+    game.loot = [won.slice(), []];
+    assert.deepEqual(game.loot[0], won, 'kept as won until then');
+    assert.equal(warGather(game, 0, seeded(5)), 20);
+    assert.notDeepEqual(game.piles[0].slice(1), won);
+    assert.deepEqual(game.piles[0].slice(1).sort((a, b) => a - b), won.slice().sort((a, b) => a - b));
+    assert.equal(game.piles[0][0], card(2), 'the top of the deck stays where it was');
+    assert.equal(warGather(game, 0, seeded(5)), 0, 'nothing left to pick up');
   });
 
   test('a tie is a war: three cards face down, the fourth decides', () => {
@@ -257,7 +317,7 @@ describe('the rules', () => {
   });
 
   test('a slow game has no clock: a stage waits for everyone online, and the bots still play', () => {
-    const { game, stage } = warNewGame([false, true, false], 'standard', seeded(12), NOW, 1, true);
+    const { game, stage } = warNewGame([false, true, false], 'standard', seeded(12), NOW, { slow: true });
     assert.equal(stage.closesIn, null);
     assert.equal(game.closesAt, Infinity);
     assert.equal(warDueAt(game, new Set([0, 2])), Infinity, 'waits for both people, however long');
@@ -815,6 +875,68 @@ describe('rooms', () => {
     await say(room, dana, { t: 'flop' });
     assert.equal(bob.all('nudge').length, 0);
     assert.equal(bob.all('slam').length, 1);
+  });
+
+  test('the host picks whether winnings are shuffled, in the lobby', async () => {
+    const dana = await join(room, 'Dana');
+    const bob = await join(room, 'Bob');
+    assert.equal(bob.last('state').shuffle, false, 'kept as won, by default');
+    await say(room, bob, { t: 'shuffle', shuffle: true });
+    assert.equal(room.room.shuffle, false, 'only the host');
+    await say(room, dana, { t: 'shuffle', shuffle: true });
+    assert.equal(bob.last('state').shuffle, true);
+    await say(room, dana, { t: 'start' });
+    assert.equal(room.room.game.shuffle, true);
+    assert.equal(bob.last('state').game.shuffle, true);
+    await say(room, dana, { t: 'shuffle', shuffle: false });
+    assert.equal(room.room.shuffle, true, 'not mid-game');
+  });
+
+  test('a player puts their winnings under their deck, and everyone sees it', async () => {
+    const dana = await join(room, 'Dana');
+    const bob = await join(room, 'Bob');
+    await say(room, dana, { t: 'gather' });
+    assert.equal(bob.all('gather').length, 0, 'nothing to pick up in the lobby');
+    await say(room, dana, { t: 'start' });
+    const game = room.room.game;
+    game.piles = [[card(12), card(2)], [card(3), card(4)]];
+    await say(room, dana, { t: 'slam', power: 10, style: 0 });
+    await say(room, bob, { t: 'slam', power: 10, style: 0 });
+    await fireAlarm(room);
+    const flip = bob.last('flip');
+    assert.deepEqual([flip.counts, flip.decks], [[3, 1], [1, 1]]);
+    const eve = await join(room, 'Eve');
+    assert.deepEqual(eve.last('state').game.decks, [1, 1]);
+    assert.deepEqual(eve.last('state').game.loot, [[card(3), card(12)], []]);
+    assert.deepEqual(eve.last('state').game.counts, [3, 1]);
+
+    const up = warUpCard(room.room.game, 0);
+    const writes = room.state.writes;
+    await say(room, eve, { t: 'gather' });
+    await say(room, bob, { t: 'gather' });
+    assert.equal(dana.all('gather').length, 0, 'not spectators, and not with nothing to pick up');
+    await say(room, dana, { t: 'gather' });
+    assert.deepEqual(bob.last('gather'), { t: 'gather', seat: 0 });
+    assert.deepEqual(room.room.game.piles[0], [card(2), card(3), card(12)]);
+    assert.equal(warUpCard(room.room.game, 0), up, 'the card this stage turns up is the same');
+    assert.equal(room.state.writes, writes + 1, 'saved, so hibernation remembers');
+    await say(room, dana, { t: 'gather' });
+    assert.equal(bob.all('gather').length, 1);
+  });
+
+  test('a game saved before winnings were kept apart carries on', async () => {
+    await join(room, 'Dana');
+    await join(room, 'Bob');
+    await say(room, room.state.getWebSockets()[0], { t: 'start' });
+    const stored = room.state.data.get('room');
+    delete stored.game.loot;
+    delete stored.game.potBy;
+    stored.game.pot = [card(5)];
+    const woken = newRoom(room.state);
+    woken.clock = room.clock;
+    const game = (await woken.load()).game;
+    assert.deepEqual(game.loot, [[], []]);
+    assert.deepEqual(game.potBy, [-1]);
   });
 
   test('junk messages are ignored', async () => {

@@ -17,6 +17,12 @@
   can flip their card over for them.
 - After a war, every card in the winner's loot pile is face up, the ones
   laid face down too.
+- The cards you win stay beside your deck instead of vanishing into it, and
+  your deck shows how many cards are left in it. Pick up puts your winnings
+  under your deck in the order you won them; when your deck runs out, they
+  go under it by themselves.
+- Winnings can be shuffled on their way back instead, as plenty of people
+  play: pick it in the menu, or as host in a room's lobby.
 
 ## 2026-11-07
 

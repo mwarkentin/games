@@ -131,7 +131,8 @@ WebSocket, pages send JSON messages:
 | Message | Means |
 | --- | --- |
 | `{"t":"hello","name","avatar","token","deck"}` | join, or rejoin the same seat with the same token; `deck` is the deck theme your cards are drawn in |
-| `{"t":"length","length"}`, `{"t":"slow","slow"}`, `{"t":"bots","n"}`, `{"t":"start"}` | the host sets up the game (its length, and whether it's slow: no clock) and deals |
+| `{"t":"length","length"}`, `{"t":"slow","slow"}`, `{"t":"shuffle","shuffle"}`, `{"t":"bots","n"}`, `{"t":"start"}` | the host sets up the game (its length, whether it's slow, with no clock, and whether winnings are shuffled on their way back) and deals |
+| `{"t":"gather"}` | put your winnings under your deck, any time in a game |
 | `{"t":"charge","tier"}`, `{"t":"slam","power","style"}` | charging up, then slamming (for show only) |
 | `{"t":"card","n","power"}` | in a war, slamming face-down card `n` (0 to 2) before the last one, which is the `slam` (for show only) |
 | `{"t":"cheer","e"}` | an emoji for everyone, at most every 0.4 seconds |
@@ -145,13 +146,14 @@ The room answers with these:
 
 | Message | Means |
 | --- | --- |
-| `state` | everything, sent on joining and when the lobby changes: `slow` is the room's setting; mid-game, `game.ups` has the card each slam so far turned face up, `game.naps` how many cards in a row flopped for each seat, and `game.slow` whether this game is slow, with `closesIn` null |
+| `state` | everything, sent on joining and when the lobby changes: `slow` and `shuffle` are the room's settings; mid-game, `game.counts` has every card each seat holds, `game.decks` the ones in their deck and `game.loot` the cards they've won (the latest last), `game.ups` the card each slam so far turned face up, `game.naps` how many cards in a row flopped for each seat, and `game.slow` and `game.shuffle` this game's settings, with `closesIn` null in a slow one |
 | `online` | who's connected, and who's host |
-| `stage` | a battle or war opens; `bots` is `[seat, power, style, delay, up]` for each bot, its slam and the card it turns face up; `closesIn` is null in a slow game |
+| `stage` | a battle or war opens; `bots` is `[seat, power, style, delay, up]` for each bot, its slam and the card it turns face up; `gathered` lists the seats whose decks couldn't cover the stage, so their winnings went under them as it opened; `closesIn` is null in a slow game |
 | `charge`, `card` | someone charging up, or slamming a face-down card in a war |
 | `slam` | `{"seat","power","style","up"}`: someone slammed the card that counts, and `up` is that card, face up at once; with `"flopped":true`, the host flipped it over for them |
 | `nudge` | `{"seats","by"}`: someone (`by` is null for a spectator) nudged the players in `seats` |
-| `flip` | the stage is played out: every card, `plays` as `[seat, down, up, power, style, flopped]`, the winner and pot, and the next stage or the final standings; in a war, `downs` has the cards each seat laid face down, which show face up in the winner's loot |
+| `flip` | the stage is played out: every card, `plays` as `[seat, down, up, power, style, flopped]`, the winner and pot, and the next stage or the final standings; `counts` is every card each seat holds and `decks` the ones in their deck; in a war, `downs` has the cards each seat laid face down, which show face up in the winner's loot |
+| `gather` | `{"seat"}`: someone put their winnings under their deck |
 | `cheer`, `deck`, `tidy` | someone cheered, changed deck or cleaned up their winnings |
 | `error` | something went wrong, in words for the player |
 
@@ -160,6 +162,17 @@ every card they lay down. A stage's cards are fixed once it opens, so a slam
 says which card it turns over: everyone sees it face up straight away, and
 the winner comes with `flip`. Cards that flop over by themselves only show
 at the `flip`. War has no decisions, so seeing a card early helps nobody.
+
+**Decks and winnings.** Each player has a deck, face down, and the cards
+they've won, face up beside it. A pot goes on its winner's winnings as it
+lies: everyone else's cards in the order they were played, then the
+winner's own on top. Winnings go back under the deck when the player picks
+them up (`gather`), or by themselves when a stage opens that their deck
+can't cover (a card in a battle, four in a war). They go under as they lie,
+the oldest first, unless the host picked shuffled winnings, which is how
+plenty of people play. Picking up early changes no card to come, so it's a
+player's own business. Kept in order, a long game can come round to where it
+was and go in circles; total war's 5,000-battle limit ends it.
 
 **Slow games.** The host can pick a slow game in the lobby: no clock, like
 a real table. A stage waits until everyone connected has played, and

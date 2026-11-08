@@ -93,21 +93,47 @@ function warBotPower(random) {
 }
 
 // A new game for seats 0..n-1, where bots[seat] is true for a bot. Returns
-// the game and the message opening its first battle. A slow game has no
-// clock: each stage waits until everyone has played, like a game at a real
-// table, and nobody's card flops over by itself.
-function warNewGame(bots, length, random, now, pace, slow) {
+// the game and the message opening its first battle. Options: pace speeds
+// it up (below 1) or slows it down; a slow game has no clock, so each stage
+// waits until everyone has played, like a game at a real table, and nobody's
+// card flops over by itself; and shuffle shuffles each player's winnings as
+// they go back under their deck, instead of keeping them as they were won.
+//
+// Each player has a deck, face down, played from the top (piles), and the
+// cards they've won, face up beside it (loot), the latest last. Winnings go
+// back under the deck when the player picks them up (warGather), or by
+// themselves when the deck can't cover a stage. Either way the cards come
+// round in the same order, so picking up early changes nothing.
+function warNewGame(bots, length, random, now, options = {}) {
   const game = {
     limit: WAR.LENGTHS[length] || WAR.LENGTHS.standard,
     piles: warDeal(bots.length, random),
+    loot: bots.map(() => []),
     bots: bots.slice(),
     out: bots.map(() => 0),  // the battle each player ran out of cards in
     naps: bots.map(() => 0), // stages in a row each player's card flopped over by itself
-    battle: 0, stage: 0, fighters: [], slams: {}, pot: [],
-    opensAt: 0, closesAt: 0, pace: pace || 1, slow: Boolean(slow),
+    battle: 0, stage: 0, fighters: [], slams: {}, pot: [], potBy: [],
+    opensAt: 0, closesAt: 0, pace: options.pace || 1, slow: Boolean(options.slow), shuffle: Boolean(options.shuffle),
     wars: 0, biggest: 0, deepest: 0, over: null,
   };
   return { game, stage: warOpenStage(game, now, random, null, 0) };
+}
+
+// The cards a player holds: their deck and their winnings.
+function warHeld(game, seat) {
+  return game.piles[seat].length + game.loot[seat].length;
+}
+
+// Puts a player's winnings under their deck as they lie, the oldest first,
+// or shuffled in a game that shuffles them. Only the bottom of the deck
+// changes, so the card a stage turns up stays the same. Returns how many
+// cards went under.
+function warGather(game, seat, random) {
+  const loot = game.loot[seat];
+  if (!loot.length) return 0;
+  game.piles[seat].push(...(game.shuffle ? warShuffle(loot, random) : loot));
+  game.loot[seat] = [];
+  return loot.length;
 }
 
 // How long the bots take to slam: a moment in a battle, longer in a war,
@@ -127,9 +153,10 @@ function warUpCard(game, seat) {
 }
 
 // Opens the next stage: a new battle for everyone still holding cards, or,
-// when fighters is given, a war between them. Bots slam straight away; the
-// pages show their slams one by one while the stage opens, each bot's card
-// face up as it lands.
+// when fighters is given, a war between them. A fighter whose deck can't
+// cover the stage (a card in a battle, four in a war) picks up their winnings
+// first; gathered says who. Bots slam straight away; the pages show their
+// slams one by one while the stage opens, each bot's card face up as it lands.
 function warOpenStage(game, now, random, fighters, delay) {
   if (fighters) {
     game.stage++;
@@ -137,9 +164,12 @@ function warOpenStage(game, now, random, fighters, delay) {
   } else {
     game.battle++;
     game.stage = 0;
-    game.fighters = game.piles.map((_, seat) => seat).filter((seat) => game.piles[seat].length);
+    game.fighters = game.piles.map((_, seat) => seat).filter((seat) => warHeld(game, seat));
     game.pot = [];
+    game.potBy = [];
   }
+  const gathered = game.fighters.filter((seat) => game.piles[seat].length < (game.stage ? 4 : 1)
+    && warGather(game, seat, random));
   game.slams = {};
   game.opensAt = now + Math.round(delay * game.pace);
   game.closesAt = game.slow ? Infinity : game.opensAt + (game.stage ? WAR.WAR_STAGE_MS : WAR.STAGE_MS);
@@ -154,7 +184,7 @@ function warOpenStage(game, now, random, fighters, delay) {
   }
   return {
     t: 'stage', battle: game.battle, stage: game.stage, limit: game.limit, fighters: game.fighters.slice(),
-    opensIn: game.opensAt - now, closesIn: game.slow ? null : game.closesAt - now, bots,
+    opensIn: game.opensAt - now, closesIn: game.slow ? null : game.closesAt - now, bots, gathered,
   };
 }
 
@@ -200,7 +230,10 @@ function warFlop(game, seat) {
 // Anyone who hasn't slammed flops their card over anyway. Returns the message
 // describing it all, with the next stage or the end of the game. In a war,
 // downs has the cards each fighter laid face down, so whoever wins the pot
-// can see every card in it.
+// can see every card in it. The pot goes onto the winner's winnings as it
+// lies: everyone else's cards in the order they were played, then the
+// winner's own on top. counts is every card each player holds, decks the
+// ones in their deck.
 function warResolve(game, now, random) {
   const plays = [];
   const downs = {};
@@ -211,15 +244,14 @@ function warResolve(game, now, random) {
     if (slam[2]) game.naps[seat]++;
     const down = game.stage ? Math.min(3, pile.length - 1) : 0;
     const laid = pile.splice(0, down);
-    game.pot.push(...laid);
     if (down) downs[seat] = laid;
     const up = pile.shift();
-    game.pot.push(up);
+    for (const card of [...laid, up]) { game.pot.push(card); game.potBy.push(seat); }
     best = Math.max(best, warRank(up));
     plays.push([seat, down, up, ...slam]);
   }
   const tied = plays.filter((play) => warRank(play[2]) === best).map((play) => play[0]);
-  const able = tied.filter((seat) => game.piles[seat].length);
+  const able = tied.filter((seat) => warHeld(game, seat));
   let winner = tied.length === 1 ? tied[0] : able.length === 1 ? able[0] : null;
   const gods = tied.length > 1 && !able.length;
   if (gods) winner = tied[Math.floor(random() * tied.length)];
@@ -229,14 +261,19 @@ function warResolve(game, now, random) {
     if (!game.stage) game.wars++;
     game.biggest = Math.max(game.biggest, able.length);
     game.deepest = Math.max(game.deepest, game.stage + 1);
-    message.counts = game.piles.map((pile) => pile.length);
+    message.counts = game.piles.map((_, seat) => warHeld(game, seat));
+    message.decks = game.piles.map((pile) => pile.length);
     // A war on jokers (rank 13) waits longer to open, for its show.
     message.next = warOpenStage(game, now, random, able, best === 13 ? WAR.JOKER_REVEAL_MS : WAR.WAR_REVEAL_MS);
     return message;
   }
-  game.piles[winner].push(...warShuffle(game.pot, random));
+  const theirs = game.pot.filter((_, i) => game.potBy[i] !== winner);
+  const own = game.pot.filter((_, i) => game.potBy[i] === winner);
+  game.loot[winner].push(...theirs, ...own);
   game.pot = [];
-  message.counts = game.piles.map((pile) => pile.length);
+  game.potBy = [];
+  message.counts = game.piles.map((_, seat) => warHeld(game, seat));
+  message.decks = game.piles.map((pile) => pile.length);
   message.out = [];
   message.counts.forEach((count, seat) => {
     if (!count && !game.out[seat]) { game.out[seat] = game.battle; message.out.push(seat); }
@@ -254,7 +291,7 @@ function warResolve(game, now, random) {
 // Most cards first, then whoever lasted longest. Everyone tied for the most
 // cards wins.
 function warStandings(game) {
-  const counts = game.piles.map((pile) => pile.length);
+  const counts = game.piles.map((_, seat) => warHeld(game, seat));
   const lasted = (seat) => game.out[seat] || Infinity;
   const order = counts.map((_, seat) => seat).sort((a, b) => counts[b] - counts[a] || lasted(b) - lasted(a) || a - b);
   const most = counts[order[0]];
@@ -266,8 +303,8 @@ function warStandings(game) {
 // ---- END WAR CORE ----
 
 export {
-  WAR, warBotNames, warDeal, warDueAt, warFlop, warNewGame, warOpenStage, warRank, warResolve, warShuffle, warSlam,
-  warStandings, warUpCard, warWaitingFor,
+  WAR, warBotNames, warDeal, warDueAt, warFlop, warGather, warHeld, warNewGame, warOpenStage, warRank, warResolve,
+  warShuffle, warSlam, warStandings, warUpCard, warWaitingFor,
 };
 
 const HOUR = 60 * 60 * 1000;
@@ -330,7 +367,15 @@ export class WarRoom {
   }
 
   async load() {
-    if (this.room === undefined) this.room = (await this.state.storage.get('room')) ?? null;
+    if (this.room === undefined) {
+      this.room = (await this.state.storage.get('room')) ?? null;
+      // A game saved before winnings were kept apart has them all in its decks.
+      const game = this.room?.game;
+      if (game && !game.loot) {
+        game.loot = game.piles.map(() => []);
+        game.potBy = game.pot.map(() => -1);
+      }
+    }
     return this.room;
   }
 
@@ -363,7 +408,8 @@ export class WarRoom {
     const now = this.now();
     if (room && now - room.touchedAt < EXPIRE_MS) return false;
     this.room = {
-      code, createdAt: now, touchedAt: now, phase: 'lobby', length: 'standard', slow: false, players: [], game: null, pausedAt: 0,
+      code, createdAt: now, touchedAt: now, phase: 'lobby', length: 'standard', slow: false, shuffle: false,
+      players: [], game: null, pausedAt: 0,
     };
     await this.save();
     return true;
@@ -427,14 +473,16 @@ export class WarRoom {
     const online = this.onlineSeats();
     const game = room.game;
     return {
-      t: 'state', code: room.code, phase: room.phase, length: room.length, slow: Boolean(room.slow), you: this.seatOf(ws),
+      t: 'state', code: room.code, phase: room.phase, length: room.length, slow: Boolean(room.slow),
+      shuffle: Boolean(room.shuffle), you: this.seatOf(ws),
       host: this.hostSeat(), watchers: this.sockets().filter((s) => this.seatOf(s) === null).length,
       players: room.players.map((p, seat) => ({
         name: p.name, avatar: p.avatar, deck: p.deck ?? null, bot: p.bot, online: p.bot || online.has(seat),
       })),
       game: game && {
         battle: game.battle, limit: game.limit, stage: game.stage, fighters: game.fighters,
-        counts: game.piles.map((pile) => pile.length), out: game.out, pot: game.pot.length,
+        counts: game.piles.map((_, seat) => warHeld(game, seat)), decks: game.piles.map((pile) => pile.length),
+        loot: game.loot, shuffle: Boolean(game.shuffle), out: game.out, pot: game.pot.length,
         slams: Object.fromEntries(Object.entries(game.slams).map(([seat, [power, style]]) => [seat, [power, style]])),
         // The cards those slams turned face up.
         ups: game.over ? {} : Object.fromEntries(Object.keys(game.slams).map((seat) => [seat, warUpCard(game, Number(seat))])),
@@ -480,6 +528,17 @@ export class WarRoom {
         room.slow = message.slow;
         await this.save();
         return this.sendStates();
+      case 'shuffle':
+        if (!host || !setup || typeof message.shuffle !== 'boolean') return;
+        room.shuffle = message.shuffle;
+        await this.save();
+        return this.sendStates();
+      case 'gather':
+        // A player puts their winnings under their deck. It changes no card
+        // to come, so it can happen any time, even mid-stage.
+        if (room.phase !== 'playing' || seat === null || !warGather(room.game, seat, this.random)) return;
+        this.broadcast({ t: 'gather', seat });
+        return this.save();
       case 'bots':
         if (!host || !setup || !Number.isInteger(message.n)) return;
         return this.setBots(message.n);
@@ -654,7 +713,9 @@ export class WarRoom {
       return this.broadcast({ t: 'error', error: 'You need at least two players. Add some bots!' });
     }
     room.players = players;
-    const { game, stage } = warNewGame(players.map((p) => p.bot), room.length, this.random, now, 1, room.slow);
+    const { game, stage } = warNewGame(players.map((p) => p.bot), room.length, this.random, now, {
+      slow: room.slow, shuffle: room.shuffle,
+    });
     room.game = game;
     room.phase = 'playing';
     await this.save();

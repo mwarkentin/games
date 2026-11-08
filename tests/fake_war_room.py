@@ -8,6 +8,9 @@ passes slams, cheers, deck changes and clean-ups on; the battles themselves are 
 which sends the room's messages with broadcast(). The real room is tested in
 worker/test/war.test.js.
 
+Picking up winnings (`gather`) is passed on as the room would, and the host's
+`shuffle` setting kept; which cards are where is up to each test's messages.
+
 A slow room (the host's `slow` setting) has no clock. The fake passes nudges
 on to whoever hasn't slammed this stage, and lets the host flip their cards
 over, without the real room's waits.
@@ -48,6 +51,7 @@ class FakeWarRoom:
         self.phase = "lobby"
         self.length = "standard"
         self.slow = False
+        self.shuffle = False
         self.slammed: set[int] = set()  # seats that slammed this stage
         self.players: list[dict] = []    # {name, avatar, deck, bot, token}
         self.sockets: list[dict] = []    # {ws, token, open}
@@ -114,6 +118,7 @@ class FakeWarRoom:
         online = self.online()
         return {
             "t": "state", "code": self.code, "phase": self.phase, "length": self.length, "slow": self.slow,
+            "shuffle": self.shuffle,
             "you": self.seat_of(conn), "host": self.host(),
             "watchers": sum(1 for c in self.open_sockets() if self.seat_of(c) is None),
             "players": [
@@ -171,6 +176,11 @@ class FakeWarRoom:
         elif kind == "slow" and is_host and self.phase != "playing":
             self.slow = message["slow"]
             self.send_states()
+        elif kind == "shuffle" and is_host and self.phase != "playing":
+            self.shuffle = message["shuffle"]
+            self.send_states()
+        elif kind == "gather" and seat is not None and self.phase == "playing":
+            self.broadcast({"t": "gather", "seat": seat})
         elif kind == "nudge" and self.slow and self.phase == "playing":
             seats = [s for s in self.waiting() if s != seat]
             if seats:

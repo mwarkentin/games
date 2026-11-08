@@ -294,6 +294,53 @@ def test_after_a_war_every_card_in_your_loot_is_face_up(page: Page, site_url, er
     assert errors == []
 
 
+def test_winnings_go_back_under_your_deck_by_hand_or_when_it_runs_out(page: Page, site_url, errors):
+    fake = FakeWarRoom()
+    open_war(page, site_url, fake)
+    start_room(page)
+    page.click("#botMore")
+    # The host picks whether winnings are shuffled on their way back.
+    page.click("#roomWinnings button[data-winnings=shuffled]")
+    expect(page.locator("#roomWinnings button[data-winnings=shuffled]")).to_have_attribute("aria-pressed", "true")
+    page.click("#roomWinnings button[data-winnings=kept]")
+    assert [m["shuffle"] for m in fake.messages("shuffle")] == [True, False]
+    page.click("#dealBtn")
+
+    def battle(n: int, mine: int, theirs: int, counts: list, decks: list, gathered=(), reveal=300) -> None:
+        page.wait_for_function(f"{STATE}.battle === {n} && {STATE}.canSlam")
+        page.evaluate("window.__war.slam(90)")
+        nxt = fake.stage(n + 1, opens_in=reveal)
+        nxt["gathered"] = list(gathered)
+        fake.broadcast({
+            "t": "flip", "battle": n, "stage": 0, "winner": 0, "tied": [0], "gods": False, "pot": 2,
+            "plays": [[0, 0, mine, 90, 0, 0], [1, 0, theirs, 100, 1, 0]],
+            "counts": counts, "decks": decks, "out": [], "next": nxt,
+        })
+
+    # You win: the two cards sit beside your deck, and you pick them up.
+    battle(1, card(12), card(3, 1), [28, 26], [26, 26])
+    page.wait_for_function(f"{STATE}.battle === 2")
+    expect(page.locator("#lootCount")).to_have_text("2")
+    expect(page.locator("#deckCount")).to_have_text("26")
+    page.click("#gatherBtn")
+    assert fake.messages("gather") == [{"t": "gather"}]
+    expect(page.locator("#gatherBtn")).to_be_hidden()
+    expect(page.locator("#deckCount")).to_have_text("28")
+    expect(page.locator("#winnings .heap .card")).to_have_count(0)
+
+    # You win with the last card in your deck: it's empty until the next
+    # battle opens, and then your winnings go under it by themselves.
+    battle(2, card(11), card(4, 1), [29, 25], [0, 25], gathered=[0], reveal=2400)
+    expect(page.locator("#myPile")).to_have_class(re.compile(r"\bempty\b"))
+    expect(page.locator("#gatherBtn")).to_have_class(re.compile(r"\bdue\b"))
+    page.wait_for_function(f"{STATE}.battle === 3")
+    expect(page.locator("#toast")).to_contain_text("Your deck ran out")
+    expect(page.locator("#deckCount")).to_have_text("29")
+    expect(page.locator("#myPile")).not_to_have_class(re.compile(r"\bempty\b"))
+    expect(page.locator("#gatherBtn")).to_be_hidden()
+    assert errors == []
+
+
 def test_everyone_sees_each_players_deck(page: Page, browser, site_url, errors):
     fake = FakeWarRoom()
     open_war(page, site_url, fake)

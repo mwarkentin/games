@@ -383,6 +383,49 @@ def test_won_cards_pile_up_and_clean_up_keeps_their_order(page: Page, site_url, 
     assert errors == []
 
 
+def test_winnings_stay_apart_until_you_pick_them_up(page: Page, site_url, errors):
+    # Seed 14: you win the first two battles.
+    start_solo(page, site_url, seed=14)
+    page.evaluate("window.__war.slam(80)")
+    page.wait_for_function(f"{STATE}.battle === 2 && {STATE}.canSlam")
+    # The two cards you won are beside your deck, not in it.
+    assert page.evaluate(f"[{STATE}.counts[0], {STATE}.decks[0], {STATE}.loot[0]]") == [28, 26, 2]
+    expect(page.locator("#deckCount")).to_have_text("26")
+    expect(page.locator("#lootCount")).to_have_text("2")
+    expect(page.locator("#myLabel")).to_contain_text("28 cards")
+    page.evaluate("window.__war.slam(80)")
+    page.wait_for_function(f"{STATE}.battle === 3 && {STATE}.canSlam")
+    expect(page.locator("#winnings .heap .card")).to_have_count(4)
+    won = page.evaluate(f"{STATE}.heap")
+
+    # Pick up: they go under your deck, as they lie, and the heap is empty.
+    page.click("#gatherBtn")
+    expect(page.locator("#gatherBtn")).to_be_hidden()
+    expect(page.locator("#winnings .heap .card")).to_have_count(0)
+    assert page.evaluate(f"[{STATE}.counts[0], {STATE}.decks[0], {STATE}.loot[0]]") == [29, 29, 0]
+    expect(page.locator("#deckCount")).to_have_text("29")
+    expect(page.locator("#caption")).to_have_text("4 cards back under your deck, in the order you won them.")
+    assert len(won) == 4
+    assert errors == []
+
+
+def test_winnings_can_be_shuffled_on_their_way_back(page: Page, site_url, errors):
+    page.goto(f"{site_url}/war?seed=14#debug")
+    expect(page.locator("#soloWinnings button[data-winnings=kept]")).to_have_attribute("aria-pressed", "true")
+    page.click("#soloWinnings button[data-winnings=shuffled]")
+    page.click("#soloBtn")
+    page.wait_for_function(f"{STATE}.canSlam")
+    assert page.evaluate(f"{STATE}.shuffle")
+    page.evaluate("window.__war.slam(80)")
+    page.wait_for_function(f"{STATE}.battle === 2 && {STATE}.canSlam")
+    page.click("#gatherBtn")
+    expect(page.locator("#caption")).to_have_text("2 cards back under your deck, shuffled.")
+    page.click("#menuBtn")
+    page.click("#quitBtn")
+    expect(page.locator("#soloWinnings button[data-winnings=shuffled]")).to_have_attribute("aria-pressed", "true")
+    assert errors == []
+
+
 def test_the_end_screen_tells_the_game_battle_by_battle_and_shares_a_picture(page: Page, site_url, errors):
     start_solo(page, site_url, opponents=1, length="quick", seed=WAR_SEED)
     page.evaluate("window.__war.pace(0.05)")
