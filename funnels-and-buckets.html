@@ -876,6 +876,7 @@ h2 { margin: 0; font-family: var(--font-display); font-weight: 400; font-size: 3
     lbGroupNote: $('#lbGroupNote'),
   };
   const setText = (el, t) => { if (el.textContent !== t) el.textContent = t; };
+  const setFlag = (el, name, on) => { if (el[name] !== on) el[name] = on; };   // hidden, inert, disabled
 
   // ---- BEGIN STATE MACHINE ----
   // The same in every page that has one (tests/test_state_machines.py checks).
@@ -931,9 +932,9 @@ h2 { margin: 0; font-family: var(--font-display); font-weight: 400; font-size: 3
   }, 'menu', { onMove: showScreen });
   function showScreen(to, from) {
     if (from === 'over' && !Save.is('none')) Save.go('none');   // the offer goes with its card
-    els.menu.hidden = to !== 'menu';
-    els.pauseOv.hidden = to !== 'paused';
-    els.overOv.hidden = to !== 'over';
+    setFlag(els.menu, 'hidden', to !== 'menu');
+    setFlag(els.pauseOv, 'hidden', to !== 'paused');
+    setFlag(els.overOv, 'hidden', to !== 'over');
     if (to === 'over') els.overOv.scrollTop = 0;
     layer();
     if (to === 'playing') requestWake(); else releaseWake();
@@ -942,8 +943,8 @@ h2 { margin: 0; font-family: var(--font-display); font-weight: 400; font-size: 3
   // open, else the card on screen, else the game.
   function layer() {
     const board = Board.is('open');
-    els.app.inert = board || !Screen.is('playing', 'ending');
-    els.menu.inert = els.overOv.inert = els.pauseOv.inert = board;
+    setFlag(els.app, 'inert', board || !Screen.is('playing', 'ending'));
+    for (const card of [els.menu, els.overOv, els.pauseOv]) setFlag(card, 'inert', board);
   }
   let score = 0, level = 1, popped = 0, wrongs = 0, missed = 0, missedList = [], gameTime = 0;
   let bubbles = [], parts = [], texts = [];
@@ -1983,16 +1984,16 @@ h2 { margin: 0; font-family: var(--font-display); font-weight: 400; font-size: 3
       const next = worthIt ? 'offered' : 'ineligible';
       if (!Save.is(next)) Save.go(next);
     }
-    els.lbPublicRow.hidden = !inGroup;
+    setFlag(els.lbPublicRow, 'hidden', !inGroup);
   }
   function showSave(to, from) {
-    els.lbForm.hidden = !(to === 'offered' || to === 'saving');
-    els.lbSave.disabled = to === 'saving';
+    setFlag(els.lbForm, 'hidden', !(to === 'offered' || to === 'saving'));
+    setFlag(els.lbSave, 'disabled', to === 'saving');
     if (to === 'offered' && from !== 'saving') {   // a new offer starts from last time's choices
       els.lbPublic.checked = store.get('games.public', true) !== false;
       els.lbInitials.value = store.get('games.initials', '');
     }
-    els.lbPublicRow.hidden = !myGroups().length;
+    setFlag(els.lbPublicRow, 'hidden', !myGroups().length);
     if (to !== 'offered') saveProblem = '';
     showSaveNote();
   }
@@ -2053,7 +2054,7 @@ h2 { margin: 0; font-family: var(--font-display); font-weight: 400; font-size: 3
   // maybe opened again) that its note is no longer wanted.
   const Board = machine('board', { closed: ['open'], open: ['closed'] }, 'closed', { onMove: showBoard });
   function showBoard(to) {
-    els.lbOv.hidden = to !== 'open';
+    setFlag(els.lbOv, 'hidden', to !== 'open');
     layer();
     if (to === 'open') {
       els.lbOv.scrollTop = 0;
@@ -2164,7 +2165,7 @@ h2 { margin: 0; font-family: var(--font-display); font-weight: 400; font-size: 3
   let groupsBusy = false;
   function busyGroups(on) {
     groupsBusy = on;
-    for (const form of [els.lbJoinForm, els.lbCreateForm]) form.querySelector('button').disabled = on;
+    for (const form of [els.lbJoinForm, els.lbCreateForm]) setFlag(form.querySelector('button'), 'disabled', on);
   }
   const normalizeCode = (value) => value.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 4);
   async function joinGroup(e) {
