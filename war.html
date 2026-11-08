@@ -233,7 +233,22 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px s
   .size-m .card { --w: 80px; }
   .size-l .card { --w: 110px; }
 }
-.downs { position: absolute; right: -6px; bottom: -4px; background: var(--war); color: #fff; font: 700 10px/1 system-ui, sans-serif; padding: 3px 5px; border-radius: 8px; }
+.downs { position: absolute; right: -6px; bottom: -4px; z-index: 2; background: var(--war); color: #fff; font: 700 10px/1 system-ui, sans-serif; padding: 3px 5px; border-radius: 8px; }
+/* Someone else's face-down cards in a war: a messy fan peeking out from under
+   their card, one for each card, so you can count them as they go down. The
+   fan tightens as it grows (--k, a share of the card's width per card). */
+.tdowns { position: absolute; inset: 0; z-index: 0; pointer-events: none; }
+.tdowns .card {
+  --step: calc(var(--w) * var(--k, .16)); z-index: calc(20 - var(--i));
+  position: absolute; left: 50%; top: 50%; margin: calc(var(--w) * -.7) 0 0 calc(var(--w) * -.5);
+  transform: translate(calc(var(--step) * (var(--i) + 1) * -1), var(--dy)) rotate(var(--r));
+  transition: transform calc(250ms * var(--pace)) ease-out;
+}
+.tdowns .card.thump { animation: thump calc(320ms * var(--pace)) cubic-bezier(.5, 0, .75, 0) both; }
+@keyframes thump {
+  0% { opacity: 0; transform: translate(calc(var(--step) * (var(--i) + 1) * -1), calc(var(--dy) - 26px)) rotate(calc(var(--r) - 20deg)) scale(1.3); }
+  100% { opacity: 1; transform: translate(calc(var(--step) * (var(--i) + 1) * -1), var(--dy)) rotate(var(--r)); }
+}
 
 /* Arena */
 #arena { min-width: 0; padding: 2px 12px 4px; text-align: center; min-height: 92px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; }
@@ -4994,7 +5009,9 @@ function buildTiles() {
     node.append(cards, info, meta);
     node.title = `${p.name}${p.bot ? ' (bot)' : ''} · ${DECKS[deckOf(seat)][0]} deck`;
     box.append(node);
-    tiles.set(seat, { node, slot, count, stat, card, heap, lootCount, deck: deckBox, deckCount, spot, cardKey: 'empty', downs: null });
+    tiles.set(seat, {
+      node, slot, count, stat, card, heap, lootCount, deck: deckBox, deckCount, spot, cardKey: 'empty', downs: null, wpile: null, wn: 0,
+    });
   }
 }
 
@@ -5084,6 +5101,25 @@ function renderTile(seat) {
   if (t.downs) {
     setHidden(t.downs, !downs);
     setText(t.downs, `+${downs}`);
+  }
+  // Their face-down cards, fanned out under their card, each thumping down
+  // as they slam it.
+  const fan = Math.min(downs, 12);
+  if (fan !== t.wn) {
+    if (!t.wpile) { t.wpile = el('div', 'tdowns'); t.slot.prepend(t.wpile); }
+    const pile = t.wpile;
+    while (pile.childElementCount > fan) pile.lastElementChild.remove();
+    while (pile.childElementCount < fan) {
+      const i = pile.childElementCount;
+      const back = cardEl('back', deckOf(seat));
+      back.style.setProperty('--i', String(i));
+      back.style.setProperty('--r', `${((i * 37) % 17) - 8}deg`);
+      back.style.setProperty('--dy', `${((i * 23) % 9) - 4}px`);
+      if (!reduceMotion.matches) back.classList.add('thump');
+      pile.append(back);
+    }
+    pile.style.setProperty('--k', Math.min(0.16, 0.6 / Math.max(1, fan)).toFixed(3));
+    t.wn = fan;
   }
 }
 

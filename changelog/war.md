@@ -35,6 +35,9 @@
   they play land on the table in the middle. A pot you win only counts once
   its cards have landed on your loot pile.
 - Every deck is as thick as it's full, and thins as it runs down.
+- In a war, the cards everyone else lays face down fan out messily from
+  under their card on the table, one for each card, so you can count them
+  as they go down.
 
 ## 2026-11-07
 

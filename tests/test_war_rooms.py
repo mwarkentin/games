@@ -122,6 +122,7 @@ def test_friends_join_with_the_code_and_see_each_other(page: Page, browser, site
     assert [(m["n"], m["power"]) for m in fake.messages("card")] == [(0, 120), (1, 120), (2, 120)]
     assert fake.messages("slam")[-1]["power"] == 120
     expect(guest.locator("#spots .downs")).to_have_text("+3")
+    expect(guest.locator("#spots .tdowns .card.back")).to_have_count(3)
     fake.broadcast({
         "t": "flip", "battle": 1, "stage": 1, "winner": 0, "tied": [0], "gods": False, "pot": 10,
         "plays": [[0, 3, card(12), 0, 0, 1], [1, 3, card(4), 0, 0, 1]], "counts": [31, 21], "out": [],

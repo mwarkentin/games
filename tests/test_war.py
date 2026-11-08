@@ -140,6 +140,8 @@ def test_a_war_means_slamming_every_card(page: Page, site_url, errors):
     expect(page.locator("#caption")).to_contain_text("War power")
     # The bot slams its face-down cards too.
     expect(page.locator("#spots .downs")).to_have_text("+3")
+    # ...and they fan out under its card, one for each, so you can count them.
+    expect(page.locator("#spots .tdowns .card.back")).to_have_count(3)
     assert errors == []
 
 
