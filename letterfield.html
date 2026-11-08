@@ -196,7 +196,7 @@ body.docked .toast{right:calc(var(--notes-w) + 16px);max-width:calc(100% - var(-
 .toast.show{opacity:1;transform:translateY(0)}
 .toast i{grid-row:span 2;width:10px;height:10px;border-radius:50%;background:var(--c)}
 .toast b{font:700 19px/1 var(--f-display);letter-spacing:.07em;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.toast span{font:400 11px/1.2 var(--f-mono);color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.toast span{font:400 11px/1.35 var(--f-mono);color:var(--muted);overflow-wrap:anywhere}
 /* A find's toast offers to share it: the only part of a toast that takes a tap. */
 .toast.can-share{grid-template-columns:auto minmax(0,1fr) auto;padding-right:10px}
 .share{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--rule);border-radius:999px;background:transparent;color:var(--ink);font:500 11.5px/1 var(--f-mono);cursor:pointer;white-space:nowrap}
