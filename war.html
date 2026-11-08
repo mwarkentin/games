@@ -236,7 +236,7 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px s
 .downs { position: absolute; right: -6px; bottom: -4px; background: var(--war); color: #fff; font: 700 10px/1 system-ui, sans-serif; padding: 3px 5px; border-radius: 8px; }
 
 /* Arena */
-#arena { padding: 2px 12px 4px; text-align: center; min-height: 92px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; }
+#arena { min-width: 0; padding: 2px 12px 4px; text-align: center; min-height: 92px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; }
 #banner {
   font-family: var(--display); font-size: 30px; line-height: 1; color: var(--gold); min-height: 30px;
   text-shadow: 0 3px 0 rgba(0, 0, 0, .35); white-space: nowrap; max-width: 100%; overflow: hidden; text-overflow: ellipsis;
@@ -284,14 +284,17 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px s
 #myWar .wcount { font-size: 12px; font-weight: 700; color: #ffb8ae; white-space: nowrap; }
 .card.ghost { position: absolute; left: 0; top: 0; --w: 88px; z-index: 31; box-shadow: 0 18px 30px rgba(0, 0, 0, .45); will-change: transform; }
 #myPile { position: relative; display: grid; justify-items: center; gap: 4px; }
-#myPile .stack { position: relative; }
-#myPile .stack::before, #myPile .stack::after {
-  content: ""; position: absolute; inset: 0; border-radius: calc(var(--cw) * var(--deck-radius));
-  background: var(--deck-back-solid); border: 1px solid var(--deck-back-edge);
+#myPile .stack { --pw: var(--cw); }
+/* A deck is as thick as it's full: its top card sits raised over a block of
+   card edges by --d, a share of the card's width (see deckDepth). */
+.pile { position: relative; --d: 0; }
+.pile::after {
+  content: ""; position: absolute; inset: 0; border-radius: calc(var(--pw) * var(--deck-radius));
+  background: repeating-linear-gradient(to bottom, var(--deck-back-edge) 0 1px, var(--deck-back-solid) 1px 3px);
+  border: 1px solid var(--deck-back-edge); box-shadow: 0 2px 6px rgba(0, 0, 0, .3);
 }
-#myPile .stack::before { transform: translate(4px, 4px); }
-#myPile .stack::after { transform: translate(2px, 2px); }
-#myPile .stack .card { z-index: 1; }
+.pile > .card { position: relative; z-index: 1; transform: translateY(calc(var(--pw) * var(--d) * -1)); transition: transform .3s; }
+.pile > .count { transform: translateY(calc(var(--pw) * var(--d) * -1)); transition: transform .3s; }
 #myPile.empty .stack { visibility: hidden; }
 #myLabel { font-size: 13px; font-weight: 700; text-align: center; max-width: 120px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 #myLabel small { display: block; font-weight: 400; color: var(--felt-dim); }
@@ -339,11 +342,37 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px s
   transition: transform calc(420ms * var(--pace)) cubic-bezier(.3, .7, .3, 1) calc(var(--i, 0) * 14ms);
 }
 #winnings .heap .card { --w: 40px; }
-/* On a tile, at a table of up to six, the player's loot pile sits beside
-   their card, with a count; the room for it is kept even while it's empty,
-   so the card doesn't jump. Cards fly to it over everything (see heapFly),
-   since the tiles' scrolling box would hide them on the way. */
+/* At a table of up to six (#opponents.loots), a tile shows the player's
+   deck, as thick as it's full with its count in the corner, and their loot
+   pile beside it, with a count; the room for the loot is kept even while
+   it's empty, so the deck doesn't jump. The cards they play go on the table
+   in the middle (#spots). Cards fly to a loot pile over everything (see
+   heapFly), since the tiles' scrolling box would hide them on the way.
+   Bigger tables keep the card each player plays on their tile. */
 .tile .tcards { display: flex; align-items: center; gap: 3px; }
+.tile .tdeck { --pw: var(--tw); flex: none; }
+.tile .tdeck .card { --w: var(--tw); }
+.tile .tdeck.empty::after { display: none; }
+.tile .tdeck.empty > .card { opacity: .2; }
+.tile .tdeck .count {
+  position: absolute; top: -5px; right: -7px; z-index: 2; min-width: 18px; padding: 2px 4px; border-radius: 999px;
+  font: 800 10px/1 system-ui, sans-serif; text-align: center; background: rgba(0, 0, 0, .6); color: #fff;
+}
+.loots .tcount { display: none; }
+#spots { display: flex; gap: 8px; justify-content: center; align-items: flex-end; align-self: stretch; min-width: 0; }
+#spots .spot { display: flex; flex-direction: column; align-items: center; gap: 2px; min-width: 0; flex: 0 1 84px; }
+#spots .tslot { position: relative; display: grid; place-items: center; }
+#spots .card { --w: 50px; }
+#spots[data-n="1"] .card { --w: 70px; }
+#spots[data-n="2"] .card, #spots[data-n="3"] .card { --w: 58px; }
+#spots .sname { font: 700 11px/1.2 system-ui, sans-serif; color: var(--felt-dim); max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#spots .spot.won .card:not(.back) { box-shadow: 0 0 0 3px var(--gold), 0 0 16px var(--gold); }
+#spots .spot.charging .tslot { filter: drop-shadow(0 0 calc(var(--glow, 2) * 1px) var(--gold)); }
+@media (min-width: 700px) {
+  #spots .card { --w: 64px; }
+  #spots[data-n="1"] .card { --w: 88px; }
+  #spots[data-n="2"] .card, #spots[data-n="3"] .card { --w: 74px; }
+}
 .tile .tloot { position: relative; flex: none; width: calc(var(--lw) * 1.2); height: calc(var(--lw) * 1.75); }
 #opponents:not(.loots) .tloot { display: none; }
 .tile .tloot .heap { position: absolute; inset: 0; pointer-events: none; }
@@ -353,14 +382,13 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px s
   font: 800 10px/1 system-ui, sans-serif; text-align: center; background: rgba(0, 0, 0, .55); color: #fff;
 }
 .card.flyer { position: absolute; z-index: 1; will-change: transform; }
-.size-l { --lw: 46px; }
-.size-m { --lw: 30px; }
-.size-s { --lw: 22px; }
+.loots.size-l { --tw: 60px; --lw: 42px; }
+.loots.size-m { --tw: 50px; --lw: 34px; }
+.loots.size-s { --tw: 38px; --lw: 26px; }
 @media (min-width: 700px) {
-  .size-l { --lw: 54px; }
-  .size-m { --lw: 40px; }
-  .size-s { --lw: 26px; }
-  #opponents.size-m { grid-template-columns: repeat(var(--cols), minmax(0, 150px)); }
+  .loots.size-l { --tw: 72px; --lw: 50px; }
+  .loots.size-m { --tw: 60px; --lw: 40px; }
+  .loots.size-s { --tw: 50px; --lw: 32px; }
 }
 /* Each card is thrown from where it lay on the table, at its size there: up
    in an arc, then down faster onto the heap. They go one after another. */
@@ -390,7 +418,7 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px s
   font: 800 11px/1 system-ui, sans-serif; text-align: center; background: rgba(0, 0, 0, .55); color: #fff; pointer-events: none;
 }
 #winnings .count { top: -2px; right: -4px; z-index: 999; }
-#myPile.low .stack::before, #myPile.thin .stack::before, #myPile.thin .stack::after { display: none; }
+
 #gain { position: absolute; left: 50%; top: 10px; font-family: var(--display); color: var(--gold); font-size: 22px; pointer-events: none; opacity: 0; }
 #gain.show { animation: rise calc(1100ms * var(--pace)) ease-out; }
 @keyframes rise { 0% { opacity: 0; transform: translate(-50%, 10px); } 20% { opacity: 1; } 100% { opacity: 0; transform: translate(-50%, -40px); } }
@@ -855,6 +883,7 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px s
   </section>
   <section id="opponents" aria-label="Other players"></section>
   <section id="arena" aria-live="polite">
+    <div id="spots" aria-live="off" hidden></div>
     <div id="banner"></div>
     <div id="warRow"></div>
     <div id="caption"></div>
@@ -870,7 +899,7 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px s
       <button id="tidyBtn" type="button" hidden>🧹 Clean up</button>
       <button id="gatherBtn" type="button" title="Put your winnings under your deck" hidden>📥 Pick up</button>
     </div>
-    <div id="myPile" role="button" tabindex="0" aria-label="Your deck" aria-describedby="slamText"><div class="stack"><div class="card back"></div><span class="count" id="deckCount" hidden></span><span id="deckHint" hidden></span></div><div id="myLabel"></div></div>
+    <div id="myPile" role="button" tabindex="0" aria-label="Your deck" aria-describedby="slamText"><div class="stack pile"><div class="card back"></div><span class="count" id="deckCount" hidden></span><span id="deckHint" hidden></span></div><div id="myLabel"></div></div>
     <div id="myWar" hidden><div class="wpile"></div><span class="wcount"></span></div>
     <div id="mySlot"><div class="card empty"></div></div>
     <div id="gain"></div>
@@ -4920,8 +4949,14 @@ function buildTiles() {
   box.replaceChildren();
   const n = seats.length;
   const size = n <= 1 ? 'size-l' : n <= 3 ? 'size-m' : n <= 8 ? 'size-s' : 'size-xs';
-  // Loot piles of their own for everyone else, at a table of up to six.
-  box.className = size + (n <= 5 ? ' loots' : '');
+  // At a table of up to six, everyone else has a deck and a loot pile on
+  // their tile, and plays onto the table in the middle (#spots).
+  const piles = n <= 5;
+  box.className = size + (piles ? ' loots' : '');
+  const spots = $('spots');
+  spots.replaceChildren();
+  spots.dataset.n = String(n);
+  setHidden(spots, !piles || !n);
   box.style.setProperty('--cols', String(n <= 4 ? n : Math.min(4, Math.ceil(n / 2))));
   for (const seat of seats) {
     const p = S.players[seat];
@@ -4937,7 +4972,19 @@ function buildTiles() {
     lootCount.hidden = true;
     loot.append(heap, lootCount);
     const cards = el('div', 'tcards');
-    cards.append(slot, loot);
+    let deckBox = null, deckCount = null, spot = null;
+    if (piles) {
+      deckBox = el('div', 'tdeck pile');
+      deckBox.dataset.deck = deckOf(seat);
+      deckCount = el('span', 'count', '');
+      deckBox.append(cardEl('back', deckOf(seat)), deckCount);
+      cards.append(deckBox, loot);
+      spot = el('div', 'spot');
+      spot.append(slot, el('span', 'sname', `${AVATARS[p.avatar] || '🃏'} ${p.name}`));
+      spots.append(spot);
+    } else {
+      cards.append(slot, loot);
+    }
     const info = el('div', 'tname');
     info.textContent = `${AVATARS[p.avatar] || '🃏'} ${p.name}`;
     const meta = el('div', 'tmeta');
@@ -4947,8 +4994,14 @@ function buildTiles() {
     node.append(cards, info, meta);
     node.title = `${p.name}${p.bot ? ' (bot)' : ''} · ${DECKS[deckOf(seat)][0]} deck`;
     box.append(node);
-    tiles.set(seat, { node, slot, count, stat, card, heap, lootCount, cardKey: 'empty', downs: null });
+    tiles.set(seat, { node, slot, count, stat, card, heap, lootCount, deck: deckBox, deckCount, spot, cardKey: 'empty', downs: null });
   }
+}
+
+// How thick a deck of n cards looks, as a share of its card's width: a lone
+// card is flat, and a deck thickens with every card, up to a point.
+function deckDepth(n) {
+  return n <= 1 ? 0 : Math.min(0.22, 0.02 + n * 0.0035).toFixed(3);
 }
 
 // Whether a player has slammed this stage's card but the stage hasn't been
@@ -4981,7 +5034,29 @@ function renderTile(seat) {
   setClass(t.node, 'waiting', waitingFor().includes(seat));
   const charging = S.charging[seat];
   setClass(t.node, 'charging', charging !== undefined && !S.slams[seat]);
-  if (charging !== undefined && t.glow !== charging) { t.glow = charging; t.node.style.setProperty('--glow', String(2 + charging * 2)); }
+  if (charging !== undefined && t.glow !== charging) {
+    t.glow = charging;
+    t.node.style.setProperty('--glow', String(2 + charging * 2));
+    if (t.spot) t.spot.style.setProperty('--glow', String(2 + charging * 2));
+  }
+  if (t.spot) {
+    // Their card on the table in the middle.
+    setHidden(t.spot, out);
+    setClass(t.spot, 'won', r && r.winner === seat && S.cards[seat]);
+    setClass(t.spot, 'charging', charging !== undefined && !S.slams[seat]);
+  }
+  if (t.deck) {
+    // Their deck: as thick as it's full, with its count in the corner.
+    const inDeck = S.decks ? S.decks[seat] ?? 0 : shownCount(seat);
+    t.deck.style.setProperty('--d', String(deckDepth(inDeck)));
+    setClass(t.deck, 'empty', S.battle > 0 && inDeck === 0);
+    setText(t.deckCount, S.battle ? String(inDeck) : '');
+    setHidden(t.deckCount, !S.battle);
+    if (S.battle) {
+      const loot = lootOf(seat);
+      setAttr(t.deck, 'title', plural(shownCount(seat), 'card') + (loot ? `: ${inDeck} in the deck, ${shownLoot(seat)} won` : ''));
+    }
+  }
   setText(t.count, S.battle ? String(shownCount(seat)) : '');
   const won = shownLoot(seat);
   setText(t.lootCount, won > 0 ? String(won) : '');
@@ -5028,8 +5103,7 @@ function renderMe() {
   // Your deck, apart from your winnings: it thins as it runs low.
   const inDeck = S.decks ? S.decks[me] ?? 0 : count;
   setClass($('myPile'), 'empty', S.battle > 0 && inDeck === 0);
-  setClass($('myPile'), 'low', S.battle > 0 && inDeck === 2);
-  setClass($('myPile'), 'thin', S.battle > 0 && inDeck === 1);
+  $('myPile').querySelector('.stack').style.setProperty('--d', String(S.battle > 0 ? deckDepth(inDeck) : deckDepth(27)));
   const badge = $('deckCount');
   setHidden(badge, !(S.decks && S.battle > 0 && inDeck > 0));
   setText(badge, String(inDeck));
@@ -5095,7 +5169,7 @@ function renderWarRow() {
   if (row.dataset.key === key) return;
   row.dataset.key = key;
   row.replaceChildren();
-  if (!war || S.players.length <= 4) return;
+  if (!war || $('opponents').classList.contains('loots')) return;
   for (const seat of fighters.slice(0, 6)) {
     const box = el('div', 'wf');
     const c = S.cards[seat];
@@ -5394,7 +5468,7 @@ function heapGather(seat, delay) {
   Object.assign(h, { cards: [], tidy: true, layer: 0 });
   renderHeaps();
   later(() => {
-    const target = seat === S.you ? $('myPile').querySelector('.stack') : tiles.get(seat)?.card;
+    const target = seat === S.you ? $('myPile').querySelector('.stack') : tiles.get(seat)?.deck || tiles.get(seat)?.card;
     const box = target && target.offsetParent ? target.getBoundingClientRect() : null;
     cards.forEach((c, i) => {
       const node = c.node;

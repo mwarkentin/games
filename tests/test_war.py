@@ -66,7 +66,7 @@ def test_cards_land_face_up_as_they_are_played(page: Page, site_url, errors):
     start_solo(page, site_url)
     # The bot slams first: its card is face up straight away, though the
     # battle waits for you.
-    bot = page.locator("#opponents .tile .tslot > .card")
+    bot = page.locator("#spots .spot .tslot > .card")
     expect(bot).to_have_attribute("aria-label", re.compile("."))
     assert page.evaluate(f"{STATE}.table") == {}, "nothing has been played out"
     expect(page.locator("#mySlot .card")).to_have_class(re.compile(r"\bempty\b"))
@@ -139,7 +139,7 @@ def test_a_war_means_slamming_every_card(page: Page, site_url, errors):
     assert len(page.evaluate(f"{STATE}.mine")) == 5, "one slam for the battle, four for the war"
     expect(page.locator("#caption")).to_contain_text("War power")
     # The bot slams its face-down cards too.
-    expect(page.locator("#opponents .tile .downs")).to_have_text("+3")
+    expect(page.locator("#spots .downs")).to_have_text("+3")
     assert errors == []
 
 
@@ -252,7 +252,7 @@ def test_a_seven_over_a_six_is_a_six_seven(page: Page, site_url, errors):
     expect(held).to_have_count(2)
     expect(held.nth(0)).to_have_attribute("aria-label", re.compile(r"^six of "))
     expect(held.nth(1)).to_have_attribute("aria-label", re.compile(r"^seven of "))
-    theirs = page.locator("#opponents .tile .card[aria-label]").first.get_attribute("data-deck")
+    theirs = page.locator("#spots .card[aria-label]").first.get_attribute("data-deck")
     assert held.nth(0).get_attribute("data-deck") == theirs
     assert held.nth(1).get_attribute("data-deck") == page.evaluate("deck"), "your seven is in your deck"
     expect(show.locator(".ss-word")).to_have_text("6-7!")
@@ -539,12 +539,45 @@ def test_others_get_loot_piles_at_a_table_of_up_to_six(page: Page, site_url, err
         page.wait_for_timeout(1200)
         return page.locator("#opponents .tile .tloot .heap .card").count()
 
-    # Six players: everyone else's winnings pile up beside their card.
+    # Six players: everyone else has a deck and a loot pile on their tile, and
+    # plays onto the table in the middle.
     assert play(5, 3) > 0
     expect(page.locator("#opponents")).to_have_class(re.compile(r"\bloots\b"))
-    # Seven: only your own, to keep a busy table readable.
+    expect(page.locator("#opponents .tile .tdeck")).to_have_count(5)
+    expect(page.locator("#opponents .tile .tslot")).to_have_count(0)
+    expect(page.locator("#spots")).to_be_visible()
+    expect(page.locator("#spots .spot")).to_have_count(5)
+    # Seven: only your own, and each plays on their tile, to keep a busy table readable.
     assert play(6, 4) == 0
     expect(page.locator("#opponents")).not_to_have_class(re.compile(r"\bloots\b"))
+    expect(page.locator("#opponents .tile .tdeck")).to_have_count(0)
+    expect(page.locator("#opponents .tile .tslot")).to_have_count(6)
+    expect(page.locator("#spots")).to_be_hidden()
+    assert errors == []
+
+
+def test_decks_are_as_thick_as_they_are_full(page: Page, site_url, errors):
+    # Seed 14: you win the first battle, so the bot's deck goes down by one.
+    start_solo(page, site_url, seed=14)
+    depth = "(sel) => parseFloat(document.querySelector(sel).style.getPropertyValue('--d'))"
+    bot_deck = page.locator("#opponents .tile .tdeck")
+    expect(bot_deck.locator(".count")).to_have_text("27")
+    full = page.evaluate(f"({depth})('#opponents .tile .tdeck')")
+    mine = page.evaluate(f"({depth})('#myPile .stack')")
+    assert full > 0.05 and mine == full
+    page.evaluate("window.__war.slam(80)")
+    page.wait_for_function(f"{STATE}.battle === 2")
+    # The bot's count sits in its deck's corner, and the deck is thinner.
+    expect(bot_deck.locator(".count")).to_have_text("26")
+    assert page.evaluate(f"({depth})('#opponents .tile .tdeck')") < full
+    # Its card was played onto the table in the middle, not onto its deck.
+    expect(page.locator("#spots .spot .tslot > .card")).to_have_attribute("aria-label", re.compile("."))
+    # A deck down to its last card is flat.
+    page.evaluate("S.conn.game.loot[0] = S.conn.game.piles[0].splice(1)")
+    page.evaluate("window.__war.slam(80)")
+    page.wait_for_function(f"{STATE}.battle === 3")
+    page.evaluate("S.decks[0] = 1; renderMe()")
+    assert page.evaluate(f"({depth})('#myPile .stack')") == 0
     assert errors == []
 
 
@@ -782,7 +815,7 @@ def test_win_probability_follows_the_game_and_ignores_slams(page: Page, site_url
     expect(page.locator("#oddsFav")).to_contain_text("%")
     page.evaluate("window.__war.slam(150)")
     expect(page.locator("#oddsNote")).to_have_text("Slam impact on win probability: +0.0%")
-    joker = page.locator("#opponents .tile .tslot > .card.joker")
+    joker = page.locator("#spots .spot .tslot > .card.joker")
     expect(joker).to_be_visible()
     expect(joker).to_have_attribute("aria-label", re.compile(r"^(red|black) joker$"))
     expect(page.locator("#banner")).to_have_text("JOKER!")

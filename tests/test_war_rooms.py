@@ -75,7 +75,7 @@ def test_start_a_room_add_bots_and_play_a_battle(page: Page, site_url, errors):
     })
     expect(page.locator("#banner")).to_have_text("YOU WIN!")
     expect(page.locator("#myLabel")).to_contain_text("27 cards")
-    expect(page.locator("#opponents .tile .tcount")).to_have_text("25")
+    expect(page.locator("#opponents .tile .tdeck .count")).to_have_text("25")
     page.wait_for_function(f"{STATE}.battle === 2 && {STATE}.canSlam")
     assert errors == []
 
@@ -121,7 +121,7 @@ def test_friends_join_with_the_code_and_see_each_other(page: Page, browser, site
     page.evaluate("window.__war.slam(120)")
     assert [(m["n"], m["power"]) for m in fake.messages("card")] == [(0, 120), (1, 120), (2, 120)]
     assert fake.messages("slam")[-1]["power"] == 120
-    expect(guest.locator("#opponents .tile .downs")).to_have_text("+3")
+    expect(guest.locator("#spots .downs")).to_have_text("+3")
     fake.broadcast({
         "t": "flip", "battle": 1, "stage": 1, "winner": 0, "tied": [0], "gods": False, "pot": 10,
         "plays": [[0, 3, card(12), 0, 0, 1], [1, 3, card(4), 0, 0, 1]], "counts": [31, 21], "out": [],
@@ -158,19 +158,19 @@ def test_cards_land_face_up_as_they_are_played(page: Page, browser, site_url, er
     page.click("#dealBtn")
 
     # The bot slams first, and its joker is face up on both screens at once.
-    bot_on_dana = page.locator("#opponents .tile").nth(1).locator(".tslot > .card")
+    bot_on_dana = page.locator("#spots .spot").nth(1).locator(".tslot > .card")
     expect(bot_on_dana).to_have_attribute("aria-label", "black joker")
-    expect(guest.locator("#opponents .tile").nth(1).locator(".tslot > .card")).to_have_attribute("aria-label", "black joker")
+    expect(guest.locator("#spots .spot").nth(1).locator(".tslot > .card")).to_have_attribute("aria-label", "black joker")
 
     # Dana slams: her ace lands face up on her screen as soon as the room
     # answers, and on Bob's, while Bob's own card is still in his hand.
     page.wait_for_function(f"{STATE}.canSlam")
     page.evaluate("window.__war.slam(120)")
     expect(page.locator("#mySlot .card")).to_have_attribute("aria-label", "ace of spades")
-    dana_on_bob = guest.locator("#opponents .tile").nth(0).locator(".tslot > .card")
+    dana_on_bob = guest.locator("#spots .spot").nth(0).locator(".tslot > .card")
     expect(dana_on_bob).to_have_attribute("aria-label", "ace of spades")
     expect(guest.locator("#mySlot .card")).to_have_class(re.compile(r"\bempty\b"))
-    bob_on_dana = page.locator("#opponents .tile").nth(0).locator(".tslot > .card")
+    bob_on_dana = page.locator("#spots .spot").nth(0).locator(".tslot > .card")
     expect(bob_on_dana).not_to_have_attribute("aria-label", re.compile("."))
 
     # Then Bob's five, face up on Dana's screen. Nobody has won yet.
@@ -390,7 +390,7 @@ def test_everyone_sees_each_players_deck(page: Page, browser, site_url, errors):
     page.evaluate("window.__war.slam(120)")
     # The fake doesn't say which card Dana turned over, as a room server from
     # before cards showed early wouldn't, so it lands face down until the flip.
-    dana_on_bob = guest.locator("#opponents .tile").nth(0).locator(".tslot > .card")
+    dana_on_bob = guest.locator("#spots .spot").nth(0).locator(".tslot > .card")
     expect(dana_on_bob).to_have_class(re.compile(r"\bback\b"))
     expect(dana_on_bob).to_have_attribute("data-deck", "space")
     fake.broadcast({
@@ -406,9 +406,9 @@ def test_everyone_sees_each_players_deck(page: Page, browser, site_url, errors):
     expect(dana_heap).to_have_count(3)
     expect(dana_heap.locator("xpath=self::*[@aria-label='ace of hearts']")).to_have_attribute("data-deck", "candy")
     expect(dana_heap.locator("xpath=self::*[@aria-label='red joker']")).to_have_attribute("data-deck", "space")
-    expect(page.locator("#opponents .tile").nth(1).locator(".tslot > .card")).to_have_attribute("data-deck", "candy")
-    expect(page.locator("#opponents .tile").nth(0).locator(".tslot > .card")).to_have_attribute("data-deck", bot_deck)
-    expect(guest.locator("#opponents .tile").nth(1).locator(".tslot > .card")).to_have_attribute("data-deck", bot_deck)
+    expect(page.locator("#spots .spot").nth(1).locator(".tslot > .card")).to_have_attribute("data-deck", "candy")
+    expect(page.locator("#spots .spot").nth(0).locator(".tslot > .card")).to_have_attribute("data-deck", bot_deck)
+    expect(guest.locator("#spots .spot").nth(1).locator(".tslot > .card")).to_have_attribute("data-deck", bot_deck)
     # Your own cards are in your deck, on your screen.
     expect(page.locator("#mySlot .card")).not_to_have_attribute("data-deck", re.compile("."))
     assert page.evaluate("document.documentElement.dataset.deck") == "space"
@@ -419,7 +419,7 @@ def test_everyone_sees_each_players_deck(page: Page, browser, site_url, errors):
     guest.click("#resumeBtn")
     guest.wait_for_function(f"{STATE}.canSlam")
     guest.evaluate("window.__war.slam(50)")
-    expect(page.locator("#opponents .tile").nth(1).locator(".tslot > .card")).to_have_attribute("data-deck", "spooky")
+    expect(page.locator("#spots .spot").nth(1).locator(".tslot > .card")).to_have_attribute("data-deck", "spooky")
     guest_context.close()
     assert errors == []
 
