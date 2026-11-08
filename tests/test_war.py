@@ -409,7 +409,7 @@ def test_winnings_stay_apart_until_you_pick_them_up(page: Page, site_url, errors
     assert errors == []
 
 
-def test_an_empty_deck_waits_for_you_to_pick_up_unless_you_are_in_a_hurry(page: Page, site_url, errors):
+def test_an_empty_deck_waits_for_you_to_pick_up_unless_auto_is_on(page: Page, site_url, errors):
     # Seed 14: you win the first two battles. Leave just the top card in your
     # deck, the rest as winnings, so the deck is out after one battle.
     start_solo(page, site_url, seed=14)
@@ -426,13 +426,20 @@ def test_an_empty_deck_waits_for_you_to_pick_up_unless_you_are_in_a_hurry(page: 
     page.wait_for_function(f"{STATE}.canSlam")
     assert page.evaluate(f"{STATE}.decks[0]") == 28
 
-    # In Fast mode, your winnings come up by themselves.
+    # Fast mode still leaves it to you.
     page.evaluate(rig)
     page.click("#fastBtn")
     page.evaluate("window.__war.slam(80)")
-    page.wait_for_function(f"{STATE}.battle === 3 && {STATE}.canSlam")
-    assert page.evaluate(f"[{STATE}.decks[0], {STATE}.loot[0]]") == [29, 0]
-    expect(page.locator("#caption")).to_contain_text("back under your deck")
+    page.wait_for_function(f"{STATE}.battle === 3")
+    expect(page.locator("#slamText")).to_have_text("Pick up your winnings to play")
+    page.wait_for_timeout(600)
+    assert page.evaluate(f"[{STATE}.decks[0], {STATE}.loot[0], {STATE}.canSlam]") == [0, 29, False]
+
+    # Auto picks them up and plays on, well before the clock would flop your card.
+    slams = len(page.evaluate(f"{STATE}.mine"))
+    page.click("#autoBtn")
+    page.wait_for_function(f"{STATE}.battle >= 4", timeout=4000)
+    assert len(page.evaluate(f"{STATE}.mine")) > slams, "Auto slammed the card it picked up"
     assert errors == []
 
 

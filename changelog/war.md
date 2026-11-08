@@ -20,8 +20,8 @@
 - The cards you win stay beside your deck instead of vanishing into it, and
   your deck shows how many cards are left in it. Pick up puts your winnings
   under your deck in the order you won them. When your deck runs out, pick
-  them up to keep playing (tap your deck or Pick up); in Fast mode, or on
-  Auto, they come up by themselves.
+  them up to keep playing (tap your deck or Pick up). On Auto, they come up
+  by themselves.
 - Winnings can be shuffled on their way back instead, as plenty of people
   play: pick it in the menu, or as host in a room's lobby.
 

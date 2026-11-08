@@ -3746,8 +3746,7 @@ function openStage() {
     if (S.decks) S.decks[seat] = S.counts[seat] ?? 0;
     heapGather(seat, m.stage ? 0 : 700 * pace());
   }
-  // Yours wait for you to pick them up, unless you're in a hurry.
-  if (S.fast && mustGather()) pickUp();
+  // Yours wait for you to pick them up, unless Auto is playing for you (see autoSlam).
   renderAll();
   syncMusic();
   if (S.auto && isFighting(S.you)) later(autoSlam, (250 + Math.random() * 700) * pace());
@@ -4772,8 +4771,8 @@ function canSlam() {
 }
 
 // Your deck can't cover this stage (a card in a battle, four in a war) and
-// your winnings are waiting: pick them up before you slam. Only Fast and
-// Auto do it for you.
+// your winnings are waiting: pick them up before you slam. Only Auto does
+// it for you.
 function mustGather() {
   const me = S.you;
   if (!S.decks || me === null || S.phase !== 'playing' || S.pending || !isFighting(me) || S.slams[me]) return false;
@@ -6143,7 +6142,6 @@ function init() {
   $('fastBtn').addEventListener('click', () => {
     S.fast = !S.fast;
     if (S.mode === 'solo') S.conn.setPace(pace());
-    if (S.fast && mustGather()) pickUp();
     renderAll();
   });
   const cheers = $('cheers');

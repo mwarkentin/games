@@ -169,7 +169,7 @@ lies: everyone else's cards in the order they were played, then the
 winner's own on top. Winnings go back under the deck when the player picks
 them up (`gather`), and only then: when a stage opens that a player's deck
 can't cover (a card in a battle, four in a war), the page has them pick up
-before they can slam (in solo, Fast and Auto pick up for them). Bots pick
+before they can slam (Auto picks up for them). Bots pick
 up by themselves as the stage opens. A slam, a host's flip or a card that
 flops at the end of the clock from a deck that can't cover the stage picks
 up first, so a stage always has its cards. They go under as they lie, the
