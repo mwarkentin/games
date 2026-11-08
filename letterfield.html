@@ -133,7 +133,11 @@ body.docked .notes{box-shadow:none}
 .filter i{width:8px;height:8px;border-radius:50%;background:var(--c)}
 .filter[aria-pressed="true"]{border-color:var(--ink);color:var(--ink);background:var(--hover)}
 .finds{list-style:none;margin:0;padding:6px 8px 10px;overflow-y:auto;flex:1;min-height:0;overscroll-behavior:contain}
-.find{display:grid;grid-template-columns:10px minmax(0,1fr) auto;column-gap:12px;row-gap:5px;align-items:baseline;padding:10px 10px;border-radius:6px;color:inherit;text-decoration:none}
+.finds li{display:flex;align-items:center;gap:2px}
+.find{flex:1;min-width:0;display:grid;grid-template-columns:10px minmax(0,1fr) auto;column-gap:12px;row-gap:5px;align-items:baseline;padding:10px 10px;border-radius:6px;color:inherit;text-decoration:none}
+.find-share{flex:none;width:40px;height:40px;display:grid;place-items:center;border:0;border-radius:50%;background:transparent;color:var(--muted);cursor:pointer}
+.find-share svg{width:17px;height:17px}
+.find-share:hover{background:var(--hover);color:var(--ink)}
 .find:hover{background:var(--hover)}
 .find-dot{width:10px;height:10px;border-radius:50%;background:var(--c);align-self:center}
 .find.stray .find-dot{background:transparent;border:2px dashed var(--c);width:10px;height:10px;box-sizing:border-box}
@@ -141,7 +145,7 @@ body.docked .notes{box-shadow:none}
 .find-when{font:400 10.5px/1 var(--f-mono);color:var(--muted);white-space:nowrap}
 .find-meta{grid-column:2 / 4;font:400 11px/1.4 var(--f-mono);color:var(--muted);font-variant-numeric:tabular-nums}
 .find-meta b{font-weight:500;color:var(--ink)}
-.finds-empty{padding:18px 10px;color:var(--muted);font-size:14px;max-width:36ch}
+.finds-empty{display:block!important;padding:18px 10px;color:var(--muted);font-size:14px;max-width:36ch}
 .finds-empty strong{display:block;color:var(--ink);font:700 18px/1.1 var(--f-display);letter-spacing:.05em;text-transform:uppercase;margin-bottom:6px}
 .sync{margin:0;padding:12px 18px 14px;border-top:1px solid var(--rule);display:flex;align-items:center;gap:8px;font:400 11px/1.3 var(--f-mono);color:var(--muted)}
 .sync-dot{width:7px;height:7px;border-radius:50%;background:var(--muted);flex:none}
@@ -185,12 +189,22 @@ body.docked .notes{box-shadow:none}
 .coach-row{display:flex;justify-content:space-between;align-items:center;gap:10px}
 .coach kbd{font:500 10.5px/1 var(--f-mono);color:var(--muted)}
 .btn{font:600 13px/1 var(--f-ui);padding:9px 14px;border:0;border-radius:6px;background:var(--accent);color:var(--on-accent);cursor:pointer}
-.toast{position:fixed;top:var(--top);left:50%;transform:translate(-50%,-8px);opacity:0;pointer-events:none;display:grid;grid-template-columns:auto auto;align-items:center;column-gap:10px;row-gap:4px;padding:10px 16px 10px 14px;transition:opacity .2s ease, transform .2s ease;max-width:calc(100% - 32px)}
-body.docked .toast{left:calc((100% - var(--notes-w)) / 2)}
-.toast.show{opacity:1;transform:translate(-50%,0)}
+/* Centred between the edges (and the docked notes) by auto margins rather than
+   left:50%, which would squeeze a long toast into half the screen. */
+.toast{position:fixed;top:var(--top);left:16px;right:16px;margin:0 auto;width:max-content;max-width:calc(100% - 32px);transform:translateY(-8px);opacity:0;pointer-events:none;display:grid;grid-template-columns:auto auto;align-items:center;column-gap:10px;row-gap:4px;padding:10px 16px 10px 14px;transition:opacity .2s ease, transform .2s ease}
+body.docked .toast{right:calc(var(--notes-w) + 16px);max-width:calc(100% - var(--notes-w) - 32px);top:calc(var(--top) + 70px)}
+.toast.show{opacity:1;transform:translateY(0)}
 .toast i{grid-row:span 2;width:10px;height:10px;border-radius:50%;background:var(--c)}
-.toast b{font:700 19px/1 var(--f-display);letter-spacing:.07em}
+.toast b{font:700 19px/1 var(--f-display);letter-spacing:.07em;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .toast span{font:400 11px/1.2 var(--f-mono);color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+/* A find's toast offers to share it: the only part of a toast that takes a tap. */
+.toast.can-share{grid-template-columns:auto minmax(0,1fr) auto;padding-right:10px}
+.share{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--rule);border-radius:999px;background:transparent;color:var(--ink);font:500 11.5px/1 var(--f-mono);cursor:pointer;white-space:nowrap}
+.share svg{width:15px;height:15px;flex:none}
+.share:hover{background:var(--hover)}
+.share:focus-visible,.find-share:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.toast .share{grid-row:1 / span 2;grid-column:3;margin-left:6px;padding:0 12px;height:36px;pointer-events:auto}
+.toast:not(.show) .share{visibility:hidden}
 .vh{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
 
 @media (max-width: 1100px){ .toast{top:calc(var(--top) + 70px)} }
@@ -376,6 +390,7 @@ const TURNSTILE_SITE_KEY = '0x4AAAAAAF26seIK58606ilv';  // public: the widget mw
 const SECTOR = RC * 4;  // cells per survey sector side: 4×4 territories, one server room each
 const SECTOR_LINKS = 4; // sectors joined at once, nearest the middle of the view first
 const SURVEY_AREA = 12; // the world charted together: sectors -12 to 12 each way, 100×100 territories
+const SURVEY_WORDS = 1120206;  // hidden words in it (AREA_WORDS in worker/src/survey.js), until the survey says
 const GRID_FONT = '"Martian Mono", ui-monospace, Menlo, monospace';
 const DISPLAY_FONT = '"Big Shoulders Display", "Arial Narrow", sans-serif';
 const RM = matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -647,9 +662,10 @@ function sanitize(o) {
   const s = chunk(fdiv(x, CH), fdiv(y, CH)).words.some(p => p.key === key) ? 0 : 1;
   if (s && w.length < 4) return null;
   const f = o.f ? 1 : 0;
+  const n = f && Number.isInteger(o.n) && o.n > 0 && o.n < 1e8 ? o.n : 0;  // where a word charted first came in the world's count
   const t = Number.isFinite(Number(o.t)) ? Number(o.t) : Date.now();
   const th = s ? VOCAB.get(w) : regionTheme(fdiv(x, RC), fdiv(y, RC));
-  return { key, w, x, y, d, t, s, f, th, born: 0 };
+  return { key, w, x, y, d, t, s, f, n, th, born: 0 };
 }
 let redrawn = null;  // {kept, had} the first time a player from the old map comes back
 function loadLocal() {
@@ -663,7 +679,7 @@ function loadLocal() {
   redrawn = { kept: found.size, had: old.length };
   saveLocal();
 }
-const plain = e => ({ w: e.w, x: e.x, y: e.y, d: e.d, t: e.t, s: e.s, ...(e.f ? { f: 1 } : {}) });
+const plain = e => ({ w: e.w, x: e.x, y: e.y, d: e.d, t: e.t, s: e.s, ...(e.f ? { f: 1 } : {}), ...(e.n ? { n: e.n } : {}) });
 function saveLocal() { LS.set(K_FINDS, JSON.stringify([...found.values()].map(plain))); }
 
 let coll = null, dbWritable = false, writeChain = Promise.resolve();
@@ -943,13 +959,13 @@ function onSurvey(l, m) {
     }
   } else if (m.t === 'taken') {
     const c = addClaim(m.c, false);
-    if (c && pending.delete(c.key)) toast(`<i></i><b>${c.w}</b><span>Charted first by ${c.by || 'another surveyor'} · ${rel(c.at)}</span>`, THEMES[c.th].hue);
+    if (c && pending.delete(c.key)) toast(`<i></i><b>${c.w}</b><span>Charted first by ${c.by || 'another surveyor'} · ${rel(c.at)}</span>`, THEMES[c.th].hue, 0, found.get(c.key));
   } else if (m.t === 'error') {
     // Claiming too fast, or past the day's limit, from this tab or from
     // everyone on the same network: the word stays in your notes, it just isn't signed.
     const why = { 'slow down': 'Too quick to chart', 'daily limit': 'Today’s charting limit reached' }[m.error];
     const e = pending.delete(m.key) && why ? found.get(m.key) : null;
-    if (e) toast(`<i></i><b>${e.w}</b><span>${why} · kept in your notes</span>`, THEMES[e.th].hue);
+    if (e) toast(`<i></i><b>${e.w}</b><span>${why} · kept in your notes</span>`, THEMES[e.th].hue, 0, e);
   } else if (m.t === 'world' && Number.isInteger(m.charted) && Number.isInteger(m.total) && Number.isInteger(m.players)) {
     world = { charted: m.charted, total: m.total, players: m.players };
     worldExtra = 0;
@@ -988,8 +1004,14 @@ function surveyClaim(e) {
 }
 function firstToChart(c) {
   const e = found.get(c.key);
-  if (e && !e.f) { e.f = 1; saveLocal(); queueWrite(e); renderNotes(); }
-  toast(`<i></i><b>${c.w}</b><span>First to chart it · ${regionName(fdiv(c.x, RC), fdiv(c.y, RC))}</span>`, THEMES[c.th].hue);
+  if (e && !e.f) {
+    e.f = 1;
+    // Where it came in the shared world's count: the Atlas's last total plus
+    // the words seen charted since (this one included).
+    if (!c.s && inSurveyArea(c.x, c.y) && world) e.n = world.charted + worldExtra;
+    saveLocal(); queueWrite(e); renderNotes();
+  }
+  toast(`<i></i><b>${c.w}</b><span>First to chart it · ${regionName(fdiv(c.x, RC), fdiv(c.y, RC))}</span>`, THEMES[c.th].hue, 0, e);
 }
 // Someone else charted a word in view: say so now and then, never over another note.
 function news(c) {
@@ -2123,7 +2145,7 @@ function collect(w, x, y, d, stray) {
   const key = keyOf(w, x, y, d);
   const have = found.get(key);
   if (have) {
-    toast(`<i></i><b>${w}</b><span>Already in your notes</span>`, THEMES[have.th].hue);
+    toast(`<i></i><b>${w}</b><span>Already in your notes</span>`, THEMES[have.th].hue, 0, have);
     pulse = { x, y, d, w, t0: performance.now() }; invalidate();
     return;
   }
@@ -2132,7 +2154,7 @@ function collect(w, x, y, d, stray) {
   found.set(key, e);
   saveLocal(); queueWrite(e); surveyClaim(e);
   const rx = fdiv(x, RC), ry = fdiv(y, RC);
-  toast(`<i></i><b>${w}</b><span>${stray ? 'Stray ' + THEMES[e.th].name.toLowerCase() + ' word' : THEMES[e.th].name} · ${regionName(rx, ry)}</span>`, THEMES[e.th].hue);
+  toast(`<i></i><b>${w}</b><span>${stray ? 'Stray ' + THEMES[e.th].name.toLowerCase() + ' word' : THEMES[e.th].name} · ${regionName(rx, ry)}</span>`, THEMES[e.th].hue, 0, e);
   if (!stray) {
     const total = territoryTotal(rx, ry);
     if (territoryFound(rx, ry) === total) supernova(rx, ry, { mine: true, text: `${regionName(rx, ry)} · all ${total} hidden words found` });
@@ -2391,13 +2413,68 @@ legendList.addEventListener('click', e => {
 });
 
 const toastEl = $('#toast');
-let toastTimer = 0;
-function toast(html, hue, ms = 2400) {
+let toastTimer = 0, toastMs = 0;
+// A note at the top of the map. Given a find, it offers to share it, and
+// stays long enough to tap, or while a pointer or focus is on it.
+function toast(html, hue, ms = 2400, find = null) {
   toastEl.innerHTML = html;
   if (hue != null) toastEl.style.setProperty('--h', hue);
+  toastEl.classList.toggle('can-share', !!find);
+  if (find) {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'share';
+    b.innerHTML = SHARE_ICON + 'Share';
+    b.setAttribute('aria-label', 'Share ' + find.w);
+    b.addEventListener('click', () => shareFind(find));
+    toastEl.append(b);
+    ms = Math.max(ms, SHARE_TOAST_MS);
+  }
   toastEl.classList.add('show');
+  toastMs = ms;
   clearTimeout(toastTimer);
   toastTimer = setTimeout(() => toastEl.classList.remove('show'), ms);
+}
+const holdToast = () => clearTimeout(toastTimer);
+const releaseToast = () => {
+  if (!toastEl.classList.contains('show') || toastEl.contains(document.activeElement) || toastEl.matches(':hover')) return;
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => toastEl.classList.remove('show'), Math.min(toastMs, 2000));
+};
+toastEl.addEventListener('pointerenter', holdToast);
+toastEl.addEventListener('pointerleave', releaseToast);
+toastEl.addEventListener('focusin', holdToast);
+toastEl.addEventListener('focusout', () => setTimeout(releaseToast));
+
+/* ---------- Sharing a find ---------- */
+// A find as a sentence, with a link that flies whoever opens it straight to
+// the word: through the phone's share sheet, or copied where there isn't one.
+// A word you charted first says where it came in the shared world's count,
+// as the survey had it at that moment.
+const SHARE_TOAST_MS = 6000;
+const SHARE_JUST_MS = 10 * 60000;  // within this long of finding it, "I just found"
+const SHARE_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 15V3M7.5 7.5 12 3l4.5 4.5"/><path d="M8 11H6a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-6a2 2 0 0 0-2-2h-2"/></svg>';
+const shareUrl = e => location.origin + location.pathname + location.search + '#' + hashOf(e);
+function shareText(e) {
+  const place = regionName(fdiv(e.x, RC), fdiv(e.y, RC));
+  const word = e.s ? `${e.w}, a stray ${THEMES[e.th].name.toLowerCase()} word,` : e.w;
+  const lead = `I ${Date.now() - e.t < SHARE_JUST_MS ? 'just ' : ''}found ${word} in ${place} in Letterfield`;
+  if (e.f && e.n) return `${lead}, before anyone else. That was word ${e.n.toLocaleString()} of ${(world ? world.total : SURVEY_WORDS).toLocaleString()} on the shared map.`;
+  if (e.f) return `${lead}, before anyone else.`;
+  const nth = [...found.values()].filter(o => o.t <= e.t).length;
+  return `${lead}. That’s word ${nth.toLocaleString()} in my field notes.`;
+}
+async function shareFind(e) {
+  const text = shareText(e), url = shareUrl(e);
+  if (navigator.share) {
+    try { await navigator.share({ title: 'Letterfield', text, url }); return; } catch (err) { if (err && err.name === 'AbortError') return; }
+  }
+  try {
+    await navigator.clipboard.writeText(`${text} ${url}`);
+    toast(`<i></i><b>Copied</b><span>${e.w}, ready to paste</span>`, THEMES[e.th].hue);
+  } catch (_) {
+    toast(`<i></i><b>Couldn’t share</b><span>Copy this page’s address instead</span>`, THEMES[e.th].hue);
+  }
 }
 
 /* ---------- Field notes ---------- */
@@ -2438,7 +2515,8 @@ function renderNotes() {
         const rx = fdiv(e.x, RC), ry = fdiv(e.y, RC);
         return `<li><a class="find mark${e.s ? ' stray' : ''}" href="#${hashOf(e)}" data-key="${e.key}" style="--h:${THEMES[e.th].hue}">` +
           `<span class="find-dot" aria-hidden="true"></span><span class="find-word">${e.w}</span><span class="find-when">${rel(e.t)}</span>` +
-          `<span class="find-meta"><b>${regionName(rx, ry)}</b> · ${fmtCoord(e.x, e.y)} · ${DARROW[e.d]} ${DNAME[e.d]}${e.s ? ' · stray' : ''}${e.f ? ' · charted first' : ''}</span></a></li>`;
+          `<span class="find-meta"><b>${regionName(rx, ry)}</b> · ${fmtCoord(e.x, e.y)} · ${DARROW[e.d]} ${DNAME[e.d]}${e.s ? ' · stray' : ''}${e.f ? ' · charted first' : ''}</span></a>` +
+          `<button type="button" class="find-share" data-key="${e.key}" aria-label="Share ${e.w}" title="Share ${e.w}">${SHARE_ICON}</button></li>`;
       }).join('')
     : '<li class="finds-empty"><strong>No words yet</strong>Circle a word on the map and it lands here with its territory, grid reference and the bearing it reads in. Tap an entry later to fly straight back to it.</li>';
 }
@@ -2449,6 +2527,8 @@ filtersEl.addEventListener('click', e => {
 });
 let hashSuppress = '';
 findsEl.addEventListener('click', e => {
+  const b = e.target.closest('.find-share');
+  if (b) { const en = found.get(b.dataset.key); if (en) shareFind(en); return; }
   const a = e.target.closest('a.find'); if (!a) return;
   e.preventDefault();
   const en = found.get(a.dataset.key); if (!en) return;
