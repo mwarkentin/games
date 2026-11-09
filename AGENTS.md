@@ -167,7 +167,8 @@ The machines each page keeps:
 | `funnels-and-buckets.html` | `screen` | menu, playing, paused, ending, over |
 | | `save` (the game-over card's offer) | none, checking, ineligible, offered, saving, saved |
 | | `board` (the leaderboard screen) | closed, open |
-| `letterfield.html` | `pass` (the survey's Turnstile pass) | off, none, loading, checking, asking, sending, good, failed |
+| `letterfield.html` | `intro` (the card over the map at the start) | sign, coach, exploring |
+| | `pass` (the survey's Turnstile pass) | off, none, loading, checking, asking, sending, good, failed |
 | | `link` (each sector's socket; `el: null`, see `__lf.linkStates()`) | connecting, open, live, backoff, closed |
 | | `claim` (each claim of ours; `el: null`, see `__lf.outbox()`) | queued, sent, unanswered, answered |
 | `letterfield-log.html` | `log` (what the page shows) | loading, ready, refreshing, stale, failed |

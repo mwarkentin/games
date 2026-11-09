@@ -2559,12 +2559,12 @@ function collect(w, x, y, d, stray) {
     const total = territoryTotal(rx, ry);
     if (territoryFound(rx, ry) === total) supernova(rx, ry, { mine: true, text: `${regionName(rx, ry)} · all ${total} hidden words found` });
   }
-  dismissCoach();
+  if (Intro.is('coach')) Intro.go('exploring');
   renderNotes(); scheduleHud(); invalidate();
 }
 function onTap(c) {
   if (cam.cs < LETTER_MIN) { flyTo(c.wx, c.wy, 30); return; }
-  if (needsSign()) { askSign(true); return; }
+  if (Intro.is('sign')) { askSign(); return; }
   const a = sel.anchor;
   if (!a) { sel.anchor = { x: c.x, y: c.y }; sel.end = null; }
   else if (a.x === c.x && a.y === c.y) { sel.anchor = null; sel.end = null; }
@@ -2614,8 +2614,8 @@ canvas.addEventListener('pointermove', e => {
   }
   if (gest.type === 'press') {
     if (Math.hypot(e.clientX - gest.x0, e.clientY - gest.y0) < (e.pointerType === 'touch' ? 9 : 5)) return;
-    if (gest.sd && cam.cs >= LETTER_MIN && needsSign()) askSign(true);
-    if (gest.sd && cam.cs >= LETTER_MIN && !needsSign()) { const c0 = cellAtScreen(gest.x0, gest.y0); gest.type = 'seldrag'; sel.anchor = { x: c0.x, y: c0.y }; }
+    if (gest.sd && cam.cs >= LETTER_MIN && Intro.is('sign')) askSign();  // and it pans instead
+    if (gest.sd && cam.cs >= LETTER_MIN && !Intro.is('sign')) { const c0 = cellAtScreen(gest.x0, gest.y0); gest.type = 'seldrag'; sel.anchor = { x: c0.x, y: c0.y }; }
     else { gest.type = 'pan'; canvas.classList.add('grabbing'); }
   }
   if (gest.type === 'pan') {
@@ -2968,16 +2968,12 @@ function goHome() { flyTo(6, 6, defaultCs()); }
 $('#home').addEventListener('click', goHome);
 
 // On the shared survey, words are signed, so a player picks initials before
-// circling one: the card asks at the start, and again on a tap until they do.
+// circling one (Intro's sign state): the card asks at the start, and a tap on
+// the map asks again until they do.
 const signup = $('#signup'), signupInput = $('#signupInitials'), signupHint = $('#signupHint');
-const needsSign = () => !!surveyApi && !myInitials();
-function askSign(tapped) {
-  coach.hidden = true;
-  signup.hidden = false;
-  if (tapped) {
-    signupHint.textContent = 'Initials first, then circle away.';
-    try { signupInput.focus({ preventScroll: true }); } catch (_) {}
-  }
+function askSign() {
+  signupHint.textContent = 'Initials first, then circle away.';
+  try { signupInput.focus({ preventScroll: true }); } catch (_) {}
 }
 function signAs(v, hint) {
   if (!/^[A-Z]{3}$/.test(v)) {
@@ -2989,11 +2985,9 @@ function signAs(v, hint) {
   for (const l of links.values()) tell(l, { t: 'me', initials: v });
   surveyInput.value = signupInput.value = v;
   surveyHint.textContent = `Words you chart first are signed ${v}.`;
-  if (!signup.hidden) {
-    signup.hidden = true;
-    if (document.activeElement === signupInput) signupInput.blur();
-    if (LS.get(K_COACH) !== '1') coach.hidden = false;
-    else toast(`<i></i><b>Signed ${v}</b><span>Tap a word's first letter, then its last</span>`, null);
+  if (Intro.is('sign')) {
+    if (LS.get(K_COACH) !== '1') Intro.go('coach');
+    else if (Intro.go('exploring')) toast(`<i></i><b>Signed ${v}</b><span>Tap a word's first letter, then its last</span>`, null);
   }
   return true;
 }
@@ -3014,8 +3008,21 @@ worldCanvas.addEventListener('click', e => {
 });
 
 const coach = $('#coach');
-function dismissCoach() { if (!coach.hidden) { coach.hidden = true; LS.set(K_COACH, '1'); } }
-$('#coachOk').addEventListener('click', dismissCoach);
+// What a visit starts with: on the shared survey, initials if the player has
+// none (sign); how to play, until a new player has seen it (coach); then
+// nothing over the map (exploring). onMove shows the card for the state.
+const Intro = machine('intro', {
+  sign: ['coach', 'exploring'],
+  coach: ['exploring'],
+  exploring: [],
+}, surveyApi && !myInitials() ? 'sign' : LS.get(K_COACH) !== '1' ? 'coach' : 'exploring', { onMove: showIntro });
+function showIntro(to, from) {
+  signup.hidden = to !== 'sign';
+  coach.hidden = to !== 'coach';
+  if (from === 'sign' && document.activeElement === signupInput) signupInput.blur();
+  if (from === 'coach') LS.set(K_COACH, '1');
+}
+$('#coachOk').addEventListener('click', () => { if (Intro.is('coach')) Intro.go('exploring'); });
 
 /* ---------- Boot ---------- */
 function resize() {
@@ -3055,8 +3062,7 @@ if (startHash) {
   const [ex, ey] = wordEnd(startHash);
   flyTo((startHash.x + ex) / 2 + .5, (startHash.y + ey) / 2 + .5, 40, { instant: true, then: now => { pulse = { ...startHash, t0: now }; } });
 }
-if (needsSign()) askSign(false);
-else if (LS.get(K_COACH) !== '1') coach.hidden = false;
+showIntro(Intro.state);
 if (surveyApi) {
   surveyEl.hidden = false;
   $('#notes').classList.add('has-survey');
@@ -3069,7 +3075,7 @@ invalidate();
 if (redrawn) setTimeout(() => toast(`<i></i><b>The map has been redrawn</b><span>${NT} themes of about ${Math.round(THEMES.reduce((a, t) => a + t.words.length, 0) / NT / 10) * 10} words now, so a territory never repeats one · ${redrawn.kept ? `${redrawn.kept} of your ${redrawn.had} finds are still on it` : 'your old finds are not on it'}</span>`, null, 8000), 900);
 connectStore();
 if (location.hash === '#debug') window.__lf = { cam, found, claims, links, chunk, wordEnd, collect, territoryProgress, world: () => world, supernova, novaSound, audioOut, musicTracks: MUSIC_TRACKS, music: () => musicNow && { state: ac.state, track: musicNow.track().name, nodes: musicNow.track().nodes.size, level: musicNow.master.gain.value, swap: musicNow.swap }, nova: () => nova,
-  pass: () => Pass.state, surveyStatus, linkStates: () => Object.fromEntries([...links].map(([k, l]) => [k, l.m.state])), outbox: () => [...outbox.values()].map(c => [c.e.w, c.m.state]) };
+  pass: () => Pass.state, intro: () => Intro.state, surveyStatus, linkStates: () => Object.fromEntries([...links].map(([k, l]) => [k, l.m.state])), outbox: () => [...outbox.values()].map(c => [c.e.w, c.m.state]) };
 
 })();
 </script>
