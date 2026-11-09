@@ -4489,13 +4489,17 @@ function openStage() {
   S.ups = m.ups;
   S.thumps = m.thumps;
   S.charging = {};
+  let won = null;
+  let landing = 0;
   if (m.stage === 0) {
     SixSeven.clear();
     if (heapPending) {
       const { winner, cards } = heapPending;
       heapPending = null;
+      won = winner;
+      landing = heapToss(winner, cards);
       // The pot counts once it's on the winner's loot pile.
-      later(() => { delete S.incoming[winner]; renderAll(); }, heapToss(winner, cards));
+      later(() => { delete S.incoming[winner]; renderAll(); }, landing);
     }
     S.cards = {};
     S.result = null;
@@ -4512,6 +4516,7 @@ function openStage() {
     heapGather(seat, m.stage ? 0 : 700 * pace());
   }
   // Yours wait for you to pick them up, unless Auto is playing for you (see autoSlam).
+  if (m.stage === 0) botsTidy(m, won, landing);
   renderAll();
   syncMusic();
   if (S.auto && isFighting(S.you)) later(autoSlam, (250 + Math.random() * 700) * pace());
@@ -5455,7 +5460,7 @@ setInterval(() => {
 // Cards drawn at most: on your heap, and on others' at a table of up to six
 // (bigger tables have smaller tiles, and it all gets too busy).
 const HEAP_MAX = { me: 36, 'size-l': 24, 'size-m': 16, 'size-s': 10, 'size-xs': 0 };
-const heaps = new Map();  // seat -> { cards: [{ card, look, seat, node }], bottom first; tidy; layer }
+const heaps = new Map();  // seat -> { cards: [{ card, look, seat, node }], bottom first; tidy; layer; tosses since it was tidy }
 let heapPending = null;   // { winner, cards }: the pot just won, until the table clears
 const TIDY_LINES = [
   (n) => `Squared away ${plural(n, 'card')}, latest on top. The war will shuffle them anyway.`,
@@ -5473,7 +5478,7 @@ const heapMax = (seat) => {
 const heapShown = () => S.phase === 'playing' || S.phase === 'over';
 
 function heapOf(seat) {
-  if (!heaps.has(seat)) heaps.set(seat, { cards: [], tidy: true, layer: 0 });
+  if (!heaps.has(seat)) heaps.set(seat, { cards: [], tidy: true, layer: 0, tosses: 0 });
   return heaps.get(seat);
 }
 
@@ -5566,6 +5571,7 @@ function heapToss(seat, cards, quiet = false) {
     h.cards.push({ ...c, node });
   });
   h.tidy = false;
+  h.tosses = (h.tosses || 0) + 1;
   if (!quiet && (seat === S.you || S.players.length <= 6)) Sound.swish();
   renderHeaps();
   // When the last card lands.
@@ -5578,7 +5584,7 @@ function heapGather(seat, delay) {
   const h = heaps.get(seat);
   if (!h || !h.cards.length) return;
   const cards = h.cards;
-  Object.assign(h, { cards: [], tidy: true, layer: 0 });
+  Object.assign(h, { cards: [], tidy: true, layer: 0, tosses: 0 });
   renderHeaps();
   later(() => {
     const target = seat === S.you ? $('myPile').querySelector('.stack') : tiles.get(seat)?.deck || tiles.get(seat)?.card;
@@ -5627,6 +5633,7 @@ function heapSquare(seat) {
   });
   h.layer = h.cards.length;
   h.tidy = true;
+  h.tosses = 0;
   Sound.riffle();
   renderHeaps();
   return true;
@@ -5638,6 +5645,22 @@ function heapTidy() {
   if (S.you === null || !heapSquare(S.you)) return;
   setText($('caption'), pick(TIDY_LINES)(heaps.get(S.you).cards.length));
   if (S.mode === 'room' && S.conn) S.conn.send({ t: 'tidy' });
+}
+
+// Bots clean up their winnings every so often, the way people do while they
+// wait: the more pots have landed on a messy heap since it was last squared
+// up, the likelier at each new battle, a beat after the bot slams (and after
+// a pot it just won lands). Only for show, so each screen decides for itself,
+// as it does where each won card lands.
+function botsTidy(m, winner, landing) {
+  for (const [seat, h] of heaps) {
+    const p = S.players[seat];
+    if (!p || !p.bot || h.tidy || h.cards.length < 4) continue;
+    if (Math.random() >= Math.min(0.8, h.tosses * 0.15)) continue;
+    const slam = (m.bots || []).find((b) => b[0] === seat);
+    const wait = Math.max(slam ? slam[3] : 0, seat === winner ? landing : 0) + (600 + Math.random() * 1400) * pace();
+    later(() => { if (heaps.get(seat) === h && S.phase === 'playing') heapSquare(seat); }, wait);
+  }
 }
 
 // The cards a player has won and not yet picked up, or null when the room
@@ -7217,6 +7240,7 @@ if (DEBUG) {
       plan: S.plan && { need: S.plan.need, done: S.plan.done.slice() },
       heap: (heaps.get(S.you)?.cards || []).map((c) => c.card), tidy: heaps.get(S.you)?.tidy ?? true,
       heaps: Object.fromEntries([...heaps].map(([seat, h]) => [seat, h.cards.map((c) => c.card)])),
+      tidied: Object.fromEntries([...heaps].map(([seat, h]) => [seat, h.tidy])),
     }),
     slam: (power) => {
       if (!canSlam()) return false;

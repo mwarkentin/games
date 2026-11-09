@@ -34,6 +34,8 @@
   count in the corner, and their loot pile, with its count, and the cards
   they play land on the table in the middle. A pot you win only counts once
   its cards have landed on your loot pile.
+- Bots clean up their loot piles every so often, squaring them into a neat
+  stack while they wait, the way you can with Clean up.
 - Every deck is as thick as it's full, and thins as it runs down.
 - In a war, the cards everyone else lays face down fan out messily from
   under their card on the table, one for each card, so you can count them

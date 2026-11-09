@@ -577,6 +577,26 @@ def test_opponents_pile_up_what_they_win_too(page: Page, site_url, errors):
     assert errors == []
 
 
+def test_bots_clean_up_their_winnings_every_so_often(page: Page, site_url, errors):
+    start_solo(page, site_url, seed=WAR_SEED)
+    page.evaluate("window.__war.pace(0.05)")
+    page.click("#autoBtn")
+    # Pots land on the bot's heap in a mess, and every so often it squares
+    # them up into a neat stack, in the order it won them.
+    page.wait_for_function(f"{STATE}.heaps[1]?.length >= 4 && !{STATE}.tidied[1]", timeout=60_000)
+    page.wait_for_function(
+        f"""(() => {{
+            const cards = [...document.querySelectorAll('#opponents .tile .heap .card')];
+            const layers = cards.map((c) => Number(c.style.zIndex));
+            return {STATE}.tidied[1] && cards.length >= 4
+                && cards.every((c) => c.style.getPropertyValue('--r') === '0deg')
+                && layers.every((z, i) => z === i + 1);
+        }})()""",
+        timeout=60_000,
+    )
+    assert errors == []
+
+
 def test_others_get_loot_piles_at_a_table_of_up_to_six(page: Page, site_url, errors):
     def play(opponents: int, seed: int) -> int:
         start_solo(page, site_url, opponents=opponents, seed=seed)
