@@ -2446,13 +2446,13 @@ const Versus = {
     }
     if (joker) { this.joker(m, { k, calm, order, shown, depth, level, n, card, joker }); return; }
     const fighter = (seat) => {
-      const look = deckOf(seat);
+      const tied = card(seat);
+      const look = cardLook(tied, deckOf(seat));
       const node = el('div', 'vs-f');
       node.dataset.deck = look;
       node.dataset.seat = seat;
       const pic = el('div', 'vs-pic');
       pic.append(el('span', '', avatarOf(seat)));
-      const tied = card(seat);
       if (tied !== undefined) pic.append(cardEl(tied, look));
       node.append(pic, el('div', 'vs-name', playerName(seat)));
       return node;
@@ -2514,7 +2514,7 @@ const Versus = {
     const next = m.next;
     const pre = [depth > 1 ? VS_PRE[level - 1] || 'MEGA' : '', n > 2 ? `${n}-WAY` : ''].filter(Boolean).join(' ');
     // The jokers that tied, each in its owner's deck.
-    const cards = shown.map((seat) => [card(seat), deckOf(seat)]).filter(([c]) => c !== undefined);
+    const cards = shown.map((seat) => [card(seat), cardLook(card(seat), deckOf(seat))]).filter(([c]) => c !== undefined);
     // Its cap is in your deck's colors, or the first fighter's if you're watching.
     const show = new Joker.Show($('fx'), { deckKey: deckOf(order[0]), level: joker, k, calm, pre, cards });
     later(() => show.remove(), next.opensIn);
@@ -4136,7 +4136,8 @@ const SixSeven = {
     // A copy of the card someone played, on a palm.
     const side = (cls, seat) => {
       const node = el('div', 'ss-side ' + cls);
-      node.append(cardEl(m.plays.find((p) => p[0] === seat)[2], deckOf(seat)));
+      const up = m.plays.find((p) => p[0] === seat)[2];
+      node.append(cardEl(up, cardLook(up, deckOf(seat))));
       node.insertAdjacentHTML('beforeend', SS_HAND);
       return node;
     };
@@ -4284,6 +4285,47 @@ function deckOf(seat) {
   return 'classic';
 }
 
+// A solo game's themes, one for each deck in it: yours first, then the others
+// in the order of DECKS after it, and round again once there are more decks
+// than themes. Deck 0 always has yours (see setDeck).
+function themeOrder(first) {
+  const keys = Object.keys(DECKS);
+  const at = Math.max(0, keys.indexOf(first));
+  return keys.map((_, i) => keys[(at + i) % keys.length]);
+}
+const soloThemes = () => (Session.is('solo') && S.conn && S.conn.themes) || null;
+
+// The deck a card is drawn in. In a solo game every deck has a theme of its
+// own and a card always shows its deck's, whoever holds it, like real decks
+// mixed together; a card the page doesn't know shows yours. In a room, a card
+// is drawn in `look`, the deck of whoever plays it (deckOf).
+function cardLook(card, look) {
+  const themes = soloThemes();
+  if (!themes) return look;
+  return themes[Number.isInteger(card) ? Math.floor(card / WAR.DECK) % themes.length : 0];
+}
+
+// In a solo game, the card i from the top of someone's deck, for the backs
+// of cards the page hasn't been told about yet: their deck's top card, and
+// the cards they're laying face down in a war.
+function soloCard(seat, i = 0) {
+  if (!soloThemes() || !S.conn.game) return undefined;
+  const pile = S.conn.game.piles[seat];
+  return pile ? pile[i] : undefined;
+}
+
+// Which deck is which, for the deck picker's note: "2 decks: yours in Neon,
+// the other in Space."
+function decksNote(themes, n) {
+  if (n <= 1) return '';
+  const name = (key) => DECKS[key][0];
+  if (n === 2) return `2 decks: yours in ${name(themes[0])}, the other in ${name(themes[1])}.`;
+  const rest = themes.slice(1, Math.min(n, themes.length)).map(name);
+  const list = rest.length > 1 ? `${rest.slice(0, -1).join(', ')} and ${rest[rest.length - 1]}` : rest[0];
+  return n <= themes.length ? `${n} decks: yours in ${name(themes[0])}, the others in ${list}.`
+    : `${n} decks: yours in ${name(themes[0])}, the others in ${list}, then round again.`;
+}
+
 // ---- Sessions: what the page is playing through ----
 //
 // One session at a time: none on the menu, joining while a room is being
@@ -4345,6 +4387,8 @@ class SoloRoom {
     for (const bot of warBotNames(opponents, random, [name])) {
       this.players.push({ name: bot, avatar: Math.floor(random() * AVATARS.length), bot: true, online: true });
     }
+    // Each deck's theme: yours, then others (see themeOrder and cardLook).
+    this.themes = themeOrder(deck);
     this.game = null;
     this.timer = 0;
     this.pausedAt = 0;
@@ -4799,13 +4843,15 @@ function playFlip(m) {
   S.pot = m.pot;
   for (const [seat, down, up, power, style] of m.plays) {
     const before = S.cards[seat];
-    const seq = [...(before ? before.seq : []), ...Array.from({ length: down }, () => ({ card: 'back', up: false })), { card: up, up: true }];
-    S.cards[seat] = { up, down: (before ? before.down : 0) + down, stage: m.stage, seq };
-    if (!S.slams[seat]) S.slams[seat] = [power, style];
-    const look = deckOf(seat);
     // The cards laid face down in a war go to the winner's heap face up. A
     // room server that doesn't say which they were leaves them face down.
     const laid = m.downs && Array.isArray(m.downs[seat]) ? m.downs[seat] : [];
+    // Face down on the table, each keeps which card it is (of), for its back.
+    const backs = Array.from({ length: down }, (_, i) => ({ card: 'back', up: false, of: laid[i] }));
+    const seq = [...(before ? before.seq : []), ...backs, { card: up, up: true }];
+    S.cards[seat] = { up, down: (before ? before.down : 0) + down, stage: m.stage, seq };
+    if (!S.slams[seat]) S.slams[seat] = [power, style];
+    const look = deckOf(seat);
     for (let i = 0; i < down; i++) {
       S.potCards.push({ card: Number.isInteger(laid[i]) ? laid[i] : 'back', look, seat, down: true });
     }
@@ -5195,6 +5241,7 @@ function buildTiles() {
     const cards = el('div', 'tcards');
     let deckBox = null, deckCount = null, spot = null;
     if (piles) {
+      // Its back is its top card's (see renderTile).
       deckBox = el('div', 'tdeck pile');
       deckBox.dataset.deck = deckOf(seat);
       deckCount = el('span', 'count', '');
@@ -5213,7 +5260,8 @@ function buildTiles() {
     const stat = el('span', 'tstat', '');
     meta.append(count, stat);
     node.append(cards, info, meta);
-    node.title = `${p.name}${p.bot ? ' (bot)' : ''} · ${DECKS[deckOf(seat)][0]} deck`;
+    // In a solo game the decks go with the cards, not the players.
+    node.title = `${p.name}${p.bot ? ' (bot)' : ''}` + (soloThemes() ? '' : ` · ${DECKS[deckOf(seat)][0]} deck`);
     box.append(node);
     tiles.set(seat, {
       node, slot, count, stat, card, heap, lootCount, deck: deckBox, deckCount, spot, cardKey: 'empty', downs: null, wpile: null,
@@ -5229,7 +5277,7 @@ function pileUnder(seat, backs) {
   const c = S.cards[seat];
   const list = c ? c.seq.slice() : [];
   if (S.phase === 'playing' && isFighting(seat) && !S.pending && (!c || c.stage < S.stage)) {
-    for (let i = 0; i < backs; i++) list.push({ card: 'back', up: false });
+    for (let i = 0; i < backs; i++) list.push({ card: 'back', up: false, of: soloCard(seat, i) });
     if (landed(seat)) list.push({ card: S.ups[seat] !== undefined ? S.ups[seat] : 'back', up: true });
   }
   for (let i = list.length - 1; i >= 0; i--) if (list[i].up) { list.splice(i, 1); break; }
@@ -5255,22 +5303,28 @@ function myWarCards(local) {
   if (!inMyWar()) return [];
   const list = c.seq.slice();
   if (S.phase === 'playing' && S.stage > 0 && isFighting(me) && !S.pending && c.stage < S.stage) {
-    for (let i = 0; i < local; i++) list.push({ card: 'back', up: false });
+    for (let i = 0; i < local; i++) list.push({ card: 'back', up: false, of: soloCard(me, i) });
     if (landed(me)) list.push({ card: S.ups[me] !== undefined ? S.ups[me] : 'back', up: true });
   }
   return list;
 }
 
-// Draws a pile into box: one card per item, keeping the cards already there
-// when the pile only grew (the new ones arrive with the `fresh` class), and
-// calling place(node, index, count) on every card.
+// The deck a card on a pile is drawn in: a face-down one by the card it is,
+// where the page knows (see cardLook).
+const pileLook = (x, look) => cardLook(x.card === 'back' ? x.of : x.card, look);
+
+// Draws a pile into box: one card per item, each in the deck look(item)
+// names, keeping the cards already there when the pile only grew (the new
+// ones arrive with the `fresh` class), and calling place(node, index, count)
+// on every card.
 function drawPile(box, items, look, fresh, place) {
-  const keys = items.map((x) => String(x.card));
+  const looks = items.map(look);
+  const keys = items.map((x, i) => `${x.card}:${looks[i] || ''}`);
   const had = box._keys || [];
   const grew = keys.length >= had.length && had.every((k, i) => k === keys[i]);
   if (!grew) { box.replaceChildren(); box._keys = []; }
   for (let i = box.childElementCount; i < items.length; i++) {
-    const node = cardEl(items[i].card === 'back' ? 'back' : items[i].card, look);
+    const node = cardEl(items[i].card === 'back' ? 'back' : items[i].card, looks[i]);
     if (grew && !reduceMotion.matches) node.classList.add(fresh);
     box.append(node);
   }
@@ -5343,6 +5397,12 @@ function renderTile(seat) {
     // Their deck: as thick as it's full, with its count in the corner.
     const inDeck = S.decks ? S.decks[seat] ?? 0 : shownCount(seat);
     t.deck.style.setProperty('--d', String(deckDepth(inDeck)));
+    // Its back is the back of its top card.
+    const look = cardLook(soloCard(seat), deckOf(seat));
+    if (t.deck.dataset.deck !== look) {
+      t.deck.dataset.deck = look;
+      t.deck.querySelector('.card').dataset.deck = look;
+    }
     setClass(t.deck, 'empty', S.battle > 0 && inDeck === 0);
     setText(t.deckCount, S.battle ? String(inDeck) : '');
     setHidden(t.deckCount, !S.battle);
@@ -5366,7 +5426,8 @@ function renderTile(seat) {
   setText(t.stat, label);
   const key = cardKeyFor(seat);
   if (key !== t.cardKey) {
-    const card = cardEl(key === 'back' ? 'back' : key === 'empty' ? null : Number(key), deckOf(seat));
+    const shown = key === 'back' ? 'back' : key === 'empty' ? null : Number(key);
+    const card = cardEl(shown, cardLook(Number.isInteger(shown) ? shown : soloCard(seat), deckOf(seat)));
     if (key !== 'back' && key !== 'empty' && !reduceMotion.matches) card.classList.add('flipin');
     t.card.replaceWith(card);
     t.card = card;
@@ -5386,7 +5447,7 @@ function renderTile(seat) {
   if (under.length || t.wpile) {
     if (!t.wpile) { t.wpile = el('div', 'tdowns'); t.slot.prepend(t.wpile); }
     const out = fanOut(under, 0.28, 0.1, 0.9);
-    drawPile(t.wpile, under, deckOf(seat), 'thump', (node, i, n) => {
+    drawPile(t.wpile, under, (x) => pileLook(x, deckOf(seat)), 'thump', (node, i, n) => {
       node.style.setProperty('--i', String(n - 1 - i));
       node.style.setProperty('--x', out[i].toFixed(3));
       node.style.setProperty('--r', `${((i * 37) % 17) - 8}deg`);
@@ -5412,7 +5473,14 @@ function renderMe() {
   // Your deck, apart from your winnings: it thins as it runs low.
   const inDeck = S.decks ? S.decks[me] ?? 0 : count;
   setClass($('myPile'), 'empty', S.battle > 0 && inDeck === 0);
-  $('myPile').querySelector('.stack').style.setProperty('--d', String(S.battle > 0 ? deckDepth(inDeck) : deckDepth(27)));
+  const stack = $('myPile').querySelector('.stack');
+  stack.style.setProperty('--d', String(S.battle > 0 ? deckDepth(inDeck) : deckDepth(27)));
+  // In a solo game its back is its top card's; in a room, the page's.
+  const back = cardLook(soloCard(me), null);
+  for (const node of [stack, stack.querySelector('.card')]) {
+    if (back) setAttr(node, 'data-deck', back);
+    else node.removeAttribute('data-deck');
+  }
   const badge = $('deckCount');
   setHidden(badge, !(S.decks && S.battle > 0 && inDeck > 0));
   setText(badge, String(inDeck));
@@ -5429,7 +5497,8 @@ function renderMe() {
   // The card you played in the battle, until it goes to war.
   const key = c ? String(c.seq[0].card) : S.stage > 0 ? 'empty' : cardKeyFor(me);
   if (slot.dataset.key !== key) {
-    const card = cardEl(key === 'back' ? 'back' : key === 'empty' ? null : Number(key));
+    const shown = key === 'back' ? 'back' : key === 'empty' ? null : Number(key);
+    const card = cardEl(shown, cardLook(Number.isInteger(shown) ? shown : soloCard(me), null));
     // A card you slam lands with a thump; one already down turns over.
     if (landed(me) && slot.dataset.key !== 'back' && !reduceMotion.matches) card.classList.add('slam');
     else if (key !== 'empty' && key !== 'back' && !reduceMotion.matches) card.classList.add('flipin');
@@ -5460,7 +5529,7 @@ function renderWarPile() {
   const top = n && pile[n - 1].up ? n - 1 : -1;
   const out = fanOut(pile.map((x, i) => ({ up: x.up && i !== top })), 0.22, 0, 0.5);
   const cw = $('mySlot').querySelector('.card')?.offsetWidth || 88;
-  drawPile(box.querySelector('.wpile'), pile, null, 'slam', (node, i) => {
+  drawPile(box.querySelector('.wpile'), pile, (x) => pileLook(x, null), 'slam', (node, i) => {
     const tied = pile[i].up;
     node.style.setProperty('--r', `${i === top ? 0 : tied ? ((i * 13) % 9) - 4 : ((i * 47) % 25) - 12}deg`);
     node.style.setProperty('--dx', `${i === top ? 0 : Math.round(((i * 29) % 11) - 5 - out[i] * cw * 0.2)}px`);
@@ -5488,7 +5557,8 @@ function renderWarRow() {
     const box = el('div', 'wf');
     const c = S.cards[seat];
     const downs = (c ? c.down : 0) + (S.thumps[seat] || 0);
-    box.append(cardEl(shown(seat), deckOf(seat)), el('span', '', `${downs ? `+${downs} · ` : ''}${avatarOf(seat)} ${playerName(seat)}`));
+    const card = shown(seat);
+    box.append(cardEl(card, cardLook(Number.isInteger(card) ? card : soloCard(seat), deckOf(seat))), el('span', '', `${downs ? `+${downs} · ` : ''}${avatarOf(seat)} ${playerName(seat)}`));
     row.append(box);
   }
   if (fighters.length > 6) row.append(el('span', 'more', `+${fighters.length - 6}`));
@@ -5709,7 +5779,7 @@ function heapFly(node, c, heapBox, size, delay) {
   const x = parseFloat(node.style.getPropertyValue('--x')) || 0;
   const y = parseFloat(node.style.getPropertyValue('--y')) || 0;
   const r = parseFloat(node.style.getPropertyValue('--r')) || 0;
-  const flyer = cardEl(c.card, c.look);
+  const flyer = cardEl(c.card, cardLook(c.card, c.look));
   flyer.classList.add('flyer');
   flyer.style.setProperty('--w', `${size}px`);
   flyer.style.left = `${heapBox.left + heapBox.width / 2 - size / 2}px`;
@@ -5741,7 +5811,7 @@ function heapToss(seat, cards, quiet = false) {
   const thrown = cards.slice(-max).sort((a, b) => (a.seat === seat) - (b.seat === seat));
   const gap = Math.min(70, 420 / Math.max(1, thrown.length - 1));
   thrown.forEach((c, i) => {
-    const node = cardEl(c.card, c.look);
+    const node = cardEl(c.card, cardLook(c.card, c.look));
     node.style.transition = 'none';  // it lands where it lands, without sliding there
     heap.append(node);
     const size = node.offsetWidth || 40;
@@ -5792,7 +5862,7 @@ function heapGather(seat, delay) {
       node.remove();
       if (!box || !r || !r.width || reduceMotion.matches) return;
       const size = r.width;
-      const flyer = cardEl(c.card, c.look);
+      const flyer = cardEl(c.card, cardLook(c.card, c.look));
       flyer.classList.add('flyer');
       flyer.style.setProperty('--w', `${node.offsetWidth || 40}px`);
       flyer.style.left = `${r.left + r.width / 2 - (node.offsetWidth || 40) / 2}px`;
@@ -6063,7 +6133,7 @@ function finishMash() {
 function startFling(e) {
   Sound.unlock();
   if (!canSlam() || inputBusy()) return;
-  const ghost = cardEl('back');
+  const ghost = cardEl('back', cardLook(soloCard(S.you), null));
   ghost.classList.add('ghost');
   $('fx').append(ghost);
   fling = { pointer: e.pointerId, x0: e.clientX, y0: e.clientY, points: [[now(), e.clientX, e.clientY]], ghost, tier: 0 };
@@ -7084,13 +7154,38 @@ function renderDecks() {
       }
     }
     for (const b of box.children) setAttr(b, 'aria-pressed', String(b.dataset.deck === deck));
-    setText($(noteId), `${DECKS[deck][0]}: ${DECKS[deck][1]}`);
+    // Against bots, which deck is which: the menu's for the game it would
+    // deal, the pause menu's for the one being played.
+    const which = noteId === 'menuDeckNote' ? decksNote(themeOrder(deck), Math.ceil((Number($('oppRange').value) + 1) / 2))
+      : noteId === 'pauseDeckNote' && soloThemes() ? decksNote(soloThemes(), Math.ceil(S.players.length / 2)) : '';
+    setText($(noteId), `${DECKS[deck][0]}: ${DECKS[deck][1]}` + (which ? ` ${which}` : ''));
+  }
+}
+
+// In a solo game, redraws the cards on every loot pile in their decks' themes,
+// just where they lie.
+function heapRedraw() {
+  for (const h of heaps.values()) {
+    for (const c of h.cards) {
+      const node = cardEl(c.card, cardLook(c.card, c.look));
+      node.style.cssText = c.node.style.cssText;
+      c.node.replaceWith(node);
+      c.node = node;
+    }
   }
 }
 
 // Changes the deck, redrawing every card on screen with it.
 function setDeck(key) {
   if (!DECKS[key] || key === deck) return;
+  // Against bots, your deck takes the new theme, and a deck that had it
+  // takes your old one, so no two look alike.
+  const themes = soloThemes();
+  if (themes) {
+    const j = themes.indexOf(key);
+    themes[j] = themes[0];
+    themes[0] = key;
+  }
   deck = key;
   store.set('deck', key);
   document.documentElement.dataset.deck = key;
@@ -7106,6 +7201,7 @@ function setDeck(key) {
     tileKey = '';
     $('mySlot').dataset.key = '';
     $('warRow').dataset.key = '';
+    if (themes) heapRedraw();
     renderAll();
   }
 }
@@ -7143,6 +7239,7 @@ function startSolo() {
   tileKey = '';
   S.conn = new SoloRoom({ opponents, length: menuLength, slow: menuSlow, shuffle: menuShuffle, name: 'You', avatar, random });
   S.conn.start();
+  renderDecks();
 }
 
 const NAME_OK = /^[\p{L}\p{N}][\p{L}\p{N} '&.,!?-]{0,15}$/u;
@@ -7587,6 +7684,8 @@ if (DEBUG) {
     },
     input: (mode) => setInput(mode),
     deck: (key) => setDeck(key),
+    // A solo game's theme for each deck, yours first; null in a room.
+    themes: () => (soloThemes() ? soloThemes().slice(0, Math.ceil(S.players.length / 2)) : null),
     versus: () => Versus.last,
     sixSeven: () => SixSeven.last,
     music: () => ({ on: Music.on, song: Music.want, playing: Music.song, songs: Object.keys(SONGS) }),

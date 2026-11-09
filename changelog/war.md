@@ -1,5 +1,9 @@
 ## 2026-11-09
 
+- Against bots, cards follow their deck: with one bot every card is in the
+  theme you picked, and with more each extra deck gets a theme of its own,
+  so you can see whose deck a card came from wherever it goes. The deck
+  picker's note says which deck is which.
 - Commentary can be Quiet, on the menu or the pause screen: the captions
   just say what happened, with no jokes, win odds or science of slamming.
   The animations stay the same.
