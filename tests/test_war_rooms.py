@@ -354,6 +354,42 @@ def test_winnings_go_back_under_your_deck_by_hand_or_when_it_runs_out(page: Page
     assert errors == []
 
 
+def test_a_slam_that_picks_up_first_never_waits_for_the_pickup(page: Page, site_url, errors):
+    fake = FakeWarRoom()
+    open_war(page, site_url, fake)
+    start_room(page)
+    page.click("#botMore")
+    page.click("#dealBtn")
+    page.wait_for_function(f"{STATE}.battle === 1 && {STATE}.canSlam")
+    page.evaluate("window.__war.slam(90)")
+    # The bot wins: two cards on its loot pile. The next battle leaves its
+    # slam to the test.
+    nxt = fake.stage(2, opens_in=300)
+    nxt["bots"] = []
+    fake.broadcast({
+        "t": "flip", "battle": 1, "stage": 0, "winner": 1, "tied": [1], "gods": False, "pot": 2,
+        "plays": [[0, 0, card(3), 90, 0, 0], [1, 0, card(12, 1), 100, 1, 0]],
+        "counts": [26, 28], "decks": [26, 26], "out": [], "next": nxt,
+    })
+    page.wait_for_function(f"{STATE}.battle === 2 && {STATE}.canSlam")
+    expect(page.locator("#opponents .tile .heap .card")).to_have_count(2)
+    # Its deck ran out, so its slam picks its winnings up first: a quick
+    # pickup, and the slam lands at once.
+    fake.broadcast({"t": "slam", "seat": 1, "power": 100, "style": 1, "gathered": True})
+    page.wait_for_function(f"{STATE}.slams[1]")
+    g = page.evaluate("window.__war.gather()")
+    assert g["seat"] == 1 and g["brief"] and g["n"] == 2, g
+    assert page.evaluate(f"{STATE}.decks[1]") == 28
+    assert page.evaluate(f"{STATE}.heaps[1]") == []
+    expect(page.locator("#opponents .tile")).to_have_class(re.compile(r"\bslammed\b"))
+    # The brief pickup has no lift or riffle, and you can slam straight away.
+    assert page.evaluate("document.querySelectorAll('#fx .tuckcover, #fx .riffling').length") == 0
+    assert page.evaluate("window.__war.slam(90)") is True
+    page.wait_for_function("document.querySelectorAll('#fx .gathering').length === 0")
+    expect(page.locator("#opponents .tile .tdeck .count")).to_have_text("28")
+    assert errors == []
+
+
 def test_everyone_sees_each_players_deck(page: Page, browser, site_url, errors):
     fake = FakeWarRoom()
     open_war(page, site_url, fake)
