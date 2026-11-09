@@ -338,6 +338,43 @@ def test_reduced_motion_gets_a_calm_six_seven(page: Page, site_url, errors):
     assert errors == []
 
 
+def test_quiet_commentary_says_just_what_happened(page: Page, site_url, errors):
+    page.goto(f"{site_url}/war?seed={SIX_SEVEN_SEED}#debug")
+    expect(page.locator("html")).to_have_attribute("data-chat", "chatty")
+    page.click("#menuChat button[data-chat=quiet]")
+    expect(page.locator("html")).to_have_attribute("data-chat", "quiet")
+    assert page.evaluate("JSON.parse(localStorage.getItem('war:chat'))") == "quiet"
+    page.reload()
+    expect(page.locator("#menuChat button[data-chat=quiet]")).to_have_attribute("aria-pressed", "true")
+    page.click("#soloBtn")
+    page.wait_for_function(f"{STATE}.canSlam")
+    # No joke to open the battle, and no joke about how it went.
+    expect(page.locator("#caption")).to_be_empty()
+    page.evaluate("window.__war.slam(60)")
+    expect(page.locator("#caption")).to_have_text("Your seven takes 2 cards.")
+    # The six… seven still plays: only the words go quiet.
+    expect(page.locator("#fx .ss")).to_have_count(1)
+    expect(page.locator("#banner")).to_have_text("YOU WIN!")
+    # No win odds as you go.
+    page.wait_for_function(f"{STATE}.chances !== null")
+    expect(page.locator("#odds")).to_be_hidden()
+    # Chatty again from the pause menu, and the odds come back.
+    page.click("#menuBtn")
+    page.click("#pauseChat button[data-chat=chatty]")
+    page.click("#resumeBtn")
+    expect(page.locator("#odds")).to_be_visible()
+    page.click("#menuBtn")
+    page.click("#pauseChat button[data-chat=quiet]")
+    page.click("#resumeBtn")
+    # The end screen leaves out the odds chart and the science.
+    page.evaluate("window.__war.finish()")
+    expect(page.locator("#over")).to_be_visible()
+    expect(page.locator("#oddsSection")).to_be_hidden()
+    expect(page.locator("#science")).to_be_hidden()
+    expect(page.locator("#overStats")).not_to_be_empty()
+    assert errors == []
+
+
 def test_mash_to_slam(page: Page, site_url, errors):
     page.goto(f"{site_url}/war?seed=2#debug")
     page.click("#inputSeg button[data-input=mash]")

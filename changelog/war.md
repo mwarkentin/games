@@ -1,5 +1,8 @@
 ## 2026-11-09
 
+- Commentary can be Quiet, on the menu or the pause screen: the captions
+  just say what happened, with no jokes, win odds or science of slamming.
+  The animations stay the same.
 - A second tap on Join or Start a room no longer connects you twice, which
   counted every battle twice and could pull you back into a room you'd left.
 - Playing solo while a room was still connecting no longer gets interrupted
