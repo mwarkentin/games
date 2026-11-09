@@ -24,7 +24,9 @@
   // can be picked out.
   const game = location.pathname.split('/').pop().replace(/\.html$/, '');
 
-  // Errors from before the SDK arrives are kept and sent once it does.
+  // Errors from before the SDK arrives are kept and sent once it does. If it
+  // never does (a script blocked, or failing its integrity check), they're
+  // let go, and no more are kept.
   // Errors from cross-origin scripts arrive as "Script error." with no error
   // attached; Sentry ignores those too.
   const early = [];
@@ -33,10 +35,15 @@
   };
   addEventListener('error', keep);
   addEventListener('unhandledrejection', keep);
-
-  const init = () => {
+  const stopKeeping = () => {
     removeEventListener('error', keep);
     removeEventListener('unhandledrejection', keep);
+  };
+
+  const init = () => {
+    stopKeeping();
+    // The add-on can arrive without the bundle it adds to.
+    if (typeof window.Sentry?.init !== 'function') return;
     Sentry.init({
       dsn: SENTRY_DSN,
       release,
@@ -63,6 +70,7 @@
     // Dynamic scripts run as they arrive unless async is off; the add-on needs the bundle first.
     Object.assign(script, { src, integrity, crossOrigin: 'anonymous', async: false });
     if (index === SDK.length - 1) script.onload = init;
+    script.onerror = () => { stopKeeping(); early.length = 0; };
     document.head.append(script);
   });
 })();

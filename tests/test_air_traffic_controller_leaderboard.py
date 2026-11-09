@@ -8,9 +8,10 @@ responses as console errors.
 
 from __future__ import annotations
 
+import json
 from urllib.parse import parse_qs, urlparse
 
-from fake_leaderboard import API, FakeLeaderboard, without_worker
+from fake_leaderboard import API, FakeLeaderboard, Held, without_worker
 from playwright.sync_api import Page, expect
 
 UNAVAILABLE = "The leaderboard is unavailable right now."
@@ -23,7 +24,7 @@ def row(initials: str, handled: int, spare: int = 0, scope: str = "*", difficult
     return {"initials": initials, "score": score, "level": handled, "scope": scope, "difficulty": difficulty, "mode": mode, **extra}
 
 
-def open_game(page: Page, site_url: str, fake: FakeLeaderboard | None, query: str = "") -> None:
+def open_game(page: Page, site_url: str, fake: FakeLeaderboard | Held | None, query: str = "") -> None:
     if fake:
         page.route(f"{API}/**", fake.handle)
         page.goto(f"{site_url}/air-traffic-controller?leaderboard={API}{query}#debug")
@@ -379,4 +380,120 @@ def test_leave_a_group(page: Page, site_url, errors):
     expect(page.locator("#lbScopes")).to_be_hidden()
     expect(page.locator("#lbList li .who")).to_have_text(["KIDTrainee · Steady"])
     assert stored(page, "games.groups") == []
+    assert errors == []
+
+
+SCORES_GET = lambda r: r.method == "GET" and "/v1/scores" in r.url  # noqa: E731
+# Ten shifts with every aircraft handled, so a lost shift isn't top-10 public.
+TOP_TEN = [row(f"A{chr(65 + i)}A", 8, spare=900 - i) for i in range(10)]
+
+
+def in_groups(page: Page, groups: list[dict]) -> None:
+    """Start every page load in `groups`, as if joined in an earlier visit."""
+    page.add_init_script(f"localStorage.setItem('games.groups', {json.dumps(json.dumps(groups))})")
+
+
+def test_a_tab_tapped_while_the_report_loads_keeps_the_offer_to_save(page: Page, site_url, errors):
+    fake = FakeLeaderboard(TOP_TEN, groups={"K7QP": "Family"})
+    in_groups(page, [{"code": "K7QP", "name": "Family"}])
+    # Every list stays out until release(), so none is answered from the page's cache.
+    held = Held(fake, SCORES_GET)
+    open_game(page, site_url, held)
+    fly_shift(page, handled=3, sweeps=50)
+    held.wait_for(page, 2)  # the menu's list and the report's
+    page.click("#resLbScopes button >> text=Family")  # before the report's list arrives
+    held.wait_for(page, 3)
+    held.release()
+    expect(page.locator("#lbForm")).to_be_visible()  # in a group, every shift with an aircraft handled can be saved
+    expect(page.locator("#resLbNote")).to_have_text("Add your initials to save this shift.")
+    expect(page.locator("html")).to_have_attribute("data-save", "offered")
+    assert errors == []
+
+
+def test_closing_the_card_before_a_join_answers_still_offers_the_save(page: Page, site_url, errors):
+    fake = FakeLeaderboard(TOP_TEN, groups={"K7QP": "Family"})
+    held = Held(fake, lambda r: "/v1/groups/" in r.url)
+    open_game(page, site_url, held)
+    fly_shift(page, handled=3, sweeps=50)
+    expect(page.locator("#resLbList li")).to_have_count(5)
+    expect(page.locator("#lbForm")).to_be_hidden()  # not a top-10 shift, and in no group
+    page.click("#lbOpenResult")
+    page.fill("#lbJoinCode", "K7QP")
+    page.click("#lbJoinForm button")
+    held.wait_for(page)
+    page.click("#lbClose")  # before the Worker answers
+    held.release()
+    # In a group now, so the report offers the save, on the group's tab.
+    expect(page.locator("#lbForm")).to_be_visible()
+    expect(page.locator("#resLbScopes button")).to_have_text(["Everyone", "Family"])
+    expect(page.locator("#resLbScopes button[aria-pressed=true]")).to_have_text("Family")
+    assert stored(page, "games.groups") == [{"code": "K7QP", "name": "Family"}]
+    expect(page.locator("#lbGroupNote")).to_have_text("")  # the closed card's note is left alone
+    assert errors == []
+
+
+def test_a_second_tap_doesnt_start_a_second_group(page: Page, site_url, errors):
+    fake = FakeLeaderboard()
+    held = Held(fake, lambda r: r.method == "POST" and r.url.endswith("/v1/groups"))
+    open_game(page, site_url, held)
+    page.click("#lbOpenMenu")
+    page.fill("#lbGroupName", "Family")
+    page.evaluate("() => { const b = document.querySelector('#lbCreateForm button'); b.click(); b.click(); }")
+    held.wait_for(page)
+    page.evaluate("document.querySelector('#lbCreateForm').requestSubmit()")  # Enter in the name field
+    page.wait_for_timeout(300)
+    assert len(held.routes) == 1, "one group asked for"
+    expect(page.locator("#lbCreateForm button")).to_be_disabled()
+    held.release()
+    expect(page.locator("#lbGroupNote")).to_have_text("Started Family. Share code K7QP so others can join.")
+    expect(page.locator("#lbCreateForm button")).to_be_enabled()
+    assert stored(page, "games.groups") == [{"code": "K7QP", "name": "Family"}]
+    assert errors == []
+
+
+def test_a_slow_invite_lookup_doesnt_undo_joining(page: Page, site_url, errors):
+    fake = FakeLeaderboard(groups={"K7QP": "The Warkentins"})
+    held = Held(fake, lambda r: "/v1/groups/" in r.url)
+    open_game(page, site_url, held, "&join=K7QP")
+    held.wait_for(page)  # the invite's lookup, still out
+    held.holding = False
+    page.click("#lbJoinForm button")
+    joined = "Joined The Warkentins. Shifts you save from now on go to The Warkentins too."
+    expect(page.locator("#lbGroupNote")).to_have_text(joined)
+    held.release()
+    page.wait_for_timeout(300)
+    expect(page.locator("#lbGroupNote")).to_have_text(joined)
+    assert errors == []
+
+
+def test_an_invite_when_youre_in_five_groups_says_so(page: Page, site_url, errors):
+    groups = [{"code": c, "name": f"Group {c}"} for c in ("AAAA", "BBBB", "CCCC", "DDDD", "EEEE")]
+    fake = FakeLeaderboard(groups={"K7QP": "The Warkentins", **{g["code"]: g["name"] for g in groups}})
+    in_groups(page, groups)
+    open_game(page, site_url, fake, "&join=K7QP")
+    expect(page.locator("#board")).to_be_visible()
+    expect(page.locator("#lbGroupNote")).to_have_text(
+        "You’re in 5 groups already, the most there can be. Leave one to join another."
+    )
+    expect(page.locator("#lbJoinForm")).to_be_hidden()
+    assert errors == []
+
+
+def test_saved_stays_said_when_the_report_reloads_its_list(page: Page, site_url, errors):
+    fake = FakeLeaderboard([row("KID", 8, spare=900)], groups={"K7QP": "Family"})
+    in_groups(page, [{"code": "K7QP", "name": "Family"}])
+    open_game(page, site_url, fake)
+    fly_shift(page, handled=6, sweeps=60)
+    page.fill("#lbInitials", "DAD")
+    page.click("#lbSave")
+    saved = "Saved! #2 this week on Everyone, #1 this week in Family."
+    expect(page.locator("#resLbNote")).to_have_text(saved)
+    page.click("#resLbScopes button >> text=Everyone")  # the list loads again
+    expect(page.locator("#resLbList li.mine")).to_have_text("2DAD6/8")
+    expect(page.locator("#resLbNote")).to_have_text(saved)
+    page.click("#lbOpenResult")
+    page.click("#lbClose")
+    expect(page.locator("#resLbNote")).to_have_text(saved)
+    expect(page.locator("#lbForm")).to_be_hidden()
+    expect(page.locator("html")).to_have_attribute("data-save", "saved")
     assert errors == []
