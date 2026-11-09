@@ -545,6 +545,120 @@ def test_winnings_can_be_shuffled_on_their_way_back(page: Page, site_url, errors
     assert errors == []
 
 
+GATHERING = "document.querySelectorAll('#fx .gathering').length"
+
+
+def win_two_and_pick_up(page: Page, site_url: str, shuffled: bool = False) -> None:
+    """Seed 14: you win the first two battles, then pick up the four cards."""
+    page.goto(f"{site_url}/war?seed=14#debug")
+    if shuffled:
+        page.click("#soloWinnings button[data-winnings=shuffled]")
+    page.click("#soloBtn")
+    page.wait_for_function(f"{STATE}.canSlam")
+    for battle in (2, 3):
+        page.evaluate("window.__war.slam(80)")
+        page.wait_for_function(f"{STATE}.battle === {battle} && {STATE}.canSlam")
+    expect(page.locator("#winnings .heap .card")).to_have_count(4)
+    page.click("#gatherBtn")
+    page.wait_for_function(f"{GATHERING} > 0")
+
+
+def test_picking_up_sweeps_the_pile_together_and_tucks_it_under_your_deck(page: Page, site_url, errors):
+    win_two_and_pick_up(page, site_url)
+    g = page.evaluate("window.__war.gather()")
+    assert g["seat"] == 0 and g["cards"] == 4 and g["n"] == 4, g
+    assert not g["brief"] and not g["calm"] and not g["shuffled"], g
+    # The heap's four cards are on their way, under a copy of your deck's top
+    # card that lifts as they go under it, and nothing riffles.
+    moving = page.evaluate("""() => {
+        const fx = [...document.querySelectorAll('#fx .gathering')];
+        return {
+            cards: fx.filter((n) => !n.classList.contains('back')).length,
+            cover: document.querySelectorAll('#fx .tuckcover').length,
+            riffle: document.querySelectorAll('#fx .riffling').length,
+            running: fx.every((n) => n.getAnimations().some((a) => a.playState === 'running')),
+            tucked: document.querySelector('#myPile .stack > .card').style.visibility,
+        };
+    }""")
+    assert moving == {"cards": 4, "cover": 1, "riffle": 0, "running": True, "tucked": "hidden"}, moving
+    # Each card has its back with it, and the squared stack turns over so its
+    # backs are up as it goes under the deck: faces turned away, backs to us.
+    assert page.evaluate("document.querySelectorAll('#fx .gathering.flipside').length") == 4
+    turned = page.evaluate("""() => {
+        const t = gatherTimes(4, false, false);
+        const at = (when) => [...document.querySelectorAll('#fx .gathering:not(.tuckcover)')].map((n) => {
+            const a = n.getAnimations()[0];
+            a.pause();
+            a.currentTime = when;
+            return [n.classList.contains('flipside'), new DOMMatrix(getComputedStyle(n).transform).m11 > 0];
+        });
+        const before = at(t.sweep), after = at(t.settle + 20);
+        for (const n of document.querySelectorAll('#fx .gathering')) n.getAnimations().forEach((a) => a.play());
+        return { before, after };
+    }""")
+    assert all(facing == (not back) for back, facing in turned["before"]), "squared up face up"
+    assert all(facing == back for back, facing in turned["after"]), "turned over, backs up"
+    # The deck's count waits for them: it ticks up as they go under.
+    assert page.evaluate(f"{STATE}.shownDecks[0]") < 29
+    assert page.evaluate(f"{STATE}.decks[0]") == 29
+    # When it's done, everything's where it belongs, and the copies are gone.
+    page.wait_for_function(f"{GATHERING} === 0")
+    expect(page.locator("#deckCount")).to_have_text("29")
+    expect(page.locator("#winnings .heap .card")).to_have_count(0)
+    assert page.evaluate(f"[{STATE}.counts[0], {STATE}.decks[0], {STATE}.loot[0], {STATE}.shownDecks[0]]") == [29, 29, 0, 29]
+    expect(page.locator("#myPile .stack > .card")).to_be_visible()
+    assert page.evaluate("document.querySelectorAll('[data-tucked]').length") == 0
+    assert errors == []
+
+
+def test_a_shuffled_pickup_riffles_the_deck(page: Page, site_url, errors):
+    win_two_and_pick_up(page, site_url, shuffled=True)
+    g = page.evaluate("window.__war.gather()")
+    assert g["shuffled"] and not g["brief"], g
+    # The deck splits in two halves that interleave: eight cards of it.
+    assert page.evaluate("document.querySelectorAll('#fx .riffling').length") == 8
+    kept = page.evaluate("gatherTimes(4, false, false).end")
+    assert g["ms"] > kept, "the riffle comes after the cards go under"
+    page.wait_for_function(f"{GATHERING} === 0")
+    expect(page.locator("#deckCount")).to_have_text("29")
+    # Fast mode keeps it in step with the game.
+    page.click("#fastBtn")
+    assert page.evaluate("gatherTimes(4, false, true).end") < g["ms"]
+    assert errors == []
+
+
+def test_you_can_slam_straight_after_picking_up(page: Page, site_url, errors):
+    win_two_and_pick_up(page, site_url)
+    # The pickup is still showing, and the slam doesn't wait for it.
+    assert page.evaluate(f"{STATE}.canSlam")
+    assert page.evaluate("window.__war.slam(80)") is True
+    assert page.evaluate(GATHERING) > 0, "the slam came while the cards were still on their way"
+    assert page.evaluate(f"{STATE}.slams[0]")
+    page.wait_for_function(f"{STATE}.battle === 4")
+    page.wait_for_function(f"{GATHERING} === 0")
+    assert page.evaluate(f"{STATE}.shownDecks[0]") == page.evaluate(f"{STATE}.decks[0]")
+    assert errors == []
+
+
+def test_reduced_motion_picks_up_without_the_show(page: Page, site_url, errors):
+    page.emulate_media(reduced_motion="reduce")
+    page.goto(f"{site_url}/war?seed=14#debug")
+    page.click("#soloBtn")
+    page.wait_for_function(f"{STATE}.canSlam")
+    for battle in (2, 3):
+        page.evaluate("window.__war.slam(80)")
+        page.wait_for_function(f"{STATE}.battle === {battle} && {STATE}.canSlam")
+    page.click("#gatherBtn")
+    page.wait_for_function("window.__war.gather()?.started")
+    # The cards just go, and the count changes at once.
+    assert page.evaluate("window.__war.gather().calm")
+    assert page.evaluate(GATHERING) == 0
+    expect(page.locator("#winnings .heap .card")).to_have_count(0)
+    assert page.evaluate(f"{STATE}.shownDecks[0]") == 29
+    expect(page.locator("#deckCount")).to_have_text("29")
+    assert errors == []
+
+
 def test_the_end_screen_tells_the_game_battle_by_battle_and_shares_a_picture(page: Page, site_url, errors):
     start_solo(page, site_url, opponents=1, length="quick", seed=WAR_SEED)
     page.evaluate("window.__war.pace(0.05)")

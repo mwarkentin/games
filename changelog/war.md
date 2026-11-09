@@ -1,5 +1,10 @@
 ## 2026-11-09
 
+- Picking up your winnings is a moment of its own: the pile sweeps into a
+  neat stack, turns over backs up, and tucks in under your deck, which lifts
+  and settles thicker as its count ticks up, and riffles when winnings are
+  shuffled back in.
+  Everyone else's pickups show on their tiles too, and it never slows a slam.
 - Against bots, cards follow their deck: with one bot every card is in the
   theme you picked, and with more each extra deck gets a theme of its own,
   so you can see whose deck a card came from wherever it goes. The deck
