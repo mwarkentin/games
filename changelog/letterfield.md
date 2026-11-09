@@ -1,5 +1,7 @@
 ## 2026-11-09
 
+- On the shared survey, you pick your three-letter initials before
+  circling your first word, so every word you chart first is signed.
 - A redrawn map with 225 themes, 109 of them new, from Sushi Bar and Whale
   Watch to Shakespeare and Fire Station. Every theme has about 150 words,
   three times as many as before, so a territory never shows the same word

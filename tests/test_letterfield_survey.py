@@ -94,6 +94,7 @@ def test_without_a_survey_url_the_game_plays_alone(page: Page, site_url, errors)
     circle(page, hidden_words(page)[0])
     expect(page.locator("#notesBadge")).to_have_text("1")
     expect(page.locator("#survey")).to_be_hidden()
+    expect(page.locator("#signup")).to_be_hidden()  # nothing to sign when playing alone
     expect(page.locator("#tCharted")).to_have_text(re.compile(r"^ · 1/\d+ found$"))
     expect(page.locator("#legendList button.chip").first).to_be_visible()  # on your own, the list gives hints
     assert sockets == []
@@ -214,9 +215,91 @@ def test_signing_initials_tells_every_sector(page: Page, site_url, errors):
     fake.received.clear()
     page.reload()
     expect(page.locator("#surveyInitials")).to_have_value("ZED")
+    expect(page.locator("#signup")).to_be_hidden()
     expect(page.locator("#survey")).to_have_attribute("data-state", "live")
     eventually(page, lambda: len(fake.sent("me")) == 4)
     assert {m["initials"] for m in fake.sent("me")} == {"ZED"}
+    assert errors == []
+
+
+# Both ends of a word hidden at the origin, on screen and clear of the cards over the map.
+WORD_ENDS = """() => {
+  const lf = window.__lf, dock = document.body.classList.contains('docked') ? 340 : 0;
+  const at = (x, y) => [(x + .5 - lf.cam.x) * lf.cam.cs + (innerWidth - dock) / 2, (y + .5 - lf.cam.y) * lf.cam.cs + innerHeight / 2];
+  const clear = ([px, py]) => document.elementFromPoint(px, py) === document.querySelector('canvas');
+  for (const w of lf.chunk(0, 0).words) {
+    const ends = [at(w.x, w.y), at(...lf.wordEnd(w))];
+    if (ends.every(clear)) return { word: w.w, ends };
+  }
+  return null;
+}"""
+
+
+def test_initials_come_before_the_first_word(page: Page, site_url, errors):
+    fake = FakeSurvey()
+    open_game(page, site_url, fake)
+    expect(page.locator("#survey")).to_have_attribute("data-state", "live")
+    signup, html = page.locator("#signup"), page.locator("html")
+    expect(html).to_have_attribute("data-intro", "sign")
+    expect(signup).to_be_visible()
+    expect(page.locator("#coach")).to_be_hidden()
+
+    # Tapping a word's ends circles nothing yet, and asks again.
+    target = page.evaluate(WORD_ENDS)
+    assert target, "no hidden word with both ends clear on screen"
+    for x, y in target["ends"]:
+        page.mouse.click(x, y)
+    expect(page.locator("#signupHint")).to_have_text("Initials first, then circle away.")
+    expect(page.locator("#signupInitials")).to_be_focused()
+    expect(page.locator("#notesBadge")).to_have_text("0")
+    expect(html).to_have_attribute("data-intro", "sign")
+    assert fake.sent("claim") == []
+
+    # Typing in the card doesn't move the map; three letters sign them.
+    cam = page.evaluate("({ ...window.__lf.cam })")
+    page.locator("#signupInitials").press_sequentially("as")
+    page.click("#signup button")
+    expect(page.locator("#signupHint")).to_have_text("Use three letters, A to Z.")
+    expect(signup).to_be_visible()
+    expect(page.locator("#signupInitials")).to_be_focused()  # back to the box to fix them
+    page.keyboard.press("End")
+    page.keyboard.type("d")
+    page.keyboard.press("Enter")
+    expect(signup).to_be_hidden()
+    expect(html).to_have_attribute("data-intro", "coach")
+    expect(page.locator("#coach")).to_be_visible()  # then how to play
+    assert page.evaluate("({ ...window.__lf.cam })") == cam
+    assert page.evaluate("localStorage.getItem('games.initials')") == "ASD"
+    expect(page.locator("#surveyInitials")).to_have_value("ASD")
+    eventually(page, lambda: {m["initials"] for m in fake.sent("me")} >= {"ASD"})
+
+    # Now the same taps circle the word.
+    for x, y in target["ends"]:
+        page.mouse.click(x, y)
+    expect(page.locator("#notesBadge")).to_have_text("1")
+    expect(page.locator("#toast")).to_contain_text(target["word"])
+    expect(html).to_have_attribute("data-intro", "exploring")  # a first find puts the tips away
+    expect(page.locator("#coach")).to_be_hidden()
+    eventually(page, lambda: len(fake.sent("claim")) == 1)
+
+    # Next time, straight to the map.
+    page.reload()
+    expect(html).to_have_attribute("data-intro", "exploring")
+    expect(signup).to_be_hidden()
+    expect(page.locator("#coach")).to_be_hidden()
+    assert errors == []
+
+
+def test_a_player_who_has_seen_the_tips_goes_from_initials_to_the_map(page: Page, site_url, errors):
+    page.add_init_script("localStorage.setItem('letterfield.coach.v1', '1')")
+    open_game(page, site_url, FakeSurvey())
+    html = page.locator("html")
+    expect(html).to_have_attribute("data-intro", "sign")
+    page.fill("#signupInitials", "TIP")
+    page.click("#signup button")
+    expect(html).to_have_attribute("data-intro", "exploring")
+    expect(page.locator("#coach")).to_be_hidden()
+    expect(page.locator("#toast")).to_contain_text("Signed TIP")
     assert errors == []
 
 
@@ -225,6 +308,8 @@ def test_unreachable_survey_says_so_and_the_game_carries_on(page: Page, site_url
     # because the browser logs each WebSocket that fails to connect.
     page.set_viewport_size({"width": 1280, "height": 900})
     page.goto(f"{site_url}/letterfield?survey={SURVEY}#debug")
+    page.fill("#signupInitials", "OFF")
+    page.click("#signup button")
     page.click("#coachOk")
     expect(page.locator("#surveyText")).to_have_text("Survey offline. Your finds still save in this browser.")
     expect(page.locator("#survey")).to_have_attribute("data-state", "offline")
