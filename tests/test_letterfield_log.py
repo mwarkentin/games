@@ -291,7 +291,7 @@ def test_reads_every_page_of_a_busy_hour(page: Page, site_url, errors):
     assert errors == []
 
 
-# Sharing without a share sheet copies the link; this keeps what's copied.
+# Sharing without a share sheet copies the words and link; this keeps what's copied.
 NO_SHARE_SHEET = """
   Object.defineProperty(Navigator.prototype, 'share', { value: undefined, configurable: true });
   Object.defineProperty(navigator, 'clipboard', { value: { writeText: t => { window.__copied = t; return Promise.resolve(); } } });
@@ -326,8 +326,11 @@ def test_a_surveyor_opens_from_a_top_list_with_an_address_to_share(page: Page, s
     assert page.evaluate("document.documentElement.scrollWidth") <= 375
 
     page.click("#share")
-    expect(page.locator("#share")).to_have_text("Link copied")
-    assert page.evaluate("window.__copied") == page.url
+    expect(page.locator("#share")).to_have_text("Copied")
+    assert page.evaluate("window.__copied") == (
+        "ZED charted 1 word first in Letterfield’s shared survey this week, most in Acorn Hollow."
+        f" Latest: ACORN.\n{page.url}"
+    )
     # All time is a surveyor's own view's first, so its address needs no period.
     page.click("#periods [data-p=all]")
     expect(page.locator(".entry .word")).to_have_text(["ACORN", "BIRCH"])
@@ -525,4 +528,76 @@ def test_an_hour_that_ended_while_the_page_was_hidden_stops_saying_live(page: Pa
     expect(page.locator("#sumText .live")).to_have_count(0)
     expect(page.locator("#next")).to_be_enabled()
     expect(page.locator("#sumTitle")).to_have_text("3:00 PM – 4:00 PM")
+    assert errors == []
+
+
+# A share sheet that takes files; this keeps what's shared, and the picture's size.
+SHARE_SHEET = """
+  Object.defineProperty(Navigator.prototype, 'canShare', { value: d => true, configurable: true });
+  Object.defineProperty(Navigator.prototype, 'share', { configurable: true, value: async d => {
+    const files = await Promise.all((d.files || []).map(async f => {
+      const b = await createImageBitmap(f);
+      return { name: f.name, type: f.type, width: b.width, height: b.height };
+    }));
+    window.__shared = { ...d, files };
+  } });
+"""
+
+
+def test_a_surveyor_shares_a_line_and_a_picture_of_their_view(page: Page, site_url, errors, tmp_path):
+    page.set_viewport_size({"width": 375, "height": 740})
+    birch = ["BIRCH", 100, 7, 0, 0, "ZED", NOW_MS - 20 * DAY_MS, 11]
+    fern = ["FERN", 9, 9, 0, 2, "ZED", NOW_MS - 30 * MINUTE, 11]
+    fake = FakeSurveyLog([birch, ACORN, fern, ZEUS], PLACES, THEMES)
+    page.add_init_script(SHARE_SHEET)
+    open_log(page, site_url, fake, query="&surveyor=zed#debug")
+    expect(page.locator(".entry .word")).to_have_text(["FERN", "ACORN", "BIRCH"])
+    # The picture's made once the view's loaded, ready for the tap.
+    page.wait_for_function("window.__log.share()?.file")
+    page.click("#share")
+    page.wait_for_function("window.__shared")
+    shared = page.evaluate("window.__shared")
+    assert shared["text"] == (
+        "ZED charted 3 words first in Letterfield’s shared survey so far, most in Acorn Hollow."
+        " Latest: FERN, ACORN, BIRCH."
+    )
+    assert shared["url"] == page.url
+    assert shared["title"] == "ZED · Letterfield survey log"
+    assert shared["files"] == [{"name": "letterfield-zed.png", "type": "image/png", "width": 1200, "height": 630}]
+
+    # Another period is another line, made for it.
+    page.evaluate("window.__shared = null")
+    page.click("#periods [data-p=day]")
+    expect(page.locator(".entry .word")).to_have_text(["FERN", "ACORN"])
+    page.wait_for_function("window.__log.share()?.run === window.__log.state.run && window.__log.share().file")
+    page.click("#share")
+    page.wait_for_function("window.__shared")
+    assert page.evaluate("window.__shared.text") == (
+        "ZED charted 2 words first in Letterfield’s shared survey today, most in Acorn Hollow. Latest: FERN, ACORN."
+    )
+    assert errors == []
+
+
+def test_a_theme_and_a_territory_share_lines_of_their_own(page: Page, site_url, errors):
+    fake = FakeSurveyLog([ACORN, MONET, ZEUS], PLACES, THEMES)
+    page.add_init_script(SHARE_SHEET)
+    open_log(page, site_url, fake, query="&theme=11#debug")
+    expect(page.locator("#focusName")).to_have_text("Forest")
+    page.wait_for_function("window.__log.share()?.file")
+    page.click("#share")
+    page.wait_for_function("window.__shared")
+    assert page.evaluate("window.__shared.text") == (
+        "1 hidden word charted in Letterfield’s Forest territories so far. Latest: ACORN."
+    )
+    page.evaluate("window.__shared = null")
+    page.goto(f"{site_url}/letterfield-log?survey=https://survey.test&territory=0,0#debug")
+    expect(page.locator("#focusName")).to_have_text("Acorn Hollow")
+    page.wait_for_function("window.__log.share()?.file")
+    page.click("#share")
+    page.wait_for_function("window.__shared")
+    assert page.evaluate("window.__shared.text") == (
+        "Acorn Hollow, in Letterfield’s shared survey: 1 of its 112 hidden words charted so far, by 1 surveyor."
+        " Latest: ACORN."
+    )
+    assert page.evaluate("window.__shared.files[0].name") == "letterfield-acorn-hollow.png"
     assert errors == []
