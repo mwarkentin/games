@@ -329,7 +329,22 @@ describe('Sector', () => {
     assert.equal(ws.deserializeAttachment().x, null);
   });
 
-  test('a busy sector sets no timers, so it can hibernate between messages', async () => {
+  test('claims owed to a batch go out even if the sector goes quiet, however busy it was', async () => {
+    const players = Array.from({ length: QUIET }, () => join());
+    const [a, b] = players;
+    const ws0 = chunk(0, 0).words;
+    await claim(a, ws0[0]);  // the first goes at once
+    clock += 50;
+    await claim(b, ws0[1]);  // owed to the next batch
+    // Then nothing comes in to carry it. Its own short timer does, before the
+    // sector could hibernate and forget it.
+    clock += BATCH_MS;
+    mock.timers.tick(BATCH_MS);
+    for (const ws of players) assert.equal(ws.sent.filter((m) => m.t === 'claimed').length, 2);
+    assert.equal(b.last('claimed').by, b.deserializeAttachment().id, 'so its claimer hears it was first');
+  });
+
+  test('a busy sector sets no timers for positions, so it can hibernate between messages', async () => {
     const players = Array.from({ length: QUIET }, () => join());
     for (const [i, ws] of players.entries()) { clock += 1; await say(ws, { t: 'pos', x: i, y: 0 }); }
     assert.equal(sector.presenceTimer, null);
@@ -435,6 +450,26 @@ describe('Sector', () => {
     assert.equal((await openFrom('aaaa')).sent[0].t, 'hello');
   });
 
+  test('counts sockets again once the limiter answers, so joins arriving together still stop at the cap', async () => {
+    // A limiter that says yes after a moment, as a call out of the object does:
+    // other joins come in while it answers.
+    sector = new Sector(state, { SURVEY_JOINS: { limit: () => new Promise((resolve) => setImmediate(() => resolve({ success: true }))) } });
+    const servers = [];
+    globalThis.WebSocketPair = function WebSocketPair() { const pair = [fakeSocket(), fakeSocket()]; servers.push(pair[1]); return { 0: pair[0], 1: pair[1] }; };
+    const RealResponse = Response;
+    globalThis.Response = class { constructor(body, init) { Object.assign(this, init); } };
+    try {
+      await Promise.all(Array.from({ length: ADDRESS_SOCKETS + 10 }, () => sector.fetch(
+        new Request('https://survey.test/v1/survey/0/0', { headers: { Upgrade: 'websocket', [ADDRESS_HEADER]: 'aaaa' } }),
+      )));
+    } finally {
+      globalThis.Response = RealResponse;
+      delete globalThis.WebSocketPair;
+    }
+    assert.equal(servers.filter((ws) => ws.sent[0]?.t === 'hello').length, ADDRESS_SOCKETS);
+    assert.equal(servers.filter((ws) => ws.sent[0]?.t === 'full').length, 10);
+  });
+
   test('limits how fast one address can claim, across every sector', async () => {
     const claims = fakeLimiter(3);
     const env = { SURVEY_CLAIMS: claims };
@@ -530,7 +565,7 @@ describe('Sector', () => {
   test('reports its last change when its players leave', async () => {
     const reports = [];
     reportingSector(reports);
-    const players = Array.from({ length: QUIET }, () => join(2, -3));  // busy: no timers
+    const players = Array.from({ length: QUIET }, () => join(2, -3));  // busy: no timer to report with
     await claim(players[0], words[0]);
     await settle();
     await claim(players[0], words[1]);
@@ -667,6 +702,58 @@ describe('Sector', () => {
     await claim(mine, words[2]);
     mock.timers.tick(BATCH_MS);
     assert.equal(mine.last('claimed').c[0], words[2].w);
+  });
+
+  // An Atlas that already counts hashed(1) past today's cap. `held` keeps its
+  // answers back until `answer()`.
+  function cappedAtlas({ held = null } = {}) {
+    const atlasObject = new Atlas(fakeState(), {});
+    atlasObject.now = () => clock;
+    atlasObject.countCharted([[hashed(1), DAILY_CLAIMS]]);
+    return { ATLAS: { idFromName: (name) => name, get: () => ({ fetch: async (url, init) => { await held; return atlasObject.fetch(new Request(url, init)); } }) } };
+  }
+
+  test("refuses an address past the cap even straight after waking, when it hasn't heard from the Atlas yet", async () => {
+    const env = cappedAtlas();
+    sector = new Sector(state, env);
+    sector.now = () => clock;
+    const mine = fakeSocket();
+    sector.join(mine, 2, -3, hashed(1));
+    await claim(mine, words[0]);
+    assert.equal(mine.last('error')?.error, 'daily limit', 'not even its first claim here');
+    // The sector hibernates, with the socket still open. Woken, it asks again.
+    clock += 30000;
+    sector = new Sector(state, env);
+    sector.now = () => clock;
+    await claim(mine, words[1]);
+    mock.timers.tick(BATCH_MS);
+    assert.equal(mine.sent.filter((m) => m.t === 'claimed').length, 0);
+    assert.equal(mine.sent.filter((m) => m.error === 'daily limit').length, 2);
+  });
+
+  test('claims sent together while the sector asks the Atlas all wait for its answer', async () => {
+    let answer;
+    const env = cappedAtlas({ held: new Promise((resolve) => { answer = resolve; }) });
+    sector = new Sector(state, env);
+    sector.now = () => clock;
+    const ws = fakeSocket();
+    sector.join(ws, 2, -3, hashed(1));
+    const sent = Promise.all(words.slice(0, CLAIM_BURST).map((w) => claim(ws, w)));
+    await settle();
+    answer();
+    await sent;
+    mock.timers.tick(BATCH_MS);
+    assert.equal(ws.sent.filter((m) => m.t === 'claimed').length, 0);
+    assert.equal(ws.sent.filter((m) => m.error === 'daily limit').length, CLAIM_BURST);
+  });
+
+  test("charts as before when the Atlas can't be reached to ask", async () => {
+    sector = new Sector(state, { ATLAS: { idFromName: (name) => name, get: () => ({ fetch: async () => { throw new Error('atlas down'); } }) } });
+    sector.now = () => clock;
+    const ws = fakeSocket();
+    sector.join(ws, 2, -3, hashed(1));
+    await claim(ws, words[0]);
+    assert.equal(ws.last('claimed').c[0], words[0].w);
   });
 
   test('keeps sectors outside the shared world to themselves', async () => {

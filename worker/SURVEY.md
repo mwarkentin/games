@@ -101,12 +101,16 @@ From [Scaling One Million Checkboxes][omcb] and
     That kept every busy sector billed every second. It also billed a sector
     with a few people circling words almost as much as a full one, because
     its report timer was nearly always pending.
-  - Now owed positions, claim batches and reports go out with the next
-    message that arrives once they're due. While people are moving there's
-    always a next message.
-  - The only timers left are short ones in quiet sectors (under 32 sockets),
-    for things that might be the last to happen there: someone leaving, or a
-    claim waiting in a batch.
+  - Now owed positions and reports go out with the next message that
+    arrives once they're due. While people are moving there's always a next
+    message.
+  - The only timers left are short ones for things that might be the last
+    to happen in a sector: someone leaving a quiet one (under 32 sockets),
+    and claims waiting in a batch, in any sector. A batch's timer lasts at
+    most 200 ms, well inside the idle time before a sector can hibernate,
+    so it costs nothing. Without it, a busy sector that went quiet straight
+    after a claim would hibernate with the claim unsent, and its claimer
+    would never hear they were first.
 - **Attachments are expensive.** Each socket's state lives in its
   hibernation attachment, which survives eviction. Serializing it on every
   position update and deserializing all of them for every list of positions
@@ -149,19 +153,30 @@ survey also limits each IP address, wherever it plays:
     changed since the sector last heard it.
   - The sector refuses those addresses' claims with `daily limit`, and the
     game says "Today's charting limit reached · kept in your notes".
-  - This costs no extra requests and adds no wait to a claim. A sector only
-    learns the list with its next report, so an address can chart a few
-    words past 300 before every sector knows. The 6-a-minute limit keeps
-    that small.
+  - A sector keeps the list in memory, so one just woken from hibernation
+    doesn't know it. Until it has heard from the Atlas that day, it asks
+    before taking a claim from an address: a report without the day's
+    counts, shared by every claim that comes in while it's out. That's one
+    request to the Atlas each time a sector wakes, and a few milliseconds'
+    wait for the first claim after. If the Atlas can't be reached, claims go
+    ahead. Before this, a capped address could chart again each time a quiet
+    sector woke: one script could manage most of the 6 a minute all day.
+  - Otherwise it costs no extra requests and adds no wait to a claim. The
+    Atlas only counts an address's words when the sector reports them, so an
+    address can chart a few words past 300 before every sector knows. The
+    6-a-minute limit keeps that small.
   - The counts live only in the Atlas's memory. It's rarely evicted, since
     sectors report to it every few seconds, but if it is, the day's counts
-    start again. Saving them would cost a row written per active address
-    every minute.
+    start again, and every deploy of the Worker evicts it. Saving them would
+    cost a row written per active address every minute.
   - Sectors outside the shared world don't report, so words charted there
     aren't capped. They don't count toward the world's total.
 - **Sockets: 40 per address in a sector, and 120 new ones a minute per
   address.** A sector counts its own sockets exactly, so a few addresses
-  can't fill it and lock everyone else out. A second binding
+  can't fill it and lock everyone else out. It counts again once the binding
+  below has answered, since other joins can come in while it does: a burst
+  of joins from one address, or everyone reconnecting after a deploy, still
+  stops at the caps. A second binding
   (`SURVEY_JOINS`) counts sockets opened anywhere. A player roaming the map
   opens about 10 an hour. Either limit is answered with `full`, and the
   game tries again in a minute or so.
@@ -262,7 +277,10 @@ by a page that can be cached, which is what D1 is for.
 - A claim sets a Durable Object [alarm][alarms] for `LOG_MS` (30 s) later, if
   none is set. Claims that come in before it goes off go with it. Unlike a
   timer, an alarm doesn't stop the sector hibernating, and it wakes the
-  sector if it was evicted.
+  sector if it was evicted. A sector woken from hibernation doesn't know the
+  alarm it set before, so it sets one no later than 30 s after the oldest
+  claim the log hasn't got. Otherwise a claim every 20 s or so, each to a
+  freshly woken sector, would put the log off again and again.
 - The alarm reads claims made since the last one D1 has (the sector's
   `logged` mark, with an index on the claims' time) and writes up to 240 in
   one D1 batch: 12 rows to an `INSERT` (D1 binds at most 100 values to a

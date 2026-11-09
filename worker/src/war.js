@@ -253,6 +253,46 @@ const TOKEN = /^[A-Za-z0-9-]{16,64}$/;
 const DECK = /^[a-z0-9]{1,16}$/;
 const CLOSING = 2;
 
+// The states a room can be in, and the moves it may make from each (see
+// "State machines" in AGENTS.md). The stored room keeps the shape it always
+// had, so rooms saved before this still load: `phase` is 'lobby', 'playing'
+// or 'over', and a game playing with nobody connected is paused, marked by
+// `pausedAt`. WarRoom.roomState() reads which state that is, and
+// WarRoom.go() makes every move.
+//
+//   absent   no room: never made, or deleted once nobody had used it for EXPIRE_MS
+//   lobby    players gather, and the host picks the length and the bots
+//   playing  a game is on, with someone connected
+//   paused   a game is on and nobody is connected: it waits for someone to come back
+//   over     the game has ended, and the host can deal the next one
+export const ROOM_MOVES = {
+  absent: ['lobby'],
+  lobby: ['playing', 'absent'],
+  playing: ['paused', 'over', 'absent'],
+  paused: ['playing', 'absent'],
+  over: ['playing', 'absent'],
+};
+
+// The messages a room takes in each state. 'open' is playing once the stage
+// has opened: a slam (or a charge, or a face-down card) that arrives before
+// then was meant for the stage just played out, and mustn't count toward the
+// next one. What else a message needs (the host, a seat, a card still to
+// slam) is checked where it's handled.
+const ANY = ['lobby', 'playing', 'paused', 'over'];
+export const ROOM_MESSAGES = {
+  hello: ANY,
+  leave: ANY,
+  cheer: ANY,
+  deck: ANY,
+  length: ['lobby'],
+  bots: ['lobby'],
+  start: ['lobby', 'over'],
+  charge: ['open'],
+  card: ['open'],
+  slam: ['open'],
+  tidy: ['playing', 'paused', 'over'],
+};
+
 const roomStub = (env, code) => env.WAR_ROOMS.get(env.WAR_ROOMS.idFromName(code));
 
 function newCode() {
@@ -269,11 +309,12 @@ export function cleanDeck(value) {
 }
 
 // One room. Its state is a single storage value, saved when something
-// changes for good (a player joins, a stage is played out); slams in the
-// current stage live only in memory, so a room woken from hibernation
-// forgets them and those cards flop over when time runs out. The alarm
-// closes each stage and, once a room is idle, deletes it. While nobody is
-// connected, a game in progress waits for someone to come back.
+// changes for good (a player joins, a stage is played out). Slams in the
+// current stage aren't saved one by one: each is kept on the socket that made
+// it too, since sockets' attachments survive hibernation, and a woken room
+// takes them back. The alarm closes each stage and, once a room is idle,
+// deletes it. While nobody is connected, a game in progress waits for someone
+// to come back.
 export class WarRoom {
   constructor(state, env) {
     this.state = state;
@@ -289,8 +330,92 @@ export class WarRoom {
   }
 
   async load() {
-    if (this.room === undefined) this.room = (await this.state.storage.get('room')) ?? null;
+    if (this.room === undefined) {
+      this.room = (await this.state.storage.get('room')) ?? null;
+      this.recallSlams();
+    }
     return this.room;
+  }
+
+  // Which of ROOM_MOVES' states the room is in, read from what's stored.
+  roomState() {
+    const room = this.room;
+    if (!room) return 'absent';
+    if (room.phase === 'playing') return room.pausedAt ? 'paused' : 'playing';
+    return room.phase;
+  }
+
+  is(...states) {
+    return states.includes(this.roomState());
+  }
+
+  // Makes one of the moves in ROOM_MOVES, and nothing else: every change of
+  // state goes through here. Any other move is a bug, refused with an error in
+  // the log. The caller saves.
+  //   go('lobby', code)            a new room
+  //   go('playing', players, game) a new game, from the lobby or after one
+  //   go('playing')                someone is back: the paused stage picks up where it was
+  //   go('paused'), go('over'), go('absent')
+  go(to, ...args) {
+    const from = this.roomState();
+    if (!ROOM_MOVES[from]?.includes(to)) {
+      console.error({ war: 'no such move', from, to });
+      return false;
+    }
+    const now = this.now();
+    if (to === 'absent') {
+      this.room = null;
+    } else if (to === 'lobby') {
+      this.room = { code: args[0], createdAt: now, touchedAt: now, phase: 'lobby', length: 'standard', players: [], game: null, pausedAt: 0 };
+    } else if (to === 'paused') {
+      this.room.pausedAt = now;
+    } else if (to === 'over') {
+      this.room.phase = 'over';
+    } else if (from === 'paused') {
+      const paused = now - this.room.pausedAt;
+      if (this.room.game) { this.room.game.opensAt += paused; this.room.game.closesAt += paused; }
+      this.room.pausedAt = 0;
+    } else {
+      const [players, game] = args;
+      Object.assign(this.room, { players, game, phase: 'playing' });
+    }
+    return true;
+  }
+
+  // Whether the room takes a message of this type in the state it's in (ROOM_MESSAGES).
+  takes(type) {
+    const states = typeof type === 'string' && Object.hasOwn(ROOM_MESSAGES, type) ? ROOM_MESSAGES[type] : [];
+    const state = this.roomState();
+    return states.includes(state) || (state === 'playing' && states.includes('open') && this.now() >= this.room.game.opensAt);
+  }
+
+  // When the alarm should go off: the stage's deadline while a game is
+  // playing; otherwise the idle check, EXPIRE_MS after the room was last used.
+  deadline() {
+    return this.is('playing') ? warDueAt(this.room.game, this.onlineSeats()) : this.room.touchedAt + EXPIRE_MS;
+  }
+
+  // A slam is kept on the socket that made it, as well as in the game, so a
+  // room woken from hibernation still has it: the game is saved once a stage,
+  // not once a slam, but attachments survive. The stage is named by when it
+  // opened, which no other stage, in this game or another, shares (a pause
+  // moves it, but nobody is connected through one).
+  keepSlam(ws, slam) {
+    ws.serializeAttachment({ ...ws.deserializeAttachment(), slam: [this.room.game.opensAt, slam.power, slam.style] });
+  }
+
+  recallSlams() {
+    const game = this.room?.game;
+    if (!game || game.over) return;
+    for (const ws of this.state.getWebSockets()) {
+      const a = ws.deserializeAttachment();
+      if (!a?.token || !Array.isArray(a.slam) || a.slam[0] !== game.opensAt) continue;
+      const seat = this.room.players.findIndex((p) => p.token === a.token);
+      if (seat >= 0 && game.fighters.includes(seat) && !game.slams[seat]) {
+        game.slams[seat] = [a.slam[1], a.slam[2], 0];
+        game.naps[seat] = 0;
+      }
+    }
   }
 
   async save() {
@@ -316,16 +441,18 @@ export class WarRoom {
     return new Response(null, { status: 404 });
   }
 
-  // Claims this room for a new code, unless someone is using it.
+  // Claims this room for a new code, unless someone is using it: it was used
+  // in the last EXPIRE_MS, or someone is still connected to it.
   async create(code) {
     const room = await this.load();
-    const now = this.now();
-    if (room && now - room.touchedAt < EXPIRE_MS) return false;
-    this.room = { code, createdAt: now, touchedAt: now, phase: 'lobby', length: 'standard', players: [], game: null, pausedAt: 0 };
+    if (room && (this.now() - room.touchedAt < EXPIRE_MS || this.sockets().length)) return false;
+    if (room) this.go('absent');
+    this.go('lobby', code);
     await this.save();
     return true;
   }
 
+  // The stored phase, as pages have always read it: a paused game is 'playing'.
   info() {
     const { code, phase, players } = this.room;
     return { code, phase, players: players.length, full: players.filter((p) => !p.bot).length >= WAR.MAX_PLAYERS };
@@ -419,40 +546,41 @@ export class WarRoom {
     if (!message || typeof message !== 'object') return;
     const room = await this.load();
     if (!room) { try { ws.close(4004, 'unknown room'); } catch { /* already closed */ } return; }
+    if (!this.takes(message.t)) return;
     const seat = this.seatOf(ws);
     const host = this.isHost(ws);
-    const setup = room.phase !== 'playing';
     switch (message.t) {
       case 'hello': return this.hello(ws, message);
       case 'leave': return this.leave(ws);
       case 'length':
-        if (!host || !setup || !Object.hasOwn(WAR.LENGTHS, message.length)) return;
+        if (!host || !Object.hasOwn(WAR.LENGTHS, message.length)) return;
         room.length = message.length;
         await this.save();
         return this.sendStates();
       case 'bots':
-        if (!host || !setup || !Number.isInteger(message.n)) return;
+        if (!host || !Number.isInteger(message.n)) return;
         return this.setBots(message.n);
       case 'start':
-        if (!host || !setup) return;
+        if (!host) return;
         return this.start();
       case 'charge':
-        if (room.phase !== 'playing' || seat === null || !Number.isInteger(message.tier)) return;
+        if (seat === null || !Number.isInteger(message.tier)) return;
         if (!room.game.fighters.includes(seat) || room.game.slams[seat]) return;
         return this.broadcast({ t: 'charge', seat, tier: Math.max(0, Math.min(WAR.TIERS - 1, message.tier)) });
       case 'card':
         // In a war, each card laid face down is slammed on its own, for show;
         // the last card is the slam that counts.
-        if (room.phase !== 'playing' || seat === null || !room.game.stage || !Number.isInteger(message.n)) return;
+        if (seat === null || !room.game.stage || !Number.isInteger(message.n)) return;
         if (message.n < 0 || message.n > 2 || !room.game.fighters.includes(seat) || room.game.slams[seat]) return;
         return this.broadcast({
           t: 'card', seat, n: message.n,
           power: Math.max(0, Math.min(WAR.MAX_POWER, Math.round(Number(message.power)) || 0)),
         });
       case 'slam': {
-        if (room.phase !== 'playing' || seat === null) return;
+        if (seat === null) return;
         const slam = warSlam(room.game, seat, message.power, message.style);
         if (!slam) return;
+        this.keepSlam(ws, slam);
         this.broadcast(slam);
         return this.tick();
       }
@@ -473,7 +601,7 @@ export class WarRoom {
         // A player cleaned up the cards they've won, for show: everyone sees
         // that player's heap squared into a neat stack.
         const now = this.now();
-        if (room.phase === 'lobby' || seat === null || now - (this.tidied.get(ws) || 0) < TIDY_GAP_MS) return;
+        if (seat === null || now - (this.tidied.get(ws) || 0) < TIDY_GAP_MS) return;
         this.tidied.set(ws, now);
         return this.broadcast({ t: 'tidy', seat });
       }
@@ -491,9 +619,9 @@ export class WarRoom {
     if (!name) return this.send(ws, { t: 'error', error: 'Pick a name of up to 16 letters or numbers.' });
     if (typeof message.token !== 'string' || !TOKEN.test(message.token)) return this.send(ws, { t: 'error', error: 'Bad token.' });
     let player = room.players.find((p) => p.token === message.token);
-    if (player && room.phase !== 'playing') Object.assign(player, { name, avatar });
+    if (player && this.is('lobby', 'over')) Object.assign(player, { name, avatar });
     if (player) player.deck = deck;  // only for show, so it can change mid-game
-    if (!player && room.phase === 'lobby') {
+    if (!player && this.is('lobby')) {
       // People take the place of bots once the room is full.
       const bot = room.players.findLastIndex((p) => p.bot);
       if (room.players.length >= WAR.MAX_PLAYERS && bot >= 0) room.players.splice(bot, 1);
@@ -504,13 +632,9 @@ export class WarRoom {
     }
     // Spectators carry their name, for the next game.
     ws.serializeAttachment(player ? { token: message.token } : { token: message.token, name, avatar, deck });
-    if (room.pausedAt) {
-      const paused = this.now() - room.pausedAt;
-      if (room.game) { room.game.opensAt += paused; room.game.closesAt += paused; }
-      room.pausedAt = 0;
-    }
+    if (this.is('paused')) this.go('playing');
     await this.save();
-    if (room.phase === 'playing') {
+    if (this.is('playing')) {
       this.send(ws, this.snapshot(ws, this.now()));
       this.broadcast(this.onlineMessage());
       return this.tick();
@@ -522,7 +646,7 @@ export class WarRoom {
     const room = this.room;
     const seat = this.seatOf(ws);
     ws.serializeAttachment({ token: null });
-    if (seat !== null && room.phase === 'lobby') {
+    if (seat !== null && this.is('lobby')) {
       room.players.splice(seat, 1);
       await this.save();
     }
@@ -577,10 +701,8 @@ export class WarRoom {
     if (players.length < 2) {
       return this.broadcast({ t: 'error', error: 'You need at least two players. Add some bots!' });
     }
-    room.players = players;
     const { game, stage } = warNewGame(players.map((p) => p.bot), room.length, this.random, now);
-    room.game = game;
-    room.phase = 'playing';
+    this.go('playing', players, game);
     await this.save();
     this.sendStates();
     this.broadcast(stage);
@@ -588,11 +710,10 @@ export class WarRoom {
 
   // Plays the stage out if it's due, then sets the alarm for whatever's next.
   async tick() {
-    const room = this.room;
     const now = this.now();
-    if (room.phase === 'playing' && !room.pausedAt && now >= warDueAt(room.game, this.onlineSeats())) {
-      const flip = warResolve(room.game, now, this.random);
-      if (flip.over) room.phase = 'over';
+    if (this.is('playing') && now >= this.deadline()) {
+      const flip = warResolve(this.room.game, now, this.random);
+      if (flip.over) this.go('over');
       this.broadcast(flip);
       return this.save();
     }
@@ -600,10 +721,7 @@ export class WarRoom {
   }
 
   async schedule() {
-    const room = this.room;
-    const at = room.phase === 'playing' && !room.pausedAt
-      ? warDueAt(room.game, this.onlineSeats())
-      : room.touchedAt + EXPIRE_MS;
+    const at = this.deadline();
     if (at === this.alarmAt) return;
     this.alarmAt = at;
     await this.state.storage.setAlarm(at);
@@ -613,13 +731,21 @@ export class WarRoom {
     this.alarmAt = null;
     const room = await this.load();
     if (!room) return;
-    if (!this.sockets().length && this.now() >= room.touchedAt + EXPIRE_MS) {
-      await this.state.storage.deleteAll();
-      this.room = null;
-      return;
+    const here = this.sockets().length > 0;
+    if (this.now() >= room.touchedAt + EXPIRE_MS) {
+      // Nobody has used the room for EXPIRE_MS: it's deleted, unless someone
+      // is still connected, which counts as using it. (Setting the alarm for
+      // that same moment again would set off a new alarm straight away, for
+      // as long as they stayed.)
+      if (!here) {
+        await this.state.storage.deleteAll();
+        this.go('absent');
+        return;
+      }
+      if (!this.is('playing')) return this.save();
     }
-    if (room.phase === 'playing' && !room.pausedAt && !this.sockets().length) {
-      room.pausedAt = this.now();
+    if (!here && this.is('playing')) {
+      this.go('paused');
       return this.save();
     }
     return this.tick();
@@ -641,9 +767,11 @@ export class WarRoom {
     this.gone.add(ws);
     const room = await this.load();
     if (!room) return;
-    if (room.phase !== 'playing') return this.sendStates();
+    if (this.is('lobby', 'over')) return this.sendStates();
     if (!this.sockets().length) {
-      room.pausedAt = this.now();
+      // A pause starts once: a page that connects to a paused room and
+      // leaves again without joining mustn't shorten the stage it left.
+      if (this.is('playing')) this.go('paused');
       return this.save();
     }
     this.broadcast(this.onlineMessage());

@@ -5,6 +5,7 @@
 // Cloudflare's documented always-passes test secret.
 
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { describe, test } from 'node:test';
 
 import { hashAddress } from '../src/leaderboard.js';
@@ -265,4 +266,19 @@ describe('routeSurvey with Turnstile on', () => {
     assert.deepEqual(['true', true, 'false', false, undefined, '', 'TRUE', '1'].map((v) => turnstileRequired({ TURNSTILE_REQUIRED: v })),
       [true, true, false, false, false, false, false, false]);
   });
+});
+
+// Requiring passes before the game asks for them would turn every player
+// away (step 4 before step 3 in "Switching it on" in TURNSTILE.md).
+test('passes are only required once the game has a site key to get them with', () => {
+  const toml = readFileSync(new URL('../wrangler.toml', import.meta.url), 'utf8');
+  const page = readFileSync(new URL('../../letterfield.html', import.meta.url), 'utf8');
+  const switches = [...toml.matchAll(/^TURNSTILE_REQUIRED\s*=\s*("?)([^"\s#]*)\1/gm)].map((m) => m[2]);
+  assert.equal(switches.length, 2, 'TURNSTILE_REQUIRED is set in [vars] and [previews.vars]');
+  const key = page.match(/^const TURNSTILE_SITE_KEY = '([^']*)'/m);
+  assert.ok(key, 'letterfield.html declares TURNSTILE_SITE_KEY');
+  for (const value of switches) {
+    assert.ok(['true', 'false'].includes(value), `TURNSTILE_REQUIRED is "${value}"`);
+    if (value === 'true') assert.notEqual(key[1], '', 'with passes required, letterfield.html needs a site key');
+  }
 });
