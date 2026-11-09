@@ -233,10 +233,27 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px s
   .size-m .card { --w: 80px; }
   .size-l .card { --w: 110px; }
 }
-.downs { position: absolute; right: -6px; bottom: -4px; background: var(--war); color: #fff; font: 700 10px/1 system-ui, sans-serif; padding: 3px 5px; border-radius: 8px; }
+.downs { position: absolute; right: -6px; bottom: -4px; z-index: 2; background: var(--war); color: #fff; font: 700 10px/1 system-ui, sans-serif; padding: 3px 5px; border-radius: 8px; }
+/* The cards under someone else's in a war: a messy fan peeking out to the
+   left of their card, one for each, so you can count them as they go down,
+   and in a war of wars the cards that tied face up among them, far enough
+   out to show their corners. --x is how far out, a share of the card's
+   width (see pileUnder); --i is 0 for the newest, which lies on top. */
+.tdowns { position: absolute; inset: 0; z-index: 0; pointer-events: none; }
+.tdowns .card {
+  z-index: calc(20 - var(--i));
+  position: absolute; left: 50%; top: 50%; margin: calc(var(--w) * -.7) 0 0 calc(var(--w) * -.5);
+  transform: translate(calc(var(--w) * var(--x) * -1), var(--dy)) rotate(var(--r));
+  transition: transform calc(250ms * var(--pace)) ease-out;
+}
+.tdowns .card.thump { animation: thump calc(320ms * var(--pace)) cubic-bezier(.5, 0, .75, 0) both; }
+@keyframes thump {
+  0% { opacity: 0; transform: translate(calc(var(--w) * var(--x) * -1), calc(var(--dy) - 26px)) rotate(calc(var(--r) - 20deg)) scale(1.3); }
+  100% { opacity: 1; transform: translate(calc(var(--w) * var(--x) * -1), var(--dy)) rotate(var(--r)); }
+}
 
 /* Arena */
-#arena { padding: 2px 12px 4px; text-align: center; min-height: 92px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; }
+#arena { min-width: 0; padding: 2px 12px 4px; text-align: center; min-height: 92px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; }
 #banner {
   font-family: var(--display); font-size: 30px; line-height: 1; color: var(--gold); min-height: 30px;
   text-shadow: 0 3px 0 rgba(0, 0, 0, .35); white-space: nowrap; max-width: 100%; overflow: hidden; text-overflow: ellipsis;
@@ -244,6 +261,20 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px s
 #banner.war { color: #fff; text-shadow: 0 0 12px var(--war), 0 3px 0 var(--war); }
 #banner.pop { animation: pop calc(600ms * var(--pace)) cubic-bezier(.2, 1.6, .4, 1); }
 @keyframes pop { 0% { transform: scale(.3); opacity: 0; } 60% { transform: scale(1.15); opacity: 1; } 100% { transform: scale(1); } }
+/* A slow game: who the table is waiting for, and a nudge for them. */
+#waitRow { display: flex; gap: 6px; align-items: center; justify-content: center; flex-wrap: wrap; font-size: 13px; color: var(--felt-ink); max-width: 100%; }
+#waitRow[hidden] { display: none; }
+#waitText { font-weight: 700; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#waitRow .chip { min-height: 32px; padding: 6px 10px; }
+.tile.waiting { border-style: dashed; }
+.tile.nudged, #myPile.nudged .stack { animation: nudge calc(500ms * var(--pace)) ease-in-out 2; }
+@keyframes nudge {
+  0%, 100% { transform: rotate(0); }
+  20% { transform: rotate(-9deg) translateX(-4px); }
+  40% { transform: rotate(7deg) translateX(4px); }
+  60% { transform: rotate(-5deg) translateX(-2px); }
+  80% { transform: rotate(3deg); }
+}
 #caption { font-size: 14px; color: var(--felt-ink); max-width: 34em; min-height: 2.7em; text-wrap: balance; }
 #warRow { display: flex; gap: 6px; justify-content: center; flex-wrap: wrap; max-width: 100%; }
 #warRow .wf { display: flex; flex-direction: column; align-items: center; gap: 2px; font-size: 11px; max-width: 64px; }
@@ -261,6 +292,7 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px s
 #myWar .wpile { position: relative; width: var(--cw); height: calc(var(--cw) * 1.4); }
 #myWar .wpile:empty { border: 2px dashed rgba(255, 80, 70, .7); border-radius: 9px; }
 #myWar .wpile .card { position: absolute; inset: 0; transform: translate(var(--dx), var(--dy)) rotate(var(--r)); }
+#myWar.won .wpile .card:last-child:not(.back) { box-shadow: 0 0 0 3px var(--gold), 0 0 22px var(--gold); }
 #myWar .wpile .card.slam { animation: wslam calc(380ms * var(--pace)) cubic-bezier(.5, 0, .75, 0) both; }
 @keyframes wslam {
   0% { transform: translate(var(--dx), calc(var(--dy) - 70px)) rotate(calc(var(--r) - 30deg)) scale(1.5); opacity: .3; }
@@ -270,14 +302,17 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px s
 #myWar .wcount { font-size: 12px; font-weight: 700; color: #ffb8ae; white-space: nowrap; }
 .card.ghost { position: absolute; left: 0; top: 0; --w: 88px; z-index: 31; box-shadow: 0 18px 30px rgba(0, 0, 0, .45); will-change: transform; }
 #myPile { position: relative; display: grid; justify-items: center; gap: 4px; }
-#myPile .stack { position: relative; }
-#myPile .stack::before, #myPile .stack::after {
-  content: ""; position: absolute; inset: 0; border-radius: calc(var(--cw) * var(--deck-radius));
-  background: var(--deck-back-solid); border: 1px solid var(--deck-back-edge);
+#myPile .stack { --pw: var(--cw); }
+/* A deck is as thick as it's full: its top card sits raised over a block of
+   card edges by --d, a share of the card's width (see deckDepth). */
+.pile { position: relative; --d: 0; }
+.pile::after {
+  content: ""; position: absolute; inset: 0; border-radius: calc(var(--pw) * var(--deck-radius));
+  background: repeating-linear-gradient(to bottom, var(--deck-back-edge) 0 1px, var(--deck-back-solid) 1px 3px);
+  border: 1px solid var(--deck-back-edge); box-shadow: 0 2px 6px rgba(0, 0, 0, .3);
 }
-#myPile .stack::before { transform: translate(4px, 4px); }
-#myPile .stack::after { transform: translate(2px, 2px); }
-#myPile .stack .card { z-index: 1; }
+.pile > .card { position: relative; z-index: 1; transform: translateY(calc(var(--pw) * var(--d) * -1)); transition: transform .3s; }
+.pile > .count { transform: translateY(calc(var(--pw) * var(--d) * -1)); transition: transform .3s; }
 #myPile.empty .stack { visibility: hidden; }
 #myLabel { font-size: 13px; font-weight: 700; text-align: center; max-width: 120px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 #myLabel small { display: block; font-weight: 400; color: var(--felt-dim); }
@@ -325,17 +360,54 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px s
   transition: transform calc(420ms * var(--pace)) cubic-bezier(.3, .7, .3, 1) calc(var(--i, 0) * 14ms);
 }
 #winnings .heap .card { --w: 40px; }
-/* On a tile, the heap is a point near the right edge of the card, behind it.
-   Cards fly to it over everything (see heapFly), since the tiles' scrolling
-   box would hide them on the way. */
-.tile .heap { position: absolute; z-index: 0; left: calc(100% - 6px); top: 56%; width: 0; height: 0; pointer-events: none; }
-.card.flyer { position: absolute; z-index: 1; will-change: transform; }
-.size-l .heap .card { --w: 46px; }
-.size-m .heap .card { --w: 34px; }
-.size-s .heap, .size-xs .heap { display: none; }
+/* At a table of up to six (#opponents.loots), a tile shows the player's
+   deck, as thick as it's full with its count in the corner, and their loot
+   pile beside it, with a count; the room for the loot is kept even while
+   it's empty, so the deck doesn't jump. The cards they play go on the table
+   in the middle (#spots). Cards fly to a loot pile over everything (see
+   heapFly), since the tiles' scrolling box would hide them on the way.
+   Bigger tables keep the card each player plays on their tile. */
+.tile .tcards { display: flex; align-items: center; gap: 3px; }
+.tile .tdeck { --pw: var(--tw); flex: none; }
+.tile .tdeck .card { --w: var(--tw); }
+.tile .tdeck.empty::after { display: none; }
+.tile .tdeck.empty > .card { opacity: .2; }
+.tile .tdeck .count {
+  position: absolute; top: -5px; right: -7px; z-index: 2; min-width: 18px; padding: 2px 4px; border-radius: 999px;
+  font: 800 10px/1 system-ui, sans-serif; text-align: center; background: rgba(0, 0, 0, .6); color: #fff;
+}
+.loots .tcount { display: none; }
+#spots { display: flex; gap: 8px; justify-content: center; align-items: flex-end; align-self: stretch; min-width: 0; }
+#spots .spot { display: flex; flex-direction: column; align-items: center; gap: 2px; min-width: 0; flex: 0 1 84px; }
+#spots .tslot { position: relative; display: grid; place-items: center; }
+#spots .card { --w: 50px; }
+#spots[data-n="1"] .card { --w: 70px; }
+#spots[data-n="2"] .card, #spots[data-n="3"] .card { --w: 58px; }
+#spots .sname { font: 700 11px/1.2 system-ui, sans-serif; color: var(--felt-dim); max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#spots .spot.won .card:not(.back) { box-shadow: 0 0 0 3px var(--gold), 0 0 16px var(--gold); }
+#spots .spot.charging .tslot { filter: drop-shadow(0 0 calc(var(--glow, 2) * 1px) var(--gold)); }
 @media (min-width: 700px) {
-  .size-l .heap .card { --w: 54px; }
-  .size-m .heap .card { --w: 40px; }
+  #spots .card { --w: 64px; }
+  #spots[data-n="1"] .card { --w: 88px; }
+  #spots[data-n="2"] .card, #spots[data-n="3"] .card { --w: 74px; }
+}
+.tile .tloot { position: relative; flex: none; width: calc(var(--lw) * 1.2); height: calc(var(--lw) * 1.75); }
+#opponents:not(.loots) .tloot { display: none; }
+.tile .tloot .heap { position: absolute; inset: 0; pointer-events: none; }
+/* Someone else's heap squares up slowly enough to see, even in Fast mode. */
+.tile .heap .card { --w: var(--lw); transition: transform 600ms cubic-bezier(.3, .7, .3, 1) calc(var(--i, 0) * 25ms); }
+.tile .tloot .count {
+  position: absolute; top: -4px; right: -6px; z-index: 999; min-width: 18px; padding: 2px 4px; border-radius: 999px;
+  font: 800 10px/1 system-ui, sans-serif; text-align: center; background: rgba(0, 0, 0, .55); color: #fff;
+}
+.card.flyer { position: absolute; z-index: 1; will-change: transform; }
+.loots.size-l { --tw: 60px; --lw: 42px; }
+.loots.size-m { --tw: 50px; --lw: 34px; }
+.loots.size-s { --tw: 38px; --lw: 26px; }
+@media (min-width: 700px) {
+  .loots.size-l { --tw: 72px; --lw: 50px; }
+  .loots.size-m { --tw: 60px; --lw: 40px; }
+  .loots.size-s { --tw: 50px; --lw: 32px; }
 }
 /* Each card is thrown from where it lay on the table, at its size there: up
    in an arc, then down faster onto the heap. They go one after another. */
@@ -353,10 +425,19 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px s
   }
   100% { transform: translate(var(--x), var(--y)) rotate(var(--r)) scale(1); }
 }
-#tidyBtn {
+#tidyBtn, #gatherBtn {
   border: 0; border-radius: 999px; padding: 6px 9px; min-height: 30px; background: rgba(0, 0, 0, .3);
   font: 700 12px/1 system-ui, sans-serif; white-space: nowrap;
 }
+/* Your deck is out and your winnings are waiting: pick them up. */
+#gatherBtn.due { background: var(--gold); color: var(--gold-ink); animation: beckon calc(1400ms * var(--pace)) ease-in-out infinite; }
+/* How many cards are in your deck, and how many you've won. */
+#myPile .count, #winnings .count {
+  position: absolute; top: -6px; right: -8px; z-index: 3; min-width: 22px; padding: 3px 6px; border-radius: 999px;
+  font: 800 11px/1 system-ui, sans-serif; text-align: center; background: rgba(0, 0, 0, .55); color: #fff; pointer-events: none;
+}
+#winnings .count { top: -2px; right: -4px; z-index: 999; }
+
 #gain { position: absolute; left: 50%; top: 10px; font-family: var(--display); color: var(--gold); font-size: 22px; pointer-events: none; opacity: 0; }
 #gain.show { animation: rise calc(1100ms * var(--pace)) ease-out; }
 @keyframes rise { 0% { opacity: 0; transform: translate(-50%, 10px); } 20% { opacity: 1; } 100% { opacity: 0; transform: translate(-50%, -40px); } }
@@ -395,6 +476,7 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px s
   100% { transform: translate(calc(-50% + var(--dx)), calc(-50% + var(--dy))) rotate(var(--rot)) scale(1.1); opacity: 0; }
 }
 .floaty { position: absolute; font-size: 30px; animation: floaty 1.8s ease-out forwards; }
+.floaty.broom { font-size: 22px; }
 @keyframes floaty { 0% { transform: translate(-50%, 0) scale(.6); opacity: 0; } 15% { opacity: 1; transform: translate(-50%, -20px) scale(1.1); } 100% { opacity: 0; transform: translate(calc(-50% + var(--dx)), -170px) scale(1); } }
 .flash { position: absolute; inset: 0; animation: flash calc(380ms * var(--pace)) ease-out forwards; }
 @keyframes flash { from { opacity: .75; } to { opacity: 0; } }
@@ -821,16 +903,23 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px s
   </section>
   <section id="opponents" aria-label="Other players"></section>
   <section id="arena" aria-live="polite">
+    <div id="spots" aria-live="off" hidden></div>
     <div id="banner"></div>
     <div id="warRow"></div>
     <div id="caption"></div>
+    <div id="waitRow" hidden>
+      <span id="waitText"></span>
+      <button class="chip" id="nudgeBtn" type="button">👉 Nudge</button>
+      <button class="chip" id="flopBtn" type="button" hidden>🫳 Flip it for them</button>
+    </div>
   </section>
   <section id="me">
     <div id="winnings" hidden>
-      <div class="heap" role="img" aria-label="Cards you've won"></div>
+      <div class="heap" role="img" aria-label="Cards you've won"><span class="count" id="lootCount" hidden></span></div>
       <button id="tidyBtn" type="button" hidden>🧹 Clean up</button>
+      <button id="gatherBtn" type="button" title="Put your winnings under your deck" hidden>📥 Pick up</button>
     </div>
-    <div id="myPile" role="button" tabindex="0" aria-label="Your deck" aria-describedby="slamText"><div class="stack"><div class="card back"></div><span id="deckHint" hidden></span></div><div id="myLabel"></div></div>
+    <div id="myPile" role="button" tabindex="0" aria-label="Your deck" aria-describedby="slamText"><div class="stack pile"><div class="card back"></div><span class="count" id="deckCount" hidden></span><span id="deckHint" hidden></span></div><div id="myLabel"></div></div>
     <div id="myWar" hidden><div class="wpile"></div><span class="wcount"></span></div>
     <div id="mySlot"><div class="card empty"></div></div>
     <div id="gain"></div>
@@ -865,6 +954,8 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px s
     <label for="opponents" class="small" id="oppLabel">1 opponent</label>
     <input type="range" id="oppRange" min="1" max="49" value="1" aria-labelledby="oppLabel">
     <div class="seg" id="soloLength" style="margin-top:8px"></div>
+    <div class="seg" id="soloClock" style="margin-top:6px" role="group" aria-label="Clock"></div>
+    <div class="seg" id="soloWinnings" style="margin-top:6px" role="group" aria-label="Winnings"></div>
     <p class="small dim" id="soloNote"></p>
     <button class="btn primary wide" id="soloBtn">Deal me in</button>
 
@@ -918,6 +1009,10 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px s
       </div>
       <h3>Length</h3>
       <div class="seg" id="roomLength"></div>
+      <h3>Clock</h3>
+      <div class="seg" id="roomClock" role="group" aria-label="Clock"></div>
+      <h3>Winnings</h3>
+      <div class="seg" id="roomWinnings" role="group" aria-label="Winnings"></div>
     </div>
     <h3>Your deck</h3>
     <div class="decks" id="lobbyDecks" role="group" aria-label="Deck"></div>
@@ -1030,6 +1125,8 @@ const WAR = {
   STAGE_MS: 8000,      // to slam before your card flops over by itself
   WAR_STAGE_MS: 20000, // the same in a war, where you slam every card you lay down
   NAPS: 2,             // flops in a row before a stage stops waiting for you
+  NUDGE_MS: 5000,      // in a slow game, how long a stage waits before you can nudge someone
+  FLOP_MS: 30000,      // and before the host can flip their card over for them
   BOT_MS: 1300,        // the shortest a stage lasts, while the bots slam
   WAR_BOT_MS: 2600,    // the same in a war, while the bots slam all their cards
   REVEAL_MS: 2400,     // to watch the cards turn over before the next battle
@@ -1092,19 +1189,54 @@ function warBotPower(random) {
 }
 
 // A new game for seats 0..n-1, where bots[seat] is true for a bot. Returns
-// the game and the message opening its first battle.
-function warNewGame(bots, length, random, now, pace) {
+// the game and the message opening its first battle. Options: pace speeds
+// it up (below 1) or slows it down; a slow game has no clock, so each stage
+// waits until everyone has played, like a game at a real table, and nobody's
+// card flops over by itself; and shuffle shuffles each player's winnings as
+// they go back under their deck, instead of keeping them as they were won.
+//
+// Each player has a deck, face down, played from the top (piles), and the
+// cards they've won, face up beside it (loot), the latest last. Winnings go
+// back under the deck when the player picks them up (warGather): players do
+// that themselves, bots when their deck can't cover a stage. Either way the
+// cards come round in the same order, so picking up early changes nothing.
+function warNewGame(bots, length, random, now, options = {}) {
   const game = {
     limit: WAR.LENGTHS[length] || WAR.LENGTHS.standard,
     piles: warDeal(bots.length, random),
+    loot: bots.map(() => []),
     bots: bots.slice(),
     out: bots.map(() => 0),  // the battle each player ran out of cards in
     naps: bots.map(() => 0), // stages in a row each player's card flopped over by itself
-    battle: 0, stage: 0, fighters: [], slams: {}, pot: [],
-    opensAt: 0, closesAt: 0, pace: pace || 1,
+    battle: 0, stage: 0, fighters: [], slams: {}, pot: [], potBy: [],
+    opensAt: 0, closesAt: 0, pace: options.pace || 1, slow: Boolean(options.slow), shuffle: Boolean(options.shuffle),
     wars: 0, biggest: 0, deepest: 0, over: null,
   };
   return { game, stage: warOpenStage(game, now, random, null, 0) };
+}
+
+// The cards a player holds: their deck and their winnings.
+function warHeld(game, seat) {
+  return game.piles[seat].length + game.loot[seat].length;
+}
+
+// Puts a player's winnings under their deck as they lie, the oldest first,
+// or shuffled in a game that shuffles them. Only the bottom of the deck
+// changes, so the card a stage turns up stays the same. Returns how many
+// cards went under.
+function warGather(game, seat, random) {
+  const loot = game.loot[seat];
+  if (!loot.length) return 0;
+  game.piles[seat].push(...(game.shuffle ? warShuffle(loot, random) : loot));
+  game.loot[seat] = [];
+  return loot.length;
+}
+
+// Whether a player has to pick up their winnings before they can play this
+// stage: their deck can't cover it (a card in a battle, four in a war) and
+// they have winnings to pick up.
+function warShort(game, seat) {
+  return game.loot[seat].length > 0 && game.piles[seat].length < (game.stage ? 4 : 1);
 }
 
 // How long the bots take to slam: a moment in a battle, longer in a war,
@@ -1113,9 +1245,21 @@ function warBotMs(game) {
   return Math.round((game.stage ? WAR.WAR_BOT_MS : WAR.BOT_MS) * game.pace);
 }
 
+// The card a fighter will turn over this stage: their top card, or in a war
+// the one after the (up to three) they lay face down. A stage's cards are
+// fixed once it opens, since piles only change when it's played out, so a
+// slam can show its card face up at once. War has no decisions, so seeing
+// cards early gives nobody an edge.
+function warUpCard(game, seat) {
+  const pile = game.piles[seat];
+  return pile[game.stage ? Math.min(3, pile.length - 1) : 0];
+}
+
 // Opens the next stage: a new battle for everyone still holding cards, or,
-// when fighters is given, a war between them. Bots slam straight away; the
-// pages show their slams one by one while the stage opens.
+// when fighters is given, a war between them. A bot whose deck can't cover
+// the stage picks up its winnings first; gathered says which. Players pick up
+// their own, before they slam. Bots slam straight away; the pages show their
+// slams one by one while the stage opens, each bot's card face up as it lands.
 function warOpenStage(game, now, random, fighters, delay) {
   if (fighters) {
     game.stage++;
@@ -1123,23 +1267,26 @@ function warOpenStage(game, now, random, fighters, delay) {
   } else {
     game.battle++;
     game.stage = 0;
-    game.fighters = game.piles.map((_, seat) => seat).filter((seat) => game.piles[seat].length);
+    game.fighters = game.piles.map((_, seat) => seat).filter((seat) => warHeld(game, seat));
     game.pot = [];
+    game.potBy = [];
   }
+  const gathered = game.fighters.filter((seat) => game.bots[seat] && warShort(game, seat) && warGather(game, seat, random));
   game.slams = {};
   game.opensAt = now + Math.round(delay * game.pace);
-  game.closesAt = game.opensAt + (game.stage ? WAR.WAR_STAGE_MS : WAR.STAGE_MS);
+  game.closesAt = game.slow ? Infinity : game.opensAt + (game.stage ? WAR.WAR_STAGE_MS : WAR.STAGE_MS);
   const bots = [];
   for (const seat of game.fighters) {
     if (!game.bots[seat]) continue;
     const power = warBotPower(random);
     const style = Math.floor(random() * WAR.STYLES);
     game.slams[seat] = [power, style, 0];
-    bots.push([seat, power, style, Math.round(100 * game.pace + random() * (warBotMs(game) - 300 * game.pace))]);
+    const delay = Math.round(100 * game.pace + random() * (warBotMs(game) - 300 * game.pace));
+    bots.push([seat, power, style, delay, warUpCard(game, seat)]);
   }
   return {
     t: 'stage', battle: game.battle, stage: game.stage, limit: game.limit, fighters: game.fighters.slice(),
-    opensIn: game.opensAt - now, closesIn: game.closesAt - now, bots,
+    opensIn: game.opensAt - now, closesIn: game.slow ? null : game.closesAt - now, bots, gathered,
   };
 }
 
@@ -1151,20 +1298,39 @@ function warWaitingFor(game, online) {
 }
 
 // When to play the stage out: once everyone online has slammed and the bots
-// have had their moment, or when time runs out.
+// have had their moment, or when time runs out. In a slow game time never
+// runs out: Infinity, until everyone online has played.
 function warDueAt(game, online) {
   return warWaitingFor(game, online).length ? game.closesAt : game.opensAt + warBotMs(game);
 }
 
-// Records a slam. Returns the message to pass on, or null when it doesn't
-// count: the game is over, the seat isn't fighting, or it already slammed.
-function warSlam(game, seat, power, style) {
+// Records a slam. Returns the message to pass on, with the card it turns
+// over, or null when it doesn't count: the game is over, the seat isn't
+// fighting, or it already slammed. The pages have the player pick up their
+// winnings first when they must; a slam that comes without picks them up
+// (gathered: true).
+function warSlam(game, seat, power, style, random = Math.random) {
   if (game.over || !game.fighters.includes(seat) || game.slams[seat]) return null;
   power = Math.max(0, Math.min(WAR.MAX_POWER, Math.round(Number(power)) || 0));
   style = Number.isInteger(style) && style >= 0 && style < WAR.STYLES ? style : 0;
+  const gathered = warShort(game, seat) && warGather(game, seat, random) > 0;
   game.slams[seat] = [power, style, 0];
   game.naps[seat] = 0;
-  return { t: 'slam', seat, power, style };
+  const slam = { t: 'slam', seat, power, style, up: warUpCard(game, seat) };
+  if (gathered) slam.gathered = true;
+  return slam;
+}
+
+// In a slow game, someone the table has waited a long time for gets their
+// card flipped over for them, as if it had flopped. Returns the slam to pass
+// on, or null when it doesn't count.
+function warFlop(game, seat, random = Math.random) {
+  if (game.over || !game.fighters.includes(seat) || game.slams[seat]) return null;
+  const gathered = warShort(game, seat) && warGather(game, seat, random) > 0;
+  game.slams[seat] = [0, 0, 1];
+  const slam = { t: 'slam', seat, power: 0, style: 0, up: warUpCard(game, seat), flopped: true };
+  if (gathered) slam.gathered = true;
+  return slam;
 }
 
 // Plays the stage out. Every fighter turns over their top card (in a war,
@@ -1172,39 +1338,56 @@ function warSlam(game, seat, power, style) {
 // highest rank takes the pot. A tie is a war between the tied players who
 // still have cards: if only one does, they win; if none do, the war gods pick.
 // Anyone who hasn't slammed flops their card over anyway. Returns the message
-// describing it all, with the next stage or the end of the game.
+// describing it all, with the next stage or the end of the game. In a war,
+// downs has the cards each fighter laid face down, so whoever wins the pot
+// can see every card in it. The pot goes onto the winner's winnings as it
+// lies: everyone else's cards in the order they were played, then the
+// winner's own on top. counts is every card each player holds, decks the
+// ones in their deck. A card that flops over from a deck that couldn't
+// cover the stage picks up its player's winnings first; gathered says whose.
 function warResolve(game, now, random) {
   const plays = [];
+  const downs = {};
+  const gathered = game.fighters.filter((seat) => warShort(game, seat) && warGather(game, seat, random));
   let best = -1;
   for (const seat of game.fighters) {
     const pile = game.piles[seat];
     const slam = game.slams[seat] || [0, 0, 1];
     if (slam[2]) game.naps[seat]++;
     const down = game.stage ? Math.min(3, pile.length - 1) : 0;
-    game.pot.push(...pile.splice(0, down));
+    const laid = pile.splice(0, down);
+    if (down) downs[seat] = laid;
     const up = pile.shift();
-    game.pot.push(up);
+    for (const card of [...laid, up]) { game.pot.push(card); game.potBy.push(seat); }
     best = Math.max(best, warRank(up));
     plays.push([seat, down, up, ...slam]);
   }
   const tied = plays.filter((play) => warRank(play[2]) === best).map((play) => play[0]);
-  const able = tied.filter((seat) => game.piles[seat].length);
+  const able = tied.filter((seat) => warHeld(game, seat));
   let winner = tied.length === 1 ? tied[0] : able.length === 1 ? able[0] : null;
   const gods = tied.length > 1 && !able.length;
   if (gods) winner = tied[Math.floor(random() * tied.length)];
-  const message = { t: 'flip', battle: game.battle, stage: game.stage, plays, tied, winner, gods, pot: game.pot.length };
+  const message = {
+    t: 'flip', battle: game.battle, stage: game.stage, plays, tied, winner, gods, pot: game.pot.length, gathered,
+  };
+  if (game.stage) message.downs = downs;
   if (winner === null) {
     if (!game.stage) game.wars++;
     game.biggest = Math.max(game.biggest, able.length);
     game.deepest = Math.max(game.deepest, game.stage + 1);
-    message.counts = game.piles.map((pile) => pile.length);
+    message.counts = game.piles.map((_, seat) => warHeld(game, seat));
+    message.decks = game.piles.map((pile) => pile.length);
     // A war on jokers (rank 13) waits longer to open, for its show.
     message.next = warOpenStage(game, now, random, able, best === 13 ? WAR.JOKER_REVEAL_MS : WAR.WAR_REVEAL_MS);
     return message;
   }
-  game.piles[winner].push(...warShuffle(game.pot, random));
+  const theirs = game.pot.filter((_, i) => game.potBy[i] !== winner);
+  const own = game.pot.filter((_, i) => game.potBy[i] === winner);
+  game.loot[winner].push(...theirs, ...own);
   game.pot = [];
-  message.counts = game.piles.map((pile) => pile.length);
+  game.potBy = [];
+  message.counts = game.piles.map((_, seat) => warHeld(game, seat));
+  message.decks = game.piles.map((pile) => pile.length);
   message.out = [];
   message.counts.forEach((count, seat) => {
     if (!count && !game.out[seat]) { game.out[seat] = game.battle; message.out.push(seat); }
@@ -1222,7 +1405,7 @@ function warResolve(game, now, random) {
 // Most cards first, then whoever lasted longest. Everyone tied for the most
 // cards wins.
 function warStandings(game) {
-  const counts = game.piles.map((pile) => pile.length);
+  const counts = game.piles.map((_, seat) => warHeld(game, seat));
   const lasted = (seat) => game.out[seat] || Infinity;
   const order = counts.map((_, seat) => seat).sort((a, b) => counts[b] - counts[a] || lasted(b) - lasted(a) || a - b);
   const most = counts[order[0]];
@@ -1282,6 +1465,12 @@ const LENGTH_LABELS = {
   quick: ['Skirmish', '20 battles'], standard: ['Battle', '60 battles'],
   long: ['Campaign', '150 battles'], total: ['Total war', 'until one has every card'],
 };
+// Timed: slam within seconds or your card flops over by itself. Slow: no
+// clock, and the table waits for everyone, like real life.
+const CLOCK_LABELS = { timed: ['⏱️ Timed', 'Slam within seconds'], slow: ['🐢 Slow', 'No clock. Like real life.'] };
+// What happens to the cards you win when they go back under your deck: as
+// they were won, or shuffled first, as plenty of people play.
+const WINNINGS_LABELS = { kept: ['📚 As won', 'Back in the order won'], shuffled: ['🔀 Shuffled', 'Shuffled on the way back'] };
 const FAST_PACE = 0.3;
 
 // ---- Small helpers ----
@@ -1598,6 +1787,11 @@ const Sound = {
     this.noise(0.3, 0.07, 0.18, 900);
   },
   cheer() { this.tone(880, 0, 0.08, { type: 'triangle', gain: 0.06, to: 1200 }); },
+  // Someone nudged you: a friendly knock-knock.
+  nudge() {
+    this.tone(520, 0, 0.09, { type: 'triangle', gain: 0.16, to: 440 });
+    this.tone(660, 0.16, 0.12, { type: 'triangle', gain: 0.16, to: 520 });
+  },
 };
 
 function renderSound() {
@@ -3914,7 +4108,17 @@ const SixSeven = {
 function floatCheer(seat, e) {
   const tile = seat === S.you ? $('myPile') : tiles.get(seat)?.node;
   const [x, y] = tile && tile.isConnected && tile.offsetParent ? centerOf(tile) : [window.innerWidth / 2, window.innerHeight - 120];
-  const node = el('span', 'floaty', CHEERS[e]);
+  floatUp(x, y, CHEERS[e]);
+}
+
+// A broom pops up out of someone's loot pile as they clean it up.
+function floatBroom(seat) {
+  const heap = tiles.get(seat)?.heap;
+  if (heap && heap.isConnected && heap.offsetParent) floatUp(...centerOf(heap), '🧹', 'broom');
+}
+
+function floatUp(x, y, text, kind = '') {
+  const node = el('span', `floaty ${kind}`.trim(), text);
   node.style.left = x + 'px';
   node.style.top = y + 'px';
   node.style.setProperty('--dx', (Math.random() * 80 - 40) + 'px');
@@ -3932,13 +4136,24 @@ const S = {
   you: null,
   host: null,
   length: store.get('length', 'standard'),
+  slow: false,           // this game has no clock (see CLOCK_LABELS)
+  shuffle: false,        // this game shuffles winnings on their way back (see WINNINGS_LABELS)
+  roomShuffle: false,    // the room's setting for its next game
+  incoming: {},          // seat -> cards they've won that haven't landed on their loot pile yet
+  decks: null,           // seat -> cards in their deck; the rest of what they hold is winnings.
+                         // null from a room server that doesn't say, which counts it all as deck
+  roomSlow: false,       // the room's setting for its next game
+  dozes: [],             // seat -> cards in a row that flopped over by themselves
+  nudgedAt: -Infinity,   // when you last nudged someone
   players: [],
   watchers: 0,
   battle: 0, limit: 0, stage: 0,
   fighters: [], counts: [], out: [], pot: 0, wars: 0,
   slams: {},             // seat -> [power, style] this stage
+  ups: {},               // seat -> the card their slam turned face up this stage
   charging: {},          // seat -> tier, for others charging up
-  cards: {},             // seat -> { up, down } on the table this battle
+  cards: {},             // seat -> { up, down, stage, seq } on the table this battle; seq is
+                         // every card they've laid, in order: { card, up } ('back' when face down)
   result: null,          // the last flip
   opensAt: 0, closesAt: 0,
   pending: null,         // the next stage, until it opens
@@ -3953,7 +4168,7 @@ const S = {
   input: store.get('input', 'hold'),  // how you slam: hold, mash or fling
   plan: null,            // the cards you're slamming this stage (see slamPlan)
   thumps: {},            // seat -> face-down cards others have slammed this war stage
-  potCards: [],          // the cards in this battle's pot, for the heap: { card, look, seat }
+  potCards: [],          // the cards in this battle's pot, for the heap: { card, look, seat, down }
 };
 const timers = new Set();
 function later(fn, ms) {
@@ -3986,10 +4201,17 @@ function deckOf(seat) {
 
 // ---- Solo games: the core, run right here against bots ----
 
+// The cards turned face up by the slams so far this stage, for a snapshot.
+function warUps(game) {
+  return game.over ? {} : Object.fromEntries(Object.keys(game.slams).map((seat) => [seat, warUpCard(game, Number(seat))]));
+}
+
 class SoloRoom {
-  constructor({ opponents, length, name, avatar, random }) {
+  constructor({ opponents, length, slow, shuffle, name, avatar, random }) {
     this.random = random;
     this.length = length;
+    this.slow = Boolean(slow);
+    this.shuffle = Boolean(shuffle);
     this.players = [{ name, avatar, bot: false, online: true }];
     for (const bot of warBotNames(opponents, random, [name])) {
       this.players.push({ name: bot, avatar: Math.floor(random() * AVATARS.length), bot: true, online: true });
@@ -3999,7 +4221,9 @@ class SoloRoom {
     this.pausedAt = 0;
   }
   start() {
-    const made = warNewGame(this.players.map((p) => p.bot), this.length, this.random, Date.now(), pace());
+    const made = warNewGame(this.players.map((p) => p.bot), this.length, this.random, Date.now(), {
+      pace: pace(), slow: this.slow, shuffle: this.shuffle,
+    });
     this.game = made.game;
     receive(this.snapshot());
     receive(made.stage);
@@ -4008,24 +4232,27 @@ class SoloRoom {
   snapshot() {
     const g = this.game;
     return {
-      t: 'state', code: null, phase: g.over ? 'over' : 'playing', length: this.length, you: 0, host: 0, watchers: 0,
-      players: this.players,
+      t: 'state', code: null, phase: g.over ? 'over' : 'playing', length: this.length, slow: this.slow, shuffle: this.shuffle,
+      you: 0, host: 0, watchers: 0, players: this.players,
       game: {
-        battle: g.battle, limit: g.limit, stage: g.stage, fighters: g.fighters, counts: g.piles.map((p) => p.length),
-        out: g.out, pot: g.pot.length, slams: g.slams, opensIn: Math.max(0, g.opensAt - Date.now()),
-        closesIn: Math.max(0, g.closesAt - Date.now()), wars: g.wars, over: g.over,
+        battle: g.battle, limit: g.limit, stage: g.stage, fighters: g.fighters, counts: g.piles.map((_, seat) => warHeld(g, seat)),
+        decks: g.piles.map((p) => p.length), loot: g.loot, shuffle: g.shuffle,
+        out: g.out, pot: g.pot.length, slams: g.slams, ups: warUps(g), opensIn: Math.max(0, g.opensAt - Date.now()),
+        closesIn: g.slow ? null : Math.max(0, g.closesAt - Date.now()), naps: g.naps, slow: g.slow, wars: g.wars, over: g.over,
       },
     };
   }
   send(message) {
     if (!this.game) return;
     if (message.t === 'slam') {
-      const slam = warSlam(this.game, 0, message.power, message.style);
+      const slam = warSlam(this.game, 0, message.power, message.style, this.random);
       if (slam) { receive(slam); this.schedule(); }
     } else if (message.t === 'start') {
       this.start();
     } else if (message.t === 'cheer') {
       receive({ t: 'cheer', seat: 0, e: message.e });
+    } else if (message.t === 'gather') {
+      if (warGather(this.game, 0, this.random)) receive({ t: 'gather', seat: 0 });
     }
   }
   schedule() {
@@ -4052,7 +4279,7 @@ class SoloRoom {
     this.pausedAt = 0;
     this.game.opensAt += paused;
     this.game.closesAt += paused;
-    receive({ t: 'timing', opensIn: this.game.opensAt - Date.now(), closesIn: this.game.closesAt - Date.now() });
+    receive({ t: 'timing', opensIn: this.game.opensAt - Date.now(), closesIn: this.game.slow ? null : this.game.closesAt - Date.now() });
     this.schedule();
   }
   // Plays every remaining battle at once, with nobody slamming.
@@ -4125,6 +4352,9 @@ async function roomRequest(method, path) {
 
 // ---- Messages from the room ----
 
+// When the stage closes, from the room's closesIn: never, in a slow game.
+const closesAtFrom = (ms) => (typeof ms === 'number' && Number.isFinite(ms) ? now() + ms : Infinity);
+
 function receive(m) {
   switch (m.t) {
     case 'state': return onState(m);
@@ -4139,9 +4369,10 @@ function receive(m) {
     case 'cheer':
       if (m.seat !== S.you || S.mode === 'solo') { floatCheer(m.seat, m.e); if (m.seat !== S.you) Sound.cheer(); }
       return;
+    case 'gather': return onGather(m);
     case 'tidy':
       // Someone cleaned up their winnings: their heap squares up on their tile.
-      if (m.seat !== S.you) heapSquare(m.seat);
+      if (m.seat !== S.you && heapSquare(m.seat)) floatBroom(m.seat);
       return;
     case 'deck':
       // Someone picked another deck: their cards are redrawn in it.
@@ -4154,8 +4385,9 @@ function receive(m) {
       return;
     case 'timing':
       S.opensAt = now() + m.opensIn;
-      S.closesAt = now() + m.closesIn;
+      S.closesAt = closesAtFrom(m.closesIn);
       return;
+    case 'nudge': return onNudge(m);
     case 'error':
       if (!$('menu').hidden) setText($('friendsErr'), m.error);
       else if (!$('lobby').hidden) setText($('lobbyErr'), m.error);
@@ -4172,6 +4404,9 @@ function onState(m) {
   S.you = m.you;
   S.host = m.host;
   S.length = m.length;
+  S.roomSlow = Boolean(m.slow);
+  S.roomShuffle = Boolean(m.shuffle);
+  if (!m.game) { S.slow = S.roomSlow; S.shuffle = S.roomShuffle; }
   S.watchers = m.watchers || 0;
   S.players = m.players.map((p) => ({ ...p }));
   if (m.game) {
@@ -4193,17 +4428,33 @@ function onState(m) {
     });
     S.slams = {};
     for (const [seat, slam] of Object.entries(g.slams || {})) S.slams[seat] = slam.slice(0, 2);
+    S.ups = {};
+    for (const [seat, up] of Object.entries(g.ups || {})) if (Number.isInteger(up)) S.ups[seat] = up;
     S.opensAt = now() + g.opensIn;
-    S.closesAt = now() + g.closesIn;
+    S.closesAt = closesAtFrom(g.closesIn);
+    S.slow = Boolean(g.slow);
+    S.shuffle = Boolean(g.shuffle);
+    S.decks = Array.isArray(g.decks) ? g.decks.slice() : null;
+    S.incoming = {};
+    S.dozes = (g.naps || []).slice();
     S.charging = {};
     S.thumps = {};
     if (g.over) { if (Odds.seats) Odds.settle(g.over); }
     else if (g.stage === 0 && (fresh || !Odds.seats)) Odds.update(g.counts, g.battle, g.limit);
   } else {
-    Object.assign(S, { battle: 0, stage: 0, fighters: [], counts: [], out: [], over: null, cards: {}, result: null, slams: {} });
+    Object.assign(S, { battle: 0, stage: 0, fighters: [], counts: [], out: [], over: null, cards: {}, result: null, slams: {}, ups: {} });
   }
   showScreen();
   renderAll();
+  // Back in a game (a reload, say): the winnings are drawn again, each card
+  // in its holder's deck, since nobody remembers whose it was.
+  if (m.game && Array.isArray(m.game.loot)) {
+    m.game.loot.forEach((cards, seat) => {
+      if (Array.isArray(cards) && cards.length && !heaps.get(seat)?.cards.length) {
+        heapToss(seat, cards.map((card) => ({ card, look: deckOf(seat), seat })), true);
+      }
+    });
+  }
   if (S.phase === 'over' && S.over) { showOver(); renderOverButtons(); }
 }
 
@@ -4217,12 +4468,14 @@ function onOnline(m) {
 }
 
 function onStage(m) {
-  S.pending = { ...m, slams: {}, thumps: {} };
+  S.pending = { ...m, slams: {}, ups: {}, thumps: {} };
   S.limit = m.limit;
   S.opensAt = now() + m.opensIn;
-  S.closesAt = now() + m.closesIn;
+  S.closesAt = closesAtFrom(m.closesIn);
   later(openStage, m.opensIn);
-  for (const [seat, power, style, delay] of m.bots) {
+  // Each bot's card lands face up as it slams. A room server from before
+  // cards showed early sends no card, and the slam lands face down.
+  for (const [seat, power, style, delay, up] of m.bots) {
     // In a war, bots slam each face-down card before the one that counts.
     const downs = m.stage ? Math.min(3, Math.max(0, (S.counts[seat] ?? 0) - 1)) : 0;
     for (let i = 0; i < downs; i++) {
@@ -4231,7 +4484,7 @@ function onStage(m) {
     }
     const glow = m.stage ? 60 : Math.max(0, delay - 450 * pace());
     later(() => { S.charging[seat] = Math.min(WAR.TIERS - 1, tierOf(power) + 1); renderTile(seat); }, m.opensIn + glow);
-    later(() => receive({ t: 'slam', seat, power, style }), m.opensIn + delay);
+    later(() => receive({ t: 'slam', seat, power, style, up }), m.opensIn + delay);
   }
 }
 
@@ -4245,11 +4498,21 @@ function openStage() {
   S.stage = m.stage;
   S.fighters = m.fighters.slice();
   S.slams = m.slams;
+  S.ups = m.ups;
   S.thumps = m.thumps;
   S.charging = {};
+  let won = null;
+  let landing = 0;
   if (m.stage === 0) {
     SixSeven.clear();
-    if (heapPending) { const { winner, cards } = heapPending; heapPending = null; heapToss(winner, cards); }
+    if (heapPending) {
+      const { winner, cards } = heapPending;
+      heapPending = null;
+      won = winner;
+      landing = heapToss(winner, cards);
+      // The pot counts once it's on the winner's loot pile.
+      later(() => { delete S.incoming[winner]; renderAll(); }, landing);
+    }
     S.cards = {};
     S.result = null;
     S.pot = 0;
@@ -4258,9 +4521,29 @@ function openStage() {
     setText($('caption'), isFighting(S.you) ? (final ? 'Last chance. Slam like it matters. (It does not.)' : pick(OPEN_LINES)) : '');
   }
   if (m.stage > 0) Versus.fight(m);
+  // Bots whose decks couldn't cover this stage took their winnings under
+  // them, once the pot just won has landed.
+  for (const seat of m.gathered || []) {
+    if (S.decks) S.decks[seat] = S.counts[seat] ?? 0;
+    heapGather(seat, m.stage ? 0 : 700 * pace());
+  }
+  // Yours wait for you to pick them up, unless Auto is playing for you (see autoSlam).
+  if (m.stage === 0) botsTidy(m, won, landing);
   renderAll();
   syncMusic();
   if (S.auto && isFighting(S.you)) later(autoSlam, (250 + Math.random() * 700) * pace());
+}
+
+// Someone put their winnings under their deck.
+function onGather(m) {
+  if (!S.decks || !Number.isInteger(m.seat)) return;
+  const n = (S.counts[m.seat] ?? 0) - (S.decks[m.seat] ?? 0);
+  S.decks[m.seat] = S.counts[m.seat] ?? 0;
+  heapGather(m.seat, 0);
+  if (m.seat === S.you && n > 0) {
+    setText($('caption'), `${plural(n, 'card')} back under your deck, ${S.shuffle ? 'shuffled' : 'in the order you won them'}.`);
+  }
+  renderAll();
 }
 
 // Someone slammed a card face down in a war. The last one comes as a slam.
@@ -4281,15 +4564,43 @@ function onCard(m) {
   if (S.players.length <= 6) Sound.slam(m.power, 0, true);
 }
 
+// Someone slammed the card that counts, and it lands face up: the room says
+// which card it is. Your own slam comes back from the room too, with yours.
 function onSlam(m) {
+  // A slam that came without picking up first picked up.
+  if (m.gathered && S.decks && Number.isInteger(m.seat)) {
+    S.decks[m.seat] = S.counts[m.seat] ?? 0;
+    heapGather(m.seat, 0);
+    if (m.seat === S.you) renderHeaps();
+  }
   // A slam can beat this page to the next stage opening, by a few milliseconds.
-  const target = S.pending && S.pending.fighters.includes(m.seat) ? S.pending.slams : S.slams;
-  if (target[m.seat]) return;
-  target[m.seat] = [m.power, m.style];
+  const early = S.pending && S.pending.fighters.includes(m.seat);
+  const slams = early ? S.pending.slams : S.slams;
+  const ups = early ? S.pending.ups : S.ups;
+  const turned = Number.isInteger(m.up) && ups[m.seat] === undefined;
+  if (turned) ups[m.seat] = m.up;
+  if (slams[m.seat]) {
+    // Already slammed (your own, most likely): now its card turns face up.
+    if (turned && !early) { if (m.seat === S.you) renderMe(); else renderTile(m.seat); renderWarRow(); }
+    return;
+  }
+  slams[m.seat] = [m.power, m.style, m.flopped ? 1 : 0];
   delete S.charging[m.seat];
-  if (m.seat === S.you) return;
+  if (!m.flopped) S.dozes[m.seat] = 0;
+  if (m.seat === S.you) {
+    // The table waited a long time for you, and the host flipped your card.
+    if (m.flopped) {
+      cancelInput();
+      setText($('caption'), 'The table waited a long time, so your card was flipped over for you.');
+      renderMe();
+      renderControls();
+    }
+    return;
+  }
   renderTile(m.seat);
-  if (target !== S.slams) return;
+  if (early) return;
+  renderWarRow();
+  if (m.flopped) { renderWait(); return; }
   const tile = tiles.get(m.seat);
   if (tile && tile.node.offsetParent) {
     const [x, y] = centerOf(tile.slot);
@@ -4313,22 +4624,36 @@ function onFlip(m) {
   logFlip(m);
   S.result = m;
   S.counts = m.counts.slice();
+  S.decks = Array.isArray(m.decks) ? m.decks.slice() : null;
+  // Cards that flopped from a deck that couldn't cover the stage took their
+  // player's winnings under it first.
+  for (const seat of m.gathered || []) heapGather(seat, 0);
   S.pot = m.pot;
   for (const [seat, down, up, power, style] of m.plays) {
     const before = S.cards[seat];
-    S.cards[seat] = { up, down: (before ? before.down : 0) + down, stage: m.stage };
+    const seq = [...(before ? before.seq : []), ...Array.from({ length: down }, () => ({ card: 'back', up: false })), { card: up, up: true }];
+    S.cards[seat] = { up, down: (before ? before.down : 0) + down, stage: m.stage, seq };
     if (!S.slams[seat]) S.slams[seat] = [power, style];
     const look = deckOf(seat);
-    for (let i = 0; i < down; i++) S.potCards.push({ card: 'back', look, seat });
-    S.potCards.push({ card: up, look, seat });
+    // The cards laid face down in a war go to the winner's heap face up. A
+    // room server that doesn't say which they were leaves them face down.
+    const laid = m.downs && Array.isArray(m.downs[seat]) ? m.downs[seat] : [];
+    for (let i = 0; i < down; i++) {
+      S.potCards.push({ card: Number.isInteger(laid[i]) ? laid[i] : 'back', look, seat, down: true });
+    }
+    S.potCards.push({ card: up, look, seat, war: m.stage > 0 });
   }
   if (m.winner !== null) {
-    if (!m.over) heapPending = { winner: m.winner, cards: S.potCards };
+    if (!m.over) {
+      heapPending = { winner: m.winner, cards: S.potCards };
+      S.incoming = { [m.winner]: m.pot };
+    }
     S.potCards = [];
   }
   if (m.winner !== null) recordResult(m);
   const mine = m.plays.find((p) => p[0] === S.you);
   if (mine) S.naps = mine[5] ? S.naps + 1 : 0;
+  for (const [seat, , , , , flopped] of m.plays) S.dozes[seat] = flopped ? (S.dozes[seat] || 0) + 1 : 0;
   if (m.out) for (const seat of m.out) S.out[seat] = m.battle;
   S.charging = {};
   S.thumps = {};  // the face-down cards are in S.cards now
@@ -4661,7 +4986,14 @@ function buildTiles() {
   box.replaceChildren();
   const n = seats.length;
   const size = n <= 1 ? 'size-l' : n <= 3 ? 'size-m' : n <= 8 ? 'size-s' : 'size-xs';
-  box.className = size;
+  // At a table of up to six, everyone else has a deck and a loot pile on
+  // their tile, and plays onto the table in the middle (#spots).
+  const piles = n <= 5;
+  box.className = size + (piles ? ' loots' : '');
+  const spots = $('spots');
+  spots.replaceChildren();
+  spots.dataset.n = String(n);
+  setHidden(spots, !piles || !n);
   box.style.setProperty('--cols', String(n <= 4 ? n : Math.min(4, Math.ceil(n / 2))));
   for (const seat of seats) {
     const p = S.players[seat];
@@ -4671,25 +5003,129 @@ function buildTiles() {
     const heap = el('div', 'heap');
     heap.setAttribute('aria-hidden', 'true');
     heap.append(...(heaps.get(seat)?.cards || []).map((c) => c.node));
-    slot.append(heap, card);
+    slot.append(card);
+    const loot = el('div', 'tloot');
+    const lootCount = el('span', 'count', '');
+    lootCount.hidden = true;
+    loot.append(heap, lootCount);
+    const cards = el('div', 'tcards');
+    let deckBox = null, deckCount = null, spot = null;
+    if (piles) {
+      deckBox = el('div', 'tdeck pile');
+      deckBox.dataset.deck = deckOf(seat);
+      deckCount = el('span', 'count', '');
+      deckBox.append(cardEl('back', deckOf(seat)), deckCount);
+      cards.append(deckBox, loot);
+      spot = el('div', 'spot');
+      spot.append(slot, el('span', 'sname', `${AVATARS[p.avatar] || '🃏'} ${p.name}`));
+      spots.append(spot);
+    } else {
+      cards.append(slot, loot);
+    }
     const info = el('div', 'tname');
     info.textContent = `${AVATARS[p.avatar] || '🃏'} ${p.name}`;
     const meta = el('div', 'tmeta');
     const count = el('span', 'tcount', '');
     const stat = el('span', 'tstat', '');
     meta.append(count, stat);
-    node.append(slot, info, meta);
+    node.append(cards, info, meta);
     node.title = `${p.name}${p.bot ? ' (bot)' : ''} · ${DECKS[deckOf(seat)][0]} deck`;
     box.append(node);
-    tiles.set(seat, { node, slot, count, stat, card, heap, cardKey: 'empty', downs: null });
+    tiles.set(seat, {
+      node, slot, count, stat, card, heap, lootCount, deck: deckBox, deckCount, spot, cardKey: 'empty', downs: null, wpile: null,
+    });
   }
 }
 
-// What's in front of a player: the card they turned over, or face-down cards
-// they've slammed but nobody has seen yet.
+// The cards someone has laid this battle, oldest first, apart from the one
+// on top (cardKeyFor): in a war, the cards that tied stay face up among the
+// face-down ones. backs is how many face-down cards they've laid so far in
+// the war being fought.
+function pileUnder(seat, backs) {
+  const c = S.cards[seat];
+  const list = c ? c.seq.slice() : [];
+  if (S.phase === 'playing' && isFighting(seat) && !S.pending && (!c || c.stage < S.stage)) {
+    for (let i = 0; i < backs; i++) list.push({ card: 'back', up: false });
+    if (landed(seat)) list.push({ card: S.ups[seat] !== undefined ? S.ups[seat] : 'back', up: true });
+  }
+  for (let i = list.length - 1; i >= 0; i--) if (list[i].up) { list.splice(i, 1); break; }
+  return list;
+}
+
+// Whether you're in a war this battle, fighting it or done with it: then all
+// your cards are on one pile, your war pile, until the next battle.
+function inMyWar() {
+  const me = S.you;
+  const c = S.cards[me];
+  if (me === null || !c) return false;
+  return c.seq.length > 1 || (S.phase === 'playing' && S.stage > 0 && isFighting(me) && !S.pending);
+}
+
+// Every card you've laid in a battle that went to war, oldest first: the one
+// you tied with, then the war's, ending with the one that decides it once
+// you've slammed it. local is how many face-down cards you've slammed in the
+// war being fought.
+function myWarCards(local) {
+  const me = S.you;
+  const c = S.cards[me];
+  if (!inMyWar()) return [];
+  const list = c.seq.slice();
+  if (S.phase === 'playing' && S.stage > 0 && isFighting(me) && !S.pending && c.stage < S.stage) {
+    for (let i = 0; i < local; i++) list.push({ card: 'back', up: false });
+    if (landed(me)) list.push({ card: S.ups[me] !== undefined ? S.ups[me] : 'back', up: true });
+  }
+  return list;
+}
+
+// Draws a pile into box: one card per item, keeping the cards already there
+// when the pile only grew (the new ones arrive with the `fresh` class), and
+// calling place(node, index, count) on every card.
+function drawPile(box, items, look, fresh, place) {
+  const keys = items.map((x) => String(x.card));
+  const had = box._keys || [];
+  const grew = keys.length >= had.length && had.every((k, i) => k === keys[i]);
+  if (!grew) { box.replaceChildren(); box._keys = []; }
+  for (let i = box.childElementCount; i < items.length; i++) {
+    const node = cardEl(items[i].card === 'back' ? 'back' : items[i].card, look);
+    if (grew && !reduceMotion.matches) node.classList.add(fresh);
+    box.append(node);
+  }
+  box._keys = keys;
+  [...box.children].forEach((node, i) => place(node, i, items.length));
+}
+
+// How far out each card of a pile lies from under the card on top, as a
+// share of a card's width, so every one shows: a face-up card by `up`, far
+// enough to show its corner, a face-down one by `back`, squeezed so the
+// whole pile stays within `most`.
+function fanOut(items, up, back, most) {
+  const steps = items.map((x) => (x.up ? up : back));
+  const total = steps.reduce((a, b) => a + b, 0);
+  const k = total > most ? most / total : 1;
+  const out = new Array(steps.length);
+  let x = 0;
+  for (let i = steps.length - 1; i >= 0; i--) { x += steps[i] * k; out[i] = x; }
+  return out;
+}
+
+// How thick a deck of n cards looks, as a share of its card's width: a lone
+// card is flat, and a deck thickens with every card, up to a point.
+function deckDepth(n) {
+  return n <= 1 ? 0 : Math.min(0.22, 0.02 + n * 0.0035).toFixed(3);
+}
+
+// Whether a player has slammed this stage's card but the stage hasn't been
+// played out yet.
+function landed(seat) {
+  const c = S.cards[seat];
+  return S.phase === 'playing' && isFighting(seat) && Boolean(S.slams[seat]) && !S.pending && (!c || c.stage < S.stage);
+}
+
+// What's in front of a player: the card they turned over, face up as soon as
+// they slam it, or face down if the room didn't say which it is.
 function cardKeyFor(seat) {
   const c = S.cards[seat];
-  if (S.phase === 'playing' && isFighting(seat) && S.slams[seat] && !S.pending && (!c || c.stage < S.stage)) return 'back';
+  if (landed(seat)) return S.ups[seat] !== undefined ? String(S.ups[seat]) : 'back';
   return c ? String(c.up) : 'empty';
 }
 
@@ -4705,15 +5141,44 @@ function renderTile(seat) {
   setClass(t.node, 'war', fighting && S.stage > 0);
   setClass(t.node, 'won', r && r.winner === seat && S.cards[seat]);
   setClass(t.node, 'slammed', Boolean(S.slams[seat]));
+  setClass(t.node, 'waiting', waitingFor().includes(seat));
   const charging = S.charging[seat];
   setClass(t.node, 'charging', charging !== undefined && !S.slams[seat]);
-  if (charging !== undefined && t.glow !== charging) { t.glow = charging; t.node.style.setProperty('--glow', String(2 + charging * 2)); }
-  setText(t.count, S.battle ? String(S.counts[seat] ?? 0) : '');
-  if (S.battle) setAttr(t.count, 'title', plural(S.counts[seat] ?? 0, 'card'));
+  if (charging !== undefined && t.glow !== charging) {
+    t.glow = charging;
+    t.node.style.setProperty('--glow', String(2 + charging * 2));
+    if (t.spot) t.spot.style.setProperty('--glow', String(2 + charging * 2));
+  }
+  if (t.spot) {
+    // Their card on the table in the middle.
+    setHidden(t.spot, out);
+    setClass(t.spot, 'won', r && r.winner === seat && S.cards[seat]);
+    setClass(t.spot, 'charging', charging !== undefined && !S.slams[seat]);
+  }
+  if (t.deck) {
+    // Their deck: as thick as it's full, with its count in the corner.
+    const inDeck = S.decks ? S.decks[seat] ?? 0 : shownCount(seat);
+    t.deck.style.setProperty('--d', String(deckDepth(inDeck)));
+    setClass(t.deck, 'empty', S.battle > 0 && inDeck === 0);
+    setText(t.deckCount, S.battle ? String(inDeck) : '');
+    setHidden(t.deckCount, !S.battle);
+    if (S.battle) {
+      const loot = lootOf(seat);
+      setAttr(t.deck, 'title', plural(shownCount(seat), 'card') + (loot ? `: ${inDeck} in the deck, ${shownLoot(seat)} won` : ''));
+    }
+  }
+  setText(t.count, S.battle ? String(shownCount(seat)) : '');
+  const won = shownLoot(seat);
+  setText(t.lootCount, won > 0 ? String(won) : '');
+  setHidden(t.lootCount, !(won > 0));
+  if (S.battle) {
+    const loot = lootOf(seat);
+    setAttr(t.count, 'title', plural(shownCount(seat), 'card') + (loot ? `: ${S.decks[seat]} in the deck, ${shownLoot(seat)} won` : ''));
+  }
   const slam = S.slams[seat];
   const thumps = S.thumps[seat] || 0;
-  const label = out ? 'out' : slam ? `${STYLES[slam[1]]?.[0] || ''} ${tierName(slam[0])}`.trim()
-    : thumps ? `${thumps} face down…` : charging !== undefined ? 'charging…' : '';
+  const label = out ? 'out' : slam && slam[2] ? 'flipped over' : slam ? `${STYLES[slam[1]]?.[0] || ''} ${tierName(slam[0])}`.trim()
+    : thumps ? `${thumps} face down…` : charging !== undefined ? 'charging…' : waitingFor().includes(seat) ? 'thinking…' : '';
   setText(t.stat, label);
   const key = cardKeyFor(seat);
   if (key !== t.cardKey) {
@@ -4730,6 +5195,20 @@ function renderTile(seat) {
     setHidden(t.downs, !downs);
     setText(t.downs, `+${downs}`);
   }
+  // The cards under theirs, fanned out from under it: the newest closest and
+  // on top, each face-down one thumping down as they slam it, and in a war
+  // of wars the cards that tied face up among them.
+  const under = pileUnder(seat, thumps).slice(-12);
+  if (under.length || t.wpile) {
+    if (!t.wpile) { t.wpile = el('div', 'tdowns'); t.slot.prepend(t.wpile); }
+    const out = fanOut(under, 0.28, 0.1, 0.9);
+    drawPile(t.wpile, under, deckOf(seat), 'thump', (node, i, n) => {
+      node.style.setProperty('--i', String(n - 1 - i));
+      node.style.setProperty('--x', out[i].toFixed(3));
+      node.style.setProperty('--r', `${((i * 37) % 17) - 8}deg`);
+      node.style.setProperty('--dy', `${((i * 23) % 9) - 4}px`);
+    });
+  }
 }
 
 function renderMe() {
@@ -4737,7 +5216,8 @@ function renderMe() {
   const watching = me === null;
   const out = !watching && S.battle > 0 && S.out[me] > 0;
   setHidden($('myPile'), watching);
-  setHidden($('mySlot'), watching || out);
+  // In a war, your card goes onto your war pile with the rest (see renderWarPile).
+  setHidden($('mySlot'), watching || out || inMyWar());
   const note = $('meNote');
   setHidden(note, !(watching || out));
   if (watching) setText(note, S.phase === 'over' ? 'Watching. You’re in the next game.' : 'You’re watching this one. You’ll be dealt into the next game.');
@@ -4745,29 +5225,42 @@ function renderMe() {
   if (watching) return;
   const p = S.players[me];
   const count = S.counts[me] ?? 0;
-  setClass($('myPile'), 'empty', S.battle > 0 && count === 0);
+  // Your deck, apart from your winnings: it thins as it runs low.
+  const inDeck = S.decks ? S.decks[me] ?? 0 : count;
+  setClass($('myPile'), 'empty', S.battle > 0 && inDeck === 0);
+  $('myPile').querySelector('.stack').style.setProperty('--d', String(S.battle > 0 ? deckDepth(inDeck) : deckDepth(27)));
+  const badge = $('deckCount');
+  setHidden(badge, !(S.decks && S.battle > 0 && inDeck > 0));
+  setText(badge, String(inDeck));
+  setAttr($('myPile'), 'aria-label', S.decks && S.battle > 0 ? `Your deck: ${plural(inDeck, 'card')}` : 'Your deck');
   const label = $('myLabel');
   const top = `${AVATARS[p.avatar] || '🃏'} ${p.name}`;
-  const sub = S.battle ? plural(count, 'card') : '';
+  const sub = S.battle ? plural(shownCount(me), 'card') : '';
   if (label.dataset.v !== top + sub) {
     label.dataset.v = top + sub;
     label.replaceChildren(document.createTextNode(top), el('small', '', sub));
   }
   const slot = $('mySlot');
   const c = S.cards[me];
-  const key = cardKeyFor(me);
+  // The card you played in the battle, until it goes to war.
+  const key = c ? String(c.seq[0].card) : S.stage > 0 ? 'empty' : cardKeyFor(me);
   if (slot.dataset.key !== key) {
     const card = cardEl(key === 'back' ? 'back' : key === 'empty' ? null : Number(key));
-    if (key === 'back' && !reduceMotion.matches) card.classList.add('slam');
-    else if (key !== 'empty' && !reduceMotion.matches) card.classList.add('flipin');
+    // A card you slam lands with a thump; one already down turns over.
+    if (landed(me) && slot.dataset.key !== 'back' && !reduceMotion.matches) card.classList.add('slam');
+    else if (key !== 'empty' && key !== 'back' && !reduceMotion.matches) card.classList.add('flipin');
     slot.replaceChildren(card);
     slot.dataset.key = key;
   }
-  setClass(slot, 'won', S.result && S.result.winner === me && c);
+  const warred = c && c.seq.length > 1;
+  setClass(slot, 'won', S.result && S.result.winner === me && c && !warred);
   renderWarPile();
 }
 
-// Your face-down cards in a war, landing one slam at a time.
+// Your war pile: in a war, all your cards on one pile, from the one you tied
+// with to the one that decides it on top, landing one slam at a time. The
+// face-down ones make a messy stack, and the cards that tied stick up out of
+// it, showing their corners.
 function renderWarPile() {
   const me = S.you;
   const box = $('myWar');
@@ -4777,19 +5270,19 @@ function renderWarPile() {
   const plan = inWar ? slamPlan() : null;
   const local = plan && !flipped ? Math.min(plan.done.length, plan.need - 1) : 0;
   const downs = (c ? c.down : 0) + local;
-  setHidden(box, me === null || S.out[me] > 0 || !(downs || (plan && plan.need > 1)));
-  const pile = box.querySelector('.wpile');
-  const shown = Math.min(downs, 9);
-  while (pile.childElementCount > shown) pile.lastElementChild.remove();
-  while (pile.childElementCount < shown) {
-    const i = pile.childElementCount;
-    const card = cardEl('back');
-    card.style.setProperty('--r', `${((i * 47) % 25) - 12}deg`);
-    card.style.setProperty('--dx', `${((i * 29) % 11) - 5}px`);
-    card.style.setProperty('--dy', `${-i * 3}px`);
-    if (!reduceMotion.matches) card.classList.add('slam');
-    pile.append(card);
-  }
+  const pile = me === null ? [] : myWarCards(local).slice(-12);
+  setHidden(box, me === null || S.out[me] > 0 || !(pile.length || plan));
+  const n = pile.length;
+  const top = n && pile[n - 1].up ? n - 1 : -1;
+  const out = fanOut(pile.map((x, i) => ({ up: x.up && i !== top })), 0.22, 0, 0.5);
+  const cw = $('mySlot').querySelector('.card')?.offsetWidth || 88;
+  drawPile(box.querySelector('.wpile'), pile, null, 'slam', (node, i) => {
+    const tied = pile[i].up;
+    node.style.setProperty('--r', `${i === top ? 0 : tied ? ((i * 13) % 9) - 4 : ((i * 47) % 25) - 12}deg`);
+    node.style.setProperty('--dx', `${i === top ? 0 : Math.round(((i * 29) % 11) - 5 - out[i] * cw * 0.2)}px`);
+    node.style.setProperty('--dy', `${Math.round(-Math.min(i, 9) * 3 - out[i] * cw * 1.4)}px`);
+  });
+  setClass(box, 'won', Boolean(S.result && S.result.winner === me && top >= 0 && c && c.seq.length > 1));
   setText(box.querySelector('.wcount'), downs ? `${downs} face down` : 'Face down here');
   setClass($('me'), 'warring', !box.hidden);
 }
@@ -4798,19 +5291,82 @@ function renderWarRow() {
   const row = $('warRow');
   const war = S.phase === 'playing' && S.stage > 0;
   const fighters = war ? S.fighters.filter((s) => s !== S.you) : [];
-  const key = war ? `${S.battle}.${S.stage}:${fighters.map((s) => `${s}=${S.cards[s] ? S.cards[s].up : ''}/${S.thumps[s] || 0}`).join(',')}` : '';
+  const shown = (seat) => {
+    const key = cardKeyFor(seat);
+    return key === 'empty' ? 'back' : key === 'back' && S.cards[seat] ? S.cards[seat].up : key === 'back' ? 'back' : Number(key);
+  };
+  const key = war ? `${S.battle}.${S.stage}:${fighters.map((s) => `${s}=${shown(s)}/${S.thumps[s] || 0}`).join(',')}` : '';
   if (row.dataset.key === key) return;
   row.dataset.key = key;
   row.replaceChildren();
-  if (!war || S.players.length <= 4) return;
+  if (!war || $('opponents').classList.contains('loots')) return;
   for (const seat of fighters.slice(0, 6)) {
     const box = el('div', 'wf');
     const c = S.cards[seat];
     const downs = (c ? c.down : 0) + (S.thumps[seat] || 0);
-    box.append(cardEl(c && c.up !== undefined ? c.up : 'back', deckOf(seat)), el('span', '', `${downs ? `+${downs} · ` : ''}${avatarOf(seat)} ${playerName(seat)}`));
+    box.append(cardEl(shown(seat), deckOf(seat)), el('span', '', `${downs ? `+${downs} · ` : ''}${avatarOf(seat)} ${playerName(seat)}`));
     row.append(box);
   }
   if (fighters.length > 6) row.append(el('span', 'more', `+${fighters.length - 6}`));
+}
+
+// In a slow room, the players the table is waiting for: online, not bots,
+// not yet slammed and not dozed off, the same as the room works it out.
+function waitingFor() {
+  if (!S.slow || S.mode !== 'room' || S.phase !== 'playing' || S.pending || now() < S.opensAt) return [];
+  const online = new Set(S.players.map((p, seat) => (p.online ? seat : null)).filter((seat) => seat !== null));
+  return warWaitingFor({ fighters: S.fighters, bots: S.players.map((p) => p.bot), slams: S.slams, naps: S.dozes }, online);
+}
+
+function namesOf(seats) {
+  const names = seats.map(playerName);
+  return names.length > 3 ? `${names.slice(0, 3).join(', ')} and ${names.length - 3} more` : names.join(' and ');
+}
+
+// Who a slow room is waiting for, with a nudge for them once they've had a
+// moment, and for the host, after a long wait, a way to flip their cards.
+function renderWait() {
+  const row = $('waitRow');
+  const waiting = waitingFor();
+  const others = waiting.filter((seat) => seat !== S.you);
+  const t = now();
+  // Tiles say who's thinking: redraw the ones that changed.
+  const before = renderWait.seats || [];
+  renderWait.seats = waiting;
+  for (const seat of new Set([...before, ...waiting])) {
+    if (before.includes(seat) !== waiting.includes(seat) && seat !== S.you) renderTile(seat);
+  }
+  setHidden(row, !waiting.length);
+  if (!waiting.length) return;
+  setText($('waitText'), others.length ? `Waiting for ${namesOf(others)}…` : 'Everyone else has played. No rush.');
+  const open = t - S.opensAt;
+  setHidden($('nudgeBtn'), !others.length || open < WAR.NUDGE_MS);
+  const nudge = $('nudgeBtn');
+  const resting = t - S.nudgedAt < 3000;
+  if (nudge.disabled !== resting) nudge.disabled = resting;
+  setText(nudge, resting ? '👉 Nudged' : '👉 Nudge');
+  setHidden($('flopBtn'), !others.length || S.you === null || S.you !== S.host || open < WAR.FLOP_MS);
+  setText($('flopBtn'), others.length > 1 ? '🫳 Flip theirs over' : `🫳 Flip ${playerName(others[0] ?? 0)}’s over`);
+}
+
+// Someone nudged the players the table is waiting for. If that's you, your
+// deck shakes and knocks; otherwise their tiles wiggle.
+function onNudge(m) {
+  if (!Array.isArray(m.seats)) return;
+  const by = Number.isInteger(m.by) ? playerName(m.by) : 'Someone';
+  for (const seat of m.seats) {
+    const node = seat === S.you ? $('myPile') : tiles.get(seat)?.node;
+    if (!node) continue;
+    node.classList.remove('nudged');
+    void node.offsetWidth;
+    node.classList.add('nudged');
+    later(() => node.classList.remove('nudged'), 1100 * pace());
+  }
+  if (m.seats.includes(S.you)) {
+    Sound.nudge();
+    if (navigator.vibrate) { try { navigator.vibrate([60, 80, 60]); } catch (e) { /* not allowed */ } }
+    toast(`👉 ${by} nudged you. Your turn!`);
+  }
 }
 
 function renderBar() {
@@ -4845,13 +5401,19 @@ function renderControls() {
     else if (S.pending) text = S.pending.stage > 0 && !S.pending.fighters.includes(S.you) ? 'War in progress…' : 'Get ready…';
     else if (!fighting) text = 'War in progress…';
     else if (now() < S.opensAt) text = 'Get ready…';
+    else if (mustGather()) text = S.stage ? 'Pick up your winnings for the war' : 'Pick up your winnings to play';
     else if (S.naps >= WAR.NAPS) text = 'You dozed off. Slam to wake up!';
     else {
       const plan = slamPlan();
-      const left = Math.ceil((S.closesAt - now()) / 1000);
       const step = plan.need > 1 ? (plan.done.length + 1 < plan.need ? `Face-down ${plan.done.length + 1}/${plan.need - 1}` : 'The decider') : '';
-      hurry = left <= 4;
-      text = hurry ? `${step ? 'Hurry' : 'Slam'}! ${Math.max(0, left)}…` : step ? `${step} · ${INPUTS[S.input][3]}` : INPUTS[S.input][2];
+      if (S.slow) {
+        // No clock: nothing counts down and nothing flops.
+        text = step ? `${step} · ${INPUTS[S.input][3]}` : 'Your turn. Take your time.';
+      } else {
+        const left = Math.ceil((S.closesAt - now()) / 1000);
+        hurry = left <= 4;
+        text = hurry ? `${step ? 'Hurry' : 'Slam'}! ${Math.max(0, left)}…` : step ? `${step} · ${INPUTS[S.input][3]}` : INPUTS[S.input][2];
+      }
     }
     setText($('slamText'), text);
     setClass($('slamText'), 'long', text.length > 21);
@@ -4881,6 +5443,7 @@ function renderAll() {
   renderBar();
   renderControls();
   renderOdds();
+  renderWait();
   document.documentElement.style.setProperty('--pace', String(pace()));
 }
 
@@ -4890,23 +5453,26 @@ setInterval(() => {
   if (S.phase !== 'playing' || document.hidden) return;
   beatTheClock();
   renderControls();
+  renderWait();
 }, 200);
 
 // ---- Winnings ----
 //
 // The cards each player wins are swept onto a messy heap when the table
 // clears, landing every which way, messier the bigger it gets: yours beside
-// your card, and at a table of up to four, everyone else's behind the card on
-// their tile. When you lose, your card flies
+// your card, and at a table of up to six, everyone else's beside the card on
+// their tile. They count once they've landed. When you lose, your card flies
 // to the winner's heap. Clean up squares your heap into a neat stack in the
 // order it landed, the latest card still on top, and in a room everyone sees
-// it happen on your tile. All for show: won cards go into the winner's deck
-// either way, and a heap never shows more cards than its player holds.
+// it happen on your tile. The heap is the player's winnings, kept apart from
+// their deck until they pick it up (Pick up), or their deck can't cover a
+// stage, and it goes under the deck as it lies (see warGather). It shows the
+// latest of them, never more than they hold.
 
-// Cards drawn at most: on your heap, and on others' at a table of up to four
+// Cards drawn at most: on your heap, and on others' at a table of up to six
 // (bigger tables have smaller tiles, and it all gets too busy).
-const HEAP_MAX = { me: 36, 'size-l': 24, 'size-m': 16, 'size-s': 0, 'size-xs': 0 };
-const heaps = new Map();  // seat -> { cards: [{ card, look, seat, node }], bottom first; tidy; layer }
+const HEAP_MAX = { me: 36, 'size-l': 24, 'size-m': 16, 'size-s': 10, 'size-xs': 0 };
+const heaps = new Map();  // seat -> { cards: [{ card, look, seat, node }], bottom first; tidy; layer; tosses since it was tidy }
 let heapPending = null;   // { winner, cards }: the pot just won, until the table clears
 const TIDY_LINES = [
   (n) => `Squared away ${plural(n, 'card')}, latest on top. The war will shuffle them anyway.`,
@@ -4916,18 +5482,23 @@ const TIDY_LINES = [
 
 const myHeapNode = () => document.querySelector('#winnings .heap');
 const heapNode = (seat) => (seat === S.you ? myHeapNode() : tiles.get(seat)?.heap || null);
-const heapMax = (seat) => (seat === S.you ? HEAP_MAX.me : HEAP_MAX[$('opponents').className] ?? 0);
+const heapMax = (seat) => {
+  if (seat === S.you) return HEAP_MAX.me;
+  const box = $('opponents');
+  return box.classList.contains('loots') ? HEAP_MAX[[...box.classList].find((c) => c.startsWith('size-'))] ?? 0 : 0;
+};
 const heapShown = () => S.phase === 'playing' || S.phase === 'over';
 
 function heapOf(seat) {
-  if (!heaps.has(seat)) heaps.set(seat, { cards: [], tidy: true, layer: 0 });
+  if (!heaps.has(seat)) heaps.set(seat, { cards: [], tidy: true, layer: 0, tosses: 0 });
   return heaps.get(seat);
 }
 
 function heapClear() {
   heaps.clear();
   heapPending = null;
-  myHeapNode().replaceChildren();
+  S.incoming = {};
+  for (const node of myHeapNode().querySelectorAll('.card')) node.remove();
   for (const t of tiles.values()) t.heap.replaceChildren();
   renderHeaps();
 }
@@ -4935,7 +5506,7 @@ function heapClear() {
 // Where a card lay on the table, relative to a heap's middle, and how much
 // bigger it was there than on the heap: [x, y, scale].
 function heapFrom(c, heapBox, size) {
-  const pile = c.card === 'back' && c.seat === S.you ? $('myWar').querySelector('.wpile .card') : null;
+  const pile = c.seat === S.you && !$('myWar').hidden ? $('myWar').querySelector('.wpile .card') : null;
   const from = pile || (c.seat === S.you ? $('mySlot').querySelector('.card') : tiles.get(c.seat)?.card);
   const box = from && from.offsetParent ? from.getBoundingClientRect() : null;
   const middle = [heapBox.left + heapBox.width / 2, heapBox.top + heapBox.height / 2];
@@ -4971,17 +5542,17 @@ function heapFly(node, c, heapBox, size, delay) {
 // Sweeps a pot onto its winner's heap: every card in its player's deck, the
 // face-down ones still face down, flying in from where it was played, the
 // winner's own last so they land on top.
-function heapToss(seat, cards) {
+function heapToss(seat, cards, quiet = false) {
   const heap = heapNode(seat);
   const max = heap ? heapMax(seat) : 0;
-  if (!max || !heapShown() || !cards.length || !(S.counts[seat] > 0)) return;
-  if (seat === S.you) {
+  if (!max || !heapShown() || !cards.length || !(S.counts[seat] > 0)) return 0;
+  if (seat === S.you && !quiet) {
     setHidden($('winnings'), false);
     setClass($('me'), 'warring', false);  // the war's over: no fading
   }
   const h = heapOf(seat);
   const heapBox = heap.getBoundingClientRect();
-  const fly = !reduceMotion.matches && heap.offsetParent !== null;
+  const fly = !quiet && !reduceMotion.matches && heap.offsetParent !== null;
   const thrown = cards.slice(-max).sort((a, b) => (a.seat === seat) - (b.seat === seat));
   const gap = Math.min(70, 420 / Math.max(1, thrown.length - 1));
   thrown.forEach((c, i) => {
@@ -5012,8 +5583,48 @@ function heapToss(seat, cards) {
     h.cards.push({ ...c, node });
   });
   h.tidy = false;
-  if (seat === S.you || S.players.length <= 4) Sound.swish();
+  h.tosses = (h.tosses || 0) + 1;
+  if (!quiet && (seat === S.you || S.players.length <= 6)) Sound.swish();
   renderHeaps();
+  // When the last card lands.
+  return fly ? Math.round((640 + (thrown.length - 1) * gap) * pace()) : 0;
+}
+
+// Picks a heap up: after `delay` ms, its cards fly into their player's deck,
+// the oldest first, and the heap is empty from now on.
+function heapGather(seat, delay) {
+  const h = heaps.get(seat);
+  if (!h || !h.cards.length) return;
+  const cards = h.cards;
+  Object.assign(h, { cards: [], tidy: true, layer: 0, tosses: 0 });
+  renderHeaps();
+  later(() => {
+    const target = seat === S.you ? $('myPile').querySelector('.stack') : tiles.get(seat)?.deck || tiles.get(seat)?.card;
+    const box = target && target.offsetParent ? target.getBoundingClientRect() : null;
+    cards.forEach((c, i) => {
+      const node = c.node;
+      const r = node.isConnected ? node.getBoundingClientRect() : null;
+      node.remove();
+      if (!box || !r || !r.width || reduceMotion.matches) return;
+      const size = r.width;
+      const flyer = cardEl(c.card, c.look);
+      flyer.classList.add('flyer');
+      flyer.style.setProperty('--w', `${node.offsetWidth || 40}px`);
+      flyer.style.left = `${r.left + r.width / 2 - (node.offsetWidth || 40) / 2}px`;
+      flyer.style.top = `${r.top + r.height / 2 - (node.offsetWidth || 40) * 0.7}px`;
+      $('fx').append(flyer);
+      const rot = parseFloat(node.style.getPropertyValue('--r')) || 0;
+      const dx = box.left + box.width / 2 - (r.left + r.width / 2);
+      const dy = box.top + box.height / 2 - (r.top + r.height / 2);
+      const done = () => flyer.remove();
+      flyer.animate([
+        { transform: `rotate(${rot}deg)` },
+        { transform: `translate(${dx}px, ${dy}px) rotate(0deg) scale(${(box.width / size).toFixed(2)})`, opacity: 0.4 },
+      ], { duration: 420 * pace(), delay: Math.min(i, 30) * 12 * pace(), easing: 'cubic-bezier(.4, 0, .6, 1)', fill: 'backwards' })
+        .finished.then(done, done);
+    });
+    if (seat === S.you || S.players.length <= 6) Sound.riffle();
+  }, delay);
 }
 
 // Squares a heap up into a neat stack without reordering it: the oldest card
@@ -5034,6 +5645,7 @@ function heapSquare(seat) {
   });
   h.layer = h.cards.length;
   h.tidy = true;
+  h.tosses = 0;
   Sound.riffle();
   renderHeaps();
   return true;
@@ -5047,17 +5659,57 @@ function heapTidy() {
   if (S.mode === 'room' && S.conn) S.conn.send({ t: 'tidy' });
 }
 
-function renderHeaps() {
-  // Never more cards than their player holds: the oldest slip out from underneath.
+// Bots clean up their winnings every so often, the way people do while they
+// wait: the more pots have landed on a messy heap since it was last squared
+// up, the likelier at each new battle, a beat after the bot slams (and after
+// a pot it just won lands), with a broom popping up so it's noticed. Only for
+// show, so each screen decides for itself, as it does where each won card
+// lands.
+function botsTidy(m, winner, landing) {
   for (const [seat, h] of heaps) {
-    const keep = heapNode(seat) && heapShown() ? Math.min(heapMax(seat), S.counts[seat] ?? 0) : 0;
+    const p = S.players[seat];
+    if (!p || !p.bot || h.tidy || h.cards.length < 4) continue;
+    if (Math.random() >= Math.min(0.8, h.tosses * 0.15)) continue;
+    const slam = (m.bots || []).find((b) => b[0] === seat);
+    const wait = Math.max(slam ? slam[3] : 0, seat === winner ? landing : 0) + (600 + Math.random() * 1400) * pace();
+    later(() => { if (heaps.get(seat) === h && S.phase === 'playing' && heapSquare(seat)) floatBroom(seat); }, wait);
+  }
+}
+
+// The cards a player has won and not yet picked up, or null when the room
+// doesn't say.
+function lootOf(seat) {
+  return S.decks ? Math.max(0, (S.counts[seat] ?? 0) - (S.decks[seat] ?? 0)) : null;
+}
+
+// What a player is shown to hold, and to have won: a pot only counts once
+// its cards have landed on their loot pile.
+function shownCount(seat) {
+  return Math.max(0, (S.counts[seat] ?? 0) - (S.incoming[seat] || 0));
+}
+function shownLoot(seat) {
+  return Math.max(0, (lootOf(seat) ?? 0) - (S.incoming[seat] || 0));
+}
+
+function renderHeaps() {
+  // Never more cards than their player has won (or, from a room server that
+  // doesn't say, holds): the oldest slip out from underneath.
+  for (const [seat, h] of heaps) {
+    const held = lootOf(seat) ?? S.counts[seat] ?? 0;
+    const keep = heapNode(seat) && heapShown() ? Math.min(heapMax(seat), held) : 0;
     while (h.cards.length > keep) h.cards.shift().node.remove();
   }
   const mine = S.you !== null ? heaps.get(S.you) : null;
   const n = mine ? mine.cards.length : 0;
-  setHidden($('winnings'), !n);
+  const loot = S.you !== null && S.decks ? shownLoot(S.you) : null;
+  const pick = S.phase === 'playing' && (loot > 0 || mustGather());
+  setHidden($('winnings'), !n && !pick);
+  setHidden($('gatherBtn'), !pick);
+  setClass($('gatherBtn'), 'due', pick && (mustGather() || S.decks[S.you] === 0));
+  setText($('lootCount'), loot > 0 ? String(loot) : '');
+  setHidden($('lootCount'), !(loot > 0));
   setHidden($('tidyBtn'), !mine || mine.tidy || n < 2);
-  setAttr(myHeapNode(), 'aria-label', `${plural(n, 'card')} you’ve won, ${mine && mine.tidy ? 'in a neat stack' : 'in a messy heap'}`);
+  setAttr(myHeapNode(), 'aria-label', `${plural(loot ?? n, 'card')} you’ve won, ${mine && mine.tidy ? 'in a neat stack' : 'in a messy heap'}`);
 }
 
 // ---- Slamming ----
@@ -5083,7 +5735,21 @@ let mash = null;    // mash: { start, taps, window, tier }
 let fling = null;   // fling: { pointer, x0, y0, points, ghost, tier }
 
 function canSlam() {
-  return S.phase === 'playing' && S.you !== null && isFighting(S.you) && !S.pending && !S.slams[S.you] && now() >= S.opensAt;
+  return S.phase === 'playing' && S.you !== null && isFighting(S.you) && !S.pending && !S.slams[S.you] && now() >= S.opensAt
+    && !mustGather();
+}
+
+// Your deck can't cover this stage (a card in a battle, four in a war) and
+// your winnings are waiting: pick them up before you slam. Only Auto does
+// it for you.
+function mustGather() {
+  const me = S.you;
+  if (!S.decks || me === null || S.phase !== 'playing' || S.pending || !isFighting(me) || S.slams[me]) return false;
+  return lootOf(me) > 0 && (S.decks[me] ?? 0) < (S.stage ? 4 : 1);
+}
+
+function pickUp() {
+  if (S.conn && S.you !== null && lootOf(S.you) > 0) S.conn.send({ t: 'gather' });
 }
 
 // The cards you slam this stage: one in a battle; in a war, up to three face
@@ -5256,7 +5922,7 @@ function releaseFling(e) {
     return;
   }
   const plan = slamPlan();
-  const target = (plan.done.length + 1 < plan.need ? $('myWar') : $('mySlot')).getBoundingClientRect();
+  const target = (S.stage ? $('myWar') : $('mySlot')).getBoundingClientRect();
   ghost.style.transition = `transform ${reduceMotion.matches ? 0 : Math.round(160 * pace())}ms ease-in`;
   ghost.style.transform = `translate(${target.left + target.width / 2 - 44}px, ${target.top + target.height / 2 - 62}px) rotate(0deg) scale(1)`;
   setTimeout(() => ghost.remove(), reduceMotion.matches ? 0 : 170 * pace());
@@ -5289,7 +5955,7 @@ function slamCard(power) {
   // In a war, each card lands harder than the last.
   const boost = S.stage ? 1 + n * 0.3 + (last ? 0.4 : 0) : 1;
   later(() => {
-    const [x, y] = centerOf(last ? $('mySlot') : $('myWar'));
+    const [x, y] = centerOf(last && !S.stage ? $('mySlot') : $('myWar'));
     burst(x, y, style, Math.min(WAR.MAX_POWER, Math.round(power * boost)), false);
     shake(power * boost);
     Sound.slam(power, style, false);
@@ -5308,6 +5974,7 @@ function warCardLine(plan, n, power, last) {
 }
 
 function autoSlam() {
+  if (S.auto && mustGather() && !inputBusy()) { pickUp(); later(autoSlam, 300 * pace()); return; }
   if (!S.auto || !canSlam() || inputBusy()) return;
   slamCard(20 + Math.floor(Math.random() * 170));
 }
@@ -5316,7 +5983,7 @@ function autoSlam() {
 // progress and slam any face-down cards left, so a war you've begun doesn't
 // end in a flop. A stage you never touched still flops.
 function beatTheClock() {
-  if (!canSlam() || S.closesAt - now() > 700) return;
+  if (S.slow || !canSlam() || S.closesAt - now() > 700) return;
   if (charge) releaseCharge();
   else if (mash) finishMash();
   else if (fling) releaseFling(null);
@@ -5386,10 +6053,14 @@ function renderLobby() {
   $('botMore').disabled = S.players.length >= WAR.MAX_PLAYERS;
   $('botFill').disabled = S.players.length >= WAR.MAX_PLAYERS;
   renderLengths($('roomLength'), S.length, !host);
+  renderClocks($('roomClock'), S.roomSlow, !host);
+  renderWinnings($('roomWinnings'), S.roomShuffle, !host);
   const hostName = S.host !== null ? S.players[S.host]?.name : null;
-  setText($('lobbyNote'), host
+  const note = host
     ? (S.players.length < 2 ? 'Waiting for friends. Or add some bots.' : `${plural(S.players.length, 'player')}, ${plural(Math.max(1, Math.ceil(S.players.length / 2)), 'deck')}. Everyone gets about 27 cards.`)
-    : S.you === null ? 'This room is full. You can watch.' : `Waiting for ${hostName || 'the host'} to deal.`);
+    : S.you === null ? 'This room is full. You can watch.' : `Waiting for ${hostName || 'the host'} to deal.`;
+  setText($('lobbyNote'), note + (S.roomSlow && !host ? ' A slow game: no clock, the table waits for everyone.' : '')
+    + (S.roomShuffle && !host ? ' Winnings are shuffled on their way back.' : ''));
   setHidden($('dealBtn'), !host);
   $('dealBtn').disabled = S.players.length < 2;
   renderDecks();
@@ -5408,6 +6079,38 @@ function renderLengths(box, value, locked) {
   }
   for (const b of box.children) {
     setAttr(b, 'aria-pressed', String(b.dataset.length === value));
+    if (b.disabled !== locked) b.disabled = locked;
+  }
+}
+
+function renderClocks(box, slow, locked) {
+  if (!box.childElementCount) {
+    for (const [key, [name, sub]] of Object.entries(CLOCK_LABELS)) {
+      const b = el('button', '');
+      b.type = 'button';
+      b.dataset.clock = key;
+      b.append(document.createTextNode(name), el('small', '', sub));
+      box.append(b);
+    }
+  }
+  for (const b of box.children) {
+    setAttr(b, 'aria-pressed', String((b.dataset.clock === 'slow') === slow));
+    if (b.disabled !== locked) b.disabled = locked;
+  }
+}
+
+function renderWinnings(box, shuffle, locked) {
+  if (!box.childElementCount) {
+    for (const [key, [name, sub]] of Object.entries(WINNINGS_LABELS)) {
+      const b = el('button', '');
+      b.type = 'button';
+      b.dataset.winnings = key;
+      b.append(document.createTextNode(name), el('small', '', sub));
+      box.append(b);
+    }
+  }
+  for (const b of box.children) {
+    setAttr(b, 'aria-pressed', String((b.dataset.winnings === 'shuffled') === shuffle));
     if (b.disabled !== locked) b.disabled = locked;
   }
 }
@@ -6032,12 +6735,16 @@ function bump(what) {
 // ---- Menu ----
 
 let menuLength = store.get('length', 'standard');
+let menuSlow = store.get('slow', false) === true;
+let menuShuffle = store.get('shuffle', false) === true;
 let avatar = store.get('avatar', Math.floor(Math.random() * AVATARS.length));
 
 function renderMenu() {
   const n = Number($('oppRange').value);
   setText($('oppLabel'), `${plural(n, 'opponent')} · ${plural(Math.ceil((n + 1) / 2), 'deck')}`);
   renderLengths($('soloLength'), menuLength, false);
+  renderClocks($('soloClock'), menuSlow, false);
+  renderWinnings($('soloWinnings'), menuShuffle, false);
   setText($('soloNote'), menuLength === 'total' && n > 3
     ? `With ${n + 1} players, total war could take thousands of battles. Autopilot and Fast help.`
     : n >= 20 ? 'A big table: expect a lot of many-way wars.' : '');
@@ -6142,13 +6849,15 @@ function startSolo() {
   const random = seed ? seeded(Number(seed) || 1) : Math.random;
   const opponents = Number($('oppRange').value);
   store.set('length', menuLength);
+  store.set('slow', menuSlow);
+  store.set('shuffle', menuShuffle);
   store.set('opponents', opponents);
   S.mode = 'solo';
   S.fast = false;
   S.battle = 0;
   S.phase = null;
   tileKey = '';
-  S.conn = new SoloRoom({ opponents, length: menuLength, name: 'You', avatar, random });
+  S.conn = new SoloRoom({ opponents, length: menuLength, slow: menuSlow, shuffle: menuShuffle, name: 'You', avatar, random });
   S.conn.start();
 }
 
@@ -6287,7 +6996,9 @@ function openPause() {
   cancelInput();
   const solo = S.mode === 'solo';
   setText($('pauseTitle'), solo ? 'Paused' : 'Menu');
-  setText($('pauseNote'), solo ? 'The war waits for you.' : 'The game carries on without you while you’re here: your cards flop over by themselves.');
+  setText($('pauseNote'), solo ? 'The war waits for you.'
+    : S.slow ? 'The table waits for you while you’re here. Take your time.'
+      : 'The game carries on without you while you’re here: your cards flop over by themselves.');
   setHidden($('skipBtn'), !solo || !S.conn.game || S.phase !== 'playing');
   setText($('quitBtn'), solo ? 'Quit to menu' : 'Leave the room');
   setHidden($('pauseInviteBtn'), solo);
@@ -6327,6 +7038,29 @@ function init() {
     const b = e.target.closest('button');
     if (b) { menuLength = b.dataset.length; renderMenu(); }
   });
+  $('soloWinnings').addEventListener('click', (e) => {
+    const b = e.target.closest('button');
+    if (b) { menuShuffle = b.dataset.winnings === 'shuffled'; renderMenu(); }
+  });
+  $('roomWinnings').addEventListener('click', (e) => {
+    const b = e.target.closest('button');
+    if (b && !b.disabled) S.conn.send({ t: 'shuffle', shuffle: b.dataset.winnings === 'shuffled' });
+  });
+  $('gatherBtn').addEventListener('click', pickUp);
+  $('soloClock').addEventListener('click', (e) => {
+    const b = e.target.closest('button');
+    if (b) { menuSlow = b.dataset.clock === 'slow'; renderMenu(); }
+  });
+  $('roomClock').addEventListener('click', (e) => {
+    const b = e.target.closest('button');
+    if (b && !b.disabled) S.conn.send({ t: 'slow', slow: b.dataset.clock === 'slow' });
+  });
+  $('nudgeBtn').addEventListener('click', () => {
+    S.nudgedAt = now();
+    S.conn.send({ t: 'nudge' });
+    renderWait();
+  });
+  $('flopBtn').addEventListener('click', () => S.conn.send({ t: 'flop' }));
   $('roomLength').addEventListener('click', (e) => {
     const b = e.target.closest('button');
     if (b && !b.disabled) S.conn.send({ t: 'length', length: b.dataset.length });
@@ -6423,6 +7157,7 @@ function init() {
     if (e.button > 0) return;
     e.preventDefault();
     try { pile.setPointerCapture(e.pointerId); } catch (err) { /* fine */ }
+    if (mustGather()) { pickUp(); return; }
     if (S.input === 'mash') mashTap();
     else if (S.input === 'fling') startFling(e);
     else startCharge(e.pointerId);
@@ -6439,7 +7174,7 @@ function init() {
     if ((e.key === ' ' || e.key === 'Enter') && tableUp()) {
       e.preventDefault();
       // Mash counts key presses; hold and fling hold the key to charge.
-      if (!e.repeat) { if (S.input === 'mash') mashTap(); else startCharge('key'); }
+      if (!e.repeat) { if (mustGather()) pickUp(); else if (S.input === 'mash') mashTap(); else startCharge('key'); }
     } else if (e.key === 'Escape' && !$('historyOv').hidden) {
       setHidden($('historyOv'), true);
     } else if (e.key === 'Escape' && !$('inviteOv').hidden) {
@@ -6498,7 +7233,8 @@ init();
 // joker() says what the joker war shows, jokerHold(on) holds it still and
 // jokerStep(du) moves it on by hand; state() reads the table, slam(power) slams
 // right away (every card, in a war), input(mode) picks how you slam, hurry()
-// runs your clock down to its last moment,
+// runs your clock down to its last moment, waited(ms) pretends the stage
+// opened ms ago,
 // finish() plays a solo game out, pace(p) speeds a solo game up,
 // odds(counts, battle, limit, sims) runs the win probability model and
 // simulate() runs its simulations, even head to head.
@@ -6507,6 +7243,9 @@ if (DEBUG) {
     state: () => ({
       mode: S.mode, phase: S.phase, you: S.you, battle: S.battle, stage: S.stage, fighters: S.fighters.slice(),
       counts: S.counts.slice(), slams: { ...S.slams }, canSlam: canSlam(), over: S.over, players: S.players.length,
+      slow: S.slow, waiting: waitingFor(), shuffle: S.shuffle,
+      decks: S.decks && S.decks.slice(), loot: S.players.map((_, seat) => lootOf(seat)),
+      ups: { ...S.ups }, table: Object.fromEntries(Object.entries(S.cards).map(([seat, c]) => [seat, c.up])),
       mine: S.mine.map((x) => x.slice()),
       odds: Odds.history.map((x) => x.slice()),
       chances: Odds.seats && Odds.seats.slice(),
@@ -6514,6 +7253,7 @@ if (DEBUG) {
       plan: S.plan && { need: S.plan.need, done: S.plan.done.slice() },
       heap: (heaps.get(S.you)?.cards || []).map((c) => c.card), tidy: heaps.get(S.you)?.tidy ?? true,
       heaps: Object.fromEntries([...heaps].map(([seat, h]) => [seat, h.cards.map((c) => c.card)])),
+      tidied: Object.fromEntries([...heaps].map(([seat, h]) => [seat, h.tidy])),
     }),
     slam: (power) => {
       if (!canSlam()) return false;
@@ -6562,6 +7302,8 @@ if (DEBUG) {
       return levels;
     },
     hurry: () => { S.closesAt = now() + 600; },
+    // Makes this page think the stage opened ms ago, for a slow room's nudges.
+    waited: (ms) => { S.opensAt = now() - ms; renderWait(); },
     log: () => Log.battles.map((e) => ({ ...e, counts: [...e.counts] })),
     picture: async () => (await summaryImage()).toDataURL('image/png'),
     finish: () => S.conn && S.conn.finish && S.conn.finish(),

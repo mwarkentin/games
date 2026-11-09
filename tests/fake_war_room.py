@@ -7,6 +7,18 @@ lobby the way the real room does (players, host, bots, length, dealing) and
 passes slams, cheers, deck changes and clean-ups on; the battles themselves are up to each test,
 which sends the room's messages with broadcast(). The real room is tested in
 worker/test/war.test.js.
+
+Picking up winnings (`gather`) is passed on as the room would, and the host's
+`shuffle` setting kept; which cards are where is up to each test's messages.
+
+A slow room (the host's `slow` setting) has no clock. The fake passes nudges
+on to whoever hasn't slammed this stage, and lets the host flip their cards
+over, without the real room's waits.
+
+The real room says which card each slam turns face up. The fake only does
+for the seats a test puts in `ups` (seat -> card), in slams and in the bots'
+slams when a stage opens; for the rest it sends none, as a room server from
+before cards showed early would.
 """
 
 from __future__ import annotations
@@ -38,10 +50,14 @@ class FakeWarRoom:
         self.rooms = {code} if exists else set()
         self.phase = "lobby"
         self.length = "standard"
+        self.slow = False
+        self.shuffle = False
+        self.slammed: set[int] = set()  # seats that slammed this stage
         self.players: list[dict] = []    # {name, avatar, deck, bot, token}
         self.sockets: list[dict] = []    # {ws, token, open}
         self.received: list[dict] = []   # every message from a page
         self.game: dict | None = None
+        self.ups: dict[int, int] = {}    # seat -> the card its slam turns face up
 
     def route(self, page: Page) -> None:
         page.route(f"{API}/**", self.handle_http)
@@ -101,7 +117,8 @@ class FakeWarRoom:
     def snapshot(self, conn: dict) -> dict:
         online = self.online()
         return {
-            "t": "state", "code": self.code, "phase": self.phase, "length": self.length,
+            "t": "state", "code": self.code, "phase": self.phase, "length": self.length, "slow": self.slow,
+            "shuffle": self.shuffle,
             "you": self.seat_of(conn), "host": self.host(),
             "watchers": sum(1 for c in self.open_sockets() if self.seat_of(c) is None),
             "players": [
@@ -156,10 +173,33 @@ class FakeWarRoom:
         elif kind == "length" and is_host:
             self.length = message["length"]
             self.send_states()
+        elif kind == "slow" and is_host and self.phase != "playing":
+            self.slow = message["slow"]
+            self.send_states()
+        elif kind == "shuffle" and is_host and self.phase != "playing":
+            self.shuffle = message["shuffle"]
+            self.send_states()
+        elif kind == "gather" and seat is not None and self.phase == "playing":
+            self.broadcast({"t": "gather", "seat": seat})
+        elif kind == "nudge" and self.slow and self.phase == "playing":
+            seats = [s for s in self.waiting() if s != seat]
+            if seats:
+                self.broadcast({"t": "nudge", "seats": seats, "by": seat})
+        elif kind == "flop" and is_host and self.slow and self.phase == "playing":
+            for s in self.waiting():
+                if s != seat:
+                    self.slammed.add(s)
+                    up = {"up": self.ups[s]} if s in self.ups else {}
+                    self.broadcast({"t": "slam", "seat": s, "power": 0, "style": 0, **up, "flopped": True})
         elif kind == "start" and is_host:
             self.deal()
         elif kind in ("slam", "charge", "card") and seat is not None:
-            self.broadcast({"t": kind, "seat": seat, **{k: v for k, v in message.items() if k != "t"}})
+            relayed = {"t": kind, "seat": seat, **{k: v for k, v in message.items() if k != "t"}}
+            if kind == "slam" and seat in self.ups:
+                relayed["up"] = self.ups[seat]
+            if kind == "slam":
+                self.slammed.add(seat)
+            self.broadcast(relayed)
         elif kind == "cheer":
             self.broadcast({"t": "cheer", "seat": seat, "e": message["e"]})
         elif kind == "deck" and seat is not None:
@@ -168,6 +208,12 @@ class FakeWarRoom:
         elif kind == "tidy" and seat is not None:
             self.broadcast({"t": "tidy", "seat": seat})
 
+    def waiting(self) -> list[int]:
+        """The players this stage waits for: online, not bots, not slammed."""
+        online = self.online()
+        fighters = self.game["fighters"] if self.game else []
+        return [s for s in fighters if not self.players[s]["bot"] and s in online and s not in self.slammed]
+
     def deal(self) -> None:
         """Starts a game, with everyone holding 27 cards and the first battle open."""
         n = len(self.players)
@@ -175,15 +221,20 @@ class FakeWarRoom:
         self.phase = "playing"
         self.game = {
             "battle": 1, "limit": limit, "stage": 0, "fighters": list(range(n)), "counts": [27] * n,
-            "out": [0] * n, "pot": 0, "slams": {}, "opensIn": 0, "closesIn": 8000, "wars": 0, "over": None,
+            "out": [0] * n, "pot": 0, "slams": {}, "opensIn": 0, "closesIn": None if self.slow else 8000,
+            "naps": [0] * n, "slow": self.slow, "wars": 0, "over": None,
         }
+        self.slammed = set()
         self.send_states()
         self.broadcast(self.stage(1))
 
     def stage(self, battle: int, stage: int = 0, fighters=None, opens_in: int = 0) -> dict:
         fighters = list(range(len(self.players))) if fighters is None else fighters
-        bots = [[seat, 100, 1, 200] for seat in fighters if self.players[seat]["bot"]]
+        self.slammed = set()
+        self.game.update(battle=battle, stage=stage, fighters=fighters)
+        bots = [[seat, 100, 1, 200, *([self.ups[seat]] if seat in self.ups else [])]
+                for seat in fighters if self.players[seat]["bot"]]
         return {
             "t": "stage", "battle": battle, "stage": stage, "limit": self.game["limit"], "fighters": fighters,
-            "opensIn": opens_in, "closesIn": opens_in + 8000, "bots": bots,
+            "opensIn": opens_in, "closesIn": None if self.slow else opens_in + 8000, "bots": bots,
         }

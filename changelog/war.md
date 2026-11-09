@@ -13,6 +13,37 @@
   and a jester in 8-bit, a shield, a princess, a prince and masks in Royal, a
   rocket, an alien, a flying saucer and a comet in Space, the undead in
   Spooky, and sweets in Candy.
+- Cards land face up as soon as they're played: yours the moment you slam
+  it, everyone else's the moment they slam theirs, bots' too. Face-down war
+  cards stay face down, and the winner still comes when everyone has played.
+- Slow games, with no clock: pick one in the menu, or as host in a room's
+  lobby. The table waits until everyone has played, and nobody's card flops
+  over by itself. In a room, everyone sees who the table is waiting for and
+  can give them a nudge, which shakes their deck; after a long wait the host
+  can flip their card over for them.
+- After a war, every card in the winner's loot pile is face up, the ones
+  laid face down too.
+- The cards you win stay beside your deck instead of vanishing into it, and
+  your deck shows how many cards are left in it. Pick up puts your winnings
+  under your deck in the order you won them. When your deck runs out, pick
+  them up to keep playing (tap your deck or Pick up). On Auto, they come up
+  by themselves.
+- Winnings can be shuffled on their way back instead, as plenty of people
+  play: pick it in the menu, or as host in a room's lobby.
+- At a table of up to six, everyone else's tile shows their deck, with its
+  count in the corner, and their loot pile, with its count, and the cards
+  they play land on the table in the middle. A pot you win only counts once
+  its cards have landed on your loot pile.
+- Bots clean up their loot piles every so often, squaring them into a neat
+  stack while they wait, the way you can with Clean up. A broom pops up when
+  they do, and when someone in a room cleans up theirs.
+- Every deck is as thick as it's full, and thins as it runs down.
+- In a war, the cards everyone else lays face down fan out messily from
+  under their card on the table, one for each card, so you can count them
+  as they go down. In a double war or more, the cards that tied stay in
+  view too, face up among them, in your pile as well as everyone else's.
+- In a war, all your cards go on one pile until it's settled: the card you
+  tied with, the ones you lay face down, and the card that decides it on top.
 
 ## 2026-11-07
 

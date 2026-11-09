@@ -75,7 +75,7 @@ def test_start_a_room_add_bots_and_play_a_battle(page: Page, site_url, errors):
     })
     expect(page.locator("#banner")).to_have_text("YOU WIN!")
     expect(page.locator("#myLabel")).to_contain_text("27 cards")
-    expect(page.locator("#opponents .tile .tcount")).to_have_text("25")
+    expect(page.locator("#opponents .tile .tdeck .count")).to_have_text("25")
     page.wait_for_function(f"{STATE}.battle === 2 && {STATE}.canSlam")
     assert errors == []
 
@@ -121,7 +121,8 @@ def test_friends_join_with_the_code_and_see_each_other(page: Page, browser, site
     page.evaluate("window.__war.slam(120)")
     assert [(m["n"], m["power"]) for m in fake.messages("card")] == [(0, 120), (1, 120), (2, 120)]
     assert fake.messages("slam")[-1]["power"] == 120
-    expect(guest.locator("#opponents .tile .downs")).to_have_text("+3")
+    expect(guest.locator("#spots .downs")).to_have_text("+3")
+    expect(guest.locator("#spots .tdowns .card.back")).to_have_count(3)
     fake.broadcast({
         "t": "flip", "battle": 1, "stage": 1, "winner": 0, "tied": [0], "gods": False, "pot": 10,
         "plays": [[0, 3, card(12), 0, 0, 1], [1, 3, card(4), 0, 0, 1]], "counts": [31, 21], "out": [],
@@ -141,6 +142,215 @@ def test_friends_join_with_the_code_and_see_each_other(page: Page, browser, site
     expect(guest.locator("#over")).to_be_hidden()
     guest.wait_for_function(f"{STATE}.battle === 1 && {STATE}.phase === 'playing'")
     guest_context.close()
+    assert errors == []
+
+
+def test_cards_land_face_up_as_they_are_played(page: Page, browser, site_url, errors):
+    fake = FakeWarRoom()
+    fake.ups = {0: card(12), 1: card(3, 1), 2: joker()}
+    open_war(page, site_url, fake)
+    start_room(page, "Dana")
+    guest_context = browser.new_context(viewport={"width": 375, "height": 740})
+    guest = guest_context.new_page()
+    open_war(guest, site_url, fake)
+    join_room(guest, "k7qp", "Bob")
+    page.click("#botMore")
+    expect(page.locator("#people .person")).to_have_count(3)
+    page.click("#dealBtn")
+
+    # The bot slams first, and its joker is face up on both screens at once.
+    bot_on_dana = page.locator("#spots .spot").nth(1).locator(".tslot > .card")
+    expect(bot_on_dana).to_have_attribute("aria-label", "black joker")
+    expect(guest.locator("#spots .spot").nth(1).locator(".tslot > .card")).to_have_attribute("aria-label", "black joker")
+
+    # Dana slams: her ace lands face up on her screen as soon as the room
+    # answers, and on Bob's, while Bob's own card is still in his hand.
+    page.wait_for_function(f"{STATE}.canSlam")
+    page.evaluate("window.__war.slam(120)")
+    expect(page.locator("#mySlot .card")).to_have_attribute("aria-label", "ace of spades")
+    dana_on_bob = guest.locator("#spots .spot").nth(0).locator(".tslot > .card")
+    expect(dana_on_bob).to_have_attribute("aria-label", "ace of spades")
+    expect(guest.locator("#mySlot .card")).to_have_class(re.compile(r"\bempty\b"))
+    bob_on_dana = page.locator("#spots .spot").nth(0).locator(".tslot > .card")
+    expect(bob_on_dana).not_to_have_attribute("aria-label", re.compile("."))
+
+    # Then Bob's five, face up on Dana's screen. Nobody has won yet.
+    guest.wait_for_function(f"{STATE}.canSlam")
+    guest.evaluate("window.__war.slam(60)")
+    expect(guest.locator("#mySlot .card")).to_have_attribute("aria-label", "five of hearts")
+    expect(bob_on_dana).to_have_attribute("aria-label", "five of hearts")
+    assert page.evaluate(f"{STATE}.table") == {}, "nothing has been played out"
+    expect(page.locator("#banner")).not_to_have_text("YOU WIN!")
+
+    # The flip brings the winner; the cards are already where they were.
+    fake.broadcast({
+        "t": "flip", "battle": 1, "stage": 0, "winner": 2, "tied": [2], "gods": False, "pot": 3,
+        "plays": [[0, 0, card(12), 120, 0, 0], [1, 0, card(3, 1), 60, 0, 0], [2, 0, joker(), 100, 1, 0]],
+        "counts": [26, 26, 29], "out": [], "next": fake.stage(2, opens_in=2400),
+    })
+    expect(page.locator("#opponents .tile").nth(1)).to_have_class(re.compile(r"\bwon\b"))
+    expect(page.locator("#mySlot .card")).to_have_attribute("aria-label", "ace of spades")
+    guest_context.close()
+    assert errors == []
+
+
+def test_a_slow_room_waits_for_everyone_and_they_can_be_nudged(page: Page, browser, site_url, errors):
+    fake = FakeWarRoom()
+    fake.ups = {0: card(12), 1: card(3, 1)}
+    open_war(page, site_url, fake)
+    start_room(page, "Dana")
+    guest_context = browser.new_context(viewport={"width": 375, "height": 740})
+    guest = guest_context.new_page()
+    open_war(guest, site_url, fake)
+    join_room(guest, "k7qp", "Bob")
+
+    # The host picks a slow game in the lobby, and Bob is told.
+    expect(page.locator("#roomClock button[data-clock=timed]")).to_have_attribute("aria-pressed", "true")
+    page.click("#roomClock button[data-clock=slow]")
+    expect(page.locator("#roomClock button[data-clock=slow]")).to_have_attribute("aria-pressed", "true")
+    assert fake.messages("slow") == [{"t": "slow", "slow": True}]
+    expect(guest.locator("#lobbyNote")).to_contain_text("A slow game")
+    expect(guest.locator("#roomClock")).to_be_hidden()
+    page.click("#dealBtn")
+
+    # No clock: a calm word instead of a countdown.
+    guest.wait_for_function(f"{STATE}.canSlam")
+    page.wait_for_function(f"{STATE}.canSlam")
+    expect(guest.locator("#slamText")).to_have_text("Your turn. Take your time.")
+
+    # Bob plays first, and sees the table waiting for Dana. He can nudge her
+    # once she's had a moment, but only the host can flip a card over.
+    guest.evaluate("window.__war.slam(60)")
+    expect(guest.locator("#waitText")).to_have_text("Waiting for Dana…")
+    expect(guest.locator("#opponents .tile").nth(0)).to_have_class(re.compile(r"\bwaiting\b"))
+    expect(guest.locator("#nudgeBtn")).to_be_hidden()
+    guest.evaluate("window.__war.waited(31000)")
+    expect(guest.locator("#nudgeBtn")).to_be_visible()
+    expect(guest.locator("#flopBtn")).to_be_hidden()
+    expect(page.locator("#waitText")).to_have_text("Everyone else has played. No rush.")
+    guest.click("#nudgeBtn")
+    assert fake.messages("nudge") == [{"t": "nudge"}]
+    expect(guest.locator("#nudgeBtn")).to_be_disabled()
+    # Dana's deck shakes, with a word about who nudged her.
+    expect(page.locator("#myPile")).to_have_class(re.compile(r"\bnudged\b"))
+    expect(page.locator("#toast")).to_have_text("👉 Bob nudged you. Your turn!")
+    page.evaluate("window.__war.slam(90)")
+    expect(guest.locator("#waitRow")).to_be_hidden()
+    fake.broadcast({
+        "t": "flip", "battle": 1, "stage": 0, "winner": 0, "tied": [0], "gods": False, "pot": 2,
+        "plays": [[0, 0, card(12), 90, 0, 0], [1, 0, card(3, 1), 60, 0, 0]],
+        "counts": [28, 26], "out": [], "next": fake.stage(2, opens_in=500),
+    })
+
+    # The next battle: Dana plays, and after a long wait flips Bob's card
+    # over for him. It lands face up on both screens.
+    page.wait_for_function(f"{STATE}.battle === 2 && {STATE}.canSlam")
+    guest.wait_for_function(f"{STATE}.battle === 2 && {STATE}.canSlam")
+    page.evaluate("window.__war.slam(90)")
+    expect(page.locator("#waitText")).to_have_text("Waiting for Bob…")
+    expect(page.locator("#flopBtn")).to_be_hidden()
+    page.evaluate("window.__war.waited(31000)")
+    expect(page.locator("#flopBtn")).to_have_text("🫳 Flip Bob’s over")
+    page.click("#flopBtn")
+    assert fake.messages("flop") == [{"t": "flop"}]
+    expect(guest.locator("#mySlot .card")).to_have_attribute("aria-label", "five of hearts")
+    expect(guest.locator("#caption")).to_contain_text("flipped over for you")
+    assert not guest.evaluate(f"{STATE}.canSlam")
+    expect(page.locator("#opponents .tile").nth(0).locator(".tstat")).to_have_text("flipped over")
+    expect(page.locator("#waitRow")).to_be_hidden()
+    guest_context.close()
+    assert errors == []
+
+
+def test_after_a_war_every_card_in_your_loot_is_face_up(page: Page, site_url, errors):
+    fake = FakeWarRoom()
+    open_war(page, site_url, fake)
+    start_room(page)
+    page.click("#botMore")
+    page.click("#dealBtn")
+    page.wait_for_function(f"{STATE}.canSlam")
+    page.evaluate("window.__war.slam(90)")
+    fake.broadcast({
+        "t": "flip", "battle": 1, "stage": 0, "winner": None, "tied": [0, 1], "gods": False, "pot": 2,
+        "plays": [[0, 0, card(9), 90, 0, 0], [1, 0, card(9, 1), 100, 1, 0]],
+        "counts": [26, 26], "next": fake.stage(1, stage=1, fighters=[0, 1], opens_in=300),
+    })
+    page.wait_for_function(f"{STATE}.stage === 1 && {STATE}.canSlam")
+    page.evaluate("window.__war.slam(90)")
+    # You win the war. The room says which cards were laid face down, and they
+    # land in your loot face up with the rest, not mixed in face down.
+    fake.broadcast({
+        "t": "flip", "battle": 1, "stage": 1, "winner": 0, "tied": [0], "gods": False, "pot": 10,
+        "plays": [[0, 3, card(12), 90, 0, 0], [1, 3, card(4, 1), 100, 1, 0]],
+        "downs": {"0": [card(0), card(1), card(2)], "1": [card(5, 1), card(6, 1), card(7, 1)]},
+        "counts": [32, 22], "out": [], "next": fake.stage(2, opens_in=300),
+    })
+    page.wait_for_function(f"{STATE}.battle === 2")
+    heap = page.locator("#winnings .heap .card")
+    expect(heap.first).to_be_visible()
+    expect(page.locator("#winnings .heap .card.back")).to_have_count(0)
+    loot = page.evaluate(f"{STATE}.heap")
+    assert card(0) in loot and card(7, 1) in loot, loot
+    assert all(isinstance(c, int) for c in loot), loot
+    assert errors == []
+
+
+def test_winnings_go_back_under_your_deck_by_hand_or_when_it_runs_out(page: Page, site_url, errors):
+    fake = FakeWarRoom()
+    open_war(page, site_url, fake)
+    start_room(page)
+    page.click("#botMore")
+    # The host picks whether winnings are shuffled on their way back.
+    page.click("#roomWinnings button[data-winnings=shuffled]")
+    expect(page.locator("#roomWinnings button[data-winnings=shuffled]")).to_have_attribute("aria-pressed", "true")
+    page.click("#roomWinnings button[data-winnings=kept]")
+    assert [m["shuffle"] for m in fake.messages("shuffle")] == [True, False]
+    page.click("#dealBtn")
+
+    def battle(n: int, mine: int, theirs: int, counts: list, decks: list, gathered=(), reveal=300) -> None:
+        page.wait_for_function(f"{STATE}.battle === {n} && {STATE}.canSlam")
+        page.evaluate("window.__war.slam(90)")
+        nxt = fake.stage(n + 1, opens_in=reveal)
+        nxt["gathered"] = list(gathered)
+        fake.broadcast({
+            "t": "flip", "battle": n, "stage": 0, "winner": 0, "tied": [0], "gods": False, "pot": 2,
+            "plays": [[0, 0, mine, 90, 0, 0], [1, 0, theirs, 100, 1, 0]],
+            "counts": counts, "decks": decks, "out": [], "next": nxt,
+        })
+
+    # You win: the two cards sit beside your deck, and you pick them up.
+    # They only count once they've landed there, as the next battle opens.
+    battle(1, card(12), card(3, 1), [28, 26], [26, 26], reveal=2400)
+    page.wait_for_function(f"Object.keys({STATE}.table).length === 2 && {STATE}.battle === 1")
+    expect(page.locator("#myLabel")).to_contain_text("26 cards")  # your ace is on the table, the pot on its way
+    expect(page.locator("#lootCount")).to_be_hidden()
+    page.wait_for_function(f"{STATE}.battle === 2")
+    expect(page.locator("#lootCount")).to_have_text("2")
+    expect(page.locator("#myLabel")).to_contain_text("28 cards")
+    expect(page.locator("#deckCount")).to_have_text("26")
+    page.click("#gatherBtn")
+    assert fake.messages("gather") == [{"t": "gather"}]
+    expect(page.locator("#gatherBtn")).to_be_hidden()
+    expect(page.locator("#deckCount")).to_have_text("28")
+    expect(page.locator("#winnings .heap .card")).to_have_count(0)
+
+    # You win with the last card in your deck. It's empty, and the next
+    # battle waits for you to pick your winnings up: tapping your deck does.
+    battle(2, card(11), card(4, 1), [29, 25], [0, 25], reveal=600)
+    page.wait_for_function(f"{STATE}.battle === 3")
+    expect(page.locator("#myPile")).to_have_class(re.compile(r"\bempty\b"))
+    expect(page.locator("#slamText")).to_have_text("Pick up your winnings to play")
+    expect(page.locator("#gatherBtn")).to_have_class(re.compile(r"\bdue\b"))
+    page.wait_for_timeout(500)
+    assert not page.evaluate(f"{STATE}.canSlam"), "nothing picks them up for you"
+    assert len(fake.messages("gather")) == 1
+    box = page.locator("#myPile").bounding_box()
+    page.mouse.click(box["x"] + box["width"] / 2, box["y"] + 40)
+    page.wait_for_function(f"{STATE}.canSlam")
+    assert len(fake.messages("gather")) == 2
+    expect(page.locator("#deckCount")).to_have_text("29")
+    expect(page.locator("#myPile")).not_to_have_class(re.compile(r"\bempty\b"))
+    expect(page.locator("#gatherBtn")).to_be_hidden()
     assert errors == []
 
 
@@ -179,7 +389,9 @@ def test_everyone_sees_each_players_deck(page: Page, browser, site_url, errors):
     # and the bot's in the same deck for both.
     page.wait_for_function(f"{STATE}.canSlam")
     page.evaluate("window.__war.slam(120)")
-    dana_on_bob = guest.locator("#opponents .tile").nth(0).locator(".tslot > .card")
+    # The fake doesn't say which card Dana turned over, as a room server from
+    # before cards showed early wouldn't, so it lands face down until the flip.
+    dana_on_bob = guest.locator("#spots .spot").nth(0).locator(".tslot > .card")
     expect(dana_on_bob).to_have_class(re.compile(r"\bback\b"))
     expect(dana_on_bob).to_have_attribute("data-deck", "space")
     fake.broadcast({
@@ -195,9 +407,9 @@ def test_everyone_sees_each_players_deck(page: Page, browser, site_url, errors):
     expect(dana_heap).to_have_count(3)
     expect(dana_heap.locator("xpath=self::*[@aria-label='ace of hearts']")).to_have_attribute("data-deck", "candy")
     expect(dana_heap.locator("xpath=self::*[@aria-label='red joker']")).to_have_attribute("data-deck", "space")
-    expect(page.locator("#opponents .tile").nth(1).locator(".tslot > .card")).to_have_attribute("data-deck", "candy")
-    expect(page.locator("#opponents .tile").nth(0).locator(".tslot > .card")).to_have_attribute("data-deck", bot_deck)
-    expect(guest.locator("#opponents .tile").nth(1).locator(".tslot > .card")).to_have_attribute("data-deck", bot_deck)
+    expect(page.locator("#spots .spot").nth(1).locator(".tslot > .card")).to_have_attribute("data-deck", "candy")
+    expect(page.locator("#spots .spot").nth(0).locator(".tslot > .card")).to_have_attribute("data-deck", bot_deck)
+    expect(guest.locator("#spots .spot").nth(1).locator(".tslot > .card")).to_have_attribute("data-deck", bot_deck)
     # Your own cards are in your deck, on your screen.
     expect(page.locator("#mySlot .card")).not_to_have_attribute("data-deck", re.compile("."))
     assert page.evaluate("document.documentElement.dataset.deck") == "space"
@@ -208,7 +420,7 @@ def test_everyone_sees_each_players_deck(page: Page, browser, site_url, errors):
     guest.click("#resumeBtn")
     guest.wait_for_function(f"{STATE}.canSlam")
     guest.evaluate("window.__war.slam(50)")
-    expect(page.locator("#opponents .tile").nth(1).locator(".tslot > .card")).to_have_attribute("data-deck", "spooky")
+    expect(page.locator("#spots .spot").nth(1).locator(".tslot > .card")).to_have_attribute("data-deck", "spooky")
     guest_context.close()
     assert errors == []
 
@@ -248,6 +460,7 @@ def test_cleaning_up_shows_on_everyone_elses_screen(page: Page, browser, site_ur
     expect(dana_on_bob.nth(0)).to_have_css("--r", "0deg")
     expect(dana_on_bob.nth(1)).to_have_css("--r", "0deg")
     assert dana_on_bob.evaluate_all(z_order) == stacked
+    expect(guest.locator("#fx .floaty.broom")).to_have_text("🧹")
     expect(guest.locator("#tidyBtn")).to_be_hidden()
     guest_context.close()
     assert errors == []
@@ -473,7 +686,7 @@ def test_a_joker_war_turns_out_the_lights(page: Page, site_url, errors):
     # The war opens on time and slamming works.
     page.wait_for_function(f"{STATE}.stage === 1 && {STATE}.canSlam")
     hold_slam(page, 250)
-    expect(page.locator("#myWar .wpile .card")).to_have_count(1)
+    expect(page.locator("#myWar .wpile .card.back")).to_have_count(1)
     expect(page.locator("#fx .jk")).to_have_count(0)
     page.evaluate("window.__war.slam(90)")
 
