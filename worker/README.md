@@ -162,7 +162,10 @@ The room answers with these:
 | `error` | something went wrong, in words for the player |
 
 Players get 8 seconds to slam in a battle and 20 in a war, where they slam
-every card they lay down. A stage's cards are fixed once it opens, so a slam
+every card they lay down. A `charge`, `card` or `slam` counts only once its
+stage has opened, after the last one's cards have turned over: one that
+arrives after its stage was played out is dropped, not counted toward the
+next. A stage's cards are fixed once it opens, so a slam
 says which card it turns over: everyone sees it face up straight away, and
 the winner comes with `flip`. Cards that flop over by themselves only show
 at the `flip`. War has no decisions, so seeing a card early helps nobody.
@@ -206,16 +209,26 @@ the place of bots in a full lobby) and up to 60 can be connected, the rest
 watching; anyone who joins mid-game watches, and is dealt into the next
 one. If a player's card flops over by itself twice in a row, the room stops
 waiting for them until they slam again. A game with nobody connected waits
-for someone to come back, and a room nobody has used for six hours deletes
-itself.
+for someone to come back. A room deletes itself once nobody has used it for
+six hours and nobody is connected; while someone is, its code stays taken.
+
+**States.** A room is `absent`, in the `lobby`, `playing`, `paused` (a game
+with nobody connected) or `over`, and makes only the moves listed in
+`ROOM_MOVES` in `src/war.js`, all through one function, `go()`.
+`ROOM_MESSAGES` says which messages it takes in each. What's stored keeps
+its old shape (`phase` and `pausedAt`), so pages and rooms from before still
+work.
 
 The rules between `BEGIN WAR CORE` and `END WAR CORE` in `src/war.js` are
 also in `war.html`, for solo games; `test/war.test.js` checks the two copies
 match.
 
 **Cost.** Rooms are SQLite-backed Durable Objects, as `wrangler.toml`'s
-migration asks. A room writes its storage once per battle (slams in progress
-stay in memory, except in a slow game, which saves each one), and WebSocket
+migration asks. A room writes its storage once per battle, except in a
+slow game, which saves each slam. Slams in progress also stay on the socket
+that made each one, whose attachment survives hibernation, so a room woken
+mid-stage still has them (all but one that had to pick up its winnings
+first, which flops when time runs out). WebSocket
 messages from pages count as one request per 20. A busy evening of games is
 well within the plan's included usage.
 
@@ -271,6 +284,16 @@ the pull request's own copy of the site at
 pointed at the Worker Preview (see Previews in `AGENTS.md`), comments on the
 pull request with both, and deletes both when the pull request closes. It's
 the way to try War's rooms or the survey with real phones before merging.
+
+- **One at a time:** Worker Previews are made one after another across pull
+  requests, and GitHub keeps only the newest run waiting for that turn. A
+  run still waiting when another queues behind it is cancelled, and fails
+  (the `worker-cancelled` job) rather than leave its previews quietly out of
+  date: re-run it.
+- **After closing:** a run that gets its turn after its pull request has
+  closed makes nothing, and its site job deletes the Previews in case
+  cleanup didn't get to (cleanup shares the site job's group, so one cancels
+  the other).
 
 - **Origins:** the Worker Preview allows its own pull request's site
   preview, on top of `ALLOWED_ORIGINS` in `[previews.vars]`: the workflow

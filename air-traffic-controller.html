@@ -284,7 +284,7 @@ details li b{color:var(--amber);font-weight:600}
       <summary>How to play</summary>
       <ul>
         <li><b>Select</b> an aircraft by tapping its target or its flight strip, then give an instruction from the deck. Pilots act on the next radar sweep (15 s of game time).</li>
-        <li><b>Arrivals</b> (strips bound for α or β) land by crossing their airport at altitude 0 on the runway heading: α southbound, β northbound. <i>Approach</i> turns a plane onto final at the navaid lined up with that runway. <i>Land</i> descends it to 0 and hands it to the tower for good.</li>
+        <li><b>Arrivals</b> (strips bound for α or β) land by crossing their airport at altitude 0 on the runway heading: α southbound, β northbound. <i>Approach</i> turns a plane onto final at the navaid lined up with that runway. <i>Land</i> descends it to 0 and hands it to the tower for good, so a plane holding at a navaid needs its approach first.</li>
         <li><b>Departures and overflights</b> (bound for fix 0–9) must leave the sector over that fix at 5,000 ft. Departures wait at their airport until you give them a climb altitude.</li>
         <li><b>Separation</b>: aircraft at the same altitude stay 3 miles apart, and no aircraft climbs or descends through another within 3 miles. Red marks warn of a loss within 45 s; one loss ends the shift.</li>
         <li><b>Moves</b>: jets fly 1 mile per sweep, props 1 mile every second sweep. Altitude changes 1,000 ft per mile. Turns go 45° per mile, starting one mile after the instruction. Arrivals hold at the first navaid they reach unless told otherwise.</li>
@@ -442,7 +442,48 @@ const store = {
 };
 const reduceMotion = window.matchMedia ? window.matchMedia('(prefers-reduced-motion: reduce)') : { matches: false };
 
+// ---- BEGIN STATE MACHINE ----
+// The same in every page that has one (tests/test_state_machines.py checks).
+// An explicit state machine, as "State machines" in AGENTS.md describes: the
+// states something can be in, and the moves it may make from each. go(to)
+// makes a listed move and nothing else. It shows the new state as el's
+// data-<name> attribute (on <html> unless el says otherwise), for CSS, tests
+// and anyone reading the page, then calls onMove(to, from, ...args). Any
+// other move, like a state the table doesn't name, is a bug: it's refused
+// with a console error, which fails the tests, and the player carries on as
+// if it had never been tried. seq counts the moves made, so a timer or a
+// reply that waited can tell whether anything moved in the meantime.
+function machine(name, moves, state, { el = document.documentElement, onMove } = {}) {
+  const known = (s) => s in moves || (console.error(`${name}: no state called ${s}`), false);
+  Object.values(moves).flat().forEach(known);
+  known(state);
+  let seq = 0;
+  if (el) el.dataset[name] = state;
+  return {
+    get state() { return state; },
+    get seq() { return seq; },
+    is: (...states) => states.filter(known).includes(state),
+    can: (to) => known(to) && moves[state].includes(to),
+    go(to, ...args) {
+      if (!moves[state].includes(to)) {
+        console.error(`${name}: no move from ${state} to ${to}`);
+        return false;
+      }
+      const from = state;
+      state = to;
+      seq += 1;
+      if (el) el.dataset[name] = to;
+      if (onMove) onMove(to, from, ...args);
+      return true;
+    },
+  };
+}
+// ---- END STATE MACHINE ----
+
 /* ---------- State ---------- */
+// G.state is the shift's own phase (running, paused or over), kept in the
+// saved shift. Which screen shows is Screen's (see Screens), and the two
+// move together: playing is a running shift, ending and the report an over one.
 let G = null;            // current game (plain data, snapshot-safe)
 let prefs = Object.assign({ level: 'trainee', speed: 'steady' }, store.get('atc-prefs', {}));
 let lastTickAt = performance.now();
@@ -512,7 +553,8 @@ function move(a) {
       a.h = APTS[k].rwy; a.app = null; a.holding = false; a.hold = false; a.tl = 0;
       return { t: 'final', k };
     }
-    if (a.hold && !a.holding) { a.holding = true; a.hs = 1; a.hn = ni; a.tl = 0; }
+    // A plane cleared to land is the tower's, and holds nowhere on its way.
+    if (a.hold && !a.holding && !a.landing) { a.holding = true; a.hs = 1; a.hn = ni; a.tl = 0; }
   }
   const k = aptAt(nx, ny);
   if (k && a.landing) {
@@ -651,7 +693,10 @@ function computeAlerts() {
   G.alerts = { planes, pairs };
 }
 
+// Ends the shift. The scope shows what happened for a moment (ending) before
+// the shift report covers it (see showScreen).
 function over(kind, who, msg) {
+  if (!Screen.is('playing')) return false;
   G.state = 'over';
   G.result = { kind, who, msg };
   if (kind === 'win') {
@@ -661,9 +706,8 @@ function over(kind, who, msg) {
     best[G.level] = { wins: prev.wins + 1, spare: Math.max(prev.spare, spare) };
     store.set('atc-best', best);
   }
-  releaseWake();
   renderAll();
-  setTimeout(showResult, kind === 'win' ? 400 : 1300);
+  Screen.go('ending');
   return true;
 }
 
@@ -699,7 +743,14 @@ function issue(a, k, v) {
         if (a.state === 'ground') { a.state = 'rolling'; a.rollAt = G.tick; }
         a.talt = v; return roger();
       }
-      if (v === 0) { a.landing = true; a.talt = 0; return roger('ROGER, to tower'); }
+      if (v === 0) {
+        // The tower takes it for good, and the tower holds nobody: a plane
+        // already circling a navaid needs its approach first, or it would
+        // circle there until its fuel ran out.
+        if (a.holding && !a.app) return unable(`holding at ${NAVS[a.hn].id}, clear an approach first`);
+        a.landing = true; a.talt = 0; a.hold = false;
+        return roger('ROGER, to tower');
+      }
       a.talt = v; return roger();
     case 'maint': a.talt = a.alt; return roger();
     case 'turn':
@@ -732,7 +783,7 @@ function radio(cs, said, reply, cls) {
 
 /* ---------- Rendering: DOM ---------- */
 const els = {
-  clock: $('#clock'), done: $('#done'), tickfill: $('#tickfill'), radio: $('#radio'), strips: $('#strips'),
+  app: $('#app'), clock: $('#clock'), done: $('#done'), tickfill: $('#tickfill'), radio: $('#radio'), strips: $('#strips'),
   hCs: $('#hCs'), hL1: $('#hL1'), hL2: $('#hL2'), hTag: $('#hTag'), cmd: $('#cmd'),
   overlay: $('#overlay'), menu: $('#menu'), paused: $('#paused'), result: $('#result'), board: $('#board'),
   speedVal: $('#speedVal'), btnPause: $('#btnPause'),
@@ -1104,9 +1155,73 @@ function drawScope(now) {
   }
 }
 
+/* ---------- Screens ---------- */
+// Which screen the game is on, as <html data-screen>. Each card of the
+// overlay shows on its own screen and only there, the console behind the
+// cards takes no taps or focus unless a shift is being flown, and the screen
+// stays awake only then. ending is the moment the scope shows how a shift
+// ended, before its report covers it. The leaderboard card (board) opens
+// over the menu, the report or, from an invite link, a paused shift, and
+// closes back to it. menu → paused and menu → report are boot bringing back
+// a saved shift or a hot snapshot.
+const Screen = machine('screen', {
+  menu: ['playing', 'board', 'paused', 'report'],
+  playing: ['paused', 'ending'],
+  paused: ['playing', 'menu', 'board'],
+  ending: ['report'],
+  report: ['playing', 'menu', 'board'],
+  board: ['menu', 'paused', 'report'],
+}, 'menu', { onMove: showScreen });
+const CARDS = { menu: 'menu', paused: 'paused', report: 'result', board: 'board' };
+// Space and Enter, the keys that sweep and that end a typed command, only
+// press a card's button once the card has been up this long, so a tap meant
+// for the shift can't start the next one.
+const KEY_GRACE_MS = 600;
+let screenAt = 0, boardReturn = 'menu', boardOpener = null;
+
+function showScreen(to, from) {
+  screenAt = performance.now();
+  if (to === 'board') { boardReturn = from; boardOpener = document.activeElement; }
+  if (from === 'report' && to !== 'board' && !Save.is('none')) Save.go('none');   // the offer goes with its report
+  paintScreen();
+  if (to === 'playing') requestWake(); else releaseWake();
+  if (to === 'ending') {
+    const at = Screen.seq;
+    setTimeout(() => { if (Screen.seq === at) Screen.go('report'); }, G.result.kind === 'win' ? 400 : 1300);
+  }
+  if (to === 'report' && from !== 'board') { renderReport(); showResultBoard(); }
+  if (to === 'board') openBoard();
+  else if (from === 'board') {
+    $('#lbGroupNote').textContent = '';
+    refreshCards();
+    if (boardOpener && els[CARDS[to]].contains(boardOpener)) boardOpener.focus({ preventScroll: true });
+  }
+  focusCard();
+}
+// Only the top layer shows, and takes focus and taps: this screen's card,
+// or the console when there's none.
+function paintScreen() {
+  const card = CARDS[Screen.state];
+  for (const id of Object.values(CARDS)) els[id].hidden = id !== card;
+  els.overlay.hidden = !card;
+  els.app.inert = !Screen.is('playing');
+}
+// A card's first button takes focus once the card is up, unless the player
+// has moved focus into the card already or the screen has moved on.
+function focusCard() {
+  const card = els[CARDS[Screen.state]], at = Screen.seq;
+  if (!card) return;
+  setTimeout(() => {
+    if (Screen.seq !== at || card.contains(document.activeElement)) return;
+    const btn = Screen.is('menu') ? $('#btnStart') : Screen.is('paused') ? $('#btnResume')
+      : Screen.is('board') ? $('#lbClose') : $('#btnNext').hidden ? $('#btnAgain') : $('#btnNext');
+    btn.focus({ preventScroll: true });
+  }, 30);
+}
+
 /* ---------- Flow ---------- */
 function frame(now) {
-  if (G && G.state === 'running' && now - lastTickAt >= tickMs()) {
+  if (Screen.is('playing') && now - lastTickAt >= tickMs()) {
     lastTickAt = now; step(); renderAll();
   }
   drawScope(now);
@@ -1115,51 +1230,55 @@ function frame(now) {
 }
 
 function startGame(levelId, speedId) {
+  if (!Screen.is('menu', 'report')) return;
   prefs = { level: levelId, speed: speedId }; store.set('atc-prefs', prefs);
   G = makeGame(levelId, speedId);
   kb = ''; armLand = null;
   lastTickAt = performance.now();
   radio(null, `On position: ${LEVELS.find((l) => l.id === levelId).name.toLowerCase()} shift, ${G.ac.length} aircraft expected.`, '', '');
-  hideOverlay(); renderAll(); requestWake();
+  Screen.go('playing');
+  renderAll();
 }
 
-function pause() {
-  if (!G || G.state !== 'running') return;
-  pausedFrac = Math.min(1, (performance.now() - lastTickAt) / tickMs());
-  G.state = 'paused';
+function pauseSummary() {
   const done = G.ac.filter((a) => a.state === 'landed' || a.state === 'exited').length;
   const air = G.ac.filter((a) => a.state === 'air').length;
   const wait = G.ac.filter((a) => a.state === 'ground').length;
-  $('#pauseSummary').textContent = `${mmss((G.shift - G.tick) * 15)} left in the shift. ${air} airborne, ${wait} waiting to depart, ${done} of ${G.ac.length} handled.`;
-  showOverlay('paused'); releaseWake(); saveShift();
+  return `${mmss((G.shift - G.tick) * 15)} left in the shift. ${air} airborne, ${wait} waiting to depart, ${done} of ${G.ac.length} handled.`;
+}
+function pause() {
+  if (!Screen.is('playing')) return;
+  pausedFrac = Math.min(1, (performance.now() - lastTickAt) / tickMs());
+  G.state = 'paused';
+  $('#pauseSummary').textContent = pauseSummary();
+  Screen.go('paused');
+  saveShift();
 }
 function resume() {
-  if (!G || G.state !== 'paused') return;
+  if (!Screen.is('paused')) return;
   G.state = 'running';
   lastTickAt = performance.now() - pausedFrac * tickMs();
-  hideOverlay(); requestWake();
+  Screen.go('playing');
 }
 function advance() {
-  if (!G || G.state !== 'running') return;
+  if (!Screen.is('playing')) return;
   lastTickAt = performance.now(); step(); renderAll();
 }
-function select(cs) {
+// Picks the aircraft that the deck and the next typed command talk to. A
+// tap or click drops a command half typed for another one; typing a
+// callsign (typed) is how a command starts.
+function select(cs, typed = false) {
   if (!G) return;
-  G.sel = cs; armLand = null; renderAll();
+  G.sel = cs; armLand = null;
+  if (!typed) kb = '';
+  renderAll();
   const el = els.strips.querySelector(`[data-cs="${cs}"]`);
   if (el && el.scrollIntoView) el.scrollIntoView({ block: 'nearest', inline: 'nearest', behavior: reduceMotion.matches ? 'auto' : 'smooth' });
 }
 
-function showOverlay(which) {
-  for (const id of ['menu', 'paused', 'result', 'board']) els[id].hidden = id !== which;
-  els.overlay.hidden = false;
-  const btn = which === 'menu' ? $('#btnStart') : which === 'paused' ? $('#btnResume') : $('#btnNext').hidden ? $('#btnAgain') : $('#btnNext');
-  setTimeout(() => btn.focus({ preventScroll: true }), 30);
-}
-function hideOverlay() { els.overlay.hidden = true; }
-
-function showResult() {
-  if (!G || G.state !== 'over') return;
+// The shift report's own lines, for a shift that's over. Its leaderboard is
+// showResultBoard's.
+function renderReport() {
   const r = G.result, L = LEVELS.find((l) => l.id === G.level);
   const done = G.ac.filter((a) => a.state === 'landed' || a.state === 'exited').length;
   const titles = { win: 'Shift complete', conflict: 'Separation lost', boundary: 'Boundary error', fuel: 'Fuel exhausted', time: 'Shift over' };
@@ -1178,8 +1297,6 @@ function showResult() {
   $('#btnAgain').classList.toggle('primary', !next);
   const best = store.get('atc-best', {})[G.level];
   $('#resBest').textContent = best ? `${L.name} shifts won on this device: ${best.wins}. Most time to spare: ${mmss(best.spare)}.` : `No ${L.name.toLowerCase()} shifts won on this device yet.`;
-  showOverlay('result');
-  showResultBoard();
 }
 
 function buildMenu() {
@@ -1292,7 +1409,23 @@ function shiftEntry(g) {
 }
 
 let menuRequest = 0, resRequest = 0, screenRequest = 0;
-let lbReturn = 'menu', lbOpener = null;
+// Whether the shift report offers to save its shift: checking until it's
+// known whether the shift makes the board, then ineligible or offered, and
+// saving and saved after that. A failed save goes back to offered with the
+// reason. Every list the report loads and every group joined or left asks
+// again (decideSave), and the report's note says what the save is doing, if
+// anything, before what its list is doing.
+const Save = machine('save', {
+  none: ['checking'],
+  checking: ['offered', 'ineligible', 'none'],
+  ineligible: ['offered', 'none'],
+  offered: ['saving', 'ineligible', 'none'],
+  saving: ['saved', 'offered', 'none'],
+  saved: ['none'],
+}, 'none', { onMove: showSave });
+// Why the last try didn't save; what saving said; where the shift ranks on
+// the public list the offer was made from (null until a list says).
+let saveProblem = '', savedNote = '', offerRank = null;
 
 function renderRanks(list, scores, { mine = null, tags = false } = {}) {
   list.replaceChildren(...scores.map((s) => {
@@ -1377,54 +1510,83 @@ async function updateMenuBoard() {
 }
 
 /* shift report: this board, and initials for a shift worth saving */
-async function showResultBoard() {
+function showResultBoard() {
   const box = $('#resLb');
   box.hidden = !Leaderboard.api;
   if (!Leaderboard.api || !G || !G.result) return;
-  const game = G, entry = shiftEntry(game);
-  $('#lbForm').hidden = true;
-  const scores = await refreshResultList();
-  if (!scores || game !== G || game.entry || !entry.level) return;
-  // In a group, every shift with an aircraft handled is worth saving.
-  // Otherwise (and then the list is the public one) it has to make the top
-  // 10, where ties go to whoever got there first.
-  const groups = myGroups();
-  if (!groups.length && scores.length >= TOP && entry.score <= scores[TOP - 1].score) return;
-  $('#lbForm').hidden = false;
-  $('#lbPublicRow').hidden = !groups.length;
-  $('#lbPublic').checked = store.get('games.public', true) !== false;
-  $('#lbInitials').value = store.get('games.initials', '');
-  if (!groups.length) {
-    const rank = 1 + scores.filter((s) => s.score >= entry.score).length;
-    $('#resLbNote').textContent = `That’s #${rank}${during(lbView().period)} on the ${boardName(entry)} board. Add your initials.`;
-  } else {
-    $('#resLbNote').textContent = 'Add your initials to save this shift.';
-  }
+  offerRank = null;
+  // A shift with an aircraft handled may be worth saving; one saved already
+  // (a hot snapshot's) isn't offered again.
+  if (shiftEntry(G).level && !G.entry && Save.is('none')) Save.go('checking');
+  decideSave(null);
+  refreshResultList();
 }
 async function refreshResultList() {
   if (!G || !G.result) return null;
   const { scope, period } = lbView(), board = shiftEntry(G), request = ++resRequest;
   $('#resLbWhich').textContent = `${boardName(board)} · ${PERIODS[period]}`;
   renderScopes($('#resLbScopes'), scope, (code) => { setLbView({ scope: code }); refreshResultList(); });
-  $('#resLbNote').textContent = 'Loading shifts…';
+  $('#resLbNote').textContent = saveNote() ?? 'Loading shifts…';
   const scores = await loadList($('#resLbList'), $('#resLbNote'), { scope, period, difficulty: board.difficulty, mode: board.mode },
     () => request === resRequest, `No shifts ${scope === PUBLIC ? 'on this board' : `in ${scopeName(scope)}`}${during(period)} yet.`);
+  if (request !== resRequest) return null;
   if (scores) renderRanks($('#resLbList'), scores.slice(0, 5), { mine: G && G.entry });
+  decideSave(scores);
+  if (scores) showSaveNote();   // a list that failed to load says why instead
   return scores;
+}
+// In a group, every shift with an aircraft handled is worth saving.
+// Otherwise the report's list is the public one, and the shift has to make
+// its top 10, where ties go to whoever got there first. Without a group or
+// a list, it waits for one.
+function decideSave(scores) {
+  if (!G || !Save.is('checking', 'ineligible', 'offered')) return;
+  const entry = shiftEntry(G), inGroup = myGroups().length > 0;
+  if (scores && !inGroup) offerRank = 1 + scores.filter((s) => s.score >= entry.score).length;
+  if (inGroup || scores) {
+    const worthIt = inGroup || scores.length < TOP || entry.score > scores[TOP - 1].score;
+    const next = worthIt ? 'offered' : 'ineligible';
+    if (!Save.is(next)) Save.go(next);
+  }
+  $('#lbPublicRow').hidden = !inGroup;
+}
+function showSave(to, from) {
+  $('#lbForm').hidden = !(to === 'offered' || to === 'saving');
+  $('#lbSave').disabled = to === 'saving';
+  if (to === 'offered' && from !== 'saving') {   // a new offer starts from last time's choices
+    $('#lbPublic').checked = store.get('games.public', true) !== false;
+    $('#lbInitials').value = store.get('games.initials', '');
+  }
+  $('#lbPublicRow').hidden = !myGroups().length;
+  if (to !== 'offered') saveProblem = '';
+  showSaveNote();
+}
+// What the save is doing, or null when it's doing nothing worth a word.
+function saveNote() {
+  if (Save.is('offered')) {
+    if (saveProblem) return saveProblem;
+    if (myGroups().length || offerRank === null) return 'Add your initials to save this shift.';
+    return `That’s #${offerRank}${during(lbView().period)} on the ${boardName(shiftEntry(G))} board. Add your initials.`;
+  }
+  return Save.is('saving') ? 'Saving…' : Save.is('saved') ? savedNote : null;
+}
+function showSaveNote() {
+  const note = saveNote();
+  if (note !== null) $('#resLbNote').textContent = note;
 }
 async function saveToBoard(e) {
   e.preventDefault();
   const game = G;
-  if (!game || !game.result || game.entry) return;
+  if (!game || !game.result || !Save.is('offered')) return;
   const initials = $('#lbInitials').value.toUpperCase().replace(/[^A-Z]/g, '');
   if (initials.length !== 3) {
-    $('#resLbNote').textContent = 'Initials are three letters, A to Z.';
+    saveProblem = 'Initials are three letters, A to Z.';
+    showSaveNote();
     $('#lbInitials').focus();
     return;
   }
   const groups = myGroups(), isPublic = !groups.length || $('#lbPublic').checked;
-  $('#lbSave').disabled = true;
-  $('#resLbNote').textContent = 'Saving…';
+  Save.go('saving');
   try {
     const { period } = lbView();
     const body = await Leaderboard.save({
@@ -1433,41 +1595,45 @@ async function saveToBoard(e) {
     game.entry = body.entry;
     store.set('games.initials', initials);
     if (groups.length) store.set('games.public', isPublic);
-    if (game !== G) return;
-    $('#lbForm').hidden = true;
+    if (game !== G || !Save.is('saving')) {
+      if (game === G && Screen.is('menu')) updateMenuBoard();   // left for the menu meanwhile: mark it there
+      return;
+    }
+    savedNote = savedText(body, period);
     if (!(lbView().scope in body.ranks)) setLbView({ scope: Object.keys(body.ranks)[0] });
-    await refreshResultList();
-    $('#resLbNote').textContent = savedText(body, period);
+    Save.go('saved');
+    refreshResultList();
   } catch (err) {
-    if (game === G) $('#resLbNote').textContent = err.fromServer ? `Couldn’t save: ${err.message}.` : OFFLINE;
-  } finally {
-    $('#lbSave').disabled = false;
+    if (game === G && Save.is('saving')) {
+      saveProblem = err.fromServer ? `Couldn’t save: ${err.message}.` : OFFLINE;
+      Save.go('offered');
+    }
   }
 }
 
 /* leaderboard card: any view, plus joining, starting and leaving groups */
+// The card is the board screen (see Screen), opened over the menu, the
+// report or a paused shift and closed back to it.
 function openBoardScreen() {
-  if (!Leaderboard.api) return;
-  lbReturn = ['result', 'paused', 'menu'].find((id) => !els[id].hidden) || 'menu';
-  lbOpener = document.activeElement;
+  if (Leaderboard.api && Screen.is('menu', 'paused', 'report')) Screen.go('board');
+}
+function closeBoardScreen() {
+  if (Screen.is('board')) Screen.go(boardReturn);
+}
+// Fills the card as it opens (showScreen).
+function openBoard() {
   const v = lbView();
   $('#lbDifficulty').value = v.difficulty;
   $('#lbMode').value = v.mode;
   renderMyGroups();
   refreshScreen();
-  for (const id of ['menu', 'paused', 'result']) els[id].hidden = true;
-  els.board.hidden = false;
-  els.overlay.hidden = false;
   els.board.scrollTop = 0;
   $('#lbClose').focus({ preventScroll: true });
 }
-function closeBoardScreen() {
-  els.board.hidden = true;
-  els[lbReturn].hidden = false;
-  $('#lbGroupNote').textContent = '';
-  // Joining or leaving a group changes the tabs, and whether a shift is worth saving.
-  if (lbReturn === 'result') showResultBoard(); else if (lbReturn === 'menu') updateMenuBoard();
-  if (lbOpener && document.contains(lbOpener)) lbOpener.focus({ preventScroll: true });
+// The menu's or the report's lists, after a change of view or groups:
+// joining or leaving a group changes the tabs, and which shifts are worth saving.
+function refreshCards() {
+  if (Screen.is('menu')) updateMenuBoard(); else if (Screen.is('report')) refreshResultList();
 }
 function refreshScreen() {
   const v = lbView(), request = ++screenRequest;
@@ -1529,11 +1695,15 @@ async function shareGroup(g, button) {
   }
   setTimeout(() => { button.textContent = 'Share'; }, 1500);
 }
+// A group joined or left changes which shifts are worth saving, and if the
+// leaderboard card has closed meanwhile, the lists on the card below too.
 function addGroup(g) {
   store.set('games.groups', [...myGroups().filter((x) => x.code !== g.code), { code: g.code, name: g.name }]);
   setLbView({ scope: g.code });
   renderMyGroups();
   refreshScreen();
+  decideSave(null);
+  if (!Screen.is('board')) refreshCards();
 }
 function leaveGroup(g) {
   if (!confirm(`Leave ${g.name}? You can rejoin later with code ${g.code}.`)) return;
@@ -1542,40 +1712,66 @@ function leaveGroup(g) {
   $('#lbGroupNote').textContent = `Left ${g.name}.`;
   renderMyGroups();
   refreshScreen();
+  decideSave(null);
 }
 
+// Joining or starting a group waits for the Worker, one request at a time,
+// so a second tap can't start a second group.
+let groupsBusy = false;
+function busyGroups(on) {
+  groupsBusy = on;
+  for (const form of [$('#lbJoinForm'), $('#lbCreateForm')]) form.querySelector('button').disabled = on;
+}
+// A reply that comes back after the card closed (and maybe opened again)
+// leaves its note alone: while the card is open, closing it is the only
+// move the screen can make.
 const normalizeCode = (value) => value.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 4);
 async function joinGroup(e) {
   e.preventDefault();
+  if (groupsBusy) return;
   const note = $('#lbGroupNote'), code = normalizeCode($('#lbJoinCode').value);
   if (!GROUP_CODE.test(code)) { note.textContent = 'Group codes are four letters and numbers, like K7QP.'; return; }
   if (myGroups().some((g) => g.code === code)) { note.textContent = `You’re already in ${groupName(code)}.`; return; }
   note.textContent = 'Looking up the group…';
+  const opened = Screen.seq;
+  busyGroups(true);
   try {
     const g = await Leaderboard.group(code);
     addGroup(g);
+    if (Screen.seq !== opened) return;
     $('#lbJoinCode').value = '';
     note.textContent = `Joined ${g.name}. Shifts you save from now on go to ${g.name} too.`;
   } catch (err) {
+    if (Screen.seq !== opened) return;
     note.textContent = err.status === 404 ? `There’s no group with code ${code}.` : OFFLINE;
+  } finally {
+    busyGroups(false);
   }
 }
 async function createGroup(e) {
   e.preventDefault();
+  if (groupsBusy) return;
   const note = $('#lbGroupNote'), name = $('#lbGroupName').value.trim();
   if (!name) { note.textContent = 'Give the group a name, like Family.'; return; }
   note.textContent = 'Starting the group…';
+  const opened = Screen.seq;
+  busyGroups(true);
   try {
     const g = await Leaderboard.createGroup(name);
     addGroup(g);
+    if (Screen.seq !== opened) return;
     $('#lbGroupName').value = '';
     note.textContent = `Started ${g.name}. Share code ${g.code} so others can join.`;
   } catch (err) {
+    if (Screen.seq !== opened) return;
     note.textContent = err.fromServer ? `Couldn’t start the group: ${err.message}.` : OFFLINE;
+  } finally {
+    busyGroups(false);
   }
 }
 
-// An invite link (?join=CODE) opens the leaderboard card ready to join.
+// An invite link (?join=CODE) opens the leaderboard card ready to join, over
+// the menu or a shift brought back paused.
 async function handleInvite() {
   const params = new URLSearchParams(location.search);
   const code = normalizeCode(params.get('join') || '');
@@ -1583,16 +1779,23 @@ async function handleInvite() {
   params.delete('join');
   const rest = params.toString();
   history.replaceState(null, '', location.pathname + (rest ? `?${rest}` : '') + location.hash);
-  if (els.overlay.hidden) return;   // a shift is under way
+  if (!Screen.is('menu', 'paused', 'report')) return;
   openBoardScreen();
   $('#lbJoinCode').value = code;
   const note = $('#lbGroupNote');
   if (myGroups().some((g) => g.code === code)) { note.textContent = `You’re already in ${groupName(code)}.`; return; }
+  if (myGroups().length >= MAX_GROUPS) {
+    note.textContent = `You’re in ${MAX_GROUPS} groups already, the most there can be. Leave one to join another.`;
+    return;
+  }
+  // The player may join, or close the card, before the lookup answers.
+  const opened = Screen.seq;
+  const stale = () => Screen.seq !== opened || groupsBusy || myGroups().some((g) => g.code === code);
   try {
     const g = await Leaderboard.group(code);
-    note.textContent = `You’re invited to ${g.name}. Tap Join to add it.`;
+    if (!stale()) note.textContent = `You’re invited to ${g.name}. Tap Join to add it.`;
   } catch (err) {
-    note.textContent = err.status === 404 ? `There’s no group with code ${code}.` : UNAVAILABLE;
+    if (!stale()) note.textContent = err.status === 404 ? `There’s no group with code ${code}.` : UNAVAILABLE;
   }
 }
 
@@ -1615,7 +1818,7 @@ $('#lbCreateForm').addEventListener('submit', createGroup);
 
 /* ---------- Input ---------- */
 cv.addEventListener('pointerdown', (e) => {
-  if (!G || G.state === 'over') return;
+  if (!Screen.is('playing')) return;
   const r = cv.getBoundingClientRect();
   const gx = (e.clientX - r.left) / cell - 0.5, gy = (e.clientY - r.top) / cell - 0.5;
   let best = null, bd = 1.7;
@@ -1637,12 +1840,12 @@ cv.addEventListener('pointerdown', (e) => {
 
 els.strips.addEventListener('click', (e) => {
   const b = e.target.closest('[data-cs]');
-  if (b) select(b.dataset.cs);
+  if (b && Screen.is('playing')) select(b.dataset.cs);
 });
 
 els.cmd.addEventListener('click', (e) => {
   const b = e.target.closest('button[data-k]');
-  if (!b || b.disabled) return;
+  if (!b || b.disabled || !Screen.is('playing')) return;
   const a = selAc(); if (!a) return;
   const k = b.dataset.k, v = b.dataset.v;
   if (k === 'alt' && v === '0' && a.state === 'air') {
@@ -1660,39 +1863,58 @@ els.cmd.addEventListener('click', (e) => {
   renderAll();
 });
 
-$('#btnPause').addEventListener('click', () => (G && G.state === 'paused' ? resume() : pause()));
+$('#btnPause').addEventListener('click', () => (Screen.is('paused') ? resume() : pause()));
 $('#btnAdvance').addEventListener('click', advance);
+// The sweep changes while a shift is flown; one that has ended keeps the
+// sweep it ended on, for "Same shift again".
 $('#btnSpeed').addEventListener('click', () => {
-  const cur = G ? G.speed : prefs.speed;
-  const i = SPEEDS.findIndex((s) => s.id === cur);
+  if (!Screen.is('playing')) return;
+  const i = SPEEDS.findIndex((s) => s.id === G.speed);
   const next = SPEEDS[(i + 1) % SPEEDS.length].id;
-  if (G && G.state === 'running') {
-    const f = Math.min(1, (performance.now() - lastTickAt) / tickMs());
-    G.speed = next;
-    lastTickAt = performance.now() - f * tickMs();
-  } else if (G) G.speed = next;
-  if (G && G.state !== 'over' && speedOf(next).sec > speedOf(G.slowest || G.speed).sec) G.slowest = next;
+  const f = Math.min(1, (performance.now() - lastTickAt) / tickMs());
+  G.speed = next;
+  lastTickAt = performance.now() - f * tickMs();
+  if (speedOf(next).sec > speedOf(G.slowest || G.speed).sec) G.slowest = next;
   prefs.speed = next; store.set('atc-prefs', prefs);
   renderTop();
+  saveShift();
 });
 $('#btnStart').addEventListener('click', () => startGame(prefs.level, prefs.speed));
 $('#btnResume').addEventListener('click', resume);
-$('#btnQuit').addEventListener('click', () => { G = null; renderAll(); buildMenu(); showOverlay('menu'); });
-$('#btnAgain').addEventListener('click', () => startGame(G ? G.level : prefs.level, G ? G.speed : prefs.speed));
+$('#btnQuit').addEventListener('click', () => {
+  if (!Screen.is('paused')) return;
+  G = null; renderAll(); buildMenu();
+  Screen.go('menu');
+});
+$('#btnAgain').addEventListener('click', () => { if (Screen.is('report')) startGame(G.level, G.speed); });
 $('#btnNext').addEventListener('click', () => {
+  if (!Screen.is('report')) return;
   const i = LEVELS.findIndex((l) => l.id === G.level);
   if (LEVELS[i + 1]) startGame(LEVELS[i + 1].id, G.speed);
 });
-$('#btnMenu').addEventListener('click', () => { buildMenu(); showOverlay('menu'); });
+$('#btnMenu').addEventListener('click', () => {
+  if (!Screen.is('report')) return;
+  buildMenu();
+  Screen.go('menu');
+});
 
+// Keys follow the screen. A held key's repeats are dropped (one press is one
+// pause, one letter of a command), except that holding Space during a shift
+// keeps sweeping, as it always has: a report never takes Space anyway.
 document.addEventListener('keydown', (e) => {
   if (e.metaKey || e.ctrlKey || e.altKey) return;
-  if (!els.overlay.hidden) {
-    if (e.key === 'Escape' && !els.board.hidden) { e.preventDefault(); closeBoardScreen(); }
-    else if (e.key === 'Escape' && G && G.state === 'paused') { e.preventDefault(); resume(); }
+  const typing = e.target instanceof Element && !!e.target.closest('input, select, textarea');
+  const sweeping = (e.key === ' ' || e.key === ',') && Screen.is('playing');
+  if (e.repeat && !sweeping) { if (!typing) e.preventDefault(); return; }
+  if (!Screen.is('playing')) {
+    if (Screen.is('board') && e.key === 'Escape') { e.preventDefault(); closeBoardScreen(); }
+    else if (Screen.is('paused') && e.key === 'Escape') { e.preventDefault(); resume(); }
+    else if ((e.key === ' ' || e.key === 'Enter') && !typing && (Screen.is('ending')
+      || performance.now() - screenAt < KEY_GRACE_MS
+      // Space sweeps, so on the report it never presses Next shift or Same shift again.
+      || (e.key === ' ' && Screen.is('report') && e.target instanceof Element && e.target.closest('#result .cta')))) e.preventDefault();
     return;
   }
-  if (!G) return;
   if (e.key === ' ' || e.key === ',') { e.preventDefault(); advance(); return; }
   if (e.key === 'Escape') { e.preventDefault(); kb ? (kb = '', renderRadio()) : pause(); return; }
   if (e.key === 'Backspace' || e.key === 'Enter') { kb = ''; renderRadio(); return; }
@@ -1700,7 +1922,7 @@ document.addEventListener('keydown', (e) => {
   if (!/^[A-Z0-9]$/.test(k)) return;
   e.preventDefault();
   if (!kb) {
-    if (/[A-Z]/.test(k) && G.ac.some((a) => a.cs === k && a.state !== 'sched')) { kb = k; select(k); }
+    if (/[A-Z]/.test(k) && G.ac.some((a) => a.cs === k && a.state !== 'sched')) { kb = k; select(k, true); }
     return;
   }
   kb += k;
@@ -1721,13 +1943,19 @@ document.addEventListener('keydown', (e) => {
 
 document.addEventListener('visibilitychange', () => {
   if (document.hidden) pause();
-  else if (G && G.state === 'running') requestWake();
+  else if (Screen.is('playing')) requestWake();
 });
 
-function requestWake() {
+// showScreen asks for a wake lock while a shift is flown and lets it go on
+// every other screen. One granted after the shift stopped is let go at once.
+async function requestWake() {
+  if (!navigator.wakeLock || wakeLock) return;
   try {
-    if (navigator.wakeLock && !wakeLock) navigator.wakeLock.request('screen').then((w) => { wakeLock = w; w.addEventListener('release', () => { wakeLock = null; }); }).catch(() => {});
-  } catch (e) { /* unsupported */ }
+    const lock = await navigator.wakeLock.request('screen');
+    if (wakeLock || !Screen.is('playing')) { lock.release(); return; }
+    wakeLock = lock;
+    lock.addEventListener('release', () => { if (wakeLock === lock) wakeLock = null; });
+  } catch (e) { /* not allowed right now */ }
 }
 function releaseWake() { try { if (wakeLock) wakeLock.release(); } catch (e) { /* ignore */ } wakeLock = null; }
 
@@ -1738,33 +1966,43 @@ function boot(data) {
   resize();
   if (window.ResizeObserver) new ResizeObserver(resize).observe(wrap); else window.addEventListener('resize', resize);
   buildMenu();
+  paintScreen();
   if (data && data.game && data.game.v === 1) {
     G = data.game;
+    if (!G.slowest) G.slowest = G.speed;   // saved before shifts were filed by their slowest sweep
     if (G.state === 'running' || G.state === 'paused') {
-      G.state = 'running'; lastTickAt = performance.now(); pause();
-      if (data.restored) $('#pauseSummary').textContent = `Picked up where you left off. ${$('#pauseSummary').textContent}`;
-    } else if (G.state === 'over') showResult();
-    renderAll();
-  } else {
-    renderAll();
-    showOverlay('menu');
+      // Back paused, at the start of its sweep.
+      G.state = 'paused'; pausedFrac = 0; lastTickAt = performance.now();
+      $('#pauseSummary').textContent = `${data.restored ? 'Picked up where you left off. ' : ''}${pauseSummary()}`;
+      Screen.go('paused');
+    } else if (G.state === 'over') Screen.go('report');
   }
+  renderAll();
+  if (Screen.is('menu')) focusCard();
   handleInvite();
   if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => {}).catch(() => {});
   requestAnimationFrame(frame);
 }
 
 // #debug exposes hooks for tests: finish(handled, sweeps) lands or clears the
-// first `handled` aircraft and ends the shift that many sweeps in.
+// first `handled` aircraft and ends the shift being flown that many sweeps
+// in. screen, save, sel and kb say which screen shows, what the report's
+// save is doing, the aircraft selected and the command typed so far.
 if (location.hash === '#debug') {
   window.__atc = {
     peek: () => G && { state: G.state, tick: G.tick, level: G.level, speed: G.speed, slowest: G.slowest, n: G.ac.length },
-    finish(handled = G.ac.length, sweeps = G.tick) {
-      G.tick = sweeps;
+    finish(handled, sweeps) {
+      if (!Screen.is('playing')) return;
+      if (handled === undefined) handled = G.ac.length;
+      G.tick = sweeps === undefined ? G.tick : sweeps;
       G.ac.forEach((a, i) => { if (i < handled) a.state = isApt(a.dst) ? 'landed' : 'exited'; });
       if (handled >= G.ac.length) over('win', [], '');
       else over('conflict', [G.ac[handled].cs], `${G.ac[handled].cs} lost separation.`);
     },
+    get screen() { return Screen.state; },
+    get save() { return Save.state; },
+    get sel() { return G ? G.sel : null; },
+    get kb() { return kb; },
   };
 }
 

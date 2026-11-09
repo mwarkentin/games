@@ -24,12 +24,13 @@
 //
 // Cost: a Durable Object is billed for every second it holds a pending timer,
 // because it can't hibernate, but otherwise only for the time it spends
-// running. So a sector sends owed positions, claims and reports with the next
-// message that arrives once they're due, rather than on timers. While people
-// are moving there's always a next message; the only timers are short ones in
-// quiet sectors, for something that might be the last thing to happen there
-// (a player leaving, a claim). See SURVEY.md for the design and how far it
-// scales.
+// running. So a sector sends owed positions and reports with the next message
+// that arrives once they're due, rather than on timers. While people are
+// moving there's always a next message; the only timers are short ones for
+// something that might be the last thing to happen there: a player leaving a
+// quiet sector, and claims waiting in a batch (at most BATCH_MS, well inside
+// the idle time before a sector can hibernate). See SURVEY.md for the design
+// and how far it scales.
 //
 // Messages are JSON. From the game:
 //   {t: 'me', initials}             initials to credit claims to ('' for none)
@@ -80,7 +81,7 @@ export const VIEW_MS = 5000;          // the world map is rebuilt, and cached, f
 export const ONLINE_MS = 2 * 60000;   // players count as online this long after their sector reported them
 export const SPAWN_MAX = 300;         // new players join the biggest crowd with fewer players than this
 export const MAX_ONLINE = 25000;      // players the whole survey takes at once: a ceiling on the bill
-export const QUIET = 32;              // a sector with fewer sockets than this sets short timers
+export const QUIET = 32;              // a sector with fewer sockets than this sets a timer for a player leaving
 export const SAVE_POS_MS = 5000;      // a moving player's position is saved to their socket this often
 export const ADDRESS_SOCKETS = 40;    // sockets one address can hold in one sector (a classroom shares an address)
 export const ADDRESS_HEADER = 'X-Survey-Address';  // the hashed address, from the Worker to the sector
@@ -256,7 +257,17 @@ export class Sector {
     this.overDay = -1;       // the UTC day `over` is for
     this.over = new Set();   // addresses past the daily cap today, as the Atlas last said
     this.overAt = 0;         // how many the Atlas had counted then; it only resends the list when this changes
-    this.logAt = 0;          // when the log alarm is set for, if this object set it since waking
+    // Whether the sector knows who is past today's cap: unknown since waking
+    // (or since the day turned), asking the Atlas (`asking` is out), or known
+    // (`heardDay` is today). Until it's known, a claim from an address waits
+    // for an ask, so waking doesn't let a capped address chart again.
+    this.heardDay = -1;      // the UTC day the Atlas last answered for, since waking
+    this.asking = null;      // the ask that's out, which every claim waiting on it shares
+    this.askedAt = 0;        // when the last ask went out; a failed one isn't tried again for REPORT_MS
+    // When the log alarm goes off: the time this object set it for, 0 once it
+    // has gone off and none is pending, or null until this object has set one
+    // since waking (one set before then may still be pending).
+    this.logAt = null;
     this.logFails = 0;       // log writes that have failed in a row
     this.logChecked = false; // whether this object has looked for claims the log is missing since waking
     this.lastAt = null;      // the latest claim's time, read on the first claim after waking
@@ -286,6 +297,9 @@ export class Sector {
     else if (this.ctx.getWebSockets().length >= MAX_PLAYERS) this.turnAway(server, false);
     else if (address && this.fromAddress(address) >= ADDRESS_SOCKETS) this.turnAway(server, false);
     else if (!(await this.allowed('SURVEY_JOINS', address))) this.turnAway(server, false);
+    // The limiter answers from outside this object, so others may have joined
+    // while it did: the counts are checked again.
+    else if (this.ctx.getWebSockets().length >= MAX_PLAYERS || (address && this.fromAddress(address) >= ADDRESS_SOCKETS)) this.turnAway(server, false);
     else this.join(server, Number(m[1]), Number(m[2]), address);
     return new Response(null, { status: 101, webSocket: client });
   }
@@ -388,6 +402,8 @@ export class Sector {
     // Every claim from the address counts, wherever it's made, so more
     // sockets in more sectors don't let a script claim any faster.
     if (!(await this.allowed('SURVEY_CLAIMS', me.address))) return send(ws, { t: 'error', key, error: 'slow down' });
+    if (me.address && this.env.ATLAS && inArea(...this.coords()) && this.heardDay !== Math.floor(now / DAY_MS)
+      && (this.asking || now - this.askedAt >= REPORT_MS)) await this.ask();
     if (me.address && this.overToday().has(me.address)) return send(ws, { t: 'error', key, error: 'daily limit' });
     const c = checkClaim(msg, me.sx, me.sy);
     if (c.error) return send(ws, { t: 'error', key, error: c.error });
@@ -437,10 +453,16 @@ export class Sector {
   // Copies new claims to the log within LOG_MS, from an alarm. An alarm,
   // unlike a timer, doesn't stop the sector hibernating, and it wakes the
   // sector if it was evicted. Claims that come in before it goes off ride
-  // along with it.
+  // along with it. A sector just woken doesn't know the alarm it set before,
+  // so it sets one no later than LOG_MS after the oldest claim the log hasn't
+  // got: otherwise each claim after a wake would put the log off again.
   logSoon(delay = LOG_MS) {
     if (!this.env.LOG_DB) return;
-    const at = this.now() + delay;
+    let at = this.now() + delay;
+    if (this.logAt === null) {
+      const oldest = this.sql.exec('SELECT MIN(at) AS at FROM claims WHERE at > ?', this.logMark()).one().at;
+      if (oldest !== null) at = Math.min(at, Math.max(this.now() + 1000, oldest + LOG_MS));
+    }
     if (this.logAt && this.logAt <= at) return;
     this.logAt = at;
     this.ctx.storage.setAlarm(at);
@@ -508,11 +530,16 @@ export class Sector {
   // Sending each claim to every socket costs players × claims sends, which
   // grows with the square of the crowd; batching claims for BATCH_MS cuts
   // that to players × 5 a second. The first claim after a lull goes at once.
+  // Claims owed to a batch, however busy the sector, have a timer of their
+  // own: without one, a sector that went quiet would hibernate with them
+  // unsent, and their claimers would never hear they were first. It lasts at
+  // most BATCH_MS, well inside the idle time before a sector can hibernate,
+  // so it doesn't keep one awake.
   sendBatch(force = false) {
     if (!this.batch.length) return;
     const wait = BATCH_MS - (this.now() - this.batchAt);
     if (wait > 0 && !force) {
-      if (!this.batchTimer && this.ctx.getWebSockets().length < QUIET) {
+      if (!this.batchTimer) {
         this.batchTimer = setTimeout(() => { this.batchTimer = null; this.sendBatch(true); }, wait);
       }
       return;
@@ -579,6 +606,41 @@ export class Sector {
     return this.counts;
   }
 
+  // What the Atlas said about addresses past the cap, in answer to a report or an ask.
+  heard(world) {
+    this.overToday();  // in case the day turned while the report was out
+    if (Array.isArray(world?.over) && world.day === this.overDay) {
+      this.over = new Set(world.over.filter((a) => typeof a === 'string' && HASH.test(a)));
+      this.overAt = isInt(world.overAt, 0, 1e9) ? world.overAt : 0;
+    }
+    if (world?.day === this.overDay) this.heardDay = this.overDay;
+  }
+
+  // Asks the Atlas who is past today's cap: a report without the words
+  // charted since the last one (those go with the next report, as ever). Every
+  // claim waiting on it shares the one ask. If the Atlas can't be reached,
+  // claims go ahead, as they do when a rate limiter fails.
+  ask() {
+    this.asking ??= this.askAtlas().finally(() => { this.asking = null; });
+    return this.asking;
+  }
+
+  async askAtlas() {
+    this.askedAt = this.now();
+    try {
+      const [sx, sy] = this.coords();
+      this.overToday();
+      const res = await atlas(this.env).fetch('https://atlas/report', {
+        method: 'POST',
+        body: JSON.stringify({
+          sx, sy, players: this.here().length, charted: this.chartedCounts(), hot: this.crowd() ?? this.hot,
+          by: [], day: this.overDay, overAt: this.overAt,
+        }),
+      });
+      if (res.ok) this.heard(await res.json());
+    } catch { /* claims go ahead */ }
+  }
+
   // Sectors in the shared world tell the Atlas their numbers at most every
   // REPORT_MS, when something changed: with a later message, or when a player
   // leaves (`force`). A report timer would be pending most of the time in a
@@ -620,11 +682,7 @@ export class Sector {
     } finally {
       this.reporting = false;
     }
-    this.overToday();  // in case the day turned while the report was out
-    if (Array.isArray(world?.over) && world.day === this.overDay) {
-      this.over = new Set(world.over.filter((a) => typeof a === 'string' && HASH.test(a)));
-      this.overAt = isInt(world.overAt, 0, 1e9) ? world.overAt : 0;
-    }
+    this.heard(world);
     if (!isInt(world?.charted, 0, AREA_WORDS) || !isInt(world?.players, 0, 1e9)) return;
     if (this.world && world.charted === this.world.charted && world.players === this.world.players) return;
     this.world = { charted: world.charted, total: AREA_WORDS, players: world.players };

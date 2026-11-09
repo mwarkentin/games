@@ -152,3 +152,34 @@ def test_errors_before_the_sdk_loads_are_sent_once_it_does(page: Page, productio
     [event] = sentry.wait_for(page, "event")
     assert event["exception"]["values"][0]["value"] == "early"
     assert event["exception"]["values"][0]["mechanism"]["handled"] is False
+
+
+# Records every listener added to and removed from window, in order.
+LISTENER_LOG = """(() => {
+  const added = window.added = [], removed = window.removed = [];
+  const add = window.addEventListener, remove = window.removeEventListener;
+  window.addEventListener = function (type, fn, options) { added.push([type, fn]); return add.call(this, type, fn, options); };
+  window.removeEventListener = function (type, fn, options) { removed.push([type, fn]); return remove.call(this, type, fn, options); };
+})()"""
+# telemetry.js runs first and listens for errors until the SDK arrives: have
+# both of those first listeners been taken off again?
+STOPPED_KEEPING = """() => {
+  const first = ['error', 'unhandledrejection'].map((type) => window.added.find(([t]) => t === type));
+  return first.every((pair) => pair && window.removed.some(([t, fn]) => t === pair[0] && fn === pair[1]));
+}"""
+
+
+@pytest.mark.parametrize("blocked", ["bundle.tracing.replay", "replay-canvas", ""])
+def test_an_sdk_that_never_arrives_stops_errors_piling_up(page: Page, production, sentry, blocked):
+    page.add_init_script(LISTENER_LOG)
+    uncaught: list[str] = []
+    page.on("pageerror", lambda exc: uncaught.append(str(exc)))
+    # A blocker or a failed integrity check stops one script of the SDK, or both.
+    page.route(f"https://browser.sentry-cdn.com/**/*{blocked}*", lambda route: route.abort("blockedbyclient"))
+    page.goto(f"{production}/doodle-chomp")
+    page.wait_for_function(STOPPED_KEEPING, timeout=10000)
+    page.wait_for_timeout(300)
+    # Nothing tried to start Sentry without its bundle, and nothing was sent.
+    assert uncaught == []
+    assert page.evaluate("!window.Sentry || !window.Sentry.getClient || !window.Sentry.getClient()")
+    assert sentry.bodies == []

@@ -1,3 +1,22 @@
+## 2026-11-09
+
+- Tapping Space or Enter as a shift ends no longer skips its report and
+  starts the next shift. Space never presses the report's buttons, and
+  Enter only does once the report has been up a moment.
+- Land takes an arrival straight in past the navaid it would have held at,
+  instead of leaving it circling there until its fuel ran out. One already
+  holding needs its approach cleared first, and says so.
+- A shift worth saving is always offered a spot on the leaderboard: tapping
+  a tab while the report was loading, or closing the leaderboard before a
+  group you joined had answered, could lose the offer. "Saved!" stays put
+  when you switch boards.
+- A second tap on Start makes one group, not two, and an invite link no
+  longer says "Tap Join" after you've joined, or when you're in five groups
+  already.
+- Tapping a flight strip drops a command half typed for another aircraft.
+- Holding Esc pauses once instead of flickering, and the screen no longer
+  stays awake while you're paused.
+
 ## 2026-11-05
 
 - A global leaderboard. Shifts are ranked by aircraft handled, then by time

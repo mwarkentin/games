@@ -818,3 +818,239 @@ def test_a_seven_over_a_six_is_a_six_seven_and_nothing_else_is(page: Page, site_
     expect(page.locator("#fx .ss")).to_have_count(0)
     assert page.evaluate("window.__war.sixSeven()")["six"] == 0, "only the first battle was a six… seven"
     assert errors == []
+
+
+# ---- Sessions and connections ----
+#
+# The page keeps one session (data-session: none, joining, solo or room), and
+# a room's socket is data-conn (off, connecting, open or retrying).
+
+# The network goes down for new connections: every socket the page opens fails
+# without ever opening, as when the room can't be reached, until NETWORK_BACK.
+# Sockets already open stay open (drop them with fake.drop()).
+NETWORK_DOWN = """() => {
+    window.routedWebSocket = window.routedWebSocket || WebSocket;
+    window.socketsTried = 0;
+    window.WebSocket = class {
+        constructor() { window.socketsTried++; this.readyState = 3; setTimeout(() => this.onclose && this.onclose({}), 0); }
+        send() {}
+        close() {}
+    };
+}"""
+NETWORK_BACK = "() => { window.WebSocket = window.routedWebSocket; }"
+
+
+def wait_until(page: Page, check, timeout_ms: int = 5000) -> None:
+    """Wait for something on the fake's side, letting Playwright hand messages over meanwhile."""
+    for _ in range(timeout_ms // 20):
+        if check():
+            return
+        page.wait_for_timeout(20)
+    assert check()
+
+
+def test_a_double_tap_on_join_opens_one_connection(page: Page, site_url, errors):
+    fake = FakeWarRoom()
+    open_war(page, site_url, fake)
+    page.fill("#nameInput", "Dana")
+    page.fill("#codeInput", "K7QP")
+    page.dblclick("#joinBtn")
+    expect(page.locator("#lobby")).to_be_visible()
+    page.wait_for_timeout(300)
+    assert len(fake.open_sockets()) == 1, "one connection to the room"
+    expect(page.locator("html")).to_have_attribute("data-session", "room")
+    # Leaving leaves: no second socket brings the room back.
+    page.click("#leaveBtn")
+    page.wait_for_timeout(500)
+    expect(page.locator("#menu")).to_be_visible()
+    expect(page.locator("#lobby")).to_be_hidden()
+    assert fake.open_sockets() == []
+    assert errors == []
+
+
+def test_a_double_tap_on_start_a_room_starts_one(page: Page, site_url, errors):
+    fake = FakeWarRoom()
+    open_war(page, site_url, fake)
+    asked = []
+    page.route(f"{API}/**", lambda route: asked.append(route) if route.request.method == "POST" else fake.handle_http(route))
+    page.fill("#nameInput", "Dana")
+    page.dblclick("#newRoomBtn")
+    page.wait_for_timeout(400)
+    assert len(asked) == 1, "one room asked for"
+    # Start and Join wait while it's out.
+    expect(page.locator("#newRoomBtn")).to_be_disabled()
+    expect(page.locator("#joinBtn")).to_be_disabled()
+    expect(page.locator("html")).to_have_attribute("data-session", "joining")
+    fake.handle_http(asked[0])
+    expect(page.locator("#lobby")).to_be_visible()
+    expect(page.locator("#lobbyCode")).to_have_text("K7QP")
+    assert len(fake.open_sockets()) == 1
+    assert errors == []
+
+
+def test_a_room_that_answers_after_you_go_solo_is_left_alone(page: Page, site_url, errors):
+    fake = FakeWarRoom()
+    fake.answering = False
+    open_war(page, site_url, fake)
+    page.fill("#nameInput", "Dana")
+    page.click("#newRoomBtn")
+    expect(page.locator("#friendsErr")).to_have_text("Connecting…")
+    wait_until(page, lambda: fake.messages("hello"))
+    # Tired of waiting, Dana plays solo. Then the room answers.
+    page.click("#soloBtn")
+    page.wait_for_function(f"{STATE}.canSlam")
+    fake.answer()
+    page.wait_for_timeout(500)
+    expect(page.locator("#lobby")).to_be_hidden()
+    expect(page.locator("#app")).to_be_visible()
+    assert page.evaluate(f"{STATE}.mode") == "solo"
+    assert fake.open_sockets() == [], "going solo closed the room's socket"
+    assert errors == []
+
+
+def test_going_solo_stops_a_room_still_trying_to_connect(page: Page, site_url, errors):
+    fake = FakeWarRoom()
+    open_war(page, site_url, fake)
+    page.evaluate(NETWORK_DOWN)
+    page.fill("#nameInput", "Dana")
+    page.click("#newRoomBtn")
+    page.wait_for_function("window.socketsTried >= 1")
+    page.click("#soloBtn")
+    page.wait_for_function(f"{STATE}.canSlam")
+    tried = page.evaluate("window.socketsTried")
+    page.wait_for_timeout(3000)  # longer than the next try would wait
+    # Left trying, it would give up after half a minute and take the solo game with it.
+    assert page.evaluate("window.socketsTried") == tried, "the room is no longer tried"
+    expect(page.locator("#app")).to_be_visible()
+    expect(page.locator("html")).to_have_attribute("data-conn", "off")
+    assert errors == []
+
+
+ON_TOP = """(id) => {
+    const node = document.getElementById(id), r = node.getBoundingClientRect();
+    return node.contains(document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2));
+}"""
+
+
+def test_reconnecting_shows_over_the_lobby_and_deal_waits_for_it(page: Page, site_url, errors):
+    fake = FakeWarRoom()
+    open_war(page, site_url, fake)
+    start_room(page)
+    page.click("#botMore")
+    expect(page.locator("#dealBtn")).to_be_enabled()
+    page.evaluate(NETWORK_DOWN)
+    fake.drop()
+    expect(page.locator("#conn")).to_be_visible()
+    assert page.evaluate(ON_TOP, "conn"), "Reconnecting… shows over the lobby"
+    expect(page.locator("html")).to_have_attribute("data-conn", "retrying")
+    # The room can't hear the host meanwhile.
+    expect(page.locator("#dealBtn")).to_be_disabled()
+    expect(page.locator("#botMore")).to_be_disabled()
+    page.evaluate(NETWORK_BACK)
+    expect(page.locator("#conn")).to_be_hidden(timeout=10_000)
+    expect(page.locator("html")).to_have_attribute("data-conn", "open")
+    expect(page.locator("#dealBtn")).to_be_enabled()
+    page.click("#dealBtn")
+    expect(page.locator("#app")).to_be_visible()
+    assert errors == []
+
+
+OVER = {"winners": [0], "order": [0, 1], "counts": [31, 23], "out": [0, 0], "battles": 1, "wars": 0, "biggest": 0, "deepest": 0}
+
+
+def end_the_game(page: Page, fake: FakeWarRoom) -> None:
+    """The room plays its last battle (Dana's ace wins), and the results come up."""
+    fake.broadcast({
+        "t": "flip", "battle": 1, "stage": 0, "winner": 0, "tied": [0], "gods": False, "pot": 2,
+        "plays": [[0, 0, card(12), 90, 0, 0], [1, 0, card(1), 0, 0, 1]], "counts": [31, 23], "out": [], "over": OVER,
+    })
+    expect(page.locator("#over")).to_be_visible()
+    fake.phase = "over"
+    fake.game = {**fake.game, "counts": [31, 23], "fighters": [], "over": OVER}
+
+
+def history(page: Page) -> int:
+    return len(page.evaluate("JSON.parse(localStorage.getItem('war:history') || '[]')"))
+
+
+def test_deal_again_keeps_the_results_until_the_room_deals(page: Page, site_url, errors):
+    fake = FakeWarRoom()
+    open_war(page, site_url, fake)
+    start_room(page, "Dana")
+    # Bob was here for the deal; his tab has closed since.
+    fake.players.append({"name": "Bob", "avatar": 2, "bot": False, "token": "bob-token-1234567890"})
+    fake.deal()
+    page.wait_for_function(f"{STATE}.canSlam")
+    end_the_game(page, fake)
+    assert history(page) == 1
+    page.click("#againBtn")
+    expect(page.locator("#toast")).to_have_text("You need at least two players. Add some bots!")
+    page.wait_for_timeout(300)
+    expect(page.locator("#over")).to_be_visible()
+    expect(page.locator("#againBtn")).to_be_enabled()
+    expect(page.locator("html")).to_have_attribute("data-screen", "over")
+    # Someone arrives, and the room shows everyone the results again: still one game.
+    fake.send_states()
+    page.wait_for_timeout(300)
+    assert history(page) == 1, "the game is in your history once"
+    assert page.evaluate("JSON.parse(localStorage.getItem('war:stats')).games") == 1
+    assert len(page.evaluate("JSON.parse(localStorage.getItem('war:styles'))")) == 2, "one power-up for one game"
+    assert errors == []
+
+
+def test_deal_again_waits_for_the_connection(page: Page, site_url, errors):
+    fake = FakeWarRoom()
+    open_war(page, site_url, fake)
+    start_room(page, "Dana")
+    page.click("#botMore")
+    page.click("#dealBtn")
+    page.wait_for_function(f"{STATE}.canSlam")
+    end_the_game(page, fake)
+    page.evaluate(NETWORK_DOWN)
+    fake.drop()
+    expect(page.locator("#conn")).to_be_visible()
+    expect(page.locator("#againBtn")).to_be_disabled()
+    page.evaluate("document.getElementById('againBtn').click()")  # a tap that gets through anyway does nothing
+    page.evaluate(NETWORK_BACK)
+    expect(page.locator("#conn")).to_be_hidden(timeout=10_000)  # back, and the room sends the results again
+    page.wait_for_timeout(300)
+    expect(page.locator("#over")).to_be_visible()
+    expect(page.locator("#againBtn")).to_be_enabled()
+    assert history(page) == 1
+    page.click("#againBtn")
+    expect(page.locator("#over")).to_be_hidden()
+    page.wait_for_function(f"{STATE}.battle === 1 && {STATE}.phase === 'playing'")
+    assert errors == []
+
+
+MUSIC = "window.__war.music()"
+
+
+def hide_tab(page: Page, hidden: bool = True) -> None:
+    page.evaluate("(h) => { Object.defineProperty(document, 'hidden', { value: h, configurable: true });"
+                  " document.dispatchEvent(new Event('visibilitychange')); }", hidden)
+
+
+def test_music_stays_quiet_while_the_tab_is_hidden(page: Page, site_url, errors):
+    fake = FakeWarRoom()
+    open_war(page, site_url, fake)
+    page.click("#menu h1")  # a first tap lets sound start
+    start_room(page)
+    page.click("#botMore")
+    page.click("#dealBtn")
+    page.wait_for_function(f"{STATE}.canSlam")
+    page.wait_for_function(f"{MUSIC}.playing === 'battle'")
+    hide_tab(page)
+    assert page.evaluate(f"{MUSIC}.playing") is None
+    # The room carries on: the next battle opens while the tab is hidden.
+    fake.broadcast({
+        "t": "flip", "battle": 1, "stage": 0, "winner": 1, "tied": [1], "gods": False, "pot": 2,
+        "plays": [[0, 0, card(1), 0, 0, 1], [1, 0, card(12), 100, 1, 0]],
+        "counts": [26, 28], "out": [], "next": fake.stage(2, opens_in=600),
+    })
+    page.wait_for_function(f"{STATE}.battle === 2")
+    page.wait_for_timeout(300)
+    assert page.evaluate(f"{MUSIC}.playing") is None, "no music in a hidden tab"
+    hide_tab(page, False)
+    page.wait_for_function(f"{MUSIC}.playing === 'battle'")
+    assert errors == []

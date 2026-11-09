@@ -68,6 +68,9 @@ jobs:
     needs: changes
     if: needs.changes.outputs.worker == 'true'
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read # whether the pull request is still open
     # One at a time across pull requests: Previews share a database, and two
     # runs applying its migrations at once could race.
     concurrency:
@@ -83,11 +86,23 @@ jobs:
       - uses: actions/setup-node@v7
         with:
           node-version: 22
+      # This job can wait behind other pull requests' for minutes. If this
+      # one has closed meanwhile, cleanup has deleted its Previews (or is
+      # about to): make nothing.
+      - name: Check the pull request is still open
+        id: open
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ github.event.pull_request.number }}
+        run: |
+          state="$(gh api "repos/$GITHUB_REPOSITORY/pulls/$PR" --jq .state)"
+          echo "open=$([ "$state" = open ] && echo true || echo false)" >> "$GITHUB_OUTPUT"
       # Migrations go on before the code that needs them, as in production.
       # A branch's migrations stay on the shared database after it closes,
       # which is fine for test scores; if they get in the way, empty or
       # replace the database (see worker/README.md).
       - name: Apply database migrations
+        if: steps.open.outputs.open == 'true'
         run: |
           npx --yes wrangler@4.151.0 d1 migrations apply games-leaderboard-previews --remote --config wrangler.previews-migrations.toml
           npx --yes wrangler@4.151.0 d1 migrations apply games-survey-log-previews --remote --config wrangler.previews-migrations.toml
@@ -97,6 +112,7 @@ jobs:
       # [previews.vars], for this Preview only.
       - name: Create or update the Preview
         id: preview
+        if: steps.open.outputs.open == 'true'
         env:
           IP_SALT: ${{ secrets.PREVIEW_IP_SALT }}
         run: |
@@ -151,8 +167,29 @@ jobs:
             --site "https://$PREVIEW-games-preview.$WORKERS_DEV" ${WORKER:+--worker "$WORKER"} \
             --banner "Preview of pull request #$PR at ${SHA:0:7}" --banner-link "$PR_URL" \
             --title-prefix "PR $PR · "
+      # Cleanup shares this job's group, so a pull request closing cancels
+      # this job while it runs. But one that starts after it closed (it
+      # waited for the Worker Preview, say) would cancel cleanup in turn, or
+      # make the Previews again after cleanup deleted them: so it deletes them
+      # itself instead.
+      - name: Check the pull request is still open
+        id: open
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ github.event.pull_request.number }}
+        run: |
+          state="$(gh api "repos/$GITHUB_REPOSITORY/pulls/$PR" --jq .state)"
+          echo "open=$([ "$state" = open ] && echo true || echo false)" >> "$GITHUB_OUTPUT"
+      - name: Delete the Previews, since the pull request has closed
+        if: steps.open.outputs.open != 'true'
+        run: |
+          for worker in games-preview games-leaderboard; do
+            npx --yes wrangler@4.151.0 preview delete --worker-name "$worker" --name "$PREVIEW" --skip-confirmation \
+              || echo "::notice::No Preview $PREVIEW of $worker to delete, or it couldn't be deleted. Check the Worker's Previews in the Cloudflare dashboard."
+          done
       - name: Create or update the Preview
         id: preview
+        if: steps.open.outputs.open == 'true'
         working-directory: preview
         run: |
           set -o pipefail
@@ -171,6 +208,7 @@ jobs:
       # One comment per pull request, kept up to date rather than added to on
       # every push. It takes over the comment Worker Previews used to have.
       - name: Comment with the Previews' URLs
+        if: steps.open.outputs.open == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
           SITE: ${{ steps.preview.outputs.url }}
@@ -216,12 +254,32 @@ jobs:
             gh api "repos/$GITHUB_REPOSITORY/issues/$PR/comments" -f body="$body" > /dev/null
           fi
 
+  # Worker Previews are made one at a time across pull requests, and GitHub
+  # keeps only the newest run waiting for that turn: an older one still
+  # waiting is cancelled, and its site preview skipped. Fail, saying so,
+  # rather than leave the preview quietly out of date.
+  worker-cancelled:
+    needs: worker
+    if: always() && needs.worker.result == 'cancelled'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Say the Worker Preview was cancelled
+        run: |
+          echo "::error::This run's Worker Preview was cancelled while it waited for its turn (another run took its place), so its previews weren't updated. Re-run this workflow to update them."
+          exit 1
+
   cleanup:
     if: >-
       github.event.action == 'closed' &&
       vars.CLOUDFLARE_ACCOUNT_ID != '' &&
       github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
+    # The site preview's group, so closing the pull request cancels a site
+    # job still running, which could otherwise make the Previews again after
+    # this deletes them.
+    concurrency:
+      group: site-preview-${{ github.event.pull_request.number }}
+      cancel-in-progress: true
     steps:
       - uses: actions/setup-node@v7
         with:

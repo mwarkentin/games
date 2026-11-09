@@ -84,6 +84,8 @@ header p{margin:8px 0 0;color:var(--muted);max-width:36ch}
 
 /* Charts: one series, in the accent; recessive axes. */
 .chart{position:relative;margin-top:14px}
+/* While a period loads, the last chart stays, faded, rather than jumping. */
+html[data-log="loading"] #chart{opacity:.5}
 .chart .ymax{display:flex;align-items:center;gap:6px;font:400 10px/1 var(--f-mono);color:var(--muted);margin-bottom:3px}
 .chart .ymax::after{content:"";flex:1;border-top:1px solid var(--rule)}
 .plot{display:grid;gap:2px;align-items:stretch;height:96px;border-bottom:1px solid var(--rule)}
@@ -263,6 +265,7 @@ const WORLD_WORDS = 1119752;  // hidden words in the shared world
 const LOG_BEGAN = Date.UTC(2026, 10, 6);  // the day the log began, until the Worker says where its words start
 const MAX_PAGES = 40;     // pages of one hour the page reads (500 each)
 const LIVE_REFRESH_MS = 20000;  // the hour still running reloads this often while it's on screen
+const LATE_MS = 60000;    // and for this long after it ends: its last words reach the log up to LOG_MS (30 s) late, then caches
 const PERIODS = ['hour', 'day', 'week', 'month', 'year', 'all'];
 
 const $ = s => document.querySelector(s);
@@ -292,6 +295,45 @@ const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls)
 const isoDay = t => { const d = new Date(t); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
 const parseDay = s => { const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(s || ''); return m ? new Date(+m[1], +m[2] - 1, +m[3]).getTime() : null; };
 const hourRange = (a, b) => `${timeFmt.format(a)} – ${timeFmt.format(b)}`;
+
+/* ---------- State machines ---------- */
+// ---- BEGIN STATE MACHINE ----
+// The same in every page that has one (tests/test_state_machines.py checks).
+// An explicit state machine, as "State machines" in AGENTS.md describes: the
+// states something can be in, and the moves it may make from each. go(to)
+// makes a listed move and nothing else. It shows the new state as el's
+// data-<name> attribute (on <html> unless el says otherwise), for CSS, tests
+// and anyone reading the page, then calls onMove(to, from, ...args). Any
+// other move, like a state the table doesn't name, is a bug: it's refused
+// with a console error, which fails the tests, and the player carries on as
+// if it had never been tried. seq counts the moves made, so a timer or a
+// reply that waited can tell whether anything moved in the meantime.
+function machine(name, moves, state, { el = document.documentElement, onMove } = {}) {
+  const known = (s) => s in moves || (console.error(`${name}: no state called ${s}`), false);
+  Object.values(moves).flat().forEach(known);
+  known(state);
+  let seq = 0;
+  if (el) el.dataset[name] = state;
+  return {
+    get state() { return state; },
+    get seq() { return seq; },
+    is: (...states) => states.filter(known).includes(state),
+    can: (to) => known(to) && moves[state].includes(to),
+    go(to, ...args) {
+      if (!moves[state].includes(to)) {
+        console.error(`${name}: no move from ${state} to ${to}`);
+        return false;
+      }
+      const from = state;
+      state = to;
+      seq += 1;
+      if (el) el.dataset[name] = to;
+      if (onMove) onMove(to, from, ...args);
+      return true;
+    },
+  };
+}
+// ---- END STATE MACHINE ----
 
 /* ---------- Periods ---------- */
 // Periods are the player's own, in local time: a day runs midnight to
@@ -765,7 +807,18 @@ readUrl();
 const logEl = $('#log'), chartEl = $('#chart'), cardsEl = $('#cards'), dayInput = $('#dayInput');
 $('#zone').textContent = Intl.DateTimeFormat().resolvedOptions().timeZone || 'your time zone';
 const BASE_TITLE = document.title;
-let observer = null, liveTimer = 0;
+let observer = null, liveTimer = 0, liveUntil = 0;  // liveUntil: when the period shown as Live ends
+// What the page shows, on <html data-log>: a period loading (its chart
+// faded), ready, refreshing in place (the running hour, or a period that's
+// just ended), stale (that refresh failed: the last copy stays, and it tries
+// again), or failed to load, with a way to try again.
+const Log = machine('log', {
+  loading: ['ready', 'failed'],
+  ready: ['loading', 'refreshing'],
+  refreshing: ['ready', 'stale', 'loading'],
+  stale: ['refreshing', 'loading'],
+  failed: ['loading'],
+}, 'loading');
 
 // The address of a view: this one, changed by whatever's given.
 function urlFor({ focus = state.focus, period = state.period, start = state.start, mine = state.mine } = {}) {
@@ -908,13 +961,17 @@ function chrome() {
   $('#navLabel').textContent = caption || title;
   const sum = $('#sumText');
   sum.replaceChildren(dated ? caption : '');
-  if (end > now && period !== 'all') sum.append(el('span', 'live', 'Live'));
+  liveUntil = end > now && period !== 'all' ? end : 0;
+  if (liveUntil) sum.append(el('span', 'live', 'Live'));
   return end;
 }
 
 /* ---------- Rendering ---------- */
 async function render(quiet = false) {
   const run = ++state.run;
+  // A quiet refresh keeps what's on screen while it reloads; anything else shows the period loading.
+  if (quiet && Log.is('ready', 'refreshing', 'stale')) { if (!Log.is('refreshing')) Log.go('refreshing'); }
+  else if (!Log.is('loading')) Log.go('loading');
   if (state.period === 'all' && api) {
     await askSpan();
     if (run !== state.run) return;
@@ -929,10 +986,9 @@ async function render(quiet = false) {
   cardsEl.replaceChildren();
   if (!api) {
     tiles([]); chartEl.replaceChildren();
-    return status('Not open yet', 'The shared survey isn’t running yet, so there’s nothing to log.');
+    status('Not open yet', 'The shared survey isn’t running yet, so there’s nothing to log.');
+    return Log.go('ready');
   }
-  // While reloading, the last chart stays, faded, rather than jumping.
-  if (!quiet) chartEl.style.opacity = '.5';
   if (!logEl.querySelector('.entries, .rows')) logEl.replaceChildren(el('p', 'loading', 'Loading the log…'));
   try {
     if (state.focus?.kind === 'territory') await renderTerritory(run, state.focus, firsts);
@@ -943,11 +999,33 @@ async function render(quiet = false) {
     else await renderLong(run, period, start, end, firsts, mine);
   } catch (err) {
     if (run !== state.run) return;
+    // A refresh that fails leaves the words on screen, and tries again.
+    if (Log.is('refreshing')) { Log.go('stale'); return scheduleRefresh(run, end); }
     tiles([]); chartEl.replaceChildren(); cardsEl.replaceChildren();
     if (state.focus && /status 400/.test(err?.message)) status('Not in the log', 'There’s no such surveyor, theme or territory to show.');
     else status('Can’t reach the log', 'The survey’s server didn’t answer. Your own finds are safe in Letterfield’s field notes.', true);
-  } finally {
-    if (run === state.run) chartEl.style.opacity = '';
+    return Log.go('failed');
+  }
+  if (run !== state.run) return;
+  Log.go('ready');
+  scheduleRefresh(run, end);
+}
+
+// After a period is shown: the hour still running reloads every
+// LIVE_REFRESH_MS, until a minute after it ends while its last words reach the
+// log; any other period still running reloads once it's over, so it stops
+// saying Live and the way on to the next one opens. Nothing reloads while the
+// page is hidden; it catches up when it's back (see visibilitychange below).
+function scheduleRefresh(run, end) {
+  clearTimeout(liveTimer);
+  if (document.hidden || state.period === 'all') return;
+  const tick = () => {
+    if (run !== state.run) return;
+    if (state.period !== 'hour' && Date.now() < end) liveTimer = setTimeout(tick, Math.min(end - Date.now() + 1000, DAY));
+    else render(true);
+  };
+  if (state.period === 'hour' ? Date.now() < end + LATE_MS : Date.now() < end) {
+    liveTimer = setTimeout(tick, state.period === 'hour' ? LIVE_REFRESH_MS : Math.min(end - Date.now() + 1000, DAY));
   }
 }
 
@@ -967,7 +1045,7 @@ function summaryTiles(p, buckets, mine, label = 'Words charted') {
 }
 
 // An hour, minute by minute, with every word in it. The hour still running
-// reloads every LIVE_REFRESH_MS while the page is on screen.
+// reloads every LIVE_REFRESH_MS while the page is on screen (scheduleRefresh).
 async function renderHour(run, start, end, firsts, mine) {
   const data = await entriesBetween(start, end);
   if (run !== state.run) return;
@@ -978,7 +1056,6 @@ async function renderHour(run, start, end, firsts, mine) {
   chartEl.replaceChildren(columnChart('hour', buckets, null));
   if (!shown.length) status(mine ? 'None this hour' : 'Nothing charted', mine ? 'You didn’t chart a word first this hour in this browser.' : 'Nobody charted a word this hour.');
   else { const list = el('ol', 'entries'); list.append(...shown.map(e => entryRow(e, data, firsts))); logEl.replaceChildren(list); }
-  if (end > Date.now() && !document.hidden) liveTimer = setTimeout(() => { if (run === state.run) render(true); }, LIVE_REFRESH_MS);
 }
 
 // A day, hour by hour. Each hour's words load as they scroll into view, and
@@ -1260,13 +1337,16 @@ $('#up').onclick = () => open('day', state.start);
 dayInput.onchange = () => { const d = parseDay(dayInput.value); if (d !== null && d <= Date.now()) open('day', d); };
 // Field notes change in Letterfield's own tab: "Mine" follows.
 addEventListener('storage', e => { if (e.key === K_FINDS && state.mine) render(); });
-// The live hour pauses while the tab is hidden, and catches up when it's back.
+// Reloading pauses while the tab is hidden. Back on screen, the running hour
+// catches up, and a period that ended meanwhile stops saying Live.
 document.addEventListener('visibilitychange', () => {
-  if (document.hidden) clearTimeout(liveTimer);
-  else if (state.period === 'hour' && endOf('hour', state.start) > Date.now()) render(true);
+  if (document.hidden) return clearTimeout(liveTimer);
+  const end = endOf(state.period, state.start), now = Date.now();
+  if ((liveUntil && now >= liveUntil) || (state.period === 'hour' && now < end + LATE_MS)) render(true);
+  else scheduleRefresh(state.run, end);
 });
 render();
-if (location.hash === '#debug') window.__log = { state, render, myFirsts, open };
+if (location.hash === '#debug') window.__log = { state, render, myFirsts, open, shown: () => Log.state };
 </script>
 </body>
 </html>

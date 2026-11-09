@@ -95,6 +95,103 @@ utilities; games live here so they get their own origin and their own rules.
   title is longer than 12 characters, add
   `<meta name="apple-mobile-web-app-title" content="...">` with a shorter
   name for the Home Screen.
+- Keep each mode the game can be in (its screens, a save in flight, a
+  connection) in an explicit state machine, not in flags (see State
+  machines).
+
+## State machines
+
+A game is always in one of a few modes: on the menu, playing, paused or
+over; a score offered, saving or saved; a socket connecting, open or
+reconnecting. The bugs that hurt players most have come from modes kept
+implicitly, spread over booleans, `hidden` attributes and the order things
+happen in, where a timer, a reply or a key press lands after the player has
+moved on. So a mode with more than two states, or one that waiting work
+(timers, fetches, sockets) can move, lives in an explicit state machine:
+
+```js
+const Screen = machine('screen', {
+  menu: ['playing'],
+  playing: ['paused', 'ending'],
+  paused: ['playing', 'menu'],
+  ending: ['over'],
+  over: ['playing', 'menu'],
+}, 'menu', { onMove: showScreen });
+```
+
+- `machine()` is a few lines kept between `BEGIN STATE MACHINE` and `END
+  STATE MACHINE` markers, the same in every page that uses it.
+  `tests/test_state_machines.py` checks the copies match and that the helper
+  keeps its promises, so change every copy together.
+- The table is the one place to see how a game flows. `go(to)` makes a
+  listed move and nothing else. Any other move is a bug: it's refused with a
+  console error, which fails the tests, while the player carries on.
+- Guard a move by the states it may start from, then make it:
+  `if (!Screen.is('paused')) return;` and then `Screen.go('playing')`. Read
+  the state with `is()` or `.state`, never a flag of your own.
+- Derive what follows from the state in `onMove`, in one place: which
+  overlay shows, which layer is `inert` (only the top one takes focus and
+  taps), the wake lock. Don't toggle those wherever the state changes.
+- Anything that waits checks nothing moved before it acts: keep
+  `const at = Machine.seq`, and give up if `Machine.seq !== at` when the
+  timer fires or the reply comes back, or check `is()` for the state it
+  expects.
+- The state shows as a `data-` attribute on `<html>`, named after the
+  machine: `<html data-screen="over" data-save="offered">`. CSS can style
+  by it, and tests and agents can read it without knowing the code:
+  `expect(page.locator("html")).to_have_attribute("data-screen", "over")`.
+  A machine for one element of many passes `el` to show it there instead,
+  or `el: null` for nowhere. Debug hooks report each machine's state too.
+- A fix for a state machine bug comes with a test that fails without it,
+  failing at the bug itself rather than at a missing `data-` attribute.
+  `Held` in `tests/fake_leaderboard.py` holds back replies to answer them
+  later in any order, for testing what a page does while a request is out
+  (set its `holding` or `match` as the test goes to choose which). Remember
+  the page's 30-second cache of scores: hold from the start, or a list it
+  already has never asks. For sockets, the fakes in `tests/` hold or drop
+  messages from the test itself: a blocking `WebSocketRoute` call, such as
+  `close()`, inside a `route_web_socket` handler spins forever.
+- Leave alone modes that are fine as they are: a single boolean, a
+  countdown in game time, a request counter that keeps only the newest
+  reply, a render that checks its run number after each await.
+
+The machines each page keeps:
+
+| Page | Machine (`data-` name) | States |
+|---|---|---|
+| `air-traffic-controller.html` | `screen` | menu, playing, paused, ending, report, board |
+| | `save` (the shift report's offer) | none, checking, ineligible, offered, saving, saved |
+| `doodle-chomp.html` | `screen` | menu, play, paused, message, clearing, over |
+| | `save` (the game-over card's offer) | none, checking, ineligible, offered, saving, saved |
+| | `board` (the high-score screen) | closed, open |
+| `funnels-and-buckets.html` | `screen` | menu, playing, paused, ending, over |
+| | `save` (the game-over card's offer) | none, checking, ineligible, offered, saving, saved |
+| | `board` (the leaderboard screen) | closed, open |
+| `letterfield.html` | `pass` (the survey's Turnstile pass) | off, none, loading, checking, asking, sending, good, failed |
+| | `link` (each sector's socket; `el: null`, see `__lf.linkStates()`) | connecting, open, live, backoff, closed |
+| | `claim` (each claim of ours; `el: null`, see `__lf.outbox()`) | queued, sent, unanswered, answered |
+| `letterfield-log.html` | `log` (what the page shows) | loading, ready, refreshing, stale, failed |
+| `war.html` | `screen` | menu, lobby, table, ending, over |
+| | `overlay` (what covers the screen) | none, pause, invite, styles, history |
+| | `session` (what the page plays through) | none, joining, solo, room |
+| | `conn` (a room's WebSocket) | off, connecting, open, retrying |
+
+The Worker keeps its modes the same way, without the page helper: a
+declared table of states and moves, one function that makes every move,
+and a state read from what's stored, so an object woken from hibernation,
+or a record saved by an earlier version, comes back in the state it left.
+War rooms keep theirs in `worker/src/war.js`: `ROOM_MOVES` (absent, lobby,
+playing, paused, over) and `ROOM_MESSAGES` (which messages each state
+takes), with `roomState()`, `go()` and `deadline()`, outside the War core.
+A refused move logs an error, and `worker/test/war.test.js` fails on it.
+Anything a woken object must still know lives in storage or a socket's
+attachment, never only in a field. Something an object only knows once
+another has told it, like a sector's list of addresses past the daily cap,
+treats "not known since waking" as a state of its own, never as "none".
+And work that waited (an alarm, another object's reply, a message that
+arrives after its moment) checks the state it expects before it acts: an
+alarm works out `deadline()` again, and a slam for a stage already played
+out is dropped.
 
 ## Changelogs
 

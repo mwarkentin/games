@@ -1031,3 +1031,175 @@ def test_music_stays_off_once_turned_off(page: Page, site_url, errors):
     # Sound effects have a switch of their own.
     expect(page.locator("#app .sound-toggle")).to_have_attribute("aria-label", "Sound effects on")
     assert errors == []
+
+
+# ---- The page's state machines: screen, overlay, session ----
+
+
+def hide_tab(page: Page, hidden: bool = True) -> None:
+    page.evaluate("(h) => { Object.defineProperty(document, 'hidden', { value: h, configurable: true });"
+                  " document.dispatchEvent(new Event('visibilitychange')); }", hidden)
+
+
+def test_the_page_shows_which_screen_its_on(page: Page, site_url, errors):
+    page.goto(f"{site_url}/war?seed=7#debug")
+    html = page.locator("html")
+    expect(html).to_have_attribute("data-screen", "menu")
+    expect(html).to_have_attribute("data-session", "none")
+    expect(html).to_have_attribute("data-overlay", "none")
+    page.click("#stylesBtn")
+    expect(html).to_have_attribute("data-overlay", "styles")
+    expect(page.locator("#menu")).to_have_attribute("inert", "")  # only the top layer takes taps
+    page.click("#stylesDone")
+    page.click("#soloBtn")
+    expect(html).to_have_attribute("data-screen", "table")
+    expect(html).to_have_attribute("data-session", "solo")
+    expect(page.locator("#app")).not_to_have_attribute("inert", "")
+    page.click("#menuBtn")
+    expect(html).to_have_attribute("data-overlay", "pause")
+    expect(page.locator("#app")).to_have_attribute("inert", "")
+    page.click("#resumeBtn")
+    expect(html).to_have_attribute("data-overlay", "none")
+    page.evaluate("window.__war.slam(60)")
+    page.evaluate("window.__war.finish()")
+    expect(html).to_have_attribute("data-screen", "over")
+    expect(page.locator("#app")).to_have_attribute("inert", "")
+    state = page.evaluate(STATE)
+    assert (state["screen"], state["overlay"], state["session"], state["conn"]) == ("over", "none", "solo", "off")
+    page.click("#overMenuBtn")
+    expect(html).to_have_attribute("data-screen", "menu")
+    expect(html).to_have_attribute("data-session", "none")
+    assert errors == []
+
+
+def test_escape_closes_the_power_ups_on_the_menu_too(page: Page, site_url, errors):
+    page.goto(f"{site_url}/war#debug")
+    page.click("#stylesBtn")
+    expect(page.locator("#stylesOv")).to_be_visible()
+    page.keyboard.press("Escape")
+    expect(page.locator("#stylesOv")).to_be_hidden()
+    assert errors == []
+
+
+def test_enter_and_space_press_the_button_youre_on(page: Page, site_url, errors):
+    start_solo(page, site_url)
+    # On your deck they slam, as ever.
+    page.focus("#myPile")
+    page.keyboard.down(" ")
+    page.wait_for_timeout(300)
+    page.keyboard.up(" ")
+    assert page.evaluate(f"{STATE}.slams[0]") is not None
+    # On a button, they press it.
+    page.focus("#autoBtn")
+    page.keyboard.press("Enter")
+    expect(page.locator("#autoBtn")).to_have_attribute("aria-pressed", "true")
+    page.focus("#menuBtn")
+    page.keyboard.press(" ")
+    expect(page.locator("#pause")).to_be_visible()
+    assert errors == []
+
+
+def test_a_war_you_started_waits_while_youre_paused(page: Page, site_url, errors):
+    start_solo(page, site_url, seed=WAR_SEED)
+    page.evaluate("window.__war.slam(50)")
+    page.wait_for_function(f"{STATE}.stage === 1 && {STATE}.canSlam")
+    hold_slam(page, 300)  # one face-down card down
+    page.wait_for_function(f"{STATE}.plan && {STATE}.plan.done.length === 1")
+    page.click("#menuBtn")
+    expect(page.locator("#pauseNote")).to_have_text("The war waits for you.")
+    page.evaluate("window.__war.hurry()")  # as if the war's clock had all but run out while you were away
+    page.wait_for_timeout(1500)
+    assert len(page.evaluate(f"{STATE}.plan.done")) == 1, "nothing is slammed for you while you're paused"
+    assert page.evaluate(f"{STATE}.slams[0]") is None
+    # Back at the table, the war is still yours to finish.
+    page.click("#resumeBtn")
+    page.wait_for_function(f"{STATE}.canSlam")
+    assert page.evaluate("window.__war.slam(70)")
+    done = page.evaluate(f"{STATE}.plan.done")
+    assert len(done) == 4 and done[1:] == [70, 70, 70]
+    assert errors == []
+
+
+def test_the_next_battle_waits_while_youre_paused(page: Page, site_url, errors):
+    start_solo(page, site_url, opponents=3)
+    page.evaluate("() => { window.slams = 0; const slam = Sound.slam.bind(Sound); Sound.slam = (...a) => { window.slams++; return slam(...a); }; }")
+    page.evaluate("window.__war.slam(60)")
+    page.wait_for_function("S.pending !== null", polling=20)  # played, and the next stage on its way
+    page.click("#menuBtn")
+    paused = page.evaluate(f"[{STATE}.battle, {STATE}.stage, window.slams]")
+    page.wait_for_timeout(3500)  # longer than the cards stay up before the next stage
+    assert page.evaluate(f"[{STATE}.battle, {STATE}.stage, window.slams]") == paused, "it all waits for you, the bots too"
+    page.click("#resumeBtn")
+    page.wait_for_function(f"[{STATE}.battle, {STATE}.stage].join() !== '{paused[0]},{paused[1]}'")
+    assert errors == []
+
+
+def test_pausing_holds_the_joker_still_behind_the_pause_menu(page: Page, site_url, errors):
+    start_solo(page, site_url, seed=JOKER_SEED)
+    page.evaluate("window.__war.slam(60)")
+    expect(page.locator("#fx .jk")).to_have_count(1)
+    page.wait_for_function("window.__war.joker() && window.__war.joker().u > 0.5")
+    page.click("#menuBtn")
+    held = page.evaluate("window.__war.joker().u")
+    page.wait_for_timeout(1200)
+    assert page.evaluate("window.__war.joker().u") == held, "the show waits for you"
+    # And it's under the pause menu, not over it.
+    assert page.evaluate("+getComputedStyle(document.getElementById('fx')).zIndex < +getComputedStyle(document.getElementById('pause')).zIndex")
+    page.click("#resumeBtn")
+    page.wait_for_function(f"{STATE}.stage === 1", timeout=10000)
+    expect(page.locator("#fx .jk")).to_have_count(0)
+    assert errors == []
+
+
+def test_skipping_to_the_end_as_a_battle_lands_still_logs_it(page: Page, site_url, errors):
+    start_solo(page, site_url, length="quick", seed=5)
+    page.wait_for_timeout(1600)  # past the bot's moment, so your slam plays the battle at once
+    # The battle is played while your slam is still landing, and you skip to
+    # the end right then.
+    held = page.evaluate("""() => new Promise((done) => {
+        window.__war.slam(60);
+        const poll = () => {
+            if (S.result !== null) done(false);
+            else if (S.conn.game.battle === 2) { openPause(); document.getElementById('skipBtn').click(); done(true); }
+            else setTimeout(poll, 1);
+        };
+        poll();
+    })""")
+    assert held, "the battle was played while the slam was landing"
+    expect(page.locator("#over")).to_be_visible()
+    battles = page.evaluate(f"{STATE}.over.battles")
+    assert [e["b"] for e in page.evaluate("window.__war.log()")] == list(range(1, battles + 1))
+    expect(page.locator("#logTitle")).to_have_text("Battle by battle")
+    assert errors == []
+
+
+def test_the_end_of_games_jingle_plays_once(page: Page, site_url, errors):
+    page.goto(f"{site_url}/war?seed={WAR_SEED}#debug")
+    page.click("#menu h1")
+    page.click("#soloBtn")
+    page.wait_for_function(f"{STATE}.canSlam")
+    page.evaluate("window.__war.slam(60)")
+    page.evaluate("window.__war.finish()")
+    page.wait_for_function(f"['win', 'lose'].includes({MUSIC}.playing)")
+    page.wait_for_function(f"{MUSIC}.playing === null", timeout=15_000)
+    hide_tab(page)
+    hide_tab(page, False)
+    page.wait_for_timeout(1000)
+    assert page.evaluate(f"{MUSIC}.playing") is None, "a jingle that has played doesn't play again"
+    assert errors == []
+
+
+def test_a_game_that_ends_while_the_tab_is_hidden_ends_quietly(page: Page, site_url, errors):
+    start_solo(page, site_url, opponents=1, length="quick", seed=3)
+    page.wait_for_function(f"{MUSIC}.playing === 'battle'")
+    page.evaluate("window.__war.pace(0.05)")
+    page.click("#autoBtn")
+    page.wait_for_function(f"{STATE}.phase === 'over'", timeout=60_000, polling=20)
+    hide_tab(page)  # right after the last battle, before the results come up
+    expect(page.locator("#over")).to_be_visible()
+    page.wait_for_timeout(300)
+    assert page.evaluate(f"{MUSIC}.playing") is None, "no jingle in a hidden tab"
+    hide_tab(page, False)
+    page.wait_for_timeout(1000)
+    assert page.evaluate(f"{MUSIC}.playing") is None, "nor battle music on the results"
+    assert errors == []
