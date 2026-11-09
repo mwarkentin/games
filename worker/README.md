@@ -274,7 +274,7 @@ works without it.
 ## Previews
 
 Every pull request whose branch changes `worker/` from `main`'s, stacked
-pull requests included, gets a
+pull requests included, or that's labelled `worker-preview`, gets a
 [Worker Preview](https://developers.cloudflare.com/workers/previews/): its
 own copy of the Worker at
 `https://pr-<number>-games-leaderboard.mwarkentin.workers.dev`. The
