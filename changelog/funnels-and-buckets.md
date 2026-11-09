@@ -1,5 +1,6 @@
 ## 2026-11-09
 
+- A “Send feedback” link on the menu, for bugs and ideas.
 - A score worth saving is always offered a spot on the leaderboard: tapping
   a board's tab, or opening and closing the leaderboard, while the game-over
   board was still loading could lose the offer. Joining a group from the

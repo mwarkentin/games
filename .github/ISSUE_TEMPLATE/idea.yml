@@ -1,0 +1,27 @@
+name: Idea
+description: Something you'd like a game to do, or a game you'd like to see.
+labels: [enhancement]
+body:
+  - type: dropdown
+    id: game
+    attributes:
+      label: Which game?
+      # Every game in README.md; tests/test_build.py checks.
+      options:
+        - Air Traffic Controller
+        - Doodle Chomp
+        - Funnels & Buckets
+        - Letterfield
+        - Letterfield survey log
+        - War
+        - A new game
+        - The site (home page, colophon, changelogs)
+    validations:
+      required: true
+  - type: textarea
+    id: idea
+    attributes:
+      label: What's your idea?
+      description: What you'd like, and what it would make better.
+    validations:
+      required: true

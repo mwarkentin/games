@@ -86,6 +86,8 @@ utilities; games live here so they get their own origin and their own rules.
   no audio files.
 - Pause when the tab is hidden (`visibilitychange`) if the game runs on a
   timer.
+- Give players one "Send feedback" link marked `data-feedback` (see
+  Feedback, under Telemetry).
 - Keep scores and settings in `localStorage`, with keys prefixed by the
   game's name: every game on this site shares one origin. Global
   leaderboards go through the leaderboard Worker (see below), never straight
@@ -241,6 +243,26 @@ text inputs masked. To hide something else from replays, give it the
 `sentry-mask` class. IP addresses aren't sent. `tests/test_telemetry.py`
 serves the site under its real hostname to check that it reports errors
 with a replay and never sends anything from elsewhere.
+
+### Feedback
+
+Every game has one "Send feedback" link, somewhere a player finds it
+without it covering the game (the menu, or Letterfield's field notes):
+
+```html
+Found a bug or have an idea? <a href="https://github.com/mwarkentin/games/issues/new/choose" target="_blank" rel="noopener" data-feedback>Send feedback</a>
+```
+
+It goes to the repo's issue forms (`.github/ISSUE_TEMPLATE/`), which ask
+which game. Once Sentry's SDK has loaded, `telemetry.js` catches clicks on
+`[data-feedback]` and opens a small form of its own instead, which sends
+the message and an optional email to Sentry's User Feedback with the
+replay's last minute (`Sentry.captureFeedback`, in every CDN bundle). The
+form keeps its keys and taps from reaching the game. Sentry's own feedback
+button isn't used: games own the whole screen. The header of the home page,
+colophon and changelogs links to the issue forms as "Feedback".
+`tests/test_build.py` checks every game has the link and the forms list
+every game; `tests/test_telemetry.py` checks the form reaches Sentry.
 
 ## Analytics
 
@@ -534,7 +556,9 @@ page loads nothing from a new host.
 
 1. Create or update `foo.html` following the rules above.
 2. Link it from `README.md` under the right heading:
-   `- [Title](https://games.michaelwarkentin.com/foo): what it is`.
+   `- [Title](https://games.michaelwarkentin.com/foo): what it is`. Add the
+   same title to the game lists in `.github/ISSUE_TEMPLATE/bug.yml` and
+   `idea.yml`, and give the game its "Send feedback" link (see Feedback).
 3. Note anything a player would notice in `changelog/foo.md`, under the day
    it reaches the site (see Changelogs). A new game's first day says it's
    here.

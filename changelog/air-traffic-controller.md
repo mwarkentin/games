@@ -1,5 +1,6 @@
 ## 2026-11-09
 
+- A “Send feedback” link on the menu, for bugs and ideas.
 - Tapping Space or Enter as a shift ends no longer skips its report and
   starts the next shift. Space never presses the report's buttons, and
   Enter only does once the report has been up a moment.

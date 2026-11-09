@@ -11,6 +11,10 @@ from urllib.parse import urlencode
 BASE_URL = "https://games.michaelwarkentin.com"
 SITE_NAME = "games.michaelwarkentin.com"
 REPO_URL = "https://github.com/mwarkentin/games"
+# Where feedback goes without Sentry: the header's link, and each game's
+# "Send feedback" (data-feedback), which telemetry.js turns into a form that
+# sends to Sentry once its SDK has loaded.
+FEEDBACK_URL = f"{REPO_URL}/issues/new/choose"
 # The leaderboard Worker (worker/), which the games' LEADERBOARD_URL, ROOMS_URL
 # and the survey log's SURVEY_URL name. A pull request's preview points them at
 # its own Worker Preview instead (see scripts/point_preview.py).
@@ -305,7 +309,7 @@ def render_page(
 <header>
   <div class="bar">
     <a class="home" href="/">{SITE_NAME}</a>
-    <nav><a href="/colophon">Colophon</a><a href="{REPO_URL}">GitHub</a>{tip}</nav>
+    <nav><a href="/colophon">Colophon</a><a href="{REPO_URL}">GitHub</a><a href="{FEEDBACK_URL}">Feedback</a>{tip}</nav>
   </div>
 </header>
 <main>

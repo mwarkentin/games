@@ -1,5 +1,6 @@
 ## 2026-11-09
 
+- A “Send feedback” link on the menu, for bugs and ideas.
 - Picking up your winnings is a moment of its own: the pile sweeps into a
   neat stack, turns over backs up, and tucks in under your deck, which lifts
   and settles thicker as its count ticks up, and riffles when winnings are

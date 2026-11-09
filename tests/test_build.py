@@ -15,6 +15,8 @@ from build_colophon import format_message
 from build_sitemap import NAMESPACE, build_sitemap
 from common import (
     BASE_URL,
+    FEEDBACK_URL,
+    GENERATED_PAGES,
     HOME_APP,
     ICON_SIZES,
     PREVIEW_SIZE,
@@ -365,3 +367,26 @@ def test_point_site_prefixes_every_page_title_but_not_link_previews(site_dir, tm
         og_title = re.compile(r'<meta property="og:title" content="([^"]*)"')
         assert og_title.search(after).group(1) == og_title.search(before).group(1)
         assert not og_title.search(after).group(1).startswith("PR 7")
+
+
+def test_every_game_has_one_feedback_link(site_dir):
+    # telemetry.js turns data-feedback links into a form that sends to Sentry;
+    # without it, they go to GitHub issues.
+    link = re.compile(r"<a [^>]*data-feedback[^>]*>")
+    for name in game_files():
+        links = link.findall((ROOT / name).read_text("utf-8"))
+        assert len(links) == 1, f"{name} should have one data-feedback link, has {len(links)}"
+        assert f'href="{FEEDBACK_URL}"' in links[0], name
+        assert 'target="_blank"' in links[0] and 'rel="noopener"' in links[0], name
+    for name in GENERATED_PAGES:
+        assert f'<a href="{FEEDBACK_URL}">Feedback</a>' in (site_dir / name).read_text("utf-8"), name
+
+
+def test_issue_templates_list_every_game():
+    titles = re.findall(rf"^- \[([^\]]+)\]\({re.escape(BASE_URL)}/", (ROOT / "README.md").read_text("utf-8"), re.M)
+    assert len(titles) == len(game_files())
+    for template in ("bug.yml", "idea.yml"):
+        text = (ROOT / ".github" / "ISSUE_TEMPLATE" / template).read_text("utf-8")
+        options = re.findall(r"^ {8}- (.+)$", text, re.M)
+        missing = [title for title in titles if title not in options]
+        assert not missing, f"{template} doesn't offer {missing}"
