@@ -1,0 +1,10 @@
+# Prototype only: never deployed. `npx wrangler@4.151.0 dev` to try it, or
+# `npx wrangler@4.151.0 deploy --dry-run --outdir dist` to measure the bundle.
+name = "letterfield-share-card-prototype"
+main = "src/index.js"
+compatibility_date = "2026-10-01"
+
+[[rules]]
+type = "Data"
+globs = ["**/*.ttf"]
+fallthrough = true
