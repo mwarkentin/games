@@ -10,7 +10,7 @@ import { DatabaseSync } from 'node:sqlite';
 import { afterEach, beforeEach, describe, mock, test } from 'node:test';
 
 import worker from '../src/index.js';
-import { RC, THEMES, VOCAB, chunk, fdiv, keyOf, regionName, regionTheme } from '../src/letterfield-world.js';
+import { MAP_VERSION, RC, THEMES, VOCAB, chunk, fdiv, keyOf, regionName, regionTheme } from '../src/letterfield-world.js';
 import {
   DAY_MS, HOURS_SQL, HOUR_AFTER_SQL, HOUR_MS, HOUR_SQL, LIVE_CACHE_S, LOG_BATCH, LOG_MS, LOG_PAGE, LOG_RETRY_MAX_MS, SETTLED_MS,
   FIRST_SQL, LAST_SQL, SLICES, SLICE_MAX_HOURS, SLICE_PAGE, SLICE_SLOW_CACHE_S, SPAN_CACHE_S, SURVEYORS_SQL, TERRITORIES_SQL,
@@ -406,7 +406,7 @@ describe('routeLog', () => {
     assert.equal(again.headers.get('Access-Control-Allow-Origin'), null);  // not in ALLOWED_ORIGINS here
   });
 
-  test('keeps each Worker\'s answers apart in Cloudflare\'s cache, so a preview never answers for production', async () => {
+  test('keeps each Worker\'s and each map\'s answers apart in Cloudflare\'s cache, so a preview never answers for production', async () => {
     // Every workers.dev Worker on the account shares one zone's cache, Worker Previews included.
     const stored = new Map();
     globalThis.caches = { default: { match: async (r) => stored.get(r.url)?.clone(), put: async (r, res) => { stored.set(r.url, res); } } };
@@ -417,8 +417,8 @@ describe('routeLog', () => {
     forgetLog();  // another Worker instance
     assert.equal((await (await ask('games-leaderboard.example.workers.dev', env)).json()).total, 0);
     assert.deepEqual([...stored.keys()].sort(), [
-      `https://games-leaderboard.example.workers.dev/_cache/survey-log/day/${DAY - 3}`,
-      `https://pr-43-games-leaderboard.example.workers.dev/_cache/survey-log/day/${DAY - 3}`,
+      `https://games-leaderboard.example.workers.dev/_cache/survey-log/m${MAP_VERSION}/day/${DAY - 3}`,
+      `https://pr-43-games-leaderboard.example.workers.dev/_cache/survey-log/m${MAP_VERSION}/day/${DAY - 3}`,
     ]);
   });
 

@@ -10,7 +10,7 @@ import { afterEach, beforeEach, describe, mock, test } from 'node:test';
 import vm from 'node:vm';
 
 import worker from '../src/index.js';
-import { CH, DEAL, DIRS, MAP_VERSION, RC, RG, STRAY_MIN, THEMES, THEME_DATA, VOCAB, chunk, genChunk, keyOf, letterAt, regionName, regionTheme, strayTheme, wordEnd } from '../src/letterfield-world.js';
+import { CH, DEAL, DIRS, HOLDERS, MAP_VERSION, RC, RG, STRAY_MIN, THEMES, THEME_DATA, VOCAB, chunk, genChunk, keyOf, letterAt, regionName, regionTheme, strayTheme, wordEnd } from '../src/letterfield-world.js';
 import {
   ADDRESS_HEADER, ADDRESS_SOCKETS, AREA, AREA_WORDS, Atlas, BATCH_MS, DAILY_CLAIMS, DAILY_LIST_MAX, CLAIM_BURST, CLAIM_REFILL_MS, MAX_ONLINE, MAX_PLAYERS, ONLINE_MS, PRESENCE_MAX, PRESENCE_MS,
   QUIET, REPORT_MS, UNPASSED_HEADER, SAVE_MS, SAVE_POS_MS, SECTOR, SPAWN_MAX, Sector, VIEW_MS, addressOf, checkClaim, routeSurvey,
@@ -84,6 +84,21 @@ describe('the world copy', () => {
       assert.equal(regionTheme(Math.floor(cx / RG), Math.floor(cy / RG)), game.regionTheme(Math.floor(cx / RG), Math.floor(cy / RG)));
       assert.deepEqual(genChunk(cx, cy).words, JSON.parse(JSON.stringify(game.genChunk(cx, cy).words)), `words differ in chunk ${cx},${cy}`);
     }
+  });
+
+  test('gives a stray in several themes its territory\'s theme where that has the word', () => {
+    const [w] = [...HOLDERS].find(([, n]) => n > 1);
+    const [a, b] = THEMES.flatMap((t, i) => (t.words.includes(w) ? [i] : []));
+    const other = THEMES.findIndex((t) => !t.words.includes(w));
+    // Theme t is the one at (t, 0): regionTheme is (rx + LAT_B ry) mod NT.
+    for (const t of [a, b, other]) assert.equal(regionTheme(t, 0), t);
+    assert.equal(strayTheme(w, a, 0), a);
+    assert.equal(strayTheme(w, b, 0), b);
+    // Anywhere else, the first theme that has it.
+    assert.equal(VOCAB.get(w), a);
+    assert.equal(strayTheme(w, other, 0), a);
+    const game = gameWorld();
+    for (const t of [a, b, other]) assert.equal(game.strayTheme(w, t, 0), strayTheme(w, t, 0));
   });
 
   test('names territories as the game does, for the survey\'s log', () => {
@@ -897,7 +912,7 @@ describe('Atlas', () => {
 });
 
 describe('the map', () => {
-  test('has well-formed themes: enough words to deal a territory, A to Z, 3 to 10 letters, mostly their own', () => {
+  test('has well-formed themes: enough words to deal a territory, A to Z, 3 to 10 letters, at least half their own', () => {
     const holders = new Map();
     for (const t of THEMES) {
       assert.ok(t.words.length >= RG * RG * DEAL, `${t.name} has ${t.words.length} words`);
@@ -908,11 +923,12 @@ describe('the map', () => {
         holders.set(w, [...(holders.get(w) ?? []), t.name]);
       }
     }
-    // A word can be in a few themes where it belongs in each, but most of a theme is its own.
+    // A word can be in up to three themes where it belongs in each, but at least
+    // half of every theme is its own.
     for (const [w, names] of holders) assert.ok(names.length <= 3, `${w} is in ${names.join(', ')}`);
     for (const t of THEMES) {
       const shared = t.words.filter((w) => holders.get(w).length > 1).length;
-      assert.ok(shared <= t.words.length / 3, `${t.name} shares ${shared} of its ${t.words.length} words`);
+      assert.ok(shared <= t.words.length / 2, `${t.name} shares ${shared} of its ${t.words.length} words`);
     }
     assert.equal(new Set(THEMES.map((t) => t.name)).size, THEMES.length);
   });

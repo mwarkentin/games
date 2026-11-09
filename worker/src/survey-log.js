@@ -53,9 +53,11 @@
 // Worker on the same zone, and all of workers.dev's for this account are one
 // zone, Worker Previews included, so each answer is kept under its own
 // Worker's host: a preview's test history never stands in for production's.
+// And under its map (MAP_VERSION): a new map empties the log, and the days
+// cached from the old one would otherwise outlive it.
 
 import { corsHeaders, json } from './leaderboard.js';
-import { RC, RG, THEMES, chunk, fdiv, regionName, regionTheme, strayTheme } from './letterfield-world.js';
+import { MAP_VERSION, RC, RG, THEMES, chunk, fdiv, regionName, regionTheme, strayTheme } from './letterfield-world.js';
 
 export const LOG_MS = 30000;            // a sector copies new claims to D1 at most this often
 export const LOG_BATCH = 240;           // claims copied at once; more go a second later
@@ -284,8 +286,8 @@ export function routeLog(request, env, now = Date.now()) {
   if (!(day || hour || month || top || span || surveyor || theme || territory) || !env.LOG_DB) return null;
   const cors = corsHeaders(request, env);
   if (request.method !== 'GET') return json({ error: 'method not allowed' }, 405, cors);
-  // Every answer is kept under this Worker's own host (see the top of this file).
-  const answer = (key, maxAge, read) => keep(`${url.host}/${key}`, maxAge, read, cors, now);
+  // Every answer is kept under this Worker's own host and map (see the top of this file).
+  const answer = (key, maxAge, read) => keep(`${url.host}/m${MAP_VERSION}/${key}`, maxAge, read, cors, now);
   let ends, read, key, live = LIVE_CACHE_S;
   if (span) return answer('span', SPAN_CACHE_S, () => readSpan(env.LOG_DB));
   if (territory) {

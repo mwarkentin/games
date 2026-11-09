@@ -1,4 +1,4 @@
--- The map was redrawn (map 3: about 180 words a theme, MAP_VERSION in
+-- The map was redrawn (map 3: about 150 words a theme, MAP_VERSION in
 -- src/letterfield-world.js), so every word logged so far names a place that
 -- holds other letters now. The survey starts over, and so does its log:
 -- sectors forget their claims when they next wake (survey.js), and this

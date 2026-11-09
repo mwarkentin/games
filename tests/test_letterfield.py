@@ -51,9 +51,9 @@ def test_finds_from_an_older_map_carry_over_if_still_there(page: Page, site_url,
     old = [{**word, "t": 1, "s": 0, "f": 1, "n": 12}, {**word, "x": word["x"] + 4800, "t": 2, "s": 0}]
     page.evaluate(
         """old => {
-          localStorage.setItem('letterfield.finds.v1', JSON.stringify([old[1]]));
-          localStorage.setItem('letterfield.finds.v2', JSON.stringify(old));
-          localStorage.removeItem('letterfield.finds.v3');
+          localStorage.setItem('letterfield.finds.v2', JSON.stringify([old[1]]));
+          localStorage.setItem('letterfield.finds.v3', JSON.stringify(old));
+          localStorage.removeItem('letterfield.finds.v4');
           localStorage.setItem('letterfield.coach.v1', '1');
         }""",
         old,
@@ -67,7 +67,7 @@ def test_finds_from_an_older_map_carry_over_if_still_there(page: Page, site_url,
     assert box["x"] >= 16 and box["x"] + box["width"] <= 375 - 16, box
     line = page.locator("#toast span")
     assert line.evaluate("e => e.scrollWidth <= e.clientWidth"), "the note's line is cut off"
-    saved = page.evaluate("() => [localStorage.getItem('letterfield.finds.v2'), JSON.parse(localStorage.getItem('letterfield.finds.v3'))]")
+    saved = page.evaluate("() => [localStorage.getItem('letterfield.finds.v3'), JSON.parse(localStorage.getItem('letterfield.finds.v4'))]")
     assert len(saved[1]) == 1 and saved[1][0]["w"] == word["w"]
     assert "f" not in saved[1][0] and "n" not in saved[1][0]
     assert saved[0] is not None, "the old notes are left as they were"

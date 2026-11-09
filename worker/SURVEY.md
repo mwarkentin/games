@@ -15,7 +15,7 @@ Its history is a page of its own, `letterfield-log.html` (see "The log").
 
 Letterfield already gives every player the same map, because every letter
 comes from a fixed seed. The middle of that map, 100×100 territories around
-the origin, hides **1,119,763 words**. The shared survey turns them into one
+the origin, hides **1,119,752 words**. The shared survey turns them into one
 job for everyone: chart them all.
 
 - **The first player to circle a word charts it.** Everyone else sees it
@@ -23,7 +23,7 @@ job for everyone: chart them all.
   ("Charted first by SIS · 3m ago"). You can still circle it for your own
   field notes, and the game tells you who beat you to it.
 - **One number for the whole world.** The header shows "412,883 of
-  1,119,763 charted", and it ticks up as words are charted nearby. The
+  1,119,752 charted", and it ticks up as words are charted nearby. The
   current territory has its own count ("83/120 charted"), and a territory
   goes supernova when its last hidden word is charted.
 - **You can see the crowd.** Each other player is a coloured caret, like a
@@ -129,21 +129,38 @@ and changing it starts the survey over:
   sector nobody visits keeps its old claims until someone does, but nothing
   reads them until then, and the Atlas has already forgotten its counts.
 - **The log** is emptied by a migration
-  (`migrations-log/0004_survey_log_new_map.sql`), which runs before the new
-  Worker deploys. A sector still on the old code could log a claim in that
-  gap of a few seconds.
-- **Field notes** move to a new key in the game (`letterfield.finds.v3`),
+  (`migrations-log/0004_survey_log_new_map.sql`, and `0005_survey_log_map_4.sql`,
+  which also works out each word's theme the new way), which runs before the
+  new Worker deploys. A sector still on the old code could log a claim in
+  that gap of a few seconds. The log's cached answers are kept under the
+  map's version (see Caching), so no day from the old map outlives it.
+- **Field notes** move to a new key in the game (`letterfield.finds.v4`),
   carrying over only the finds whose word is still where it was, without
   being charted first, and the game says the map has been redrawn.
 
-Map 3 has 116 themes of 146 to 184 words (17,671 in all), up from about 47.
-A territory deals its 16 chunks from one shuffled deck of its theme, nine
-cards each (`DEAL`), and a chunk places six to eight of its own nine, so no
-word comes up twice in a territory (a test checks every territory in the
-shared world). Each word now turns up about 63 times in the shared world,
-not 200. With three times the words, the letters spell far more of them by
-chance, so a stray now needs six letters (`STRAY_MIN`): about 14 a
-territory, where four letters would allow some 370.
+Map 4 has 225 themes of 144 to 184 words, 28,845 different words in all, where
+map 2 had 116 themes of about 47 (map 3, the same 116 at about 150 words, only
+ran in a pull request's preview). A territory deals its 16 chunks from one
+shuffled deck of its theme, nine cards each (`DEAL`), and a chunk places six to
+eight of its own nine, so no word comes up twice in a territory (a test checks
+every territory in the shared world).
+
+Territory (rx, ry) has theme `(rx + 15 ry) mod 225`, so a theme comes round
+again only 15 territories away in any direction, as far apart as 225 themes
+can be: each needs a 15 × 15 square to itself. The order of the themes was
+found by a search (`bench/layout.mjs`) so that the eight territories around
+each one differ from it in colour, by 30° of hue or more, and in kind (no two
+bird themes side by side), and share no words with it.
+
+A word can be in up to three themes where it belongs in each, like SPARKLE in
+Glimmer and Yuletide, but at least half of every theme is its own: 24,170
+words are in one theme, 3,972 in two and 703 in three. A stray takes its
+territory's theme when that theme has the word, and otherwise the first that
+does; territories are named only with words in one theme. Each word turns up
+about 39 times in the shared world, where it was 63 on map 3 and 200 on map 2.
+With this many words the letters spell plenty of them by chance, so a stray
+needs six letters (`STRAY_MIN`): about 20 a territory, where four letters
+would allow some 530.
 
 ### Limits per address
 
@@ -349,10 +366,11 @@ GET /v1/survey/log/territory/<rx>/<ry>
 
 An hour comes oldest first, 500 entries a page; `next` is the `after` for the
 next page. A day, hour or month that hasn't started is a 400. `world` counts
-the hidden words in the shared world, which go toward its 1,119,763. Top
+the hidden words in the shared world, which go toward its 1,119,752. Top
 lists count hidden and stray words for surveyors, but only hidden words for
-territories and themes, since a stray's theme is its word's, not its
-territory's. The day endpoint is still there for older copies of the page.
+territories and themes, since a stray's theme is one its word is in, not
+always its territory's. The day endpoint is still there for older copies of
+the page.
 
 **Caching.** Past hours and days don't change, but a claim can reach D1 up to
 `LOG_MS` late, or later while D1 is failing. So an hour or day that ended an
@@ -366,11 +384,13 @@ hour ago (`SETTLED_MS`) is cached for a day, and the one still running for
   headers; each answer adds its own origin's. That cache is shared by every
   Worker on the same zone, and all of this account's `workers.dev` Workers,
   Worker Previews included, are one zone, so each answer is kept under its
-  own Worker's host (`<host>/_cache/survey-log/<path>`). Before that was so,
-  a pull request's preview put its test history's months in the cache and
-  production read them back for a day; the page's requests carry a version
-  (`CACHE_VERSION` in `letterfield-log.html`) so browsers dropped the copies
-  they'd kept.
+  own Worker's host and its map (`<host>/_cache/survey-log/m<MAP_VERSION>/<path>`).
+  Before the host was in it, a pull request's preview put its test history's
+  months in the cache and production read them back for a day; the map is
+  there so that a new map, which empties the log, doesn't read back the old
+  one's days. The page's requests carry a version (`CACHE_VERSION` in
+  `letterfield-log.html`), raised each time so browsers drop the copies
+  they've kept.
 
 A backfilled sector's old claims can take up to a day to appear in hours that
 were already cached.
@@ -469,8 +489,10 @@ one for each:
 
 A word's territory and theme aren't stored: they're virtual columns worked
 out from its start cell as the game does (floor division by 48, and
-`(rx + 21 ry) mod 116`), so only the indexes hold them. A test checks the
-SQL matches `regionTheme` for random cells, negative ones included. Each
+`(rx + 15 ry) mod 225`), so only the indexes hold them. A test checks the
+SQL matches `regionTheme` for random cells, negative ones included. A new
+layout of the themes means a migration that redefines the theme column and
+its index, as `migrations-log/0005_survey_log_map_4.sql` did for map 4. Each
 query names its index with `INDEXED BY` and pages in `(at, key)` order,
 which the index already holds (an index on a `WITHOUT ROWID` table carries
 the primary key), so a page of words never sorts. The tests check every
