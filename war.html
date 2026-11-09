@@ -979,6 +979,8 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px s
     <h3>Deck</h3>
     <div class="decks" id="menuDecks" role="group" aria-label="Deck"></div>
     <p class="deck-note" id="menuDeckNote"></p>
+    <h3>Commentary</h3>
+    <div class="seg" id="menuChat" role="group" aria-label="Commentary"></div>
     <p class="fine" id="lifetime"></p>
     <div class="menu-tools">
       <button class="btn" id="stylesBtn">🧤 Power-ups</button>
@@ -1040,6 +1042,10 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px s
       <h3>Deck</h3>
       <div class="decks" id="pauseDecks" role="group" aria-label="Deck"></div>
       <p class="deck-note" id="pauseDeckNote"></p>
+    </div>
+    <div>
+      <h3>Commentary</h3>
+      <div class="seg" id="pauseChat" role="group" aria-label="Commentary"></div>
     </div>
   </div>
 </div>
@@ -1472,6 +1478,10 @@ const CLOCK_LABELS = { timed: ['⏱️ Timed', 'Slam within seconds'], slow: ['�
 // What happens to the cards you win when they go back under your deck: as
 // they were won, or shuffled first, as plenty of people play.
 const WINNINGS_LABELS = { kept: ['📚 As won', 'Back in the order won'], shuffled: ['🔀 Shuffled', 'Shuffled on the way back'] };
+// Chatty: a joke about every play, the win odds as you go, and the science
+// of slamming at the end. Quiet: just what happened. The animations are the
+// same either way; prefers-reduced-motion is what calms those.
+const CHAT_LABELS = { chatty: ['🎙️ Chatty', 'Jokes, win odds, the science'], quiet: ['🤫 Quiet', 'Just what happened'] };
 const FAST_PACE = 0.3;
 
 // ---- Small helpers ----
@@ -1487,6 +1497,10 @@ const store = {
   },
   set(key, value) { try { localStorage.setItem('war:' + key, JSON.stringify(value)); } catch (e) { /* private mode */ } },
 };
+
+// Whether the game chats (see CHAT_LABELS): shown as data-chat on <html>.
+let chatty = store.get('chat', 'chatty') !== 'quiet';
+document.documentElement.dataset.chat = chatty ? 'chatty' : 'quiet';
 
 // Only touch the page when something changed, so nothing is rewritten for nothing.
 function setText(node, text) { if (node.textContent !== text) node.textContent = text; }
@@ -4133,7 +4147,7 @@ const SixSeven = {
     const me = S.you;
     const seven = m.winner === me ? 'your seven' : `${playerName(m.winner)}'s seven`;
     const victim = six === me ? 'your six' : sixes > 1 ? 'a six' : `${playerName(six)}'s six`;
-    setText($('caption'), pick([
+    if (chatty) setText($('caption'), pick([
       `Six… seven! ${seven[0].toUpperCase() + seven.slice(1)} edges out ${victim}.`,
       `Six… SEVEN! ${seven[0].toUpperCase() + seven.slice(1)} weighs more than ${victim}. Barely.`,
       `It’s a six… seven! ${seven[0].toUpperCase() + seven.slice(1)} beats ${victim} by one.`,
@@ -4653,7 +4667,8 @@ function openStage() {
     S.pot = 0;
     const final = m.battle === m.limit && m.limit < WAR.LENGTHS.total;
     banner(final ? 'FINAL BATTLE' : '', false);
-    setText($('caption'), isFighting(S.you) ? (final ? 'Last chance. Slam like it matters. (It does not.)' : pick(OPEN_LINES)) : '');
+    setText($('caption'), !isFighting(S.you) ? '' : final ? (chatty ? 'Last chance. Slam like it matters. (It does not.)' : 'The last battle.')
+      : chatty ? pick(OPEN_LINES) : '');
   }
   if (m.stage > 0) Versus.fight(m);
   // Bots whose decks couldn't cover this stage took their winnings under
@@ -4849,7 +4864,8 @@ function narrate(m) {
   if (m.winner === me) {
     const [power, , auto] = mine.slice(3);
     banner(joker ? 'JOKER!' : m.stage ? 'WAR WON!' : 'YOU WIN!', false);
-    const lines = auto ? [`You dozed off, your ${cardName(winCard)} flopped over, and it won ${takes}. Effort is overrated.`]
+    const lines = !chatty ? [plainWin(m, winCard, takes)]
+      : auto ? [`You dozed off, your ${cardName(winCard)} flopped over, and it won ${takes}. Effort is overrated.`]
       : m.gods ? [`Nobody had cards left to fight with. The war gods smile on you: ${takes}.`]
       : !m.tied.includes(me) ? [`The others ran out of cards mid-war. You take ${takes}.`]
       : joker ? [`A joker! It beats everything, so it takes ${takes}.`, `Your joker takes ${takes}. Who’s laughing now? The joker.`]
@@ -4865,7 +4881,8 @@ function narrate(m) {
     banner(m.out && m.out.includes(me) ? 'OUT OF CARDS' : joker ? 'JOKER!' : '', false);
     const yours = cardName(mine[2]);
     const outranked = warRank(mine[2]) < warRank(winCard);
-    const lines = auto ? [`You dozed off and your ${yours} flopped over. ${winner}'s ${cardName(winCard)} takes ${takes}.`]
+    const lines = !chatty ? [plainLoss(m, mine[2], winCard, takes)]
+      : auto ? [`You dozed off and your ${yours} flopped over. ${winner}'s ${cardName(winCard)} takes ${takes}.`]
       : m.gods ? [`Nobody had cards left to fight with. The war gods pick ${winner}.`]
       : joker && outranked ? [`${winner}'s joker takes ${takes}. There is no defense against the joker.`, `Your ${yours} never stood a chance against ${winner}'s joker.`]
       : power >= 115 && outranked ? [`That ${tierName(power)} registered on seismographs. Your ${yours} still loses to ${aOrAn(cardName(winCard))}.`, `An incredible ${tierName(power)}. Sadly, ${cardNames(mine[2])} are not ${cardNames(winCard)}.`]
@@ -4875,8 +4892,21 @@ function narrate(m) {
     return;
   }
   banner(joker ? 'JOKER!' : '', false);
-  const how = m.gods ? 'The war gods pick' : '';
+  const how = m.gods ? (chatty ? 'The war gods pick' : 'Nobody had cards left to fight with, so it goes to') : '';
   setText($('caption'), how ? `${how} ${winner}, who takes ${takes}.` : `${winner} ${m.winner === me ? 'take' : 'takes'} ${takes} with ${aOrAn(cardName(winCard))}.`);
+}
+
+// What Quiet says about a battle you won, or lost: just what happened.
+function plainWin(m, winCard, takes) {
+  if (m.gods) return `Nobody had cards left to fight with, so you take ${takes}.`;
+  if (!m.tied.includes(S.you)) return `The others ran out of cards mid-war. You take ${takes}.`;
+  if (warRank(winCard) === JOKER) return `Your joker beats everything and takes ${takes}.`;
+  return `Your ${cardName(winCard)} takes ${takes}.`;
+}
+function plainLoss(m, yourCard, winCard, takes) {
+  const winner = playerName(m.winner);
+  if (m.gods) return `Nobody had cards left to fight with, so ${winner} takes ${takes}.`;
+  return `${winner}'s ${cardName(winCard)} beats your ${cardName(yourCard)} and takes ${takes}.`;
 }
 
 function gain(n) {
@@ -5059,7 +5089,7 @@ const Odds = {
 function renderOdds() {
   const box = $('odds');
   const p = Odds.seats;
-  const show = Boolean(p) && (S.phase === 'playing' || S.phase === 'over') && p.length === S.players.length;
+  const show = chatty && Boolean(p) && (S.phase === 'playing' || S.phase === 'over') && p.length === S.players.length;
   setHidden(box, !show);
   if (!show) return;
   const me = S.you;
@@ -5810,7 +5840,8 @@ function heapSquare(seat) {
 // squared up on your tile too.
 function heapTidy() {
   if (S.you === null || !heapSquare(S.you)) return;
-  setText($('caption'), pick(TIDY_LINES)(heaps.get(S.you).cards.length));
+  const n = heaps.get(S.you).cards.length;
+  setText($('caption'), chatty ? pick(TIDY_LINES)(n) : `${plural(n, 'card')} tidied up, latest on top.`);
   if (Session.is('room') && S.conn) S.conn.send({ t: 'tidy' });
 }
 
@@ -6125,9 +6156,9 @@ function slamCard(power) {
 
 function warCardLine(plan, n, power, last) {
   if (!last) return `Face-down card ${n + 1} of ${plan.need - 1}: ${tierName(power)}. ${n + 2 < plan.need ? 'Next!' : 'Now the decider.'}`;
-  if (plan.need === 1) return `Your last card: ${tierName(power)}. It’s all you’ve got.`;
+  if (plan.need === 1) return `Your last card: ${tierName(power)}.${chatty ? ' It’s all you’ve got.' : ''}`;
   const total = plan.done.reduce((a, b) => a + b, 0);
-  return `The decider: ${tierName(power)}. War power ${fmt(total)}. The cards remain unimpressed.`;
+  return `The decider: ${tierName(power)}. War power ${fmt(total)}.${chatty ? ' The cards remain unimpressed.' : ''}`;
 }
 
 function autoSlam() {
@@ -6368,7 +6399,7 @@ function showOver() {
   cell(o.biggest ? `${o.biggest}-way` : '—', 'biggest war');
   cell(o.deepest ? deep : '—', 'deepest war');
 
-  const chart = oddsChart();
+  const chart = chatty ? oddsChart() : null;
   setHidden($('oddsSection'), !chart);
   if (chart) {
     $('oddsChart').replaceChildren(chart.svg);
@@ -6376,7 +6407,8 @@ function showOver() {
   }
   renderLog();
   setText($('shareImgNote'), '');
-  $('science').replaceChildren(...science());
+  $('science').replaceChildren(...(chatty ? science() : []));
+  setHidden($('science'), !chatty);
   // A game goes in your history, and unlocks a power-up, once, however many
   // times its results come up (a room repeats them to anyone who arrives).
   let unlocked = null;
@@ -6394,7 +6426,10 @@ function showOver() {
     unlocked = unlockStyle();
   }
   setHidden($('unlock'), !unlocked);
-  if (unlocked !== null) setText($('unlock'), `New power-up: ${STYLES[unlocked][0]} ${STYLES[unlocked][1]} (${STYLES[unlocked][2]}, no effect). Equip it from the power-ups button.`);
+  if (unlocked !== null) {
+    const [emoji, name, stat] = STYLES[unlocked];
+    setText($('unlock'), `New power-up: ${emoji} ${name}${chatty ? ` (${stat}, no effect)` : ''}. Equip it from the power-ups button.`);
+  }
 
   renderOverButtons();
   if (Music.on && Sound.ctx) Music.play(won || me === null ? 'win' : 'lose');
@@ -6952,7 +6987,7 @@ function unlockStyle() {
 function bump(what) {
   if (what === 'cosmic' && !store.get('cosmic', false)) {
     store.set('cosmic', true);
-    toast('Achievement: you broke the slam meter. Nothing happened.');
+    if (chatty) toast('Achievement: you broke the slam meter. Nothing happened.');
   }
 }
 
@@ -6992,6 +7027,7 @@ function renderMenu() {
   renderSound();
   renderInputs();
   renderDecks();
+  renderChat();
   const titleCards = document.querySelector('.title-cards');
   if (!titleCards.childElementCount) titleCards.append(cardEl(12), cardEl(53), cardEl(11 + 13));
 }
@@ -7008,6 +7044,29 @@ function renderInputs() {
     }
   }
   for (const b of box.children) setAttr(b, 'aria-pressed', String(b.dataset.input === S.input));
+}
+
+function renderChat() {
+  for (const box of [$('menuChat'), $('pauseChat')]) {
+    if (!box.childElementCount) {
+      for (const [key, [name, sub]] of Object.entries(CHAT_LABELS)) {
+        const b = el('button', '');
+        b.type = 'button';
+        b.dataset.chat = key;
+        b.append(document.createTextNode(name), el('small', '', sub));
+        box.append(b);
+      }
+    }
+    for (const b of box.children) setAttr(b, 'aria-pressed', String((b.dataset.chat === 'chatty') === chatty));
+  }
+}
+
+function setChat(key) {
+  chatty = key !== 'quiet';
+  store.set('chat', chatty ? 'chatty' : 'quiet');
+  document.documentElement.dataset.chat = chatty ? 'chatty' : 'quiet';
+  renderChat();
+  renderOdds();
 }
 
 function renderDecks() {
@@ -7290,6 +7349,12 @@ function init() {
     if (b && !b.disabled) S.conn.send({ t: 'shuffle', shuffle: b.dataset.winnings === 'shuffled' });
   });
   $('gatherBtn').addEventListener('click', pickUp);
+  for (const id of ['menuChat', 'pauseChat']) {
+    $(id).addEventListener('click', (e) => {
+      const b = e.target.closest('button');
+      if (b) setChat(b.dataset.chat);
+    });
+  }
   $('soloClock').addEventListener('click', (e) => {
     const b = e.target.closest('button');
     if (b) { menuSlow = b.dataset.clock === 'slow'; renderMenu(); }
