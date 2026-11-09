@@ -562,6 +562,18 @@ describe('Sector copying claims to the log', () => {
     assert.equal(env.LOG_DB.batches, 2);  // each claim went once
   });
 
+  test('keeps to LOG_MS when the next claim reaches a sector woken from hibernation', async () => {
+    const ws = join();
+    await claim(ws, 0);
+    const due = state.alarm;
+    clock += 18000;   // 20 seconds after the first claim, with claim()'s own 2
+    sector = make();  // it hibernated in between, so this is a new object
+    await claim(ws, 1);
+    assert.equal(state.alarm, due, 'the first claim is logged when it was due to be, not put off');
+    await fire();
+    assert.deepEqual(env.LOG_DB.rows().map((r) => r.w), [word(0).w, word(1).w]);
+  });
+
   test('keeps claims D1 did not take, and tries again later and later', async () => {
     const ws = join();
     await claim(ws, 0);

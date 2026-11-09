@@ -7,6 +7,23 @@
   found by chance now need six letters. Finds still on the new map stay in
   your field notes, and the shared survey and its log start again from
   nothing.
+- Words you circle while the shared survey is still joining, reconnecting or
+  checking you're a person now count: they're sent as soon as it's back, so
+  you can still be the first to chart them.
+- A word you charted first just as your connection dropped is still credited
+  to you when it's back, if you've signed your initials.
+- Your field notes no longer lose words when the game is open in more than
+  one tab.
+- A phone or computer whose clock is an hour or more out no longer gets stuck
+  checking that you're a person.
+- The "one tap" check no longer pops up while you're already in the shared
+  survey, and goes away when it gives up.
+- With music left on from last time, the first tap on the music button
+  starts it, instead of switching it off.
+- The survey log's live hour keeps its words on screen if an update fails,
+  and tries again. An hour or day that ends while you're watching, or while
+  the page is in the background, stops saying Live and lets you go on to the
+  next one.
 
 ## 2026-11-08
 

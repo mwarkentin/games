@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from urllib.parse import parse_qs, urlparse
 
-from fake_leaderboard import API, FakeLeaderboard, without_worker
+from fake_leaderboard import API, FakeLeaderboard, Held, without_worker
 from playwright.sync_api import Page, expect
 
 UNAVAILABLE = "The high-score board is unavailable right now."
@@ -20,7 +20,7 @@ def row(initials: str, score: int, scope: str = "*", difficulty: str = "explorer
     return {"initials": initials, "score": score, "level": 3, "scope": scope, "difficulty": difficulty, "mode": mode, **extra}
 
 
-def open_game(page: Page, site_url: str, fake: FakeLeaderboard | None, query: str = "") -> None:
+def open_game(page: Page, site_url: str, fake: FakeLeaderboard | Held | None, query: str = "") -> None:
     if fake:
         page.route(f"{API}/**", fake.handle)
         page.goto(f"{site_url}/doodle-chomp?leaderboard={API}{query}#debug")
@@ -245,6 +245,7 @@ def test_periods_narrow_the_board(page: Page, site_url, errors):
     page.click("#lbClose")
     expect(page.locator(".ov-board .scores-which")).to_have_text("Multiples · Explorer · All time")
     expect(page.locator(".ov-board li .who")).to_have_text(["OLD", "KID", "MRW", "ZED"])
+    expect(page.locator(".ov-board .scores-note")).to_have_text("Saved! #3 this week on Everyone (#4 all time).")
     assert errors == []
 
 
@@ -317,6 +318,7 @@ def test_group_members_save_to_their_groups(page: Page, site_url, errors):
 
     board.locator(".lb-scopes button >> text=Friends").click()
     expect(board.locator("li.mine")).to_have_text("1DAD30L1")
+    expect(board.locator(".scores-note")).to_have_text("Saved! #2 this week in Family, #1 this week in Friends.")
 
     # The public-board choice is remembered for the next game.
     click_action(page, "Play again")
@@ -391,4 +393,207 @@ def test_leave_a_group(page: Page, site_url, errors):
     expect(page.locator("#lbScopes")).to_be_hidden()
     expect(page.locator("#lbList li .who")).to_have_text(["KIDMultiples · Explorer"])
     assert stored(page, "games.groups") == []
+    assert errors == []
+
+
+SCORES_GET = lambda r: r.method == "GET" and "/v1/scores" in r.url  # noqa: E731
+SCORES_POST = lambda r: r.method == "POST" and r.url.endswith("/v1/scores")  # noqa: E731
+
+
+def test_closing_the_high_score_screen_while_saving_saves_once(page: Page, site_url, errors):
+    fake = FakeLeaderboard([row("KID", 300), row("MRW", 245)])
+    held = Held(fake, SCORES_POST)
+    open_game(page, site_url, held)
+    play(page)
+    type_initials(page, "ZED")
+    page.click(".save-score button[type=submit]")
+    held.wait_for(page)  # the score is out
+    page.click(".ov-board .lb-open")
+    page.click("#lbClose")
+    # Still the one form, still saving: no second Save to tap.
+    expect(page.locator(".save-score")).to_have_count(1)
+    expect(page.locator(".save-score button[type=submit]")).to_be_disabled()
+    expect_letters(page, "ZED")
+    held.release()
+    expect(page.locator("#ovTitle")).to_have_text("On the board!")
+    expect(page.locator(".ov-board .scores-note")).to_have_text("Saved! #3 this week on Everyone.")
+    expect(page.locator(".save-score")).to_have_count(0)
+    assert [p["initials"] for p in fake.posts] == ["ZED"]
+    assert errors == []
+
+
+def test_a_save_that_lands_while_the_card_reloads_says_its_saved(page: Page, site_url, errors):
+    fake = FakeLeaderboard([row("KID", 300), row("MRW", 245)])
+    held = Held(fake, SCORES_POST)
+    open_game(page, site_url, held)
+    play(page)
+    type_initials(page, "ZED")
+    page.click(".save-score button[type=submit]")
+    held.wait_for(page)
+    page.click(".ov-board .lb-open")
+    page.click("#lbPeriods >> text=All time")  # a board the card hasn't loaded yet
+    expect(page.locator("#lbList li")).to_have_count(2)
+    held.match = lambda r: SCORES_POST(r) or SCORES_GET(r)
+    page.click("#lbClose")
+    held.wait_for(page, 2)  # the score, and the card's list for All time
+    held.answer(0)  # the score lands first
+    expect(page.locator("#ovTitle")).to_have_text("On the board!")
+    held.release()
+    expect(page.locator(".ov-board li.mine")).to_have_text("3ZED30L1")
+    expect(page.locator(".ov-board .scores-note")).to_have_text("Saved! #3 this week on Everyone.")
+    assert errors == []
+
+
+def test_a_tab_tapped_while_the_card_loads_keeps_the_offer_to_save(page: Page, site_url, errors):
+    fake = FakeLeaderboard([row(f"A{chr(65 + i)}A", 500 - i) for i in range(10)], groups={"K7QP": "Family"})
+    # Every list stays out until release(), so none is answered from the page's cache.
+    held = Held(fake, SCORES_GET)
+    open_game(page, site_url, held)
+    join_group(page, "K7QP", "Family")
+    page.click("#lbClose")
+    before = len(held.routes)
+    play(page)
+    held.wait_for(page, before + 1)  # the card's list
+    page.click(".ov-board .lb-scopes button >> text=Everyone")  # before it arrives
+    held.wait_for(page, before + 2)
+    held.release()
+    expect(page.locator(".ov-board li")).to_have_count(5)
+    expect(page.locator(".save-score")).to_be_visible()
+    expect(page.locator("html")).to_have_attribute("data-save", "offered")
+    assert errors == []
+
+
+def test_opening_the_high_score_screen_keeps_typed_initials(page: Page, site_url, errors):
+    fake = FakeLeaderboard([row("KID", 300), row("MRW", 245)])
+    open_game(page, site_url, fake)
+    play(page)
+    type_initials(page, "ZED")
+    page.click(".ov-board .lb-open")
+    page.click("#lbClose")
+    expect_letters(page, "ZED")
+    expect(page.locator("html")).to_have_attribute("data-save", "offered")
+    assert errors == []
+
+
+def test_the_high_score_screen_keeps_the_card_below_out_of_reach(page: Page, site_url, errors):
+    fake = FakeLeaderboard([row("KID", 300)])
+    open_game(page, site_url, fake)
+    play(page)
+    page.click(".ov-board .lb-open")
+    # However far you tab, focus stays on the high-score screen, so Enter
+    # can't start a game behind it.
+    for _ in range(25):
+        page.keyboard.press("Shift+Tab")
+        assert page.evaluate("!document.activeElement.closest('#overlay, #menu, #hud, #rule, #stage, #side, #pad')")
+    expect(page.locator("html")).to_have_attribute("data-board", "open")
+    expect(page.locator("#overlay")).to_have_attribute("inert", "")
+    page.keyboard.press("Escape")
+    expect(page.locator("html")).to_have_attribute("data-board", "closed")
+    expect(page.locator("#overlay")).not_to_have_attribute("inert", "")
+    expect(page.locator("html")).to_have_attribute("data-screen", "over")
+    assert errors == []
+
+
+def test_a_save_that_lands_while_the_screen_is_open_leaves_focus_there(page: Page, site_url, errors):
+    fake = FakeLeaderboard([row("KID", 300), row("MRW", 245)])
+    held = Held(fake, SCORES_POST)
+    open_game(page, site_url, held)
+    play(page)
+    type_initials(page, "ZED")
+    page.click(".save-score button[type=submit]")
+    held.wait_for(page)
+    page.click(".ov-board .lb-open")
+    all_time = page.locator("#lbPeriods button >> text=All time")
+    all_time.focus()
+    held.release()
+    expect(page.locator("#ovTitle")).to_have_text("On the board!")
+    expect(all_time).to_be_focused()
+    page.keyboard.press("Enter")  # for All time, not for Play again behind the screen
+    expect(page.locator("#lbPeriods button[aria-pressed=true]")).to_have_text("All time")
+    assert page.evaluate("window.__dc.peek().phase") == "over"
+    assert errors == []
+
+
+def test_a_list_that_lands_while_the_screen_is_open_leaves_focus_there(page: Page, site_url, errors):
+    fake = FakeLeaderboard([row("KID", 300), row("MRW", 245)])
+    held = Held(fake, SCORES_GET)
+    open_game(page, site_url, held)
+    page.evaluate("localStorage.setItem('games.initials', JSON.stringify('MOM'))")
+    play(page)
+    page.click(".ov-board .lb-open")
+    page.click("#lbJoinCode")  # about to type a group's code
+    held.release()  # the card's list comes back and offers to save
+    expect(page.locator(".save-score")).to_have_count(1)
+    expect(page.locator("#lbJoinCode")).to_be_focused()
+    page.keyboard.press("Enter")
+    expect(page.locator("#lbGroupNote")).to_have_text("Group codes are four letters and numbers, like K7QP.")
+    assert fake.posts == [], "no score saved from behind the screen"
+    assert errors == []
+
+
+def test_a_second_tap_doesnt_start_a_second_group(page: Page, site_url, errors):
+    fake = FakeLeaderboard()
+    held = Held(fake, lambda r: r.method == "POST" and r.url.endswith("/v1/groups"))
+    open_game(page, site_url, held)
+    page.click("#lbOpenMenu")
+    page.fill("#lbGroupName", "Family")
+    page.evaluate("() => { const b = document.querySelector('#lbCreateForm button'); b.click(); b.click(); }")
+    held.wait_for(page)
+    page.wait_for_timeout(200)
+    assert len(held.routes) == 1, "one group asked for"
+    expect(page.locator("#lbCreateForm button")).to_be_disabled()
+    page.evaluate("document.querySelector('#lbCreateForm').requestSubmit()")  # Enter in the name field
+    page.wait_for_timeout(200)
+    assert len(held.routes) == 1, "still one"
+    held.release()
+    expect(page.locator("#lbGroupNote")).to_have_text("Started Family. Share code K7QP so others can join.")
+    expect(page.locator("#lbCreateForm button")).to_be_enabled()
+    assert stored(page, "games.groups") == [{"code": "K7QP", "name": "Family"}]
+    assert errors == []
+
+
+def test_a_slow_invite_lookup_doesnt_undo_joining(page: Page, site_url, errors):
+    fake = FakeLeaderboard(groups={"K7QP": "The Warkentins"})
+    held = Held(fake, lambda r: "/v1/groups/" in r.url)
+    open_game(page, site_url, held, "&join=K7QP")
+    held.wait_for(page)  # the invite's lookup, still out
+    held.holding = False
+    page.click("#lbJoinForm button")
+    joined = "Joined The Warkentins. Scores you save from now on go to The Warkentins too."
+    expect(page.locator("#lbGroupNote")).to_have_text(joined)
+    held.release()
+    page.wait_for_timeout(300)
+    expect(page.locator("#lbGroupNote")).to_have_text(joined)
+    assert errors == []
+
+
+def test_a_group_joined_after_the_screen_closed_shows_on_the_menu(page: Page, site_url, errors):
+    fake = FakeLeaderboard([row("MOM", 500, scope="K7QP")], groups={"K7QP": "Family"})
+    held = Held(fake, lambda r: "/v1/groups/" in r.url)
+    open_game(page, site_url, held)
+    page.click("#lbOpenMenu")
+    page.fill("#lbJoinCode", "K7QP")
+    page.click("#lbJoinForm button")
+    held.wait_for(page)
+    page.keyboard.press("Escape")  # closed before the Worker answers
+    held.release()
+    expect(page.locator("#menuScopes button")).to_have_text(["Everyone", "Family"])
+    expect(page.locator("#menuScoreList li")).to_have_text(["1MOM500L3"])
+    page.click("#lbOpenMenu")
+    expect(page.locator("#lbGroupNote")).to_have_text("")  # no news from a screen that had closed
+    assert stored(page, "games.groups") == [{"code": "K7QP", "name": "Family"}]
+    assert errors == []
+
+
+def test_an_invite_when_youre_in_five_groups_says_so(page: Page, site_url, errors):
+    groups = [{"code": c, "name": f"Group {c}"} for c in ("AAAA", "BBBB", "CCCC", "DDDD", "EEEE")]
+    fake = FakeLeaderboard(groups={"K7QP": "The Warkentins", **{g["code"]: g["name"] for g in groups}})
+    page.route(f"{API}/**", fake.handle)
+    page.goto(f"{site_url}/doodle-chomp?leaderboard={API}#debug")
+    page.evaluate("(g) => localStorage.setItem('games.groups', JSON.stringify(g))", groups)
+    page.goto(f"{site_url}/doodle-chomp?leaderboard={API}&join=K7QP#debug")
+    expect(page.locator("#lbJoinForm")).to_be_hidden()
+    expect(page.locator("#lbGroupNote")).to_have_text(
+        "You’re in 5 groups already, the most there can be. Leave one to join another."
+    )
     assert errors == []

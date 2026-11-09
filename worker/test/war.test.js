@@ -7,12 +7,15 @@
 import assert from 'node:assert/strict';
 import { readFileSync, readdirSync } from 'node:fs';
 import { DatabaseSync } from 'node:sqlite';
-import { beforeEach, describe, test } from 'node:test';
+import { afterEach, beforeEach, describe, mock, test } from 'node:test';
 
 import {
   EXPIRE_MS, MAX_SOCKETS, WAR, WarRoom, cleanDeck, cleanName, handleWar, warDeal, warDueAt, warNewGame, warRank, warResolve,
   warFlop, warGather, warShort, warSlam, warStandings, warUpCard,
 } from '../src/war.js';
+// The room's state machine, as a namespace so the rest still runs against a
+// war.js without one.
+import * as warRoom from '../src/war.js';
 
 const ORIGIN = 'https://games.michaelwarkentin.com';
 const NOW = Date.UTC(2026, 10, 3, 12);
@@ -467,8 +470,17 @@ async function fireAlarm(room) {
 }
 
 describe('rooms', () => {
-  let room;
-  beforeEach(async () => { room = await openRoom(); });
+  let room, errors;
+  beforeEach(async () => {
+    errors = mock.method(console, 'error', () => {});
+    room = await openRoom();
+  });
+  // A move ROOM_MOVES doesn't list is a bug, whichever test makes it.
+  afterEach(() => {
+    const logged = errors.mock.calls.map((c) => c.arguments[0]);
+    errors.mock.restore();
+    assert.deepEqual(logged, [], 'no moves refused');
+  });
 
   test('a code in use is not given out again until the room has been idle a while', async () => {
     assert.equal(await room.create('K7QP'), false);
@@ -596,6 +608,9 @@ describe('rooms', () => {
     const war = bob.last('flip').next;
     assert.equal(war.stage, 1);
     assert.equal(war.closesIn - war.opensIn, WAR.WAR_STAGE_MS);
+    await say(room, dana, { t: 'card', n: 0, power: 50 });
+    assert.equal(bob.all('card').length, 0, 'not before the war opens, after its reveal');
+    room.clock += war.opensIn;
 
     await say(room, dana, { t: 'card', n: 0, power: 999 });
     await say(room, dana, { t: 'card', n: 1, power: 'lots' });
@@ -716,7 +731,7 @@ describe('rooms', () => {
     assert.equal(eve.last('state').you, 0);
   });
 
-  test('a room woken from hibernation carries on from storage', async () => {
+  test('a room woken from hibernation carries on from storage, and from the slams its sockets kept', async () => {
     const dana = await join(room, 'Dana');
     const bob = await join(room, 'Bob');
     await say(room, dana, { t: 'start' });
@@ -726,7 +741,62 @@ describe('rooms', () => {
     await woken.alarm();
     const flip = bob.last('flip');
     assert.equal(flip.battle, 1);
-    assert.deepEqual(flip.plays.map((p) => p[5]), [1, 1], 'the slams in memory were forgotten, so both flopped');
+    assert.deepEqual(flip.plays.map((p) => [p[3], p[5]]), [[80, 0], [0, 1]], "Dana's slam was kept on her socket; Bob's card flopped");
+  });
+
+  test('a woken room still has the slams in progress, so it waits only for people who have yet to slam', async () => {
+    const dana = await join(room, 'Dana');
+    const bob = await join(room, 'Bob');
+    await say(room, dana, { t: 'start' });
+    // Rig a tie, so the next stage is a war: 20 seconds, time enough to hibernate.
+    room.room.game.piles = [[card(9), card(1), card(2), card(3), card(4)], [card(9, 1), card(5), card(6), card(7), card(8)]];
+    await say(room, dana, { t: 'slam', power: 10, style: 0 });
+    await say(room, bob, { t: 'slam', power: 10, style: 0 });
+    await fireAlarm(room);
+    room.clock = room.room.game.opensAt + 1000;
+    await say(room, dana, { t: 'slam', power: 120, style: 1 });  // her page now shows her slammed
+    // Nothing happens for a while, so the room hibernates. Then Bob slams.
+    const woken = newRoom(room.state);
+    woken.clock = room.clock + 12000;
+    await say(woken, bob, { t: 'slam', power: 50, style: 0 });
+    const flip = bob.last('flip');
+    assert.equal(flip.stage, 1, 'the war played out once Bob slammed, rather than waiting the full 20 seconds for Dana');
+    assert.deepEqual(flip.plays.map((p) => [p[0], p[3], p[5]]), [[0, 120, 0], [1, 50, 0]]);
+    assert.equal(woken.room.game.naps[0], 0, 'and her card never flopped, so it is no nap');
+  });
+
+  test("a slam kept on a socket only counts in the stage it was made in", async () => {
+    const dana = await join(room, 'Dana');
+    const bob = await join(room, 'Bob');
+    await say(room, dana, { t: 'start' });
+    await say(room, dana, { t: 'slam', power: 80, style: 2 });
+    await say(room, bob, { t: 'slam', power: 30, style: 0 });
+    await fireAlarm(room);  // battle 1 played out; Dana's socket still holds her slam
+    room.clock = room.room.game.opensAt;
+    const woken = newRoom(room.state);
+    woken.clock = room.clock;
+    await say(woken, bob, { t: 'cheer', e: 1 });
+    assert.equal(woken.room.game.battle, 2);
+    assert.deepEqual(woken.room.game.slams, {}, 'battle 1 slams stay in battle 1');
+  });
+
+  test("a slam that picked up its winnings first isn't taken back by a woken room", async () => {
+    const dana = await join(room, 'Dana');
+    const bob = await join(room, 'Bob');
+    await say(room, dana, { t: 'start' });
+    // Dana's deck is empty, so her slam puts her winnings under it before it turns a card over.
+    room.room.game.piles[0] = [];
+    room.room.game.loot[0] = [card(9), card(4)];
+    await room.save();
+    await say(room, dana, { t: 'slam', power: 90, style: 0 });
+    assert.equal(room.room.game.piles[0].length, 2, 'the pick-up happened, in memory');
+    const woken = newRoom(room.state);
+    woken.clock = room.clock + 1000;
+    await say(woken, bob, { t: 'cheer', e: 1 });
+    // The saved game never had that pick-up, so her slam can't be taken back
+    // as it was: her card flops when time runs out instead, as it always has.
+    assert.equal(woken.room.game.slams[0], undefined);
+    assert.deepEqual(woken.room.game.piles[0], []);
   });
 
   test('cheers are passed on, but not too often', async () => {
@@ -987,6 +1057,143 @@ describe('rooms', () => {
     await say(room, dana, { t: 'slam', power: 1, style: 0 });
     await fireAlarm(room);
     assert.equal(room.state.writes - before, 1);
+  });
+
+  test('a room someone is still connected to is in use, however long since anything changed', async () => {
+    const dana = await join(room, 'Dana');
+    await say(room, dana, { t: 'bots', n: 1 });
+    await say(room, dana, { t: 'start' });
+    room.room.game.limit = 1;
+    while (room.room.phase === 'playing') await fireAlarm(room);
+    // The results stay on screen, the page left open, for six hours.
+    room.clock += EXPIRE_MS;
+    await fireAlarm(room);
+    assert.equal(room.room.phase, 'over', 'not deleted');
+    assert.equal(room.state.alarm, room.clock + EXPIRE_MS, 'checked again later, rather than by an alarm that goes off again at once');
+    assert.equal(await room.create('K7QP'), false, 'and its code is not given out again');
+    dana.close();
+    await room.webSocketClose(dana);
+    room.clock += EXPIRE_MS;
+    await fireAlarm(room);
+    assert.equal(room.room, null, 'deleted once nobody is left');
+  });
+
+  test("a slam that lands after its stage was played out doesn't count toward the next one", async () => {
+    const dana = await join(room, 'Dana');
+    const bob = await join(room, 'Bob');
+    await say(room, dana, { t: 'start' });
+    await say(room, dana, { t: 'slam', power: 80, style: 0 });
+    await fireAlarm(room);  // time's up: Bob's card flopped
+    assert.equal(bob.last('flip').plays[1][5], 1);
+    // Bob's slam, sent as time ran out, arrives just after.
+    room.clock += 60;
+    await say(room, bob, { t: 'charge', tier: 3 });
+    await say(room, bob, { t: 'slam', power: 150, style: 3 });
+    assert.equal(dana.all('charge').length, 0);
+    assert.equal(dana.all('slam').length, 1, 'only her own, in battle 1');
+    assert.deepEqual(room.room.game.slams, {});
+    assert.equal(room.state.alarm, room.room.game.closesAt, 'battle 2 waits for both of them');
+    room.clock = room.room.game.opensAt;  // once it opens, his slams count again
+    await say(room, bob, { t: 'slam', power: 20, style: 0 });
+    assert.deepEqual(room.room.game.slams[1], [20, 0, 0]);
+  });
+
+  test("a player who dozed off doesn't wake up in a stage that hasn't opened yet", async () => {
+    const dana = await join(room, 'Dana');
+    await say(room, dana, { t: 'bots', n: 1 });
+    await say(room, dana, { t: 'start' });
+    room.room.game.naps[0] = WAR.NAPS;  // dozed off: battles don't wait for her
+    await room.tick();
+    assert.equal(room.state.alarm, room.room.game.opensAt + WAR.BOT_MS);
+    await fireAlarm(room);  // battle 1 plays out once the bot has slammed
+    room.clock += 200;      // "Slam to wake up!", a moment too late
+    await say(room, dana, { t: 'slam', power: 99, style: 0 });
+    assert.equal(room.room.game.battle, 2);
+    assert.equal(room.room.game.slams[0], undefined, 'it was meant for battle 1');
+    assert.equal(room.room.game.naps[0], WAR.NAPS + 1);
+  });
+
+  test("a page that looks in on a paused game and leaves without joining doesn't shorten its stage", async () => {
+    const dana = await join(room, 'Dana');
+    const bob = await join(room, 'Bob');
+    await say(room, dana, { t: 'start' });
+    room.clock = room.room.game.opensAt + 6000;  // 2 seconds left to slam
+    for (const ws of [dana, bob]) { ws.close(); await room.webSocketClose(ws); }
+    const pausedAt = room.room.pausedAt;
+    // An hour later a page connects, and goes again before it joins.
+    room.clock += 3600000;
+    const passing = new FakeSocket();
+    room.connect(passing);
+    await say(room, passing, { t: 'hello', name: '<b>', avatar: 0, token: token('passing') });
+    passing.close();
+    await room.webSocketClose(passing);
+    assert.equal(room.room.pausedAt, pausedAt);
+    room.clock += 10000;
+    const back = await join(room, 'Dana');
+    assert.equal(back.all('flip').length, 0, 'the stage is still on');
+    assert.equal(room.room.game.closesAt - room.clock, 2000, 'with the 2 seconds it had left');
+  });
+
+  test('after a game, only a new deal changes the table: the length and bots are set in the lobby', async () => {
+    const dana = await join(room, 'Dana');
+    await say(room, dana, { t: 'bots', n: 3 });
+    await say(room, dana, { t: 'start' });
+    room.room.game.limit = 1;
+    while (room.room.phase === 'playing') await fireAlarm(room);
+    const states = dana.all('state').length;
+    await say(room, dana, { t: 'bots', n: 0 });
+    await say(room, dana, { t: 'length', length: 'quick' });
+    assert.equal(room.room.players.length, 4, 'the standings still name every seat');
+    assert.equal(room.room.length, 'standard');
+    assert.equal(dana.all('state').length, states);
+  });
+});
+
+describe('the room machine', () => {
+  test('names only states it has, and gives each message the states it may come in', () => {
+    const { ROOM_MOVES, ROOM_MESSAGES } = warRoom;
+    const states = Object.keys(ROOM_MOVES);
+    assert.deepEqual(states, ['absent', 'lobby', 'playing', 'paused', 'over']);
+    for (const to of Object.values(ROOM_MOVES).flat()) assert.ok(states.includes(to), to);
+    assert.deepEqual(Object.keys(ROOM_MESSAGES).sort(),
+      ['bots', 'card', 'charge', 'cheer', 'deck', 'flop', 'gather', 'hello', 'leave', 'length', 'nudge', 'shuffle',
+        'slam', 'slow', 'start', 'tidy']);
+    for (const [type, list] of Object.entries(ROOM_MESSAGES)) {
+      for (const s of list) assert.ok(states.includes(s) || s === 'open', `${type}: ${s}`);
+    }
+  });
+
+  test('refuses a move the table does not list, and changes nothing', async () => {
+    const errors = mock.method(console, 'error', () => {});
+    try {
+      const room = await openRoom();
+      const before = structuredClone(room.room);
+      assert.equal(room.roomState(), 'lobby');
+      assert.equal(room.go('over'), false);
+      assert.equal(room.go('paused'), false);
+      assert.deepEqual(room.room, before);
+      assert.equal(errors.mock.calls.length, 2);
+    } finally {
+      errors.mock.restore();
+    }
+  });
+
+  test('reads its state from the room as stored, so rooms saved by earlier versions load as they were', async () => {
+    const room = await openRoom();
+    const dana = await join(room, 'Dana');
+    await say(room, dana, { t: 'bots', n: 1 });
+    await say(room, dana, { t: 'start' });
+    dana.close();
+    await room.webSocketClose(dana);
+    const stored = room.state.data.get('room');
+    assert.deepEqual(Object.keys(stored).sort(), ['code', 'createdAt', 'game', 'length', 'pausedAt', 'phase', 'players', 'shuffle', 'slow', 'touchedAt']);
+    assert.equal(stored.phase, 'playing');
+    const woken = newRoom(room.state);
+    await woken.load();
+    assert.equal(woken.roomState(), 'paused');
+    assert.equal(woken.info().phase, 'playing', 'pages still read a paused game as playing');
+    await join(woken, 'Dana');
+    assert.equal(woken.roomState(), 'playing');
   });
 });
 

@@ -770,6 +770,45 @@ function rel(t) {
   return new Date(t).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
 }
 
+/* ---------- State machines ---------- */
+// ---- BEGIN STATE MACHINE ----
+// The same in every page that has one (tests/test_state_machines.py checks).
+// An explicit state machine, as "State machines" in AGENTS.md describes: the
+// states something can be in, and the moves it may make from each. go(to)
+// makes a listed move and nothing else. It shows the new state as el's
+// data-<name> attribute (on <html> unless el says otherwise), for CSS, tests
+// and anyone reading the page, then calls onMove(to, from, ...args). Any
+// other move, like a state the table doesn't name, is a bug: it's refused
+// with a console error, which fails the tests, and the player carries on as
+// if it had never been tried. seq counts the moves made, so a timer or a
+// reply that waited can tell whether anything moved in the meantime.
+function machine(name, moves, state, { el = document.documentElement, onMove } = {}) {
+  const known = (s) => s in moves || (console.error(`${name}: no state called ${s}`), false);
+  Object.values(moves).flat().forEach(known);
+  known(state);
+  let seq = 0;
+  if (el) el.dataset[name] = state;
+  return {
+    get state() { return state; },
+    get seq() { return seq; },
+    is: (...states) => states.filter(known).includes(state),
+    can: (to) => known(to) && moves[state].includes(to),
+    go(to, ...args) {
+      if (!moves[state].includes(to)) {
+        console.error(`${name}: no move from ${state} to ${to}`);
+        return false;
+      }
+      const from = state;
+      state = to;
+      seq += 1;
+      if (el) el.dataset[name] = to;
+      if (onMove) onMove(to, from, ...args);
+      return true;
+    },
+  };
+}
+// ---- END STATE MACHINE ----
+
 /* ---------- Storage ---------- */
 const LS = {
   get(k) { try { return localStorage.getItem(k); } catch (_) { return null; } },
@@ -794,22 +833,54 @@ function sanitize(o) {
   return { key, w, x, y, d, t, s, f, n, th, born: 0 };
 }
 let redrawn = null;  // {kept, had} the first time a player from an older map comes back
+const readList = k => { try { const a = JSON.parse(LS.get(k) || '[]'); return Array.isArray(a) ? a : []; } catch (_) { return []; } };
 function loadLocal() {
-  const read = k => { try { const a = JSON.parse(LS.get(k) || '[]'); return Array.isArray(a) ? a : []; } catch (_) { return []; } };
-  for (const o of read(K_FINDS)) { const e = sanitize(o); if (e) found.set(e.key, e); }
+  for (const o of readList(K_FINDS)) { const e = sanitize(o); if (e) found.set(e.key, e); }
   if (LS.get(K_FINDS) !== null) return;
   // Finds from the last map this browser played: carry over any whose word is
   // still there. The shared survey started over with the map, so none was
   // charted first on this one. The old notes stay where they were.
   const key = K_FINDS_OLD.find(k => LS.get(k) !== null);
-  const old = key ? read(key) : [];
+  const old = key ? readList(key) : [];
   if (!old.length) return;
   for (const o of old) { const e = sanitize({ ...o, f: 0, n: 0 }); if (e) found.set(e.key, e); }
   redrawn = { kept: found.size, had: old.length };
   saveLocal();
 }
 const plain = e => ({ w: e.w, x: e.x, y: e.y, d: e.d, t: e.t, s: e.s, ...(e.f ? { f: 1 } : {}), ...(e.n ? { n: e.n } : {}) });
-function saveLocal() { LS.set(K_FINDS, JSON.stringify([...found.values()].map(plain))); }
+// Every tab of the game in this browser shares one set of field notes. Each
+// save takes in what other tabs saved since, so it never writes over their
+// finds, and a save in another tab is taken in here as it happens. A word
+// charted first in either tab stays charted first. Returns whether anything
+// came in, and whether this tab holds finds the stored notes lack.
+function takeInStored() {
+  let added = false, behind = false;
+  const stored = new Set();
+  for (const o of readList(K_FINDS)) {
+    const have = o && typeof o.w === 'string' ? found.get(keyOf(o.w, o.x, o.y, o.d)) : null;
+    if (have) {
+      stored.add(have.key);
+      if (o.f && !have.f) { have.f = 1; if (Number.isInteger(o.n) && o.n > 0 && o.n < 1e8) have.n = o.n; added = true; }
+      else if (have.f && !o.f) behind = true;
+      continue;
+    }
+    const e = sanitize(o);
+    if (e && !found.has(e.key)) { found.set(e.key, e); added = true; }
+    if (e) stored.add(e.key);
+  }
+  return { added, behind: behind || stored.size < found.size };
+}
+function saveLocal() {
+  takeInStored();
+  LS.set(K_FINDS, JSON.stringify([...found.values()].map(plain)));
+}
+window.addEventListener('storage', e => {
+  if (e.key !== K_FINDS) return;
+  const { added, behind } = takeInStored();
+  // The other tab saved before it had heard of one of ours: put it back.
+  if (behind) saveLocal();
+  if (added) { renderNotes(); scheduleHud(); invalidate(); }
+});
 
 let coll = null, dbWritable = false, writeChain = Promise.resolve();
 const syncEl = $('#sync'), syncText = $('#syncText');
@@ -872,8 +943,8 @@ const surveyApi = (() => {
   return url.replace(/\/+$/, '').replace(/^http/, 'ws');
 })();
 const claims = new Map();   // key → entry like a find, plus by (initials) and at: every word anyone has charted
-const links = new Map();    // 'sx,sy' → one sector's connection
-const pending = new Set();  // keys of our own claims awaiting an answer
+const links = new Map();    // 'sx,sy' → one sector's connection (see openLink)
+const outbox = new Map();   // key → one of our own claims on its way to its sector (see claimWord)
 const ghosts = new Map();   // surveyor id → where their caret is drawn, easing toward their position
 const IDLE_MS = 20000;      // a surveyor who hasn't moved for this long fades
 const terrTotals = new Map();
@@ -883,7 +954,8 @@ const surveyHttp = surveyApi.replace(/^ws/, 'http');
 const inSurveyArea = (x, y) => Math.abs(fdiv(x, SECTOR)) <= SURVEY_AREA && Math.abs(fdiv(y, SECTOR)) <= SURVEY_AREA;
 const sectorKey = (x, y) => fdiv(x, SECTOR) + ',' + fdiv(y, SECTOR);
 const myInitials = () => { const v = LS.get(K_INITIALS) || ''; return /^[A-Z]{3}$/.test(v) ? v : ''; };
-const tell = (l, m) => { if (l && l.open && l.ws) try { l.ws.send(JSON.stringify(m)); } catch (_) {} };
+const tell = (l, m) => { if (l && l.ws && l.m.is('open', 'live')) try { l.ws.send(JSON.stringify(m)); } catch (_) {} };
+const anyLive = () => [...links.values()].some(l => l.m.is('live'));
 const surveyEl = $('#survey'), surveyText = $('#surveyText'), surveyInput = $('#surveyInitials'), surveyHint = $('#surveyHint');
 
 // A survey pass: the Worker's word that this browser passed Turnstile, good
@@ -898,13 +970,40 @@ const siteKey = (() => {
   try { const q = new URLSearchParams(location.search).get('turnstile'); if (q && /^[\w-]{10,80}$/.test(q)) k = q; } catch (_) {}
   return k;
 })();
-let pass = null, passing = false, passFails = 0, passRetryAt = 0, passRequired = false, turnstileLoad = null, widgetId = null;
-try { const p = JSON.parse(LS.get(K_PASS) || 'null'); if (p && typeof p.pass === 'string' && Number.isFinite(p.expires)) pass = p; } catch (_) {}
-const passGood = () => !siteKey || (pass && pass.expires - Date.now() > 60000);
+// A pass lasts an hour from when the Worker issues it (PASS_MS in
+// worker/src/survey-pass.js). The game counts that hour from when the pass
+// arrives, on this device's clock: the time the Worker gives is on its own
+// clock, and a device's can be an hour or more out.
+const PASS_MS = 3600000;
+let pass = null, passFails = 0, passRetryAt = 0, passRequired = false, passTry = 0, turnstileLoad = null, widgetId = null;
+try { const p = JSON.parse(LS.get(K_PASS) || 'null'); if (p && typeof p.pass === 'string' && Number.isFinite(p.expires) && p.expires - Date.now() > 60000) pass = p; } catch (_) {}
+// Getting a pass, shown on <html data-pass>: none yet (or it ran out),
+// loading Cloudflare's script, checking out of sight, asking for a tap (its
+// box shows), sending the token to the Worker, good, or failed until it's
+// time to try again. Without a site key it's off: every join goes ahead.
+const Pass = machine('pass', {
+  off: [],
+  none: ['loading'],
+  loading: ['checking', 'failed'],
+  checking: ['asking', 'sending', 'failed'],
+  asking: ['checking', 'sending', 'failed'],
+  sending: ['good', 'failed'],
+  good: ['none', 'failed'],
+  failed: ['loading'],
+}, !siteKey ? 'off' : pass ? 'good' : 'none', { onMove: passMoved });
+const passGood = () => Pass.is('off') || (Pass.is('good') && pass.expires - Date.now() > 60000);
 // Whether to join now: with a pass, or without one once a try for one has
 // failed, unless a sector has asked for one.
 const mayJoin = () => passGood() || (passFails > 0 && !passRequired);
 const surveyCheck = $('#surveyCheck');
+function passMoved(to) {
+  // Turnstile's box shows only while it wants a tap, with a line saying why.
+  surveyCheck.classList.toggle('asking', to === 'asking');
+  if (to === 'asking') surveyCheck.querySelector('p').textContent = anyLive() ? 'One tap to stay in the shared survey' : 'One tap to join the shared survey';
+  // A try that failed takes its widget with it, so no box is left that does nothing.
+  if (to === 'failed' && widgetId !== null) { try { window.turnstile.remove(widgetId); } catch (_) {} widgetId = null; }
+  renderSurvey();
+}
 function loadTurnstile() {
   turnstileLoad ??= new Promise((resolve, reject) => {
     const timer = setTimeout(() => reject(new Error('timeout')), 15000);
@@ -918,57 +1017,92 @@ function loadTurnstile() {
   turnstileLoad.catch(() => { turnstileLoad = null; });
   return turnstileLoad;
 }
+// Tries for a pass when there's none and it's time: one try at a time, each
+// numbered (passTry), so a callback or a reply from an earlier one does nothing.
+function ensurePass() {
+  if (passGood()) return;
+  if (Pass.is('good')) {
+    // It ran out. One that ran out as soon as it came is no use: wait before asking again, so nothing can loop.
+    const quick = pass.got && Date.now() - pass.got < 60000;
+    pass = null;
+    if (quick) return passFailed(passTry, true);
+    Pass.go('none');
+  }
+  if (Pass.is('failed') && Date.now() < passRetryAt) return;
+  if (!Pass.is('none', 'failed')) return;
+  const t = ++passTry;
+  Pass.go('loading');
+  loadTurnstile().then(ts => {
+    if (t === passTry && Pass.is('loading')) { Pass.go('checking'); askTurnstile(ts, t); }
+  }, () => passFailed(t));
+}
 // One token from the widget. It runs out of sight; only if Turnstile wants a
-// tap does its box show, bottom middle, with a line saying why.
-async function turnstileToken() {
-  const ts = await loadTurnstile();
-  return new Promise((resolve, reject) => {
-    const done = (fn, v) => { clearTimeout(timer); surveyCheck.classList.remove('asking'); fn(v); };
-    const timer = setTimeout(() => done(reject, new Error('timeout')), 120000);
-    if (widgetId !== null) try { ts.remove(widgetId); } catch (_) {}
+// tap does its box show, bottom middle, with a line saying why. A player
+// already in the survey without a pass, while passes aren't required, isn't
+// asked for a tap: the try ends, and the game tries again later.
+function askTurnstile(ts, t) {
+  const current = () => t === passTry && Pass.is('checking', 'asking');
+  const timer = setTimeout(() => { if (current()) passFailed(t); }, 120000);
+  const fail = () => { clearTimeout(timer); if (current()) passFailed(t); };
+  if (widgetId !== null) try { ts.remove(widgetId); } catch (_) {}
+  widgetId = null;
+  try {
     widgetId = ts.render('#surveyWidget', {
       sitekey: siteKey, action: 'survey', appearance: 'interaction-only', theme: 'auto', 'refresh-expired': 'never',
-      callback: token => done(resolve, token),
-      'error-callback': code => { done(reject, new Error('turnstile ' + code)); return true; },
-      'timeout-callback': () => done(reject, new Error('timeout')),
-      'unsupported-callback': () => done(reject, new Error('unsupported')),
-      'before-interactive-callback': () => surveyCheck.classList.add('asking'),
-      'after-interactive-callback': () => surveyCheck.classList.remove('asking'),
+      callback: token => { clearTimeout(timer); if (current()) sendToken(token, t); },
+      'error-callback': () => { fail(); return true; },
+      'timeout-callback': fail,
+      'unsupported-callback': fail,
+      'before-interactive-callback': () => {
+        if (!current()) return;
+        if (anyLive() && !passRequired) fail();
+        else if (Pass.is('checking')) Pass.go('asking');
+      },
+      'after-interactive-callback': () => { if (current() && Pass.is('asking')) Pass.go('checking'); },
     });
-  });
+  } catch (_) { fail(); }
 }
-async function fetchPass() {
-  const token = await turnstileToken();
+// The token goes to the Worker, which answers with the pass.
+async function sendToken(token, t) {
+  Pass.go('sending');
   const ctl = new AbortController(), timer = setTimeout(() => ctl.abort(), 10000);
   let p = null;
   try {
     const res = await fetch(surveyHttp + '/v1/survey/pass', { method: 'POST', headers: { 'Content-Type': 'text/plain' }, body: JSON.stringify({ token }), signal: ctl.signal });
     p = res.ok ? await res.json() : null;
+  } catch (_) {
   } finally { clearTimeout(timer); }
-  if (!p || typeof p.pass !== 'string' || !Number.isFinite(p.expires)) throw new Error('no pass');
-  return { pass: p.pass, expires: Math.min(p.expires, Date.now() + 3600000) };
+  if (t !== passTry || !Pass.is('sending')) return;
+  if (!p || typeof p.pass !== 'string' || !Number.isFinite(p.expires)) return passFailed(t);
+  pass = { pass: p.pass, expires: Date.now() + PASS_MS, got: Date.now() };
+  passFails = 0;
+  LS.set(K_PASS, JSON.stringify(pass));
+  Pass.go('good');
+  syncSurvey();
 }
-function ensurePass() {
-  if (passGood() || passing || Date.now() < passRetryAt) return;
-  passing = true;
-  fetchPass().then(p => {
-    pass = { ...p, got: Date.now() }; passFails = 0;
-    LS.set(K_PASS, JSON.stringify(pass));
-  }, () => {
-    // Blocked, offline or refused: alone for now, and asked again in a minute or a few.
-    passFails++;
-    passRetryAt = Date.now() + Math.min(600000, 30000 * 2 ** (passFails - 1));
-  }).finally(() => { passing = false; syncSurvey(); });
+// A try that didn't get a pass (blocked, offline, refused, or no tap): alone
+// for now, or joining without one while passes aren't required, and asked
+// again in a minute or a few. `quick` is a pass that was no good on arrival.
+function passFailed(t, quick = false) {
+  if (t !== passTry || !(quick ? Pass.is('good') : Pass.is('loading', 'checking', 'asking', 'sending'))) return;
+  passFails++;
+  passRetryAt = Date.now() + Math.min(600000, 30000 * 2 ** (passFails - 1));
+  Pass.go('failed');
+  syncSurvey();
 }
-// A sector didn't take our pass (expired, or our address changed): drop it
-// and get another. A pass refused straight after we got it counts as a failure,
-// so a fault can't loop through challenges.
-function dropPass() {
+// A sector didn't take the pass a socket joined with (it expired, or our address
+// changed): passes are required now, so drop it and get another. A socket
+// opened with an older pass than the one we hold says nothing about ours. A
+// pass refused straight after we got it counts as a failure, so a fault can't
+// loop through challenges.
+function passRefused(used) {
   passRequired = true;
-  if (!pass) return;
-  if (pass.got && Date.now() - pass.got < 15000) { passFails++; passRetryAt = Date.now() + Math.min(600000, 30000 * 2 ** (passFails - 1)); }
+  if (!used || !pass || used !== pass.pass || !Pass.is('good')) return;
+  const fresh = pass.got && Date.now() - pass.got < 15000;
   pass = null;
   try { localStorage.removeItem(K_PASS); } catch (_) {}
+  if (fresh) passFailed(passTry, true);
+  else Pass.go('none');
 }
 
 function sectorsInView() {
@@ -981,14 +1115,14 @@ function sectorsInView() {
 // Joins the sectors in view and leaves ones that have been out of view a few
 // seconds. Mid-flight it joins nothing, rather than every sector on the way.
 function syncSurvey() {
-  if (!surveyApi || spawning) return;
+  if (!surveyApi) return;
+  if (spawning) return renderSurvey();
   const want = surveyPaused ? [] : sectorsInView(), keep = new Set(), now = Date.now();
   if (want.length && !passGood()) ensurePass();
-  const passed = mayJoin();
   for (const { sx, sy } of want) {
     const k = sx + ',' + sy, l = links.get(k);
     keep.add(k);
-    if (l) l.unwanted = 0; else if (!flight && passed) openLink(sx, sy);
+    if (l) l.unwanted = 0; else if (!flight) openLink(sx, sy);
   }
   for (const [k, l] of links) {
     if (keep.has(k)) continue;
@@ -998,18 +1132,37 @@ function syncSurvey() {
   sendPos();
   renderSurvey();
 }
+// One sector's connection is a state machine of its own (el: null):
+// connecting (its socket is on the way), open (the Worker took it; the
+// sector's hello is next), live, backoff (it closed, or the sector was full:
+// it's tried again after a wait), and closed for good (out of view, the tab
+// hidden, or turned away for want of a pass), when it leaves `links`.
+const LINK_MOVES = {
+  connecting: ['open', 'backoff', 'closed'],
+  open: ['live', 'backoff', 'closed'],
+  live: ['backoff', 'closed'],
+  backoff: ['connecting', 'closed'],
+  closed: [],
+};
 function openLink(sx, sy) {
   const k = sx + ',' + sy;
-  let l = links.get(k);
-  if (!l) { l = { k, sx, sy, ws: null, open: false, you: null, n: 0, counted: false, here: [], tries: 0, timer: 0, unwanted: 0, failed: false, full: false }; links.set(k, l); }
+  if (links.has(k) || !mayJoin()) return;  // syncSurvey opens it once there's a pass
+  const l = { k, sx, sy, ws: null, pass: '', you: null, n: 0, counted: false, here: [], tries: 0, timer: 0, unwanted: 0, full: false, tokens: 0, refilled: 0, flush: 0 };
+  l.m = machine('link', LINK_MOVES, 'connecting', { el: null, onMove: (to, from) => linkMoved(l, to, from) });
+  links.set(k, l);
+  connect(l);
+}
+function connect(l) {
+  l.pass = siteKey && passGood() ? pass.pass : '';
   let ws;
-  if (!mayJoin()) { links.delete(k); return; }  // syncSurvey opens it again once there's a pass
-  const withPass = siteKey && passGood() ? '?pass=' + encodeURIComponent(pass.pass) : '';
-  try { ws = new WebSocket(`${surveyApi}/v1/survey/${sx}/${sy}` + withPass); } catch (_) { l.failed = true; return; }
+  try { ws = new WebSocket(`${surveyApi}/v1/survey/${l.sx}/${l.sy}` + (l.pass ? '?pass=' + encodeURIComponent(l.pass) : '')); } catch (_) {
+    l.tries++;
+    return l.m.go('backoff');
+  }
   l.ws = ws;
   ws.onopen = () => {
     if (l.ws !== ws) return;
-    l.open = true;
+    l.m.go('open');
     tell(l, { t: 'me', initials: myInitials() });
     sendPos();
   };
@@ -1017,47 +1170,65 @@ function openLink(sx, sy) {
     if (l.ws !== ws) return;
     let m = null;
     try { m = JSON.parse(ev.data); } catch (_) {}
-    if (Array.isArray(m)) m.forEach(one => one && onSurvey(l, one));  // messages sent together
+    if (Array.isArray(m)) m.forEach(one => one && l.ws === ws && onSurvey(l, one));  // messages sent together
     else if (m) onSurvey(l, m);
   };
   ws.onclose = ev => {
     if (l.ws !== ws) return;
-    Object.assign(l, { ws: null, open: false, you: null, n: 0, counted: false, here: [] });
-    if (posSent && posSent.l === l) posSent = null;
-    if (ev.code === 4001 || l.unverified) {
-      l.unverified = false;
-      // No good pass: get one, then syncSurvey joins again.
-      if (links.get(k) === l) links.delete(k);
-      dropPass(); syncSurvey();
-      return;
-    }
+    if (ev.code === 4001) return turnedAway(l);  // no good pass: get one, then syncSurvey joins again
     if (ev.code === 4000 && !l.full) l.full = 'sector';
-    if (links.get(k) === l) {
-      l.failed = true;
-      // A full sector is asked again in a minute or so; anything else backs off from a second.
-      const wait = l.full ? 45000 : Math.min(30000, 1000 * 2 ** l.tries++) * (.5 + Math.random());
-      l.timer = setTimeout(() => { l.timer = 0; if (links.get(k) === l && !surveyPaused) openLink(sx, sy); }, wait);
-    }
-    renderSurvey(); scheduleHud(); invalidate();
+    l.tries++;
+    l.m.go('backoff');
   };
+}
+// What follows from each move of a link, in one place.
+function linkMoved(l, to, from) {
+  if (from === 'backoff') { clearTimeout(l.timer); l.timer = 0; }
+  if (to === 'backoff' || to === 'closed') {
+    // The socket goes, and with it who we were there and who was around.
+    const ws = l.ws;
+    l.ws = null;
+    if (ws) try { ws.close(); } catch (_) {}
+    Object.assign(l, { you: null, n: 0, counted: false, here: [] });
+    if (posSent && posSent.l === l) posSent = null;
+    clearTimeout(l.flush); l.flush = 0;
+    // Claims still out on it are asked about again when the sector is next joined.
+    for (const c of outbox.values()) if (c.l === l && c.m.is('sent')) c.m.go('unanswered');
+  }
+  if (to === 'backoff') {
+    // A full sector is asked again in a minute or so; anything else backs off from a second.
+    const wait = l.full ? 45000 : Math.min(30000, 1000 * 2 ** (l.tries - 1)) * (.5 + Math.random());
+    l.timer = setTimeout(() => {
+      if (!l.m.is('backoff')) return;
+      l.m.go(mayJoin() ? 'connecting' : 'closed');  // without a pass, syncSurvey opens it again once there is one
+    }, wait);
+  }
+  if (to === 'closed' && links.get(l.k) === l) links.delete(l.k);
+  if (to === 'live') {
+    l.tries = 0; l.full = false;
+    l.tokens = CLAIM_BURST; l.refilled = performance.now();
+    settleClaims(l);
+  }
+  renderSurvey(); scheduleHud(); invalidate();
+  if (to === 'connecting') connect(l);
 }
 function closeLink(k) {
   const l = links.get(k);
-  if (!l) return;
-  links.delete(k);
-  clearTimeout(l.timer);
-  if (posSent && posSent.l === l) posSent = null;
-  const ws = l.ws;
-  l.ws = null; l.open = false; l.here = [];
-  if (ws) try { ws.close(); } catch (_) {}
-  invalidate();
+  if (l) l.m.go('closed');
+}
+// A sector turned l away for want of a good pass (the Worker closes it with code 4001).
+function turnedAway(l) {
+  const used = l.pass;
+  l.m.go('closed');
+  passRefused(used);
+  syncSurvey();
 }
 // Where we're looking, to the sector under the middle of the view only, at most once a second.
 function sendPos() {
   clearTimeout(posTimer); posTimer = 0;
   const home = links.get(sectorKey(Math.floor(cam.x), Math.floor(cam.y)));
   if (posSent && posSent.l !== home) { tell(posSent.l, { t: 'pos', away: true }); posSent = null; }
-  if (!home || !home.open) return;
+  if (!home || !home.m.is('open', 'live')) return;
   const x = Math.round(cam.x * 10) / 10, y = Math.round(cam.y * 10) / 10;
   if (posSent && Math.hypot(x - posSent.x, y - posSent.y) < 1) return;
   const wait = posSent ? posSent.at + 1000 - Date.now() : 0;
@@ -1067,16 +1238,22 @@ function sendPos() {
 }
 function onSurvey(l, m) {
   if (m.t === 'hello' && Array.isArray(m.claims)) {
-    l.you = m.you; l.failed = false; l.full = false; l.tries = 0;
+    if (!l.m.is('open')) return;
+    l.you = m.you;
     for (const [k, c] of claims) if (sectorKey(c.x, c.y) === l.k) claims.delete(k);
     for (const r of m.claims) addClaim(r, false);
     if (claims.size > 30000) for (const [k, c] of claims) if (!links.has(sectorKey(c.x, c.y))) claims.delete(k);
+    return l.m.go('live');
   } else if (m.t === 'claimed') {
     const c = addClaim(m.c, true);
     if (!c) return;
     if (!c.s && inSurveyArea(c.x, c.y)) worldExtra++;
-    if (m.by === l.you && pending.delete(c.key)) firstToChart(c);
-    else if (!found.has(c.key)) news(c);
+    const out = outbox.get(c.key);
+    if (m.by === l.you && out && out.m.is('sent')) { out.m.go('answered'); firstToChart(c); }
+    else {
+      if (out) out.beaten = true;  // someone else charted it while ours was on its way
+      if (!found.has(c.key)) news(c);
+    }
     if (!c.s) {
       const rx = fdiv(c.x, RC), ry = fdiv(c.y, RC), [done, total] = territoryProgress(rx, ry);
       if (done === total) {
@@ -1087,25 +1264,24 @@ function onSurvey(l, m) {
       }
     }
   } else if (m.t === 'taken') {
-    const c = addClaim(m.c, false);
-    if (c && pending.delete(c.key)) toast(`<i></i><b>${c.w}</b><span>Charted first by ${c.by || 'another surveyor'} · ${rel(c.at)}</span>`, THEMES[c.th].hue, 0, found.get(c.key));
+    const c = addClaim(m.c, false), out = c && outbox.get(c.key);
+    if (out && out.m.is('sent')) {
+      out.m.go('answered');
+      toast(`<i></i><b>${c.w}</b><span>Charted first by ${c.by || 'another surveyor'} · ${rel(c.at)}</span>`, THEMES[c.th].hue, 0, found.get(c.key));
+    }
   } else if (m.t === 'error') {
-    // Claiming too fast, or past the day's limit, from this tab or from
-    // everyone on the same network: the word stays in your notes, it just isn't signed.
-    const why = { 'slow down': 'Too quick to chart', 'daily limit': 'Today’s charting limit reached' }[m.error];
-    const e = pending.delete(m.key) && why ? found.get(m.key) : null;
-    if (e) toast(`<i></i><b>${e.w}</b><span>${why} · kept in your notes</span>`, THEMES[e.th].hue, 0, e);
+    const out = outbox.get(m.key);
+    if (out && out.m.is('sent')) claimRefused(l, out, m.error);
   } else if (m.t === 'world' && Number.isInteger(m.charted) && Number.isInteger(m.total) && Number.isInteger(m.players)) {
     world = { charted: m.charted, total: m.total, players: m.players };
     worldExtra = 0;
   } else if (m.t === 'unverified') {
     // No good pass (it expired, or our address changed); the socket closes with code 4001.
-    l.unverified = true;
-    try { l.ws.close(); } catch (_) {}
-    return;
+    return turnedAway(l);
   } else if (m.t === 'full') {
     l.full = m.world ? 'world' : 'sector';
-    try { l.ws.close(); } catch (_) {}
+    l.tries++;
+    return l.m.go('backoff');
   } else if (m.t === 'presence' && Array.isArray(m.p)) {
     const p = m.p.filter(q => Array.isArray(q) && typeof q[0] === 'string' && Number.isFinite(q[2]) && Number.isFinite(q[3]));
     l.n = m.n | 0;
@@ -1125,11 +1301,79 @@ function addClaim(r, live) {
   claims.set(e.key, e);
   return e;
 }
-function surveyClaim(e) {
+// Our own claims, a state machine each (el: null): queued (circled while its
+// sector wasn't live, or waiting its turn under the sector's limit), sent (out
+// on a live socket), unanswered (its socket closed before the answer came:
+// the sector is asked again when it's next joined) and answered, when it
+// leaves the outbox. A word circled while the survey is joining, reconnecting
+// or checking for a pass is claimed as soon as its sector is live.
+const CLAIM_MOVES = {
+  queued: ['sent', 'answered'],
+  sent: ['answered', 'unanswered', 'queued'],
+  unanswered: ['sent', 'answered'],
+  answered: [],
+};
+// A sector takes a burst of claims from a socket, then one every 1.5 s
+// (CLAIM_BURST and CLAIM_REFILL_MS in worker/src/survey.js). The game keeps a
+// little inside that, so time on the way can't push a claim over.
+const CLAIM_BURST = 4, CLAIM_REFILL_MS = 1600;
+function claimWord(e) {
+  if (!surveyApi || outbox.has(e.key)) return;
   const l = links.get(sectorKey(e.x, e.y));
-  if (!l || !l.you) return;
-  pending.add(e.key);
-  tell(l, { t: 'claim', w: e.w, x: e.x, y: e.y, d: e.d });
+  // `backlog`: it waited for its sector, rather than going as it was circled.
+  const c = { e, l: null, backlog: !(l && l.m.is('live')), initials: '', known: false, beaten: false };
+  c.m = machine('claim', CLAIM_MOVES, 'queued', { el: null, onMove: to => { if (to === 'answered') outbox.delete(e.key); } });
+  outbox.set(e.key, c);
+  if (l) flushClaims(l);
+}
+// Sends l's sector the claims waiting for it, oldest first, as fast as the
+// sector takes them, and comes back for the rest when it will.
+function flushClaims(l) {
+  clearTimeout(l.flush); l.flush = 0;
+  if (!l.m.is('live')) return;
+  const now = performance.now();
+  l.tokens = Math.min(CLAIM_BURST, l.tokens + (now - l.refilled) / CLAIM_REFILL_MS);
+  l.refilled = now;
+  for (const c of outbox.values()) {
+    if (!c.m.is('queued', 'unanswered') || sectorKey(c.e.x, c.e.y) !== l.k) continue;
+    if (c.backlog && claims.has(c.e.key)) { c.m.go('answered'); continue; }  // someone charted it while it waited
+    if (l.tokens < 1) { l.flush = setTimeout(() => flushClaims(l), (1 - l.tokens) * CLAIM_REFILL_MS); return; }
+    l.tokens -= 1;
+    Object.assign(c, { l, initials: myInitials(), known: claims.has(c.e.key) });
+    c.m.go('sent');
+    tell(l, { t: 'claim', w: c.e.w, x: c.e.x, y: c.e.y, d: c.e.d });
+  }
+}
+// The sector's just been joined: claims that went out on its last socket but
+// never heard back are settled from the claims it holds, and the rest go.
+// One it holds signed with our initials, that nobody else had when we sent
+// it, is ours: its answer was lost with the socket. Without initials there's
+// no telling, so the credit stays unclaimed.
+function settleClaims(l) {
+  for (const c of outbox.values()) {
+    if (!c.m.is('unanswered') || sectorKey(c.e.x, c.e.y) !== l.k) continue;
+    const got = claims.get(c.e.key);
+    if (!got) { c.backlog = true; continue; }  // it never arrived: it goes again
+    c.m.go('answered');
+    if (c.initials && got.by === c.initials && !c.known && !c.beaten) firstToChart(got);
+  }
+  flushClaims(l);
+}
+// A claim the sector turned down: too quick, or past the day's limit, from
+// this tab or from everyone on the same network. The word stays in your
+// notes, it just isn't signed. A claim that waited for its sector waits again,
+// quietly, when it's too quick (the network's limit counts over a minute),
+// and isn't announced when the day's limit is reached.
+function claimRefused(l, c, error) {
+  if (error === 'slow down' && c.backlog) {
+    c.m.go('queued');
+    l.tokens = 1 - 60000 / CLAIM_REFILL_MS;  // this sector's claims wait a minute
+    return flushClaims(l);
+  }
+  c.m.go('answered');
+  const why = { 'slow down': 'Too quick to chart', 'daily limit': 'Today’s charting limit reached' }[error];
+  const e = why && !c.backlog ? found.get(c.e.key) : null;
+  if (e) toast(`<i></i><b>${e.w}</b><span>${why} · kept in your notes</span>`, THEMES[e.th].hue, 0, e);
 }
 function firstToChart(c) {
   const e = found.get(c.key);
@@ -1176,31 +1420,47 @@ function territoryFound(rx, ry) {
 }
 // Within a few territories of the middle of the view.
 const nearView = (rx, ry) => Math.max(Math.abs(rx - fdiv(Math.floor(cam.x), RC)), Math.abs(ry - fdiv(Math.floor(cam.y), RC))) <= 3;
+// Where the shared survey stands, worked out afresh from the links and the
+// pass every time, so the panel's dot and its words always agree.
+function surveyStatus() {
+  let live = false, failed = false;
+  for (const l of links.values()) {
+    if (l.m.is('live')) live = true;
+    else if (l.tries) failed = true;  // it has failed since it was last live, and may be trying again
+  }
+  if (live) return 'live';
+  if (surveyPaused) return 'paused';
+  if (spawning) return 'joining';
+  if (!passGood() && Pass.is('loading', 'checking', 'asking', 'sending')) return 'checking';
+  if (!mayJoin() && passFails) return 'alone';
+  const home = links.get(sectorKey(Math.floor(cam.x), Math.floor(cam.y)));
+  if (home && home.full === 'world') return 'full-world';
+  if (home && home.full) return 'full-sector';
+  return failed ? 'offline' : 'joining';
+}
+// Each status's dot (#survey's data-state, which the CSS colours) and words; live has its own.
+const SURVEY_STATUS = {
+  paused: ['connecting', 'Paused while this tab is hidden.'],
+  checking: ['connecting', 'Checking this is a person, not a bot…'],
+  alone: ['offline', 'Couldn’t check this is a person, so you’re surveying alone for now. Your finds still save in this browser.'],
+  'full-world': ['offline', 'The survey is full right now. Your finds still save in this browser.'],
+  'full-sector': ['offline', 'This part of the map is full right now. Your finds still save in this browser.'],
+  offline: ['offline', 'Survey offline. Your finds still save in this browser.'],
+  joining: ['connecting', 'Joining the survey…'],
+};
 function renderSurvey() {
   if (!surveyApi) return;
-  let live = 0, failed = 0, others = 0;
-  for (const l of links.values()) {
-    if (l.you) { live++; others += Math.max(0, l.n - (l.counted ? 1 : 0)); }
-    else if (l.failed) failed++;
-  }
-  let firsts = 0;
-  for (const e of found.values()) if (e.f) firsts++;
-  surveyEl.dataset.state = live ? 'live' : failed || (!mayJoin() && passFails && !passing) ? 'offline' : 'connecting';
+  const status = surveyStatus();
+  surveyEl.dataset.state = status === 'live' ? 'live' : SURVEY_STATUS[status][0];
   // The live count ticks up with claims seen nearby between the Atlas's totals, and never runs backwards.
   if (world) worldShown = Math.min(world.total, Math.max(worldShown, world.charted + worldExtra));
   if (world && W >= 700) $('#brandSub').textContent = `${worldShown.toLocaleString()} of ${world.total.toLocaleString()} charted`;
-  if (!live) {
-    const home = links.get(sectorKey(Math.floor(cam.x), Math.floor(cam.y)));
-    surveyText.textContent = surveyPaused ? 'Paused while this tab is hidden.'
-      : !passGood() && passing ? 'Checking this is a person, not a bot…'
-      : !mayJoin() && passFails ? 'Couldn’t check this is a person, so you’re surveying alone for now. Your finds still save in this browser.'
-      : home && home.full === 'world' ? 'The survey is full right now. Your finds still save in this browser.'
-      : home && home.full ? 'This part of the map is full right now. Your finds still save in this browser.'
-      : failed ? 'Survey offline. Your finds still save in this browser.' : 'Joining the survey…';
-    return;
-  }
+  if (status !== 'live') { surveyText.textContent = SURVEY_STATUS[status][1]; return; }
+  let others = 0, firsts = 0;
+  for (const l of links.values()) if (l.m.is('live')) others += Math.max(0, l.n - (l.counted ? 1 : 0));
+  for (const e of found.values()) if (e.f) firsts++;
   const cx = Math.floor(cam.x), cy = Math.floor(cam.y), rx = fdiv(cx, RC), ry = fdiv(cy, RC), here = links.get(sectorKey(cx, cy));
-  const [done, total] = here && here.you ? territoryProgress(rx, ry) : [0, 0];
+  const [done, total] = here && here.m.is('live') ? territoryProgress(rx, ry) : [0, 0];
   surveyText.textContent = `Live · ${others} other surveyor${others === 1 ? '' : 's'} nearby\n` +
     (world ? `World: ${worldShown.toLocaleString()} of ${world.total.toLocaleString()} charted · ${world.players.toLocaleString()} online\n` : '') +
     (total ? `${regionName(rx, ry)}: ${done} of ${total} charted\n` : '') +
@@ -1814,7 +2074,9 @@ function setMusic(on) {
   else if (musicNow) { musicNow.end(); musicNow = null; }
 }
 musicBtn.setAttribute('aria-pressed', String(musicOn));
-musicBtn.addEventListener('click', () => { gestured = true; setMusic(!musicOn); });
+// Music left on from last time waits, silent, for the first tap: a tap on its
+// own button then starts it, rather than switching it off unheard.
+musicBtn.addEventListener('click', () => { gestured = true; if (musicOn && !musicNow) startMusic(); else setMusic(!musicOn); });
 
 const noiseBufs = new WeakMap(), roomBufs = new WeakMap();
 function noiseOf(a) {
@@ -2281,7 +2543,7 @@ function collect(w, x, y, d, stray) {
   const e = sanitize({ w, x, y, d, t: Date.now(), s: stray ? 1 : 0 });
   e.born = performance.now();
   found.set(key, e);
-  saveLocal(); queueWrite(e); surveyClaim(e);
+  saveLocal(); queueWrite(e); claimWord(e);
   const rx = fdiv(x, RC), ry = fdiv(y, RC);
   toast(`<i></i><b>${w}</b><span>${stray ? 'Stray ' + THEMES[e.th].name.toLowerCase() + ' word' : THEMES[e.th].name} · ${regionName(rx, ry)}</span>`, THEMES[e.th].hue, 0, e);
   if (!stray) {
@@ -2445,7 +2707,11 @@ window.addEventListener('keydown', e => {
   if (e.key === 'Shift' && dragMode === 'pan') canvas.classList.add('select');
   const inNotes = e.target && e.target.closest && e.target.closest('.notes');
   if (e.key === 'Escape') {
-    if (sel.anchor) { sel.anchor = null; sel.end = null; invalidate(); return; }
+    if (sel.anchor) {
+      sel.anchor = null; sel.end = null;
+      if (gest && gest.type === 'seldrag') gest = null;  // a drag that was circling stops here, button still down or not
+      invalidate(); return;
+    }
     if (notesOpen && !dock) { setNotes(false); notesToggle.focus(); }
     return;
   }
@@ -2491,7 +2757,7 @@ function updateHud() {
   tCoord.textContent = fmtCoord(cx, cy);
   if (surveyApi) {
     syncSurvey();
-    const l = links.get(sectorKey(cx, cy)), [done, total] = l && l.you ? territoryProgress(rx, ry) : [0, 0];
+    const l = links.get(sectorKey(cx, cy)), [done, total] = l && l.m.is('live') ? territoryProgress(rx, ry) : [0, 0];
     tCharted.hidden = !total;
     if (total) tCharted.textContent = ` · ${done}/${total} charted`;
   } else {
@@ -2766,7 +3032,8 @@ updateHud();
 invalidate();
 if (redrawn) setTimeout(() => toast(`<i></i><b>The map has been redrawn</b><span>${NT} themes of about ${Math.round(THEMES.reduce((a, t) => a + t.words.length, 0) / NT / 10) * 10} words now, so a territory never repeats one · ${redrawn.kept ? `${redrawn.kept} of your ${redrawn.had} finds are still on it` : 'your old finds are not on it'}</span>`, null, 8000), 900);
 connectStore();
-if (location.hash === '#debug') window.__lf = { cam, found, claims, links, chunk, wordEnd, collect, territoryProgress, world: () => world, supernova, novaSound, audioOut, musicTracks: MUSIC_TRACKS, music: () => musicNow && { state: ac.state, track: musicNow.track().name, nodes: musicNow.track().nodes.size, level: musicNow.master.gain.value, swap: musicNow.swap }, nova: () => nova };
+if (location.hash === '#debug') window.__lf = { cam, found, claims, links, chunk, wordEnd, collect, territoryProgress, world: () => world, supernova, novaSound, audioOut, musicTracks: MUSIC_TRACKS, music: () => musicNow && { state: ac.state, track: musicNow.track().name, nodes: musicNow.track().nodes.size, level: musicNow.master.gain.value, swap: musicNow.swap }, nova: () => nova,
+  pass: () => Pass.state, surveyStatus, linkStates: () => Object.fromEntries([...links].map(([k, l]) => [k, l.m.state])), outbox: () => [...outbox.values()].map(c => [c.e.w, c.m.state]) };
 
 })();
 </script>

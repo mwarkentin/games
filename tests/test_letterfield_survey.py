@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import json
 import re
+import time
 from pathlib import Path
 from urllib.parse import urlparse
 
@@ -585,3 +586,141 @@ def test_blocked_turnstile_leaves_you_surveying_alone_once_passes_are_required(p
     circle(page, hidden_words(page)[0])
     expect(page.locator("#notesBadge")).to_have_text("1")
     assert fake.sectors == []
+
+
+# ---------- The survey's state machines ----------
+# Each sector's link (connecting, open, live, backoff, closed), each of our
+# claims (queued, sent, unanswered, answered) and the pass (on <html data-pass>)
+# are state machines in the page; window.__lf reports them.
+
+HIDE = """hidden => {
+  Object.defineProperty(document, 'hidden', { configurable: true, get: () => hidden });
+  document.dispatchEvent(new Event('visibilitychange'));
+}"""
+
+
+def test_words_circled_while_joining_are_claimed_once_the_sector_is_live(page: Page, site_url, errors):
+    words = known_words(page, site_url)[:6]
+    # Every sector holds back its hello, and takes claims only as fast as a real one does.
+    fake = FakeSurvey(hold=lambda url: True, rate=True)
+    open_game(page, site_url, fake)
+    eventually(page, lambda: len(fake.held) == 4)
+    expect(page.locator("#surveyText")).to_have_text("Joining the survey…")
+    for word in words:
+        circle(page, word)
+    page.wait_for_timeout(300)
+    assert fake.sent("claim") == []  # nothing to send them on yet
+    fake.hold = None
+    fake.welcome()
+    # Once the sector's live they all go, as fast as it takes them, and none is turned away.
+    eventually(page, lambda: len(fake.sent("claim")) == len(words), 10000)
+    assert [m["w"] for m in fake.sent("claim")] == [w[0] for w in words]
+    expect(page.locator("#surveyText")).to_contain_text(f"{len(words)} words charted first by you")
+    assert page.evaluate("window.__lf.outbox()") == []
+    assert page.evaluate("window.__lf.linkStates()") == {"0,0": "live", "-1,0": "live", "0,-1": "live", "-1,-1": "live"}
+    assert errors == []
+
+
+def test_a_claim_whose_answer_was_lost_with_its_socket_is_still_credited(page: Page, site_url, errors):
+    word = known_words(page, site_url)[0]
+    page.add_init_script("localStorage.setItem('games.initials', 'ZED')")
+    fake = FakeSurvey(lose="answer")  # the sector keeps the claim, but the socket drops before its answer
+    open_game(page, site_url, fake)
+    expect(page.locator("#survey")).to_have_attribute("data-state", "live")
+    circle(page, word)
+    eventually(page, lambda: len(fake.claims) == 1)
+    assert fake.claims[0][5] == "ZED"
+    page.evaluate(HIDE, True)  # switching apps closes every socket
+    page.evaluate(HIDE, False)
+    expect(page.locator("#surveyText")).to_contain_text("1 word charted first by you")
+    assert page.evaluate("[...window.__lf.found.values()][0].f") == 1
+    expect(page.locator("#toast")).to_contain_text("First to chart it")
+    assert len(fake.sent("claim")) == 1  # the sector already had it: not sent again
+    assert errors == []
+
+
+def test_a_claim_lost_on_the_way_is_sent_again_when_the_sector_is_rejoined(page: Page, site_url, errors):
+    word = known_words(page, site_url)[0]
+    fake = FakeSurvey(lose="claim")
+    open_game(page, site_url, fake)
+    expect(page.locator("#survey")).to_have_attribute("data-state", "live")
+    circle(page, word)
+    eventually(page, lambda: len(fake.sent("claim")) == 1)
+    fake.lose = None
+    page.evaluate(HIDE, True)
+    page.evaluate(HIDE, False)
+    eventually(page, lambda: len(fake.sent("claim")) == 2)
+    expect(page.locator("#toast")).to_contain_text("First to chart it")
+    assert page.evaluate("window.__lf.outbox()") == []
+    assert errors == []
+
+
+def test_the_panel_says_its_joining_while_it_looks_for_where_to_start(page: Page, site_url, errors):
+    page.set_viewport_size({"width": 1280, "height": 900})
+    without_turnstile(page)
+    fake = FakeSurvey()
+    asked: list[Route] = []
+    page.route_web_socket(re.compile(r"^wss://survey\.test/"), fake.handle)
+    page.route(f"{SURVEY}/v1/survey/world", lambda route: asked.append(route))  # a new player waits to hear where to start
+    page.goto(f"{site_url}/letterfield?survey={SURVEY}#debug")
+    eventually(page, lambda: asked)
+    expect(page.locator("#surveyText")).to_have_text("Joining the survey…")
+    expect(page.locator("#survey")).to_have_attribute("data-state", "connecting")
+    fake.handle_world(asked[0])
+    expect(page.locator("#survey")).to_have_attribute("data-state", "live")
+    assert errors == []
+
+
+def test_a_device_clock_an_hour_fast_gets_one_pass_and_joins(page: Page, site_url, errors):
+    # The Worker gives a pass's end on its own clock; this device's says an hour later.
+    page.clock.install(time=time.time() + 3600)
+    desk = with_turnstile(page)
+    fake = FakeSurvey()
+    open_game(page, site_url, fake, f"&turnstile={SITE_KEY}")
+    expect(page.locator("#survey")).to_have_attribute("data-state", "live")
+    page.wait_for_timeout(2500)
+    assert len(desk.issued) == 1, "one pass covers the hour, whatever the device's clock says"
+    assert page.evaluate("window.__tsRenders.length") == 1
+    assert all(url.endswith(f"?pass={desk.issued[0]}") for url in fake.urls)
+    expect(page.locator("html")).to_have_attribute("data-pass", "good")
+    assert errors == []
+
+
+def test_a_late_refusal_of_an_old_pass_leaves_the_new_one_alone(page: Page, site_url, errors):
+    # A stored pass the Worker no longer takes: every sector refuses it, but sector 0,0's refusal
+    # comes back only after the new pass is in and the other sectors have joined with it.
+    page.add_init_script("""localStorage.setItem('letterfield.surveyPass.v1',
+      JSON.stringify({ pass: 'old-pass', expires: Date.now() + 1800000 }))""")
+    desk = with_turnstile(page)
+    fake = FakeSurvey(refuse_passes={"old-pass"}, hold=lambda url: url.endswith("/0/0?pass=old-pass"))
+    open_game(page, site_url, fake, f"&turnstile={SITE_KEY}")
+    eventually(page, lambda: len(fake.held) == 1 and len(desk.issued) == 1 and len(fake.sectors) == 3)
+    fake.hold = None
+    fake.welcome()
+    page.wait_for_function("window.__lf.links.get('0,0')?.you", timeout=5000)
+    assert page.evaluate("JSON.parse(localStorage.getItem('letterfield.surveyPass.v1')).pass") == desk.issued[0]
+    assert len(desk.issued) == 1, "no second challenge"
+    assert fake.urls[-1].endswith(f"/0/0?pass={desk.issued[0]}")
+    expect(page.locator("html")).to_have_attribute("data-pass", "good")
+    assert errors == []
+
+
+def test_a_check_nobody_taps_goes_away_and_isnt_asked_for_while_in_the_survey(page: Page, site_url, errors):
+    page.clock.install()
+    desk = with_turnstile(page, "interactive")
+    fake = FakeSurvey()
+    open_game(page, site_url, fake, f"&turnstile={SITE_KEY}")
+    expect(page.locator("#surveyCheck")).to_have_class(re.compile("asking"))
+    page.clock.fast_forward("02:01")  # nobody taps
+    expect(page.locator("#surveyCheck")).not_to_have_class(re.compile("asking"))
+    expect(page.locator("#survey")).to_have_attribute("data-state", "live")  # joined without a pass
+    assert page.evaluate("window.__tsRemoved") == ["w1"], "the widget goes with its try"
+    expect(page.locator("html")).to_have_attribute("data-pass", "failed")
+    # Asked again later, a tap isn't asked for while the player is already in the survey.
+    page.clock.fast_forward("00:33")
+    page.wait_for_function("window.__tsRenders.length === 2", timeout=5000)
+    page.wait_for_function("window.__tsRemoved && window.__tsRemoved.length === 2", timeout=5000)
+    expect(page.locator("#surveyCheck")).not_to_have_class(re.compile("asking"))
+    expect(page.locator("#survey")).to_have_attribute("data-state", "live")
+    assert desk.tokens == []
+    assert errors == []

@@ -28,11 +28,17 @@ MONET = ["MONET", 60, 3, 2, 1, "", NOW_MS - 25 * MINUTE, 0]          # 3:05 PM, 
 ZEUS = ["ZEUS", -40, 100, 6, 0, "ABC", NOW_MS - 24 * 60 * MINUTE, 17]  # yesterday
 
 
-def open_log(page: Page, site_url: str, fake: FakeSurveyLog, query: str = "", finds=None) -> None:
-    page.clock.set_fixed_time(NOW_MS / 1000)
+def open_log(page: Page, site_url: str, fake: FakeSurveyLog, query: str = "", finds=None,
+             now_ms: int = NOW_MS, running: bool = False) -> None:
+    """Opens the log at `now_ms`, with the clock stopped there, or `running` on from it
+    (for what happens as time passes: page.clock.fast_forward moves it on)."""
+    if running:
+        page.clock.install(time=now_ms / 1000)
+    else:
+        page.clock.set_fixed_time(now_ms / 1000)
     if finds is not None:
         page.add_init_script(f"localStorage.setItem('letterfield.finds.v4', {json.dumps(json.dumps(finds))})")
-    fake.now_ms = NOW_MS
+    fake.now_ms = now_ms
     page.route(f"{SURVEY}/v1/survey/log/**", fake.handle)
     page.goto(f"{site_url}/letterfield-log?survey={SURVEY}{query}")
 
@@ -449,3 +455,74 @@ def test_letterfield_links_to_the_log_from_its_survey_panel(page: Page, site_url
     page.goto(f"{site_url}/letterfield")
     link = page.locator("#survey a.survey-log")
     expect(link).to_have_attribute("href", "/letterfield-log")
+
+
+# ---------- What the page shows as time passes (<html data-log>) ----------
+
+HIDE = """hidden => {
+  Object.defineProperty(document, 'hidden', { configurable: true, get: () => hidden });
+  document.dispatchEvent(new Event('visibilitychange'));
+}"""
+
+
+def wait_for_requests(page: Page, fake: FakeSurveyLog, count: int, timeout_ms: int = 5000) -> None:
+    """Waits until the fake has been asked `count` things: its handler runs between Playwright calls."""
+    for _ in range(timeout_ms // 50):
+        if len(fake.requests) >= count:
+            return
+        page.wait_for_timeout(50)
+    assert len(fake.requests) >= count
+
+
+def test_a_live_hour_that_fails_to_refresh_keeps_its_words_and_tries_again(page: Page, site_url):
+    # Skips the errors fixture: the browser logs the 503s.
+    fake = FakeSurveyLog([ACORN, MONET, ZEUS], PLACES, THEMES)
+    open_log(page, site_url, fake, query="&period=hour", running=True)
+    expect(page.locator(".entry")).to_have_count(1)  # MONET, at 3:05
+    expect(page.locator("#sumText .live")).to_have_text("Live")
+    fake.fail = True
+    asked = len(fake.requests)
+    page.clock.fast_forward(21_000)  # the hour reloads every 20 s
+    wait_for_requests(page, fake, asked + 1)
+    page.wait_for_timeout(500)  # for the page to take the failure in
+    # Its words stay on screen, rather than "Can't reach the log".
+    expect(page.locator(".entry")).to_have_count(1)
+    expect(page.locator(".status")).to_have_count(0)
+    expect(page.locator("#tiles .tile")).to_have_count(3)
+    expect(page.locator("html")).to_have_attribute("data-log", "stale")
+    # And the next reload, once the server's back, brings what was charted since.
+    fake.fail = False
+    fake.entries.append(["FERN", 10, 20, 0, 0, "AMY", NOW_MS + 10_000, 11])
+    page.clock.fast_forward(21_000)
+    expect(page.locator(".entry")).to_have_count(2)
+    expect(page.locator("html")).to_have_attribute("data-log", "ready")
+
+
+def test_a_day_that_ends_on_screen_stops_saying_live(page: Page, site_url, errors):
+    late = int(datetime(2026, 11, 7, 4, 59, 30, tzinfo=timezone.utc).timestamp() * 1000)  # 11:59:30 PM in Toronto
+    fake = FakeSurveyLog([ACORN, MONET, ZEUS], PLACES, THEMES)
+    open_log(page, site_url, fake, now_ms=late, running=True)
+    expect(page.locator("#sumTitle")).to_have_text("Today")
+    expect(page.locator("#sumText .live")).to_have_text("Live")
+    expect(page.locator("#next")).to_be_disabled()
+    page.clock.fast_forward(60_000)  # midnight passes
+    expect(page.locator("#sumTitle")).to_have_text("Yesterday")
+    expect(page.locator("#sumText .live")).to_have_count(0)
+    expect(page.locator("#next")).to_be_enabled()
+    assert "day=2026-11-06" in page.url
+    expect(page.locator("html")).to_have_attribute("data-log", "ready")
+    assert errors == []
+
+
+def test_an_hour_that_ended_while_the_page_was_hidden_stops_saying_live(page: Page, site_url, errors):
+    fake = FakeSurveyLog([ACORN, MONET, ZEUS], PLACES, THEMES)
+    open_log(page, site_url, fake, query="&period=hour", now_ms=NOW_MS + 29 * MINUTE, running=True)  # 3:59 PM
+    expect(page.locator("#sumText .live")).to_have_text("Live")
+    expect(page.locator("#next")).to_be_disabled()
+    page.evaluate(HIDE, True)
+    page.clock.fast_forward("05:00")
+    page.evaluate(HIDE, False)  # back at 4:04
+    expect(page.locator("#sumText .live")).to_have_count(0)
+    expect(page.locator("#next")).to_be_enabled()
+    expect(page.locator("#sumTitle")).to_have_text("3:00 PM – 4:00 PM")
+    assert errors == []
