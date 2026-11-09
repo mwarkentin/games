@@ -594,6 +594,8 @@ def test_bots_clean_up_their_winnings_every_so_often(page: Page, site_url, error
         }})()""",
         timeout=60_000,
     )
+    # A broom pops up out of its loot pile, so it's noticed.
+    expect(page.locator("#fx .floaty.broom")).to_have_text("🧹")
     assert errors == []
 
 

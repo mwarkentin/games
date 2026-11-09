@@ -394,7 +394,8 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px s
 .tile .tloot { position: relative; flex: none; width: calc(var(--lw) * 1.2); height: calc(var(--lw) * 1.75); }
 #opponents:not(.loots) .tloot { display: none; }
 .tile .tloot .heap { position: absolute; inset: 0; pointer-events: none; }
-.tile .heap .card { --w: var(--lw); }
+/* Someone else's heap squares up slowly enough to see, even in Fast mode. */
+.tile .heap .card { --w: var(--lw); transition: transform 600ms cubic-bezier(.3, .7, .3, 1) calc(var(--i, 0) * 25ms); }
 .tile .tloot .count {
   position: absolute; top: -4px; right: -6px; z-index: 999; min-width: 18px; padding: 2px 4px; border-radius: 999px;
   font: 800 10px/1 system-ui, sans-serif; text-align: center; background: rgba(0, 0, 0, .55); color: #fff;
@@ -475,6 +476,7 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px s
   100% { transform: translate(calc(-50% + var(--dx)), calc(-50% + var(--dy))) rotate(var(--rot)) scale(1.1); opacity: 0; }
 }
 .floaty { position: absolute; font-size: 30px; animation: floaty 1.8s ease-out forwards; }
+.floaty.broom { font-size: 22px; }
 @keyframes floaty { 0% { transform: translate(-50%, 0) scale(.6); opacity: 0; } 15% { opacity: 1; transform: translate(-50%, -20px) scale(1.1); } 100% { opacity: 0; transform: translate(calc(-50% + var(--dx)), -170px) scale(1); } }
 .flash { position: absolute; inset: 0; animation: flash calc(380ms * var(--pace)) ease-out forwards; }
 @keyframes flash { from { opacity: .75; } to { opacity: 0; } }
@@ -4106,7 +4108,17 @@ const SixSeven = {
 function floatCheer(seat, e) {
   const tile = seat === S.you ? $('myPile') : tiles.get(seat)?.node;
   const [x, y] = tile && tile.isConnected && tile.offsetParent ? centerOf(tile) : [window.innerWidth / 2, window.innerHeight - 120];
-  const node = el('span', 'floaty', CHEERS[e]);
+  floatUp(x, y, CHEERS[e]);
+}
+
+// A broom pops up out of someone's loot pile as they clean it up.
+function floatBroom(seat) {
+  const heap = tiles.get(seat)?.heap;
+  if (heap && heap.isConnected && heap.offsetParent) floatUp(...centerOf(heap), '🧹', 'broom');
+}
+
+function floatUp(x, y, text, kind = '') {
+  const node = el('span', `floaty ${kind}`.trim(), text);
   node.style.left = x + 'px';
   node.style.top = y + 'px';
   node.style.setProperty('--dx', (Math.random() * 80 - 40) + 'px');
@@ -4360,7 +4372,7 @@ function receive(m) {
     case 'gather': return onGather(m);
     case 'tidy':
       // Someone cleaned up their winnings: their heap squares up on their tile.
-      if (m.seat !== S.you) heapSquare(m.seat);
+      if (m.seat !== S.you && heapSquare(m.seat)) floatBroom(m.seat);
       return;
     case 'deck':
       // Someone picked another deck: their cards are redrawn in it.
@@ -5650,8 +5662,9 @@ function heapTidy() {
 // Bots clean up their winnings every so often, the way people do while they
 // wait: the more pots have landed on a messy heap since it was last squared
 // up, the likelier at each new battle, a beat after the bot slams (and after
-// a pot it just won lands). Only for show, so each screen decides for itself,
-// as it does where each won card lands.
+// a pot it just won lands), with a broom popping up so it's noticed. Only for
+// show, so each screen decides for itself, as it does where each won card
+// lands.
 function botsTidy(m, winner, landing) {
   for (const [seat, h] of heaps) {
     const p = S.players[seat];
@@ -5659,7 +5672,7 @@ function botsTidy(m, winner, landing) {
     if (Math.random() >= Math.min(0.8, h.tosses * 0.15)) continue;
     const slam = (m.bots || []).find((b) => b[0] === seat);
     const wait = Math.max(slam ? slam[3] : 0, seat === winner ? landing : 0) + (600 + Math.random() * 1400) * pace();
-    later(() => { if (heaps.get(seat) === h && S.phase === 'playing') heapSquare(seat); }, wait);
+    later(() => { if (heaps.get(seat) === h && S.phase === 'playing' && heapSquare(seat)) floatBroom(seat); }, wait);
   }
 }
 

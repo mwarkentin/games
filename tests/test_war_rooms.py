@@ -460,6 +460,7 @@ def test_cleaning_up_shows_on_everyone_elses_screen(page: Page, browser, site_ur
     expect(dana_on_bob.nth(0)).to_have_css("--r", "0deg")
     expect(dana_on_bob.nth(1)).to_have_css("--r", "0deg")
     assert dana_on_bob.evaluate_all(z_order) == stacked
+    expect(guest.locator("#fx .floaty.broom")).to_have_text("🧹")
     expect(guest.locator("#tidyBtn")).to_be_hidden()
     guest_context.close()
     assert errors == []
