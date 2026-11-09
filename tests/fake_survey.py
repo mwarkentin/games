@@ -39,7 +39,8 @@ def world_map(charted=None, sectors=(), spawn=None, players=0):
 class FakeSurvey:
     """Answers each sector's WebSocket the way worker/src/survey.js does."""
 
-    def __init__(self, claims=(), presence=(), taken=(), world=None, totals=None, full=None, refuse=None, refuse_passes=(), require_pass=False):
+    def __init__(self, claims=(), presence=(), taken=(), world=None, totals=None, full=None, refuse=None, refuse_passes=(),
+                 require_pass=False, hold=None, lose=None, rate=False):
         self.claims = list(claims)        # [w, x, y, d, s, initials, at] already charted in sector 0,0
         self.presence = list(presence)    # [id, initials, x, y] of other players in sector 0,0
         self.taken = {tuple(c[:4]): c for c in taken}  # words someone else charts first, just before us
@@ -49,12 +50,28 @@ class FakeSurvey:
         self.refuse = refuse              # "slow down" or "daily limit": every claim is refused with it
         self.refuse_passes = set(refuse_passes)  # survey passes the Worker turns away, as expired or another address's
         self.require_pass = require_pass  # joins without a pass are turned away, as with TURNSTILE_REQUIRED = "true"
+        self.hold = hold                  # a test of a socket's URL: those wait, unanswered, for welcome()
+        self.lose = lose                  # "answer": the sector keeps each claim but its answer is lost; "claim": the claim is,
+                                          # as when the socket drops with it on the way
+        self.rate = rate                  # claims are limited per socket, as the sector's CLAIM_BURST and CLAIM_REFILL_MS
+        self.held: list[WebSocketRoute] = []
         self.urls: list[str] = []         # the URL of every connection
         self.sectors: list[str] = []      # path of every connection
         self.received: list[dict] = []    # every message from the game
         self.sockets: dict[str, WebSocketRoute] = {}
 
     def handle(self, ws: WebSocketRoute) -> None:
+        if self.hold and self.hold(ws.url):
+            self.held.append(ws)  # open, as far as the game can tell, but nothing comes back yet
+            return
+        self.welcome(ws)
+
+    def welcome(self, ws: WebSocketRoute | None = None) -> None:
+        """Answers a socket as the sector would: `ws`, or every one being held."""
+        if ws is None:
+            while self.held:
+                self.welcome(self.held.pop(0))
+            return
         sector = re.search(r"/v1/survey/(-?\d+)/(-?\d+)(?:\?pass=([^&]*))?$", ws.url)
         key = f"{sector[1]},{sector[2]}"
         self.urls.append(ws.url)
@@ -63,7 +80,7 @@ class FakeSurvey:
             return
         self.sectors.append(key)
         self.sockets[key] = ws
-        you = f"you-{key}"
+        you = f"you-{key}-{len(self.sectors)}"  # every socket is someone new to the sector
         home = key == "0,0"
         if self.full:
             ws.send(json.dumps({"t": "full", "world": self.full == "world"}))
@@ -74,18 +91,33 @@ class FakeSurvey:
             ws.send(json.dumps({"t": "world", **self.totals}))
         if home and self.presence:
             ws.send(json.dumps({"t": "presence", "n": len(self.presence), "p": self.presence}))
+        me = {"initials": "", "tokens": 5.0, "at": time.monotonic()}
 
         def on_message(text: str) -> None:
             msg = json.loads(text)
             self.received.append({**msg, "sector": key})
+            if msg["t"] == "me":
+                me["initials"] = msg["initials"]
             if msg["t"] != "claim":
                 return
             word = (msg["w"], msg["x"], msg["y"], msg["d"])
+            word_key = f"{msg['w']}~{msg['x']}~{msg['y']}~{msg['d']}"
+            if self.rate:
+                now = time.monotonic()
+                me["tokens"] = min(5.0, me["tokens"] + (now - me["at"]) / 1.5)
+                me["at"] = now
+                if me["tokens"] < 1:
+                    ws.send(json.dumps({"t": "error", "key": word_key, "error": "slow down"}))
+                    return
+                me["tokens"] -= 1
             if self.refuse:
-                word_key = f"{msg['w']}~{msg['x']}~{msg['y']}~{msg['d']}"
                 ws.send(json.dumps({"t": "error", "key": word_key, "error": self.refuse}))
             elif word in self.taken:
                 ws.send(json.dumps({"t": "taken", "c": self.taken[word]}))
+            elif self.lose == "answer":
+                self.claims.append([*word, 0, me["initials"], NOW_MS])
+            elif self.lose == "claim":
+                pass
             else:
                 ws.send(json.dumps({"t": "claimed", "c": [*word, 0, "ZED", NOW_MS], "by": you}))
 
@@ -118,7 +150,8 @@ FAKE_TURNSTILE = """
       } else setTimeout(() => o.callback('%s'), 10);
       return 'w' + window.__tsRenders.length;
     },
-    remove() {}, reset() {},
+    remove(id) { (window.__tsRemoved = window.__tsRemoved || []).push(id); },
+    reset() {},
   };
   const onload = new URL(document.currentScript.src).searchParams.get('onload');
   window[onload]();

@@ -276,3 +276,65 @@ def test_without_a_share_sheet_a_find_is_copied(page: Page, site_url, errors):
     assert copied.startswith(f"I just found {w} in ")
     assert copied.endswith(f" {site_url}/letterfield#f-{w.lower()}-{x}-{y}-{d}")
     assert errors == []
+
+
+def test_every_tab_keeps_the_field_notes_found_in_the_others(page: Page, site_url, errors):
+    without_worker(page, site_url, "letterfield")
+    page.goto(f"{site_url}/letterfield#debug")
+    page.wait_for_function("window.__lf")
+    # A find's link, or a word in the survey log, opened in a new tab.
+    other = page.context.new_page()
+    without_worker(other, site_url, "letterfield")
+    other.goto(f"{site_url}/letterfield#debug")
+    other.wait_for_function("window.__lf")
+    words = page.evaluate("window.__lf.chunk(0, 0).words.slice(0, 2).map(o => [o.w, o.x, o.y, o.d])")
+    page.evaluate(COLLECT, words[:1])
+    other.evaluate(COLLECT, words[1:])
+    # Neither tab's find is lost from the notes kept in this browser (tabs hear of each other's saves a moment later).
+    stored = "() => (JSON.parse(localStorage.getItem('letterfield.finds.v2')) || []).map(o => o.w).sort().join(' ')"
+    want = " ".join(sorted(w[0] for w in words))
+    for _ in range(60):
+        if page.evaluate(stored) == want and other.evaluate(stored) == want:
+            break
+        page.wait_for_timeout(50)
+    assert page.evaluate(stored) == want, "a tab's save wrote over the other's find"
+    # Each tab takes in the other's as it's saved.
+    expect(page.locator("#notesBadge")).to_have_text("2")
+    expect(other.locator("#notesBadge")).to_have_text("2")
+    page.reload()
+    expect(page.locator("#notesBadge")).to_have_text("2")
+    assert errors == []
+
+
+def test_escape_while_dragging_a_circle_lets_it_go(page: Page, site_url, errors):
+    without_worker(page, site_url, "letterfield")
+    page.set_viewport_size({"width": 1280, "height": 900})
+    page.goto(f"{site_url}/letterfield#debug")
+    page.click("#coachOk")
+    page.click("#modeSelect")
+    cam = page.evaluate("({ ...window.__lf.cam })")
+    page.mouse.move(500, 450)
+    page.mouse.down()
+    page.mouse.move(560, 450, steps=4)
+    page.keyboard.press("Escape")
+    page.mouse.move(640, 450, steps=4)  # still holding the button
+    page.mouse.up()
+    assert errors == []
+    assert page.evaluate("({ ...window.__lf.cam })") == cam, "the rest of the drag doesn't pan either"
+    expect(page.locator("#notesBadge")).to_have_text("0")
+
+
+def test_music_left_on_starts_with_the_first_tap_on_its_button(page: Page, site_url, errors):
+    page.add_init_script(COUNT_AUDIO + "localStorage.setItem('letterfield.music.v1', '1');")
+    page.goto(f"{site_url}/letterfield#debug")
+    page.wait_for_function("window.__lf")
+    music = page.locator("#music")
+    expect(music).to_have_attribute("aria-pressed", "true")
+    assert page.evaluate("window.__lf.music()") is None  # on, but waiting for a tap
+    music.click()
+    page.wait_for_function("window.__lf.music() !== null", timeout=3000)
+    expect(music).to_have_attribute("aria-pressed", "true")
+    music.click()  # and the next tap switches it off
+    expect(music).to_have_attribute("aria-pressed", "false")
+    assert page.evaluate("window.__lf.music()") is None
+    assert errors == []
