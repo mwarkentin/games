@@ -2870,10 +2870,117 @@ function shareText(e) {
   const nth = [...found.values()].filter(o => o.t <= e.t).length;
   return `${lead}. That’s word ${nth.toLocaleString()} in my field notes.`;
 }
+// A find as a picture, 1200×630 like a link preview: the word circled on its
+// own patch of the map, beside its name, place and standing. It's drawn and
+// encoded in one go, without waiting, so the share sheet still opens from
+// the tap (Safari won't open one after a wait); the fonts are the map's,
+// already loaded.
+function findImage(e) {
+  const W0 = 1200, H0 = 630, cv = document.createElement('canvas');
+  cv.width = W0; cv.height = H0;
+  const g = cv.getContext('2d');
+  if (!g) return null;
+  const tc = TC[e.th], theme = THEMES[e.th], [ex, ey] = wordEnd(e);
+  const rx = fdiv(e.x, RC), ry = fdiv(e.y, RC);
+  const css = getComputedStyle(document.documentElement), font = n => css.getPropertyValue(n).trim();
+  const type = (weight, px, f, spacing = 0) => {
+    g.font = `${weight} ${px}px ${f}`;
+    if ('letterSpacing' in g) g.letterSpacing = `${(spacing * px).toFixed(1)}px`;
+  };
+  g.fillStyle = C.paper; g.fillRect(0, 0, W0, H0);
+
+  // The map, with the word's middle in the middle of the right-hand side.
+  const PANEL = 470, mx = (PANEL + 60 + W0) / 2, my = H0 / 2;
+  const spanX = Math.abs(ex - e.x) + 1, spanY = Math.abs(ey - e.y) + 1;
+  const cs = clamp(Math.min((W0 - PANEL - 120) / (spanX + 1), (H0 - 120) / (spanY + 1)), 30, 72);
+  const wx = (e.x + ex) / 2 + .5, wy = (e.y + ey) / 2 + .5;
+  const SX = x => (x - wx) * cs + mx, SY = y => (y - wy) * cs + my;
+  const x0 = Math.floor(wx - (mx - PANEL + 60) / cs), x1 = Math.ceil(wx + (W0 - mx) / cs);
+  const y0 = Math.floor(wy - my / cs) - 1, y1 = Math.ceil(wy + (H0 - my) / cs);
+  g.globalAlpha = tintAlpha(cs);
+  for (let ty = fdiv(y0, RC); ty <= fdiv(y1, RC); ty++) for (let tx = fdiv(x0, RC); tx <= fdiv(x1, RC); tx++) {
+    g.fillStyle = TC[regionTheme(tx, ty)].tint;
+    g.fillRect(SX(tx * RC), SY(ty * RC), RC * cs, RC * cs);
+  }
+  g.globalAlpha = 1;
+  g.strokeStyle = C.rule; g.lineWidth = 1.5; g.setLineDash([6, 6]);
+  g.beginPath();
+  for (let tx = fdiv(x0, RC) + 1; tx <= fdiv(x1, RC); tx++) { g.moveTo(SX(tx * RC), 0); g.lineTo(SX(tx * RC), H0); }
+  for (let ty = fdiv(y0, RC) + 1; ty <= fdiv(y1, RC); ty++) { g.moveTo(0, SY(ty * RC)); g.lineTo(W0, SY(ty * RC)); }
+  g.stroke(); g.setLineDash([]);
+  // The word's ring, as the map draws it.
+  const a = Math.atan2(SY(ey) - SY(e.y), SX(ex) - SX(e.x)), r = cs * .42;
+  g.beginPath();
+  g.moveTo(SX(e.x + .5) + r * Math.cos(a - Math.PI / 2), SY(e.y + .5) + r * Math.sin(a - Math.PI / 2));
+  g.arc(SX(ex + .5), SY(ey + .5), r, a - Math.PI / 2, a + Math.PI / 2);
+  g.arc(SX(e.x + .5), SY(e.y + .5), r, a + Math.PI / 2, a + Math.PI * 1.5);
+  g.closePath();
+  g.fillStyle = tc.fill; g.fill();
+  g.lineWidth = 3; g.strokeStyle = tc.stroke;
+  if (e.s) g.setLineDash([cs * .16, cs * .1]);
+  g.stroke(); g.setLineDash([]);
+  // Letters: the word's in full ink, the rest quieter.
+  const inWord = new Set([...e.w].map((_, i) => `${e.x + DIRS[e.d][0] * i},${e.y + DIRS[e.d][1] * i}`));
+  type(500, Math.round(cs * .42), GRID_FONT);
+  g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillStyle = C.ink;
+  for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) {
+    const word = inWord.has(`${x},${y}`);
+    g.globalAlpha = word ? 1 : .42;
+    g.fillText(String.fromCharCode(65 + letterAt(x, y)), SX(x + .5), SY(y + .5));
+  }
+  g.globalAlpha = 1;
+  g.textAlign = 'left'; g.textBaseline = 'alphabetic';
+
+  // The panel, fading into the map.
+  const fade = g.createLinearGradient(PANEL, 0, PANEL + 90, 0);
+  fade.addColorStop(0, rgba(C.paper, 1)); fade.addColorStop(1, rgba(C.paper, 0));
+  g.fillStyle = C.paper; g.fillRect(0, 0, PANEL, H0);
+  g.fillStyle = fade; g.fillRect(PANEL, 0, 90, H0);
+  g.fillStyle = C.accent; g.fillRect(0, 0, W0, 10);
+  const X = 64, R = PANEL - 20;
+  const fit = (text, weight, px, min, f, spacing) => {
+    for (; px > min; px -= 2) { type(weight, px, f, spacing); if (g.measureText(text).width <= R - X) return px; }
+    type(weight, min, f, spacing); return min;
+  };
+  type(500, 20, font('--f-mono'), .14); g.fillStyle = C.muted;
+  g.fillText('LETTERFIELD', X, 84);
+  fit(e.w, 800, 120, 40, DISPLAY_FONT, .04); g.fillStyle = C.ink;
+  g.fillText(e.w, X, 216);
+  g.fillStyle = tc.stroke; g.beginPath(); g.arc(X + 9, 262, 9, 0, Math.PI * 2); g.fill();
+  fit(`${e.s ? 'A stray ' + theme.name.toLowerCase() : theme.name} word`, 500, 26, 16, font('--f-ui'));
+  g.fillStyle = C.muted; g.fillText(`${e.s ? 'A stray ' + theme.name.toLowerCase() : theme.name} word`, X + 30, 271);
+  fit(regionName(rx, ry), 600, 34, 18, font('--f-ui')); g.fillStyle = C.ink;
+  g.fillText(regionName(rx, ry), X, 330);
+  type(400, 18, font('--f-mono')); g.fillStyle = C.muted;
+  g.fillText(`${fmtCoord(e.x, e.y)} · ${DARROW[e.d]} ${DNAME[e.d]}`, X, 366);
+  g.fillStyle = C.rule; g.fillRect(X, 410, R - X, 2);
+  if (e.f) {
+    type(700, 44, DISPLAY_FONT, .05); g.fillStyle = C.accent; g.fillText('CHARTED FIRST', X, 470);
+    type(400, 18, font('--f-mono')); g.fillStyle = C.muted;
+    const who = myInitials();
+    if (e.n) g.fillText(`Word ${e.n.toLocaleString()} of ${(world ? world.total : SURVEY_WORDS).toLocaleString()}`, X, 508);
+    g.fillText(e.n ? `on the shared map${who ? ' · ' + who : ''}` : `on the shared map${who ? ', by ' + who : ''}`, X, e.n ? 536 : 508);
+  } else {
+    const nth = [...found.values()].filter(o => o.t <= e.t).length;
+    type(700, 44, DISPLAY_FONT, .05); g.fillStyle = C.ink; g.fillText(`WORD ${nth.toLocaleString()}`, X, 470);
+    type(400, 18, font('--f-mono')); g.fillStyle = C.muted; g.fillText('in my field notes', X, 508);
+  }
+  type(400, 16, font('--f-mono')); g.fillStyle = C.muted; g.fillText(location.host, X, 594);
+
+  // Encoded here and now, so nothing waits.
+  const url = cv.toDataURL('image/png'), bin = atob(url.slice(url.indexOf(',') + 1));
+  const bytes = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+  return new File([bytes], `letterfield-${e.w.toLowerCase()}.png`, { type: 'image/png' });
+}
 async function shareFind(e) {
   const text = shareText(e), url = shareUrl(e);
   if (navigator.share) {
-    try { await navigator.share({ title: 'Letterfield', text, url }); return; } catch (err) { if (err && err.name === 'AbortError') return; }
+    const data = { title: 'Letterfield', text, url };
+    try {
+      if (navigator.canShare) { const file = findImage(e); if (file && navigator.canShare({ ...data, files: [file] })) data.files = [file]; }
+    } catch (_) {}
+    try { await navigator.share(data); return; } catch (err) { if (err && err.name === 'AbortError') return; }
   }
   try {
     await navigator.clipboard.writeText(`${text} ${url}`);
@@ -3074,7 +3181,7 @@ updateHud();
 invalidate();
 if (redrawn) setTimeout(() => toast(`<i></i><b>The map has been redrawn</b><span>${NT} themes of about ${Math.round(THEMES.reduce((a, t) => a + t.words.length, 0) / NT / 10) * 10} words now, so a territory never repeats one · ${redrawn.kept ? `${redrawn.kept} of your ${redrawn.had} finds are still on it` : 'your old finds are not on it'}</span>`, null, 8000), 900);
 connectStore();
-if (location.hash === '#debug') window.__lf = { cam, found, claims, links, chunk, wordEnd, collect, territoryProgress, world: () => world, supernova, novaSound, audioOut, musicTracks: MUSIC_TRACKS, music: () => musicNow && { state: ac.state, track: musicNow.track().name, nodes: musicNow.track().nodes.size, level: musicNow.master.gain.value, swap: musicNow.swap }, nova: () => nova,
+if (location.hash === '#debug') window.__lf = { cam, found, claims, links, chunk, wordEnd, collect, findImage, territoryProgress, world: () => world, supernova, novaSound, audioOut, musicTracks: MUSIC_TRACKS, music: () => musicNow && { state: ac.state, track: musicNow.track().name, nodes: musicNow.track().nodes.size, level: musicNow.master.gain.value, swap: musicNow.swap }, nova: () => nova,
   pass: () => Pass.state, intro: () => Intro.state, surveyStatus, linkStates: () => Object.fromEntries([...links].map(([k, l]) => [k, l.m.state])), outbox: () => [...outbox.values()].map(c => [c.e.w, c.m.state]) };
 
 })();

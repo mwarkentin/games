@@ -3,6 +3,9 @@
 - On the survey log, Share on a surveyor's, theme's or territory's own page
   sends a line about it, ready to post, with a picture of their numbers and
   latest words. Without a share sheet, it copies the line and link.
+- Sharing a word you found sends a picture with it, where your phone can:
+  the word circled on its patch of the map, with its territory and whether
+  you charted it first.
 - On the shared survey, you pick your three-letter initials before
   circling your first word, so every word you chart first is signed.
 - A redrawn map with 225 themes, 109 of them new, from Sushi Bar and Whale

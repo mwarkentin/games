@@ -267,6 +267,34 @@ def test_a_find_shares_what_it_is_where_and_a_link_to_it(page: Page, site_url, e
     assert errors == []
 
 
+def test_a_find_shares_a_picture_of_it_where_files_can_be_shared(page: Page, site_url, errors):
+    without_worker(page, site_url, "letterfield")
+    page.add_init_script("""
+      window.__shared = [];
+      Object.defineProperty(Navigator.prototype, 'canShare', { value: d => true, configurable: true });
+      Object.defineProperty(Navigator.prototype, 'share', { configurable: true, value: async d => {
+        const files = await Promise.all((d.files || []).map(async f => {
+          const b = await createImageBitmap(f);
+          return { name: f.name, type: f.type, width: b.width, height: b.height };
+        }));
+        window.__shared.push({ ...d, files });
+      } });
+    """)
+    page.set_viewport_size({"width": 375, "height": 740})
+    page.goto(f"{site_url}/letterfield#debug")
+    page.click("#coachOk")
+    page.wait_for_function("window.__lf")
+    w, x, y, d = page.evaluate("(() => { const o = window.__lf.chunk(0, 0).words[0]; return [o.w, o.x, o.y, o.d]; })()")
+    page.evaluate("([w, x, y, d]) => window.__lf.collect(w, x, y, d, false)", [w, x, y, d])
+    page.click("#toast .share")
+    page.wait_for_function("window.__shared.length")
+    shared = page.evaluate("window.__shared[0]")
+    assert shared["text"].startswith(f"I just found {w} in ")
+    assert shared["url"] == f"{site_url}/letterfield#f-{w.lower()}-{x}-{y}-{d}"
+    assert shared["files"] == [{"name": f"letterfield-{w.lower()}.png", "type": "image/png", "width": 1200, "height": 630}]
+    assert errors == []
+
+
 def test_without_a_share_sheet_a_find_is_copied(page: Page, site_url, errors):
     without_worker(page, site_url, "letterfield")
     page.add_init_script("""
