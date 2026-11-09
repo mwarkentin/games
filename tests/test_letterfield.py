@@ -41,16 +41,19 @@ def test_circling_a_word_adds_it_to_field_notes(page: Page, site_url, errors):
     assert errors == []
 
 
-def test_finds_from_the_first_map_carry_over_if_still_there(page: Page, site_url, errors):
+def test_finds_from_an_older_map_carry_over_if_still_there(page: Page, site_url, errors):
+    page.set_viewport_size({"width": 375, "height": 740})
     page.goto(f"{site_url}/letterfield#debug")
     page.wait_for_function("window.__lf")
-    # One hidden word on today's map, and the same word somewhere it isn't.
+    # One hidden word on today's map, and the same word somewhere it isn't. The
+    # survey started over with the map, so being first to it doesn't carry over.
     word = page.evaluate("() => { const { w, x, y, d } = window.__lf.chunk(0, 0).words[0]; return { w, x, y, d }; }")
-    old = [{**word, "t": 1, "s": 0}, {**word, "x": word["x"] + 4800, "t": 2, "s": 0}]
+    old = [{**word, "t": 1, "s": 0, "f": 1, "n": 12}, {**word, "x": word["x"] + 4800, "t": 2, "s": 0}]
     page.evaluate(
         """old => {
-          localStorage.setItem('letterfield.finds.v1', JSON.stringify(old));
-          localStorage.removeItem('letterfield.finds.v2');
+          localStorage.setItem('letterfield.finds.v2', JSON.stringify([old[1]]));
+          localStorage.setItem('letterfield.finds.v3', JSON.stringify(old));
+          localStorage.removeItem('letterfield.finds.v4');
           localStorage.setItem('letterfield.coach.v1', '1');
         }""",
         old,
@@ -59,8 +62,14 @@ def test_finds_from_the_first_map_carry_over_if_still_there(page: Page, site_url
     expect(page.locator("#toast")).to_contain_text("The map has been redrawn")
     expect(page.locator("#toast")).to_contain_text("1 of your 2 finds are still on it")
     expect(page.locator("#notesBadge")).to_have_text("1")
-    saved = page.evaluate("() => [localStorage.getItem('letterfield.finds.v1'), JSON.parse(localStorage.getItem('letterfield.finds.v2'))]")
+    # A long note stays on a phone's screen, padding and all, and wraps rather than cutting off.
+    box = page.locator("#toast").bounding_box()
+    assert box["x"] >= 16 and box["x"] + box["width"] <= 375 - 16, box
+    line = page.locator("#toast span")
+    assert line.evaluate("e => e.scrollWidth <= e.clientWidth"), "the note's line is cut off"
+    saved = page.evaluate("() => [localStorage.getItem('letterfield.finds.v3'), JSON.parse(localStorage.getItem('letterfield.finds.v4'))]")
     assert len(saved[1]) == 1 and saved[1][0]["w"] == word["w"]
+    assert "f" not in saved[1][0] and "n" not in saved[1][0]
     assert saved[0] is not None, "the old notes are left as they were"
 
     # The note shows once.
@@ -291,7 +300,7 @@ def test_every_tab_keeps_the_field_notes_found_in_the_others(page: Page, site_ur
     page.evaluate(COLLECT, words[:1])
     other.evaluate(COLLECT, words[1:])
     # Neither tab's find is lost from the notes kept in this browser (tabs hear of each other's saves a moment later).
-    stored = "() => (JSON.parse(localStorage.getItem('letterfield.finds.v2')) || []).map(o => o.w).sort().join(' ')"
+    stored = "() => (JSON.parse(localStorage.getItem('letterfield.finds.v4')) || []).map(o => o.w).sort().join(' ')"
     want = " ".join(sorted(w[0] for w in words))
     for _ in range(60):
         if page.evaluate(stored) == want and other.evaluate(stored) == want:

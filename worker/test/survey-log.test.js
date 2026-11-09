@@ -10,7 +10,7 @@ import { DatabaseSync } from 'node:sqlite';
 import { afterEach, beforeEach, describe, mock, test } from 'node:test';
 
 import worker from '../src/index.js';
-import { RC, THEMES, VOCAB, chunk, fdiv, keyOf, regionName, regionTheme } from '../src/letterfield-world.js';
+import { MAP_VERSION, RC, THEMES, VOCAB, chunk, fdiv, keyOf, regionName, regionTheme } from '../src/letterfield-world.js';
 import {
   DAY_MS, HOURS_SQL, HOUR_AFTER_SQL, HOUR_MS, HOUR_SQL, LIVE_CACHE_S, LOG_BATCH, LOG_MS, LOG_PAGE, LOG_RETRY_MAX_MS, SETTLED_MS,
   FIRST_SQL, LAST_SQL, SLICES, SLICE_MAX_HOURS, SLICE_PAGE, SLICE_SLOW_CACHE_S, SPAN_CACHE_S, SURVEYORS_SQL, TERRITORIES_SQL,
@@ -241,6 +241,19 @@ describe('the log\'s counts', () => {
     for (const sql of [FIRST_SQL, LAST_SQL]) assert.doesNotMatch(plan(db, sql), /TEMP B-TREE/);
   });
 
+  test('start over with the new map: the log and its counts emptied, and counting again after', async () => {
+    db = fakeD1(3);
+    await writeLog(db, [at(0, 0, NOW), at(48, 0, NOW + 1, { initials: 'AMY' }), at(5, 5, NOW + 2, { s: 1 })]);
+    db.raw.exec(migrations()[3]);
+    for (const table of ['survey_log', 'survey_log_hours', 'survey_log_surveyors', 'survey_log_territories']) {
+      assert.equal(db.raw.prepare(`SELECT COUNT(*) AS n FROM ${table}`).get().n, 0, table);
+    }
+    await writeLog(db, [at(0, 0, NOW + 3), at(1, 1, NOW + 4, { w: 'BARK' })]);
+    db.raw.exec(`DELETE FROM survey_log WHERE w = 'BARK'`);
+    assert.deepEqual(hours(), [{ hour: HOUR, n: 1, world: 1 }]);
+    assert.deepEqual(counts('survey_log_territories'), [{ day: DAY, rx: 0, ry: 0, n: 1 }]);
+  });
+
   test('read only the counts asked for', () => {
     for (const p of [plan(db, HOURS_SQL, 1, 2)]) assert.match(p, /SEARCH survey_log_hours USING PRIMARY KEY \(hour>\? AND hour<\?\)/);
     assert.match(plan(db, SURVEYORS_SQL, 1, 2), /SEARCH survey_log_surveyors USING PRIMARY KEY \(day>\? AND day<\?\)/);
@@ -295,7 +308,7 @@ describe('one surveyor, theme or territory', () => {
   });
 
   test('give one theme\'s hidden words, with who charted them', async () => {
-    const th = regionTheme(0, 0), far = [116 * 2, 0];  // another territory with the same theme
+    const th = regionTheme(0, 0), far = [THEMES.length, 0];  // another territory with the same theme
     assert.equal(regionTheme(far[0], far[1]), th);
     await writeLog(db, [
       at(1, 1, NOW), at(2, 2, NOW + 1, { initials: 'AMY' }), at(far[0] * RC, 0, NOW + 2, { initials: 'AMY' }),
@@ -393,7 +406,7 @@ describe('routeLog', () => {
     assert.equal(again.headers.get('Access-Control-Allow-Origin'), null);  // not in ALLOWED_ORIGINS here
   });
 
-  test('keeps each Worker\'s answers apart in Cloudflare\'s cache, so a preview never answers for production', async () => {
+  test('keeps each Worker\'s and each map\'s answers apart in Cloudflare\'s cache, so a preview never answers for production', async () => {
     // Every workers.dev Worker on the account shares one zone's cache, Worker Previews included.
     const stored = new Map();
     globalThis.caches = { default: { match: async (r) => stored.get(r.url)?.clone(), put: async (r, res) => { stored.set(r.url, res); } } };
@@ -404,8 +417,8 @@ describe('routeLog', () => {
     forgetLog();  // another Worker instance
     assert.equal((await (await ask('games-leaderboard.example.workers.dev', env)).json()).total, 0);
     assert.deepEqual([...stored.keys()].sort(), [
-      `https://games-leaderboard.example.workers.dev/_cache/survey-log/day/${DAY - 3}`,
-      `https://pr-43-games-leaderboard.example.workers.dev/_cache/survey-log/day/${DAY - 3}`,
+      `https://games-leaderboard.example.workers.dev/_cache/survey-log/m${MAP_VERSION}/day/${DAY - 3}`,
+      `https://pr-43-games-leaderboard.example.workers.dev/_cache/survey-log/m${MAP_VERSION}/day/${DAY - 3}`,
     ]);
   });
 

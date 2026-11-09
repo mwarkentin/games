@@ -10,7 +10,7 @@ import { afterEach, beforeEach, describe, mock, test } from 'node:test';
 import vm from 'node:vm';
 
 import worker from '../src/index.js';
-import { CH, DIRS, RG, THEMES, THEME_DATA, VOCAB, chunk, genChunk, keyOf, letterAt, regionName, regionTheme, wordEnd } from '../src/letterfield-world.js';
+import { CH, DEAL, DIRS, HOLDERS, MAP_VERSION, RC, RG, STRAY_MIN, THEMES, THEME_DATA, VOCAB, chunk, genChunk, keyOf, letterAt, regionName, regionTheme, strayTheme, wordEnd } from '../src/letterfield-world.js';
 import {
   ADDRESS_HEADER, ADDRESS_SOCKETS, AREA, AREA_WORDS, Atlas, BATCH_MS, DAILY_CLAIMS, DAILY_LIST_MAX, CLAIM_BURST, CLAIM_REFILL_MS, MAX_ONLINE, MAX_PLAYERS, ONLINE_MS, PRESENCE_MAX, PRESENCE_MS,
   QUIET, REPORT_MS, UNPASSED_HEADER, SAVE_MS, SAVE_POS_MS, SECTOR, SPAWN_MAX, Sector, VIEW_MS, addressOf, checkClaim, routeSurvey,
@@ -30,7 +30,7 @@ function gameWorld() {
   const end = html.indexOf('/* ---------- Formatting ---------- */');
   assert.ok(start > 0 && end > start, 'letterfield.html lost its section markers');
   const context = vm.createContext({ matchMedia: () => ({ matches: false }) });
-  return vm.runInContext(`${html.slice(start, end)}; ({ genChunk, letterAt, regionName, regionTheme, SECTOR, SURVEY_AREA, THEME_DATA, THEMES })`, context);
+  return vm.runInContext(`${html.slice(start, end)}; ({ genChunk, letterAt, regionName, regionTheme, strayTheme, SECTOR, SURVEY_AREA, THEME_DATA, THEMES })`, context);
 }
 
 // A hidden word in the given chunk, as the game would send it.
@@ -39,15 +39,16 @@ function placed(cx, cy, n = 0) {
   return { w, x, y, d };
 }
 
-// A word the letters spell by chance, found by reading the map near the origin.
-function findStray() {
+// A word the letters spell by chance, found by reading the map near the origin,
+// of `min` to `max` letters.
+function findStray(min = STRAY_MIN, max = 12) {
   for (let y = 0; y < 96; y++) {
     for (let x = 0; x < 96; x++) {
       for (let d = 0; d < 8; d++) {
         let s = '';
-        for (let i = 0; i < 12; i++) {
+        for (let i = 0; i < max; i++) {
           s += String.fromCharCode(65 + letterAt(x + DIRS[d][0] * i, y + DIRS[d][1] * i));
-          if (s.length >= 4 && VOCAB.has(s) && !chunk(Math.floor(x / CH), Math.floor(y / CH)).words.some((p) => p.key === keyOf(s, x, y, d))) {
+          if (s.length >= min && VOCAB.has(s) && !chunk(Math.floor(x / CH), Math.floor(y / CH)).words.some((p) => p.key === keyOf(s, x, y, d))) {
             return { w: s, x, y, d };
           }
         }
@@ -73,12 +74,31 @@ describe('the world copy', () => {
   test('has the same themes as the game, and lays them out the same way', () => {
     const game = gameWorld();
     assert.equal(THEME_DATA, game.THEME_DATA);
+    // A stray takes its territory's theme when that theme has the word, as in the game.
+    for (const [i, t] of THEMES.entries()) {
+      for (const w of t.words.slice(0, 3)) for (const [rx, ry] of [[i, 0], [3, -7]]) assert.equal(strayTheme(w, rx, ry), game.strayTheme(w, rx, ry));
+    }
     // One chunk in a territory of every theme.
     for (let t = 0; t < THEMES.length; t++) {
       const cx = t * RG + (t % RG), cy = -(t % 3);
       assert.equal(regionTheme(Math.floor(cx / RG), Math.floor(cy / RG)), game.regionTheme(Math.floor(cx / RG), Math.floor(cy / RG)));
       assert.deepEqual(genChunk(cx, cy).words, JSON.parse(JSON.stringify(game.genChunk(cx, cy).words)), `words differ in chunk ${cx},${cy}`);
     }
+  });
+
+  test('gives a stray in several themes its territory\'s theme where that has the word', () => {
+    const [w] = [...HOLDERS].find(([, n]) => n > 1);
+    const [a, b] = THEMES.flatMap((t, i) => (t.words.includes(w) ? [i] : []));
+    const other = THEMES.findIndex((t) => !t.words.includes(w));
+    // Theme t is the one at (t, 0): regionTheme is (rx + LAT_B ry) mod NT.
+    for (const t of [a, b, other]) assert.equal(regionTheme(t, 0), t);
+    assert.equal(strayTheme(w, a, 0), a);
+    assert.equal(strayTheme(w, b, 0), b);
+    // Anywhere else, the first theme that has it.
+    assert.equal(VOCAB.get(w), a);
+    assert.equal(strayTheme(w, other, 0), a);
+    const game = gameWorld();
+    for (const t of [a, b, other]) assert.equal(game.strayTheme(w, t, 0), strayTheme(w, t, 0));
   });
 
   test('names territories as the game does, for the survey\'s log', () => {
@@ -104,10 +124,13 @@ describe('checkClaim', () => {
     assert.equal(checkClaim(far, Math.floor(far.x / SECTOR), Math.floor(far.y / SECTOR)).s, 0);
   });
 
-  test('accepts a stray word of four letters or more', () => {
+  test('accepts a stray word of STRAY_MIN letters or more, and no shorter', () => {
     const stray = findStray();
     assert.ok(stray, 'no stray word near the origin');
     assert.equal(checkClaim(stray, 0, 0).s, 1);
+    const short = findStray(3, STRAY_MIN - 1);
+    assert.ok(short, 'no short stray near the origin');
+    assert.deepEqual(checkClaim(short, 0, 0), { error: 'word is not there' });
   });
 
   test('rejects words that are not on the map', () => {
@@ -976,31 +999,62 @@ describe('Atlas', () => {
 });
 
 describe('the map', () => {
-  test('has well-formed themes: 40 words or more, A to Z, 3 to 10 letters, each in one theme', () => {
-    const seen = new Map();
+  test('has well-formed themes: enough words to deal a territory, A to Z, 3 to 10 letters, at least half their own', () => {
+    const holders = new Map();
     for (const t of THEMES) {
-      assert.ok(t.words.length >= 40, `${t.name} has ${t.words.length} words`);
+      assert.ok(t.words.length >= RG * RG * DEAL, `${t.name} has ${t.words.length} words`);
       assert.ok(Number.isInteger(t.hue) && t.hue >= 0 && t.hue < 360, `${t.name} hue`);
+      assert.equal(new Set(t.words).size, t.words.length, `${t.name} has a word twice`);
       for (const w of t.words) {
         assert.match(w, /^[A-Z]{3,10}$/, `${t.name}: ${w}`);
-        assert.ok(!seen.has(w), `${w} is in ${seen.get(w)} and ${t.name}`);
-        seen.set(w, t.name);
+        holders.set(w, [...(holders.get(w) ?? []), t.name]);
       }
+    }
+    // A word can be in up to three themes where it belongs in each, but at least
+    // half of every theme is its own.
+    for (const [w, names] of holders) assert.ok(names.length <= 3, `${w} is in ${names.join(', ')}`);
+    for (const t of THEMES) {
+      const shared = t.words.filter((w) => holders.get(w).length > 1).length;
+      assert.ok(shared <= t.words.length / 2, `${t.name} shares ${shared} of its ${t.words.length} words`);
     }
     assert.equal(new Set(THEMES.map((t) => t.name)).size, THEMES.length);
   });
 
-  test('never repeats a theme within 9 territories, and neighbours differ in colour', () => {
+  // NT themes can keep a theme at most floor(sqrt(NT)) territories from its next
+  // appearance (each needs that square to itself), and the layout does.
+  const SPACING = Math.floor(Math.sqrt(THEMES.length));
+  test(`never repeats a theme within ${SPACING - 1} territories, and neighbours differ in colour and share no words`, () => {
     const circ = (a) => Math.min(((a % 360) + 360) % 360, 360 - (((a % 360) + 360) % 360));
+    const sets = THEMES.map((t) => new Set(t.words));
+    const share = (a, b) => THEMES[a].words.some((w) => sets[b].has(w));
     for (let ry = -20; ry < 20; ry++) {
       for (let rx = -20; rx < 20; rx++) {
         const t = regionTheme(rx, ry);
-        for (let dy = -9; dy <= 9; dy++) {
-          for (let dx = -9; dx <= 9; dx++) {
+        for (let dy = 1 - SPACING; dy < SPACING; dy++) {
+          for (let dx = 1 - SPACING; dx < SPACING; dx++) {
             if (!dx && !dy) continue;
             const u = regionTheme(rx + dx, ry + dy);
             assert.notEqual(u, t, `${rx},${ry} and ${rx + dx},${ry + dy}`);
-            if (Math.abs(dx) <= 1 && Math.abs(dy) <= 1) assert.ok(circ(THEMES[t].hue - THEMES[u].hue) >= 30, `hues at ${rx},${ry}`);
+            if (Math.abs(dx) <= 1 && Math.abs(dy) <= 1) {
+              assert.ok(circ(THEMES[t].hue - THEMES[u].hue) >= 30, `hues at ${rx},${ry}`);
+              assert.ok(!share(t, u), `${THEMES[t].name} and ${THEMES[u].name} share a word, side by side at ${rx},${ry}`);
+            }
+          }
+        }
+      }
+    }
+  });
+
+  test('never repeats a word within a territory of the shared world', () => {
+    for (let ry = -AREA * RG; ry < (AREA + 1) * RG; ry++) {
+      for (let rx = -AREA * RG; rx < (AREA + 1) * RG; rx++) {
+        const seen = new Set();
+        for (let cy = ry * RG; cy < ry * RG + RG; cy++) {
+          for (let cx = rx * RG; cx < rx * RG + RG; cx++) {
+            for (const { w } of chunk(cx, cy).words) {
+              assert.ok(!seen.has(w), `${w} twice in territory ${rx},${ry}`);
+              seen.add(w);
+            }
           }
         }
       }
@@ -1019,6 +1073,39 @@ describe('the map', () => {
       }
     }
     assert.ok(where.size > 0.99 * (2 * AREA + 1) ** 2 * 16);
+  });
+});
+
+describe('a new map', () => {
+  const count = (sql, table) => sql.exec(`SELECT COUNT(*) AS n FROM ${table}`).one().n;
+
+  test('clears a sector\'s claims and log mark from an older map, once', () => {
+    const state = fakeState(), sql = state.storage.sql;
+    // A sector from map 2, before maps had versions: a claim, logged.
+    new Sector(state, {});
+    sql.exec('DROP TABLE map');
+    sql.exec("INSERT INTO claims VALUES ('ACORN~1~2~0', 'ACORN', 1, 2, 0, 0, 'ZED', 5)");
+    sql.exec('INSERT INTO logged VALUES (0, 5)');
+    new Sector(state, {});
+    assert.equal(count(sql, 'claims'), 0);
+    assert.equal(count(sql, 'logged'), 0);
+    assert.equal(sql.exec('SELECT version FROM map').one().version, MAP_VERSION);
+    // Claims on this map stay when it wakes again.
+    sql.exec("INSERT INTO claims VALUES ('BARK~1~2~0', 'BARK', 1, 2, 0, 0, 'ZED', 6)");
+    new Sector(state, {});
+    assert.equal(count(sql, 'claims'), 1);
+  });
+
+  test('clears the Atlas\'s counts from an older map', () => {
+    const state = fakeState(), sql = state.storage.sql;
+    new Atlas(state, {});
+    sql.exec("INSERT INTO sectors VALUES (0, 0, '1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0', 1)");
+    sql.exec('UPDATE map SET version = ?', MAP_VERSION - 1);
+    const atlasObject = new Atlas(state, {});
+    assert.equal(count(sql, 'sectors'), 0);
+    assert.equal(atlasObject.totals().charted, 0);
+    sql.exec("INSERT INTO sectors VALUES (0, 0, '1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0', 1)");
+    assert.equal(new Atlas(state, {}).totals().charted, 1);
   });
 });
 

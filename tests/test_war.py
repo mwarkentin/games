@@ -62,6 +62,65 @@ def test_hold_to_charge_and_release_to_slam(page: Page, site_url, errors):
     assert errors == []
 
 
+def test_cards_land_face_up_as_they_are_played(page: Page, site_url, errors):
+    start_solo(page, site_url)
+    # The bot slams first: its card is face up straight away, though the
+    # battle waits for you.
+    bot = page.locator("#spots .spot .tslot > .card")
+    expect(bot).to_have_attribute("aria-label", re.compile("."))
+    assert page.evaluate(f"{STATE}.table") == {}, "nothing has been played out"
+    expect(page.locator("#mySlot .card")).to_have_class(re.compile(r"\bempty\b"))
+
+    # Your card lands face up the moment you slam it, before the flip.
+    landed = page.evaluate(f"""() => {{
+        window.__war.slam(90);
+        const card = document.querySelector('#mySlot .card');
+        return {{ label: card.getAttribute('aria-label'), back: card.classList.contains('back'), table: {STATE}.table }};
+    }}""")
+    assert not landed["back"] and landed["label"], landed
+    assert landed["table"] == {}, "the flip hasn't come yet"
+
+    # The flip turns over the same cards, and brings the winner.
+    page.wait_for_function(f"Object.keys({STATE}.table).length === 2")
+    expect(page.locator("#mySlot .card")).to_have_attribute("aria-label", landed["label"])
+    ups = page.evaluate(f"{STATE}.ups")
+    assert page.evaluate(f"{STATE}.table") == ups
+    assert errors == []
+
+
+def test_a_slow_game_never_flops_your_card(page: Page, site_url, errors):
+    page.goto(f"{site_url}/war?seed=7#debug")
+    page.click("#soloClock button[data-clock=slow]")
+    page.click("#soloBtn")
+    page.wait_for_function(f"{STATE}.canSlam")
+    assert page.evaluate(f"{STATE}.slow")
+    page.evaluate("window.__war.pace(0.2)")
+    expect(page.locator("#slamText")).to_have_text("Your turn. Take your time.")
+    page.evaluate("window.__war.slam(90)")
+    page.wait_for_function(f"{STATE}.canSlam && ({STATE}.battle === 2 || {STATE}.stage === 1)")
+    where = page.evaluate(f"[{STATE}.battle, {STATE}.stage]")
+
+    # Longer than a timed game's clock, and then some: nothing counts down,
+    # nothing hurries, and your card stays in your hand.
+    page.wait_for_timeout(9000)
+    page.evaluate("window.__war.hurry()")
+    page.wait_for_timeout(1000)
+    assert page.evaluate(f"[{STATE}.battle, {STATE}.stage]") == where
+    assert page.evaluate(f"{STATE}.canSlam"), "still your turn"
+    expect(page.locator("#slamBar")).not_to_have_class(re.compile(r"\bhurry\b"))
+    expect(page.locator("#slamText")).to_have_text(re.compile(r"Your turn\. Take your time\.|Face-down 1/3"))
+    expect(page.locator("#waitRow")).to_be_hidden()
+    page.evaluate("window.__war.slam(90)")
+    page.wait_for_function(f"[{STATE}.battle, {STATE}.stage].join() !== {where!r}.join()".replace("'", ""))
+    assert page.evaluate(f"{STATE}.mine.every(([power]) => power === 90)"), "every card was yours, none flopped"
+
+    # The menu remembers the choice.
+    page.click("#menuBtn")
+    page.click("#quitBtn")
+    expect(page.locator("#soloClock button[data-clock=slow]")).to_have_attribute("aria-pressed", "true")
+    assert errors == []
+
+
 def test_a_war_means_slamming_every_card(page: Page, site_url, errors):
     start_solo(page, site_url, seed=WAR_SEED)
     hold_slam(page, 400)
@@ -71,7 +130,7 @@ def test_a_war_means_slamming_every_card(page: Page, site_url, errors):
     for n in (1, 2, 3):
         expect(page.locator("#slamText")).to_have_text(f"Face-down {n}/3 · hold")
         hold_slam(page, 300)
-        expect(page.locator("#myWar .wpile .card")).to_have_count(n)
+        expect(page.locator("#myWar .wpile .card.back")).to_have_count(n)
         assert page.evaluate(f"{STATE}.canSlam"), "the war isn't slammed until the last card"
     expect(page.locator("#myWar .wcount")).to_have_text("3 face down")
     expect(page.locator("#slamText")).to_have_text("The decider · hold")
@@ -80,7 +139,56 @@ def test_a_war_means_slamming_every_card(page: Page, site_url, errors):
     assert len(page.evaluate(f"{STATE}.mine")) == 5, "one slam for the battle, four for the war"
     expect(page.locator("#caption")).to_contain_text("War power")
     # The bot slams its face-down cards too.
-    expect(page.locator("#opponents .tile .downs")).to_have_text("+3")
+    expect(page.locator("#spots .downs")).to_have_text("+3")
+    # ...and they fan out under its card, one for each, so you can count them.
+    expect(page.locator("#spots .tdowns .card.back")).to_have_count(3)
+    assert errors == []
+
+
+def test_in_a_war_of_wars_the_cards_that_tied_stay_on_the_table(page: Page, site_url, errors):
+    # Seed 589: both turn over an eight, then a three in the war.
+    start_solo(page, site_url, seed=WAR_SEED)
+    page.evaluate("window.__war.slam(60)")
+    page.wait_for_function(f"{STATE}.stage === 1 && {STATE}.canSlam")
+    page.evaluate("window.__war.slam(60)")
+    page.wait_for_function(f"{STATE}.stage === 2 && {STATE}.canSlam")
+    # The double war opens with each three on top, and each eight still
+    # there, face up under the three face-down cards.
+    bot_up = page.locator("#spots .tdowns .card:not(.back)")
+    expect(bot_up).to_have_count(1)
+    expect(bot_up).to_have_attribute("aria-label", re.compile(r"^eight of "))
+    expect(page.locator("#spots .tdowns .card.back")).to_have_count(3)
+    expect(page.locator("#spots .spot .tslot > .card")).to_have_attribute("aria-label", re.compile(r"^three of "))
+    # Yours are all on your war pile: the eight, your three face-down cards,
+    # and the three that tied on top.
+    expect(page.locator("#mySlot")).to_be_hidden()
+    my_up = page.locator("#myWar .wpile .card:not(.back)")
+    expect(my_up).to_have_count(2)
+    assert [l.split(" ")[0] for l in my_up.evaluate_all("cs => cs.map((c) => c.getAttribute('aria-label'))")] == ["eight", "three"]
+    expect(page.locator("#myWar .wpile .card:last-child")).to_have_attribute("aria-label", re.compile(r"^three of "))
+    expect(page.locator("#myWar .wpile .card.back")).to_have_count(3)
+    # When the bot slams its next card, its three joins the pile, face up.
+    page.wait_for_function("document.querySelectorAll('#spots .tdowns .card:not(.back)').length === 2", timeout=10_000)
+    labels = bot_up.evaluate_all("cards => cards.map((c) => c.getAttribute('aria-label'))")
+    assert labels[0].startswith("eight") and labels[1].startswith("three"), labels
+    expect(page.locator("#spots .tdowns .card.back")).to_have_count(6)
+    assert errors == []
+
+
+def test_in_a_war_all_your_cards_are_on_one_pile(page: Page, site_url, errors):
+    start_solo(page, site_url, seed=WAR_SEED)
+    page.evaluate("window.__war.slam(60)")
+    page.wait_for_function(f"{STATE}.stage === 1 && {STATE}.canSlam")
+    landed = page.evaluate("""() => {
+        window.__war.slam(60);
+        const pile = [...document.querySelectorAll('#myWar .wpile .card')];
+        return { pile: pile.map((c) => c.getAttribute('aria-label')) };
+    }""")
+    # One pile: the eight you tied with, three face down and the one that
+    # decides it on top, face up.
+    assert landed["pile"][0].startswith("eight"), landed
+    assert landed["pile"][1:4] == [None, None, None] and landed["pile"][4], landed
+    expect(page.locator("#mySlot")).to_be_hidden()
     assert errors == []
 
 
@@ -126,7 +234,7 @@ def test_a_war_gets_a_versus_intro_that_escalates(page: Page, site_url, errors):
     expect(page.locator("#fx .vs-fight")).to_have_text("FIGHT!")
     expect(page.locator("#fx .vs")).to_have_count(0)
     hold_slam(page, 250)
-    expect(page.locator("#myWar .wpile .card")).to_have_count(1)
+    expect(page.locator("#myWar .wpile .card.back")).to_have_count(1)
 
     # The war ties again: a double war is bigger.
     page.evaluate("window.__war.slam(60)")
@@ -193,7 +301,7 @@ def test_a_seven_over_a_six_is_a_six_seven(page: Page, site_url, errors):
     expect(held).to_have_count(2)
     expect(held.nth(0)).to_have_attribute("aria-label", re.compile(r"^six of "))
     expect(held.nth(1)).to_have_attribute("aria-label", re.compile(r"^seven of "))
-    theirs = page.locator("#opponents .tile .card[aria-label]").first.get_attribute("data-deck")
+    theirs = page.locator("#spots .card[aria-label]").first.get_attribute("data-deck")
     assert held.nth(0).get_attribute("data-deck") == theirs
     assert held.nth(1).get_attribute("data-deck") == page.evaluate("deck"), "your seven is in your deck"
     expect(show.locator(".ss-word")).to_have_text("6-7!")
@@ -324,6 +432,83 @@ def test_won_cards_pile_up_and_clean_up_keeps_their_order(page: Page, site_url, 
     assert errors == []
 
 
+def test_winnings_stay_apart_until_you_pick_them_up(page: Page, site_url, errors):
+    # Seed 14: you win the first two battles.
+    start_solo(page, site_url, seed=14)
+    page.evaluate("window.__war.slam(80)")
+    page.wait_for_function(f"{STATE}.battle === 2 && {STATE}.canSlam")
+    # The two cards you won are beside your deck, not in it.
+    assert page.evaluate(f"[{STATE}.counts[0], {STATE}.decks[0], {STATE}.loot[0]]") == [28, 26, 2]
+    expect(page.locator("#deckCount")).to_have_text("26")
+    expect(page.locator("#lootCount")).to_have_text("2")
+    expect(page.locator("#myLabel")).to_contain_text("28 cards")
+    page.evaluate("window.__war.slam(80)")
+    page.wait_for_function(f"{STATE}.battle === 3 && {STATE}.canSlam")
+    expect(page.locator("#winnings .heap .card")).to_have_count(4)
+    won = page.evaluate(f"{STATE}.heap")
+
+    # Pick up: they go under your deck, as they lie, and the heap is empty.
+    page.click("#gatherBtn")
+    expect(page.locator("#gatherBtn")).to_be_hidden()
+    expect(page.locator("#winnings .heap .card")).to_have_count(0)
+    assert page.evaluate(f"[{STATE}.counts[0], {STATE}.decks[0], {STATE}.loot[0]]") == [29, 29, 0]
+    expect(page.locator("#deckCount")).to_have_text("29")
+    expect(page.locator("#caption")).to_have_text("4 cards back under your deck, in the order you won them.")
+    assert len(won) == 4
+    assert errors == []
+
+
+def test_an_empty_deck_waits_for_you_to_pick_up_unless_auto_is_on(page: Page, site_url, errors):
+    # Seed 14: you win the first two battles. Leave just the top card in your
+    # deck, the rest as winnings, so the deck is out after one battle.
+    start_solo(page, site_url, seed=14)
+    rig = "S.conn.game.loot[0] = S.conn.game.piles[0].splice(1)"
+    page.evaluate(rig)
+    page.evaluate("window.__war.slam(80)")
+    page.wait_for_function(f"{STATE}.battle === 2")
+    assert page.evaluate(f"{STATE}.decks[0]") == 0
+    expect(page.locator("#slamText")).to_have_text("Pick up your winnings to play")
+    page.wait_for_timeout(600)
+    assert not page.evaluate(f"{STATE}.canSlam")
+    assert page.evaluate("window.__war.slam(80)") is False, "you can't slam an empty deck"
+    page.keyboard.press("Space")
+    page.wait_for_function(f"{STATE}.canSlam")
+    assert page.evaluate(f"{STATE}.decks[0]") == 28
+
+    # Fast mode still leaves it to you.
+    page.evaluate(rig)
+    page.click("#fastBtn")
+    page.evaluate("window.__war.slam(80)")
+    page.wait_for_function(f"{STATE}.battle === 3")
+    expect(page.locator("#slamText")).to_have_text("Pick up your winnings to play")
+    page.wait_for_timeout(600)
+    assert page.evaluate(f"[{STATE}.decks[0], {STATE}.loot[0], {STATE}.canSlam]") == [0, 29, False]
+
+    # Auto picks them up and plays on, well before the clock would flop your card.
+    slams = len(page.evaluate(f"{STATE}.mine"))
+    page.click("#autoBtn")
+    page.wait_for_function(f"{STATE}.battle >= 4", timeout=4000)
+    assert len(page.evaluate(f"{STATE}.mine")) > slams, "Auto slammed the card it picked up"
+    assert errors == []
+
+
+def test_winnings_can_be_shuffled_on_their_way_back(page: Page, site_url, errors):
+    page.goto(f"{site_url}/war?seed=14#debug")
+    expect(page.locator("#soloWinnings button[data-winnings=kept]")).to_have_attribute("aria-pressed", "true")
+    page.click("#soloWinnings button[data-winnings=shuffled]")
+    page.click("#soloBtn")
+    page.wait_for_function(f"{STATE}.canSlam")
+    assert page.evaluate(f"{STATE}.shuffle")
+    page.evaluate("window.__war.slam(80)")
+    page.wait_for_function(f"{STATE}.battle === 2 && {STATE}.canSlam")
+    page.click("#gatherBtn")
+    expect(page.locator("#caption")).to_have_text("2 cards back under your deck, shuffled.")
+    page.click("#menuBtn")
+    page.click("#quitBtn")
+    expect(page.locator("#soloWinnings button[data-winnings=shuffled]")).to_have_attribute("aria-pressed", "true")
+    assert errors == []
+
+
 def test_the_end_screen_tells_the_game_battle_by_battle_and_shares_a_picture(page: Page, site_url, errors):
     start_solo(page, site_url, opponents=1, length="quick", seed=WAR_SEED)
     page.evaluate("window.__war.pace(0.05)")
@@ -387,18 +572,83 @@ def test_opponents_pile_up_what_they_win_too(page: Page, site_url, errors):
     heaps = page.evaluate(f"{STATE}.heaps")
     assert len(heaps["1"]) == 2 and not heaps.get("0"), heaps
     expect(page.locator("#winnings")).to_be_hidden()
+    # The bot's loot pile is its own, beside its card, with a count.
+    expect(page.locator("#opponents .tile .tloot .count")).to_have_text("2")
     assert errors == []
 
 
-def test_others_heaps_only_at_a_small_table(page: Page, site_url, errors):
-    # Five players: only your own heap, to keep a busy table readable.
-    start_solo(page, site_url, opponents=4, seed=3)
-    page.evaluate("window.__war.pace(0.2)")
-    for _ in range(4):
-        page.wait_for_function(f"{STATE}.canSlam", timeout=15_000)
-        page.evaluate("window.__war.slam(60)")
-    page.wait_for_function(f"{STATE}.battle >= 4", timeout=15_000)
-    expect(page.locator("#opponents .tile .heap .card")).to_have_count(0)
+def test_bots_clean_up_their_winnings_every_so_often(page: Page, site_url, errors):
+    start_solo(page, site_url, seed=WAR_SEED)
+    page.evaluate("window.__war.pace(0.05)")
+    page.click("#autoBtn")
+    # Pots land on the bot's heap in a mess, and every so often it squares
+    # them up into a neat stack, in the order it won them.
+    page.wait_for_function(f"{STATE}.heaps[1]?.length >= 4 && !{STATE}.tidied[1]", timeout=60_000)
+    page.wait_for_function(
+        f"""(() => {{
+            const cards = [...document.querySelectorAll('#opponents .tile .heap .card')];
+            const layers = cards.map((c) => Number(c.style.zIndex));
+            return {STATE}.tidied[1] && cards.length >= 4
+                && cards.every((c) => c.style.getPropertyValue('--r') === '0deg')
+                && layers.every((z, i) => z === i + 1);
+        }})()""",
+        timeout=60_000,
+    )
+    # A broom pops up out of its loot pile, so it's noticed.
+    expect(page.locator("#fx .floaty.broom")).to_have_text("🧹")
+    assert errors == []
+
+
+def test_others_get_loot_piles_at_a_table_of_up_to_six(page: Page, site_url, errors):
+    def play(opponents: int, seed: int) -> int:
+        start_solo(page, site_url, opponents=opponents, seed=seed)
+        page.evaluate("window.__war.pace(0.3)")
+        for _ in range(6):
+            page.wait_for_function(f"{STATE}.canSlam", timeout=15_000)
+            page.evaluate("window.__war.slam(60)")
+        page.wait_for_function(f"{STATE}.battle >= 6 && {STATE}.canSlam", timeout=15_000)
+        page.wait_for_timeout(1200)
+        return page.locator("#opponents .tile .tloot .heap .card").count()
+
+    # Six players: everyone else has a deck and a loot pile on their tile, and
+    # plays onto the table in the middle.
+    assert play(5, 3) > 0
+    expect(page.locator("#opponents")).to_have_class(re.compile(r"\bloots\b"))
+    expect(page.locator("#opponents .tile .tdeck")).to_have_count(5)
+    expect(page.locator("#opponents .tile .tslot")).to_have_count(0)
+    expect(page.locator("#spots")).to_be_visible()
+    expect(page.locator("#spots .spot")).to_have_count(5)
+    # Seven: only your own, and each plays on their tile, to keep a busy table readable.
+    assert play(6, 4) == 0
+    expect(page.locator("#opponents")).not_to_have_class(re.compile(r"\bloots\b"))
+    expect(page.locator("#opponents .tile .tdeck")).to_have_count(0)
+    expect(page.locator("#opponents .tile .tslot")).to_have_count(6)
+    expect(page.locator("#spots")).to_be_hidden()
+    assert errors == []
+
+
+def test_decks_are_as_thick_as_they_are_full(page: Page, site_url, errors):
+    # Seed 14: you win the first battle, so the bot's deck goes down by one.
+    start_solo(page, site_url, seed=14)
+    depth = "(sel) => parseFloat(document.querySelector(sel).style.getPropertyValue('--d'))"
+    bot_deck = page.locator("#opponents .tile .tdeck")
+    expect(bot_deck.locator(".count")).to_have_text("27")
+    full = page.evaluate(f"({depth})('#opponents .tile .tdeck')")
+    mine = page.evaluate(f"({depth})('#myPile .stack')")
+    assert full > 0.05 and mine == full
+    page.evaluate("window.__war.slam(80)")
+    page.wait_for_function(f"{STATE}.battle === 2")
+    # The bot's count sits in its deck's corner, and the deck is thinner.
+    expect(bot_deck.locator(".count")).to_have_text("26")
+    assert page.evaluate(f"({depth})('#opponents .tile .tdeck')") < full
+    # Its card was played onto the table in the middle, not onto its deck.
+    expect(page.locator("#spots .spot .tslot > .card")).to_have_attribute("aria-label", re.compile("."))
+    # A deck down to its last card is flat.
+    page.evaluate("S.conn.game.loot[0] = S.conn.game.piles[0].splice(1)")
+    page.evaluate("window.__war.slam(80)")
+    page.wait_for_function(f"{STATE}.battle === 3")
+    page.evaluate("S.decks[0] = 1; renderMe()")
+    assert page.evaluate(f"({depth})('#myPile .stack')") == 0
     assert errors == []
 
 
@@ -636,7 +886,7 @@ def test_win_probability_follows_the_game_and_ignores_slams(page: Page, site_url
     expect(page.locator("#oddsFav")).to_contain_text("%")
     page.evaluate("window.__war.slam(150)")
     expect(page.locator("#oddsNote")).to_have_text("Slam impact on win probability: +0.0%")
-    joker = page.locator("#opponents .tile .tslot > .card.joker")
+    joker = page.locator("#spots .spot .tslot > .card.joker")
     expect(joker).to_be_visible()
     expect(joker).to_have_attribute("aria-label", re.compile(r"^(red|black) joker$"))
     expect(page.locator("#banner")).to_have_text("JOKER!")
@@ -854,7 +1104,7 @@ def test_a_war_you_started_waits_while_youre_paused(page: Page, site_url, errors
     page.evaluate("window.__war.slam(50)")
     page.wait_for_function(f"{STATE}.stage === 1 && {STATE}.canSlam")
     hold_slam(page, 300)  # one face-down card down
-    expect(page.locator("#myWar .wpile .card")).to_have_count(1)
+    page.wait_for_function(f"{STATE}.plan && {STATE}.plan.done.length === 1")
     page.click("#menuBtn")
     expect(page.locator("#pauseNote")).to_have_text("The war waits for you.")
     page.evaluate("window.__war.hurry()")  # as if the war's clock had all but run out while you were away

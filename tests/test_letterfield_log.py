@@ -37,7 +37,7 @@ def open_log(page: Page, site_url: str, fake: FakeSurveyLog, query: str = "", fi
     else:
         page.clock.set_fixed_time(now_ms / 1000)
     if finds is not None:
-        page.add_init_script(f"localStorage.setItem('letterfield.finds.v2', {json.dumps(json.dumps(finds))})")
+        page.add_init_script(f"localStorage.setItem('letterfield.finds.v4', {json.dumps(json.dumps(finds))})")
     fake.now_ms = now_ms
     page.route(f"{SURVEY}/v1/survey/log/**", fake.handle)
     page.goto(f"{site_url}/letterfield-log?survey={SURVEY}{query}")
@@ -185,7 +185,7 @@ def test_all_time_shows_how_much_of_the_world_is_charted(page: Page, site_url, e
     # ZEUS, the day before the log began, came from a sector sending its older words.
     expect(page.locator("#navLabel")).to_have_text("Since the first word, on Nov 5, 2026")
     expect(page.locator("#prev")).to_be_hidden()
-    expect(page.locator(".chart .ymax").nth(1)).to_have_text("2 of 1,120,206 hidden words in the shared world · <0.01%")
+    expect(page.locator(".chart .ymax").nth(1)).to_have_text("2 of 1,119,752 hidden words in the shared world · <0.01%")
     expect(page.locator(".meter")).to_have_attribute("aria-valuenow", "2")
     # One month is a meter; the line that rises toward the whole world needs two.
     expect(page.locator("svg.line")).to_have_count(0)

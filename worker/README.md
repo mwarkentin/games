@@ -86,7 +86,8 @@ SURVEY.md). Triggers keep running counts beside it, per hour, per day per
 set of initials and per day per territory, for the log page's weeks,
 months, years and top lists, and three indexes find one surveyor's,
 territory's or theme's words. The whole shared world would be about 1.1
-million rows and 150 MB. mwarkentin/infra makes it too; its id (the
+million rows and 150 MB. A new map (see "A new map" in SURVEY.md) empties
+it with a migration. mwarkentin/infra makes it too; its id (the
 `survey_log_database_id` output) goes in `wrangler.toml`.
 
 D1 counts every row a query scans against the plan's allowance, so each
@@ -134,23 +135,74 @@ WebSocket, pages send JSON messages:
 | Message | Means |
 | --- | --- |
 | `{"t":"hello","name","avatar","token","deck"}` | join, or rejoin the same seat with the same token; `deck` is the deck theme your cards are drawn in |
-| `{"t":"length","length"}`, `{"t":"bots","n"}`, `{"t":"start"}` | the host sets up the game and deals |
+| `{"t":"length","length"}`, `{"t":"slow","slow"}`, `{"t":"shuffle","shuffle"}`, `{"t":"bots","n"}`, `{"t":"start"}` | the host sets up the game (its length, whether it's slow, with no clock, and whether winnings are shuffled on their way back) and deals |
+| `{"t":"gather"}` | put your winnings under your deck, any time in a game |
 | `{"t":"charge","tier"}`, `{"t":"slam","power","style"}` | charging up, then slamming (for show only) |
 | `{"t":"card","n","power"}` | in a war, slamming face-down card `n` (0 to 2) before the last one, which is the `slam` (for show only) |
 | `{"t":"cheer","e"}` | an emoji for everyone, at most every 0.4 seconds |
 | `{"t":"deck","deck"}` | change deck theme, even mid-game, at most once a second |
 | `{"t":"tidy"}` | clean up the cards you've won into a neat stack, during or after a game, at most once a second (for show only) |
+| `{"t":"nudge"}` | in a slow game, once a stage has been open 5 seconds: nudge everyone it's waiting for, at most every 3 seconds |
+| `{"t":"flop"}` | in a slow game, from the host, once a stage has been open 30 seconds: flip over the cards of everyone it's still waiting for |
 | `{"t":"leave"}` | leave the lobby |
 
-The room answers with `state` (everything, sent on joining and when the
-lobby changes), `online`, `stage` (a battle or war opens, with the bots'
-slams), `charge`, `card`, `slam`, `flip` (the cards turn over, with the next
-stage or the final standings), `cheer`, `deck` (someone changed deck), `tidy`
-(someone cleaned up their winnings) and `error`. Players get 8 seconds to
-slam in a battle and 20 in a war, where they slam every card they lay down.
-A `charge`, `card` or `slam` counts only once its stage has opened, after
-the last one's cards have turned over: one that arrives after its stage was
-played out is dropped, not counted toward the next.
+The room answers with these:
+
+| Message | Means |
+| --- | --- |
+| `state` | everything, sent on joining and when the lobby changes: `slow` and `shuffle` are the room's settings; mid-game, `game.counts` has every card each seat holds, `game.decks` the ones in their deck and `game.loot` the cards they've won (the latest last), `game.ups` the card each slam so far turned face up, `game.naps` how many cards in a row flopped for each seat, and `game.slow` and `game.shuffle` this game's settings, with `closesIn` null in a slow one |
+| `online` | who's connected, and who's host |
+| `stage` | a battle or war opens; `bots` is `[seat, power, style, delay, up]` for each bot, its slam and the card it turns face up; `gathered` lists the bots whose decks couldn't cover the stage, so their winnings went under them as it opened; `closesIn` is null in a slow game |
+| `charge`, `card` | someone charging up, or slamming a face-down card in a war |
+| `slam` | `{"seat","power","style","up"}`: someone slammed the card that counts, and `up` is that card, face up at once; with `"flopped":true`, the host flipped it over for them; with `"gathered":true`, their deck couldn't cover the stage, so their winnings went under it first |
+| `nudge` | `{"seats","by"}`: someone (`by` is null for a spectator) nudged the players in `seats` |
+| `flip` | the stage is played out: every card, `plays` as `[seat, down, up, power, style, flopped]`, the winner and pot, and the next stage or the final standings; `counts` is every card each seat holds and `decks` the ones in their deck; `gathered` lists the seats whose cards flopped from a deck that couldn't cover the stage, so their winnings went under it first; in a war, `downs` has the cards each seat laid face down, which show face up in the winner's loot |
+| `gather` | `{"seat"}`: someone put their winnings under their deck |
+| `cheer`, `deck`, `tidy` | someone cheered, changed deck or cleaned up their winnings |
+| `error` | something went wrong, in words for the player |
+
+Players get 8 seconds to slam in a battle and 20 in a war, where they slam
+every card they lay down. A `charge`, `card` or `slam` counts only once its
+stage has opened, after the last one's cards have turned over: one that
+arrives after its stage was played out is dropped, not counted toward the
+next. A stage's cards are fixed once it opens, so a slam
+says which card it turns over: everyone sees it face up straight away, and
+the winner comes with `flip`. Cards that flop over by themselves only show
+at the `flip`. War has no decisions, so seeing a card early helps nobody.
+
+**Decks and winnings.** Each player has a deck, face down, and the cards
+they've won, face up beside it. A pot goes on its winner's winnings as it
+lies: everyone else's cards in the order they were played, then the
+winner's own on top. Winnings go back under the deck when the player picks
+them up (`gather`), and only then: when a stage opens that a player's deck
+can't cover (a card in a battle, four in a war), the page has them pick up
+before they can slam (Auto picks up for them). Bots pick
+up by themselves as the stage opens. A slam, a host's flip or a card that
+flops at the end of the clock from a deck that can't cover the stage picks
+up first, so a stage always has its cards. They go under as they lie, the
+oldest first, unless the host picked shuffled winnings, which is how plenty
+of people play. Picking up early changes no card to come, so it's a
+player's own business. Kept in order, a long game can come round to where it
+was and go in circles; total war's 5,000-battle limit ends it.
+
+**Slow games.** The host can pick a slow game in the lobby: no clock, like
+a real table. A stage waits until everyone connected has played, and
+nobody's card flops over by itself; bots still play on their own. So that
+one sleepy or vanished player can't stall the table for good:
+
+- players who've left (no open connection) aren't waited for, and are
+  waited for again when they come back;
+- every page shows who the table is waiting for;
+- after 5 seconds anyone, spectators included, can nudge them: their deck
+  shakes and knocks on their screen;
+- after 30 seconds the host can flip their cards over for them, which counts
+  as a flop: two in a row and the room stops waiting for them until they
+  slam again, as in a timed game.
+
+A slow stage has no deadline, so the room's alarm is only its idle check,
+and with people still connected it looks again every hour. A slow room
+saves each slam, so a room woken from hibernation remembers who has
+played.
 
 The first player still connected is the host. Up to 50 play (people take
 the place of bots in a full lobby) and up to 60 can be connected, the rest
@@ -172,9 +224,11 @@ also in `war.html`, for solo games; `test/war.test.js` checks the two copies
 match.
 
 **Cost.** Rooms are SQLite-backed Durable Objects, as `wrangler.toml`'s
-migration asks. A room writes its storage once per battle. Slams in progress
-stay in memory, and on the socket that made each one, whose attachment
-survives hibernation, so a room woken mid-stage still has them. WebSocket
+migration asks. A room writes its storage once per battle, except in a
+slow game, which saves each slam. Slams in progress also stay on the socket
+that made each one, whose attachment survives hibernation, so a room woken
+mid-stage still has them (all but one that had to pick up its winnings
+first, which flops when time runs out). WebSocket
 messages from pages count as one request per 20. A busy evening of games is
 well within the plan's included usage.
 

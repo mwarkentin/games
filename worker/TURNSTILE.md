@@ -34,7 +34,7 @@ without playing. The survey already limits each hashed IP address (see
 | sockets in one sector | 40 | a few addresses filling a sector |
 | new sockets (rate-limiting binding) | 120 a minute | flooding every sector |
 
-At 300 a day, charting all 1,120,206 words takes one address about 3,700
+At 300 a day, charting all 1,119,752 words takes one address about 3,700
 days. It takes 3,700 addresses one day. That's a small botnet, or a
 residential proxy pool rented by the gigabyte. Everything an address is
 allowed, a pool gets once per address. Turnstile is meant to make each of
