@@ -124,7 +124,7 @@ class FakeSurveyLog:
         elif territory:
             rx, ry = int(territory[1]), int(territory[2])
             rows = [e for e in reversed(self.entries) if (e[1] // 48, e[2] // 48) == (rx, ry)]
-            th = next((e[7] for e in rows if e[4] == 0), (rx + 21 * ry) % 116)
+            th = next((e[7] for e in rows if e[4] == 0), (rx + 15 * ry) % 225)
             body = {
                 "rx": rx, "ry": ry, "name": self.places.get(f"{rx},{ry}", f"Place {rx},{ry}"), "th": th,
                 "total": self.totals.get(f"{rx},{ry}", 112), "charted": sum(1 for e in rows if e[4] == 0),

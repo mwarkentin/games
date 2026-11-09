@@ -1,3 +1,13 @@
+## 2026-11-09
+
+- A redrawn map with 225 themes, 109 of them new, from Sushi Bar and Whale
+  Watch to Shakespeare and Fire Station. Every theme has about 150 words,
+  three times as many as before, so a territory never shows the same word
+  twice, and a theme comes round again only every 15 territories. Words
+  found by chance now need six letters. Finds still on the new map stay in
+  your field notes, and the shared survey and its log start again from
+  nothing.
+
 ## 2026-11-08
 
 - Fixed the survey log's months and years showing made-up numbers from a

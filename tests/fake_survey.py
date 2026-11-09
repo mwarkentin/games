@@ -23,7 +23,7 @@ import time
 from playwright.sync_api import Route, WebSocketRoute
 
 NOW_MS = 1_793_000_000_000
-AREA, AREA_WORDS = 12, 1_120_206
+AREA, AREA_WORDS = 12, 1_119_752
 SIZE = (2 * AREA + 1) * 4  # territories per side of the shared world
 
 
