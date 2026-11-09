@@ -1,4 +1,4 @@
-## 2026-11-08
+## 2026-11-09
 
 - A score worth saving is always offered a spot on the leaderboard: tapping
   a board's tab, or opening and closing the leaderboard, while the game-over

@@ -1,3 +1,21 @@
+## 2026-11-09
+
+- Opening the high-score screen while your score saves no longer lets you
+  save it twice, and "Saved!" shows once it's on the board. Initials you've
+  typed stay put when you open and close the screen.
+- A score worth saving is always offered a spot on the board: tapping a
+  group's tab while the game-over board was still loading could lose the
+  offer.
+- "Saved!" and your ranks stay put when you switch boards.
+- With the high-score screen open, the keyboard stays on it: Enter can't
+  start a game, or save a score, hidden behind it.
+- A second tap on Start makes one group, not two, and an invite link no
+  longer says "Tap Join" after you've joined, or when you're in five groups
+  already. A group you join as you close the screen shows on the menu
+  straight away.
+- After losing a life, Nib no longer walks off to a square you tapped just
+  before, and Nib stops blinking when the game is over.
+
 ## 2026-11-05
 
 - High scores go on a global leaderboard, filed by game (multiples, primes,

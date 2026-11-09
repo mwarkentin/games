@@ -1057,7 +1057,7 @@ const els = {};
  'pauseBtn', 'chompBtn', 'playBtn', 'modeChips', 'diffSeg', 'titleNib', 'pad', 'menuScoreList', 'menuScoreNote', 'menuWhich', 'menuScopes',
  'sideScoreList', 'sideScoreNote', 'sideWhich', 'sayBtn', 'diffField', 'kNote', 'howtoBoard', 'lbOpenMenu', 'lbOv', 'lbClose',
  'lbScopes', 'lbPeriods', 'lbMode', 'lbDiff', 'lbList', 'lbNote', 'lbNoGroups', 'lbGroupList', 'lbJoinForm', 'lbJoinCode', 'lbCreateForm',
- 'lbGroupName', 'lbGroupNote'].forEach(id => { els[id] = $(id); });
+ 'lbGroupName', 'lbGroupNote', 'hud', 'side'].forEach(id => { els[id] = $(id); });
 
 // ---------- saved preferences (this browser only) ----------
 const store = {
@@ -1065,10 +1065,48 @@ const store = {
   set(k, v) { try { localStorage.setItem('doodle-chomp:' + k, JSON.stringify(v)); } catch (e) { /* storage unavailable */ } },
 };
 
+// ---- BEGIN STATE MACHINE ----
+// The same in every page that has one (tests/test_state_machines.py checks).
+// An explicit state machine, as "State machines" in AGENTS.md describes: the
+// states something can be in, and the moves it may make from each. go(to)
+// makes a listed move and nothing else. It shows the new state as el's
+// data-<name> attribute (on <html> unless el says otherwise), for CSS, tests
+// and anyone reading the page, then calls onMove(to, from, ...args). Any
+// other move, like a state the table doesn't name, is a bug: it's refused
+// with a console error, which fails the tests, and the player carries on as
+// if it had never been tried. seq counts the moves made, so a timer or a
+// reply that waited can tell whether anything moved in the meantime.
+function machine(name, moves, state, { el = document.documentElement, onMove } = {}) {
+  const known = (s) => s in moves || (console.error(`${name}: no state called ${s}`), false);
+  Object.values(moves).flat().forEach(known);
+  known(state);
+  let seq = 0;
+  if (el) el.dataset[name] = state;
+  return {
+    get state() { return state; },
+    get seq() { return seq; },
+    is: (...states) => states.filter(known).includes(state),
+    can: (to) => known(to) && moves[state].includes(to),
+    go(to, ...args) {
+      if (!moves[state].includes(to)) {
+        console.error(`${name}: no move from ${state} to ${to}`);
+        return false;
+      }
+      const from = state;
+      state = to;
+      seq += 1;
+      if (el) el.dataset[name] = to;
+      if (onMove) onMove(to, from, ...args);
+      return true;
+    },
+  };
+}
+// ---- END STATE MACHINE ----
+
 // ---------- game state ----------
 const S = {
   // diff is the difficulty in play; diffPick is the one chosen on the menu (Kindergarten has no difficulty, so it plays as 0).
-  phase: 'menu', mode: 'multiples', diff: 1, diffPick: 1,
+  mode: 'multiples', diff: 1, diffPick: 1,
   level: 1, score: 0, lives: 3, chomps: 0, startT: 0,
   spec: null, nextSpec: null, rule: null, cfg: null,
   cols: 6, rows: 5, cw: 60, ch: 50, cells: [], cellEls: [], hereIdx: -1,
@@ -1076,6 +1114,43 @@ const S = {
   playerEl: null, enemies: [], pending: [], nextSpawnAt: 0,
   t: 0, last: 0, uid: 1, levelWrong: 0, levelChomps: 0, ovShownAt: 0, ovPrimary: null,
 };
+// Which screen the game is on. The clock runs only in play. A lost life
+// (message) and a cleared page (clearing) show their card a moment later,
+// once Nib's reaction has played; paused and over show theirs at once. The
+// high-score screen (Board) opens on top of the menu or the game-over card
+// without leaving them.
+const Screen = machine('screen', {
+  menu: ['play', 'paused'],   // paused: a game brought back by restore()
+  play: ['paused', 'message', 'clearing', 'over'],
+  paused: ['play', 'menu'],
+  message: ['play', 'over'],
+  clearing: ['play'],
+  over: ['play', 'menu'],
+}, 'menu', { onMove: showScreen });
+function showScreen(to, from) {
+  // A walk, swipe or held arrow that started in play stays behind with it.
+  if (from === 'play') {
+    S.player.target = null;
+    ptr = null;
+    stopPad();
+    S.playerEl.classList.remove('blink');
+  }
+  if (from === 'over' && !Save.is('none')) Save.go('none');   // the offer goes with its card
+  els.menu.hidden = to !== 'menu';
+  if (to === 'play' || to === 'menu') hideOverlay();
+  else if (to === 'paused') showPaused();
+  else if (to === 'over') showOver();
+  layer();
+}
+// Only the top layer takes focus and taps: the high-score screen when it's
+// open, else the menu or the card on screen, else the game.
+function layer() {
+  const board = Board.is('open'), covered = board || Screen.is('menu') || !els.overlay.hidden;
+  const set = (el, on) => { if (el.inert !== on) el.inert = on; };
+  for (const el of [els.hud, els.rule, els.stage, els.side, els.pad]) set(el, covered);
+  set(els.menu, board);
+  set(els.overlay, board);
+}
 const reduceMotion = window.matchMedia ? window.matchMedia('(prefers-reduced-motion: reduce)') : { matches: false };
 const inside = (c, r) => c >= 0 && r >= 0 && c < S.cols && r < S.rows;
 const idx = (c, r) => r * S.cols + c;
@@ -1445,7 +1520,7 @@ function stepEnemy(e) {
 }
 function enemyTick() {
   for (const e of S.enemies.slice()) {
-    if (S.phase !== 'play') return;
+    if (!Screen.is('play')) return;
     if (S.t < e.nextAt || !S.enemies.includes(e)) continue;
     e.nextAt = S.t + stepMsFor(e.type);
     stepEnemy(e);
@@ -1454,7 +1529,7 @@ function enemyTick() {
 
 // ---------- Nib ----------
 function tryMove(dx, dy, auto) {
-  if (S.phase !== 'play') return false;
+  if (!Screen.is('play')) return false;
   const p = S.player, now = performance.now();
   if (!auto) p.target = null;
   if (now - p.lastMove < 70) return false;
@@ -1507,7 +1582,7 @@ function crumbs(c, r) {
   }
 }
 function chomp() {
-  if (S.phase !== 'play') return;
+  if (!Screen.is('play')) return;
   const p = S.player, i = idx(p.c, p.r), it = S.cells[i];
   p.target = null;
   pulse(S.playerEl, 'chomp', 260);
@@ -1532,7 +1607,7 @@ function chomp() {
   }
 }
 function caught(e) {
-  if (S.phase !== 'play' || S.t < S.player.invUntil) return;
+  if (!Screen.is('play') || S.t < S.player.invUntil) return;
   Sound.caught();
   removeEnemy(e, true);
   S.playerEl.classList.add('hurt');
@@ -1541,22 +1616,29 @@ function caught(e) {
 }
 
 // ---------- lives, levels, game over ----------
+// A lost life and a cleared page show their card once Nib's reaction has
+// played. The timers give up if the screen has moved on meanwhile.
 function loseLife(info) {
-  S.phase = 'message';
+  if (!Screen.go('message')) return;
   S.lives--;
   renderHud();
-  setTimeout(() => (info.kind === 'wrong' ? showWrong(info.item) : showCaught(info.type)), info.kind === 'wrong' ? 420 : 650);
+  const at = Screen.seq;
+  setTimeout(() => {
+    if (Screen.seq !== at) return;
+    if (info.kind === 'wrong') showWrong(info.item); else showCaught(info.type);
+  }, info.kind === 'wrong' ? 420 : 650);
 }
 function afterLife() {
-  hideOverlay();
+  if (!Screen.is('message')) return;
   S.playerEl.classList.remove('hurt');
   S.cellEls.forEach(d => d.classList.remove('bad'));
   if (S.lives <= 0) { gameOver(); return; }
   S.player.invUntil = S.t + 1800;
-  S.phase = 'play';
+  Screen.go('play');
 }
 function levelCleared() {
-  S.phase = 'clearing';
+  if (!Screen.go('clearing')) return;
+  const at = Screen.seq;
   const perfect = S.levelWrong === 0;
   const bonus = 25 * S.level + (perfect ? 50 : 0);
   const extra = S.level % 3 === 0 && S.lives < 5;
@@ -1567,17 +1649,17 @@ function levelCleared() {
   S.pending = [];
   S.playerEl.classList.add('happy');
   Sound.clear();
-  if (extra) setTimeout(() => Sound.life(), 520);
+  if (extra) setTimeout(() => { if (Screen.seq === at) Sound.life(); }, 520);
   renderHud();
   saveBest();
   S.nextSpec = newSpec(S.mode, S.diff, S.level + 1, S.spec);
-  setTimeout(() => showClear(bonus, perfect, extra), 1100);
+  setTimeout(() => { if (Screen.seq === at) showClear(bonus, perfect, extra); }, 1100);
 }
 function nextLevel() {
-  hideOverlay();
+  if (!Screen.is('clearing')) return;
   S.level++;
   startLevel(S.nextSpec);
-  S.phase = 'play';
+  Screen.go('play');
   Voice.say(S.rule.text.say);
   announce(`Level ${S.level}. ${S.rule.text.short}.`);
 }
@@ -1586,16 +1668,15 @@ const startLives = () => (S.mode === 'kinder' ? 5 : 3);
 function bestKey() { return `best:${S.mode}:${S.diff}`; }
 function saveBest() { if (S.score > store.get(bestKey(), 0)) store.set(bestKey(), S.score); }
 function gameOver() {
-  S.phase = 'over';
+  if (!Screen.is('play', 'message')) return;
   clearCritters();
   saveBest();
   Sound.over();
   Voice.say('Game over. Good try!');
-  showOver();
+  Screen.go('over');   // shows the game-over card
 }
 function newGame() {
-  hideOverlay();
-  els.menu.hidden = true;
+  if (!Screen.is('over')) return;
   S.chomps = 0;
   S.startT = S.t;
   S.level = 1;
@@ -1603,14 +1684,13 @@ function newGame() {
   S.lives = startLives();
   S.bestBefore = store.get(bestKey(), 0);
   startLevel();
-  S.phase = 'play';
+  Screen.go('play');
   Voice.say(S.rule.text.say);
   announce(`Level 1. ${S.rule.text.short}.`);
 }
 function beginPlay() {
   Sound.unlock();
-  if (S.phase !== 'menu') return;
-  els.menu.hidden = true;
+  if (!Screen.is('menu')) return;
   S.chomps = 0;
   S.startT = S.t;
   S.level = 1;
@@ -1621,21 +1701,17 @@ function beginPlay() {
   S.nextSpawnAt = S.t + S.cfg.firstSpawn;
   S.levelWrong = 0;
   renderHud();
-  S.phase = 'play';
+  Screen.go('play');
   Voice.say(S.rule.text.say);
   announce(`Level 1. ${S.rule.text.short}. Nib starts in the middle.`);
 }
 function pause() {
-  if (S.phase !== 'play') return;
+  if (!Screen.is('play')) return;
   Voice.stop();
-  S.phase = 'paused';
-  S.player.target = null;
-  showPaused();
+  Screen.go('paused');   // shows the pause card
 }
 function resume() {
-  if (S.phase !== 'paused') return;
-  hideOverlay();
-  S.phase = 'play';
+  if (Screen.is('paused')) Screen.go('play');
 }
 function transpose() {
   const oc = S.cols, orows = S.rows, old = S.cells, cells = new Array(old.length);
@@ -1661,13 +1737,13 @@ let boilAt = 0, boilSeed = 1;
 function frame(now) {
   const dt = Math.min(100, now - (S.last || now));
   S.last = now;
-  if (S.phase === 'play') {
+  if (Screen.is('play')) {
     S.t += dt;
     walkTick(now);
     spawnTick();
     pendingTick();
     enemyTick();
-    if (S.phase === 'play') {
+    if (Screen.is('play')) {
       const p = S.player;
       S.playerEl.classList.toggle('blink', S.t < p.invUntil);
       if (S.t >= p.invUntil) { const e = S.enemies.find(x => x.c === p.c && x.r === p.r); if (e) caught(e); }
@@ -1846,14 +1922,18 @@ function showOverlay({ art, artCls, title, red, body, actions }) {
   S.ovPrimary = actions[0] ? actions[0].run : null;
   S.ovShownAt = performance.now();
   els.overlay.hidden = false;
-  const first = els.ovActions.firstChild;
-  if (first) setTimeout(() => { if (!els.overlay.hidden && !els.overlay.contains(document.activeElement)) first.focus({ preventScroll: true }); }, 30);
+  layer();
+  // Focus moves to the card unless something in it has focus already, or
+  // the high-score screen has opened on top of it meanwhile.
+  const first = els.ovActions.firstChild, at = Screen.seq;
+  if (first) setTimeout(() => { if (Screen.seq === at && Board.is('closed') && !els.overlay.contains(document.activeElement)) first.focus({ preventScroll: true }); }, 30);
 }
 function hideOverlay() {
   if (els.overlay.contains(document.activeElement)) document.activeElement.blur();
   ob = null;
   els.overlay.hidden = true;
   S.ovPrimary = null;
+  layer();
 }
 function runPrimary() {
   if (performance.now() - S.ovShownAt < 450 || !S.ovPrimary) return;
@@ -2008,6 +2088,22 @@ const savedInitials = () => cleanInitials(shared.get('initials', '')) || cleanIn
 let boardRequest = 0, overRequest = 0, screenRequest = 0;
 let lastGame = null;   // the finished game, kept so its score can be saved
 let ob = null;         // the game-over card's high-score section
+// Whether the game-over card offers to save lastGame: checking until it's
+// known whether the score makes the board, then ineligible or offered, and
+// saving and saved after that. A failed save goes back to offered with the
+// reason. Every list the card loads and every group joined or left asks
+// again (decideSave), and the card's note says what the save is doing, if
+// anything, before what its list is doing. It starts again with each
+// game-over card, and goes back to none when the card goes.
+const Save = machine('save', {
+  none: ['checking'],
+  checking: ['offered', 'ineligible', 'none'],
+  ineligible: ['offered', 'none'],
+  offered: ['saving', 'ineligible', 'none'],
+  saving: ['saved', 'offered', 'none'],
+  saved: ['none'],
+}, 'none', { onMove: showSave });
+let offerNote = '', saveProblem = '', savedNote = '';
 
 // Rank-numbered rows; past the top few, your entry keeps its place after a "…".
 // Views that mix boards say which board each score is from.
@@ -2133,7 +2229,8 @@ async function saveScore(initials, isPublic) {
 }
 // Three letter slots: type into them, or step through A to Z with the arrows (no phone keyboard needed).
 // In a group, a checkbox says whether the score goes on the public board too.
-function initialsForm(onSaved) {
+// The Save machine shows it, disables it while saving, and takes it away.
+function initialsForm() {
   const form = document.createElement('form');
   form.className = 'save-score';
   form.noValidate = true;
@@ -2147,7 +2244,8 @@ function initialsForm(onSaved) {
     '<p class="save-msg" aria-live="polite"></p>';
   const inputs = [...form.querySelectorAll('.letter')], btn = form.querySelector('button[type="submit"]'), msg = form.querySelector('.save-msg');
   const publicBox = form.querySelector('#lbPublic');
-  form.querySelector('.lb-public').hidden = !myGroups().length;
+  form.publicRow = form.querySelector('.lb-public');
+  form.publicRow.hidden = !myGroups().length;
   publicBox.checked = shared.get('public', true) !== false;
   const saved = savedInitials();
   inputs.forEach((inp, i) => { inp.value = saved[i] || ''; });
@@ -2193,26 +2291,20 @@ function initialsForm(onSaved) {
     ['pointerup', 'pointercancel', 'lostpointercapture'].forEach(type => b.addEventListener(type, stop));
     b.addEventListener('click', e => { if (e.detail === 0) nudge(i, step); });
   });
-  form.addEventListener('submit', async e => {
+  form.addEventListener('submit', e => {
     e.preventDefault();
+    if (!Save.is('offered')) return;
     const initials = inputs.map(x => x.value).join('');
     if (initials.length < 3) {
       inputs.forEach(x => { if (!x.value) x.setAttribute('aria-invalid', 'true'); });
-      msg.className = 'save-msg err';
-      msg.textContent = 'Fill in all three letters.';
+      form.say('Fill in all three letters.', true);
       inputs.find(x => !x.value).focus();
       return;
     }
-    const controls = [btn, publicBox, ...inputs];
-    controls.forEach(x => { x.disabled = true; });
-    msg.className = 'save-msg';
-    msg.textContent = 'Saving…';
-    const res = await saveScore(initials, publicBox.checked);
-    if (res.ok) { onSaved(res); return; }
-    controls.forEach(x => { x.disabled = false; });
-    msg.className = 'save-msg err';
-    msg.textContent = res.message;
+    saveToBoard(initials, publicBox.checked);
   });
+  form.busy = on => { [btn, publicBox, ...inputs].forEach(x => { x.disabled = on; }); };
+  form.say = (text, err) => { msg.className = err ? 'save-msg err' : 'save-msg'; msg.textContent = text; };
   form.focusFirst = () => { const target = inputs.find(x => !x.value) || btn; target.focus(); };
   return form;
 }
@@ -2233,7 +2325,10 @@ function showOver() {
     actions: [{ label: 'Play again', run: newGame }, { label: 'Change game', run: openMenu }],
   });
   announce(`Game over. Score ${S.score}.`);
-  if (ob) refreshOverBoard(true);
+  if (!ob) return;
+  if (lastGame) Save.go('checking');
+  decideSave(null);
+  refreshOverBoard();
 }
 // The game-over card's board: this game's top 5, scope tabs when you're in a
 // group, and initials for a score worth saving.
@@ -2260,72 +2355,129 @@ function overBoard() {
   ob = { box, which, scopes, list, note, form: null };
   return box;
 }
-async function refreshOverBoard(offerSave) {
+async function refreshOverBoard() {
   const here = ob, { scope, period } = lbView(), request = ++overRequest;
   if (!here) return;
   here.which.textContent = `${boardLabel()} · ${PERIODS[period]}`;
-  renderScopes(here.scopes, scope, code => { setLbView({ scope: code }); refreshOverBoard(false); });
-  here.note.textContent = 'Loading scores…';
-  const scores = await loadScores([[here.list, here.note]], { scope, period, ...boardOf() }, () => request === overRequest && ob === here,
+  renderScopes(here.scopes, scope, code => { setLbView({ scope: code }); refreshOverBoard(); });
+  here.note.textContent = saveNote() ?? 'Loading scores…';
+  const isCurrent = () => request === overRequest && ob === here;
+  const scores = await loadScores([[here.list, here.note]], { scope, period, ...boardOf() }, isCurrent,
     `No scores ${scope === PUBLIC ? 'on this board' : `in ${scopeName(scope)}`}${during(period)} yet.`, 5);
-  const game = lastGame;
-  if (!offerSave || !scores || here.form || !game || game.entry) return;
-  // In a group, every score is worth saving. Otherwise (and then the list is
-  // the public one) it has to make the top 10, where ties go to whoever got
-  // there first.
-  const inGroups = myGroups().length > 0;
-  if (!inGroups && scores.length >= TOP && game.score <= scores[TOP - 1].score) return;
-  if (!inGroups) {
-    const rank = 1 + scores.filter(x => x.score >= game.score).length;
-    here.note.textContent = rank > 1 ? `That's #${rank}${during(period)} on the ${boardLabel()} board.`
-      : !scores.length ? `First score on this board${during(period)}!`
-      : period === 'all' ? `A new record! The old one was ${scores[0].score}.` : `Top score${during(period)}! The best before was ${scores[0].score}.`;
-  }
-  here.form = initialsForm(res => scoreSaved(here, game, res));
-  here.box.insertBefore(here.form, here.scopes);
-  const active = document.activeElement;
-  // Focus outside the card counts as none: showOverlay pulls it into the
-  // card anyway, and it can still be on the just-hidden Play button.
-  if (finePointer.matches && (!els.overlay.contains(active) || els.ovActions.contains(active))) here.form.focusFirst();
+  if (!isCurrent()) return;
+  decideSave(scores, period);
+  if (scores) showSaveNote();   // a list that failed to load says why instead
 }
-async function scoreSaved(here, game, saved) {
-  const { ranks } = saved;
-  if (ob !== here || game !== lastGame) return;
-  here.form.remove();
-  here.form = null;
-  els.ovTitle.textContent = 'On the board!';
-  els.ovArt.innerHTML = svgFor('nib');
-  if (!(lbView().scope in ranks)) setLbView({ scope: Object.keys(ranks)[0] });
-  renderScores();
-  await refreshOverBoard(false);
-  here.note.textContent = savedText(saved, saved.period);
-  announce(here.note.textContent);
-  els.ovActions.firstChild.focus({ preventScroll: true });
+// In a group, every score is worth saving. Otherwise the card's list is the
+// public one, and the score has to make its top 10, where ties go to
+// whoever got there first. Without a group or a list, it waits for one.
+function decideSave(scores, period) {
+  if (!Save.is('checking', 'ineligible', 'offered')) return;
+  const game = lastGame, inGroup = myGroups().length > 0;
+  if (inGroup || scores) {
+    const worthIt = inGroup || scores.length < TOP || game.score > scores[TOP - 1].score;
+    if (inGroup || !worthIt) offerNote = '';
+    else {
+      const rank = 1 + scores.filter(x => x.score >= game.score).length;
+      offerNote = rank > 1 ? `That's #${rank}${during(period)} on the ${boardLabel()} board.`
+        : !scores.length ? `First score on this board${during(period)}!`
+        : period === 'all' ? `A new record! The old one was ${scores[0].score}.` : `Top score${during(period)}! The best before was ${scores[0].score}.`;
+    }
+    const next = worthIt ? 'offered' : 'ineligible';
+    if (!Save.is(next)) Save.go(next);
+  }
+  if (ob && ob.form) ob.form.publicRow.hidden = !inGroup;
+}
+function showSave(to, from) {
+  const here = ob;
+  if (!here) return;
+  if (to === 'offered' || to === 'saving') {
+    if (!here.form) {
+      here.form = initialsForm();
+      here.box.insertBefore(here.form, here.scopes);
+      // Focus outside the card counts as none: showOverlay pulls it into the
+      // card anyway, and it can still be on the just-hidden Play button.
+      // With the high-score screen open on top, focus stays there.
+      const active = document.activeElement;
+      if (finePointer.matches && Board.is('closed') && (!els.overlay.contains(active) || els.ovActions.contains(active))) here.form.focusFirst();
+    }
+    here.form.busy(to === 'saving');
+    if (to === 'saving') here.form.say('Saving…');
+    else if (from === 'saving') here.form.say(saveProblem, true);
+    here.form.publicRow.hidden = !myGroups().length;
+  } else if (here.form) {
+    here.form.remove();
+    here.form = null;
+  }
+  if (to === 'saved') {
+    els.ovTitle.textContent = 'On the board!';
+    els.ovArt.innerHTML = svgFor('nib');
+    renderScores();
+    refreshOverBoard();
+    announce(savedNote);
+    if (Board.is('closed')) els.ovActions.firstChild.focus({ preventScroll: true });
+  }
+  showSaveNote();
+}
+// What the save is doing, or null when it's doing nothing worth a word.
+function saveNote() {
+  if (Save.is('offered', 'saving')) return offerNote || null;
+  return Save.is('saved') ? savedNote : null;
+}
+function showSaveNote() {
+  const note = saveNote();
+  if (note !== null && ob) ob.note.textContent = note;
+}
+async function saveToBoard(initials, isPublic) {
+  if (!lastGame || !Save.go('saving')) return;
+  const at = Save.seq;
+  const res = await saveScore(initials, isPublic);
+  if (Save.seq !== at) return;   // the card went while the score was out
+  if (res.ok) {
+    savedNote = savedText(res, res.period);
+    if (!(lbView().scope in res.ranks)) setLbView({ scope: Object.keys(res.ranks)[0] });
+    Save.go('saved');
+  } else {
+    saveProblem = res.message;
+    Save.go('offered');
+  }
 }
 
 // ---------- the high-score screen: any view, plus joining, starting and leaving groups ----------
+// The high-score screen, open on top of the menu or the game-over card,
+// which take no focus or taps meanwhile. Its seq tells a reply that comes
+// back after the screen was closed (and maybe opened again) that its note
+// is no longer wanted. Closing it gives focus back to what opened it.
 let lbOpener = null;
+const Board = machine('board', { closed: ['open'], open: ['closed'] }, 'closed', { onMove: showBoard });
+function showBoard(to) {
+  if (to === 'open') lbOpener = document.activeElement;   // before the layers below lose it
+  els.lbOv.hidden = to !== 'open';
+  layer();
+  if (to === 'open') {
+    const v = lbView();
+    els.lbMode.value = v.mode;
+    els.lbDiff.value = v.difficulty;
+    renderMyGroups();
+    refreshScreen();
+    els.lbClose.focus();
+  } else {
+    els.lbGroupNote.textContent = '';
+    refreshCards();
+    if (lbOpener && document.contains(lbOpener)) lbOpener.focus({ preventScroll: true });
+  }
+}
 function openBoardScreen() {
-  if (!Leaderboard.api) return;
-  lbOpener = document.activeElement;
-  els.lbOv.hidden = false;
-  const v = lbView();
-  els.lbMode.value = v.mode;
-  els.lbDiff.value = v.difficulty;
-  renderMyGroups();
-  refreshScreen();
-  els.lbClose.focus();
+  if (Leaderboard.api && Board.is('closed')) Board.go('open');
 }
 function closeBoardScreen() {
-  els.lbOv.hidden = true;
-  els.lbGroupNote.textContent = '';
+  if (Board.is('open')) Board.go('closed');
+}
+// The menu's and the margin's lists, and the game-over card's, after a
+// change of view or groups.
+function refreshCards() {
   renderScores();
-  // Joining or leaving a group changes the tabs, and whether a score is worth saving.
-  if (ob && !els.overlay.hidden) {
-    if (ob.form && lastGame && !lastGame.entry) { ob.form.remove(); ob.form = null; }
-    refreshOverBoard(true);
-  }
-  if (lbOpener && document.contains(lbOpener)) lbOpener.focus({ preventScroll: true });
+  if (ob && Screen.is('over')) refreshOverBoard();
 }
 function refreshScreen() {
   const v = lbView(), request = ++screenRequest;
@@ -2387,11 +2539,15 @@ async function shareGroup(g, button) {
   }
   setTimeout(() => { button.textContent = 'Share'; }, 1500);
 }
+// A group joined or left changes which scores are worth saving, and if the
+// high-score screen has closed meanwhile, the lists on the cards below too.
 function addGroup(g) {
   shared.set('groups', [...myGroups().filter(x => x.code !== g.code), { code: g.code, name: g.name }]);
   setLbView({ scope: g.code });
   renderMyGroups();
   refreshScreen();
+  decideSave(null);
+  if (Board.is('closed')) refreshCards();
 }
 function leaveGroup(g) {
   if (!confirm(`Leave ${g.name}? You can rejoin later with code ${g.code}.`)) return;
@@ -2400,11 +2556,20 @@ function leaveGroup(g) {
   els.lbGroupNote.textContent = `Left ${g.name}.`;
   renderMyGroups();
   refreshScreen();
+  decideSave(null);
 }
 
+// Joining or starting a group waits for the Worker, one request at a time,
+// so a second tap can't start a second group.
+let groupsBusy = false;
+function busyGroups(on) {
+  groupsBusy = on;
+  for (const form of [els.lbJoinForm, els.lbCreateForm]) form.querySelector('button').disabled = on;
+}
 const normalizeCode = value => value.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 4);
 async function joinGroup(e) {
   e.preventDefault();
+  if (groupsBusy) return;
   const code = normalizeCode(els.lbJoinCode.value);
   if (!GROUP_CODE.test(code)) {
     els.lbGroupNote.textContent = 'Group codes are four letters and numbers, like K7QP.';
@@ -2415,30 +2580,43 @@ async function joinGroup(e) {
     return;
   }
   els.lbGroupNote.textContent = 'Looking up the group…';
+  const opened = Board.seq;
+  busyGroups(true);
   try {
     const g = await Leaderboard.group(code);
     addGroup(g);
+    if (Board.seq !== opened) return;
     els.lbJoinCode.value = '';
     els.lbGroupNote.textContent = `Joined ${g.name}. Scores you save from now on go to ${g.name} too.`;
   } catch (err) {
+    if (Board.seq !== opened) return;
     els.lbGroupNote.textContent = err.status === 404 ? `There’s no group with code ${code}.` : OFFLINE;
+  } finally {
+    busyGroups(false);
   }
 }
 async function createGroup(e) {
   e.preventDefault();
+  if (groupsBusy) return;
   const name = els.lbGroupName.value.trim();
   if (!name) {
     els.lbGroupNote.textContent = 'Give the group a name, like Family.';
     return;
   }
   els.lbGroupNote.textContent = 'Starting the group…';
+  const opened = Board.seq;
+  busyGroups(true);
   try {
     const g = await Leaderboard.createGroup(name);
     addGroup(g);
+    if (Board.seq !== opened) return;
     els.lbGroupName.value = '';
     els.lbGroupNote.textContent = `Started ${g.name}. Share code ${g.code} so others can join.`;
   } catch (err) {
+    if (Board.seq !== opened) return;
     els.lbGroupNote.textContent = err.fromServer ? `Couldn’t start the group: ${err.message}.` : OFFLINE;
+  } finally {
+    busyGroups(false);
   }
 }
 
@@ -2456,11 +2634,18 @@ async function handleInvite() {
     els.lbGroupNote.textContent = `You’re already in ${groupName(code)}.`;
     return;
   }
+  if (myGroups().length >= MAX_GROUPS) {
+    els.lbGroupNote.textContent = `You’re in ${MAX_GROUPS} groups already, the most there can be. Leave one to join another.`;
+    return;
+  }
+  // The player may join, or close the screen, before the lookup answers.
+  const opened = Board.seq;
+  const stale = () => Board.seq !== opened || groupsBusy || myGroups().some(g => g.code === code);
   try {
     const g = await Leaderboard.group(code);
-    els.lbGroupNote.textContent = `You’re invited to ${g.name}. Tap Join to add it.`;
+    if (!stale()) els.lbGroupNote.textContent = `You’re invited to ${g.name}. Tap Join to add it.`;
   } catch (err) {
-    els.lbGroupNote.textContent = err.status === 404 ? `There’s no group with code ${code}.` : UNAVAILABLE;
+    if (!stale()) els.lbGroupNote.textContent = err.status === 404 ? `There’s no group with code ${code}.` : UNAVAILABLE;
   }
 }
 
@@ -2495,15 +2680,16 @@ function syncMenu() {
   els.kNote.hidden = S.mode !== 'kinder';
   renderScores();
 }
+// From the pause card or the game-over card, and at the start, when the
+// page is on the menu already.
 function openMenu() {
-  hideOverlay();
-  S.phase = 'menu';
+  if (!Screen.is('menu', 'paused', 'over')) return;
   S.level = 1;
   S.score = 0;
   S.lives = startLives();
   S.spec = null;
   startLevel();
-  els.menu.hidden = false;
+  if (!Screen.is('menu')) Screen.go('menu');
   syncMenu();
 }
 els.modeChips.addEventListener('change', e => {
@@ -2530,7 +2716,7 @@ els.playBtn.addEventListener('click', beginPlay);
 els.soundBtn.addEventListener('click', () => { toggleSound(); els.soundBtn.blur(); });
 els.pauseBtn.addEventListener('click', () => {
   Sound.unlock();
-  if (S.phase === 'play') pause(); else if (S.phase === 'paused') resume();
+  if (Screen.is('play')) pause(); else resume();
   els.pauseBtn.blur();
 });
 
@@ -2540,24 +2726,25 @@ document.addEventListener('keydown', e => {
   Sound.unlock();
   const k = e.key, t = e.target instanceof Element ? e.target : null;
   // The high-score screen sits over everything: Escape closes it, and game keys wait.
-  if (!els.lbOv.hidden) { if (k === 'Escape') { e.preventDefault(); closeBoardScreen(); } return; }
+  if (Board.is('open')) { if (k === 'Escape') { e.preventDefault(); closeBoardScreen(); } return; }
   const onControl = !!(t && t.closest('button, summary, input, a, select, textarea'));
   const isSpace = k === ' ' || k === 'Spacebar';
-  if (S.phase === 'play') {
+  if (Screen.is('play')) {
     if (KEYS[k]) { e.preventDefault(); tryMove(...DIRS[KEYS[k]]); return; }
     if (isSpace || (k === 'Enter' && !onControl)) { e.preventDefault(); if (!e.repeat) chomp(); return; }
     if (k === 'p' || k === 'P' || k === 'Escape') { e.preventDefault(); pause(); return; }
-  } else if (S.phase === 'paused' && (k === 'p' || k === 'P' || k === 'Escape')) {
+  } else if (Screen.is('paused') && (k === 'p' || k === 'P' || k === 'Escape')) {
     e.preventDefault(); resume(); return;
   }
-  if (S.phase === 'menu' && k === 'Enter' && t && t.matches('input[type="radio"]')) { e.preventDefault(); beginPlay(); return; }
+  if (Screen.is('menu') && k === 'Enter' && t && t.matches('input[type="radio"]')) { e.preventDefault(); beginPlay(); return; }
   if ((k === 'm' || k === 'M') && !e.repeat && !(t && t.closest('input, textarea'))) { toggleSound(); return; }
   if (!els.overlay.hidden && (isSpace || k === 'Enter') && !onControl) { e.preventDefault(); if (!e.repeat) runPrimary(); return; }
-  if (S.phase === 'menu' && (isSpace || k === 'Enter') && !onControl) { e.preventDefault(); beginPlay(); }
+  if (Screen.is('menu') && (isSpace || k === 'Enter') && !onControl) { e.preventDefault(); beginPlay(); }
 });
 
-let ptr = null;
+let ptr = null;   // a press on the board: a tap walks Nib there, a swipe steps (cleared on leaving play)
 function tapAt(x, y) {
+  if (!Screen.is('play')) return;
   const b = els.board.getBoundingClientRect();
   const c = Math.floor((x - b.left) / (b.width / S.cols)), r = Math.floor((y - b.top) / (b.height / S.rows));
   if (!inside(c, r)) return;
@@ -2566,7 +2753,7 @@ function tapAt(x, y) {
   S.player.lastMove = Math.min(S.player.lastMove, performance.now() - 200);
 }
 els.board.addEventListener('pointerdown', e => {
-  if (S.phase !== 'play') return;
+  if (!Screen.is('play')) return;
   e.preventDefault();
   Sound.unlock();
   ptr = { id: e.pointerId, x: e.clientX, y: e.clientY, moved: false };
@@ -2591,10 +2778,14 @@ const endPtr = e => {
 els.board.addEventListener('pointerup', endPtr);
 els.board.addEventListener('pointercancel', endPtr);
 
+// A held arrow repeats until it's let go, or play stops (showScreen).
+const padStops = [];
+function stopPad() { padStops.forEach(stop => stop()); els.chompBtn.classList.remove('on'); }
 els.pad.querySelectorAll('.key').forEach(btn => {
   const [dx, dy] = DIRS[btn.dataset.dir];
   let timer = 0;
   const stop = () => { clearTimeout(timer); timer = 0; btn.classList.remove('on'); };
+  padStops.push(stop);
   btn.addEventListener('pointerdown', e => {
     e.preventDefault();
     Sound.unlock();
@@ -2625,7 +2816,7 @@ function onResize() {
     if (!S.cells.length) return;
     const [c, r] = wantDims();
     if (c !== S.cols || r !== S.rows) {
-      if (S.phase === 'menu') startLevel(S.spec);
+      if (Screen.is('menu')) startLevel(S.spec);
       else transpose();
       return;
     }
@@ -2637,7 +2828,7 @@ else window.addEventListener('resize', onResize);
 
 // ---------- keep a game going across page updates ----------
 function snapshot() {
-  const live = ['play', 'paused', 'message', 'clearing'].includes(S.phase);
+  const live = Screen.is('play', 'paused', 'message', 'clearing');
   return {
     v: 1, mode: S.mode, diff: S.diffPick,
     game: live ? {
@@ -2667,9 +2858,7 @@ function restore(data) {
     showRule(false);
     renderHud();
     if (!okLeft()) { S.level++; startLevel(g.nextSpec); }
-    els.menu.hidden = true;
-    S.phase = 'paused';
-    showPaused();
+    Screen.go('paused');   // shows the pause card
     return true;
   } catch (err) {
     return false;
@@ -2689,20 +2878,24 @@ function start(data) {
   S.playerEl = makeSprite('nib', 'player');
   S.playerEl.style.setProperty('--dur', '110ms');
   if (!restore(data)) openMenu();
+  layer();
   els.lbOpenMenu.hidden = els.howtoBoard.hidden = !Leaderboard.api;
   syncMenu();
   handleInvite();
   requestAnimationFrame(frame);
 }
 
-// #debug exposes hooks for tests: chompRight() moves Nib onto a number that
-// fits the rule and chomps it, and end() finishes the game.
+// #debug exposes hooks for tests: peek() reports the game and each state
+// machine (phase is the screen, kept under its old name), chompRight() moves
+// Nib onto a number that fits the rule and chomps it, and end() finishes the
+// game.
 if (location.hash === '#debug') {
   window.__dc = {
-    peek: () => ({ phase: S.phase, score: S.score, level: S.level, chomps: S.chomps, lives: S.lives }),
+    peek: () => ({ phase: Screen.state, screen: Screen.state, save: Save.state, board: Board.state,
+      score: S.score, level: S.level, chomps: S.chomps, lives: S.lives }),
     chompRight() {
       const i = S.cells.findIndex(x => x.ok && !x.eaten);
-      if (S.phase !== 'play' || i < 0) return false;
+      if (!Screen.is('play') || i < 0) return false;
       S.player.c = i % S.cols;
       S.player.r = Math.floor(i / S.cols);
       placePlayer(true);
@@ -2710,7 +2903,7 @@ if (location.hash === '#debug') {
       return true;
     },
     end() {
-      if (S.phase !== 'play') return;
+      if (!Screen.is('play')) return;
       S.lives = 0;
       renderHud();
       gameOver();
