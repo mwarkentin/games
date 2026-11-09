@@ -7,6 +7,10 @@ lobby the way the real room does (players, host, bots, length, dealing) and
 passes slams, cheers, deck changes and clean-ups on; the battles themselves are up to each test,
 which sends the room's messages with broadcast(). The real room is tested in
 worker/test/war.test.js.
+
+For testing what a page does while its connection isn't answering: `answering`
+False holds back the room's reply to a hello until answer(), and drop() cuts
+the sockets that are open, as a connection that drops does.
 """
 
 from __future__ import annotations
@@ -42,6 +46,7 @@ class FakeWarRoom:
         self.sockets: list[dict] = []    # {ws, token, open}
         self.received: list[dict] = []   # every message from a page
         self.game: dict | None = None
+        self.answering = True            # False: a hello gets no reply until answer()
 
     def route(self, page: Page) -> None:
         page.route(f"{API}/**", self.handle_http)
@@ -76,6 +81,18 @@ class FakeWarRoom:
         self.sockets.append(conn)
         ws.on_message(lambda message: self.on_message(conn, message))
         ws.on_close(lambda code, reason: self.on_close(conn))
+
+    def drop(self) -> None:
+        """Cuts every open socket, as a connection that drops does. Call it from
+        the test, not from a handler: closing waits for the page."""
+        for conn in self.open_sockets():
+            conn["open"] = False
+            conn["ws"].close(code=1001, reason="connection lost")
+
+    def answer(self) -> None:
+        """Answers the hellos held back while `answering` was False."""
+        self.answering = True
+        self.send_states()
 
     def on_close(self, conn: dict) -> None:
         conn["open"] = False
@@ -142,7 +159,8 @@ class FakeWarRoom:
                 })
             elif seat is not None:
                 self.players[seat]["deck"] = message.get("deck")
-            self.send_states()
+            if self.answering:
+                self.send_states()
         elif kind == "leave":
             if seat is not None and self.phase == "lobby":
                 self.players.pop(seat)
@@ -157,7 +175,12 @@ class FakeWarRoom:
             self.length = message["length"]
             self.send_states()
         elif kind == "start" and is_host:
-            self.deal()
+            # As the real room: a game needs two players here, bots included.
+            online = self.online()
+            if sum(1 for seat, p in enumerate(self.players) if p["bot"] or seat in online) < 2:
+                self.broadcast({"t": "error", "error": "You need at least two players. Add some bots!"})
+            else:
+                self.deal()
         elif kind in ("slam", "charge", "card") and seat is not None:
             self.broadcast({"t": kind, "seat": seat, **{k: v for k, v in message.items() if k != "t"}})
         elif kind == "cheer":

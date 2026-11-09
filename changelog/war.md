@@ -1,3 +1,24 @@
+## 2026-11-09
+
+- A second tap on Join or Start a room no longer connects you twice, which
+  counted every battle twice and could pull you back into a room you'd left.
+- Playing solo while a room was still connecting no longer gets interrupted
+  by that room turning up, or giving up, later.
+- Deal again keeps the results on screen until the next game is dealt: if it
+  can't be, they stay put, and each game counts once in your history.
+- Reconnecting… now shows over the lobby and menus too, and Deal and Deal
+  again wait until you're back.
+- Music and sound effects stay quiet while the tab is hidden, and when you
+  come back the music matches the screen: the end-of-game tune doesn't play
+  again, and the results don't get battle music.
+- Pausing a solo game stops everything until you're back: the next battle,
+  the bots, the joker, and a war you'd started, which used to be slammed for
+  you.
+- Space and Enter press the button you're on instead of slamming, and Escape
+  closes the power-ups on the menu too.
+- Skipping to the end just as a battle was played no longer leaves it out of
+  the battle log.
+
 ## 2026-11-08
 
 - In a room, Clean up shows on everyone's screen: at a table of up to four,

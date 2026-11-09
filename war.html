@@ -387,8 +387,8 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px s
 #cheers { display: flex; gap: 4px; }
 #cheers button { width: 36px; height: 36px; border-radius: 50%; border: 0; background: rgba(0, 0, 0, .22); font-size: 18px; padding: 0; }
 
-/* Effects */
-#fx { position: fixed; inset: 0; pointer-events: none; z-index: 30; overflow: hidden; }
+/* Effects. They belong to the table, so every overlay (z-index 20) covers them. */
+#fx { position: fixed; inset: 0; pointer-events: none; z-index: 19; overflow: hidden; }
 .bit { position: absolute; font-size: 22px; animation: burst var(--t, 900ms) cubic-bezier(.15, .7, .3, 1) forwards; will-change: transform, opacity; }
 @keyframes burst {
   0% { transform: translate(-50%, -50%) scale(.4); opacity: 1; }
@@ -799,7 +799,8 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px s
   box-shadow: var(--shadow); font-weight: 700; font-size: 13px; width: max-content;
   max-width: min(360px, calc(100% - 110px)); text-align: center;
 }
-#conn { position: fixed; top: calc(env(safe-area-inset-top) + 52px); left: 50%; transform: translateX(-50%); z-index: 15; background: var(--war); color: #fff; padding: 6px 12px; border-radius: 999px; font-weight: 700; font-size: 13px; }
+/* Reconnecting: over every overlay, since the lobby and the menus are where it's easiest to miss. */
+#conn { position: fixed; top: calc(env(safe-area-inset-top) + 52px); left: 50%; transform: translateX(-50%); z-index: 35; background: var(--war); color: #fff; padding: 6px 12px; border-radius: 999px; font-weight: 700; font-size: 13px; }
 
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: 1ms !important; animation-iteration-count: 1 !important; transition: none !important; }
@@ -1396,6 +1397,44 @@ function roomsUrl() {
   return (/^https?:\/\//.test(override) ? override : ROOMS_URL).replace(/\/+$/, '');
 }
 
+// ---- BEGIN STATE MACHINE ----
+// The same in every page that has one (tests/test_state_machines.py checks).
+// An explicit state machine, as "State machines" in AGENTS.md describes: the
+// states something can be in, and the moves it may make from each. go(to)
+// makes a listed move and nothing else. It shows the new state as el's
+// data-<name> attribute (on <html> unless el says otherwise), for CSS, tests
+// and anyone reading the page, then calls onMove(to, from, ...args). Any
+// other move, like a state the table doesn't name, is a bug: it's refused
+// with a console error, which fails the tests, and the player carries on as
+// if it had never been tried. seq counts the moves made, so a timer or a
+// reply that waited can tell whether anything moved in the meantime.
+function machine(name, moves, state, { el = document.documentElement, onMove } = {}) {
+  const known = (s) => s in moves || (console.error(`${name}: no state called ${s}`), false);
+  Object.values(moves).flat().forEach(known);
+  known(state);
+  let seq = 0;
+  if (el) el.dataset[name] = state;
+  return {
+    get state() { return state; },
+    get seq() { return seq; },
+    is: (...states) => states.filter(known).includes(state),
+    can: (to) => known(to) && moves[state].includes(to),
+    go(to, ...args) {
+      if (!moves[state].includes(to)) {
+        console.error(`${name}: no move from ${state} to ${to}`);
+        return false;
+      }
+      const from = state;
+      state = to;
+      seq += 1;
+      if (el) el.dataset[name] = to;
+      if (onMove) onMove(to, from, ...args);
+      return true;
+    },
+  };
+}
+// ---- END STATE MACHINE ----
+
 // ---- Sound ----
 
 const Sound = {
@@ -1420,8 +1459,10 @@ const Sound = {
     if (this.on) this.unlock();
     renderSound();
   },
+  // The audio context, if a sound may play now: not while the tab is hidden,
+  // where a room carries on without you.
   ready() {
-    if (!this.on || !this.ctx) return null;
+    if (!this.on || !this.ctx || document.hidden) return null;
     if (this.ctx.state === 'suspended') this.ctx.resume();
     return this.ctx;
   },
@@ -1920,7 +1961,6 @@ const Music = {
   seg: null,        // the part playing: { part, arr, start, beat, i, until }
   queue: [],        // parts of the song still to come
   next: null,       // { song, list }: the song taking over when this part stops
-  paused: null,     // the song to bring back when the tab is shown again
   timer: 0,
   // Fetches and arranges a song's piece, once.
   async ready(name) {
@@ -1947,16 +1987,16 @@ const Music = {
   },
   // Plays a song from the next bar of the one playing, or straight away;
   // null stops. Its intro plays unless `intro` is false, or the music is
-  // coming back from a war.
+  // coming back from a war. Nothing plays while the tab is hidden.
   play(name, intro) {
-    if (!this.on || !Sound.ctx) name = null;
+    if (!this.on || !Sound.ctx || document.hidden) name = null;
     if (name === this.want) return;
     const from = this.want;
     this.want = name;
     if (!name) { this.stop(); return; }
+    const withIntro = intro ?? !(from && from.startsWith('war'));
     this.ready(name).then((parts) => {
       if (this.want !== name) return;
-      const withIntro = intro ?? !(from && from.startsWith('war'));
       const list = parts.once ? [parts.once] : [...(parts.intro && withIntro ? [parts.intro] : []), parts.loop];
       this.start(name, list);
     }, () => { if (this.want === name) this.want = null; });
@@ -2033,18 +2073,14 @@ const Music = {
     this.halt();
     if (this.mix) this.mix.out.gain.setTargetAtTime(0, Sound.ctx.currentTime, 0.04);
   },
-  // The tab is hidden: hush, and start the song again when it's back.
+  // The tab is hidden: hush. When it's back, the music is whatever the screen
+  // wants then, not what it was: a jingle that has played doesn't play again,
+  // and a game that ended meanwhile doesn't bring its battle music back.
   pause() {
-    if (!this.want) return;
-    const name = this.want;
     this.play(null);
-    this.paused = name;
   },
   resume() {
-    if (!this.paused) return;
-    const name = this.paused;
-    this.paused = null;
-    this.play(name, false);
+    syncMusic(false);
   },
   toggle() {
     this.on = !this.on;
@@ -2065,13 +2101,14 @@ function warDepth() {
 
 // The music for what's on screen: The Entertainer in the menu and lobby,
 // Thunder and Lightning at the table and the Mountain King in a war, faster
-// the deeper it goes. The end of a game plays a jingle instead.
-function syncMusic() {
+// the deeper it goes. The end of a game plays a jingle instead (see showOver).
+// `intro` is false for music coming back with the tab.
+function syncMusic(intro) {
   if (!Music.on || !Sound.ctx) return;
-  if (!$('menu').hidden || !$('lobby').hidden) { Music.play('menu'); return; }
+  if (Screen.is('menu', 'lobby')) { Music.play('menu', intro); return; }
   if (S.phase !== 'playing') return;
   const depth = warDepth();
-  Music.play(depth >= 3 ? 'war3' : depth === 2 ? 'war2' : depth === 1 ? 'war' : 'battle');
+  Music.play(depth >= 3 ? 'war3' : depth === 2 ? 'war2' : depth === 1 ? 'war' : 'battle', intro);
 }
 
 
@@ -3925,8 +3962,7 @@ function floatCheer(seat, e) {
 // ---- Game state, as the room describes it ----
 
 const S = {
-  mode: null,            // 'solo' or 'room'
-  conn: null,
+  conn: null,            // the SoloRoom or NetRoom of the session (see Session)
   code: null,
   phase: null,
   you: null,
@@ -3947,7 +3983,7 @@ const S = {
   style: store.get('style', 0),
   auto: false,
   fast: false,
-  overShown: false,
+  recorded: false,       // this game is in your history and stats (see showOver)
   animUntil: 0,
   naps: 0,               // your cards that flopped over by themselves in a row
   input: store.get('input', 'hold'),  // how you slam: hold, mash or fling
@@ -3955,13 +3991,48 @@ const S = {
   thumps: {},            // seat -> face-down cards others have slammed this war stage
   potCards: [],          // the cards in this battle's pot, for the heap: { card, look, seat }
 };
-const timers = new Set();
+// The page's own clock: what it shows later (the next stage opening, the
+// bots' slams, the shows in #fx), all cleared when the table changes under it.
+// While a solo game is paused (see holdClocks), they wait with it.
+const timers = new Map();   // id -> { fn, due }
+let heldTimers = null;      // while held: [{ fn, left }] to start again on release
 function later(fn, ms) {
-  const id = setTimeout(() => { timers.delete(id); fn(); }, Math.max(0, ms));
-  timers.add(id);
+  ms = Math.max(0, ms);
+  if (heldTimers) { heldTimers.push({ fn, left: ms }); return 0; }
+  const id = setTimeout(() => { timers.delete(id); fn(); }, ms);
+  timers.set(id, { fn, due: now() + ms });
   return id;
 }
-function clearLater() { for (const id of timers) clearTimeout(id); timers.clear(); }
+function clearLater() {
+  for (const id of timers.keys()) clearTimeout(id);
+  timers.clear();
+  if (heldTimers) heldTimers = [];
+}
+
+// A paused solo game stops the page's clock too, not just the room's: what
+// it has scheduled waits, the shows in #fx stand still, and the joker holds
+// its pose, until the game resumes.
+let heldAnims = [], heldJoker = null;
+function holdClocks() {
+  if (heldTimers) return;
+  heldTimers = [...timers.values()].map(({ fn, due }) => ({ fn, left: Math.max(0, due - now()) }));
+  for (const id of timers.keys()) clearTimeout(id);
+  timers.clear();
+  heldAnims = document.getAnimations().filter((a) => a.playState === 'running' && a.effect?.target?.closest?.('#fx'));
+  for (const a of heldAnims) a.pause();
+  heldJoker = Joker.current && Joker.current.root.isConnected && !Joker.current.held ? Joker.current : null;
+  if (heldJoker) heldJoker.hold(true);
+}
+function releaseClocks() {
+  if (!heldTimers) return;
+  const list = heldTimers;
+  heldTimers = null;
+  for (const a of heldAnims) if (a.playState === 'paused') a.play();
+  heldAnims = [];
+  if (heldJoker) heldJoker.hold(false);
+  heldJoker = null;
+  for (const { fn, left } of list) later(fn, left);
+}
 const pace = () => (S.fast ? FAST_PACE : 1);
 const now = () => performance.now();
 const isFighting = (seat) => S.fighters.includes(seat);
@@ -3984,6 +4055,50 @@ function deckOf(seat) {
   return 'classic';
 }
 
+// ---- Sessions: what the page is playing through ----
+//
+// One session at a time: none on the menu, joining while a room is being
+// started or looked up (Start and Join wait for it), then a game against bots
+// right here (solo) or a room over a WebSocket (room). A new session closes
+// the old one's connection, and a connection only ever speaks for the session
+// it was made for, so a socket left over from a double tap, or a room still
+// connecting when you went solo, can't steer the page.
+const Session = machine('session', {
+  none: ['joining', 'solo'],
+  joining: ['none', 'room', 'solo'],   // looked up, failed, or abandoned for solo
+  room: ['none', 'joining', 'solo'],   // a room still connecting can be swapped from the menu
+  solo: ['none'],
+}, 'none', { onMove: showSession });
+function showSession(to, from) {
+  if (from === 'room' || from === 'solo') {
+    const old = S.conn;
+    S.conn = null;
+    if (old) old.close();
+  }
+  if (!Conn.is('off') && to !== 'room') Conn.go('off');
+  for (const id of ['newRoomBtn', 'joinBtn']) $(id).disabled = to === 'joining';
+}
+
+// The room's WebSocket: connecting at first, open, and retrying after it
+// drops until it's open again (the Reconnecting banner shows meanwhile), off
+// outside a room. The room hears nothing while it isn't open, so Deal, Deal
+// again and slams wait for it.
+const Conn = machine('conn', {
+  off: ['connecting'],
+  connecting: ['open', 'retrying', 'off'],
+  open: ['retrying', 'off'],
+  retrying: ['open', 'off'],
+}, 'off', { onMove: showConn });
+function showConn() {
+  setHidden($('conn'), !Conn.is('retrying'));
+  if (Screen.is('lobby')) renderLobby();
+  if (Screen.is('over')) renderOverButtons();
+  if (Screen.is('table', 'ending')) renderControls();
+}
+// Whether what you do reaches the game: a solo game that isn't paused, or a
+// room whose socket is open.
+const live = () => (Session.is('solo') ? Boolean(S.conn) && !S.conn.pausedAt : Session.is('room') && Conn.is('open'));
+
 // ---- Solo games: the core, run right here against bots ----
 
 class SoloRoom {
@@ -3998,11 +4113,15 @@ class SoloRoom {
     this.timer = 0;
     this.pausedAt = 0;
   }
+  // Passes a message to the page, while this is still the session's game.
+  emit(message) {
+    if (S.conn === this) receive(message);
+  }
   start() {
     const made = warNewGame(this.players.map((p) => p.bot), this.length, this.random, Date.now(), pace());
     this.game = made.game;
-    receive(this.snapshot());
-    receive(made.stage);
+    this.emit(this.snapshot());
+    this.emit(made.stage);
     this.schedule();
   }
   snapshot() {
@@ -4021,11 +4140,11 @@ class SoloRoom {
     if (!this.game) return;
     if (message.t === 'slam') {
       const slam = warSlam(this.game, 0, message.power, message.style);
-      if (slam) { receive(slam); this.schedule(); }
+      if (slam) { this.emit(slam); this.schedule(); }
     } else if (message.t === 'start') {
       this.start();
     } else if (message.t === 'cheer') {
-      receive({ t: 'cheer', seat: 0, e: message.e });
+      this.emit({ t: 'cheer', seat: 0, e: message.e });
     }
   }
   schedule() {
@@ -4037,33 +4156,39 @@ class SoloRoom {
   tick() {
     if (!this.game || this.game.over || this.pausedAt) return;
     if (Date.now() < warDueAt(this.game, new Set([0]))) { this.schedule(); return; }
-    receive(warResolve(this.game, Date.now(), this.random));
+    this.emit(warResolve(this.game, Date.now(), this.random));
     this.schedule();
   }
   setPace(p) { if (this.game) this.game.pace = p; }
+  // Says whether it paused: a game that's over has nothing to wait for.
   pause() {
-    if (this.pausedAt || !this.game || this.game.over) return;
+    if (this.pausedAt || !this.game || this.game.over) return false;
     this.pausedAt = Date.now();
     clearTimeout(this.timer);
+    return true;
   }
   resume() {
-    if (!this.pausedAt) return;
+    if (!this.pausedAt || !this.game) return false;
     const paused = Date.now() - this.pausedAt;
     this.pausedAt = 0;
     this.game.opensAt += paused;
     this.game.closesAt += paused;
-    receive({ t: 'timing', opensIn: this.game.opensAt - Date.now(), closesIn: this.game.closesAt - Date.now() });
+    this.emit({ t: 'timing', opensIn: this.game.opensAt - Date.now(), closesIn: this.game.closesAt - Date.now() });
     this.schedule();
+    return true;
   }
-  // Plays every remaining battle at once, with nobody slamming.
+  // Plays every remaining battle at once, with nobody slamming, after any
+  // battle already played that the page is still holding back (see onFlip),
+  // and ends on the results.
   finish() {
-    if (!this.game || this.game.over) return;
+    if (!this.game) return;
+    releaseFlip();
     clearTimeout(this.timer);
     this.pausedAt = 0;
     while (!this.game.over) logFlip(warResolve(this.game, Date.now(), this.random));
-    receive(this.snapshot());
+    this.emit(this.snapshot());
   }
-  close() { clearTimeout(this.timer); this.game = null; }
+  close() { clearTimeout(this.timer); this.game = null; this.pausedAt = 0; }
 }
 
 // ---- Rooms: the same messages, from the War room over a WebSocket ----
@@ -4075,30 +4200,35 @@ class NetRoom {
     this.ws = null;
     this.tries = 0;
     this.closed = false;
+    Conn.go('connecting');
     this.open();
   }
   open() {
     const ws = new WebSocket(`${roomsUrl().replace(/^http/, 'ws')}/v1/war/rooms/${this.code}`);
     this.ws = ws;
+    // Only the session's room, on its latest socket, speaks for it.
+    const current = () => !this.closed && S.conn === this && this.ws === ws;
     ws.onopen = () => {
+      if (!current()) return;
       this.tries = 0;
-      setHidden($('conn'), true);
+      Conn.go('open');
       ws.send(JSON.stringify({ t: 'hello', ...this.me }));
     };
     ws.onmessage = (event) => {
+      if (!current()) return;
       let message;
       try { message = JSON.parse(event.data); } catch (e) { return; }
       if (message && typeof message.t === 'string') receive(message);
     };
     ws.onclose = () => {
-      if (this.closed || this.ws !== ws) return;
+      if (!current()) return;
       this.tries++;
-      setHidden($('conn'), false);
       if (this.tries > 6) {
         this.closed = true;
         backToMenu("Lost touch with the room. Check your connection and join again.");
         return;
       }
+      if (!Conn.is('retrying')) Conn.go('retrying');
       this.timer = setTimeout(() => this.open(), Math.min(8000, 500 * 2 ** this.tries));
     };
   }
@@ -4110,7 +4240,6 @@ class NetRoom {
     clearTimeout(this.timer);
     this.send({ t: 'leave' });
     try { this.ws.close(1000, 'bye'); } catch (e) { /* closed */ }
-    setHidden($('conn'), true);
   }
 }
 
@@ -4137,7 +4266,7 @@ function receive(m) {
     case 'card': return onCard(m);
     case 'flip': return onFlip(m);
     case 'cheer':
-      if (m.seat !== S.you || S.mode === 'solo') { floatCheer(m.seat, m.e); if (m.seat !== S.you) Sound.cheer(); }
+      if (m.seat !== S.you || Session.is('solo')) { floatCheer(m.seat, m.e); if (m.seat !== S.you) Sound.cheer(); }
       return;
     case 'tidy':
       // Someone cleaned up their winnings: their heap squares up on their tile.
@@ -4157,8 +4286,8 @@ function receive(m) {
       S.closesAt = now() + m.closesIn;
       return;
     case 'error':
-      if (!$('menu').hidden) setText($('friendsErr'), m.error);
-      else if (!$('lobby').hidden) setText($('lobbyErr'), m.error);
+      if (Screen.is('menu')) setText($('friendsErr'), m.error);
+      else if (Screen.is('lobby')) setText($('lobbyErr'), m.error);
       else toast(m.error);
       return;
     default:
@@ -4166,6 +4295,7 @@ function receive(m) {
 }
 
 function onState(m) {
+  releaseFlip();  // a battle that came before this state goes on the table first
   const wasPhase = S.phase;
   S.code = m.code;
   S.phase = m.phase;
@@ -4178,7 +4308,7 @@ function onState(m) {
     const g = m.game;
     // A new game, or a snapshot of a different moment in this one.
     const fresh = m.phase === 'playing' && (wasPhase !== 'playing' || g.battle < S.battle);
-    if (fresh) { S.mine = []; S.overShown = false; S.naps = 0; S.plan = null; S.potCards = []; Odds.reset(); heapClear(); logReset(g.counts); }
+    if (fresh) { S.mine = []; S.recorded = false; S.naps = 0; S.plan = null; S.potCards = []; Odds.reset(); heapClear(); logReset(g.counts); }
     if (fresh || S.battle !== g.battle || S.stage !== g.stage) {
       if (!g.over) Log.stages = [];
       clearLater();
@@ -4202,7 +4332,12 @@ function onState(m) {
   } else {
     Object.assign(S, { battle: 0, stage: 0, fighters: [], counts: [], out: [], over: null, cards: {}, result: null, slams: {} });
   }
-  showScreen();
+  // The room's phase picks the screen; a game that's over goes to the
+  // results (showOver, below).
+  const screen = { lobby: 'lobby', playing: 'table' }[S.phase];
+  if (screen && !Screen.is(screen)) Screen.go(screen);
+  if (Screen.is('lobby')) renderLobby();
+  syncMusic();
   renderAll();
   if (S.phase === 'over' && S.over) { showOver(); renderOverButtons(); }
 }
@@ -4306,9 +4441,27 @@ const OPEN_LINES = [
   'Wind up. Let it rip.', 'The table can take it.',
 ];
 
+// A flip that comes while your slam is still landing waits for it. It's held
+// here rather than only in a timer, so whatever clears the timers (skipping
+// to the end, a fresh state from the room) plays it first instead of losing it.
+let heldFlip = null;
 function onFlip(m) {
+  releaseFlip();
   const wait = S.animUntil - now();
-  if (wait > 0) { later(() => onFlip(m), wait); return; }
+  if (wait > 0) {
+    heldFlip = m;
+    later(releaseFlip, wait);
+    return;
+  }
+  playFlip(m);
+}
+function releaseFlip() {
+  const m = heldFlip;
+  heldFlip = null;
+  if (m) playFlip(m);
+}
+
+function playFlip(m) {
   if (S.pending && S.pending.battle === m.battle && S.pending.stage === m.stage) openStage();
   logFlip(m);
   S.result = m;
@@ -4342,6 +4495,7 @@ function onFlip(m) {
     Odds.settle(m.over);
     S.over = m.over;
     S.phase = 'over';
+    if (Screen.is('table')) Screen.go('ending');
     later(showOver, 1600 * pace());
   }
   renderAll();
@@ -4741,7 +4895,7 @@ function renderMe() {
   const note = $('meNote');
   setHidden(note, !(watching || out));
   if (watching) setText(note, S.phase === 'over' ? 'Watching. You’re in the next game.' : 'You’re watching this one. You’ll be dealt into the next game.');
-  else if (out) setText(note, S.mode === 'solo' ? '💀 Out of cards! Speed things up, or skip to the end from the menu.' : '💀 Out of cards! Cheer from the sidelines.');
+  else if (out) setText(note, Session.is('solo') ? '💀 Out of cards! Speed things up, or skip to the end from the menu.' : '💀 Out of cards! Cheer from the sidelines.');
   if (watching) return;
   const p = S.players[me];
   const count = S.counts[me] ?? 0;
@@ -4830,7 +4984,7 @@ function renderBar() {
 
 function renderControls() {
   const fighting = S.phase === 'playing' && S.you !== null && isFighting(S.you) && !S.pending;
-  const can = fighting && !S.slams[S.you] && now() >= S.opensAt;
+  const can = fighting && !S.slams[S.you] && now() >= S.opensAt && live();
   const busy = inputBusy();
   setClass($('me'), 'ready', can);
   const hint = $('deckHint');
@@ -4841,6 +4995,7 @@ function renderControls() {
     let text = INPUTS[S.input][2];
     if (S.phase !== 'playing' || S.you === null) text = S.phase === 'over' ? 'Game over' : 'Watching';
     else if (S.battle && S.out[S.you]) text = 'Out of cards';
+    else if (Session.is('room') && !Conn.is('open')) text = 'Reconnecting…';
     else if (S.slams[S.you] && fighting) text = `${tierName(S.slams[S.you][0])}!`;
     else if (S.pending) text = S.pending.stage > 0 && !S.pending.fighters.includes(S.you) ? 'War in progress…' : 'Get ready…';
     else if (!fighting) text = 'War in progress…';
@@ -4866,10 +5021,10 @@ function renderControls() {
   setAttr($('autoBtn'), 'aria-pressed', String(S.auto));
   setHidden($('autoBtn'), S.you === null);
   setHidden($('styleBtn'), S.you === null);
-  const fastShown = S.mode === 'solo';
+  const fastShown = Session.is('solo');
   setHidden($('fastBtn'), !fastShown);
   setAttr($('fastBtn'), 'aria-pressed', String(S.fast));
-  setHidden($('cheers'), S.mode !== 'room');
+  setHidden($('cheers'), !Session.is('room'));
 }
 
 function renderAll() {
@@ -5044,7 +5199,7 @@ function heapSquare(seat) {
 function heapTidy() {
   if (S.you === null || !heapSquare(S.you)) return;
   setText($('caption'), pick(TIDY_LINES)(heaps.get(S.you).cards.length));
-  if (S.mode === 'room' && S.conn) S.conn.send({ t: 'tidy' });
+  if (Session.is('room') && S.conn) S.conn.send({ t: 'tidy' });
 }
 
 function renderHeaps() {
@@ -5082,8 +5237,10 @@ let charge = null;  // hold: { start, power, tier, pointer }
 let mash = null;    // mash: { start, taps, window, tier }
 let fling = null;   // fling: { pointer, x0, y0, points, ghost, tier }
 
+// Your turn to slam, and somewhere for it to go: not while a solo game is
+// paused or a room is reconnecting.
 function canSlam() {
-  return S.phase === 'playing' && S.you !== null && isFighting(S.you) && !S.pending && !S.slams[S.you] && now() >= S.opensAt;
+  return S.phase === 'playing' && S.you !== null && isFighting(S.you) && !S.pending && !S.slams[S.you] && now() >= S.opensAt && live();
 }
 
 // The cards you slam this stage: one in a battle; in a war, up to three face
@@ -5129,7 +5286,7 @@ function reachTier(state, power) {
   if (tier <= state.tier) return;
   state.tier = tier;
   Sound.blip(tier);
-  if (S.mode === 'room') S.conn.send({ t: 'charge', tier });
+  if (Session.is('room')) S.conn.send({ t: 'charge', tier });
 }
 
 // Hold: the longer you hold, the harder it lands.
@@ -5277,7 +5434,7 @@ function slamCard(power) {
   if (last) {
     S.slams[S.you] = [power, style];
     S.conn.send({ t: 'slam', power, style });
-  } else if (S.mode === 'room') {
+  } else if (Session.is('room')) {
     S.conn.send({ t: 'card', n, power });
   }
   S.animUntil = now() + (reduceMotion.matches ? 0 : 420 * pace());
@@ -5332,33 +5489,86 @@ function recordResult(m) {
 }
 
 // ---- Screens ----
-
-function showScreen() {
-  const playing = S.phase === 'playing' || S.phase === 'over';
-  setText($('friendsErr'), '');
-  setHidden($('app'), !playing);
-  setHidden($('menu'), true);
-  setHidden($('lobby'), S.phase !== 'lobby');
-  if (S.phase !== 'over') setHidden($('over'), true);
-  if (S.phase === 'lobby') renderLobby();
+//
+// Which screen is up: the menu, a room's lobby, the table, the moment after
+// the last battle before the results (ending), and the results (over), which
+// sit on top of the table. The room's phase moves it (see onState), and so
+// does leaving. Each screen shows its own layer and only that one.
+const Screen = machine('screen', {
+  menu: ['lobby', 'table', 'over'],     // a room, or a solo game, answers
+  lobby: ['menu', 'table', 'over'],     // dealt in (or over before you got back)
+  table: ['menu', 'ending', 'over'],
+  ending: ['menu', 'over', 'table'],    // the results, or a new game dealt first
+  over: ['menu', 'table'],              // dealt again
+}, 'menu', { onMove: showScreen });
+function showScreen(to, from) {
+  setHidden($('menu'), to !== 'menu');
+  setHidden($('lobby'), to !== 'lobby');
+  setHidden($('app'), !['table', 'ending', 'over'].includes(to));
+  setHidden($('over'), to !== 'over');
+  if (from === 'menu') setText($('friendsErr'), '');
+  if (to === 'over' && Overlay.is('pause')) Overlay.go('none');  // the results take over from the pause menu
+  layer();
   syncMusic();
 }
 
+// What covers the screen, one at a time: the pause menu (Menu in a room), an
+// invite, the power-ups or your recent games. A paused solo game waits, the
+// page's clock with it (see holdClocks).
+const Overlay = machine('overlay', {
+  none: ['pause', 'invite', 'styles', 'history'],
+  pause: ['none', 'invite'],
+  invite: ['none'],
+  styles: ['none', 'pause'],   // the tab hidden mid-game pauses a solo game
+  history: ['none'],
+}, 'none', { onMove: showOverlay });
+function showOverlay(to, from) {
+  setHidden($('pause'), to !== 'pause');
+  setHidden($('inviteOv'), to !== 'invite');
+  setHidden($('stylesOv'), to !== 'styles');
+  setHidden($('historyOv'), to !== 'history');
+  if (to === 'pause') {
+    const solo = Session.is('solo');
+    setText($('pauseTitle'), solo ? 'Paused' : 'Menu');
+    setText($('pauseNote'), solo ? 'The war waits for you.' : 'The game carries on without you while you’re here: your cards flop over by themselves.');
+    setHidden($('skipBtn'), !solo || !S.conn.game || S.phase !== 'playing');
+    setText($('quitBtn'), solo ? 'Quit to menu' : 'Leave the room');
+    setHidden($('pauseInviteBtn'), solo);
+    if (solo && S.conn.pause()) holdClocks();
+  }
+  if (from === 'pause') {
+    if (Session.is('solo') && S.conn) S.conn.resume();
+    releaseClocks();
+  }
+  if (from === 'styles') renderControls();
+  layer();
+}
+
+// Only the top layer takes taps and focus: an overlay, else the screen, and
+// the table only while it's the screen.
+function layer() {
+  const covered = !Overlay.is('none');
+  $('app').inert = covered || !Screen.is('table', 'ending');
+  for (const id of ['menu', 'lobby', 'over']) $(id).inert = covered;
+}
+
+// The table is up, with nothing over it.
+const tableUp = () => Screen.is('table', 'ending') && Overlay.is('none');
+
 function backToMenu(message) {
-  if (S.conn) S.conn.close();
-  S.conn = null;
-  S.mode = null;
+  heldFlip = null;
+  clearLater();
+  if (!Session.is('none')) Session.go('none');  // closes the connection
   S.phase = null;
   S.code = null;
-  clearLater();
   Versus.clear();
   SixSeven.clear();
   cancelInput();
   Odds.reset();
   heapClear();
   tileKey = '';
-  for (const id of ['app', 'lobby', 'pause', 'over', 'inviteOv']) setHidden($(id), true);
-  setHidden($('menu'), false);
+  if (!Overlay.is('none')) Overlay.go('none');
+  if (!Screen.is('menu')) Screen.go('menu');
   history.replaceState(null, '', location.pathname + (params.get('rooms') ? `?rooms=${encodeURIComponent(params.get('rooms'))}` : '') + location.hash);
   renderMenu();
   syncMusic();
@@ -5382,16 +5592,18 @@ function renderLobby() {
   const host = S.you !== null && S.you === S.host;
   setHidden($('hostControls'), !host);
   setText($('botCount'), String(bots));
-  $('botLess').disabled = !bots;
-  $('botMore').disabled = S.players.length >= WAR.MAX_PLAYERS;
-  $('botFill').disabled = S.players.length >= WAR.MAX_PLAYERS;
-  renderLengths($('roomLength'), S.length, !host);
+  // The room can't hear the host while its socket is down.
+  const heard = Conn.is('open');
+  $('botLess').disabled = !bots || !heard;
+  $('botMore').disabled = S.players.length >= WAR.MAX_PLAYERS || !heard;
+  $('botFill').disabled = S.players.length >= WAR.MAX_PLAYERS || !heard;
+  renderLengths($('roomLength'), S.length, !host || !heard);
   const hostName = S.host !== null ? S.players[S.host]?.name : null;
   setText($('lobbyNote'), host
     ? (S.players.length < 2 ? 'Waiting for friends. Or add some bots.' : `${plural(S.players.length, 'player')}, ${plural(Math.max(1, Math.ceil(S.players.length / 2)), 'deck')}. Everyone gets about 27 cards.`)
     : S.you === null ? 'This room is full. You can watch.' : `Waiting for ${hostName || 'the host'} to deal.`);
   setHidden($('dealBtn'), !host);
-  $('dealBtn').disabled = S.players.length < 2;
+  $('dealBtn').disabled = S.players.length < 2 || !heard;
   renderDecks();
   if (S.code) drawQr($('lobbyQr'), inviteUrl());
 }
@@ -5412,10 +5624,12 @@ function renderLengths(box, value, locked) {
   }
 }
 
+// The results, once a game is over: from the table a moment after the last
+// battle, or straight away for a room that's over when you arrive.
 function showOver() {
-  if (S.overShown || !S.over) return;
-  S.overShown = true;
+  if (!S.over || !Screen.can('over')) return;
   cancelInput();
+  Screen.go('over');
   const o = S.over;
   const me = S.you;
   const won = me !== null && o.winners.includes(me);
@@ -5458,22 +5672,26 @@ function showOver() {
   renderLog();
   setText($('shareImgNote'), '');
   $('science').replaceChildren(...science());
-  if (me !== null) {
-    const life = store.get('stats', { games: 0, wins: 0, slams: 0, best: 0 });
-    life.games++;
-    if (won) life.wins++;
-    life.slams += S.mine.length;
-    life.best = Math.max(life.best, ...S.mine.map((x) => x[0]), 0);
-    store.set('stats', life);
-    recordGame(o);
+  // A game goes in your history, and unlocks a power-up, once, however many
+  // times its results come up (a room repeats them to anyone who arrives).
+  let unlocked = null;
+  if (!S.recorded) {
+    S.recorded = true;
+    if (me !== null) {
+      const life = store.get('stats', { games: 0, wins: 0, slams: 0, best: 0 });
+      life.games++;
+      if (won) life.wins++;
+      life.slams += S.mine.length;
+      life.best = Math.max(life.best, ...S.mine.map((x) => x[0]), 0);
+      store.set('stats', life);
+      recordGame(o);
+    }
+    unlocked = unlockStyle();
   }
-  const unlocked = unlockStyle();
   setHidden($('unlock'), !unlocked);
   if (unlocked !== null) setText($('unlock'), `New power-up: ${STYLES[unlocked][0]} ${STYLES[unlocked][1]} (${STYLES[unlocked][2]}, no effect). Equip it from the power-ups button.`);
 
   renderOverButtons();
-  setHidden($('over'), false);
-  setHidden($('pause'), true);
   if (Music.on && Sound.ctx) Music.play(won || me === null ? 'win' : 'lose');
   else if (won) Sound.win();
 }
@@ -5489,7 +5707,7 @@ function recordGame(o) {
   const chances = Odds.history.slice(0, -1).map(([, p]) => p);
   const games = store.get('history', []);
   games.unshift({
-    at: Date.now(), mode: S.mode, code: S.code || null, length: S.length, players: S.players.length,
+    at: Date.now(), mode: Session.state, code: S.code || null, length: S.length, players: S.players.length,
     rivals: S.players.filter((_, seat) => seat !== me).slice(0, 3).map((p) => p.name),
     place: o.order.indexOf(me) + 1, won: o.winners.includes(me), shared: o.winners.length > 1,
     cards: o.counts[me], out: o.out[me] || 0, battles: o.battles, wars: o.wars,
@@ -5805,7 +6023,7 @@ async function summaryImage() {
   g.font = `30px ${PIC_BODY}`;
   const alive = o.counts.filter(Boolean).length;
   const sub = alive <= 1 ? `${names[0]} took every card in ${plural(o.battles, 'battle')}.`
-    : `${plural(o.battles, 'battle')}, ${plural(S.players.length, 'player')}${S.mode === 'room' ? ', in a room' : ''}. The most cards wins.`;
+    : `${plural(o.battles, 'battle')}, ${plural(S.players.length, 'player')}${Session.is('room') ? ', in a room' : ''}. The most cards wins.`;
   g.fillText(picFit(g, sub, W - PAD * 2 - 80), PAD + 40, y + 138);
   y += 200;
   for (const seat of rows) {
@@ -5973,13 +6191,17 @@ async function shareSummary() {
 }
 
 // Whoever runs the room deals the next game; everyone else waits for them.
+// The results stay up until the room deals, so Deal again waits for a socket
+// that can carry it.
 function renderOverButtons() {
   const me = S.you;
-  const host = S.mode === 'solo' || (me !== null ? me === S.host : S.host === null);
-  setText($('againBtn'), S.mode === 'solo' ? 'Play again' : 'Deal again');
+  const solo = Session.is('solo');
+  const host = solo || (me !== null ? me === S.host : S.host === null);
+  setText($('againBtn'), solo ? 'Play again' : 'Deal again');
   setHidden($('againBtn'), !host);
-  setText($('overMenuBtn'), S.mode === 'room' ? 'Leave' : 'Menu');
-  setHidden($('overInviteBtn'), S.mode !== 'room');
+  $('againBtn').disabled = !live();
+  setText($('overMenuBtn'), solo ? 'Menu' : 'Leave');
+  setHidden($('overInviteBtn'), solo);
   setText($('overNote'), host ? '' : `Waiting for ${S.players[S.host]?.name || 'the host'} to deal again…`);
 }
 
@@ -6104,7 +6326,7 @@ function setDeck(key) {
   deck = key;
   store.set('deck', key);
   document.documentElement.dataset.deck = key;
-  if (S.mode === 'room' && S.conn) {
+  if (Session.is('room') && S.conn) {
     S.conn.me.deck = key;
     sendDeck();
     if (S.phase === 'lobby') renderLobby();
@@ -6127,7 +6349,7 @@ function sendDeck() {
   const wait = sendDeck.at + 1100 - Date.now();
   if (wait > 0) { sendDeck.timer = setTimeout(sendDeck, wait); return; }
   sendDeck.at = Date.now();
-  if (S.mode === 'room' && S.conn) S.conn.send({ t: 'deck', deck });
+  if (Session.is('room') && S.conn) S.conn.send({ t: 'deck', deck });
 }
 sendDeck.at = 0;
 
@@ -6138,12 +6360,13 @@ function myName() {
 
 function startSolo() {
   Sound.unlock();
+  if (!Screen.is('menu') || Session.is('solo')) return;
   const seed = params.get('seed');
   const random = seed ? seeded(Number(seed) || 1) : Math.random;
   const opponents = Number($('oppRange').value);
   store.set('length', menuLength);
   store.set('opponents', opponents);
-  S.mode = 'solo';
+  Session.go('solo');  // a room still connecting, or a join on its way, is dropped
   S.fast = false;
   S.battle = 0;
   S.phase = null;
@@ -6154,32 +6377,42 @@ function startSolo() {
 
 const NAME_OK = /^[\p{L}\p{N}][\p{L}\p{N} '&.,!?-]{0,15}$/u;
 
+// Starts a room, or looks one up by its code, then connects to it. One at a
+// time: Start and Join wait while it's out, and if you go solo before it
+// answers, the answer is let go.
 async function startRoom(code) {
   Sound.unlock();
+  if (!Screen.is('menu') || Session.is('joining', 'solo')) return;
   const name = myName();
   const err = $('friendsErr');
   if (!NAME_OK.test(name)) { setText(err, 'Pick a name first: up to 16 letters or numbers.'); $('nameInput').focus(); return; }
   store.set('name', name);
   store.set('avatar', avatar);
   setText(err, code ? 'Finding the room…' : 'Starting a room…');
+  Session.go('joining');
+  const asked = Session.seq;
+  let problem = '';
   try {
     if (!code) {
       const made = await roomRequest('POST', '/v1/war/rooms');
-      if (made.status !== 201) { setText(err, made.body.error ? `Couldn’t start a room: ${made.body.error}.` : 'Couldn’t start a room. Try again in a bit.'); return; }
-      code = made.body.code;
+      if (made.status !== 201) problem = made.body.error ? `Couldn’t start a room: ${made.body.error}.` : 'Couldn’t start a room. Try again in a bit.';
+      else code = made.body.code;
     } else {
       const found = await roomRequest('GET', `/v1/war/rooms/${code}`);
-      if (found.status === 404) { setText(err, `There’s no room ${code}. Check the code?`); return; }
-      if (found.status !== 200) { setText(err, 'The War server is unavailable right now. Try solo instead.'); return; }
+      if (found.status === 404) problem = `There’s no room ${code}. Check the code?`;
+      else if (found.status !== 200) problem = 'The War server is unavailable right now. Try solo instead.';
     }
   } catch (e) {
-    setText(err, 'The War server is unavailable right now. Try solo instead.');
+    problem = 'The War server is unavailable right now. Try solo instead.';
+  }
+  if (Session.seq !== asked) return;
+  if (problem) {
+    setText(err, problem);
+    Session.go('none');
     return;
   }
-  setText(err, '');
   let token = store.get('token', null);
   if (!token) { token = randomToken(); store.set('token', token); }
-  S.mode = 'room';
   S.fast = false;
   S.battle = 0;
   S.phase = null;
@@ -6188,7 +6421,14 @@ async function startRoom(code) {
   query.set('room', code);
   history.replaceState(null, '', `${location.pathname}?${query}${location.hash}`);
   setText(err, 'Connecting…');
-  S.conn = new NetRoom(code, { name, avatar, token, deck });
+  Session.go('room');
+  try {
+    S.conn = new NetRoom(code, { name, avatar, token, deck });
+  } catch (e) {
+    setText(err, 'The War server is unavailable right now. Try solo instead.');
+    Session.go('none');
+    return;
+  }
   setText($('lobbyCode'), code);
 }
 
@@ -6264,7 +6504,7 @@ async function drawQr(box, url) {
 
 // Invite someone mid-game: they watch this one and are dealt into the next.
 function openInvite() {
-  if (S.mode !== 'room' || !S.code) return;
+  if (!Session.is('room') || !S.code || !Overlay.is('none', 'pause')) return;
   setText($('inviteCode'), S.code);
   const scan = 'Scan this with a phone’s camera, or send the link.';
   setText($('inviteHelp'), S.phase === 'lobby' ? scan
@@ -6272,31 +6512,34 @@ function openInvite() {
       : `${scan} Whoever joins watches this game and is dealt into the next one.`);
   setText($('inviteNote'), '');
   drawQr($('inviteQr'), inviteUrl());
-  setHidden($('pause'), true);
-  setHidden($('inviteOv'), false);
+  Overlay.go('invite');
 }
 
 function closeInvite() {
-  setHidden($('inviteOv'), true);
+  if (Overlay.is('invite')) Overlay.go('none');
 }
 
 // ---- Wiring ----
 
 function openPause() {
-  if (S.mode === 'solo') S.conn.pause();
+  if (!Screen.is('table', 'ending') || !Overlay.is('none', 'styles')) return;
   cancelInput();
-  const solo = S.mode === 'solo';
-  setText($('pauseTitle'), solo ? 'Paused' : 'Menu');
-  setText($('pauseNote'), solo ? 'The war waits for you.' : 'The game carries on without you while you’re here: your cards flop over by themselves.');
-  setHidden($('skipBtn'), !solo || !S.conn.game || S.phase !== 'playing');
-  setText($('quitBtn'), solo ? 'Quit to menu' : 'Leave the room');
-  setHidden($('pauseInviteBtn'), solo);
-  setHidden($('pause'), false);
+  Overlay.go('pause');
 }
 
 function closePause() {
-  setHidden($('pause'), true);
-  if (S.mode === 'solo' && S.conn) S.conn.resume();
+  if (Overlay.is('pause')) Overlay.go('none');
+}
+
+function openStyles() {
+  if (!Overlay.is('none')) return;
+  renderStyles();
+  Overlay.go('styles');
+}
+
+function closeOverlay() {
+  if (Overlay.is('pause')) closePause();
+  else if (!Overlay.is('none')) Overlay.go('none');
 }
 
 function init() {
@@ -6352,7 +6595,11 @@ function init() {
   $('botLess').addEventListener('click', () => S.conn.send({ t: 'bots', n: S.players.filter((p) => p.bot).length - 1 }));
   $('botMore').addEventListener('click', () => S.conn.send({ t: 'bots', n: S.players.filter((p) => p.bot).length + 1 }));
   $('botFill').addEventListener('click', () => S.conn.send({ t: 'bots', n: WAR.MAX_PLAYERS }));
-  $('dealBtn').addEventListener('click', () => { setText($('lobbyErr'), ''); S.conn.send({ t: 'start' }); });
+  $('dealBtn').addEventListener('click', () => {
+    if (!Conn.is('open')) return;
+    setText($('lobbyErr'), '');
+    S.conn.send({ t: 'start' });
+  });
   $('leaveBtn').addEventListener('click', () => backToMenu());
 
   for (const b of document.querySelectorAll('.sound-toggle')) b.addEventListener('click', () => Sound.toggle());
@@ -6362,10 +6609,16 @@ function init() {
   myHeapNode().addEventListener('click', heapTidy);
   $('resumeBtn').addEventListener('click', closePause);
   $('quitBtn').addEventListener('click', () => backToMenu());
-  $('skipBtn').addEventListener('click', () => { setHidden($('pause'), true); clearLater(); S.conn.finish(); });
+  $('skipBtn').addEventListener('click', () => {
+    if (!Session.is('solo') || !Overlay.is('pause')) return;
+    closePause();
+    clearLater();
+    S.conn.finish();
+  });
+  // The results stay up until the room deals the next game (onState moves
+  // the screen on); if it doesn't, they're still here, and so is the button.
   $('againBtn').addEventListener('click', () => {
-    setHidden($('over'), true);
-    S.overShown = false;
+    if (!Screen.is('over') || !live()) return;
     S.conn.send({ t: 'start' });
   });
   $('overMenuBtn').addEventListener('click', () => backToMenu());
@@ -6391,7 +6644,7 @@ function init() {
   });
   $('fastBtn').addEventListener('click', () => {
     S.fast = !S.fast;
-    if (S.mode === 'solo') S.conn.setPace(pace());
+    if (Session.is('solo')) S.conn.setPace(pace());
     renderAll();
   });
   const cheers = $('cheers');
@@ -6399,16 +6652,24 @@ function init() {
     const b = el('button', '', c);
     b.type = 'button';
     b.setAttribute('aria-label', `Cheer ${c}`);
-    b.addEventListener('click', () => { S.conn.send({ t: 'cheer', e: i }); floatCheer(S.you, i); });
+    b.addEventListener('click', () => {
+      if (!Session.is('room')) return;
+      S.conn.send({ t: 'cheer', e: i });
+      floatCheer(S.you, i);
+    });
     cheers.append(b);
   });
 
   // Power-ups
   $('styleBtn').addEventListener('click', openStyles);
   $('stylesBtn').addEventListener('click', openStyles);
-  $('historyBtn').addEventListener('click', () => { renderHistory(); setHidden($('historyOv'), false); });
-  $('historyDone').addEventListener('click', () => setHidden($('historyOv'), true));
-  $('stylesDone').addEventListener('click', () => { setHidden($('stylesOv'), true); renderControls(); });
+  $('historyBtn').addEventListener('click', () => {
+    if (!Overlay.is('none')) return;
+    renderHistory();
+    Overlay.go('history');
+  });
+  $('historyDone').addEventListener('click', () => { if (Overlay.is('history')) Overlay.go('none'); });
+  $('stylesDone').addEventListener('click', () => { if (Overlay.is('styles')) Overlay.go('none'); });
   $('styleList').addEventListener('click', (e) => {
     const b = e.target.closest('button');
     if (!b || b.disabled) return;
@@ -6433,25 +6694,23 @@ function init() {
   document.addEventListener('pointermove', moveFling);
   document.addEventListener('pointerup', releaseFling);
   document.addEventListener('pointercancel', releaseFling);
+  // Space and Enter slam on the table, unless they're pressing a button you've
+  // focused, which they press as usual. Your deck is the one button they slam.
+  const slamKey = (e) => (e.key === ' ' || e.key === 'Enter') && tableUp() && !onButton(e.target);
   document.addEventListener('keydown', (e) => {
     if (e.target.closest && e.target.closest('input, select, textarea')) return;
     Sound.unlock();
-    if ((e.key === ' ' || e.key === 'Enter') && tableUp()) {
+    if (slamKey(e)) {
       e.preventDefault();
       // Mash counts key presses; hold and fling hold the key to charge.
       if (!e.repeat) { if (S.input === 'mash') mashTap(); else startCharge('key'); }
-    } else if (e.key === 'Escape' && !$('historyOv').hidden) {
-      setHidden($('historyOv'), true);
-    } else if (e.key === 'Escape' && !$('inviteOv').hidden) {
-      closeInvite();
-    } else if (e.key === 'Escape' && !$('app').hidden) {
-      if (!$('stylesOv').hidden) setHidden($('stylesOv'), true);
-      else if (!$('pause').hidden) closePause();
-      else if ($('over').hidden) openPause();
+    } else if (e.key === 'Escape') {
+      if (!Overlay.is('none')) closeOverlay();
+      else if (Screen.is('table', 'ending')) openPause();
     }
   });
   document.addEventListener('keyup', (e) => {
-    if ((e.key === ' ' || e.key === 'Enter') && tableUp()) e.preventDefault();
+    if (slamKey(e)) e.preventDefault();
     if ((e.key === ' ' || e.key === 'Enter') && charge && charge.pointer === 'key') releaseCharge();
   });
   document.addEventListener('pointerdown', () => Sound.unlock(), { passive: true });
@@ -6459,19 +6718,17 @@ function init() {
     if (!document.hidden) { Music.resume(); return; }
     Music.pause();
     cancelInput();
-    if (S.mode === 'solo' && S.phase === 'playing' && $('pause').hidden) openPause();
+    if (Session.is('solo') && S.phase === 'playing') openPause();
   });
+  layer();
 }
 
-// The table is up, with nothing over it.
-function tableUp() {
-  return !$('app').hidden && $('pause').hidden && $('over').hidden && $('stylesOv').hidden && $('lobby').hidden && $('inviteOv').hidden;
+// A button (or link) on screen that has the keyboard's focus, other than your deck.
+function onButton(target) {
+  const control = target.closest && target.closest('button, a[href], [role=button]:not(#myPile)');
+  return Boolean(control) && control.getClientRects().length > 0;
 }
 
-function openStyles() {
-  renderStyles();
-  setHidden($('stylesOv'), false);
-}
 
 function renderStyles() {
   const have = new Set(store.get('styles', [0]));
@@ -6493,10 +6750,11 @@ function renderStyles() {
 
 init();
 
-// #debug exposes hooks for tests: music() says what's playing,
+// #debug exposes hooks for tests: state() reads the table, and each state
+// machine's state (screen, overlay, session, conn); music() says what's playing,
 // musicLevels() measures every song and laughLevels() the joker's laugh;
 // joker() says what the joker war shows, jokerHold(on) holds it still and
-// jokerStep(du) moves it on by hand; state() reads the table, slam(power) slams
+// jokerStep(du) moves it on by hand; slam(power) slams
 // right away (every card, in a war), input(mode) picks how you slam, hurry()
 // runs your clock down to its last moment,
 // finish() plays a solo game out, pace(p) speeds a solo game up,
@@ -6505,7 +6763,9 @@ init();
 if (DEBUG) {
   window.__war = {
     state: () => ({
-      mode: S.mode, phase: S.phase, you: S.you, battle: S.battle, stage: S.stage, fighters: S.fighters.slice(),
+      mode: Session.is('solo', 'room') ? Session.state : null,
+      screen: Screen.state, overlay: Overlay.state, session: Session.state, conn: Conn.state,
+      phase: S.phase, you: S.you, battle: S.battle, stage: S.stage, fighters: S.fighters.slice(),
       counts: S.counts.slice(), slams: { ...S.slams }, canSlam: canSlam(), over: S.over, players: S.players.length,
       mine: S.mine.map((x) => x.slice()),
       odds: Odds.history.map((x) => x.slice()),
