@@ -410,8 +410,12 @@ Controller take part like this:
   also answers the real Worker's URL (`WORKER_URL` there) with an empty
   fake, so no test touches real scores; `without_worker()` serves a game
   with its URL blanked, to test it without a leaderboard.
-- The Worker answers at `https://games-leaderboard.mwarkentin.workers.dev`.
-  Its credentials (the `CLOUDFLARE_API_TOKEN` and `IP_SALT` secrets and the
+- The Worker answers at `https://api.games.michaelwarkentin.com`, a custom
+  domain made by OpenTofu in mwarkentin/infra (`worker_domains.tf`), and
+  still at `https://games-leaderboard.mwarkentin.workers.dev`. Keep `routes`
+  out of `worker/wrangler.toml`: with routes there, wrangler would own the
+  Worker's domains and drop that one. Its credentials (the
+  `CLOUDFLARE_API_TOKEN` and `IP_SALT` secrets and the
   `CLOUDFLARE_ACCOUNT_ID` variable) are made and set by OpenTofu in
   mwarkentin/infra, live only there, in GitHub and in Cloudflare, and never
   in this repo.

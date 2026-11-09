@@ -25,7 +25,7 @@ from fake_survey import FAKE_TURNSTILE, TURNSTILE_JS, FakePassDesk, FakeSurvey
 API = "https://leaderboard.test"
 # LEADERBOARD_URL in the games, ROOMS_URL in war.html and SURVEY_URL in letterfield.html and
 # letterfield-log.html.
-WORKER_URL = "https://games-leaderboard.mwarkentin.workers.dev"
+WORKER_URL = "https://api.games.michaelwarkentin.com"
 
 
 DAY_MS = 24 * 60 * 60 * 1000

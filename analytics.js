@@ -8,9 +8,10 @@
 // country Cloudflare works out from the IP address, which it doesn't keep.
 // It sets no cookies.
 (() => {
-  // Counterscale's address, as the installer printed it. While it's empty,
-  // nothing loads and nothing is sent.
-  const COUNTERSCALE_URL = 'https://counterscale.mwarkentin.workers.dev';
+  // Counterscale's address: its custom domain, made by OpenTofu in
+  // mwarkentin/infra (worker_domains.tf). While it's empty, nothing loads
+  // and nothing is sent.
+  const COUNTERSCALE_URL = 'https://stats.michaelwarkentin.com';
   const SITE_ID = 'games';
   // Counterscale's own tracker, checked against this hash before it runs.
   const TRACKER = {
