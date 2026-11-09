@@ -429,8 +429,8 @@ def test_won_cards_pile_up_and_clean_up_keeps_their_order(page: Page, site_url, 
     expect(page.locator("#winnings")).to_be_hidden()
     page.evaluate("window.__war.slam(80)")
     page.wait_for_function(f"{STATE}.battle === 2 && {STATE}.canSlam")
-    # The table clears, and what you won lands on the heap: the bot's queen in
-    # the bot's deck, your joker in yours.
+    # The table clears, and what you won lands on the heap. Against one bot
+    # there's one deck, so the bot's queen is in your theme too.
     expect(heap).to_have_count(2)
     expect(page.locator("#tidyBtn")).to_be_visible()
     # They were thrown from the table at the size they were there (bigger than
@@ -440,8 +440,7 @@ def test_won_cards_pile_up_and_clean_up_keeps_their_order(page: Page, site_url, 
     assert thrown[0][0].startswith("queen") and thrown[1][0].endswith("joker"), thrown
     assert all(scale > 1 for _, scale, _ in thrown)
     assert thrown[0][2] < thrown[1][2]
-    bot_deck = page.evaluate("deckOf(1)")
-    expect(page.locator("#winnings .heap .card[aria-label^=queen]")).to_have_attribute("data-deck", bot_deck)
+    expect(page.locator("#winnings .heap .card[aria-label^=queen]")).to_have_attribute("data-deck", page.evaluate("deck"))
     page.evaluate("window.__war.slam(80)")
     page.wait_for_function(f"{STATE}.battle === 3")
     expect(heap).to_have_count(4)
@@ -599,12 +598,12 @@ def test_opponents_pile_up_what_they_win_too(page: Page, site_url, errors):
     bot_heap = page.locator("#opponents .tile .heap .card")
     page.evaluate("window.__war.slam(80)")
     page.wait_for_function(f"{STATE}.battle === 2")
-    # Your four flies over to the bot's heap, in your deck, and its joker
-    # lands on top, in its own.
+    # Your four flies over to the bot's heap and its joker lands on top, both
+    # in your theme: one bot, one deck.
     expect(bot_heap).to_have_count(2)
     labels = bot_heap.evaluate_all("cards => cards.map((c) => [c.getAttribute('aria-label'), c.dataset.deck, c.style.zIndex])")
     assert labels[0][0].startswith("four") and labels[0][1] == page.evaluate("deck")
-    assert labels[1][0].endswith("joker") and labels[1][1] == page.evaluate("deckOf(1)")
+    assert labels[1][0].endswith("joker") and labels[1][1] == page.evaluate("deck")
     assert int(labels[1][2]) > int(labels[0][2])
     heaps = page.evaluate(f"{STATE}.heaps")
     assert len(heaps["1"]) == 2 and not heaps.get("0"), heaps
@@ -793,6 +792,129 @@ def test_pick_a_deck_in_the_menu_or_mid_game(page: Page, site_url, errors):
     assert page.evaluate("document.documentElement.dataset.deck") == "candy"
     expect(page.locator(TITLE_KING)).to_have_attribute("data-pic", "candy-king")
     expect(page.locator("#menuDecks button[data-deck=candy]")).to_have_attribute("aria-pressed", "true")
+    assert errors == []
+
+
+# Every card on screen with the deck it's drawn in, and the theme of the deck
+# it comes from, read in one go so nothing moves in between: what's on the
+# table (yours, and each bot's spot) and on every loot pile.
+SHOWN = """() => {
+    const s = window.__war.state();
+    const themes = window.__war.themes();
+    const label = (card) => cardEl(card).getAttribute('aria-label');
+    const out = [];
+    for (const [seat, up] of Object.entries(s.table)) {
+        const node = seat === '0' ? document.querySelector('#mySlot .card')
+            : document.querySelectorAll('#spots .spot')[seat - 1].querySelector('.tslot > .card');
+        // A card already laid in a war, or the next battle's, isn't this one.
+        if (node.getAttribute('aria-label') !== label(up)) continue;
+        out.push({ where: 'table', seat: Number(seat), card: up, shown: node.dataset.deck || null, theme: themes[Math.floor(up / 54)] });
+    }
+    for (const [seat, cards] of Object.entries(s.heaps)) {
+        const box = seat === '0' ? document.querySelector('#winnings .heap')
+            : document.querySelectorAll('#opponents .tile')[seat - 1].querySelector('.heap');
+        const nodes = [...box.querySelectorAll('.card')];
+        cards.forEach((card, i) => out.push({
+            where: 'heap', seat: Number(seat), card, shown: nodes[i] && nodes[i].dataset.deck || null,
+            theme: themes[Math.floor(card / 54)], label: nodes[i] && nodes[i].getAttribute('aria-label') === label(card),
+        }));
+    }
+    return out;
+}"""
+
+
+def test_against_one_bot_every_card_is_in_your_theme(page: Page, site_url, errors):
+    page.goto(f"{site_url}/war?seed=2#debug")
+    page.click("#menuDecks button[data-deck=neon]")
+    expect(page.locator("#menuDeckNote")).to_have_text("Neon: Glows in the dark.")
+    start_solo(page, site_url, seed=2)
+    assert page.evaluate("window.__war.themes()") == ["neon"]
+    # The bot's card lands on the table in your theme, and its deck has your back.
+    bot = page.locator("#spots .spot .tslot > .card")
+    expect(bot).to_have_attribute("aria-label", re.compile("."))
+    expect(bot).to_have_attribute("data-deck", "neon")
+    expect(page.locator("#opponents .tile .tdeck")).to_have_attribute("data-deck", "neon")
+    expect(page.locator("#opponents .tile .tdeck .card")).to_have_attribute("data-deck", "neon")
+    # Seed 2: its joker beats your four, and both land on its loot pile in neon.
+    page.evaluate("window.__war.slam(80)")
+    page.wait_for_function(f"{STATE}.battle === 2")
+    bot_heap = page.locator("#opponents .tile .heap .card")
+    expect(bot_heap).to_have_count(2)
+    assert bot_heap.evaluate_all("cards => cards.map((c) => c.dataset.deck)") == ["neon", "neon"]
+    expect(bot_heap.nth(1).locator(".cc")).to_have_attribute("data-pic", "neon-joker")
+    assert page.locator("#opponents .tile").get_attribute("title") == page.evaluate("S.players[1].name") + " (bot)"
+    assert errors == []
+
+
+def play_and_watch(page: Page, battles: int) -> list[dict]:
+    """Plays some battles, slamming each card, and returns what was on screen."""
+    seen = []
+    for _ in range(battles):
+        page.wait_for_function(f"{STATE}.canSlam || {STATE}.over")
+        if page.evaluate(f"{STATE}.over"):
+            break
+        seen += page.evaluate(SHOWN)
+        battle, stage = page.evaluate(f"[{STATE}.battle, {STATE}.stage]")
+        page.evaluate("window.__war.slam(90)")
+        # Played out: the cards are on the table until the next stage opens.
+        page.wait_for_function(f"S.result && S.result.battle === {battle} && S.result.stage === {stage}")
+        seen += page.evaluate(SHOWN)
+    return seen
+
+
+def test_with_several_bots_each_deck_has_a_theme_of_its_own(page: Page, site_url, errors):
+    page.goto(f"{site_url}/war?seed=5#debug")
+    page.fill("#oppRange", "3")
+    page.click("#menuDecks button[data-deck=classic]")
+    expect(page.locator("#menuDeckNote")).to_contain_text("2 decks: yours in Classic, the other in Neon.")
+    page.fill("#oppRange", "5")
+    expect(page.locator("#menuDeckNote")).to_contain_text("3 decks: yours in Classic, the others in Neon and 8-bit.")
+    start_solo(page, site_url, opponents=3, seed=5)
+    assert page.evaluate("window.__war.themes()") == ["classic", "neon"]
+    page.evaluate("window.__war.pace(0.3)")
+    seen = play_and_watch(page, 8)
+    wrong = [x for x in seen if x["shown"] != x["theme"]]
+    assert not wrong, wrong
+    table = [x for x in seen if x["where"] == "table"]
+    heaped = [x for x in seen if x["where"] == "heap"]
+    # Cards from 54 up are the second deck's, below that yours, whoever plays them.
+    bots = {(x["card"] >= 54) for x in table if x["seat"] > 0}
+    assert bots == {True, False}, table
+    assert {x["shown"] for x in heaped} == {"classic", "neon"}, heaped
+    assert all(x["label"] for x in heaped)
+    # A deck stack's back is its top card's.
+    stacks = page.evaluate("""() => [...document.querySelectorAll('#opponents .tile')].map((t, i) => {
+        const top = S.conn.game.piles[i + 1][0];
+        return [t.querySelector('.tdeck').dataset.deck, top === undefined ? null : window.__war.themes()[Math.floor(top / 54)]];
+    })""")
+    assert all(shown == top for shown, top in stacks if top), stacks
+    assert errors == []
+
+
+def test_changing_theme_mid_game_keeps_the_decks_apart(page: Page, site_url, errors):
+    page.goto(f"{site_url}/war?seed=5#debug")
+    page.click("#menuDecks button[data-deck=classic]")
+    start_solo(page, site_url, opponents=3, seed=5)
+    page.evaluate("window.__war.pace(0.3)")
+    play_and_watch(page, 4)
+    page.click("#menuBtn")
+    expect(page.locator("#pauseDeckNote")).to_contain_text("2 decks: yours in Classic, the other in Neon.")
+    # Your deck takes the other deck's theme: the other deck takes yours.
+    page.click("#pauseDecks button[data-deck=neon]")
+    assert page.evaluate("window.__war.themes()") == ["neon", "classic"]
+    expect(page.locator("#pauseDeckNote")).to_contain_text("2 decks: yours in Neon, the other in Classic.")
+    page.click("#resumeBtn")
+    seen = page.evaluate(SHOWN)
+    assert seen and all(x["shown"] == x["theme"] for x in seen), seen
+    assert {x["shown"] for x in seen if x["where"] == "heap"} <= {"neon", "classic"}
+    # A theme no deck had just replaces yours.
+    page.evaluate("window.__war.deck('candy')")
+    assert page.evaluate("window.__war.themes()") == ["candy", "classic"]
+    seen = page.evaluate(SHOWN)
+    assert all(x["shown"] == x["theme"] for x in seen), seen
+    assert any(x["shown"] == "candy" for x in seen) and any(x["shown"] == "classic" for x in seen), seen
+    seen = play_and_watch(page, 3)
+    assert all(x["shown"] == x["theme"] for x in seen), seen
     assert errors == []
 
 

@@ -412,6 +412,8 @@ def test_everyone_sees_each_players_deck(page: Page, browser, site_url, errors):
     expect(guest.locator("#spots .spot").nth(1).locator(".tslot > .card")).to_have_attribute("data-deck", bot_deck)
     # Your own cards are in your deck, on your screen.
     expect(page.locator("#mySlot .card")).not_to_have_attribute("data-deck", re.compile("."))
+    # Rooms keep each player's deck: decks have no themes of their own there.
+    assert page.evaluate("window.__war.themes()") is None
     assert page.evaluate("document.documentElement.dataset.deck") == "space"
 
     # A change mid-game shows on everyone's screen from your next card.
