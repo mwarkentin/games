@@ -142,9 +142,15 @@ const Screen = machine('screen', {
   `expect(page.locator("html")).to_have_attribute("data-screen", "over")`.
   A machine for one element of many passes `el` to show it there instead,
   or `el: null` for nowhere. Debug hooks report each machine's state too.
-- A fix for a state machine bug comes with a test that fails without it.
+- A fix for a state machine bug comes with a test that fails without it,
+  failing at the bug itself rather than at a missing `data-` attribute.
   `Held` in `tests/fake_leaderboard.py` holds back replies to answer them
-  later in any order, for testing what a page does while a request is out.
+  later in any order, for testing what a page does while a request is out
+  (set its `holding` or `match` as the test goes to choose which). Remember
+  the page's 30-second cache of scores: hold from the start, or a list it
+  already has never asks. For sockets, the fakes in `tests/` hold or drop
+  messages from the test itself: a blocking `WebSocketRoute` call, such as
+  `close()`, inside a `route_web_socket` handler spins forever.
 - Leave alone modes that are fine as they are: a single boolean, a
   countdown in game time, a request counter that keeps only the newest
   reply, a render that checks its run number after each await.
@@ -153,9 +159,39 @@ The machines each page keeps:
 
 | Page | Machine (`data-` name) | States |
 |---|---|---|
+| `air-traffic-controller.html` | `screen` | menu, playing, paused, ending, report, board |
+| | `save` (the shift report's offer) | none, checking, ineligible, offered, saving, saved |
+| `doodle-chomp.html` | `screen` | menu, play, paused, message, clearing, over |
+| | `save` (the game-over card's offer) | none, checking, ineligible, offered, saving, saved |
+| | `board` (the high-score screen) | closed, open |
 | `funnels-and-buckets.html` | `screen` | menu, playing, paused, ending, over |
 | | `save` (the game-over card's offer) | none, checking, ineligible, offered, saving, saved |
 | | `board` (the leaderboard screen) | closed, open |
+| `letterfield.html` | `pass` (the survey's Turnstile pass) | off, none, loading, checking, asking, sending, good, failed |
+| | `link` (each sector's socket; `el: null`, see `__lf.linkStates()`) | connecting, open, live, backoff, closed |
+| | `claim` (each claim of ours; `el: null`, see `__lf.outbox()`) | queued, sent, unanswered, answered |
+| `letterfield-log.html` | `log` (what the page shows) | loading, ready, refreshing, stale, failed |
+| `war.html` | `screen` | menu, lobby, table, ending, over |
+| | `overlay` (what covers the screen) | none, pause, invite, styles, history |
+| | `session` (what the page plays through) | none, joining, solo, room |
+| | `conn` (a room's WebSocket) | off, connecting, open, retrying |
+
+The Worker keeps its modes the same way, without the page helper: a
+declared table of states and moves, one function that makes every move,
+and a state read from what's stored, so an object woken from hibernation,
+or a record saved by an earlier version, comes back in the state it left.
+War rooms keep theirs in `worker/src/war.js`: `ROOM_MOVES` (absent, lobby,
+playing, paused, over) and `ROOM_MESSAGES` (which messages each state
+takes), with `roomState()`, `go()` and `deadline()`, outside the War core.
+A refused move logs an error, and `worker/test/war.test.js` fails on it.
+Anything a woken object must still know lives in storage or a socket's
+attachment, never only in a field. Something an object only knows once
+another has told it, like a sector's list of addresses past the daily cap,
+treats "not known since waking" as a state of its own, never as "none".
+And work that waited (an alarm, another object's reply, a message that
+arrives after its moment) checks the state it expects before it acts: an
+alarm works out `deadline()` again, and a slam for a stage already played
+out is dropped.
 
 ## Changelogs
 
