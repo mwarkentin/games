@@ -66,28 +66,28 @@ account has it for the survey.
 
 ## Setup
 
-The Cloudflare side is made with OpenTofu in mwarkentin/infra:
+The Cloudflare side is made with OpenTofu in mwarkentin/infra (`share.tf`
+and `worker_domains.tf` there), in this order:
 
-1. **R2 buckets** `games-share-cards` and `games-share-cards-previews`.
-2. **The custom domain** `share.michaelwarkentin.com` for `games-share`, as
-   `api.games.michaelwarkentin.com` is for the leaderboard Worker. Keep
-   `routes` out of `wrangler.toml`, or wrangler takes the domain over.
-3. **The deploy token** (`CLOUDFLARE_API_TOKEN`, shared with the leaderboard
-   Worker) able to deploy a Worker with an R2 binding.
-4. **The `SHARE_DEPLOY` Actions variable**, set to `true` once the above
-   exist. Until then **Deploy share worker** (`.github/workflows/share.yml`)
-   is skipped.
-
-Then:
-
-1. **Deploy:** run **Deploy share worker** from the Actions tab, or push a
+1. **R2 buckets** `games-share-cards` and `games-share-cards-previews`, and
+   the **`SHARE_DEPLOY` Actions variable**, set to `true` once they exist.
+   Until then **Deploy share worker** (`.github/workflows/share.yml`) is
+   skipped. The deploy token (`CLOUDFLARE_API_TOKEN`, shared with the
+   leaderboard Worker) needs nothing new: a Worker reaches its bucket through
+   its binding.
+2. **Deploy:** run **Deploy share worker** from the Actions tab, or push a
    change under `share/` (or `worker/src/`, whose code it imports). Deploy
    the leaderboard Worker first if its `/claim` and `/totals` paths are new:
-   until then, cards just leave their charting lines off.
-2. **Try it:** open `https://share.michaelwarkentin.com/f/<slug>` for a word
+   until then, cards just leave their charting lines off. The Worker then
+   answers at `https://games-share.mwarkentin.workers.dev`.
+3. **The custom domain** `share.michaelwarkentin.com`, made in infra once the
+   Worker exists (a custom domain needs its Worker), as
+   `api.games.michaelwarkentin.com` is for the leaderboard Worker. Keep
+   `routes` out of `wrangler.toml`, or wrangler takes the domain over.
+4. **Try it:** open `https://share.michaelwarkentin.com/f/<slug>` for a word
    you've found, and share it in Slack, iMessage, WhatsApp, Discord, Bluesky
    and Mastodon. Each app keeps the first card it fetches for a URL.
-3. **Switch it on:** set `SHARE_URL` in `letterfield.html` to
+5. **Switch it on:** set `SHARE_URL` in `letterfield.html` to
    `https://share.michaelwarkentin.com`, and add a line to
    `changelog/letterfield.md` for that day.
 
