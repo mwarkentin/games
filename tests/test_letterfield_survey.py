@@ -102,6 +102,19 @@ def test_without_a_survey_url_the_game_plays_alone(page: Page, site_url, errors)
     assert errors == []
 
 
+def test_shared_word_list_scrolls_only_sideways(page: Page, site_url, errors):
+    from test_letterfield import CHIPS_JS, chips_scroll_only_sideways
+
+    open_game(page, site_url, FakeSurvey())
+    expect(page.locator("#legendList span.chip").first).to_be_visible()  # plain labels, no hints
+    for phone, size in ((True, {"width": 375, "height": 740}), (False, {"width": 1280, "height": 900})):
+        page.set_viewport_size(size)
+        chips_scroll_only_sideways(page, phone)
+    page.set_viewport_size({"width": 375, "height": 740})
+    m = page.evaluate(CHIPS_JS)
+    assert m["sw"] > m["cw"], m
+    assert errors == []
+
 def test_shared_map_shows_other_surveyors_and_their_words(page: Page, site_url, errors):
     words = known_words(page, site_url)
     fake = FakeSurvey(
