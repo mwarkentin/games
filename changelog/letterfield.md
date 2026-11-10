@@ -1,5 +1,8 @@
 ## 2026-11-10
 
+- The list of words hidden in view only names a word once you can see
+  most of it from its first letter, not just a letter or two at the edge
+  of the screen or under a panel.
 - Sharing a find in a chat now shows a picture of the word circled on its
   patch of the map, with whether it's been charted and how much of the
   shared map is, in your light or dark colours.
