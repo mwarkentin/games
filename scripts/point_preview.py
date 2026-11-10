@@ -12,8 +12,10 @@ rewrites, in every text file:
   Preview, when it has one. Without --worker the pages keep production's
   Worker, which answers only the live site's origin, so a preview can never
   write to production's scores or rooms;
-- the share Worker's address (Letterfield's SHARE_URL) to nothing, so a
-  preview's shares link straight to the preview's own game, not to
+- the share Worker's address (Letterfield's SHARE_URL) to the pull
+  request's Worker Preview of the share Worker, when it has one (--share),
+  whose cards send people to this preview. Without --share it's blanked, so
+  a preview's shares link straight to the preview's own game, never to
   production's cards, which send people to the live site.
 
 With --banner, the generated pages (home page, colophon, changelogs) get a strip along the top
@@ -26,7 +28,7 @@ Home Screen names keep the page's own title.
 Telemetry and analytics check the bare hostname, not these URLs, so they
 stay off on a preview either way.
 
-Usage: point_preview.py SITE_DIR --site URL [--worker URL] [--banner TEXT --banner-link URL] [--title-prefix TEXT]
+Usage: point_preview.py SITE_DIR --site URL [--worker URL] [--share URL] [--banner TEXT --banner-link URL] [--title-prefix TEXT]
 """
 
 from __future__ import annotations
@@ -40,7 +42,7 @@ from common import BASE_URL, WORKER_URL, generated_pages
 
 # Everything the build writes as text. Images, icons and MIDI files are left alone.
 TEXT_SUFFIXES = {".html", ".js", ".json", ".txt", ".xml", ".webmanifest"}
-# An https origin with nothing after it: what --site and --worker must be.
+# An https origin with nothing after it: what --site, --worker and --share must be.
 ORIGIN = re.compile(r"https://[a-z0-9.-]+")
 
 
@@ -51,13 +53,13 @@ def origin(value: str) -> str:
     return value
 
 
-def point_text(text: str, site: str, worker: str = "") -> str:
+def point_text(text: str, site: str, worker: str = "", share: str = "") -> str:
     # Only whole URLs: the address followed by a path, quote or end, never a
     # longer hostname that happens to start the same way.
     text = re.sub(re.escape(BASE_URL) + r"(?![\w.-])", site, text)
     if worker:
         text = re.sub(re.escape(WORKER_URL) + r"(?![\w.-])", worker, text)
-    return re.sub(r"\b(const SHARE_URL = )'[^']*'", r"\1''", text)
+    return re.sub(r"\b(const SHARE_URL = )'[^']*'", lambda m: f"{m.group(1)}'{share}'", text)
 
 
 def add_banner(text: str, banner: str, link: str = "") -> str:
@@ -86,6 +88,7 @@ def point_site(
     site_dir: Path,
     site: str,
     worker: str = "",
+    share: str = "",
     banner: str = "",
     banner_link: str = "",
     title_prefix: str = "",
@@ -97,7 +100,7 @@ def point_site(
         if not path.is_file() or path.suffix not in TEXT_SUFFIXES:
             continue
         text = path.read_text("utf-8")
-        pointed = point_text(text, site, worker)
+        pointed = point_text(text, site, worker, share)
         if banner and path.relative_to(site_dir).as_posix() in generated:
             pointed = add_banner(pointed, banner, banner_link)
         if title_prefix and path.suffix == ".html":
@@ -114,13 +117,17 @@ def main() -> None:
     parser.add_argument("--site", type=origin, required=True, help="the preview's own origin")
     # No default: argparse would run origin() on it.
     parser.add_argument("--worker", type=origin, help="the Worker Preview's origin, if any")
+    parser.add_argument("--share", type=origin, help="the share Worker's Preview's origin, if any")
     parser.add_argument("--banner", default="", help="text for a strip atop the generated pages")
     parser.add_argument("--banner-link", default="", help="where the strip links to")
     parser.add_argument("--title-prefix", default="", help="text to start every page's <title> with")
     args = parser.parse_args()
-    changed = point_site(args.site_dir, args.site, args.worker or "", args.banner, args.banner_link, args.title_prefix)
+    changed = point_site(
+        args.site_dir, args.site, args.worker or "", args.share or "", args.banner, args.banner_link, args.title_prefix
+    )
     target = args.worker or f"{WORKER_URL} (production's Worker)"
-    print(f"Pointed {len(changed)} files at {args.site}, with {target}")
+    shares = f"shares at {args.share}" if args.share else "no share Worker"
+    print(f"Pointed {len(changed)} files at {args.site}, with {target} and {shares}")
 
 
 if __name__ == "__main__":

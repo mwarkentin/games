@@ -12,8 +12,14 @@ name: Preview
 # points at it. Without one, the site preview keeps production's Worker,
 # which only answers the live site, so it can't write there.
 #
-# One comment on the pull request links to both and is kept up to date. Both
-# Previews are deleted when the pull request closes. See "Previews" in
+# A pull request whose branch changes share/ (or worker/src/, whose code it
+# imports), or that's labelled worker-preview, also gets a Worker Preview of
+# the share Worker at https://pr-<number>-games-share.mwarkentin.workers.dev,
+# whose cards send people to the site preview, and Letterfield's Share hands
+# out its links. Without one, the preview's shares link to its own game.
+#
+# One comment on the pull request links to all of them and is kept up to
+# date. Every Preview is deleted when the pull request closes. See "Previews" in
 # AGENTS.md and worker/README.md.
 
 on:
@@ -43,6 +49,7 @@ jobs:
       github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
     outputs:
+      share: ${{ steps.share.outputs.share }}
       worker: ${{ steps.diff.outputs.worker }}
     steps:
       # The pull request's merge commit against the default branch: what the
@@ -62,6 +69,21 @@ jobs:
             echo "worker=true" >> "$GITHUB_OUTPUT"
           else
             echo "worker=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      # The share Worker, against the same merge base. It bundles the
+      # leaderboard Worker's map and survey code from worker/src/, as its
+      # deploy does.
+      - id: share
+        env:
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+          LABELLED: ${{ contains(github.event.pull_request.labels.*.name, 'worker-preview') }}
+        run: |
+          if git diff --name-only "origin/$DEFAULT_BRANCH...HEAD" | grep -qE '^(share/|worker/src/|\.github/workflows/preview\.yml$)' \
+            || [ "$LABELLED" = true ]; then
+            echo "share=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "share=false" >> "$GITHUB_OUTPUT"
           fi
 
   worker:
@@ -130,14 +152,77 @@ jobs:
           url="$(printf '%s' "$output" | jq -er '.preview.urls[0]')"
           echo "url=${url%/}" >> "$GITHUB_OUTPUT"
 
+  share:
+    needs: changes
+    if: needs.changes.outputs.share == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read # whether the pull request is still open
+    # Nothing here is shared between pull requests (its R2 bucket is keyed by
+    # card, and has no migrations), so it needn't wait for other pull
+    # requests' turns, as the leaderboard's does. A newer push to the same
+    # pull request takes over from one still going: it makes the Preview
+    # again, and this run's site job, which needs this, is skipped.
+    concurrency:
+      group: share-preview-${{ github.event.pull_request.number }}
+      cancel-in-progress: true
+    outputs:
+      url: ${{ steps.preview.outputs.url }}
+    defaults:
+      run:
+        working-directory: share
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+      # If the pull request closed while this waited, make nothing: cleanup
+      # has deleted its Previews (or the site job will, after this).
+      - name: Check the pull request is still open
+        id: open
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ github.event.pull_request.number }}
+        run: |
+          state="$(gh api "repos/$GITHUB_REPOSITORY/pulls/$PR" --jq .state)"
+          echo "open=$([ "$state" = open ] && echo true || echo false)" >> "$GITHUB_OUTPUT"
+      - name: Install dependencies
+        if: steps.open.outputs.open == 'true'
+        run: npm ci
+      # As the leaderboard's Preview, the salt goes up with it, for the render
+      # limit's hashed addresses. Its cards send people to this pull request's
+      # site preview: SITE_URL in [previews.vars] is overridden with --var,
+      # for this Preview only. Its other bindings are wrangler.toml's
+      # [previews] ones: the previews' R2 bucket and rate limit, and no survey.
+      - name: Create or update the Preview
+        id: preview
+        if: steps.open.outputs.open == 'true'
+        env:
+          IP_SALT: ${{ secrets.PREVIEW_IP_SALT }}
+        run: |
+          test -n "$IP_SALT" || { echo "::error::The PREVIEW_IP_SALT secret is missing; see worker/README.md"; exit 1; }
+          set -o pipefail
+          secrets="$RUNNER_TEMP/share-secrets.json"
+          trap 'rm -f "$secrets"' EXIT
+          jq -n --arg salt "$IP_SALT" '{IP_SALT: $salt}' > "$secrets"
+          output="$(npx --yes wrangler@4.151.0 preview --name "$PREVIEW" --secrets-file "$secrets" \
+            --var "SITE_URL:https://$PREVIEW-games-preview.$WORKERS_DEV" \
+            --message "${{ github.event.pull_request.head.sha }}" --json)"
+          printf '%s\n' "$output"
+          # Anything wrangler logs on stdout comes before the JSON.
+          url="$(printf '%s\n' "$output" | sed -n '/^{$/,$p' | jq -er '.preview.urls[0]')"
+          echo "url=${url%/}" >> "$GITHUB_OUTPUT"
+
   site:
-    needs: [changes, worker]
-    # After the Worker Preview, or without one when the pull request doesn't
-    # touch worker/; never pointed at production when making one failed.
+    needs: [changes, worker, share]
+    # After the Worker Previews, or without them when the pull request doesn't
+    # touch their code; never pointed at production when making one failed.
     if: >-
       always() &&
       needs.changes.result == 'success' &&
-      (needs.worker.result == 'success' || needs.worker.result == 'skipped')
+      (needs.worker.result == 'success' || needs.worker.result == 'skipped') &&
+      (needs.share.result == 'success' || needs.share.result == 'skipped')
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -159,12 +244,13 @@ jobs:
       - name: Point it at this pull request's Previews
         env:
           WORKER: ${{ needs.worker.outputs.url }}
+          SHARE: ${{ needs.share.outputs.url }}
           PR: ${{ github.event.pull_request.number }}
           SHA: ${{ github.event.pull_request.head.sha }}
           PR_URL: ${{ github.event.pull_request.html_url }}
         run: |
           uv run --locked --no-dev scripts/point_preview.py _site \
-            --site "https://$PREVIEW-games-preview.$WORKERS_DEV" ${WORKER:+--worker "$WORKER"} \
+            --site "https://$PREVIEW-games-preview.$WORKERS_DEV" ${WORKER:+--worker "$WORKER"} ${SHARE:+--share "$SHARE"} \
             --banner "Preview of pull request #$PR at ${SHA:0:7}" --banner-link "$PR_URL" \
             --title-prefix "PR $PR · "
       # Cleanup shares this job's group, so a pull request closing cancels
@@ -183,7 +269,7 @@ jobs:
       - name: Delete the Previews, since the pull request has closed
         if: steps.open.outputs.open != 'true'
         run: |
-          for worker in games-preview games-leaderboard; do
+          for worker in games-preview games-leaderboard games-share; do
             npx --yes wrangler@4.151.0 preview delete --worker-name "$worker" --name "$PREVIEW" --skip-confirmation \
               || echo "::notice::No Preview $PREVIEW of $worker to delete, or it couldn't be deleted. Check the Worker's Previews in the Cloudflare dashboard."
           done
@@ -215,6 +301,7 @@ jobs:
           WORKER: ${{ needs.worker.outputs.url }}
           PR: ${{ github.event.pull_request.number }}
           SHA: ${{ github.event.pull_request.head.sha }}
+          SHARE: ${{ needs.share.outputs.url }}
         run: |
           marker='<!-- preview -->'
           old_marker='<!-- worker-preview -->'
@@ -242,6 +329,19 @@ jobs:
             body="$body
 
           This pull request's branch doesn't change \`worker/\` from main's, so the preview's pages keep production's Worker, which only answers the live site: here the leaderboards say they can't be reached and War's rooms can't start. Solo play works as usual."
+          fi
+          if [ -n "$SHARE" ]; then
+            # A word on this branch's own map, for an example card.
+            slug="$(node --input-type=module -e "
+              import { chunk } from './worker/src/letterfield-world.js';
+              const n = (v) => (v < 0 ? 'm' + -v : String(v));
+              const p = chunk(3, 7).words[0];
+              console.log('f-' + p.w.toLowerCase() + '-' + n(p.x) + '-' + n(p.y) + '-' + p.d);")"
+            body="$body
+
+          **Share Preview:** $SHARE
+
+          [Letterfield]($SITE/letterfield)'s Share hands out links to this Preview of the share Worker, whose pages send people back to the preview: try [a find's page]($SHARE/f/$slug) and [its card]($SHARE/f/$slug.png), or [the dark one]($SHARE/f/d/$slug.png). It has no survey, so its cards leave their charting lines off."
           fi
           body="$body
 
@@ -289,7 +389,7 @@ jobs:
       # nothing to delete.
       - name: Delete the Previews
         run: |
-          for worker in games-preview games-leaderboard; do
+          for worker in games-preview games-leaderboard games-share; do
             npx --yes wrangler@4.151.0 preview delete --worker-name "$worker" --name "$PREVIEW" --skip-confirmation \
               || echo "::notice::No Preview $PREVIEW of $worker to delete, or it couldn't be deleted. Check the Worker's Previews in the Cloudflare dashboard."
           done
