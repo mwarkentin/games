@@ -30,9 +30,15 @@ ZEUS = ["ZEUS", -40, 100, 6, 0, "ABC", NOW_MS - 24 * 60 * MINUTE, 17]  # yesterd
 
 
 def open_log(page: Page, site_url: str, fake: FakeSurveyLog, query: str = "", finds=None,
-             now_ms: int = NOW_MS, running: bool = False) -> None:
+             now_ms: int = NOW_MS, running: bool = False, share: bool = True) -> None:
     """Opens the log at `now_ms`, with the clock stopped there, or `running` on from it
-    (for what happens as time passes: page.clock.fast_forward moves it on)."""
+    (for what happens as time passes: page.clock.fast_forward moves it on). With
+    share=False, SHARE_URL is blanked, as on a preview without a share Worker."""
+    if not share:
+        def blank(route):
+            response = route.fetch()
+            route.fulfill(response=response, body=re.sub(r"\b(const SHARE_URL = )'[^']*'", r"\1''", response.text()))
+        page.route(lambda url: urlsplit(url).path == "/letterfield-log", blank)
     if running:
         page.clock.install(time=now_ms / 1000)
     else:
@@ -328,12 +334,13 @@ def test_a_surveyor_opens_from_a_top_list_with_an_address_to_share(page: Page, s
 
     page.click("#share")
     expect(page.locator("#share")).to_have_text("Copied")
-    # The page's own address leaves this week's date out, so it stays this
-    # week; the shared one pins it, so it's still that week when it's read later.
+    # The share Worker's card of this week, pinned by its Monday and the hours
+    # the page asked for, so it's still that week when it's read later; the
+    # page's own address leaves the date out, so it stays this week.
     assert "day=" not in page.url
     assert page.evaluate("window.__copied") == (
         "ZED charted 1 word first in Letterfield’s shared survey this week, most in Acorn Hollow."
-        f" Latest: ACORN.\n{page.url}&day=2026-11-02"
+        f" Latest: ACORN.\nhttps://share.michaelwarkentin.com/v/surveyor/ZED/week/2026-11-02/{week}-{week + 7 * 24}"
     )
     # All time is a surveyor's own view's first, so its address needs no period.
     page.click("#periods [data-p=all]")
@@ -554,7 +561,8 @@ def test_a_surveyor_shares_a_line_and_a_picture_of_their_view(page: Page, site_u
     fern = ["FERN", 9, 9, 0, 2, "ZED", NOW_MS - 30 * MINUTE, 11]
     fake = FakeSurveyLog([birch, ACORN, fern, ZEUS], PLACES, THEMES)
     page.add_init_script(SHARE_SHEET)
-    open_log(page, site_url, fake, query="&surveyor=zed#debug")
+    # Without a share Worker (a preview that has none), Share attaches the page's own picture.
+    open_log(page, site_url, fake, query="&surveyor=zed#debug", share=False)
     expect(page.locator(".entry .word")).to_have_text(["FERN", "ACORN", "BIRCH"])
     # The picture's made once the view's loaded, ready for the tap.
     page.wait_for_function("window.__log.share()?.file")
@@ -588,7 +596,7 @@ def test_a_surveyor_shares_a_line_and_a_picture_of_their_view(page: Page, site_u
 def test_a_theme_and_a_territory_share_lines_of_their_own(page: Page, site_url, errors):
     fake = FakeSurveyLog([ACORN, MONET, ZEUS], PLACES, THEMES)
     page.add_init_script(SHARE_SHEET)
-    open_log(page, site_url, fake, query="&theme=11#debug")
+    open_log(page, site_url, fake, query="&theme=11#debug", share=False)
     expect(page.locator("#focusName")).to_have_text("Forest")
     page.wait_for_function("window.__log.share()?.file")
     page.click("#share")
