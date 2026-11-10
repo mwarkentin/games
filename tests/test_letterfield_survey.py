@@ -38,10 +38,11 @@ def without_turnstile(page: Page) -> None:
     page.route(lambda url: urlparse(url).path == "/letterfield", handle)
 
 
-def open_game(page: Page, site_url: str, fake: FakeSurvey | None, query: str = "", own_site_key: bool = False) -> None:
+def open_game(page: Page, site_url: str, fake: FakeSurvey | None, query: str = "", own_site_key: bool = False,
+              viewport: dict | None = None) -> None:
     """Opens the game, against `fake` if given. Its own Turnstile site key is blanked
     unless `own_site_key` is set or `query` brings one (?turnstile=)."""
-    page.set_viewport_size({"width": 1280, "height": 900})
+    page.set_viewport_size(viewport or {"width": 1280, "height": 900})
     if not own_site_key and "turnstile=" not in query:
         without_turnstile(page)
     if fake:
@@ -528,6 +529,17 @@ def test_the_game_joins_the_survey_on_the_worker_by_default(page: Page, site_url
 SITE_KEY = "1x00000000000000000000BB"
 
 
+OVERLAP = """([a, b]) => {
+  const r = document.querySelector(a).getBoundingClientRect(), q = document.querySelector(b).getBoundingClientRect();
+  return r.width > 0 && q.width > 0 && r.left < q.right && q.left < r.right && r.top < q.bottom && q.top < r.bottom;
+}"""
+# What a tap at the middle of each of an element's chips lands on: true where it reaches that chip.
+TAPS_REACH = """sel => [...document.querySelectorAll(sel)].map(el => {
+  const r = el.getBoundingClientRect(), x = r.left + r.width / 2, y = r.top + r.height / 2;
+  return x < 0 || x > innerWidth ? true : el.contains(document.elementFromPoint(x, y));
+})"""
+
+
 def with_turnstile(page: Page, mode: str = "pass", desk: FakePassDesk | None = None) -> FakePassDesk:
     desk = desk or FakePassDesk()
     page.add_init_script(f"window.__tsMode = {json.dumps(mode)}")
@@ -590,10 +602,79 @@ def test_turnstile_shows_its_box_only_when_it_wants_a_tap(page: Page, site_url, 
     expect(page.locator("#surveyCheck")).to_have_class(re.compile("asking"))
     expect(page.locator("#surveyCheck")).to_contain_text("One tap to join the shared survey")
     expect(page.locator("#surveyText")).to_have_text("Checking this is a person, not a bot…")
+    for other in [".legend", ".instruments .seg", ".instruments .zoom", "#signup", "#notes"]:
+        assert not page.evaluate(OVERLAP, ["#surveyCheck", other]), f"the box covers {other}"
     assert fake.sectors == []
     page.evaluate("window.__tsSolve()")
     expect(page.locator("#survey")).to_have_attribute("data-state", "live")
     expect(page.locator("#surveyCheck")).not_to_have_class(re.compile("asking"))
+    assert errors == []
+
+
+def test_turnstile_box_keeps_clear_of_the_game_and_goes_once_passed(page: Page, site_url, errors):
+    # On a phone, Turnstile's box once stayed over the word legend after "Success!".
+    phone = {"width": 375, "height": 667}
+    with_turnstile(page, "interactive")
+    fake = FakeSurvey()
+    open_game(page, site_url, fake, f"&turnstile={SITE_KEY}", viewport=phone)
+    check = page.locator("#surveyCheck")
+    expect(check).to_have_class(re.compile("asking"))
+    expect(page.locator(".fake-turnstile")).to_be_visible()
+    # While it asks, it's a small panel with its reason, clear of the legend and instruments.
+    expect(check.locator("p")).to_be_visible()
+    expect(check.locator("p")).to_have_text("One tap to join the shared survey")
+    box = check.bounding_box()
+    assert box["x"] >= 16 and box["x"] + box["width"] <= phone["width"] - 16
+    expect(page.locator("#signup")).to_be_visible()  # asked for initials at the same time
+    for other in [".legend", ".instruments .seg", ".instruments .zoom", ".cartouche", "#notesToggle", "#signup"]:
+        assert not page.evaluate(OVERLAP, ["#surveyCheck", other]), f"the box covers {other}"
+
+    page.evaluate("window.__tsSolve()")
+    expect(page.locator("#survey")).to_have_attribute("data-state", "live")
+    expect(page.locator("html")).to_have_attribute("data-pass", "good")
+    # "Success!" shows for a moment, then the widget and its box are gone.
+    expect(page.locator(".fake-turnstile")).to_have_count(0, timeout=3000)
+    assert page.evaluate("window.__tsRemoved") == ["w1"]
+    expect(check).not_to_have_class(re.compile("shown|asking"))
+    assert check.bounding_box() is None or check.bounding_box()["height"] == 0
+    # Every word in the legend takes a tap where it is.
+    expect(page.locator("#legendList .chip").first).to_be_visible()
+    assert all(page.evaluate(TAPS_REACH, "#legendList .chip"))
+    assert errors == []
+
+
+def test_turnstile_box_goes_when_a_player_already_in_the_survey_is_not_asked(page: Page, site_url, errors):
+    # A pass that runs out while the player is in the survey: a check that
+    # wants a tap is dropped while passes aren't required, and nothing is left on screen.
+    page.add_init_script("""localStorage.setItem('letterfield.surveyPass.v1',
+      JSON.stringify({ pass: 'old-pass', expires: Date.now() + 62000 }))""")
+    with_turnstile(page, "interactive")
+    fake = FakeSurvey()
+    open_game(page, site_url, fake, f"&turnstile={SITE_KEY}", viewport={"width": 375, "height": 667})
+    expect(page.locator("#survey")).to_have_attribute("data-state", "live")
+    expect(page.locator("html")).to_have_attribute("data-pass", "failed", timeout=8000)
+    assert page.evaluate("window.__tsRenders.length") == 1
+    expect(page.locator(".fake-turnstile")).to_have_count(0)
+    expect(page.locator("#surveyCheck")).not_to_have_class(re.compile("shown|asking"))
+    assert all(page.evaluate(TAPS_REACH, "#legendList .chip"))
+    assert errors == []
+
+
+def test_turnstile_box_asks_a_player_already_in_the_survey_once_passes_are_required(page: Page, site_url, errors):
+    # A sector turns the stored pass away: passes are required, so the player is asked to stay, then the box goes.
+    page.add_init_script("""localStorage.setItem('letterfield.surveyPass.v1',
+      JSON.stringify({ pass: 'old-pass', expires: Date.now() + 1800000 }))""")
+    with_turnstile(page, "interactive")
+    fake = FakeSurvey(refuse_passes={"old-pass"}, require_pass=True)
+    open_game(page, site_url, fake, f"&turnstile={SITE_KEY}", viewport={"width": 375, "height": 667})
+    expect(page.locator("#surveyCheck")).to_have_class(re.compile("asking"))
+    expect(page.locator("#surveyCheck p")).to_be_visible()
+    for other in [".legend", ".instruments .seg", ".instruments .zoom"]:
+        assert not page.evaluate(OVERLAP, ["#surveyCheck", other]), f"the box covers {other}"
+    page.evaluate("window.__tsSolve()")
+    expect(page.locator("#survey")).to_have_attribute("data-state", "live")
+    expect(page.locator(".fake-turnstile")).to_have_count(0, timeout=3000)
+    expect(page.locator("#surveyCheck")).not_to_have_class(re.compile("shown|asking"))
     assert errors == []
 
 

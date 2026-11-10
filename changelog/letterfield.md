@@ -1,3 +1,9 @@
+## 2026-11-10
+
+- The "One tap to join the shared survey" box now sits just above the word
+  list and controls instead of over them, and goes away a moment after
+  you pass instead of staying over the words.
+
 ## 2026-11-09
 
 - On the shared survey, you pick your three-letter initials before
