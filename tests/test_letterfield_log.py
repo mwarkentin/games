@@ -601,3 +601,54 @@ def test_a_theme_and_a_territory_share_lines_of_their_own(page: Page, site_url, 
     )
     assert page.evaluate("window.__shared.files[0].name") == "letterfield-acorn-hollow.png"
     assert errors == []
+
+
+def test_a_day_and_an_hour_have_top_lists_of_their_own(page: Page, site_url, errors):
+    page.set_viewport_size({"width": 375, "height": 740})
+    birch = ["BIRCH", 7, 9, 0, 0, "ZED", NOW_MS - 40 * MINUTE, 11]   # 2:50 PM
+    fern = ["FERN", 9, 11, 0, 0, "ABC", NOW_MS - 70 * MINUTE, 11]    # 2:20 PM
+    late = ["OAK", 11, 13, 0, 0, "ABC", NOW_MS - 16 * HOUR_MS, 11]   # 11:30 PM yesterday, the same UTC day
+    fake = FakeSurveyLog([ACORN, MONET, ZEUS, birch, fern, late], PLACES, THEMES)
+    open_log(page, site_url, fake)
+    # Today in Toronto, counted by the hour: not the whole UTC day, which
+    # began at 7 PM yesterday here and holds OAK.
+    hour = NOW_MS // HOUR_MS
+    assert f"/top/hours/{hour - 15}/{hour + 1}" in fake.requests
+    cards = page.locator(".card")
+    surveyors = cards.filter(has_text="Top surveyors")
+    expect(surveyors.locator(".rank .lbl")).to_have_text(["ZED", "ABC"])
+    expect(surveyors.locator(".num")).to_have_text(["2", "1"])
+    expect(surveyors).not_to_contain_text("UTC")
+    expect(cards.filter(has_text="Top territories").locator(".rank .lbl")).to_have_text(["Acorn Hollow"])
+    assert page.evaluate("document.documentElement.scrollWidth") <= 375
+
+    # Minute by minute, the hour's own.
+    page.locator(".hour h3", has_text="2:00").get_by_role("button", name="Minute by minute").click()
+    expect(page.locator("#sumTitle")).to_contain_text("2:00")
+    assert f"/top/hours/{hour - 1}/{hour}" in fake.requests
+    expect(surveyors.locator(".rank .lbl")).to_have_text(["ZED", "ABC"])
+    expect(surveyors.locator(".num")).to_have_text(["2", "1"])
+    # Each opens that surveyor's own view of the same hour.
+    surveyors.get_by_role("link", name="ABC").click()
+    expect(page.locator("#focusName")).to_have_text("ABC")
+    assert "surveyor=ABC" in page.url and "period=hour" in page.url
+    expect(page.locator(".entry .word")).to_have_text(["FERN"])
+    assert errors == []
+
+
+def test_an_hour_still_running_keeps_its_top_lists_while_it_refreshes(page: Page, site_url, errors):
+    fake = FakeSurveyLog([MONET, ["ELM", 3, 3, 0, 0, "ZED", NOW_MS - 10 * MINUTE, 11]], PLACES, THEMES)
+    open_log(page, site_url, fake, query="&period=hour", running=True)
+    surveyors = page.locator(".card").filter(has_text="Top surveyors")
+    expect(surveyors.locator(".rank .lbl")).to_have_text(["ZED"])
+    fake.entries.append(["ASH", 4, 4, 0, 0, "AMY", NOW_MS + 5 * MINUTE, 11])
+    fake.entries.append(["YEW", 5, 5, 0, 0, "AMY", NOW_MS + 6 * MINUTE, 11])
+    seen = []
+    page.expose_function("__cards", lambda n: seen.append(n))
+    page.evaluate("""() => new MutationObserver(() => window.__cards(document.querySelectorAll('#cards .card').length))
+      .observe(document.querySelector('#cards'), { childList: true })""")
+    page.clock.fast_forward(7 * 60_000)
+    expect(surveyors.locator(".rank .lbl")).to_have_text(["AMY", "ZED"])
+    # It went from one set of cards to the next, never through none.
+    assert 0 not in seen
+    assert errors == []

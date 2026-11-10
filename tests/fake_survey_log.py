@@ -62,12 +62,14 @@ class FakeSurveyLog:
         hour = re.search(r"/v1/survey/log/hour/(\d+)(?:\?after=(\d+))?$", url)
         month = re.search(r"/v1/survey/log/month/(\d+)$", url)
         top = re.search(r"/v1/survey/log/top/(\d+)/(\d+)$", url)
+        top_hours = re.search(r"/v1/survey/log/top/hours/(\d+)/(\d+)$", url)
         sliced = re.search(r"/v1/survey/log/(surveyor|theme)/([A-Z]{3}|\d+)/(\d+)/(\d+)(?:\?before=(\d+))?$", url)
         territory = re.search(r"/v1/survey/log/territory/(-?\d+)/(-?\d+)$", url)
         future = self.now_ms is not None and (
             (day and int(day[1]) > self.now_ms // DAY_MS) or (hour and int(hour[1]) > self.now_ms // HOUR_MS)
             or (month and month_hours(int(month[1]))[0] > self.now_ms // HOUR_MS)
             or (top and int(top[1]) > self.now_ms // DAY_MS)
+            or (top_hours and int(top_hours[1]) > self.now_ms // HOUR_MS)
             or (sliced and int(sliced[3]) > self.now_ms // HOUR_MS)
         )
         if future:
@@ -81,9 +83,11 @@ class FakeSurveyLog:
             counts = Counter(e[6] // HOUR_MS for e in self.entries if first <= e[6] // HOUR_MS < last)
             world = Counter(e[6] // HOUR_MS for e in self.entries if first <= e[6] // HOUR_MS < last and in_world(e))
             body = {"month": int(month[1]), "hours": [[h, n, world[h]] for h, n in sorted(counts.items())]}
-        elif top:
-            first, last = int(top[1]), int(top[2])
-            rows = [e for e in self.entries if first <= e[6] // DAY_MS < last]
+        elif top or top_hours:
+            # Over UTC days, or over UTC hours for a day or an hour in the page's time zone.
+            unit = DAY_MS if top else HOUR_MS
+            first, last = int((top or top_hours)[1]), int((top or top_hours)[2])
+            rows = [e for e in self.entries if first <= e[6] // unit < last]
             surveyors = Counter(e[5] for e in rows if e[5])
             # Hidden words only, by territory; a hidden word's theme is its territory's.
             places = Counter((e[1] // 48, e[2] // 48) for e in rows if e[4] == 0)
@@ -92,7 +96,7 @@ class FakeSurveyLog:
             for place, n in places.items():
                 themes[theme_of[place]] += n
             body = {
-                "from": first, "to": last, "hidden": sum(places.values()),
+                "from": first, "to": last, "hidden": sum(places.values()), **({"hours": True} if top_hours else {}),
                 "surveyors": [[i, n] for i, n in sorted(surveyors.items(), key=lambda r: (-r[1], r[0]))[:10]],
                 "territories": [
                     [rx, ry, self.places.get(f"{rx},{ry}", f"Place {rx},{ry}"), theme_of[(rx, ry)], n]

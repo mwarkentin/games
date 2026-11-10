@@ -26,6 +26,10 @@
 //                                    1970): {from, to, surveyors: [[initials, words], ...],
 //                                    territories: [[rx, ry, name, th, words], ...],
 //                                    themes: [[th, name, hue, words], ...], hidden}
+//   GET /v1/survey/log/top/hours/<from>/<to>   the same over UTC hours from..to-1 (hours since
+//                                    1970), at most TOP_HOURS_MAX, for a day or an hour in the
+//                                    page's own time zone: {from, to, hours: true, surveyors,
+//                                    territories, themes, hidden}
 //
 // Entries are [w, x, y, d, s, initials, at, th]: the claim as the game gets
 // it from a sector, plus its theme. `places` names each territory ('rx,ry'),
@@ -73,6 +77,7 @@ export const LOG_DAY_PATH = /^\/v1\/survey\/log\/day\/(\d{1,6})$/;
 export const LOG_HOUR_PATH = /^\/v1\/survey\/log\/hour\/(\d{1,8})$/;
 export const LOG_MONTH_PATH = /^\/v1\/survey\/log\/month\/(\d{1,5})$/;
 export const LOG_TOP_PATH = /^\/v1\/survey\/log\/top\/(\d{1,6})\/(\d{1,6})$/;
+export const LOG_TOP_HOURS_PATH = /^\/v1\/survey\/log\/top\/hours\/(\d{1,8})\/(\d{1,8})$/;
 export const LOG_SPAN_PATH = '/v1/survey/log/span';
 export const LOG_SURVEYOR_PATH = /^\/v1\/survey\/log\/surveyor\/([A-Z]{3})\/(\d{1,8})\/(\d{1,8})$/;
 export const LOG_THEME_PATH = /^\/v1\/survey\/log\/theme\/(\d{1,3})\/(\d{1,8})\/(\d{1,8})$/;
@@ -85,6 +90,7 @@ export const SPAN_CACHE_S = 300;        // seconds the span is cached for: its l
 export const TOP_N = 10;                // surveyors and territories in a top list
 export const TOP_MAX_DAYS = 3660;       // the longest range a top list covers
 export const TOP_SLOW_CACHE_S = 600;    // seconds a running top list over more than 2 days is cached for
+export const TOP_HOURS_MAX = 48;        // the longest run of hours a top list by hours covers (a local day is up to 26)
 const CURSOR = /^(\d{1,15})~([A-Z]{3,12}~-?\d{1,10}~-?\d{1,10}~[0-7])$/;
 
 // Copies claims, as a sector stores them, to D1 in one batch, which D1 runs
@@ -133,6 +139,12 @@ export const SURVEYORS_SQL = `SELECT initials, SUM(n) AS n FROM survey_log_surve
   WHERE day >= ? AND day < ? GROUP BY initials HAVING SUM(n) > 0 ORDER BY SUM(n) DESC, initials LIMIT ${TOP_N}`;
 export const TERRITORIES_SQL = `SELECT rx, ry, SUM(n) AS n FROM survey_log_territories
   WHERE day >= ? AND day < ? GROUP BY rx, ry HAVING SUM(n) > 0`;
+// The same over a run of hours, counted from the log's own rows, which are in
+// time order: a day's rows at most, read once.
+export const HOURS_SURVEYORS_SQL = `SELECT initials, COUNT(*) AS n FROM survey_log
+  WHERE at >= ? AND at < ? AND initials <> '' GROUP BY initials ORDER BY COUNT(*) DESC, initials LIMIT ${TOP_N}`;
+export const HOURS_TERRITORIES_SQL = `SELECT rx, ry, COUNT(*) AS n FROM survey_log
+  WHERE at >= ? AND at < ? AND s = 0 GROUP BY rx, ry`;
 
 // One hour's entries, a page at a time, with the names the page shows.
 export async function readHour(db, hour, after = null) {
@@ -248,10 +260,21 @@ export async function readSpan(db) {
 // territories have. Initials aren't unique, so a "surveyor" is everyone who
 // typed the same three letters.
 export async function readTop(db, from, to) {
-  const [surveyors, territories] = await Promise.all([
+  return tops(from, to, await Promise.all([
     db.prepare(SURVEYORS_SQL).bind(from, to).all(),
     db.prepare(TERRITORIES_SQL).bind(from, to).all(),
-  ]);
+  ]));
+}
+// The same over UTC hours from..to: a day or an hour in the page's own time
+// zone, which whole UTC days can't give.
+export async function readTopHours(db, from, to) {
+  const range = [from * HOUR_MS, to * HOUR_MS];
+  return { ...tops(from, to, await Promise.all([
+    db.prepare(HOURS_SURVEYORS_SQL).bind(...range).all(),
+    db.prepare(HOURS_TERRITORIES_SQL).bind(...range).all(),
+  ])), hours: true };
+}
+function tops(from, to, [surveyors, territories]) {
   const byTheme = new Map();
   let hidden = 0;
   for (const r of territories.results) {
@@ -281,9 +304,10 @@ export function routeLog(request, env, now = Date.now()) {
   const url = new URL(request.url);
   const day = url.pathname.match(LOG_DAY_PATH), hour = url.pathname.match(LOG_HOUR_PATH);
   const month = url.pathname.match(LOG_MONTH_PATH), top = url.pathname.match(LOG_TOP_PATH), span = url.pathname === LOG_SPAN_PATH;
+  const topHours = url.pathname.match(LOG_TOP_HOURS_PATH);
   const surveyor = url.pathname.match(LOG_SURVEYOR_PATH), theme = url.pathname.match(LOG_THEME_PATH);
   const territory = url.pathname.match(LOG_TERRITORY_PATH);
-  if (!(day || hour || month || top || span || surveyor || theme || territory) || !env.LOG_DB) return null;
+  if (!(day || hour || month || top || topHours || span || surveyor || theme || territory) || !env.LOG_DB) return null;
   const cors = corsHeaders(request, env);
   if (request.method !== 'GET') return json({ error: 'method not allowed' }, 405, cors);
   // Every answer is kept under this Worker's own host and map (see the top of this file).
@@ -318,6 +342,13 @@ export function routeLog(request, env, now = Date.now()) {
     ends = to * HOUR_MS;
     read = () => readMonth(env.LOG_DB, m);
     key = `month/${m}`;
+  } else if (topHours) {
+    const from = Number(topHours[1]), to = Number(topHours[2]);
+    if (!(from < to) || to - from > TOP_HOURS_MAX) return json({ error: 'bad range of hours' }, 400, cors);
+    if (from > fdiv(now, HOUR_MS)) return json({ error: 'that hour has not started' }, 400, cors);
+    ends = to * HOUR_MS;
+    read = () => readTopHours(env.LOG_DB, from, to);
+    key = `top/hours/${from}/${to}`;
   } else if (top) {
     const from = Number(top[1]), to = Number(top[2]);
     if (!(from < to) || to - from > TOP_MAX_DAYS) return json({ error: 'bad range of days' }, 400, cors);

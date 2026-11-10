@@ -367,6 +367,8 @@ GET /v1/survey/log/top/<from>/<to>   (UTC days from..to-1, at most 3,660)
   → {"from", "to", "surveyors": [[initials, words], ...10],
      "territories": [[rx, ry, name, th, words], ...10],
      "themes": [[th, name, hue, words], ...], "hidden"}
+GET /v1/survey/log/top/hours/<from>/<to>   (UTC hours from..to-1, at most 48)
+  → the same, with "hours": true, for a day or an hour in the page's time zone
 GET /v1/survey/log/surveyor/<initials>/<from>/<to>   (UTC hours from..to-1)
 GET /v1/survey/log/theme/<th>/<from>/<to>
 GET /v1/survey/log/…/<from>/<to>?before=<at>~<key>
@@ -423,8 +425,8 @@ then what's in it:
 
 | period | chart | below it |
 | --- | --- | --- |
-| hour | a column a minute | every word, newest first |
-| day | a column an hour | each hour's words, loaded as they scroll into view |
+| hour | a column a minute | top surveyors, territories and themes; every word, newest first |
+| day | a column an hour | the top lists; each hour's words, loaded as they scroll into view |
 | week, month | a column a day | top surveyors, territories and themes; each day as a row |
 | year | twelve month calendars, a cell a day, in four shades of one hue by rank among the year's days with words (so one huge day doesn't wash out the rest) | the top lists; each month as a row |
 | all time | a column a month, a meter of the shared world charted, and, from the second month, a line of it filling in | the top lists; each month as a row |
@@ -460,8 +462,12 @@ The page draws every chart from hourly counts, a UTC month at a time (at
 most 744 rows read for a month, whatever happened in it), and puts each hour
 in the local day, week, month or year it starts in. In a time zone a half
 hour off UTC, an hour that starts at 11:30 pm counts toward that day.
-Top lists come from the daily tables, so they cover whole UTC days and can
-run a few hours past a local week's edges; the page says which days.
+A week's or longer period's top lists come from the daily tables, so they
+cover whole UTC days and can run a few hours past a local week's edges; the
+page says which days. A day's and an hour's are counted from the log's own
+rows over those hours (`top/hours`), so they cover just that local day or
+hour: a day is at most a day's rows, read in time order, which is cheap
+where a week's wouldn't be.
 
 "Mine" for a week or longer counts this browser's finds by when they were
 found, without asking the server. It has no top lists: they'd only ever say

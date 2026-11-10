@@ -1,5 +1,8 @@
 ## 2026-11-10
 
+- The survey log shows top surveyors, territories and themes for a day and
+  for an hour minute by minute too, counted for just that day or hour where
+  you are. Tap a name to see their words from it.
 - The "One tap to join the shared survey" box now sits just above the word
   list and controls instead of over them, and goes away a moment after
   you pass instead of staying over the words.

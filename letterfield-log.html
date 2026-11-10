@@ -247,7 +247,7 @@ html[data-log="loading"] #chart{opacity:.5}
 
   <div id="log"></div>
 
-  <p class="foot">Times are yours, in <span id="zone"></span>. Top lists count whole days in UTC, and initials are whatever each surveyor typed in, so they aren’t unique. “Mine” lists the words this browser charted first, from Letterfield’s field notes; nothing about you is sent to find them. A surveyor’s, territory’s or theme’s own view has an address of its own to share.</p>
+  <p class="foot">Times are yours, in <span id="zone"></span>. Top lists for a week or longer count whole days in UTC, and initials are whatever each surveyor typed in, so they aren’t unique. “Mine” lists the words this browser charted first, from Letterfield’s field notes; nothing about you is sent to find them. A surveyor’s, territory’s or theme’s own view has an address of its own to share.</p>
 </main>
 <div class="tip" id="tip" role="tooltip" hidden></div>
 <script>
@@ -983,7 +983,8 @@ async function render(quiet = false) {
   if (observer) observer.disconnect();
   clearTimeout(liveTimer);
   const end = chrome(), firsts = myFirsts();
-  cardsEl.replaceChildren();
+  // A refresh in place keeps the top lists on screen until new ones come.
+  if (!Log.is('refreshing')) cardsEl.replaceChildren();
   if (!api) {
     tiles([]); chartEl.replaceChildren();
     status('Not open yet', 'The shared survey isn’t running yet, so there’s nothing to log.');
@@ -1056,6 +1057,7 @@ async function renderHour(run, start, end, firsts, mine) {
   chartEl.replaceChildren(columnChart('hour', buckets, null));
   if (!shown.length) status(mine ? 'None this hour' : 'Nothing charted', mine ? 'You didn’t chart a word first this hour in this browser.' : 'Nobody charted a word this hour.');
   else { const list = el('ol', 'entries'); list.append(...shown.map(e => entryRow(e, data, firsts))); logEl.replaceChildren(list); }
+  if (!mine && shown.length) loadTops(run, start, end, true);
 }
 
 // A day, hour by hour. Each hour's words load as they scroll into view, and
@@ -1067,6 +1069,7 @@ async function renderDay(run, start, end, firsts) {
   const total = summaryTiles('day', buckets, false);
   chartEl.replaceChildren(columnChart('day', buckets, b => open('hour', b.from)));
   if (!total) return status('Nothing charted', start === startOf('day', Date.now()) ? 'No words charted yet today. Be the first: open the map and circle one.' : 'Nobody charted a word this day.');
+  loadTops(run, start, end, true);
   const hours = buckets.filter(b => b.n).reverse();
   logEl.replaceChildren(...hours.map(b => hourSection(b, b.n)));
   observer = new IntersectionObserver(seen => {
@@ -1161,20 +1164,23 @@ async function renderLong(run, p, start, end, firsts, mine) {
   if (!mine && total) loadTops(run, start, end);
 }
 
-// Top lists come from whole UTC days, so they can run a few hours past the
-// period's own edges.
-async function loadTops(run, start, end) {
-  const from = fdiv(start, DAY), to = fdiv(Math.min(end, Date.now() + 1) - 1, DAY) + 1;
+// Who and where charted most. A day's or an hour's lists are counted by the
+// hour, so they cover just that day or hour in this time zone (a time zone
+// half an hour off UTC adds the half hour either side). Longer periods' come
+// from whole UTC days, so they can run a few hours past the period's edges.
+async function loadTops(run, start, end, byHour = false) {
+  const unit = byHour ? HOUR : DAY, upTo = Math.min(end, Date.now() + 1);
+  const from = fdiv(start, unit), to = fdiv(upTo - 1, unit) + 1;
   let top;
-  try { top = await cachedJSON(`/v1/survey/log/top/${from}/${to}`, isLive(to * DAY)); } catch (_) {
-    if (run === state.run) cardsEl.replaceChildren(el('p', 'loading', 'Couldn’t load who charted most.'));
+  try { top = await cachedJSON(`/v1/survey/log/top/${byHour ? 'hours/' : ''}${from}/${to}`, isLive(to * unit)); } catch (_) {
+    // A refresh that can't load them keeps the ones on screen.
+    if (run === state.run && !Log.is('refreshing', 'stale')) cardsEl.replaceChildren(el('p', 'loading', 'Couldn’t load who charted most.'));
     return;
   }
   if (run !== state.run || !top || !Array.isArray(top.surveyors)) return;
-  const ok = (r, n) => Array.isArray(r) && Number.isInteger(r[n]);
   const span = to - from === 1 ? fullDate.format(from * DAY + DAY / 2) : `${monthDay.format(from * DAY + DAY / 2)} – ${fullDate.format((to - 1) * DAY + DAY / 2)}`;
   cardsEl.replaceChildren(
-    rankCard('Top surveyors', surveyorRows(top.surveyors), `By initials, which anyone can share · UTC days ${span}`),
+    rankCard('Top surveyors', surveyorRows(top.surveyors), `By initials, which anyone can share${byHour ? '' : ` · UTC days ${span}`}`),
     rankCard('Top territories', territoryRows(top.territories, top.themes), 'Hidden words charted in each'),
     rankCard('Themes', themeRows(top.themes), 'Hidden words, by their territory’s theme'),
   );

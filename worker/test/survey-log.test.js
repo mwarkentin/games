@@ -15,7 +15,7 @@ import {
   DAY_MS, HOURS_SQL, HOUR_AFTER_SQL, HOUR_MS, HOUR_SQL, LIVE_CACHE_S, LOG_BATCH, LOG_MS, LOG_PAGE, LOG_RETRY_MAX_MS, SETTLED_MS,
   FIRST_SQL, LAST_SQL, SLICES, SLICE_MAX_HOURS, SLICE_PAGE, SLICE_SLOW_CACHE_S, SPAN_CACHE_S, SURVEYORS_SQL, TERRITORIES_SQL,
   TOP_MAX_DAYS, TOP_N, TOP_SLOW_CACHE_S, forgetLog, monthHours, readDay, readHour, readMonth, readSlice, readSpan, readTerritory,
-  readTop, routeLog, sliceSql, writeLog,
+  readTop, readTopHours, routeLog, sliceSql, writeLog, HOURS_SURVEYORS_SQL, HOURS_TERRITORIES_SQL, TOP_HOURS_MAX,
 } from '../src/survey-log.js';
 import { AREA, SECTOR, Sector } from '../src/survey.js';
 
@@ -231,6 +231,27 @@ describe('the log\'s counts', () => {
     assert.equal((await readTop(db, DAY - 3, DAY + 1)).surveyors.find(([i]) => i === 'OLD')[1], 1);
   });
 
+  test('rank them over a run of hours too, for a day or an hour in the page’s time zone', async () => {
+    const rows = [];
+    let t = HOUR * HOUR_MS;
+    const add = (x, y, initials, n, when = t) => { for (let i = 0; i < n; i++) rows.push(at(x + i, y, when + rows.length, { initials })); };
+    add(0, 0, 'ZED', 3);                       // this hour, territory 0,0
+    add(48, 0, 'AMY', 2);                      // this hour, territory 1,0
+    add(0, 48, '', 4);                         // this hour, no initials
+    rows.push(at(200, 0, t + 1000, { initials: 'ZED', s: 1 }));  // a stray: counts for ZED, not for a territory
+    add(-48, 0, 'BOB', 5, t - HOUR_MS);        // the hour before
+    await writeLog(db, rows);
+    const hour = await readTopHours(db, HOUR, HOUR + 1);
+    assert.equal(hour.hours, true);
+    assert.deepEqual(hour.surveyors, [['ZED', 4], ['AMY', 2]]);
+    assert.deepEqual(hour.territories.map((r) => [r[0], r[1], r[4]]), [[0, 1, 4], [0, 0, 3], [1, 0, 2]]);
+    assert.equal(hour.hidden, 9);
+    assert.equal(hour.themes.reduce((a, r) => a + r[3], 0), hour.hidden);
+    assert.deepEqual((await readTopHours(db, HOUR - 1, HOUR + 1)).surveyors, [['BOB', 5], ['ZED', 4], ['AMY', 2]]);
+    // Each reads only its run of the log, in time order.
+    for (const sql of [HOURS_SURVEYORS_SQL, HOURS_TERRITORIES_SQL]) assert.match(plan(db, sql, 1, 2), /SEARCH survey_log USING PRIMARY KEY \(at>\? AND at<\?\)/);
+  });
+
   test('say where the log starts and ends, words logged late included', async () => {
     assert.deepEqual(await readSpan(db), { first: null, last: null });
     await writeLog(db, [at(0, 0, NOW), at(1, 1, NOW - 40 * DAY_MS), at(2, 2, NOW + HOUR_MS)]);
@@ -437,6 +458,14 @@ describe('routeLog', () => {
     assert.equal((await get(`/v1/survey/log/top/${DAY + 1}/${DAY + 2}`)).status, 400);
     assert.equal((await get(`/v1/survey/log/top/${DAY}/${DAY}`)).status, 400);
     assert.equal((await get(`/v1/survey/log/top/${DAY - TOP_MAX_DAYS - 1}/${DAY}`)).status, 400);
+    // A top list over hours, for a day in the page's own time zone.
+    const hours = await get(`/v1/survey/log/top/hours/${HOUR - 14}/${HOUR + 10}`);
+    assert.equal(hours.headers.get('Cache-Control'), `public, max-age=${LIVE_CACHE_S}`);
+    assert.deepEqual((await hours.json()).surveyors, [['ZED', 1]]);
+    assert.equal((await get(`/v1/survey/log/top/hours/${HOUR - 30}/${HOUR - 6}`)).headers.get('Cache-Control'), 'public, max-age=86400');
+    assert.equal((await get(`/v1/survey/log/top/hours/${HOUR + 1}/${HOUR + 2}`)).status, 400);
+    assert.equal((await get(`/v1/survey/log/top/hours/${HOUR}/${HOUR}`)).status, 400);
+    assert.equal((await get(`/v1/survey/log/top/hours/${HOUR - TOP_HOURS_MAX - 1}/${HOUR}`)).status, 400);
   });
 
   test('answers a surveyor, a theme and a territory, cached by how settled and how long they are', async () => {
