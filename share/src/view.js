@@ -1,0 +1,190 @@
+// Survey log views as cards: a surveyor's, a theme's or a territory's page of
+// letterfield-log.html, drawn as that page's own share picture
+// (shareImage() there) from the log's own answers.
+//
+//   /v/surveyor/<initials>/<period>/<when>/<from>-<to>   one surveyor's period
+//   /v/theme/<th>/<period>/<when>/<from>-<to>            one theme's period
+//   /v/surveyor/<initials>/all, /v/theme/<th>/all        all time
+//   /v/territory/<rx>,<ry>                               a territory, all time
+//   /v/d/…  the dark card; ….png the card itself
+//
+// A period is pinned to where it starts in the sharer's own time zone: <when>
+// is its first day there (YYYY-MM-DD, with Thh for an hour), which names it on
+// the card and in the link to the page, and <from>-<to> are the UTC hours it
+// covers, which the log is asked for. So a card shared on Monday still matches
+// its link on Friday, wherever it's opened.
+
+import { THEMES, regionName, regionTheme } from '../../worker/src/letterfield-world.js';
+import { H, PALETTES, W, fit, measure, text } from './card.js';
+
+const HOUR = 3_600_000;
+export const LOG_BEGAN_HOUR = Date.UTC(2026, 10, 6) / HOUR;  // where all time starts, until the log's span says earlier
+const SLICE_MAX_HOURS = 24 * 3660;  // the most the log's view of one covers (SLICE_MAX_HOURS in survey-log.js)
+const PERIODS = ['hour', 'day', 'week', 'month', 'year'];
+export const VIEW_PATH = /^\/v\/(d\/)?(?:(surveyor)\/([A-Z]{3})|(theme)\/(\d{1,3}))\/(?:(all)|(hour|day|week|month|year)\/(\d{4})-(\d{2})-(\d{2})(?:T(\d{2}))?\/(\d{1,8})-(\d{1,8}))(\.png)?$/;
+export const TERRITORY_PATH = /^\/v\/(d\/)?territory\/(-?\d{1,8}),(-?\d{1,8})(\.png)?$/;
+
+const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+const DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+const pad = (n) => String(n).padStart(2, '0');
+const num = (n) => n.toLocaleString('en-US');
+const plural = (n, one, many = `${one}s`) => `${num(n)} ${n === 1 ? one : many}`;
+// Dates as the card names them, from wall-clock times kept as UTC.
+const longDay = (t) => { const d = new Date(t); return `${DAYS[d.getUTCDay()]} ${d.getUTCDate()} ${MONTHS[d.getUTCMonth()]} ${d.getUTCFullYear()}`; };
+const shortDay = (t, year = true) => { const d = new Date(t); return `${d.getUTCDate()} ${MONTHS[d.getUTCMonth()].slice(0, 3)}${year ? ` ${d.getUTCFullYear()}` : ''}`; };
+export const today = (now) => shortDay(now);
+
+// A period's first and last-plus-one wall-clock times, kept as UTC.
+function wall(period, y, m, d, h) {
+  const start = Date.UTC(y, m - 1, d, period === 'hour' ? h : 0);
+  const end = period === 'hour' ? start + HOUR
+    : period === 'day' ? Date.UTC(y, m - 1, d + 1)
+      : period === 'week' ? Date.UTC(y, m - 1, d + 7)
+        : period === 'month' ? Date.UTC(y, m, 1)
+          : Date.UTC(y + 1, 0, 1);
+  return [start, end];
+}
+
+// The view an address names, or null for one that doesn't name a real one:
+// a date that isn't one, a week that doesn't start on a Monday, or hours that
+// can't be that period in any time zone (UTC-12 to UTC+14).
+export function parseView(pathname, now = Date.now()) {
+  const t = TERRITORY_PATH.exec(pathname);
+  if (t) return { kind: 'territory', rx: Number(t[2]), ry: Number(t[3]), dark: !!t[1], png: !!t[4], period: 'all' };
+  const m = VIEW_PATH.exec(pathname);
+  if (!m) return null;
+  const view = m[2] ? { kind: 'surveyor', key: m[3] } : { kind: 'theme', key: Number(m[5]) };
+  if (view.kind === 'theme' && !(view.key < THEMES.length)) return null;
+  Object.assign(view, { dark: !!m[1], png: !!m[14] });
+  if (m[6]) return { ...view, period: 'all' };
+  const period = m[7], [y, mo, d] = [Number(m[8]), Number(m[9]), Number(m[10])], h = m[11] === undefined ? null : Number(m[11]);
+  if ((period === 'hour') !== (h !== null) || (h !== null && h > 23)) return null;
+  const [start, end] = wall(period, y, mo, d, h ?? 0);
+  const date = new Date(start);
+  if (date.getUTCFullYear() !== y || date.getUTCMonth() !== mo - 1 || date.getUTCDate() !== d) return null;
+  if ((period === 'week' && date.getUTCDay() !== 1) || (period === 'month' && d !== 1) || (period === 'year' && (mo !== 1 || d !== 1))) return null;
+  const from = Number(m[12]), to = Number(m[13]);
+  // Where the period starts, in UTC hours, for any offset from UTC-12 to UTC+14.
+  if (from * HOUR < start - 15 * HOUR || from * HOUR > start + 13 * HOUR) return null;
+  if (Math.abs((to - from) - (end - start) / HOUR) > 2 || !(from < to) || to - from > SLICE_MAX_HOURS) return null;
+  if (from > Math.floor(now / HOUR)) return null;
+  return { ...view, period, y, mo, d, h, start, end, from, to };
+}
+
+// The view's own page in the log, with its date pinned, as the page's Share
+// gives it (urlFor({ pin: true }) in letterfield-log.html).
+export function pagePath(v) {
+  const q = new URLSearchParams();
+  if (v.kind === 'territory') q.set('territory', `${v.rx},${v.ry}`);
+  else q.set(v.kind, String(v.key));
+  if (v.period !== 'all') {
+    q.set('period', v.period);
+    q.set('day', `${v.y}-${pad(v.mo)}-${pad(v.d)}`);
+    if (v.period === 'hour') q.set('hour', String(v.h));
+  }
+  return `/letterfield-log?${q.toString().replace(/%2C/g, ',')}`;
+}
+
+// The log's paths for the view: the span first, for all time's start.
+export function logPaths(v, span, now = Date.now()) {
+  if (v.kind === 'territory') return `/v1/survey/log/territory/${v.rx}/${v.ry}`;
+  if (v.period !== 'all') return `/v1/survey/log/${v.kind}/${v.key}/${v.from}/${v.to}`;
+  const first = Number.isInteger(span?.first) ? Math.min(span.first, LOG_BEGAN_HOUR) : LOG_BEGAN_HOUR;
+  const to = Math.floor(now / HOUR) + 1;
+  return `/v1/survey/log/${v.kind}/${v.key}/${Math.max(first, to - SLICE_MAX_HOURS)}/${to}`;
+}
+
+// The view's name, and its theme's hue where it has one, known without asking.
+export function nameOf(v) {
+  if (v.kind === 'surveyor') return { name: v.key };
+  if (v.kind === 'theme') return { name: THEMES[v.key].name, hue: THEMES[v.key].hue };
+  const th = regionTheme(v.rx, v.ry);
+  return { name: regionName(v.rx, v.ry), hue: THEMES[th].hue };
+}
+
+// When, as the card says it (dates, never "this week"), and as its line does.
+export function whenOf(v, now = Date.now()) {
+  if (v.period === 'all') return { shown: `All time, to ${today(now)}`, said: 'so far' };
+  const { start, end } = v, d = new Date(start);
+  if (v.period === 'hour') {
+    const span = `${pad(d.getUTCHours())}:00 – ${pad(new Date(end).getUTCHours())}:00`;
+    return { shown: `${span} · ${longDay(start)}`, said: `from ${span} on ${longDay(start)}` };
+  }
+  if (v.period === 'day') return { shown: longDay(start), said: `on ${longDay(start)}` };
+  if (v.period === 'week') return { shown: `${shortDay(start, false)} – ${shortDay(end - HOUR)}`, said: `in the week of ${shortDay(start)}` };
+  if (v.period === 'month') return { shown: `${MONTHS[d.getUTCMonth()]} ${d.getUTCFullYear()}`, said: `in ${MONTHS[d.getUTCMonth()]} ${d.getUTCFullYear()}` };
+  return { shown: String(d.getUTCFullYear()), said: `in ${d.getUTCFullYear()}` };
+}
+
+// What a card shows of the log's answer: three numbers, the latest words, a
+// line for the page's description, and a token that changes when they do.
+export function summarize(v, a, now = Date.now()) {
+  const { name, hue } = nameOf(v), when = whenOf(v, now);
+  const entries = Array.isArray(a?.entries) ? a.entries.filter((e) => Array.isArray(e) && typeof e[0] === 'string') : [];
+  const themes = a?.themes && typeof a.themes === 'object' ? a.themes : {};
+  const words = entries.slice(0, 12).map((e) => ({ w: e[0], hue: themes[e[7]]?.[1], stray: !!e[4] }));
+  const latest = entries[0]?.[6] ?? 0;
+  const top = Array.isArray(a?.topTerritories?.[0]) ? a.topTerritories[0][2] : null;
+  let stats, line, count;
+  if (v.kind === 'territory') {
+    count = a.charted;
+    const people = new Set(entries.map((e) => e[5]).filter((i) => /^[A-Z]{3}$/.test(i))).size;
+    stats = [['Hidden words charted', `${num(a.charted)} of ${num(a.total)}`], ['Surveyors', num(people)], ['Latest', entries.length ? shortDay(latest) : '—']];
+    line = `${name}, in Letterfield’s shared survey: ${num(a.charted)} of its ${plural(a.total, 'hidden word')} charted so far${people ? `, by ${plural(people, 'surveyor')}` : ''}.`;
+  } else if (v.kind === 'surveyor') {
+    count = a.words;
+    stats = [['Words charted first', num(a.words)], ['In the shared world', num(a.world)], ['Top territory', top || '—']];
+    line = a.words
+      ? `${name} charted ${plural(a.words, 'word')} first in Letterfield’s shared survey ${when.said}${top ? `, most in ${top}` : ''}.`
+      : `No words signed ${name} in Letterfield’s shared survey ${when.said}.`;
+  } else {
+    count = a.words;
+    const who = Array.isArray(a?.topSurveyors?.[0]) ? a.topSurveyors[0][0] : null;
+    stats = [['Hidden words charted', num(a.words)], ['Top surveyor', who || '—'], ['Top territory', top || '—']];
+    line = `${plural(a.words, 'hidden word')} charted in Letterfield’s ${name} territories ${when.said}.`;
+  }
+  return { name, hue, when: when.shown, stats, words, line, token: `${count}.${latest.toString(36)}` };
+}
+
+// The card, 1200×630: shareImage() in letterfield-log.html, as SVG.
+export function viewSvg(v, s, { dark = false, host = 'games.michaelwarkentin.com' } = {}) {
+  const C = dark ? PALETTES.dark : PALETTES.light;
+  const mark = (hue) => `hsl(${hue},${C.markS},${C.markL})`;
+  const X = 72, R = W - 72, out = [];
+  const dot = (x, y, r, hue, stray) => (stray
+    ? `<circle cx="${x}" cy="${y}" r="${r - 1.5}" fill="none" stroke="${mark(hue)}" stroke-width="3" stroke-dasharray="4 3"/>`
+    : `<circle cx="${x}" cy="${y}" r="${r}" fill="${mark(hue)}"/>`);
+  out.push(`<rect width="${W}" height="${H}" fill="${C.paper}"/><rect width="${W}" height="10" fill="${C.accent}"/>`);
+  const kind = { surveyor: 'SURVEYOR', theme: 'THEME', territory: 'TERRITORY' }[v.kind];
+  const head = `LETTERFIELD · SURVEY LOG · ${kind}`;
+  out.push(text(head, X, 84, 'mono5', 20, C.muted, 0.14));
+  // The site's address on the right, where it fits beside the heading.
+  const hostW = measure(host, 'mono4', 18);
+  if (X + measure(head, 'mono5', 20, 0.14) + 40 + hostW <= R) out.push(text(host, R - hostW, 84, 'mono4', 18, C.muted));
+
+  // Whose, as large as fits, after its theme's dot.
+  const name = s.name.toUpperCase(), lead = s.hue !== undefined ? 68 : 0;
+  const px = fit(name, 'display', 170, 64, R - X - lead, 0.04);
+  if (lead) out.push(dot(X + 20, Math.round(250 - px * 0.36), 20, s.hue));
+  out.push(text(name, X + lead, 250, 'display', px, C.ink, 0.04));
+  out.push(text(s.when, X, 306, 'ui5', fit(s.when, 'ui5', 30, 16, R - X), C.muted));
+  out.push(`<rect x="${X}" y="346" width="${R - X}" height="2" fill="${C.rule}"/>`);
+
+  const col = (R - X) / s.stats.length;
+  s.stats.forEach(([label, value], i) => {
+    const x = X + i * col;
+    out.push(text(label, x, 390, 'mono4', fit(label, 'mono4', 18, 12, col - 24), C.muted));
+    out.push(text(value, x, 458, 'display', fit(value, 'display', 64, 30, col - 24, 0.04), C.ink, 0.04));
+  });
+
+  out.push(text(s.words.length ? 'LATEST' : 'NOTHING CHARTED IN THIS PERIOD', X, 520, 'mono5', 18, C.muted, 0.14));
+  let x = X;
+  for (const { w, hue, stray } of s.words) {
+    const width = 26 + measure(w, 'display', 38, 0.07);
+    if (x + width > R) break;
+    if (Number.isFinite(hue)) out.push(dot(x + 8, 566, 8, hue, stray));
+    out.push(text(w, x + 26, 580, 'display', 38, C.ink, 0.07));
+    x += width + 30;
+  }
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}">${out.join('')}</svg>`;
+}

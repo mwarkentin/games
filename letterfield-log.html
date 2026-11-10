@@ -255,6 +255,11 @@ html[data-log="loading"] #chart{opacity:.5}
 // The survey's server (worker/src/survey-log.js). ?survey=<url> overrides it
 // for testing, as in letterfield.html.
 const SURVEY_URL = 'https://api.games.michaelwarkentin.com';
+// Where a shared view links: the share Worker (share/, its /v/ addresses),
+// which answers with a page whose link preview is a card of the view, then
+// sends people here. While it's empty, Share links straight to this page and
+// attaches its own picture. ?share=<url> overrides it, as in letterfield.html.
+const SHARE_URL = '';
 const K_FINDS = 'letterfield.finds.v4';  // Letterfield's field notes, on this origin (K_FINDS in letterfield.html)
 const HOUR = 3600000, DAY = 86400000, MINUTE = 60000;
 const DARROW = ['→','↘','↓','↙','←','↖','↑','↗'];
@@ -273,6 +278,11 @@ const api = (() => {
   let url = SURVEY_URL;
   try { const q = new URLSearchParams(location.search).get('survey'); if (q && /^(https?|wss?):\/\//.test(q)) url = q; } catch (_) {}
   return url.replace(/\/+$/, '').replace(/^ws/, 'http');
+})();
+const shareBase = (() => {
+  let url = SHARE_URL;
+  try { const q = new URLSearchParams(location.search).get('share'); if (q && /^https?:\/\//.test(q)) url = q; } catch (_) {}
+  return url.replace(/\/+$/, '');
 })();
 const fdiv = (a, b) => Math.floor(a / b);
 const keyOf = (w, x, y, d) => `${w}~${x}~${y}~${d}`;
@@ -1383,7 +1393,25 @@ const latestSaid = words => words.length ? ` Latest: ${words.slice(0, SHARE_WORD
 // Readies the view's share: c is { kind, name, hue, when, stats: [[label, value]], words, text }.
 function offerShare(run, c) {
   shareCard = { run, text: c.text, file: null };
-  shareImage(c).then(file => { if (shareCard?.run === run) shareCard.file = file; }, () => {});
+  // With the share Worker, the link carries a card of its own: a picture too
+  // would show the view twice.
+  if (!shareBase) shareImage(c).then(file => { if (shareCard?.run === run) shareCard.file = file; }, () => {});
+}
+
+// The view on screen as the share Worker's address (share/src/view.js): its
+// period pinned by its first day here and the UTC hours it covers, which are
+// the hours this page asks the log for, so the card counts what the page did.
+// A dark page shares the dark card.
+function viewPath() {
+  const f = state.focus;
+  if (!f) return null;
+  const t = document.documentElement.dataset.theme;
+  const dark = (t ? t === 'dark' : matchMedia('(prefers-color-scheme: dark)').matches) ? 'd/' : '';
+  if (f.kind === 'territory') return `/v/${dark}territory/${f.rx},${f.ry}`;
+  const base = `/v/${dark}${f.kind}/${f.key}`, { period: p, start: s } = state;
+  if (p === 'all') return `${base}/all`;
+  const hour = p === 'hour' ? 'T' + String(new Date(s).getHours()).padStart(2, '0') : '';
+  return `${base}/${p}/${isoDay(s)}${hour}/${fdiv(s, HOUR)}-${fdiv(endOf(p, s) - 1, HOUR) + 1}`;
 }
 
 // The picture: the page's own colours and type, on a card the size link
@@ -1470,7 +1498,8 @@ async function shareImage(c) {
 }
 
 $('#share').onclick = async () => {
-  const b = $('#share'), url = location.origin + urlFor({ pin: true }), c = shareCard?.run === state.run ? shareCard : null;
+  const view = shareBase && viewPath();
+  const b = $('#share'), url = view ? shareBase + view : location.origin + urlFor({ pin: true }), c = shareCard?.run === state.run ? shareCard : null;
   const said = text => { b.textContent = text; setTimeout(() => { b.textContent = 'Share'; }, 2500); };
   if (navigator.share) {
     const data = { title: document.title, url };

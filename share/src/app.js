@@ -5,6 +5,8 @@
 //                        people on to the game at that word
 //   GET /f/<slug>.png    the card, 1200×630
 //   GET /f/d/<slug>…     the same, with a dark card (a dark page's share)
+//   GET /v/…             the same for a view of the survey log: a surveyor's,
+//                        theme's or territory's page (see view.js)
 //
 // <slug> is the game's own fragment, f-<word>-<x>-<y>-<d>. Only words really
 // on the map are drawn. Everyone, bot or person, gets the same page: link
@@ -17,6 +19,7 @@ import { hashAddress } from '../../worker/src/leaderboard.js';
 import { MAP_VERSION, THEMES, keyOf, regionName } from '../../worker/src/letterfield-world.js';
 import { AREA, SECTOR, CLAIM_PATH, TOTALS_PATH } from '../../worker/src/survey.js';
 import { day, findSvg, parseFind, progress } from './card.js';
+import { logPaths, nameOf, pagePath, parseView, summarize, viewSvg } from './view.js';
 
 export const DEFAULT_SITE = 'https://games.michaelwarkentin.com';
 export const PATH = /^\/f\/(d\/)?([a-z0-9-]{1,48}?)(\.png)?$/;
@@ -24,6 +27,8 @@ export const ASK_MS = 1500;          // how long a card waits for the survey bef
 export const TOTALS_MS = 60_000;     // how long one Worker instance keeps the shared map's totals
 export const PAGE_MS = 60_000;       // how long the page is kept at the edge
 export const STALE_IMAGE_MS = 300_000; // how long a card asked for with an old state is kept
+export const LOG_MS = 3000;          // how long a view's card waits for the log before standing in the game's own
+export const DEFAULT_LOG = 'https://api.games.michaelwarkentin.com';
 const IMAGE_FOREVER = 'public, max-age=31536000, immutable';
 
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
@@ -33,6 +38,11 @@ export async function handle(request, env, ctx, render) {
   const url = new URL(request.url);
   if (request.method !== 'GET' && request.method !== 'HEAD') return new Response('method not allowed', { status: 405 });
   if (url.pathname === '/') return Response.redirect(`${site(env)}/letterfield`, 302);
+  if (url.pathname.startsWith('/v/')) {
+    const v = parseView(url.pathname);
+    if (!v) return new Response('not found', { status: 404 });
+    return v.png ? viewImage(request, env, ctx, render, v) : viewPage(request, env, ctx, v);
+  }
   const m = PATH.exec(url.pathname);
   if (!m) return new Response('not found', { status: 404 });
   const dark = !!m[1], slug = m[2], e = parseFind(slug);
@@ -209,4 +219,94 @@ async function allowed(request, env) {
 
 async function edgeCache() {
   try { return globalThis.caches?.default ?? null; } catch { return null; }
+}
+
+// ---------- Views of the survey log ----------
+
+// The log's answer for a view, asked of the leaderboard Worker through its
+// service binding (LOG), by the same paths and under the same host as the
+// page asks, so the two share its cache. Null if it can't be had in time, as
+// on a Worker Preview, which has no binding.
+export async function logOf(env, v, now = Date.now()) {
+  if (!env.LOG) return null;
+  const base = (env.LOG_URL || DEFAULT_LOG).replace(/\/$/, '');
+  const get = async (path) => {
+    let timer;
+    try {
+      const answer = await Promise.race([
+        env.LOG.fetch(new Request(`${base}${path}`)),
+        new Promise((resolve) => { timer = setTimeout(resolve, LOG_MS, null); }),
+      ]);
+      return answer?.status === 200 ? await answer.json().catch(() => null) : null;
+    } catch {
+      return null;
+    } finally {
+      clearTimeout(timer);
+    }
+  };
+  const span = v.kind !== 'territory' && v.period === 'all' ? await get('/v1/survey/log/span') : null;
+  const a = await get(logPaths(v, span, now));
+  if (!a || !Array.isArray(a.entries)) return null;
+  if (v.kind === 'territory' ? !(Number.isInteger(a.charted) && Number.isInteger(a.total)) : !(Number.isInteger(a.words) && Number.isInteger(a.world))) return null;
+  return summarize(v, a, now);
+}
+
+const viewSlug = (v) => (v.kind === 'territory' ? `territory/${v.rx},${v.ry}`
+  : `${v.kind}/${v.key}/${v.period === 'all' ? 'all' : `${v.period}/${v.y}-${String(v.mo).padStart(2, '0')}-${String(v.d).padStart(2, '0')}${v.period === 'hour' ? `T${String(v.h).padStart(2, '0')}` : ''}/${v.from}-${v.to}`}`);
+
+async function viewPage(request, env, ctx, v) {
+  const cache = await edgeCache();
+  const url = new URL(request.url), key = new Request(url.origin + url.pathname);
+  const hit = await cache?.match(key);
+  if (hit) return hit;
+  const s = await logOf(env, v);
+  const { name } = s ?? nameOf(v);
+  const title = `${name} · Letterfield survey log`;
+  const description = s ? s.line : 'Every word charted in Letterfield’s shared survey: what, where, by whom and when.';
+  const image = s ? `${url.origin}/v/${v.dark ? 'd/' : ''}${viewSlug(v)}.png?s=${encodeURIComponent(s.token)}` : `${site(env)}/previews/letterfield.jpg`;
+  const alt = s ? `${name}'s page of Letterfield's survey log` : 'Letterfield';
+  return htmlPage({ title, description, image, alt, png: !!s, self: url.origin + url.pathname, target: `${site(env)}${pagePath(v)}`, linkText: `Open ${name} in Letterfield's survey log` }, cache, key, ctx);
+}
+
+async function viewImage(request, env, ctx, render, v) {
+  const cache = await edgeCache();
+  const key = new Request(request.url);
+  const hit = await cache?.match(key);
+  if (hit) return hit;
+  const s = await logOf(env, v);
+  if (!s || !(await allowed(request, env))) {
+    return new Response(null, { status: 302, headers: { Location: `${site(env)}/previews/letterfield.jpg`, 'Cache-Control': 'no-store' } });
+  }
+  const png = await render(viewSvg(v, s, { dark: v.dark, host: new URL(site(env)).host }));
+  // Asked for with the state it shows, it never changes: a new word is a new token.
+  const current = new URL(request.url).searchParams.get('s') === s.token;
+  return answer(png, current ? IMAGE_FOREVER : `public, max-age=${STALE_IMAGE_MS / 1000}`, cache, key, ctx);
+}
+
+function htmlPage({ title, description, image, alt, png, self, target, linkText }, cache, key, ctx) {
+  const tags = [
+    ['property', 'og:type', 'website'], ['property', 'og:site_name', 'Games'],
+    ['property', 'og:title', title], ['property', 'og:description', description],
+    ['property', 'og:url', self],
+    ['property', 'og:image', image], ['property', 'og:image:type', png ? 'image/png' : 'image/jpeg'],
+    ['property', 'og:image:width', '1200'], ['property', 'og:image:height', '630'],
+    ['property', 'og:image:alt', alt],
+    ['name', 'twitter:card', 'summary_large_image'],
+  ];
+  const html = `<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<title>${esc(title)}</title>
+<meta name="description" content="${esc(description)}">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+${tags.map(([k, n, v]) => `<meta ${k}="${n}" content="${esc(v)}">`).join('\n')}
+<meta name="robots" content="noindex">
+<meta http-equiv="refresh" content="0;url=${esc(target)}">
+<script>location.replace(${JSON.stringify(target).replace(/</g, '\\u003c')})</script>
+</head><body><p><a href="${esc(target)}">${esc(linkText)}</a></p></body></html>`;
+  const response = new Response(html, {
+    status: 200,
+    headers: { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': `public, max-age=${PAGE_MS / 1000}` },
+  });
+  if (cache) ctx.waitUntil(cache.put(key, response.clone()));
+  return response;
 }

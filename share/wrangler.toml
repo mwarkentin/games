@@ -25,12 +25,23 @@ invocation_logs = false
 [vars]
 # Where a card sends people: the game, at its word.
 SITE_URL = "https://games.michaelwarkentin.com"
+# The host a view's card names when it asks the log (through LOG below), so it
+# shares the page's cached answers rather than keeping its own.
+LOG_URL = "https://api.games.michaelwarkentin.com"
 
 # Cards of charted words, drawn once and kept: m<map>/<theme>/<slug>/<state>.png.
 # Made with OpenTofu in mwarkentin/infra.
 [[r2_buckets]]
 binding = "CARDS"
 bucket_name = "games-share-cards"
+
+# The leaderboard Worker itself, for a view of the survey log: its own
+# /v1/survey/log/... answers, asked as the log page asks them, so cards and the
+# page read the same queries and the same cache. No Worker Preview has it:
+# their view cards stand in the game's own preview.
+[[services]]
+binding = "LOG"
+service = "games-leaderboard"
 
 # The leaderboard Worker's survey, asked directly: a sector for who charted a
 # word (GET /claim/<key>), the Atlas for the shared map's totals (GET
