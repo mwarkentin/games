@@ -1429,8 +1429,12 @@ async function shareImage(c) {
   g.textBaseline = 'alphabetic';
 
   type(500, 20, fam.m, .14); g.fillStyle = v('--muted');
-  g.textAlign = 'left'; g.fillText(`LETTERFIELD · SURVEY LOG · ${c.kind.toUpperCase()}`, X, 84);
-  type(400, 18, fam.m); g.textAlign = 'right'; g.fillText(location.host, R, 84);
+  const head = `LETTERFIELD · SURVEY LOG · ${c.kind.toUpperCase()}`, headW = g.measureText(head).width;
+  g.textAlign = 'left'; g.fillText(head, X, 84);
+  // The site's address on the right, where it fits beside that: a preview's
+  // long one doesn't, and is left off rather than run into it.
+  type(400, 18, fam.m);
+  if (X + headW + 40 + g.measureText(location.host).width <= R) { g.textAlign = 'right'; g.fillText(location.host, R, 84); }
   g.textAlign = 'left';
 
   // Whose, as large as fits, after its theme's dot.
