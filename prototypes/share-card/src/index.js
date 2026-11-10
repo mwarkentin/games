@@ -4,6 +4,8 @@
 //   GET /f/<f-word-x-y-d>       a tiny page whose og:image is the card, which
 //                               sends people on to the game at that word
 //   GET /f/<f-word-x-y-d>.png   the card, 1200×630, cached at the edge
+//   GET /f/d/<f-word-x-y-d>…    the same, with the card in the dark theme
+//                               (the sharer's, which the page puts in the link)
 //
 // Only words really on the map are drawn; anything else is a 404.
 
@@ -25,11 +27,11 @@ const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&l
 export default {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
-    const m = /^\/f\/(f-[a-z0-9-]{1,40}?)(\.png)?$/.exec(url.pathname);
+    const m = /^\/f\/(d\/)?(f-[a-z0-9-]{1,40}?)(\.png)?$/.exec(url.pathname);
     if (request.method !== 'GET' || !m) return new Response('not found', { status: 404 });
-    const e = parseFind(m[1]);
+    const e = parseFind(m[2]);
     if (!e) return new Response('not on the map', { status: 404 });
-    return m[2] ? image(request, e, m[1], ctx) : page(url, e, m[1]);
+    return m[3] ? image(request, e, m[2], !!m[1], ctx) : page(url, e, m[2]);
   },
 };
 
@@ -61,16 +63,16 @@ ${tags.map(([k, n, v]) => `<meta ${k}="${n}" content="${esc(v)}">`).join('\n')}
   });
 }
 
-async function image(request, e, slug, ctx) {
+async function image(request, e, slug, dark, ctx) {
   // The card only changes with the map, so the key carries its version.
-  const key = new Request(`${new URL(request.url).origin}/_cache/card/m${MAP_VERSION}/${slug}.png`);
+  const key = new Request(`${new URL(request.url).origin}/_cache/card/m${MAP_VERSION}/${dark ? 'd/' : ''}${slug}.png`);
   const cache = caches.default;
   const hit = await cache.match(key);
   if (hit) return hit;
   ready ??= initWasm(wasm);
   await ready;
   const t = Date.now();
-  const png = new Resvg(findSvg(e), {
+  const png = new Resvg(findSvg(e, null, undefined, dark), {
     fitTo: { mode: 'original' },
     font: { fontBuffers, loadSystemFonts: false, defaultFontFamily: 'Schibsted Grotesk' },
   }).render().asPng();

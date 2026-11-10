@@ -368,11 +368,13 @@ so the map is never copied a third time.
 
 - `letterfield.html`: a `SHARE_URL` constant, empty until it's switched on,
   with a `?share=<url>` override for tests, as `LEADERBOARD_URL` has.
-  `shareUrl(e)` returns `${SHARE_URL}/f/${hashOf(e)}` when it's set, else the
+  `shareUrl(e)` returns `${SHARE_URL}/f/${hashOf(e)}` when it's set, or
+  `${SHARE_URL}/f/d/${hashOf(e)}` while the page is dark (`C.dark`), else the
   current fragment link. The text, the clipboard fallback and the picture
   file don't change. The game keeps reading `#f-…` exactly as now.
 - `letterfield-log.html` (phase 2): the Share button hands out
-  `${SHARE_URL}/v/<kind>/<key>/<period>/<start>`, with the period pinned to
+  `${SHARE_URL}/v/<kind>/<key>/<period>/<start>` (with `d/` for a dark page,
+  as above), with the period pinned to
   its start rather than "this week", so a card shared on Monday still matches
   its link on Friday. The word links inside the log stay as they are.
 - **Offline:** building the URL is string work, so Share still works offline
@@ -453,8 +455,7 @@ Sizes are rough: S is under a day, M a day or two.
 9. **Later, maybe:** have the page fetch the Worker's PNG for its share-sheet
    file when online (and keep the canvas for offline), so there's one drawing
    to keep up. Safari won't open the share sheet after a wait, though, so
-   this needs a prefetch when the find's card opens. Dark-mode cards
-   (`?dark` in the key), if wanted.
+   this needs a prefetch when the find's card opens.
 
 ## Open decisions
 
@@ -515,11 +516,25 @@ Sizes are rough: S is under a day, M a day or two.
   Durable Objects; there, both lines are left off. Check that in step 5 of
   the plan.
 
+- **Theme (10 November 2026): the sharer's.** A link preview has one image
+  for everyone, and chat apps don't tell the server the viewer's theme, so
+  the card follows the sharer's instead and matches the picture file in the
+  share sheet, which already does. A dark page hands out `/f/d/<slug>`; the
+  page and card are otherwise the same, and both forms send people to the
+  same game URL, where they see their own theme. Each card has up to two
+  versions (the theme is in the cache key). The Worker keeps both palettes
+  (the page's `:root` and dark custom properties), which have to stay in
+  step with `letterfield.html`; the drift test in "Tests" covers the text,
+  and a test that the Worker's palette matches the page's custom properties
+  would cover the colours. The prototype draws both
+  (`prototypes/share-card/`, 99–132 KB dark):
+
+  ![The dark card, drawn by the prototype](link-previews-sample-dark.png)
+
 ### Still open
 
-1. **Light only, or a dark card too.** Link cards are usually shown on a
-   light or dark chat background the sender doesn't control. The prototype
-   draws the light one.
+Nothing: every decision above is made. The next step is the implementation
+plan, from step 2.
 
 ## Sources and gaps
 

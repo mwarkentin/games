@@ -25,7 +25,7 @@ for (const [i, slug] of slugs.entries()) {
   t = performance.now();
   const e = parseFind(slug);
   if (!e) { console.log(`${slug}: refused (not on the map)`); continue; }
-  const svg = findSvg(e, i % 2 ? { initials: 'ZED', n: 1234 + i, total: 1119752 } : null);
+  const svg = findSvg(e, i % 2 ? { initials: 'ZED', n: 1234 + i, total: 1119752 } : null, undefined, i >= 2);
   const tSvg = performance.now() - t;
   t = performance.now();
   const png = new Resvg(svg, { fitTo: { mode: 'original' }, font: { fontBuffers, loadSystemFonts: false, defaultFontFamily: 'Schibsted Grotesk' } }).render().asPng();

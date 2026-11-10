@@ -9,8 +9,14 @@ import {
 import METRICS from './metrics.json' with { type: 'json' };
 
 const W0 = 1200, H0 = 630;
-const C = { paper: '#EBEEE7', ink: '#1B2428', muted: '#59656A', rule: '#C6CFC6', accent: '#2A43C2' };
-const tc = (hue) => ({ stroke: `hsl(${hue},58%,38%)`, fill: `hsla(${hue},75%,55%,.26)`, tint: `hsl(${hue},45%,50%)` });
+// The page's two themes (its :root and dark custom properties): the card
+// follows the sharer's, which the share link carries.
+const THEME = {
+  light: { paper: '#EBEEE7', ink: '#1B2428', muted: '#59656A', rule: '#C6CFC6', accent: '#2A43C2', mark: '58%,38%', fill: 0.26, tint: 0.09 },
+  dark: { paper: '#0F171A', ink: '#E2E7DE', muted: '#93A19D', rule: '#2B3A3E', accent: '#97A9FF', mark: '68%,68%', fill: 0.22, tint: 0.075 },
+};
+let C = THEME.light;
+const tc = (hue) => ({ stroke: `hsl(${hue},${C.mark})`, fill: `hsla(${hue},75%,55%,${C.fill})`, tint: `hsl(${hue},45%,50%)` });
 const DNAME = ['E', 'SE', 'S', 'SW', 'W', 'NW', 'N', 'NE'];
 const DARROW = ['→', '↘', '↓', '↙', '←', '↖', '↑', '↗'];
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
@@ -59,7 +65,8 @@ export function parseFind(slug) {
 }
 
 // first: { initials, n, total } from the survey log when the word was charted, or null.
-export function findSvg(e, first = null, host = 'games.michaelwarkentin.com') {
+export function findSvg(e, first = null, host = 'games.michaelwarkentin.com', dark = false) {
+  C = dark ? THEME.dark : THEME.light;
   const theme = THEMES[e.th], col = tc(theme.hue), [ex, ey] = wordEnd(e);
   const out = [];
   const PANEL = 470, mx = (PANEL + 60 + W0) / 2, my = H0 / 2;
@@ -72,7 +79,7 @@ export function findSvg(e, first = null, host = 'games.michaelwarkentin.com') {
 
   out.push(`<rect width="${W0}" height="${H0}" fill="${C.paper}"/>`);
   // Territory tints and their dashed borders.
-  out.push('<g fill-opacity=".09">');
+  out.push(`<g fill-opacity="${C.tint}">`);
   for (let ty = fdiv(y0, RC); ty <= fdiv(y1, RC); ty++) for (let tx = fdiv(x0, RC); tx <= fdiv(x1, RC); tx++) {
     out.push(`<rect x="${SX(tx * RC).toFixed(1)}" y="${SY(ty * RC).toFixed(1)}" width="${RC * cs}" height="${RC * cs}" fill="${tc(THEMES[regionTheme(tx, ty)].hue).tint}"/>`);
   }
