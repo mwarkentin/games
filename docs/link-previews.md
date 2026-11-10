@@ -467,23 +467,27 @@ Sizes are rough: S is under a day, M a day or two.
   cover `workers.dev`), and the Worker can never be renamed or have
   workers.dev turned off, or old links break.
 
+- **Cost (10 November 2026): stay on Workers Paid, with a render limit and a
+  billing alert.** New renders are limited to 30 a minute per salted address
+  hash (a `ratelimits` binding); cache hits are never limited. Only charted
+  words in the shared world are kept in R2; anything else stays in the edge
+  cache. A Cloudflare billing notification at $10 over the base plan is the
+  backstop (a dashboard setting, not code).
+
 ### Still open
 
-1. **Cost:** stays on Workers Paid (required: the free plan's 10 ms CPU
-   can't render). R2 is expected to stay inside its free tier. Is a render
-   rate limit of ~30 a minute per address the right trade?
-2. **Dependencies:** accept `@resvg/resvg-wasm` (one package, no transitive
+1. **Dependencies:** accept `@resvg/resvg-wasm` (one package, no transitive
    dependencies, pinned, MPL-2.0) in a separate `share/` Worker? The
    alternative that avoids npm is vendoring its 2.4 MiB wasm into the repo,
    which is worse to update.
-3. **One Worker or two:** two is recommended (see above). One avoids a
+2. **One Worker or two:** two is recommended (see above). One avoids a
    second deploy, Preview and set of bindings, at the cost of a 3 MiB
    leaderboard Worker with a dependency.
-4. **What the card shows** for a word nobody has charted yet ("Find it on
+3. **What the card shows** for a word nobody has charted yet ("Find it on
    the map", as in the prototype) and for a charted one ("Charted by ZED · 9
    Nov 2026"), and whether to show first charters' initials at all on a
    picture that travels further than the log page.
-5. **Light only, or a dark card too.** Link cards are usually shown on a
+4. **Light only, or a dark card too.** Link cards are usually shown on a
    light or dark chat background the sender doesn't control. The prototype
    draws the light one.
 
