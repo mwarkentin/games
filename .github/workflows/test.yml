@@ -36,3 +36,17 @@ jobs:
           node-version: 22 # the tests use node:sqlite
       - name: Test the leaderboard worker
         run: node --disable-warning=ExperimentalWarning --test "worker/test/*.test.js"
+
+  share:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+      # resvg's wasm, pinned in share/package-lock.json.
+      - name: Install the share Worker's dependency
+        run: npm ci
+        working-directory: share
+      - name: Test the share Worker
+        run: node --disable-warning=ExperimentalWarning --test "share/test/*.test.js"

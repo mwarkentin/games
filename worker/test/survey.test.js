@@ -256,6 +256,21 @@ describe('Sector', () => {
     assert.equal(b.sent.filter((m) => m.t === 'claimed').length, 1);
   });
 
+  test('tells the share Worker who charted a word, and nothing for one nobody has', async () => {
+    const ws = join();
+    await say(ws, { t: 'me', initials: 'ZED' });
+    const word = placed(0, 0);
+    const ask = (w) => sector.fetch(new Request(`https://sector/claim/${encodeURIComponent(keyOf(w.w, w.x, w.y, w.d))}`));
+    assert.equal((await ask(word)).status, 404);
+    await claim(ws, word);
+    const answer = await ask(word);
+    assert.equal(answer.status, 200);
+    assert.deepEqual(await answer.json(), { initials: 'ZED', at: NOW });
+    // It's only for GETs, and a socket's path still needs an upgrade.
+    assert.equal((await sector.fetch(new Request(`https://sector/claim/x`, { method: 'POST' }))).status, 404);
+    assert.equal((await sector.fetch(new Request('https://sector/v1/survey/0/0'))).status, 426);
+  });
+
   test('refuses claims that are not on the map or not in this sector', async () => {
     const ws = join();
     const word = placed(0, 0);
@@ -817,6 +832,12 @@ describe('Atlas', () => {
     return (await atlasObject.fetch(new Request('https://atlas/world'))).json();
   }
 
+  test('gives the share Worker the world\'s totals', async () => {
+    await report({ sx: 0, sy: 0, players: 3, charted: counts(5, 2) });
+    const answer = await atlasObject.fetch(new Request('https://atlas/totals'));
+    assert.deepEqual(await answer.json(), { charted: 7, total: AREA_WORDS, players: 3 });
+  });
+
   test('adds up joins without a pass for the UTC day, and keeps yesterday\'s', async () => {
     await report({ sx: 0, sy: 0, players: 3, charted: counts(5), unpassed: 3 });
     await report({ sx: 1, sy: 0, players: 1, charted: counts(1), unpassed: 2 });
@@ -1129,6 +1150,13 @@ describe('routeSurvey', () => {
     if (upgrade) headers.Upgrade = upgrade;
     return routeSurvey(new Request(`https://survey.test${path}`, { method, headers }), env);
   };
+
+  test('never forwards the internal claim path, which only the share Worker uses', async () => {
+    forwarded.length = 0;
+    assert.equal(await open('/claim/CORAL~0~0~0'), null);
+    assert.equal(await open('/v1/survey/claim/CORAL'), null);
+    assert.equal(forwarded.length, 0);
+  });
 
   test('sends each sector to its own Durable Object', async () => {
     assert.equal(await (await open('/v1/survey/0/0')).text(), 'ok');

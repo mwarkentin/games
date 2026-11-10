@@ -95,6 +95,10 @@ const TERR = SECTOR / RC;             // territories per sector side
 const MAX_MESSAGE = 256;
 const LIMIT = 1e9;                    // the game's map runs to ±1e9 cells
 export const SECTOR_PATH = /^\/v1\/survey\/(-?\d{1,7})\/(-?\d{1,7})$/;
+// Internal paths, for Workers that bind these classes (share/): a sector's
+// claim on one word (key as keyOf makes it), and the Atlas's totals.
+export const CLAIM_PATH = /^\/claim\/([^/]{1,64})$/;
+export const TOTALS_PATH = '/totals';
 export const WORLD_PATH = '/v1/survey/world';
 
 const send = (ws, message) => { try { ws.send(JSON.stringify(message)); } catch { /* closing */ } };
@@ -287,7 +291,13 @@ export class Sector {
   }
 
   async fetch(request) {
-    const m = new URL(request.url).pathname.match(SECTOR_PATH);
+    const { pathname } = new URL(request.url);
+    // Who charted a word, for the share Worker's cards (share/): it binds this
+    // class directly, and the public router only ever forwards WebSocket
+    // upgrades here, so this path isn't reachable from outside.
+    const claim = request.method === 'GET' && pathname.match(CLAIM_PATH);
+    if (claim) return this.claimOf(decodeURIComponent(claim[1]));
+    const m = pathname.match(SECTOR_PATH);
     if (!m) return new Response('not found', { status: 404 });
     if (request.headers.get('Upgrade') !== 'websocket') return new Response('expected a WebSocket', { status: 426 });
     const [client, server] = Object.values(new WebSocketPair());
@@ -302,6 +312,11 @@ export class Sector {
     else if (this.ctx.getWebSockets().length >= MAX_PLAYERS || (address && this.fromAddress(address) >= ADDRESS_SOCKETS)) this.turnAway(server, false);
     else this.join(server, Number(m[1]), Number(m[2]), address);
     return new Response(null, { status: 101, webSocket: client });
+  }
+
+  claimOf(key) {
+    const row = this.sql.exec('SELECT initials, at FROM claims WHERE key = ?', key).toArray()[0];
+    return row ? Response.json({ initials: row.initials, at: row.at }) : Response.json({ error: 'not charted' }, { status: 404 });
   }
 
   fromAddress(address) {
@@ -765,6 +780,7 @@ export class Atlas {
       const fresh = r.day === this.day && r.overAt === this.overList.length;
       return json({ ...this.totals(), day: this.day, overAt: this.overList.length, ...(fresh ? {} : { over: this.overList.slice(-DAILY_LIST_MAX) }) });
     }
+    if (request.method === 'GET' && pathname === TOTALS_PATH) return json(this.totals());
     if (request.method === 'GET' && pathname === '/world') {
       const now = this.now();
       if (!this.view || now - this.view.at >= VIEW_MS) this.view = { at: now, body: JSON.stringify(this.worldMap()) };

@@ -1,0 +1,78 @@
+# games-share: link-preview cards for Letterfield finds. See README.md.
+#
+# Its address, share.michaelwarkentin.com, is a Workers custom domain made by
+# OpenTofu in mwarkentin/infra, as the leaderboard Worker's is. Keep `routes`
+# out of this file: wrangler would take the Worker's domains over and drop it.
+name = "games-share"
+main = "src/index.js"
+compatibility_date = "2026-10-01"
+
+# The fonts go in as data (index.js imports them); the wasm is compiled.
+[[rules]]
+type = "Data"
+globs = ["**/*.ttf"]
+fallthrough = true
+
+# Workers Logs keeps console output and exceptions. Invocation logs stay off:
+# they'd record every request's headers, and iMessage and WhatsApp fetch
+# previews from the sender's phone, so those headers carry their address.
+[observability]
+enabled = true
+
+[observability.logs]
+invocation_logs = false
+
+[vars]
+# Where a card sends people: the game, at its word.
+SITE_URL = "https://games.michaelwarkentin.com"
+
+# Cards of charted words, drawn once and kept: m<map>/<theme>/<slug>/<state>.png.
+# Made with OpenTofu in mwarkentin/infra.
+[[r2_buckets]]
+binding = "CARDS"
+bucket_name = "games-share-cards"
+
+# The leaderboard Worker's survey, asked directly: a sector for who charted a
+# word (GET /claim/<key>), the Atlas for the shared map's totals (GET
+# /totals). Neither path is reachable from the internet.
+[[durable_objects.bindings]]
+name = "SECTORS"
+class_name = "Sector"
+script_name = "games-leaderboard"
+
+[[durable_objects.bindings]]
+name = "ATLAS"
+class_name = "Atlas"
+script_name = "games-leaderboard"
+
+# New cards drawn per address (a salted hash, with IP_SALT, as the survey's
+# limits are): 30 a minute. Cards already drawn are never limited. Each
+# namespace_id must be unique in the account (the leaderboard's are 73xx).
+[[ratelimits]]
+name = "RENDERS"
+namespace_id = "7303"
+
+  [ratelimits.simple]
+  limit = 30
+  period = 60
+
+# Worker Previews: a pull request that changes share/ gets its own copy at
+# https://pr-<number>-games-share.mwarkentin.workers.dev. A Preview takes
+# only the code, so its variables and bindings are set again here. It has no
+# survey bindings: a Preview's cards say nothing of charting, rather than
+# read production's survey. Its SITE_URL is passed with --var, pointing at
+# the pull request's site preview.
+[previews.vars]
+SITE_URL = "https://games.michaelwarkentin.com"
+
+[[previews.r2_buckets]]
+binding = "CARDS"
+bucket_name = "games-share-cards-previews"
+
+[[previews.ratelimits]]
+name = "RENDERS"
+namespace_id = "7313"
+
+  [previews.ratelimits.simple]
+  limit = 30
+  period = 60
