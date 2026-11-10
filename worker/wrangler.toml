@@ -92,6 +92,16 @@ namespace_id = "7302"
   limit = 120
   period = 60
 
+# Letterfield's definitions (src/define.js): new words looked up on
+# Wiktionary or Wikipedia, per address. Words already kept in D1 don't count.
+[[ratelimits]]
+name = "DEFINE_LOOKUPS"
+namespace_id = "7303"
+
+  [ratelimits.simple]
+  limit = 20
+  period = 60
+
 # Worker Previews: every pull request that touches worker/ gets its own copy
 # of this Worker at https://pr-<number>-games-leaderboard.mwarkentin.workers.dev
 # (see "Previews" in README.md). A Preview takes nothing above but the code,
@@ -147,4 +157,12 @@ namespace_id = "7312"
 
   [previews.ratelimits.simple]
   limit = 120
+  period = 60
+
+[[previews.ratelimits]]
+name = "DEFINE_LOOKUPS"
+namespace_id = "7313"
+
+  [previews.ratelimits.simple]
+  limit = 20
   period = 60
