@@ -20,7 +20,7 @@ import sys
 import urllib.request
 from pathlib import Path
 
-WORLD_URL = "https://games-leaderboard.mwarkentin.workers.dev/v1/survey/world"
+WORLD_URL = "https://api.games.michaelwarkentin.com/v1/survey/world"
 
 # One address at the daily cap is a keen player or a single script; this
 # many in a day is a pool of addresses, which is what Turnstile is for.
