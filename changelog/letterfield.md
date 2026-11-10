@@ -1,5 +1,8 @@
 ## 2026-11-10
 
+- The list of words hidden in view only names a word once you can see
+  most of it from its first letter, not just a letter or two at the edge
+  of the screen or under a panel.
 - On a phone, the list of words hidden in view scrolls only sideways, no
   longer up and down as well.
 

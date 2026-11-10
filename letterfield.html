@@ -2780,6 +2780,39 @@ function updateHud() {
   }
   updateLegend();
 }
+// A word counts as in view once the first three quarters of it can be seen,
+// read from its first letter, since that's where circling one starts. A
+// letter can be seen when its cell's centre is on the map and not under one
+// of the panels over it. Their boxes change with layout, not with the camera,
+// so they're measured again only after a resize, a change in their size or
+// the end of a slide.
+const SEEN_SHARE = .75;
+const coverEls = ['.cartouche', '#notesToggle', '.legend', '.seg', '.zoom', '#notes'].map($);
+let covers = null;
+function coverRects() {
+  if (covers) return covers;
+  covers = [];
+  for (const el of coverEls) {
+    if (el.id === 'notes' && (!notesOpen || dock)) continue;  // shut, or beside the map rather than over it
+    if (el.id === 'notesToggle' && dock) continue;
+    const r = el.getBoundingClientRect();
+    if (r.width > 0 && r.height > 0) covers.push({ l: r.left, r: r.right, t: r.top, b: r.bottom });
+  }
+  return covers;
+}
+const dropCovers = () => { covers = null; };
+if (window.ResizeObserver) { const ro = new ResizeObserver(dropCovers); coverEls.forEach(el => ro.observe(el)); }
+window.addEventListener('resize', dropCovers);
+for (const el of [$('#notes'), $('.instruments')]) el.addEventListener('transitionend', e => { if (e.target === el) { dropCovers(); scheduleHud(); } });
+function wordSeen(w, cs, OX, rects) {
+  const [dx, dy] = DIRS[w.d], right = W - dock;
+  for (let i = 0, n = Math.ceil(w.w.length * SEEN_SHARE); i < n; i++) {
+    const sx = (w.x + dx * i + .5 - cam.x) * cs + OX, sy = (w.y + dy * i + .5 - cam.y) * cs + H / 2;
+    if (sx < 0 || sx >= right || sy < 0 || sy >= H) return false;
+    for (const c of rects) if (sx >= c.l && sx < c.r && sy >= c.t && sy < c.b) return false;
+  }
+  return true;
+}
 function updateLegend() {
   const cs = cam.cs;
   if (cs < LETTER_MIN) {
@@ -2788,12 +2821,12 @@ function updateLegend() {
   }
   const OX = (W - dock) / 2;
   const vx0 = cam.x - OX / cs, vx1 = cam.x + (W - dock - OX) / cs, vy0 = cam.y - H / 2 / cs, vy1 = cam.y + H / 2 / cs;
-  const items = [];
+  const items = [], rects = coverRects();
   for (let cy = fdiv(Math.floor(vy0), CH); cy <= fdiv(Math.floor(vy1), CH); cy++) {
     for (let cx = fdiv(Math.floor(vx0), CH); cx <= fdiv(Math.floor(vx1), CH); cx++) {
       for (const w of chunk(cx, cy).words) {
         const [ex, ey] = wordEnd(w);
-        if (Math.max(w.x, ex) + 1 <= vx0 || Math.min(w.x, ex) >= vx1 || Math.max(w.y, ey) + 1 <= vy0 || Math.min(w.y, ey) >= vy1) continue;
+        if (Math.max(w.x, ex) + 1 <= vx0 || Math.min(w.x, ex) >= vx1 || Math.max(w.y, ey) + 1 <= vy0 || Math.min(w.y, ey) >= vy1 || !wordSeen(w, cs, OX, rects)) continue;
         const mx = (w.x + ex) / 2 + .5 - cam.x, my = (w.y + ey) / 2 + .5 - cam.y;
         items.push({ w, dist: mx * mx + my * my, f: found.has(w.key) });
       }
