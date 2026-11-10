@@ -474,20 +474,21 @@ Sizes are rough: S is under a day, M a day or two.
   cache. A Cloudflare billing notification at $10 over the base plan is the
   backstop (a dashboard setting, not code).
 
+- **Dependency (10 November 2026): `@resvg/resvg-wasm`, pinned to an exact
+  version in `share/package.json` and `share/package-lock.json`.** The share
+  Worker's deploy and the test job run `npm ci` in `share/`; updates are
+  deliberate version bumps. Nothing is vendored, and the leaderboard Worker
+  and the site stay npm-free.
+- **Two Workers (10 November 2026),** following from that: the renderer lives
+  in its own `games-share` Worker in `share/`, not in `games-leaderboard`.
+
 ### Still open
 
-1. **Dependencies:** accept `@resvg/resvg-wasm` (one package, no transitive
-   dependencies, pinned, MPL-2.0) in a separate `share/` Worker? The
-   alternative that avoids npm is vendoring its 2.4 MiB wasm into the repo,
-   which is worse to update.
-2. **One Worker or two:** two is recommended (see above). One avoids a
-   second deploy, Preview and set of bindings, at the cost of a 3 MiB
-   leaderboard Worker with a dependency.
-3. **What the card shows** for a word nobody has charted yet ("Find it on
+1. **What the card shows** for a word nobody has charted yet ("Find it on
    the map", as in the prototype) and for a charted one ("Charted by ZED · 9
    Nov 2026"), and whether to show first charters' initials at all on a
    picture that travels further than the log page.
-4. **Light only, or a dark card too.** Link cards are usually shown on a
+2. **Light only, or a dark card too.** Link cards are usually shown on a
    light or dark chat background the sender doesn't control. The prototype
    draws the light one.
 
