@@ -74,10 +74,12 @@ a placed word or a stray of `STRAY_MIN`+ letters. It draws nothing else.
 
 **What the card can say.** The Worker knows everything the map knows: the
 word, its theme, the territory's name, the coordinates, whether it's a stray.
-For "charted first", it looks the word up in the survey log. The
-`survey_log_by_territory (rx, ry, at)` index already narrows a query on
-`rx = ? AND ry = ? AND key = ?` to one territory's few hundred rows, so no new
-index or extra row writes are needed. It can't honestly show the sharer's own
+For "charted first", it asks the word's sector, not the survey log: the
+log gets a claim up to 30 s late (`LOG_MS`), and iMessage and WhatsApp fetch
+the preview the moment Share is tapped, so a log lookup would often call a
+word that was just charted uncharted, and chat apps keep that first image.
+For the shared map's progress it asks the Atlas, which already keeps the
+total the game shows (see "Card wording" under Decided). It can't honestly show the sharer's own
 "word 312 in my field notes": that's only in their browser, and putting it in
 the URL would let anyone forge it. The picture file in the share sheet keeps
 showing it, as it does on #51.
@@ -482,13 +484,40 @@ Sizes are rough: S is under a day, M a day or two.
 - **Two Workers (10 November 2026),** following from that: the renderer lives
   in its own `games-share` Worker in `share/`, not in `games-leaderboard`.
 
+- **Card wording (10 November 2026).** Below the map facts, two lines:
+  - **This word,** from its sector's live claims: "CHARTED FIRST · by ZED ·
+    9 Nov 2026" (initials only when the charter gave some), or "Not yet
+    charted" with an invitation to find it.
+  - **The shared map's progress,** from the Atlas: "0.4% of the shared map
+    charted" (one decimal below 1%), whole percents rounded down from 1% to
+    99%, and "Every word charted" at the end. No exact "word 1,234 of
+    1,119,752": that needs a count across the log, and a share's readers
+    mostly aren't players.
+  - Either line is left off if its answer doesn't come back in time; the
+    card still renders.
+  - The cache key carries both (charted or not, and the percentage), so a
+    card is redrawn when the word is charted or the map passes the next
+    step: at most a couple of hundred versions of a word over a map's life.
+
+  **How the share Worker asks.** Bind the leaderboard Worker's Durable
+  Objects directly (`[[durable_objects.bindings]]` with
+  `script_name = "games-leaderboard"` for `Sector` and `Atlas`) and call
+  `stub.fetch()` on new internal paths: `GET /claim/<key>` on a sector (a
+  primary-key read of its `claims` table, returning initials and time, or
+  404) and `GET /totals` on the Atlas (its existing `totals()`). Neither is
+  reachable from the internet: the public router only forwards WebSocket
+  upgrades to sectors and serves the world map itself. That avoids a
+  `WorkerEntrypoint` (`cloudflare:workers` would break the Node tests that
+  import `worker/src/index.js`) and a public endpoint. A Worker can't simply
+  `fetch()` another Worker's workers.dev address on the same account. Cost:
+  up to two Durable Object requests per new render, never per unfurl. Worker
+  Previews of `games-share` may not be able to bind a Worker Preview's
+  Durable Objects; there, both lines are left off. Check that in step 5 of
+  the plan.
+
 ### Still open
 
-1. **What the card shows** for a word nobody has charted yet ("Find it on
-   the map", as in the prototype) and for a charted one ("Charted by ZED · 9
-   Nov 2026"), and whether to show first charters' initials at all on a
-   picture that travels further than the log page.
-2. **Light only, or a dark card too.** Link cards are usually shown on a
+1. **Light only, or a dark card too.** Link cards are usually shown on a
    light or dark chat background the sender doesn't control. The prototype
    draws the light one.
 
