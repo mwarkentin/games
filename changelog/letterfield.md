@@ -1,5 +1,12 @@
 ## 2026-11-10
 
+- The survey log shows top surveyors, territories and themes for a day and
+  for an hour minute by minute too, counted for just that day or hour where
+  you are. Tap a name to see their words from it.
+- On the survey log, Share on a surveyor's, theme's or territory's own page
+  sends a line about it, ready to post, with a picture of their numbers and
+  latest words, and its link keeps the day, week or month it was shared
+  from. Without a share sheet, it copies the line and link.
 - The list of words hidden in view only names a word once you can see
   most of it from its first letter, not just a letter or two at the edge
   of the screen or under a panel.

@@ -11,6 +11,7 @@ from __future__ import annotations
 import json
 import re
 from datetime import datetime, timezone
+from urllib.parse import parse_qs, urlsplit
 
 from playwright.sync_api import Page, expect
 
@@ -291,7 +292,7 @@ def test_reads_every_page_of_a_busy_hour(page: Page, site_url, errors):
     assert errors == []
 
 
-# Sharing without a share sheet copies the link; this keeps what's copied.
+# Sharing without a share sheet copies the words and link; this keeps what's copied.
 NO_SHARE_SHEET = """
   Object.defineProperty(Navigator.prototype, 'share', { value: undefined, configurable: true });
   Object.defineProperty(navigator, 'clipboard', { value: { writeText: t => { window.__copied = t; return Promise.resolve(); } } });
@@ -326,8 +327,14 @@ def test_a_surveyor_opens_from_a_top_list_with_an_address_to_share(page: Page, s
     assert page.evaluate("document.documentElement.scrollWidth") <= 375
 
     page.click("#share")
-    expect(page.locator("#share")).to_have_text("Link copied")
-    assert page.evaluate("window.__copied") == page.url
+    expect(page.locator("#share")).to_have_text("Copied")
+    # The page's own address leaves this week's date out, so it stays this
+    # week; the shared one pins it, so it's still that week when it's read later.
+    assert "day=" not in page.url
+    assert page.evaluate("window.__copied") == (
+        "ZED charted 1 word first in Letterfield’s shared survey this week, most in Acorn Hollow."
+        f" Latest: ACORN.\n{page.url}&day=2026-11-02"
+    )
     # All time is a surveyor's own view's first, so its address needs no period.
     page.click("#periods [data-p=all]")
     expect(page.locator(".entry .word")).to_have_text(["ACORN", "BIRCH"])
@@ -525,4 +532,130 @@ def test_an_hour_that_ended_while_the_page_was_hidden_stops_saying_live(page: Pa
     expect(page.locator("#sumText .live")).to_have_count(0)
     expect(page.locator("#next")).to_be_enabled()
     expect(page.locator("#sumTitle")).to_have_text("3:00 PM – 4:00 PM")
+    assert errors == []
+
+
+# A share sheet that takes files; this keeps what's shared, and the picture's size.
+SHARE_SHEET = """
+  Object.defineProperty(Navigator.prototype, 'canShare', { value: d => true, configurable: true });
+  Object.defineProperty(Navigator.prototype, 'share', { configurable: true, value: async d => {
+    const files = await Promise.all((d.files || []).map(async f => {
+      const b = await createImageBitmap(f);
+      return { name: f.name, type: f.type, width: b.width, height: b.height };
+    }));
+    window.__shared = { ...d, files };
+  } });
+"""
+
+
+def test_a_surveyor_shares_a_line_and_a_picture_of_their_view(page: Page, site_url, errors, tmp_path):
+    page.set_viewport_size({"width": 375, "height": 740})
+    birch = ["BIRCH", 100, 7, 0, 0, "ZED", NOW_MS - 20 * DAY_MS, 11]
+    fern = ["FERN", 9, 9, 0, 2, "ZED", NOW_MS - 30 * MINUTE, 11]
+    fake = FakeSurveyLog([birch, ACORN, fern, ZEUS], PLACES, THEMES)
+    page.add_init_script(SHARE_SHEET)
+    open_log(page, site_url, fake, query="&surveyor=zed#debug")
+    expect(page.locator(".entry .word")).to_have_text(["FERN", "ACORN", "BIRCH"])
+    # The picture's made once the view's loaded, ready for the tap.
+    page.wait_for_function("window.__log.share()?.file")
+    page.click("#share")
+    page.wait_for_function("window.__shared")
+    shared = page.evaluate("window.__shared")
+    assert shared["text"] == (
+        "ZED charted 3 words first in Letterfield’s shared survey so far, most in Acorn Hollow."
+        " Latest: FERN, ACORN, BIRCH."
+    )
+    assert shared["url"] == page.url.split("#")[0]  # all time has no date to pin
+    assert shared["title"] == "ZED · Letterfield survey log"
+    assert shared["files"] == [{"name": "letterfield-zed.png", "type": "image/png", "width": 1200, "height": 630}]
+
+    # Another period is another line, made for it.
+    page.evaluate("window.__shared = null")
+    page.click("#periods [data-p=day]")
+    expect(page.locator(".entry .word")).to_have_text(["FERN", "ACORN"])
+    page.wait_for_function("window.__log.share()?.run === window.__log.state.run && window.__log.share().file")
+    page.click("#share")
+    page.wait_for_function("window.__shared")
+    assert page.evaluate("window.__shared.text") == (
+        "ZED charted 2 words first in Letterfield’s shared survey today, most in Acorn Hollow. Latest: FERN, ACORN."
+    )
+    url = urlsplit(page.evaluate("window.__shared.url"))
+    assert f"{url.scheme}://{url.netloc}{url.path}" == f"{site_url}/letterfield-log"
+    assert parse_qs(url.query) == {"survey": [SURVEY], "surveyor": ["ZED"], "period": ["day"], "day": ["2026-11-06"]}
+    assert errors == []
+
+
+def test_a_theme_and_a_territory_share_lines_of_their_own(page: Page, site_url, errors):
+    fake = FakeSurveyLog([ACORN, MONET, ZEUS], PLACES, THEMES)
+    page.add_init_script(SHARE_SHEET)
+    open_log(page, site_url, fake, query="&theme=11#debug")
+    expect(page.locator("#focusName")).to_have_text("Forest")
+    page.wait_for_function("window.__log.share()?.file")
+    page.click("#share")
+    page.wait_for_function("window.__shared")
+    assert page.evaluate("window.__shared.text") == (
+        "1 hidden word charted in Letterfield’s Forest territories so far. Latest: ACORN."
+    )
+    page.evaluate("window.__shared = null")
+    page.goto(f"{site_url}/letterfield-log?survey=https://survey.test&territory=0,0#debug")
+    expect(page.locator("#focusName")).to_have_text("Acorn Hollow")
+    page.wait_for_function("window.__log.share()?.file")
+    page.click("#share")
+    page.wait_for_function("window.__shared")
+    assert page.evaluate("window.__shared.text") == (
+        "Acorn Hollow, in Letterfield’s shared survey: 1 of its 112 hidden words charted so far, by 1 surveyor."
+        " Latest: ACORN."
+    )
+    assert page.evaluate("window.__shared.files[0].name") == "letterfield-acorn-hollow.png"
+    assert errors == []
+
+
+def test_a_day_and_an_hour_have_top_lists_of_their_own(page: Page, site_url, errors):
+    page.set_viewport_size({"width": 375, "height": 740})
+    birch = ["BIRCH", 7, 9, 0, 0, "ZED", NOW_MS - 40 * MINUTE, 11]   # 2:50 PM
+    fern = ["FERN", 9, 11, 0, 0, "ABC", NOW_MS - 70 * MINUTE, 11]    # 2:20 PM
+    late = ["OAK", 11, 13, 0, 0, "ABC", NOW_MS - 16 * HOUR_MS, 11]   # 11:30 PM yesterday, the same UTC day
+    fake = FakeSurveyLog([ACORN, MONET, ZEUS, birch, fern, late], PLACES, THEMES)
+    open_log(page, site_url, fake)
+    # Today in Toronto, counted by the hour: not the whole UTC day, which
+    # began at 7 PM yesterday here and holds OAK.
+    hour = NOW_MS // HOUR_MS
+    assert f"/top/hours/{hour - 15}/{hour + 1}" in fake.requests
+    cards = page.locator(".card")
+    surveyors = cards.filter(has_text="Top surveyors")
+    expect(surveyors.locator(".rank .lbl")).to_have_text(["ZED", "ABC"])
+    expect(surveyors.locator(".num")).to_have_text(["2", "1"])
+    expect(surveyors).not_to_contain_text("UTC")
+    expect(cards.filter(has_text="Top territories").locator(".rank .lbl")).to_have_text(["Acorn Hollow"])
+    assert page.evaluate("document.documentElement.scrollWidth") <= 375
+
+    # Minute by minute, the hour's own.
+    page.locator(".hour h3", has_text="2:00").get_by_role("button", name="Minute by minute").click()
+    expect(page.locator("#sumTitle")).to_contain_text("2:00")
+    assert f"/top/hours/{hour - 1}/{hour}" in fake.requests
+    expect(surveyors.locator(".rank .lbl")).to_have_text(["ZED", "ABC"])
+    expect(surveyors.locator(".num")).to_have_text(["2", "1"])
+    # Each opens that surveyor's own view of the same hour.
+    surveyors.get_by_role("link", name="ABC").click()
+    expect(page.locator("#focusName")).to_have_text("ABC")
+    assert "surveyor=ABC" in page.url and "period=hour" in page.url
+    expect(page.locator(".entry .word")).to_have_text(["FERN"])
+    assert errors == []
+
+
+def test_an_hour_still_running_keeps_its_top_lists_while_it_refreshes(page: Page, site_url, errors):
+    fake = FakeSurveyLog([MONET, ["ELM", 3, 3, 0, 0, "ZED", NOW_MS - 10 * MINUTE, 11]], PLACES, THEMES)
+    open_log(page, site_url, fake, query="&period=hour", running=True)
+    surveyors = page.locator(".card").filter(has_text="Top surveyors")
+    expect(surveyors.locator(".rank .lbl")).to_have_text(["ZED"])
+    fake.entries.append(["ASH", 4, 4, 0, 0, "AMY", NOW_MS + 5 * MINUTE, 11])
+    fake.entries.append(["YEW", 5, 5, 0, 0, "AMY", NOW_MS + 6 * MINUTE, 11])
+    seen = []
+    page.expose_function("__cards", lambda n: seen.append(n))
+    page.evaluate("""() => new MutationObserver(() => window.__cards(document.querySelectorAll('#cards .card').length))
+      .observe(document.querySelector('#cards'), { childList: true })""")
+    page.clock.fast_forward(7 * 60_000)
+    expect(surveyors.locator(".rank .lbl")).to_have_text(["AMY", "ZED"])
+    # It went from one set of cards to the next, never through none.
+    assert 0 not in seen
     assert errors == []

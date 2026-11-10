@@ -247,7 +247,7 @@ html[data-log="loading"] #chart{opacity:.5}
 
   <div id="log"></div>
 
-  <p class="foot">Times are yours, in <span id="zone"></span>. Top lists count whole days in UTC, and initials are whatever each surveyor typed in, so they aren’t unique. “Mine” lists the words this browser charted first, from Letterfield’s field notes; nothing about you is sent to find them. A surveyor’s, territory’s or theme’s own view has an address of its own to share.</p>
+  <p class="foot">Times are yours, in <span id="zone"></span>. Top lists for a week or longer count whole days in UTC, and initials are whatever each surveyor typed in, so they aren’t unique. “Mine” lists the words this browser charted first, from Letterfield’s field notes; nothing about you is sent to find them. A surveyor’s, territory’s or theme’s own view has an address of its own to share.</p>
 </main>
 <div class="tip" id="tip" role="tooltip" hidden></div>
 <script>
@@ -820,15 +820,18 @@ const Log = machine('log', {
   failed: ['loading'],
 }, 'loading');
 
-// The address of a view: this one, changed by whatever's given.
-function urlFor({ focus = state.focus, period = state.period, start = state.start, mine = state.mine } = {}) {
+// The address of a view: this one, changed by whatever's given. The period
+// on now leaves its date out, so a bookmark of today stays today; pinned, as
+// a shared link is, it keeps its date, so ZED's "this week" still opens that
+// week when it's read next month.
+function urlFor({ focus = state.focus, period = state.period, start = state.start, mine = state.mine, pin = false } = {}) {
   const q = new URLSearchParams(location.search);
   for (const k of [...FOCUS_KEYS, 'period', 'day', 'hour', 'view']) q.delete(k);
   if (focus?.kind === 'surveyor') q.set('surveyor', focus.key);
   else if (focus?.kind === 'theme') q.set('theme', String(focus.key));
   else if (focus?.kind === 'territory') q.set('territory', `${focus.rx},${focus.ry}`);
   if (focus?.kind !== 'territory') {
-    const here = period === 'all' || start === startOf(period, Date.now());
+    const here = period === 'all' || (!pin && start === startOf(period, Date.now()));
     if (period !== defaultPeriod(focus)) q.set('period', period);
     if (!here) q.set('day', isoDay(start));
     if (period === 'hour' && !here) q.set('hour', String(new Date(start).getHours()));
@@ -983,7 +986,8 @@ async function render(quiet = false) {
   if (observer) observer.disconnect();
   clearTimeout(liveTimer);
   const end = chrome(), firsts = myFirsts();
-  cardsEl.replaceChildren();
+  // A refresh in place keeps the top lists on screen until new ones come.
+  if (!Log.is('refreshing')) cardsEl.replaceChildren();
   if (!api) {
     tiles([]); chartEl.replaceChildren();
     status('Not open yet', 'The shared survey isn’t running yet, so there’s nothing to log.');
@@ -1056,6 +1060,7 @@ async function renderHour(run, start, end, firsts, mine) {
   chartEl.replaceChildren(columnChart('hour', buckets, null));
   if (!shown.length) status(mine ? 'None this hour' : 'Nothing charted', mine ? 'You didn’t chart a word first this hour in this browser.' : 'Nobody charted a word this hour.');
   else { const list = el('ol', 'entries'); list.append(...shown.map(e => entryRow(e, data, firsts))); logEl.replaceChildren(list); }
+  if (!mine && shown.length) loadTops(run, start, end, true);
 }
 
 // A day, hour by hour. Each hour's words load as they scroll into view, and
@@ -1067,6 +1072,7 @@ async function renderDay(run, start, end, firsts) {
   const total = summaryTiles('day', buckets, false);
   chartEl.replaceChildren(columnChart('day', buckets, b => open('hour', b.from)));
   if (!total) return status('Nothing charted', start === startOf('day', Date.now()) ? 'No words charted yet today. Be the first: open the map and circle one.' : 'Nobody charted a word this day.');
+  loadTops(run, start, end, true);
   const hours = buckets.filter(b => b.n).reverse();
   logEl.replaceChildren(...hours.map(b => hourSection(b, b.n)));
   observer = new IntersectionObserver(seen => {
@@ -1161,20 +1167,23 @@ async function renderLong(run, p, start, end, firsts, mine) {
   if (!mine && total) loadTops(run, start, end);
 }
 
-// Top lists come from whole UTC days, so they can run a few hours past the
-// period's own edges.
-async function loadTops(run, start, end) {
-  const from = fdiv(start, DAY), to = fdiv(Math.min(end, Date.now() + 1) - 1, DAY) + 1;
+// Who and where charted most. A day's or an hour's lists are counted by the
+// hour, so they cover just that day or hour in this time zone (a time zone
+// half an hour off UTC adds the half hour either side). Longer periods' come
+// from whole UTC days, so they can run a few hours past the period's edges.
+async function loadTops(run, start, end, byHour = false) {
+  const unit = byHour ? HOUR : DAY, upTo = Math.min(end, Date.now() + 1);
+  const from = fdiv(start, unit), to = fdiv(upTo - 1, unit) + 1;
   let top;
-  try { top = await cachedJSON(`/v1/survey/log/top/${from}/${to}`, isLive(to * DAY)); } catch (_) {
-    if (run === state.run) cardsEl.replaceChildren(el('p', 'loading', 'Couldn’t load who charted most.'));
+  try { top = await cachedJSON(`/v1/survey/log/top/${byHour ? 'hours/' : ''}${from}/${to}`, isLive(to * unit)); } catch (_) {
+    // A refresh that can't load them keeps the ones on screen.
+    if (run === state.run && !Log.is('refreshing', 'stale')) cardsEl.replaceChildren(el('p', 'loading', 'Couldn’t load who charted most.'));
     return;
   }
   if (run !== state.run || !top || !Array.isArray(top.surveyors)) return;
-  const ok = (r, n) => Array.isArray(r) && Number.isInteger(r[n]);
   const span = to - from === 1 ? fullDate.format(from * DAY + DAY / 2) : `${monthDay.format(from * DAY + DAY / 2)} – ${fullDate.format((to - 1) * DAY + DAY / 2)}`;
   cardsEl.replaceChildren(
-    rankCard('Top surveyors', surveyorRows(top.surveyors), `By initials, which anyone can share · UTC days ${span}`),
+    rankCard('Top surveyors', surveyorRows(top.surveyors), `By initials, which anyone can share${byHour ? '' : ` · UTC days ${span}`}`),
     rankCard('Top territories', territoryRows(top.territories, top.themes), 'Hidden words charted in each'),
     rankCard('Themes', themeRows(top.themes), 'Hidden words, by their territory’s theme'),
   );
@@ -1243,6 +1252,7 @@ async function renderSlice(run, f, p, start, end, firsts) {
     : [rankCard('Top surveyors', surveyorRows(first.topSurveyors), 'By initials, which anyone can share'), rankCard('Top territories', places, 'Hidden words charted in each')]
     : []));
   entries = entries.filter(e => e[6] >= start && e[6] < end);
+  shareSlice(run, f, p, start, end, { total, world: buckets.reduce((a, b) => a + b.world, 0), places, surveyors: surveyorRows(first.topSurveyors), words: latestWords(entries, data) });
   if (!entries.length) {
     return status('Nothing charted', f.kind === 'surveyor' ? `No words signed ${f.key} in this period.` : 'No hidden words with this theme charted in this period.');
   }
@@ -1252,6 +1262,24 @@ async function renderSlice(run, f, p, start, end, firsts) {
   groups.add(entries, data);
   logEl.replaceChildren(groups);
   if (p !== 'hour' && typeof next === 'string') logEl.append(moreButton(run, page, next, groups, data, start, end));
+}
+function shareSlice(run, f, p, start, end, { total, world, places, surveyors, words }) {
+  const said = whenSaid(p, start, end), top = places[0]?.label;
+  if (f.kind === 'surveyor') {
+    return offerShare(run, {
+      kind: 'Surveyor', name: f.key, when: whenShown(p, start, end), words,
+      stats: [['Words charted first', total.toLocaleString()], ['In the shared world', world.toLocaleString()], ['Top territory', top || '—']],
+      text: total
+        ? `${f.key} charted ${plural(total, 'word')} first in Letterfield’s shared survey ${said}${top ? `, most in ${top}` : ''}.${latestSaid(words)}`
+        : `No words signed ${f.key} in Letterfield’s shared survey ${said}.`,
+    });
+  }
+  const [name, hue] = known.themes[f.key] || [`Theme ${f.key}`];
+  offerShare(run, {
+    kind: 'Theme', name, hue, when: whenShown(p, start, end), words,
+    stats: [['Hidden words charted', total.toLocaleString()], ['Top surveyor', surveyors[0]?.label || '—'], ['Top territory', top || '—']],
+    text: `${plural(total, 'hidden word')} charted in Letterfield’s ${name} territories ${said}.${latestSaid(words)}`,
+  });
 }
 function moreButton(run, page, next, groups, data, start, end) {
   const b = el('button', 'more', 'Show more');
@@ -1305,6 +1333,12 @@ async function renderTerritory(run, f, firsts) {
   wrap.append(el('div', 'ymax', `${t.charted.toLocaleString()} of its ${t.total.toLocaleString()} hidden words`), meter);
   chartEl.replaceChildren(wrap);
   cardsEl.replaceChildren(...(entries.length ? [rankCard('Top surveyors', surveyorRows(t.topSurveyors), 'Words charted here, by initials')] : []));
+  const name = typeof t.name === 'string' ? t.name : 'A territory', words = latestWords(entries, data);
+  offerShare(run, {
+    kind: 'Territory', name, hue: known.themes[t.th]?.[1], when: `All time, to ${fullDate.format(Date.now())}`, words,
+    stats: [['Hidden words charted', `${t.charted.toLocaleString()} of ${t.total.toLocaleString()}`], ['Surveyors', people.size.toLocaleString()], ['Latest', entries.length ? monthDay.format(entries[0][6]) : '—']],
+    text: `${name}, in Letterfield’s shared survey: ${t.charted.toLocaleString()} of its ${plural(t.total, 'hidden word')} charted so far${people.size ? `, by ${plural(people.size, 'surveyor')}` : ''}.${latestSaid(words)}`,
+  });
   if (!entries.length) return status('Nothing charted yet', 'Nobody has charted a word in this territory yet.');
   const perDay = new Map();
   for (const e of entries) { const d = startOf('day', e[6]); perDay.set(d, (perDay.get(d) || 0) + 1); }
@@ -1313,13 +1347,138 @@ async function renderTerritory(run, f, firsts) {
   logEl.replaceChildren(groups);
 }
 
+/* ---------- Sharing someone's own view ---------- */
+// Share sends a view as a line about it, ready to post, and a 1200×630
+// picture of it, beside its address. Both are made as soon as the view has
+// loaded, so the share sheet opens straight from the tap: Safari won't open
+// one after a wait. Until the picture's ready, or where a share sheet can't
+// take files, it sends the line and the address; with no share sheet, it
+// copies them.
+let shareCard = null;  // { run, text, file } for the view on screen, while state.run is its run
+const SHARE_WORDS = 3;  // latest words in the line; the picture shows as many as fit
+
+// When, as a sentence says it: "this week", "on Friday, November 6", "so far".
+function whenSaid(p, s, e) {
+  const now = Date.now(), [title] = titles(p, s, e);
+  if (p === 'all') return 'so far';
+  if (p === 'hour') return `from ${hourRange(s, e)} ${s >= startOf('day', now) ? 'today' : 'on ' + dayFmt.format(s)}`;
+  if (p === 'day') return /^(Today|Yesterday)$/.test(title) ? title.toLowerCase() : 'on ' + title;
+  if (p === 'week') return /^(This|Last) week$/.test(title) ? title.toLowerCase() : 'in the week of ' + monthDay.format(s);
+  if (p === 'month') return s === startOf('month', now) ? 'this month' : 'in ' + title;
+  return s === startOf('year', now) ? 'this year' : 'in ' + title;
+}
+// When, as the picture says it, which is kept: dates, never "today".
+function whenShown(p, s, e) {
+  if (p === 'all') return `All time, to ${fullDate.format(Date.now())}`;
+  if (p === 'hour') return `${hourRange(s, e)} · ${dayYearFmt.format(s)}`;
+  if (p === 'day') return dayYearFmt.format(s);
+  if (p === 'week') return `${monthDay.format(s)} – ${fullDate.format(shift('day', e, -1))}`;
+  if (p === 'month') return monthFmt.format(s);
+  return String(new Date(s).getFullYear());
+}
+// The latest words, newest first, each with its theme's hue.
+const latestWords = (entries, data) => entries.map(e => ({ w: e[0], hue: data.themes[e[7]]?.[1], stray: !!e[4] }));
+const latestSaid = words => words.length ? ` Latest: ${words.slice(0, SHARE_WORDS).map(x => x.w).join(', ')}.` : '';
+
+// Readies the view's share: c is { kind, name, hue, when, stats: [[label, value]], words, text }.
+function offerShare(run, c) {
+  shareCard = { run, text: c.text, file: null };
+  shareImage(c).then(file => { if (shareCard?.run === run) shareCard.file = file; }, () => {});
+}
+
+// The picture: the page's own colours and type, on a card the size link
+// previews use.
+async function shareImage(c) {
+  const W = 1200, H = 630, X = 72, R = W - 72;
+  const css = getComputedStyle(document.documentElement), v = n => css.getPropertyValue(n).trim();
+  const fam = { d: v('--f-display'), m: v('--f-mono'), u: v('--f-ui') };
+  // The fonts may still be on their way, or never come: then a system one.
+  try {
+    await Promise.race([
+      Promise.all([`800 100px ${fam.d}`, `700 60px ${fam.d}`, `500 20px ${fam.m}`, `500 30px ${fam.u}`].map(f => document.fonts.load(f))),
+      new Promise(r => setTimeout(r, 3000)),
+    ]);
+  } catch (_) {}
+  const cv = document.createElement('canvas');
+  cv.width = W; cv.height = H;
+  const g = cv.getContext('2d');
+  if (!g) return null;
+  const mark = h => `hsl(${h}, ${v('--mark-s')}, ${v('--mark-l')})`;
+  const type = (weight, px, f, spacing = 0) => {
+    g.font = `${weight} ${px}px ${f}`;
+    if ('letterSpacing' in g) g.letterSpacing = `${(spacing * px).toFixed(1)}px`;
+  };
+  // The largest size up to px, down to min, at which text fits in width.
+  const fit = (text, weight, px, min, f, spacing, width) => {
+    for (; px > min; px -= 2) { type(weight, px, f, spacing); if (g.measureText(text).width <= width) return px; }
+    type(weight, min, f, spacing);
+    return min;
+  };
+  const clip = (text, width) => {
+    if (g.measureText(text).width <= width) return text;
+    while (text.length > 1 && g.measureText(text + '…').width > width) text = text.slice(0, -1);
+    return text + '…';
+  };
+  const dot = (x, y, r, hue, stray) => {
+    g.beginPath(); g.arc(x, y, r, 0, Math.PI * 2);
+    if (stray) { g.lineWidth = 3; g.setLineDash([4, 3]); g.strokeStyle = mark(hue); g.stroke(); g.setLineDash([]); }
+    else { g.fillStyle = mark(hue); g.fill(); }
+  };
+  g.fillStyle = v('--paper'); g.fillRect(0, 0, W, H);
+  g.fillStyle = v('--accent'); g.fillRect(0, 0, W, 10);
+  g.textBaseline = 'alphabetic';
+
+  type(500, 20, fam.m, .14); g.fillStyle = v('--muted');
+  const head = `LETTERFIELD · SURVEY LOG · ${c.kind.toUpperCase()}`, headW = g.measureText(head).width;
+  g.textAlign = 'left'; g.fillText(head, X, 84);
+  // The site's address on the right, where it fits beside that: a preview's
+  // long one doesn't, and is left off rather than run into it.
+  type(400, 18, fam.m);
+  if (X + headW + 40 + g.measureText(location.host).width <= R) { g.textAlign = 'right'; g.fillText(location.host, R, 84); }
+  g.textAlign = 'left';
+
+  // Whose, as large as fits, after its theme's dot.
+  const name = c.name.toUpperCase(), lead = c.hue !== undefined ? 68 : 0;
+  const px = fit(name, 800, 170, 64, fam.d, .04, R - X - lead);
+  if (lead) dot(X + 20, 250 - px * .36, 20, c.hue);
+  g.fillStyle = v('--ink'); g.fillText(name, X + lead, 250);
+  type(500, 30, fam.u); g.fillStyle = v('--muted'); g.fillText(clip(c.when, R - X), X, 306);
+
+  g.fillStyle = v('--rule'); g.fillRect(X, 346, R - X, 2);
+  const col = (R - X) / c.stats.length;
+  c.stats.forEach(([label, value], i) => {
+    const x = X + i * col;
+    type(400, 18, fam.m); g.fillStyle = v('--muted'); g.fillText(clip(label, col - 24), x, 390);
+    fit(value, 700, 64, 30, fam.d, .04, col - 24); g.fillStyle = v('--ink'); g.fillText(clip(value, col - 24), x, 458);
+  });
+
+  type(500, 18, fam.m, .14); g.fillStyle = v('--muted');
+  g.fillText(c.words.length ? 'LATEST' : 'NOTHING CHARTED IN THIS PERIOD', X, 520);
+  let x = X;
+  for (const { w, hue, stray } of c.words) {
+    type(700, 38, fam.d, .07);
+    const width = 26 + g.measureText(w).width;
+    if (x + width > R) break;
+    if (hue !== undefined) dot(x + 8, 566, 8, hue, stray);
+    g.fillStyle = v('--ink'); g.fillText(w, x + 26, 580);
+    x += width + 30;
+  }
+  const blob = await new Promise(r => cv.toBlob(r, 'image/png'));
+  if (!blob) return null;
+  const slug = c.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'view';
+  return new File([blob], `letterfield-${slug}.png`, { type: 'image/png' });
+}
+
 $('#share').onclick = async () => {
-  const b = $('#share'), url = location.href;
+  const b = $('#share'), url = location.origin + urlFor({ pin: true }), c = shareCard?.run === state.run ? shareCard : null;
   const said = text => { b.textContent = text; setTimeout(() => { b.textContent = 'Share'; }, 2500); };
   if (navigator.share) {
-    try { await navigator.share({ title: document.title, url }); return; } catch (e) { if (e?.name === 'AbortError') return; }
+    const data = { title: document.title, url };
+    if (c?.text) data.text = c.text;
+    try { if (c?.file && navigator.canShare?.({ ...data, files: [c.file] })) data.files = [c.file]; } catch (_) {}
+    try { await navigator.share(data); return; } catch (e) { if (e?.name === 'AbortError') return; }
   }
-  try { await navigator.clipboard.writeText(url); said('Link copied'); } catch (_) { said('Copy the address'); }
+  try { await navigator.clipboard.writeText(c?.text ? `${c.text}\n${url}` : url); said(c?.text ? 'Copied' : 'Link copied'); } catch (_) { said('Copy the address'); }
 };
 
 $('#viewAll').onclick = () => { if (state.mine) { state.mine = false; render(); } };
@@ -1346,7 +1505,7 @@ document.addEventListener('visibilitychange', () => {
   else scheduleRefresh(state.run, end);
 });
 render();
-if (location.hash === '#debug') window.__log = { state, render, myFirsts, open, shown: () => Log.state };
+if (location.hash === '#debug') window.__log = { state, render, myFirsts, open, shown: () => Log.state, share: () => shareCard };
 </script>
 </body>
 </html>

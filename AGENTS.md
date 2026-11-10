@@ -368,6 +368,9 @@ kept up to date), and deletes it when the pull request closes.
   It's `main` it compares against, not the pull request's base, so one
   stacked on another pull request's branch gets a Worker Preview of its own
   when that branch changes the Worker, built from everything it carries.
+  To try pages that need the Worker without changing it, such as
+  Letterfield's log, label the pull request `worker-preview`: adding the
+  label makes the previews again, with a Worker Preview.
 - **Without one,** the preview keeps production's Worker, which only answers
   the live site's origin: leaderboards say they can't be reached and War's
   rooms can't start, and a preview can never write to production. Solo play
