@@ -339,8 +339,11 @@ behind it, and `share/README.md` how it works.
   map is charted (internal paths on the leaderboard Worker's Durable
   Objects), and draws the card with `@resvg/resvg-wasm`. Its colours are
   `letterfield.html`'s; `share/test/card.test.js` checks they still match.
-- Previews blank `SHARE_URL` (`scripts/point_preview.py`), so a preview's
-  shares stay on the preview. `without_worker()` blanks it too.
+- A pull request that changes `share/` gets a Worker Preview of it (see
+  Previews), and `scripts/point_preview.py` points `SHARE_URL` at that,
+  whose pages send people to the site preview. Other previews blank
+  `SHARE_URL`, so their shares stay on the preview. `without_worker()`
+  blanks it too.
 
 ## Previews
 
@@ -382,6 +385,17 @@ kept up to date), and deletes it when the pull request closes.
   the live site's origin: leaderboards say they can't be reached and War's
   rooms can't start, and a preview can never write to production. Solo play
   is unaffected.
+- **The share Worker:** a pull request whose branch changes `share/` or
+  `worker/src/` (whose code it bundles), or `preview.yml`, from `main`'s gets
+  a Worker Preview of `games-share` too, at
+  `https://pr-<number>-games-share.mwarkentin.workers.dev`, made alongside
+  the leaderboard's, and `point_preview.py --share` points Letterfield's
+  `SHARE_URL` at it. Its `SITE_URL` is the site preview, passed with
+  `--var`, so its pages send people back there; its other bindings are
+  `[previews]` in `share/wrangler.toml` (the previews' R2 bucket and rate
+  limit, no survey, so its cards leave their charting lines off). The
+  comment links to it with an example card. Without one, the preview blanks
+  `SHARE_URL`, so Share hands out the game's own link.
 - **Apart from the live site:** each preview is its own origin, so its
   `localStorage`, service worker and offline copy are its own. Telemetry and
   analytics check the hostname, so they stay off. Turnstile's widget doesn't
