@@ -820,15 +820,18 @@ const Log = machine('log', {
   failed: ['loading'],
 }, 'loading');
 
-// The address of a view: this one, changed by whatever's given.
-function urlFor({ focus = state.focus, period = state.period, start = state.start, mine = state.mine } = {}) {
+// The address of a view: this one, changed by whatever's given. The period
+// on now leaves its date out, so a bookmark of today stays today; pinned, as
+// a shared link is, it keeps its date, so ZED's "this week" still opens that
+// week when it's read next month.
+function urlFor({ focus = state.focus, period = state.period, start = state.start, mine = state.mine, pin = false } = {}) {
   const q = new URLSearchParams(location.search);
   for (const k of [...FOCUS_KEYS, 'period', 'day', 'hour', 'view']) q.delete(k);
   if (focus?.kind === 'surveyor') q.set('surveyor', focus.key);
   else if (focus?.kind === 'theme') q.set('theme', String(focus.key));
   else if (focus?.kind === 'territory') q.set('territory', `${focus.rx},${focus.ry}`);
   if (focus?.kind !== 'territory') {
-    const here = period === 'all' || start === startOf(period, Date.now());
+    const here = period === 'all' || (!pin && start === startOf(period, Date.now()));
     if (period !== defaultPeriod(focus)) q.set('period', period);
     if (!here) q.set('day', isoDay(start));
     if (period === 'hour' && !here) q.set('hour', String(new Date(start).getHours()));
@@ -1463,7 +1466,7 @@ async function shareImage(c) {
 }
 
 $('#share').onclick = async () => {
-  const b = $('#share'), url = location.href, c = shareCard?.run === state.run ? shareCard : null;
+  const b = $('#share'), url = location.origin + urlFor({ pin: true }), c = shareCard?.run === state.run ? shareCard : null;
   const said = text => { b.textContent = text; setTimeout(() => { b.textContent = 'Share'; }, 2500); };
   if (navigator.share) {
     const data = { title: document.title, url };

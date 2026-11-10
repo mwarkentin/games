@@ -5,7 +5,8 @@
   you are. Tap a name to see their words from it.
 - On the survey log, Share on a surveyor's, theme's or territory's own page
   sends a line about it, ready to post, with a picture of their numbers and
-  latest words. Without a share sheet, it copies the line and link.
+  latest words, and its link keeps the day, week or month it was shared
+  from. Without a share sheet, it copies the line and link.
 - Sharing a find in a chat now shows a picture of the word circled on its
   patch of the map, with whether it's been charted and how much of the
   shared map is, in your light or dark colours.

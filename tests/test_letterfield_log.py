@@ -11,6 +11,7 @@ from __future__ import annotations
 import json
 import re
 from datetime import datetime, timezone
+from urllib.parse import parse_qs, urlsplit
 
 from playwright.sync_api import Page, expect
 
@@ -327,9 +328,12 @@ def test_a_surveyor_opens_from_a_top_list_with_an_address_to_share(page: Page, s
 
     page.click("#share")
     expect(page.locator("#share")).to_have_text("Copied")
+    # The page's own address leaves this week's date out, so it stays this
+    # week; the shared one pins it, so it's still that week when it's read later.
+    assert "day=" not in page.url
     assert page.evaluate("window.__copied") == (
         "ZED charted 1 word first in Letterfield’s shared survey this week, most in Acorn Hollow."
-        f" Latest: ACORN.\n{page.url}"
+        f" Latest: ACORN.\n{page.url}&day=2026-11-02"
     )
     # All time is a surveyor's own view's first, so its address needs no period.
     page.click("#periods [data-p=all]")
@@ -561,7 +565,7 @@ def test_a_surveyor_shares_a_line_and_a_picture_of_their_view(page: Page, site_u
         "ZED charted 3 words first in Letterfield’s shared survey so far, most in Acorn Hollow."
         " Latest: FERN, ACORN, BIRCH."
     )
-    assert shared["url"] == page.url
+    assert shared["url"] == page.url.split("#")[0]  # all time has no date to pin
     assert shared["title"] == "ZED · Letterfield survey log"
     assert shared["files"] == [{"name": "letterfield-zed.png", "type": "image/png", "width": 1200, "height": 630}]
 
@@ -575,6 +579,9 @@ def test_a_surveyor_shares_a_line_and_a_picture_of_their_view(page: Page, site_u
     assert page.evaluate("window.__shared.text") == (
         "ZED charted 2 words first in Letterfield’s shared survey today, most in Acorn Hollow. Latest: FERN, ACORN."
     )
+    url = urlsplit(page.evaluate("window.__shared.url"))
+    assert f"{url.scheme}://{url.netloc}{url.path}" == f"{site_url}/letterfield-log"
+    assert parse_qs(url.query) == {"survey": [SURVEY], "surveyor": ["ZED"], "period": ["day"], "day": ["2026-11-06"]}
     assert errors == []
 
 
