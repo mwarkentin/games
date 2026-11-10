@@ -1,5 +1,8 @@
 ## 2026-11-10
 
+- Sharing a surveyor's, theme's or territory's page of the survey log in a
+  chat now shows a card of it: whose it is, the day, week or month, their
+  numbers and latest words, in your light or dark colours.
 - The survey log shows top surveyors, territories and themes for a day and
   for an hour minute by minute too, counted for just that day or hour where
   you are. Tap a name to see their words from it.
