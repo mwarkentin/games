@@ -8,6 +8,9 @@
   you pass instead of staying over the words.
 - On a phone, the list of words hidden in view scrolls only sideways, no
   longer up and down as well.
+- Tap the book beside a word in your field notes to see what it means, from
+  Wiktionary, or Wikipedia for names it doesn't know, with links to read
+  more or search when there's no definition.
 
 ## 2026-11-09
 

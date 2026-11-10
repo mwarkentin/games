@@ -139,6 +139,21 @@ body.docked .notes{box-shadow:none}
 .find-share{flex:none;width:40px;height:40px;display:grid;place-items:center;border:0;border-radius:50%;background:transparent;color:var(--muted);cursor:pointer}
 .find-share svg{width:17px;height:17px}
 .find-share:hover{background:var(--hover);color:var(--ink)}
+.finds li{flex-wrap:wrap}
+.find-define{flex:none;width:40px;height:40px;display:grid;place-items:center;border:0;border-radius:50%;background:transparent;color:var(--muted);cursor:pointer}
+.find-define svg{width:17px;height:17px}
+.find-define:hover{background:var(--hover);color:var(--ink)}
+.find-define[aria-expanded="true"]{background:var(--hover);color:var(--ink)}
+/* A found word's meaning, opened under its entry (see Definitions). */
+.find-def{flex:1 0 100%;box-sizing:border-box;margin:0 0 8px;padding:10px 12px 11px 32px;font-size:14px;line-height:1.45;color:var(--ink)}
+.def-sense{margin:0 0 6px;overflow-wrap:anywhere}
+.def-sense i{font:italic 400 12px/1 var(--f-mono);color:var(--muted);margin-right:6px}
+.def-note{margin:0 0 6px;color:var(--muted)}
+.find-def[data-define="loading"] .def-note{animation:blink 1s infinite alternate}
+.def-links{display:flex;flex-wrap:wrap;align-items:center;gap:4px 12px;margin:2px 0 0;font:400 11px/1.4 var(--f-mono);color:var(--muted)}
+.def-links a{color:inherit;text-underline-offset:2px;padding:6px 0}
+.def-links a:hover{color:var(--ink)}
+.def-retry{font:500 11px/1 var(--f-mono);padding:7px 10px;border:1px solid var(--rule);border-radius:999px;background:transparent;color:var(--ink);cursor:pointer}
 .find:hover{background:var(--hover)}
 .find-dot{width:10px;height:10px;border-radius:50%;background:var(--c);align-self:center}
 .find.stray .find-dot{background:transparent;border:2px dashed var(--c);width:10px;height:10px;box-sizing:border-box}
@@ -270,6 +285,7 @@ body.docked .nova{left:calc((100% - var(--notes-w)) / 2)}
 }
 @media (prefers-reduced-motion: reduce){
   .notes,.toast,.instruments{transition:none}
+  .find-def[data-define="loading"] .def-note{animation:none}
   .nova.show b{animation:none}
   .sync-dot,.survey-dot{animation:none!important}
   #music[aria-pressed="true"] svg{animation:none}
@@ -330,7 +346,7 @@ body.docked .nova{left:calc((100% - var(--notes-w)) / 2)}
   <div class="notes-head">
     <div>
       <h2>Field notes</h2>
-      <p class="notes-sub">Every word you circle, with where you found it. Tap one to fly back.</p>
+      <p class="notes-sub">Every word you circle, with where you found it. Tap one to fly back, or the book for what it means.</p>
     </div>
     <button type="button" class="icon-btn" id="notesClose" aria-label="Close field notes"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
   </div>
@@ -416,6 +432,11 @@ const SHARE_URL = '';
 // from challenges.cloudflare.com only then. While it's empty, joins need no
 // pass. ?turnstile=<site key> overrides it for testing.
 const TURNSTILE_SITE_KEY = '0x4AAAAAAF26seIK58606ilv';  // public: the widget mwarkentin/infra makes
+// What a found word means (worker/src/define.js): the Worker looks it up on
+// Wiktionary or Wikipedia and keeps the answer, so the page talks to no new
+// host. With DEFINE_URL empty, field notes only link out to those sites.
+// ?define=<url> overrides it for testing.
+const DEFINE_URL = 'https://api.games.michaelwarkentin.com';
 const SECTOR = RC * 4;  // cells per survey sector side: 4×4 territories, one server room each
 const SECTOR_LINKS = 4; // sectors joined at once, nearest the middle of the view first
 const SURVEY_AREA = 12; // the world charted together: sectors -12 to 12 each way, 100×100 territories
@@ -2964,6 +2985,85 @@ async function shareFind(e) {
   }
 }
 
+/* ---------- Definitions ---------- */
+// What a word you've found means, opened under its entry in the field notes
+// by the book beside it. Only found words have one: asking about a word is
+// asking the Worker, which needs the word, and the page only ever sends one
+// from the notes. Each lookup (word and theme) has a machine of its own:
+// loading, then ready (senses to show), none (neither Wiktionary nor
+// Wikipedia knows it) or failed (the Worker couldn't be reached, or
+// Wikimedia was busy), which can be tried again. The answer is kept for the
+// page's life; the browser and the Worker keep it far longer.
+const BOOK_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 6.5C10.3 5.2 7.9 4.5 4 4.5v13c3.9 0 6.3.7 8 2 1.7-1.3 4.1-2 8-2v-13c-3.9 0-6.3.7-8 2z"/><path d="M12 6.5v13"/></svg>';
+const defineApi = (() => {
+  let url = DEFINE_URL;
+  try { const q = new URLSearchParams(location.search).get('define'); if (q !== null && (q === '' || /^https?:\/\//.test(q))) url = q; } catch (_) {}
+  return url.replace(/\/+$/, '');
+})();
+const definitions = new Map();  // 'WORD/th' → { m: its machine, senses, source, url }
+let defOpen = null;             // the key of the find whose meaning is open
+const DEFINE_MOVES = { loading: ['ready', 'none', 'failed'], ready: [], none: [], failed: ['loading'] };
+const escHtml = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
+const safeLink = u => (typeof u === 'string' && /^https:\/\/en\.(wiktionary|wikipedia)\.org\//.test(u) ? u : '');
+const defKey = e => e.w + '/' + e.th;
+function define(e, retry = false) {
+  const k = defKey(e);
+  let d = definitions.get(k);
+  if (d && !(retry && d.m.is('failed'))) return d;
+  if (!d) {
+    d = { m: machine('define', DEFINE_MOVES, defineApi ? 'loading' : 'failed', { el: null, onMove: () => showDefinition(k) }), senses: [], source: null, url: '' };
+    definitions.set(k, d);
+    if (!defineApi) return d;
+  } else d.m.go('loading');
+  const at = d.m.seq;
+  fetch(`${defineApi}/v1/define/${e.w}/${e.th}`)
+    .then(r => (r.ok ? r.json() : Promise.reject(new Error('status ' + r.status))))
+    .then(body => {
+      if (d.m.seq !== at) return;
+      const senses = Array.isArray(body.senses) ? body.senses.filter(s => s && typeof s.text === 'string').slice(0, 3) : [];
+      d.senses = senses; d.source = body.source === 'wikipedia' ? 'wikipedia' : 'wiktionary'; d.url = safeLink(body.url);
+      d.m.go(senses.length ? 'ready' : 'none');
+    })
+    .catch(() => { if (d.m.seq === at) d.m.go('failed'); });
+  return d;
+}
+// The panel under an open entry.
+function defPanel(e) {
+  const d = define(e), st = d.m.state, theme = THEMES[e.th].name;
+  const search = `<a href="https://en.wiktionary.org/wiki/Special:Search?search=${encodeURIComponent(e.w.toLowerCase())}" target="_blank" rel="noopener">Wiktionary</a>` +
+    `<a href="https://en.wikipedia.org/w/index.php?search=${encodeURIComponent(e.w.toLowerCase() + ' ' + theme)}" target="_blank" rel="noopener">Wikipedia</a>`;
+  let html;
+  if (st === 'ready') {
+    html = d.senses.map(s => `<p class="def-sense">${s.pos ? `<i>${escHtml(s.pos)}</i>` : ''}${escHtml(s.text)}</p>`).join('') +
+      `<p class="def-links">${d.url ? `<a href="${escHtml(d.url)}" target="_blank" rel="noopener">From ${d.source === 'wikipedia' ? 'Wikipedia' : 'Wiktionary'}</a>` : ''}` +
+      `<a href="https://creativecommons.org/licenses/by-sa/4.0/" target="_blank" rel="noopener license">CC BY-SA 4.0</a></p>`;
+  } else if (st === 'loading') {
+    html = '<p class="def-note">Looking it up…</p>';
+  } else if (st === 'none') {
+    html = `<p class="def-note">No definition to hand for this one.</p><p class="def-links">Search ${search}</p>`;
+  } else if (!defineApi) {
+    html = `<p class="def-links">Look it up on ${search}</p>`;
+  } else {
+    html = `<p class="def-note">Couldn’t look it up just now.</p><p class="def-links"><button type="button" class="def-retry" data-key="${e.key}">Try again</button>${search}</p>`;
+  }
+  return `<div class="find-def" id="def-${e.key}" data-define="${st}" aria-live="polite">${html}</div>`;
+}
+// Redraws an open panel when its lookup moves.
+function showDefinition(k) {
+  const e = defOpen && found.get(defOpen);
+  const el = e && defKey(e) === k && document.getElementById('def-' + e.key);
+  if (el) el.outerHTML = defPanel(e);
+}
+function toggleDefinition(key) {
+  const e = found.get(key); if (!e) return;
+  defOpen = defOpen === key ? null : key;
+  renderNotes();
+  const b = findsEl.querySelector(`.find-define[data-key="${CSS.escape(key)}"]`);
+  if (b) try { b.focus({ preventScroll: true }); } catch (_) {}
+  const el = defOpen && document.getElementById('def-' + key);
+  if (el && el.scrollIntoView) el.scrollIntoView({ block: 'nearest', behavior: RM ? 'auto' : 'smooth' });
+}
+
 /* ---------- Field notes ---------- */
 const notesToggle = $('#notesToggle'), notesBadge = $('#notesBadge'), findsEl = $('#finds'), filtersEl = $('#filters');
 let notesOpen = false, filter = null;
@@ -3003,7 +3103,9 @@ function renderNotes() {
         return `<li><a class="find mark${e.s ? ' stray' : ''}" href="#${hashOf(e)}" data-key="${e.key}" style="--h:${THEMES[e.th].hue}">` +
           `<span class="find-dot" aria-hidden="true"></span><span class="find-word">${e.w}</span><span class="find-when">${rel(e.t)}</span>` +
           `<span class="find-meta"><b>${regionName(rx, ry)}</b> · ${fmtCoord(e.x, e.y)} · ${DARROW[e.d]} ${DNAME[e.d]}${e.s ? ' · stray' : ''}${e.f ? ' · charted first' : ''}</span></a>` +
-          `<button type="button" class="find-share" data-key="${e.key}" aria-label="Share ${e.w}" title="Share ${e.w}">${SHARE_ICON}</button></li>`;
+          `<button type="button" class="find-define" data-key="${e.key}" aria-expanded="${defOpen === e.key}"${defOpen === e.key ? ` aria-controls="def-${e.key}"` : ''} aria-label="What ${e.w} means" title="What ${e.w} means">${BOOK_ICON}</button>` +
+          `<button type="button" class="find-share" data-key="${e.key}" aria-label="Share ${e.w}" title="Share ${e.w}">${SHARE_ICON}</button>` +
+          (defOpen === e.key ? defPanel(e) : '') + '</li>';
       }).join('')
     : '<li class="finds-empty"><strong>No words yet</strong>Circle a word on the map and it lands here with its territory, grid reference and the bearing it reads in. Tap an entry later to fly straight back to it.</li>';
 }
@@ -3014,6 +3116,11 @@ filtersEl.addEventListener('click', e => {
 });
 let hashSuppress = '';
 findsEl.addEventListener('click', e => {
+  const d = e.target.closest('.find-define');
+  if (d) { toggleDefinition(d.dataset.key); return; }
+  const r = e.target.closest('.def-retry');
+  if (r) { const en = found.get(r.dataset.key); if (en) define(en, true); return; }
+  if (e.target.closest('.find-def')) return;  // its links open on their own
   const b = e.target.closest('.find-share');
   if (b) { const en = found.get(b.dataset.key); if (en) shareFind(en); return; }
   const a = e.target.closest('a.find'); if (!a) return;
@@ -3156,7 +3263,7 @@ invalidate();
 if (redrawn) setTimeout(() => toast(`<i></i><b>The map has been redrawn</b><span>${NT} themes of about ${Math.round(THEMES.reduce((a, t) => a + t.words.length, 0) / NT / 10) * 10} words now, so a territory never repeats one · ${redrawn.kept ? `${redrawn.kept} of your ${redrawn.had} finds are still on it` : 'your old finds are not on it'}</span>`, null, 8000), 900);
 connectStore();
 if (location.hash === '#debug') window.__lf = { cam, found, claims, links, chunk, wordEnd, collect, territoryProgress, world: () => world, supernova, novaSound, audioOut, musicTracks: MUSIC_TRACKS, music: () => musicNow && { state: ac.state, track: musicNow.track().name, nodes: musicNow.track().nodes.size, level: musicNow.master.gain.value, swap: musicNow.swap }, nova: () => nova,
-  pass: () => Pass.state, intro: () => Intro.state, surveyStatus, linkStates: () => Object.fromEntries([...links].map(([k, l]) => [k, l.m.state])), outbox: () => [...outbox.values()].map(c => [c.e.w, c.m.state]) };
+  pass: () => Pass.state, intro: () => Intro.state, surveyStatus, linkStates: () => Object.fromEntries([...links].map(([k, l]) => [k, l.m.state])), outbox: () => [...outbox.values()].map(c => [c.e.w, c.m.state]), definitions: () => Object.fromEntries([...definitions].map(([k, d]) => [k, d.m.state])) };
 
 })();
 </script>

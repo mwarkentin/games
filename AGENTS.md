@@ -174,6 +174,7 @@ The machines each page keeps:
 | | `pass` (the survey's Turnstile pass) | off, none, loading, checking, asking, sending, good, failed |
 | | `link` (each sector's socket; `el: null`, see `__lf.linkStates()`) | connecting, open, live, backoff, closed |
 | | `claim` (each claim of ours; `el: null`, see `__lf.outbox()`) | queued, sent, unanswered, answered |
+| | `define` (each found word's meaning; `el: null`, see `__lf.definitions()`) | loading, ready, none, failed |
 | `letterfield-log.html` | `log` (what the page shows) | loading, ready, refreshing, stale, failed |
 | `war.html` | `screen` | menu, lobby, table, ending, over |
 | | `overlay` (what covers the screen) | none, pause, invite, styles, history |
@@ -487,6 +488,23 @@ per sector of the map, plus an Atlas for the world's totals
   Turnstile check with a fake widget and pass, so no test reaches
   challenges.cloudflare.com. `without_worker()` blanks `SURVEY_URL` along
   with the other URLs.
+
+## Letterfield's definitions
+
+A word in the field notes opens to what it means, through the same Worker
+(`worker/src/define.js`; "Letterfield's definitions" in `worker/README.md`),
+which looks it up once on Wiktionary or Wikipedia and keeps it in D1, so the
+page loads nothing from a new host.
+
+- A `DEFINE_URL` constant holds the Worker's URL; `?define=<url>`
+  overrides it. While it's empty, an entry only links out to Wiktionary and
+  Wikipedia searches.
+- Only found words: the page asks only from a find's entry, and nothing on
+  the map, the toast or the legend shows a meaning.
+- Show the source's link and CC BY-SA 4.0 beside the text, and put the
+  Worker's text in the page as text, never HTML.
+- Game tests fake it with `page.route` and `tests/fake_definitions.py`; the
+  real Worker's stand-in answers it too.
 
 ## Adding or changing a game
 
