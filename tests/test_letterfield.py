@@ -1,3 +1,4 @@
+import pytest
 from playwright.sync_api import Page, expect
 
 from fake_leaderboard import without_worker
@@ -436,4 +437,63 @@ def test_the_word_list_never_scrolls_up_and_down(page: Page, site_url, errors):
     page.set_viewport_size({"width": 1280, "height": 900})
     page.evaluate(fill)
     chips_scroll_only_sideways(page, phone=False)
+    assert errors == []
+
+
+# Puts a hidden word's first letter's centre at screen position (sx, sy), with
+# cells of cs pixels, and returns the word list once it has caught up.
+PLACE_WORD_JS = """async ({ key, sx, sy, cs }) => {
+  const lf = window.__lf, [, x, y] = key.split('~');
+  const dock = document.body.classList.contains('docked') ? 340 : 0;
+  lf.cam.cs = cs;
+  lf.cam.x = +x + .5 - (sx - (innerWidth - dock) / 2) / cs;
+  lf.cam.y = +y + .5 - (sy - innerHeight / 2) / cs;
+  dispatchEvent(new Event('resize'));
+  await new Promise(r => setTimeout(r, 300));
+  return {
+    keys: [...document.querySelectorAll('#legendList .chip')].map(c => c.dataset.key),
+    count: document.getElementById('legendCount').textContent,
+  };
+}"""
+
+
+@pytest.mark.parametrize("size", [(375, 740), (1280, 900)], ids=["phone", "desktop"])
+def test_the_word_list_names_only_words_mostly_in_sight(page: Page, site_url, errors, size):
+    without_worker(page, site_url, "letterfield")  # alone, so each chip names its word
+    page.set_viewport_size({"width": size[0], "height": size[1]})
+    page.goto(f"{site_url}/letterfield#debug")
+    page.click("#coachOk")
+    expect(page.locator("#legendList .chip").first).to_be_visible()
+    # A five-letter word reading left to right: it counts once its first four
+    # letters (three quarters, rounded up) can be seen.
+    key = page.evaluate("""() => {
+      for (let cy = -3; cy <= 3; cy++) for (let cx = -3; cx <= 3; cx++)
+        for (const w of window.__lf.chunk(cx, cy).words) if (w.d === 0 && w.w.length === 5) return w.key;
+    }""")
+    assert key
+    cs = 80
+    right = page.evaluate("innerWidth - (document.body.classList.contains('docked') ? 340 : 0)")
+    mid = size[1] / 2
+
+    def listed(sx, sy):
+        got = page.evaluate(PLACE_WORD_JS, {"key": key, "sx": sx, "sy": sy, "cs": cs})
+        return key in got["keys"], got
+
+    seen, got = listed(right / 2 - 2 * cs, mid)
+    assert seen, got  # all of it in the middle of the map
+    seen, got = listed(right - 2.5 * cs, mid)
+    assert not seen, got  # three letters at the right edge
+    seen, got = listed(right - 3.5 * cs, mid)
+    assert seen, got  # four letters at the right edge
+    seen, got = listed(-0.5 * cs, mid)
+    assert not seen, got  # all but the first at the left edge, where it starts
+
+    # A first letter under a panel over the map can't be seen either: the title
+    # box, the word list, and on a phone the controls above it.
+    panels = ["header.cartouche", "section.legend"] + ([".seg"] if size[0] < 700 else [])
+    for sel in panels:
+        box = page.locator(sel).bounding_box()
+        sy = box["y"] + box["height"] - 12 if sel == "section.legend" else box["y"] + box["height"] / 2
+        seen, got = listed(box["x"] + cs / 2, sy)
+        assert not seen, (sel, got)
     assert errors == []
