@@ -82,6 +82,7 @@ button:focus-visible,a:focus-visible,#map:focus-visible{outline:2px solid var(--
 .legend-head{display:flex;justify-content:space-between;align-items:baseline;gap:12px;margin-bottom:9px}
 .legend-count{font:400 11px/1 var(--f-mono);color:var(--muted);font-variant-numeric:tabular-nums}
 .chips{list-style:none;margin:0;padding:0;display:flex;flex-wrap:wrap;gap:6px}
+.chips > li{display:flex} /* so a span chip's padding counts, as a button's does */
 .chip{font:500 12px/1 var(--f-mono);letter-spacing:.07em;padding:7px 8px 6px;border:1px solid var(--rule);border-radius:5px;background:var(--panel);cursor:pointer;white-space:nowrap}
 .chip:hover{border-color:var(--ink)}
 .chip.found{color:var(--muted);text-decoration:line-through;text-decoration-thickness:2px;text-decoration-color:var(--c);border-style:dashed;cursor:default}
@@ -244,7 +245,9 @@ body.docked .nova{left:calc((100% - var(--notes-w)) / 2)}
   .notes-toggle .badge{position:absolute;top:-6px;right:-6px}
   .legend{right:var(--gr);width:auto;padding:9px 0 10px}
   .legend-head{padding:0 12px;margin-bottom:8px}
-  .chips{flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none;padding:0 12px}
+  /* One row that scrolls sideways only: overflow-x alone would make y auto too.
+     The 4px above and below, taken back by the margin, keep focus rings unclipped. */
+  .chips{flex-wrap:nowrap;overflow-x:auto;overflow-y:hidden;overscroll-behavior-x:contain;touch-action:pan-x;scrollbar-width:none;padding:4px 12px;margin:-4px 0}
   .chips::-webkit-scrollbar{display:none}
   .chip{flex:none}
   .legend-note{padding:2px 0}
