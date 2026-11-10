@@ -372,26 +372,34 @@ Sizes are rough: S is under a day, M a day or two.
 
 ## Open decisions
 
-1. **Domain:** `share.michaelwarkentin.com` (recommended; needs the zone on
-   Cloudflare), workers.dev (works now, looks worse, Cache API not
-   promised), or proxying games.michaelwarkentin.com (best links, biggest
-   change). Another name, like `lf.michaelwarkentin.com` or a short domain of
-   its own, works the same way.
-2. **Cost:** stays on Workers Paid (required: the free plan's 10 ms CPU
+### Decided
+
+- **Domain (10 November 2026): `share.michaelwarkentin.com`**, as a custom
+  domain on the `games-share` Worker. michaelwarkentin.com's DNS moved to
+  Cloudflare, with DNSimple still the registrar. The games record stays DNS
+  only, so GitHub Pages is unchanged. The Worker launches straight on the
+  custom domain. If it ever answers on workers.dev too, that address has to
+  `301` to the custom domain from inside the Worker (Redirect Rules can't
+  cover `workers.dev`), and the Worker can never be renamed or have
+  workers.dev turned off, or old links break.
+
+### Still open
+
+1. **Cost:** stays on Workers Paid (required: the free plan's 10 ms CPU
    can't render). R2 is expected to stay inside its free tier. Is a render
    rate limit of ~30 a minute per address the right trade?
-3. **Dependencies:** accept `@resvg/resvg-wasm` (one package, no transitive
+2. **Dependencies:** accept `@resvg/resvg-wasm` (one package, no transitive
    dependencies, pinned, MPL-2.0) in a separate `share/` Worker? The
    alternative that avoids npm is vendoring its 2.4 MiB wasm into the repo,
    which is worse to update.
-4. **One Worker or two:** two is recommended (see above). One avoids a
+3. **One Worker or two:** two is recommended (see above). One avoids a
    second deploy, Preview and set of bindings, at the cost of a 3 MiB
    leaderboard Worker with a dependency.
-5. **What the card shows** for a word nobody has charted yet ("Find it on
+4. **What the card shows** for a word nobody has charted yet ("Find it on
    the map", as in the prototype) and for a charted one ("Charted by ZED · 9
    Nov 2026"), and whether to show first charters' initials at all on a
    picture that travels further than the log page.
-6. **Light only, or a dark card too.** Link cards are usually shown on a
+5. **Light only, or a dark card too.** Link cards are usually shown on a
    light or dark chat background the sender doesn't control. The prototype
    draws the light one.
 
