@@ -267,6 +267,33 @@ def test_a_find_shares_what_it_is_where_and_a_link_to_it(page: Page, site_url, e
     assert errors == []
 
 
+def test_with_a_share_worker_a_find_links_to_its_card_in_the_sharers_theme(page: Page, site_url, errors):
+    # ?share= stands in for SHARE_URL: the share Worker (share/), whose page
+    # carries a picture of the word as its link preview.
+    without_worker(page, site_url, "letterfield")
+    page.add_init_script(SHARE_SHEET)
+    page.goto(f"{site_url}/letterfield?share=https://share.test/#debug")
+    page.click("#coachOk")
+    page.wait_for_function("window.__lf")
+    w, x, y, d = page.evaluate("(() => { const o = window.__lf.chunk(0, 0).words[0]; return [o.w, o.x, o.y, o.d]; })()")
+    page.evaluate("([w, x, y, d]) => window.__lf.collect(w, x, y, d, false)", [w, x, y, d])
+    page.click("#toast .share")
+    slug = f"f-{w.lower()}-{x}-{y}-{d}"
+    assert page.evaluate("window.__shared")[0]["url"] == f"https://share.test/f/{slug}"
+
+    # A dark page shares the dark card.
+    page.emulate_media(color_scheme="dark")
+    page.reload()
+    page.wait_for_function("window.__lf")
+    expect(page.locator("html")).to_have_attribute("data-intro", "exploring")
+    # The find is still in the field notes, which stay open from before.
+    if page.locator("#notesToggle").get_attribute("aria-expanded") != "true":
+        page.click("#notesToggle")
+    page.locator("#finds").get_by_role("button", name=f"Share {w}").click()
+    assert page.evaluate("window.__shared")[0]["url"] == f"https://share.test/f/d/{slug}"
+    assert errors == []
+
+
 def test_without_a_share_sheet_a_find_is_copied(page: Page, site_url, errors):
     without_worker(page, site_url, "letterfield")
     page.add_init_script("""

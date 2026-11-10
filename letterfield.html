@@ -399,6 +399,10 @@ const K_PASS = 'letterfield.surveyPass.v1';
 // SURVEY_URL empty the game is single-player and connects nowhere.
 // ?survey=<url> overrides it for testing.
 const SURVEY_URL = 'https://api.games.michaelwarkentin.com';
+// Where a shared find links: the share Worker (share/), which answers with a
+// page whose link preview is a picture of the word, then sends people here.
+// While it's empty, shares link straight to the game. ?share=<url> overrides it.
+const SHARE_URL = '';
 // Turnstile (see worker/TURNSTILE.md): with a site key, the game passes
 // Cloudflare's bot check once before joining the survey, and loads its script
 // from challenges.cloudflare.com only then. While it's empty, joins need no
@@ -2860,7 +2864,15 @@ toastEl.addEventListener('focusout', () => setTimeout(releaseToast));
 const SHARE_TOAST_MS = 6000;
 const SHARE_JUST_MS = 10 * 60000;  // within this long of finding it, "I just found"
 const SHARE_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 15V3M7.5 7.5 12 3l4.5 4.5"/><path d="M8 11H6a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-6a2 2 0 0 0-2-2h-2"/></svg>';
-const shareUrl = e => location.origin + location.pathname + location.search + '#' + hashOf(e);
+// A dark page shares a dark card (/f/d/…): the card follows the sharer's theme.
+const shareBase = (() => {
+  let url = SHARE_URL;
+  try { const q = new URLSearchParams(location.search).get('share'); if (q && /^https?:\/\//.test(q)) url = q; } catch (_) {}
+  return url.replace(/\/+$/, '');
+})();
+const shareUrl = e => shareBase
+  ? `${shareBase}/f/${C.dark ? 'd/' : ''}${hashOf(e)}`
+  : location.origin + location.pathname + location.search + '#' + hashOf(e);
 function shareText(e) {
   const place = regionName(fdiv(e.x, RC), fdiv(e.y, RC));
   const word = e.s ? `${e.w}, a stray ${THEMES[e.th].name.toLowerCase()} word,` : e.w;

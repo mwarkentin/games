@@ -48,6 +48,9 @@ utilities; games live here so they get their own origin and their own rules.
   workflow and is never part of the site. A pull request that changes it
   gets a Worker Preview of its own (see Previews below, and in
   `worker/README.md`).
+- `share/`: the `games-share` Worker, which draws link-preview cards for
+  shared Letterfield finds (see Share cards). It deploys through its own
+  workflow, has the repo's one npm dependency, and is never part of the site.
 - `preview/`: the `games-preview` Worker, which has no code and serves each
   pull request's build of the site as a Worker Preview (see Previews). It's
   never deployed to production.
@@ -310,6 +313,27 @@ built from `BASE_URL`.
   and colophon use `previews/index.jpg` if there is one, or the site's icon.
 - A page that writes its own `og:title` keeps its own tags.
 
+### Share cards
+
+A page's preview is fixed, and a Letterfield find's word lives in the
+`#fragment`, which no server sees. So a shared find links to the share
+Worker instead (`share/`, at `share.michaelwarkentin.com`): a small page whose
+`og:image` is a card it draws of that word, which sends people on to
+`/letterfield#f-…`. `docs/link-previews.md` has the research and decisions
+behind it, and `share/README.md` how it works.
+
+- A `SHARE_URL` constant in `letterfield.html` holds the Worker's address.
+  While it's empty, Share hands out the game's own fragment link.
+  `?share=<url>` overrides it for tests. A dark page hands out `/f/d/…`, so
+  the card follows the sharer's theme.
+- The Worker checks the word is on the map with `worker/src/`'s own code,
+  asks the word's sector who charted it and the Atlas how much of the shared
+  map is charted (internal paths on the leaderboard Worker's Durable
+  Objects), and draws the card with `@resvg/resvg-wasm`. Its colours are
+  `letterfield.html`'s; `share/test/card.test.js` checks they still match.
+- Previews blank `SHARE_URL` (`scripts/point_preview.py`), so a preview's
+  shares stay on the preview. `without_worker()` blanks it too.
+
 ## Previews
 
 Every pull request gets its own copy of the whole site, built from its
@@ -489,6 +513,7 @@ per sector of the map, plus an Atlas for the world's totals
 uv run playwright install chromium   # once
 uv run pytest                        # builds the site into a temp dir, then tests it
 node --disable-warning=ExperimentalWarning --test "worker/test/*.test.js"   # the leaderboard Worker
+(cd share && npm ci) && node --disable-warning=ExperimentalWarning --test "share/test/*.test.js"   # the share Worker
 uv run ./build.sh && python3 -m http.server -d _site 8000   # preview the real site
 uv run scripts/render_icons.py       # after drawing or changing an icon
 ```
@@ -501,7 +526,7 @@ pins and the README link.
 In a Claude Code on the web sandbox, the default network policy can block
 `cdn.jsdelivr.net`, `cdnjs.cloudflare.com`, `fonts.googleapis.com`,
 `fonts.gstatic.com`, `browser.sentry-cdn.com`, `cdn.playwright.dev` and
-`registry.npmjs.org` (for `wrangler`). A test failing with
+`registry.npmjs.org` (for `wrangler` and the share Worker). A test failing with
 `Failed: https://...` for one of those hosts means the sandbox can't reach
 it, not that the game is broken. Ask for those hosts to be allowed. CI has
 full network access.
