@@ -1,20 +1,14 @@
 name: Bug
 description: Something in a game isn't working the way it should.
 labels: [bug]
+# Each game's "Send feedback" dialog fills in these fields by their ids
+# (feedback.js); tests/test_feedback.py checks they match.
 body:
-  - type: dropdown
+  - type: input
     id: game
     attributes:
       label: Which game?
-      # Every game in README.md; tests/test_build.py checks.
-      options:
-        - Air Traffic Controller
-        - Doodle Chomp
-        - Funnels & Buckets
-        - Letterfield
-        - Letterfield survey log
-        - War
-        - The site (home page, colophon, changelogs)
+      placeholder: War
     validations:
       required: true
   - type: textarea
@@ -28,4 +22,12 @@ body:
     id: device
     attributes:
       label: Device and browser
-      placeholder: iPhone 15, Safari
+      placeholder: iPhone · iOS 18.5 · Safari 18.5
+    validations:
+      required: true
+  - type: textarea
+    id: details
+    attributes:
+      label: Details
+      description: Filled in by the game's "Send feedback" link. Edit or delete anything you'd rather not share.
+      render: text

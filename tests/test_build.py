@@ -37,7 +37,7 @@ from common import (
 )
 from gather_links import extract_urls
 from point_preview import origin, point_site, point_text
-from publish import current_release, inject_telemetry
+from publish import current_release, inject_feedback, inject_telemetry
 
 
 def test_extract_urls_trims_punctuation_and_duplicates():
@@ -149,19 +149,22 @@ def test_inject_telemetry_goes_before_head_end_once():
     assert no_head == '<p>no head\n<script data-telemetry data-release="">\nrun();\n</script>\n'
 
 
-def test_games_are_published_with_only_previews_telemetry_analytics_and_app_links_added_and_colophon_entries(site_dir):
+def test_games_are_published_with_only_previews_telemetry_feedback_analytics_and_app_links_added_and_colophon_entries(site_dir):
     colophon = (site_dir / "colophon.html").read_text("utf-8")
     telemetry = (ROOT / "telemetry.js").read_text("utf-8")
+    feedback = (ROOT / "feedback.js").read_text("utf-8")
     for filename in game_files():
         source = (ROOT / filename).read_text("utf-8")
         published = (site_dir / filename).read_text("utf-8")
         slug = filename.removesuffix(".html")
         app = app_of(source, slug)
         social = inject_social(source, app, f"/{slug}")
-        assert published == inject_pwa(inject_analytics(inject_telemetry(social, telemetry, current_release())), app)
+        with_scripts = inject_feedback(inject_telemetry(social, telemetry, current_release()), feedback)
+        assert published == inject_pwa(inject_analytics(with_scripts), app)
         assert (
             published.index('<meta property="og:title"')
             < published.index("<script data-telemetry")
+            < published.index("<script data-feedback-dialog")
             < published.index("<script data-analytics")
             < published.index("<script data-pwa")
             < published.index("</head>")
@@ -380,13 +383,3 @@ def test_every_game_has_one_feedback_link(site_dir):
         assert 'target="_blank"' in links[0] and 'rel="noopener"' in links[0], name
     for name in GENERATED_PAGES:
         assert f'<a href="{FEEDBACK_URL}">Feedback</a>' in (site_dir / name).read_text("utf-8"), name
-
-
-def test_issue_templates_list_every_game():
-    titles = re.findall(rf"^- \[([^\]]+)\]\({re.escape(BASE_URL)}/", (ROOT / "README.md").read_text("utf-8"), re.M)
-    assert len(titles) == len(game_files())
-    for template in ("bug.yml", "idea.yml"):
-        text = (ROOT / ".github" / "ISSUE_TEMPLATE" / template).read_text("utf-8")
-        options = re.findall(r"^ {8}- (.+)$", text, re.M)
-        missing = [title for title in titles if title not in options]
-        assert not missing, f"{template} doesn't offer {missing}"

@@ -11,9 +11,9 @@ from urllib.parse import urlencode
 BASE_URL = "https://games.michaelwarkentin.com"
 SITE_NAME = "games.michaelwarkentin.com"
 REPO_URL = "https://github.com/mwarkentin/games"
-# Where feedback goes without Sentry: the header's link, and each game's
-# "Send feedback" (data-feedback), which telemetry.js turns into a form that
-# sends to Sentry once its SDK has loaded.
+# The repo's issue forms: the header's "Feedback" link, and each game's "Send
+# feedback" (data-feedback) without JavaScript. With it, feedback.js opens a
+# dialog that sends to Sentry or links to the forms filled in.
 FEEDBACK_URL = f"{REPO_URL}/issues/new/choose"
 # The leaderboard Worker (worker/), which the games' LEADERBOARD_URL, ROOMS_URL
 # and the survey log's SURVEY_URL name. A pull request's preview points them at

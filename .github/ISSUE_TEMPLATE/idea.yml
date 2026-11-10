@@ -1,21 +1,14 @@
 name: Idea
 description: Something you'd like a game to do, or a game you'd like to see.
 labels: [enhancement]
+# Each game's "Send feedback" dialog fills in these fields by their ids
+# (feedback.js); tests/test_feedback.py checks they match.
 body:
-  - type: dropdown
+  - type: input
     id: game
     attributes:
       label: Which game?
-      # Every game in README.md; tests/test_build.py checks.
-      options:
-        - Air Traffic Controller
-        - Doodle Chomp
-        - Funnels & Buckets
-        - Letterfield
-        - Letterfield survey log
-        - War
-        - A new game
-        - The site (home page, colophon, changelogs)
+      placeholder: War, or a new one
     validations:
       required: true
   - type: textarea

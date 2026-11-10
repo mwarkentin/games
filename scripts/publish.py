@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 """Copy everything publishable into the site directory.
 
-Games are copied as they are apart from four additions, inserted before
+Games are copied as they are apart from five additions, inserted before
 </head>: link-preview tags (see inject_social in common.py), telemetry.js
-(Sentry), analytics.js (Counterscale), and the links and script that make
+(Sentry), feedback.js (the "Send feedback" dialog), analytics.js
+(Counterscale), and the links and script that make
 each game a home-screen app (see build_pwa.py). Nothing is drawn on top of
 them, because each one owns the whole screen. games.json is copied alongside
 them, and so are the MIDI files in music/ that games play and the
@@ -33,6 +34,7 @@ from common import (
 )
 
 TELEMETRY = "telemetry.js"
+FEEDBACK = "feedback.js"
 
 
 def current_release(root: Path = ROOT) -> str:
@@ -50,9 +52,15 @@ def inject_telemetry(text: str, script: str, release: str) -> str:
     return inline_script(text, "data-telemetry", script, f' data-release="{release}"')
 
 
+def inject_feedback(text: str, script: str) -> str:
+    """Inline the "Send feedback" dialog's script before </head>, once."""
+    return inline_script(text, "data-feedback-dialog", script)
+
+
 def publish(site_dir: Path, root: Path = ROOT) -> list[str]:
     site_dir.mkdir(parents=True, exist_ok=True)
     telemetry = (root / TELEMETRY).read_text("utf-8")
+    feedback = (root / FEEDBACK).read_text("utf-8")
     release = current_release(root)
 
     published = game_files(root)
@@ -61,7 +69,8 @@ def publish(site_dir: Path, root: Path = ROOT) -> list[str]:
         source = (root / filename).read_text("utf-8")
         app = app_of(source, slug)
         text = inject_social(source, app, f"/{slug}", root)
-        text = inject_analytics(inject_telemetry(text, telemetry, release), root)
+        text = inject_feedback(inject_telemetry(text, telemetry, release), feedback)
+        text = inject_analytics(text, root)
         text = inject_pwa(text, app)
         (site_dir / filename).write_text(text, "utf-8")
     games_json = root / "games.json"

@@ -1,6 +1,6 @@
 ## 2026-11-09
 
-- A “Send feedback” link under How to play, for bugs and ideas.
+- A “Send feedback” link under How to play, for bugs and ideas. A GitHub issue from it comes with the game and your device filled in.
 - Opening the high-score screen while your score saves no longer lets you
   save it twice, and "Saved!" shows once it's on the board. Initials you've
   typed stay put when you open and close the screen.

@@ -13,7 +13,7 @@ import json
 import mimetypes
 import re
 from pathlib import Path
-from urllib.parse import urlparse
+from urllib.parse import parse_qs, urlparse
 
 import pytest
 from playwright.sync_api import Page, Route, expect
@@ -158,6 +158,27 @@ def test_send_feedback_reaches_sentry_with_a_replay(page: Page, production, sent
     assert context["replay_id"] == replay["replay_id"]
     assert feedback["tags"]["game"] == "funnels-and-buckets"
     expect(dialog).to_be_hidden()
+    assert errors == []
+
+
+def test_reporting_on_github_instead_carries_the_message_and_the_replay(page: Page, production, sentry, errors):
+    page.context.route("https://github.com/**", lambda route: route.fulfill(body="", content_type="text/html"))
+    page.goto(f"{production}/war")
+    page.wait_for_function("window.Sentry?.getClient()")
+
+    page.locator("[data-feedback]").click()
+    dialog = page.locator("dialog.games-feedback")
+    expect(dialog).to_have_attribute("data-mode", "sentry")
+    page.keyboard.type("Cards stuck mid-slam")
+    with page.context.expect_page() as opened:
+        dialog.get_by_role("link", name="report a bug").click()
+    fields = {key: values[0] for key, values in parse_qs(urlparse(opened.value.url).query).items()}
+
+    # Following the link sends the replay so far, for the issue to point to.
+    [replay] = sentry.wait_for(page, "replay_event")
+    assert fields["what"] == "Cards stuck mid-slam"
+    assert f"Sentry replay: {replay['replay_id']}" in fields["details"].splitlines()
+    assert sentry.items("feedback") == []
     assert errors == []
 
 
