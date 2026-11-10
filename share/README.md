@@ -93,12 +93,27 @@ and `worker_domains.tf` there), in this order:
 
 ## Previews
 
-A pull request that changes `share/` doesn't get a Worker Preview of this
-Worker yet, and previews blank `SHARE_URL`, so their shares link straight
-to the preview's own game. `wrangler.toml` already has the `[previews]`
-bindings (a previews bucket, a rate limit apart from production's, no survey)
-for when `preview.yml` makes one, with `--var SITE_URL=<the site preview>`
-so its pages send people to the preview.
+A pull request whose branch changes `share/` or `worker/src/` (or
+`preview.yml`) from `main`'s gets a Worker Preview of this Worker at
+`https://pr-<number>-games-share.mwarkentin.workers.dev`, made by the
+**Preview** workflow (`.github/workflows/preview.yml`) with `npm ci` and
+`wrangler preview`, and deleted when the pull request closes. The pull
+request's site preview points Letterfield's `SHARE_URL` at it, so Share
+there hands out its links, and the workflow's comment links to an example
+card.
+
+- **`SITE_URL`** is the site preview, passed with `--var` for that Preview
+  only, so its pages send people back to the preview, not production.
+- **`IP_SALT`** is the Previews' salt (`PREVIEW_IP_SALT`, as the
+  leaderboard's Previews use), passed with `--secrets-file`.
+- **Bindings** are `[previews]` in `wrangler.toml`: the
+  `games-share-cards-previews` bucket (objects expire after 30 days) and a
+  rate limit apart from production's. There's no survey, so a Preview's
+  cards leave their charting lines off, and since only charted words are
+  kept in R2, it draws every card afresh, cached at the edge.
+
+Other previews blank `SHARE_URL`, so their shares link straight to the
+preview's own game.
 
 ## Fonts
 

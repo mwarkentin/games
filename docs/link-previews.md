@@ -450,15 +450,16 @@ built.
    **done**
 4. **Deploy workflow** (`share.yml`, skipped until `SHARE_DEPLOY` is set)
    and a `share` test job. **done**
-5. **Preview workflow:** Worker Preview of `games-share`, `SITE_URL` var.
-   Not done: for now `point_preview.py` blanks `SHARE_URL` on previews, so
-   their shares link to the preview's own game. **S–M**
+5. **Preview workflow:** Worker Preview of `games-share`, `SITE_URL` var,
+   and `point_preview.py --share` pointing the site preview's `SHARE_URL` at
+   it (previews without one blank it). **done**
 6. **Pages:** `SHARE_URL` (empty) in `letterfield.html`, the `?share=`
    override, `/f/d/` from a dark page, a Playwright test, the AGENTS.md
    section. **done**
 7. **Try it** on the PR preview in Slack, iMessage, WhatsApp, Discord,
    Bluesky and Mastodon, using each one's card debugger where there is one.
-   Then set `SHARE_URL` and add the changelog line on that day. **S**
+   Then set `SHARE_URL` and add the changelog line on that day. **done**
+   (games#61: share cards are live)
 8. **Phase 2, log views:** `/v/surveyor|theme|territory/...` drawn from
    `shareImage()`'s layout and the log's own queries (import
    `survey-log.js`'s query functions with the `LOG_DB` binding). A running
@@ -525,8 +526,9 @@ built.
   `fetch()` another Worker's workers.dev address on the same account. Cost:
   up to two Durable Object requests per new render, never per unfurl. Worker
   Previews of `games-share` may not be able to bind a Worker Preview's
-  Durable Objects; there, both lines are left off. Check that in step 5 of
-  the plan.
+  Durable Objects; there, both lines are left off. As built in step 5,
+  Previews have no survey bindings at all, so their cards always leave both
+  lines off.
 
 - **Theme (10 November 2026): the sharer's.** A link preview has one image
   for everyone, and chat apps don't tell the server the viewer's theme, so

@@ -271,6 +271,29 @@ def test_point_text_blanks_the_share_workers_address():
     assert point_text(text, "https://pr-7-games-preview.example.workers.dev") == "const SHARE_URL = '';\nconst SHARE_URLS = 1;"
 
 
+def test_point_text_points_shares_at_the_share_workers_preview():
+    # With a share Preview, whose cards send people to this preview.
+    site, share = "https://pr-7-games-preview.example.workers.dev", "https://pr-7-games-share.example.workers.dev"
+    text = "const SHARE_URL = 'https://share.michaelwarkentin.com';\nconst SHARE_URLS = 1;"
+    assert point_text(text, site, share=share) == f"const SHARE_URL = '{share}';\nconst SHARE_URLS = 1;"
+
+
+def test_point_preview_points_letterfield_at_a_share_preview_only_when_given_one(site_dir, tmp_path):
+    """As the workflow runs it, with and without a share Preview."""
+    site, share = "https://pr-7-games-preview.example.workers.dev", "https://pr-7-games-share.example.workers.dev"
+    assert "const SHARE_URL = 'https://share.michaelwarkentin.com';" in (site_dir / "letterfield.html").read_text("utf-8")
+    for extra, expected in [([], ""), (["--share", share + "/"], share)]:
+        preview = tmp_path / f"site{len(extra)}"
+        shutil.copytree(site_dir, preview)
+        subprocess.run(
+            [sys.executable, str(ROOT / "scripts" / "point_preview.py"), str(preview), "--site", site, *extra],
+            check=True,
+        )
+        text = (preview / "letterfield.html").read_text("utf-8")
+        assert f"const SHARE_URL = '{expected}';" in text
+        assert "share.michaelwarkentin.com" not in text
+
+
 def test_point_site_leaves_no_production_url_in_the_preview(site_dir, tmp_path):
     preview = tmp_path / "site"
     shutil.copytree(site_dir, preview)
