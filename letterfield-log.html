@@ -186,6 +186,7 @@ html[data-log="loading"] #chart{opacity:.5}
 .meta b{font-weight:500;color:var(--ink)}
 .loading{color:var(--muted);font:400 12px/1 var(--f-mono);padding:12px 8px}
 .foot{margin-top:28px;padding-top:12px;border-top:1px solid var(--rule);color:var(--muted);font-size:13px}
+.foot.feedback{margin-top:4px;padding-top:0;border-top:0}
 @media (prefers-reduced-motion: no-preference){html{scroll-behavior:smooth}}
 @media (min-width:640px){.year{grid-template-columns:repeat(4,minmax(0,1fr))}.plot,.overlay,.line{height:120px}}
 @media (max-width:420px){header h1{font-size:34px}.nav input{width:10em}.seg button{padding:8px 10px}.tile b{font-size:21px}.rank li{grid-template-columns:minmax(0,7.5rem) minmax(0,1fr) auto}.row{grid-template-columns:minmax(0,8rem) minmax(0,1fr) 4rem}}
@@ -248,6 +249,7 @@ html[data-log="loading"] #chart{opacity:.5}
   <div id="log"></div>
 
   <p class="foot">Times are yours, in <span id="zone"></span>. Top lists for a week or longer count whole days in UTC, and initials are whatever each surveyor typed in, so they aren’t unique. “Mine” lists the words this browser charted first, from Letterfield’s field notes; nothing about you is sent to find them. A surveyor’s, territory’s or theme’s own view has an address of its own to share.</p>
+  <p class="foot feedback">Found a bug or have an idea? <a href="https://github.com/mwarkentin/games/issues/new/choose" target="_blank" rel="noopener" data-feedback>Send feedback</a></p>
 </main>
 <div class="tip" id="tip" role="tooltip" hidden></div>
 <script>

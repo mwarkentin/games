@@ -1,0 +1,33 @@
+name: Bug
+description: Something in a game isn't working the way it should.
+labels: [bug]
+# Each game's "Send feedback" dialog fills in these fields by their ids
+# (feedback.js); tests/test_feedback.py checks they match.
+body:
+  - type: input
+    id: game
+    attributes:
+      label: Which game?
+      placeholder: War
+    validations:
+      required: true
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened?
+      description: What you did, what you expected, and what happened instead. A screenshot helps.
+    validations:
+      required: true
+  - type: input
+    id: device
+    attributes:
+      label: Device and browser
+      placeholder: iPhone · iOS 18.5 · Safari 18.5
+    validations:
+      required: true
+  - type: textarea
+    id: details
+    attributes:
+      label: Details
+      description: Filled in by the game's "Send feedback" link. Edit or delete anything you'd rather not share.
+      render: text

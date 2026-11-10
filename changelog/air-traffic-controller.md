@@ -1,3 +1,7 @@
+## 2026-11-10
+
+- A “Send feedback” link on the menu, for bugs and ideas. A GitHub issue from it comes with the game and your device filled in.
+
 ## 2026-11-09
 
 - Tapping Space or Enter as a shift ends no longer skips its report and

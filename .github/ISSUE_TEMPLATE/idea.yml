@@ -1,0 +1,20 @@
+name: Idea
+description: Something you'd like a game to do, or a game you'd like to see.
+labels: [enhancement]
+# Each game's "Send feedback" dialog fills in these fields by their ids
+# (feedback.js); tests/test_feedback.py checks they match.
+body:
+  - type: input
+    id: game
+    attributes:
+      label: Which game?
+      placeholder: War, or a new one
+    validations:
+      required: true
+  - type: textarea
+    id: idea
+    attributes:
+      label: What's your idea?
+      description: What you'd like, and what it would make better.
+    validations:
+      required: true

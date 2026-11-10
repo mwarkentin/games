@@ -1,3 +1,7 @@
+## 2026-11-10
+
+- A “Send feedback” link under How to play, for bugs and ideas. A GitHub issue from it comes with the game and your device filled in.
+
 ## 2026-11-09
 
 - Opening the high-score screen while your score saves no longer lets you

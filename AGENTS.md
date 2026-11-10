@@ -21,8 +21,8 @@ utilities; games live here so they get their own origin and their own rules.
   The build also generates `index.html`, `colophon.html`, the changelog
   pages, `sitemap.xml`, `games.json` and each page's web app manifest, so
   don't create those by hand. Games are published as committed, apart from
-  link-preview tags, `telemetry.js`, `analytics.js` and the home-screen app
-  links (see below).
+  link-preview tags, `telemetry.js`, `feedback.js`, `analytics.js` and the
+  home-screen app links (see below).
 - `TIP_URL` in `scripts/common.py`: the Stripe Payment Link for tips. Once
   it's set, the header of the home page, colophon and changelogs link to it
   as "Tip jar", tagged with `client_reference_id=games-home`,
@@ -30,6 +30,8 @@ utilities; games live here so they get their own origin and their own rules.
   from. Games themselves get no link, since they own the whole screen.
 - `telemetry.js`: error reporting, performance and session replays through
   Sentry. The build inlines it into every game's `<head>`.
+- `feedback.js`: the "Send feedback" dialog (see Feedback). The build inlines
+  it into every game's `<head>`.
 - `analytics.js`: page views through Counterscale. The build inlines it into
   every page's `<head>`, the home page, colophon and changelogs included.
 - `sw.js`: the service worker that keeps every page working offline. The
@@ -86,6 +88,8 @@ utilities; games live here so they get their own origin and their own rules.
   no audio files.
 - Pause when the tab is hidden (`visibilitychange`) if the game runs on a
   timer.
+- Give players one "Send feedback" link marked `data-feedback` (see
+  Feedback, under Telemetry).
 - Keep scores and settings in `localStorage`, with keys prefixed by the
   game's name: every game on this site shares one origin. Global
   leaderboards go through the leaderboard Worker (see below), never straight
@@ -241,6 +245,37 @@ text inputs masked. To hide something else from replays, give it the
 `sentry-mask` class. IP addresses aren't sent. `tests/test_telemetry.py`
 serves the site under its real hostname to check that it reports errors
 with a replay and never sends anything from elsewhere.
+
+### Feedback
+
+Every game has one "Send feedback" link, somewhere a player finds it
+without it covering the game (the menu, or Letterfield's field notes):
+
+```html
+Found a bug or have an idea? <a href="https://github.com/mwarkentin/games/issues/new/choose" target="_blank" rel="noopener" data-feedback>Send feedback</a>
+```
+
+Without JavaScript it goes to the repo's issue forms
+(`.github/ISSUE_TEMPLATE/`). With it, `feedback.js` opens a dialog instead,
+which keeps its keys, taps and clicks from reaching the game:
+
+- **Once Sentry's SDK has loaded,** it's a form that sends the message and
+  an optional email to Sentry's User Feedback with the replay's last minute
+  (`Sentry.captureFeedback`, in every CDN bundle). Sentry's own feedback
+  button isn't used: games own the whole screen.
+- **Either way,** it links to the Bug and Idea forms, filled in through the
+  URL by their fields' ids: the game (the page's `<title>` up to any colon),
+  the device and browser, and details (the address without its query string,
+  which can hold invite codes, each machine's state, the window, the version
+  and the user agent). From the Sentry form, the links also carry what was
+  typed and the replay's id, and send the replay so far. GitHub only fills
+  in text fields, so the forms ask for the game as text, not from a list.
+
+A click meant for a new tab goes straight to the issue forms. The header of
+the home page, colophon and changelogs links to them as "Feedback".
+`tests/test_feedback.py` checks the dialog and that the forms have the
+fields it fills in; `tests/test_build.py` that every game has the link;
+`tests/test_telemetry.py` the Sentry form.
 
 ## Analytics
 
@@ -534,7 +569,9 @@ page loads nothing from a new host.
 
 1. Create or update `foo.html` following the rules above.
 2. Link it from `README.md` under the right heading:
-   `- [Title](https://games.michaelwarkentin.com/foo): what it is`.
+   `- [Title](https://games.michaelwarkentin.com/foo): what it is`, with
+   the same title as the page's `<title>` up to any colon, and give the game
+   its "Send feedback" link (see Feedback).
 3. Note anything a player would notice in `changelog/foo.md`, under the day
    it reaches the site (see Changelogs). A new game's first day says it's
    here.
