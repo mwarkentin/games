@@ -1,3 +1,9 @@
+## 2026-11-10
+
+- Tap the book beside a word in your field notes to see what it means, from
+  Wiktionary, or Wikipedia for names it doesn't know, with links to read
+  more or search when there's no definition.
+
 ## 2026-11-09
 
 - On the shared survey, you pick your three-letter initials before

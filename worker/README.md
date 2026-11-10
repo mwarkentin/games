@@ -108,7 +108,39 @@ client's IP address included.
 Worker and the Durable Object classes: the runtime treats every
 export of the main module as an entry point, so constants exported for tests
 can't live there. `src/survey.js`, `src/survey-log.js` and `src/letterfield-world.js` are the
-survey.
+survey, and `src/define.js` Letterfield's definitions.
+
+## Letterfield's definitions
+
+`GET /v1/define/<WORD>/<th>` (`src/define.js`) says what a word means, for
+Letterfield's field notes: up to three senses from Wiktionary, or, for a
+name Wiktionary doesn't know, the start of the Wikipedia article a search
+for the word beside its theme's name finds ("cronkite Broadcast"). The word
+must be in theme `th` of `letterfield-world.js`, so there are only about
+17,700 words ever to look up.
+
+```
+GET /v1/define/BASIL/72
+  → 200 {"word", "senses": [{"pos", "text"}], "source": "wiktionary"|"wikipedia"|null, "title", "url"}
+  → 400 not a word in that theme   429 too many new words from one address
+  → 503 Wiktionary or Wikipedia couldn't answer; try again later
+```
+
+- **Cost:** each word is fetched once and kept in D1 (`definitions`) for
+  good; an empty answer is asked again after a month. Cloudflare's cache
+  and the browser keep answers for a month (a day for an empty one). Only
+  a word D1 hasn't got counts against `DEFINE_LOOKUPS`, 20 a minute per
+  address.
+- **Wikimedia's limits:** it rate-limits unauthenticated requests from
+  shared addresses, Cloudflare's included. A 429 is never stored: the
+  instance backs off for its `Retry-After` and answers 503, and the game
+  offers to try again or search. Requests name the game in `User-Agent`, as
+  Wikimedia asks. An optional `WIKIMEDIA_TOKEN` secret (an API token from
+  Wikimedia's developer portal) is sent as a bearer token for a higher
+  limit; it isn't set, and would be made in mwarkentin/infra like the
+  others.
+- **Licence:** both sites' text is CC BY-SA 4.0. Every answer carries its
+  source's `url`, and the game shows it with the licence.
 
 ## War rooms
 
