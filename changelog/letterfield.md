@@ -3,6 +3,9 @@
 - The list of words hidden in view only names a word once you can see
   most of it from its first letter, not just a letter or two at the edge
   of the screen or under a panel.
+- The "One tap to join the shared survey" box now sits just above the word
+  list and controls instead of over them, and goes away a moment after
+  you pass instead of staying over the words.
 - On a phone, the list of words hidden in view scrolls only sideways, no
   longer up and down as well.
 
