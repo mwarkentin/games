@@ -295,6 +295,33 @@ def test_a_find_shares_a_picture_of_it_where_files_can_be_shared(page: Page, sit
     assert errors == []
 
 
+def test_with_a_share_worker_a_find_links_to_its_card_in_the_sharers_theme(page: Page, site_url, errors):
+    # ?share= stands in for SHARE_URL: the share Worker (share/), whose page
+    # carries a picture of the word as its link preview.
+    without_worker(page, site_url, "letterfield")
+    page.add_init_script(SHARE_SHEET)
+    page.goto(f"{site_url}/letterfield?share=https://share.test/#debug")
+    page.click("#coachOk")
+    page.wait_for_function("window.__lf")
+    w, x, y, d = page.evaluate("(() => { const o = window.__lf.chunk(0, 0).words[0]; return [o.w, o.x, o.y, o.d]; })()")
+    page.evaluate("([w, x, y, d]) => window.__lf.collect(w, x, y, d, false)", [w, x, y, d])
+    page.click("#toast .share")
+    slug = f"f-{w.lower()}-{x}-{y}-{d}"
+    assert page.evaluate("window.__shared")[0]["url"] == f"https://share.test/f/{slug}"
+
+    # A dark page shares the dark card.
+    page.emulate_media(color_scheme="dark")
+    page.reload()
+    page.wait_for_function("window.__lf")
+    expect(page.locator("html")).to_have_attribute("data-intro", "exploring")
+    # The find is still in the field notes, which stay open from before.
+    if page.locator("#notesToggle").get_attribute("aria-expanded") != "true":
+        page.click("#notesToggle")
+    page.locator("#finds").get_by_role("button", name=f"Share {w}").click()
+    assert page.evaluate("window.__shared")[0]["url"] == f"https://share.test/f/d/{slug}"
+    assert errors == []
+
+
 def test_without_a_share_sheet_a_find_is_copied(page: Page, site_url, errors):
     without_worker(page, site_url, "letterfield")
     page.add_init_script("""
@@ -374,4 +401,67 @@ def test_music_left_on_starts_with_the_first_tap_on_its_button(page: Page, site_
     music.click()  # and the next tap switches it off
     expect(music).to_have_attribute("aria-pressed", "false")
     assert page.evaluate("window.__lf.music()") is None
+    assert errors == []
+
+
+# How the word list's row of chips sits in its box.
+CHIPS_JS = """() => {
+  const ul = document.getElementById('legendList'), cs = getComputedStyle(ul);
+  return { sh: ul.scrollHeight, ch: ul.clientHeight, sw: ul.scrollWidth, cw: ul.clientWidth,
+           ox: cs.overflowX, oy: cs.overflowY, wrap: cs.flexWrap,
+           n: ul.querySelectorAll('.chip').length };
+}"""
+
+
+def chips_scroll_only_sideways(page: Page, phone: bool) -> None:
+    """The word list never scrolls up and down: on a phone it's one row that
+    scrolls sideways, on a computer the words wrap inside the box."""
+    m = page.evaluate(CHIPS_JS)
+    assert m["n"] > 0
+    assert m["oy"] not in ("auto", "scroll"), m
+    assert m["sh"] <= m["ch"], m
+    # Every chip, struck through or not, sits inside the row's height.
+    if phone:
+        assert m["wrap"] == "nowrap" and m["ox"] == "auto", m
+    else:
+        assert m["wrap"] == "wrap" and m["sw"] <= m["cw"], m
+
+
+def test_the_word_list_never_scrolls_up_and_down(page: Page, site_url, errors):
+    without_worker(page, site_url, "letterfield")  # alone, so the words are buttons
+    page.set_viewport_size({"width": 375, "height": 740})
+    page.goto(f"{site_url}/letterfield")
+    page.click("#coachOk")
+    expect(page.locator("#legendList .chip").first).to_be_visible()
+    # Fill the list with long words, some found, to push it as far as it goes.
+    fill = """() => {
+      const ul = document.getElementById('legendList');
+      ul.innerHTML = Array.from({length: 14}, (_, i) =>
+        `<li><button type="button" class="chip mark${i % 3 ? '' : ' found'}">${'QUARTERMASTER'.slice(0, 6 + i % 8)}</button></li>`).join('');
+    }"""
+    page.evaluate(fill)
+    chips_scroll_only_sideways(page, phone=True)
+    m = page.evaluate(CHIPS_JS)
+    assert m["sw"] > m["cw"], m  # too many to fit, so it scrolls sideways
+    page.evaluate("document.getElementById('legendList').scrollLeft = 99999")
+    assert page.evaluate("document.getElementById('legendList').scrollLeft") > 0
+    assert page.evaluate("document.getElementById('legendList').scrollTop") == 0
+
+    # A keyboard's focus ring still shows in full on the chip it's on.
+    chip = page.locator("#legendList .chip:not(.found)").first
+    chip.focus()
+    page.keyboard.press("Shift+Tab")
+    page.keyboard.press("Tab")
+    assert page.evaluate("document.activeElement.matches('#legendList .chip:focus-visible')")
+    assert page.evaluate("""() => {
+      const ul = document.getElementById('legendList'), a = document.activeElement;
+      const r = ul.getBoundingClientRect(), c = a.getBoundingClientRect();
+      const o = parseFloat(getComputedStyle(a).outlineWidth) + parseFloat(getComputedStyle(a).outlineOffset);
+      return c.top - o >= r.top && c.bottom + o <= r.bottom;
+    }""")
+    chips_scroll_only_sideways(page, phone=True)
+
+    page.set_viewport_size({"width": 1280, "height": 900})
+    page.evaluate(fill)
+    chips_scroll_only_sideways(page, phone=False)
     assert errors == []

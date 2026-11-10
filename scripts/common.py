@@ -14,7 +14,7 @@ REPO_URL = "https://github.com/mwarkentin/games"
 # The leaderboard Worker (worker/), which the games' LEADERBOARD_URL, ROOMS_URL
 # and the survey log's SURVEY_URL name. A pull request's preview points them at
 # its own Worker Preview instead (see scripts/point_preview.py).
-WORKER_URL = "https://games-leaderboard.mwarkentin.workers.dev"
+WORKER_URL = "https://api.games.michaelwarkentin.com"
 ROOT = Path(__file__).resolve().parent.parent
 # The Stripe Payment Link for tips. While it's empty, pages have no tip link.
 TIP_URL = "https://buy.stripe.com/4gM7sL3xucbG0ADgcd3Je00"

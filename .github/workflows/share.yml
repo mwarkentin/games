@@ -1,0 +1,56 @@
+name: Deploy share worker
+
+# games-share (share/): link-preview cards for Letterfield finds. It imports
+# the leaderboard Worker's map and survey code, so a change there redeploys it
+# too.
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'share/**'
+      - 'worker/src/**'
+      - '.github/workflows/share.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: share
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    # Skipped until mwarkentin/infra has made the R2 bucket and the custom
+    # domain, and set the SHARE_DEPLOY variable to "true" (see share/README.md),
+    # as well as the leaderboard Worker's CLOUDFLARE_ACCOUNT_ID, CLOUDFLARE_API_TOKEN and IP_SALT.
+    if: vars.CLOUDFLARE_ACCOUNT_ID != '' && vars.SHARE_DEPLOY == 'true'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: share
+    env:
+      CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      WRANGLER_SEND_METRICS: 'false'
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+      - run: npm ci
+      - name: Test
+        working-directory: .
+        run: node --disable-warning=ExperimentalWarning --test "share/test/*.test.js"
+      # The salt (the leaderboard's, for hashing addresses before the render
+      # limit sees them) goes up with the deploy, so the new version never
+      # runs without it.
+      - name: Deploy worker
+        env:
+          IP_SALT: ${{ secrets.IP_SALT }}
+        run: |
+          test -n "$IP_SALT" || { echo "::error::The IP_SALT secret is missing; see share/README.md"; exit 1; }
+          secrets="$RUNNER_TEMP/share-secrets.json"
+          trap 'rm -f "$secrets"' EXIT
+          jq -n --arg salt "$IP_SALT" '{IP_SALT: $salt}' > "$secrets"
+          npx --yes wrangler@4.151.0 deploy --secrets-file "$secrets"

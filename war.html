@@ -401,6 +401,8 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px s
   font: 800 10px/1 system-ui, sans-serif; text-align: center; background: rgba(0, 0, 0, .55); color: #fff;
 }
 .card.flyer { position: absolute; z-index: 1; will-change: transform; }
+/* A picked-up card's face and back turn over together (see gatherShow). */
+.card.flyer.gathering { -webkit-backface-visibility: hidden; backface-visibility: hidden; }
 .loots.size-l { --tw: 60px; --lw: 42px; }
 .loots.size-m { --tw: 50px; --lw: 34px; }
 .loots.size-s { --tw: 38px; --lw: 26px; }
@@ -979,6 +981,8 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px s
     <h3>Deck</h3>
     <div class="decks" id="menuDecks" role="group" aria-label="Deck"></div>
     <p class="deck-note" id="menuDeckNote"></p>
+    <h3>Commentary</h3>
+    <div class="seg" id="menuChat" role="group" aria-label="Commentary"></div>
     <p class="fine" id="lifetime"></p>
     <div class="menu-tools">
       <button class="btn" id="stylesBtn">🧤 Power-ups</button>
@@ -1040,6 +1044,10 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px s
       <h3>Deck</h3>
       <div class="decks" id="pauseDecks" role="group" aria-label="Deck"></div>
       <p class="deck-note" id="pauseDeckNote"></p>
+    </div>
+    <div>
+      <h3>Commentary</h3>
+      <div class="seg" id="pauseChat" role="group" aria-label="Commentary"></div>
     </div>
   </div>
 </div>
@@ -1422,7 +1430,7 @@ function warStandings(game) {
 // The leaderboard Worker's URL, which also runs War rooms (worker/src/war.js).
 // While it's empty, playing with friends stays hidden and War is solo only.
 // ?rooms=<url> overrides it, for local testing and for tests.
-const ROOMS_URL = 'https://games-leaderboard.mwarkentin.workers.dev';
+const ROOMS_URL = 'https://api.games.michaelwarkentin.com';
 
 const TIERS = [
   [0, 'boop'], [12, 'tap'], [30, 'thwack'], [50, 'SLAM'], [70, 'BIG SLAM'],
@@ -1472,6 +1480,10 @@ const CLOCK_LABELS = { timed: ['⏱️ Timed', 'Slam within seconds'], slow: ['�
 // What happens to the cards you win when they go back under your deck: as
 // they were won, or shuffled first, as plenty of people play.
 const WINNINGS_LABELS = { kept: ['📚 As won', 'Back in the order won'], shuffled: ['🔀 Shuffled', 'Shuffled on the way back'] };
+// Chatty: a joke about every play, the win odds as you go, and the science
+// of slamming at the end. Quiet: just what happened. The animations are the
+// same either way; prefers-reduced-motion is what calms those.
+const CHAT_LABELS = { chatty: ['🎙️ Chatty', 'Jokes, win odds, the science'], quiet: ['🤫 Quiet', 'Just what happened'] };
 const FAST_PACE = 0.3;
 
 // ---- Small helpers ----
@@ -1487,6 +1499,10 @@ const store = {
   },
   set(key, value) { try { localStorage.setItem('war:' + key, JSON.stringify(value)); } catch (e) { /* private mode */ } },
 };
+
+// Whether the game chats (see CHAT_LABELS): shown as data-chat on <html>.
+let chatty = store.get('chat', 'chatty') !== 'quiet';
+document.documentElement.dataset.chat = chatty ? 'chatty' : 'quiet';
 
 // Only touch the page when something changed, so nothing is rewritten for nothing.
 function setText(node, text) { if (node.textContent !== text) node.textContent = text; }
@@ -1826,6 +1842,23 @@ const Sound = {
   riffle() {
     for (let i = 0; i < 9; i++) this.noise(i * 0.03, 0.025, 0.1, 3000 + i * 250);
     this.noise(0.3, 0.07, 0.18, 900);
+  },
+  // Picking up: a soft brush as a heap sweeps together, rising, and a tap
+  // as the stack lands under the deck. `k` is how loud, quieter for others.
+  sweep(k = 1) {
+    for (let i = 0; i < 6; i++) this.noise(i * 0.035, 0.07, 0.05 * k, 700 + i * 450);
+  },
+  tap(k = 1) {
+    this.noise(0, 0.05, 0.22 * k, 800);
+    this.tone(150, 0, 0.09, { gain: 0.12 * k, to: 85 });
+  },
+  // A riffle shuffle over `len` seconds: quick flicks from the two halves in
+  // turn, a bridge's soft whirr, and a tap as it squares up.
+  shuffle(k = 1, len = 0.6) {
+    const flicks = 16, run = len * 0.7;
+    for (let i = 0; i < flicks; i++) this.noise(len * 0.15 + (i * run * 0.85) / flicks, 0.02, 0.09 * k, i % 2 ? 4200 : 2800);
+    this.noise(len * 0.15 + run * 0.85, 0.12, 0.05 * k, 1500);
+    this.noise(len * 0.95, 0.05, 0.16 * k, 900);
   },
   cheer() { this.tone(880, 0, 0.08, { type: 'triangle', gain: 0.06, to: 1200 }); },
   // Someone nudged you: a friendly knock-knock.
@@ -2432,13 +2465,13 @@ const Versus = {
     }
     if (joker) { this.joker(m, { k, calm, order, shown, depth, level, n, card, joker }); return; }
     const fighter = (seat) => {
-      const look = deckOf(seat);
+      const tied = card(seat);
+      const look = cardLook(tied, deckOf(seat));
       const node = el('div', 'vs-f');
       node.dataset.deck = look;
       node.dataset.seat = seat;
       const pic = el('div', 'vs-pic');
       pic.append(el('span', '', avatarOf(seat)));
-      const tied = card(seat);
       if (tied !== undefined) pic.append(cardEl(tied, look));
       node.append(pic, el('div', 'vs-name', playerName(seat)));
       return node;
@@ -2500,7 +2533,7 @@ const Versus = {
     const next = m.next;
     const pre = [depth > 1 ? VS_PRE[level - 1] || 'MEGA' : '', n > 2 ? `${n}-WAY` : ''].filter(Boolean).join(' ');
     // The jokers that tied, each in its owner's deck.
-    const cards = shown.map((seat) => [card(seat), deckOf(seat)]).filter(([c]) => c !== undefined);
+    const cards = shown.map((seat) => [card(seat), cardLook(card(seat), deckOf(seat))]).filter(([c]) => c !== undefined);
     // Its cap is in your deck's colors, or the first fighter's if you're watching.
     const show = new Joker.Show($('fx'), { deckKey: deckOf(order[0]), level: joker, k, calm, pre, cards });
     later(() => show.remove(), next.opensIn);
@@ -4122,7 +4155,8 @@ const SixSeven = {
     // A copy of the card someone played, on a palm.
     const side = (cls, seat) => {
       const node = el('div', 'ss-side ' + cls);
-      node.append(cardEl(m.plays.find((p) => p[0] === seat)[2], deckOf(seat)));
+      const up = m.plays.find((p) => p[0] === seat)[2];
+      node.append(cardEl(up, cardLook(up, deckOf(seat))));
       node.insertAdjacentHTML('beforeend', SS_HAND);
       return node;
     };
@@ -4133,7 +4167,7 @@ const SixSeven = {
     const me = S.you;
     const seven = m.winner === me ? 'your seven' : `${playerName(m.winner)}'s seven`;
     const victim = six === me ? 'your six' : sixes > 1 ? 'a six' : `${playerName(six)}'s six`;
-    setText($('caption'), pick([
+    if (chatty) setText($('caption'), pick([
       `Six… seven! ${seven[0].toUpperCase() + seven.slice(1)} edges out ${victim}.`,
       `Six… SEVEN! ${seven[0].toUpperCase() + seven.slice(1)} weighs more than ${victim}. Barely.`,
       `It’s a six… seven! ${seven[0].toUpperCase() + seven.slice(1)} beats ${victim} by one.`,
@@ -4270,6 +4304,47 @@ function deckOf(seat) {
   return 'classic';
 }
 
+// A solo game's themes, one for each deck in it: yours first, then the others
+// in the order of DECKS after it, and round again once there are more decks
+// than themes. Deck 0 always has yours (see setDeck).
+function themeOrder(first) {
+  const keys = Object.keys(DECKS);
+  const at = Math.max(0, keys.indexOf(first));
+  return keys.map((_, i) => keys[(at + i) % keys.length]);
+}
+const soloThemes = () => (Session.is('solo') && S.conn && S.conn.themes) || null;
+
+// The deck a card is drawn in. In a solo game every deck has a theme of its
+// own and a card always shows its deck's, whoever holds it, like real decks
+// mixed together; a card the page doesn't know shows yours. In a room, a card
+// is drawn in `look`, the deck of whoever plays it (deckOf).
+function cardLook(card, look) {
+  const themes = soloThemes();
+  if (!themes) return look;
+  return themes[Number.isInteger(card) ? Math.floor(card / WAR.DECK) % themes.length : 0];
+}
+
+// In a solo game, the card i from the top of someone's deck, for the backs
+// of cards the page hasn't been told about yet: their deck's top card, and
+// the cards they're laying face down in a war.
+function soloCard(seat, i = 0) {
+  if (!soloThemes() || !S.conn.game) return undefined;
+  const pile = S.conn.game.piles[seat];
+  return pile ? pile[i] : undefined;
+}
+
+// Which deck is which, for the deck picker's note: "2 decks: yours in Neon,
+// the other in Space."
+function decksNote(themes, n) {
+  if (n <= 1) return '';
+  const name = (key) => DECKS[key][0];
+  if (n === 2) return `2 decks: yours in ${name(themes[0])}, the other in ${name(themes[1])}.`;
+  const rest = themes.slice(1, Math.min(n, themes.length)).map(name);
+  const list = rest.length > 1 ? `${rest.slice(0, -1).join(', ')} and ${rest[rest.length - 1]}` : rest[0];
+  return n <= themes.length ? `${n} decks: yours in ${name(themes[0])}, the others in ${list}.`
+    : `${n} decks: yours in ${name(themes[0])}, the others in ${list}, then round again.`;
+}
+
 // ---- Sessions: what the page is playing through ----
 //
 // One session at a time: none on the menu, joining while a room is being
@@ -4331,6 +4406,8 @@ class SoloRoom {
     for (const bot of warBotNames(opponents, random, [name])) {
       this.players.push({ name: bot, avatar: Math.floor(random() * AVATARS.length), bot: true, online: true });
     }
+    // Each deck's theme: yours, then others (see themeOrder and cardLook).
+    this.themes = themeOrder(deck);
     this.game = null;
     this.timer = 0;
     this.pausedAt = 0;
@@ -4653,14 +4730,15 @@ function openStage() {
     S.pot = 0;
     const final = m.battle === m.limit && m.limit < WAR.LENGTHS.total;
     banner(final ? 'FINAL BATTLE' : '', false);
-    setText($('caption'), isFighting(S.you) ? (final ? 'Last chance. Slam like it matters. (It does not.)' : pick(OPEN_LINES)) : '');
+    setText($('caption'), !isFighting(S.you) ? '' : final ? (chatty ? 'Last chance. Slam like it matters. (It does not.)' : 'The last battle.')
+      : chatty ? pick(OPEN_LINES) : '');
   }
   if (m.stage > 0) Versus.fight(m);
   // Bots whose decks couldn't cover this stage took their winnings under
   // them, once the pot just won has landed.
   for (const seat of m.gathered || []) {
-    if (S.decks) S.decks[seat] = S.counts[seat] ?? 0;
-    heapGather(seat, m.stage ? 0 : 700 * pace());
+    const n = takeLoot(seat);
+    heapGather(seat, m.stage ? 0 : 700 * pace(), { n });
   }
   // Yours wait for you to pick them up, unless Auto is playing for you (see autoSlam).
   if (m.stage === 0) botsTidy(m, won, landing);
@@ -4672,9 +4750,8 @@ function openStage() {
 // Someone put their winnings under their deck.
 function onGather(m) {
   if (!S.decks || !Number.isInteger(m.seat)) return;
-  const n = (S.counts[m.seat] ?? 0) - (S.decks[m.seat] ?? 0);
-  S.decks[m.seat] = S.counts[m.seat] ?? 0;
-  heapGather(m.seat, 0);
+  const n = takeLoot(m.seat);
+  heapGather(m.seat, 0, { n });
   if (m.seat === S.you && n > 0) {
     setText($('caption'), `${plural(n, 'card')} back under your deck, ${S.shuffle ? 'shuffled' : 'in the order you won them'}.`);
   }
@@ -4702,10 +4779,10 @@ function onCard(m) {
 // Someone slammed the card that counts, and it lands face up: the room says
 // which card it is. Your own slam comes back from the room too, with yours.
 function onSlam(m) {
-  // A slam that came without picking up first picked up.
+  // A slam that came without picking up first picked up, quickly, so the
+  // card it plays never waits on it.
   if (m.gathered && S.decks && Number.isInteger(m.seat)) {
-    S.decks[m.seat] = S.counts[m.seat] ?? 0;
-    heapGather(m.seat, 0);
+    heapGather(m.seat, 0, { brief: true, n: takeLoot(m.seat) });
     if (m.seat === S.you) renderHeaps();
   }
   // A slam can beat this page to the next stage opening, by a few milliseconds.
@@ -4780,17 +4857,19 @@ function playFlip(m) {
   S.decks = Array.isArray(m.decks) ? m.decks.slice() : null;
   // Cards that flopped from a deck that couldn't cover the stage took their
   // player's winnings under it first.
-  for (const seat of m.gathered || []) heapGather(seat, 0);
+  for (const seat of m.gathered || []) heapGather(seat, 0, { brief: true });
   S.pot = m.pot;
   for (const [seat, down, up, power, style] of m.plays) {
     const before = S.cards[seat];
-    const seq = [...(before ? before.seq : []), ...Array.from({ length: down }, () => ({ card: 'back', up: false })), { card: up, up: true }];
-    S.cards[seat] = { up, down: (before ? before.down : 0) + down, stage: m.stage, seq };
-    if (!S.slams[seat]) S.slams[seat] = [power, style];
-    const look = deckOf(seat);
     // The cards laid face down in a war go to the winner's heap face up. A
     // room server that doesn't say which they were leaves them face down.
     const laid = m.downs && Array.isArray(m.downs[seat]) ? m.downs[seat] : [];
+    // Face down on the table, each keeps which card it is (of), for its back.
+    const backs = Array.from({ length: down }, (_, i) => ({ card: 'back', up: false, of: laid[i] }));
+    const seq = [...(before ? before.seq : []), ...backs, { card: up, up: true }];
+    S.cards[seat] = { up, down: (before ? before.down : 0) + down, stage: m.stage, seq };
+    if (!S.slams[seat]) S.slams[seat] = [power, style];
+    const look = deckOf(seat);
     for (let i = 0; i < down; i++) {
       S.potCards.push({ card: Number.isInteger(laid[i]) ? laid[i] : 'back', look, seat, down: true });
     }
@@ -4849,7 +4928,8 @@ function narrate(m) {
   if (m.winner === me) {
     const [power, , auto] = mine.slice(3);
     banner(joker ? 'JOKER!' : m.stage ? 'WAR WON!' : 'YOU WIN!', false);
-    const lines = auto ? [`You dozed off, your ${cardName(winCard)} flopped over, and it won ${takes}. Effort is overrated.`]
+    const lines = !chatty ? [plainWin(m, winCard, takes)]
+      : auto ? [`You dozed off, your ${cardName(winCard)} flopped over, and it won ${takes}. Effort is overrated.`]
       : m.gods ? [`Nobody had cards left to fight with. The war gods smile on you: ${takes}.`]
       : !m.tied.includes(me) ? [`The others ran out of cards mid-war. You take ${takes}.`]
       : joker ? [`A joker! It beats everything, so it takes ${takes}.`, `Your joker takes ${takes}. Who’s laughing now? The joker.`]
@@ -4865,7 +4945,8 @@ function narrate(m) {
     banner(m.out && m.out.includes(me) ? 'OUT OF CARDS' : joker ? 'JOKER!' : '', false);
     const yours = cardName(mine[2]);
     const outranked = warRank(mine[2]) < warRank(winCard);
-    const lines = auto ? [`You dozed off and your ${yours} flopped over. ${winner}'s ${cardName(winCard)} takes ${takes}.`]
+    const lines = !chatty ? [plainLoss(m, mine[2], winCard, takes)]
+      : auto ? [`You dozed off and your ${yours} flopped over. ${winner}'s ${cardName(winCard)} takes ${takes}.`]
       : m.gods ? [`Nobody had cards left to fight with. The war gods pick ${winner}.`]
       : joker && outranked ? [`${winner}'s joker takes ${takes}. There is no defense against the joker.`, `Your ${yours} never stood a chance against ${winner}'s joker.`]
       : power >= 115 && outranked ? [`That ${tierName(power)} registered on seismographs. Your ${yours} still loses to ${aOrAn(cardName(winCard))}.`, `An incredible ${tierName(power)}. Sadly, ${cardNames(mine[2])} are not ${cardNames(winCard)}.`]
@@ -4875,8 +4956,21 @@ function narrate(m) {
     return;
   }
   banner(joker ? 'JOKER!' : '', false);
-  const how = m.gods ? 'The war gods pick' : '';
+  const how = m.gods ? (chatty ? 'The war gods pick' : 'Nobody had cards left to fight with, so it goes to') : '';
   setText($('caption'), how ? `${how} ${winner}, who takes ${takes}.` : `${winner} ${m.winner === me ? 'take' : 'takes'} ${takes} with ${aOrAn(cardName(winCard))}.`);
+}
+
+// What Quiet says about a battle you won, or lost: just what happened.
+function plainWin(m, winCard, takes) {
+  if (m.gods) return `Nobody had cards left to fight with, so you take ${takes}.`;
+  if (!m.tied.includes(S.you)) return `The others ran out of cards mid-war. You take ${takes}.`;
+  if (warRank(winCard) === JOKER) return `Your joker beats everything and takes ${takes}.`;
+  return `Your ${cardName(winCard)} takes ${takes}.`;
+}
+function plainLoss(m, yourCard, winCard, takes) {
+  const winner = playerName(m.winner);
+  if (m.gods) return `Nobody had cards left to fight with, so ${winner} takes ${takes}.`;
+  return `${winner}'s ${cardName(winCard)} beats your ${cardName(yourCard)} and takes ${takes}.`;
 }
 
 function gain(n) {
@@ -5059,7 +5153,7 @@ const Odds = {
 function renderOdds() {
   const box = $('odds');
   const p = Odds.seats;
-  const show = Boolean(p) && (S.phase === 'playing' || S.phase === 'over') && p.length === S.players.length;
+  const show = chatty && Boolean(p) && (S.phase === 'playing' || S.phase === 'over') && p.length === S.players.length;
   setHidden(box, !show);
   if (!show) return;
   const me = S.you;
@@ -5165,6 +5259,7 @@ function buildTiles() {
     const cards = el('div', 'tcards');
     let deckBox = null, deckCount = null, spot = null;
     if (piles) {
+      // Its back is its top card's (see renderTile).
       deckBox = el('div', 'tdeck pile');
       deckBox.dataset.deck = deckOf(seat);
       deckCount = el('span', 'count', '');
@@ -5183,7 +5278,8 @@ function buildTiles() {
     const stat = el('span', 'tstat', '');
     meta.append(count, stat);
     node.append(cards, info, meta);
-    node.title = `${p.name}${p.bot ? ' (bot)' : ''} · ${DECKS[deckOf(seat)][0]} deck`;
+    // In a solo game the decks go with the cards, not the players.
+    node.title = `${p.name}${p.bot ? ' (bot)' : ''}` + (soloThemes() ? '' : ` · ${DECKS[deckOf(seat)][0]} deck`);
     box.append(node);
     tiles.set(seat, {
       node, slot, count, stat, card, heap, lootCount, deck: deckBox, deckCount, spot, cardKey: 'empty', downs: null, wpile: null,
@@ -5199,7 +5295,7 @@ function pileUnder(seat, backs) {
   const c = S.cards[seat];
   const list = c ? c.seq.slice() : [];
   if (S.phase === 'playing' && isFighting(seat) && !S.pending && (!c || c.stage < S.stage)) {
-    for (let i = 0; i < backs; i++) list.push({ card: 'back', up: false });
+    for (let i = 0; i < backs; i++) list.push({ card: 'back', up: false, of: soloCard(seat, i) });
     if (landed(seat)) list.push({ card: S.ups[seat] !== undefined ? S.ups[seat] : 'back', up: true });
   }
   for (let i = list.length - 1; i >= 0; i--) if (list[i].up) { list.splice(i, 1); break; }
@@ -5225,22 +5321,28 @@ function myWarCards(local) {
   if (!inMyWar()) return [];
   const list = c.seq.slice();
   if (S.phase === 'playing' && S.stage > 0 && isFighting(me) && !S.pending && c.stage < S.stage) {
-    for (let i = 0; i < local; i++) list.push({ card: 'back', up: false });
+    for (let i = 0; i < local; i++) list.push({ card: 'back', up: false, of: soloCard(me, i) });
     if (landed(me)) list.push({ card: S.ups[me] !== undefined ? S.ups[me] : 'back', up: true });
   }
   return list;
 }
 
-// Draws a pile into box: one card per item, keeping the cards already there
-// when the pile only grew (the new ones arrive with the `fresh` class), and
-// calling place(node, index, count) on every card.
+// The deck a card on a pile is drawn in: a face-down one by the card it is,
+// where the page knows (see cardLook).
+const pileLook = (x, look) => cardLook(x.card === 'back' ? x.of : x.card, look);
+
+// Draws a pile into box: one card per item, each in the deck look(item)
+// names, keeping the cards already there when the pile only grew (the new
+// ones arrive with the `fresh` class), and calling place(node, index, count)
+// on every card.
 function drawPile(box, items, look, fresh, place) {
-  const keys = items.map((x) => String(x.card));
+  const looks = items.map(look);
+  const keys = items.map((x, i) => `${x.card}:${looks[i] || ''}`);
   const had = box._keys || [];
   const grew = keys.length >= had.length && had.every((k, i) => k === keys[i]);
   if (!grew) { box.replaceChildren(); box._keys = []; }
   for (let i = box.childElementCount; i < items.length; i++) {
-    const node = cardEl(items[i].card === 'back' ? 'back' : items[i].card, look);
+    const node = cardEl(items[i].card === 'back' ? 'back' : items[i].card, looks[i]);
     if (grew && !reduceMotion.matches) node.classList.add(fresh);
     box.append(node);
   }
@@ -5311,8 +5413,14 @@ function renderTile(seat) {
   }
   if (t.deck) {
     // Their deck: as thick as it's full, with its count in the corner.
-    const inDeck = S.decks ? S.decks[seat] ?? 0 : shownCount(seat);
+    const inDeck = deckShown(seat);
     t.deck.style.setProperty('--d', String(deckDepth(inDeck)));
+    // Its back is the back of its top card.
+    const look = cardLook(soloCard(seat), deckOf(seat));
+    if (t.deck.dataset.deck !== look) {
+      t.deck.dataset.deck = look;
+      t.deck.querySelector('.card').dataset.deck = look;
+    }
     setClass(t.deck, 'empty', S.battle > 0 && inDeck === 0);
     setText(t.deckCount, S.battle ? String(inDeck) : '');
     setHidden(t.deckCount, !S.battle);
@@ -5336,7 +5444,8 @@ function renderTile(seat) {
   setText(t.stat, label);
   const key = cardKeyFor(seat);
   if (key !== t.cardKey) {
-    const card = cardEl(key === 'back' ? 'back' : key === 'empty' ? null : Number(key), deckOf(seat));
+    const shown = key === 'back' ? 'back' : key === 'empty' ? null : Number(key);
+    const card = cardEl(shown, cardLook(Number.isInteger(shown) ? shown : soloCard(seat), deckOf(seat)));
     if (key !== 'back' && key !== 'empty' && !reduceMotion.matches) card.classList.add('flipin');
     t.card.replaceWith(card);
     t.card = card;
@@ -5356,7 +5465,7 @@ function renderTile(seat) {
   if (under.length || t.wpile) {
     if (!t.wpile) { t.wpile = el('div', 'tdowns'); t.slot.prepend(t.wpile); }
     const out = fanOut(under, 0.28, 0.1, 0.9);
-    drawPile(t.wpile, under, deckOf(seat), 'thump', (node, i, n) => {
+    drawPile(t.wpile, under, (x) => pileLook(x, deckOf(seat)), 'thump', (node, i, n) => {
       node.style.setProperty('--i', String(n - 1 - i));
       node.style.setProperty('--x', out[i].toFixed(3));
       node.style.setProperty('--r', `${((i * 37) % 17) - 8}deg`);
@@ -5380,9 +5489,16 @@ function renderMe() {
   const p = S.players[me];
   const count = S.counts[me] ?? 0;
   // Your deck, apart from your winnings: it thins as it runs low.
-  const inDeck = S.decks ? S.decks[me] ?? 0 : count;
+  const inDeck = S.decks ? deckShown(me) : count;
   setClass($('myPile'), 'empty', S.battle > 0 && inDeck === 0);
-  $('myPile').querySelector('.stack').style.setProperty('--d', String(S.battle > 0 ? deckDepth(inDeck) : deckDepth(27)));
+  const stack = $('myPile').querySelector('.stack');
+  stack.style.setProperty('--d', String(S.battle > 0 ? deckDepth(inDeck) : deckDepth(27)));
+  // In a solo game its back is its top card's; in a room, the page's.
+  const back = cardLook(soloCard(me), null);
+  for (const node of [stack, stack.querySelector('.card')]) {
+    if (back) setAttr(node, 'data-deck', back);
+    else node.removeAttribute('data-deck');
+  }
   const badge = $('deckCount');
   setHidden(badge, !(S.decks && S.battle > 0 && inDeck > 0));
   setText(badge, String(inDeck));
@@ -5399,7 +5515,8 @@ function renderMe() {
   // The card you played in the battle, until it goes to war.
   const key = c ? String(c.seq[0].card) : S.stage > 0 ? 'empty' : cardKeyFor(me);
   if (slot.dataset.key !== key) {
-    const card = cardEl(key === 'back' ? 'back' : key === 'empty' ? null : Number(key));
+    const shown = key === 'back' ? 'back' : key === 'empty' ? null : Number(key);
+    const card = cardEl(shown, cardLook(Number.isInteger(shown) ? shown : soloCard(me), null));
     // A card you slam lands with a thump; one already down turns over.
     if (landed(me) && slot.dataset.key !== 'back' && !reduceMotion.matches) card.classList.add('slam');
     else if (key !== 'empty' && key !== 'back' && !reduceMotion.matches) card.classList.add('flipin');
@@ -5430,7 +5547,7 @@ function renderWarPile() {
   const top = n && pile[n - 1].up ? n - 1 : -1;
   const out = fanOut(pile.map((x, i) => ({ up: x.up && i !== top })), 0.22, 0, 0.5);
   const cw = $('mySlot').querySelector('.card')?.offsetWidth || 88;
-  drawPile(box.querySelector('.wpile'), pile, null, 'slam', (node, i) => {
+  drawPile(box.querySelector('.wpile'), pile, (x) => pileLook(x, null), 'slam', (node, i) => {
     const tied = pile[i].up;
     node.style.setProperty('--r', `${i === top ? 0 : tied ? ((i * 13) % 9) - 4 : ((i * 47) % 25) - 12}deg`);
     node.style.setProperty('--dx', `${i === top ? 0 : Math.round(((i * 29) % 11) - 5 - out[i] * cw * 0.2)}px`);
@@ -5458,7 +5575,8 @@ function renderWarRow() {
     const box = el('div', 'wf');
     const c = S.cards[seat];
     const downs = (c ? c.down : 0) + (S.thumps[seat] || 0);
-    box.append(cardEl(shown(seat), deckOf(seat)), el('span', '', `${downs ? `+${downs} · ` : ''}${avatarOf(seat)} ${playerName(seat)}`));
+    const card = shown(seat);
+    box.append(cardEl(card, cardLook(Number.isInteger(card) ? card : soloCard(seat), deckOf(seat))), el('span', '', `${downs ? `+${downs} · ` : ''}${avatarOf(seat)} ${playerName(seat)}`));
     row.append(box);
   }
   if (fighters.length > 6) row.append(el('span', 'more', `+${fighters.length - 6}`));
@@ -5655,6 +5773,7 @@ function heapClear() {
   S.incoming = {};
   for (const node of myHeapNode().querySelectorAll('.card')) node.remove();
   for (const t of tiles.values()) t.heap.replaceChildren();
+  gatherClear();
   renderHeaps();
 }
 
@@ -5679,7 +5798,7 @@ function heapFly(node, c, heapBox, size, delay) {
   const x = parseFloat(node.style.getPropertyValue('--x')) || 0;
   const y = parseFloat(node.style.getPropertyValue('--y')) || 0;
   const r = parseFloat(node.style.getPropertyValue('--r')) || 0;
-  const flyer = cardEl(c.card, c.look);
+  const flyer = cardEl(c.card, cardLook(c.card, c.look));
   flyer.classList.add('flyer');
   flyer.style.setProperty('--w', `${size}px`);
   flyer.style.left = `${heapBox.left + heapBox.width / 2 - size / 2}px`;
@@ -5711,7 +5830,7 @@ function heapToss(seat, cards, quiet = false) {
   const thrown = cards.slice(-max).sort((a, b) => (a.seat === seat) - (b.seat === seat));
   const gap = Math.min(70, 420 / Math.max(1, thrown.length - 1));
   thrown.forEach((c, i) => {
-    const node = cardEl(c.card, c.look);
+    const node = cardEl(c.card, cardLook(c.card, c.look));
     node.style.transition = 'none';  // it lands where it lands, without sliding there
     heap.append(node);
     const size = node.offsetWidth || 40;
@@ -5745,43 +5864,6 @@ function heapToss(seat, cards, quiet = false) {
   return fly ? Math.round((640 + (thrown.length - 1) * gap) * pace()) : 0;
 }
 
-// Picks a heap up: after `delay` ms, its cards fly into their player's deck,
-// the oldest first, and the heap is empty from now on.
-function heapGather(seat, delay) {
-  const h = heaps.get(seat);
-  if (!h || !h.cards.length) return;
-  const cards = h.cards;
-  Object.assign(h, { cards: [], tidy: true, layer: 0, tosses: 0 });
-  renderHeaps();
-  later(() => {
-    const target = seat === S.you ? $('myPile').querySelector('.stack') : tiles.get(seat)?.deck || tiles.get(seat)?.card;
-    const box = target && target.offsetParent ? target.getBoundingClientRect() : null;
-    cards.forEach((c, i) => {
-      const node = c.node;
-      const r = node.isConnected ? node.getBoundingClientRect() : null;
-      node.remove();
-      if (!box || !r || !r.width || reduceMotion.matches) return;
-      const size = r.width;
-      const flyer = cardEl(c.card, c.look);
-      flyer.classList.add('flyer');
-      flyer.style.setProperty('--w', `${node.offsetWidth || 40}px`);
-      flyer.style.left = `${r.left + r.width / 2 - (node.offsetWidth || 40) / 2}px`;
-      flyer.style.top = `${r.top + r.height / 2 - (node.offsetWidth || 40) * 0.7}px`;
-      $('fx').append(flyer);
-      const rot = parseFloat(node.style.getPropertyValue('--r')) || 0;
-      const dx = box.left + box.width / 2 - (r.left + r.width / 2);
-      const dy = box.top + box.height / 2 - (r.top + r.height / 2);
-      const done = () => flyer.remove();
-      flyer.animate([
-        { transform: `rotate(${rot}deg)` },
-        { transform: `translate(${dx}px, ${dy}px) rotate(0deg) scale(${(box.width / size).toFixed(2)})`, opacity: 0.4 },
-      ], { duration: 420 * pace(), delay: Math.min(i, 30) * 12 * pace(), easing: 'cubic-bezier(.4, 0, .6, 1)', fill: 'backwards' })
-        .finished.then(done, done);
-    });
-    if (seat === S.you || S.players.length <= 6) Sound.riffle();
-  }, delay);
-}
-
 // Squares a heap up into a neat stack without reordering it: the oldest card
 // at the bottom and the latest still on top. Says whether there was anything
 // to square up.
@@ -5810,7 +5892,8 @@ function heapSquare(seat) {
 // squared up on your tile too.
 function heapTidy() {
   if (S.you === null || !heapSquare(S.you)) return;
-  setText($('caption'), pick(TIDY_LINES)(heaps.get(S.you).cards.length));
+  const n = heaps.get(S.you).cards.length;
+  setText($('caption'), chatty ? pick(TIDY_LINES)(n) : `${plural(n, 'card')} tidied up, latest on top.`);
   if (Session.is('room') && S.conn) S.conn.send({ t: 'tidy' });
 }
 
@@ -5829,6 +5912,281 @@ function botsTidy(m, winner, landing) {
     const wait = Math.max(slam ? slam[3] : 0, seat === winner ? landing : 0) + (600 + Math.random() * 1400) * pace();
     later(() => { if (heaps.get(seat) === h && S.phase === 'playing' && heapSquare(seat)) floatBroom(seat); }, wait);
   }
+}
+
+// ---- Picking up ----
+//
+// Picking up a loot pile is a moment of its own. The messy heap sweeps
+// together into a neat stack, oldest at the bottom, which turns over, backs
+// up, as cards go into a deck. The stack slides over as one block and tucks in under the deck, and the deck
+// lifts and settles a little thicker while its count ticks up. When the room
+// shuffles winnings back in, the deck then riffles: it splits in two and the
+// halves interleave. Without shuffling, turning the stack over leaves the
+// cards under the deck in the order they were won.
+//
+// It's all drawn over the table in #fx, so it never takes a tap or holds the
+// game up. A pickup that comes with a slam (or a card flipped over for
+// someone) is `brief`: a quick sweep and slide, no lift or riffle, so the
+// card being played never waits. The whole pickup is one timeline of Web
+// Animations, which a paused solo game holds with everything else in #fx
+// (see holdClocks), and the copies remove themselves when it ends, however
+// it ends. With reduced motion the cards just go, and the count changes.
+const GATHER_MS = { sweep: 240, flip: 240, slide: 300, lift: 220, riffle: 600, brief: 120, briefSlide: 170, fade: 60 };
+// seat -> { left, until }: cards still on their way under that deck, which
+// its count doesn't show yet.
+const tucks = new Map();
+let lastGather = null;  // what the latest pickup showed, for the tests
+
+// The cards a deck is shown to hold: those still being tucked under it
+// don't count until they get there.
+function deckShown(seat) {
+  const n = S.decks ? S.decks[seat] ?? 0 : shownCount(seat);
+  const t = tucks.get(seat);
+  if (t && now() >= t.until) tucks.delete(seat);
+  return Math.max(0, n - (tucks.has(seat) ? t.left : 0));
+}
+
+// A player's winnings go under their deck, as far as this page's counts go:
+// how many went.
+function takeLoot(seat) {
+  if (!S.decks || !Number.isInteger(seat)) return 0;
+  const n = Math.max(0, (S.counts[seat] ?? 0) - (S.decks[seat] ?? 0));
+  S.decks[seat] = S.counts[seat] ?? 0;
+  return n;
+}
+
+// When each part of a pickup happens, in ms from its start.
+function gatherTimes(cards, brief, shuffled) {
+  const p = pace();
+  const stagger = Math.min(brief ? 40 : 90, cards * 6);
+  if (brief) {
+    const sweep = (GATHER_MS.brief + stagger) * p;
+    const slide = sweep + GATHER_MS.briefSlide * p;
+    return { stagger: stagger * p, sweep, settle: sweep, slide, lift: slide, riffle: slide, end: slide + GATHER_MS.fade * p };
+  }
+  const sweep = (GATHER_MS.sweep + stagger) * p;
+  const settle = sweep + GATHER_MS.flip * p;  // the stack turns over
+  const slide = settle + GATHER_MS.slide * p;
+  const lift = slide + GATHER_MS.lift * p;
+  const riffle = lift + (shuffled ? GATHER_MS.riffle * p : 0);
+  return { stagger: stagger * p, sweep, settle, slide, lift, riffle, end: riffle };
+}
+
+// The deck a player's winnings go under: [the whole pile, its top card].
+function deckOfSeat(seat) {
+  const pile = seat === S.you ? $('myPile').querySelector('.stack') : tiles.get(seat)?.deck || null;
+  return pile ? [pile, pile.querySelector(':scope > .card')] : [tiles.get(seat)?.card || null, null];
+}
+
+// Picks a heap up: after `delay` ms, its cards go under their player's deck
+// (`n` of them, the heap showing at most its latest), and the heap is empty
+// from now on.
+function heapGather(seat, delay, { brief = false, n = 0 } = {}) {
+  const h = heaps.get(seat);
+  if (!h || !h.cards.length) return;
+  const cards = h.cards;
+  // Where each card lies, before your emptied loot pile is hidden.
+  const where = (node) => {
+    if (!node.isConnected || !node.offsetParent) return null;
+    const r = node.getBoundingClientRect();
+    return r.width ? { w: node.offsetWidth || 40, x: r.left + r.width / 2, y: r.top + r.height / 2 } : null;
+  };
+  const was = new Map(cards.map((c) => [c, where(c.node)]));
+  Object.assign(h, { cards: [], tidy: true, layer: 0, tosses: 0 });
+  renderHeaps();
+  const calm = reduceMotion.matches;
+  const shuffled = Boolean(S.shuffle);
+  const times = gatherTimes(Math.min(cards.length, 30), brief, shuffled);
+  const loud = seat === S.you ? 1 : S.players.length <= 3 ? 0.6 : 0.4;
+  const heard = seat === S.you || S.players.length <= 6;
+  // The count holds back the cards on their way, and ticks up as they go under.
+  const tuck = !calm && n > 0 && S.decks ? { left: n, until: now() + delay + times.end + 50 } : null;
+  if (tuck) tucks.set(seat, tuck);
+  lastGather = { seat, cards: cards.length, n, brief, shuffled, calm, ms: Math.round(times.end), started: false };
+  const record = lastGather;
+  later(() => {
+    const [pile, top] = deckOfSeat(seat);
+    const box = pile && pile.offsetParent ? pile.getBoundingClientRect() : null;
+    const from = [];
+    for (const c of cards) {
+      const spot = where(c.node) || was.get(c);
+      if (spot && box && box.width && !calm) from.push({ c, ...spot, rot: parseFloat(c.node.style.getPropertyValue('--r')) || 0 });
+      c.node.remove();
+    }
+    record.started = true;
+    if (!from.length) {
+      if (tucks.get(seat) === tuck) tucks.delete(seat);
+      if (heard) Sound.tap(loud);
+      if (seat === S.you) renderMe(); else renderTile(seat);
+      return;
+    }
+    gatherShow(seat, from, box, top, times, { brief, shuffled, n, tuck, loud: heard ? loud : 0 });
+  }, delay);
+}
+
+function gatherShow(seat, from, box, top, times, { brief, shuffled, n, tuck, loud }) {
+  const T = times.end;
+  const at = (ms) => Math.min(1, Math.max(0, ms / T));
+  const w = from[0].w;
+  const u = w / 40;
+  // The heap's middle, where the cards square up, and the deck's.
+  const hx = from.reduce((a, f) => a + f.x, 0) / from.length;
+  const hy = from.reduce((a, f) => a + f.y, 0) / from.length;
+  const dx = box.left + box.width / 2 - hx;
+  const dy = box.top + box.height / 2 - hy;
+  const scale = box.width / w;
+  const N = from.length;
+  const fx = $('fx');
+  const shows = [];
+  const mk = (card, look, width, cx, cy, z) => {
+    const node = cardEl(card, look);
+    node.classList.add('flyer', 'gathering');
+    node.style.setProperty('--w', `${width}px`);
+    node.style.left = `${cx - width / 2}px`;
+    node.style.top = `${cy - width * 0.7}px`;
+    node.style.zIndex = String(z);
+    fx.append(node);
+    return node;
+  };
+  // The heap: each card sweeps in to the middle, squares up on the stack,
+  // then the stack slides over in an arc, as one block, and tucks under the deck.
+  // Each card is two faces that move as one: its face, and its back turned
+  // away, so when the stack turns over (rotateY) its backs come up, as cards
+  // go into a deck. Turned over, the oldest card ends up on top, which is
+  // the order they come back out from under the deck.
+  const tf = (x, y, r, a, k = 1) => `perspective(${Math.round(w * 12)}px) translate(${x}px, ${y}px) rotate(${r}deg) rotateY(${a}deg) scale(${k})`;
+  from.forEach((f, i) => {
+    const look = cardLook(f.c.card, f.c.look);
+    const face = mk(f.c.card, look, w, hx, hy, i + 1);
+    const back = mk('back', look, w, hx, hy, 2 * N - i);
+    back.classList.add('flipside');
+    const lift = -Math.min(i, 30) * 0.7 * u;
+    const under = -Math.min(i, 30) * 0.2 * u * scale;
+    const start = (i / Math.max(1, N - 1)) * times.stagger;
+    const end = tf(dx, dy + under, 0, -180, scale);
+    const frames = [
+      { offset: 0, transform: tf(f.x - hx, f.y - hy, f.rot, 0) },
+      { offset: at(start), transform: tf(f.x - hx, f.y - hy, f.rot, 0), easing: 'cubic-bezier(.3, .7, .3, 1)' },
+      { offset: at(times.sweep), transform: tf(0, lift, 0, 0), easing: 'cubic-bezier(.45, 0, .55, 1)' },
+      // The squared stack turns over, rising a little as it does. A brief
+      // pickup turns it over on the way to the deck instead.
+      ...(brief ? [] : [
+        { offset: at((times.sweep + times.settle) / 2), transform: tf(0, lift - 10 * u, 0, -90, 1.06), easing: 'cubic-bezier(.45, 0, .55, 1)' },
+        { offset: at(times.settle), transform: tf(0, lift, 0, -180), easing: 'cubic-bezier(.45, 0, .55, 1)' },
+      ]),
+      { offset: at((times.settle + times.slide) / 2), transform: tf(dx / 2, dy / 2 + lift - 22 * u, -5, -180, (1 + scale) / 2), easing: 'cubic-bezier(.45, 0, .55, 1)' },
+      { offset: at(times.slide), transform: end, opacity: 1 },
+      { offset: at(times.lift + (brief ? GATHER_MS.fade * pace() : 0)), transform: end, opacity: 0 },
+      { offset: 1, transform: end, opacity: 0 },
+    ];
+    shows.push([face, face.animate(frames, { duration: T, easing: 'linear' })]);
+    // The back is the face turned half a turn further.
+    const turned = frames.map((k) => ({ ...k, transform: k.transform.replace(/rotateY\((-?[\d.]+)deg\)/, (_, a) => `rotateY(${Number(a) + 180}deg)`) }));
+    shows.push([back, back.animate(turned, { duration: T, easing: 'linear' })]);
+  });
+  // The deck's top card lifts as the stack goes under it, and settles back a
+  // little higher, the deck now thicker. A copy of it does, over the stack,
+  // while the real one waits out of sight.
+  const shown = deckShown(seat);
+  const visible = top && top.offsetParent && !brief && shown > 0 && getComputedStyle(top).visibility !== 'hidden';
+  let cover = null;
+  if (visible) {
+    const r = top.getBoundingClientRect();
+    const tw = top.offsetWidth;
+    const grow = (deckDepth(shown + n) - deckDepth(shown)) * box.width;
+    const lift = Math.max(4, tw * 0.12);
+    cover = top.cloneNode(true);
+    cover.removeAttribute('style');
+    cover.classList.remove('flipin', 'slam', 'tapped');
+    cover.classList.add('flyer', 'gathering');
+    Object.assign(cover.style, { left: `${r.left}px`, top: `${r.top}px`, zIndex: '900' });
+    cover.style.setProperty('--w', `${tw}px`);
+    fx.append(cover);
+    cover.classList.add('tuckcover');
+    top.dataset.tucked = '1';
+    top.style.visibility = 'hidden';
+    const frames = [
+      { offset: 0, transform: 'none' },
+      { offset: at(times.slide - 90 * pace()), transform: 'none', easing: 'cubic-bezier(.2, .8, .3, 1)' },
+      { offset: at(times.slide + 40 * pace()), transform: `translateY(${-lift}px) rotate(-1.5deg)`, easing: 'cubic-bezier(.5, 0, .7, 1.4)' },
+      { offset: at(times.lift), transform: `translateY(${-grow}px)` },
+      { offset: 1, transform: `translateY(${-grow}px)` },
+    ];
+    shows.push([cover, cover.animate(frames, { duration: T, easing: 'linear' })]);
+    // The riffle: the deck splits in two halves that lean apart, then their
+    // cards interleave back into one deck, left and right in turn.
+    if (shuffled) {
+      const K = 8;
+      // Leaning apart, the halves stay on the screen: at a tile by its edge
+      // they split a little to one side.
+      const reach = tw * 0.55 + tw * 0.62;
+      const mid = r.left + r.width / 2;
+      const ox = Math.max(reach + 4 - mid, Math.min(0, window.innerWidth - 4 - reach - mid));
+      for (let k = 0; k < K; k++) {
+        const side = k % 2 ? 1 : -1;
+        const j = Math.floor(k / 2);
+        // Each in its own deck's theme, the last to drop the deck's top card.
+        const node = mk('back', cardLook(soloCard(seat, K - 1 - k), deckOf(seat)), tw, r.left + r.width / 2, r.top + r.height / 2, 901 + k);
+        node.classList.add('riffling');
+        const span = times.riffle - times.lift;
+        const split = times.lift + span * 0.3;
+        const drop = split + span * (0.08 + (k / K) * 0.42);
+        const out = `translate(${ox + side * tw * 0.55}px, ${-grow - j * 1.5 * u - 3 * u}px) rotate(${side * 9}deg)`;
+        const home = `translate(0px, ${-grow - k * 0.6 * u}px)`;
+        const frames = [
+          { offset: 0, transform: `translateY(${-grow}px)`, opacity: 0 },
+          { offset: at(times.lift), transform: `translateY(${-grow}px)`, opacity: 0 },
+          { offset: Math.min(1, at(times.lift) + 0.001), transform: `translateY(${-grow}px)`, opacity: 1, easing: 'cubic-bezier(.3, .7, .3, 1)' },
+          { offset: at(split), transform: out },
+          { offset: at(drop), transform: out, easing: 'cubic-bezier(.5, 0, .8, .5)' },
+          { offset: at(drop + span * 0.12), transform: home },
+          { offset: at(times.riffle - span * 0.08), transform: home, opacity: 1 },
+          { offset: 1, transform: `translateY(${-grow}px)`, opacity: 0 },
+        ];
+        shows.push([node, node.animate(frames, { duration: T, easing: 'linear' })]);
+      }
+    }
+  }
+  const t0 = now();
+  // Everything goes when it ends, however it ends: finished, cancelled, or
+  // the page moving on (see heapClear).
+  for (const [node, anim] of shows) {
+    const done = () => {
+      node.remove();
+      if (node === cover && top.dataset.tucked) { delete top.dataset.tucked; top.style.visibility = ''; }
+    };
+    anim.finished.then(done, done);
+  }
+  // The count ticks up as the stack goes under, a few cards at a time.
+  if (tuck) {
+    const steps = Math.min(n, 8);
+    const from0 = times.slide - (brief ? 60 : 100) * pace();
+    const span = (brief ? 80 : 160) * pace();
+    for (let i = 1; i <= steps; i++) {
+      later(() => {
+        if (tucks.get(seat) !== tuck) return;
+        tuck.left = Math.round(n * (1 - i / steps));
+        if (!tuck.left) tucks.delete(seat);
+        if (seat === S.you) renderMe(); else renderTile(seat);
+      }, from0 + (span * i) / steps - (now() - t0));
+    }
+  }
+  // A sweep as the heap comes together, a tap as the stack lands, then the riffle.
+  if (loud) {
+    Sound.sweep(loud * (brief ? 0.7 : 1));
+    later(() => Sound.tap(loud), times.slide - (now() - t0));
+    if (shuffled) later(() => Sound.shuffle(loud, brief ? 0.25 : (times.riffle - times.lift) / 1000), (brief ? times.slide : times.lift) - (now() - t0));
+  }
+}
+
+// Clears every pickup still on its way, for a new game or the menu.
+function gatherClear() {
+  tucks.clear();
+  for (const node of document.querySelectorAll('#fx .gathering')) {
+    for (const a of node.getAnimations()) a.cancel();
+    node.remove();
+  }
+  for (const node of document.querySelectorAll('[data-tucked]')) { delete node.dataset.tucked; node.style.visibility = ''; }
 }
 
 // The cards a player has won and not yet picked up, or null when the room
@@ -6032,7 +6390,7 @@ function finishMash() {
 function startFling(e) {
   Sound.unlock();
   if (!canSlam() || inputBusy()) return;
-  const ghost = cardEl('back');
+  const ghost = cardEl('back', cardLook(soloCard(S.you), null));
   ghost.classList.add('ghost');
   $('fx').append(ghost);
   fling = { pointer: e.pointerId, x0: e.clientX, y0: e.clientY, points: [[now(), e.clientX, e.clientY]], ghost, tier: 0 };
@@ -6125,9 +6483,9 @@ function slamCard(power) {
 
 function warCardLine(plan, n, power, last) {
   if (!last) return `Face-down card ${n + 1} of ${plan.need - 1}: ${tierName(power)}. ${n + 2 < plan.need ? 'Next!' : 'Now the decider.'}`;
-  if (plan.need === 1) return `Your last card: ${tierName(power)}. It’s all you’ve got.`;
+  if (plan.need === 1) return `Your last card: ${tierName(power)}.${chatty ? ' It’s all you’ve got.' : ''}`;
   const total = plan.done.reduce((a, b) => a + b, 0);
-  return `The decider: ${tierName(power)}. War power ${fmt(total)}. The cards remain unimpressed.`;
+  return `The decider: ${tierName(power)}. War power ${fmt(total)}.${chatty ? ' The cards remain unimpressed.' : ''}`;
 }
 
 function autoSlam() {
@@ -6368,7 +6726,7 @@ function showOver() {
   cell(o.biggest ? `${o.biggest}-way` : '—', 'biggest war');
   cell(o.deepest ? deep : '—', 'deepest war');
 
-  const chart = oddsChart();
+  const chart = chatty ? oddsChart() : null;
   setHidden($('oddsSection'), !chart);
   if (chart) {
     $('oddsChart').replaceChildren(chart.svg);
@@ -6376,7 +6734,8 @@ function showOver() {
   }
   renderLog();
   setText($('shareImgNote'), '');
-  $('science').replaceChildren(...science());
+  $('science').replaceChildren(...(chatty ? science() : []));
+  setHidden($('science'), !chatty);
   // A game goes in your history, and unlocks a power-up, once, however many
   // times its results come up (a room repeats them to anyone who arrives).
   let unlocked = null;
@@ -6394,7 +6753,10 @@ function showOver() {
     unlocked = unlockStyle();
   }
   setHidden($('unlock'), !unlocked);
-  if (unlocked !== null) setText($('unlock'), `New power-up: ${STYLES[unlocked][0]} ${STYLES[unlocked][1]} (${STYLES[unlocked][2]}, no effect). Equip it from the power-ups button.`);
+  if (unlocked !== null) {
+    const [emoji, name, stat] = STYLES[unlocked];
+    setText($('unlock'), `New power-up: ${emoji} ${name}${chatty ? ` (${stat}, no effect)` : ''}. Equip it from the power-ups button.`);
+  }
 
   renderOverButtons();
   if (Music.on && Sound.ctx) Music.play(won || me === null ? 'win' : 'lose');
@@ -6952,7 +7314,7 @@ function unlockStyle() {
 function bump(what) {
   if (what === 'cosmic' && !store.get('cosmic', false)) {
     store.set('cosmic', true);
-    toast('Achievement: you broke the slam meter. Nothing happened.');
+    if (chatty) toast('Achievement: you broke the slam meter. Nothing happened.');
   }
 }
 
@@ -6992,6 +7354,7 @@ function renderMenu() {
   renderSound();
   renderInputs();
   renderDecks();
+  renderChat();
   const titleCards = document.querySelector('.title-cards');
   if (!titleCards.childElementCount) titleCards.append(cardEl(12), cardEl(53), cardEl(11 + 13));
 }
@@ -7010,6 +7373,29 @@ function renderInputs() {
   for (const b of box.children) setAttr(b, 'aria-pressed', String(b.dataset.input === S.input));
 }
 
+function renderChat() {
+  for (const box of [$('menuChat'), $('pauseChat')]) {
+    if (!box.childElementCount) {
+      for (const [key, [name, sub]] of Object.entries(CHAT_LABELS)) {
+        const b = el('button', '');
+        b.type = 'button';
+        b.dataset.chat = key;
+        b.append(document.createTextNode(name), el('small', '', sub));
+        box.append(b);
+      }
+    }
+    for (const b of box.children) setAttr(b, 'aria-pressed', String((b.dataset.chat === 'chatty') === chatty));
+  }
+}
+
+function setChat(key) {
+  chatty = key !== 'quiet';
+  store.set('chat', chatty ? 'chatty' : 'quiet');
+  document.documentElement.dataset.chat = chatty ? 'chatty' : 'quiet';
+  renderChat();
+  renderOdds();
+}
+
 function renderDecks() {
   for (const [boxId, noteId] of [['menuDecks', 'menuDeckNote'], ['pauseDecks', 'pauseDeckNote'], ['lobbyDecks', 'lobbyDeckNote']]) {
     const box = $(boxId);
@@ -7025,13 +7411,38 @@ function renderDecks() {
       }
     }
     for (const b of box.children) setAttr(b, 'aria-pressed', String(b.dataset.deck === deck));
-    setText($(noteId), `${DECKS[deck][0]}: ${DECKS[deck][1]}`);
+    // Against bots, which deck is which: the menu's for the game it would
+    // deal, the pause menu's for the one being played.
+    const which = noteId === 'menuDeckNote' ? decksNote(themeOrder(deck), Math.ceil((Number($('oppRange').value) + 1) / 2))
+      : noteId === 'pauseDeckNote' && soloThemes() ? decksNote(soloThemes(), Math.ceil(S.players.length / 2)) : '';
+    setText($(noteId), `${DECKS[deck][0]}: ${DECKS[deck][1]}` + (which ? ` ${which}` : ''));
+  }
+}
+
+// In a solo game, redraws the cards on every loot pile in their decks' themes,
+// just where they lie.
+function heapRedraw() {
+  for (const h of heaps.values()) {
+    for (const c of h.cards) {
+      const node = cardEl(c.card, cardLook(c.card, c.look));
+      node.style.cssText = c.node.style.cssText;
+      c.node.replaceWith(node);
+      c.node = node;
+    }
   }
 }
 
 // Changes the deck, redrawing every card on screen with it.
 function setDeck(key) {
   if (!DECKS[key] || key === deck) return;
+  // Against bots, your deck takes the new theme, and a deck that had it
+  // takes your old one, so no two look alike.
+  const themes = soloThemes();
+  if (themes) {
+    const j = themes.indexOf(key);
+    themes[j] = themes[0];
+    themes[0] = key;
+  }
   deck = key;
   store.set('deck', key);
   document.documentElement.dataset.deck = key;
@@ -7047,6 +7458,7 @@ function setDeck(key) {
     tileKey = '';
     $('mySlot').dataset.key = '';
     $('warRow').dataset.key = '';
+    if (themes) heapRedraw();
     renderAll();
   }
 }
@@ -7084,6 +7496,7 @@ function startSolo() {
   tileKey = '';
   S.conn = new SoloRoom({ opponents, length: menuLength, slow: menuSlow, shuffle: menuShuffle, name: 'You', avatar, random });
   S.conn.start();
+  renderDecks();
 }
 
 const NAME_OK = /^[\p{L}\p{N}][\p{L}\p{N} '&.,!?-]{0,15}$/u;
@@ -7290,6 +7703,12 @@ function init() {
     if (b && !b.disabled) S.conn.send({ t: 'shuffle', shuffle: b.dataset.winnings === 'shuffled' });
   });
   $('gatherBtn').addEventListener('click', pickUp);
+  for (const id of ['menuChat', 'pauseChat']) {
+    $(id).addEventListener('click', (e) => {
+      const b = e.target.closest('button');
+      if (b) setChat(b.dataset.chat);
+    });
+  }
   $('soloClock').addEventListener('click', (e) => {
     const b = e.target.closest('button');
     if (b) { menuSlow = b.dataset.clock === 'slow'; renderMenu(); }
@@ -7514,6 +7933,7 @@ if (DEBUG) {
       heap: (heaps.get(S.you)?.cards || []).map((c) => c.card), tidy: heaps.get(S.you)?.tidy ?? true,
       heaps: Object.fromEntries([...heaps].map(([seat, h]) => [seat, h.cards.map((c) => c.card)])),
       tidied: Object.fromEntries([...heaps].map(([seat, h]) => [seat, h.tidy])),
+      shownDecks: S.decks && S.players.map((_, seat) => deckShown(seat)),
     }),
     slam: (power) => {
       if (!canSlam()) return false;
@@ -7522,7 +7942,10 @@ if (DEBUG) {
     },
     input: (mode) => setInput(mode),
     deck: (key) => setDeck(key),
+    // A solo game's theme for each deck, yours first; null in a room.
+    themes: () => (soloThemes() ? soloThemes().slice(0, Math.ceil(S.players.length / 2)) : null),
     versus: () => Versus.last,
+    gather: () => lastGather && { ...lastGather },
     sixSeven: () => SixSeven.last,
     music: () => ({ on: Music.on, song: Music.want, playing: Music.song, songs: Object.keys(SONGS) }),
     // How loud the joker's laugh gets at each level: rendered offline.

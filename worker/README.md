@@ -254,6 +254,7 @@ keep their leaderboards hidden. After that:
    Durable Object classes (War's rooms, and the survey's sectors and Atlas)
    from the `[[migrations]]` in `wrangler.toml`, and the survey's
    per-address rate limiters from its `[[ratelimits]]`. The Worker answers at
+   `https://api.games.michaelwarkentin.com` (below) and at
    `https://games-leaderboard.mwarkentin.workers.dev`.
 2. **The games already point at it:** `LEADERBOARD_URL` in
    `funnels-and-buckets.html`, `doodle-chomp.html` and
@@ -266,10 +267,21 @@ keep their leaderboards hidden. After that:
 Don't change the salt or the token here by hand: the next OpenTofu apply
 would put them back. To replace the token, see mwarkentin/infra's README.
 
-Optional: serve the Worker from your own domain (such as
-`api.games.michaelwarkentin.com`). That needs the domain's DNS on
-Cloudflare, which mwarkentin/infra would manage; the `workers.dev` URL
-works without it.
+**Its own domain:** `api.games.michaelwarkentin.com` is a Workers custom
+domain, made by OpenTofu in mwarkentin/infra (`worker_domains.tf`) along
+with its DNS record and certificate. Wrangler leaves it alone because
+`wrangler.toml` declares no `routes`; keep it that way, or wrangler takes
+over the Worker's domains and drops this one. The `workers.dev` address
+keeps working, and Worker Previews stay on `workers.dev`.
+
+**The share Worker** (`share/`) binds this Worker's `Sector` and `Atlas`
+classes directly and asks two internal paths that nothing on the internet
+can reach (the router only ever forwards WebSocket upgrades to sectors):
+`GET /claim/<key>` on a sector, who charted that word and when, or
+`{"error": "not charted"}` with a 404; and `GET /totals` on the Atlas, the
+shared map's totals. Keep both answering as they do, or share cards lose
+their lines about charting (`share/test/app.test.js` fakes them, and
+`test/survey.test.js` tests the real ones).
 
 ## Previews
 

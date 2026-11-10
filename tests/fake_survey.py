@@ -143,14 +143,24 @@ FAKE_TURNSTILE = """
   window.turnstile = {
     render(el, o) {
       window.__tsRenders.push({ el, sitekey: o.sitekey, action: o.action, appearance: o.appearance });
+      const id = 'w' + window.__tsRenders.length;
+      // A box the size of Cloudflare's widget, as its iframe takes space in the page once it shows.
+      const box = document.createElement('div');
+      box.className = 'fake-turnstile';
+      box.dataset.widget = id;
+      box.style.cssText = 'width:300px;height:65px;display:none';
+      document.querySelector(el).appendChild(box);
       if (mode === 'fail') setTimeout(() => o['error-callback']('600010'), 10);
       else if (mode === 'interactive') {
-        setTimeout(() => o['before-interactive-callback'](), 10);
-        window.__tsSolve = () => { o['after-interactive-callback'](); o.callback('%s'); };
+        setTimeout(() => { box.style.display = 'block'; box.textContent = 'Verify you are human'; o['before-interactive-callback'](); }, 10);
+        window.__tsSolve = () => { box.textContent = 'Success!'; o['after-interactive-callback'](); o.callback('%s'); };
       } else setTimeout(() => o.callback('%s'), 10);
-      return 'w' + window.__tsRenders.length;
+      return id;
     },
-    remove(id) { (window.__tsRemoved = window.__tsRemoved || []).push(id); },
+    remove(id) {
+      (window.__tsRemoved = window.__tsRemoved || []).push(id);
+      document.querySelector(`.fake-turnstile[data-widget="${id}"]`)?.remove();
+    },
     reset() {},
   };
   const onload = new URL(document.currentScript.src).searchParams.get('onload');

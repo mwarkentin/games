@@ -220,8 +220,10 @@ this sandbox can't reach `challenges.cloudflare.com`, so it wasn't tried.
 - **Accessibility.** Managed mode never shows a puzzle, only a checkbox when
   it's unsure. Cloudflare's plans page says WCAG 2.2 AAA and its overview
   says WCAG 2.2 AA ([plans][plans], [overview][ts]). The game's box sits at
-  the bottom middle, clear of the safe area, with a line saying why it's
-  there. Players who can't pass join without a pass until passes are
+  the bottom left, just above the word legend (and on a phone the
+  instruments), clear of the safe area and the sign-up card, with a line saying why it's there. A moment
+  after the token arrives the widget is removed, so its "Success!" never
+  stays over the game. Players who can't pass join without a pass until passes are
   required, and after that survey alone, never locked out of the game.
 - **When it fails.** A blocked `challenges.cloudflare.com` (ad blockers,
   school and work filters, some privacy browsers) usually fails as error

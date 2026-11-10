@@ -1,3 +1,11 @@
+## 2026-11-10
+
+- The "One tap to join the shared survey" box now sits just above the word
+  list and controls instead of over them, and goes away a moment after
+  you pass instead of staying over the words.
+- On a phone, the list of words hidden in view scrolls only sideways, no
+  longer up and down as well.
+
 ## 2026-11-09
 
 - On the survey log, Share on a surveyor's, theme's or territory's own page

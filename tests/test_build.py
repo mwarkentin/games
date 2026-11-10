@@ -264,6 +264,13 @@ def test_point_text_moves_site_and_worker_urls_to_the_preview():
     assert f"ROOMS_URL = '{WORKER_URL}'" in point_text(text, site)
 
 
+def test_point_text_blanks_the_share_workers_address():
+    # A preview's shares link to its own game: production's share Worker would
+    # send people to the live site.
+    text = "const SHARE_URL = 'https://share.michaelwarkentin.com';\nconst SHARE_URLS = 1;"
+    assert point_text(text, "https://pr-7-games-preview.example.workers.dev") == "const SHARE_URL = '';\nconst SHARE_URLS = 1;"
+
+
 def test_point_site_leaves_no_production_url_in_the_preview(site_dir, tmp_path):
     preview = tmp_path / "site"
     shutil.copytree(site_dir, preview)
