@@ -6,7 +6,8 @@ apart from the site and the real Worker.
 
 ## Recommendation
 
-**Yes, it's worth doing, and it can be small.** Shares would link to a short
+**Yes, it's worth doing, and it can be small.** The owner settled every open
+question on 10 November 2026; see [Decided](#decided). Shares would link to a short
 address the Worker answers, like `https://share.michaelwarkentin.com/f/f-muddy-42-89-7`.
 That address returns a tiny page whose `og:image` is a card the Worker draws,
 and the page sends people straight on to `/letterfield#f-muddy-42-89-7`.
@@ -22,8 +23,8 @@ and the page sends people straight on to `/letterfield#f-muddy-42-89-7`.
   apart, the leaderboard, War's rooms and the survey stay small and stay free
   of npm dependencies, and a bad renderer deploy can't touch them. It imports
   the same `worker/src/letterfield-world.js` and binds `LOG_DB` read-only.
-- **Use a custom domain, `share.michaelwarkentin.com`,** if the zone's DNS is
-  on Cloudflare. The Cache API only works reliably on custom domains, and
+- **Use a custom domain, `share.michaelwarkentin.com`** (the zone is now on
+  Cloudflare). The Cache API only works reliably on custom domains, and
   `mwarkentin.workers.dev` reads as spam in a chat. Don't put
   games.michaelwarkentin.com behind Cloudflare for this.
 - **Every client gets the same `200` page**, with the tags, a
