@@ -1,5 +1,8 @@
 ## 2026-11-10
 
+- Sharing a find in a chat now shows a picture of the word circled on its
+  patch of the map, with whether it's been charted and how much of the
+  shared map is, in your light or dark colours.
 - The "One tap to join the shared survey" box now sits just above the word
   list and controls instead of over them, and goes away a moment after
   you pass instead of staying over the words.
