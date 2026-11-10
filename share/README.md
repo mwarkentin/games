@@ -1,6 +1,7 @@
 # Share worker
 
-`games-share` draws link-preview cards for shared Letterfield finds, at
+`games-share` draws link-preview cards for shared Letterfield finds, and for
+the survey log's views (see "Survey log views" below), at
 `https://share.michaelwarkentin.com`. The research and the decisions behind it
 are in [docs/link-previews.md](../docs/link-previews.md).
 
@@ -91,12 +92,50 @@ and `worker_domains.tf` there), in this order:
    `https://share.michaelwarkentin.com`, and add a line to
    `changelog/letterfield.md` for that day.
 
+## Survey log views
+
+A surveyor's, theme's or territory's page of `letterfield-log.html` has a
+Share button too. With `SHARE_URL` set in that page, Share hands out this
+Worker's `/v/` address for the view instead of the page's own, and attaches
+no picture of its own, since the link's card is one (`src/view.js`):
+
+```
+GET /v/surveyor/<initials>/<period>/<when>/<from>-<to>   a surveyor's day, week…
+GET /v/theme/<th>/<period>/<when>/<from>-<to>            a theme's
+GET /v/surveyor/<initials>/all, /v/theme/<th>/all        all time
+GET /v/territory/<rx>,<ry>                               a territory (all time)
+GET /v/d/…, ….png                                        dark; the card itself
+```
+
+- **Pinned:** `<period>` is `hour`, `day`, `week`, `month` or `year`;
+  `<when>` is its first day in the sharer's time zone (`YYYY-MM-DD`, with
+  `Thh` for an hour), which names it on the card and in the link back; and
+  `<from>-<to>` are the UTC hours it covers, the very hours the page asked
+  the log for. So a week shared on Monday is still that week on Friday, and
+  a card counts what the page did. An address whose hours can't be that
+  period in any time zone, or a week that doesn't start on a Monday, is not
+  found.
+- **The numbers** come from the leaderboard Worker's own log answers
+  (`/v1/survey/log/…`), asked through a service binding (`LOG`) under
+  `LOG_URL`'s host, so the cards and the page share its queries and its
+  cache. If it doesn't answer within 3 s, or there's no binding (Worker
+  Previews), the page carries the game's own preview and the card sends
+  people to it.
+- **What it shows** is the page's own share picture, `shareImage()` in
+  `letterfield-log.html`: whose view, the period by its dates, three
+  numbers, and the latest words with their themes' dots.
+- **Caching:** the card's URL carries a token of its count and latest word,
+  `?s=5.<time>`, so it changes with every new word, and a card asked for
+  with the state it shows is kept for good at the edge. Views aren't kept in
+  R2. New cards share the render limit with finds'.
+
 ## Previews
 
 A pull request that changes `share/` doesn't get a Worker Preview of this
 Worker yet, and previews blank `SHARE_URL`, so their shares link straight
 to the preview's own game. `wrangler.toml` already has the `[previews]`
-bindings (a previews bucket, a rate limit apart from production's, no survey)
+bindings (a previews bucket, a rate limit apart from production's, no survey
+and no log)
 for when `preview.yml` makes one, with `--var SITE_URL=<the site preview>`
 so its pages send people to the preview.
 

@@ -7,6 +7,7 @@ import { describe, test } from 'node:test';
 
 import { Resvg, initWasm } from '@resvg/resvg-wasm';
 import { findSvg, parseFind } from '../src/card.js';
+import { parseView, summarize, viewSvg } from '../src/view.js';
 import { renderer } from '../src/render.js';
 import { FAR, PLACED, slugOf } from './card.test.js';
 
@@ -41,4 +42,23 @@ describe('rendering', () => {
     const each = (performance.now() - start) / 5;
     assert.ok(each < 250, `${each.toFixed(0)} ms a card`);
   });
+});
+
+describe('rendering a view of the survey log', () => {
+  const NOW = Date.UTC(2026, 10, 10, 15, 30), from = Date.UTC(2026, 10, 1, 4) / 3_600_000;
+  const entry = (w, th, s = 0) => [w, 5, 7, 0, s, 'MLW', NOW, th];
+  const slice = {
+    words: 5, world: 5, topTerritories: [[0, 0, 'Hafnium Basin', 1, 3]],
+    entries: [entry('BOHRIUM', 1), entry('BERYLLIUM', 1), entry('OSMIUM', 1, 1), entry('FIREWORKS', 2), entry('RAMEN', 3)],
+    themes: { 1: ['Periodic Table', 236], 2: ['Festivals', 95], 3: ['Pasta', 356] },
+  };
+  for (const [name, path] of [['a surveyor\'s month, light', `/v/surveyor/MLW/month/2026-11-01/${from}-${from + 721}.png`], ['a theme, dark', '/v/d/theme/11/all.png']]) {
+    test(`draws a 1200×630 PNG: ${name}`, async () => {
+      const v = parseView(path, NOW);
+      const png = await render(viewSvg(v, summarize(v, { ...slice, topSurveyors: [['MLW', 5]] }, NOW), { dark: v.dark }));
+      assert.deepEqual(size(png), [1200, 630]);
+      assert.ok(png.length < 300_000, `${png.length} bytes`);
+      if (process.env.SHARE_CARD_OUT) (await import('node:fs')).writeFileSync(`${process.env.SHARE_CARD_OUT}/view-${v.kind}-${v.dark ? 'dark' : 'light'}.png`, png);
+    });
+  }
 });

@@ -45,7 +45,7 @@ export function fit(text, font, px, min, width, spacing = 0) {
   for (; px > min; px -= 2) if (measure(text, font, px, spacing) <= width) return px;
   return min;
 }
-function text(str, x, y, font, px, fill, spacing = 0) {
+export function text(str, x, y, font, px, fill, spacing = 0) {
   const [family, weight] = FONTS[font];
   return `<text x="${x.toFixed(1)}" y="${y.toFixed(1)}" font-family="${family}" font-weight="${weight}" font-size="${px}"`
     + (spacing ? ` letter-spacing="${(spacing * px).toFixed(1)}"` : '') + ` fill="${fill}">${esc(str)}</text>`;

@@ -327,6 +327,13 @@ behind it, and `share/README.md` how it works.
   While it's empty, Share hands out the game's own fragment link.
   `?share=<url>` overrides it for tests. A dark page hands out `/f/d/…`, so
   the card follows the sharer's theme.
+- The survey log's views (a surveyor's, theme's or territory's page) have
+  cards too, at `/v/…`: `letterfield-log.html` has a `SHARE_URL` of its own,
+  and while it's empty Share links to the page and attaches the page's own
+  picture. Their numbers come from the leaderboard Worker's log answers,
+  through a service binding (`LOG` in `share/wrangler.toml`), and their
+  addresses pin the period by its first day and its UTC hours, so the page's
+  `viewPath()` and `share/src/view.js` must agree.
 - The Worker checks the word is on the map with `worker/src/`'s own code,
   asks the word's sector who charted it and the Atlas how much of the shared
   map is charted (internal paths on the leaderboard Worker's Durable

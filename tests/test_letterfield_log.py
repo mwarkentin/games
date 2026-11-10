@@ -659,3 +659,43 @@ def test_an_hour_still_running_keeps_its_top_lists_while_it_refreshes(page: Page
     # It went from one set of cards to the next, never through none.
     assert 0 not in seen
     assert errors == []
+
+
+def test_with_a_share_worker_a_view_links_to_its_card_with_no_picture_of_its_own(page: Page, site_url, errors):
+    # ?share= stands in for SHARE_URL: the share Worker's /v/ addresses, whose
+    # pages carry a card of the view as their link preview.
+    fake = FakeSurveyLog([ACORN, MONET, ZEUS], PLACES, THEMES)
+    page.add_init_script(SHARE_SHEET)
+    open_log(page, site_url, fake, query="&share=https://share.test/&surveyor=zed&period=week#debug")
+    expect(page.locator(".entry .word")).to_have_text(["ACORN"])
+    page.wait_for_function("window.__log.share()?.run === window.__log.state.run")
+    page.click("#share")
+    page.wait_for_function("window.__shared")
+    shared = page.evaluate("window.__shared")
+    # This week in Toronto, pinned by its Monday and the UTC hours the page asked the log for.
+    week = NOW_MS // HOUR_MS - 4 * 24 - 15
+    assert f"/surveyor/ZED/{week}/{week + 7 * 24}" in fake.requests
+    assert shared["url"] == f"https://share.test/v/surveyor/ZED/week/2026-11-02/{week}-{week + 7 * 24}"
+    assert shared["text"].startswith("ZED charted 1 word first in Letterfield’s shared survey this week")
+    # The link's card is the picture: none of the page's own goes with it.
+    assert shared["files"] == []
+    assert page.evaluate("window.__log.share().file") is None
+
+    # All time, a dark page, and a territory.
+    page.evaluate("window.__shared = null")
+    page.emulate_media(color_scheme="dark")
+    page.click("#periods [data-p=all]")
+    expect(page.locator(".entry .word")).to_have_text(["ACORN"])
+    page.wait_for_function("window.__log.share()?.run === window.__log.state.run")
+    page.click("#share")
+    page.wait_for_function("window.__shared")
+    assert page.evaluate("window.__shared.url") == "https://share.test/v/d/surveyor/ZED/all"
+    page.evaluate("window.__shared = null")
+    page.emulate_media(color_scheme="light")
+    page.locator(".card", has_text="Top territories").get_by_role("link", name="Acorn Hollow").click()
+    expect(page.locator("#focusName")).to_have_text("Acorn Hollow")
+    page.wait_for_function("window.__log.share()?.run === window.__log.state.run")
+    page.click("#share")
+    page.wait_for_function("window.__shared")
+    assert page.evaluate("window.__shared.url") == "https://share.test/v/territory/0,0"
+    assert errors == []

@@ -313,7 +313,10 @@ can reach (the router only ever forwards WebSocket upgrades to sectors):
 `{"error": "not charted"}` with a 404; and `GET /totals` on the Atlas, the
 shared map's totals. Keep both answering as they do, or share cards lose
 their lines about charting (`share/test/app.test.js` fakes them, and
-`test/survey.test.js` tests the real ones).
+`test/survey.test.js` tests the real ones). It also reaches this Worker's
+public survey log paths through a service binding, for cards of the log's
+views, so changing what `/v1/survey/log/surveyor|theme|territory/…` answer
+changes those cards too (`share/test/view.test.js` fakes them).
 
 ## Previews
 
