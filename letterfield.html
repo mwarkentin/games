@@ -139,6 +139,21 @@ body.docked .notes{box-shadow:none}
 .find-share{flex:none;width:40px;height:40px;display:grid;place-items:center;border:0;border-radius:50%;background:transparent;color:var(--muted);cursor:pointer}
 .find-share svg{width:17px;height:17px}
 .find-share:hover{background:var(--hover);color:var(--ink)}
+.finds li{flex-wrap:wrap}
+.find-define{flex:none;width:40px;height:40px;display:grid;place-items:center;border:0;border-radius:50%;background:transparent;color:var(--muted);cursor:pointer}
+.find-define svg{width:17px;height:17px}
+.find-define:hover{background:var(--hover);color:var(--ink)}
+.find-define[aria-expanded="true"]{background:var(--hover);color:var(--ink)}
+/* A found word's meaning, opened under its entry (see Definitions). */
+.find-def{flex:1 0 100%;box-sizing:border-box;margin:0 0 8px;padding:10px 12px 11px 32px;font-size:14px;line-height:1.45;color:var(--ink)}
+.def-sense{margin:0 0 6px;overflow-wrap:anywhere}
+.def-sense i{font:italic 400 12px/1 var(--f-mono);color:var(--muted);margin-right:6px}
+.def-note{margin:0 0 6px;color:var(--muted)}
+.find-def[data-define="loading"] .def-note{animation:blink 1s infinite alternate}
+.def-links{display:flex;flex-wrap:wrap;align-items:center;gap:4px 12px;margin:2px 0 0;font:400 11px/1.4 var(--f-mono);color:var(--muted)}
+.def-links a{color:inherit;text-underline-offset:2px;padding:6px 0}
+.def-links a:hover{color:var(--ink)}
+.def-retry{font:500 11px/1 var(--f-mono);padding:7px 10px;border:1px solid var(--rule);border-radius:999px;background:transparent;color:var(--ink);cursor:pointer}
 .find:hover{background:var(--hover)}
 .find-dot{width:10px;height:10px;border-radius:50%;background:var(--c);align-self:center}
 .find.stray .find-dot{background:transparent;border:2px dashed var(--c);width:10px;height:10px;box-sizing:border-box}
@@ -270,6 +285,7 @@ body.docked .nova{left:calc((100% - var(--notes-w)) / 2)}
 }
 @media (prefers-reduced-motion: reduce){
   .notes,.toast,.instruments{transition:none}
+  .find-def[data-define="loading"] .def-note{animation:none}
   .nova.show b{animation:none}
   .sync-dot,.survey-dot{animation:none!important}
   #music[aria-pressed="true"] svg{animation:none}
@@ -330,7 +346,7 @@ body.docked .nova{left:calc((100% - var(--notes-w)) / 2)}
   <div class="notes-head">
     <div>
       <h2>Field notes</h2>
-      <p class="notes-sub">Every word you circle, with where you found it. Tap one to fly back.</p>
+      <p class="notes-sub">Every word you circle, with where you found it. Tap one to fly back, or the book for what it means.</p>
     </div>
     <button type="button" class="icon-btn" id="notesClose" aria-label="Close field notes"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
   </div>
@@ -410,12 +426,17 @@ const SURVEY_URL = 'https://api.games.michaelwarkentin.com';
 // Where a shared find links: the share Worker (share/), which answers with a
 // page whose link preview is a picture of the word, then sends people here.
 // While it's empty, shares link straight to the game. ?share=<url> overrides it.
-const SHARE_URL = '';
+const SHARE_URL = 'https://share.michaelwarkentin.com';
 // Turnstile (see worker/TURNSTILE.md): with a site key, the game passes
 // Cloudflare's bot check once before joining the survey, and loads its script
 // from challenges.cloudflare.com only then. While it's empty, joins need no
 // pass. ?turnstile=<site key> overrides it for testing.
 const TURNSTILE_SITE_KEY = '0x4AAAAAAF26seIK58606ilv';  // public: the widget mwarkentin/infra makes
+// What a found word means (worker/src/define.js): the Worker looks it up on
+// Wiktionary or Wikipedia and keeps the answer, so the page talks to no new
+// host. With DEFINE_URL empty, field notes only link out to those sites.
+// ?define=<url> overrides it for testing.
+const DEFINE_URL = 'https://api.games.michaelwarkentin.com';
 const SECTOR = RC * 4;  // cells per survey sector side: 4×4 territories, one server room each
 const SECTOR_LINKS = 4; // sectors joined at once, nearest the middle of the view first
 const SURVEY_AREA = 12; // the world charted together: sectors -12 to 12 each way, 100×100 territories
@@ -2918,117 +2939,10 @@ function shareText(e) {
   const nth = [...found.values()].filter(o => o.t <= e.t).length;
   return `${lead}. That’s word ${nth.toLocaleString()} in my field notes.`;
 }
-// A find as a picture, 1200×630 like a link preview: the word circled on its
-// own patch of the map, beside its name, place and standing. It's drawn and
-// encoded in one go, without waiting, so the share sheet still opens from
-// the tap (Safari won't open one after a wait); the fonts are the map's,
-// already loaded.
-function findImage(e) {
-  const W0 = 1200, H0 = 630, cv = document.createElement('canvas');
-  cv.width = W0; cv.height = H0;
-  const g = cv.getContext('2d');
-  if (!g) return null;
-  const tc = TC[e.th], theme = THEMES[e.th], [ex, ey] = wordEnd(e);
-  const rx = fdiv(e.x, RC), ry = fdiv(e.y, RC);
-  const css = getComputedStyle(document.documentElement), font = n => css.getPropertyValue(n).trim();
-  const type = (weight, px, f, spacing = 0) => {
-    g.font = `${weight} ${px}px ${f}`;
-    if ('letterSpacing' in g) g.letterSpacing = `${(spacing * px).toFixed(1)}px`;
-  };
-  g.fillStyle = C.paper; g.fillRect(0, 0, W0, H0);
-
-  // The map, with the word's middle in the middle of the right-hand side.
-  const PANEL = 470, mx = (PANEL + 60 + W0) / 2, my = H0 / 2;
-  const spanX = Math.abs(ex - e.x) + 1, spanY = Math.abs(ey - e.y) + 1;
-  const cs = clamp(Math.min((W0 - PANEL - 120) / (spanX + 1), (H0 - 120) / (spanY + 1)), 30, 72);
-  const wx = (e.x + ex) / 2 + .5, wy = (e.y + ey) / 2 + .5;
-  const SX = x => (x - wx) * cs + mx, SY = y => (y - wy) * cs + my;
-  const x0 = Math.floor(wx - (mx - PANEL + 60) / cs), x1 = Math.ceil(wx + (W0 - mx) / cs);
-  const y0 = Math.floor(wy - my / cs) - 1, y1 = Math.ceil(wy + (H0 - my) / cs);
-  g.globalAlpha = tintAlpha(cs);
-  for (let ty = fdiv(y0, RC); ty <= fdiv(y1, RC); ty++) for (let tx = fdiv(x0, RC); tx <= fdiv(x1, RC); tx++) {
-    g.fillStyle = TC[regionTheme(tx, ty)].tint;
-    g.fillRect(SX(tx * RC), SY(ty * RC), RC * cs, RC * cs);
-  }
-  g.globalAlpha = 1;
-  g.strokeStyle = C.rule; g.lineWidth = 1.5; g.setLineDash([6, 6]);
-  g.beginPath();
-  for (let tx = fdiv(x0, RC) + 1; tx <= fdiv(x1, RC); tx++) { g.moveTo(SX(tx * RC), 0); g.lineTo(SX(tx * RC), H0); }
-  for (let ty = fdiv(y0, RC) + 1; ty <= fdiv(y1, RC); ty++) { g.moveTo(0, SY(ty * RC)); g.lineTo(W0, SY(ty * RC)); }
-  g.stroke(); g.setLineDash([]);
-  // The word's ring, as the map draws it.
-  const a = Math.atan2(SY(ey) - SY(e.y), SX(ex) - SX(e.x)), r = cs * .42;
-  g.beginPath();
-  g.moveTo(SX(e.x + .5) + r * Math.cos(a - Math.PI / 2), SY(e.y + .5) + r * Math.sin(a - Math.PI / 2));
-  g.arc(SX(ex + .5), SY(ey + .5), r, a - Math.PI / 2, a + Math.PI / 2);
-  g.arc(SX(e.x + .5), SY(e.y + .5), r, a + Math.PI / 2, a + Math.PI * 1.5);
-  g.closePath();
-  g.fillStyle = tc.fill; g.fill();
-  g.lineWidth = 3; g.strokeStyle = tc.stroke;
-  if (e.s) g.setLineDash([cs * .16, cs * .1]);
-  g.stroke(); g.setLineDash([]);
-  // Letters: the word's in full ink, the rest quieter.
-  const inWord = new Set([...e.w].map((_, i) => `${e.x + DIRS[e.d][0] * i},${e.y + DIRS[e.d][1] * i}`));
-  type(500, Math.round(cs * .42), GRID_FONT);
-  g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillStyle = C.ink;
-  for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) {
-    const word = inWord.has(`${x},${y}`);
-    g.globalAlpha = word ? 1 : .42;
-    g.fillText(String.fromCharCode(65 + letterAt(x, y)), SX(x + .5), SY(y + .5));
-  }
-  g.globalAlpha = 1;
-  g.textAlign = 'left'; g.textBaseline = 'alphabetic';
-
-  // The panel, fading into the map.
-  const fade = g.createLinearGradient(PANEL, 0, PANEL + 90, 0);
-  fade.addColorStop(0, rgba(C.paper, 1)); fade.addColorStop(1, rgba(C.paper, 0));
-  g.fillStyle = C.paper; g.fillRect(0, 0, PANEL, H0);
-  g.fillStyle = fade; g.fillRect(PANEL, 0, 90, H0);
-  g.fillStyle = C.accent; g.fillRect(0, 0, W0, 10);
-  const X = 64, R = PANEL - 20;
-  const fit = (text, weight, px, min, f, spacing) => {
-    for (; px > min; px -= 2) { type(weight, px, f, spacing); if (g.measureText(text).width <= R - X) return px; }
-    type(weight, min, f, spacing); return min;
-  };
-  type(500, 20, font('--f-mono'), .14); g.fillStyle = C.muted;
-  g.fillText('LETTERFIELD', X, 84);
-  fit(e.w, 800, 120, 40, DISPLAY_FONT, .04); g.fillStyle = C.ink;
-  g.fillText(e.w, X, 216);
-  g.fillStyle = tc.stroke; g.beginPath(); g.arc(X + 9, 262, 9, 0, Math.PI * 2); g.fill();
-  fit(`${e.s ? 'A stray ' + theme.name.toLowerCase() : theme.name} word`, 500, 26, 16, font('--f-ui'));
-  g.fillStyle = C.muted; g.fillText(`${e.s ? 'A stray ' + theme.name.toLowerCase() : theme.name} word`, X + 30, 271);
-  fit(regionName(rx, ry), 600, 34, 18, font('--f-ui')); g.fillStyle = C.ink;
-  g.fillText(regionName(rx, ry), X, 330);
-  type(400, 18, font('--f-mono')); g.fillStyle = C.muted;
-  g.fillText(`${fmtCoord(e.x, e.y)} · ${DARROW[e.d]} ${DNAME[e.d]}`, X, 366);
-  g.fillStyle = C.rule; g.fillRect(X, 410, R - X, 2);
-  if (e.f) {
-    type(700, 44, DISPLAY_FONT, .05); g.fillStyle = C.accent; g.fillText('CHARTED FIRST', X, 470);
-    type(400, 18, font('--f-mono')); g.fillStyle = C.muted;
-    const who = myInitials();
-    if (e.n) g.fillText(`Word ${e.n.toLocaleString()} of ${(world ? world.total : SURVEY_WORDS).toLocaleString()}`, X, 508);
-    g.fillText(e.n ? `on the shared map${who ? ' · ' + who : ''}` : `on the shared map${who ? ', by ' + who : ''}`, X, e.n ? 536 : 508);
-  } else {
-    const nth = [...found.values()].filter(o => o.t <= e.t).length;
-    type(700, 44, DISPLAY_FONT, .05); g.fillStyle = C.ink; g.fillText(`WORD ${nth.toLocaleString()}`, X, 470);
-    type(400, 18, font('--f-mono')); g.fillStyle = C.muted; g.fillText('in my field notes', X, 508);
-  }
-  type(400, 16, font('--f-mono')); g.fillStyle = C.muted; g.fillText(location.host, X, 594);
-
-  // Encoded here and now, so nothing waits.
-  const url = cv.toDataURL('image/png'), bin = atob(url.slice(url.indexOf(',') + 1));
-  const bytes = new Uint8Array(bin.length);
-  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
-  return new File([bytes], `letterfield-${e.w.toLowerCase()}.png`, { type: 'image/png' });
-}
 async function shareFind(e) {
   const text = shareText(e), url = shareUrl(e);
   if (navigator.share) {
-    const data = { title: 'Letterfield', text, url };
-    try {
-      if (navigator.canShare) { const file = findImage(e); if (file && navigator.canShare({ ...data, files: [file] })) data.files = [file]; }
-    } catch (_) {}
-    try { await navigator.share(data); return; } catch (err) { if (err && err.name === 'AbortError') return; }
+    try { await navigator.share({ title: 'Letterfield', text, url }); return; } catch (err) { if (err && err.name === 'AbortError') return; }
   }
   try {
     await navigator.clipboard.writeText(`${text} ${url}`);
@@ -3036,6 +2950,85 @@ async function shareFind(e) {
   } catch (_) {
     toast(`<i></i><b>Couldn’t share</b><span>Copy this page’s address instead</span>`, THEMES[e.th].hue);
   }
+}
+
+/* ---------- Definitions ---------- */
+// What a word you've found means, opened under its entry in the field notes
+// by the book beside it. Only found words have one: asking about a word is
+// asking the Worker, which needs the word, and the page only ever sends one
+// from the notes. Each lookup (word and theme) has a machine of its own:
+// loading, then ready (senses to show), none (neither Wiktionary nor
+// Wikipedia knows it) or failed (the Worker couldn't be reached, or
+// Wikimedia was busy), which can be tried again. The answer is kept for the
+// page's life; the browser and the Worker keep it far longer.
+const BOOK_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 6.5C10.3 5.2 7.9 4.5 4 4.5v13c3.9 0 6.3.7 8 2 1.7-1.3 4.1-2 8-2v-13c-3.9 0-6.3.7-8 2z"/><path d="M12 6.5v13"/></svg>';
+const defineApi = (() => {
+  let url = DEFINE_URL;
+  try { const q = new URLSearchParams(location.search).get('define'); if (q !== null && (q === '' || /^https?:\/\//.test(q))) url = q; } catch (_) {}
+  return url.replace(/\/+$/, '');
+})();
+const definitions = new Map();  // 'WORD/th' → { m: its machine, senses, source, url }
+let defOpen = null;             // the key of the find whose meaning is open
+const DEFINE_MOVES = { loading: ['ready', 'none', 'failed'], ready: [], none: [], failed: ['loading'] };
+const escHtml = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
+const safeLink = u => (typeof u === 'string' && /^https:\/\/en\.(wiktionary|wikipedia)\.org\//.test(u) ? u : '');
+const defKey = e => e.w + '/' + e.th;
+function define(e, retry = false) {
+  const k = defKey(e);
+  let d = definitions.get(k);
+  if (d && !(retry && d.m.is('failed'))) return d;
+  if (!d) {
+    d = { m: machine('define', DEFINE_MOVES, defineApi ? 'loading' : 'failed', { el: null, onMove: () => showDefinition(k) }), senses: [], source: null, url: '' };
+    definitions.set(k, d);
+    if (!defineApi) return d;
+  } else d.m.go('loading');
+  const at = d.m.seq;
+  fetch(`${defineApi}/v1/define/${e.w}/${e.th}`)
+    .then(r => (r.ok ? r.json() : Promise.reject(new Error('status ' + r.status))))
+    .then(body => {
+      if (d.m.seq !== at) return;
+      const senses = Array.isArray(body.senses) ? body.senses.filter(s => s && typeof s.text === 'string').slice(0, 3) : [];
+      d.senses = senses; d.source = body.source === 'wikipedia' ? 'wikipedia' : 'wiktionary'; d.url = safeLink(body.url);
+      d.m.go(senses.length ? 'ready' : 'none');
+    })
+    .catch(() => { if (d.m.seq === at) d.m.go('failed'); });
+  return d;
+}
+// The panel under an open entry.
+function defPanel(e) {
+  const d = define(e), st = d.m.state, theme = THEMES[e.th].name;
+  const search = `<a href="https://en.wiktionary.org/wiki/Special:Search?search=${encodeURIComponent(e.w.toLowerCase())}" target="_blank" rel="noopener">Wiktionary</a>` +
+    `<a href="https://en.wikipedia.org/w/index.php?search=${encodeURIComponent(e.w.toLowerCase() + ' ' + theme)}" target="_blank" rel="noopener">Wikipedia</a>`;
+  let html;
+  if (st === 'ready') {
+    html = d.senses.map(s => `<p class="def-sense">${s.pos ? `<i>${escHtml(s.pos)}</i>` : ''}${escHtml(s.text)}</p>`).join('') +
+      `<p class="def-links">${d.url ? `<a href="${escHtml(d.url)}" target="_blank" rel="noopener">From ${d.source === 'wikipedia' ? 'Wikipedia' : 'Wiktionary'}</a>` : ''}` +
+      `<a href="https://creativecommons.org/licenses/by-sa/4.0/" target="_blank" rel="noopener license">CC BY-SA 4.0</a></p>`;
+  } else if (st === 'loading') {
+    html = '<p class="def-note">Looking it up…</p>';
+  } else if (st === 'none') {
+    html = `<p class="def-note">No definition to hand for this one.</p><p class="def-links">Search ${search}</p>`;
+  } else if (!defineApi) {
+    html = `<p class="def-links">Look it up on ${search}</p>`;
+  } else {
+    html = `<p class="def-note">Couldn’t look it up just now.</p><p class="def-links"><button type="button" class="def-retry" data-key="${e.key}">Try again</button>${search}</p>`;
+  }
+  return `<div class="find-def" id="def-${e.key}" data-define="${st}" aria-live="polite">${html}</div>`;
+}
+// Redraws an open panel when its lookup moves.
+function showDefinition(k) {
+  const e = defOpen && found.get(defOpen);
+  const el = e && defKey(e) === k && document.getElementById('def-' + e.key);
+  if (el) el.outerHTML = defPanel(e);
+}
+function toggleDefinition(key) {
+  const e = found.get(key); if (!e) return;
+  defOpen = defOpen === key ? null : key;
+  renderNotes();
+  const b = findsEl.querySelector(`.find-define[data-key="${CSS.escape(key)}"]`);
+  if (b) try { b.focus({ preventScroll: true }); } catch (_) {}
+  const el = defOpen && document.getElementById('def-' + key);
+  if (el && el.scrollIntoView) el.scrollIntoView({ block: 'nearest', behavior: RM ? 'auto' : 'smooth' });
 }
 
 /* ---------- Field notes ---------- */
@@ -3077,7 +3070,9 @@ function renderNotes() {
         return `<li><a class="find mark${e.s ? ' stray' : ''}" href="#${hashOf(e)}" data-key="${e.key}" style="--h:${THEMES[e.th].hue}">` +
           `<span class="find-dot" aria-hidden="true"></span><span class="find-word">${e.w}</span><span class="find-when">${rel(e.t)}</span>` +
           `<span class="find-meta"><b>${regionName(rx, ry)}</b> · ${fmtCoord(e.x, e.y)} · ${DARROW[e.d]} ${DNAME[e.d]}${e.s ? ' · stray' : ''}${e.f ? ' · charted first' : ''}</span></a>` +
-          `<button type="button" class="find-share" data-key="${e.key}" aria-label="Share ${e.w}" title="Share ${e.w}">${SHARE_ICON}</button></li>`;
+          `<button type="button" class="find-define" data-key="${e.key}" aria-expanded="${defOpen === e.key}"${defOpen === e.key ? ` aria-controls="def-${e.key}"` : ''} aria-label="What ${e.w} means" title="What ${e.w} means">${BOOK_ICON}</button>` +
+          `<button type="button" class="find-share" data-key="${e.key}" aria-label="Share ${e.w}" title="Share ${e.w}">${SHARE_ICON}</button>` +
+          (defOpen === e.key ? defPanel(e) : '') + '</li>';
       }).join('')
     : '<li class="finds-empty"><strong>No words yet</strong>Circle a word on the map and it lands here with its territory, grid reference and the bearing it reads in. Tap an entry later to fly straight back to it.</li>';
 }
@@ -3088,6 +3083,11 @@ filtersEl.addEventListener('click', e => {
 });
 let hashSuppress = '';
 findsEl.addEventListener('click', e => {
+  const d = e.target.closest('.find-define');
+  if (d) { toggleDefinition(d.dataset.key); return; }
+  const r = e.target.closest('.def-retry');
+  if (r) { const en = found.get(r.dataset.key); if (en) define(en, true); return; }
+  if (e.target.closest('.find-def')) return;  // its links open on their own
   const b = e.target.closest('.find-share');
   if (b) { const en = found.get(b.dataset.key); if (en) shareFind(en); return; }
   const a = e.target.closest('a.find'); if (!a) return;
@@ -3229,8 +3229,8 @@ updateHud();
 invalidate();
 if (redrawn) setTimeout(() => toast(`<i></i><b>The map has been redrawn</b><span>${NT} themes of about ${Math.round(THEMES.reduce((a, t) => a + t.words.length, 0) / NT / 10) * 10} words now, so a territory never repeats one · ${redrawn.kept ? `${redrawn.kept} of your ${redrawn.had} finds are still on it` : 'your old finds are not on it'}</span>`, null, 8000), 900);
 connectStore();
-if (location.hash === '#debug') window.__lf = { cam, found, claims, links, chunk, wordEnd, collect, findImage, territoryProgress, world: () => world, supernova, novaSound, audioOut, musicTracks: MUSIC_TRACKS, music: () => musicNow && { state: ac.state, track: musicNow.track().name, nodes: musicNow.track().nodes.size, level: musicNow.master.gain.value, swap: musicNow.swap }, nova: () => nova,
-  pass: () => Pass.state, intro: () => Intro.state, surveyStatus, linkStates: () => Object.fromEntries([...links].map(([k, l]) => [k, l.m.state])), outbox: () => [...outbox.values()].map(c => [c.e.w, c.m.state]) };
+if (location.hash === '#debug') window.__lf = { cam, found, claims, links, chunk, wordEnd, collect, territoryProgress, world: () => world, supernova, novaSound, audioOut, musicTracks: MUSIC_TRACKS, music: () => musicNow && { state: ac.state, track: musicNow.track().name, nodes: musicNow.track().nodes.size, level: musicNow.master.gain.value, swap: musicNow.swap }, nova: () => nova,
+  pass: () => Pass.state, intro: () => Intro.state, surveyStatus, linkStates: () => Object.fromEntries([...links].map(([k, l]) => [k, l.m.state])), outbox: () => [...outbox.values()].map(c => [c.e.w, c.m.state]), definitions: () => Object.fromEntries([...definitions].map(([k, d]) => [k, d.m.state])) };
 
 })();
 </script>

@@ -23,8 +23,8 @@ from playwright.sync_api import BrowserContext, Page, Route
 from fake_survey import FAKE_TURNSTILE, TURNSTILE_JS, FakePassDesk, FakeSurvey
 
 API = "https://leaderboard.test"
-# LEADERBOARD_URL in the games, ROOMS_URL in war.html and SURVEY_URL in letterfield.html and
-# letterfield-log.html.
+# LEADERBOARD_URL in the games, ROOMS_URL in war.html, SURVEY_URL in letterfield.html and
+# letterfield-log.html, and DEFINE_URL in letterfield.html.
 WORKER_URL = "https://api.games.michaelwarkentin.com"
 
 
@@ -164,6 +164,7 @@ class Held:
 
 def stand_in_for_worker(context: BrowserContext) -> FakeLeaderboard:
     """Answer the real Worker's URL in `context` with an empty fake, the survey's log included."""
+    from fake_definitions import FakeDefinitions
     from fake_survey_log import FakeSurveyLog
 
     fake = FakeLeaderboard()
@@ -178,15 +179,16 @@ def stand_in_for_worker(context: BrowserContext) -> FakeLeaderboard:
     context.route(TURNSTILE_JS, lambda route: route.fulfill(content_type="application/javascript", body=FAKE_TURNSTILE))
     context.route(f"{WORKER_URL}/v1/survey/pass", FakePassDesk().handle)
     context.route(f"{WORKER_URL}/v1/survey/log/**", FakeSurveyLog().handle)  # later routes win
+    context.route(f"{WORKER_URL}/v1/define/**", FakeDefinitions().handle)  # Letterfield's definitions
     return fake
 
 
 def without_worker(page: Page, site_url: str, game: str) -> None:
-    """Serve `game` with LEADERBOARD_URL, ROOMS_URL, SURVEY_URL and SHARE_URL blanked, as it runs with no Worker set up."""
+    """Serve `game` with LEADERBOARD_URL, ROOMS_URL, SURVEY_URL, SHARE_URL and DEFINE_URL blanked, as it runs with no Worker set up."""
 
     def handle(route: Route) -> None:
         response = route.fetch()
-        body = re.sub(r"\b((?:LEADERBOARD|ROOMS|SURVEY|SHARE)_URL = )'[^']*'", r"\1''", response.text())
+        body = re.sub(r"\b((?:LEADERBOARD|ROOMS|SURVEY|SHARE|DEFINE)_URL = )'[^']*'", r"\1''", response.text())
         route.fulfill(response=response, body=body)
 
     page.route(lambda url: urlparse(url).path == f"/{game}", handle)

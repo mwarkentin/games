@@ -166,7 +166,8 @@ def test_a_word_charted_first_shares_where_it_came_in_the_worlds_count(page: Pag
     page.click("#toast .share")
     pattern = rf"I just found {word[0]} in [A-Z][a-z]+ [A-Z][a-z]+ in Letterfield, before anyone else\. That was word 412,884 of 1,119,752 on the shared map\."
     assert re.fullmatch(pattern, page.evaluate("window.__shared[0].text"))
-    assert page.evaluate("window.__shared[0].url").endswith(f"/letterfield?survey={SURVEY}#f-{word[0].lower()}-{word[1]}-{word[2]}-{word[3]}")
+    # The link goes to the share Worker, whose page carries a picture of the word.
+    assert page.evaluate("window.__shared[0].url") == f"https://share.michaelwarkentin.com/f/f-{word[0].lower()}-{word[1]}-{word[2]}-{word[3]}"
     # Where it came is kept with the find, so the field notes share it later too.
     page.reload()
     open_notes(page)
