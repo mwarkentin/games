@@ -1,3 +1,8 @@
+## 2026-11-10
+
+- On a phone, the list of words hidden in view scrolls only sideways, no
+  longer up and down as well.
+
 ## 2026-11-09
 
 - On the shared survey, you pick your three-letter initials before
