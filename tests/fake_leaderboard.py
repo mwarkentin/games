@@ -184,11 +184,11 @@ def stand_in_for_worker(context: BrowserContext) -> FakeLeaderboard:
 
 
 def without_worker(page: Page, site_url: str, game: str) -> None:
-    """Serve `game` with LEADERBOARD_URL, ROOMS_URL, SURVEY_URL and DEFINE_URL blanked, as it runs with no Worker set up."""
+    """Serve `game` with LEADERBOARD_URL, ROOMS_URL, SURVEY_URL, SHARE_URL and DEFINE_URL blanked, as it runs with no Worker set up."""
 
     def handle(route: Route) -> None:
         response = route.fetch()
-        body = re.sub(r"\b((?:LEADERBOARD|ROOMS|SURVEY|DEFINE)_URL = )'[^']*'", r"\1''", response.text())
+        body = re.sub(r"\b((?:LEADERBOARD|ROOMS|SURVEY|SHARE|DEFINE)_URL = )'[^']*'", r"\1''", response.text())
         route.fulfill(response=response, body=body)
 
     page.route(lambda url: urlparse(url).path == f"/{game}", handle)

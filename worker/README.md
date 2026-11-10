@@ -306,6 +306,15 @@ with its DNS record and certificate. Wrangler leaves it alone because
 over the Worker's domains and drops this one. The `workers.dev` address
 keeps working, and Worker Previews stay on `workers.dev`.
 
+**The share Worker** (`share/`) binds this Worker's `Sector` and `Atlas`
+classes directly and asks two internal paths that nothing on the internet
+can reach (the router only ever forwards WebSocket upgrades to sectors):
+`GET /claim/<key>` on a sector, who charted that word and when, or
+`{"error": "not charted"}` with a 404; and `GET /totals` on the Atlas, the
+shared map's totals. Keep both answering as they do, or share cards lose
+their lines about charting (`share/test/app.test.js` fakes them, and
+`test/survey.test.js` tests the real ones).
+
 ## Previews
 
 Every pull request whose branch changes `worker/` from `main`'s, stacked

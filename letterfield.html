@@ -82,6 +82,7 @@ button:focus-visible,a:focus-visible,#map:focus-visible{outline:2px solid var(--
 .legend-head{display:flex;justify-content:space-between;align-items:baseline;gap:12px;margin-bottom:9px}
 .legend-count{font:400 11px/1 var(--f-mono);color:var(--muted);font-variant-numeric:tabular-nums}
 .chips{list-style:none;margin:0;padding:0;display:flex;flex-wrap:wrap;gap:6px}
+.chips > li{display:flex} /* so a span chip's padding counts, as a button's does */
 .chip{font:500 12px/1 var(--f-mono);letter-spacing:.07em;padding:7px 8px 6px;border:1px solid var(--rule);border-radius:5px;background:var(--panel);cursor:pointer;white-space:nowrap}
 .chip:hover{border-color:var(--ink)}
 .chip.found{color:var(--muted);text-decoration:line-through;text-decoration-thickness:2px;text-decoration-color:var(--c);border-style:dashed;cursor:default}
@@ -191,10 +192,15 @@ body.docked .notes{box-shadow:none}
 .notes.has-survey{overflow-y:auto;overscroll-behavior:contain}
 .notes.has-survey .finds{flex:1 0 auto;overflow:visible}
 .survey-hint:empty{display:none}
-/* Turnstile's check (see worker/TURNSTILE.md): empty and out of the way unless it needs a tap. */
-.survey-check{position:fixed;left:50%;bottom:calc(16px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);z-index:40;max-width:calc(100vw - 32px)}
+/* Turnstile's check (see worker/TURNSTILE.md): empty and out of the way unless it needs a tap.
+   When it does, it's a small panel just above the word legend (and, on a phone, the
+   instruments; placeCheck() measures them), so it covers neither them nor the sign-up card
+   at the top. It stays a moment after to show it passed, then goes. While it isn't showing,
+   taps go through it to the map. */
+.survey-check{position:fixed;left:var(--gl);bottom:calc(var(--bottom) + 140px);z-index:40;max-width:calc(100% - var(--gl) - var(--gr));box-sizing:border-box}
+.survey-check:not(.shown){pointer-events:none}
 .survey-check p{display:none;margin:0 0 8px;font-size:13px;color:var(--ink)}
-.survey-check.asking{padding:10px 12px;background:var(--panel);border:1px solid var(--rule);border-radius:8px;box-shadow:0 6px 24px rgb(0 0 0/.18)}
+.survey-check.shown{padding:10px 12px;background:var(--panel);border:1px solid var(--rule);border-radius:8px;box-shadow:0 6px 24px rgb(0 0 0/.18)}
 .survey-check.asking p{display:block}
 
 /* Coach + toast */
@@ -259,7 +265,9 @@ body.docked .nova{left:calc((100% - var(--notes-w)) / 2)}
   .notes-toggle .badge{position:absolute;top:-6px;right:-6px}
   .legend{right:var(--gr);width:auto;padding:9px 0 10px}
   .legend-head{padding:0 12px;margin-bottom:8px}
-  .chips{flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none;padding:0 12px}
+  /* One row that scrolls sideways only: overflow-x alone would make y auto too.
+     The 4px above and below, taken back by the margin, keep focus rings unclipped. */
+  .chips{flex-wrap:nowrap;overflow-x:auto;overflow-y:hidden;overscroll-behavior-x:contain;touch-action:pan-x;scrollbar-width:none;padding:4px 12px;margin:-4px 0}
   .chips::-webkit-scrollbar{display:none}
   .chip{flex:none}
   .legend-note{padding:2px 0}
@@ -415,6 +423,10 @@ const K_PASS = 'letterfield.surveyPass.v1';
 // SURVEY_URL empty the game is single-player and connects nowhere.
 // ?survey=<url> overrides it for testing.
 const SURVEY_URL = 'https://api.games.michaelwarkentin.com';
+// Where a shared find links: the share Worker (share/), which answers with a
+// page whose link preview is a picture of the word, then sends people here.
+// While it's empty, shares link straight to the game. ?share=<url> overrides it.
+const SHARE_URL = '';
 // Turnstile (see worker/TURNSTILE.md): with a site key, the game passes
 // Cloudflare's bot check once before joining the survey, and loads its script
 // from challenges.cloudflare.com only then. While it's empty, joins need no
@@ -1027,12 +1039,39 @@ const passGood = () => Pass.is('off') || (Pass.is('good') && pass.expires - Date
 const mayJoin = () => passGood() || (passFails > 0 && !passRequired);
 const surveyCheck = $('#surveyCheck');
 function passMoved(to) {
-  // Turnstile's box shows only while it wants a tap, with a line saying why.
+  // Turnstile's box shows once it wants a tap, with a line saying why, and
+  // stays until its widget is removed (a moment after the token, see askTurnstile).
   surveyCheck.classList.toggle('asking', to === 'asking');
-  if (to === 'asking') surveyCheck.querySelector('p').textContent = anyLive() ? 'One tap to stay in the shared survey' : 'One tap to join the shared survey';
+  if (to === 'asking') {
+    surveyCheck.classList.add('shown');
+    surveyCheck.querySelector('p').textContent = anyLive() ? 'One tap to stay in the shared survey' : 'One tap to join the shared survey';
+    placeCheck();
+  }
   // A try that failed takes its widget with it, so no box is left that does nothing.
-  if (to === 'failed' && widgetId !== null) { try { window.turnstile.remove(widgetId); } catch (_) {} widgetId = null; }
+  if (to === 'failed') dropWidget();
   renderSurvey();
+}
+// Sits the box 8px above whichever of the legend and instruments it would
+// otherwise cover, wherever they are at this size.
+function placeCheck() {
+  if (!surveyCheck.classList.contains('shown')) return;
+  const left = surveyCheck.getBoundingClientRect().left, right = left + Math.max(surveyCheck.offsetWidth, 326);
+  let top = innerHeight;
+  for (const el of document.querySelectorAll('.legend, .instruments > *')) {
+    const r = el.getBoundingClientRect();
+    if (r.width && r.left < right && r.right > left) top = Math.min(top, r.top);
+  }
+  surveyCheck.style.bottom = top < innerHeight ? `${Math.round(innerHeight - top + 8)}px` : '';
+}
+addEventListener('resize', placeCheck);
+if (window.ResizeObserver) new ResizeObserver(placeCheck).observe($('.legend'));
+// Removes Turnstile's widget, if it's still the one given (any, by default),
+// and the box around it, so nothing is left over the game.
+function dropWidget(id = widgetId) {
+  if (id === null || id !== widgetId) return;
+  try { window.turnstile.remove(id); } catch (_) {}
+  widgetId = null;
+  surveyCheck.classList.remove('shown');
 }
 function loadTurnstile() {
   turnstileLoad ??= new Promise((resolve, reject) => {
@@ -1067,19 +1106,20 @@ function ensurePass() {
   }, () => passFailed(t));
 }
 // One token from the widget. It runs out of sight; only if Turnstile wants a
-// tap does its box show, bottom middle, with a line saying why. A player
+// tap does its box show, above the legend, with a line saying why. A player
 // already in the survey without a pass, while passes aren't required, isn't
 // asked for a tap: the try ends, and the game tries again later.
 function askTurnstile(ts, t) {
   const current = () => t === passTry && Pass.is('checking', 'asking');
   const timer = setTimeout(() => { if (current()) passFailed(t); }, 120000);
   const fail = () => { clearTimeout(timer); if (current()) passFailed(t); };
-  if (widgetId !== null) try { ts.remove(widgetId); } catch (_) {}
-  widgetId = null;
+  dropWidget();
+  let mine = null;
   try {
-    widgetId = ts.render('#surveyWidget', {
+    widgetId = mine = ts.render('#surveyWidget', {
       sitekey: siteKey, action: 'survey', appearance: 'interaction-only', theme: 'auto', 'refresh-expired': 'never',
-      callback: token => { clearTimeout(timer); if (current()) sendToken(token, t); },
+      // Once the token's here the widget has done its job: it shows "Success!" for a moment if it asked for a tap, then goes.
+      callback: token => { clearTimeout(timer); setTimeout(() => dropWidget(mine), 1000); if (current()) sendToken(token, t); },
       'error-callback': () => { fail(); return true; },
       'timeout-callback': fail,
       'unsupported-callback': fail,
@@ -2881,7 +2921,15 @@ toastEl.addEventListener('focusout', () => setTimeout(releaseToast));
 const SHARE_TOAST_MS = 6000;
 const SHARE_JUST_MS = 10 * 60000;  // within this long of finding it, "I just found"
 const SHARE_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 15V3M7.5 7.5 12 3l4.5 4.5"/><path d="M8 11H6a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-6a2 2 0 0 0-2-2h-2"/></svg>';
-const shareUrl = e => location.origin + location.pathname + location.search + '#' + hashOf(e);
+// A dark page shares a dark card (/f/d/…): the card follows the sharer's theme.
+const shareBase = (() => {
+  let url = SHARE_URL;
+  try { const q = new URLSearchParams(location.search).get('share'); if (q && /^https?:\/\//.test(q)) url = q; } catch (_) {}
+  return url.replace(/\/+$/, '');
+})();
+const shareUrl = e => shareBase
+  ? `${shareBase}/f/${C.dark ? 'd/' : ''}${hashOf(e)}`
+  : location.origin + location.pathname + location.search + '#' + hashOf(e);
 function shareText(e) {
   const place = regionName(fdiv(e.x, RC), fdiv(e.y, RC));
   const word = e.s ? `${e.w}, a stray ${THEMES[e.th].name.toLowerCase()} word,` : e.w;

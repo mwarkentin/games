@@ -11,7 +11,10 @@ rewrites, in every text file:
   survey log's SURVEY_URL in the games) to the pull request's Worker
   Preview, when it has one. Without --worker the pages keep production's
   Worker, which answers only the live site's origin, so a preview can never
-  write to production's scores or rooms.
+  write to production's scores or rooms;
+- the share Worker's address (Letterfield's SHARE_URL) to nothing, so a
+  preview's shares link straight to the preview's own game, not to
+  production's cards, which send people to the live site.
 
 With --banner, the generated pages (home page, colophon, changelogs) get a strip along the top
 naming the preview (the pull request and commit), linked to --banner-link.
@@ -54,7 +57,7 @@ def point_text(text: str, site: str, worker: str = "") -> str:
     text = re.sub(re.escape(BASE_URL) + r"(?![\w.-])", site, text)
     if worker:
         text = re.sub(re.escape(WORKER_URL) + r"(?![\w.-])", worker, text)
-    return text
+    return re.sub(r"\b(const SHARE_URL = )'[^']*'", r"\1''", text)
 
 
 def add_banner(text: str, banner: str, link: str = "") -> str:
