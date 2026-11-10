@@ -1,5 +1,6 @@
 ## 2026-11-10
 
+- A “Send feedback” link at the foot of your field notes and of the survey log, for bugs and ideas. A GitHub issue from it comes with the game and your device filled in.
 - Sharing a surveyor's, theme's or territory's page of the survey log in a
   chat now shows a card of it: whose it is, the day, week or month, their
   numbers and latest words, in your light or dark colours.
@@ -27,7 +28,6 @@
 
 ## 2026-11-09
 
-- A “Send feedback” link at the foot of your field notes and of the survey log, for bugs and ideas. A GitHub issue from it comes with the game and your device filled in.
 - On the shared survey, you pick your three-letter initials before
   circling your first word, so every word you chart first is signed.
 - A redrawn map with 225 themes, 109 of them new, from Sushi Bar and Whale

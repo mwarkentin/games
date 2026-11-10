@@ -1,6 +1,9 @@
-## 2026-11-09
+## 2026-11-10
 
 - A “Send feedback” link on the menu, for bugs and ideas. A GitHub issue from it comes with the game and your device filled in.
+
+## 2026-11-09
+
 - A score worth saving is always offered a spot on the leaderboard: tapping
   a board's tab, or opening and closing the leaderboard, while the game-over
   board was still loading could lose the offer. Joining a group from the
