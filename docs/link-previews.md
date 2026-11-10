@@ -210,18 +210,102 @@ What follows for the design:
 | How the link looks in a chat | `mwarkentin.workers.dev` reads as a throwaway host | best: the site's own | good: the owner's domain |
 | Previews | Worker Previews are on workers.dev anyway | | Worker Previews are on workers.dev anyway |
 
-**Recommended: `share.michaelwarkentin.com`**, if michaelwarkentin.com's DNS
-is on Cloudflare (the infra repo isn't attached here, so I couldn't check).
-If it isn't, start on workers.dev with R2 as the cache. That works without
-the Cache API, and moving to a domain later only changes `SHARE_URL`.
-Proxying games.michaelwarkentin.com would give the nicest links, but it puts
-the whole site behind a new layer for one feature.
+**Recommended, and decided: `share.michaelwarkentin.com`.** The zone moved
+to Cloudflare on 10 November 2026 (Free plan, SSL/TLS mode "Full", the
+`games` record a DNS-only CNAME to GitHub Pages, no Worker routes yet).
+Proxying games.michaelwarkentin.com is now a real option and would give the
+nicest links. But it puts the whole site behind a new layer for one feature,
+and its main risk, GitHub's certificate, isn't documented either way. The
+details are below, in case the decision is ever revisited.
+
+### If games.michaelwarkentin.com were proxied
+
+The change: turn the `games` record from DNS only to proxied, and add a
+Worker route `games.michaelwarkentin.com/s/*` to `games-share`. Requests to
+`/s/…` would go to the Worker; everything else would go through Cloudflare to
+GitHub Pages as now. Share links would look like
+`games.michaelwarkentin.com/s/f-coral-120-m48-2`. The word goes in the path
+either way, since the `#fragment` never reaches a server.
+
+**GitHub Pages' certificate and "Enforce HTTPS".** GitHub gets a Let's
+Encrypt certificate for the custom domain after a DNS check that the record
+points at GitHub (its docs say records pointing elsewhere "can prevent
+certificate generation"). Behind the proxy, the name resolves to Cloudflare,
+not GitHub. GitHub's docs don't cover proxies or renewal, but it's widely
+reported that renewal then fails, the current certificate runs out within
+about 90 days, and the Pages settings may show the domain as misconfigured.
+With SSL/TLS mode **"Full"**, as the zone is now, that doesn't reach visitors:
+Cloudflare connects to GitHub over HTTPS but doesn't check the origin's
+certificate, so an expired or mismatched one still works, while visitors get
+Cloudflare's edge certificate. **"Full (strict)" would break the site**
+when GitHub's certificate expired, and **"Flexible"** would loop with
+"Enforce HTTPS" on (Cloudflare asks over HTTP, GitHub redirects to HTTPS).
+Keep "Enforce HTTPS" on and the mode at "Full". Turn on Cloudflare's own
+"Always Use HTTPS", so the edge redirects HTTP before GitHub is asked.
+Whether GitHub keeps enforcing HTTPS once its certificate has lapsed isn't
+documented. Cloudflare connecting only over HTTPS makes that moot for
+visitors. The trade-off is that the hop to GitHub is encrypted but not
+authenticated, which is fine for a public static site.
+
+**Does a narrow route keep other requests off the Worker?** Yes. A Worker
+runs only for requests matching its route pattern, and a pattern ending in
+`*` matches every suffix (`/s/*` matches `/s/…` only). Other requests never
+start the Worker, so they don't count as Worker requests and add no Worker
+time. They still gain a Cloudflare hop in front of GitHub's own CDN. That's
+usually a few milliseconds, and less on cache hits.
+
+**What the proxy changes for the static site:**
+
+- **Caching.** Cloudflare caches by file extension, respecting the origin's
+  `Cache-Control` (GitHub Pages sends `max-age=600`). HTML isn't cached by
+  default, so pages are unchanged. `.js` and `.mid` are on the default list,
+  so **`sw.js` and the music would be cached at the edge for up to 10
+  minutes**, as browsers already cache them. A deploy's new service worker
+  could then take up to 10 minutes longer to reach people. The fix is a
+  Cache Rule that bypasses the cache for `/sw.js`, or a cache purge after
+  each Pages deploy. `.webmanifest` isn't cached by default.
+- **Settings that rewrite pages.** Check that Email Address Obfuscation (in
+  Scrape Shield, often on for new zones) and Rocket Loader are off, and that
+  nothing injects Cloudflare Web Analytics or other scripts. Each would
+  change the HTML GitHub serves, and the obfuscation and analytics scripts
+  would also trip the smoke tests' rule against unknown hosts on the live
+  site.
+- **Bots.** Bot Fight Mode can challenge crawlers, which would stop link
+  previews (Slack, Discord and others are verified bots, but iMessage and
+  WhatsApp fetch from phones, and Mastodon from thousands of servers).
+  Leave it off, or skip it for `/s/*`.
+- **Unchanged:** `sw.js` (it never handles `/s/*`, which isn't in its page
+  list), telemetry and analytics (they check the hostname, which is the
+  same), the leaderboard Worker (its own hostname), and Previews (on
+  workers.dev).
+- **Rollback:** turning the proxy back off restores today's setup within
+  the record's TTL. GitHub would then request a certificate again on its next
+  DNS check.
+
+**The OpenTofu change in mwarkentin/infra** would be the `games` record's
+`proxied = true`, plus a `cloudflare_workers_route` with the pattern above
+for `games-share`, or the route in `share/wrangler.toml` with the deploy token
+allowed to edit Workers routes. To keep the zone's behaviour explicit, it
+would also set `ssl = "full"`, `always_use_https = "on"`,
+`email_obfuscation = "off"` and `rocket_loader = "off"`, and add a Cache
+Rule bypassing `/sw.js`. For comparison, `share.michaelwarkentin.com` needs
+only a `cloudflare_workers_custom_domain` for that hostname, or
+`custom_domain = true` in `share/wrangler.toml`, which creates its own DNS
+record and certificate and leaves the `games` record alone.
+
+| | proxied `games…/s/*` | `share.michaelwarkentin.com` |
+| --- | --- | --- |
+| Links | the site's own address | the owner's domain, another hostname |
+| Live site | every request through Cloudflare; GitHub's certificate lapses; settings to keep in check | untouched |
+| Worker requests | only `/s/*` | only that hostname |
+| infra change | record proxied, route, five zone settings, a Cache Rule | one custom domain |
+| Undo | proxy off | delete the domain |
 
 Changes in mwarkentin/infra, in outline:
 
 - an R2 bucket `games-share-cards`, with a lifecycle rule to expire old maps'
   prefixes if wanted;
-- the custom domain for the `games-share` Worker;
+- the custom domain for the `games-share` Worker (`share.michaelwarkentin.com`);
 - the existing deploy token allowed to deploy the new Worker, write that
   bucket and (if `wrangler.toml` declares the domain) edit Workers routes on
   the zone;
