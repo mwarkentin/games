@@ -111,6 +111,10 @@ namespace_id = "7303"
 ALLOWED_ORIGINS = "https://games.michaelwarkentin.com,http://localhost:8000,http://127.0.0.1:8000"
 TURNSTILE_HOSTNAMES = "games.michaelwarkentin.com"
 TURNSTILE_REQUIRED = "false"
+# Words one address can chart on a Preview each UTC day: 1,000 rather than
+# production's 300 (DAILY_CLAIMS in src/survey.js), so a test can chart
+# several whole territories in a day.
+SURVEY_DAILY_CLAIMS = "1000"
 
 # Previews share one database of test scores, never production's. It's made
 # with OpenTofu in mwarkentin/infra, and wrangler.previews-migrations.toml

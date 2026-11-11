@@ -12,7 +12,7 @@ import vm from 'node:vm';
 import worker from '../src/index.js';
 import { CH, DEAL, DIRS, HOLDERS, MAP_VERSION, RC, RG, STRAY_MIN, THEMES, THEME_DATA, VOCAB, chunk, genChunk, keyOf, letterAt, regionName, regionTheme, strayTheme, wordEnd } from '../src/letterfield-world.js';
 import {
-  ADDRESS_HEADER, ADDRESS_SOCKETS, AREA, AREA_WORDS, Atlas, BATCH_MS, DAILY_CLAIMS, DAILY_LIST_MAX, CLAIM_BURST, CLAIM_REFILL_MS, MAX_ONLINE, MAX_PLAYERS, ONLINE_MS, PRESENCE_MAX, PRESENCE_MS,
+  ADDRESS_HEADER, ADDRESS_SOCKETS, AREA, AREA_WORDS, Atlas, BATCH_MS, DAILY_CLAIMS, dailyClaims, DAILY_LIST_MAX, CLAIM_BURST, CLAIM_REFILL_MS, MAX_ONLINE, MAX_PLAYERS, ONLINE_MS, PRESENCE_MAX, PRESENCE_MS,
   QUIET, REPORT_MS, UNPASSED_HEADER, SAVE_MS, SAVE_POS_MS, SECTOR, SPAWN_MAX, Sector, VIEW_MS, addressOf, checkClaim, routeSurvey,
 } from '../src/survey.js';
 
@@ -740,6 +740,18 @@ describe('Sector', () => {
     await claim(mine, words[2]);
     mock.timers.tick(BATCH_MS);
     assert.equal(mine.last('claimed').c[0], words[2].w);
+  });
+
+  test('takes a daily cap of its own from SURVEY_DAILY_CLAIMS, as Worker Previews do', () => {
+    assert.equal(dailyClaims({}), DAILY_CLAIMS);
+    assert.equal(dailyClaims({ SURVEY_DAILY_CLAIMS: '1000' }), 1000);
+    for (const bad of ['', 'lots', '0', '-5', '2.5', '1e9']) assert.equal(dailyClaims({ SURVEY_DAILY_CLAIMS: bad }), DAILY_CLAIMS, bad);
+    const atlasObject = new Atlas(fakeState(), { SURVEY_DAILY_CLAIMS: '1000' });
+    atlasObject.now = () => clock;
+    atlasObject.countCharted([[hashed(1), DAILY_CLAIMS]]);
+    assert.equal(atlasObject.overList.length, 0);
+    atlasObject.countCharted([[hashed(1), 1000 - DAILY_CLAIMS]]);
+    assert.deepEqual(atlasObject.overList, [hashed(1)]);
   });
 
   // An Atlas that already counts hashed(1) past today's cap. `held` keeps its
