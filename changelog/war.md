@@ -1,3 +1,11 @@
+## 2026-11-11
+
+- Winning a war ends with SPOILS OF WAR!: the whole pot bursts out into a
+  fan, the face-down cards turn over one by one, a counter tallies them up
+  and a war report lists the haul, before the cards fly onto your loot pile.
+  Double and triple wars get a bigger show, someone else's war gets a strip
+  with their haul, and any tap sends it off early.
+
 ## 2026-11-10
 
 - A “Send feedback” link on the menu, for bugs and ideas. A GitHub issue from it comes with the game and your device filled in.

@@ -658,6 +658,108 @@ def test_a_many_way_war_at_a_big_table(page: Page, site_url, errors):
     assert errors == []
 
 
+SPOILS = "window.__war.spoils()"
+
+
+def test_a_war_someone_else_wins_gets_the_smaller_spoils(page: Page, site_url, errors):
+    fake = FakeWarRoom()
+    open_war(page, site_url, fake)
+    start_room(page)
+    page.click("#botMore")
+    page.click("#dealBtn")
+    page.wait_for_function(f"{STATE}.canSlam")
+    page.evaluate("window.__war.slam(90)")
+    fake.broadcast({
+        "t": "flip", "battle": 1, "stage": 0, "winner": None, "tied": [0, 1], "gods": False, "pot": 2,
+        "plays": [[0, 0, card(9), 90, 0, 0], [1, 0, card(9, 1), 100, 1, 0]],
+        "counts": [26, 26], "next": fake.stage(1, stage=1, fighters=[0, 1], opens_in=300),
+    })
+    page.wait_for_function(f"{STATE}.stage === 1 && {STATE}.canSlam")
+    page.evaluate("window.__war.slam(90)")
+    # Bot 1 wins the war: a strip of the spoils, every card face up, not the whole show.
+    fake.broadcast({
+        "t": "flip", "battle": 1, "stage": 1, "winner": 1, "tied": [1], "gods": False, "pot": 10,
+        "plays": [[0, 3, card(4), 90, 0, 0], [1, 3, card(12, 1), 100, 1, 0]],
+        "downs": {"0": [card(0), card(1), card(2)], "1": [card(5, 1), card(6, 1), card(7, 1)]},
+        "counts": [22, 30], "out": [], "next": fake.stage(2, opens_in=2400),
+    })
+    strip = page.locator("#fx .sp-lite")
+    expect(strip).to_have_count(1)
+    expect(page.locator("#fx .sp")).to_have_count(0)
+    expect(strip.locator("p")).to_have_text("💰 Spoils to Bot 1: 10 cards")
+    expect(strip.locator(".sp-mini .card")).to_have_count(10)
+    expect(strip.locator(".sp-mini .card.back")).to_have_count(0)
+    assert page.evaluate(SPOILS)["kind"] == "lite"
+    expect(page.locator("html")).to_have_attribute("data-spoils", "lite")
+    page.wait_for_function(f"{STATE}.battle === 2")
+    expect(page.locator("html")).to_have_attribute("data-spoils", "none", timeout=5000)
+    assert errors == []
+
+
+def big_pot(page: Page, site_url, fake: FakeWarRoom, winner: int) -> None:
+    """Seven at the table, six tie, and `winner` takes all 31 cards in the war."""
+    open_war(page, site_url, fake)
+    start_room(page)
+    for n in range(6):
+        page.click("#botMore")
+        expect(page.locator("#people .person")).to_have_count(n + 2)
+    page.click("#dealBtn")
+    page.wait_for_function(f"{STATE}.canSlam")
+    page.evaluate("window.__war.slam(90)")
+    fighters = [0, 1, 2, 3, 4, 5]
+    fake.broadcast({
+        "t": "flip", "battle": 1, "stage": 0, "winner": None, "tied": fighters, "gods": False, "pot": 7,
+        "plays": [[s, 0, card(7, s % 4), 90, 1, 0] for s in fighters] + [[6, 0, card(2), 90, 1, 0]],
+        "counts": [26] * 7, "out": [], "next": fake.stage(1, stage=1, fighters=fighters, opens_in=300),
+    })
+    page.wait_for_function(f"{STATE}.stage === 1 && {STATE}.canSlam")
+    page.evaluate("window.__war.slam(90)")
+    ups = {s: card(3 + s, s % 4) for s in fighters}
+    ups[winner] = card(12, 2)
+    counts = [22] * 6 + [25]
+    counts[winner] += 31
+    fake.broadcast({
+        "t": "flip", "battle": 1, "stage": 1, "winner": winner, "tied": [winner], "gods": False, "pot": 31,
+        "plays": [[s, 3, ups[s], 90, 1, 0] for s in fighters],
+        "downs": {str(s): [card(i, s % 4) for i in range(3)] for s in fighters},
+        "counts": counts, "out": [], "next": fake.stage(2, opens_in=2400),
+    })
+
+
+def test_a_big_many_way_pot_is_capped_and_summarized(page: Page, site_url, errors):
+    fake = FakeWarRoom()
+    big_pot(page, site_url, fake, winner=0)
+    # You win a 6-way war: the fan draws 20 of the 31 cards, the winning ace
+    # among them, and counts the rest.
+    show = page.locator("#fx .sp")
+    expect(show).to_have_count(1)
+    expect(show.locator(".sp-c")).to_have_count(20)
+    expect(show.locator(".sp-more")).to_have_text("+11 more")
+    spoils = page.evaluate(SPOILS)
+    assert spoils["total"] == 31 and spoils["more"] == 11 and card(12, 2) in spoils["cards"], spoils
+    expect(page.locator("html")).to_have_attribute("data-spoils", "report", timeout=5000)
+    expect(show.locator(".sp-count")).to_have_text("+31")
+    expect(show.locator(".sp-win")).to_contain_text("+31")
+    for sel in (".sp-fan", ".sp-win", ".sp-title"):
+        box = show.locator(sel).bounding_box()
+        assert box["x"] >= 0 and box["x"] + box["width"] <= page.viewport_size["width"], (sel, box)
+    assert page.evaluate("document.documentElement.scrollWidth") <= page.viewport_size["width"]
+    assert errors == []
+
+
+def test_someone_elses_big_pot_is_a_capped_strip(page: Page, site_url, errors):
+    fake = FakeWarRoom()
+    big_pot(page, site_url, fake, winner=3)
+    strip = page.locator("#fx .sp-lite")
+    expect(strip).to_have_count(1)
+    expect(strip.locator("p")).to_have_text("💰 Spoils to Bot 3: 31 cards")
+    expect(strip.locator(".sp-mini .card")).to_have_count(12)
+    expect(strip.locator(".sp-mini small")).to_have_text("+19 more")
+    box = strip.bounding_box()
+    assert box["x"] >= 0 and box["x"] + box["width"] <= page.viewport_size["width"], box
+    assert errors == []
+
+
 VERSUS = "window.__war.versus()"
 
 

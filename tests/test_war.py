@@ -338,6 +338,177 @@ def test_reduced_motion_gets_a_calm_six_seven(page: Page, site_url, errors):
     assert errors == []
 
 
+# Seed 489: an eight each, then the war ties again and your double war wins
+# all 18 cards. Seed 130: a war you win, 10 cards. Seed 802: a triple war you
+# win, 26 cards with a joker.
+SPOILS_DOUBLE_SEED = 489
+SPOILS_SEED = 130
+SPOILS = "window.__war.spoils()"
+
+
+def play_to_spoils(page: Page) -> None:
+    """Slams through the opening battle and its war until the war is decided."""
+    for _ in range(5):
+        page.evaluate("window.__war.slam(60)")
+        page.wait_for_function(f"{STATE}.spoils !== 'none' || ({STATE}.stage > 0 && {STATE}.canSlam)", timeout=10_000)
+        if page.evaluate(f"{STATE}.spoils") != "none":
+            return
+    raise AssertionError("no war was decided")
+
+
+def test_a_war_you_win_shows_its_spoils_then_they_land_on_your_loot(page: Page, site_url, errors):
+    start_solo(page, site_url, seed=SPOILS_DOUBLE_SEED)
+    play_to_spoils(page)
+    show = page.locator("#fx .sp")
+    expect(show).to_have_count(1)
+    expect(show).to_have_class(re.compile(r"\blv2\b"))
+    expect(show.locator(".sp-title")).to_have_text("SPOILS OF WAR!")
+    expect(show.locator(".sp-pre")).to_have_text("DOUBLE")
+    expect(page.locator("#banner")).to_have_text("WAR WON!")
+    spoils = page.evaluate(SPOILS)
+    assert spoils["kind"] == "full" and spoils["total"] == 18 and spoils["more"] == 0, spoils
+    # Every card in the pot, the twelve laid face down included, each in its
+    # deck, and those twelve start face down and turn over.
+    cards = show.locator(".sp-c .sp-in > .card:not(.sp-back)")
+    expect(cards).to_have_count(18)
+    assert all(isinstance(c, int) for c in spoils["cards"]), spoils
+    expect(show.locator(".sp-c .sp-back")).to_have_count(12)
+    assert spoils["downs"] == 12
+    for i in range(18):
+        assert cards.nth(i).get_attribute("data-deck"), "each card keeps its deck's look"
+    # It moves, takes no taps and fits a phone.
+    assert page.evaluate("document.getAnimations().filter((a) => a.effect?.target?.closest?.('.sp')).length") >= 18
+    assert page.evaluate("getComputedStyle(document.getElementById('fx')).pointerEvents") == "none"
+    # The counter tallies them and the war report lists the haul.
+    expect(page.locator("html")).to_have_attribute("data-spoils", "report", timeout=5000)
+    expect(show.locator(".sp-count")).to_have_text("+18")
+    report = show.locator(".sp-win")
+    expect(report).to_be_visible()
+    expect(report.locator(".sp-row").first).to_contain_text("Cards won")
+    expect(report.locator(".sp-row").first).to_contain_text("+18")
+    expect(report).to_contain_text("Double war")
+    expect(report).to_contain_text("12 cards")
+    expect(report).to_contain_text("+0, as always")
+    expect(report).to_contain_text(re.compile(r"Win odds.*\d+% → \d+%"))
+    box = report.bounding_box()
+    assert box["x"] >= 0 and box["x"] + box["width"] <= page.viewport_size["width"]
+    # The next battle opens: the cards fly to your loot pile, the show goes,
+    # and the counts add up.
+    page.wait_for_function(f"{STATE}.battle === 2")
+    expect(page.locator("html")).to_have_attribute("data-spoils", "none", timeout=5000)
+    expect(page.locator("#fx .sp")).to_have_count(0)
+    state = page.evaluate(STATE)
+    assert sorted(state["heap"]) == sorted(spoils["cards"]), state["heap"]
+    assert state["loot"] == [18, 0], state["loot"]
+    assert state["counts"] == [36, 18], state["counts"]
+    assert page.evaluate("document.documentElement.scrollWidth") <= page.viewport_size["width"]
+    assert errors == []
+
+
+def test_a_war_someone_else_wins_shows_a_strip_of_their_spoils(page: Page, site_url, errors):
+    start_solo(page, site_url, seed=WAR_SEED)
+    play_to_spoils(page)
+    strip = page.locator("#fx .sp-lite")
+    expect(strip).to_have_count(1)
+    expect(page.locator("#fx .sp")).to_have_count(0)
+    expect(strip.locator("p")).to_have_text("💰 Spoils to Grumpy Pancake: 18 cards")
+    # Every card in the pot, face up, the face-down ones included.
+    expect(strip.locator(".sp-mini .card")).to_have_count(18)
+    expect(strip.locator(".sp-mini .card.back")).to_have_count(0)
+    spoils = page.evaluate(SPOILS)
+    assert spoils["kind"] == "lite" and spoils["downs"] == 12 and spoils["more"] == 0, spoils
+    box = strip.bounding_box()
+    assert box["x"] >= 0 and box["x"] + box["width"] <= page.viewport_size["width"]
+    # They land on Grumpy Pancake's loot pile.
+    page.wait_for_function(f"{STATE}.battle === 2")
+    expect(page.locator("#fx .sp-lite")).to_have_count(0, timeout=5000)
+    state = page.evaluate(STATE)
+    assert state["loot"] == [0, 18] and sorted(state["heaps"]["1"]) == sorted(spoils["cards"]), state
+    assert errors == []
+
+
+def test_you_can_slam_while_the_spoils_are_still_leaving(page: Page, site_url, errors):
+    start_solo(page, site_url, seed=SPOILS_SEED)
+    play_to_spoils(page)
+    page.wait_for_function(f"{STATE}.battle === 2 && {STATE}.canSlam")
+    assert page.evaluate(f"{STATE}.spoils") == "leaving"
+    # Holding your deck slams as usual, and sends the show off.
+    hold_slam(page, 250)
+    page.wait_for_function(f"{STATE}.slams[0] !== undefined")
+    expect(page.locator("#fx .sp")).to_have_count(0)
+    expect(page.locator("html")).to_have_attribute("data-spoils", "none")
+    assert errors == []
+
+
+def test_a_tap_skips_the_spoils(page: Page, site_url, errors):
+    start_solo(page, site_url, seed=SPOILS_SEED)
+    play_to_spoils(page)
+    page.wait_for_timeout(700)
+    page.mouse.click(10, 300)
+    expect(page.locator("#fx .sp")).to_have_count(0)
+    # The cards still land on your loot pile.
+    page.wait_for_function(f"{STATE}.battle === 2")
+    page.wait_for_function(f"{STATE}.loot[0] === 10")
+    assert errors == []
+
+
+def test_a_triple_war_caps_the_fan_and_counts_the_rest(page: Page, site_url, errors):
+    start_solo(page, site_url, seed=802)
+    play_to_spoils(page)
+    show = page.locator("#fx .sp")
+    expect(show).to_have_class(re.compile(r"\blv3\b"))
+    expect(show.locator(".sp-pre")).to_have_text("TRIPLE")
+    expect(show.locator(".sp-c")).to_have_count(20)
+    expect(show.locator(".sp-more")).to_have_text("+6 more")
+    expect(show.locator(".sp-win")).to_contain_text("Jokers")
+    title = show.locator(".sp-title")
+    page.wait_for_function(f"{STATE}.spoils === 'report'", timeout=5000)
+    box = title.bounding_box()
+    assert box["x"] >= 0 and box["x"] + box["width"] <= page.viewport_size["width"], box
+    page.wait_for_function(f"{STATE}.battle === 2")
+    page.wait_for_function(f"{STATE}.loot[0] === 26")
+    assert errors == []
+
+
+def test_reduced_motion_gets_calm_spoils(page: Page, site_url, errors):
+    page.emulate_media(reduced_motion="reduce")
+    start_solo(page, site_url, seed=SPOILS_SEED)
+    play_to_spoils(page)
+    show = page.locator("#fx .sp")
+    expect(show).to_have_class(re.compile(r"\bcalm\b"))
+    # The whole haul and the report straight away, face up, standing still.
+    expect(page.locator("html")).to_have_attribute("data-spoils", "report")
+    expect(show.locator(".sp-c .card")).to_have_count(10)
+    expect(show.locator(".sp-c .card.back")).to_have_count(0)
+    expect(show.locator(".sp-count")).to_have_text("+10")
+    expect(show.locator(".sp-win")).to_be_visible()
+    assert page.evaluate("document.getAnimations().filter((a) => a.effect?.target?.closest?.('.sp')).length") == 0
+    page.wait_for_timeout(800)
+    assert page.locator("#fx .bit").count() == 0
+    assert page.evaluate("document.getElementById('app').classList.contains('shake')") is False
+    assert page.evaluate(SPOILS)["kind"] == "calm"
+    page.wait_for_function(f"{STATE}.battle === 2")
+    page.wait_for_function(f"{STATE}.loot[0] === 10")
+    expect(page.locator("#fx .sp")).to_have_count(0, timeout=5000)
+    assert errors == []
+
+
+def test_quiet_spoils_keep_the_show_but_drop_the_jokes(page: Page, site_url, errors):
+    page.goto(f"{site_url}/war?seed={SPOILS_SEED}#debug")
+    page.click("#menuChat button[data-chat=quiet]")
+    page.click("#soloBtn")
+    page.wait_for_function(f"{STATE}.canSlam")
+    play_to_spoils(page)
+    report = page.locator("#fx .sp .sp-win")
+    expect(report).to_contain_text("Cards won")
+    expect(report).to_contain_text("War depth")
+    expect(report).not_to_contain_text("Slam power")
+    expect(report).not_to_contain_text("Win odds")
+    labels = [r[0] for r in page.evaluate(SPOILS)["rows"]]
+    assert labels == ["Cards won", "Face down, now yours", "War depth"], labels
+    assert errors == []
+
+
 def test_quiet_commentary_says_just_what_happened(page: Page, site_url, errors):
     page.goto(f"{site_url}/war?seed={SIX_SEVEN_SEED}#debug")
     expect(page.locator("html")).to_have_attribute("data-chat", "chatty")
