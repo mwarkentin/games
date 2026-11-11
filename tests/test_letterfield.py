@@ -483,45 +483,79 @@ PLACE_WORD_JS = """async ({ key, sx, sy, cs }) => {
 }"""
 
 
+# Leaves only the given words on the map around them, so the word list, which
+# names the fourteen nearest the middle, can't leave one out for being far off.
+ONLY_WORDS_JS = """keys => {
+  const lf = window.__lf;
+  for (const key of keys) {
+    const [, x, y] = key.split('~'), cx = Math.floor(x / 12), cy = Math.floor(y / 12);
+    for (let j = cy - 10; j <= cy + 10; j++) for (let i = cx - 10; i <= cx + 10; i++) {
+      const c = lf.chunk(i, j);
+      c.words = c.words.filter(w => keys.includes(w.key));
+    }
+  }
+}"""
+
+
 @pytest.mark.parametrize("size", [(375, 740), (1280, 900)], ids=["phone", "desktop"])
-def test_the_word_list_names_only_words_mostly_in_sight(page: Page, site_url, errors, size):
+def test_the_word_list_names_only_words_half_in_sight(page: Page, site_url, errors, size):
     without_worker(page, site_url, "letterfield")  # alone, so each chip names its word
     page.set_viewport_size({"width": size[0], "height": size[1]})
     page.goto(f"{site_url}/letterfield#debug")
     page.click("#coachOk")
     expect(page.locator("#legendList .chip").first).to_be_visible()
-    # A five-letter word reading left to right: it counts once its first four
-    # letters (three quarters, rounded up) can be seen.
-    key = page.evaluate("""() => {
+    # Five-letter words reading right, down and up: each counts once any three
+    # of its letters (half, rounded up) can be seen.
+    keys = page.evaluate("""() => {
+      const keys = {};
       for (let cy = -3; cy <= 3; cy++) for (let cx = -3; cx <= 3; cx++)
-        for (const w of window.__lf.chunk(cx, cy).words) if (w.d === 0 && w.w.length === 5) return w.key;
+        for (const w of window.__lf.chunk(cx, cy).words) if (w.w.length === 5) keys[w.d] ??= w.key;
+      return [keys[0], keys[2], keys[6]];
     }""")
-    assert key
-    cs = 80
+    assert all(keys), keys
+    across, down, up = keys
+    page.evaluate(ONLY_WORDS_JS, keys)
     right = page.evaluate("innerWidth - (document.body.classList.contains('docked') ? 340 : 0)")
     mid = size[1] / 2
 
-    def listed(sx, sy):
+    def listed(key, sx, sy, cs=80):
         got = page.evaluate(PLACE_WORD_JS, {"key": key, "sx": sx, "sy": sy, "cs": cs})
         return key in got["keys"], got
 
-    seen, got = listed(right / 2 - 2 * cs, mid)
+    cs = 80
+    seen, got = listed(across, right / 2 - 2 * cs, mid)
     assert seen, got  # all of it in the middle of the map
-    seen, got = listed(right - 2.5 * cs, mid)
-    assert not seen, got  # three letters at the right edge
-    seen, got = listed(right - 3.5 * cs, mid)
-    assert seen, got  # four letters at the right edge
-    seen, got = listed(-0.5 * cs, mid)
-    assert not seen, got  # all but the first at the left edge, where it starts
+    seen, got = listed(across, right - 1.5 * cs, mid)
+    assert not seen, got  # two letters at the right edge
+    seen, got = listed(across, right - 2.5 * cs, mid)
+    assert seen, got  # its first three at the right edge
+    seen, got = listed(across, -1.5 * cs, mid)
+    assert seen, got  # its last three at the left edge, where it starts
+    seen, got = listed(across, -2.5 * cs, mid)
+    assert not seen, got  # only its last two at the left edge
 
-    # A first letter under a panel over the map can't be seen either: the title
-    # box, the word list, and on a phone the zoom controls above it.
-    panels = ["header.cartouche", "section.legend"] + ([".zoom"] if size[0] < 700 else [])
-    for sel in panels:
+    # Letters under a panel over the map can't be seen either. A word reading
+    # away from the title box (down), or from the word list or, on a phone, the
+    # zoom controls above it (up), with its first three letters under the panel
+    # isn't listed, and with only its first two there it is, where the rest
+    # lands on open map.
+    cs = 12
+    phone = size[0] < 700
+    panels = [("header.cartouche", down, True), ("section.legend", up, not phone)]
+    if phone:
+        panels.append((".zoom", up, True))
+    for sel, key, clear in panels:
         box = page.locator(sel).bounding_box()
-        sy = box["y"] + box["height"] - 12 if sel == "section.legend" else box["y"] + box["height"] / 2
-        seen, got = listed(box["x"] + cs / 2, sy)
+        sx = box["x"] + box["width"] / 2
+        if key == down:  # the first letters just inside its bottom edge
+            hidden3, hidden2 = box["y"] + box["height"] - 2.5 * cs, box["y"] + box["height"] - 1.5 * cs
+        else:  # just inside its top edge
+            hidden3, hidden2 = box["y"] + 2.5 * cs, box["y"] + 1.5 * cs
+        seen, got = listed(key, sx, hidden3, cs)
         assert not seen, (sel, got)
+        if clear:
+            seen, got = listed(key, sx, hidden2, cs)
+            assert seen, (sel, got)
     assert errors == []
 
 

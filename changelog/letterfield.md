@@ -18,6 +18,8 @@
 - The Pan and Circle switch is gone. Dragging moves the map, and you circle
   a word by tapping its first letter and then its last (or Shift-drag on a
   computer), as before.
+- The list of words hidden in view names a word once half its letters can
+  be seen, any half of it, rather than most of it from its first letter.
 
 ## 2026-11-10
 
