@@ -537,6 +537,9 @@ def test_the_word_list_can_name_every_word_left_in_the_territory(page: Page, sit
         for x, y in target["ends"]:
             page.mouse.click(x, y)
         finds = 2
+        # Found, it leaves the list rather than staying there crossed out.
+        expect(page.locator(f'#legendList .chip:text-is("{target["word"]}")')).to_have_count(0)
+        expect(page.locator("#legendList .found")).to_have_count(0)
     expect(page.locator("#notesBadge")).to_have_text(str(finds))
     whole.click()
     expect(whole).to_have_attribute("aria-pressed", "true")

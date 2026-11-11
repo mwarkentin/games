@@ -3,6 +3,10 @@
 - The word list can switch from the words hidden in view to every word
   still to find in the territory you're in, as a checklist. It doesn't
   say where any of them are.
+- The word list leaves out words already found, by you or, on the shared
+  survey, by anyone, so it only names words still worth looking for.
+- On the shared survey, circling a word someone has already charted says
+  who did and leaves it out of your notes: it's theirs.
 
 ## 2026-11-10
 

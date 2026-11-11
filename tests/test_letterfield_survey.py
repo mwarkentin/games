@@ -145,10 +145,12 @@ def test_shared_map_shows_other_surveyors_and_their_words(page: Page, site_url, 
     open_notes(page)
     expect(page.locator("#finds .find-meta").first).to_contain_text("charted first")
 
-    # Circling a word someone already charted keeps it in your notes, credited to them.
+    # Circling a word someone already charted finds nothing new: it's theirs.
     circle(page, words[0])
-    expect(page.locator("#notesBadge")).to_have_text("2")
-    eventually(page, lambda: len(fake.sent("claim")) == 2)
+    expect(page.locator("#toast")).to_contain_text("Already charted by MRW")
+    expect(page.locator("#notesBadge")).to_have_text("1")
+    page.wait_for_timeout(300)
+    assert len(fake.sent("claim")) == 1
     assert errors == []
 
 
@@ -184,6 +186,24 @@ def test_second_to_a_word_hears_who_was_first(page: Page, site_url, errors):
     circle(page, word)
     expect(page.locator("#toast")).to_contain_text("Charted first by SIS")
     assert page.evaluate("window.__lf.found.values().next().value.f") == 0
+    assert errors == []
+
+
+def test_circling_a_word_someone_charted_finds_nothing_new(page: Page, site_url, errors):
+    words = known_words(page, site_url)
+    fake = FakeSurvey(claims=[[*words[0], 0, "MRW", NOW_MS - 60_000]])
+    open_game(page, site_url, fake)
+    expect(page.locator("#survey")).to_have_attribute("data-state", "live")
+    circle(page, words[0])
+    expect(page.locator("#toast")).to_contain_text(f"{words[0][0]}Already charted by MRW")
+    expect(page.locator("#toast .share")).to_have_count(0)
+    assert page.evaluate("window.__lf.found.size") == 0
+    expect(page.locator("#notesBadge")).to_have_text("0")
+    # A word nobody has charted is found and claimed as ever.
+    circle(page, words[1])
+    eventually(page, lambda: len(fake.sent("claim")) == 1)
+    assert fake.sent("claim")[0]["w"] == words[1][0]
+    expect(page.locator("#notesBadge")).to_have_text("1")
     assert errors == []
 
 
@@ -903,4 +923,38 @@ def test_a_check_nobody_taps_goes_away_and_isnt_asked_for_while_in_the_survey(pa
     expect(page.locator("#surveyCheck")).not_to_have_class(re.compile("asking"))
     expect(page.locator("#survey")).to_have_attribute("data-state", "live")
     assert desk.tokens == []
+    assert errors == []
+
+
+def test_word_list_leaves_out_words_anyone_has_charted(page: Page, site_url, errors):
+    words = territory_words(page, site_url)
+    near = [w for w in words if 0 <= w[1] < 12 and 0 <= w[2] < 12]  # the chunk the map opens on
+    free = near[::2]
+    fake = FakeSurvey(claims=[[*w, 0, "MRW", NOW_MS - 60_000] for w in words if w not in free])
+    open_game(page, site_url, fake)
+    eventually(page, lambda: "0,0" in fake.sockets)
+    expect(page.locator("#tCharted")).to_have_text(f" · {len(words) - len(free)}/{len(words)} charted")
+    chips = page.locator("#legendList .chip")
+
+    # In view, none of the charted ones (words of the territories beside it
+    # may show too).
+    expect(chips.first).to_be_visible()
+    named = chips.all_inner_texts()
+    charted = {w[0] for w in words} - {w[0] for w in free}
+    assert not charted & set(named), named
+    assert {w[0] for w in free} & set(named), named
+    expect(page.locator("#legendCount")).to_have_text(f"{len(named)} left")
+
+    # Across the territory, the same.
+    page.click("#listWhole")
+    expect(chips).to_have_text(sorted(w[0] for w in free))
+    expect(page.locator("#legendCount")).to_have_text(f"{len(free)} left")
+
+    # A word someone charts just now drops out, and so does one you circle.
+    fake.sockets["0,0"].send(json.dumps({"t": "claimed", "c": [*free[0], 0, "SIS", NOW_MS], "by": "someone"}))
+    expect(chips).to_have_text(sorted(w[0] for w in free[1:]))
+    for w in free[1:]:
+        circle(page, w)
+    expect(chips).to_have_count(0)
+    expect(page.locator("#legendList .legend-note")).to_have_text("Every word here is charted.")
     assert errors == []
