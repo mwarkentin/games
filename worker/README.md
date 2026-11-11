@@ -362,7 +362,11 @@ the way to try War's rooms or the survey with real phones before merging.
 - **Settings** aren't inherited: `[previews]` in `wrangler.toml` sets the
   variables, the database, the Durable Object bindings and the rate limits
   (counted apart from production's) again. Keep it in step with the
-  production settings above it. Observability is inherited.
+  production settings above it, apart from one difference on purpose:
+  survey claims are limited to 60 a minute per address rather than 6, so a
+  test can chart a whole territory (to try a supernova, say) in a few
+  minutes. Each socket's own limit and the daily cap still hold.
+  Observability is inherited.
 - **Secrets:** each Preview gets `PREVIEW_IP_SALT` as its `IP_SALT`, never
   production's salt. Turnstile stays off.
 
