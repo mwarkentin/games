@@ -478,6 +478,26 @@ def test_the_spoils_leave_by_themselves_once_read(page: Page, site_url, errors):
     assert errors == []
 
 
+def test_in_a_slow_game_the_spoils_wait_for_your_tap(page: Page, site_url, errors):
+    page.goto(f"{site_url}/war?seed={SPOILS_SEED}#debug")
+    page.click("#soloClock button[data-clock=slow]")
+    page.click("#soloBtn")
+    page.wait_for_function(f"{STATE}.canSlam")
+    play_to_spoils(page)
+    page.wait_for_function(f"{STATE}.battle === 2 && {STATE}.canSlam")
+    # Well past when a timed game's spoils leave by themselves: still up, the
+    # pot still on the fan.
+    page.wait_for_timeout(7000)
+    assert page.evaluate(f"{STATE}.spoils") == "report"
+    expect(page.locator("#fx .sp .sp-next")).to_be_visible()
+    assert page.evaluate(f"{STATE}.heap") == []
+    # A tap sends it off and the cards land on your loot pile.
+    page.mouse.click(10, 300)
+    expect(page.locator("#fx .sp")).to_have_count(0)
+    page.wait_for_function(f"{STATE}.heap.length === 10 && {STATE}.loot[0] === 10")
+    assert errors == []
+
+
 def test_a_tap_skips_the_spoils(page: Page, site_url, errors):
     start_solo(page, site_url, seed=SPOILS_SEED)
     play_to_spoils(page)

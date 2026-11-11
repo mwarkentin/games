@@ -4307,7 +4307,8 @@ const SixSeven = {
 // haul. It takes its time: longer than the room waits before the next
 // battle, so it runs on into that battle, holding the pot on the fan (and
 // off your loot pile, see defer) until you've had a moment to read the
-// report, or tap. Then the cards fly from the fan to your loot pile
+// report, or tap (in a slow game, which has no clock, until you tap). Then
+// the cards fly from the fan to your loot pile
 // (heapToss, from each card's `from`) and the report fades. Anyone else's
 // war gets a strip: "Spoils to Bob: 14 cards", with a row of the cards, gone
 // as the next battle opens. It's only a picture in #fx, like the versus
@@ -4388,8 +4389,11 @@ const Spoils = {
       cards: shown.map((c) => c.card), downs: cards.filter((c) => c.down).length, rows: [] };
     if (m.winner === S.you) this.full(m, cards, shown, { calm, level, before });
     else this.lite(m, shown, calm);
-    // Nothing comes to move it on (a room that skips ahead, say): it goes by itself.
-    this.during(this.root, Math.max(m.next.opensIn, this.tossAt - now()) + 4000 * this.k, () => this.clear());
+    // Nothing comes to move it on (a room that skips ahead, say): it goes by
+    // itself, unless your win waits for your tap in a slow game.
+    if (!(S.slow && m.winner === S.you)) {
+      this.during(this.root, Math.max(m.next.opensIn, this.tossAt - now()) + 4000 * this.k, () => this.clear());
+    }
     return true;
   },
   full(m, cards, shown, { calm, level, before }) {
@@ -4593,7 +4597,8 @@ const Spoils = {
     if (!root || !SpoilsShow.is('haul', 'report') || winner !== S.you) return false;
     this.held = { winner, cards };
     root.classList.add('next');
-    this.during(root, this.tossAt - now(), () => this.flush());
+    // A slow game has no clock, so neither does this: it waits for your tap.
+    if (!S.slow) this.during(root, this.tossAt - now(), () => this.flush());
     return true;
   },
   // Throws the held pot onto the loot pile now, from the fan where it lies
