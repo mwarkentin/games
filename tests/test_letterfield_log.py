@@ -751,7 +751,10 @@ def test_supernovas_have_a_view_of_their_own(page: Page, site_url, errors):
     expect(tile(page, 0)).to_contain_text("Went supernovaNov 6")
     expect(tile(page, 1)).to_contain_text("First word to last30 minutes")
     expect(tile(page, 2)).to_contain_text("Most charted byAMY1 of its 2 · 2 surveyors in all")
-    expect(page.locator("#chart .meter.nova")).to_have_attribute("aria-valuenow", "2")
+    expect(page.locator("#chart .meter.whole")).to_have_attribute("aria-valuenow", "2")
+    # Its fill runs the whole width (a meter is not a supernova's row).
+    widths = page.evaluate("(() => { const m = document.querySelector('#chart .meter'); return [m.clientWidth, m.querySelector('i').clientWidth]; })()")
+    assert widths[1] >= widths[0] - 1 and widths[0] > 100
     # Its supernova sits just above the word that set it off.
     expect(page.locator("#log .entries > li")).to_have_count(4)
     rows = page.locator("#log .entries > li")

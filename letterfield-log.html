@@ -210,8 +210,8 @@ html[data-log="loading"] #chart{opacity:.5}
 .strip a{color:var(--ink)}
 .strip .all{font:500 12px/1 var(--f-mono);white-space:nowrap}
 @media (max-width:520px){.strip .all{grid-column:2 / 4;justify-self:end}}
-.meter.nova{background:hsl(var(--h,200) 45% 50% / .2)}
-.meter.nova i{background:linear-gradient(90deg, hsl(var(--h,200) 70% 45%), hsl(var(--h,200) 90% 65%))}
+.meter.whole{background:hsl(var(--h,200) 45% 50% / .2)}
+.meter.whole i{background:linear-gradient(90deg, hsl(var(--h,200) 70% 45%), hsl(var(--h,200) 90% 65%))}
 .bar.starred::before{content:"✦";position:absolute;top:-15px;left:50%;transform:translateX(-50%);font-size:11px;line-height:1;color:var(--accent)}
 .back.novas-link{display:inline-flex;align-items:center;gap:7px}
 .back.novas-link .star{width:12px;height:12px;--h:45}
@@ -1549,7 +1549,7 @@ async function renderTerritory(run, f, firsts) {
       ['Latest', entries.length ? monthDay.format(entries[0][6]) : '—', entries.length ? timeFmt.format(entries[0][6]) : ''],
     ]);
   }
-  const meter = el('div', nova ? 'meter nova mark' : 'meter'), fill = el('i');
+  const meter = el('div', nova ? 'meter whole mark' : 'meter'), fill = el('i');
   if (nova && Number.isFinite(hue)) meter.style.setProperty('--h', hue);
   fill.style.width = (t.total ? Math.min(100, 100 * t.charted / t.total) : 0) + '%';
   meter.append(fill);
