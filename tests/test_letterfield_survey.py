@@ -108,10 +108,16 @@ def test_shared_word_list_scrolls_only_sideways(page: Page, site_url, errors):
 
     open_game(page, site_url, FakeSurvey())
     expect(page.locator("#legendList span.chip").first).to_be_visible()  # plain labels, no hints
-    for phone, size in ((True, {"width": 375, "height": 740}), (False, {"width": 1280, "height": 900})):
+    # Each size waits for the list to catch up with it: a check made straight
+    # after a resize would measure the list from before. On a phone, zoomed
+    # out enough that the row holds more words than fit across.
+    full = "n => document.querySelectorAll('#legendList span.chip').length >= n"
+    for phone, size in ((False, {"width": 1280, "height": 900}), (True, {"width": 375, "height": 740})):
         page.set_viewport_size(size)
+        page.evaluate("cs => { window.__lf.cam.cs = cs; dispatchEvent(new Event('resize')); }", 20 if phone else 38)
+        page.wait_for_function(full, arg=8 if phone else 10)
+        page.wait_for_timeout(300)  # and any update still to come
         chips_scroll_only_sideways(page, phone)
-    page.set_viewport_size({"width": 375, "height": 740})
     m = page.evaluate(CHIPS_JS)
     assert m["sw"] > m["cw"], m
     assert errors == []
