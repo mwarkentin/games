@@ -504,6 +504,40 @@ def test_in_a_slow_game_the_spoils_wait_for_your_tap(page: Page, site_url, error
     assert errors == []
 
 
+def test_in_a_slow_game_a_war_you_lose_waits_for_your_tap_too(page: Page, site_url, errors):
+    page.goto(f"{site_url}/war?seed={WAR_SEED}#debug")
+    page.click("#soloClock button[data-clock=slow]")
+    page.click("#soloBtn")
+    page.wait_for_function(f"{STATE}.canSlam")
+    play_to_spoils(page)
+    page.wait_for_function(f"{STATE}.battle === 2 && {STATE}.canSlam")
+    page.wait_for_timeout(5000)
+    # Still up, with the pot held on it, off Grumpy Pancake's loot pile.
+    strip = page.locator("#fx .sp-lite")
+    expect(strip).to_have_count(1)
+    assert page.evaluate(f"{STATE}.spoils") == "lite"
+    expect(strip.locator(".sp-tap")).to_be_visible()
+    assert page.evaluate(f"{STATE}.heaps").get("1", []) == []
+    page.mouse.click(10, 300)
+    expect(page.locator("#fx .sp-lite")).to_have_count(0)
+    page.wait_for_function(f"({STATE}.heaps[1] || []).length === 18")
+    assert errors == []
+
+
+def test_a_war_between_others_says_nothing_of_your_card(page: Page, site_url, errors):
+    # Seed 16, two bots: both bots tie in the first battle and Lucky Noodle
+    # wins the war. Your card from that battle is in the pot, but you didn't
+    # fight in the war, so the strip says nothing of it.
+    start_solo(page, site_url, opponents=2, seed=16)
+    page.evaluate("window.__war.slam(60)")
+    page.wait_for_function(f"{STATE}.spoils === 'lite'", timeout=15_000)
+    strip = page.locator("#fx .sp-lite")
+    expect(strip.locator("p")).to_have_text("💰 Spoils to Lucky Noodle: +6 cards")
+    expect(strip.locator(".sp-lost")).to_have_count(0)
+    assert page.evaluate(SPOILS)["lost"] == 0
+    assert errors == []
+
+
 def test_a_tap_skips_the_spoils(page: Page, site_url, errors):
     start_solo(page, site_url, seed=SPOILS_SEED)
     play_to_spoils(page)

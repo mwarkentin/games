@@ -962,6 +962,8 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px s
 .sp-lite p b { font: 400 13px/1.25 var(--display); color: var(--gold); }
 .sp-lost { font: 700 13px/1 system-ui, sans-serif; color: #ffd0c8; background: rgba(160, 20, 10, .6); padding: 2px 7px; border-radius: 99px; white-space: nowrap; }
 .sp-mini { display: flex; align-items: center; }
+.sp-lite .sp-tap { display: none; font: 700 12px/1 system-ui, sans-serif; color: #ffe9a8; }
+.sp-lite.next .sp-tap { display: block; }
 .sp-mini .card { --w: 26px; margin-left: -9px; box-shadow: 0 2px 5px rgba(0, 0, 0, .5); }
 .sp-mini .card:first-child { margin-left: 0; }
 .sp-mini .card .ci { font-size: 9px; }
@@ -4387,16 +4389,18 @@ const Spoils = {
     const shown = spoilsShown(cards, m.winner, m.winner === S.you ? SP_MAX : cards.length <= SP_LITE_MAX ? SP_LITE_MAX : 12);
     const more = m.pot - shown.length;
     // What the winner gains is the pot less their own cards in it, and what
-    // you lose, if it's someone else's, is yours.
+    // you lose, if it's someone else's war and you fought in it (laid cards
+    // in it, not just the battle that started it), is yours.
     const net = m.pot - cards.filter((c) => c.seat === m.winner).length;
-    const lost = S.you !== null && S.you !== m.winner ? cards.filter((c) => c.seat === S.you).length : 0;
+    const yours = S.you !== null && S.you !== m.winner ? cards.filter((c) => c.seat === S.you) : [];
+    const lost = yours.some((c) => c.down || c.war) ? yours.length : 0;
     this.last = { kind: m.winner === S.you ? (calm ? 'calm' : 'full') : 'lite', winner: m.winner, level, total: m.pot, net, lost, more,
       cards: shown.map((c) => c.card), downs: cards.filter((c) => c.down).length, rows: [] };
     if (m.winner === S.you) this.full(m, cards, shown, { calm, level, before });
     else this.lite(m, shown, calm);
     // Nothing comes to move it on (a room that skips ahead, say): it goes by
-    // itself, unless your win waits for your tap in a slow game.
-    if (!(S.slow && m.winner === S.you)) {
+    // itself, unless it waits for your tap in a slow game (see defer).
+    if (!(S.slow && (m.winner === S.you || lost))) {
       this.during(this.root, Math.max(m.next.opensIn, this.tossAt - now()) + 4000 * this.k, () => this.clear());
     }
     return true;
@@ -4592,7 +4596,7 @@ const Spoils = {
       c.from = node;
     }
     if (m.pot > shown.length) mini.append(el('small', '', `+${m.pot - shown.length} more`));
-    root.append(line, mini);
+    root.append(line, mini, el('small', 'sp-tap', 'Tap to play on'));
     $('fx').append(root);
     this.root = root;
     this.last.rows = [];
@@ -4603,9 +4607,13 @@ const Spoils = {
   // the fan, off your loot pile (S.incoming still counts it), until there's
   // been time to read the report, or a tap, or anything that needs the loot
   // pile (see flush). Says whether it took the pot.
+  // In a slow game, a war you fought in and lost waits for your tap too, its
+  // strip up and the pot held on it.
   defer(winner, cards) {
     const root = this.root;
-    if (!root || !SpoilsShow.is('haul', 'report') || winner !== S.you) return false;
+    const mine = winner === S.you && SpoilsShow.is('haul', 'report');
+    const lost = SpoilsShow.is('lite') && S.slow && this.last.lost > 0;
+    if (!root || !(mine || lost)) return false;
     this.held = { winner, cards };
     root.classList.add('next');
     // A slow game has no clock, so neither does this: it waits for your tap.

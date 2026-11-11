@@ -6,7 +6,8 @@
   the haul. It takes its time, running on into the next battle until you've
   read it (in a slow game, until you tap), then the cards fly onto your loot
   pile. Double and triple wars get a bigger show, someone else's war gets a strip
-  with their haul and what you lost to it, and any tap sends it off early.
+  with their haul and, if you fought in it, what you lost (in a slow game it
+  waits for your tap too), and any tap sends it off early.
 - As a war starts, the card you tied with stays where it lies, and the
   face-down cards land on it, instead of it being picked up and slammed
   down again.
