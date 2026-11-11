@@ -220,8 +220,8 @@ body.docked .notes{box-shadow:none}
 /* Turnstile's check (see worker/TURNSTILE.md): empty and out of the way unless it needs a tap.
    When it does, it's a small panel just above the word legend (and, on a phone, the
    instruments; placeCheck() measures them), so it covers neither them nor the sign-up card
-   at the top. It stays a moment after to show it passed, then goes. While it isn't showing,
-   taps go through it to the map. */
+   at the top, and it waits for that card to go (see below). It stays a moment after to show
+   it passed, then goes. While it isn't showing, taps go through it to the map. */
 .survey-check{position:fixed;left:var(--gl);bottom:calc(var(--bottom) + 140px);z-index:40;max-width:calc(100% - var(--gl) - var(--gr));box-sizing:border-box}
 .survey-check:not(.shown){pointer-events:none}
 .survey-check p{display:none;margin:0 0 8px;font-size:13px;color:var(--ink)}
@@ -236,6 +236,13 @@ body.docked .notes{box-shadow:none}
 .coach kbd{font:500 10.5px/1 var(--f-mono);color:var(--muted)}
 .signup label{display:block;margin:0 0 10px;font-size:13.5px;line-height:1.5}
 .signup .coach-row{justify-content:flex-start}
+.signup .btn{white-space:nowrap}
+.signup kbd{display:block;margin-top:10px}
+.signup kbd[hidden]{display:none}
+/* The keyboard hint is for keyboards: a phone's card stays short enough to clear its keyboard. */
+@media (hover: none) and (pointer: coarse){.signup kbd{display:none}}
+/* Turnstile's box waits for the card asking for initials to go, so a first visit asks one thing at a time. */
+html[data-intro="sign"] .survey-check{visibility:hidden}
 .signup .survey-hint{color:var(--ink)}
 .btn{font:600 13px/1 var(--f-ui);padding:9px 14px;border:0;border-radius:6px;background:var(--accent);color:var(--on-accent);cursor:pointer}
 /* Centred between the edges (and the docked notes) by auto margins rather than
@@ -403,8 +410,9 @@ body.docked .nova{left:calc((100% - var(--notes-w)) / 2)}
 </div>
 
 <form class="coach card signup" id="signup" hidden>
-  <label for="signupInitials"><strong>Pick your initials to start.</strong> Everyone charts this map together, and every word you find first is signed with them.</label>
+  <label for="signupInitials"><span id="signupHow"><strong>Every territory hides its own words</strong>, in all eight directions: tap a word's first letter, then its last, to circle it. Everyone charts this map together, so pick initials to sign the ones you find first.</span><span id="signupOnly" hidden><strong>Pick your initials to start.</strong> Everyone charts this map together, and every word you find first is signed with them.</span></label>
   <div class="coach-row"><input id="signupInitials" maxlength="3" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="ABC" aria-describedby="signupHint"><button type="submit" class="btn">Start surveying</button></div>
+  <kbd id="signupKbd">Shift-drag also circles</kbd>
   <p class="survey-hint" id="signupHint" aria-live="polite"></p>
 </form>
 
@@ -1016,7 +1024,13 @@ let world = null, worldShown = 0, worldExtra = 0, worldMap = null, worldTimer = 
 const surveyHttp = surveyApi.replace(/^ws/, 'http');
 const inSurveyArea = (x, y) => Math.abs(fdiv(x, SECTOR)) <= SURVEY_AREA && Math.abs(fdiv(y, SECTOR)) <= SURVEY_AREA;
 const sectorKey = (x, y) => fdiv(x, SECTOR) + ',' + fdiv(y, SECTOR);
-const myInitials = () => { const v = LS.get(K_INITIALS) || ''; return /^[A-Z]{3}$/.test(v) ? v : ''; };
+// The other games keep initials as JSON ("ABC"), and so does this one now;
+// one saved bare (ABC) by an earlier version still counts.
+const myInitials = () => {
+  let v = LS.get(K_INITIALS) || '';
+  try { v = JSON.parse(v); } catch (_) {}
+  return typeof v === 'string' && /^[A-Z]{3}$/.test(v) ? v : '';
+};
 const tell = (l, m) => { if (l && l.ws && l.m.is('open', 'live')) try { l.ws.send(JSON.stringify(m)); } catch (_) {} };
 const anyLive = () => [...links.values()].some(l => l.m.is('live'));
 const surveyEl = $('#survey'), surveyText = $('#surveyText'), surveyInput = $('#surveyInitials'), surveyHint = $('#surveyHint');
@@ -3358,7 +3372,8 @@ $('#home').addEventListener('click', goHome);
 
 // On the shared survey, words are signed, so a player picks initials before
 // circling one (Intro's sign state): the card asks at the start, and a tap on
-// the map asks again until they do.
+// the map asks again until they do. For a new player the same card is the
+// how-to-play too, so signing is all a first visit asks.
 const signup = $('#signup'), signupInput = $('#signupInitials'), signupHint = $('#signupHint');
 function askSign() {
   signupHint.textContent = 'Initials first, then circle away.';
@@ -3370,15 +3385,12 @@ function signAs(v, hint) {
     if (hint === signupHint) try { signupInput.focus({ preventScroll: true }); } catch (_) {}
     return false;
   }
-  LS.set(K_INITIALS, v);
+  LS.set(K_INITIALS, JSON.stringify(v));
   for (const l of links.values()) tell(l, { t: 'me', initials: v });
   surveyInput.value = signupInput.value = v;
   surveyHint.textContent = '';
   showSigning(false, hint === surveyHint);
-  if (Intro.is('sign')) {
-    if (LS.get(K_COACH) !== '1') Intro.go('coach');
-    else if (Intro.go('exploring')) toast(`<i></i><b>Signed ${v}</b><span>Tap a word's first letter, then its last</span>`, null);
-  }
+  if (Intro.is('sign')) Intro.go('exploring');
   return true;
 }
 for (const input of [surveyInput, signupInput]) input.addEventListener('input', () => {
@@ -3411,19 +3423,26 @@ worldCanvas.addEventListener('click', e => {
 });
 
 const coach = $('#coach');
-// What a visit starts with: on the shared survey, initials if the player has
-// none (sign); how to play, until a new player has seen it (coach); then
-// nothing over the map (exploring). onMove shows the card for the state.
+// What a visit starts with, one card at most: on the shared survey, initials
+// if the player has none (sign), with how to play in the same card until
+// they've seen it; otherwise how to play, until they've seen it (coach); then
+// nothing over the map (exploring). Leaving either card means it's been read.
+// onMove shows the card for the state.
 const Intro = machine('intro', {
-  sign: ['coach', 'exploring'],
+  sign: ['exploring'],
   coach: ['exploring'],
   exploring: [],
 }, surveyApi && !myInitials() ? 'sign' : LS.get(K_COACH) !== '1' ? 'coach' : 'exploring', { onMove: showIntro });
 function showIntro(to, from) {
   signup.hidden = to !== 'sign';
   coach.hidden = to !== 'coach';
+  if (to === 'sign') {
+    const how = LS.get(K_COACH) !== '1';
+    $('#signupHow').hidden = $('#signupKbd').hidden = !how;
+    $('#signupOnly').hidden = how;
+  }
   if (from === 'sign' && document.activeElement === signupInput) signupInput.blur();
-  if (from === 'coach') LS.set(K_COACH, '1');
+  if (from) LS.set(K_COACH, '1');
 }
 $('#coachOk').addEventListener('click', () => { if (Intro.is('coach')) Intro.go('exploring'); });
 
