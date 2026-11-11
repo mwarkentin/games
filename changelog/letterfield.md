@@ -1,3 +1,9 @@
+## 2026-11-11
+
+- The word list can switch from the words hidden in view to every word
+  still to find in the territory you're in, as a checklist. It doesn't
+  say where any of them are.
+
 ## 2026-11-10
 
 - A “Send feedback” link at the foot of your field notes and of the survey log, for bugs and ideas. A GitHub issue from it comes with the game and your device filled in.

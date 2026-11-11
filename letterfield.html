@@ -80,7 +80,16 @@ button:focus-visible,a:focus-visible,#map:focus-visible{outline:2px solid var(--
 /* Legend: words hidden in view */
 .legend{position:fixed;left:var(--gl);bottom:var(--bottom);width:304px;padding:11px 12px 12px}
 .legend-head{display:flex;justify-content:space-between;align-items:baseline;gap:12px;margin-bottom:9px}
-.legend-count{font:400 11px/1 var(--f-mono);color:var(--muted);font-variant-numeric:tabular-nums}
+.legend-count{font:400 11px/1 var(--f-mono);color:var(--muted);font-variant-numeric:tabular-nums;white-space:nowrap}
+/* Which words the list names: those in view, or those left in the territory. */
+.list-mode{display:flex;gap:2px;margin:-9px 0 -9px -7px}
+.list-mode button{padding:9px 7px;border:0;background:none;cursor:pointer;text-underline-offset:4px}
+.list-mode button:hover{color:var(--ink)}
+.list-mode button[aria-pressed="true"]{color:var(--ink);text-decoration:underline;text-decoration-thickness:1.5px}
+/* A territory's words don't fit in the box: they run in three rows that
+   scroll sideways, never up and down. */
+.legend.whole .chips{display:grid;grid-auto-flow:column;grid-template-rows:repeat(3, auto);justify-content:start;overflow-x:auto;overflow-y:hidden;overscroll-behavior-x:contain;scrollbar-width:thin;padding:4px 2px;margin:-4px -2px}
+.legend.whole .legend-note{grid-row:1 / -1}
 .chips{list-style:none;margin:0;padding:0;display:flex;flex-wrap:wrap;gap:6px}
 .chips > li{display:flex} /* so a span chip's padding counts, as a button's does */
 .chip{font:500 12px/1 var(--f-mono);letter-spacing:.07em;padding:7px 8px 6px;border:1px solid var(--rule);border-radius:5px;background:var(--panel);cursor:pointer;white-space:nowrap}
@@ -271,6 +280,7 @@ body.docked .nova{left:calc((100% - var(--notes-w)) / 2)}
   .chips{flex-wrap:nowrap;overflow-x:auto;overflow-y:hidden;overscroll-behavior-x:contain;touch-action:pan-x;scrollbar-width:none;padding:4px 12px;margin:-4px 0}
   .chips::-webkit-scrollbar{display:none}
   .chip{flex:none}
+  .legend.whole .chips{display:flex;padding:4px 12px;margin:-4px 0;scrollbar-width:none}
   .legend-note{padding:2px 0}
   .instruments{left:var(--gl);bottom:calc(var(--bottom) + 84px);flex-direction:row;justify-content:space-between;align-items:flex-end}
   .zoom{flex-direction:row}
@@ -317,7 +327,10 @@ body.docked .nova{left:calc((100% - var(--notes-w)) / 2)}
 
 <section class="legend card" aria-label="Words hidden in view">
   <div class="legend-head">
-    <span class="eyebrow">Hidden in view</span>
+    <div class="list-mode" role="group" aria-label="Words to list">
+      <button type="button" class="eyebrow" id="listView" aria-pressed="true" title="Words hidden in view">Hidden in view</button>
+      <button type="button" class="eyebrow" id="listWhole" aria-pressed="false" title="Words still to find in this territory">Territory</button>
+    </div>
     <span class="legend-count" id="legendCount"></span>
   </div>
   <ul class="chips" id="legendList"></ul>
@@ -417,7 +430,7 @@ const DEAL = 9;
 const STRAY_MIN = 6;
 const NOTES_W = 340;
 // Field notes, by map: each redraw starts a new key and carries over any finds still there.
-const K_FINDS = 'letterfield.finds.v4', K_FINDS_OLD = ['letterfield.finds.v3', 'letterfield.finds.v2', 'letterfield.finds.v1'], K_CAM = 'letterfield.cam.v1', K_COACH = 'letterfield.coach.v1', K_NOTES = 'letterfield.notes.v1', K_SOUND = 'letterfield.sound.v1', K_MUSIC = 'letterfield.music.v1';
+const K_FINDS = 'letterfield.finds.v4', K_FINDS_OLD = ['letterfield.finds.v3', 'letterfield.finds.v2', 'letterfield.finds.v1'], K_CAM = 'letterfield.cam.v1', K_COACH = 'letterfield.coach.v1', K_NOTES = 'letterfield.notes.v1', K_SOUND = 'letterfield.sound.v1', K_MUSIC = 'letterfield.music.v1', K_LIST = 'letterfield.list.v1';
 const K_INITIALS = 'games.initials';  // shared with the other games' leaderboards
 const K_PASS = 'letterfield.surveyPass.v1';
 // The shared survey (see worker/SURVEY.md), on the leaderboard Worker. With
@@ -2872,8 +2885,51 @@ function wordSeen(w, cs, OX, rects) {
   }
   return true;
 }
+// The list names either the words hidden in view or, as a checklist, every
+// word still to find in the territory you're in, at any zoom. Those are plain
+// labels: a word that may be off screen gets no hint of where it is.
+const legendEl = $('.legend'), listBtns = { view: $('#listView'), whole: $('#listWhole') };
+let listWhole = LS.get(K_LIST) === 'whole';
+function showListMode() {
+  for (const [k, b] of Object.entries(listBtns)) b.setAttribute('aria-pressed', String(listWhole === (k === 'whole')));
+  legendEl.classList.toggle('whole', listWhole);
+  legendEl.setAttribute('aria-label', listWhole ? 'Words left to find in this territory' : 'Words hidden in view');
+}
+for (const [k, b] of Object.entries(listBtns)) b.addEventListener('click', () => {
+  if (listWhole === (k === 'whole')) return;
+  listWhole = k === 'whole';
+  LS.set(K_LIST, k);
+  showListMode();
+  legendSig = '';
+  legendList.scrollLeft = 0;
+  updateLegend();
+});
+showListMode();
+// A mouse wheel moves a list that scrolls sideways.
+legendList.addEventListener('wheel', e => {
+  if (legendList.scrollWidth <= legendList.clientWidth || Math.abs(e.deltaX) >= Math.abs(e.deltaY)) return;
+  legendList.scrollLeft += e.deltaY;
+  e.preventDefault();
+}, { passive: false });
+function listTerritory() {
+  const rx = fdiv(Math.floor(cam.x), RC), ry = fdiv(Math.floor(cam.y), RC), left = [];
+  for (let cy = ry * RG; cy < ry * RG + RG; cy++) for (let cx = rx * RG; cx < rx * RG + RG; cx++)
+    for (const w of chunk(cx, cy).words) if (!found.has(w.key)) left.push(w);
+  // Finds only take words away, so the territory and how many are left say
+  // whether the list has changed.
+  const sig = `whole ${rx},${ry} ${left.length}`;
+  if (sig === legendSig) return;
+  legendSig = sig;
+  legendWords = new Map();
+  left.sort((a, b) => (a.w < b.w ? -1 : a.w > b.w ? 1 : a.key < b.key ? -1 : 1));
+  legendCount.textContent = `${left.length} left`;
+  legendList.innerHTML = left.length
+    ? left.map(w => `<li><span class="chip mark" style="--h:${THEMES[w.th].hue}">${w.w}</span></li>`).join('')
+    : '<li class="legend-note">Every word here is found.</li>';
+}
 function updateLegend() {
   const cs = cam.cs;
+  if (listWhole) return listTerritory();
   if (cs < LETTER_MIN) {
     if (legendSig !== 'far') { legendSig = 'far'; legendList.innerHTML = '<li class="legend-note">Zoom in to read the letters.</li>'; legendCount.textContent = ''; }
     return;
