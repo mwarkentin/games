@@ -240,8 +240,9 @@ def test_signing_initials_tells_every_sector(page: Page, site_url, errors):
     open_notes(page)
     page.locator("#surveyInitials").press_sequentially("z3ed")
     expect(page.locator("#surveyInitials")).to_have_value("ZED")
-    page.click("#surveySign button")
-    expect(page.locator("#surveyHint")).to_have_text("Words you chart first are signed ZED.")
+    page.click("#surveySign button[type=submit]")
+    expect(page.locator("#surveyMeName")).to_have_text("ZED")  # the form gives way to who you are
+    expect(page.locator("#surveySign")).to_be_hidden()
     assert page.evaluate("localStorage.getItem('games.initials')") == "ZED"
     signed = lambda: {m["sector"] for m in fake.sent("me") if m["initials"] == "ZED"}  # noqa: E731
     eventually(page, lambda: signed() == {"-1,-1", "-1,0", "0,-1", "0,0"})
@@ -249,11 +250,53 @@ def test_signing_initials_tells_every_sector(page: Page, site_url, errors):
     # Next time, the game signs in with them straight away.
     fake.received.clear()
     page.reload()
-    expect(page.locator("#surveyInitials")).to_have_value("ZED")
+    open_notes(page)
+    expect(page.locator("#surveyMe")).to_be_visible()
+    expect(page.locator("#surveyMeName")).to_have_text("ZED")
+    expect(page.locator("#surveySign")).to_be_hidden()
     expect(page.locator("#signup")).to_be_hidden()
     expect(page.locator("#survey")).to_have_attribute("data-state", "live")
     eventually(page, lambda: len(fake.sent("me")) == 4)
     assert {m["initials"] for m in fake.sent("me")} == {"ZED"}
+    assert errors == []
+
+
+
+def test_the_pencil_changes_your_initials(page: Page, site_url, errors):
+    fake = FakeSurvey()
+    page.add_init_script("localStorage.setItem('games.initials', 'MLW')")
+    open_game(page, site_url, fake)
+    expect(page.locator("#survey")).to_have_attribute("data-state", "live")
+    open_notes(page)
+    expect(page.locator("#surveyMe")).to_have_text(re.compile(r"Surveyor\s*MLW"))
+    expect(page.locator("#surveySign")).to_be_hidden()
+
+    # Escape puts the pencil back without changing anything, and leaves the notes open.
+    page.click("#surveyEdit")
+    expect(page.locator("#surveyInitials")).to_be_focused()
+    expect(page.locator("#surveyInitials")).to_have_value("MLW")
+    page.keyboard.press("Escape")
+    expect(page.locator("#surveySign")).to_be_hidden()
+    expect(page.locator("#surveyEdit")).to_be_focused()
+    expect(page.locator("#notes")).to_be_visible()
+
+    # Three letters or nothing; then the new ones go to every sector.
+    page.click("#surveyEdit")
+    page.keyboard.type("zz")
+    page.keyboard.press("Enter")
+    expect(page.locator("#surveyHint")).to_have_text("Use three letters, A to Z.")
+    page.keyboard.type("q")
+    page.keyboard.press("Enter")
+    expect(page.locator("#surveyMeName")).to_have_text("ZZQ")
+    expect(page.locator("#surveyHint")).to_have_text("")
+    expect(page.locator("#surveyEdit")).to_be_focused()
+    assert page.evaluate("localStorage.getItem('games.initials')") == "ZZQ"
+    eventually(page, lambda: {m["sector"] for m in fake.sent("me") if m["initials"] == "ZZQ"} == {"-1,-1", "-1,0", "0,-1", "0,0"})
+
+    # Cancel works the same as Escape.
+    page.click("#surveyEdit")
+    page.click("#surveyCancel")
+    expect(page.locator("#surveyMeName")).to_have_text("ZZQ")
     assert errors == []
 
 
@@ -305,7 +348,7 @@ def test_initials_come_before_the_first_word(page: Page, site_url, errors):
     expect(page.locator("#coach")).to_be_visible()  # then how to play
     assert page.evaluate("({ ...window.__lf.cam })") == cam
     assert page.evaluate("localStorage.getItem('games.initials')") == "ASD"
-    expect(page.locator("#surveyInitials")).to_have_value("ASD")
+    expect(page.locator("#surveyMeName")).to_have_text("ASD")
     eventually(page, lambda: {m["initials"] for m in fake.sent("me")} >= {"ASD"})
 
     # Now the same taps circle the word.
@@ -957,4 +1000,88 @@ def test_word_list_leaves_out_words_anyone_has_charted(page: Page, site_url, err
         circle(page, w)
     expect(chips).to_have_count(0)
     expect(page.locator("#legendList .legend-note")).to_have_text("Every word here is charted.")
+    assert errors == []
+
+
+NOTES_LAYOUT_JS = """() => {
+  const box = el => el.getBoundingClientRect();
+  const notes = document.getElementById('notes'), filters = document.getElementById('filters');
+  const lis = [...document.querySelectorAll('#finds > li')];
+  return {
+    survey: box(document.getElementById('survey')).toJSON(),
+    filters: box(filters).toJSON(),
+    // Every section's content fits its box: none is squashed below its content's height.
+    squashed: [...notes.children].filter(el => !el.hidden && el.id !== 'finds' && el.scrollHeight > el.clientHeight + 1).map(el => el.id || el.className),
+    chip: box(filters.querySelector('.filter')).height,
+    first: box(lis[0]).toJSON(), last: box(lis[lis.length - 1]).toJSON(),
+    notes: box(notes).toJSON(), n: lis.length,
+  };
+}"""
+
+
+def fill_notes(page: Page, count: int = 40) -> None:
+    """Circles `count` words from the chunks around the start, across several themes."""
+    page.evaluate("""(count) => {
+      let n = 0;
+      for (let r = 0; n < count && r < 4; r++)
+        for (let cx = -r; cx <= r; cx++) for (let cy = -r; cy <= r; cy++) {
+          if (Math.max(Math.abs(cx), Math.abs(cy)) !== r) continue;
+          for (const o of window.__lf.chunk(cx, cy).words) {
+            if (n >= count) return;
+            window.__lf.collect(o.w, o.x, o.y, o.d, false); n++;
+          }
+        }
+    }""", count)
+
+
+def notes_sections_keep_their_height(page: Page) -> dict:
+    """No section of the drawer is squashed or overlaps the next; returns the measures."""
+    m = page.evaluate(NOTES_LAYOUT_JS)
+    assert m["n"] >= 30, m
+    # The theme chips keep their full height instead of being squashed to a sliver...
+    assert m["squashed"] == [], m
+    assert m["chip"] >= 24 and m["filters"]["height"] >= m["chip"], m
+    # ...and nothing overlaps the section below it.
+    assert m["survey"]["bottom"] <= m["filters"]["top"] + 0.5, m
+    assert m["filters"]["bottom"] <= m["first"]["top"] + 0.5, m
+    return m
+
+
+def test_field_notes_scroll_whole_on_a_phone_with_the_survey(page: Page, site_url, errors):
+    open_game(page, site_url, FakeSurvey(), viewport={"width": 375, "height": 812})
+    fill_notes(page)
+    open_notes(page)
+    expect(page.locator("#survey")).to_be_visible()
+    expect(page.locator("#filters .filter").nth(2)).to_be_attached()
+    page.wait_for_timeout(400)  # the drawer slides up
+    notes_sections_keep_their_height(page)
+
+    # An up-and-down scroll over the theme chips scrolls the drawer, not the row;
+    # a sideways one scrolls the row.
+    scroll = "() => [document.getElementById('notes').scrollTop, document.getElementById('filters').scrollTop, document.getElementById('filters').scrollLeft]"
+    page.hover("#filters .filter >> nth=1")
+    page.mouse.wheel(0, 200)
+    eventually(page, lambda: page.evaluate(scroll)[0] > 0)
+    assert page.evaluate(scroll)[1] == 0
+    page.evaluate("document.getElementById('notes').scrollTop = 0")
+    page.hover("#filters .filter >> nth=1")
+    page.mouse.wheel(200, 0)
+    eventually(page, lambda: page.evaluate(scroll)[2] > 0)
+    assert page.evaluate(scroll)[0] == 0
+
+    # The drawer scrolls down to the last find, and the feedback line under it,
+    # with the theme chips held at its top.
+    page.evaluate("document.getElementById('filters').scrollLeft = 0; document.getElementById('notes').scrollTop = 1e6")
+    page.wait_for_timeout(100)
+    m = page.evaluate(NOTES_LAYOUT_JS)
+    assert m["last"]["bottom"] <= m["notes"]["bottom"], m
+    expect(page.locator("#sync")).to_be_in_viewport()
+    assert abs(m["filters"]["top"] - m["notes"]["top"]) <= 1, m
+    expect(page.locator("#filters .filter").first).to_be_in_viewport()
+
+    # Docked beside the map on a computer, the same.
+    page.evaluate("document.getElementById('notes').scrollTop = 0")
+    page.set_viewport_size({"width": 1280, "height": 900})
+    page.wait_for_timeout(400)
+    notes_sections_keep_their_height(page)
     assert errors == []

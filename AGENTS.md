@@ -184,6 +184,7 @@ The machines each page keeps:
 | | `overlay` (what covers the screen) | none, pause, invite, styles, history |
 | | `session` (what the page plays through) | none, joining, solo, room |
 | | `conn` (a room's WebSocket) | off, connecting, open, retrying |
+| | `spoils` (the show for a war won) | none, haul, report, lite, leaving |
 
 The Worker keeps its modes the same way, without the page helper: a
 declared table of states and moves, one function that makes every move,
