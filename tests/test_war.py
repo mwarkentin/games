@@ -192,6 +192,24 @@ def test_in_a_war_all_your_cards_are_on_one_pile(page: Page, site_url, errors):
     assert errors == []
 
 
+def test_as_a_war_opens_the_card_you_tied_with_stays_where_it_lies(page: Page, site_url, errors):
+    start_solo(page, site_url, seed=WAR_SEED)
+    page.evaluate("window.__war.slam(60)")
+    page.wait_for_function(f"{STATE}.stage === 1 && {STATE}.canSlam")
+    # Your eight moves onto your war pile as it lay: it isn't slammed down again.
+    tied = page.locator("#myWar .wpile .card")
+    expect(tied).to_have_count(1)
+    expect(tied).to_have_attribute("aria-label", re.compile(r"^eight of "))
+    assert "slam" not in (tied.get_attribute("class") or "")
+    assert page.evaluate("document.querySelector('#myWar .wpile .card').getAnimations().length") == 0
+    # The face-down cards you slam next land on it, one by one.
+    hold_slam(page, 250)
+    expect(page.locator("#myWar .wpile .card.back")).to_have_count(1)
+    expect(page.locator("#myWar .wpile .card.back")).to_have_class(re.compile(r"\bslam\b"))
+    assert "slam" not in (page.locator("#myWar .wpile .card").first.get_attribute("class") or "")
+    assert errors == []
+
+
 def test_a_war_you_started_is_finished_before_the_clock_runs_out(page: Page, site_url, errors):
     start_solo(page, site_url, seed=WAR_SEED)
     page.evaluate("window.__war.slam(50)")
@@ -395,7 +413,7 @@ def test_a_war_you_win_shows_its_spoils_then_they_land_on_your_loot(page: Page, 
     # The next battle opens: the cards fly to your loot pile, the show goes,
     # and the counts add up.
     page.wait_for_function(f"{STATE}.battle === 2")
-    expect(page.locator("html")).to_have_attribute("data-spoils", "none", timeout=5000)
+    expect(page.locator("html")).to_have_attribute("data-spoils", "none", timeout=10_000)
     expect(page.locator("#fx .sp")).to_have_count(0)
     state = page.evaluate(STATE)
     assert sorted(state["heap"]) == sorted(spoils["cards"]), state["heap"]
@@ -427,16 +445,36 @@ def test_a_war_someone_else_wins_shows_a_strip_of_their_spoils(page: Page, site_
     assert errors == []
 
 
-def test_you_can_slam_while_the_spoils_are_still_leaving(page: Page, site_url, errors):
+def test_the_spoils_run_on_into_the_next_battle_and_a_slam_carries_on(page: Page, site_url, errors):
     start_solo(page, site_url, seed=SPOILS_SEED)
     play_to_spoils(page)
+    # The next battle opens while the report is still up: the pot stays on
+    # the fan, off your loot pile, with a word that a tap carries on.
     page.wait_for_function(f"{STATE}.battle === 2 && {STATE}.canSlam")
-    assert page.evaluate(f"{STATE}.spoils") == "leaving"
-    # Holding your deck slams as usual, and sends the show off.
+    assert page.evaluate(f"{STATE}.spoils") in ("haul", "report")
+    expect(page.locator("#fx .sp .sp-next")).to_be_visible()
+    expect(page.locator("#fx .sp .sp-next")).to_contain_text("Tap to play on")
+    assert page.evaluate(f"{STATE}.heap") == []
+    # Holding your deck slams as usual, sends the show off and throws the pot
+    # onto your loot pile.
     hold_slam(page, 250)
     page.wait_for_function(f"{STATE}.slams[0] !== undefined")
     expect(page.locator("#fx .sp")).to_have_count(0)
     expect(page.locator("html")).to_have_attribute("data-spoils", "none")
+    page.wait_for_function(f"{STATE}.heap.length === 10")
+    assert errors == []
+
+
+def test_the_spoils_leave_by_themselves_once_read(page: Page, site_url, errors):
+    start_solo(page, site_url, seed=SPOILS_SEED)
+    play_to_spoils(page)
+    page.wait_for_function(f"{STATE}.battle === 2")
+    # Nobody taps: the cards fly to your loot pile a little into the battle.
+    expect(page.locator("html")).to_have_attribute("data-spoils", "leaving", timeout=6000)
+    page.wait_for_function(f"{STATE}.heap.length === 10")
+    expect(page.locator("html")).to_have_attribute("data-spoils", "none", timeout=5000)
+    state = page.evaluate(STATE)
+    assert state["loot"][0] == 10 and state["canSlam"], state
     assert errors == []
 
 
