@@ -1,3 +1,5 @@
+import re
+
 import pytest
 from playwright.sync_api import Page, expect
 
@@ -371,14 +373,15 @@ def test_escape_while_dragging_a_circle_lets_it_go(page: Page, site_url, errors)
     page.set_viewport_size({"width": 1280, "height": 900})
     page.goto(f"{site_url}/letterfield#debug")
     page.click("#coachOk")
-    page.click("#modeSelect")
     cam = page.evaluate("({ ...window.__lf.cam })")
     page.mouse.move(500, 450)
+    page.keyboard.down("Shift")  # Shift-drag circles
     page.mouse.down()
     page.mouse.move(560, 450, steps=4)
     page.keyboard.press("Escape")
     page.mouse.move(640, 450, steps=4)  # still holding the button
     page.mouse.up()
+    page.keyboard.up("Shift")
     assert errors == []
     assert page.evaluate("({ ...window.__lf.cam })") == cam, "the rest of the drag doesn't pan either"
     expect(page.locator("#notesBadge")).to_have_text("0")
@@ -512,11 +515,114 @@ def test_the_word_list_names_only_words_mostly_in_sight(page: Page, site_url, er
     assert not seen, got  # all but the first at the left edge, where it starts
 
     # A first letter under a panel over the map can't be seen either: the title
-    # box, the word list, and on a phone the controls above it.
-    panels = ["header.cartouche", "section.legend"] + ([".seg"] if size[0] < 700 else [])
+    # box, the word list, and on a phone the zoom controls above it.
+    panels = ["header.cartouche", "section.legend"] + ([".zoom"] if size[0] < 700 else [])
     for sel in panels:
         box = page.locator(sel).bounding_box()
         sy = box["y"] + box["height"] - 12 if sel == "section.legend" else box["y"] + box["height"] / 2
         seen, got = listed(box["x"] + cs / 2, sy)
         assert not seen, (sel, got)
+    assert errors == []
+
+
+# The words left to find in the territory the camera is in, as the game deals
+# them, in the list's order.
+TERRITORY_LEFT_JS = """() => {
+  const lf = window.__lf, rx = Math.floor(Math.floor(lf.cam.x) / 48), ry = Math.floor(Math.floor(lf.cam.y) / 48);
+  const left = [];
+  for (let cy = ry * 4; cy < ry * 4 + 4; cy++) for (let cx = rx * 4; cx < rx * 4 + 4; cx++)
+    for (const w of lf.chunk(cx, cy).words) if (!lf.found.has(w.key)) left.push(w.w);
+  return left.sort();
+}"""
+
+
+@pytest.mark.parametrize("size", [(375, 740), (1280, 900)], ids=["phone", "desktop"])
+def test_the_word_list_can_name_every_word_left_in_the_territory(page: Page, site_url, errors, size):
+    without_worker(page, site_url, "letterfield")  # alone, so in view the words are buttons
+    page.set_viewport_size({"width": size[0], "height": size[1]})
+    page.goto(f"{site_url}/letterfield#debug")
+    page.wait_for_function("window.__lf")
+    # One word of this territory found already, away from where the map starts.
+    kept = page.evaluate("""() => {
+      const { w, x, y, d } = window.__lf.chunk(3, 3).words[0];
+      localStorage.setItem('letterfield.finds.v4', JSON.stringify([{ w, x, y, d, t: 1 }]));
+      localStorage.setItem('letterfield.coach.v1', '1');
+      return w;
+    }""")
+    page.reload()
+    chips = page.locator("#legendList .chip")
+    expect(chips.first).to_be_visible()
+    view, whole = page.locator("#listView"), page.locator("#listWhole")
+    expect(view).to_have_attribute("aria-pressed", "true")
+    expect(page.locator("#legendList button.chip").first).to_be_visible()
+    in_view = chips.count()
+    finds = 1
+    if size[0] >= 700:  # and one circled in view
+        target = page.evaluate(FIND_WORD_JS)
+        assert target, "no legend word with both ends on open map"
+        for x, y in target["ends"]:
+            page.mouse.click(x, y)
+        finds = 2
+        # Found, it leaves the list rather than staying there crossed out.
+        expect(page.locator(f'#legendList .chip:text-is("{target["word"]}")')).to_have_count(0)
+        expect(page.locator("#legendList .found")).to_have_count(0)
+    expect(page.locator("#notesBadge")).to_have_text(str(finds))
+    whole.click()
+    expect(whole).to_have_attribute("aria-pressed", "true")
+    expect(view).to_have_attribute("aria-pressed", "false")
+    expect(page.locator(".legend")).to_have_attribute("aria-label", "Words left to find in this territory")
+
+    # Every word not yet found, in alphabetical order. They're labels, with no
+    # hint of where.
+    left = page.evaluate(TERRITORY_LEFT_JS)
+    assert len(left) > in_view and kept not in left
+    expect(chips).to_have_text(left)
+    expect(page.locator("#legendCount")).to_have_text(f"{len(left)} left")
+    expect(page.locator("#legendList button")).to_have_count(0)
+
+    # So many words never make the list scroll up and down, or the page sideways.
+    m = page.evaluate(CHIPS_JS)
+    assert m["oy"] not in ("auto", "scroll") and m["sh"] <= m["ch"], m
+    assert m["ox"] == "auto" and m["sw"] > m["cw"], m
+    if size[0] >= 700:  # three rows on a computer, one on a phone
+        tops = page.evaluate("[...new Set([...document.querySelectorAll('#legendList .chip')].map(c => c.getBoundingClientRect().top))].length")
+        assert tops == 3, tops
+        page.locator("#legendList").hover()
+        page.mouse.wheel(0, 300)  # a mouse wheel moves it sideways
+        page.wait_for_function("document.getElementById('legendList').scrollLeft > 0")
+    assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
+
+    # Zoomed out too far to read the letters, it still lists them.
+    page.evaluate("() => { window.__lf.cam.cs = 4; dispatchEvent(new Event('resize')); }")
+    page.wait_for_timeout(300)
+    expect(chips).to_have_text(left)
+
+    # The choice is kept, and switching back lists what's in view again.
+    page.reload()
+    expect(whole).to_have_attribute("aria-pressed", "true")
+    expect(chips).to_have_count(len(left))
+    view.click()
+    expect(view).to_have_attribute("aria-pressed", "true")
+    expect(page.locator("#legendList .legend-note, #legendList .chip").first).to_be_visible()
+    assert chips.count() < len(left)
+    assert errors == []
+
+
+@pytest.mark.parametrize("size", [(375, 740), (1280, 900)], ids=["phone", "desktop"])
+def test_the_title_box_always_shows_how_many_words_are_found(page: Page, site_url, errors, size):
+    without_worker(page, site_url, "letterfield")
+    page.set_viewport_size({"width": size[0], "height": size[1]})
+    page.goto(f"{site_url}/letterfield")
+    page.click("#coachOk")
+    expect(page.locator("#tCharted")).to_have_text(re.compile(r"^ · 0/\d+ found$"))
+    # Even beside a long theme name, the count shows whole: the name gives way.
+    page.evaluate("document.getElementById('tTheme').textContent = 'Pioneers of Science'")
+    fits = page.evaluate("""() => {
+      const meta = document.querySelector('.t-meta').getBoundingClientRect();
+      const count = document.getElementById('tCharted').getBoundingClientRect();
+      return count.width > 0 && count.left >= meta.left && count.right <= meta.right + .5;
+    }""")
+    assert fits
+    # On a phone the grid reference makes room for it; a computer has room for both.
+    expect(page.locator("#tCoord")).to_be_visible() if size[0] >= 700 else expect(page.locator("#tCoord")).to_be_hidden()
     assert errors == []

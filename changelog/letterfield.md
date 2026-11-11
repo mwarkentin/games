@@ -3,6 +3,21 @@
 - A third piece of music, Chimes: glassy bells in slow, rolling arpeggios, like an old console role-playing game's quiet town at night, ringing in a deep hall. It takes turns with Drift and Orbit.
 - On a phone with the shared survey on, the theme filters in your field notes no longer get squashed under the list of finds, and they stay at the top of the notes as you scroll.
 - Once you've picked your initials, the survey panel just shows them as “Surveyor MLW”, with a pencil to change them, instead of the form.
+- The word list can switch from the words hidden in view to every word
+  still to find in the territory you're in, as a checklist. It doesn't
+  say where any of them are.
+- The word list leaves out words already found, by you or, on the shared
+  survey, by anyone, so it only names words still worth looking for.
+- On the shared survey, circling a word someone has already charted says
+  who did and leaves it out of your notes: it's theirs.
+- A note at the top of the map no longer covers the box for your initials
+  or the welcome card; it sits just below.
+- On a phone the title box always shows how many words of the territory
+  are found, shortening the theme's name if it must, and leaves the grid
+  reference to your field notes.
+- The Pan and Circle switch is gone. Dragging moves the map, and you circle
+  a word by tapping its first letter and then its last (or Shift-drag on a
+  computer), as before.
 
 ## 2026-11-10
 

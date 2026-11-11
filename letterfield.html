@@ -75,12 +75,24 @@ button:focus-visible,a:focus-visible,#map:focus-visible{outline:2px solid var(--
 .territory{padding:8px 14px 8px 12px;display:grid;grid-template-columns:auto minmax(0,1fr);column-gap:10px;row-gap:3px;align-items:center;min-width:0}
 .swatch{grid-row:1 / span 2;width:12px;height:12px;border-radius:50%;background:var(--c);box-shadow:0 0 0 3px color-mix(in srgb, var(--c) 22%, transparent)}
 .t-name{font:700 20px/1 var(--f-display);letter-spacing:.05em;text-transform:uppercase;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.t-meta{font:400 11px/1.2 var(--f-mono);color:var(--muted);font-variant-numeric:tabular-nums;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+/* When it runs short of room, the theme's name gives way, never the count of words found. */
+.t-meta{display:flex;font:400 11px/1.2 var(--f-mono);color:var(--muted);font-variant-numeric:tabular-nums;white-space:nowrap;overflow:hidden}
+.t-meta > *{flex:none;white-space:pre}
+.t-meta > #tTheme{flex:0 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis}
 
 /* Legend: words hidden in view */
 .legend{position:fixed;left:var(--gl);bottom:var(--bottom);width:304px;padding:11px 12px 12px}
 .legend-head{display:flex;justify-content:space-between;align-items:baseline;gap:12px;margin-bottom:9px}
-.legend-count{font:400 11px/1 var(--f-mono);color:var(--muted);font-variant-numeric:tabular-nums}
+.legend-count{font:400 11px/1 var(--f-mono);color:var(--muted);font-variant-numeric:tabular-nums;white-space:nowrap}
+/* Which words the list names: those in view, or those left in the territory. */
+.list-mode{display:flex;gap:2px;margin:-9px 0 -9px -7px}
+.list-mode button{padding:9px 7px;border:0;background:none;cursor:pointer;text-underline-offset:4px}
+.list-mode button:hover{color:var(--ink)}
+.list-mode button[aria-pressed="true"]{color:var(--ink);text-decoration:underline;text-decoration-thickness:1.5px}
+/* A territory's words don't fit in the box: they run in three rows that
+   scroll sideways, never up and down. */
+.legend.whole .chips{display:grid;grid-auto-flow:column;grid-template-rows:repeat(3, auto);justify-content:start;overflow-x:auto;overflow-y:hidden;overscroll-behavior-x:contain;scrollbar-width:thin;padding:4px 2px;margin:-4px -2px}
+.legend.whole .legend-note{grid-row:1 / -1}
 .chips{list-style:none;margin:0;padding:0;display:flex;flex-wrap:wrap;gap:6px}
 .chips > li{display:flex} /* so a span chip's padding counts, as a button's does */
 .chip{font:500 12px/1 var(--f-mono);letter-spacing:.07em;padding:7px 8px 6px;border:1px solid var(--rule);border-radius:5px;background:var(--panel);cursor:pointer;white-space:nowrap}
@@ -94,10 +106,6 @@ span.chip:hover{border-color:var(--rule)}
 .instruments{position:fixed;right:var(--gr);bottom:var(--bottom);display:flex;flex-direction:column;align-items:flex-end;gap:8px;pointer-events:none;transition:right .28s ease}
 .instruments > *{pointer-events:auto}
 body.docked .instruments{right:calc(var(--notes-w) + 16px)}
-.seg{display:flex;padding:3px;gap:2px}
-.seg button{display:flex;align-items:center;gap:6px;padding:8px 10px;border:0;border-radius:5px;background:transparent;color:var(--muted);font:600 12px/1 var(--f-ui);cursor:pointer}
-.seg button[aria-pressed="true"]{background:var(--ink);color:var(--panel)}
-.seg svg{width:15px;height:15px}
 .zoom{display:flex;flex-direction:column;overflow:hidden}
 .zoom button{flex:none;width:40px;height:40px;border:0;background:transparent;display:grid;place-items:center;cursor:pointer}
 .zoom button:hover{background:var(--hover)}
@@ -277,6 +285,7 @@ body.docked .nova{left:calc((100% - var(--notes-w)) / 2)}
   .swatch{width:9px;height:9px}
   .t-name{font-size:15.5px}
   .t-meta{font-size:9.5px}
+  .t-coord{display:none}  /* the grid reference is in each find's notes */
   .notes-toggle{padding:0;width:46px;height:46px;justify-content:center;gap:0}
   .notes-toggle .label{display:none}
   .notes-toggle .badge{position:absolute;top:-6px;right:-6px}
@@ -287,18 +296,15 @@ body.docked .nova{left:calc((100% - var(--notes-w)) / 2)}
   .chips{flex-wrap:nowrap;overflow-x:auto;overflow-y:hidden;overscroll-behavior-x:contain;touch-action:pan-x;scrollbar-width:none;padding:4px 12px;margin:-4px 0}
   .chips::-webkit-scrollbar{display:none}
   .chip{flex:none}
+  .legend.whole .chips{display:flex;padding:4px 12px;margin:-4px 0;scrollbar-width:none}
   .legend-note{padding:2px 0}
-  .instruments{left:var(--gl);bottom:calc(var(--bottom) + 84px);flex-direction:row;justify-content:space-between;align-items:flex-end}
+  .instruments{left:var(--gl);bottom:calc(var(--bottom) + 84px);flex-direction:row;justify-content:flex-end;align-items:flex-end}
   .zoom{flex-direction:row}
   .zoom button + button{border-top:0;border-left:1px solid var(--rule)}
   .zoom button{width:38px}
-  .seg button{padding:8px}
   .notes{top:auto;left:0;width:100%;height:min(80%, 680px);border-left:0;border-top:1px solid var(--rule);border-radius:14px 14px 0 0;transform:translateY(100%);padding-left:env(safe-area-inset-left, 0px)}
   .coach{top:calc(var(--top) + 60px);right:var(--gr);width:auto}
   .toast{top:calc(var(--top) + 60px)}
-}
-@media (max-width: 374px){
-  .seg button{font-size:0;gap:0}
 }
 @media (prefers-reduced-motion: reduce){
   .notes,.toast,.instruments{transition:none}
@@ -321,7 +327,7 @@ body.docked .nova{left:calc((100% - var(--notes-w)) / 2)}
   <div class="territory mark" id="territory">
     <span class="swatch" aria-hidden="true"></span>
     <div class="t-name" id="tName">&nbsp;</div>
-    <div class="t-meta"><span id="tTheme"></span> · <span id="tCoord"></span><span id="tCharted" hidden></span></div>
+    <div class="t-meta"><span id="tTheme"></span><span class="t-coord"> · <span id="tCoord"></span></span><span id="tCharted" hidden></span></div>
   </div>
 </header>
 
@@ -333,23 +339,16 @@ body.docked .nova{left:calc((100% - var(--notes-w)) / 2)}
 
 <section class="legend card" aria-label="Words hidden in view">
   <div class="legend-head">
-    <span class="eyebrow">Hidden in view</span>
+    <div class="list-mode" role="group" aria-label="Words to list">
+      <button type="button" class="eyebrow" id="listView" aria-pressed="true" title="Words hidden in view">Hidden in view</button>
+      <button type="button" class="eyebrow" id="listWhole" aria-pressed="false" title="Words still to find in this territory">Territory</button>
+    </div>
     <span class="legend-count" id="legendCount"></span>
   </div>
   <ul class="chips" id="legendList"></ul>
 </section>
 
 <div class="instruments">
-  <div class="seg card" role="group" aria-label="What dragging does">
-    <button type="button" id="modePan" aria-pressed="true">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v18M3 12h18M12 3l-3 3M12 3l3 3M12 21l-3-3M12 21l3-3M3 12l3-3M3 12l3 3M21 12l-3-3M21 12l-3 3"/></svg>
-      Pan
-    </button>
-    <button type="button" id="modeSelect" aria-pressed="false">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="8.5" width="18" height="7" rx="3.5"/><path d="M7 12h10"/></svg>
-      Circle
-    </button>
-  </div>
   <div class="zoom card">
     <button type="button" id="zoomIn" aria-label="Zoom in"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></button>
     <button type="button" id="zoomOut" aria-label="Zoom out"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M5 12h14"/></svg></button>
@@ -438,7 +437,7 @@ const DEAL = 9;
 const STRAY_MIN = 6;
 const NOTES_W = 340;
 // Field notes, by map: each redraw starts a new key and carries over any finds still there.
-const K_FINDS = 'letterfield.finds.v4', K_FINDS_OLD = ['letterfield.finds.v3', 'letterfield.finds.v2', 'letterfield.finds.v1'], K_CAM = 'letterfield.cam.v1', K_COACH = 'letterfield.coach.v1', K_NOTES = 'letterfield.notes.v1', K_SOUND = 'letterfield.sound.v1', K_MUSIC = 'letterfield.music.v1';
+const K_FINDS = 'letterfield.finds.v4', K_FINDS_OLD = ['letterfield.finds.v3', 'letterfield.finds.v2', 'letterfield.finds.v1'], K_CAM = 'letterfield.cam.v1', K_COACH = 'letterfield.coach.v1', K_NOTES = 'letterfield.notes.v1', K_SOUND = 'letterfield.sound.v1', K_MUSIC = 'letterfield.music.v1', K_LIST = 'letterfield.list.v1';
 const K_INITIALS = 'games.initials';  // shared with the other games' leaderboards
 const K_PASS = 'letterfield.surveyPass.v1';
 // The shared survey (see worker/SURVEY.md), on the leaderboard Worker. With
@@ -2390,7 +2389,6 @@ function novaSound(a, out, t, far = 0) {
 /* ---------- Interaction state ---------- */
 const sel = { anchor: null, end: null };
 let fail = null, hint = null, pulse = null, flight = null, inertia = null;
-let dragMode = 'pan';
 
 function draw(now) {
   let anim = false;
@@ -2756,6 +2754,14 @@ function collect(w, x, y, d, stray) {
     pulse = { x, y, d, w, t0: performance.now() }; invalidate();
     return;
   }
+  // On the shared survey a word someone has already charted is theirs: it
+  // shows circled on the map, and circling it again finds nothing new.
+  const theirs = claims.get(key);
+  if (theirs) {
+    toast(`<i></i><b>${w}</b><span>Already charted by ${theirs.by || 'another surveyor'}</span>`, THEMES[theirs.th].hue);
+    pulse = { x, y, d, w, t0: performance.now() }; invalidate();
+    return;
+  }
   const e = sanitize({ w, x, y, d, t: Date.now(), s: stray ? 1 : 0 });
   e.born = performance.now();
   found.set(key, e);
@@ -2798,7 +2804,7 @@ canvas.addEventListener('pointerdown', e => {
     gest = { type: 'pinch', d0: s.d, cs0: cam.cs, wx: w.x, wy: w.y };
   } else if (pointers.size === 1) {
     const t = performance.now();
-    gest = { type: 'press', x0: e.clientX, y0: e.clientY, lx: e.clientX, ly: e.clientY, sd: (dragMode === 'select' || e.shiftKey) && e.button !== 1, samples: [{ t, x: e.clientX, y: e.clientY }] };
+    gest = { type: 'press', x0: e.clientX, y0: e.clientY, lx: e.clientX, ly: e.clientY, sd: e.shiftKey && e.button !== 1, samples: [{ t, x: e.clientX, y: e.clientY }] };
   }
   invalidate();
 });
@@ -2922,7 +2928,7 @@ canvas.addEventListener('wheel', e => {
 }, { passive: false });
 
 window.addEventListener('keydown', e => {
-  if (e.key === 'Shift' && dragMode === 'pan') canvas.classList.add('select');
+  if (e.key === 'Shift') canvas.classList.add('select');
   const inNotes = e.target && e.target.closest && e.target.closest('.notes, .signup');
   if (e.key === 'Escape') {
     if (sel.anchor) {
@@ -2951,7 +2957,7 @@ window.addEventListener('keydown', e => {
   }
   e.preventDefault();
 });
-window.addEventListener('keyup', e => { if (e.key === 'Shift' && dragMode === 'pan') canvas.classList.remove('select'); });
+window.addEventListener('keyup', e => { if (e.key === 'Shift') canvas.classList.remove('select'); });
 
 /* ---------- HUD ---------- */
 const tName = $('#tName'), tTheme = $('#tTheme'), tCoord = $('#tCoord'), tCharted = $('#tCharted'), territory = $('#territory');
@@ -2991,7 +2997,7 @@ function updateHud() {
 // so they're measured again only after a resize, a change in their size or
 // the end of a slide.
 const SEEN_SHARE = .75;
-const coverEls = ['.cartouche', '#notesToggle', '.legend', '.seg', '.zoom', '#notes'].map($);
+const coverEls = ['.cartouche', '#notesToggle', '.legend', '.zoom', '#notes'].map($);
 let covers = null;
 function coverRects() {
   if (covers) return covers;
@@ -3017,8 +3023,53 @@ function wordSeen(w, cs, OX, rects) {
   }
   return true;
 }
+// The list names either the words hidden in view or, as a checklist, every
+// word still to find in the territory you're in, at any zoom. Those are plain
+// labels: a word that may be off screen gets no hint of where it is. Either
+// way it leaves out words already found, by you or, on the shared survey, by
+// anyone, since what's worth looking for is what nobody has circled yet.
+const taken = key => found.has(key) || claims.has(key);
+const doneWord = surveyApi ? 'charted' : 'found';
+const legendEl = $('.legend'), listBtns = { view: $('#listView'), whole: $('#listWhole') };
+let listWhole = LS.get(K_LIST) === 'whole';
+function showListMode() {
+  for (const [k, b] of Object.entries(listBtns)) b.setAttribute('aria-pressed', String(listWhole === (k === 'whole')));
+  legendEl.classList.toggle('whole', listWhole);
+  legendEl.setAttribute('aria-label', listWhole ? 'Words left to find in this territory' : 'Words hidden in view');
+}
+for (const [k, b] of Object.entries(listBtns)) b.addEventListener('click', () => {
+  if (listWhole === (k === 'whole')) return;
+  listWhole = k === 'whole';
+  LS.set(K_LIST, k);
+  showListMode();
+  legendSig = '';
+  legendList.scrollLeft = 0;
+  updateLegend();
+});
+showListMode();
+// A mouse wheel moves a list that scrolls sideways.
+legendList.addEventListener('wheel', e => {
+  if (legendList.scrollWidth <= legendList.clientWidth || Math.abs(e.deltaX) >= Math.abs(e.deltaY)) return;
+  legendList.scrollLeft += e.deltaY;
+  e.preventDefault();
+}, { passive: false });
+function listTerritory() {
+  const rx = fdiv(Math.floor(cam.x), RC), ry = fdiv(Math.floor(cam.y), RC), left = [];
+  for (let cy = ry * RG; cy < ry * RG + RG; cy++) for (let cx = rx * RG; cx < rx * RG + RG; cx++)
+    for (const w of chunk(cx, cy).words) if (!taken(w.key)) left.push(w);
+  left.sort((a, b) => (a.w < b.w ? -1 : a.w > b.w ? 1 : a.key < b.key ? -1 : 1));
+  const sig = `whole ${rx},${ry} ` + left.map(w => w.key).join('|');
+  if (sig === legendSig) return;
+  legendSig = sig;
+  legendWords = new Map();
+  legendCount.textContent = `${left.length} left`;
+  legendList.innerHTML = left.length
+    ? left.map(w => `<li><span class="chip mark" style="--h:${THEMES[w.th].hue}">${w.w}</span></li>`).join('')
+    : `<li class="legend-note">Every word here is ${doneWord}.</li>`;
+}
 function updateLegend() {
   const cs = cam.cs;
+  if (listWhole) return listTerritory();
   if (cs < LETTER_MIN) {
     if (legendSig !== 'far') { legendSig = 'far'; legendList.innerHTML = '<li class="legend-note">Zoom in to read the letters.</li>'; legendCount.textContent = ''; }
     return;
@@ -3026,29 +3077,30 @@ function updateLegend() {
   const OX = (W - dock) / 2;
   const vx0 = cam.x - OX / cs, vx1 = cam.x + (W - dock - OX) / cs, vy0 = cam.y - H / 2 / cs, vy1 = cam.y + H / 2 / cs;
   const items = [], rects = coverRects();
+  let gone = 0;
   for (let cy = fdiv(Math.floor(vy0), CH); cy <= fdiv(Math.floor(vy1), CH); cy++) {
     for (let cx = fdiv(Math.floor(vx0), CH); cx <= fdiv(Math.floor(vx1), CH); cx++) {
       for (const w of chunk(cx, cy).words) {
         const [ex, ey] = wordEnd(w);
         if (Math.max(w.x, ex) + 1 <= vx0 || Math.min(w.x, ex) >= vx1 || Math.max(w.y, ey) + 1 <= vy0 || Math.min(w.y, ey) >= vy1 || !wordSeen(w, cs, OX, rects)) continue;
+        if (taken(w.key)) { gone++; continue; }
         const mx = (w.x + ex) / 2 + .5 - cam.x, my = (w.y + ey) / 2 + .5 - cam.y;
-        items.push({ w, dist: mx * mx + my * my, f: found.has(w.key) });
+        items.push({ w, dist: mx * mx + my * my });
       }
     }
   }
   items.sort((a, b) => a.dist - b.dist);
-  let nf = 0; for (const it of items) if (it.f) nf++;
-  legendCount.textContent = items.length ? `${nf} of ${items.length} found` : '';
+  legendCount.textContent = items.length ? `${items.length} left` : '';
   const shown = items.slice(0, 14).sort((a, b) => (a.w.w < b.w.w ? -1 : a.w.w > b.w.w ? 1 : 0));
-  const sig = shown.map(i => i.w.key + (i.f ? '+' : '')).join('|');
+  const sig = shown.map(i => i.w.key).join('|') + (shown.length ? '' : ' ' + !!gone);
   if (sig === legendSig) return;
   legendSig = sig;
   legendWords = new Map(shown.map(i => [i.w.key, i.w]));
   legendList.innerHTML = shown.length
     ? shown.map(i => hints
-      ? `<li><button type="button" class="chip mark${i.f ? ' found' : ''}" data-key="${i.w.key}" style="--h:${THEMES[i.w.th].hue}" ${i.f ? 'aria-disabled="true"' : 'title="Show where it starts"'}>${i.w.w}</button></li>`
-      : `<li><span class="chip mark${i.f ? ' found' : ''}" style="--h:${THEMES[i.w.th].hue}">${i.w.w}</span></li>`).join('')
-    : '<li class="legend-note">No words here. Keep wandering.</li>';
+      ? `<li><button type="button" class="chip mark" data-key="${i.w.key}" style="--h:${THEMES[i.w.th].hue}" title="Show where it starts">${i.w.w}</button></li>`
+      : `<li><span class="chip mark" style="--h:${THEMES[i.w.th].hue}">${i.w.w}</span></li>`).join('')
+    : `<li class="legend-note">${gone ? `Every word in view is ${doneWord}.` : 'No words here. Keep wandering.'}</li>`;
 }
 legendList.addEventListener('click', e => {
   if (!hints) return;
@@ -3075,6 +3127,14 @@ function toast(html, hue, ms = 2400, find = null) {
     b.addEventListener('click', () => shareFind(find));
     toastEl.append(b);
     ms = Math.max(ms, SHARE_TOAST_MS);
+  }
+  // A note never covers the card at the top of the map (the intro, or the
+  // box for your initials): it sits just below it instead.
+  toastEl.style.top = '';
+  const t = toastEl.getBoundingClientRect();
+  for (const el of [$('#coach'), $('#signup')]) {
+    const r = el.hidden ? null : el.getBoundingClientRect();
+    if (r && r.width && r.left < t.right && t.left < r.right && r.top < t.bottom + 8 && t.top < r.bottom) toastEl.style.top = `${r.bottom + 8}px`;
   }
   toastEl.classList.add('show');
   toastMs = ms;
@@ -3287,14 +3347,6 @@ $('#notesClose').addEventListener('click', () => setNotes(false));
 setInterval(() => { if (notesOpen) renderNotes(); }, 60000);
 
 /* ---------- Controls ---------- */
-function setMode(m) {
-  dragMode = m;
-  $('#modePan').setAttribute('aria-pressed', String(m === 'pan'));
-  $('#modeSelect').setAttribute('aria-pressed', String(m === 'select'));
-  canvas.classList.toggle('select', m === 'select');
-}
-$('#modePan').addEventListener('click', () => setMode('pan'));
-$('#modeSelect').addEventListener('click', () => setMode('select'));
 $('#zoomIn').addEventListener('click', () => flyTo(cam.x, cam.y, cam.cs * 1.6, { min: 240, max: 360 }));
 $('#zoomOut').addEventListener('click', () => flyTo(cam.x, cam.y, cam.cs / 1.6, { min: 240, max: 360 }));
 const defaultCs = () => (W < 700 ? 32 : 38);

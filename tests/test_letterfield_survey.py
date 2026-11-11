@@ -15,6 +15,7 @@ import time
 from pathlib import Path
 from urllib.parse import urlparse
 
+import pytest
 from playwright.sync_api import Page, Route, expect
 
 from fake_leaderboard import without_worker
@@ -107,10 +108,16 @@ def test_shared_word_list_scrolls_only_sideways(page: Page, site_url, errors):
 
     open_game(page, site_url, FakeSurvey())
     expect(page.locator("#legendList span.chip").first).to_be_visible()  # plain labels, no hints
-    for phone, size in ((True, {"width": 375, "height": 740}), (False, {"width": 1280, "height": 900})):
+    # Each size waits for the list to catch up with it: a check made straight
+    # after a resize would measure the list from before. On a phone, zoomed
+    # out enough that the row holds more words than fit across.
+    full = "n => document.querySelectorAll('#legendList span.chip').length >= n"
+    for phone, size in ((False, {"width": 1280, "height": 900}), (True, {"width": 375, "height": 740})):
         page.set_viewport_size(size)
+        page.evaluate("cs => { window.__lf.cam.cs = cs; dispatchEvent(new Event('resize')); }", 20 if phone else 38)
+        page.wait_for_function(full, arg=8 if phone else 10)
+        page.wait_for_timeout(300)  # and any update still to come
         chips_scroll_only_sideways(page, phone)
-    page.set_viewport_size({"width": 375, "height": 740})
     m = page.evaluate(CHIPS_JS)
     assert m["sw"] > m["cw"], m
     assert errors == []
@@ -145,10 +152,12 @@ def test_shared_map_shows_other_surveyors_and_their_words(page: Page, site_url, 
     open_notes(page)
     expect(page.locator("#finds .find-meta").first).to_contain_text("charted first")
 
-    # Circling a word someone already charted keeps it in your notes, credited to them.
+    # Circling a word someone already charted finds nothing new: it's theirs.
     circle(page, words[0])
-    expect(page.locator("#notesBadge")).to_have_text("2")
-    eventually(page, lambda: len(fake.sent("claim")) == 2)
+    expect(page.locator("#toast")).to_contain_text("Already charted by MRW")
+    expect(page.locator("#notesBadge")).to_have_text("1")
+    page.wait_for_timeout(300)
+    assert len(fake.sent("claim")) == 1
     assert errors == []
 
 
@@ -184,6 +193,24 @@ def test_second_to_a_word_hears_who_was_first(page: Page, site_url, errors):
     circle(page, word)
     expect(page.locator("#toast")).to_contain_text("Charted first by SIS")
     assert page.evaluate("window.__lf.found.values().next().value.f") == 0
+    assert errors == []
+
+
+def test_circling_a_word_someone_charted_finds_nothing_new(page: Page, site_url, errors):
+    words = known_words(page, site_url)
+    fake = FakeSurvey(claims=[[*words[0], 0, "MRW", NOW_MS - 60_000]])
+    open_game(page, site_url, fake)
+    expect(page.locator("#survey")).to_have_attribute("data-state", "live")
+    circle(page, words[0])
+    expect(page.locator("#toast")).to_contain_text(f"{words[0][0]}Already charted by MRW")
+    expect(page.locator("#toast .share")).to_have_count(0)
+    assert page.evaluate("window.__lf.found.size") == 0
+    expect(page.locator("#notesBadge")).to_have_text("0")
+    # A word nobody has charted is found and claimed as ever.
+    circle(page, words[1])
+    eventually(page, lambda: len(fake.sent("claim")) == 1)
+    assert fake.sent("claim")[0]["w"] == words[1][0]
+    expect(page.locator("#notesBadge")).to_have_text("1")
     assert errors == []
 
 
@@ -659,7 +686,7 @@ def test_turnstile_shows_its_box_only_when_it_wants_a_tap(page: Page, site_url, 
     expect(page.locator("#surveyCheck")).to_have_class(re.compile("asking"))
     expect(page.locator("#surveyCheck")).to_contain_text("One tap to join the shared survey")
     expect(page.locator("#surveyText")).to_have_text("Checking this is a person, not a bot…")
-    for other in [".legend", ".instruments .seg", ".instruments .zoom", "#signup", "#notes"]:
+    for other in [".legend", ".instruments .zoom", "#signup", "#notes"]:
         assert not page.evaluate(OVERLAP, ["#surveyCheck", other]), f"the box covers {other}"
     assert fake.sectors == []
     page.evaluate("window.__tsSolve()")
@@ -683,7 +710,7 @@ def test_turnstile_box_keeps_clear_of_the_game_and_goes_once_passed(page: Page, 
     box = check.bounding_box()
     assert box["x"] >= 16 and box["x"] + box["width"] <= phone["width"] - 16
     expect(page.locator("#signup")).to_be_visible()  # asked for initials at the same time
-    for other in [".legend", ".instruments .seg", ".instruments .zoom", ".cartouche", "#notesToggle", "#signup"]:
+    for other in [".legend", ".instruments .zoom", ".cartouche", "#notesToggle", "#signup"]:
         assert not page.evaluate(OVERLAP, ["#surveyCheck", other]), f"the box covers {other}"
 
     page.evaluate("window.__tsSolve()")
@@ -726,7 +753,7 @@ def test_turnstile_box_asks_a_player_already_in_the_survey_once_passes_are_requi
     open_game(page, site_url, fake, f"&turnstile={SITE_KEY}", viewport={"width": 375, "height": 667})
     expect(page.locator("#surveyCheck")).to_have_class(re.compile("asking"))
     expect(page.locator("#surveyCheck p")).to_be_visible()
-    for other in [".legend", ".instruments .seg", ".instruments .zoom"]:
+    for other in [".legend", ".instruments .zoom"]:
         assert not page.evaluate(OVERLAP, ["#surveyCheck", other]), f"the box covers {other}"
     page.evaluate("window.__tsSolve()")
     expect(page.locator("#survey")).to_have_attribute("data-state", "live")
@@ -949,6 +976,40 @@ def test_a_check_nobody_taps_goes_away_and_isnt_asked_for_while_in_the_survey(pa
     assert errors == []
 
 
+def test_word_list_leaves_out_words_anyone_has_charted(page: Page, site_url, errors):
+    words = territory_words(page, site_url)
+    near = [w for w in words if 0 <= w[1] < 12 and 0 <= w[2] < 12]  # the chunk the map opens on
+    free = near[::2]
+    fake = FakeSurvey(claims=[[*w, 0, "MRW", NOW_MS - 60_000] for w in words if w not in free])
+    open_game(page, site_url, fake)
+    eventually(page, lambda: "0,0" in fake.sockets)
+    expect(page.locator("#tCharted")).to_have_text(f" · {len(words) - len(free)}/{len(words)} charted")
+    chips = page.locator("#legendList .chip")
+
+    # In view, none of the charted ones (words of the territories beside it
+    # may show too).
+    expect(chips.first).to_be_visible()
+    named = chips.all_inner_texts()
+    charted = {w[0] for w in words} - {w[0] for w in free}
+    assert not charted & set(named), named
+    assert {w[0] for w in free} & set(named), named
+    expect(page.locator("#legendCount")).to_have_text(f"{len(named)} left")
+
+    # Across the territory, the same.
+    page.click("#listWhole")
+    expect(chips).to_have_text(sorted(w[0] for w in free))
+    expect(page.locator("#legendCount")).to_have_text(f"{len(free)} left")
+
+    # A word someone charts just now drops out, and so does one you circle.
+    fake.sockets["0,0"].send(json.dumps({"t": "claimed", "c": [*free[0], 0, "SIS", NOW_MS], "by": "someone"}))
+    expect(chips).to_have_text(sorted(w[0] for w in free[1:]))
+    for w in free[1:]:
+        circle(page, w)
+    expect(chips).to_have_count(0)
+    expect(page.locator("#legendList .legend-note")).to_have_text("Every word here is charted.")
+    assert errors == []
+
+
 NOTES_LAYOUT_JS = """() => {
   const box = el => el.getBoundingClientRect();
   const notes = document.getElementById('notes'), filters = document.getElementById('filters');
@@ -1030,4 +1091,20 @@ def test_field_notes_scroll_whole_on_a_phone_with_the_survey(page: Page, site_ur
     page.set_viewport_size({"width": 1280, "height": 900})
     page.wait_for_timeout(400)
     notes_sections_keep_their_height(page)
+    assert errors == []
+
+
+@pytest.mark.parametrize("size", [(375, 740), (1280, 900)], ids=["phone", "desktop"])
+def test_a_note_never_covers_the_box_for_your_initials(page: Page, site_url, errors, size):
+    words = known_words(page, site_url)
+    fake = FakeSurvey(claims=[[*words[0], 0, "MRW", NOW_MS - 60_000]])
+    open_game(page, site_url, fake, viewport={"width": size[0], "height": size[1]})
+    expect(page.locator("#signup")).to_be_visible()
+    circle(page, words[0])
+    expect(page.locator("#toast")).to_have_class(re.compile(r"\bshow\b"))
+    page.wait_for_timeout(300)  # its slide in
+    toast, box = page.locator("#toast").bounding_box(), page.locator("#signup").bounding_box()
+    apart = (toast["y"] >= box["y"] + box["height"] or toast["y"] + toast["height"] <= box["y"]
+             or toast["x"] >= box["x"] + box["width"] or toast["x"] + toast["width"] <= box["x"])
+    assert apart, (toast, box)
     assert errors == []
