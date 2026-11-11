@@ -75,7 +75,10 @@ button:focus-visible,a:focus-visible,#map:focus-visible{outline:2px solid var(--
 .territory{padding:8px 14px 8px 12px;display:grid;grid-template-columns:auto minmax(0,1fr);column-gap:10px;row-gap:3px;align-items:center;min-width:0}
 .swatch{grid-row:1 / span 2;width:12px;height:12px;border-radius:50%;background:var(--c);box-shadow:0 0 0 3px color-mix(in srgb, var(--c) 22%, transparent)}
 .t-name{font:700 20px/1 var(--f-display);letter-spacing:.05em;text-transform:uppercase;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.t-meta{font:400 11px/1.2 var(--f-mono);color:var(--muted);font-variant-numeric:tabular-nums;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+/* When it runs short of room, the theme's name gives way, never the count of words found. */
+.t-meta{display:flex;font:400 11px/1.2 var(--f-mono);color:var(--muted);font-variant-numeric:tabular-nums;white-space:nowrap;overflow:hidden}
+.t-meta > *{flex:none;white-space:pre}
+.t-meta > #tTheme{flex:0 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis}
 
 /* Legend: words hidden in view */
 .legend{position:fixed;left:var(--gl);bottom:var(--bottom);width:304px;padding:11px 12px 12px}
@@ -286,6 +289,7 @@ body.docked .nova{left:calc((100% - var(--notes-w)) / 2)}
   .swatch{width:9px;height:9px}
   .t-name{font-size:15.5px}
   .t-meta{font-size:9.5px}
+  .t-coord{display:none}  /* the grid reference is in each find's notes */
   .notes-toggle{padding:0;width:46px;height:46px;justify-content:center;gap:0}
   .notes-toggle .label{display:none}
   .notes-toggle .badge{position:absolute;top:-6px;right:-6px}
@@ -331,7 +335,7 @@ body.docked .nova{left:calc((100% - var(--notes-w)) / 2)}
   <div class="territory mark" id="territory">
     <span class="swatch" aria-hidden="true"></span>
     <div class="t-name" id="tName">&nbsp;</div>
-    <div class="t-meta"><span id="tTheme"></span> · <span id="tCoord"></span><span id="tCharted" hidden></span></div>
+    <div class="t-meta"><span id="tTheme"></span><span class="t-coord"> · <span id="tCoord"></span></span><span id="tCharted" hidden></span></div>
   </div>
 </header>
 
@@ -3019,6 +3023,14 @@ function toast(html, hue, ms = 2400, find = null) {
     b.addEventListener('click', () => shareFind(find));
     toastEl.append(b);
     ms = Math.max(ms, SHARE_TOAST_MS);
+  }
+  // A note never covers the card at the top of the map (the intro, or the
+  // box for your initials): it sits just below it instead.
+  toastEl.style.top = '';
+  const t = toastEl.getBoundingClientRect();
+  for (const el of [$('#coach'), $('#signup')]) {
+    const r = el.hidden ? null : el.getBoundingClientRect();
+    if (r && r.width && r.left < t.right && t.left < r.right && r.top < t.bottom + 8 && t.top < r.bottom) toastEl.style.top = `${r.bottom + 8}px`;
   }
   toastEl.classList.add('show');
   toastMs = ms;

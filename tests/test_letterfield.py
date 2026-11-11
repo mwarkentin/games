@@ -1,3 +1,5 @@
+import re
+
 import pytest
 from playwright.sync_api import Page, expect
 
@@ -579,4 +581,24 @@ def test_the_word_list_can_name_every_word_left_in_the_territory(page: Page, sit
     expect(view).to_have_attribute("aria-pressed", "true")
     expect(page.locator("#legendList .legend-note, #legendList .chip").first).to_be_visible()
     assert chips.count() < len(left)
+    assert errors == []
+
+
+@pytest.mark.parametrize("size", [(375, 740), (1280, 900)], ids=["phone", "desktop"])
+def test_the_title_box_always_shows_how_many_words_are_found(page: Page, site_url, errors, size):
+    without_worker(page, site_url, "letterfield")
+    page.set_viewport_size({"width": size[0], "height": size[1]})
+    page.goto(f"{site_url}/letterfield")
+    page.click("#coachOk")
+    expect(page.locator("#tCharted")).to_have_text(re.compile(r"^ · 0/\d+ found$"))
+    # Even beside a long theme name, the count shows whole: the name gives way.
+    page.evaluate("document.getElementById('tTheme').textContent = 'Pioneers of Science'")
+    fits = page.evaluate("""() => {
+      const meta = document.querySelector('.t-meta').getBoundingClientRect();
+      const count = document.getElementById('tCharted').getBoundingClientRect();
+      return count.width > 0 && count.left >= meta.left && count.right <= meta.right + .5;
+    }""")
+    assert fits
+    # On a phone the grid reference makes room for it; a computer has room for both.
+    expect(page.locator("#tCoord")).to_be_visible() if size[0] >= 700 else expect(page.locator("#tCoord")).to_be_hidden()
     assert errors == []

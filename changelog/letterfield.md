@@ -9,6 +9,11 @@
   survey, by anyone, so it only names words still worth looking for.
 - On the shared survey, circling a word someone has already charted says
   who did and leaves it out of your notes: it's theirs.
+- A note at the top of the map no longer covers the box for your initials
+  or the welcome card; it sits just below.
+- On a phone the title box always shows how many words of the territory
+  are found, shortening the theme's name if it must, and leaves the grid
+  reference to your field notes.
 
 ## 2026-11-10
 

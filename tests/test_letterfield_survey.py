@@ -15,6 +15,7 @@ import time
 from pathlib import Path
 from urllib.parse import urlparse
 
+import pytest
 from playwright.sync_api import Page, Route, expect
 
 from fake_leaderboard import without_worker
@@ -1084,4 +1085,20 @@ def test_field_notes_scroll_whole_on_a_phone_with_the_survey(page: Page, site_ur
     page.set_viewport_size({"width": 1280, "height": 900})
     page.wait_for_timeout(400)
     notes_sections_keep_their_height(page)
+    assert errors == []
+
+
+@pytest.mark.parametrize("size", [(375, 740), (1280, 900)], ids=["phone", "desktop"])
+def test_a_note_never_covers_the_box_for_your_initials(page: Page, site_url, errors, size):
+    words = known_words(page, site_url)
+    fake = FakeSurvey(claims=[[*words[0], 0, "MRW", NOW_MS - 60_000]])
+    open_game(page, site_url, fake, viewport={"width": size[0], "height": size[1]})
+    expect(page.locator("#signup")).to_be_visible()
+    circle(page, words[0])
+    expect(page.locator("#toast")).to_have_class(re.compile(r"\bshow\b"))
+    page.wait_for_timeout(300)  # its slide in
+    toast, box = page.locator("#toast").bounding_box(), page.locator("#signup").bounding_box()
+    apart = (toast["y"] >= box["y"] + box["height"] or toast["y"] + toast["height"] <= box["y"]
+             or toast["x"] >= box["x"] + box["width"] or toast["x"] + toast["width"] <= box["x"])
+    assert apart, (toast, box)
     assert errors == []
