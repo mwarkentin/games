@@ -350,14 +350,15 @@ def test_escape_while_dragging_a_circle_lets_it_go(page: Page, site_url, errors)
     page.set_viewport_size({"width": 1280, "height": 900})
     page.goto(f"{site_url}/letterfield#debug")
     page.click("#coachOk")
-    page.click("#modeSelect")
     cam = page.evaluate("({ ...window.__lf.cam })")
     page.mouse.move(500, 450)
+    page.keyboard.down("Shift")  # Shift-drag circles
     page.mouse.down()
     page.mouse.move(560, 450, steps=4)
     page.keyboard.press("Escape")
     page.mouse.move(640, 450, steps=4)  # still holding the button
     page.mouse.up()
+    page.keyboard.up("Shift")
     assert errors == []
     assert page.evaluate("({ ...window.__lf.cam })") == cam, "the rest of the drag doesn't pan either"
     expect(page.locator("#notesBadge")).to_have_text("0")
@@ -491,8 +492,8 @@ def test_the_word_list_names_only_words_mostly_in_sight(page: Page, site_url, er
     assert not seen, got  # all but the first at the left edge, where it starts
 
     # A first letter under a panel over the map can't be seen either: the title
-    # box, the word list, and on a phone the controls above it.
-    panels = ["header.cartouche", "section.legend"] + ([".seg"] if size[0] < 700 else [])
+    # box, the word list, and on a phone the zoom controls above it.
+    panels = ["header.cartouche", "section.legend"] + ([".zoom"] if size[0] < 700 else [])
     for sel in panels:
         box = page.locator(sel).bounding_box()
         sy = box["y"] + box["height"] - 12 if sel == "section.legend" else box["y"] + box["height"] / 2

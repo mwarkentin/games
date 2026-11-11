@@ -14,6 +14,9 @@
 - On a phone the title box always shows how many words of the territory
   are found, shortening the theme's name if it must, and leaves the grid
   reference to your field notes.
+- The Pan and Circle switch is gone. Dragging moves the map, and you circle
+  a word by tapping its first letter and then its last (or Shift-drag on a
+  computer), as before.
 
 ## 2026-11-10
 

@@ -106,10 +106,6 @@ span.chip:hover{border-color:var(--rule)}
 .instruments{position:fixed;right:var(--gr);bottom:var(--bottom);display:flex;flex-direction:column;align-items:flex-end;gap:8px;pointer-events:none;transition:right .28s ease}
 .instruments > *{pointer-events:auto}
 body.docked .instruments{right:calc(var(--notes-w) + 16px)}
-.seg{display:flex;padding:3px;gap:2px}
-.seg button{display:flex;align-items:center;gap:6px;padding:8px 10px;border:0;border-radius:5px;background:transparent;color:var(--muted);font:600 12px/1 var(--f-ui);cursor:pointer}
-.seg button[aria-pressed="true"]{background:var(--ink);color:var(--panel)}
-.seg svg{width:15px;height:15px}
 .zoom{display:flex;flex-direction:column;overflow:hidden}
 .zoom button{flex:none;width:40px;height:40px;border:0;background:transparent;display:grid;place-items:center;cursor:pointer}
 .zoom button:hover{background:var(--hover)}
@@ -302,17 +298,13 @@ body.docked .nova{left:calc((100% - var(--notes-w)) / 2)}
   .chip{flex:none}
   .legend.whole .chips{display:flex;padding:4px 12px;margin:-4px 0;scrollbar-width:none}
   .legend-note{padding:2px 0}
-  .instruments{left:var(--gl);bottom:calc(var(--bottom) + 84px);flex-direction:row;justify-content:space-between;align-items:flex-end}
+  .instruments{left:var(--gl);bottom:calc(var(--bottom) + 84px);flex-direction:row;justify-content:flex-end;align-items:flex-end}
   .zoom{flex-direction:row}
   .zoom button + button{border-top:0;border-left:1px solid var(--rule)}
   .zoom button{width:38px}
-  .seg button{padding:8px}
   .notes{top:auto;left:0;width:100%;height:min(80%, 680px);border-left:0;border-top:1px solid var(--rule);border-radius:14px 14px 0 0;transform:translateY(100%);padding-left:env(safe-area-inset-left, 0px)}
   .coach{top:calc(var(--top) + 60px);right:var(--gr);width:auto}
   .toast{top:calc(var(--top) + 60px)}
-}
-@media (max-width: 374px){
-  .seg button{font-size:0;gap:0}
 }
 @media (prefers-reduced-motion: reduce){
   .notes,.toast,.instruments{transition:none}
@@ -357,16 +349,6 @@ body.docked .nova{left:calc((100% - var(--notes-w)) / 2)}
 </section>
 
 <div class="instruments">
-  <div class="seg card" role="group" aria-label="What dragging does">
-    <button type="button" id="modePan" aria-pressed="true">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v18M3 12h18M12 3l-3 3M12 3l3 3M12 21l-3-3M12 21l3-3M3 12l3-3M3 12l3 3M21 12l-3-3M21 12l-3 3"/></svg>
-      Pan
-    </button>
-    <button type="button" id="modeSelect" aria-pressed="false">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="8.5" width="18" height="7" rx="3.5"/><path d="M7 12h10"/></svg>
-      Circle
-    </button>
-  </div>
   <div class="zoom card">
     <button type="button" id="zoomIn" aria-label="Zoom in"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></button>
     <button type="button" id="zoomOut" aria-label="Zoom out"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M5 12h14"/></svg></button>
@@ -2284,7 +2266,6 @@ function novaSound(a, out, t, far = 0) {
 /* ---------- Interaction state ---------- */
 const sel = { anchor: null, end: null };
 let fail = null, hint = null, pulse = null, flight = null, inertia = null;
-let dragMode = 'pan';
 
 function draw(now) {
   let anim = false;
@@ -2700,7 +2681,7 @@ canvas.addEventListener('pointerdown', e => {
     gest = { type: 'pinch', d0: s.d, cs0: cam.cs, wx: w.x, wy: w.y };
   } else if (pointers.size === 1) {
     const t = performance.now();
-    gest = { type: 'press', x0: e.clientX, y0: e.clientY, lx: e.clientX, ly: e.clientY, sd: (dragMode === 'select' || e.shiftKey) && e.button !== 1, samples: [{ t, x: e.clientX, y: e.clientY }] };
+    gest = { type: 'press', x0: e.clientX, y0: e.clientY, lx: e.clientX, ly: e.clientY, sd: e.shiftKey && e.button !== 1, samples: [{ t, x: e.clientX, y: e.clientY }] };
   }
   invalidate();
 });
@@ -2824,7 +2805,7 @@ canvas.addEventListener('wheel', e => {
 }, { passive: false });
 
 window.addEventListener('keydown', e => {
-  if (e.key === 'Shift' && dragMode === 'pan') canvas.classList.add('select');
+  if (e.key === 'Shift') canvas.classList.add('select');
   const inNotes = e.target && e.target.closest && e.target.closest('.notes, .signup');
   if (e.key === 'Escape') {
     if (sel.anchor) {
@@ -2853,7 +2834,7 @@ window.addEventListener('keydown', e => {
   }
   e.preventDefault();
 });
-window.addEventListener('keyup', e => { if (e.key === 'Shift' && dragMode === 'pan') canvas.classList.remove('select'); });
+window.addEventListener('keyup', e => { if (e.key === 'Shift') canvas.classList.remove('select'); });
 
 /* ---------- HUD ---------- */
 const tName = $('#tName'), tTheme = $('#tTheme'), tCoord = $('#tCoord'), tCharted = $('#tCharted'), territory = $('#territory');
@@ -2893,7 +2874,7 @@ function updateHud() {
 // so they're measured again only after a resize, a change in their size or
 // the end of a slide.
 const SEEN_SHARE = .75;
-const coverEls = ['.cartouche', '#notesToggle', '.legend', '.seg', '.zoom', '#notes'].map($);
+const coverEls = ['.cartouche', '#notesToggle', '.legend', '.zoom', '#notes'].map($);
 let covers = null;
 function coverRects() {
   if (covers) return covers;
@@ -3243,14 +3224,6 @@ $('#notesClose').addEventListener('click', () => setNotes(false));
 setInterval(() => { if (notesOpen) renderNotes(); }, 60000);
 
 /* ---------- Controls ---------- */
-function setMode(m) {
-  dragMode = m;
-  $('#modePan').setAttribute('aria-pressed', String(m === 'pan'));
-  $('#modeSelect').setAttribute('aria-pressed', String(m === 'select'));
-  canvas.classList.toggle('select', m === 'select');
-}
-$('#modePan').addEventListener('click', () => setMode('pan'));
-$('#modeSelect').addEventListener('click', () => setMode('select'));
 $('#zoomIn').addEventListener('click', () => flyTo(cam.x, cam.y, cam.cs * 1.6, { min: 240, max: 360 }));
 $('#zoomOut').addEventListener('click', () => flyTo(cam.x, cam.y, cam.cs / 1.6, { min: 240, max: 360 }));
 const defaultCs = () => (W < 700 ? 32 : 38);

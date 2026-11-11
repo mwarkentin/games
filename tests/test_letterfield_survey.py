@@ -680,7 +680,7 @@ def test_turnstile_shows_its_box_only_when_it_wants_a_tap(page: Page, site_url, 
     expect(page.locator("#surveyCheck")).to_have_class(re.compile("asking"))
     expect(page.locator("#surveyCheck")).to_contain_text("One tap to join the shared survey")
     expect(page.locator("#surveyText")).to_have_text("Checking this is a person, not a bot…")
-    for other in [".legend", ".instruments .seg", ".instruments .zoom", "#signup", "#notes"]:
+    for other in [".legend", ".instruments .zoom", "#signup", "#notes"]:
         assert not page.evaluate(OVERLAP, ["#surveyCheck", other]), f"the box covers {other}"
     assert fake.sectors == []
     page.evaluate("window.__tsSolve()")
@@ -704,7 +704,7 @@ def test_turnstile_box_keeps_clear_of_the_game_and_goes_once_passed(page: Page, 
     box = check.bounding_box()
     assert box["x"] >= 16 and box["x"] + box["width"] <= phone["width"] - 16
     expect(page.locator("#signup")).to_be_visible()  # asked for initials at the same time
-    for other in [".legend", ".instruments .seg", ".instruments .zoom", ".cartouche", "#notesToggle", "#signup"]:
+    for other in [".legend", ".instruments .zoom", ".cartouche", "#notesToggle", "#signup"]:
         assert not page.evaluate(OVERLAP, ["#surveyCheck", other]), f"the box covers {other}"
 
     page.evaluate("window.__tsSolve()")
@@ -747,7 +747,7 @@ def test_turnstile_box_asks_a_player_already_in_the_survey_once_passes_are_requi
     open_game(page, site_url, fake, f"&turnstile={SITE_KEY}", viewport={"width": 375, "height": 667})
     expect(page.locator("#surveyCheck")).to_have_class(re.compile("asking"))
     expect(page.locator("#surveyCheck p")).to_be_visible()
-    for other in [".legend", ".instruments .seg", ".instruments .zoom"]:
+    for other in [".legend", ".instruments .zoom"]:
         assert not page.evaluate(OVERLAP, ["#surveyCheck", other]), f"the box covers {other}"
     page.evaluate("window.__tsSolve()")
     expect(page.locator("#survey")).to_have_attribute("data-state", "live")
