@@ -9,7 +9,8 @@
 //   POST /v1/survey/pass       a Turnstile token for a pass (survey-pass.js), while TURNSTILE_SECRET
 //                              is set; joins need one only once TURNSTILE_REQUIRED is "true"
 //   GET /v1/survey/log/...     the survey's log: every word charted, by hour (survey-log.js).
-//                              Each sector copies its new claims to D1 from an alarm (flushLog).
+//                              Each sector copies its new claims to D1 from an alarm (flushLog),
+//                              with its supernovas: territories whose every hidden word is charted.
 //
 // The map is split into sectors of 4×4 territories (192×192 cells), and each
 // sector is its own Durable Object: one single-threaded room that holds the
@@ -63,7 +64,7 @@
 
 import { BLOCKED_INITIALS, INITIALS, corsHeaders, hashAddress, json } from './leaderboard.js';
 import { PASS_PATH, checkPass, handlePass } from './survey-pass.js';
-import { CH, DIRS, MAP_VERSION, RC, STRAY_MIN, VOCAB, chunk, fdiv, keyOf, letterAt } from './letterfield-world.js';
+import { CH, DIRS, MAP_VERSION, RC, STRAY_MIN, VOCAB, chunk, fdiv, keyOf, letterAt, territoryTotal } from './letterfield-world.js';
 import { LOG_BATCH, LOG_MS, LOG_RETRY_MAX_MS, writeLog } from './survey-log.js';
 
 export const SECTOR = RC * 4;         // cells per sector side
@@ -261,6 +262,7 @@ export class Sector {
     this.where = null;       // [sx, sy], from the first socket to join or wake it
     this.claimsJson = null;  // every claim as JSON, built on the first join after waking, then kept up to date
     this.counts = null;      // hidden words charted in each of the sector's 16 territories, likewise
+    this.hidden = null;      // hidden words each of those territories has, from the map, worked out when first needed
     this.world = null;       // the last totals the Atlas sent back
     this.people = null;      // socket → its attachment, read from the sockets on first use after waking
     this.chartedBy = new Map();  // address → words it charted here since the last report
@@ -290,10 +292,18 @@ export class Sector {
     // before the log starts with none logged, so it sends its old claims too.
     this.sql.exec('CREATE INDEX IF NOT EXISTS claims_by_time ON claims (at, key)');
     this.sql.exec('CREATE TABLE IF NOT EXISTS logged (id INTEGER PRIMARY KEY CHECK (id = 0), at INTEGER NOT NULL)');
+    // Supernovas: the sector's territories whose every hidden word is
+    // charted, each recorded by the claim that completed it (supernova()),
+    // and copied to the log once it has their last word (logged = 1).
+    this.sql.exec(`CREATE TABLE IF NOT EXISTS novas (
+      rx INTEGER NOT NULL, ry INTEGER NOT NULL, at INTEGER NOT NULL, w TEXT NOT NULL, x INTEGER NOT NULL, y INTEGER NOT NULL,
+      d INTEGER NOT NULL, initials TEXT NOT NULL, first INTEGER NOT NULL, words INTEGER NOT NULL, surveyors INTEGER NOT NULL,
+      top TEXT NOT NULL, top_n INTEGER NOT NULL, logged INTEGER NOT NULL DEFAULT 0, PRIMARY KEY (rx, ry)) WITHOUT ROWID`);
     // Claims from an older map name words that aren't there any more.
     if (onOlderMap(this.sql)) {
       this.sql.exec('DELETE FROM claims');
       this.sql.exec('DELETE FROM logged');
+      this.sql.exec('DELETE FROM novas');
     }
   }
 
@@ -362,9 +372,11 @@ export class Sector {
     try { ws.send(hello.replace('"claims":[]', `"claims":${this.claimsJson}`)); } catch { /* closing */ }
     if (this.world) send(ws, { t: 'world', ...this.world });
     if (!this.logChecked) {
-      // The first join after waking: anything the log hasn't got goes soon.
+      // The first join after waking: supernovas from before they were
+      // recorded are found, and anything the log hasn't got goes soon.
       this.logChecked = true;
-      if (this.env.LOG_DB && this.unlogged(2).some((r) => r.at > this.logMark())) this.logSoon(1000);
+      this.findNovas();
+      if (this.env.LOG_DB && (this.unlogged(2).some((r) => r.at > this.logMark()) || this.novasUnlogged())) this.logSoon(1000);
     }
   }
 
@@ -447,7 +459,13 @@ export class Sector {
     this.lastAt = at;
     const claimed = JSON.stringify([c.w, c.x, c.y, c.d, c.s, me.initials, at]);
     if (this.claimsJson) this.claimsJson = `${this.claimsJson.slice(0, -1)}${this.claimsJson === '[]' ? '' : ','}${claimed}]`;
-    if (this.counts && !c.s) this.counts[this.territory(c.x, c.y)]++;
+    if (!c.s) {
+      // Counted from storage, the new claim included, if not yet since waking.
+      const t = this.territory(c.x, c.y);
+      if (this.counts) this.counts[t]++;
+      else this.chartedCounts();
+      if (this.counts[t] === this.hiddenCounts()[t]) this.supernova(t);
+    }
     this.hot = [c.x, c.y];
     if (me.address && inArea(...this.coords())) this.chartedBy.set(me.address, (this.chartedBy.get(me.address) ?? 0) + 1);
     this.batch.push(`{"t":"claimed","c":${claimed},"by":${JSON.stringify(me.id)}}`);
@@ -507,16 +525,75 @@ export class Sector {
   }
 
   // Sends up to LOG_BATCH claims to D1, and moves the mark past them once D1
-  // has them. Returns whether more are waiting.
+  // has them, with the supernovas whose last word D1 then has too, so a
+  // supernova never reaches the log ahead of the word that set it off.
+  // Returns whether more are waiting.
   async flushLog() {
     if (!this.env.LOG_DB) return false;
     const mark = this.logMark();
-    const rows = this.unlogged(LOG_BATCH);
+    let rows = this.unlogged(LOG_BATCH);
     // Only the claim at the mark itself, which D1 already has.
-    if (!rows.length || rows.at(-1).at === mark) return false;
-    await writeLog(this.env.LOG_DB, rows);
-    this.sql.exec('INSERT INTO logged (id, at) VALUES (0, ?) ON CONFLICT (id) DO UPDATE SET at = excluded.at', rows.at(-1).at);
+    if (rows.length && rows.at(-1).at === mark) rows = [];
+    const upTo = rows.length ? rows.at(-1).at : mark;
+    const novas = this.sql.exec('SELECT * FROM novas WHERE logged = 0 AND at <= ?', upTo).toArray();
+    if (!rows.length && !novas.length) return false;
+    await writeLog(this.env.LOG_DB, rows, novas);
+    if (rows.length) this.sql.exec('INSERT INTO logged (id, at) VALUES (0, ?) ON CONFLICT (id) DO UPDATE SET at = excluded.at', upTo);
+    for (const n of novas) this.sql.exec('UPDATE novas SET logged = 1 WHERE rx = ? AND ry = ?', n.rx, n.ry);
     return rows.length === LOG_BATCH;
+  }
+
+  novasUnlogged() {
+    return this.sql.exec('SELECT rx FROM novas WHERE logged = 0 LIMIT 1').toArray().length > 0;
+  }
+
+  // Hidden words in each of the sector's territories, from the map: about
+  // 3 ms of work, done once per waking.
+  hiddenCounts() {
+    if (!this.hidden) {
+      const [sx, sy] = this.coords();
+      this.hidden = Array.from({ length: TERR * TERR }, (_, t) => territoryTotal(sx * TERR + (t % TERR), sy * TERR + Math.floor(t / TERR)));
+    }
+    return this.hidden;
+  }
+
+  // Territory t (row by row, as territory() numbers them) has just had its
+  // last hidden word charted: its supernova, recorded once, with the last
+  // word, who charted it, when the first was, and who charted most. A
+  // territory lies inside one sector and claims here run one at a time, so
+  // only one claim can be the last, and the row is written with that claim,
+  // before anything is awaited.
+  supernova(t) {
+    const [sx, sy] = this.coords(), rx = sx * TERR + (t % TERR), ry = sy * TERR + Math.floor(t / TERR);
+    const rows = this.sql.exec(
+      'SELECT w, x, y, d, initials, at FROM claims WHERE s = 0 AND x >= ? AND x < ? AND y >= ? AND y < ? ORDER BY at, key',
+      rx * RC, rx * RC + RC, ry * RC, ry * RC + RC,
+    ).toArray();
+    if (!rows.length) return;
+    const by = new Map();
+    for (const r of rows) if (r.initials) by.set(r.initials, (by.get(r.initials) ?? 0) + 1);
+    // Who charted most, as the log ranks surveyors: most words, then initials.
+    const [top, topN] = [...by].sort((a, b) => b[1] - a[1] || (a[0] < b[0] ? -1 : 1))[0] ?? ['', 0];
+    const last = rows.at(-1);
+    this.sql.exec(
+      `INSERT INTO novas (rx, ry, at, w, x, y, d, initials, first, words, surveyors, top, top_n)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT (rx, ry) DO NOTHING`,
+      rx, ry, last.at, last.w, last.x, last.y, last.d, last.initials, rows[0].at, rows.length, by.size, top, topN,
+    );
+  }
+
+  // Supernovas the sector hasn't recorded: territories completed before
+  // supernovas were recorded at all. Looked for once per waking, from the
+  // charted counts the sector keeps anyway.
+  findNovas() {
+    if (!this.coords()) return;
+    const counts = this.chartedCounts();
+    if (!counts.some((n) => n > 0)) return;
+    const hidden = this.hiddenCounts(), [sx, sy] = this.coords();
+    const known = new Set(this.sql.exec('SELECT rx, ry FROM novas').toArray().map((r) => `${r.rx},${r.ry}`));
+    for (let t = 0; t < TERR * TERR; t++) {
+      if (counts[t] === hidden[t] && !known.has(`${sx * TERR + (t % TERR)},${sy * TERR + Math.floor(t / TERR)}`)) this.supernova(t);
+    }
   }
 
   async webSocketClose(ws) {

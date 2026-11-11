@@ -1,5 +1,7 @@
 ## 2026-11-11
 
+- A territory that's gone supernova stays changed afterwards: a deeper, quieter tint with a faint shell and a few stars, settling in as the shockwave passes. It shows on the map, zoomed out, and on the world map in your field notes, for the shared survey's supernovas and for territories you've found every word of yourself.
+- The survey log keeps every supernova: a list of them from “Supernovas” at the top, newest first, with when, how long the territory took, who charted most and its last word. A day or an hour shows each one just above the word that set it off, every period names its own, and a territory's page says when it went supernova. Its shared link's card says so too.
 - A first visit to the shared survey is one card: how to play and your initials together, then straight to the map, with no second card to dismiss or “Signed” note after it. A tap to prove you’re a person, if one is needed, waits until it’s gone.
 - Your initials are shared with the other games’ leaderboards, as they were meant to be: initials picked here fill in a high score there, and initials from a leaderboard sign your finds here.
 - A third piece of music, Chimes: glassy bells in slow, rolling arpeggios, like an old console role-playing game's quiet town at night, ringing in a deep hall. It takes turns with Drift and Orbit.

@@ -5,6 +5,9 @@ at https://survey.test and route those requests here with page.route. The
 real API is tested in worker/test/survey-log.test.js. Entries are the API's
 [w, x, y, d, s, initials, at, th]; places and themes come from the test, since
 the names need the map's data, which only the Worker and the game hold.
+Supernovas are worked out from the entries, as a sector does, for each
+territory the test gives a total: once that many of its hidden words are in,
+the one that made it is the last word.
 """
 
 from __future__ import annotations
@@ -41,12 +44,13 @@ class FakeSurveyLog:
         self.entries = sorted(entries, key=lambda e: (e[6], e[0], e[1], e[2], e[3]))
         self.places = places or {}    # 'rx,ry' -> name
         self.themes = themes or {}    # theme index -> [name, hue]
-        self.totals = totals or {}    # 'rx,ry' -> hidden words in that territory (112 if not given)
+        self.totals = totals or {}    # 'rx,ry' -> hidden words in that territory (112 if not given; only these go supernova)
         self.page = page
         self.slice_page = slice_page
         self.fail = fail
         self.now_ms = now_ms  # the Worker refuses days and hours after this one's, as the real one does
         self.requests: list[str] = []  # path and query of every request
+        self.fail_novas = False  # supernovas answer 503, as if only they were failing
 
     def handle(self, route: Route) -> None:
         # The page adds ?v=<CACHE_VERSION> (or &v=) to every request, for browsers' caches.
@@ -65,12 +69,14 @@ class FakeSurveyLog:
         top_hours = re.search(r"/v1/survey/log/top/hours/(\d+)/(\d+)$", url)
         sliced = re.search(r"/v1/survey/log/(surveyor|theme)/([A-Z]{3}|\d+)/(\d+)/(\d+)(?:\?before=(\d+))?$", url)
         territory = re.search(r"/v1/survey/log/territory/(-?\d+)/(-?\d+)$", url)
+        novas = re.search(r"/v1/survey/log/novas/(\d+)/(\d+)(?:\?before=(\d+))?$", url)
         future = self.now_ms is not None and (
             (day and int(day[1]) > self.now_ms // DAY_MS) or (hour and int(hour[1]) > self.now_ms // HOUR_MS)
             or (month and month_hours(int(month[1]))[0] > self.now_ms // HOUR_MS)
             or (top and int(top[1]) > self.now_ms // DAY_MS)
             or (top_hours and int(top_hours[1]) > self.now_ms // HOUR_MS)
             or (sliced and int(sliced[3]) > self.now_ms // HOUR_MS)
+            or (novas and int(novas[1]) > self.now_ms // HOUR_MS)
         )
         if future:
             route.fulfill(status=400, headers=headers, body=json.dumps({"error": "that day has not started"}))
@@ -125,6 +131,22 @@ class FakeSurveyLog:
             }
             if kind == "theme":
                 body["name"], body["hue"] = self.themes[int(key)]
+        elif novas and self.fail_novas:
+            route.fulfill(status=503, headers=headers, body=json.dumps({"error": "server error"}))
+            return
+        elif novas:
+            first, last, before = int(novas[1]), int(novas[2]), int(novas[3] or 0)
+            rows = [n for n in self.novas() if first <= n[2] // HOUR_MS < last]
+            counts = Counter(n[2] // HOUR_MS for n in rows)
+            part = rows[before : before + self.slice_page]
+            body = {
+                "from": first, "to": last, "count": len(rows), "hours": [[h, n] for h, n in sorted(counts.items())],
+                "novas": part,
+                "places": {f"{n[0]},{n[1]}": self.places[f"{n[0]},{n[1]}"] for n in part if f"{n[0]},{n[1]}" in self.places},
+                "themes": {str(n[13]): self.themes[n[13]] for n in part if n[13] in self.themes},
+                # The real cursor is the last one's at~rx~ry; an offset does here.
+                "next": str(before + self.slice_page) if len(rows) > before + self.slice_page else None,
+            }
         elif territory:
             rx, ry = int(territory[1]), int(territory[2])
             rows = [e for e in reversed(self.entries) if (e[1] // 48, e[2] // 48) == (rx, ry)]
@@ -133,6 +155,7 @@ class FakeSurveyLog:
                 "rx": rx, "ry": ry, "name": self.places.get(f"{rx},{ry}", f"Place {rx},{ry}"), "th": th,
                 "total": self.totals.get(f"{rx},{ry}", 112), "charted": sum(1 for e in rows if e[4] == 0),
                 "topSurveyors": self.tops(rows, "theme")["topSurveyors"],
+                "nova": next((n for n in self.novas() if (n[0], n[1]) == (rx, ry)), None),
                 **self.page_of(rows, 0, 1000),
             }
             body["themes"].setdefault(str(th), self.themes.get(th, [f"Theme {th}", 200]))
@@ -162,6 +185,20 @@ class FakeSurveyLog:
             route.fulfill(status=404, headers=headers, body=json.dumps({"error": "not found"}))
             return
         route.fulfill(status=200, headers=headers, body=json.dumps(body))
+
+    def novas(self):
+        """Every supernova, newest first: [rx, ry, at, w, x, y, d, initials, first, words, surveyors, top, topN, th]."""
+        out = []
+        for place, total in self.totals.items():
+            rx, ry = (int(v) for v in place.split(","))
+            hidden = [e for e in self.entries if e[4] == 0 and (e[1] // 48, e[2] // 48) == (rx, ry)][:total]
+            if len(hidden) < total:
+                continue
+            last = hidden[-1]
+            people = Counter(e[5] for e in hidden if e[5])
+            top, top_n = min(people.items(), key=lambda r: (-r[1], r[0]), default=("", 0))
+            out.append([rx, ry, last[6], last[0], last[1], last[2], last[3], last[5], hidden[0][6], total, len(people), top, top_n, last[7]])
+        return sorted(out, key=lambda n: (-n[2], -n[0], -n[1]))
 
     def page_of(self, rows, start, size):
         """A page of entries from `start`, with the names they need and an offset for the next."""

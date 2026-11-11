@@ -303,7 +303,8 @@ any hour minute by minute. Each word links to
 `/letterfield#f-<word>-<x>-<y>-<d>`, which flies the game to it, and its
 surveyor, territory and theme each open a view of their own, with an
 address to share. "Mine" narrows it to the words this browser charted
-first.
+first. Territories whose every hidden word is charted have gone supernova,
+and the log keeps a list of them (see "Supernovas").
 
 ### Where the history lives: D1, copied from each sector
 
@@ -384,7 +385,14 @@ GET /v1/survey/log/…/<from>/<to>?before=<at>~<key>
      "entries", "places", "themes", "next"}         newest first, 100 a page
 GET /v1/survey/log/territory/<rx>/<ry>
   → {"rx", "ry", "name", "th", "total", "charted",
-     "topSurveyors": [[initials, words], ...10], "entries", "places", "themes"}
+     "topSurveyors": [[initials, words], ...10], "nova": [...] | null,
+     "entries", "places", "themes"}
+GET /v1/survey/log/novas/<from>/<to>   (UTC hours from..to-1, at most 3,660 days)
+GET /v1/survey/log/novas/<from>/<to>?before=<at>~<rx>~<ry>
+  → {"from", "to", "count", "hours": [[hour, supernovas], ...],
+     "novas": [[rx, ry, at, w, x, y, d, initials, first, words,
+                surveyors, top, topN, th], ...],   newest first, 100 a page
+     "places", "themes", "next"}
 ```
 
 An hour comes oldest first, 500 entries a page; `next` is the `after` for the
@@ -533,6 +541,65 @@ hidden words from the map. Settled ranges are cached for a day, as
 elsewhere; a running one for 15 seconds, or 2 minutes over more than two
 days, and a territory for 15 seconds.
 
+### Supernovas
+
+A territory goes supernova when every one of its hidden words (about 112,
+from 102 to 122) has been charted: the game plays a charge, a burst and a
+shockwave, and the territory looks different afterwards (a deeper tint,
+a faint shell and a few stars). The log keeps each one: where, when the
+last word came in, that word and who charted it, when the first did, how
+many sets of initials charted it, and who charted most.
+
+**Where they're recorded.** The options were:
+
+| | for | against |
+| --- | --- | --- |
+| **the sector, when the last word comes in** (chosen) | a territory lies inside one sector, whose claims run one at a time, so exactly one claim completes it, even when two land together; the sector already counts each territory's hidden words for the Atlas, and works out the totals from the map in about 3 ms | a table more in each sector, and a migration |
+| worked out from the log | nothing new in sectors | the log doesn't know totals, so every territory with words would be counted and checked against the map, on every read; a claim that reaches D1 late would make a supernova appear, then move |
+| triggers on the count tables | stays in D1 | SQL can't count a territory's hidden words without a table of 10,000 totals, made from the map and rebuilt with every new one, and "the claim that completed it" means the order rows arrive in, not the order they were made |
+
+So `Sector.supernova()` writes a row to the sector's own `novas` table in
+the same step as the claim that completed its territory, before anything is
+awaited. A sector that's evicted and wakes works its counts out again from
+storage, so the next claim still sees it. On the first join after waking,
+a sector also looks for completed territories it has no row for
+(`findNovas()`), so territories finished before supernovas were recorded
+are found the first time anyone visits, with the times of the claims
+themselves, as the log's own backfill works.
+
+**How they reach D1.** The log's alarm sends them in the same batch as the
+claims (`survey_log_novas`, `migrations-log/0006_survey_log_novas.sql`),
+keyed by territory so a resent row is ignored. A supernova goes only once D1
+has its last word: in a backlog of more than one batch, it waits for the
+batch that carries that word, so the list never names a word the log
+doesn't have yet. If D1 fails it stays unsent and goes with a later try. A
+new map empties sectors' rows along with their claims. Taking a word out of
+the log for moderation leaves its territory's supernova alone: delete or
+edit that row too.
+
+**On the page.**
+
+- **A list** (`?supernovas`, from "Supernovas" in the header): every
+  period, all time first, like a surveyor's view. Its chart counts
+  supernovas, and each one says where (with its theme's colour, linking to
+  the territory), when, how long it took from first word to last, how many
+  surveyors, who charted most, and the last word, which flies to the map.
+- **In everyone's periods:** a line above the log names the period's
+  supernovas, with the way to the list for the same period; the chart's
+  columns that held one wear a star; and a day's or an hour's words show
+  each supernova just above the word that set it off.
+- **A territory** that's gone supernova says so in place of "Charted so
+  far": when, first word to last, and who charted most; its words show the
+  supernova above the last one; and its share card says "Supernova" and
+  how it went (`share/src/view.js`), with no new address.
+
+If the list can't be loaded, the period shows without its supernovas.
+
+**Caching** is the same as a surveyor's view: a range that ended an hour
+ago for a day, a running one for 15 seconds, or 2 minutes over more than two
+days, and a page through its own cursor. `CACHE_VERSION` didn't need
+raising: no answer a browser already holds has changed.
+
 ### Where, readably
 
 Coordinates mean little, so each answer names the territories its entries
@@ -586,7 +653,12 @@ On Workers Paid, per word charted: up to seven D1 rows written (the log's
 row, an update each to the hour's, the surveyor's and the territory's
 counts, and a row in each of the three indexes; no initials or a stray word
 skips two), one more row written in the sector (its time index), and a
-share of an alarm. Each busy sector's
+share of an alarm. A supernova, once per territory (10,000 in the shared
+world), adds two rows written in its sector (the row and marking it sent)
+and two in D1 (the row and its index on time), and reads its territory's
+claims once, about 110 rows: next to the 112 words that made it, nothing.
+Reading the list costs the supernovas in its range, at most 100 a page,
+plus one count for each. Each busy sector's
 alarm runs at most every 30 s: one Durable Object request and two rows
 written (the alarm and the mark).
 
@@ -795,9 +867,12 @@ about 30 cents over the included million requests.
 - **The log, live, beyond the hour.** The running hour reloads every 20
   seconds; a running day, week or longer shows what it had when opened. It
   could take claims from the sector sockets the game already uses.
-- **The log's words by initials or by territory.** Top lists count both,
-  but listing a surveyor's or a territory's words would need an index on
-  the log, so a row written per claim more.
+- **Supernovas, live.** A supernova far from you is a toast in the game,
+  and a line in the log once the log has it. The log's list could take them
+  from the sector sockets too, as the running hour could.
+- **Supernovas outside the shared world** are recorded and listed like any
+  other, but the game's world map only covers the shared world, so far
+  away ones only show as remnants when you're there.
 - **Finds made offline stay personal.** Uploading them later would let
   anyone backdate a pile of claims at once.
 

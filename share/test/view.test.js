@@ -102,6 +102,19 @@ describe('what a card says', () => {
     assert.equal(territory.line, `${regionName(0, 0)}, in Letterfield’s shared survey: 2 of its 112 hidden words charted so far, by 2 surveyors.`);
   });
 
+  test('a territory gone supernova, and its card', () => {
+    const at = NOW - 2 * HOUR, nova = [0, 0, at, 'BIRCH', 1, 2, 0, 'ABC', at - 5 * HOUR, 112, 4, 'ZED', 60, regionTheme(0, 0)];
+    const v = parseView('/v/territory/0,0', NOW);
+    const s = summarize(v, { charted: 112, total: 112, nova, entries: [entry('BIRCH', at, 'ABC')], themes: {} }, NOW);
+    assert.equal(s.nova, true);
+    assert.deepEqual(s.stats, [['Went supernova', '10 Nov 2026'], ['First word to last', '5 hours'], ['Most charted by', 'ZED']]);
+    assert.equal(s.line, `${regionName(0, 0)} went supernova in Letterfield’s shared survey on 10 Nov 2026: all 112 hidden words charted by 4 surveyors in 5 hours, the last, BIRCH, by ABC.`);
+    assert.match(s.token, /n$/);
+    const svg = viewSvg(v, s);
+    assert.ok(svg.includes('>LETTERFIELD · SURVEY LOG · SUPERNOVA<') || svg.includes('SUPERNOVA'));
+    assert.ok(!viewSvg(v, summarize(v, { charted: 2, total: 112, nova: null, entries: [], themes: {} }, NOW)).includes('SUPERNOVA'));
+  });
+
   test('draws the card, its address only where it fits beside the heading', () => {
     const v = parseView(`/v/surveyor/ZED/${WEEK}`, NOW), s = summarize(v, SLICE, NOW);
     const svg = viewSvg(v, s);

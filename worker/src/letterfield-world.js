@@ -348,4 +348,11 @@ export function letterAt(x, y) {
   const cx = fdiv(x, CH), cy = fdiv(y, CH);
   return chunk(cx, cy).g[(y - cy * CH) * CH + (x - cx * CH)];
 }
+// How many hidden words a territory has: its 16 chunks' words. Not part of
+// the game's copied code (the game has its own territoryTotal).
+export function territoryTotal(rx, ry) {
+  let total = 0;
+  for (let cy = ry * RG; cy < ry * RG + RG; cy++) for (let cx = rx * RG; cx < rx * RG + RG; cx++) total += chunk(cx, cy).words.length;
+  return total;
+}
 export const wordEnd = (e) => [e.x + DIRS[e.d][0] * (e.w.length - 1), e.y + DIRS[e.d][1] * (e.w.length - 1)];

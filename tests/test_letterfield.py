@@ -660,3 +660,58 @@ def test_the_title_box_always_shows_how_many_words_are_found(page: Page, site_ur
     # On a phone the grid reference makes room for it; a computer has room for both.
     expect(page.locator("#tCoord")).to_be_visible() if size[0] >= 700 else expect(page.locator("#tCoord")).to_be_hidden()
     assert errors == []
+
+
+# The mean colour of the map over cells 1..10 of territory (0, 0), from the
+# canvas itself (device pixels), where the camera starts.
+TERRITORY_SHADE = """() => {
+  const c = document.getElementById('map'), g = c.getContext('2d'), { cam } = window.__lf;
+  const dock = document.body.classList.contains('docked') ? 340 : 0, k = c.width / innerWidth;
+  const sx = x => ((x - cam.x) * cam.cs + (innerWidth - dock) / 2) * k, sy = y => ((y - cam.y) * cam.cs + innerHeight / 2) * k;
+  const x0 = Math.round(sx(1)), y0 = Math.round(sy(1)), w = Math.round(sx(11)) - x0, h = Math.round(sy(11)) - y0;
+  const d = g.getImageData(x0, y0, w, h).data, m = [0, 0, 0];
+  for (let i = 0; i < d.length; i += 4) for (let j = 0; j < 3; j++) m[j] += d[i + j];
+  return m.map(v => v / (d.length / 4));
+}"""
+
+
+def open_with_finds(page: Page, site_url: str, skip: int) -> list:
+    """Opens the game alone with every hidden word of territory (0, 0) but the first `skip` in the notes."""
+    without_worker(page, site_url, "letterfield")
+    page.goto(f"{site_url}/letterfield#debug")
+    page.wait_for_function("window.__lf")
+    words = page.evaluate(TERRITORY_WORDS)
+    finds = [{"w": w, "x": x, "y": y, "d": d, "t": 1_793_000_000_000 + i, "s": 0} for i, (w, x, y, d) in enumerate(words[skip:])]
+    page.evaluate("finds => { localStorage.setItem('letterfield.finds.v4', JSON.stringify(finds)); localStorage.setItem('letterfield.coach.v1', '1'); }", finds)
+    page.reload()
+    page.wait_for_function("window.__lf")
+    page.wait_for_timeout(300)
+    return words
+
+
+@pytest.mark.parametrize("scheme", ["light", "dark"])
+def test_a_territory_you_found_every_word_of_stays_a_remnant(page: Page, site_url, errors, scheme):
+    page.emulate_media(color_scheme=scheme)
+    page.set_viewport_size({"width": 1280, "height": 900})
+    open_with_finds(page, site_url, 1)
+    assert page.evaluate("window.__lf.remnants()") == []
+    before = page.evaluate(TERRITORY_SHADE)
+    open_with_finds(page, site_url, 0)
+    assert page.evaluate("window.__lf.remnants()") == ["0,0"]
+    after = page.evaluate(TERRITORY_SHADE)
+    # A deeper tint: darker on paper; on the dark map, darker still.
+    assert sum(after) < sum(before) - (30 if scheme == "light" else 6), (before, after)
+    # Zoomed right out, it's a darker patch of the far view too.
+    page.evaluate("window.__lf.cam.cs = 0.5")
+    page.mouse.wheel(0, 1)
+    page.wait_for_timeout(200)
+    assert errors == []
+
+
+def test_a_supernova_leaves_its_remnant_behind_the_shockwave(page: Page, site_url, errors):
+    words = open_with_finds(page, site_url, 1)
+    page.evaluate(COLLECT, words[:1])
+    assert page.evaluate("window.__lf.nova() !== null")
+    assert page.evaluate("window.__lf.remnants()") == ["0,0"]
+    page.wait_for_function("window.__lf.nova() === null", timeout=12000)
+    assert errors == []

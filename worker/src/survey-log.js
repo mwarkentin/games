@@ -19,7 +19,10 @@
 //                                    entries (newest first, SLICE_PAGE a page), places, themes, next}
 //   GET /v1/survey/log/territory/<rx>/<ry>   every word charted in a territory, newest first, with
 //                                    its name, theme, how many hidden words it has and how many
-//                                    are charted, and its top surveyors
+//                                    are charted, its top surveyors, and its supernova or null
+//   GET /v1/survey/log/novas/<from>/<to>   supernovas over UTC hours from..to-1, newest first,
+//       [?before=<at>~<rx>~<ry>]     NOVA_PAGE a page: {from, to, count, hours: [[hour, n], ...],
+//                                    novas, places, themes, next}
 //   GET /v1/survey/log/span          the first and latest UTC hours with words in them, or nulls:
 //                                    {first, last}, where all time starts
 //   GET /v1/survey/log/top/<from>/<to>   the most charted over UTC days from..to-1 (days since
@@ -32,7 +35,11 @@
 //                                    territories, themes, hidden}
 //
 // Entries are [w, x, y, d, s, initials, at, th]: the claim as the game gets
-// it from a sector, plus its theme. `places` names each territory ('rx,ry'),
+// it from a sector, plus its theme. A supernova, a territory whose every
+// hidden word is charted, is [rx, ry, at, w, x, y, d, initials, first, words,
+// surveyors, top, topN, th]: when its last hidden word was charted, that word
+// and who charted it, when its first was, how many hidden words it has, how
+// many sets of initials charted them, and who charted most and how many. `places` names each territory ('rx,ry'),
 // and `themes` gives each theme used as [name, hue], so the page needs none of
 // the map's data. `next`, when there is more, is the `after` for the next page.
 //
@@ -61,7 +68,7 @@
 // cached from the old one would otherwise outlive it.
 
 import { corsHeaders, json } from './leaderboard.js';
-import { MAP_VERSION, RC, RG, THEMES, chunk, fdiv, regionName, regionTheme, strayTheme } from './letterfield-world.js';
+import { MAP_VERSION, RC, THEMES, fdiv, regionName, regionTheme, strayTheme, territoryTotal } from './letterfield-world.js';
 
 export const LOG_MS = 30000;            // a sector copies new claims to D1 at most this often
 export const LOG_BATCH = 240;           // claims copied at once; more go a second later
@@ -86,17 +93,28 @@ export const SLICE_PAGE = 100;          // words in a page of a surveyor's or th
 export const SLICE_MAX_HOURS = 24 * 3660;  // the longest range a surveyor's or theme's view covers
 export const SLICE_SLOW_CACHE_S = 120;  // seconds a running view of one over more than 2 days is cached for
 export const TERRITORY_MAX = 1000;      // words a territory's view lists (a territory hides about 110)
+export const LOG_NOVAS_PATH = /^\/v1\/survey\/log\/novas\/(\d{1,8})\/(\d{1,8})$/;
+export const NOVA_PAGE = 100;           // supernovas in a page of the list
 export const SPAN_CACHE_S = 300;        // seconds the span is cached for: its latest hour can lag this much
 export const TOP_N = 10;                // surveyors and territories in a top list
 export const TOP_MAX_DAYS = 3660;       // the longest range a top list covers
 export const TOP_SLOW_CACHE_S = 600;    // seconds a running top list over more than 2 days is cached for
 export const TOP_HOURS_MAX = 48;        // the longest run of hours a top list by hours covers (a local day is up to 26)
 const CURSOR = /^(\d{1,15})~([A-Z]{3,12}~-?\d{1,10}~-?\d{1,10}~[0-7])$/;
+const NOVA_CURSOR = /^(\d{1,15})~(-?\d{1,8})~(-?\d{1,8})$/;
 
 // Copies claims, as a sector stores them, to D1 in one batch, which D1 runs
-// as one transaction: all of them or none.
-export async function writeLog(db, rows) {
+// as one transaction: all of them or none. Supernovas the sector has seen go
+// in the same batch (a row binds 13 values, so 7 to a statement).
+export async function writeLog(db, rows, novas = []) {
   const statements = [];
+  for (let i = 0; i < novas.length; i += 7) {
+    const part = novas.slice(i, i + 7);
+    statements.push(
+      db.prepare(`INSERT OR IGNORE INTO survey_log_novas (rx, ry, at, w, x, y, d, initials, first, words, surveyors, top, top_n) VALUES ${part.map(() => '(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)').join(', ')}`)
+        .bind(...part.flatMap((n) => [n.rx, n.ry, n.at, n.w, n.x, n.y, n.d, n.initials, n.first, n.words, n.surveyors, n.top, n.top_n])),
+    );
+  }
   for (let i = 0; i < rows.length; i += LOG_ROWS_PER_INSERT) {
     const part = rows.slice(i, i + LOG_ROWS_PER_INSERT);
     statements.push(
@@ -132,6 +150,16 @@ export const sliceSql = (kind, after = false) => {
     entries: `SELECT at, key, w, x, y, d, s, initials ${from}${after ? ' AND (at, key) < (?, ?)' : ''} ORDER BY at DESC, key DESC LIMIT ?`,
   };
 };
+
+// Supernovas, newest first, through their index on time (migrations-log/0006_survey_log_novas.sql).
+const NOVA_COLUMNS = 'rx, ry, at, w, x, y, d, initials, first, words, surveyors, top, top_n';
+export const NOVAS_SQL = `SELECT ${NOVA_COLUMNS} FROM survey_log_novas INDEXED BY survey_log_novas_by_time
+  WHERE at >= ? AND at < ? ORDER BY at DESC, rx DESC, ry DESC LIMIT ?`;
+export const NOVAS_BEFORE_SQL = `SELECT ${NOVA_COLUMNS} FROM survey_log_novas INDEXED BY survey_log_novas_by_time
+  WHERE at >= ? AND at < ? AND (at, rx, ry) < (?, ?, ?) ORDER BY at DESC, rx DESC, ry DESC LIMIT ?`;
+export const NOVA_HOURS_SQL = `SELECT at / ${HOUR_MS} AS hour, COUNT(*) AS n FROM survey_log_novas INDEXED BY survey_log_novas_by_time
+  WHERE at >= ? AND at < ? GROUP BY at / ${HOUR_MS}`;
+export const NOVA_SQL = `SELECT ${NOVA_COLUMNS} FROM survey_log_novas WHERE rx = ? AND ry = ?`;
 
 export const FIRST_SQL = 'SELECT hour FROM survey_log_hours WHERE n > 0 ORDER BY hour LIMIT 1';
 export const LAST_SQL = 'SELECT hour FROM survey_log_hours WHERE n > 0 ORDER BY hour DESC LIMIT 1';
@@ -210,23 +238,54 @@ export async function readSlice(db, kind, key, fromHour, toHour, before = null) 
 }
 
 // Everything charted in one territory, all time: it hides about 110 words, so
-// that's never many rows. With how many hidden words it has, from the map.
+// that's never many rows. With how many hidden words it has, from the map,
+// and its supernova once it has gone off.
 export async function readTerritory(db, rx, ry) {
   const sql = sliceSql('territory'), range = [rx, ry, 0, Number.MAX_SAFE_INTEGER];
-  const [rows, people] = await Promise.all([
+  const [rows, people, nova] = await Promise.all([
     db.prepare(sql.entries).bind(...range, TERRITORY_MAX).all(),
     db.prepare(sql.people).bind(...range).all(),
+    db.prepare(NOVA_SQL).bind(rx, ry).first(),
   ]);
-  let total = 0;
-  for (let cy = ry * RG; cy < ry * RG + RG; cy++) for (let cx = rx * RG; cx < rx * RG + RG; cx++) total += chunk(cx, cy).words.length;
   const places = {}, themes = {}, th = regionTheme(rx, ry);
   const entries = rows.results.map((r) => entryOf(r, places, themes));
   themes[th] ??= [THEMES[th].name, THEMES[th].hue];
   return {
-    rx, ry, name: regionName(rx, ry), th, total,
+    rx, ry, name: regionName(rx, ry), th, total: territoryTotal(rx, ry),
     charted: new Set(rows.results.filter((r) => !r.s).map((r) => r.key)).size,
     topSurveyors: people.results.map((r) => [r.initials, r.n]),
+    nova: nova ? novaOf(nova, places, themes) : null,
     entries, places, themes,
+  };
+}
+
+// A supernova as the page shows it, naming its place and theme once.
+function novaOf(r, places, themes) {
+  const th = regionTheme(r.rx, r.ry);
+  places[`${r.rx},${r.ry}`] ??= regionName(r.rx, r.ry);
+  themes[th] ??= [THEMES[th].name, THEMES[th].hue];
+  return [r.rx, r.ry, r.at, r.w, r.x, r.y, r.d, r.initials, r.first, r.words, r.surveyors, r.top, r.top_n, th];
+}
+
+// Supernovas over UTC hours from..to, newest first, a page at a time, with
+// how many there were in each hour. There are at most 10,000 in the shared
+// world, so even all time is a short read.
+export async function readNovas(db, fromHour, toHour, before = null) {
+  const range = [fromHour * HOUR_MS, toHour * HOUR_MS];
+  const [hours, rows] = await Promise.all([
+    db.prepare(NOVA_HOURS_SQL).bind(...range).all(),
+    (before ? db.prepare(NOVAS_BEFORE_SQL).bind(...range, before.at, before.rx, before.ry, NOVA_PAGE + 1)
+      : db.prepare(NOVAS_SQL).bind(...range, NOVA_PAGE + 1)).all(),
+  ]);
+  const list = rows.results, more = list.length > NOVA_PAGE;
+  if (more) list.length = NOVA_PAGE;
+  const places = {}, themes = {}, last = list.at(-1);
+  return {
+    from: fromHour, to: toHour,
+    count: hours.results.reduce((a, r) => a + r.n, 0),
+    hours: hours.results.sort((a, b) => a.hour - b.hour).map((r) => [r.hour, r.n]),
+    novas: list.map((r) => novaOf(r, places, themes)), places, themes,
+    next: more ? `${last.at}~${last.rx}~${last.ry}` : null,
   };
 }
 
@@ -306,8 +365,8 @@ export function routeLog(request, env, now = Date.now()) {
   const month = url.pathname.match(LOG_MONTH_PATH), top = url.pathname.match(LOG_TOP_PATH), span = url.pathname === LOG_SPAN_PATH;
   const topHours = url.pathname.match(LOG_TOP_HOURS_PATH);
   const surveyor = url.pathname.match(LOG_SURVEYOR_PATH), theme = url.pathname.match(LOG_THEME_PATH);
-  const territory = url.pathname.match(LOG_TERRITORY_PATH);
-  if (!(day || hour || month || top || topHours || span || surveyor || theme || territory) || !env.LOG_DB) return null;
+  const territory = url.pathname.match(LOG_TERRITORY_PATH), novas = url.pathname.match(LOG_NOVAS_PATH);
+  if (!(day || hour || month || top || topHours || span || surveyor || theme || territory || novas) || !env.LOG_DB) return null;
   const cors = corsHeaders(request, env);
   if (request.method !== 'GET') return json({ error: 'method not allowed' }, 405, cors);
   // Every answer is kept under this Worker's own host and map (see the top of this file).
@@ -317,6 +376,21 @@ export function routeLog(request, env, now = Date.now()) {
   if (territory) {
     const rx = Number(territory[1]), ry = Number(territory[2]);
     return answer(`territory/${rx}/${ry}`, LIVE_CACHE_S, () => readTerritory(env.LOG_DB, rx, ry));
+  }
+  if (novas) {
+    const from = Number(novas[1]), to = Number(novas[2]);
+    if (!(from < to) || to - from > SLICE_MAX_HOURS) return json({ error: 'bad range of hours' }, 400, cors);
+    if (from > fdiv(now, HOUR_MS)) return json({ error: 'that hour has not started' }, 400, cors);
+    const before = url.searchParams.get('before');
+    let cursor = null;
+    if (before !== null) {
+      const m = before.match(NOVA_CURSOR);
+      if (!m) return json({ error: 'bad cursor' }, 400, cors);
+      cursor = { at: Number(m[1]), rx: Number(m[2]), ry: Number(m[3]) };
+    }
+    const settled = now >= to * HOUR_MS + SETTLED_MS;
+    return answer(`novas/${from}/${to}${cursor ? `?before=${before}` : ''}`, settled ? 86400 : to - from > 48 ? SLICE_SLOW_CACHE_S : LIVE_CACHE_S,
+      () => readNovas(env.LOG_DB, from, to, cursor));
   }
   if (surveyor || theme) {
     const [, key, a, b] = surveyor ?? theme, from = Number(a), to = Number(b);

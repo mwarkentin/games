@@ -10,12 +10,13 @@ import { DatabaseSync } from 'node:sqlite';
 import { afterEach, beforeEach, describe, mock, test } from 'node:test';
 
 import worker from '../src/index.js';
-import { MAP_VERSION, RC, THEMES, VOCAB, chunk, fdiv, keyOf, regionName, regionTheme } from '../src/letterfield-world.js';
+import { MAP_VERSION, RC, THEMES, VOCAB, chunk, fdiv, keyOf, regionName, regionTheme, territoryTotal } from '../src/letterfield-world.js';
 import {
   DAY_MS, HOURS_SQL, HOUR_AFTER_SQL, HOUR_MS, HOUR_SQL, LIVE_CACHE_S, LOG_BATCH, LOG_MS, LOG_PAGE, LOG_RETRY_MAX_MS, SETTLED_MS,
   FIRST_SQL, LAST_SQL, SLICES, SLICE_MAX_HOURS, SLICE_PAGE, SLICE_SLOW_CACHE_S, SPAN_CACHE_S, SURVEYORS_SQL, TERRITORIES_SQL,
   TOP_MAX_DAYS, TOP_N, TOP_SLOW_CACHE_S, forgetLog, monthHours, readDay, readHour, readMonth, readSlice, readSpan, readTerritory,
   readTop, readTopHours, routeLog, sliceSql, writeLog, HOURS_SURVEYORS_SQL, HOURS_TERRITORIES_SQL, TOP_HOURS_MAX,
+  NOVAS_SQL, NOVAS_BEFORE_SQL, NOVA_HOURS_SQL, NOVA_PAGE, NOVA_SQL, readNovas,
 } from '../src/survey-log.js';
 import { AREA, SECTOR, Sector } from '../src/survey.js';
 
@@ -668,3 +669,247 @@ describe('Sector copying claims to the log', () => {
     assert.equal(state.alarm, null);
   });
 });
+
+// Every hidden word of territory (rx, ry), in chunk order.
+const territoryWords = (rx, ry) => {
+  const out = [];
+  for (let cy = ry * 4; cy < ry * 4 + 4; cy++) for (let cx = rx * 4; cx < rx * 4 + 4; cx++) out.push(...chunk(cx, cy).words);
+  return out;
+};
+// A supernova as a sector sends it to the log.
+const nova = (rx, ry, at, { first = at - DAY_MS, initials = 'ZED', top = 'ZED', w = 'ACORN' } = {}) => ({
+  rx, ry, at, w, x: rx * RC, y: ry * RC, d: 0, initials, first, words: territoryTotal(rx, ry), surveyors: 2, top, top_n: 60,
+});
+
+describe('supernovas in the log', () => {
+  let db;
+  beforeEach(() => { db = fakeD1(); forgetLog(); });
+
+  test('go in with the claims, once each', async () => {
+    await writeLog(db, [stored(0, 0, 0, NOW)], [nova(0, 0, NOW)]);
+    await writeLog(db, [], [nova(0, 0, NOW + 5, { initials: 'AMY' }), ...Array.from({ length: 9 }, (_, i) => nova(i + 1, 0, NOW + i))]);
+    const rows = db.raw.prepare('SELECT * FROM survey_log_novas ORDER BY rx').all();
+    assert.equal(rows.length, 10);
+    assert.equal(rows[0].initials, 'ZED');  // the first copy stands
+    assert.ok(db.log.every((q) => q.params.length <= 100));
+  });
+
+  test('list newest first, a page at a time, with where, its theme and each hour\'s count', async () => {
+    const list = Array.from({ length: NOVA_PAGE + 3 }, (_, i) => nova(i % 50, Math.floor(i / 50), NOW - i * 60000));
+    await writeLog(db, [], [...list, nova(-5, -5, NOW - 30 * DAY_MS)]);
+    const from = HOUR - 24, to = HOUR + 1;
+    const first = await readNovas(db, from, to);
+    assert.equal(first.count, NOVA_PAGE + 3);
+    assert.equal(first.novas.length, NOVA_PAGE);
+    assert.deepEqual(first.novas.map((n) => n[2]), list.slice(0, NOVA_PAGE).map((n) => n.at));
+    const [rx, ry, at, w, x, y, d, initials, firstAt, words, surveyors, top, topN, th] = first.novas[0];
+    assert.deepEqual([rx, ry, at, w, x, y, d, initials, firstAt, words, surveyors, top, topN], Object.values(list[0]));
+    assert.equal(th, regionTheme(0, 0));
+    assert.equal(first.places['0,0'], regionName(0, 0));
+    assert.deepEqual(first.themes[th], [THEMES[th].name, THEMES[th].hue]);
+    assert.deepEqual(first.hours.map((h) => h[0]), [...new Set(list.map((n) => Math.floor(n.at / HOUR_MS)))].sort((a, b) => a - b));
+    assert.equal(first.hours.reduce((a, h) => a + h[1], 0), NOVA_PAGE + 3);
+    const [a, b, c] = first.next.split('~').map(Number);
+    const second = await readNovas(db, from, to, { at: a, rx: b, ry: c });
+    assert.deepEqual(second.novas.map((n) => n[2]), list.slice(NOVA_PAGE).map((n) => n.at));
+    assert.equal(second.next, null);
+    assert.equal((await readNovas(db, HOUR - 24 * 40, HOUR)).count, NOVA_PAGE + 4 - list.filter((n) => n.at >= HOUR * HOUR_MS).length);
+  });
+
+  test('show on their territory\'s own view', async () => {
+    await writeLog(db, [stored(0, 0, 0, NOW)], [nova(0, 0, NOW, { first: NOW - 3 * DAY_MS })]);
+    const t = await readTerritory(db, 0, 0);
+    assert.deepEqual(t.nova.slice(0, 13), Object.values(nova(0, 0, NOW, { first: NOW - 3 * DAY_MS })));
+    assert.equal(t.nova[13], regionTheme(0, 0));
+    assert.equal((await readTerritory(db, 1, 0)).nova, null);
+  });
+
+  test('read only the supernovas asked for, along their index', () => {
+    for (const [sql, args] of [[NOVAS_SQL, [1, 2, 10]], [NOVAS_BEFORE_SQL, [1, 2, 1, 0, 0, 10]], [NOVA_HOURS_SQL, [1, 2]]]) {
+      const p = plan(db, sql, ...args);
+      assert.match(p, /SEARCH survey_log_novas USING (COVERING )?INDEX survey_log_novas_by_time \(at>\? AND at<\?\)/, p);
+      if (sql !== NOVA_HOURS_SQL) assert.doesNotMatch(p, /TEMP B-TREE/, p);
+    }
+    assert.match(plan(db, NOVA_SQL, 0, 0), /SEARCH survey_log_novas USING PRIMARY KEY \(rx=\? AND ry=\?\)/);
+  });
+
+  test('are answered over a range of hours, cached by how settled and how long it is', async () => {
+    const env = { LOG_DB: db, ALLOWED_ORIGINS: ORIGIN };
+    await writeLog(db, [], [nova(0, 0, NOW - 1000), nova(1, 0, NOW - 3 * DAY_MS)]);
+    const get = (path, now = NOW) => routeLog(new Request(`https://survey.test${path}`, { headers: { Origin: ORIGIN } }), env, now);
+    const day = await get(`/v1/survey/log/novas/${HOUR - 14}/${HOUR + 10}`);
+    assert.equal(day.headers.get('Cache-Control'), `public, max-age=${LIVE_CACHE_S}`);
+    assert.equal((await day.json()).count, 1);
+    const all = await get(`/v1/survey/log/novas/${HOUR - 24 * 30}/${HOUR + 1}`);
+    assert.equal(all.headers.get('Cache-Control'), `public, max-age=${SLICE_SLOW_CACHE_S}`);
+    assert.equal((await all.json()).novas.length, 2);
+    assert.equal((await get(`/v1/survey/log/novas/${HOUR - 96}/${HOUR - 48}`)).headers.get('Cache-Control'), 'public, max-age=86400');
+    assert.equal((await get(`/v1/survey/log/novas/${HOUR}/${HOUR + 1}?before=${NOW}~-1~2`)).status, 200);
+    assert.equal((await get(`/v1/survey/log/novas/${HOUR}/${HOUR + 1}?before=nope`)).status, 400);
+    assert.equal((await get(`/v1/survey/log/novas/${HOUR + 1}/${HOUR + 2}`)).status, 400);
+    assert.equal((await get(`/v1/survey/log/novas/${HOUR}/${HOUR}`)).status, 400);
+    assert.equal((await get(`/v1/survey/log/novas/${HOUR - SLICE_MAX_HOURS - 1}/${HOUR}`)).status, 400);
+    const place = await (await get('/v1/survey/log/territory/0/0')).json();
+    assert.equal(place.nova[2], NOW - 1000);
+  });
+});
+
+describe('Sector recording supernovas', () => {
+  let state, env, sector, clock, logged;
+  beforeEach(() => {
+    logged = mock.method(console, 'log', () => {});
+    mock.timers.enable({ apis: ['setTimeout'] });
+    state = fakeState();
+    env = { LOG_DB: fakeD1() };
+    clock = NOW;
+    sector = make();
+  });
+  afterEach(() => { mock.timers.reset(); logged.mock.restore(); });
+
+  function make(e = env) {
+    const s = new Sector(state, e);
+    s.now = () => clock;
+    return s;
+  }
+  async function join(initials = 'ZED', s = sector) {
+    const ws = fakeSocket();
+    s.join(ws, 0, 0, initials.charCodeAt(0).toString(16).repeat(32));  // an address, which the claim limiter counts
+    await s.webSocketMessage(ws, JSON.stringify({ t: 'me', initials }));
+    return ws;
+  }
+  const words = territoryWords(1, 2);  // a territory in sector 0,0
+  async function claim(ws, word, s = sector) {
+    clock += 2000;  // past the socket's claim limit
+    const { w, x, y, d } = word;
+    await s.webSocketMessage(ws, JSON.stringify({ t: 'claim', w, x, y, d }));
+  }
+  const novas = () => state.storage.sql.exec('SELECT * FROM novas').toArray();
+  const fire = async () => { clock = Math.max(clock, state.alarm); state.alarm = null; await sector.alarm(); };
+  const logNovas = () => env.LOG_DB.raw.prepare('SELECT * FROM survey_log_novas').all().map((r) => ({ ...r }));
+  // Claims stored as an older sector left them, without going through claim().
+  const store = (list, initials, at) => list.forEach((o, i) => state.storage.sql.exec(
+    'INSERT INTO claims (key, w, x, y, d, s, initials, at) VALUES (?, ?, ?, ?, ?, 0, ?, ?)', o.key, o.w, o.x, o.y, o.d, initials, at + i,
+  ));
+
+  test('records the claim that charts a territory\'s last hidden word, once, and logs it with that claim', async () => {
+    const amy = await join('AMY'), zed = await join('ZED');
+    const start = clock;
+    for (const [i, o] of words.entries()) {
+      await claim(i % 3 ? amy : zed, o);
+      if (i === words.length - 2) assert.deepEqual(novas(), []);
+    }
+    const [n] = novas();
+    const last = words.at(-1), lastBy = (words.length - 1) % 3 ? 'AMY' : 'ZED';
+    const amyN = words.filter((_, i) => i % 3).length;
+    assert.deepEqual(
+      [n.rx, n.ry, n.w, n.x, n.y, n.d, n.initials, n.at, n.first, n.words, n.surveyors, n.top, n.top_n],
+      [1, 2, last.w, last.x, last.y, last.d, lastBy, clock, start + 2000, words.length, 2, 'AMY', amyN],
+    );
+    assert.equal(words.length, territoryTotal(1, 2));
+    // A stray, or a word elsewhere, after it changes nothing.
+    await claim(zed, chunk(0, 0).words[0]);
+    assert.equal(novas().length, 1);
+    while (state.alarm !== null) await fire();
+    const [row] = logNovas();
+    assert.deepEqual(row, Object.fromEntries(Object.entries(n).filter(([k]) => k !== 'logged')));
+    assert.equal(novas()[0].logged, 1);
+    assert.equal(env.LOG_DB.rows().length, words.length + 1);
+  });
+
+  test('records it once when the last two words are claimed together', async () => {
+    store(words.slice(0, -2), 'OLD', NOW - 1e6);
+    // The rate limiter answers late, so both claims are in flight at once.
+    const waiting = [];
+    env.SURVEY_CLAIMS = { limit: () => new Promise((resolve) => waiting.push(resolve)) };
+    sector = make();
+    const a = await join('AMY'), b = await join('BEA');
+    clock += 2000;
+    const one = sector.webSocketMessage(a, JSON.stringify({ t: 'claim', ...pick(words.at(-1)) }));
+    const two = sector.webSocketMessage(b, JSON.stringify({ t: 'claim', ...pick(words.at(-2)) }));
+    // And a third, of the same last word, from someone else.
+    const c = await join('CAL');
+    const three = sector.webSocketMessage(c, JSON.stringify({ t: 'claim', ...pick(words.at(-1)) }));
+    for (let i = 0; i < 50 && waiting.length < 3; i++) await new Promise((r) => setImmediate(r));
+    assert.equal(waiting.length, 3);
+    waiting[1]({ success: true }); await two;
+    waiting[2]({ success: true }); await three;
+    waiting[0]({ success: true }); await one;
+    const list = novas();
+    assert.equal(list.length, 1);
+    assert.deepEqual([list[0].w, list[0].initials], [words.at(-1).w, 'CAL']);
+    assert.ok(a.sent.some((m) => m.t === 'taken'));
+  });
+
+  test('records it after the sector wakes with the territory nearly done', async () => {
+    let ws = await join('AMY');
+    for (const o of words.slice(0, -1)) await claim(ws, o);
+    sector = make();  // evicted: counts and hidden words are worked out again
+    ws = await join('ZED');
+    await claim(ws, words.at(-1));
+    assert.deepEqual(novas().map((n) => [n.initials, n.top, n.surveyors]), [['ZED', 'AMY', 2]]);
+  });
+
+  test('finds territories completed before supernovas were recorded, when the sector next wakes', async () => {
+    store(words, 'OLD', NOW - 1e6);
+    assert.deepEqual(novas(), []);
+    // Before the log has those claims, the supernova waits for them.
+    state.storage.sql.exec('INSERT INTO logged (id, at) VALUES (0, ?)', NOW - 1e6 - 1);
+    sector = make();
+    await join();
+    const [n] = novas();
+    assert.deepEqual([n.rx, n.ry, n.at, n.first, n.initials, n.top, n.top_n, n.logged], [1, 2, NOW - 1e6 + words.length - 1, NOW - 1e6, 'OLD', 'OLD', words.length, 0]);
+    assert.equal(state.alarm, clock + 1000);
+    await fire();
+    assert.equal(logNovas().length, 1);
+    // Waking again finds nothing new to send.
+    sector = make();
+    await join();
+    assert.equal(novas().length, 1);
+    assert.equal(state.alarm, null);
+  });
+
+  test('never reaches the log ahead of its last word', async () => {
+    // A sector from before the log, with more claims than one batch takes,
+    // and the territory's last word in the second batch.
+    const other = [];
+    for (let cy = 0; cy < 16 && other.length < LOG_BATCH; cy++) for (let cx = 0; cx < 4; cx++) {
+      if (fdiv(cx, 4) === 1 && fdiv(cy, 4) === 2) continue;
+      other.push(...chunk(cx, cy).words.slice(1));  // never a whole territory
+    }
+    store(other.slice(0, LOG_BATCH), 'OLD', NOW - 2e6);
+    store(words, 'NEW', NOW - 1e6);
+    sector = make();
+    await join();
+    assert.equal(novas().length, 1);
+    await fire();
+    assert.equal(env.LOG_DB.rows().length, LOG_BATCH);
+    assert.deepEqual(logNovas(), []);
+    await fire();
+    assert.equal(env.LOG_DB.rows().length, LOG_BATCH + words.length);
+    assert.equal(logNovas().length, 1);
+    assert.equal(state.alarm, null);
+  });
+
+  test('keeps a supernova D1 did not take, and sends it with a later try', async () => {
+    const ws = await join();
+    for (const o of words) await claim(ws, o);
+    env.LOG_DB.fail = 'D1 is down';
+    await fire();
+    assert.equal(novas()[0].logged, 0);
+    env.LOG_DB.fail = null;
+    await fire();
+    assert.equal(logNovas().length, 1);
+    assert.equal(novas()[0].logged, 1);
+  });
+
+  test('forgets supernovas from an older map', async () => {
+    store(words, 'OLD', NOW - 1e6);
+    sector = make();
+    await join();
+    assert.equal(novas().length, 1);
+    state.storage.sql.exec('UPDATE map SET version = ?', MAP_VERSION - 1);
+    sector = make();
+    assert.deepEqual(novas(), []);
+  });
+});
+const pick = ({ w, x, y, d }) => ({ w, x, y, d });
