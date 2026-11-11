@@ -1,6 +1,7 @@
 ## 2026-11-11
 
 - A first visit to the shared survey is one card: how to play and your initials together, then straight to the map, with no second card to dismiss or “Signed” note after it. A tap to prove you’re a person, if one is needed, waits until it’s gone.
+- Your initials are shared with the other games’ leaderboards, as they were meant to be: initials picked here fill in a high score there, and initials from a leaderboard sign your finds here.
 - A third piece of music, Chimes: glassy bells in slow, rolling arpeggios, like an old console role-playing game's quiet town at night, ringing in a deep hall. It takes turns with Drift and Orbit.
 - On a phone with the shared survey on, the theme filters in your field notes no longer get squashed under the list of finds, and they stay at the top of the notes as you scroll.
 - Once you've picked your initials, the survey panel just shows them as “Surveyor MLW”, with a pencil to change them, instead of the form.

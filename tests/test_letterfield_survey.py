@@ -250,7 +250,7 @@ def test_signing_initials_tells_every_sector(page: Page, site_url, errors):
     page.click("#surveySign button[type=submit]")
     expect(page.locator("#surveyMeName")).to_have_text("ZED")  # the form gives way to who you are
     expect(page.locator("#surveySign")).to_be_hidden()
-    assert page.evaluate("localStorage.getItem('games.initials')") == "ZED"
+    assert page.evaluate("localStorage.getItem('games.initials')") == '"ZED"'  # JSON, as the other games keep it
     signed = lambda: {m["sector"] for m in fake.sent("me") if m["initials"] == "ZED"}  # noqa: E731
     eventually(page, lambda: signed() == {"-1,-1", "-1,0", "0,-1", "0,0"})
 
@@ -271,7 +271,7 @@ def test_signing_initials_tells_every_sector(page: Page, site_url, errors):
 
 def test_the_pencil_changes_your_initials(page: Page, site_url, errors):
     fake = FakeSurvey()
-    page.add_init_script("localStorage.setItem('games.initials', 'MLW')")
+    page.add_init_script("localStorage.setItem('games.initials', JSON.stringify('MLW'))")
     open_game(page, site_url, fake)
     expect(page.locator("#survey")).to_have_attribute("data-state", "live")
     open_notes(page)
@@ -297,7 +297,7 @@ def test_the_pencil_changes_your_initials(page: Page, site_url, errors):
     expect(page.locator("#surveyMeName")).to_have_text("ZZQ")
     expect(page.locator("#surveyHint")).to_have_text("")
     expect(page.locator("#surveyEdit")).to_be_focused()
-    assert page.evaluate("localStorage.getItem('games.initials')") == "ZZQ"
+    assert page.evaluate("localStorage.getItem('games.initials')") == '"ZZQ"'  # JSON, as the other games keep it
     eventually(page, lambda: {m["sector"] for m in fake.sent("me") if m["initials"] == "ZZQ"} == {"-1,-1", "-1,0", "0,-1", "0,0"})
 
     # Cancel works the same as Escape.
@@ -361,7 +361,7 @@ def test_initials_come_before_the_first_word(page: Page, site_url, errors):
     expect(page.locator("#toast")).not_to_have_class(re.compile(r"\bshow\b"))  # nor a note after it
     assert page.evaluate("localStorage.getItem('letterfield.coach.v1')") == "1"
     assert page.evaluate("({ ...window.__lf.cam })") == cam
-    assert page.evaluate("localStorage.getItem('games.initials')") == "ASD"
+    assert page.evaluate("localStorage.getItem('games.initials')") == '"ASD"'  # JSON, as the other games keep it
     expect(page.locator("#surveyMeName")).to_have_text("ASD")
     eventually(page, lambda: {m["initials"] for m in fake.sent("me")} >= {"ASD"})
 
@@ -399,7 +399,7 @@ def test_a_player_who_has_seen_the_tips_is_only_asked_for_initials(page: Page, s
 
 def test_a_player_with_initials_from_another_game_only_sees_how_to_play(page: Page, site_url, errors):
     # games.initials is shared with the other games' leaderboards.
-    page.add_init_script("localStorage.setItem('games.initials', 'LBD')")
+    page.add_init_script("localStorage.setItem('games.initials', JSON.stringify('LBD'))")
     page.set_viewport_size({"width": 1280, "height": 900})
     without_turnstile(page)
     fake = FakeSurvey()
@@ -415,6 +415,33 @@ def test_a_player_with_initials_from_another_game_only_sees_how_to_play(page: Pa
     expect(page.locator("#coach")).to_be_hidden()
     page.reload()
     expect(html).to_have_attribute("data-intro", "exploring")
+    assert errors == []
+
+
+def test_initials_are_shared_with_the_leaderboard_games(page: Page, site_url, errors):
+    # Letterfield once kept initials bare (ABC) where the other games keep
+    # JSON ("ABC"), so neither could read the other's. Signed here, they
+    # read as the leaderboard games read them (their store.get: JSON.parse).
+    open_game(page, site_url, FakeSurvey())
+    page.fill("#signupInitials", "SHR")
+    page.click("#signup button")
+    expect(page.locator("html")).to_have_attribute("data-intro", "exploring")
+    assert page.evaluate("JSON.parse(localStorage.getItem('games.initials'))") == "SHR"
+
+    # And a leaderboard's, saved as JSON (their store.set), sign Letterfield without asking.
+    page.evaluate("localStorage.setItem('games.initials', JSON.stringify('ATC'))")
+    page.goto(f"{site_url}/letterfield?survey={SURVEY}#debug")
+    expect(page.locator("html")).not_to_have_attribute("data-intro", "sign")
+    expect(page.locator("#signup")).to_be_hidden()
+    assert errors == []
+
+
+def test_initials_saved_bare_by_an_earlier_version_still_count(page: Page, site_url, errors):
+    page.add_init_script("localStorage.setItem('games.initials', 'OLD'); localStorage.setItem('letterfield.coach.v1', '1')")
+    open_game(page, site_url, FakeSurvey())
+    expect(page.locator("html")).to_have_attribute("data-intro", "exploring")
+    open_notes(page)
+    expect(page.locator("#surveyMeName")).to_have_text("OLD")
     assert errors == []
 
 
@@ -709,7 +736,7 @@ def test_turnstile_pass_lets_every_sector_in(page: Page, site_url, errors):
 
 
 def test_turnstile_shows_its_box_only_when_it_wants_a_tap(page: Page, site_url, errors):
-    page.add_init_script("localStorage.setItem('games.initials', 'MLW')")
+    page.add_init_script("localStorage.setItem('games.initials', JSON.stringify('MLW'))")
     with_turnstile(page, "interactive")
     fake = FakeSurvey()
     open_game(page, site_url, fake, f"&turnstile={SITE_KEY}")
@@ -784,7 +811,7 @@ def test_turnstile_box_asks_a_player_already_in_the_survey_once_passes_are_requi
     # A sector turns the stored pass away: passes are required, so the player is asked to stay, then the box goes.
     page.add_init_script("""localStorage.setItem('letterfield.surveyPass.v1',
       JSON.stringify({ pass: 'old-pass', expires: Date.now() + 1800000 }));
-      localStorage.setItem('games.initials', 'MLW')""")
+      localStorage.setItem('games.initials', JSON.stringify('MLW'))""")
     with_turnstile(page, "interactive")
     fake = FakeSurvey(refuse_passes={"old-pass"}, require_pass=True)
     open_game(page, site_url, fake, f"&turnstile={SITE_KEY}", viewport={"width": 375, "height": 667})
@@ -910,7 +937,7 @@ def test_words_circled_while_joining_are_claimed_once_the_sector_is_live(page: P
 
 def test_a_claim_whose_answer_was_lost_with_its_socket_is_still_credited(page: Page, site_url, errors):
     word = known_words(page, site_url)[0]
-    page.add_init_script("localStorage.setItem('games.initials', 'ZED')")
+    page.add_init_script("localStorage.setItem('games.initials', JSON.stringify('ZED'))")
     fake = FakeSurvey(lose="answer")  # the sector keeps the claim, but the socket drops before its answer
     open_game(page, site_url, fake)
     expect(page.locator("#survey")).to_have_attribute("data-state", "live")

@@ -1024,7 +1024,13 @@ let world = null, worldShown = 0, worldExtra = 0, worldMap = null, worldTimer = 
 const surveyHttp = surveyApi.replace(/^ws/, 'http');
 const inSurveyArea = (x, y) => Math.abs(fdiv(x, SECTOR)) <= SURVEY_AREA && Math.abs(fdiv(y, SECTOR)) <= SURVEY_AREA;
 const sectorKey = (x, y) => fdiv(x, SECTOR) + ',' + fdiv(y, SECTOR);
-const myInitials = () => { const v = LS.get(K_INITIALS) || ''; return /^[A-Z]{3}$/.test(v) ? v : ''; };
+// The other games keep initials as JSON ("ABC"), and so does this one now;
+// one saved bare (ABC) by an earlier version still counts.
+const myInitials = () => {
+  let v = LS.get(K_INITIALS) || '';
+  try { v = JSON.parse(v); } catch (_) {}
+  return typeof v === 'string' && /^[A-Z]{3}$/.test(v) ? v : '';
+};
 const tell = (l, m) => { if (l && l.ws && l.m.is('open', 'live')) try { l.ws.send(JSON.stringify(m)); } catch (_) {} };
 const anyLive = () => [...links.values()].some(l => l.m.is('live'));
 const surveyEl = $('#survey'), surveyText = $('#surveyText'), surveyInput = $('#surveyInitials'), surveyHint = $('#surveyHint');
@@ -3379,7 +3385,7 @@ function signAs(v, hint) {
     if (hint === signupHint) try { signupInput.focus({ preventScroll: true }); } catch (_) {}
     return false;
   }
-  LS.set(K_INITIALS, v);
+  LS.set(K_INITIALS, JSON.stringify(v));
   for (const l of links.values()) tell(l, { t: 'me', initials: v });
   surveyInput.value = signupInput.value = v;
   surveyHint.textContent = '';
