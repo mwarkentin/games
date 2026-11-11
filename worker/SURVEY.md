@@ -212,6 +212,9 @@ survey also limits each IP address, wherever it plays:
     Atlas only counts an address's words when the sector reports them, so an
     address can chart a few words past 300 before every sector knows. The
     6-a-minute limit keeps that small.
+  - Worker Previews allow 1,000 a day (`SURVEY_DAILY_CLAIMS` in
+    `[previews.vars]`, read by `dailyClaims()`) and 60 claims a minute, so
+    a test can chart several whole territories in a day.
   - The counts live only in the Atlas's memory. It's rarely evicted, since
     sectors report to it every few seconds, but if it is, the day's counts
     start again, and every deploy of the Worker evicts it. Saving them would
