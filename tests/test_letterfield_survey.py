@@ -993,7 +993,9 @@ def test_word_list_leaves_out_words_anyone_has_charted(page: Page, site_url, err
     charted = {w[0] for w in words} - {w[0] for w in free}
     assert not charted & set(named), named
     assert {w[0] for w in free} & set(named), named
-    expect(page.locator("#legendCount")).to_have_text(f"{len(named)} left")
+    # The count is of every such word in view; the list names the nearest 14.
+    left = int(page.locator("#legendCount").inner_text().split()[0])
+    assert left == len(named) if len(named) < 14 else left >= 14, (left, named)
 
     # Across the territory, the same.
     page.click("#listWhole")
