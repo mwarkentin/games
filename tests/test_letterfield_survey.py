@@ -327,6 +327,11 @@ def test_initials_come_before_the_first_word(page: Page, site_url, errors):
     signup, html = page.locator("#signup"), page.locator("html")
     expect(html).to_have_attribute("data-intro", "sign")
     expect(signup).to_be_visible()
+    # One card for a new player: how to play and the initials together.
+    expect(page.locator("#signupHow")).to_be_visible()
+    expect(page.locator("#signupHow")).to_contain_text("tap a word's first letter, then its last")
+    expect(page.locator("#signupKbd")).to_have_text("Shift-drag also circles")
+    expect(page.locator("#signupOnly")).to_be_hidden()
     expect(page.locator("#coach")).to_be_hidden()
 
     # Tapping a word's ends circles nothing yet, and asks again.
@@ -351,8 +356,10 @@ def test_initials_come_before_the_first_word(page: Page, site_url, errors):
     page.keyboard.type("d")
     page.keyboard.press("Enter")
     expect(signup).to_be_hidden()
-    expect(html).to_have_attribute("data-intro", "coach")
-    expect(page.locator("#coach")).to_be_visible()  # then how to play
+    expect(html).to_have_attribute("data-intro", "exploring")  # straight to the map
+    expect(page.locator("#coach")).to_be_hidden()  # no second card to dismiss
+    expect(page.locator("#toast")).not_to_have_class(re.compile(r"\bshow\b"))  # nor a note after it
+    assert page.evaluate("localStorage.getItem('letterfield.coach.v1')") == "1"
     assert page.evaluate("({ ...window.__lf.cam })") == cam
     assert page.evaluate("localStorage.getItem('games.initials')") == "ASD"
     expect(page.locator("#surveyMeName")).to_have_text("ASD")
@@ -363,8 +370,6 @@ def test_initials_come_before_the_first_word(page: Page, site_url, errors):
         page.mouse.click(x, y)
     expect(page.locator("#notesBadge")).to_have_text("1")
     expect(page.locator("#toast")).to_contain_text(target["word"])
-    expect(html).to_have_attribute("data-intro", "exploring")  # a first find puts the tips away
-    expect(page.locator("#coach")).to_be_hidden()
     eventually(page, lambda: len(fake.sent("claim")) == 1)
 
     # Next time, straight to the map.
@@ -375,16 +380,41 @@ def test_initials_come_before_the_first_word(page: Page, site_url, errors):
     assert errors == []
 
 
-def test_a_player_who_has_seen_the_tips_goes_from_initials_to_the_map(page: Page, site_url, errors):
+def test_a_player_who_has_seen_the_tips_is_only_asked_for_initials(page: Page, site_url, errors):
     page.add_init_script("localStorage.setItem('letterfield.coach.v1', '1')")
     open_game(page, site_url, FakeSurvey())
     html = page.locator("html")
     expect(html).to_have_attribute("data-intro", "sign")
+    expect(page.locator("#signupOnly")).to_be_visible()
+    expect(page.locator("#signupOnly")).to_contain_text("Pick your initials to start.")
+    expect(page.locator("#signupHow")).to_be_hidden()
+    expect(page.locator("#signupKbd")).to_be_hidden()
     page.fill("#signupInitials", "TIP")
     page.click("#signup button")
     expect(html).to_have_attribute("data-intro", "exploring")
     expect(page.locator("#coach")).to_be_hidden()
-    expect(page.locator("#toast")).to_contain_text("Signed TIP")
+    expect(page.locator("#toast")).not_to_have_class(re.compile(r"\bshow\b"))
+    assert errors == []
+
+
+def test_a_player_with_initials_from_another_game_only_sees_how_to_play(page: Page, site_url, errors):
+    # games.initials is shared with the other games' leaderboards.
+    page.add_init_script("localStorage.setItem('games.initials', 'LBD')")
+    page.set_viewport_size({"width": 1280, "height": 900})
+    without_turnstile(page)
+    fake = FakeSurvey()
+    page.route_web_socket(re.compile(r"^wss://survey\.test/"), fake.handle)
+    page.route(f"{SURVEY}/v1/survey/world", fake.handle_world)
+    page.goto(f"{site_url}/letterfield?survey={SURVEY}#debug")
+    html = page.locator("html")
+    expect(html).to_have_attribute("data-intro", "coach")
+    expect(page.locator("#coach")).to_be_visible()
+    expect(page.locator("#signup")).to_be_hidden()
+    page.click("#coachOk")
+    expect(html).to_have_attribute("data-intro", "exploring")
+    expect(page.locator("#coach")).to_be_hidden()
+    page.reload()
+    expect(html).to_have_attribute("data-intro", "exploring")
     assert errors == []
 
 
@@ -395,7 +425,6 @@ def test_unreachable_survey_says_so_and_the_game_carries_on(page: Page, site_url
     page.goto(f"{site_url}/letterfield?survey={SURVEY}#debug")
     page.fill("#signupInitials", "OFF")
     page.click("#signup button")
-    page.click("#coachOk")
     expect(page.locator("#surveyText")).to_have_text("Survey offline. Your finds still save in this browser.")
     expect(page.locator("#survey")).to_have_attribute("data-state", "offline")
     circle(page, hidden_words(page)[0])
@@ -680,6 +709,7 @@ def test_turnstile_pass_lets_every_sector_in(page: Page, site_url, errors):
 
 
 def test_turnstile_shows_its_box_only_when_it_wants_a_tap(page: Page, site_url, errors):
+    page.add_init_script("localStorage.setItem('games.initials', 'MLW')")
     with_turnstile(page, "interactive")
     fake = FakeSurvey()
     open_game(page, site_url, fake, f"&turnstile={SITE_KEY}")
@@ -703,14 +733,20 @@ def test_turnstile_box_keeps_clear_of_the_game_and_goes_once_passed(page: Page, 
     open_game(page, site_url, fake, f"&turnstile={SITE_KEY}", viewport=phone)
     check = page.locator("#surveyCheck")
     expect(check).to_have_class(re.compile("asking"))
+    # A first visit asks one thing at a time: the box waits for the card asking for initials.
+    expect(page.locator("#signup")).to_be_visible()
+    expect(check).to_be_hidden()
+    expect(page.locator(".fake-turnstile")).to_be_hidden()
+    page.fill("#signupInitials", "NEW")
+    page.click("#signup button")
+    expect(page.locator("#signup")).to_be_hidden()
     expect(page.locator(".fake-turnstile")).to_be_visible()
     # While it asks, it's a small panel with its reason, clear of the legend and instruments.
     expect(check.locator("p")).to_be_visible()
     expect(check.locator("p")).to_have_text("One tap to join the shared survey")
     box = check.bounding_box()
     assert box["x"] >= 16 and box["x"] + box["width"] <= phone["width"] - 16
-    expect(page.locator("#signup")).to_be_visible()  # asked for initials at the same time
-    for other in [".legend", ".instruments .zoom", ".cartouche", "#notesToggle", "#signup"]:
+    for other in [".legend", ".instruments .zoom", ".cartouche", "#notesToggle"]:
         assert not page.evaluate(OVERLAP, ["#surveyCheck", other]), f"the box covers {other}"
 
     page.evaluate("window.__tsSolve()")
@@ -747,7 +783,8 @@ def test_turnstile_box_goes_when_a_player_already_in_the_survey_is_not_asked(pag
 def test_turnstile_box_asks_a_player_already_in_the_survey_once_passes_are_required(page: Page, site_url, errors):
     # A sector turns the stored pass away: passes are required, so the player is asked to stay, then the box goes.
     page.add_init_script("""localStorage.setItem('letterfield.surveyPass.v1',
-      JSON.stringify({ pass: 'old-pass', expires: Date.now() + 1800000 }))""")
+      JSON.stringify({ pass: 'old-pass', expires: Date.now() + 1800000 }));
+      localStorage.setItem('games.initials', 'MLW')""")
     with_turnstile(page, "interactive")
     fake = FakeSurvey(refuse_passes={"old-pass"}, require_pass=True)
     open_game(page, site_url, fake, f"&turnstile={SITE_KEY}", viewport={"width": 375, "height": 667})
