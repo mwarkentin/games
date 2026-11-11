@@ -142,13 +142,17 @@ class_name = "Sector"
 name = "ATLAS"
 class_name = "Atlas"
 
-# The same limits as production, counted apart from it (Previews share these).
+# Counted apart from production's (Previews share these). The same limits,
+# except claims: 60 a minute rather than 6, so a test can chart a whole
+# territory in a few minutes. Each socket's own limit (CLAIM_BURST and
+# CLAIM_REFILL_MS in src/survey.js, about 40 a minute) and the daily cap per
+# address still hold, so a person playing a preview meets the same survey.
 [[previews.ratelimits]]
 name = "SURVEY_CLAIMS"
 namespace_id = "7311"
 
   [previews.ratelimits.simple]
-  limit = 6
+  limit = 60
   period = 60
 
 [[previews.ratelimits]]
