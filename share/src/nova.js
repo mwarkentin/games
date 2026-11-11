@@ -10,7 +10,7 @@
 // still sits with its theme. Everything random is seeded by the territory,
 // so a territory's card is always the same picture.
 
-import { RC, letterAt } from '../../worker/src/letterfield-world.js';
+import { RC, THEMES, letterAt, regionTheme } from '../../worker/src/letterfield-world.js';
 import { H, W, fit, measure, text } from './card.js';
 
 // A small seeded generator (mulberry32), from the territory's coordinates.
@@ -136,7 +136,9 @@ export function novaSvg(v, s, { dark = false, host = 'games.michaelwarkentin.com
   out.push(scrim);
   out.push(`<rect width="${W}" height="6" fill="${glow(62, 0.95)}"/>`);
   const X = 72, COL = 640;
-  out.push(text('LETTERFIELD · SUPERNOVA', X, 84, 'mono5', 20, glow(80, 1, 85), 0.16));
+  // Which theme went up, by name as well as by colour.
+  const head = `LETTERFIELD · SUPERNOVA · ${THEMES[regionTheme(v.rx, v.ry)].name.toUpperCase()}`;
+  out.push(text(head, X, 84, 'mono5', fit(head, 'mono5', 20, 13, COL + 60, 0.16), glow(80, 1, 85), 0.16));
   const name = s.name.toUpperCase(), px = fit(name, 'display', 150, 60, COL, 0.03);
   out.push(text(name, X, 228, 'display', px, K.ink, 0.03));
   const sub = `Every one of its ${n.words.toLocaleString('en-US')} hidden words charted`;

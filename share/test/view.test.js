@@ -113,7 +113,7 @@ describe('what a card says', () => {
     assert.deepEqual(s.novaOf, { at, w: 'BIRCH', initials: 'ABC', first: at - 5 * HOUR, words: 112, surveyors: 4, top: 'ZED', topN: 60 });
     // Its own card: the burst, then who, when and how.
     const svg = viewSvg(v, s);
-    for (const part of ['>LETTERFIELD · SUPERNOVA<', `>${regionName(0, 0).toUpperCase()}<`, '>Every one of its 112 hidden words charted<',
+    for (const part of [`>LETTERFIELD · SUPERNOVA · ${THEMES[regionTheme(0, 0)].name.toUpperCase()}<`, `>${regionName(0, 0).toUpperCase()}<`, '>Every one of its 112 hidden words charted<',
       '>10 Nov 2026<', '>5 hours<', '>ZED<', '>THE LAST WORD<', '>BIRCH<', '>BY ABC<', `hsla(${THEMES[regionTheme(0, 0)].hue},`]) {
       assert.ok(svg.includes(part), part);
     }

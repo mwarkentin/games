@@ -283,7 +283,7 @@ describe('a territory gone supernova moments ago', () => {
     assert.match(meta(html, 'og:description'), /^Sodden Wold went supernova in Letterfield’s shared survey on 11 Nov 2026: all 116 hidden words charted by 1 surveyor in 21 hours, the last, MULTITOOL, by LMW\.$/);
     assert.match(meta(html, 'og:image'), /\/v\/territory\/0,1\.png\?s=112\.[a-z0-9]+n$/);
     await get('/v/territory/0,1.png', env);
-    assert.ok(renders[0].includes('>LETTERFIELD · SUPERNOVA<') && renders[0].includes('>MULTITOOL<'));
+    assert.ok(renders[0].includes('>LETTERFIELD · SUPERNOVA · ') && renders[0].includes('>MULTITOOL<'));
   });
 
   test('keeps the log\'s card when the sector has none, can\'t say, or nothing is charted there', async () => {
