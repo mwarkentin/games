@@ -601,6 +601,66 @@ def test_someone_else_finishing_a_territory_nearby_sets_it_off_too(page: Page, s
     assert errors == []
 
 
+SHARE_SHEET_INIT = """
+  window.__shared = [];
+  Object.defineProperty(navigator, 'share', { value: data => { window.__shared.push(data); return Promise.resolve(); }, configurable: true });
+"""
+
+
+def test_a_supernova_you_saw_is_kept_in_your_notes_and_shares_its_card(page: Page, site_url, errors):
+    words = territory_words(page, site_url)
+    fake = FakeSurvey(claims=[[*w, 0, "MRW", NOW_MS - 60_000] for w in words[1:]])
+    page.add_init_script(SHARE_SHEET_INIT)
+    open_game(page, site_url, fake)
+    eventually(page, lambda: "0,0" in fake.sockets)
+    expect(page.locator("#tCharted")).to_have_text(f" · {len(words) - 1}/{len(words)} charted")
+    fake.sockets["0,0"].send(json.dumps({"t": "claimed", "c": [*words[0], 0, "SIS", NOW_MS], "by": "someone"}))
+    expect(page.locator("#nova")).to_be_visible(timeout=6000)
+    # Once the banner has gone, a note offers to share it.
+    place = page.evaluate("window.__lf.territoryName(0, 0)")
+    toast = page.locator("#toast")
+    expect(toast).to_contain_text("Supernova · kept in your field notes", timeout=12000)
+    expect(toast).to_contain_text(place)
+    toast.locator(".share").click()
+    page.wait_for_function("window.__shared.length === 1")
+    shared = page.evaluate("window.__shared[0]")
+    assert shared["text"] == f"{place} just went supernova in Letterfield’s shared survey: every hidden word charted, the last, {words[0][0]}, by SIS."
+    assert shared["url"] == "https://share.michaelwarkentin.com/v/territory/0,0"
+    # It's in the field notes, and stays there after a reload.
+    open_notes(page)
+    row = page.locator("#novaList li")
+    expect(row).to_have_count(1)
+    expect(row.locator(".find-word")).to_have_text(place)
+    expect(row.locator(".find-meta")).to_have_text(f"Went supernova · {words[0][0]}, the last by SIS")
+    page.reload()
+    open_notes(page)
+    expect(page.locator("#novaList li")).to_have_count(1)
+    page.locator("#novaList .find-share").click()
+    page.wait_for_function("window.__shared.length === 1")  # a fresh page: its first share
+    assert page.evaluate("window.__shared[0].url") == "https://share.michaelwarkentin.com/v/territory/0,0"
+    assert errors == []
+
+
+def test_a_supernova_far_away_is_a_note_you_can_share(page: Page, site_url, errors):
+    words = territory_words(page, site_url)
+    fake = FakeSurvey(claims=[[*w, 0, "MRW", NOW_MS - 60_000] for w in words[1:]])
+    page.add_init_script(SHARE_SHEET_INIT)
+    open_game(page, site_url, fake)
+    eventually(page, lambda: "0,0" in fake.sockets)
+    expect(page.locator("#tCharted")).to_have_text(f" · {len(words) - 1}/{len(words)} charted")
+    page.evaluate("window.__lf.cam.x = 600; window.__lf.cam.y = 600")  # more than three territories off
+    fake.sockets["0,0"].send(json.dumps({"t": "claimed", "c": [*words[0], 0, "", NOW_MS], "by": "someone"}))
+    toast = page.locator("#toast")
+    expect(toast).to_contain_text("Went supernova · every hidden word charted", timeout=6000)
+    assert page.locator("#nova").is_hidden()
+    toast.locator(".share").click()
+    page.wait_for_function("window.__shared.length === 1")
+    assert page.evaluate("window.__shared[0].text").endswith(f"the last, {words[0][0]}.")
+    open_notes(page)
+    expect(page.locator("#novaList .find-meta")).to_have_text(f"Went supernova · {words[0][0]}, every word charted")
+    assert errors == []
+
+
 SCREEN_OF = """([x, y]) => {
   const cam = window.__lf.cam, dock = document.body.classList.contains('docked') ? 340 : 0;
   return [(x - cam.x) * cam.cs + (innerWidth - dock) / 2, (y - cam.y) * cam.cs + innerHeight / 2];

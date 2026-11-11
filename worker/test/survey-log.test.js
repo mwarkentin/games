@@ -902,6 +902,19 @@ describe('Sector recording supernovas', () => {
     assert.equal(novas()[0].logged, 1);
   });
 
+  test('tells the share Worker about a supernova before the log has it', async () => {
+    store(words, 'OLD', NOW - 1e6);
+    sector = make();
+    await join();
+    const res = await sector.fetch(new Request('https://sector/nova/1/2'));
+    assert.equal(res.status, 200);
+    const { nova } = await res.json();
+    assert.deepEqual(nova.slice(0, 4), [1, 2, NOW - 1e6 + words.length - 1, words.at(-1).w]);
+    assert.equal(nova[13], regionTheme(1, 2));
+    assert.equal((await sector.fetch(new Request('https://sector/nova/0/0'))).status, 404);
+    assert.equal((await sector.fetch(new Request('https://sector/nova/1/2', { method: 'POST' }))).status, 404);
+  });
+
   test('forgets supernovas from an older map', async () => {
     store(words, 'OLD', NOW - 1e6);
     sector = make();

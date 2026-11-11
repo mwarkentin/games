@@ -1,5 +1,6 @@
 ## 2026-11-11
 
+- A supernova you see is kept in your field notes, under Supernovas, with its last word and who charted it, and a note after the burst offers to share it. Shared from the survey, its link shows a card of the territory exploding.
 - A territory that's gone supernova stays changed afterwards: a deeper, quieter tint with a faint shell and a few stars, settling in as the shockwave passes. It shows on the map, zoomed out, and on the world map in your field notes, for the shared survey's supernovas and for territories you've found every word of yourself.
 - The survey log keeps every supernova: a list of them from “Supernovas” at the top, newest first, with when, how long the territory took, who charted most and its last word. A day or an hour shows each one just above the word that set it off, every period names its own, and a territory's page says when it went supernova. Its shared link's card says so too.
 - A first visit to the shared survey is one card: how to play and your initials together, then straight to the map, with no second card to dismiss or “Signed” note after it. A tap to prove you’re a person, if one is needed, waits until it’s gone.

@@ -16,6 +16,7 @@
 
 import { THEMES, regionName, regionTheme } from '../../worker/src/letterfield-world.js';
 import { H, PALETTES, W, fit, measure, text } from './card.js';
+import { novaSvg } from './nova.js';
 
 const HOUR = 3_600_000;
 export const LOG_BEGAN_HOUR = Date.UTC(2026, 10, 6) / HOUR;  // where all time starts, until the log's span says earlier
@@ -158,11 +159,14 @@ export function summarize(v, a, now = Date.now()) {
     stats = [['Hidden words charted', num(a.words)], ['Top surveyor', who || '—'], ['Top territory', top || '—']];
     line = `${plural(a.words, 'hidden word')} charted in Letterfield’s ${name} territories ${when.said}.`;
   }
-  return { name, hue, nova: !!nova, when: when.shown, stats, words, line, token: `${count}.${latest.toString(36)}${nova ? 'n' : ''}` };
+  const novaOf = nova && { at: nova[2], w: String(nova[3]), initials: String(nova[7] ?? ''), first: nova[8], words: nova[9], surveyors: nova[10], top: String(nova[11] ?? ''), topN: nova[12] };
+  return { name, hue, nova: !!nova, novaOf, when: when.shown, stats, words, line, token: `${count}.${latest.toString(36)}${nova ? 'n' : ''}` };
 }
 
 // The card, 1200×630: shareImage() in letterfield-log.html, as SVG.
 export function viewSvg(v, s, { dark = false, host = 'games.michaelwarkentin.com' } = {}) {
+  // A supernova has a card of its own (nova.js).
+  if (s.novaOf) return novaSvg(v, s, { dark, host });
   const C = dark ? PALETTES.dark : PALETTES.light;
   const mark = (hue) => `hsl(${hue},${C.markS},${C.markL})`;
   const X = 72, R = W - 72, out = [];
@@ -170,7 +174,7 @@ export function viewSvg(v, s, { dark = false, host = 'games.michaelwarkentin.com
     ? `<circle cx="${x}" cy="${y}" r="${r - 1.5}" fill="none" stroke="${mark(hue)}" stroke-width="3" stroke-dasharray="4 3"/>`
     : `<circle cx="${x}" cy="${y}" r="${r}" fill="${mark(hue)}"/>`);
   out.push(`<rect width="${W}" height="${H}" fill="${C.paper}"/><rect width="${W}" height="10" fill="${C.accent}"/>`);
-  const kind = s.nova ? 'SUPERNOVA' : { surveyor: 'SURVEYOR', theme: 'THEME', territory: 'TERRITORY' }[v.kind];
+  const kind = { surveyor: 'SURVEYOR', theme: 'THEME', territory: 'TERRITORY' }[v.kind];
   const head = `LETTERFIELD · SURVEY LOG · ${kind}`;
   out.push(text(head, X, 84, 'mono5', 20, C.muted, 0.14));
   // The site's address on the right, where it fits beside the heading.
@@ -181,8 +185,6 @@ export function viewSvg(v, s, { dark = false, host = 'games.michaelwarkentin.com
   const name = s.name.toUpperCase(), lead = s.hue !== undefined ? 68 : 0;
   const px = fit(name, 'display', 170, 64, R - X - lead, 0.04);
   if (lead) out.push(dot(X + 20, Math.round(250 - px * 0.36), 20, s.hue));
-  // A supernova's dot keeps a faint ring, as its territory does on the map.
-  if (lead && s.nova) out.push(`<circle cx="${X + 20}" cy="${Math.round(250 - px * 0.36)}" r="31" fill="none" stroke="${mark(s.hue)}" stroke-width="3" opacity="0.45"/>`);
   out.push(text(name, X + lead, 250, 'display', px, C.ink, 0.04));
   out.push(text(s.when, X, 306, 'ui5', fit(s.when, 'ui5', 30, 16, R - X), C.muted));
   out.push(`<rect x="${X}" y="346" width="${R - X}" height="2" fill="${C.rule}"/>`);

@@ -116,9 +116,25 @@ def test_finding_every_word_in_a_territory_goes_supernova(page: Page, site_url, 
     expect(page.locator("#nova")).to_be_visible(timeout=5000)
     expect(page.locator("#nova")).to_contain_text("Supernova")
     expect(page.locator("#novaText")).to_contain_text(f"all {len(words)} hidden words found")
-    # It plays out, then the map is back to normal.
+    # It plays out, then the map is back to normal, and a note offers to share it.
     expect(page.locator("#nova")).to_be_hidden(timeout=10000)
     page.wait_for_function("window.__lf.nova() === null", timeout=5000)
+    expect(page.locator("#toast")).to_contain_text("Supernova · kept in your field notes")
+    expect(page.locator("#toast .share")).to_be_visible()
+    # Your field notes keep it: alone, it was all yours.
+    if page.locator("#notes").is_hidden():
+        page.click("#notesToggle")
+    expect(page.locator("#novaList .find-meta")).to_have_text(f"Went supernova · {words[0][0]}, all found by you")
+    record = page.evaluate("JSON.parse(localStorage.getItem('letterfield.novas.v1'))")
+    assert [(n["rx"], n["ry"], n["w"], n["solo"], n["mine"]) for n in record] == [(0, 0, words[0][0], True, True)]
+    # Sharing it alone links to the game, flying to its last word.
+    page.evaluate("""() => { window.__shared = []; Object.defineProperty(navigator, 'share', { value: d => { window.__shared.push(d); return Promise.resolve(); }, configurable: true }); }""")
+    page.locator("#novaList .find-share").click()
+    page.wait_for_function("window.__shared.length === 1")
+    shared = page.evaluate("window.__shared[0]")
+    assert shared["text"].startswith("I found every hidden word in ") and shared["text"].endswith("in Letterfield, and it just went supernova.")
+    w, x, y, d = words[0]
+    assert shared["url"].endswith(f"/letterfield#f-{w.lower()}-{x}-{y}-{d}")
     assert errors == []
 
 

@@ -62,3 +62,25 @@ describe('rendering a view of the survey log', () => {
     });
   }
 });
+
+describe('rendering a supernova', () => {
+  const NOW = Date.UTC(2026, 10, 11, 22);
+  // Sodden Wold, as the log has it, then territories of every kind of hue.
+  const places = [[0, 1], [-3, -4], [17, 30], [-41, 8], [33, -27], [-12, 44]];
+  for (const [i, [rx, ry]] of places.entries()) {
+    const dark = i % 2 === 1;
+    test(`draws a 1200×630 PNG small enough for WhatsApp, quickly: ${rx},${ry}, ${dark ? 'dark' : 'light'}`, async () => {
+      const nova = [rx, ry, NOW - 3_600_000, i ? 'AMPHITHEATRE' : 'MULTITOOL', rx * 48, ry * 48, 0, 'LMW', NOW - 21 * 3_600_000, 116, 3, 'LMW', 80, 0];
+      const v = parseView(`/v/${dark ? 'd/' : ''}territory/${rx},${ry}.png`, NOW);
+      const svg = viewSvg(v, summarize(v, { charted: 116, total: 116, nova, entries: [], themes: {} }, NOW), { dark });
+      await render(svg);  // the wasm starts on the first
+      const start = performance.now();
+      const png = await render(svg);
+      const ms = performance.now() - start;
+      assert.deepEqual(size(png), [1200, 630]);
+      assert.ok(png.length < 300_000, `${png.length} bytes`);
+      assert.ok(ms < 600, `${ms.toFixed(0)} ms`);
+      if (process.env.SHARE_CARD_OUT) (await import('node:fs')).writeFileSync(`${process.env.SHARE_CARD_OUT}/nova-${rx},${ry}-${dark ? 'dark' : 'light'}.png`, png);
+    });
+  }
+});

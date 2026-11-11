@@ -110,9 +110,26 @@ describe('what a card says', () => {
     assert.deepEqual(s.stats, [['Went supernova', '10 Nov 2026'], ['First word to last', '5 hours'], ['Most charted by', 'ZED']]);
     assert.equal(s.line, `${regionName(0, 0)} went supernova in Letterfield’s shared survey on 10 Nov 2026: all 112 hidden words charted by 4 surveyors in 5 hours, the last, BIRCH, by ABC.`);
     assert.match(s.token, /n$/);
+    assert.deepEqual(s.novaOf, { at, w: 'BIRCH', initials: 'ABC', first: at - 5 * HOUR, words: 112, surveyors: 4, top: 'ZED', topN: 60 });
+    // Its own card: the burst, then who, when and how.
     const svg = viewSvg(v, s);
-    assert.ok(svg.includes('>LETTERFIELD · SURVEY LOG · SUPERNOVA<') || svg.includes('SUPERNOVA'));
-    assert.ok(!viewSvg(v, summarize(v, { charted: 2, total: 112, nova: null, entries: [], themes: {} }, NOW)).includes('SUPERNOVA'));
+    for (const part of [`>LETTERFIELD · SUPERNOVA · ${THEMES[regionTheme(0, 0)].name.toUpperCase()}<`, `>${regionName(0, 0).toUpperCase()}<`, '>Every one of its 112 hidden words charted<',
+      '>10 Nov 2026<', '>5 hours<', '>ZED<', '>THE LAST WORD<', '>BIRCH<', '>BY ABC<', `hsla(${THEMES[regionTheme(0, 0)].hue},`]) {
+      assert.ok(svg.includes(part), part);
+    }
+    assert.ok(!svg.includes('SURVEY LOG ·'), 'not the log\'s plain card');
+    // The same territory is always the same picture; another is another.
+    assert.equal(viewSvg(v, s), svg);
+    const other = parseView('/v/territory/5,-3', NOW);
+    assert.notEqual(viewSvg(other, summarize(other, { charted: 112, total: 112, nova: [5, -3, ...nova.slice(2)], entries: [], themes: {} }, NOW)).replace(/>[^<]*</g, '><'), svg.replace(/>[^<]*</g, '><'));
+    // Night either way: the dark card's sky is only deeper.
+    assert.notEqual(viewSvg(v, s, { dark: true }), svg);
+    assert.ok(!viewSvg(v, s, { dark: true }).includes('#EBEEE7'));
+    // An initials-less last word leaves "by" off.
+    assert.ok(!viewSvg(v, summarize(v, { charted: 112, total: 112, nova: nova.map((x, i) => (i === 7 ? '' : x)), entries: [], themes: {} }, NOW)).includes('>BY '));
+    // Without a supernova, the log's own card.
+    const plain = viewSvg(v, summarize(v, { charted: 2, total: 112, nova: null, entries: [], themes: {} }, NOW));
+    assert.ok(plain.includes('>LETTERFIELD · SURVEY LOG · TERRITORY<') && !plain.includes('SUPERNOVA'));
   });
 
   test('draws the card, its address only where it fits beside the heading', () => {
