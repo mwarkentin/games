@@ -220,8 +220,9 @@ def test_signing_initials_tells_every_sector(page: Page, site_url, errors):
     open_notes(page)
     page.locator("#surveyInitials").press_sequentially("z3ed")
     expect(page.locator("#surveyInitials")).to_have_value("ZED")
-    page.click("#surveySign button")
-    expect(page.locator("#surveyHint")).to_have_text("Words you chart first are signed ZED.")
+    page.click("#surveySign button[type=submit]")
+    expect(page.locator("#surveyMeName")).to_have_text("ZED")  # the form gives way to who you are
+    expect(page.locator("#surveySign")).to_be_hidden()
     assert page.evaluate("localStorage.getItem('games.initials')") == "ZED"
     signed = lambda: {m["sector"] for m in fake.sent("me") if m["initials"] == "ZED"}  # noqa: E731
     eventually(page, lambda: signed() == {"-1,-1", "-1,0", "0,-1", "0,0"})
@@ -229,11 +230,53 @@ def test_signing_initials_tells_every_sector(page: Page, site_url, errors):
     # Next time, the game signs in with them straight away.
     fake.received.clear()
     page.reload()
-    expect(page.locator("#surveyInitials")).to_have_value("ZED")
+    open_notes(page)
+    expect(page.locator("#surveyMe")).to_be_visible()
+    expect(page.locator("#surveyMeName")).to_have_text("ZED")
+    expect(page.locator("#surveySign")).to_be_hidden()
     expect(page.locator("#signup")).to_be_hidden()
     expect(page.locator("#survey")).to_have_attribute("data-state", "live")
     eventually(page, lambda: len(fake.sent("me")) == 4)
     assert {m["initials"] for m in fake.sent("me")} == {"ZED"}
+    assert errors == []
+
+
+
+def test_the_pencil_changes_your_initials(page: Page, site_url, errors):
+    fake = FakeSurvey()
+    page.add_init_script("localStorage.setItem('games.initials', 'MLW')")
+    open_game(page, site_url, fake)
+    expect(page.locator("#survey")).to_have_attribute("data-state", "live")
+    open_notes(page)
+    expect(page.locator("#surveyMe")).to_have_text(re.compile(r"Surveyor\s*MLW"))
+    expect(page.locator("#surveySign")).to_be_hidden()
+
+    # Escape puts the pencil back without changing anything, and leaves the notes open.
+    page.click("#surveyEdit")
+    expect(page.locator("#surveyInitials")).to_be_focused()
+    expect(page.locator("#surveyInitials")).to_have_value("MLW")
+    page.keyboard.press("Escape")
+    expect(page.locator("#surveySign")).to_be_hidden()
+    expect(page.locator("#surveyEdit")).to_be_focused()
+    expect(page.locator("#notes")).to_be_visible()
+
+    # Three letters or nothing; then the new ones go to every sector.
+    page.click("#surveyEdit")
+    page.keyboard.type("zz")
+    page.keyboard.press("Enter")
+    expect(page.locator("#surveyHint")).to_have_text("Use three letters, A to Z.")
+    page.keyboard.type("q")
+    page.keyboard.press("Enter")
+    expect(page.locator("#surveyMeName")).to_have_text("ZZQ")
+    expect(page.locator("#surveyHint")).to_have_text("")
+    expect(page.locator("#surveyEdit")).to_be_focused()
+    assert page.evaluate("localStorage.getItem('games.initials')") == "ZZQ"
+    eventually(page, lambda: {m["sector"] for m in fake.sent("me") if m["initials"] == "ZZQ"} == {"-1,-1", "-1,0", "0,-1", "0,0"})
+
+    # Cancel works the same as Escape.
+    page.click("#surveyEdit")
+    page.click("#surveyCancel")
+    expect(page.locator("#surveyMeName")).to_have_text("ZZQ")
     assert errors == []
 
 
@@ -285,7 +328,7 @@ def test_initials_come_before_the_first_word(page: Page, site_url, errors):
     expect(page.locator("#coach")).to_be_visible()  # then how to play
     assert page.evaluate("({ ...window.__lf.cam })") == cam
     assert page.evaluate("localStorage.getItem('games.initials')") == "ASD"
-    expect(page.locator("#surveyInitials")).to_have_value("ASD")
+    expect(page.locator("#surveyMeName")).to_have_text("ASD")
     eventually(page, lambda: {m["initials"] for m in fake.sent("me")} >= {"ASD"})
 
     # Now the same taps circle the word.
