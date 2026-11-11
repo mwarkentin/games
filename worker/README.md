@@ -365,7 +365,9 @@ the way to try War's rooms or the survey with real phones before merging.
   production settings above it, apart from one difference on purpose:
   survey claims are limited to 60 a minute per address rather than 6, so a
   test can chart a whole territory (to try a supernova, say) in a few
-  minutes. Each socket's own limit and the daily cap still hold.
+  minutes. Each socket's own limit still holds, and the daily cap per
+  address is 1,000 words rather than 300 (`SURVEY_DAILY_CLAIMS` in
+  `[previews.vars]`), enough for several territories in a day.
   Observability is inherited.
 - **Secrets:** each Preview gets `PREVIEW_IP_SALT` as its `IP_SALT`, never
   production's salt. Turnstile stays off.

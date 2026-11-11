@@ -105,6 +105,13 @@ const send = (ws, message) => { try { ws.send(JSON.stringify(message)); } catch 
 const broadcast = (ctx, frame) => { for (const ws of ctx.getWebSockets()) { try { ws.send(frame); } catch { /* closing */ } } };
 const row = (r) => [r.w, r.x, r.y, r.d, r.s, r.initials, r.at];
 const isInt = (v, min, max) => Number.isInteger(v) && v >= min && v <= max;
+// The daily cap: DAILY_CLAIMS, unless SURVEY_DAILY_CLAIMS (a var in
+// wrangler.toml) says otherwise, as Worker Previews' does so tests can chart
+// more in a day.
+export function dailyClaims(env) {
+  const n = Number(env?.SURVEY_DAILY_CLAIMS);
+  return Number.isInteger(n) && n >= 1 && n <= 1e6 ? n : DAILY_CLAIMS;
+}
 export const inArea = (sx, sy) => Math.abs(sx) <= AREA && Math.abs(sy) <= AREA;
 const atlas = (env) => env.ATLAS.get(env.ATLAS.idFromName('atlas'));
 
@@ -719,7 +726,8 @@ export class Atlas {
     this.dirty = new Set();
     this.saveTimer = null;
     this.view = null;      // the world map as JSON, rebuilt at most every VIEW_MS
-    // Words each address charted today (UTC), and those past DAILY_CLAIMS in
+    this.daily = dailyClaims(env);
+    // Words each address charted today (UTC), and those past the daily cap in
     // the order they got there. Kept in memory only: the Atlas hears from
     // every busy sector every few seconds, so it's rarely evicted, and if it
     // is, the day's counts start again.
@@ -796,7 +804,7 @@ export class Atlas {
       this.chartedToday.set(address, before + n);
       this.stats.charted += n;
       this.hour.charted += n;
-      if (before < DAILY_CLAIMS && before + n >= DAILY_CLAIMS) {
+      if (before < this.daily && before + n >= this.daily) {
         this.overList.push(address);
         console.log({ survey: 'daily cap', capped: this.overList.length });  // never the address, hashed or not
       }
