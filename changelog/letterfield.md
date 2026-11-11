@@ -1,3 +1,8 @@
+## 2026-11-11
+
+- The list of words hidden in view names a word once half its letters can
+  be seen, any half of it, rather than most of it from its first letter.
+
 ## 2026-11-10
 
 - A “Send feedback” link at the foot of your field notes and of the survey log, for bugs and ideas. A GitHub issue from it comes with the game and your device filled in.

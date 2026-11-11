@@ -2839,13 +2839,13 @@ function updateHud() {
   }
   updateLegend();
 }
-// A word counts as in view once the first three quarters of it can be seen,
-// read from its first letter, since that's where circling one starts. A
-// letter can be seen when its cell's centre is on the map and not under one
-// of the panels over it. Their boxes change with layout, not with the camera,
-// so they're measured again only after a resize, a change in their size or
-// the end of a slide.
-const SEEN_SHARE = .75;
+// A word counts as in view once half its letters can be seen, whichever half:
+// its start can be off the edge or under a panel while its end shows, and a
+// panel over its middle can leave both ends in sight. A letter can be seen
+// when its cell's centre is on the map and not under one of the panels over
+// it. Their boxes change with layout, not with the camera, so they're measured
+// again only after a resize, a change in their size or the end of a slide.
+const SEEN_SHARE = .5;
 const coverEls = ['.cartouche', '#notesToggle', '.legend', '.seg', '.zoom', '#notes'].map($);
 let covers = null;
 function coverRects() {
@@ -2864,13 +2864,16 @@ if (window.ResizeObserver) { const ro = new ResizeObserver(dropCovers); coverEls
 window.addEventListener('resize', dropCovers);
 for (const el of [$('#notes'), $('.instruments')]) el.addEventListener('transitionend', e => { if (e.target === el) { dropCovers(); scheduleHud(); } });
 function wordSeen(w, cs, OX, rects) {
-  const [dx, dy] = DIRS[w.d], right = W - dock;
-  for (let i = 0, n = Math.ceil(w.w.length * SEEN_SHARE); i < n; i++) {
+  const [dx, dy] = DIRS[w.d], right = W - dock, len = w.w.length, need = Math.ceil(len * SEEN_SHARE);
+  let seen = 0;
+  letters: for (let i = 0; i < len; i++) {
+    if (seen + len - i < need) return false;  // too few letters left to get there
     const sx = (w.x + dx * i + .5 - cam.x) * cs + OX, sy = (w.y + dy * i + .5 - cam.y) * cs + H / 2;
-    if (sx < 0 || sx >= right || sy < 0 || sy >= H) return false;
-    for (const c of rects) if (sx >= c.l && sx < c.r && sy >= c.t && sy < c.b) return false;
+    if (sx < 0 || sx >= right || sy < 0 || sy >= H) continue;
+    for (const c of rects) if (sx >= c.l && sx < c.r && sy >= c.t && sy < c.b) continue letters;
+    if (++seen >= need) return true;
   }
-  return true;
+  return false;
 }
 function updateLegend() {
   const cs = cam.cs;
