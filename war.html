@@ -960,6 +960,7 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px s
 }
 .sp-lite p { margin: 0; font: 700 14px/1.25 system-ui, sans-serif; white-space: normal; text-align: center; max-width: calc(100vw - 56px); }
 .sp-lite p b { font: 400 13px/1.25 var(--display); color: var(--gold); }
+.sp-lost { font: 700 13px/1 system-ui, sans-serif; color: #ffd0c8; background: rgba(160, 20, 10, .6); padding: 2px 7px; border-radius: 99px; white-space: nowrap; }
 .sp-mini { display: flex; align-items: center; }
 .sp-mini .card { --w: 26px; margin-left: -9px; box-shadow: 0 2px 5px rgba(0, 0, 0, .5); }
 .sp-mini .card:first-child { margin-left: 0; }
@@ -4385,7 +4386,11 @@ const Spoils = {
     const level = Math.min(3, m.stage);
     const shown = spoilsShown(cards, m.winner, m.winner === S.you ? SP_MAX : cards.length <= SP_LITE_MAX ? SP_LITE_MAX : 12);
     const more = m.pot - shown.length;
-    this.last = { kind: m.winner === S.you ? (calm ? 'calm' : 'full') : 'lite', winner: m.winner, level, total: m.pot, more,
+    // What the winner gains is the pot less their own cards in it, and what
+    // you lose, if it's someone else's, is yours.
+    const net = m.pot - cards.filter((c) => c.seat === m.winner).length;
+    const lost = S.you !== null && S.you !== m.winner ? cards.filter((c) => c.seat === S.you).length : 0;
+    this.last = { kind: m.winner === S.you ? (calm ? 'calm' : 'full') : 'lite', winner: m.winner, level, total: m.pot, net, lost, more,
       cards: shown.map((c) => c.card), downs: cards.filter((c) => c.down).length, rows: [] };
     if (m.winner === S.you) this.full(m, cards, shown, { calm, level, before });
     else this.lite(m, shown, calm);
@@ -4404,7 +4409,8 @@ const Spoils = {
     const col = el('div', 'sp-col');
     if (level > 1) col.append(el('div', 'sp-pre', SP_WARS[level - 1] || 'MEGA'));
     const title = el('div', 'sp-title', 'SPOILS OF WAR!');
-    const count = el('div', 'sp-count', calm ? `+${m.pot}` : '+0');
+    const net = this.last.net;
+    const count = el('div', 'sp-count', calm ? `+${net}` : '+0');
     // The fan: a row of cards, or two for a big pot, curving like a hand.
     const vw = window.innerWidth;
     const room = Math.min(380, vw - 32);
@@ -4509,11 +4515,11 @@ const Spoils = {
         $('fx').append(flash);
       }
     });
-    // The counter tallies the pot as it lands.
-    const ticks = Math.min(20, m.pot);
+    // The counter tallies what you gained as the pot lands.
+    const ticks = Math.max(1, Math.min(20, net));
     for (let t = 1; t <= ticks; t++) {
       this.during(root, (380 + ((lastLand - 380) * t) / ticks) * k, () => {
-        setText(count, `+${Math.round((m.pot * t) / ticks)}`);
+        setText(count, `+${Math.round((net * t) / ticks)}`);
         Sound.tick(t);
         if (t === ticks) count.classList.add('done');
       });
@@ -4536,9 +4542,12 @@ const Spoils = {
       rows.push([label, value]);
       return b;
     };
-    row('Cards won', `+${m.pot}`, true);
+    // Won: the others' cards. Your own come back with them.
+    const net = this.last.net;
+    row('Cards won', `+${net}`, true);
+    if (m.pot > net) row('Your own, back', plural(m.pot - net, 'card'));
     const downs = cards.filter((c) => c.down).length;
-    if (downs) row('Face down, now yours', plural(downs, 'card'));
+    if (downs) row('Face down, turned over', plural(downs, 'card'));
     row('War depth', SP_DEPTH[m.stage - 1] || `${m.stage} wars deep`);
     const jokers = cards.filter((c) => Number.isInteger(c.card) && warRank(c.card) === JOKER).length;
     if (jokers) row('Jokers', `${jokers} 🃏`);
@@ -4573,7 +4582,9 @@ const Spoils = {
     // Near the top of the arena, clear of the caption.
     if (arena.offsetParent !== null) root.style.setProperty('--y', `${arena.getBoundingClientRect().top + 48}px`);
     const line = el('p');
-    line.append(el('b', '', `💰 Spoils to ${playerName(m.winner)}:`), ` ${plural(m.pot, 'card')}`);
+    line.append(el('b', '', `💰 Spoils to ${playerName(m.winner)}:`), ` +${plural(this.last.net, 'card')}`);
+    // Some of them were yours.
+    if (this.last.lost) line.append(' ', el('span', 'sp-lost', `You −${this.last.lost}`));
     const mini = el('div', 'sp-mini');
     for (const c of shown) {
       const node = cardEl(c.card, cardLook(c.card, c.look));

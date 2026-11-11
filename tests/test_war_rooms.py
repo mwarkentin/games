@@ -686,7 +686,7 @@ def test_a_war_someone_else_wins_gets_the_smaller_spoils(page: Page, site_url, e
     strip = page.locator("#fx .sp-lite")
     expect(strip).to_have_count(1)
     expect(page.locator("#fx .sp")).to_have_count(0)
-    expect(strip.locator("p")).to_have_text("💰 Spoils to Bot 1: 10 cards")
+    expect(strip.locator("p")).to_have_text("💰 Spoils to Bot 1: +5 cards You −5")
     expect(strip.locator(".sp-mini .card")).to_have_count(10)
     expect(strip.locator(".sp-mini .card.back")).to_have_count(0)
     assert page.evaluate(SPOILS)["kind"] == "lite"
@@ -737,9 +737,13 @@ def test_a_big_many_way_pot_is_capped_and_summarized(page: Page, site_url, error
     expect(show.locator(".sp-more")).to_have_text("+11 more")
     spoils = page.evaluate(SPOILS)
     assert spoils["total"] == 31 and spoils["more"] == 11 and card(12, 2) in spoils["cards"], spoils
+    # Five of the 31 were yours (the nine you tied with, three face down and
+    # the ace): you gain 26.
+    assert spoils["net"] == 26, spoils
     expect(page.locator("html")).to_have_attribute("data-spoils", "report", timeout=5000)
-    expect(show.locator(".sp-count")).to_have_text("+31")
-    expect(show.locator(".sp-win")).to_contain_text("+31")
+    expect(show.locator(".sp-count")).to_have_text("+26")
+    expect(show.locator(".sp-win .sp-row").first).to_contain_text("+26")
+    expect(show.locator(".sp-win")).to_contain_text("5 cards")
     for sel in (".sp-fan", ".sp-win", ".sp-title"):
         box = show.locator(sel).bounding_box()
         assert box["x"] >= 0 and box["x"] + box["width"] <= page.viewport_size["width"], (sel, box)
@@ -752,7 +756,7 @@ def test_someone_elses_big_pot_is_a_capped_strip(page: Page, site_url, errors):
     big_pot(page, site_url, fake, winner=3)
     strip = page.locator("#fx .sp-lite")
     expect(strip).to_have_count(1)
-    expect(strip.locator("p")).to_have_text("💰 Spoils to Bot 3: 31 cards")
+    expect(strip.locator("p")).to_have_text("💰 Spoils to Bot 3: +26 cards You −5")
     expect(strip.locator(".sp-mini .card")).to_have_count(12)
     expect(strip.locator(".sp-mini small")).to_have_text("+19 more")
     box = strip.bounding_box()

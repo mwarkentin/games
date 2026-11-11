@@ -385,6 +385,8 @@ def test_a_war_you_win_shows_its_spoils_then_they_land_on_your_loot(page: Page, 
     expect(page.locator("#banner")).to_have_text("WAR WON!")
     spoils = page.evaluate(SPOILS)
     assert spoils["kind"] == "full" and spoils["total"] == 18 and spoils["more"] == 0, spoils
+    # Half the pot was yours already: you gain the other nine.
+    assert spoils["net"] == 9 and spoils["lost"] == 0, spoils
     # Every card in the pot, the twelve laid face down included, each in its
     # deck, and those twelve start face down and turn over.
     cards = show.locator(".sp-c .sp-in > .card:not(.sp-back)")
@@ -397,15 +399,16 @@ def test_a_war_you_win_shows_its_spoils_then_they_land_on_your_loot(page: Page, 
     # It moves, takes no taps and fits a phone.
     assert page.evaluate("document.getAnimations().filter((a) => a.effect?.target?.closest?.('.sp')).length") >= 18
     assert page.evaluate("getComputedStyle(document.getElementById('fx')).pointerEvents") == "none"
-    # The counter tallies them and the war report lists the haul.
+    # The counter tallies what you gained and the war report lists the haul.
     expect(page.locator("html")).to_have_attribute("data-spoils", "report", timeout=5000)
-    expect(show.locator(".sp-count")).to_have_text("+18")
+    expect(show.locator(".sp-count")).to_have_text("+9")
     report = show.locator(".sp-win")
     expect(report).to_be_visible()
     expect(report.locator(".sp-row").first).to_contain_text("Cards won")
-    expect(report.locator(".sp-row").first).to_contain_text("+18")
+    expect(report.locator(".sp-row").first).to_contain_text("+9")
+    expect(report.locator(".sp-row").nth(1)).to_contain_text(re.compile(r"Your own, back.*9 cards"))
+    expect(report).to_contain_text(re.compile(r"Face down, turned over.*12 cards"))
     expect(report).to_contain_text("Double war")
-    expect(report).to_contain_text("12 cards")
     expect(report).to_contain_text("+0, as always")
     expect(report).to_contain_text(re.compile(r"Win odds.*\d+% → \d+%"))
     box = report.bounding_box()
@@ -429,12 +432,15 @@ def test_a_war_someone_else_wins_shows_a_strip_of_their_spoils(page: Page, site_
     strip = page.locator("#fx .sp-lite")
     expect(strip).to_have_count(1)
     expect(page.locator("#fx .sp")).to_have_count(0)
-    expect(strip.locator("p")).to_have_text("💰 Spoils to Grumpy Pancake: 18 cards")
+    # They gain nine, and the nine they take from you show as yours lost.
+    expect(strip.locator("p")).to_have_text("💰 Spoils to Grumpy Pancake: +9 cards You −9")
+    expect(strip.locator(".sp-lost")).to_have_text("You −9")
     # Every card in the pot, face up, the face-down ones included.
     expect(strip.locator(".sp-mini .card")).to_have_count(18)
     expect(strip.locator(".sp-mini .card.back")).to_have_count(0)
     spoils = page.evaluate(SPOILS)
     assert spoils["kind"] == "lite" and spoils["downs"] == 12 and spoils["more"] == 0, spoils
+    assert spoils["net"] == 9 and spoils["lost"] == 9, spoils
     box = strip.bounding_box()
     assert box["x"] >= 0 and box["x"] + box["width"] <= page.viewport_size["width"]
     # They land on Grumpy Pancake's loot pile.
@@ -538,7 +544,7 @@ def test_reduced_motion_gets_calm_spoils(page: Page, site_url, errors):
     expect(page.locator("html")).to_have_attribute("data-spoils", "report")
     expect(show.locator(".sp-c .card")).to_have_count(10)
     expect(show.locator(".sp-c .card.back")).to_have_count(0)
-    expect(show.locator(".sp-count")).to_have_text("+10")
+    expect(show.locator(".sp-count")).to_have_text("+5")
     expect(show.locator(".sp-win")).to_be_visible()
     assert page.evaluate("document.getAnimations().filter((a) => a.effect?.target?.closest?.('.sp')).length") == 0
     page.wait_for_timeout(800)
@@ -563,7 +569,7 @@ def test_quiet_spoils_keep_the_show_but_drop_the_jokes(page: Page, site_url, err
     expect(report).not_to_contain_text("Slam power")
     expect(report).not_to_contain_text("Win odds")
     labels = [r[0] for r in page.evaluate(SPOILS)["rows"]]
-    assert labels == ["Cards won", "Face down, now yours", "War depth"], labels
+    assert labels == ["Cards won", "Your own, back", "Face down, turned over", "War depth"], labels
     assert errors == []
 
 

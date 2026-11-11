@@ -1,12 +1,12 @@
 ## 2026-11-11
 
 - Winning a war ends with SPOILS OF WAR!: the whole pot bursts out into a
-  fan, the face-down cards turn over one by one, a counter tallies them up
-  and a war report lists the haul. It takes its time, running on into the
-  next battle until you've read it (in a slow game, until you tap), then the
-  cards fly onto your loot pile.
-  Double and triple wars get a bigger show, someone else's war gets a strip
-  with their haul, and any tap sends it off early.
+  fan, the face-down cards turn over one by one, a counter tallies what you
+  gained (the others' cards; your own just come back) and a war report lists
+  the haul. It takes its time, running on into the next battle until you've
+  read it (in a slow game, until you tap), then the cards fly onto your loot
+  pile. Double and triple wars get a bigger show, someone else's war gets a strip
+  with their haul and what you lost to it, and any tap sends it off early.
 - As a war starts, the card you tied with stays where it lies, and the
   face-down cards land on it, instead of it being picked up and slammed
   down again.
