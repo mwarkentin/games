@@ -33,6 +33,13 @@ const plural = (n, one, many = `${one}s`) => `${num(n)} ${n === 1 ? one : many}`
 const longDay = (t) => { const d = new Date(t); return `${DAYS[d.getUTCDay()]} ${d.getUTCDate()} ${MONTHS[d.getUTCMonth()]} ${d.getUTCFullYear()}`; };
 const shortDay = (t, year = true) => { const d = new Date(t); return `${d.getUTCDate()} ${MONTHS[d.getUTCMonth()].slice(0, 3)}${year ? ` ${d.getUTCFullYear()}` : ''}`; };
 export const today = (now) => shortDay(now);
+// How long a supernova took, first word to last, as the log page says it (took() there).
+export function took(ms) {
+  const min = Math.max(1, Math.round(ms / 60000));
+  if (min < 60) return plural(min, 'minute');
+  const h = Math.round(min / 60);
+  return h < 48 ? plural(h, 'hour') : plural(Math.round(h / 24), 'day');
+}
 
 // A period's first and last-plus-one wall-clock times, kept as UTC.
 function wall(period, y, m, d, h) {
@@ -126,7 +133,15 @@ export function summarize(v, a, now = Date.now()) {
   const latest = entries[0]?.[6] ?? 0;
   const top = Array.isArray(a?.topTerritories?.[0]) ? a.topTerritories[0][2] : null;
   let stats, line, count;
-  if (v.kind === 'territory') {
+  // A territory gone supernova (its nova: [rx, ry, at, w, x, y, d, initials,
+  // first, words, surveyors, top, topN, th]) says so, and how it went.
+  const nova = v.kind === 'territory' && Array.isArray(a?.nova) && [2, 8, 9, 10, 12].every((i) => Number.isInteger(a.nova[i])) ? a.nova : null;
+  if (nova) {
+    const [, , at, w, , , , initials, first, words, surveyors, top] = nova;
+    count = a.charted;
+    stats = [['Went supernova', shortDay(at)], ['First word to last', took(at - first)], ['Most charted by', /^[A-Z]{3}$/.test(top) ? top : '—']];
+    line = `${name} went supernova in Letterfield’s shared survey on ${shortDay(at)}: all ${plural(words, 'hidden word')} charted${surveyors ? ` by ${plural(surveyors, 'surveyor')}` : ''} in ${took(at - first)}, the last, ${w}${/^[A-Z]{3}$/.test(initials) ? `, by ${initials}` : ''}.`;
+  } else if (v.kind === 'territory') {
     count = a.charted;
     const people = new Set(entries.map((e) => e[5]).filter((i) => /^[A-Z]{3}$/.test(i))).size;
     stats = [['Hidden words charted', `${num(a.charted)} of ${num(a.total)}`], ['Surveyors', num(people)], ['Latest', entries.length ? shortDay(latest) : '—']];
@@ -143,7 +158,7 @@ export function summarize(v, a, now = Date.now()) {
     stats = [['Hidden words charted', num(a.words)], ['Top surveyor', who || '—'], ['Top territory', top || '—']];
     line = `${plural(a.words, 'hidden word')} charted in Letterfield’s ${name} territories ${when.said}.`;
   }
-  return { name, hue, when: when.shown, stats, words, line, token: `${count}.${latest.toString(36)}` };
+  return { name, hue, nova: !!nova, when: when.shown, stats, words, line, token: `${count}.${latest.toString(36)}${nova ? 'n' : ''}` };
 }
 
 // The card, 1200×630: shareImage() in letterfield-log.html, as SVG.
@@ -155,7 +170,7 @@ export function viewSvg(v, s, { dark = false, host = 'games.michaelwarkentin.com
     ? `<circle cx="${x}" cy="${y}" r="${r - 1.5}" fill="none" stroke="${mark(hue)}" stroke-width="3" stroke-dasharray="4 3"/>`
     : `<circle cx="${x}" cy="${y}" r="${r}" fill="${mark(hue)}"/>`);
   out.push(`<rect width="${W}" height="${H}" fill="${C.paper}"/><rect width="${W}" height="10" fill="${C.accent}"/>`);
-  const kind = { surveyor: 'SURVEYOR', theme: 'THEME', territory: 'TERRITORY' }[v.kind];
+  const kind = s.nova ? 'SUPERNOVA' : { surveyor: 'SURVEYOR', theme: 'THEME', territory: 'TERRITORY' }[v.kind];
   const head = `LETTERFIELD · SURVEY LOG · ${kind}`;
   out.push(text(head, X, 84, 'mono5', 20, C.muted, 0.14));
   // The site's address on the right, where it fits beside the heading.
@@ -166,6 +181,8 @@ export function viewSvg(v, s, { dark = false, host = 'games.michaelwarkentin.com
   const name = s.name.toUpperCase(), lead = s.hue !== undefined ? 68 : 0;
   const px = fit(name, 'display', 170, 64, R - X - lead, 0.04);
   if (lead) out.push(dot(X + 20, Math.round(250 - px * 0.36), 20, s.hue));
+  // A supernova's dot keeps a faint ring, as its territory does on the map.
+  if (lead && s.nova) out.push(`<circle cx="${X + 20}" cy="${Math.round(250 - px * 0.36)}" r="31" fill="none" stroke="${mark(s.hue)}" stroke-width="3" opacity="0.45"/>`);
   out.push(text(name, X + lead, 250, 'display', px, C.ink, 0.04));
   out.push(text(s.when, X, 306, 'ui5', fit(s.when, 'ui5', 30, 16, R - X), C.muted));
   out.push(`<rect x="${X}" y="346" width="${R - X}" height="2" fill="${C.rule}"/>`);

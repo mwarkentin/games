@@ -1591,6 +1591,21 @@ function drawWorld() {
     g.globalAlpha = .14; g.fillStyle = TC[regionTheme(first + tx, first + ty)].tint; g.fillRect(x, y, w, w);
     if (n) { g.globalAlpha = .15 + .75 * Math.min(1, n / 112); g.fillStyle = C.ink; g.fillRect(x, y, w, w); }
   }
+  // Territories gone supernova: deep, each with a small star of its hue.
+  g.globalAlpha = 1;
+  for (const q of remnants().list) {
+    const tx = q.rx - first, ty = q.ry - first;
+    if (tx < 0 || ty < 0 || tx >= size || ty >= size) continue;
+    g.fillStyle = REM[q.th].deep; g.fillRect(Math.floor(tx * cell), Math.floor(ty * cell), Math.ceil(cell), Math.ceil(cell));
+  }
+  for (const q of remnants().list) {
+    const tx = q.rx - first, ty = q.ry - first;
+    if (tx < 0 || ty < 0 || tx >= size || ty >= size) continue;
+    const cx = (tx + .5) * cell, cy = (ty + .5) * cell, rad = Math.max(2.5, cell * 1.7);
+    const glow = g.createRadialGradient(cx, cy, 0, cx, cy, rad);
+    glow.addColorStop(0, REM[q.th].glow(1)); glow.addColorStop(.35, REM[q.th].glow(.55)); glow.addColorStop(1, REM[q.th].glow(0));
+    g.fillStyle = glow; g.beginPath(); g.arc(cx, cy, rad, 0, Math.PI * 2); g.fill();
+  }
   g.globalAlpha = .85; g.fillStyle = C.accent; g.strokeStyle = C.paper; g.lineWidth = Math.max(1, px / 300);
   for (const [sx, sy, n] of worldMap.sectors) {
     g.beginPath();
@@ -1630,7 +1645,7 @@ const canvas = $('#map');
 const ctx = canvas.getContext('2d', { alpha: false });
 let W = 1, H = 1, dpr = 1, dock = 0;
 const cam = { x: 6, y: 6, cs: 38 };
-let C = {}, TC = [], farRGB = [];
+let C = {}, TC = [], farRGB = [], REM = [], farRemRGB = [];
 
 function hexRGB(hex) {
   const m = /^#?([0-9a-f]{6})$/i.exec((hex || '').trim());
@@ -1656,6 +1671,17 @@ function readColors() {
   TC = THEMES.map(t => ({ stroke: `hsl(${t.hue}, ${ms}, ${ml})`, fill: `hsla(${t.hue}, 75%, 55%, ${fa})`, tint: `hsl(${t.hue}, 45%, 50%)` }));
   const pr = hexRGB(C.paper), a = C.dark ? .15 : .2;
   farRGB = THEMES.map(t => { const c = hslRGB(t.hue, .45, .5); return [0, 1, 2].map(i => Math.round(pr[i] * (1 - a) + c[i] * a)); });
+  // A remnant (a territory gone supernova): a deep shade of its hue, a faint
+  // shell and a few stars. Darker on a dark map, lighter-handed on paper, so
+  // the letters keep their contrast either way.
+  const deepL = C.dark ? .02 : .14, ra = C.dark ? .62 : .3;
+  REM = THEMES.map(t => ({
+    deep: `hsl(${t.hue}, 50%, ${deepL * 100}%)`,
+    ring: a => `hsla(${t.hue}, 75%, ${C.dark ? 62 : 42}%, ${a})`,
+    star: `hsla(${t.hue}, ${C.dark ? 80 : 55}%, ${C.dark ? 86 : 34}%, 1)`,
+    glow: a => `hsla(${t.hue}, 95%, ${C.dark ? 70 : 60}%, ${a})`,
+  }));
+  farRemRGB = THEMES.map(t => { const c = hslRGB(t.hue, .5, deepL); return [0, 1, 2].map(i => Math.round(pr[i] * (1 - ra) + c[i] * ra)); });
   atlas.key = '';
   invalidate();
 }
@@ -1683,13 +1709,13 @@ const ff = { c: document.createElement('canvas'), w: 0, h: 0, g: null, img: null
 function drawFar(vx0, vy0, cs) {
   const step = 4, gw = Math.ceil(W / step), gh = Math.ceil(H / step);
   if (ff.w !== gw || ff.h !== gh) { ff.c.width = gw; ff.c.height = gh; ff.w = gw; ff.h = gh; ff.g = ff.c.getContext('2d'); ff.img = ff.g.createImageData(gw, gh); }
-  const data = ff.img.data, inv = step / cs;
+  const data = ff.img.data, inv = step / cs, rem = remnants().set;
   for (let j = 0; j < gh; j++) {
     const ry = Math.floor((vy0 + (j + .5) * inv) / RC);
     let prx = NaN, col = null;
     for (let i = 0; i < gw; i++) {
       const rx = Math.floor((vx0 + (i + .5) * inv) / RC);
-      if (rx !== prx) { prx = rx; col = farRGB[regionTheme(rx, ry)]; }
+      if (rx !== prx) { prx = rx; col = (rem.size && rem.has(rx + ',' + ry) ? farRemRGB : farRGB)[regionTheme(rx, ry)]; }
       const p = (j * gw + i) * 4;
       data[p] = col[0]; data[p + 1] = col[1]; data[p + 2] = col[2]; data[p + 3] = 255;
     }
@@ -1697,6 +1723,18 @@ function drawFar(vx0, vy0, cs) {
   ff.g.putImageData(ff.img, 0, 0);
   ctx.imageSmoothingEnabled = true;
   ctx.drawImage(ff.c, 0, 0, gw * step, gh * step);
+  // Each remnant big enough to see keeps a small lit core.
+  const rpx = RC * cs;
+  if (rpx < 6 || !rem.size) return;
+  for (const q of remnants().list) {
+    const cx = (q.rx * RC + RC / 2 - vx0) * cs, cy = (q.ry * RC + RC / 2 - vy0) * cs, rad = Math.max(1.5, rpx * .2);
+    if (cx < -rad || cy < -rad || cx > W + rad || cy > H + rad) continue;
+    const f = remnantFade(q.rx, q.ry);
+    if (f <= 0) continue;
+    const g = ctx.createRadialGradient(cx, cy, 0, cx, cy, rad);
+    g.addColorStop(0, REM[q.th].glow(.75 * f)); g.addColorStop(1, REM[q.th].glow(0));
+    ctx.fillStyle = g; ctx.beginPath(); ctx.arc(cx, cy, rad, 0, Math.PI * 2); ctx.fill();
+  }
 }
 
 function capsule(x0, y0, x1, y1, r) {
@@ -1883,6 +1921,79 @@ function novaOver(nv) {
     ctx.fillRect(0, 0, W, H);
   }
   ctx.lineCap = 'butt';
+}
+
+/* ---------- Remnants ---------- */
+// A territory that has gone supernova stays marked: a deeper, quieter tint,
+// a faint shell and a scatter of stars, under the letters. It's a remnant
+// once every hidden word in it is charted in the shared survey (by the claims
+// of the sectors joined, or further afield by the world map's counts), or once
+// your own notes hold every one. That last counts playing alone: the
+// supernova went off for you, so it stays. With the survey on you can't find
+// a word someone else charted, so it's only a territory you charted wholly
+// yourself. Worked out again only when the claims, the finds or the world
+// map change; drawn without animation, so reduced motion changes nothing.
+let remMemo = { sig: '', map: null, set: new Set(), list: [] };
+function remnants() {
+  const sig = claims.size + '|' + found.size;
+  if (remMemo.sig === sig && remMemo.map === worldMap) return remMemo;
+  const set = new Set(), list = [], counts = new Map(), mine = new Map();
+  const add = (rx, ry) => { const k = rx + ',' + ry; if (!set.has(k)) { set.add(k); list.push({ rx, ry, th: regionTheme(rx, ry) }); } };
+  for (const c of claims.values()) if (!c.s) { const k = fdiv(c.x, RC) + ',' + fdiv(c.y, RC); counts.set(k, (counts.get(k) || 0) + 1); }
+  for (const e of found.values()) if (!e.s) { const k = fdiv(e.x, RC) + ',' + fdiv(e.y, RC); mine.set(k, (mine.get(k) || 0) + 1); }
+  // A territory hides 102 to 122 words, so fewer than 90 is never all of them.
+  for (const m of [counts, mine]) for (const [k, n] of m) {
+    if (n < 90 || set.has(k)) continue;
+    const [rx, ry] = k.split(',').map(Number);
+    if (n >= territoryTotal(rx, ry)) add(rx, ry);
+  }
+  if (worldMap) {
+    const { size, bytes, area } = worldMap, first = -area * RG;
+    for (let i = 0; i < bytes.length; i++) {
+      const n = bytes.charCodeAt(i);
+      if (n < 90) continue;
+      const rx = first + i % size, ry = first + Math.floor(i / size);
+      if (n >= territoryTotal(rx, ry)) add(rx, ry);
+    }
+  }
+  remMemo = { sig, map: worldMap, set, list };
+  return remMemo;
+}
+// How far a remnant has settled in: all the way, unless it's the supernova
+// going off now, whose remnant comes in behind the shockwave.
+function remnantFade(rx, ry) {
+  if (!nova || nova.rx !== rx || nova.ry !== ry) return 1;
+  const after = (performance.now() - nova.t0 - NOVA_CHARGE) / 1000;
+  if (after < 0) return 0;
+  return RM ? 1 : clamp((after - .6) / 1.6, 0, 1);
+}
+function drawRemnants(vx0, vy0, vx1, vy1, cs, SX, SY) {
+  const { list } = remnants();
+  if (!list.length) return;
+  const rpx = RC * cs;
+  for (const q of list) {
+    if ((q.rx + 1) * RC < vx0 || q.rx * RC > vx1 || (q.ry + 1) * RC < vy0 || q.ry * RC > vy1) continue;
+    const f = remnantFade(q.rx, q.ry);
+    if (f <= 0) continue;
+    const R = REM[q.th], x0 = SX(q.rx * RC), y0 = SY(q.ry * RC), cx = x0 + rpx / 2, cy = y0 + rpx / 2;
+    ctx.globalAlpha = (C.dark ? .7 : .16) * f;
+    ctx.fillStyle = R.deep; ctx.fillRect(x0, y0, rpx, rpx);
+    // The shell the star threw off, faint, around the territory's middle
+    ctx.globalAlpha = f;
+    const g = ctx.createRadialGradient(cx, cy, rpx * .26, cx, cy, rpx * .5);
+    const a = C.dark ? .04 : .11;
+    g.addColorStop(0, R.ring(0)); g.addColorStop(.6, R.ring(a)); g.addColorStop(.75, R.ring(a * .45)); g.addColorStop(1, R.ring(0));
+    ctx.fillStyle = g; ctx.beginPath(); ctx.arc(cx, cy, rpx * .5, 0, Math.PI * 2); ctx.fill();
+    // A scatter of stars, always the same for the same territory
+    const r = rng(h3(q.rx, q.ry, SEED ^ 0x3c6ef372)), dot = Math.max(.8, cs * .045);
+    ctx.fillStyle = R.star;
+    for (let i = 0; i < 20; i++) {
+      const sx = x0 + r() * rpx, sy = y0 + r() * rpx, big = r() < .2;
+      ctx.globalAlpha = f * (C.dark ? .35 : .28) * (.5 + r() * .5) * (big ? 1.4 : 1);
+      ctx.beginPath(); ctx.arc(sx, sy, dot * (big ? 1.6 : 1), 0, Math.PI * 2); ctx.fill();
+    }
+  }
+  ctx.globalAlpha = 1;
 }
 
 /* ---------- Sound ---------- */
@@ -2432,6 +2543,7 @@ function draw(now) {
     ctx.setLineDash([]);
   }
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  if (rpx >= 28) drawRemnants(vx0, vy0, vx1, vy1, cs, SX, SY);
   if (nv) novaUnder(nv, cs, SX, SY);
 
   // Circled words
@@ -3477,7 +3589,7 @@ updateHud();
 invalidate();
 if (redrawn) setTimeout(() => toast(`<i></i><b>The map has been redrawn</b><span>${NT} themes of about ${Math.round(THEMES.reduce((a, t) => a + t.words.length, 0) / NT / 10) * 10} words now, so a territory never repeats one · ${redrawn.kept ? `${redrawn.kept} of your ${redrawn.had} finds are still on it` : 'your old finds are not on it'}</span>`, null, 8000), 900);
 connectStore();
-if (location.hash === '#debug') window.__lf = { cam, found, claims, links, chunk, wordEnd, collect, territoryProgress, world: () => world, supernova, novaSound, audioOut, musicTracks: MUSIC_TRACKS, music: () => musicNow && { state: ac.state, track: musicNow.track().name, nodes: musicNow.track().nodes.size, level: musicNow.master.gain.value, swap: musicNow.swap }, nova: () => nova,
+if (location.hash === '#debug') window.__lf = { cam, found, claims, links, chunk, wordEnd, collect, territoryProgress, remnants: () => [...remnants().set], world: () => world, supernova, novaSound, audioOut, musicTracks: MUSIC_TRACKS, music: () => musicNow && { state: ac.state, track: musicNow.track().name, nodes: musicNow.track().nodes.size, level: musicNow.master.gain.value, swap: musicNow.swap }, nova: () => nova,
   pass: () => Pass.state, intro: () => Intro.state, surveyStatus, linkStates: () => Object.fromEntries([...links].map(([k, l]) => [k, l.m.state])), outbox: () => [...outbox.values()].map(c => [c.e.w, c.m.state]), definitions: () => Object.fromEntries([...definitions].map(([k, d]) => [k, d.m.state])) };
 
 })();

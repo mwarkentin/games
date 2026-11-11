@@ -1110,3 +1110,40 @@ def test_a_note_never_covers_the_box_for_your_initials(page: Page, site_url, err
              or toast["x"] >= box["x"] + box["width"] or toast["x"] + toast["width"] <= box["x"])
     assert apart, (toast, box)
     assert errors == []
+
+
+TERRITORY_WORDS = """() => {
+  const out = [];
+  for (let cy = 0; cy < 4; cy++) for (let cx = 0; cx < 4; cx++) for (const o of window.__lf.chunk(cx, cy).words) out.push([o.w, o.x, o.y, o.d]);
+  return out;
+}"""
+
+
+def test_a_territory_charted_in_full_is_a_remnant(page: Page, site_url, errors):
+    page.goto(f"{site_url}/letterfield#debug")
+    words = page.evaluate(TERRITORY_WORDS)
+    page.goto("about:blank")
+    # All but one charted: not yet.
+    fake = FakeSurvey(claims=[[w, x, y, d, 0, "ZED", NOW_MS - 1000 + i] for i, (w, x, y, d) in enumerate(words[1:])])
+    open_game(page, site_url, fake)
+    page.wait_for_function(f"window.__lf.claims.size >= {len(words) - 1}")
+    assert page.evaluate("window.__lf.remnants()") == []
+    page.goto("about:blank")
+    fake = FakeSurvey(claims=[[w, x, y, d, 0, "ZED", NOW_MS - 1000 + i] for i, (w, x, y, d) in enumerate(words)])
+    open_game(page, site_url, fake)
+    page.wait_for_function(f"window.__lf.claims.size >= {len(words)}")
+    assert page.evaluate("window.__lf.remnants()") == ["0,0"]
+    assert errors == []
+
+
+def test_the_world_map_shows_territories_charted_in_full_far_afield(page: Page, site_url, errors):
+    page.goto(f"{site_url}/letterfield#debug")
+    total = page.evaluate("(() => { let t = 0; for (let cy = 80; cy < 84; cy++) for (let cx = -40; cx < -36; cx++) t += window.__lf.chunk(cx, cy).words.length; return t; })()")
+    page.goto("about:blank")
+    fake = FakeSurvey(world=world_map(charted={(-10, 20): total, (-11, 20): total - 1}))
+    open_game(page, site_url, fake)
+    open_notes(page)
+    page.click("#surveyMap summary")
+    page.wait_for_function("window.__lf.remnants().length > 0")
+    assert page.evaluate("window.__lf.remnants()") == ["-10,20"]
+    assert errors == []

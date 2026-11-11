@@ -479,6 +479,15 @@ HIDE = """hidden => {
 }"""
 
 
+def wait_for_request(page: Page, fake: FakeSurveyLog, path: str, timeout_ms: int = 5000) -> None:
+    """Waits until the fake has been asked for `path`: the page asks for some things only after others."""
+    for _ in range(timeout_ms // 50):
+        if path in fake.requests:
+            return
+        page.wait_for_timeout(50)
+    assert path in fake.requests
+
+
 def wait_for_requests(page: Page, fake: FakeSurveyLog, count: int, timeout_ms: int = 5000) -> None:
     """Waits until the fake has been asked `count` things: its handler runs between Playwright calls."""
     for _ in range(timeout_ms // 50):
@@ -628,7 +637,7 @@ def test_a_day_and_an_hour_have_top_lists_of_their_own(page: Page, site_url, err
     # Today in Toronto, counted by the hour: not the whole UTC day, which
     # began at 7 PM yesterday here and holds OAK.
     hour = NOW_MS // HOUR_MS
-    assert f"/top/hours/{hour - 15}/{hour + 1}" in fake.requests
+    wait_for_request(page, fake, f"/top/hours/{hour - 15}/{hour + 1}")
     cards = page.locator(".card")
     surveyors = cards.filter(has_text="Top surveyors")
     expect(surveyors.locator(".rank .lbl")).to_have_text(["ZED", "ABC"])
@@ -640,7 +649,7 @@ def test_a_day_and_an_hour_have_top_lists_of_their_own(page: Page, site_url, err
     # Minute by minute, the hour's own.
     page.locator(".hour h3", has_text="2:00").get_by_role("button", name="Minute by minute").click()
     expect(page.locator("#sumTitle")).to_contain_text("2:00")
-    assert f"/top/hours/{hour - 1}/{hour}" in fake.requests
+    wait_for_request(page, fake, f"/top/hours/{hour - 1}/{hour}")
     expect(surveyors.locator(".rank .lbl")).to_have_text(["ZED", "ABC"])
     expect(surveyors.locator(".num")).to_have_text(["2", "1"])
     # Each opens that surveyor's own view of the same hour.
@@ -706,4 +715,120 @@ def test_with_a_share_worker_a_view_links_to_its_card_with_no_picture_of_its_own
     page.click("#share")
     page.wait_for_function("window.__shared")
     assert page.evaluate("window.__shared.url") == "https://share.test/v/territory/0,0"
+    assert errors == []
+
+
+# Monet Reach (1,0) hides two words in these tests; OAK, its last, comes in at 3:10 PM.
+BIRCH = ["BIRCH", 50, 4, 0, 0, "AMY", NOW_MS - 50 * MINUTE, 0]   # 2:40 PM
+OAK = ["OAK", 70, 10, 2, 0, "ZED", NOW_MS - 20 * MINUTE, 0]       # 3:10 PM
+NOVA_TOTALS = {"1,0": 2}
+
+
+def test_supernovas_have_a_view_of_their_own(page: Page, site_url, errors):
+    page.set_viewport_size({"width": 375, "height": 740})
+    fake = FakeSurveyLog([ACORN, MONET, BIRCH, OAK, ZEUS], PLACES, THEMES, totals=NOVA_TOTALS)
+    open_log(page, site_url, fake)
+    page.locator("header").get_by_role("link", name="Supernovas").click()
+
+    expect(page.locator("#focusName")).to_have_text("Supernovas")
+    assert "supernovas" in page.url and "supernovas=" not in page.url
+    expect(page.locator("#sumTitle")).to_have_text("All time")
+    expect(tile(page, 0)).to_contain_text("Supernovas1")
+    expect(tile(page, 1)).to_contain_text("LatestMonet Reach")
+    expect(tile(page, 2)).to_contain_text("Quickest30 minutes")
+    nova = page.locator(".nova")
+    expect(nova).to_have_count(1)
+    expect(nova.locator(".what")).to_have_text("Monet Reachwent supernova")
+    expect(nova.locator(".when")).to_have_text(re.compile(r"Nov 6 · 3:10\s?PM"))
+    expect(nova.locator(".meta")).to_have_text("Every one of its 2 hidden words charted, in 30 minutes by 2 surveyors. The last, OAK, by ZED. Most by AMY (1).")
+    expect(nova.get_by_role("link", name="OAK")).to_have_attribute("href", "/letterfield#f-oak-70-10-2")
+    assert page.evaluate("document.documentElement.scrollWidth") <= 375
+    # The territory opens from it, saying when it went and how.
+    nova.get_by_role("link", name="Monet Reach").click()
+    expect(page.locator("#focusName")).to_have_text("Monet Reach")
+    expect(page.locator("#sumTitle")).to_have_text("Supernova")
+    expect(page.locator("#sumText")).to_have_text(re.compile(r"Every hidden word charted · Friday, November 6, 2026, 3:10\s?PM"))
+    expect(tile(page, 0)).to_contain_text("Went supernovaNov 6")
+    expect(tile(page, 1)).to_contain_text("First word to last30 minutes")
+    expect(tile(page, 2)).to_contain_text("Most charted byAMY1 of its 2 · 2 surveyors in all")
+    expect(page.locator("#chart .meter.nova")).to_have_attribute("aria-valuenow", "2")
+    # Its supernova sits just above the word that set it off.
+    expect(page.locator("#log .entries > li")).to_have_count(4)
+    rows = page.locator("#log .entries > li")
+    expect(rows.nth(0)).to_have_class(re.compile(r"\bnova\b"))
+    expect(rows.nth(1).locator(".word")).to_have_text("OAK")
+    page.go_back()
+    expect(page.locator("#focusName")).to_have_text("Supernovas")
+    # An empty period says so.
+    page.locator("#periods [data-p=week]").click()
+    expect(tile(page, 0)).to_contain_text("Supernovas1")
+    page.click("#prev")
+    expect(page.locator("#log .status")).to_contain_text("No supernovas")
+    assert errors == []
+
+
+def test_a_day_and_an_hour_show_their_supernovas_where_they_happened(page: Page, site_url, errors):
+    fake = FakeSurveyLog([ACORN, MONET, BIRCH, OAK, ZEUS], PLACES, THEMES, totals=NOVA_TOTALS)
+    open_log(page, site_url, fake)
+    strip = page.locator("#novaStrip .strip")
+    expect(strip).to_contain_text("Monet Reach went supernova today: every hidden word charted")
+    expect(page.locator(".bar.starred")).to_have_count(1)
+    expect(page.locator(".bar.starred")).to_have_attribute("aria-label", re.compile(r"3:00\s?PM – 4:00\s?PM: 2 words · 1 supernova"))
+    three = page.locator(".hour").first
+    expect(three.locator(".entries > li").nth(0)).to_have_class(re.compile(r"\bnova\b"))
+    expect(three.locator(".entries > li").nth(1).locator(".word")).to_have_text("OAK")
+    expect(three.locator(".entries > li")).to_have_count(3)  # the supernova, OAK and MONET
+    # Minute by minute, the same.
+    three.get_by_role("button", name="Minute by minute").click()
+    expect(page.locator("#sumTitle")).to_have_text(re.compile(r"3:00\s?PM – 4:00\s?PM"))
+    expect(page.locator(".entries > li").nth(0)).to_have_class(re.compile(r"\bnova\b"))
+    expect(page.locator(".bar.starred")).to_have_count(1)
+    expect(strip).to_contain_text("Monet Reach went supernova")
+    # The strip leads to them all, for the period on screen.
+    page.click("#up")
+    page.locator("#periods [data-p=week]").click()
+    expect(strip).to_contain_text("Monet Reach went supernova this week")
+    strip.get_by_role("link", name="Supernovas →").click()
+    expect(page.locator("#focusName")).to_have_text("Supernovas")
+    expect(page.locator("#sumTitle")).to_have_text("This week")
+    # Yesterday had none, and shows no strip.
+    page.click("#everyone")
+    page.locator("#periods [data-p=day]").click()
+    page.click("#prev")
+    expect(page.locator(".entry")).to_have_count(1)
+    expect(strip).to_have_count(0)
+    assert errors == []
+
+
+def test_a_period_shows_without_its_supernovas_when_they_cannot_load(page: Page, site_url, errors):
+    fake = FakeSurveyLog([ACORN, BIRCH, OAK], PLACES, THEMES, totals=NOVA_TOTALS)
+    fake.fail_novas = True
+    open_log(page, site_url, fake)
+    expect(page.locator(".hour")).to_have_count(2)
+    expect(page.locator(".entry")).to_have_count(3)
+    expect(page.locator("#novaStrip .strip")).to_have_count(0)
+    expect(page.locator(".nova")).to_have_count(0)
+
+
+def test_a_supernova_shares_a_line_of_its_own(page: Page, site_url, errors):
+    fake = FakeSurveyLog([ACORN, BIRCH, OAK], PLACES, THEMES, totals=NOVA_TOTALS)
+    page.add_init_script(SHARE_SHEET)
+    open_log(page, site_url, fake, query="&territory=1,0#debug", share=False)
+    expect(page.locator("#sumTitle")).to_have_text("Supernova")
+    page.wait_for_function("window.__log.share()?.file")
+    page.click("#share")
+    page.wait_for_function("window.__shared")
+    assert page.evaluate("window.__shared.text") == (
+        "Monet Reach went supernova in Letterfield’s shared survey on Nov 6, 2026:"
+        " all 2 hidden words charted by 2 surveyors in 30 minutes, the last, OAK, by ZED."
+    )
+    page.evaluate("window.__shared = null")
+    page.goto(f"{site_url}/letterfield-log?survey=https://survey.test&supernovas#debug")
+    expect(page.locator(".nova")).to_have_count(1)
+    page.wait_for_function("window.__log.share()?.file")
+    page.click("#share")
+    page.wait_for_function("window.__shared")
+    assert page.evaluate("window.__shared.text") == (
+        "1 territory went supernova in Letterfield’s shared survey so far, every hidden word charted. Latest: Monet Reach."
+    )
     assert errors == []

@@ -74,6 +74,7 @@ header p{margin:8px 0 0;color:var(--muted);max-width:36ch}
 
 .summary{background:var(--panel);border:1px solid var(--rule);border-radius:8px;padding:14px 14px 12px;margin-bottom:8px}
 .summary h2{margin:0;font:700 24px/1 var(--f-display);letter-spacing:.05em;text-transform:uppercase}
+.summary h2 .star{vertical-align:-2px}
 .summary .caption{margin:6px 0 0;color:var(--muted);font:400 12px/1.5 var(--f-mono)}
 .live{display:inline-block;margin-left:6px;padding:2px 6px;border-radius:999px;border:1px solid var(--accent);color:var(--accent);font:500 9px/1.2 var(--f-mono);letter-spacing:.08em;text-transform:uppercase;vertical-align:2px}
 .tiles{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin-top:12px}
@@ -187,6 +188,34 @@ html[data-log="loading"] #chart{opacity:.5}
 .loading{color:var(--muted);font:400 12px/1 var(--f-mono);padding:12px 8px}
 .foot{margin-top:28px;padding-top:12px;border-top:1px solid var(--rule);color:var(--muted);font-size:13px}
 .foot.feedback{margin-top:4px;padding-top:0;border-top:0}
+
+/* Supernovas: a territory whose every hidden word is charted. A star in its
+   theme's hue, a faint wash of that hue, and nothing that moves. */
+.star{position:relative;display:inline-block;flex:none;width:18px;height:18px;border-radius:50%;
+  background:radial-gradient(circle, #fff 0 16%, hsl(var(--h,200) 90% 66%) 30%, hsl(var(--h,200) 80% 50% / .35) 52%, transparent 70%);
+  box-shadow:0 0 0 1.5px hsl(var(--h,200) 60% 50% / .35)}
+.nova{position:relative;display:grid;grid-template-columns:18px minmax(0,1fr) auto;column-gap:12px;row-gap:6px;align-items:center;
+  padding:12px 10px;margin:4px 0;border-radius:8px;
+  background:linear-gradient(100deg, hsl(var(--h,200) 55% 50% / .13), hsl(var(--h,200) 55% 50% / .03) 70%);
+  border:1px solid hsl(var(--h,200) 45% 50% / .28)}
+.nova .what{min-width:0;font:700 19px/1.05 var(--f-display);letter-spacing:.06em;text-transform:uppercase;overflow-wrap:anywhere}
+.nova .what small{display:block;margin-top:3px;font:500 10px/1.2 var(--f-mono);letter-spacing:.12em;color:var(--muted)}
+.nova .when{font:400 11px/1.3 var(--f-mono);color:var(--muted);text-align:right;white-space:nowrap;font-variant-numeric:tabular-nums}
+.nova .meta{grid-column:2 / 4}
+.nova a.to{position:relative;z-index:1;color:inherit;text-decoration:underline dotted;text-decoration-color:color-mix(in srgb, currentColor 50%, transparent);text-underline-offset:3px}
+.novas{list-style:none;margin:0;padding:4px 0}
+.strip{display:grid;grid-template-columns:18px minmax(0,1fr) auto;align-items:center;gap:6px 10px;margin:0 0 8px;padding:10px 14px;border-radius:8px;
+  background:linear-gradient(100deg, hsl(var(--h,200) 55% 50% / .14), var(--panel) 75%);border:1px solid hsl(var(--h,200) 45% 50% / .3);font-size:13px}
+.strip b{font-weight:600}
+.strip a{color:var(--ink)}
+.strip .all{font:500 12px/1 var(--f-mono);white-space:nowrap}
+@media (max-width:520px){.strip .all{grid-column:2 / 4;justify-self:end}}
+.meter.nova{background:hsl(var(--h,200) 45% 50% / .2)}
+.meter.nova i{background:linear-gradient(90deg, hsl(var(--h,200) 70% 45%), hsl(var(--h,200) 90% 65%))}
+.bar.starred::before{content:"✦";position:absolute;top:-15px;left:50%;transform:translateX(-50%);font-size:11px;line-height:1;color:var(--accent)}
+.back.novas-link{display:inline-flex;align-items:center;gap:7px}
+.back.novas-link .star{width:12px;height:12px;--h:45}
+.heads{display:flex;flex-wrap:wrap;gap:8px}
 @media (prefers-reduced-motion: no-preference){html{scroll-behavior:smooth}}
 @media (min-width:640px){.year{grid-template-columns:repeat(4,minmax(0,1fr))}.plot,.overlay,.line{height:120px}}
 @media (max-width:420px){header h1{font-size:34px}.nav input{width:10em}.seg button{padding:8px 10px}.tile b{font-size:21px}.rank li{grid-template-columns:minmax(0,7.5rem) minmax(0,1fr) auto}.row{grid-template-columns:minmax(0,8rem) minmax(0,1fr) 4rem}}
@@ -200,7 +229,10 @@ html[data-log="loading"] #chart{opacity:.5}
       <h1>Survey log</h1>
       <p>Every word charted first, by the hour, day, week, month or year. Tap a word to fly there on the map, or its surveyor, territory or theme to see all of theirs.</p>
     </div>
-    <a class="back" href="/letterfield">← The map</a>
+    <div class="heads">
+      <a class="back novas-link" href="?supernovas" data-go><i class="star"></i>Supernovas</a>
+      <a class="back" href="/letterfield">← The map</a>
+    </div>
   </header>
 
   <section class="focus" id="focus" hidden aria-labelledby="focusName">
@@ -246,9 +278,11 @@ html[data-log="loading"] #chart{opacity:.5}
 
   <div class="cards" id="cards"></div>
 
+  <div id="novaStrip"></div>
+
   <div id="log"></div>
 
-  <p class="foot">Times are yours, in <span id="zone"></span>. Top lists for a week or longer count whole days in UTC, and initials are whatever each surveyor typed in, so they aren’t unique. “Mine” lists the words this browser charted first, from Letterfield’s field notes; nothing about you is sent to find them. A surveyor’s, territory’s or theme’s own view has an address of its own to share.</p>
+  <p class="foot">Times are yours, in <span id="zone"></span>. Top lists for a week or longer count whole days in UTC, and initials are whatever each surveyor typed in, so they aren’t unique. “Mine” lists the words this browser charted first, from Letterfield’s field notes; nothing about you is sent to find them. A surveyor’s, territory’s or theme’s own view has an address of its own to share. A territory goes supernova once every one of its hidden words is charted.</p>
   <p class="foot feedback">Found a bug or have an idea? <a href="https://github.com/mwarkentin/games/issues/new/choose" target="_blank" rel="noopener" data-feedback>Send feedback</a></p>
 </main>
 <div class="tip" id="tip" role="tooltip" hidden></div>
@@ -512,6 +546,151 @@ async function entriesBetween(from, to) {
   return out;
 }
 
+/* ---------- Supernovas ---------- */
+// A territory goes supernova when every one of its hidden words is charted.
+// The log gives each as [rx, ry, at, w, x, y, d, initials, first, words,
+// surveyors, top, topN, th]: when its last hidden word was charted, that word
+// and who charted it, when the first was, how many it has, how many sets of
+// initials charted them, and who charted most and how many.
+const okNova = n => Array.isArray(n) && [0, 1, 2, 4, 5, 6, 8, 9, 10, 12, 13].every(i => Number.isInteger(n[i]))
+  && typeof n[3] === 'string' && /^[A-Z]{3,12}$/.test(n[3]) && n[6] >= 0 && n[6] <= 7 && typeof n[7] === 'string' && typeof n[11] === 'string';
+// The UTC hours a period covers, as views of one ask for them, so the strip
+// above a period and the list of them share one answer.
+const novaPath = (start, end) => `/v1/survey/log/novas/${fdiv(start, HOUR)}/${fdiv(end - 1, HOUR) + 1}`;
+// A period's supernovas, newest first: the first hundred, more than any
+// period is likely to hold. Null if the log can't say: the period shows
+// without them.
+async function novasBetween(start, end) {
+  try {
+    const a = await cachedJSON(novaPath(start, end), isLive(end));
+    if (!a || !Array.isArray(a.novas)) return null;
+    learn(a);
+    const novas = a.novas.filter(okNova).filter(n => n[2] >= start && n[2] < end);
+    return { novas, more: typeof a.next === 'string', count: Number.isInteger(a.count) ? a.count : novas.length, places: a.places || {}, themes: a.themes || {} };
+  } catch (_) { return null; }
+}
+// How long one took, first word to last.
+function took(ms) {
+  const min = Math.max(1, Math.round(ms / MINUTE));
+  if (min < 60) return plural(min, 'minute');
+  const h = Math.round(min / 60);
+  return h < 48 ? plural(h, 'hour') : plural(Math.round(h / 24), 'day');
+}
+const novaPlace = (n, data) => data.places?.[`${n[0]},${n[1]}`] ?? known.places[`${n[0]},${n[1]}`]?.[0] ?? 'A territory';
+const novaHue = (n, data) => (data.themes?.[n[13]] || known.themes[n[13]])?.[1];
+// The word that set each one off, so a list of words can show its supernova above it.
+const novaMap = list => new Map((list || []).map(n => [keyOf(n[3], n[4], n[5], n[6]), n]));
+const novasIn = (list, from, to) => (list || []).filter(n => n[2] >= from && n[2] < to).length;
+
+// One supernova: where, when, how it went, and its last word, which flies to the map.
+function novaRow(n, data, { date = false } = {}) {
+  const [rx, ry, at, w, x, y, d, initials, first, words, surveyors, top, topN, th] = n;
+  const li = el('li', 'nova mark'), hue = novaHue(n, data), place = novaPlace(n, data);
+  if (Number.isFinite(hue)) li.style.setProperty('--h', hue);
+  if (data.places?.[`${rx},${ry}`]) learnPlace(rx, ry, place, th);
+  const what = el('span', 'what');
+  what.append(toFocus({ kind: 'territory', rx, ry }, document.createTextNode(place)), el('small', '', 'went supernova'));
+  li.append(el('i', 'star'), what, el('span', 'when', date ? `${monthDay.format(at)} · ${timeFmt.format(at)}` : timeFmt.format(at)));
+  const meta = el('span', 'meta');
+  const fly = el('a', 'to', w);
+  fly.href = flyHref(w, x, y, d);
+  fly.title = `${w}: the last of its hidden words. Fly there on the map.`;
+  meta.append(`Every one of its ${plural(words, 'hidden word')} charted, in ${took(at - first)}${surveyors ? ` by ${plural(surveyors, 'surveyor')}` : ''}. The last, `, fly);
+  if (/^[A-Z]{3}$/.test(initials)) meta.append(', by ', toFocus({ kind: 'surveyor', key: initials }, el('b', '', initials)));
+  meta.append('.');
+  if (/^[A-Z]{3}$/.test(top) && surveyors > 1) meta.append(' Most by ', toFocus({ kind: 'surveyor', key: top }, el('b', '', top)), ` (${topN.toLocaleString()}).`);
+  li.append(meta);
+  return li;
+}
+// A list's rows: each word, and above the word that set one off, its supernova.
+function rowsOf(entries, data, firsts) {
+  const out = [];
+  for (const e of entries) {
+    const n = data.novas?.get(keyOf(e[0], e[1], e[2], e[3]));
+    if (n) out.push(novaRow(n, data));
+    out.push(entryRow(e, data, firsts));
+  }
+  return out;
+}
+// One line above a period's log when territories went supernova in it, with
+// the way to all of them.
+function novaStrip(found, p, start, end) {
+  stripEl.replaceChildren();
+  if (!found || !found.novas.length) return;
+  const n = found.more ? found.count : found.novas.length, box = el('div', 'strip mark'), hue = novaHue(found.novas[0], found);
+  if (Number.isFinite(hue)) box.style.setProperty('--h', hue);
+  const line = el('span'), names = found.novas.slice(0, 3).map(v => toFocus({ kind: 'territory', rx: v[0], ry: v[1] }, el('b', '', novaPlace(v, found)), ''));
+  if (n === 1) line.append(names[0], ` went supernova ${whenSaid(p, start, end)}: every hidden word charted`);
+  else {
+    line.append(`${n.toLocaleString()} territories went supernova ${whenSaid(p, start, end)}: `);
+    names.forEach((a, i) => line.append(...(i ? [', '] : []), a));
+    if (n > names.length) line.append(` and ${(n - names.length).toLocaleString()} more`);
+  }
+  const all = el('a', 'all', 'Supernovas →');
+  all.href = focusHref({ kind: 'novas' });
+  all.dataset.go = '';
+  box.append(el('i', 'star'), line, all);
+  stripEl.append(box);
+}
+// Supernovas, newest first: a period's, with a chart of when, and each one.
+async function renderNovas(run, p, start, end) {
+  const base = novaPath(start, end), live = isLive(end);
+  const page = async before => {
+    const a = await cachedJSON(base + (before ? '?before=' + encodeURIComponent(before) : ''), live);
+    if (!a || !Array.isArray(a.novas) || !Array.isArray(a.hours)) throw new Error('bad answer');
+    learn(a);
+    return a;
+  };
+  const first = await page(null);
+  if (run !== state.run) return;
+  const data = { places: { ...first.places }, themes: { ...first.themes } };
+  const list = first.novas.filter(okNova).filter(n => n[2] >= start && n[2] < end);
+  const points = first.hours.filter(r => Array.isArray(r) && Number.isInteger(r[0]) && Number.isInteger(r[1])).map(r => [r[0] * HOUR, r[1], 0]);
+  const buckets = tally(bucketsOf(p, start, end), points), total = buckets.reduce((a, b) => a + b.n, 0);
+  const latest = list[0], quick = list.reduce((a, n) => (!a || n[2] - n[8] < a[2] - a[8] ? n : a), null);
+  tiles([
+    ['Supernovas', total.toLocaleString(), total === 1 ? 'territory fully charted' : 'territories fully charted'],
+    ['Latest', latest ? novaPlace(latest, data) : '—', latest ? `${monthDay.format(latest[2])} · ${timeFmt.format(latest[2])}` : ''],
+    ['Quickest', quick ? took(quick[2] - quick[8]) : '—', quick ? novaPlace(quick, data) + (first.next ? ' · of the latest 100' : '') : ''],
+  ]);
+  // A year by its months: a calendar of days would be almost all empty.
+  if (p === 'year') chartEl.replaceChildren(columnChart('all', tally(bucketsOf('all', start, end), points), b => open('month', b.from), { what: 'supernova' }));
+  else chartEl.replaceChildren(columnChart(p, buckets, p === 'hour' ? null : p === 'day' ? b => open('hour', b.from) : b => open(UNIT[p] === 'month' ? 'month' : 'day', b.from), { what: 'supernova' }));
+  const said = whenSaid(p, start, end);
+  offerShare(run, {
+    kind: 'Supernovas', name: 'Supernovas', when: whenShown(p, start, end),
+    words: list.map(n => ({ w: n[3], hue: novaHue(n, data) })),
+    stats: [['Supernovas', total.toLocaleString()], ['Latest', latest ? novaPlace(latest, data) : '—'], ['Quickest', quick ? took(quick[2] - quick[8]) : '—']],
+    text: total
+      ? `${plural(total, 'territory', 'territories')} went supernova in Letterfield’s shared survey ${said}, every hidden word charted.${latest ? ` Latest: ${novaPlace(latest, data)}.` : ''}`
+      : `No territories went supernova in Letterfield’s shared survey ${said}.`,
+  });
+  if (!list.length) {
+    return status('No supernovas', p === 'all' && start <= logFirst
+      ? 'No territory has gone supernova yet. One does when every one of its hidden words is charted: open the map and finish one.'
+      : 'No territory went supernova in this period.');
+  }
+  const ol = el('ol', 'novas');
+  ol.append(...list.map(n => novaRow(n, data, { date: true })));
+  logEl.replaceChildren(ol);
+  if (typeof first.next !== 'string') return;
+  let next = first.next;
+  const b = el('button', 'more', 'Show more');
+  b.type = 'button';
+  b.onclick = async () => {
+    b.disabled = true;
+    b.textContent = 'Loading…';
+    let a;
+    try { a = await page(next); } catch (_) { b.disabled = false; b.textContent = 'Couldn’t load more. Try again'; return; }
+    if (run !== state.run) return;
+    Object.assign(data.places, a.places); Object.assign(data.themes, a.themes);
+    ol.append(...a.novas.filter(okNova).filter(n => n[2] >= start && n[2] < end).map(n => novaRow(n, data, { date: true })));
+    if (typeof a.next === 'string') { next = a.next; b.disabled = false; b.textContent = 'Show more'; }
+    else b.remove();
+  };
+  logEl.append(b);
+}
+
 /* ---------- Pieces of the page ---------- */
 const flyHref = (w, x, y, d) => `/letterfield#f-${w.toLowerCase()}-${hashNum(x)}-${hashNum(y)}-${d}`;
 const sameFocus = (a, b) => !!a && !!b && a.kind === b.kind && a.key === b.key && a.rx === b.rx && a.ry === b.ry;
@@ -574,7 +753,7 @@ function wordGroups(unit, firsts, countOf) {
         s.append(head, last.list);
         box.append(s);
       }
-      last.list.append(entryRow(e, data, firsts));
+      last.list.append(...rowsOf([e], data, firsts));
     }
   };
   return box;
@@ -601,13 +780,15 @@ function hoverable(node, value, label) {
 
 // A column chart of words per piece of the period. Tapping a column opens
 // that piece, where there's a smaller period to open.
-function columnChart(p, buckets, go) {
+// `what` names what's counted; `stars`, if given, says how many supernovas
+// went off in a piece, which its column wears as a star.
+function columnChart(p, buckets, go, { what = 'word', stars = null } = {}) {
   const wrap = el('div', 'chart');
   const top = Math.max(1, ...buckets.map(b => b.n));
   wrap.append(el('div', 'ymax', top.toLocaleString()));
   const plot = el('div', 'plot'), ticks = el('div', 'ticks');
   plot.setAttribute('role', 'group');
-  plot.setAttribute('aria-label', `Words charted in each ${UNIT[p]}`);
+  plot.setAttribute('aria-label', what === 'word' ? `Words charted in each ${UNIT[p]}` : `Supernovas in each ${UNIT[p]}`);
   const cols = `repeat(${buckets.length}, minmax(0, 1fr))`;
   plot.style.gridTemplateColumns = ticks.style.gridTemplateColumns = cols;
   const now = Date.now();
@@ -617,7 +798,9 @@ function columnChart(p, buckets, go) {
     const mark = el('i');
     mark.style.height = b.n ? Math.max(3, Math.round(b.n / top * 100)) + '%' : '2px';
     bar.append(mark);
-    const label = bucketLabel(p, b), value = plural(b.n, 'word');
+    const label = bucketLabel(p, b), novas = stars ? stars(b) : 0;
+    const value = plural(b.n, what) + (novas ? ` · ${plural(novas, 'supernova')}` : '');
+    if (novas) bar.classList.add('starred');
     bar.setAttribute('aria-label', `${label}: ${value}`);
     hoverable(bar, value, label);
     if (go && b.from <= now) { bar.classList.add('go'); bar.onclick = () => { hideTip(); go(b); }; }
@@ -787,7 +970,7 @@ function pieceRows(unit, buckets, open) {
 // ?theme=<n> or ?territory=<rx>,<ry> narrows it to theirs. Everyone's opens
 // on today; theirs on all time, which a territory always shows.
 const state = { period: 'day', start: startOf('day', Date.now()), mine: false, focus: null, run: 0 };
-const FOCUS_KEYS = ['surveyor', 'theme', 'territory'];
+const FOCUS_KEYS = ['surveyor', 'theme', 'territory', 'supernovas'];
 const defaultPeriod = f => f ? 'all' : 'day';
 function focusOf(q) {
   const initials = (q.get('surveyor') || '').toUpperCase();
@@ -796,6 +979,7 @@ function focusOf(q) {
   if (/^\d{1,3}$/.test(th)) return { kind: 'theme', key: Number(th) };
   const m = /^(-?\d{1,8}),(-?\d{1,8})$/.exec(q.get('territory') || '');
   if (m) return { kind: 'territory', rx: Number(m[1]), ry: Number(m[2]) };
+  if (q.has('supernovas')) return { kind: 'novas' };
   return null;
 }
 function readUrl() {
@@ -816,7 +1000,7 @@ function readUrl() {
   } catch (_) {}
 }
 readUrl();
-const logEl = $('#log'), chartEl = $('#chart'), cardsEl = $('#cards'), dayInput = $('#dayInput');
+const logEl = $('#log'), chartEl = $('#chart'), cardsEl = $('#cards'), stripEl = $('#novaStrip'), dayInput = $('#dayInput');
 $('#zone').textContent = Intl.DateTimeFormat().resolvedOptions().timeZone || 'your time zone';
 const BASE_TITLE = document.title;
 let observer = null, liveTimer = 0, liveUntil = 0;  // liveUntil: when the period shown as Live ends
@@ -842,6 +1026,7 @@ function urlFor({ focus = state.focus, period = state.period, start = state.star
   if (focus?.kind === 'surveyor') q.set('surveyor', focus.key);
   else if (focus?.kind === 'theme') q.set('theme', String(focus.key));
   else if (focus?.kind === 'territory') q.set('territory', `${focus.rx},${focus.ry}`);
+  else if (focus?.kind === 'novas') q.set('supernovas', '');
   if (focus?.kind !== 'territory') {
     const here = period === 'all' || (!pin && start === startOf(period, Date.now()));
     if (period !== defaultPeriod(focus)) q.set('period', period);
@@ -849,7 +1034,7 @@ function urlFor({ focus = state.focus, period = state.period, start = state.star
     if (period === 'hour' && !here) q.set('hour', String(new Date(start).getHours()));
     if (mine && !focus) q.set('view', 'mine');
   }
-  const s = q.toString().replace(/%2C/g, ',');
+  const s = q.toString().replace(/%2C/g, ',').replace(/(^|&)supernovas=(&|$)/, '$1supernovas$2');
   return location.pathname + (s ? '?' + s : '');
 }
 // Someone's own view keeps the period on screen, so ZED's week follows from
@@ -922,7 +1107,11 @@ function focusBar() {
   $('#fly').hidden = true;
   if (!f) { document.title = BASE_TITLE; return; }
   let kind, label, hue, note;
-  if (f.kind === 'surveyor') {
+  if (f.kind === 'novas') {
+    kind = 'The shared survey';
+    label = 'Supernovas';
+    note = ['Territories whose every hidden word has been charted, newest first. Each lights up the map when its last word comes in, and stays changed after.'];
+  } else if (f.kind === 'surveyor') {
     kind = 'Surveyor';
     label = f.key;
     note = [`Every word signed ${f.key}. Initials aren’t unique, so that’s everyone who typed them.`];
@@ -943,9 +1132,10 @@ function focusBar() {
   }
   $('#focusKind').textContent = kind;
   const name = $('#focusName');
-  name.className = hue !== undefined ? 'mark' : '';
+  name.className = hue !== undefined || f.kind === 'novas' ? 'mark' : '';
   if (hue !== undefined) name.style.setProperty('--h', hue);
-  name.replaceChildren(...(hue !== undefined ? [el('i', 'dot')] : []), label);
+  else if (f.kind === 'novas') name.style.setProperty('--h', 45);
+  name.replaceChildren(...(f.kind === 'novas' ? [el('i', 'star')] : hue !== undefined ? [el('i', 'dot')] : []), label);
   $('#focusNote').replaceChildren(...note);
   $('#everyone').href = urlFor({ focus: null, period: f.kind === 'territory' ? 'day' : state.period, start: f.kind === 'territory' ? startOf('day', Date.now()) : state.start });
   $('#everyone').dataset.go = '';
@@ -956,6 +1146,7 @@ function chrome() {
   const { period, start, focus } = state, end = endOf(period, start), now = Date.now();
   focusBar();
   $('#whose').hidden = !!focus;
+  document.querySelector('.novas-link').hidden = focus?.kind === 'novas';
   $('#periods').hidden = focus?.kind === 'territory';
   document.querySelector('.nav').hidden = focus?.kind === 'territory';
   $('#viewAll').setAttribute('aria-pressed', String(!state.mine));
@@ -973,6 +1164,7 @@ function chrome() {
   $('#next').setAttribute('aria-label', `${period === 'all' ? '' : 'The ' + period} after`);
   const [title, caption] = titles(period, start, end);
   $('#sumTitle').textContent = title;
+  $('#sumTitle').className = '';
   $('#navLabel').textContent = caption || title;
   const sum = $('#sumText');
   sum.replaceChildren(dated ? caption : '');
@@ -999,7 +1191,7 @@ async function render(quiet = false) {
   clearTimeout(liveTimer);
   const end = chrome(), firsts = myFirsts();
   // A refresh in place keeps the top lists on screen until new ones come.
-  if (!Log.is('refreshing')) cardsEl.replaceChildren();
+  if (!Log.is('refreshing')) { cardsEl.replaceChildren(); stripEl.replaceChildren(); }
   if (!api) {
     tiles([]); chartEl.replaceChildren();
     status('Not open yet', 'The shared survey isn’t running yet, so there’s nothing to log.');
@@ -1008,6 +1200,7 @@ async function render(quiet = false) {
   if (!logEl.querySelector('.entries, .rows')) logEl.replaceChildren(el('p', 'loading', 'Loading the log…'));
   try {
     if (state.focus?.kind === 'territory') await renderTerritory(run, state.focus, firsts);
+    else if (state.focus?.kind === 'novas') await renderNovas(run, period, start, end);
     else if (state.focus) await renderSlice(run, state.focus, period, start, end, firsts);
     else if (period === 'hour') await renderHour(run, start, end, firsts, mine);
     else if (period === 'day' && mine) await renderMineDay(run, start, end, firsts);
@@ -1018,6 +1211,7 @@ async function render(quiet = false) {
     // A refresh that fails leaves the words on screen, and tries again.
     if (Log.is('refreshing')) { Log.go('stale'); return scheduleRefresh(run, end); }
     tiles([]); chartEl.replaceChildren(); cardsEl.replaceChildren();
+    stripEl.replaceChildren();
     if (state.focus && /status 400/.test(err?.message)) status('Not in the log', 'There’s no such surveyor, theme or territory to show.');
     else status('Can’t reach the log', 'The survey’s server didn’t answer. Your own finds are safe in Letterfield’s field notes.', true);
     return Log.go('failed');
@@ -1063,32 +1257,35 @@ function summaryTiles(p, buckets, mine, label = 'Words charted') {
 // An hour, minute by minute, with every word in it. The hour still running
 // reloads every LIVE_REFRESH_MS while the page is on screen (scheduleRefresh).
 async function renderHour(run, start, end, firsts, mine) {
-  const data = await entriesBetween(start, end);
+  const [data, found] = await Promise.all([entriesBetween(start, end), mine ? null : novasBetween(start, end)]);
   if (run !== state.run) return;
+  if (found) { data.novas = novaMap(found.novas); Object.assign(data.places, found.places); Object.assign(data.themes, found.themes); }
   const shown = mine ? data.entries.filter(e => firsts.has(keyOf(e[0], e[1], e[2], e[3]))) : data.entries;
   const points = shown.map(e => [e[6], 1, !e[4] && inWorld(e[1], e[2]) ? 1 : 0]).reverse();
   const buckets = tally(bucketsOf('hour', start, end), points);
   summaryTiles('hour', buckets, mine);
-  chartEl.replaceChildren(columnChart('hour', buckets, null));
+  chartEl.replaceChildren(columnChart('hour', buckets, null, { stars: b => novasIn(found?.novas, b.from, b.to) }));
+  if (!mine) novaStrip(found, 'hour', start, end);
   if (!shown.length) status(mine ? 'None this hour' : 'Nothing charted', mine ? 'You didn’t chart a word first this hour in this browser.' : 'Nobody charted a word this hour.');
-  else { const list = el('ol', 'entries'); list.append(...shown.map(e => entryRow(e, data, firsts))); logEl.replaceChildren(list); }
+  else { const list = el('ol', 'entries'); list.append(...rowsOf(shown, data, firsts)); logEl.replaceChildren(list); }
   if (!mine && shown.length) loadTops(run, start, end, true);
 }
 
 // A day, hour by hour. Each hour's words load as they scroll into view, and
 // tapping an hour opens it minute by minute.
 async function renderDay(run, start, end, firsts) {
-  const points = await hourly(start, end);
+  const [points, found] = await Promise.all([hourly(start, end), novasBetween(start, end)]);
   if (run !== state.run) return;
   const buckets = tally(bucketsOf('day', start, end), points);
   const total = summaryTiles('day', buckets, false);
-  chartEl.replaceChildren(columnChart('day', buckets, b => open('hour', b.from)));
+  chartEl.replaceChildren(columnChart('day', buckets, b => open('hour', b.from), { stars: b => novasIn(found?.novas, b.from, b.to) }));
+  novaStrip(found, 'day', start, end);
   if (!total) return status('Nothing charted', start === startOf('day', Date.now()) ? 'No words charted yet today. Be the first: open the map and circle one.' : 'Nobody charted a word this day.');
   loadTops(run, start, end, true);
   const hours = buckets.filter(b => b.n).reverse();
   logEl.replaceChildren(...hours.map(b => hourSection(b, b.n)));
   observer = new IntersectionObserver(seen => {
-    for (const s of seen) if (s.isIntersecting) { observer.unobserve(s.target); fillHour(run, s.target, firsts); }
+    for (const s of seen) if (s.isIntersecting) { observer.unobserve(s.target); fillHour(run, s.target, firsts, found); }
   }, { rootMargin: '800px 0px' });
   logEl.querySelectorAll('.hour').forEach(s => observer.observe(s));
 }
@@ -1109,20 +1306,21 @@ function hourSection(b, n) {
   return s;
 }
 
-async function fillHour(run, s, firsts) {
+async function fillHour(run, s, firsts, found) {
   let data;
   try { data = await entriesBetween(Number(s.dataset.from), Number(s.dataset.to)); } catch (_) {
     if (run !== state.run) return;
     const p = s.querySelector('.loading');
     p.textContent = 'Couldn’t load this hour. ';
     const b = el('button', '', 'Try again'); b.type = 'button';
-    b.onclick = () => { p.textContent = 'Loading…'; fillHour(state.run, s, firsts); };
+    b.onclick = () => { p.textContent = 'Loading…'; fillHour(state.run, s, firsts, found); };
     p.append(b);
     return;
   }
   if (run !== state.run) return;
+  if (found) { data.novas = novaMap(found.novas); Object.assign(data.places, found.places); Object.assign(data.themes, found.themes); }
   const list = el('ol', 'entries');
-  list.append(...data.entries.map(e => entryRow(e, data, firsts)));
+  list.append(...rowsOf(data.entries, data, firsts));
   s.querySelector('.loading').replaceWith(list);
 }
 
@@ -1164,13 +1362,14 @@ async function renderMineDay(run, start, end, firsts) {
 // A week, month, year or all time: the chart, then who and where charted
 // most (everyone's only), then the period's days or months.
 async function renderLong(run, p, start, end, firsts, mine) {
-  const points = mine ? minePoints(firsts).filter(([t]) => t >= start && t < end) : await hourly(start, end);
+  const [points, found] = mine ? [minePoints(firsts).filter(([t]) => t >= start && t < end), null] : await Promise.all([hourly(start, end), novasBetween(start, end)]);
   if (run !== state.run) return;
   const buckets = tally(bucketsOf(p, start, end), points);
   const total = summaryTiles(p, buckets, mine);
   const openPiece = t => open(UNIT[p] === 'month' ? 'month' : 'day', t);
   if (p === 'year') chartEl.replaceChildren(yearCalendar(new Date(start).getFullYear(), buckets, t => open('day', t), t => open('month', t)));
-  else chartEl.replaceChildren(columnChart(p, buckets, b => openPiece(b.from)));
+  else chartEl.replaceChildren(columnChart(p, buckets, b => openPiece(b.from), { stars: b => novasIn(found?.novas, b.from, b.to) }));
+  if (!mine) novaStrip(found, p, start, end);
   if (p === 'all') chartEl.append(progressChart(buckets));
   if (mine && !firsts.size) return status('None yet', 'Words you chart first in Letterfield show up here: join the survey and circle a word nobody has found. This uses the field notes saved in this browser.');
   // A year's rows are its months; the calendar already shows its days.
@@ -1319,21 +1518,39 @@ async function renderTerritory(run, f, firsts) {
   learnPlace(f.rx, f.ry, t.name, t.th);
   focusBar();
   const entries = t.entries.filter(okEntry), data = { places: t.places || {}, themes: t.themes || {} };
+  const nova = okNova(t.nova) ? t.nova : null;
+  if (nova) data.novas = novaMap([nova]);
   if (entries.length) {
     const fly = $('#fly'), e = entries.find(e => !e[4]) || entries[0];
     fly.href = flyHref(e[0], e[1], e[2], e[3]);
     fly.hidden = false;
   }
-  $('#sumTitle').textContent = 'Charted so far';
-  $('#sumText').replaceChildren(entries.length ? `Since ${fullDate.format(entries.at(-1)[6])}` : '');
   const people = new Set(entries.map(e => e[5]).filter(i => /^[A-Z]{3}$/.test(i)));
   const share = n => t.total ? `${Math.round(100 * n / t.total)}%` : '—';
-  tiles([
-    ['Hidden words charted', `${t.charted.toLocaleString()} of ${t.total.toLocaleString()}`, `${share(t.charted)} of the territory`],
-    ['Surveyors', people.size.toLocaleString(), 'by their initials'],
-    ['Latest', entries.length ? monthDay.format(entries[0][6]) : '—', entries.length ? timeFmt.format(entries[0][6]) : ''],
-  ]);
-  const meter = el('div', 'meter'), fill = el('i');
+  const hue = known.themes[t.th]?.[1];
+  if (nova) {
+    // Gone supernova: when, how long it took, and who did most of it.
+    const [, , at, , , , , , first, words, surveyors, top, topN] = nova;
+    $('#sumTitle').replaceChildren(el('i', 'star'), ' Supernova');
+    $('#sumTitle').className = 'mark';
+    if (Number.isFinite(hue)) $('#sumTitle').style.setProperty('--h', hue);
+    $('#sumText').replaceChildren(`Every hidden word charted · ${dayYearFmt.format(at)}, ${timeFmt.format(at)}`);
+    tiles([
+      ['Went supernova', monthDay.format(at), timeFmt.format(at)],
+      ['First word to last', took(at - first), `from ${fullDate.format(first)}`],
+      ['Most charted by', /^[A-Z]{3}$/.test(top) ? top : '—', /^[A-Z]{3}$/.test(top) ? `${topN.toLocaleString()} of its ${words.toLocaleString()} · ${plural(surveyors, 'surveyor')} in all` : ''],
+    ]);
+  } else {
+    $('#sumTitle').textContent = 'Charted so far';
+    $('#sumText').replaceChildren(entries.length ? `Since ${fullDate.format(entries.at(-1)[6])}` : '');
+    tiles([
+      ['Hidden words charted', `${t.charted.toLocaleString()} of ${t.total.toLocaleString()}`, `${share(t.charted)} of the territory`],
+      ['Surveyors', people.size.toLocaleString(), 'by their initials'],
+      ['Latest', entries.length ? monthDay.format(entries[0][6]) : '—', entries.length ? timeFmt.format(entries[0][6]) : ''],
+    ]);
+  }
+  const meter = el('div', nova ? 'meter nova mark' : 'meter'), fill = el('i');
+  if (nova && Number.isFinite(hue)) meter.style.setProperty('--h', hue);
   fill.style.width = (t.total ? Math.min(100, 100 * t.charted / t.total) : 0) + '%';
   meter.append(fill);
   meter.setAttribute('role', 'meter');
@@ -1346,8 +1563,16 @@ async function renderTerritory(run, f, firsts) {
   chartEl.replaceChildren(wrap);
   cardsEl.replaceChildren(...(entries.length ? [rankCard('Top surveyors', surveyorRows(t.topSurveyors), 'Words charted here, by initials')] : []));
   const name = typeof t.name === 'string' ? t.name : 'A territory', words = latestWords(entries, data);
-  offerShare(run, {
-    kind: 'Territory', name, hue: known.themes[t.th]?.[1], when: `All time, to ${fullDate.format(Date.now())}`, words,
+  if (nova) {
+    const [, , at, w, , , , initials, first, all, surveyors, top] = nova;
+    const by = /^[A-Z]{3}$/.test(initials) ? `, by ${initials}` : '';
+    offerShare(run, {
+      kind: 'Supernova', nova: true, name, hue, when: `${dayYearFmt.format(at)}, ${timeFmt.format(at)}`, words,
+      stats: [['Went supernova', fullDate.format(at)], ['First word to last', took(at - first)], ['Most charted by', /^[A-Z]{3}$/.test(top) ? top : '—']],
+      text: `${name} went supernova in Letterfield’s shared survey on ${fullDate.format(at)}: all ${plural(all, 'hidden word')} charted${surveyors ? ` by ${plural(surveyors, 'surveyor')}` : ''} in ${took(at - first)}, the last, ${w}${by}.`,
+    });
+  } else offerShare(run, {
+    kind: 'Territory', name, hue, when: `All time, to ${fullDate.format(Date.now())}`, words,
     stats: [['Hidden words charted', `${t.charted.toLocaleString()} of ${t.total.toLocaleString()}`], ['Surveyors', people.size.toLocaleString()], ['Latest', entries.length ? monthDay.format(entries[0][6]) : '—']],
     text: `${name}, in Letterfield’s shared survey: ${t.charted.toLocaleString()} of its ${plural(t.total, 'hidden word')} charted so far${people.size ? `, by ${plural(people.size, 'surveyor')}` : ''}.${latestSaid(words)}`,
   });
@@ -1471,6 +1696,8 @@ async function shareImage(c) {
   const name = c.name.toUpperCase(), lead = c.hue !== undefined ? 68 : 0;
   const px = fit(name, 800, 170, 64, fam.d, .04, R - X - lead);
   if (lead) dot(X + 20, 250 - px * .36, 20, c.hue);
+  // A supernova's dot keeps a faint ring, as its territory does on the map.
+  if (lead && c.nova) { g.beginPath(); g.arc(X + 20, 250 - px * .36, 31, 0, Math.PI * 2); g.globalAlpha = .45; g.lineWidth = 3; g.strokeStyle = mark(c.hue); g.stroke(); g.globalAlpha = 1; }
   g.fillStyle = v('--ink'); g.fillText(name, X + lead, 250);
   type(500, 30, fam.u); g.fillStyle = v('--muted'); g.fillText(clip(c.when, R - X), X, 306);
 

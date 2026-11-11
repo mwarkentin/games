@@ -1,5 +1,7 @@
 ## 2026-11-11
 
+- A territory that's gone supernova stays changed afterwards: a deeper, quieter tint with a faint shell and a few stars, settling in as the shockwave passes. It shows on the map, zoomed out, and on the world map in your field notes, for the shared survey's supernovas and for territories you've found every word of yourself.
+- The survey log keeps every supernova: a list of them from “Supernovas” at the top, newest first, with when, how long the territory took, who charted most and its last word. A day or an hour shows each one just above the word that set it off, every period names its own, and a territory's page says when it went supernova. Its shared link's card says so too.
 - A third piece of music, Chimes: glassy bells in slow, rolling arpeggios, like an old console role-playing game's quiet town at night, ringing in a deep hall. It takes turns with Drift and Orbit.
 - On a phone with the shared survey on, the theme filters in your field notes no longer get squashed under the list of finds, and they stay at the top of the notes as you scroll.
 - Once you've picked your initials, the survey panel just shows them as “Surveyor MLW”, with a pencil to change them, instead of the form.
