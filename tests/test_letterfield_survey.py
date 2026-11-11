@@ -904,3 +904,87 @@ def test_a_check_nobody_taps_goes_away_and_isnt_asked_for_while_in_the_survey(pa
     expect(page.locator("#survey")).to_have_attribute("data-state", "live")
     assert desk.tokens == []
     assert errors == []
+
+
+NOTES_LAYOUT_JS = """() => {
+  const box = el => el.getBoundingClientRect();
+  const notes = document.getElementById('notes'), filters = document.getElementById('filters');
+  const lis = [...document.querySelectorAll('#finds > li')];
+  return {
+    survey: box(document.getElementById('survey')).toJSON(),
+    filters: box(filters).toJSON(),
+    // Every section's content fits its box: none is squashed below its content's height.
+    squashed: [...notes.children].filter(el => !el.hidden && el.id !== 'finds' && el.scrollHeight > el.clientHeight + 1).map(el => el.id || el.className),
+    chip: box(filters.querySelector('.filter')).height,
+    first: box(lis[0]).toJSON(), last: box(lis[lis.length - 1]).toJSON(),
+    notes: box(notes).toJSON(), n: lis.length,
+  };
+}"""
+
+
+def fill_notes(page: Page, count: int = 40) -> None:
+    """Circles `count` words from the chunks around the start, across several themes."""
+    page.evaluate("""(count) => {
+      let n = 0;
+      for (let r = 0; n < count && r < 4; r++)
+        for (let cx = -r; cx <= r; cx++) for (let cy = -r; cy <= r; cy++) {
+          if (Math.max(Math.abs(cx), Math.abs(cy)) !== r) continue;
+          for (const o of window.__lf.chunk(cx, cy).words) {
+            if (n >= count) return;
+            window.__lf.collect(o.w, o.x, o.y, o.d, false); n++;
+          }
+        }
+    }""", count)
+
+
+def notes_sections_keep_their_height(page: Page) -> dict:
+    """No section of the drawer is squashed or overlaps the next; returns the measures."""
+    m = page.evaluate(NOTES_LAYOUT_JS)
+    assert m["n"] >= 30, m
+    # The theme chips keep their full height instead of being squashed to a sliver...
+    assert m["squashed"] == [], m
+    assert m["chip"] >= 24 and m["filters"]["height"] >= m["chip"], m
+    # ...and nothing overlaps the section below it.
+    assert m["survey"]["bottom"] <= m["filters"]["top"] + 0.5, m
+    assert m["filters"]["bottom"] <= m["first"]["top"] + 0.5, m
+    return m
+
+
+def test_field_notes_scroll_whole_on_a_phone_with_the_survey(page: Page, site_url, errors):
+    open_game(page, site_url, FakeSurvey(), viewport={"width": 375, "height": 812})
+    fill_notes(page)
+    open_notes(page)
+    expect(page.locator("#survey")).to_be_visible()
+    expect(page.locator("#filters .filter").nth(2)).to_be_attached()
+    page.wait_for_timeout(400)  # the drawer slides up
+    notes_sections_keep_their_height(page)
+
+    # An up-and-down scroll over the theme chips scrolls the drawer, not the row;
+    # a sideways one scrolls the row.
+    scroll = "() => [document.getElementById('notes').scrollTop, document.getElementById('filters').scrollTop, document.getElementById('filters').scrollLeft]"
+    page.hover("#filters .filter >> nth=1")
+    page.mouse.wheel(0, 200)
+    eventually(page, lambda: page.evaluate(scroll)[0] > 0)
+    assert page.evaluate(scroll)[1] == 0
+    page.evaluate("document.getElementById('notes').scrollTop = 0")
+    page.hover("#filters .filter >> nth=1")
+    page.mouse.wheel(200, 0)
+    eventually(page, lambda: page.evaluate(scroll)[2] > 0)
+    assert page.evaluate(scroll)[0] == 0
+
+    # The drawer scrolls down to the last find, and the feedback line under it,
+    # with the theme chips held at its top.
+    page.evaluate("document.getElementById('filters').scrollLeft = 0; document.getElementById('notes').scrollTop = 1e6")
+    page.wait_for_timeout(100)
+    m = page.evaluate(NOTES_LAYOUT_JS)
+    assert m["last"]["bottom"] <= m["notes"]["bottom"], m
+    expect(page.locator("#sync")).to_be_in_viewport()
+    assert abs(m["filters"]["top"] - m["notes"]["top"]) <= 1, m
+    expect(page.locator("#filters .filter").first).to_be_in_viewport()
+
+    # Docked beside the map on a computer, the same.
+    page.evaluate("document.getElementById('notes').scrollTop = 0")
+    page.set_viewport_size({"width": 1280, "height": 900})
+    page.wait_for_timeout(400)
+    notes_sections_keep_their_height(page)
+    assert errors == []

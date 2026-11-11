@@ -127,7 +127,9 @@ body.docked .notes{box-shadow:none}
 .tally div + div{padding-left:14px;border-left:1px solid var(--rule)}
 .tally dt{font:500 9.5px/1 var(--f-mono);letter-spacing:.14em;text-transform:uppercase;color:var(--muted);margin-bottom:6px}
 .tally dd{margin:0;font:700 22px/1 var(--f-display);letter-spacing:.04em;font-variant-numeric:tabular-nums;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.filters{display:flex;gap:6px;padding:12px 18px 6px;overflow-x:auto;scrollbar-width:none}
+/* One row of theme chips that scrolls sideways only: overflow-x alone would make y auto too.
+   A sideways swipe stays in the row; an up-and-down one still scrolls the drawer. */
+.filters{display:flex;gap:6px;padding:12px 18px 6px;overflow-x:auto;overflow-y:hidden;overscroll-behavior-x:contain;scrollbar-width:none}
 .filters::-webkit-scrollbar{display:none}
 .filters:empty{display:none}
 .filter{flex:none;display:flex;align-items:center;gap:6px;font:500 11px/1 var(--f-mono);padding:6px 8px;border:1px solid var(--rule);border-radius:999px;background:transparent;cursor:pointer;color:var(--muted)}
@@ -189,9 +191,15 @@ body.docked .notes{box-shadow:none}
 .survey-map-note:empty{display:none}
 .survey-log{display:block;margin-top:6px;padding:4px 0;font:500 10px/1.3 var(--f-mono);letter-spacing:.14em;text-transform:uppercase;color:var(--muted)}
 .survey-log::after{content:" →"}
-/* With the survey panel, the whole drawer scrolls, so the world map never pushes the finds out of reach. */
-.notes.has-survey{overflow-y:auto;overscroll-behavior:contain}
+/* Only the list of finds may shrink: everything else keeps its own height. A section
+   that scrolls (the theme chips) would otherwise be squashed to a sliver, since a flex
+   item that scrolls may shrink to nothing, and spill over the finds. */
+.notes > :not(.finds){flex-shrink:0}
+/* With the survey panel, the whole drawer scrolls, so the world map never pushes the finds
+   out of reach, and the theme chips stick to its top to stay in reach of a long list. */
+.notes.has-survey{overflow-y:auto;overscroll-behavior:contain;scroll-padding-top:48px}  /* a find scrolled to stays clear of the chips */
 .notes.has-survey .finds{flex:1 0 auto;overflow:visible}
+.notes.has-survey .filters{position:sticky;top:0;z-index:1;background:var(--panel);margin-top:6px;padding-top:6px;box-shadow:0 1px 0 var(--rule)}
 .survey-hint:empty{display:none}
 /* Turnstile's check (see worker/TURNSTILE.md): empty and out of the way unless it needs a tap.
    When it does, it's a small panel just above the word legend (and, on a phone, the

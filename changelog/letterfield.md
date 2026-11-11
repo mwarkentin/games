@@ -1,3 +1,7 @@
+## 2026-11-11
+
+- On a phone with the shared survey on, the theme filters in your field notes no longer get squashed under the list of finds, and they stay at the top of the notes as you scroll.
+
 ## 2026-11-10
 
 - A “Send feedback” link at the foot of your field notes and of the survey log, for bugs and ideas. A GitHub issue from it comes with the game and your device filled in.
