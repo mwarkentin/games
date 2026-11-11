@@ -1,5 +1,6 @@
 ## 2026-11-11
 
+- A third piece of music, Chimes: glassy bells in slow, rolling arpeggios, like an old console role-playing game's quiet town at night, ringing in a deep hall. It takes turns with Drift and Orbit.
 - On a phone with the shared survey on, the theme filters in your field notes no longer get squashed under the list of finds, and they stay at the top of the notes as you scroll.
 - Once you've picked your initials, the survey panel just shows them as “Surveyor MLW”, with a pencil to change them, instead of the form.
 

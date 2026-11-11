@@ -200,7 +200,7 @@ def test_music_fades_out_while_the_tab_is_hidden(page: Page, site_url, errors):
     assert errors == []
 
 
-def test_both_music_tracks_make_sound_and_take_turns(page: Page, site_url, errors):
+def test_every_music_track_makes_sound_and_they_take_turns(page: Page, site_url, errors):
     page.add_init_script("localStorage.setItem('letterfield.coach.v1', '1'); localStorage.setItem('letterfield.music.v1', '1');")
     page.goto(f"{site_url}/letterfield#debug")
     page.wait_for_function("window.__lf")
@@ -218,12 +218,35 @@ def test_both_music_tracks_make_sound_and_take_turns(page: Page, site_url, error
           return out;
         }"""
     )
+    assert len(levels) == 3
     assert all(0.001 < level < 0.2 for level in levels), levels
     page.keyboard.press("Shift")
     page.wait_for_function("window.__lf.music() !== null")
-    first = page.evaluate("window.__lf.music().track")
-    page.evaluate("window.__lf.music().swap()")
-    assert page.evaluate("window.__lf.music().track") != first
+    # Each swap hands over to the next piece, and all three come round.
+    heard = [page.evaluate("window.__lf.music().track")]
+    for _ in range(3):
+        page.evaluate("window.__lf.music().swap()")
+        heard.append(page.evaluate("window.__lf.music().track"))
+    assert sorted(set(heard)) == ["chimes", "drift", "orbit"], heard
+    assert heard[3] == heard[0] and len(set(heard[:3])) == 3, heard
+    assert errors == []
+
+
+def test_chimes_starts_and_stops_cleanly(page: Page, site_url, errors):
+    page.add_init_script("localStorage.setItem('letterfield.coach.v1', '1'); localStorage.setItem('letterfield.music.v1', '1');")
+    page.goto(f"{site_url}/letterfield#debug")
+    page.wait_for_function("window.__lf")
+    page.keyboard.press("Shift")
+    page.wait_for_function("window.__lf.music() !== null")
+    while page.evaluate("window.__lf.music().track") != "chimes":
+        page.evaluate("window.__lf.music().swap()")
+    # It schedules its notes as it plays, and its reverb rings out of the bus.
+    page.wait_for_function("window.__lf.music().nodes > 4", timeout=5000)
+    page.keyboard.press("b")
+    expect(page.locator("#music")).to_have_attribute("aria-pressed", "false")
+    page.wait_for_timeout(3200)  # past the fade, when the piece stops its oscillators
+    page.keyboard.press("b")
+    page.wait_for_function("window.__lf.music() !== null")
     assert errors == []
 
 
