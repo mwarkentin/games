@@ -64,7 +64,7 @@
 
 import { BLOCKED_INITIALS, INITIALS, corsHeaders, hashAddress, json } from './leaderboard.js';
 import { PASS_PATH, checkPass, handlePass } from './survey-pass.js';
-import { CH, DIRS, MAP_VERSION, RC, STRAY_MIN, VOCAB, chunk, fdiv, keyOf, letterAt, territoryTotal } from './letterfield-world.js';
+import { CH, DIRS, MAP_VERSION, RC, STRAY_MIN, VOCAB, chunk, fdiv, keyOf, letterAt, regionTheme, territoryTotal } from './letterfield-world.js';
 import { LOG_BATCH, LOG_MS, LOG_RETRY_MAX_MS, writeLog } from './survey-log.js';
 
 export const SECTOR = RC * 4;         // cells per sector side
@@ -99,6 +99,9 @@ export const SECTOR_PATH = /^\/v1\/survey\/(-?\d{1,7})\/(-?\d{1,7})$/;
 // Internal paths, for Workers that bind these classes (share/): a sector's
 // claim on one word (key as keyOf makes it), and the Atlas's totals.
 export const CLAIM_PATH = /^\/claim\/([^/]{1,64})$/;
+// A territory's supernova, straight from its sector, for share cards made
+// in the seconds before the log has it: { nova: [as the log gives it] }.
+export const NOVA_PATH = /^\/nova\/(-?\d{1,8})\/(-?\d{1,8})$/;
 export const TOTALS_PATH = '/totals';
 export const WORLD_PATH = '/v1/survey/world';
 
@@ -314,6 +317,8 @@ export class Sector {
     // upgrades here, so this path isn't reachable from outside.
     const claim = request.method === 'GET' && pathname.match(CLAIM_PATH);
     if (claim) return this.claimOf(decodeURIComponent(claim[1]));
+    const nova = request.method === 'GET' && pathname.match(NOVA_PATH);
+    if (nova) return this.novaOf(Number(nova[1]), Number(nova[2]));
     const m = pathname.match(SECTOR_PATH);
     if (!m) return new Response('not found', { status: 404 });
     if (request.headers.get('Upgrade') !== 'websocket') return new Response('expected a WebSocket', { status: 426 });
@@ -334,6 +339,13 @@ export class Sector {
   claimOf(key) {
     const row = this.sql.exec('SELECT initials, at FROM claims WHERE key = ?', key).toArray()[0];
     return row ? Response.json({ initials: row.initials, at: row.at }) : Response.json({ error: 'not charted' }, { status: 404 });
+  }
+
+  novaOf(rx, ry) {
+    const n = this.sql.exec('SELECT * FROM novas WHERE rx = ? AND ry = ?', rx, ry).toArray()[0];
+    return n
+      ? Response.json({ nova: [n.rx, n.ry, n.at, n.w, n.x, n.y, n.d, n.initials, n.first, n.words, n.surveyors, n.top, n.top_n, regionTheme(n.rx, n.ry)] })
+      : Response.json({ error: 'no supernova' }, { status: 404 });
   }
 
   fromAddress(address) {

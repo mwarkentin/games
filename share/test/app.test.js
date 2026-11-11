@@ -3,8 +3,8 @@
 import assert from 'node:assert/strict';
 import { afterEach, beforeEach, describe, mock, test } from 'node:test';
 
-import { keyOf } from '../../worker/src/letterfield-world.js';
-import { ASK_MS, PAGE_MS, claimOf, forgetTotals, handle, stateToken, totalsOf } from '../src/app.js';
+import { keyOf, regionName, regionTheme } from '../../worker/src/letterfield-world.js';
+import { ASK_MS, PAGE_MS, claimOf, forgetTotals, handle, novaOf, stateToken, totalsOf } from '../src/app.js';
 import { FAR, PLACED, slugOf } from './card.test.js';
 
 const SHARE = 'https://share.test';
@@ -246,5 +246,64 @@ describe('asking the survey', () => {
     assert.equal(stateToken({ claim: { initials: '', at: AT }, progressText: null }), 'c.20766.x');
     assert.equal(stateToken({ claim: null, progressText: 'Every word on the shared map charted' }), 'o.every');
     assert.equal(stateToken({ claim: undefined, progressText: 'Under 0.1% of the shared map charted' }), 'u.under');
+  });
+});
+
+// ---------- A supernova the log hasn't got yet ----------
+
+describe('a territory gone supernova moments ago', () => {
+  const NOW = Date.UTC(2026, 10, 11, 1, 47), at = NOW - 20_000;
+  const NOVA = [0, 1, at, 'MULTITOOL', 15, 71, 0, 'LMW', at - 21 * 3_600_000, 116, 1, 'LMW', 116, regionTheme(0, 1)];
+  // The log, a few words behind and with no supernova yet; the sector, with it.
+  function sectorEnv({ charted = 112, nova = NOVA, status = 200 } = {}) {
+    const asked = [];
+    const env = {
+      SITE_URL: SITE,
+      LOG: { fetch: async () => Response.json({ rx: 0, ry: 1, charted, total: 116, nova: null, entries: [['TENT', 5, 50, 0, 0, 'LMW', at - 60_000, 15]], themes: {} }) },
+      SECTORS: {
+        idFromName: (name) => name,
+        get: (name) => ({
+          fetch: async (url) => {
+            asked.push([name, new URL(url).pathname]);
+            return status === 200 && nova ? Response.json({ nova }) : Response.json({ error: 'no supernova' }, { status: 404 });
+          },
+        }),
+      },
+    };
+    return { env, asked };
+  }
+  let realNow;
+  beforeEach(() => { renders = []; waits = []; delete globalThis.caches; realNow = Date.now; Date.now = () => NOW; });
+  afterEach(() => { Date.now = realNow; });
+
+  test('asks its sector, and shows the supernova card straight away', async () => {
+    const { env, asked } = sectorEnv();
+    const html = await (await get('/v/territory/0,1', env)).text();
+    assert.deepEqual(asked, [['0,0', '/nova/0/1']]);
+    assert.match(meta(html, 'og:description'), /^Sodden Wold went supernova in Letterfield’s shared survey on 11 Nov 2026: all 116 hidden words charted by 1 surveyor in 21 hours, the last, MULTITOOL, by LMW\.$/);
+    assert.match(meta(html, 'og:image'), /\/v\/territory\/0,1\.png\?s=112\.[a-z0-9]+n$/);
+    await get('/v/territory/0,1.png', env);
+    assert.ok(renders[0].includes('>LETTERFIELD · SUPERNOVA<') && renders[0].includes('>MULTITOOL<'));
+  });
+
+  test('keeps the log\'s card when the sector has none, can\'t say, or nothing is charted there', async () => {
+    for (const [state, wantAsked] of [[{ nova: null }, 1], [{ status: 500 }, 1], [{ charted: 0 }, 0]]) {
+      renders = [];
+      const { env, asked } = sectorEnv(state);
+      await get('/v/territory/0,1.png', env);
+      assert.equal(asked.length, wantAsked, JSON.stringify(state));
+      assert.ok(renders[0].includes('SURVEY LOG · TERRITORY'), JSON.stringify(state));
+    }
+  });
+
+  test('checks what the sector says, and never asks one outside the shared world', async () => {
+    const { env, asked } = sectorEnv({ nova: [...NOVA.slice(0, 13)] });
+    assert.equal(await novaOf(env, 0, 1), null);  // the wrong shape
+    assert.equal(await novaOf(sectorEnv({ nova: [1, ...NOVA.slice(1)] }).env, 0, 1), null);  // another territory's
+    assert.deepEqual(await novaOf(sectorEnv().env, 0, 1), NOVA);
+    assert.equal(await novaOf(env, 400, 1), null);
+    assert.equal(await novaOf({}, 0, 1), null);
+    assert.equal(asked.filter(([, path]) => path === '/nova/400/1').length, 0);
+    assert.equal(regionName(0, 1), 'Sodden Wold');
   });
 });

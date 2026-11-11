@@ -16,8 +16,8 @@
 // Node.
 
 import { hashAddress } from '../../worker/src/leaderboard.js';
-import { MAP_VERSION, THEMES, keyOf, regionName } from '../../worker/src/letterfield-world.js';
-import { AREA, SECTOR, CLAIM_PATH, TOTALS_PATH } from '../../worker/src/survey.js';
+import { MAP_VERSION, RC, THEMES, keyOf, regionName } from '../../worker/src/letterfield-world.js';
+import { AREA, SECTOR, CLAIM_PATH, NOVA_PATH, TOTALS_PATH } from '../../worker/src/survey.js';
 import { day, findSvg, parseFind, progress } from './card.js';
 import { logPaths, nameOf, pagePath, parseView, summarize, viewSvg } from './view.js';
 
@@ -72,6 +72,25 @@ export async function claimOf(env, e) {
   // before it knew this path (the share Worker deployed first), so unknown.
   if (answer.status === 404) return c?.error === 'not charted' ? null : undefined;
   return c && typeof c.initials === 'string' && Number.isFinite(c.at) ? { initials: c.initials, at: c.at } : undefined;
+}
+
+// A territory's supernova, from its sector's own record: a supernova is
+// shared from the game seconds after it goes off, and the log only has it
+// once the sector next copies to it (up to 30 s later), so a card asked for
+// then would otherwise be the plain one. The log's array shape, [rx, ry, at,
+// w, x, y, d, initials, first, words, surveyors, top, topN, th], or null.
+// Only sectors in the shared world are asked, as for claims.
+export async function novaOf(env, rx, ry) {
+  const sx = Math.floor(rx * RC / SECTOR), sy = Math.floor(ry * RC / SECTOR);
+  if (!env.SECTORS || Math.abs(sx) > AREA || Math.abs(sy) > AREA) return null;
+  const path = `/nova/${rx}/${ry}`;
+  if (!NOVA_PATH.test(path)) return null;
+  const answer = await ask(() => env.SECTORS.get(env.SECTORS.idFromName(`${sx},${sy}`)).fetch(`https://sector${path}`));
+  if (answer?.status !== 200) return null;
+  const n = (await answer.json().catch(() => null))?.nova;
+  const ok = Array.isArray(n) && n.length === 14 && n[0] === rx && n[1] === ry
+    && [2, 4, 5, 6, 8, 9, 10, 12, 13].every((i) => Number.isInteger(n[i])) && [3, 7, 11].every((i) => typeof n[i] === 'string');
+  return ok ? n : null;
 }
 
 // The shared map's totals, from the Atlas, kept for a minute per instance.
@@ -248,6 +267,13 @@ export async function logOf(env, v, now = Date.now()) {
   const a = await get(logPaths(v, span, now));
   if (!a || !Array.isArray(a.entries)) return null;
   if (v.kind === 'territory' ? !(Number.isInteger(a.charted) && Number.isInteger(a.total)) : !(Number.isInteger(a.words) && Number.isInteger(a.world))) return null;
+  // A territory the log doesn't know has gone supernova may have done so in
+  // the last half minute: its sector knows. One with nothing charted can't
+  // have, so its sector isn't woken.
+  if (v.kind === 'territory' && !Array.isArray(a.nova) && a.charted > 0) {
+    const nova = await novaOf(env, v.rx, v.ry);
+    if (nova) a.nova = nova;
+  }
   return summarize(v, a, now);
 }
 

@@ -78,7 +78,7 @@ and `worker_domains.tf` there), in this order:
    its binding.
 2. **Deploy:** run **Deploy share worker** from the Actions tab, or push a
    change under `share/` (or `worker/src/`, whose code it imports). Deploy
-   the leaderboard Worker first if its `/claim` and `/totals` paths are new:
+   the leaderboard Worker first if its `/claim`, `/nova` and `/totals` paths are new:
    until then, cards just leave their charting lines off. The Worker then
    answers at `https://games-share.mwarkentin.workers.dev`.
 3. **The custom domain** `share.michaelwarkentin.com`, made in infra once the
@@ -124,6 +124,24 @@ GET /v/d/…, ….png                                        dark; the card itse
 - **What it shows** is the page's own share picture, `shareImage()` in
   `letterfield-log.html`: whose view, the period by its dates, three
   numbers, and the latest words with their themes' dots.
+- **A supernova** has a card of its own (`src/nova.js`): a territory whose
+  every hidden word is charted, drawn as the game's supernova just after
+  the burst, in the territory theme's hue. A white-hot core with a cross of
+  light, the shockwave with its two fainter echoes, sparks and streaks, the
+  territory's own letters flung out along the front, and stars; then its
+  name, how many words it had, when it went, first word to last, who
+  charted most, and the last word and who charted it. It's night on both
+  cards (the dark one's sky is only deeper), and seeded by the territory, so
+  each territory's card is always the same picture. Its glows are flat
+  steps rather than wide gradients or blurs, which keeps the PNG under
+  WhatsApp's 300 KB (about 270 KB) and the render near 120 ms;
+  `test/render.test.js` checks both.
+- **A supernova moments old:** the game's Share hands out its card seconds
+  after it goes off, but the log only has it once its sector next copies to
+  it, up to 30 s later. So when the log's territory has words but no
+  supernova, the card asks the territory's sector (`GET /nova/<rx>/<ry>`, an
+  internal path like `/claim`, with the same time limit and only inside the
+  shared world) and uses its answer.
 - **Caching:** the card's URL carries a token of its count and latest word,
   `?s=5.<time>`, so it changes with every new word, and a card asked for
   with the state it shows is kept for good at the edge. Views aren't kept in

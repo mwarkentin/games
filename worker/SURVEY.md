@@ -593,6 +593,16 @@ edit that row too.
   supernova above the last one; and its share card says "Supernova" and
   how it went (`share/src/view.js`), with no new address.
 
+**In the game,** every supernova a player sees (the burst nearby, or the
+note for one further off) and every territory they find every word of
+themselves is kept in their field notes (`letterfield.novas.v1`), and a
+note after the burst offers to share it. A shared one links to the share
+Worker's card of its territory (`/v/territory/<rx>,<ry>`), drawn as a
+supernova. A player shares one seconds after it goes off, before the log
+has it, so the share Worker asks the territory's sector for it
+(`GET /nova/<rx>/<ry>`, an internal path like `/claim/<key>`) when the log
+hasn't got it yet.
+
 If the list can't be loaded, the period shows without its supernovas.
 
 **Caching** is the same as a surveyor's view: a range that ended an hour

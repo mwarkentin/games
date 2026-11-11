@@ -165,6 +165,13 @@ body.docked .notes{box-shadow:none}
 .def-links a:hover{color:var(--ink)}
 .def-retry{font:500 11px/1 var(--f-mono);padding:7px 10px;border:1px solid var(--rule);border-radius:999px;background:transparent;color:var(--ink);cursor:pointer}
 .find:hover{background:var(--hover)}
+/* Supernovas you were here for, above your finds: a star each, its share. */
+.novas{flex:none;padding:10px 8px 4px;border-bottom:1px solid var(--rule)}
+.novas h3{margin:0 10px 2px}
+.novas ol{list-style:none;margin:0;padding:0;max-height:min(30vh, 260px);overflow-y:auto;overscroll-behavior:contain}
+.novas li{display:flex;align-items:center;gap:2px}
+.nova-star{width:12px;height:12px;margin:0 -1px;border-radius:50%;align-self:center;background:radial-gradient(circle, #fff 0 16%, hsl(var(--h,200) 90% 62%) 32%, hsl(var(--h,200) 80% 50% / .35) 56%, transparent 72%);box-shadow:0 0 0 1.5px hsl(var(--h,200) 60% 50% / .35)}
+.nova-find .find-word{font-size:17px}
 .find-dot{width:10px;height:10px;border-radius:50%;background:var(--c);align-self:center}
 .find.stray .find-dot{background:transparent;border:2px dashed var(--c);width:10px;height:10px;box-sizing:border-box}
 .find-word{font:700 21px/1 var(--f-display);letter-spacing:.07em;min-width:0;overflow:hidden;text-overflow:ellipsis}
@@ -398,6 +405,10 @@ body.docked .nova{left:calc((100% - var(--notes-w)) / 2)}
       <button type="button" class="btn ghost" id="surveyCancel" hidden>Cancel</button>
     </form>
     <p class="survey-hint" id="surveyHint"></p>
+  </section>
+  <section class="novas" id="novasSec" aria-labelledby="novasHead" hidden>
+    <h3 class="eyebrow" id="novasHead">Supernovas</h3>
+    <ol id="novaList"></ol>
   </section>
   <div class="filters" id="filters" role="group" aria-label="Filter by theme"></div>
   <ol class="finds" id="finds"></ol>
@@ -1366,7 +1377,8 @@ function onSurvey(l, m) {
         // Close enough to see, it goes supernova; further off, a note will do.
         const mine = m.by === l.you, last = mine ? 'the last by you' : c.by ? `the last by ${c.by}` : '';
         const text = `${regionName(rx, ry)} · every hidden word charted${last ? ', ' + last : ''}`;
-        if (!nearView(rx, ry) || !supernova(rx, ry, { mine, text })) setTimeout(() => toast(`<i></i><b>${regionName(rx, ry)}</b><span>Every hidden word here is charted</span>`, THEMES[regionTheme(rx, ry)].hue), 1800);
+        const seen = sawNova({ rx, ry, t: Date.now(), w: c.w, x: c.x, y: c.y, d: c.d, by: c.by || '', mine, solo: false });
+        if (!nearView(rx, ry) || !supernova(rx, ry, { mine, text, seen })) setTimeout(() => (seen ? novaToast(seen, 'Went supernova · every hidden word charted') : toast(`<i></i><b>${regionName(rx, ry)}</b><span>Every hidden word here is charted</span>`, THEMES[regionTheme(rx, ry)].hue)), 1800);
       }
     }
   } else if (m.t === 'taken') {
@@ -1776,7 +1788,7 @@ function supernova(rx, ry, opts = {}) {
   const r = rng(h3(rx, ry, SEED ^ 0x7f4a7c15)), motes = [], sparks = [];
   for (let i = 0; i < 140; i++) motes.push({ a: r() * Math.PI * 2, r: .6 + r() * 1.2, s: r(), laps: 2 + r() * 3, spin: (r() < .5 ? -1 : 1) * (1 + r() * 2), w: .8 + r() * 1.8 });
   for (let i = 0; i < 220; i++) sparks.push({ a: r() * Math.PI * 2, v: 220 + Math.pow(r(), 1.7) * 1700, life: .6 + r() * 1.7, w: 1 + r() * 2.4, white: r() < .35 });
-  nova = { rx, ry, th: regionTheme(rx, ry), x, y, t0: now, burst: false, text: opts.text || regionName(rx, ry), motes, sparks };
+  nova = { rx, ry, th: regionTheme(rx, ry), x, y, t0: now, burst: false, text: opts.text || regionName(rx, ry), motes, sparks, seen: opts.seen || null };
   // Your own: the camera centres on it, close enough that the shockwave has letters to throw.
   if (opts.mine && !RM) flyTo(x, y, clamp(cam.cs, 18, 28), { min: 900, max: 1500 });
   const far = clamp((Math.max(Math.abs(x - cam.x), Math.abs(y - cam.y)) - RC) / (RC * 4), 0, 1);
@@ -1790,8 +1802,97 @@ function novaBanner() {
   novaEl.hidden = false;
   novaEl.classList.remove('show'); void novaEl.offsetWidth; novaEl.classList.add('show');
   clearTimeout(novaTimer);
-  novaTimer = setTimeout(() => { novaEl.classList.remove('show'); novaEl.hidden = true; }, 4700);
+  const seen = nova.seen;
+  novaTimer = setTimeout(() => {
+    novaEl.classList.remove('show'); novaEl.hidden = true;
+    // Then the way to share it, and where it's kept.
+    if (seen) novaToast(seen);
+  }, 4700);
 }
+// Supernovas you were here for, kept in this browser and listed in the
+// field notes: the shared survey's, near enough to watch or far enough for a
+// note, and territories you found every word of yourself. Each is
+// { rx, ry, t, w, x, y, d, by, mine, solo }: when, the last word and who
+// charted it, whether that was you, and whether it was yours alone.
+const K_NOVAS = 'letterfield.novas.v1', NOVAS_MAX = 200;
+const novasSeen = new Map();  // 'rx,ry' → its record
+function cleanNova(o) {
+  if (!o || typeof o.w !== 'string' || !/^[A-Z]{3,12}$/.test(o.w)) return null;
+  const n = { rx: o.rx, ry: o.ry, t: o.t, w: o.w, x: o.x, y: o.y, d: o.d, by: typeof o.by === 'string' && /^[A-Z]{3}$/.test(o.by) ? o.by : '', mine: !!o.mine, solo: !!o.solo };
+  return [n.rx, n.ry, n.t, n.x, n.y, n.d].every(Number.isInteger) && n.d >= 0 && n.d <= 7 ? n : null;
+}
+function loadNovas() {
+  novasSeen.clear();
+  for (const o of readList(K_NOVAS)) { const n = cleanNova(o); if (n) novasSeen.set(n.rx + ',' + n.ry, n); }
+}
+loadNovas();
+// Records one, once: a territory goes supernova only once.
+function sawNova(o) {
+  const k = o.rx + ',' + o.ry, had = novasSeen.get(k);
+  if (had) return had;
+  const n = cleanNova(o);
+  if (!n) return null;
+  novasSeen.set(k, n);
+  const list = [...novasSeen.values()].sort((a, b) => b.t - a.t).slice(0, NOVAS_MAX);
+  if (list.length < novasSeen.size) { novasSeen.clear(); for (const v of list) novasSeen.set(v.rx + ',' + v.ry, v); }
+  LS.set(K_NOVAS, JSON.stringify(list));
+  if (notesOpen) renderNotes();
+  return n;
+}
+window.addEventListener('storage', e => { if (e.key === K_NOVAS) { loadNovas(); if (notesOpen) renderNotes(); } });
+// A supernova as a sentence, with a link: on the shared survey, the share
+// Worker's card of it (a dark page shares the dark one); alone, the game
+// flying to its last word.
+function novaShareText(n) {
+  const place = regionName(n.rx, n.ry), just = Date.now() - n.t < SHARE_JUST_MS ? 'just ' : '';
+  if (n.solo) return `I found every hidden word in ${place} in Letterfield, and it ${just}went supernova.`;
+  if (n.mine) return `I charted the last hidden word in ${place}, ${n.w}, and the whole territory ${just}went supernova in Letterfield’s shared survey.`;
+  return `${place} ${just}went supernova in Letterfield’s shared survey: every hidden word charted, the last, ${n.w}${n.by ? `, by ${n.by}` : ''}.`;
+}
+function novaShareUrl(n) {
+  if (n.solo) return location.origin + location.pathname + location.search + '#' + hashOf(n);
+  return shareBase ? `${shareBase}/v/${C.dark ? 'd/' : ''}territory/${n.rx},${n.ry}` : `${location.origin}/letterfield-log?territory=${n.rx},${n.ry}`;
+}
+async function shareNova(n) {
+  const text = novaShareText(n), url = novaShareUrl(n), hue = THEMES[regionTheme(n.rx, n.ry)].hue;
+  if (navigator.share) {
+    try { await navigator.share({ title: 'Letterfield', text, url }); return; } catch (err) { if (err && err.name === 'AbortError') return; }
+  }
+  try {
+    await navigator.clipboard.writeText(`${text} ${url}`);
+    toast(`<i></i><b>Copied</b><span>${regionName(n.rx, n.ry)}, ready to paste</span>`, hue);
+  } catch (_) {
+    toast(`<i></i><b>Couldn’t share</b><span>Copy this page’s address instead</span>`, hue);
+  }
+}
+const novaAction = n => ({ label: `Share ${regionName(n.rx, n.ry)}’s supernova`, share: () => shareNova(n) });
+// The note a supernova leaves: where, that it's in your notes, and Share.
+function novaToast(n, line = 'Supernova · kept in your field notes') {
+  toast(`<i></i><b>${regionName(n.rx, n.ry)}</b><span>${line}</span>`, THEMES[regionTheme(n.rx, n.ry)].hue, SHARE_TOAST_MS, novaAction(n));
+}
+// The field notes' list of them, newest first; each flies to its last word.
+const novasSec = $('#novasSec'), novaListEl = $('#novaList');
+function renderNovas() {
+  const list = [...novasSeen.values()].sort((a, b) => b.t - a.t);
+  novasSec.hidden = !list.length;
+  $('#novasHead').textContent = list.length === 1 ? 'Supernova' : `Supernovas · ${list.length}`;
+  novaListEl.innerHTML = list.map(n => {
+    const k = n.rx + ',' + n.ry, place = regionName(n.rx, n.ry), who = n.solo ? 'all found by you' : n.mine ? 'the last by you' : n.by ? `the last by ${n.by}` : 'every word charted';
+    return `<li><a class="find mark nova-find" href="#${hashOf(n)}" data-nova="${k}" style="--h:${THEMES[regionTheme(n.rx, n.ry)].hue}">` +
+      `<span class="nova-star" aria-hidden="true"></span><span class="find-word">${place}</span><span class="find-when">${rel(n.t)}</span>` +
+      `<span class="find-meta">Went supernova · <b>${n.w}</b>, ${who}</span></a>` +
+      `<button type="button" class="find-share" data-nova="${k}" aria-label="Share ${place}’s supernova" title="Share ${place}’s supernova">${SHARE_ICON}</button></li>`;
+  }).join('');
+}
+novaListEl.addEventListener('click', e => {
+  const b = e.target.closest('.find-share');
+  if (b) { const n = novasSeen.get(b.dataset.nova); if (n) shareNova(n); return; }
+  const a = e.target.closest('a.find'); if (!a) return;
+  e.preventDefault();
+  const n = novasSeen.get(a.dataset.nova); if (!n) return;
+  if (!dock) setNotes(false, false);
+  goToEntry(n);
+});
 // The supernova this frame, or null: charge runs 0 to 1, then after counts
 // seconds since the burst. Sizes are CSS pixels; the d-suffixed ones are for
 // the letters, which are drawn in device pixels.
@@ -2896,7 +2997,10 @@ function collect(w, x, y, d, stray) {
   toast(`<i></i><b>${w}</b><span>${stray ? 'Stray ' + THEMES[e.th].name.toLowerCase() + ' word' : THEMES[e.th].name} · ${regionName(rx, ry)}</span>`, THEMES[e.th].hue, 0, e);
   if (!stray) {
     const total = territoryTotal(rx, ry);
-    if (territoryFound(rx, ry) === total) supernova(rx, ry, { mine: true, text: `${regionName(rx, ry)} · all ${total} hidden words found` });
+    if (territoryFound(rx, ry) === total) {
+      const seen = sawNova({ rx, ry, t: e.t, w, x, y, d, by: '', mine: true, solo: !surveyApi });
+      supernova(rx, ry, { mine: true, text: `${regionName(rx, ry)} · all ${total} hidden words found`, seen });
+    }
   }
   if (Intro.is('coach')) Intro.go('exploring');
   renderNotes(); scheduleHud(); invalidate();
@@ -3243,17 +3347,19 @@ const toastEl = $('#toast');
 let toastTimer = 0, toastMs = 0;
 // A note at the top of the map. Given a find, it offers to share it, and
 // stays long enough to tap, or while a pointer or focus is on it.
+// `find` is a find to offer to share, or { label, share } for anything else.
 function toast(html, hue, ms = 2400, find = null) {
   toastEl.innerHTML = html;
   if (hue != null) toastEl.style.setProperty('--h', hue);
   toastEl.classList.toggle('can-share', !!find);
   if (find) {
+    const act = typeof find.share === 'function' ? find : { label: 'Share ' + find.w, share: () => shareFind(find) };
     const b = document.createElement('button');
     b.type = 'button';
     b.className = 'share';
     b.innerHTML = SHARE_ICON + 'Share';
-    b.setAttribute('aria-label', 'Share ' + find.w);
-    b.addEventListener('click', () => shareFind(find));
+    b.setAttribute('aria-label', act.label);
+    b.addEventListener('click', act.share);
     toastEl.append(b);
     ms = Math.max(ms, SHARE_TOAST_MS);
   }
@@ -3417,6 +3523,7 @@ function setNotes(open, remember = true) {
   scheduleHud(); invalidate();
 }
 function renderNotes() {
+  renderNovas();
   const all = [...found.values()].sort((a, b) => b.t - a.t);
   notesBadge.textContent = all.length;
   $('#tWords').textContent = all.length;
@@ -3608,7 +3715,7 @@ updateHud();
 invalidate();
 if (redrawn) setTimeout(() => toast(`<i></i><b>The map has been redrawn</b><span>${NT} themes of about ${Math.round(THEMES.reduce((a, t) => a + t.words.length, 0) / NT / 10) * 10} words now, so a territory never repeats one · ${redrawn.kept ? `${redrawn.kept} of your ${redrawn.had} finds are still on it` : 'your old finds are not on it'}</span>`, null, 8000), 900);
 connectStore();
-if (location.hash === '#debug') window.__lf = { cam, found, claims, links, chunk, wordEnd, collect, territoryProgress, remnants: () => [...remnants().set], world: () => world, supernova, novaSound, audioOut, musicTracks: MUSIC_TRACKS, music: () => musicNow && { state: ac.state, track: musicNow.track().name, nodes: musicNow.track().nodes.size, level: musicNow.master.gain.value, swap: musicNow.swap }, nova: () => nova,
+if (location.hash === '#debug') window.__lf = { cam, found, claims, links, chunk, wordEnd, collect, territoryProgress, remnants: () => [...remnants().set], novas: () => [...novasSeen.values()], territoryName: regionName, world: () => world, supernova, novaSound, audioOut, musicTracks: MUSIC_TRACKS, music: () => musicNow && { state: ac.state, track: musicNow.track().name, nodes: musicNow.track().nodes.size, level: musicNow.master.gain.value, swap: musicNow.swap }, nova: () => nova,
   pass: () => Pass.state, intro: () => Intro.state, surveyStatus, linkStates: () => Object.fromEntries([...links].map(([k, l]) => [k, l.m.state])), outbox: () => [...outbox.values()].map(c => [c.e.w, c.m.state]), definitions: () => Object.fromEntries([...definitions].map(([k, d]) => [k, d.m.state])) };
 
 })();
