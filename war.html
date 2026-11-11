@@ -291,7 +291,7 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px s
 #myWar { position: relative; display: grid; justify-items: center; gap: 4px; }
 #myWar .wpile { position: relative; width: var(--cw); height: calc(var(--cw) * 1.4); }
 #myWar .wpile:empty { border: 2px dashed rgba(255, 80, 70, .7); border-radius: 9px; }
-#myWar .wpile .card { position: absolute; inset: 0; transform: translate(var(--dx), var(--dy)) rotate(var(--r)); }
+#myWar .wpile .card { position: absolute; inset: 0; transform: translate(var(--dx), var(--dy)) rotate(var(--r)); transition: transform calc(250ms * var(--pace)) ease-out; }
 #myWar.won .wpile .card:last-child:not(.back) { box-shadow: 0 0 0 3px var(--gold), 0 0 22px var(--gold); }
 #myWar .wpile .card.slam { animation: wslam calc(380ms * var(--pace)) cubic-bezier(.5, 0, .75, 0) both; }
 @keyframes wslam {
@@ -877,6 +877,105 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px s
 .feedback a { color: inherit; }
 .err { color: var(--accent); font-weight: 700; min-height: 1.3em; }
 .stack-gap { display: grid; gap: 8px; }
+/* Spoils of war: a war you won. SPOILS OF WAR! slams in, the pot bursts out
+   into a fan (two rows for a big pot), the face-down cards turn over one by
+   one, a counter tallies them up and a war report lists the haul. As the next
+   battle opens the cards fly from here to your loot pile and the rest fades.
+   Only a picture in #fx, like the versus intro: the page places and flips
+   the cards (see Spoils), and --k scales its timeline to the time there is. */
+.sp { --k: 1; position: absolute; inset: 0; }
+.sp-dim { position: absolute; inset: 0; background: radial-gradient(ellipse at 50% 45%, rgba(4, 22, 12, .86), rgba(0, 0, 0, .94) 75%); animation: sp-in calc(220ms * var(--k)) ease-out both; }
+.sp.lv2 .sp-dim { background: radial-gradient(ellipse at 50% 45%, rgba(40, 18, 0, .8), rgba(0, 0, 0, .92) 75%); }
+.sp.lv3 .sp-dim { background: radial-gradient(ellipse at 50% 45%, rgba(10, 18, 48, .82), rgba(0, 0, 0, .94) 75%); }
+.sp-col {
+  position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px;
+  padding: calc(env(safe-area-inset-top) + 12px) calc(env(safe-area-inset-right) + 16px) calc(env(safe-area-inset-bottom) + 12px) calc(env(safe-area-inset-left) + 16px);
+}
+.sp-pre, .sp-title { font-family: "Black Ops One", Impact, "Arial Black", system-ui, sans-serif; font-weight: 400; line-height: .95; white-space: nowrap; text-align: center; }
+.sp-pre { font-size: min(9vw, 40px); color: #fff; text-shadow: 0 3px 0 #5a2a00, 0 0 12px rgba(255, 190, 60, .8); animation: sp-drop calc(300ms * var(--k)) cubic-bezier(.6, 0, .9, .4) calc(80ms * var(--k)) both; }
+.sp-title {
+  --size: min(9.4vw, 50px);
+  font-size: var(--size); color: var(--gold);
+  background: linear-gradient(180deg, #fff6c8 0 28%, #ffc93d 50%, #e07a00 85%);
+  -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent;
+  -webkit-text-stroke: max(3px, .06em) #3a1a00; paint-order: stroke fill;
+  filter: drop-shadow(0 .06em 0 #3a1a00) drop-shadow(0 0 .2em rgba(255, 190, 40, .7));
+  animation: sp-slam calc(420ms * var(--k)) cubic-bezier(.6, 0, .9, .4) both;
+}
+.sp.lv2 .sp-title { --size: min(9.8vw, 58px); }
+.sp.lv3 .sp-title { --size: min(10.2vw, 64px); filter: drop-shadow(0 .06em 0 #3a1a00) drop-shadow(0 0 .25em rgba(150, 230, 255, .9)); }
+@keyframes sp-slam { 0% { transform: scale(3.6) rotate(-10deg); opacity: 0; } 60% { opacity: 1; } 100% { transform: skewX(-7deg); opacity: 1; } }
+@keyframes sp-drop { from { transform: translateY(-40px) scale(1.8); opacity: 0; } to { transform: none; opacity: 1; } }
+@keyframes sp-in { from { opacity: 0; } }
+.sp-count {
+  font: 400 min(10vw, 44px)/1 var(--display); color: #fff; min-width: 3ch; text-align: center;
+  text-shadow: 0 3px 0 #3a1a00, 0 0 14px rgba(255, 201, 61, .8);
+}
+.sp-count.done { animation: sp-bump calc(300ms * var(--k)) cubic-bezier(.2, 1.6, .4, 1); }
+@keyframes sp-bump { 50% { transform: scale(1.35); } }
+.sp-fan { position: relative; flex: none; }
+.sp-c { position: absolute; left: 50%; top: 0; will-change: transform; }
+.sp-c .card { box-shadow: 0 6px 14px rgba(0, 0, 0, .55); }
+.sp-in { position: relative; transform-style: preserve-3d; }
+.sp-in .card { -webkit-backface-visibility: hidden; backface-visibility: hidden; }
+.sp-in .sp-back { position: absolute; left: 0; top: 0; transform: rotateY(180deg); }
+.sp-more { font: 700 13px/1 system-ui, sans-serif; color: #fff; background: rgba(0, 0, 0, .55); padding: 5px 10px; border-radius: 99px; border: 1px solid rgba(255, 201, 61, .6); }
+/* The war report, a results window in War's own colors: felt, brass and card. */
+.sp-win {
+  width: min(100%, 340px); margin-top: 4px; padding: 8px 12px 10px; border-radius: 12px;
+  background: linear-gradient(180deg, rgba(31, 125, 79, .97), rgba(16, 70, 44, .97));
+  border: 3px solid var(--gold); box-shadow: 0 0 0 2px #3a1a00, inset 0 0 0 2px rgba(255, 255, 255, .14), 0 10px 26px rgba(0, 0, 0, .6);
+  color: #fdf8ec; visibility: hidden;
+}
+.sp.report .sp-win { visibility: visible; animation: sp-win calc(340ms * var(--k)) cubic-bezier(.2, 1.4, .4, 1) both; }
+@keyframes sp-win { from { transform: scaleY(.1) scaleX(.6); opacity: 0; } }
+.sp-head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; border-bottom: 2px solid rgba(255, 201, 61, .55); padding-bottom: 4px; margin-bottom: 4px; }
+.sp-head b { font: 400 15px/1 var(--display); color: var(--gold); letter-spacing: .06em; }
+.sp-head small { font: 700 12px/1 system-ui, sans-serif; color: rgba(253, 248, 236, .75); }
+.sp-row { display: flex; align-items: baseline; gap: 6px; font: 600 14px/1.25 system-ui, sans-serif; padding: 2px 0; }
+.sp.report .sp-row { animation: sp-row calc(260ms * var(--k)) ease-out calc((150ms + var(--i, 0) * 100ms) * var(--k)) both; }
+/* Once the next battle is up, a word that a tap carries on. */
+.sp-next {
+  font: 700 13px/1.2 system-ui, sans-serif; color: #fff; background: rgba(0, 0, 0, .6); border: 1px solid rgba(255, 201, 61, .7);
+  padding: 6px 12px; border-radius: 99px; text-align: center; max-width: 100%; visibility: hidden;
+}
+.sp.next .sp-next { visibility: visible; animation: sp-in calc(300ms * var(--k)) ease-out both, sp-nudge calc(1400ms * var(--k)) ease-in-out calc(300ms * var(--k)) infinite; }
+@keyframes sp-nudge { 50% { transform: scale(1.06); } }
+@keyframes sp-row { from { transform: translateX(-14px); opacity: 0; } }
+.sp-row span { flex: none; }
+.sp-row i { flex: 1; min-width: 8px; border-bottom: 2px dotted rgba(253, 248, 236, .35); transform: translateY(-3px); }
+.sp-row b { font: 400 14px/1.25 var(--display); color: #fff3c4; text-align: right; min-width: 0; overflow-wrap: anywhere; }
+.sp-row.big b { color: var(--gold); font-size: 16px; }
+/* The cards fly off to the loot pile; the report holds a moment, then fades. */
+.sp.leaving .sp-dim { animation: sp-out calc(240ms * var(--k)) ease-in forwards; }
+.sp.gone .sp-col { animation: sp-out calc(300ms * var(--k)) ease-in forwards; }
+@keyframes sp-out { to { opacity: 0; } }
+/* Someone else's war: a strip with their haul. */
+.sp-lite {
+  position: absolute; left: 50%; top: var(--y, 40%); transform: translate(-50%, -50%);
+  display: grid; justify-items: center; gap: 5px; padding: 7px 14px 8px; max-width: calc(100vw - 24px);
+  background: linear-gradient(180deg, rgba(31, 125, 79, .95), rgba(16, 70, 44, .95)); border: 2px solid var(--gold);
+  border-radius: 12px; box-shadow: var(--shadow); white-space: nowrap; color: #fff;
+  animation: sp-lite calc(320ms * var(--k)) cubic-bezier(.2, 1.4, .4, 1) both;
+}
+.sp-lite p { margin: 0; font: 700 14px/1.25 system-ui, sans-serif; white-space: normal; text-align: center; max-width: calc(100vw - 56px); }
+.sp-lite p b { font: 400 13px/1.25 var(--display); color: var(--gold); }
+.sp-lost { font: 700 13px/1 system-ui, sans-serif; color: #ffd0c8; background: rgba(160, 20, 10, .6); padding: 2px 7px; border-radius: 99px; white-space: nowrap; }
+.sp-mini { display: flex; align-items: center; }
+.sp-lite .sp-tap { display: none; font: 700 12px/1 system-ui, sans-serif; color: #ffe9a8; }
+.sp-lite.next .sp-tap { display: block; }
+.sp-mini .card { --w: 26px; margin-left: -9px; box-shadow: 0 2px 5px rgba(0, 0, 0, .5); }
+.sp-mini .card:first-child { margin-left: 0; }
+.sp-mini .card .ci { font-size: 9px; }
+.sp-mini .card .cc { display: none; }
+.sp-mini small { margin-left: 6px; font: 700 12px/1 system-ui, sans-serif; }
+@keyframes sp-lite { from { transform: translate(-50%, -50%) scale(.3); opacity: 0; } }
+.sp-lite.gone { animation: sp-lite-out calc(300ms * var(--k)) ease-in forwards; }
+@keyframes sp-lite-out { to { transform: translate(-50%, -50%) translateY(-14px); opacity: 0; } }
+/* Reduced motion: the same haul, standing still. */
+.sp.calm *, .sp-lite.calm, .sp-lite.calm * { animation: none !important; }
+.sp.calm .sp-title { transform: none; filter: none; }
+
 /* Over the battle counter, so it never hides the cards. */
 #toast {
   position: fixed; left: 50%; top: calc(env(safe-area-inset-top) + 4px); transform: translateX(-50%);
@@ -1837,6 +1936,31 @@ const Sound = {
     [0.468, 0.756, 1.044].forEach((t) => this.tone(523, t * k, 0.16, { type: 'square', gain: 0.06, to: 628 }));
     this.tone(330, 1.12 * k, 0.4, { type: 'triangle', gain: 0.16, to: 990 });
     this.tone(659, 1.16 * k, 0.3, { type: 'square', gain: 0.04, to: 784 });
+  },
+  // Spoils of war: a thud as the title lands, a quick climb up the scale and
+  // a bright chord with a sparkle on top, a step higher for each level of
+  // war, with a bass under a double or triple war. `k` scales its timing.
+  spoils(level = 1, k = 1) {
+    const up = [1, 1.122, 1.26][level - 1] || 1.26;
+    this.noise(0.24 * k, 0.3, 0.35, 900);
+    this.tone(120, 0.24 * k, 0.35, { gain: 0.35, to: 48 });
+    [392, 440, 494, 587, 659].forEach((f, i) => this.tone(f * up, (0.34 + i * 0.055) * k, 0.1, { type: 'square', gain: 0.045 }));
+    [523, 659, 784].forEach((f) => this.tone(f * up, 0.64 * k, 0.75, { type: 'triangle', gain: 0.085 }));
+    this.tone(1568 * up, 0.66 * k, 0.12, { type: 'square', gain: 0.02 });
+    this.tone(2093 * up, 0.72 * k, 0.2, { type: 'square', gain: 0.018 });
+    if (level >= 2) this.tone(131 * up, 0.64 * k, 0.9, { type: 'sawtooth', gain: 0.05, to: 128 * up });
+  },
+  // A face-down card in the spoils turns over: a pop, higher for each one.
+  pop(i = 0) {
+    this.noise(0, 0.03, 0.14, 6000);
+    this.tone(520 + i * 45, 0, 0.08, { type: 'square', gain: 0.045, to: 980 + i * 45 });
+  },
+  // The spoils' counter ticking up.
+  tick(i = 0) { this.tone(1500 + (i % 3) * 80, 0, 0.025, { type: 'square', gain: 0.025 }); },
+  // Someone else's spoils: a little two-note ding.
+  ding() {
+    this.tone(1318, 0, 0.22, { type: 'triangle', gain: 0.05 });
+    this.tone(1760, 0.07, 0.28, { type: 'triangle', gain: 0.045 });
   },
   blip(tier) { this.tone(300 + tier * 90, 0, 0.06, { type: 'square', gain: 0.04 }); },
   swish() { this.noise(0, 0.14, 0.07, 1800); },
@@ -4178,6 +4302,365 @@ const SixSeven = {
   },
 };
 
+// ---- Spoils of war ----
+//
+// A war is won. If it's yours, SPOILS OF WAR! slams in, the whole pot bursts
+// out into a fan, each card in its deck, the face-down ones turning over one
+// by one with a pop, a counter tallies them up, and a war report lists the
+// haul. It takes its time: longer than the room waits before the next
+// battle, so it runs on into that battle, holding the pot on the fan (and
+// off your loot pile, see defer) until you've had a moment to read the
+// report, or tap (in a slow game, which has no clock, until you tap). Then
+// the cards fly from the fan to your loot pile
+// (heapToss, from each card's `from`) and the report fades. Anyone else's
+// war gets a strip: "Spoils to Bob: 14 cards", with a row of the cards, gone
+// as the next battle opens. It's only a picture in #fx, like the versus
+// intro: it never holds the room up, takes no taps, and any tap or key sends
+// it off early (and still does what it does, a slam included). Fast mode
+// speeds it up with the rest (k).
+const SP_ROW = 10;          // cards in a row of the fan
+const SP_MAX = 2 * SP_ROW;  // cards drawn in the show; the rest are "+N more"
+const SP_LITE_MAX = 18;     // and in someone else's strip, or 12 and "+N more" for a pot bigger than that
+const SP_HOLD = 450;        // how long the report stays once the cards fly, ms at normal speed
+const SP_READ = 1800;       // how long the whole report stays up before the cards fly
+const SP_CALM_READ = 3200;  // and with reduced motion, where it's all up at once
+const SP_WARS = ['', 'DOUBLE', 'TRIPLE'];
+const SP_DEPTH = ['War', 'Double war', 'Triple war'];
+const SP_JOKES = [
+  ['Skill involved', 'None'],
+  ['Strategy used', 'None needed'],
+  ['Experience', '+0 XP. War has no levels'],
+  ['Cards that tried their best', 'All of them'],
+];
+
+// What the show is doing: nothing, the haul bursting out and turning over,
+// the report up, someone else's strip, or leaving as the cards fly off.
+const SpoilsShow = machine('spoils', {
+  none: ['haul', 'report', 'lite'],   // the report straight away with reduced motion
+  haul: ['report', 'leaving', 'none'],
+  report: ['leaving', 'none'],
+  lite: ['leaving', 'none'],
+  leaving: ['none'],
+}, 'none', { onMove: (to) => Spoils.moved(to) });
+
+const Spoils = {
+  last: null,   // what the last one showed, for tests: see __war.spoils()
+  root: null,
+  k: 1,
+  since: 0,     // when it started
+  held: null,   // the pot, { winner, cards }, held on the fan into the next battle (see defer)
+  tossAt: 0,    // when the cards fly to the loot pile, on the page's clock
+  odds: null,   // the report's win odds: { before, node }, filled in as the new odds come
+  moved(to) {
+    const root = this.root;
+    if (!root) return;
+    setClass(root, 'report', to === 'report' || to === 'leaving');
+    setClass(root, 'leaving', to === 'leaving');
+    if (to === 'none') {
+      root.remove();
+      this.root = null;
+      this.odds = null;
+    }
+  },
+  clear() {
+    this.flush();
+    if (!SpoilsShow.is('none')) SpoilsShow.go('none');
+  },
+  // Does fn in ms, if the show hasn't moved on by then.
+  after(ms, fn) {
+    const at = SpoilsShow.seq;
+    setTimeout(() => { if (SpoilsShow.seq === at) fn(); }, Math.max(0, ms));
+  },
+  // Does fn in ms, if this show is still up.
+  during(root, ms, fn) { setTimeout(() => { if (this.root === root) fn(); }, Math.max(0, ms)); },
+  // A flip that won a war, which is going on to the next battle. Says
+  // whether it shows, so the six… seven can keep out of its way.
+  show(m, before) {
+    if (m.winner === null || !(m.stage > 0) || m.over || !m.next || !heapPending) return false;
+    const cards = heapPending.cards;
+    if (!cards.length) return false;
+    this.clear();
+    for (const node of $('fx').querySelectorAll('.vs-fight')) node.remove();  // FIGHT! is old news
+    this.since = now();
+    this.tossAt = 0;
+    this.k = Math.max(0.4, Math.min(1.5, m.next.opensIn / WAR.REVEAL_MS));
+    const calm = reduceMotion.matches;
+    const level = Math.min(3, m.stage);
+    const shown = spoilsShown(cards, m.winner, m.winner === S.you ? SP_MAX : cards.length <= SP_LITE_MAX ? SP_LITE_MAX : 12);
+    const more = m.pot - shown.length;
+    // What the winner gains is the pot less their own cards in it, and what
+    // you lose, if it's someone else's war and you fought in it (laid cards
+    // in it, not just the battle that started it), is yours.
+    const net = m.pot - cards.filter((c) => c.seat === m.winner).length;
+    const yours = S.you !== null && S.you !== m.winner ? cards.filter((c) => c.seat === S.you) : [];
+    const lost = yours.some((c) => c.down || c.war) ? yours.length : 0;
+    this.last = { kind: m.winner === S.you ? (calm ? 'calm' : 'full') : 'lite', winner: m.winner, level, total: m.pot, net, lost, more,
+      cards: shown.map((c) => c.card), downs: cards.filter((c) => c.down).length, rows: [] };
+    if (m.winner === S.you) this.full(m, cards, shown, { calm, level, before });
+    else this.lite(m, shown, calm);
+    // Nothing comes to move it on (a room that skips ahead, say): it goes by
+    // itself, unless it waits for your tap in a slow game (see defer).
+    if (!(S.slow && (m.winner === S.you || lost))) {
+      this.during(this.root, Math.max(m.next.opensIn, this.tossAt - now()) + 4000 * this.k, () => this.clear());
+    }
+    return true;
+  },
+  full(m, cards, shown, { calm, level, before }) {
+    const k = this.k;
+    const root = el('div', `sp lv${level}` + (calm ? ' calm' : ''));
+    root.style.setProperty('--k', k);
+    root.setAttribute('aria-hidden', 'true');  // #banner and the caption say it
+    const col = el('div', 'sp-col');
+    if (level > 1) col.append(el('div', 'sp-pre', SP_WARS[level - 1] || 'MEGA'));
+    const title = el('div', 'sp-title', 'SPOILS OF WAR!');
+    const net = this.last.net;
+    const count = el('div', 'sp-count', calm ? `+${net}` : '+0');
+    // The fan: a row of cards, or two for a big pot, curving like a hand.
+    const vw = window.innerWidth;
+    const room = Math.min(380, vw - 32);
+    const rows = shown.length > SP_ROW ? 2 : 1;
+    const per = Math.ceil(shown.length / rows);
+    const w = Math.round(Math.min(rows > 1 ? 50 : 60, vw * (rows > 1 ? 0.13 : 0.155)));
+    const h = Math.round(w * 1.4);
+    const step = per > 1 ? Math.min(w * 0.82, (room - w * 1.3) / (per - 1)) : 0;
+    const drop = Math.round(h * 0.62);  // the second row, overlapping the first
+    const fan = el('div', 'sp-fan');
+    fan.style.width = `${room}px`;
+    fan.style.height = `${h + (rows - 1) * drop + 26}px`;
+    const stagger = Math.min(55, 700 / shown.length);
+    const downs = shown.filter((c) => c.down && Number.isInteger(c.card)).length;
+    const fstep = downs ? Math.min(150, 950 / downs) : 0;
+    let flipped = 0;
+    let lastLand = 0;
+    let end = 0;
+    const flips = [];
+    shown.forEach((c, i) => {
+      const r = Math.floor(i / per);
+      const j = i - r * per;
+      const n = r === rows - 1 ? shown.length - r * per : per;
+      const x = (j - (n - 1) / 2) * step;
+      const y = r * drop + (x * x) / (room * 2.4);
+      const a = (x / room) * 26;
+      const look = cardLook(c.card, c.look);
+      const wrap = el('div', 'sp-c');
+      wrap.style.width = `${w}px`;
+      wrap.style.marginLeft = `${-w / 2}px`;
+      wrap.style.zIndex = String(i + 1);
+      const inner = el('div', 'sp-in');
+      const face = cardEl(c.card, look);
+      face.style.setProperty('--w', `${w}px`);
+      inner.append(face);
+      const turns = c.down && Number.isInteger(c.card) && !calm;
+      if (turns) {
+        const back = cardEl('back', look);
+        back.classList.add('sp-back');
+        back.style.setProperty('--w', `${w}px`);
+        inner.append(back);
+      }
+      wrap.append(inner);
+      fan.append(wrap);
+      c.from = wrap;  // where heapToss throws it from
+      const at = `translate(${x.toFixed(1)}px, ${y.toFixed(1)}px) rotate(${a.toFixed(1)}deg)`;
+      wrap.style.transform = at;
+      if (calm) return;
+      // Out of the pot in a burst, overshooting a little, one after another.
+      const delay = 380 + i * stagger;
+      const spin = (Math.random() - 0.5) * 140;
+      wrap.animate([
+        { transform: `translate(${(x * 0.1).toFixed(1)}px, ${h * 0.5 + 30}px) rotate(${spin.toFixed(0)}deg) scale(.2)`, opacity: 0 },
+        { opacity: 1, offset: 0.25 },
+        { transform: `translate(${(x * 1.1).toFixed(1)}px, ${(y - 22).toFixed(1)}px) rotate(${(a * 1.3).toFixed(1)}deg) scale(1.08)`, offset: 0.7 },
+        { transform: at },
+      ], { duration: 560 * k, delay: delay * k, easing: 'cubic-bezier(.2, .8, .3, 1)', fill: 'backwards' });
+      const land = delay + 560;
+      lastLand = Math.max(lastLand, land);
+      if (turns) flips.push({ wrap, inner, land });
+    });
+    // The face-down ones turn over once they've landed, one by one, with a pop.
+    flips.forEach(({ wrap, inner, land }, f) => {
+      const at = Math.max(land + 150, 1150 + f * fstep);
+      inner.animate([{ transform: 'perspective(500px) rotateY(180deg)' }, { transform: 'perspective(500px) rotateY(0deg)' }],
+        { duration: 380 * k, delay: at * k, easing: 'cubic-bezier(.3, .6, .4, 1)', fill: 'backwards' });
+      wrap.animate([{ scale: 1 }, { scale: 1.3, offset: 0.4 }, { scale: 1 }], { duration: 320 * k, delay: (at + 280) * k, easing: 'ease-out' });
+      end = Math.max(end, at + 600);
+      this.during(root, (at + 290) * k, () => {
+        Sound.pop(flipped++);
+        if (wrap.isConnected) burst(...centerOf(wrap), 0, 22, true);
+      });
+    });
+    col.append(title, count, fan);
+    if (m.pot > shown.length) col.append(el('div', 'sp-more', `+${m.pot - shown.length} more`));
+    col.append(this.report(m, cards, before));
+    // Its place kept from the start, so nothing shifts when the next battle opens.
+    col.append(el('div', 'sp-next', chatty ? 'The next battle’s up. Tap to play on.' : 'Next battle. Tap to play on.'));
+    root.append(el('div', 'sp-dim'), col);
+    $('fx').append(root);
+    this.root = root;
+    if (calm) {
+      this.tossAt = this.since + SP_CALM_READ * k;
+      SpoilsShow.go('report');
+      return;
+    }
+    // The report once it's all turned over, then a moment to read it, row by
+    // row (as in the CSS: --i * 100ms after 150ms), before the cards fly.
+    const reportAt = Math.max(lastLand, end) + 150;
+    this.tossAt = this.since + (reportAt + 150 + this.last.rows.length * 100 + SP_READ) * k;
+    SpoilsShow.go('haul');
+    Sound.spoils(level, k);
+    // The title lands with a shake, bigger for a bigger war.
+    this.during(root, 400 * k, () => {
+      shake(60 + level * 40);
+      const [tx, ty] = centerOf(title);
+      burst(tx, ty, 0, 40 + level * 35);
+      if (level >= 2) {
+        const flash = el('div', 'flash');
+        flash.style.background = level >= 3 ? 'radial-gradient(circle, #fff 15%, rgba(150, 230, 255, .8))' : 'radial-gradient(circle, #fff6c8 15%, rgba(255, 170, 30, .75))';
+        flash.addEventListener('animationend', () => flash.remove(), { once: true });
+        $('fx').append(flash);
+      }
+    });
+    // The counter tallies what you gained as the pot lands.
+    const ticks = Math.max(1, Math.min(20, net));
+    for (let t = 1; t <= ticks; t++) {
+      this.during(root, (380 + ((lastLand - 380) * t) / ticks) * k, () => {
+        setText(count, `+${Math.round((net * t) / ticks)}`);
+        Sound.tick(t);
+        if (t === ticks) count.classList.add('done');
+      });
+    }
+    this.after(reportAt * k, () => SpoilsShow.go('report'));
+  },
+  // The war report: what you won, what it took, and a few things it didn't.
+  report(m, cards, before) {
+    const win = el('div', 'sp-win');
+    const head = el('div', 'sp-head');
+    head.append(el('b', '', 'WAR REPORT'), el('small', '', `Battle ${m.battle}`));
+    win.append(head);
+    const rows = [];
+    const row = (label, value, big) => {
+      const node = el('div', 'sp-row' + (big ? ' big' : ''));
+      node.style.setProperty('--i', rows.length);
+      const b = el('b', '', value);
+      node.append(el('span', '', label), el('i'), b);
+      win.append(node);
+      rows.push([label, value]);
+      return b;
+    };
+    // Won: the others' cards. Your own come back with them.
+    const net = this.last.net;
+    row('Cards won', `+${net}`, true);
+    if (m.pot > net) row('Your own, back', plural(m.pot - net, 'card'));
+    const downs = cards.filter((c) => c.down).length;
+    if (downs) row('Face down, turned over', plural(downs, 'card'));
+    row('War depth', SP_DEPTH[m.stage - 1] || `${m.stage} wars deep`);
+    const jokers = cards.filter((c) => Number.isInteger(c.card) && warRank(c.card) === JOKER).length;
+    if (jokers) row('Jokers', `${jokers} 🃏`);
+    if (m.gods) row('Won by', chatty ? 'The war gods' : 'Default');
+    if (chatty) {
+      row('Slam power gained', '+0, as always');
+      if (isSixSeven(m)) row('Six… seven!', 'By one');
+      row(...pick(SP_JOKES));
+      if (before !== null && before !== undefined && S.you !== null) {
+        const node = row('Win odds', `${pct(before)} → …`);
+        this.odds = { before, node };
+      }
+    }
+    this.last.rows = rows;
+    return win;
+  },
+  // The new odds are in: the report's line shows where they went.
+  oddsIn() {
+    const o = this.odds;
+    if (!o || !o.node.isConnected || !Odds.seats || S.you === null) return;
+    const text = `${pct(o.before)} → ${pct(Odds.seats[S.you])}`;
+    setText(o.node, text);
+    const r = this.last && this.last.rows.find((x) => x[0] === 'Win odds');
+    if (r) r[1] = text;
+  },
+  // Someone else's war: a strip, over the arena.
+  lite(m, shown, calm) {
+    const root = el('div', 'sp-lite' + (calm ? ' calm' : ''));
+    root.style.setProperty('--k', this.k);
+    root.setAttribute('aria-hidden', 'true');
+    const arena = $('arena');
+    // Near the top of the arena, clear of the caption.
+    if (arena.offsetParent !== null) root.style.setProperty('--y', `${arena.getBoundingClientRect().top + 48}px`);
+    const line = el('p');
+    line.append(el('b', '', `💰 Spoils to ${playerName(m.winner)}:`), ` +${plural(this.last.net, 'card')}`);
+    // Some of them were yours.
+    if (this.last.lost) line.append(' ', el('span', 'sp-lost', `You −${this.last.lost}`));
+    const mini = el('div', 'sp-mini');
+    for (const c of shown) {
+      const node = cardEl(c.card, cardLook(c.card, c.look));
+      mini.append(node);
+      c.from = node;
+    }
+    if (m.pot > shown.length) mini.append(el('small', '', `+${m.pot - shown.length} more`));
+    root.append(line, mini, el('small', 'sp-tap', 'Tap to play on'));
+    $('fx').append(root);
+    this.root = root;
+    this.last.rows = [];
+    SpoilsShow.go('lite');
+    if (S.players.length <= 6) Sound.ding();
+  },
+  // The next battle opened while your spoils are still up: the pot stays on
+  // the fan, off your loot pile (S.incoming still counts it), until there's
+  // been time to read the report, or a tap, or anything that needs the loot
+  // pile (see flush). Says whether it took the pot.
+  // In a slow game, a war you fought in and lost waits for your tap too, its
+  // strip up and the pot held on it.
+  defer(winner, cards) {
+    const root = this.root;
+    const mine = winner === S.you && SpoilsShow.is('haul', 'report');
+    const lost = SpoilsShow.is('lite') && S.slow && this.last.lost > 0;
+    if (!root || !(mine || lost)) return false;
+    this.held = { winner, cards };
+    root.classList.add('next');
+    // A slow game has no clock, so neither does this: it waits for your tap.
+    if (!S.slow) this.during(root, this.tossAt - now(), () => this.flush());
+    return true;
+  },
+  // Throws the held pot onto the loot pile now, from the fan where it lies
+  // (quietly, straight there, when something's about to pick it up).
+  flush(quiet = false) {
+    const held = this.held;
+    if (!held) return;
+    this.held = null;
+    const landing = heapToss(held.winner, held.cards, quiet);
+    later(() => { delete S.incoming[held.winner]; renderAll(); }, landing);
+    renderAll();
+    this.land(landing);
+  },
+  // The next battle opened and the cards are on their way to the loot pile,
+  // landing in `landing` ms: the report holds a moment, then fades.
+  land(landing) {
+    if (!SpoilsShow.is('haul', 'report', 'lite')) return;
+    SpoilsShow.go('leaving');
+    const root = this.root;
+    const k = this.k;
+    const hold = Math.max(landing, (root.classList.contains('sp-lite') ? 500 : SP_HOLD) * k);
+    if (root.classList.contains('calm')) { this.after(hold + 400, () => SpoilsShow.go('none')); return; }
+    this.after(hold, () => {
+      root.classList.add('gone');
+      this.after(320 * k, () => SpoilsShow.go('none'));
+    });
+  },
+  // A tap or a key: off it goes, once it's had a moment (a last mash
+  // landing just after the war is decided doesn't count).
+  skip() { if (now() - this.since > 500 * this.k) this.clear(); },
+};
+
+// The cards of a pot that a show draws, at most `max`: all of them in the
+// order they were played, or, for a big pot, the first ones and the card that
+// won it.
+function spoilsShown(cards, winner, max) {
+  if (cards.length <= max) return cards.slice();
+  let decider = cards.length - 1;
+  for (let i = cards.length - 1; i >= 0; i--) if (cards[i].seat === winner && !cards[i].down) { decider = i; break; }
+  if (decider < max) return cards.slice(0, max);
+  return [...cards.slice(0, max - 1), cards[decider]];
+}
+
 function floatCheer(seat, e) {
   const tile = seat === S.you ? $('myPile') : tiles.get(seat)?.node;
   const [x, y] = tile && tile.isConnected && tile.offsetParent ? centerOf(tile) : [window.innerWidth / 2, window.innerHeight - 120];
@@ -4607,6 +5090,7 @@ function receive(m) {
 
 function onState(m) {
   releaseFlip();  // a battle that came before this state goes on the table first
+  Spoils.clear();  // and the spoils of war still up, before the loot piles are drawn again
   const wasPhase = S.phase;
   S.code = m.code;
   S.phase = m.phase;
@@ -4628,6 +5112,7 @@ function onState(m) {
       clearLater();
       Versus.clear();
       SixSeven.clear();
+      Spoils.clear();
       S.cards = {};
       S.result = null;
     }
@@ -4723,9 +5208,13 @@ function openStage() {
       const { winner, cards } = heapPending;
       heapPending = null;
       won = winner;
-      landing = heapToss(winner, cards);
-      // The pot counts once it's on the winner's loot pile.
-      later(() => { delete S.incoming[winner]; renderAll(); }, landing);
+      // Your spoils of war may still be up: they throw the pot when they're done.
+      if (!Spoils.defer(winner, cards)) {
+        landing = heapToss(winner, cards);
+        Spoils.land(landing);
+        // The pot counts once it's on the winner's loot pile.
+        later(() => { delete S.incoming[winner]; renderAll(); }, landing);
+      }
     }
     S.cards = {};
     S.result = null;
@@ -4852,6 +5341,7 @@ function releaseFlip() {
 }
 
 function playFlip(m) {
+  Spoils.flush();  // a pot still held on the spoils' fan lands first
   if (S.pending && S.pending.battle === m.battle && S.pending.stage === m.stage) openStage();
   logFlip(m);
   S.result = m;
@@ -4893,7 +5383,10 @@ function playFlip(m) {
   S.thumps = {};  // the face-down cards are in S.cards now
   Sound.flip();
   narrate(m);
-  if (isSixSeven(m)) SixSeven.show(m);
+  // A war won: its spoils, with the odds from before it for the report. The
+  // six… seven keeps out of their way (the report mentions it).
+  const spoiled = Spoils.show(m, Odds.seats && S.you !== null ? Odds.seats[S.you] : null);
+  if (isSixSeven(m) && !spoiled) SixSeven.show(m);
   if (m.next) onStage(m.next);
   if (m.winner !== null && m.next) Odds.update(m.counts, m.next.battle, S.limit);
   syncMusic();
@@ -5143,6 +5636,7 @@ const Odds = {
       else this.history.push([battle, chances[me]]);
     }
     renderOdds();
+    Spoils.oddsIn();
     const box = $('odds');
     box.classList.remove('swing-up', 'swing-down');
     if (Math.abs(this.delta) >= 0.2) {
@@ -5336,8 +5830,9 @@ const pileLook = (x, look) => cardLook(x.card === 'back' ? x.of : x.card, look);
 // Draws a pile into box: one card per item, each in the deck look(item)
 // names, keeping the cards already there when the pile only grew (the new
 // ones arrive with the `fresh` class), and calling place(node, index, count)
-// on every card.
-function drawPile(box, items, look, fresh, place) {
+// on every card. The first `settled` items were already down on the table
+// before the pile showed them, so they arrive as they lie, without it.
+function drawPile(box, items, look, fresh, place, settled = 0) {
   const looks = items.map(look);
   const keys = items.map((x, i) => `${x.card}:${looks[i] || ''}`);
   const had = box._keys || [];
@@ -5345,7 +5840,7 @@ function drawPile(box, items, look, fresh, place) {
   if (!grew) { box.replaceChildren(); box._keys = []; }
   for (let i = box.childElementCount; i < items.length; i++) {
     const node = cardEl(items[i].card === 'back' ? 'back' : items[i].card, looks[i]);
-    if (grew && !reduceMotion.matches) node.classList.add(fresh);
+    if (grew && i >= settled && !reduceMotion.matches) node.classList.add(fresh);
     box.append(node);
   }
   box._keys = keys;
@@ -5549,12 +6044,15 @@ function renderWarPile() {
   const top = n && pile[n - 1].up ? n - 1 : -1;
   const out = fanOut(pile.map((x, i) => ({ up: x.up && i !== top })), 0.22, 0, 0.5);
   const cw = $('mySlot').querySelector('.card')?.offsetWidth || 88;
+  // The cards already played (the one you tied with, and a war's that tied
+  // again) stay where they lie as the war opens: only what you slam now lands.
+  const settled = c ? Math.max(0, c.seq.length - (myWarCards(local).length - pile.length)) : 0;
   drawPile(box.querySelector('.wpile'), pile, (x) => pileLook(x, null), 'slam', (node, i) => {
     const tied = pile[i].up;
     node.style.setProperty('--r', `${i === top ? 0 : tied ? ((i * 13) % 9) - 4 : ((i * 47) % 25) - 12}deg`);
     node.style.setProperty('--dx', `${i === top ? 0 : Math.round(((i * 29) % 11) - 5 - out[i] * cw * 0.2)}px`);
     node.style.setProperty('--dy', `${Math.round(-Math.min(i, 9) * 3 - out[i] * cw * 1.4)}px`);
-  });
+  }, settled);
   setClass(box, 'won', Boolean(S.result && S.result.winner === me && top >= 0 && c && c.seq.length > 1));
   setText(box.querySelector('.wcount'), downs ? `${downs} face down` : 'Face down here');
   setClass($('me'), 'warring', !box.hidden);
@@ -5782,6 +6280,11 @@ function heapClear() {
 // Where a card lay on the table, relative to a heap's middle, and how much
 // bigger it was there than on the heap: [x, y, scale].
 function heapFrom(c, heapBox, size) {
+  // A card in the spoils of war flies from there (see Spoils).
+  if (c.from && c.from.isConnected && c.from.offsetParent !== null) {
+    const [x, y] = centerOf(c.from);
+    return [x - (heapBox.left + heapBox.width / 2), y - (heapBox.top + heapBox.height / 2), (c.from.offsetWidth || size) / size];
+  }
   const pile = c.seat === S.you && !$('myWar').hidden ? $('myWar').querySelector('.wpile .card') : null;
   const from = pile || (c.seat === S.you ? $('mySlot').querySelector('.card') : tiles.get(c.seat)?.card);
   const box = from && from.offsetParent ? from.getBoundingClientRect() : null;
@@ -5856,7 +6359,10 @@ function heapToss(seat, cards, quiet = false) {
     }
     void node.offsetWidth;
     s.transition = '';
-    h.cards.push({ ...c, node });
+    // Off it goes from the spoils, where it was shown.
+    if (fly && c.from) c.from.style.visibility = 'hidden';
+    const { from, ...card } = c;
+    h.cards.push({ ...card, node });
   });
   h.tidy = false;
   h.tosses = (h.tosses || 0) + 1;
@@ -5984,6 +6490,7 @@ function deckOfSeat(seat) {
 // (`n` of them, the heap showing at most its latest), and the heap is empty
 // from now on.
 function heapGather(seat, delay, { brief = false, n = 0 } = {}) {
+  if (Spoils.held && Spoils.held.winner === seat) Spoils.flush(true);  // the pot on the spoils' fan goes too
   const h = heaps.get(seat);
   if (!h || !h.cards.length) return;
   const cards = h.cards;
@@ -6535,6 +7042,7 @@ function showScreen(to, from) {
   setHidden($('over'), to !== 'over');
   if (from === 'menu') setText($('friendsErr'), '');
   if (to === 'over' && Overlay.is('pause')) Overlay.go('none');  // the results take over from the pause menu
+  if (to !== 'table') Spoils.clear();
   layer();
   syncMusic();
 }
@@ -6592,6 +7100,7 @@ function backToMenu(message) {
   S.code = null;
   Versus.clear();
   SixSeven.clear();
+  Spoils.clear();
   cancelInput();
   Odds.reset();
   heapClear();
@@ -7870,6 +8379,10 @@ function init() {
     if ((e.key === ' ' || e.key === 'Enter') && charge && charge.pointer === 'key') releaseCharge();
   });
   document.addEventListener('pointerdown', () => Sound.unlock(), { passive: true });
+  // Any tap or key sends the spoils of war off early, and still does what it
+  // does: a slam, a button.
+  document.addEventListener('pointerdown', () => Spoils.skip(), { capture: true, passive: true });
+  document.addEventListener('keydown', (e) => { if (!e.repeat && !['Shift', 'Control', 'Alt', 'Meta'].includes(e.key)) Spoils.skip(); }, true);
   document.addEventListener('visibilitychange', () => {
     if (!document.hidden) { Music.resume(); return; }
     Music.pause();
@@ -7921,7 +8434,7 @@ if (DEBUG) {
   window.__war = {
     state: () => ({
       mode: Session.is('solo', 'room') ? Session.state : null,
-      screen: Screen.state, overlay: Overlay.state, session: Session.state, conn: Conn.state,
+      screen: Screen.state, overlay: Overlay.state, session: Session.state, conn: Conn.state, spoils: SpoilsShow.state,
       phase: S.phase, you: S.you, battle: S.battle, stage: S.stage, fighters: S.fighters.slice(),
       counts: S.counts.slice(), slams: { ...S.slams }, canSlam: canSlam(), over: S.over, players: S.players.length,
       slow: S.slow, waiting: waitingFor(), shuffle: S.shuffle,
@@ -7949,6 +8462,7 @@ if (DEBUG) {
     versus: () => Versus.last,
     gather: () => lastGather && { ...lastGather },
     sixSeven: () => SixSeven.last,
+    spoils: () => Spoils.last && { ...Spoils.last, state: SpoilsShow.state },
     music: () => ({ on: Music.on, song: Music.want, playing: Music.song, songs: Object.keys(SONGS) }),
     // How loud the joker's laugh gets at each level: rendered offline.
     joker: () => (Joker.current && Joker.current.root.isConnected ? Joker.current.state() : null),

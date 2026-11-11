@@ -127,7 +127,9 @@ body.docked .notes{box-shadow:none}
 .tally div + div{padding-left:14px;border-left:1px solid var(--rule)}
 .tally dt{font:500 9.5px/1 var(--f-mono);letter-spacing:.14em;text-transform:uppercase;color:var(--muted);margin-bottom:6px}
 .tally dd{margin:0;font:700 22px/1 var(--f-display);letter-spacing:.04em;font-variant-numeric:tabular-nums;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.filters{display:flex;gap:6px;padding:12px 18px 6px;overflow-x:auto;scrollbar-width:none}
+/* One row of theme chips that scrolls sideways only: overflow-x alone would make y auto too.
+   A sideways swipe stays in the row; an up-and-down one still scrolls the drawer. */
+.filters{display:flex;gap:6px;padding:12px 18px 6px;overflow-x:auto;overflow-y:hidden;overscroll-behavior-x:contain;scrollbar-width:none}
 .filters::-webkit-scrollbar{display:none}
 .filters:empty{display:none}
 .filter{flex:none;display:flex;align-items:center;gap:6px;font:500 11px/1 var(--f-mono);padding:6px 8px;border:1px solid var(--rule);border-radius:999px;background:transparent;cursor:pointer;color:var(--muted)}
@@ -181,6 +183,14 @@ body.docked .notes{box-shadow:none}
 .survey-sign input,.signup input{width:74px;flex:none;box-sizing:border-box;font:500 16px/1 var(--f-mono);letter-spacing:.18em;text-transform:uppercase;padding:7px 6px 7px 9px;border:1px solid var(--rule);border-radius:6px;background:var(--paper);color:var(--ink)}
 .survey-sign input:focus-visible,.signup input:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
 .survey-sign .btn{flex:none;padding:9px 12px}
+.survey-sign[hidden]{display:none}
+.survey-sign .btn.ghost{background:transparent;color:var(--ink);border:1px solid var(--rule)}
+/* Once signed, the panel just says who you are, with a pencil to change it. */
+.survey-me{display:flex;align-items:center;gap:8px;margin-top:8px}
+.survey-me[hidden]{display:none}
+.survey-me b{font:700 20px/1 var(--f-display);letter-spacing:.12em}
+.survey-me .icon-btn{width:32px;height:32px;margin-left:-2px;border-color:transparent;color:var(--muted)}
+.survey-me .icon-btn:hover{color:var(--ink)}
 .survey-hint{margin:7px 0 0;font-size:12px;color:var(--muted)}
 .survey-map{margin-top:9px}
 .survey-map summary{cursor:pointer;font:500 10px/1 var(--f-mono);letter-spacing:.14em;text-transform:uppercase;color:var(--muted);padding:4px 0}
@@ -189,9 +199,15 @@ body.docked .notes{box-shadow:none}
 .survey-map-note:empty{display:none}
 .survey-log{display:block;margin-top:6px;padding:4px 0;font:500 10px/1.3 var(--f-mono);letter-spacing:.14em;text-transform:uppercase;color:var(--muted)}
 .survey-log::after{content:" →"}
-/* With the survey panel, the whole drawer scrolls, so the world map never pushes the finds out of reach. */
-.notes.has-survey{overflow-y:auto;overscroll-behavior:contain}
+/* Only the list of finds may shrink: everything else keeps its own height. A section
+   that scrolls (the theme chips) would otherwise be squashed to a sliver, since a flex
+   item that scrolls may shrink to nothing, and spill over the finds. */
+.notes > :not(.finds){flex-shrink:0}
+/* With the survey panel, the whole drawer scrolls, so the world map never pushes the finds
+   out of reach, and the theme chips stick to its top to stay in reach of a long list. */
+.notes.has-survey{overflow-y:auto;overscroll-behavior:contain;scroll-padding-top:48px}  /* a find scrolled to stays clear of the chips */
 .notes.has-survey .finds{flex:1 0 auto;overflow:visible}
+.notes.has-survey .filters{position:sticky;top:0;z-index:1;background:var(--panel);margin-top:6px;padding-top:6px;box-shadow:0 1px 0 var(--rule)}
 .survey-hint:empty{display:none}
 /* Turnstile's check (see worker/TURNSTILE.md): empty and out of the way unless it needs a tap.
    When it does, it's a small panel just above the word legend (and, on a phone, the
@@ -365,10 +381,15 @@ body.docked .nova{left:calc((100% - var(--notes-w)) / 2)}
       <p class="survey-map-note" id="worldNote"></p>
     </details>
     <a class="survey-log" href="/letterfield-log">Survey log: every word charted, hour by hour</a>
+    <div class="survey-me" id="surveyMe" hidden>
+      <span class="eyebrow">Surveyor</span><b id="surveyMeName"></b>
+      <button type="button" class="icon-btn" id="surveyEdit" aria-label="Change your initials" title="Change your initials"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 20h4L19 9l-4-4L4 16v4z"/><path d="M13.5 6.5l4 4"/></svg></button>
+    </div>
     <form class="survey-sign" id="surveySign">
       <label for="surveyInitials">Sign the words you chart first</label>
       <input id="surveyInitials" maxlength="3" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="ABC" aria-describedby="surveyHint">
       <button type="submit" class="btn">Sign</button>
+      <button type="button" class="btn ghost" id="surveyCancel" hidden>Cancel</button>
     </form>
     <p class="survey-hint" id="surveyHint"></p>
   </section>
@@ -1000,6 +1021,7 @@ const myInitials = () => { const v = LS.get(K_INITIALS) || ''; return /^[A-Z]{3}
 const tell = (l, m) => { if (l && l.ws && l.m.is('open', 'live')) try { l.ws.send(JSON.stringify(m)); } catch (_) {} };
 const anyLive = () => [...links.values()].some(l => l.m.is('live'));
 const surveyEl = $('#survey'), surveyText = $('#surveyText'), surveyInput = $('#surveyInitials'), surveyHint = $('#surveyHint');
+const surveySign = $('#surveySign'), surveyMe = $('#surveyMe'), surveyEdit = $('#surveyEdit'), surveyCancel = $('#surveyCancel');
 
 // A survey pass: the Worker's word that this browser passed Turnstile, good
 // for an hour from this address and for every sector joined in that time. It
@@ -3176,7 +3198,8 @@ function signAs(v, hint) {
   LS.set(K_INITIALS, v);
   for (const l of links.values()) tell(l, { t: 'me', initials: v });
   surveyInput.value = signupInput.value = v;
-  surveyHint.textContent = `Words you chart first are signed ${v}.`;
+  surveyHint.textContent = '';
+  showSigning(false, hint === surveyHint);
   if (Intro.is('sign')) {
     if (LS.get(K_COACH) !== '1') Intro.go('coach');
     else if (Intro.go('exploring')) toast(`<i></i><b>Signed ${v}</b><span>Tap a word's first letter, then its last</span>`, null);
@@ -3187,7 +3210,20 @@ for (const input of [surveyInput, signupInput]) input.addEventListener('input', 
   const v = input.value.toUpperCase().replace(/[^A-Z]/g, '').slice(0, 3);
   if (v !== input.value) input.value = v;
 });
-$('#surveySign').addEventListener('submit', e => { e.preventDefault(); signAs(surveyInput.value, surveyHint); });
+// The survey panel shows your initials with a pencil, and the form only while
+// you change them, or until you have some.
+function showSigning(editing, refocus) {
+  const v = myInitials(), edit = editing || !v;
+  $('#surveyMeName').textContent = v;
+  surveyMe.hidden = edit; surveySign.hidden = !edit; surveyCancel.hidden = !v;
+  if (edit) surveyInput.value = v;
+  else surveyHint.textContent = '';
+  if (refocus) try { (edit ? surveyInput : surveyEdit).focus({ preventScroll: true }); if (edit) surveyInput.select(); } catch (_) {}
+}
+surveyEdit.addEventListener('click', () => showSigning(true, true));
+surveyCancel.addEventListener('click', () => showSigning(false, true));
+surveySign.addEventListener('keydown', e => { if (e.key === 'Escape' && myInitials()) { e.stopPropagation(); showSigning(false, true); } });
+surveySign.addEventListener('submit', e => { e.preventDefault(); signAs(surveyInput.value, surveyHint); });
 signup.addEventListener('submit', e => { e.preventDefault(); signAs(signupInput.value, signupHint); });
 document.addEventListener('visibilitychange', () => { if (surveyApi) { surveyPaused = document.hidden; syncSurvey(); refreshWorld(); } });
 surveyMapEl.addEventListener('toggle', refreshWorld);
@@ -3258,7 +3294,7 @@ showIntro(Intro.state);
 if (surveyApi) {
   surveyEl.hidden = false;
   $('#notes').classList.add('has-survey');
-  surveyInput.value = myInitials();
+  showSigning(false);
   setInterval(syncSurvey, 2000);
   if (!camSaved && !startHash) spawnSomewhere();
 }

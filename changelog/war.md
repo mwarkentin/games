@@ -1,3 +1,17 @@
+## 2026-11-11
+
+- Winning a war ends with SPOILS OF WAR!: the whole pot bursts out into a
+  fan, the face-down cards turn over one by one, a counter tallies what you
+  gained (the others' cards; your own just come back) and a war report lists
+  the haul. It takes its time, running on into the next battle until you've
+  read it (in a slow game, until you tap), then the cards fly onto your loot
+  pile. Double and triple wars get a bigger show, someone else's war gets a strip
+  with their haul and, if you fought in it, what you lost (in a slow game it
+  waits for your tap too), and any tap sends it off early.
+- As a war starts, the card you tied with stays where it lies, and the
+  face-down cards land on it, instead of it being picked up and slammed
+  down again.
+
 ## 2026-11-10
 
 - A “Send feedback” link on the menu, for bugs and ideas. A GitHub issue from it comes with the game and your device filled in.
