@@ -588,8 +588,9 @@ def test_the_word_list_names_only_words_half_in_sight(page: Page, site_url, erro
         assert not seen, (sel, got)
         seen, got = listed(key, sx, hidden2, cs)
         assert seen, (sel, got)
+    page.wait_for_timeout(400)  # done dropping down
     box = page.locator("#toolStack").bounding_box()
-    seen, got = listed(up, box["x"] + box["width"] / 2, box["y"] + 2.5 * cs, cs)
+    seen, got = listed(down, box["x"] + box["width"] / 2, box["y"] + box["height"] - 2.5 * cs, cs)
     assert seen, ("#toolStack", got)
     assert errors == []
 
@@ -754,7 +755,7 @@ def test_a_supernova_leaves_its_remnant_behind_the_shockwave(page: Page, site_ur
 
 
 @pytest.mark.parametrize("size", [(375, 740), (1280, 900)], ids=["phone", "desktop"])
-def test_the_tools_pop_up_from_the_bar_and_go_again(page: Page, site_url, errors, size):
+def test_the_tools_drop_down_from_their_button_and_go_again(page: Page, site_url, errors, size):
     without_worker(page, site_url, "letterfield")
     page.set_viewport_size({"width": size[0], "height": size[1]})
     page.goto(f"{site_url}/letterfield#debug")
@@ -774,10 +775,11 @@ def test_the_tools_pop_up_from_the_bar_and_go_again(page: Page, site_url, errors
     button.click()
     expect(button).to_have_attribute("aria-expanded", "true")
     expect(stack).to_be_visible()
-    expect(page.locator("#music")).to_be_focused()
+    expect(page.locator("#zoomIn")).to_be_focused()
     page.wait_for_timeout(300)  # done popping up
-    box = stack.bounding_box()
-    assert box["y"] + box["height"] <= bar["y"], "it stands above the bar, clear of the word list"
+    box, tools = stack.bounding_box(), button.bounding_box()
+    assert box["y"] >= tools["y"] + tools["height"] and box["y"] + box["height"] <= bar["y"], "it drops from its button, clear of the word list"
+    assert abs(box["x"] + box["width"] - tools["x"] - tools["width"]) < 1
     for el in ["#toolsBtn", "#music", "#sound", "#home", "#zoomIn", "#zoomOut"]:
         b = page.locator(el).bounding_box()
         assert b["width"] >= 40 and b["height"] >= 40, (el, b)
@@ -802,7 +804,7 @@ def test_the_tools_pop_up_from_the_bar_and_go_again(page: Page, site_url, errors
 
     # Dragging the map leaves it open; a tap on the map shuts it, and does nothing else.
     button.click()
-    cx, cy = size[0] / 2, page.evaluate("document.getElementById('map').clientHeight") / 3
+    cx, cy = 80, page.evaluate("document.getElementById('map').clientHeight") / 2  # clear of the stack, top right
     page.mouse.move(cx, cy)
     page.mouse.down()
     page.mouse.move(cx + 60, cy + 30, steps=5)
@@ -864,7 +866,8 @@ def test_a_finds_note_folds_into_the_field_notes_before_it_counts(page: Page, si
     notes = page.locator("#notes" if size[0] >= 1100 else "#notesToggle").bounding_box()
     box = toast.bounding_box()
     if size[0] >= 1100:
-        assert abs(box["x"] + box["width"] - (notes["x"] - 16)) < 3 and box["y"] < 30, (box, notes)
+        tools = page.locator("#toolsBtn").bounding_box()
+        assert abs(box["x"] + box["width"] - (notes["x"] - 16)) < 3 and box["y"] > tools["y"] + tools["height"], (box, notes, tools)
     else:
         assert abs(box["x"] + box["width"] - (notes["x"] + notes["width"])) < 2 and box["y"] > notes["y"] + notes["height"], (box, notes)
     page.wait_for_timeout(1000)

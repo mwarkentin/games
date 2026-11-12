@@ -13,9 +13,9 @@
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Big+Shoulders+Display:wght@700;800&family=Martian+Mono:wght@400;500&family=Schibsted+Grotesk:wght@400;500;600&display=swap">
 <style>
 /* Layout: a full-bleed survey sheet (canvas) with map furniture floating on it — a cartouche (title + current territory) top-left,
-   a solid bar along the bottom holding the word legend and the tools button (whose stack pops up above it), and a
-   field-notes drawer docked on the right, whose corner notes pop out of and collapse back into. The map ends at the
-   bar's top edge (resize() measures it). */
+   the tools and field-notes buttons top-right (the tools' stack drops down from theirs, and notes pop out of and fold back
+   into the field notes), a solid bar along the bottom holding the word legend, and a field-notes drawer docked on the
+   right. The map ends at the bar's top edge (resize() measures it). */
 :root{
   --paper:#EBEEE7;
   --panel:#F7F8F4;
@@ -78,7 +78,7 @@ button:focus-visible,a:focus-visible,#map:focus-visible{outline:2px solid var(--
 .eyebrow{font:500 10px/1 var(--f-mono);letter-spacing:.14em;text-transform:uppercase;color:var(--muted)}
 
 /* Cartouche: map title block */
-.cartouche{position:fixed;top:var(--top);left:var(--gl);display:flex;align-items:stretch;max-width:calc(100% - 140px);outline:1px solid var(--rule);outline-offset:-5px;padding:3px}
+.cartouche{position:fixed;top:var(--top);left:var(--gl);display:flex;align-items:stretch;max-width:calc(100% - 236px);outline:1px solid var(--rule);outline-offset:-5px;padding:3px}
 .brand{padding:9px 14px 8px 12px;border-right:1px solid var(--rule);display:flex;flex-direction:column;justify-content:center;gap:5px}
 .brand h1{margin:0;font:800 27px/.85 var(--f-display);letter-spacing:.05em;text-transform:uppercase}
 .brand small{font:400 9px/1 var(--f-mono);letter-spacing:.16em;text-transform:uppercase;color:var(--muted)}
@@ -90,9 +90,9 @@ button:focus-visible,a:focus-visible,#map:focus-visible{outline:2px solid var(--
 .t-meta > *{flex:none;white-space:pre}
 .t-meta > #tTheme{flex:0 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis}
 
-/* Bar: the word legend and the tools button, solid from edge to edge and down
-   through the safe area, so no map shows around or under it. On a wide screen
-   it's one row: the list's head, its chips scrolling sideways, then the tools. */
+/* Bar: the word legend, solid from edge to edge and down through the safe
+   area, so no map shows around or under it. On a wide screen it's one row: the
+   list's head, then its chips scrolling sideways. */
 .bar{position:fixed;left:0;right:0;bottom:0;display:flex;align-items:center;gap:14px;background:var(--panel);border-top:1px solid var(--rule);box-shadow:0 -8px 22px -16px rgba(0,0,0,.4);
   padding:8px var(--gr) calc(env(safe-area-inset-bottom, 0px) + 8px) var(--gl);transition:right var(--t-slow) var(--ease-out)}
 body.docked .bar{right:var(--notes-w)}
@@ -116,23 +116,33 @@ span.chip{cursor:default}
 span.chip:hover{border-color:var(--rule)}
 .legend-note{font:400 12px/1.4 var(--f-ui);color:var(--muted);padding:2px 0;white-space:nowrap}
 
-/* Tools: one button in the bar; zoom, home, sound and music pop up above it as a
-   stack, and go again on a second tap, Escape or a tap on the map. Closed, the
-   stack takes no taps or focus (inert) and covers nothing. */
-.tools-btn{flex:none;width:44px;height:44px;border:1px solid var(--rule);border-radius:8px;background:var(--panel);display:grid;place-items:center;cursor:pointer;transition:background-color var(--t-fast) var(--ease-out), color var(--t-fast) var(--ease-out), border-color var(--t-fast) var(--ease-out)}
+/* Corner: the tools button and the field notes button, top right (beside the
+   docked notes, which then stand in for their button). Above the cards at the
+   top of the map, so the stack can drop over them, and under the notes drawer. */
+.corner{position:fixed;top:var(--top);right:var(--gr);z-index:20;display:flex;align-items:stretch;transition:right var(--t-slow) var(--ease-out)}
+body.docked .corner{right:calc(var(--notes-w) + 16px)}
+/* The two buttons are one card, split by a rule, so they take little of the top row. */
+.corner .tools-btn{border-radius:8px 0 0 8px;border-right:0}
+body.docked .corner .tools-btn{border-radius:8px;border-right:1px solid var(--rule)}
+.corner .notes-toggle{border-radius:0 8px 8px 0}
+/* Tools: zoom, home, sound and music drop down from their button as a stack,
+   and go again on a second tap, Escape or a tap on the map. Closed, the stack
+   takes no taps or focus (inert) and covers nothing. */
+.tools{position:relative}
+.tools-btn{flex:none;width:40px;height:40px;border:1px solid var(--rule);border-radius:8px;background:var(--panel);box-shadow:var(--shadow);display:grid;place-items:center;cursor:pointer;transition:background-color var(--t-fast) var(--ease-out), color var(--t-fast) var(--ease-out), border-color var(--t-fast) var(--ease-out)}
 .tools-btn svg circle{transition:transform var(--t-slow) var(--ease-pop)}
 .tools-btn[aria-expanded="true"] svg circle:first-of-type{transform:translateX(-5px)}
 .tools-btn[aria-expanded="true"] svg circle:last-of-type{transform:translateX(5px)}
 @media (hover: hover){.tools-btn:hover{background:var(--hover)}}  /* a tap leaves no grey behind on a phone */
 .tools-btn[aria-expanded="true"]{background:var(--ink);border-color:var(--ink);color:var(--panel)}
 .tools-btn svg{width:20px;height:20px}
-.tool-stack{position:absolute;right:var(--gr);bottom:calc(100% + 8px);display:flex;flex-direction:column;padding:4px;min-width:176px;box-sizing:border-box;
-  transform-origin:calc(100% - 22px) calc(100% + 30px);opacity:0;transform:translateY(8px) scale(.9);visibility:hidden;pointer-events:none;
+.tool-stack{position:absolute;right:0;top:calc(100% + 8px);display:flex;flex-direction:column;padding:4px;min-width:176px;box-sizing:border-box;
+  transform-origin:calc(100% - 20px) -28px;opacity:0;transform:translateY(-8px) scale(.9);visibility:hidden;pointer-events:none;
   transition:opacity var(--t-mid) var(--ease-in), transform var(--t-mid) var(--ease-in), visibility 0s linear var(--t-mid)}
-.bar.tools-open .tool-stack{opacity:1;transform:none;visibility:visible;pointer-events:auto;transition:opacity var(--t-fast) var(--ease-out), transform var(--t-slow) var(--ease-pop), visibility 0s}
-/* Its rows follow it up, nearest the button first (--i counts up from there). */
-.tool-stack > *{opacity:0;transform:translateY(6px);transition:opacity var(--t-fast) var(--ease-in), transform var(--t-fast) var(--ease-in)}
-.bar.tools-open .tool-stack > *{opacity:1;transform:none;transition:opacity var(--t-mid) var(--ease-out) calc(var(--i, 0) * 24ms), transform var(--t-slow) var(--ease-pop) calc(var(--i, 0) * 24ms)}
+.tools.open .tool-stack{opacity:1;transform:none;visibility:visible;pointer-events:auto;transition:opacity var(--t-fast) var(--ease-out), transform var(--t-slow) var(--ease-pop), visibility 0s}
+/* Its rows follow it down, nearest the button first (--i counts on from there). */
+.tool-stack > *{opacity:0;transform:translateY(-6px);transition:opacity var(--t-fast) var(--ease-in), transform var(--t-fast) var(--ease-in)}
+.tools.open .tool-stack > *{opacity:1;transform:none;transition:opacity var(--t-mid) var(--ease-out) calc(var(--i, 0) * 24ms), transform var(--t-slow) var(--ease-pop) calc(var(--i, 0) * 24ms)}
 .tool-stack hr{margin:4px 6px;border:0;border-top:1px solid var(--rule)}
 .tool-stack button{display:flex;align-items:center;gap:11px;height:44px;padding:0 10px 0 11px;border:0;border-radius:6px;background:transparent;cursor:pointer;font:500 13.5px/1 var(--f-ui);text-align:left}
 @media (hover: hover){.tool-stack button:hover{background:var(--hover)}}
@@ -142,13 +152,13 @@ span.chip:hover{border-color:var(--rule)}
 @media (hover: none) and (pointer: coarse){.tool-stack kbd{display:none}}
 
 /* Notes toggle */
-.notes-toggle{position:fixed;top:var(--top);right:var(--gr);display:flex;align-items:center;gap:8px;padding:10px 12px;cursor:pointer;font:600 13px/1 var(--f-ui)}
+.notes-toggle{position:relative;display:flex;align-items:center;gap:8px;min-height:40px;box-sizing:border-box;padding:10px 12px;cursor:pointer;font:600 13px/1 var(--f-ui)}
 .notes-toggle svg{width:17px;height:17px}
 .badge{font:500 11px/1 var(--f-mono);background:var(--ink);color:var(--panel);border-radius:999px;padding:4px 7px 3px;font-variant-numeric:tabular-nums}
-body.docked .notes-toggle{visibility:hidden}
+body.docked .notes-toggle{display:none}
 
 /* Field notes drawer */
-.notes{position:fixed;top:0;right:0;bottom:0;width:var(--notes-w);max-width:100%;background:var(--panel);border-left:1px solid var(--rule);display:flex;flex-direction:column;
+.notes{position:fixed;top:0;right:0;bottom:0;z-index:30;width:var(--notes-w);max-width:100%;background:var(--panel);border-left:1px solid var(--rule);display:flex;flex-direction:column;
   padding-top:env(safe-area-inset-top, 0px);padding-bottom:env(safe-area-inset-bottom, 0px);padding-right:env(safe-area-inset-right, 0px);
   transform:translateX(100%);visibility:hidden;transition:transform var(--t-slow) var(--ease-out), visibility 0s linear var(--t-slow);box-shadow:var(--shadow)}
 body.notes-open .notes{transform:none;visibility:visible;transition:transform var(--t-slow) var(--ease-out), visibility 0s}
@@ -286,7 +296,7 @@ html[data-intro="sign"] .survey-check{visibility:hidden}
    note folds right into the count, which ticks up as it lands (see foldToast).
    toast() sets its top: just under the notes button, clear of the cards at
    the top of the map. */
-.toast{position:fixed;top:var(--top);right:var(--gr);width:max-content;max-width:calc(100% - var(--gl) - var(--gr));box-sizing:border-box;pointer-events:none;display:grid;grid-template-columns:auto auto;align-items:center;column-gap:10px;row-gap:4px;padding:10px 16px 10px 14px;
+.toast{position:fixed;top:var(--top);right:var(--gr);z-index:35;width:max-content;max-width:calc(100% - var(--gl) - var(--gr));box-sizing:border-box;pointer-events:none;display:grid;grid-template-columns:auto auto;align-items:center;column-gap:10px;row-gap:4px;padding:10px 16px 10px 14px;
   transform-origin:calc(100% - 23px) -24px;opacity:0;transform:translateY(-6px) scale(.5);
   transition:opacity var(--t-mid) var(--ease-in), transform var(--t-mid) var(--ease-in)}
 body.docked .toast{right:calc(var(--notes-w) + 16px);max-width:calc(100% - var(--notes-w) - 32px);transform-origin:calc(100% + 16px) 24px}
@@ -306,7 +316,7 @@ body.docked .toast{right:calc(var(--notes-w) + 16px);max-width:calc(100% - var(-
 
 
 /* Supernova: the banner when a territory is finished */
-.nova{position:fixed;left:50%;top:40%;transform:translate(-50%,-50%);width:max-content;max-width:calc(100% - 32px);text-align:center;pointer-events:none;opacity:0;--c:hsl(var(--h,200) 95% 60%)}
+.nova{position:fixed;z-index:35;left:50%;top:40%;transform:translate(-50%,-50%);width:max-content;max-width:calc(100% - 32px);text-align:center;pointer-events:none;opacity:0;--c:hsl(var(--h,200) 95% 60%)}
 body.docked .nova{left:calc((100% - var(--notes-w)) / 2)}
 .nova b{display:block;font:800 clamp(38px, 10.5vw, 128px)/.9 var(--f-display);letter-spacing:.14em;margin-right:-.14em;text-transform:uppercase;color:var(--ink);text-shadow:0 0 14px var(--c),0 0 42px var(--c),0 0 96px var(--c)}
 .nova span{display:block;margin-top:14px;font:500 12px/1.4 var(--f-mono);letter-spacing:.12em;text-transform:uppercase;color:var(--ink);text-shadow:0 0 4px var(--paper),0 0 10px var(--paper),0 0 18px var(--paper)}
@@ -324,24 +334,24 @@ body.docked .nova{left:calc((100% - var(--notes-w)) / 2)}
 .peek b{font-weight:600;letter-spacing:.08em}
 .peek span{color:var(--muted)}
 @media (max-width: 699px){
-  .cartouche{right:calc(var(--gr) + 58px);max-width:none;padding:2px;outline-offset:-4px}
+  .cartouche{right:calc(var(--gr) + 96px);max-width:none;padding:2px;outline-offset:-4px}
   .brand{padding:7px 9px 6px 8px}
   .brand h1{font-size:17px}
   .brand small{display:none}
-  .territory{padding:6px 10px 6px 9px;column-gap:8px;row-gap:2px}
+  .territory{padding:6px 8px 6px 8px;column-gap:7px;row-gap:2px}
   .swatch{width:9px;height:9px}
   .t-name{font-size:15.5px}
   .t-meta{font-size:9.5px}
   .t-coord{display:none}  /* the grid reference is in each find's notes */
-  .notes-toggle{padding:0;width:46px;height:46px;justify-content:center;gap:0}
+  .notes-toggle,.tools-btn{padding:0;width:44px;height:46px;justify-content:center;gap:0}
   .notes-toggle .label{display:none}
   .notes-toggle .badge{position:absolute;top:-6px;right:-6px}
-  /* The bar's list takes two rows, its head over its chips, which scroll from the
-     screen's left edge to the tools button; the button stands beside both. */
-  .bar{padding-left:0;gap:8px;padding-top:9px;padding-bottom:calc(env(safe-area-inset-bottom, 0px) + 9px)}
+  /* The bar's list takes two rows, its head over its chips, which scroll from
+     one edge of the screen to the other. */
+  .bar{padding-left:0;padding-right:0;padding-top:9px;padding-bottom:calc(env(safe-area-inset-bottom, 0px) + 9px)}
   .legend{flex-direction:column;align-items:stretch;gap:8px}
-  .legend-head{padding:0 4px 0 calc(var(--gl) - 2px)}
-  .chips{flex:none;padding:4px 4px 4px var(--gl)}
+  .legend-head{padding:0 var(--gr) 0 calc(var(--gl) - 2px)}
+  .chips{flex:none;padding:4px var(--gr) 4px var(--gl)}
   .notes{top:auto;left:0;width:100%;height:min(80%, 680px);border-left:0;border-top:1px solid var(--rule);border-radius:14px 14px 0 0;transform:translateY(100%);padding-left:env(safe-area-inset-left, 0px)}
   .coach{top:calc(var(--top) + 60px);right:var(--gr);width:auto}
 }
@@ -370,11 +380,24 @@ body.docked .nova{left:calc((100% - var(--notes-w)) / 2)}
   </div>
 </header>
 
-<button class="notes-toggle card" id="notesToggle" aria-expanded="false" aria-controls="notes">
-  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 4h11a3 3 0 0 1 3 3v13H8a3 3 0 0 1-3-3V4z"/><path d="M5 17a3 3 0 0 1 3-3h11"/><path d="M9 8h6"/></svg>
-  <span class="label">Field notes</span>
-  <span class="badge" id="notesBadge">0</span>
-</button>
+<div class="corner">
+  <div class="tools" id="tools">
+    <button type="button" class="tools-btn" id="toolsBtn" aria-expanded="false" aria-controls="toolStack" aria-label="Tools" title="Tools: zoom, home, sound and music"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M4 7h9M17 7h3M4 17h3M11 17h9"/><circle cx="15" cy="7" r="2.2"/><circle cx="9" cy="17" r="2.2"/></svg></button>
+    <div class="tool-stack card" id="toolStack" role="group" aria-label="Tools" inert>
+      <button type="button" style="--i:0" id="zoomIn" aria-label="Zoom in" aria-keyshortcuts="+" title="Zoom in (+)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg><span aria-hidden="true">Zoom in</span><kbd aria-hidden="true">+</kbd></button>
+      <button type="button" style="--i:1" id="zoomOut" aria-label="Zoom out" aria-keyshortcuts="-" title="Zoom out (−)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M5 12h14"/></svg><span aria-hidden="true">Zoom out</span><kbd aria-hidden="true">−</kbd></button>
+      <button type="button" style="--i:2" id="home" aria-label="Return to the origin" aria-keyshortcuts="H" title="Return to the origin (H)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="6.5"/><circle cx="12" cy="12" r="1.6" fill="currentColor"/><path d="M12 2v4M12 18v4M2 12h4M18 12h4"/></svg><span aria-hidden="true">Origin</span><kbd aria-hidden="true">H</kbd></button>
+      <hr style="--i:3">
+      <button type="button" style="--i:4" id="sound" aria-pressed="true" aria-label="Sound" aria-keyshortcuts="M" title="Sound (M)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 9.5h3.5L12 6v12l-4.5-3.5H4z"/><path class="on" d="M15.5 9.2a4 4 0 0 1 0 5.6M18.2 6.6a7.6 7.6 0 0 1 0 10.8"/><path class="off" d="M16 9.5l5 5M21 9.5l-5 5"/></svg><span aria-hidden="true">Sound</span><kbd aria-hidden="true">M</kbd></button>
+      <button type="button" style="--i:5" id="music" aria-pressed="false" aria-label="Music" aria-keyshortcuts="B" title="Music (B)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 17.5V6l10-2v11.5"/><circle cx="6.5" cy="17.5" r="2.5"/><circle cx="16.5" cy="15.5" r="2.5"/><path class="off" d="M3.5 3.5l17 17"/></svg><span aria-hidden="true">Music</span><kbd aria-hidden="true">B</kbd></button>
+    </div>
+  </div>
+  <button class="notes-toggle card" id="notesToggle" aria-expanded="false" aria-controls="notes">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 4h11a3 3 0 0 1 3 3v13H8a3 3 0 0 1-3-3V4z"/><path d="M5 17a3 3 0 0 1 3-3h11"/><path d="M9 8h6"/></svg>
+    <span class="label">Field notes</span>
+    <span class="badge" id="notesBadge">0</span>
+  </button>
+</div>
 
 <footer class="bar" id="bar">
   <section class="legend" aria-label="Words hidden in view">
@@ -387,15 +410,6 @@ body.docked .nova{left:calc((100% - var(--notes-w)) / 2)}
     </div>
     <ul class="chips" id="legendList"></ul>
   </section>
-  <button type="button" class="tools-btn" id="toolsBtn" aria-expanded="false" aria-controls="toolStack" aria-label="Tools" title="Tools: zoom, home, sound and music"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M4 7h9M17 7h3M4 17h3M11 17h9"/><circle cx="15" cy="7" r="2.2"/><circle cx="9" cy="17" r="2.2"/></svg></button>
-  <div class="tool-stack card" id="toolStack" role="group" aria-label="Tools" inert>
-    <button type="button" style="--i:5" id="music" aria-pressed="false" aria-label="Music" aria-keyshortcuts="B" title="Music (B)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 17.5V6l10-2v11.5"/><circle cx="6.5" cy="17.5" r="2.5"/><circle cx="16.5" cy="15.5" r="2.5"/><path class="off" d="M3.5 3.5l17 17"/></svg><span aria-hidden="true">Music</span><kbd aria-hidden="true">B</kbd></button>
-    <button type="button" style="--i:4" id="sound" aria-pressed="true" aria-label="Sound" aria-keyshortcuts="M" title="Sound (M)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 9.5h3.5L12 6v12l-4.5-3.5H4z"/><path class="on" d="M15.5 9.2a4 4 0 0 1 0 5.6M18.2 6.6a7.6 7.6 0 0 1 0 10.8"/><path class="off" d="M16 9.5l5 5M21 9.5l-5 5"/></svg><span aria-hidden="true">Sound</span><kbd aria-hidden="true">M</kbd></button>
-    <hr style="--i:3">
-    <button type="button" style="--i:2" id="home" aria-label="Return to the origin" aria-keyshortcuts="H" title="Return to the origin (H)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="6.5"/><circle cx="12" cy="12" r="1.6" fill="currentColor"/><path d="M12 2v4M12 18v4M2 12h4M18 12h4"/></svg><span aria-hidden="true">Origin</span><kbd aria-hidden="true">H</kbd></button>
-    <button type="button" style="--i:1" id="zoomIn" aria-label="Zoom in" aria-keyshortcuts="+" title="Zoom in (+)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg><span aria-hidden="true">Zoom in</span><kbd aria-hidden="true">+</kbd></button>
-    <button type="button" style="--i:0" id="zoomOut" aria-label="Zoom out" aria-keyshortcuts="-" title="Zoom out (−)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M5 12h14"/></svg><span aria-hidden="true">Zoom out</span><kbd aria-hidden="true">−</kbd></button>
-  </div>
 </footer>
 
 <aside class="notes" id="notes" aria-label="Field notes">
@@ -1124,17 +1138,14 @@ function passMoved(to) {
   if (to === 'failed') dropWidget();
   renderSurvey();
 }
-// Sits the box 8px above the bottom bar, or the tools' stack while it's open
-// over the same side, wherever they are at this size.
+// Sits the box 8px above the bottom bar, wherever it is at this size.
 function placeCheck() {
   if (!surveyCheck.classList.contains('shown')) return;
   const left = surveyCheck.getBoundingClientRect().left, right = left + Math.max(surveyCheck.offsetWidth, 326);
   let top = innerHeight;
-  for (const el of document.querySelectorAll('.bar, .bar.tools-open .tool-stack')) {
+  for (const el of document.querySelectorAll('.bar')) {
     const r = el.getBoundingClientRect();
-    // The stack may still be popping up: its place without the transform is where it ends.
-    const t = el.id === 'toolStack' ? el.offsetParent.getBoundingClientRect().top + el.offsetTop : r.top;
-    if (r.width && r.left < right && r.right > left) top = Math.min(top, t);
+    if (r.width && r.left < right && r.right > left) top = Math.min(top, r.top);
   }
   surveyCheck.style.bottom = top < innerHeight ? `${Math.round(innerHeight - top + 8)}px` : '';
 }
@@ -3261,14 +3272,13 @@ function updateHud() {
 // bottom bar isn't one, since the map ends at its top edge, and nor is the open
 // tools' stack, so opening it doesn't reshuffle the list.
 const SEEN_SHARE = .5;
-const coverEls = ['.cartouche', '#notesToggle', '#notes'].map($);
+const coverEls = ['.cartouche', '.corner', '#notes'].map($);
 let covers = null;
 function coverRects() {
   if (covers) return covers;
   covers = [];
   for (const el of coverEls) {
     if (el.id === 'notes' && (!notesOpen || dock)) continue;  // shut, or beside the map rather than over it
-    if (el.id === 'notesToggle' && dock) continue;
     const r = el.getBoundingClientRect();
     if (r.width > 0 && r.height > 0) covers.push({ l: r.left, r: r.right, t: r.top, b: r.bottom });
   }
@@ -3278,7 +3288,6 @@ const dropCovers = () => { covers = null; };
 if (window.ResizeObserver) { const ro = new ResizeObserver(dropCovers); coverEls.forEach(el => ro.observe(el)); }
 window.addEventListener('resize', dropCovers);
 $('#notes').addEventListener('transitionend', e => { if (e.target === e.currentTarget) { dropCovers(); scheduleHud(); } });
-$('#toolStack').addEventListener('transitionend', e => { if (e.target === e.currentTarget) placeCheck(); });
 function wordSeen(w, cs, OX, rects) {
   const [dx, dy] = DIRS[w.d], right = W - dock, len = w.w.length, need = Math.ceil(len * SEEN_SHARE);
   let seen = 0;
@@ -3405,14 +3414,15 @@ function toast(html, hue, ms = 2400, find = null, carry = false) {
     toastEl.append(b);
     ms = Math.max(ms, SHARE_TOAST_MS);
   }
-  // A note sits just under the notes button (at the top, beside the docked
-  // notes), and never covers the title or the card at the top of the map (the
-  // intro, or the box for your initials): it moves down below them instead.
-  // Measured without its transform, which shrinks it while it's put away.
-  const nb = notesToggle.getBoundingClientRect();
-  toastEl.style.top = !dock && nb.height ? `${Math.round(nb.bottom + 10)}px` : '';
-  for (const el of [$('.cartouche'), $('#coach'), $('#signup')]) {
-    const r = el.hidden ? null : el.getBoundingClientRect();
+  // A note sits just under the buttons at the top right (beside the docked
+  // notes), and never covers the title, the card at the top of the map (the
+  // intro, or the box for your initials) or the open tools: it moves down
+  // below them instead. Measured without its transform, which shrinks it while
+  // it's put away.
+  const nb = $('.corner').getBoundingClientRect();
+  toastEl.style.top = nb.height ? `${Math.round(nb.bottom + 10)}px` : '';
+  for (const el of [$('.cartouche'), $('#coach'), $('#signup'), toolsOpen && toolStack]) {
+    const r = !el || el.hidden ? null : el.getBoundingClientRect();
     const l = toastEl.offsetLeft, t = toastEl.offsetTop, b = t + toastEl.offsetHeight;
     if (r && r.width && r.left < l + toastEl.offsetWidth && l < r.right && r.top < b + 8 && t < r.bottom) toastEl.style.top = `${Math.round(r.bottom + 8)}px`;
   }
@@ -3711,16 +3721,15 @@ $('#home').addEventListener('click', goHome);
 // nothing waits on it. Opening moves focus into the
 // stack, and shutting it from there brings focus back to the button. The
 // keyboard shortcuts never need it open.
-const barEl = $('#bar'), toolsBtn = $('#toolsBtn'), toolStack = $('#toolStack');
+const barEl = $('#bar'), toolsEl = $('#tools'), toolsBtn = $('#toolsBtn'), toolStack = $('#toolStack');
 let toolsOpen = false;
 function setTools(open, { focus = false, refocus = false } = {}) {
   toolsOpen = open;
-  barEl.classList.toggle('tools-open', open);
+  toolsEl.classList.toggle('open', open);
   toolsBtn.setAttribute('aria-expanded', String(open));
   toolStack.inert = !open;
   if (open && focus) try { toolStack.querySelector('button').focus({ preventScroll: true }); } catch (_) {}
   if (!open && (refocus || toolStack.contains(document.activeElement))) try { toolsBtn.focus({ preventScroll: true }); } catch (_) {}
-  placeCheck();
 }
 toolsBtn.addEventListener('click', () => setTools(!toolsOpen, { focus: true }));
 
