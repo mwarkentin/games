@@ -1426,14 +1426,20 @@ function onSurvey(l, m) {
     }
     if (!c.s) {
       const rx = fdiv(c.x, RC), ry = fdiv(c.y, RC), [done, total] = territoryProgress(rx, ry);
-      if (done === total) {
-        // Close enough to see, it goes supernova; further off, a note will do.
-        const mine = m.by === l.you, last = mine ? 'the last by you' : c.by ? `the last by ${c.by}` : '';
-        const text = `${regionName(rx, ry)} · every hidden word charted${last ? ', ' + last : ''}`;
-        const seen = sawNova({ rx, ry, t: Date.now(), w: c.w, x: c.x, y: c.y, d: c.d, by: c.by || '', mine, solo: false });
-        if (!nearView(rx, ry) || !supernova(rx, ry, { mine, text, seen })) setTimeout(() => (seen ? novaToast(seen, 'Went supernova · every hidden word charted') : toast(`<i></i><b>${regionName(rx, ry)}</b><span>Every hidden word here is charted</span>`, THEMES[regionTheme(rx, ry)].hue)), 1800);
-      }
+      if (done === total) goneSupernova(rx, ry, { w: c.w, x: c.x, y: c.y, d: c.d, by: c.by || '', mine: m.by === l.you });
     }
+  } else if (m.t === 'nova' && Array.isArray(m.n)) {
+    // A territory in a neighbouring sector, near enough that we might see it
+    // from here, has gone supernova: [rx, ry, at, w, x, y, d, initials].
+    const [rx, ry, , w, x, y, d, by] = m.n;
+    if (![rx, ry, x, y, d].every(Number.isInteger) || typeof w !== 'string' || fdiv(x, RC) !== rx || fdiv(y, RC) !== ry) return;
+    if (novasHeard.size > 2000) novasHeard.clear();
+    novasHeard.add(rx + ',' + ry);
+    invalidate();
+    // Joined to its own sector too, we hear its last word from there, and whether it was ours.
+    const home = links.get(sectorKey(x, y));
+    if (home && home.m.is('live')) return;
+    goneSupernova(rx, ry, { w, x, y, d, by: typeof by === 'string' ? by : '', mine: false });
   } else if (m.t === 'taken') {
     const c = addClaim(m.c, false), out = c && outbox.get(c.key);
     if (out && out.m.is('sent')) {
@@ -1589,7 +1595,22 @@ function territoryFound(rx, ry) {
   for (const e of found.values()) if (!e.s && fdiv(e.x, RC) === rx && fdiv(e.y, RC) === ry) n++;
   return n;
 }
-// Within a few territories of the middle of the view.
+// A territory on the shared survey has gone supernova, as its own sector's
+// claim of the last word or a neighbouring sector's news of it says, which
+// may both come: it plays, or makes a note, once. Close enough to see, it
+// goes supernova; further off, a note will do.
+const novaNoted = new Set();
+function goneSupernova(rx, ry, o) {
+  const k = rx + ',' + ry;
+  if (novaNoted.has(k)) return;
+  novaNoted.add(k);
+  const last = o.mine ? 'the last by you' : o.by ? `the last by ${o.by}` : '';
+  const text = `${regionName(rx, ry)} · every hidden word charted${last ? ', ' + last : ''}`;
+  const seen = sawNova({ rx, ry, t: Date.now(), w: o.w, x: o.x, y: o.y, d: o.d, by: o.by, mine: o.mine, solo: false });
+  if (!nearView(rx, ry) || !supernova(rx, ry, { mine: o.mine, text, seen })) setTimeout(() => (seen ? novaToast(seen, 'Went supernova · every hidden word charted') : toast(`<i></i><b>${regionName(rx, ry)}</b><span>Every hidden word here is charted</span>`, THEMES[regionTheme(rx, ry)].hue)), 1800);
+}
+// Within a few territories of the middle of the view: NOVA_REACH in
+// worker/src/survey.js, which tells the neighbouring sectors this far off.
 const nearView = (rx, ry) => Math.max(Math.abs(rx - fdiv(Math.floor(cam.x), RC)), Math.abs(ry - fdiv(Math.floor(cam.y), RC))) <= 3;
 // Where the shared survey stands, worked out afresh from the links and the
 // pass every time, so the panel's dot and its words always agree.
@@ -2098,20 +2119,23 @@ function novaOver(nv) {
 // A territory that has gone supernova stays marked: a deeper, quieter tint,
 // a faint shell and a scatter of stars, under the letters. It's a remnant
 // once every hidden word in it is charted in the shared survey (by the claims
-// of the sectors joined, or further afield by the world map's counts), or once
+// of the sectors joined, a neighbouring sector's news of its supernova, or
+// further afield by the world map's counts), or once
 // your own notes hold every one. That last counts playing alone: the
 // supernova went off for you, so it stays. With the survey on you can't find
 // a word someone else charted, so it's only a territory you charted wholly
 // yourself. Worked out again only when the claims, the finds or the world
 // map change; drawn without animation, so reduced motion changes nothing.
 let remMemo = { sig: '', map: null, set: new Set(), list: [] };
+const novasHeard = new Set();  // 'rx,ry' of territories a neighbouring sector said went supernova
 function remnants() {
-  const sig = claims.size + '|' + found.size;
+  const sig = claims.size + '|' + found.size + '|' + novasHeard.size;
   if (remMemo.sig === sig && remMemo.map === worldMap) return remMemo;
   const set = new Set(), list = [], counts = new Map(), mine = new Map();
   const add = (rx, ry) => { const k = rx + ',' + ry; if (!set.has(k)) { set.add(k); list.push({ rx, ry, th: regionTheme(rx, ry) }); } };
   for (const c of claims.values()) if (!c.s) { const k = fdiv(c.x, RC) + ',' + fdiv(c.y, RC); counts.set(k, (counts.get(k) || 0) + 1); }
   for (const e of found.values()) if (!e.s) { const k = fdiv(e.x, RC) + ',' + fdiv(e.y, RC); mine.set(k, (mine.get(k) || 0) + 1); }
+  for (const k of novasHeard) { const [rx, ry] = k.split(',').map(Number); add(rx, ry); }
   // A territory hides 102 to 122 words, so fewer than 90 is never all of them.
   for (const m of [counts, mine]) for (const [k, n] of m) {
     if (n < 90 || set.has(k)) continue;

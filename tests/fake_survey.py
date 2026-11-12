@@ -123,6 +123,11 @@ class FakeSurvey:
 
         ws.on_message(on_message)
 
+    def nova(self, sector: str, rx: int, ry: int, word: list, initials: str = "", at: int = NOW_MS) -> None:
+        """Sends sector `sector`'s players a neighbour's supernova, as the sector passes it on:
+        territory (rx, ry) went supernova when `word` ([w, x, y, d]) was charted."""
+        self.sockets[sector].send(json.dumps({"t": "nova", "n": [rx, ry, at, *word, initials]}))
+
     def handle_world(self, route: Route) -> None:
         route.fulfill(json=self.world, headers={"Access-Control-Allow-Origin": "*"})
 

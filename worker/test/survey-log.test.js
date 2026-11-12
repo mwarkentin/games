@@ -18,7 +18,7 @@ import {
   readTop, readTopHours, routeLog, sliceSql, writeLog, HOURS_SURVEYORS_SQL, HOURS_TERRITORIES_SQL, TOP_HOURS_MAX,
   NOVAS_SQL, NOVAS_BEFORE_SQL, NOVA_HOURS_SQL, NOVA_PAGE, NOVA_SQL, readNovas,
 } from '../src/survey-log.js';
-import { AREA, SECTOR, Sector } from '../src/survey.js';
+import { AREA, NEAR_PATH, NOVA_REACH, SECTOR, Sector, checkNova, novaNeighbours } from '../src/survey.js';
 
 const MIGRATIONS = new URL('../migrations-log/', import.meta.url);
 const ORIGIN = 'https://games.michaelwarkentin.com';
@@ -926,3 +926,190 @@ describe('Sector recording supernovas', () => {
   });
 });
 const pick = ({ w, x, y, d }) => ({ w, x, y, d });
+
+describe('supernovas reaching neighbouring sectors', () => {
+  const sorted = (list) => list.map((s) => s.join(',')).sort();
+  // Territory (lx, ly) of sector 0,0.
+  const near = (lx, ly) => sorted(novaNeighbours(lx, ly));
+
+  test('go to the sectors with a territory within NOVA_REACH, as the game\'s nearView counts', () => {
+    assert.equal(NOVA_REACH, 3);
+    // Corners: one beside, one above or below, one diagonal.
+    assert.deepEqual(near(0, 0), sorted([[-1, -1], [-1, 0], [0, -1]]));
+    assert.deepEqual(near(3, 0), sorted([[0, -1], [1, -1], [1, 0]]));
+    assert.deepEqual(near(0, 3), sorted([[-1, 0], [-1, 1], [0, 1]]));
+    assert.deepEqual(near(3, 3), sorted([[0, 1], [1, 0], [1, 1]]));
+    // An edge: three territories reach across one side and both its corners.
+    assert.deepEqual(near(1, 0), sorted([[-1, -1], [-1, 0], [0, -1], [1, -1], [1, 0]]));
+    assert.deepEqual(near(3, 2), sorted([[0, -1], [0, 1], [1, -1], [1, 0], [1, 1]]));
+    // The middle four reach every side.
+    for (const [lx, ly] of [[1, 1], [2, 1], [1, 2], [2, 2]]) assert.equal(novaNeighbours(lx, ly).length, 8);
+    // Away from the origin and below zero, the same.
+    assert.deepEqual(sorted(novaNeighbours(-5, 7)), sorted([[-2, 2], [-1, 1], [-1, 2]]));  // the bottom right corner of sector -2,1
+    assert.equal(novaNeighbours(-6, 6).length, 8);
+    assert.deepEqual(sorted(novaNeighbours(-4, -4)), sorted([[-2, -2], [-2, -1], [-1, -2]]));
+    // Each is right: every territory within reach is in this sector or one of them, and each has one in reach.
+    for (let ly = 0; ly < 4; ly++) for (let lx = 0; lx < 4; lx++) {
+      const list = new Set(near(lx, ly));
+      for (let dy = -NOVA_REACH; dy <= NOVA_REACH; dy++) for (let dx = -NOVA_REACH; dx <= NOVA_REACH; dx++) {
+        const sx = fdiv(lx + dx, 4), sy = fdiv(ly + dy, 4);
+        if (sx || sy) assert.ok(list.has(`${sx},${sy}`), `${lx},${ly} misses ${sx},${sy}`);
+      }
+      for (const k of list) {
+        const [sx, sy] = k.split(',').map(Number);
+        const gap = (r, s) => Math.max(0, s * 4 - r, r - (s * 4 + 3));
+        assert.ok(Math.max(gap(lx, sx), gap(ly, sy)) <= NOVA_REACH, `${lx},${ly} tells ${k}, out of reach`);
+      }
+    }
+  });
+
+  let clock, logged, sectors, pending, posts;
+  beforeEach(() => {
+    logged = mock.method(console, 'log', () => {});
+    mock.timers.enable({ apis: ['setTimeout'] });
+    clock = NOW;
+    sectors = new Map();
+    pending = [];
+    posts = [];
+  });
+  afterEach(() => { mock.timers.reset(); logged.mock.restore(); });
+
+  // The SECTORS binding: each name is a Sector of its own, made when first asked for, as Durable Objects are.
+  const binding = {
+    idFromName: (name) => name,
+    get: (name) => ({
+      fetch: (url, init) => {
+        posts.push({ name, url: String(url), method: init?.method ?? 'GET' });
+        return sectorAt(name).fetch(new Request(url, init));
+      },
+    }),
+  };
+  function sectorAt(name) {
+    if (!sectors.has(name)) {
+      const state = fakeState();
+      state.waitUntil = (p) => pending.push(p);
+      const s = new Sector(state, { SECTORS: binding });
+      s.now = () => clock;
+      sectors.set(name, s);
+    }
+    return sectors.get(name);
+  }
+  function join(name, initials = '') {
+    const ws = fakeSocket();
+    const [sx, sy] = name.split(',').map(Number);
+    sectorAt(name).join(ws, sx, sy);
+    if (initials) sectorAt(name).webSocketMessage(ws, JSON.stringify({ t: 'me', initials }));
+    return ws;
+  }
+  const settle = async () => { while (pending.length) await pending.shift(); };
+  // Every hidden word of territory (rx, ry) but the last stored, as a sector already holding them.
+  function nearlyDone(rx, ry) {
+    const words = territoryWords(rx, ry), name = `${fdiv(rx, 4)},${fdiv(ry, 4)}`;
+    const sql = sectorAt(name).sql;
+    words.slice(0, -1).forEach((o, i) => sql.exec(
+      'INSERT INTO claims (key, w, x, y, d, s, initials, at) VALUES (?, ?, ?, ?, ?, 0, ?, ?)', o.key, o.w, o.x, o.y, o.d, 'OLD', NOW - 1e6 + i,
+    ));
+    return { words, name, last: words.at(-1) };
+  }
+  async function chartLast(rx, ry, initials = 'AMY') {
+    const t = nearlyDone(rx, ry), ws = join(t.name, initials);
+    clock += 2000;
+    await sectorAt(t.name).webSocketMessage(ws, JSON.stringify({ t: 'claim', ...pick(t.last) }));
+    return { ...t, ws };
+  }
+
+  test('are passed on to the players of each neighbour, once the claim has its answer', async () => {
+    // Territory (1, 2) of sector 0,0 reaches all eight of its neighbours; three have players.
+    const left = join('-1,0'), above = join('0,-1'), corner = join('1,1'), corner2 = join('1,1');
+    const { ws, last } = await chartLast(1, 2);
+    // The claim went out first, and nothing waited on the neighbours.
+    assert.equal(ws.sent.filter((m) => m.t === 'claimed').length, 1);
+    assert.equal(pending.length, 1);
+    await settle();
+    const frame = { t: 'nova', n: [1, 2, clock, last.w, last.x, last.y, last.d, 'AMY'] };
+    for (const p of [left, above, corner, corner2]) assert.deepEqual(p.sent.filter((m) => m.t === 'nova'), [frame]);
+    assert.deepEqual(ws.sent.filter((m) => m.t === 'nova'), []);  // its own players had the claim
+    assert.deepEqual(posts.map((p) => p.name).sort(), sorted(novaNeighbours(1, 2)));
+    assert.ok(posts.every((p) => p.method === 'POST' && p.url === `https://sector${NEAR_PATH}`));
+    // A claim after it, in the same territory or not, tells nobody again.
+    posts.length = 0;
+    clock += 2000;
+    await sectorAt('0,0').webSocketMessage(ws, JSON.stringify({ t: 'claim', ...pick(chunk(0, 0).words[0]) }));
+    await settle();
+    assert.deepEqual(posts, []);
+  });
+
+  test('a neighbour with nobody in it answers at once and sends nothing', async () => {
+    await chartLast(0, 0);
+    await settle();
+    assert.equal(posts.length, 3);
+    for (const name of ['-1,-1', '-1,0', '0,-1']) assert.equal(sectorAt(name).ctx.getWebSockets().length, 0);
+  });
+
+  test('one neighbour failing doesn\'t stop the others or the claim', async () => {
+    const fine = join('-1,0');
+    const real = binding.get;
+    binding.get = (name) => (name === '0,-1' ? { fetch: () => Promise.reject(new Error('gone')) } : real(name));
+    try {
+      const { ws } = await chartLast(0, 0);
+      await settle();
+      assert.equal(ws.sent.filter((m) => m.t === 'claimed').length, 1);
+      assert.equal(fine.sent.filter((m) => m.t === 'nova').length, 1);
+    } finally { binding.get = real; }
+  });
+
+  test('nothing is sent without the binding, or for a supernova found on waking', async () => {
+    // Recorded on waking from claims made before supernovas were: no news to anyone.
+    const { name } = nearlyDone(0, 0);
+    const words = territoryWords(0, 0), o = words.at(-1);
+    sectorAt(name).sql.exec('INSERT INTO claims (key, w, x, y, d, s, initials, at) VALUES (?, ?, ?, ?, ?, 0, ?, ?)', o.key, o.w, o.x, o.y, o.d, 'OLD', NOW - 1);
+    const other = join('-1,0');
+    join(name);
+    await settle();
+    assert.equal(sectorAt(name).sql.exec('SELECT * FROM novas').toArray().length, 1);
+    assert.deepEqual(posts, []);
+    assert.deepEqual(other.sent.filter((m) => m.t === 'nova'), []);
+    // A sector without SECTORS (as the share Worker's tests make them) records it and tells nobody.
+    const state = fakeState(), lone = new Sector(state, {});
+    lone.now = () => clock;
+    const t = territoryWords(5, 5);
+    t.slice(0, -1).forEach((w, i) => state.storage.sql.exec('INSERT INTO claims (key, w, x, y, d, s, initials, at) VALUES (?, ?, ?, ?, ?, 0, ?, ?)', w.key, w.w, w.x, w.y, w.d, '', NOW - 1e6 + i));
+    const ws = fakeSocket();
+    lone.join(ws, 1, 1);
+    clock += 2000;
+    await lone.webSocketMessage(ws, JSON.stringify({ t: 'claim', ...pick(t.at(-1)) }));
+    assert.equal(state.storage.sql.exec('SELECT * FROM novas').toArray().length, 1);
+  });
+
+  test('a forged supernova is refused, and none reaches the players', async () => {
+    const p = join('-1,0'), s = sectorAt('-1,0');
+    const words = territoryWords(0, 0), o = words.at(-1);
+    const good = [0, 0, NOW, o.w, o.x, o.y, o.d, 'AMY'];
+    const post = (nova, path = NEAR_PATH, method = 'POST') => s.fetch(new Request(`https://sector${path}`, { method, body: method === 'POST' ? JSON.stringify({ nova }) : undefined }));
+    assert.ok(checkNova(good, -1, 0));
+    const forged = [
+      [0, 0, NOW, o.w, o.x + 1, o.y, o.d, 'AMY'],              // not where the word is
+      [0, 0, NOW, 'ZZZZ', o.x, o.y, o.d, 'AMY'],               // not a word
+      [1, 0, NOW, o.w, o.x, o.y, o.d, 'AMY'],                  // not the word's territory
+      [0, 0, NOW, o.w, o.x, o.y, o.d, '<b>'],                  // not initials
+      [0, 0, NOW, o.w, o.x, o.y, o.d],                         // too short
+      null, 'nova',
+    ];
+    for (const n of forged) assert.equal((await post(n)).status, 400, JSON.stringify(n));
+    // A real word, but in this sector's own territory, or too far off to see from here.
+    const own = territoryWords(-1, 0)[0], far = territoryWords(4, 0)[0];
+    assert.equal((await post([-1, 0, NOW, own.w, own.x, own.y, own.d, ''])).status, 400);
+    assert.equal((await post([4, 0, NOW, far.w, far.x, far.y, far.d, ''])).status, 400);
+    // The public router never reaches it: only WebSocket upgrades of sector paths go through.
+    const env = { SECTORS: binding, ALLOWED_ORIGINS: ORIGIN };
+    for (const path of [NEAR_PATH, `/v1/survey/-1/0${NEAR_PATH}`, `/v1/survey${NEAR_PATH}`]) {
+      const res = await worker.fetch(new Request(`https://api.test${path}`, { method: 'POST', headers: { Origin: ORIGIN }, body: JSON.stringify({ nova: good }) }), env);
+      assert.notEqual(res.status, 204, path);
+    }
+    assert.equal((await post(good, NEAR_PATH, 'GET')).status, 404);
+    assert.deepEqual(p.sent.filter((m) => m.t === 'nova'), []);
+    // The real one goes through.
+    assert.equal((await post(good)).status, 204);
+    assert.equal(p.sent.filter((m) => m.t === 'nova').length, 1);
+  });
+});
