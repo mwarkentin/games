@@ -12,6 +12,9 @@ the emotes the game sends are answered as `emote_error` says.
 FakeGuilds answers the guilds' paths (/v1/survey/guilds...), and `guild()`
 sends a sector's word of which of a guild are online.
 
+FakeLinks answers the paths for linking another device (/v1/link...); the
+real ones are tested in worker/test/players.test.js.
+
 It also fakes Turnstile (worker/TURNSTILE.md): Cloudflare's widget script
 and the Worker's POST /v1/survey/pass.
 
@@ -229,7 +232,7 @@ class FakePassDesk:
 
 def player_id(token: str) -> str:
     """A player's id from their token, as worker/src/survey-social.js works it out."""
-    return hashlib.sha256(f"letterfield-player:{token}".encode()).hexdigest()[:12]
+    return hashlib.sha256(f"games-player:{token}".encode()).hexdigest()[:12]
 
 
 class FakeGuilds:
@@ -278,3 +281,48 @@ class FakeGuilds:
         if not member:
             return reply(404, {"error": "not a member"})
         return reply(200, {"code": parts[0], **g})
+
+
+class FakeLinks:
+    """The paths for linking another device, as worker/src/players.js answers them. `codes`
+    maps a code to {"token": 32 hex, "carry": {...}}: codes made elsewhere, for the game to redeem."""
+
+    ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ23456789"
+
+    def __init__(self, codes=None, status=None):
+        self.codes = {code: {"state": "waiting", **link} for code, link in (codes or {}).items()}
+        self.status = status          # answer everything with this status instead, as a Worker in trouble would
+        self.calls: list[tuple] = []  # (path, body) of every request
+        self.made = 0
+
+    def use(self, code: str) -> None:
+        """Another device redeems `code`."""
+        self.codes[code]["state"] = "used"
+
+    def expire(self, code: str) -> None:
+        self.codes[code]["state"] = "gone"
+
+    def handle(self, route: Route) -> None:
+        request = route.request
+        path = urlparse(request.url).path.removeprefix("/v1/link")
+        body = json.loads(request.post_data) if request.post_data else {}
+        self.calls.append((path, body))
+
+        def reply(status: int, data: dict) -> None:
+            route.fulfill(status=status, json=data, headers={"Access-Control-Allow-Origin": "*"})
+
+        if self.status:
+            return reply(self.status, {"error": "link error"})
+        if path == "":
+            self.made += 1
+            code = "CDEFGHJ" + self.ALPHABET[self.made]
+            self.codes[code] = {"token": body["token"], "carry": body["carry"], "state": "waiting"}
+            return reply(201, {"code": code, "expires": NOW_MS + 600_000})
+        parts = path.strip("/").split("/")
+        link = self.codes.get(parts[0].upper())
+        if parts[1:] == ["status"]:
+            return reply(200, {"state": link["state"] if link and link["token"] == body.get("token") else "gone"})
+        if not link or link["state"] != "waiting":
+            return reply(404, {"error": "no such code, or it has run out"})
+        link["state"] = "used"
+        return reply(200, {"token": link["token"], "carry": link["carry"]})

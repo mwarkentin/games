@@ -37,7 +37,7 @@ def start(
     open_game(page, site_url, fake, viewport=viewport)
     page.evaluate(
         """([t, ini, g]) => {
-      localStorage.setItem('letterfield.coach.v1', '1'); localStorage.setItem('letterfield.player.v1', t); localStorage.removeItem('letterfield.cam.v1');
+      localStorage.setItem('letterfield.coach.v1', '1'); localStorage.setItem('games.player', t); localStorage.removeItem('letterfield.cam.v1');
       if (ini) localStorage.setItem('games.initials', JSON.stringify(ini)); else localStorage.removeItem('games.initials');
       if (g) localStorage.setItem('letterfield.guild.v1', JSON.stringify(g)); else localStorage.removeItem('letterfield.guild.v1');
     }""",

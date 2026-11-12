@@ -327,6 +327,33 @@ html[data-who="loading"] .who-status{animation:blink 1s infinite alternate}
 .guild-invite .eyebrow{margin-bottom:8px}
 .guild-invite .btn.ghost{background:transparent;color:var(--ink);border:1px solid var(--rule)}
 .guild-invite .coach-row{justify-content:flex-end}
+/* Linking devices: a code that carries this surveyor to another device, or one to type in (see Linking devices). */
+.pair{margin-top:10px}
+.pair:empty{display:none}
+.pair p{margin:0 0 8px;font-size:12.5px;line-height:1.45;color:var(--muted)}
+.pair p b{color:var(--ink)}
+.pair-acts{display:flex;flex-wrap:wrap;align-items:center;gap:6px}
+.pair-acts .btn{padding:8px 12px}
+.pair-box{padding:9px 10px 10px;border:1px solid var(--rule);border-radius:7px}
+.pair-box .eyebrow{margin:0 0 8px}
+.pair-qr{width:176px;aspect-ratio:1;margin:2px auto 10px;padding:8px;box-sizing:border-box;background:#fff;border-radius:6px}
+.pair-qr:empty{display:none}
+.pair-qr svg{display:block;width:100%;height:100%}
+.pair-code{display:block;margin:2px 0 6px;text-align:center;font:600 22px/1.1 var(--f-mono);letter-spacing:.14em;color:var(--ink);user-select:all;-webkit-user-select:all}
+.pair .pair-left{text-align:center;font:400 10.5px/1.3 var(--f-mono)}
+.pair .pair-small{margin:8px 0 0;font-size:11.5px}
+.pair .pair-small:empty{display:none}
+.pair-enter{display:flex;flex-wrap:wrap;align-items:center;gap:8px}
+.pair-enter label{flex:1 0 100%;font-size:13px}
+.pair-enter input{width:9.5em;flex:none;box-sizing:border-box;font:500 16px/1 var(--f-mono);letter-spacing:.12em;text-transform:uppercase;padding:7px 9px;border:1px solid var(--rule);border-radius:6px;background:var(--paper);color:var(--ink)}
+.pair-enter input:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+.pair-enter .btn{padding:9px 12px}
+.pair-enter > p{flex:1 0 100%;margin:0}
+.pair-err{color:var(--danger)!important}
+.pair-offer p{margin:0 0 10px;font-size:13.5px;line-height:1.5}
+.pair-offer .eyebrow{margin-bottom:8px}
+.pair-offer .btn.ghost{background:transparent;color:var(--ink);border:1px solid var(--rule)}
+.pair-offer .coach-row{justify-content:flex-end}
 .who-mute{margin-top:8px}
 .who-more{display:block;margin:6px auto 0}
 .who-opts{display:flex;flex-wrap:wrap;gap:0 16px;margin-top:10px;padding-top:6px;border-top:1px solid var(--rule)}
@@ -562,6 +589,7 @@ body.settling, body.settling *{transition:none!important}
       <button type="button" class="btn ghost" id="surveyCancel" hidden>Cancel</button>
     </form>
     <p class="survey-hint" id="surveyHint"></p>
+    <div class="pair" id="pairCard"></div>
   </section>
   <section class="novas" id="novasSec" aria-labelledby="novasHead" hidden>
     <h3 class="eyebrow" id="novasHead">Supernovas</h3>
@@ -578,6 +606,7 @@ body.settling, body.settling *{transition:none!important}
 </div>
 
 <div class="coach card guild-invite" id="guildInvite" role="dialog" aria-labelledby="guildInviteName" hidden></div>
+<div class="coach card pair-offer" id="pairOffer" role="dialog" aria-labelledby="pairOfferHead" hidden></div>
 
 <form class="coach card signup" id="signup" hidden>
   <label for="signupInitials"><span id="signupHow"><strong>Every territory hides its own words</strong>, in all eight directions: tap a word's first letter, then its last, to circle it. Everyone charts this map together, so pick initials to sign the ones you find first.</span><span id="signupOnly" hidden><strong>Pick your initials to start.</strong> Everyone charts this map together, and every word you find first is signed with them.</span></label>
@@ -3005,6 +3034,7 @@ function draw(now) {
   const mateHue = myGuild ? guildHue(myGuild.name) : null;
   for (const l of links.values()) for (const [id, ini, gx, gy, tag] of l.here) {
     if (muted.has(id)) continue;  // hidden on this device (see Surveyors)
+    if (seen.has(id)) continue;   // one caret a player, on two linked devices in two sectors too
     seen.add(id);
     let gh = ghosts.get(id);
     if (!gh) {
@@ -4025,26 +4055,32 @@ worldCanvas.addEventListener('click', e => {
 });
 
 const coach = $('#coach');
-// What a visit starts with, one card at most: on the shared survey, initials
-// if the player has none (sign), with how to play in the same card until
-// they've seen it; otherwise how to play, until they've seen it (coach); then
-// nothing over the map (exploring). Leaving either card means it's been read.
-// onMove shows the card for the state.
+// What a visit starts with, one card at most: on the shared survey, an offer
+// to link this device if it was opened from another's link (link; see
+// Linking devices), then initials if the player has none (sign), with how to
+// play in the same card until they've seen it; otherwise how to play, until
+// they've seen it (coach); then nothing over the map (exploring). Leaving the
+// sign or coach card means it's been read. onMove shows the card for the state.
+const linkAsked = readLinkAsked();
+const introNext = () => surveyApi && !myInitials() ? 'sign' : LS.get(K_COACH) !== '1' ? 'coach' : 'exploring';
 const Intro = machine('intro', {
+  link: ['sign', 'coach', 'exploring'],
   sign: ['exploring'],
   coach: ['exploring'],
   exploring: [],
-}, surveyApi && !myInitials() ? 'sign' : LS.get(K_COACH) !== '1' ? 'coach' : 'exploring', { onMove: showIntro });
+}, linkAsked ? 'link' : introNext(), { onMove: showIntro });
 function showIntro(to, from) {
   signup.hidden = to !== 'sign';
   coach.hidden = to !== 'coach';
+  $('#pairOffer').hidden = to !== 'link';
+  if (to === 'link' || from === 'link') renderPair();
   if (to === 'sign') {
     const how = LS.get(K_COACH) !== '1';
     $('#signupHow').hidden = $('#signupKbd').hidden = !how;
     $('#signupOnly').hidden = how;
   }
   if (from === 'sign' && document.activeElement === signupInput) signupInput.blur();
-  if (from) LS.set(K_COACH, '1');
+  if (from && from !== 'link') LS.set(K_COACH, '1');
   if (from) renderGuild();  // an invite waits for this card to go (see Guilds)
 }
 $('#coachOk').addEventListener('click', () => { if (Intro.is('coach')) Intro.go('exploring'); });
@@ -4057,7 +4093,7 @@ $('#coachOk').addEventListener('click', () => { if (Intro.is('coach')) Intro.go(
 // token, so nobody can send as someone else. The list is a fold of the survey
 // panel, like the world map: the Worker's answer, nearest first, fetched while
 // it's open and on screen. Emotes are a few fixed drawings, never text.
-const K_PLAYER = 'letterfield.player.v1', K_MUTED = 'letterfield.muted.v1', K_LISTED = 'letterfield.listed.v1', K_EMOTES = 'letterfield.emotes.v1';
+const K_PLAYER = 'games.player', K_MUTED = 'letterfield.muted.v1', K_LISTED = 'letterfield.listed.v1', K_EMOTES = 'letterfield.emotes.v1';
 const PID_RE = /^[0-9a-f]{12}$/, MUTED_MAX = 200, LIST_PAGES = 25;
 const WHO_REFRESH_MS = 20000, WHO_RETRY_MS = 20000, POP_MS = 2600, HERE_MS = 30000;
 // The emotes, in the Worker's order (EMOTES in worker/src/survey-social.js):
@@ -4128,7 +4164,7 @@ const playerToken = (() => {
 })();
 let myPid = '';
 if (playerToken && window.crypto && crypto.subtle) {
-  crypto.subtle.digest('SHA-256', new TextEncoder().encode('letterfield-player:' + playerToken))
+  crypto.subtle.digest('SHA-256', new TextEncoder().encode('games-player:' + playerToken))
     .then(h => {
       myPid = [...new Uint8Array(h).slice(0, 6)].map(b => b.toString(16).padStart(2, '0')).join('');
       // Presence that came before we knew our own id: we were in it.
@@ -4742,6 +4778,279 @@ if (surveyApi) {
   renderGuild();
 }
 
+/* ---------- Linking devices ---------- */
+// One surveyor on every device (see "One player, several devices" in
+// worker/SURVEY.md). A device that's already you asks the Worker for a
+// one-time code, good for ten minutes, and shows it as a QR code, a link and
+// eight characters. The other device redeems it, from the link (?link=<code>,
+// offered as the visit starts; see Intro) or by typing it in, for this
+// device's token and a few settings, and reloads as the same surveyor: the
+// same initials and guild, with mutes from both. Finds stay on the device
+// that found them. Whoever has the code becomes you, so it's only ever shown
+// here, never sent anywhere but the Worker.
+const LINK_CODE_RE = /^[A-HJKMNP-Z2-9]{8}$/, TOKEN_RE = /^[0-9a-f]{32}$/, LINK_MS = 10 * 60000, LINK_POLL_MS = 5000, K_LINKED = 'letterfield.linked';
+const pairCard = $('#pairCard'), pairOffer = $('#pairOffer');
+let pairCode = null;    // {code, until, gone}: the code shown here, until when by this device's clock, and whether it's run out
+let pairError = '', pairRetry = false, pairTimer = 0;
+// Linking, on <html data-pair>: nothing under way (idle); a code being made,
+// shown (until it's used, runs out or is put away) and used; a code being
+// typed in; a code being redeemed, typed or from a link; done, reloading as
+// the linked surveyor; or a failure to say. A reply that comes back after the
+// player has moved on is dropped.
+const Pair = machine('pair', {
+  idle: ['making', 'entering', 'redeeming'],
+  making: ['showing', 'failed'],
+  showing: ['used', 'making', 'idle'],
+  used: ['idle'],
+  entering: ['redeeming', 'idle'],
+  redeeming: ['done', 'entering', 'failed'],
+  failed: ['idle', 'making', 'redeeming'],
+  done: [],
+}, 'idle', { onMove: pairMoved });
+function pairMoved(to) {
+  clearTimeout(pairTimer);
+  if (to === 'idle' || to === 'making') { pairCode = null; pairError = ''; }
+  if (to === 'showing') pollPair();
+  renderPair();
+}
+// ?link=<code>: read once, then taken off the address, like a guild's invite.
+function readLinkAsked() {
+  if (!surveyApi) return '';
+  try {
+    const u = new URL(location.href), code = (u.searchParams.get('link') || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+    if (u.searchParams.has('link')) { u.searchParams.delete('link'); history.replaceState(history.state, '', u.pathname + u.search + u.hash); }
+    return /^[A-HJKMNP-Z2-9]{8}$/.test(code) ? code : '';
+  } catch (_) { return ''; }
+}
+// The address a code opens on the other device; a test's or preview's ?survey= goes along.
+function pairUrl(code) {
+  const u = new URL(location.pathname, location.origin), survey = new URLSearchParams(location.search).get('survey');
+  if (survey) u.searchParams.set('survey', survey);
+  u.searchParams.set('link', code);
+  return u.href;
+}
+const showCode = code => `${code.slice(0, 4)}-${code.slice(4)}`;
+const cleanCode = v => v.toUpperCase().replace(/[^A-Z0-9]/g, '');
+async function linkCall(path, body) {
+  const ctl = new AbortController(), timer = setTimeout(() => ctl.abort(), 8000);
+  try {
+    const res = await fetch(`${surveyHttp}/v1/link${path}`, { method: 'POST', headers: { 'Content-Type': 'text/plain' }, body: JSON.stringify(body), signal: ctl.signal });
+    return { status: res.status, data: await res.json().catch(() => ({})) };
+  } catch (_) {
+    return { status: 0, data: {} };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+async function makeCode() {
+  if (!playerToken || !Pair.is('idle', 'showing', 'failed')) return;
+  Pair.go('making');
+  const at = Pair.seq;
+  const carry = { initials: myInitials(), guild: myGuild && { code: myGuild.code, name: myGuild.name, tag: myGuild.tag }, muted: [...muted].slice(-MUTED_MAX), listed: listedOn, emotes: emotesOn };
+  const { status, data } = await linkCall('', { token: playerToken, carry });
+  if (Pair.seq !== at) return;
+  if (status === 201 && LINK_CODE_RE.test(data.code)) {
+    pairCode = { code: data.code, until: Date.now() + LINK_MS, gone: false };
+    return Pair.go('showing');
+  }
+  pairError = status === 429 ? 'That’s a lot of codes for one network: try again in a while.' : 'Couldn’t make a code. Try again in a moment.';
+  Pair.go('failed');
+}
+// While a code's shown, ask now and then whether it's been used, until it runs out.
+function pollPair() {
+  clearTimeout(pairTimer);
+  const code = pairCode, at = Pair.seq;
+  if (!Pair.is('showing') || !code || code.gone) return;
+  pairTimer = setTimeout(async () => {
+    if (Pair.seq !== at) return;
+    if (Date.now() >= code.until) { code.gone = true; return renderPair(); }
+    if (!document.hidden) {
+      const { status, data } = await linkCall(`/${code.code}/status`, { token: playerToken });
+      if (Pair.seq !== at) return;
+      if (status === 200 && data.state === 'used') return Pair.go('used');
+      if (status === 200 && data.state === 'gone') { code.gone = true; return renderPair(); }
+    }
+    renderPair();
+    pollPair();
+  }, LINK_POLL_MS);
+}
+async function redeemCode(code) {
+  if (!LINK_CODE_RE.test(code) || !Pair.is('idle', 'entering', 'failed')) return;
+  Pair.go('redeeming');
+  const at = Pair.seq;
+  const { status, data } = await linkCall(`/${code}`, {});
+  if (Pair.seq !== at) return;
+  if (status === 200 && TOKEN_RE.test(data.token)) {
+    await takeLink(data.token, data.carry || {});
+    Pair.go('done');
+    try { sessionStorage.setItem(K_LINKED, '1'); } catch (_) {}
+    location.reload();
+    return;
+  }
+  pairRetry = status === 0 || status >= 500;
+  pairError = status === 404 ? 'That code has been used or has run out. Make a new one on your other device.'
+    : status === 429 ? 'Too many tries from this network: wait a while, then try again.' : 'Couldn’t reach the survey. Try again in a moment.';
+  if (Intro.is('link')) return Pair.go('failed');
+  Pair.go('entering');
+  try { $('#pairInput').focus({ preventScroll: true }); } catch (_) {}
+}
+// Become the surveyor the code came from. Their guild wins; if they're in
+// none, this device's comes along. Either way this device's old self leaves
+// its guild, since it won't be back.
+async function takeLink(token, c) {
+  const old = playerToken, mine = myGuild;
+  const initials = typeof c.initials === 'string' && /^[A-Z]{3}$/.test(c.initials) ? c.initials : myInitials();
+  let guild = goodGuild(c.guild) ? { code: c.guild.code, name: c.guild.name, tag: c.guild.tag } : null;
+  if (mine && token !== old) {
+    if (!guild && initials) {
+      const { status, data } = await guildCall(`/${mine.code}/join`, { token, initials });
+      if (status === 200 && goodGuild(data)) guild = { code: data.code, name: data.name, tag: data.tag };
+    }
+    await guildCall(`/${mine.code}/leave`, { token: old });
+  }
+  LS.set(K_PLAYER, token);
+  if (initials) LS.set(K_INITIALS, JSON.stringify(initials));
+  saveGuild(guild);
+  const theirs = Array.isArray(c.muted) ? c.muted.filter(p => typeof p === 'string' && PID_RE.test(p)) : [];
+  LS.set(K_MUTED, JSON.stringify([...new Set([...muted, ...theirs])].slice(-MUTED_MAX)));
+  if (typeof c.listed === 'boolean') LS.set(K_LISTED, c.listed ? '1' : '0');
+  if (typeof c.emotes === 'boolean') LS.set(K_EMOTES, c.emotes ? '1' : '0');
+}
+async function sharePairLink() {
+  if (!pairCode) return;
+  const url = pairUrl(pairCode.code);
+  const done = text => { const el = $('#pairSaid'); if (el) el.textContent = text; say(text); };
+  try {
+    if (navigator.share && matchMedia('(pointer: coarse)').matches) { await navigator.share({ title: 'Letterfield', text: 'Link a device to my surveyor', url }); return; }
+  } catch (e) { if (e && e.name === 'AbortError') return; }
+  try { await navigator.clipboard.writeText(url); done('Link copied. Open it on your other device in the next ten minutes.'); }
+  catch (_) { done(url); }
+}
+
+// The code as a QR code, with War's library, loaded the first time one's
+// needed; without it, there's still the code and the link.
+const QR_LIBRARY = 'https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.js';
+const QR_INTEGRITY = 'sha384-8FWZA6BGMXhsfO+BLtrJK0We6gg5o1JyO8xQm6peWDEUs17ACA5ziE/NIAkl9z2k';
+let qrLoading = null;
+function loadQr() {
+  qrLoading = qrLoading || new Promise((resolve, reject) => {
+    const script = document.createElement('script');
+    script.src = QR_LIBRARY;
+    script.integrity = QR_INTEGRITY;
+    script.crossOrigin = 'anonymous';
+    script.onload = () => (window.qrcode ? resolve(window.qrcode) : reject(new Error('no qrcode')));
+    script.onerror = () => { qrLoading = null; script.remove(); reject(new Error('qrcode did not load')); };
+    document.head.append(script);
+  });
+  return qrLoading;
+}
+async function drawQr(box, url) {
+  if (!box || box.dataset.url === url) return;
+  box.dataset.url = url;
+  let qr;
+  try {
+    qr = (await loadQr())(0, 'M');
+    qr.addData(url);
+    qr.make();
+  } catch (_) {
+    box.dataset.url = '';
+    box.replaceChildren();
+    return;
+  }
+  if (box.dataset.url !== url || !box.isConnected) return;
+  const n = qr.getModuleCount();
+  let d = '';
+  for (let r = 0; r < n; r++) for (let c = 0; c < n; c++) if (qr.isDark(r, c)) d += `M${c} ${r}h1v1h-1z`;
+  box.innerHTML = `<svg viewBox="0 0 ${n} ${n}" role="img" aria-label="QR code that opens Letterfield on another device and links it"><path d="${d}" fill="#000"/></svg>`;
+}
+
+function renderPair() {
+  if (!surveyApi || !playerToken) return;
+  const st = Pair.state, offering = Intro.is('link');
+  const err = pairError ? `<p class="pair-err" role="alert">${pairError}</p>` : '';
+  const busy = st === 'redeeming';
+  let html = '';  // while a link's offer is over the map, it's the one card about linking
+  if (offering) { /* nothing here */ }
+  else if (st === 'idle') html = `<p>Play as the same surveyor on your phone, tablet and computer.</p><div class="pair-acts"><button type="button" class="pill" data-p="make">Link another device</button><button type="button" class="pill" data-p="enter">Use a code</button></div>`;
+  else if (st === 'making') html = `<div class="pair-box"><p class="eyebrow">Link another device</p><p>Making a code…</p></div>`;
+  else if (st === 'showing' && pairCode && pairCode.gone) html = `<div class="pair-box"><p class="eyebrow">Link another device</p><p>That code has run out.</p><div class="pair-acts"><button type="button" class="btn" data-p="make">New code</button><button type="button" class="pill" data-p="close">Close</button></div></div>`;
+  else if (st === 'showing' && pairCode) {
+    const share = navigator.share && matchMedia('(pointer: coarse)').matches ? 'Share link' : 'Copy link';
+    html = `<div class="pair-box"><p class="eyebrow">Link another device</p><div class="pair-qr" id="pairQr"></div><p>Scan this with the other device’s camera, or open Letterfield there and choose <b>Use a code</b>:</p><b class="pair-code" id="pairCode">${showCode(pairCode.code)}</b><p class="pair-left" id="pairLeft"></p><p>Whoever uses it plays as you, so keep it to your own devices. It brings your initials, guild and mutes; finds stay on the device that found them.</p><div class="pair-acts"><button type="button" class="pill" data-p="share">${share}</button><button type="button" class="btn" data-p="close">Done</button></div><p class="pair-small" id="pairSaid" aria-live="polite"></p><p class="pair-small">On an iPhone, a Home Screen app keeps its own storage: type the code in there.</p></div>`;
+  } else if (st === 'used') html = `<div class="pair-box"><p><b>Linked.</b> Your other device plays as ${myInitials() || 'you'} now.</p><div class="pair-acts"><button type="button" class="btn" data-p="close">Done</button></div></div>`;
+  else if (st === 'entering' || st === 'redeeming') html = `<form class="pair-box pair-enter" id="pairEnter"><label for="pairInput">The code from your other device, under <b>Link another device</b> there</label><input id="pairInput" maxlength="9" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="ABCD-EFGH"${busy ? ' disabled' : ''}><button type="submit" class="btn"${busy ? ' disabled' : ''}>${busy ? 'Linking…' : 'Link'}</button><button type="button" class="pill" data-p="close"${busy ? ' disabled' : ''}>Cancel</button>${err}<p class="pair-small">This device then plays as that surveyor: their initials and guild, with mutes from both.</p></form>`;
+  else if (st === 'failed') html = `<div class="pair-box">${err}<div class="pair-acts"><button type="button" class="pill" data-p="make">Try again</button><button type="button" class="pill" data-p="close">Close</button></div></div>`;
+  else if (st === 'done') html = `<div class="pair-box"><p><b>Linked.</b> Loading as your surveyor…</p></div>`;
+  if (pairCard.innerHTML !== html) {
+    const f = document.activeElement, k = f && pairCard.contains(f) ? f.dataset.p || f.id : '';
+    const typed = $('#pairInput') ? $('#pairInput').value : '';
+    pairCard.innerHTML = html;
+    if ($('#pairInput')) $('#pairInput').value = typed;
+    if (k) { const el = pairCard.querySelector(`[data-p="${k}"]`) || (k === 'pairInput' && $('#pairInput')) || pairCard.querySelector('button, input'); if (el && !el.disabled) try { el.focus({ preventScroll: true }); } catch (_) {} }
+  }
+  if (st === 'showing' && pairCode && !pairCode.gone) {
+    drawQr($('#pairQr'), pairUrl(pairCode.code));
+    const m = Math.max(1, Math.ceil((pairCode.until - Date.now()) / 60000));
+    $('#pairLeft').textContent = `Good for ${m} more minute${m === 1 ? '' : 's'}, once`;
+  }
+  if (offering) {
+    const head = '<p class="eyebrow" id="pairOfferHead">Link this device</p>';
+    const offer = st === 'failed'
+      ? `${head}${err}<div class="coach-row"><button type="button" class="btn ghost" data-p="not-now">Close</button>${pairRetry ? '<button type="button" class="btn" data-p="link">Try again</button>' : ''}</div>`
+      : st === 'done' ? `${head}<p><b>Linked.</b> Loading as your surveyor…</p>`
+        : `${head}<p>This link comes from another device. Link this one to it, and here you’ll be the same surveyor as there: the same initials and guild, with mutes from both. Finds stay on the device that found them.</p>${myGuild ? `<p>If they’re in a guild, this device leaves the ${guildName(myGuild.name)}.</p>` : ''}<div class="coach-row"><button type="button" class="btn ghost" data-p="not-now"${busy ? ' disabled' : ''}>Not now</button><button type="button" class="btn" data-p="link"${busy ? ' disabled' : ''}>${busy ? 'Linking…' : 'Link'}</button></div>`;
+    if (pairOffer.innerHTML !== offer) pairOffer.innerHTML = offer;
+  }
+}
+function leaveOffer() {
+  if (!Intro.is('link') || Pair.is('redeeming', 'done')) return;
+  if (!Pair.is('idle')) Pair.go('idle');
+  Intro.go(introNext());
+}
+function onPairClick(e) {
+  const b = e.target.closest('button[data-p]');
+  if (!b || b.disabled) return;
+  const p = b.dataset.p;
+  if (p === 'make') makeCode();
+  else if (p === 'enter' && Pair.is('idle')) { Pair.go('entering'); try { $('#pairInput').focus({ preventScroll: true }); } catch (_) {} }
+  else if (p === 'share') sharePairLink();
+  else if (p === 'close' && Pair.is('showing', 'used', 'entering', 'failed')) Pair.go('idle');
+  else if (p === 'link' && Intro.is('link')) redeemCode(linkAsked);
+  else if (p === 'not-now') leaveOffer();
+}
+pairCard.addEventListener('click', onPairClick);
+pairOffer.addEventListener('click', onPairClick);
+pairCard.addEventListener('input', e => {
+  if (e.target.id !== 'pairInput') return;
+  const v = cleanCode(e.target.value).slice(0, 8), shown = v.length > 4 ? showCode(v) : v;
+  if (shown !== e.target.value) e.target.value = shown;
+});
+pairCard.addEventListener('submit', e => {
+  e.preventDefault();
+  const code = cleanCode($('#pairInput').value);
+  if (!LINK_CODE_RE.test(code)) {
+    pairError = 'A code is eight letters and digits, like ABCD-EFGH.';
+    renderPair();
+    try { $('#pairInput').focus({ preventScroll: true }); } catch (_) {}
+    return;
+  }
+  redeemCode(code);
+});
+pairCard.addEventListener('keydown', e => {
+  if (e.key !== 'Escape' || !Pair.is('showing', 'used', 'entering', 'failed')) return;
+  e.stopPropagation();
+  Pair.go('idle');
+  try { pairCard.querySelector('button').focus({ preventScroll: true }); } catch (_) {}
+});
+pairOffer.addEventListener('keydown', e => { if (e.key === 'Escape') { e.stopPropagation(); leaveOffer(); } });
+// Just linked: say so once, after the reload.
+if (surveyApi) {
+  let linked = false;
+  try { linked = sessionStorage.getItem(K_LINKED) === '1'; sessionStorage.removeItem(K_LINKED); } catch (_) {}
+  if (linked) setTimeout(() => toast(`<i></i><b>Linked</b><span>This device plays as ${myInitials() || 'your surveyor'} now, as your other one does</span>`, null, 5000), 600);
+  renderPair();
+}
+
 /* ---------- Boot ---------- */
 function resize() {
   dpr = Math.min(window.devicePixelRatio || 1, 3);
@@ -4810,6 +5119,7 @@ if (redrawn) setTimeout(() => toast(`<i></i><b>The map has been redrawn</b><span
 connectStore();
 if (location.hash === '#debug') window.__lf = { cam, found, claims, links, chunk, wordEnd, collect, territoryProgress, remnants: () => [...remnants().set], novas: () => [...novasSeen.values()], territoryName: regionName, world: () => world, supernova, novaSound, audioOut, musicTracks: MUSIC_TRACKS, audio: () => ac, music: () => musicNow && { state: ac.state, track: musicNow.track().name, nodes: musicNow.track().nodes.size, level: musicNow.master.gain.value, master: musicNow.master, volume: musicVol, target: musicLevel(), swap: musicNow.swap }, nova: () => nova,
   who: () => Who.state, surveyors: () => whoData, emoteMotion, guild: () => Membership.state, myGuild: () => myGuild, mates: () => [...mates.keys()], roster: () => roster,
+  pair: () => Pair.state, pairCode: () => pairCode && pairCode.code,
   guildWords: () => [GUILD_FIRST.length, GUILD_SECOND.length, GUILD_THIRD.length], pops: () => pops.map(p => [p.pid, p.e]), pid: () => myPid, muted: () => [...muted], carets: () => [...ghosts.keys()],
   caretXY: id => { const gh = ghosts.get(id); return gh && { x: (Math.round(gh.x) - cam.x) * cam.cs + (W - dock) / 2, y: (Math.floor(gh.y) + .5 - cam.y) * cam.cs + H / 2 + mapTop }; },
   pass: () => Pass.state, intro: () => Intro.state, surveyStatus, linkStates: () => Object.fromEntries([...links].map(([k, l]) => [k, l.m.state])), outbox: () => [...outbox.values()].map(c => [c.e.w, c.m.state]), definitions: () => Object.fromEntries([...definitions].map(([k, d]) => [k, d.m.state])) };

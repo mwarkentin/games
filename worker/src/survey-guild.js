@@ -39,7 +39,7 @@ const MAX_BODY = 1024;
 const isInt = (v, min, max) => Number.isInteger(v) && v >= min && v <= max;
 const guildOf = (env, code) => env.GUILDS.get(env.GUILDS.idFromName(code));
 const ask = (env, code, path, body) => guildOf(env, code).fetch(`https://guild${path}`, body === undefined ? undefined : { method: 'POST', body: JSON.stringify(body) });
-const goodName = (n) => Array.isArray(n) && n.length === 3 && n.every((v, i) => isInt(v, 0, GUILD_WORDS[i] - 1));
+export const goodName = (n) => Array.isArray(n) && n.length === 3 && n.every((v, i) => isInt(v, 0, GUILD_WORDS[i] - 1));
 
 async function readBody(request) {
   const text = await request.text();

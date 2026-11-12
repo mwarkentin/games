@@ -322,7 +322,7 @@ emotes.
 ### Who a player is
 
 Initials aren't unique, and a socket's id lasts only as long as the socket.
-So the game makes a random token (`letterfield.player.v1`, 128 bits) and sends
+So the game makes a random token (`games.player`, 128 bits, a key without a game prefix so any game can share it) and sends
 it in its `me` message to every sector it joins. The sector names the player
 by 48 bits of the token's SHA-256 (`playerId`): the same id in every sector
 and every visit, used in presence, the list and emotes. Nobody else ever sees
@@ -332,8 +332,9 @@ game that sends no token (an older copy) keeps its socket's id, as before.
 The trade-off is a lasting pseudonym. It's what lets a mute outlast a visit,
 and it lets someone recognise "the same KIM" from day to day; it says nothing
 else about the player, and clearing the browser's storage makes a new one.
-Claims still aren't tied to it (see "Mine"). An iPhone's Home Screen app keeps
-its own storage, so it has its own token, id and mutes.
+Claims still aren't tied to it (see "Mine"). Each device has its own until
+it's linked to another (see "One player, several devices"); an iPhone's Home
+Screen app counts as a device of its own, since it keeps its own storage.
 
 ### Where the list comes from: the Atlas, from the reports sectors already send
 
@@ -589,6 +590,77 @@ every report. It costs no requests of its own.
   mute anyone, or leave and start another.
 - **One guild at a time** is the game's rule; the Worker doesn't know a
   player's other guilds, so two devices could join two.
+
+## One player, several devices
+
+A player is a token in one browser's storage, so the same person on a phone,
+a tablet and a computer was three surveyors: three ids, three sets of mutes,
+and only one of them in their guild, all signing with the same initials.
+Linking makes them one. It's built for Letterfield, but the token is kept as
+`games.player`, without a game's prefix like `games.initials`, so any game
+on the site can name the same player later.
+
+### How it goes
+
+1. On a device that's already you, **Link another device** (in the survey
+   panel of the field notes) asks the Worker for a code: `POST /v1/link
+   {token, carry}`. The Worker keeps the token and what it carries in D1
+   (`links`, migration 0004) under eight random characters from the groups'
+   alphabet, for ten minutes and one use.
+2. The device shows the code three ways: a QR code that opens
+   `/letterfield?link=<code>`, the same link to copy or share, and the code
+   itself, `ABCD-EFGH`, to type on a device with no camera or into an
+   iPhone's Home Screen app (a scanned link opens Safari, whose storage the
+   app doesn't share). While it shows, it asks every 5 seconds
+   (`POST /v1/link/<code>/status {token}`) whether the code is still
+   `waiting`, `used` or `gone`, and says "Linked" once it's used.
+3. The other device opens the link, which offers to link before anything
+   else (the `link` state of the page's `intro`), or types the code under
+   **Use a code**. Either redeems it: `POST /v1/link/<code>` answers the
+   token and the carried settings, once.
+4. That device takes the token and settings and reloads as the same
+   surveyor, with a note saying so.
+
+What a link carries, checked by `cleanCarry` in `worker/src/players.js`:
+the initials, the guild (code, name and tag), the mutes, and the two
+switches under Surveyors (on the list, taking emotes). Mutes from both
+devices are kept. Their guild wins; if they're in none and this device is
+in one, the linked surveyor joins this device's guild instead, so linking in
+either direction doesn't lose one. Either way the device's old self leaves
+its guild, since it won't be back. Finds, supernovas seen, sound and music
+stay on each device for now.
+
+### Why a code, and how it's kept safe
+
+Whoever redeems a code becomes that player, so a code is as good as the
+token for ten minutes:
+
+- **It can't be guessed.** Eight characters from a 31-letter alphabet is
+  852 billion codes, and every try counts against the address's limit
+  (`linkTry`, 20 an hour, right or wrong), as making codes does (`link`, 10
+  an hour). With a thousand codes live at once, a try has about one chance
+  in 850 million.
+- **It works once.** One `UPDATE … WHERE used = 0 … RETURNING` claims it, so
+  two devices redeeming at once can't both have it, and what it carried is
+  wiped from the row as soon as it's handed over. The row stays until it
+  runs out, so the device that made it can hear it was used.
+- **Only its maker hears about it.** `/status` answers `gone` to anyone who
+  doesn't send the token that made the code.
+- **The token never travels in an address.** It goes in request bodies
+  only; the link holds just the code, and the page takes `?link=` off the
+  address as soon as it's read. The page says that whoever uses a code
+  plays as you, so keep it to your own devices.
+
+A passkey would do this without a code, but needs an account to hang it on,
+which nothing else here has.
+
+### Cost
+
+D1 only, and small: making a code sweeps expired rows and writes one;
+redeeming it is two writes; each ask while it shows reads one row by its
+key (120 if left showing the full ten minutes, a few in a usual link). Even
+if every one of 10,000 players linked a device every day, that's well
+inside Workers Paid's included D1 reads and writes, so nothing extra.
 
 ## The log
 
@@ -1291,6 +1363,9 @@ about 30 cents over the included million requests.
   `BLOCKED_INITIALS` screens, and seven drawings; mute is on the device. A
   muted player with a new token is a new id, held back only by the limits.
 - **Guilds:** see "Left for later" under "Guilds".
+- **Syncing linked devices.** Linked devices share who they are, not what
+  they've found: field notes, supernovas seen and the sound and music
+  switches stay on each device.
 - **Finds made offline stay personal.** Uploading them later would let
   anyone backdate a pile of claims at once.
 

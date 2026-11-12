@@ -27,6 +27,8 @@ const LIMITS = {
   room: { max: 20, windowMs: HOUR },             // new War rooms per IP address (see war.js)
   guild: { max: 5, windowMs: HOUR },             // new Letterfield guilds per IP address (see survey-guild.js)
   guildJoin: { max: 20, windowMs: HOUR },        // guilds joined per IP address
+  link: { max: 10, windowMs: HOUR },             // codes made to link another device (see players.js)
+  linkTry: { max: 20, windowMs: HOUR },          // codes tried, right or wrong
 };
 
 const PUBLIC = '*';

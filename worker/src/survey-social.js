@@ -65,7 +65,7 @@ const send = (ws, message) => { try { ws.send(JSON.stringify(message)); } catch 
 // A player's id from their token: 48 bits of its SHA-256, plenty to tell
 // apart everyone who ever plays, and no use for finding the token.
 export async function playerId(token) {
-  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(`letterfield-player:${token}`));
+  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(`games-player:${token}`));
   return [...new Uint8Array(digest).slice(0, 6)].map((b) => b.toString(16).padStart(2, '0')).join('');
 }
 

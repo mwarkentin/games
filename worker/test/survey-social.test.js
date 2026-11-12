@@ -159,6 +159,17 @@ describe('the surveyor list', () => {
     assert.deepEqual(reports.at(-1).who.map((e) => e.slice(0, 4)), [[a.pid, 'ABC', 2, 2]]);
   });
 
+  test('a player on two linked devices in one sector has one caret, where they last moved', async () => {
+    const a = await w.player(0, 0, { id: 1, x: 5, y: 5 });
+    w.clock.now += 1000;
+    await w.player(0, 0, { id: 1, x: 100, y: 100 });
+    const watcher = await w.player(0, 0, { id: 2 });
+    await w.tick(watcher);
+    const shown = watcher.ws.last('presence');
+    assert.deepEqual(shown.p.filter((q) => q[0] === a.pid), [[a.pid, 'ABC', 100, 100]]);
+    assert.equal(shown.n, 1);  // one player, however many devices (the watcher has no position yet)
+  });
+
   test('a sector reports at least every REFRESH_MS while its players are still there, moving or not', async () => {
     const p = await w.player(0, 0, { id: 1, x: 5, y: 5 });
     await w.tick(p, REPORT_MS);  // what was owed goes

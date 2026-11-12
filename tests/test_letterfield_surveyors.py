@@ -17,7 +17,7 @@ from fake_survey import FakeSurvey
 from test_letterfield_survey import eventually, open_game, open_notes
 
 TOKEN = "0" * 31 + "1"  # this browser's player token, as the game would make one
-PID = hashlib.sha256(f"letterfield-player:{TOKEN}".encode()).hexdigest()[:12]  # and the id the sectors give it
+PID = hashlib.sha256(f"games-player:{TOKEN}".encode()).hexdigest()[:12]  # and the id the sectors give it
 
 # Everyone the list names: [id, initials, rx, ry, seconds idle, flags]. The
 # fake hands them out in this order; the game puts the nearest first.
@@ -35,7 +35,7 @@ def start(page: Page, site_url: str, fake: FakeSurvey, viewport: dict | None = N
     open_game(page, site_url, fake, viewport=viewport)
     page.evaluate(
         "t => { localStorage.setItem('games.initials', '\"MLW\"'); localStorage.setItem('letterfield.coach.v1', '1');"
-        " localStorage.setItem('letterfield.player.v1', t); localStorage.removeItem('letterfield.cam.v1'); }",
+        " localStorage.setItem('games.player', t); localStorage.removeItem('letterfield.cam.v1'); }",
         TOKEN,
     )
     fake.received.clear()  # what the first load, with a token of its own, sent

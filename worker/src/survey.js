@@ -720,7 +720,8 @@ export class Sector {
   sendPresence() {
     this.presenceAt = this.now();
     this.presenceDue = false;
-    const here = this.here().sort((a, b) => b.moved - a.moved);
+    // One caret a player: a player on two linked devices here shows where they last moved.
+    const seen = new Set(), here = this.here().sort((a, b) => b.moved - a.moved).filter((p) => { const id = p.pid || p.id; return !seen.has(id) && seen.add(id); });
     broadcast(this.ctx, JSON.stringify({ t: 'presence', n: here.length, p: here.slice(0, PRESENCE_MAX).map((p) => [p.pid || p.id, p.initials, p.x, p.y, ...(p.tag ? [p.tag] : [])]) }));
     this.maybeReport();
   }
