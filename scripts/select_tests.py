@@ -22,6 +22,7 @@ page. A page that belongs to a game, like letterfield-log.html, counts as
 that game: a change to either runs both.
 
     python3 scripts/select_tests.py < changed.txt
+    python3 scripts/select_tests.py --base origin/main   # a branch's changes from main
     python3 scripts/select_tests.py --all
 """
 
@@ -31,6 +32,7 @@ import argparse
 import json
 import math
 import re
+import subprocess
 import sys
 from pathlib import Path
 
@@ -114,6 +116,19 @@ def select(changed: list[str], root: Path = ROOT) -> dict:
     return {"pytest": True, "tests": tests, "shards": shards(total)}
 
 
+def changed_since(base: str, root: Path = ROOT) -> list[str] | None:
+    """The files a branch changes from where it left `base`, both sides of a
+    rename included as in a pull request's files, or None if git can't say."""
+    result = subprocess.run(
+        ["git", "diff", "--name-only", "--no-renames", f"{base}...HEAD"],
+        cwd=root, capture_output=True, text=True,
+    )
+    if result.returncode != 0:
+        print(f"Can't compare with {base}, so testing everything: {result.stderr.strip()}", file=sys.stderr)
+        return None
+    return result.stdout.split("\n")
+
+
 def shards(seconds: float) -> list[int]:
     return list(range(1, max(1, min(MAX_SHARDS, math.ceil(seconds / SHARD_SECONDS))) + 1))
 
@@ -121,8 +136,16 @@ def shards(seconds: float) -> list[int]:
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--all", action="store_true", help="the whole suite, whatever changed")
+    parser.add_argument("--base", help="select for this branch's changes from BASE, not stdin's list")
     args = parser.parse_args()
-    changed = [] if args.all else [line.strip() for line in sys.stdin if line.strip()]
+    if args.all:
+        changed = []
+    elif args.base:
+        changed = changed_since(args.base) or []
+        print(f"Changed from {args.base}: {' '.join(c for c in changed if c) or 'nothing'}", file=sys.stderr)
+    else:
+        changed = list(sys.stdin)
+    changed = [line.strip() for line in changed if line.strip()]
     print(json.dumps(select(changed)))
 
 

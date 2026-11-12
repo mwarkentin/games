@@ -22,8 +22,10 @@ jobs:
   # how many shards. A pull request runs the tests its changed files need
   # (scripts/select_tests.py): one that only changes Letterfield runs
   # Letterfield's tests and those covering every game, not War's, and one
-  # that changes anything shared runs them all. main and branches without a
-  # pull request always run them all.
+  # that changes anything shared runs them all. A branch pushed before it has
+  # a pull request runs what its changes from main need, the same way, so a
+  # session's first push gets the narrow run its pull request would. main
+  # always runs them all.
   plan:
     runs-on: ubuntu-latest
     permissions:
@@ -36,6 +38,8 @@ jobs:
       shards: ${{ steps.plan.outputs.shards }}
     steps:
       - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0 # a branch's changes from main, for its push runs
       - id: plan
         env:
           GH_TOKEN: ${{ github.token }}
@@ -53,9 +57,13 @@ jobs:
               run=false
             fi
           fi
+          changed="$RUNNER_TEMP/changed.txt"
           if [ "$EVENT" = pull_request ]; then
-            gh api --paginate "repos/$REPO/pulls/$PR/files" --jq '.[] | .filename, (.previous_filename // empty)' > "$RUNNER_TEMP/changed.txt"
-            plan=$(python3 scripts/select_tests.py < "$RUNNER_TEMP/changed.txt")
+            gh api --paginate "repos/$REPO/pulls/$PR/files" --jq '.[] | .filename, (.previous_filename // empty)' > "$changed"
+            plan=$(python3 scripts/select_tests.py < "$changed")
+          elif [ "$REF" != refs/heads/main ]; then
+            git fetch --quiet origin main
+            plan=$(python3 scripts/select_tests.py --base origin/main)
           else
             plan=$(python3 scripts/select_tests.py --all)
           fi

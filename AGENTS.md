@@ -614,7 +614,9 @@ up to three shards of about equal time, each a job of its own on four
 workers, and a job named `test` passes once every shard has. A pull request
 runs only the tests its changes need (`scripts/select_tests.py`): one that
 only changes Letterfield runs Letterfield's tests and the ones covering
-every game, not War's. `main` always runs them all. So:
+every game, not War's. A branch pushed before it has a pull request runs
+what its changes from `main` need, the same way, and its later pushes
+leave testing to the pull request. `main` always runs them all. So:
 
 - **Every test must pass alongside others,** in any order and in any worker.
   Keep state in the test's own page, context or `tmp_path`, never in a
