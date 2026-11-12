@@ -111,7 +111,7 @@ span.chip:hover{border-color:var(--rule)}
    stack, and go again on a second tap, Escape or a tap on the map. Closed, the
    stack takes no taps or focus (inert) and covers nothing. */
 .tools-btn{flex:none;width:44px;height:44px;border:1px solid var(--rule);border-radius:8px;background:var(--panel);display:grid;place-items:center;cursor:pointer;transition:background-color .12s ease, color .12s ease}
-.tools-btn:hover{background:var(--hover)}
+@media (hover: hover){.tools-btn:hover{background:var(--hover)}}  /* a tap leaves no grey behind on a phone */
 .tools-btn[aria-expanded="true"]{background:var(--ink);border-color:var(--ink);color:var(--panel)}
 .tools-btn svg{width:20px;height:20px}
 .tool-stack{position:absolute;right:var(--gr);bottom:calc(100% + 8px);display:flex;flex-direction:column;padding:4px;min-width:176px;box-sizing:border-box;
@@ -120,7 +120,7 @@ span.chip:hover{border-color:var(--rule)}
 .bar.tools-open .tool-stack{opacity:1;transform:none;visibility:visible;pointer-events:auto;transition:opacity .1s ease, transform .16s cubic-bezier(.2,.9,.3,1.15), visibility 0s}
 .tool-stack hr{margin:4px 6px;border:0;border-top:1px solid var(--rule)}
 .tool-stack button{display:flex;align-items:center;gap:11px;height:44px;padding:0 10px 0 11px;border:0;border-radius:6px;background:transparent;cursor:pointer;font:500 13.5px/1 var(--f-ui);text-align:left}
-.tool-stack button:hover{background:var(--hover)}
+@media (hover: hover){.tool-stack button:hover{background:var(--hover)}}
 .tool-stack button span{flex:1}
 .tool-stack svg{width:18px;height:18px;flex:none}
 .tool-stack kbd{font:500 10.5px/1 var(--f-mono);color:var(--muted);border:1px solid var(--rule);border-radius:4px;padding:3px 5px 2px;min-width:9px;text-align:center}
