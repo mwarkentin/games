@@ -204,7 +204,7 @@ const EASE = 1.4;              // how quickly the camera follows, per second
 const FETCHES = 3;             // days loaded at once
 const VIDEO_PX = 1080;         // a saved video is square, this many pixels a side,
 const VIDEO_S = 24;            // the whole history in this many seconds,
-const VIDEO_HOLD = [0.8, 2.2]; // held this long at the start and at the end,
+const VIDEO_HOLD = [0.8, 3.2]; // held this long at the start and at the end (long enough for a last supernova to play out),
 const VIDEO_FPS = 30;          // at this many frames a second
 const K_SPEED = 'letterfield.timelapse.speed';
 
@@ -388,10 +388,12 @@ function cluster(x, y, at) {
   const r = root(t);
   r.n++; r.last = at;
 }
+let framed = null;  // the biggest cluster at the last keyframe, kept on a tie so the camera doesn't flick between two
 function keyframe() {
   const thr = Math.max(CLUSTER_MIN[0], CLUSTER_MIN[1] * W.length);
-  let best = null;
-  for (const c of clusters) if (!best || c.n > best.n || (c.n === best.n && c.last > best.last)) best = c;
+  let best = framed && root(framed);
+  for (const c of clusters) if (!best || c.n > best.n) best = c;
+  framed = best;
   let x0 = best.x0, y0 = best.y0, x1 = best.x1, y1 = best.y1;
   for (const c of clusters) {
     if (c === best || c.n < thr) continue;
@@ -495,10 +497,12 @@ function togglePlay() {
   if (TL.is('playing', 'waiting')) TL.go('paused');
   else if (TL.is('paused')) {
     if (pos >= P) { pos = 0; snap = true; }
+    ended = null;
     TL.go('playing');
   }
 }
 function seek(p, snapNow = true) {
+  ended = null;
   pos = clamp(p, 0, P);
   if (snapNow) snap = true;
   if (TL.is('waiting') && timeAt(pos) < loadedUntil) TL.go('playing');
@@ -629,13 +633,15 @@ function draw(g, view, cam, p, opts) {
     if (i < dayStart.length && dayStart[i][0] < n) for (const [q, path] of wordPaths(dayStart[i][0], n)) { g.strokeStyle = TC[q].stroke; g.stroke(path); }
     g.setTransform(1, 0, 0, 1, 0, 0); g.globalAlpha = 1;
   }
-  const r = opts.rate, live = !RM && r > 0;
+  // Glows and flares run on their own clock, `fx`, which goes on past the end
+  // so a supernova among the last words plays out rather than freezing.
+  const r = opts.rate, live = !RM && r > 0, fx = opts.fx ?? p;
   // Words just charted glow, and fade.
   if (live) {
-    const from = upto(W, timeAt(p - GLOW_S * r));
+    const from = fx - GLOW_S * r > P ? n : upto(W, timeAt(fx - GLOW_S * r));
     g.globalCompositeOperation = C.dark ? 'lighter' : 'source-over';
     for (let j = Math.max(from, n - 500); j < n; j++) {
-      const [at, x, y, d, len, q] = W[j], age = (p - playAt(at)) / r / GLOW_S;
+      const [at, x, y, d, len, q] = W[j], age = (fx - playAt(at)) / r / GLOW_S;
       if (age < 0 || age >= 1) continue;
       const a = 1 - age, mx = ox + (x + .5 + DIRS[d][0] * (len - 1) / 2) * s, my = oy + (y + .5 + DIRS[d][1] * (len - 1) / 2) * s;
       const rad = Math.max(10, (len * .6 + 2) * s), gl = g.createRadialGradient(mx, my, 0, mx, my, rad);
@@ -646,8 +652,8 @@ function draw(g, view, cam, p, opts) {
   }
   // Supernovas going off: a flash, and a shockwave rolling out.
   if (live) {
-    for (let i = upto(NV, timeAt(p - FLARE_S * r)); i < nNova; i++) {
-      const [at, rx, ry, q] = NV[i], age = (p - playAt(at)) / r;
+    for (let i = fx - FLARE_S * r > P ? nNova : upto(NV, timeAt(fx - FLARE_S * r)); i < nNova; i++) {
+      const [at, rx, ry, q] = NV[i], age = (fx - playAt(at)) / r;
       if (age < 0 || age >= FLARE_S) continue;
       const k = age / FLARE_S, cx = ox + (rx + .5) * rpx, cy = oy + (ry + .5) * rpx, R = TC[q];
       const unit = Math.max(rpx, Math.min(view.w, view.h) * .12);
@@ -687,19 +693,26 @@ function frame(now) {
   if (TL.is('playing')) {
     pos = Math.min(P, pos + dt * rate());
     if (timeAt(pos) >= loadedUntil) TL.go('waiting');
-    else if (pos >= P) TL.go('paused');
+    else if (pos >= P) { ended = { at: now, rate: rate() }; TL.go('paused'); }
     dirty = true;
   }
   // Once nothing moves, the camera gets a moment to settle, then drawing stops until something changes.
+  // Played to the end: the last glows and flares carry on for a moment.
+  let fxRate = TL.is('playing') ? rate() : 0, fx = pos;
+  if (ended && TL.is('paused') && pos >= P) {
+    const after = (now - ended.at) / 1000;
+    if (after < FLARE_S) { fxRate = ended.rate; fx = P + after * ended.rate; dirty = true; }
+    else { ended = null; dirty = true; }
+  }
   if (dirty) settle = 0;
   else if (++settle > 90) return;
   dirty = false;
   if (!idx) return;
   const jump = snap; snap = false;
-  const r = draw(g0, view, mainCam, pos, { dt, jump, rate: TL.is('playing') ? rate() : 0 });
+  const r = draw(g0, view, mainCam, pos, { dt, jump, rate: fxRate, fx });
   showNumbers(r);
 }
-let settle = 0;
+let settle = 0, ended = null;  // when and how fast playback reached the end, while its effects play out
 function showNumbers({ t, n, nNova }) {
   const minute = Math.floor(t / 60000);
   if (minute !== shown.t) {
@@ -862,9 +875,9 @@ function recFrame(now) {
   const dt = recLast ? Math.min(.1, (now - recLast) / 1000) : 0;
   recLast = now; recClock += dt;
   const [hold0, hold1] = VIDEO_HOLD, total = hold0 + videoSeconds + hold1;
-  const p = P * clamp((recClock - hold0) / videoSeconds, 0, 1);
+  const fx = P * Math.max(0, (recClock - hold0) / videoSeconds), p = Math.min(P, fx);
   const S = VIDEO_PX, top = S * .19, bottom = S * .07;
-  const r = draw(recG, { x: S * .04, y: top, w: S * .92, h: S - top - bottom }, recCam, p, { dt, jump: !recCam.ok, rate: P / videoSeconds });
+  const r = draw(recG, { x: S * .04, y: top, w: S * .92, h: S - top - bottom }, recCam, p, { dt, jump: !recCam.ok, rate: P / videoSeconds, fx });
   hud(recG, r, p);
   $('#recBar').style.width = `${(100 * Math.min(1, recClock / total)).toFixed(1)}%`;
   if (recClock >= total && recorder.state === 'recording') recorder.stop();
