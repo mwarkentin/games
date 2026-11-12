@@ -13,7 +13,7 @@ FIND_WORD_JS = """() => {
   const cs = 38, start = 6, canvas = document.getElementById('map');
   const dock = document.body.classList.contains('docked') ? 340 : 0;
   const dirs = [[1,0],[1,1],[0,1],[-1,1],[-1,0],[-1,-1],[0,-1],[1,-1]];
-  const screen = (x, y) => [(x + .5 - start) * cs + (innerWidth - dock) / 2, (y + .5 - start) * cs + document.getElementById('map').clientHeight / 2];
+  const screen = (x, y) => [(x + .5 - start) * cs + (innerWidth - dock) / 2, (y + .5 - start) * cs + (m => m.getBoundingClientRect().top + m.clientHeight / 2)(document.getElementById('map'))];
   for (const chip of document.querySelectorAll('#legendList .chip:not(.found)')) {
     const [word, x, y, d] = chip.dataset.key.split('~');
     const n = word.length - 1, [dx, dy] = dirs[+d];
@@ -506,7 +506,7 @@ PLACE_WORD_JS = """async ({ key, sx, sy, cs }) => {
   const dock = document.body.classList.contains('docked') ? 340 : 0;
   lf.cam.cs = cs;
   lf.cam.x = +x + .5 - (sx - (innerWidth - dock) / 2) / cs;
-  lf.cam.y = +y + .5 - (sy - document.getElementById('map').clientHeight / 2) / cs;
+  lf.cam.y = +y + .5 - (sy - (m => m.getBoundingClientRect().top + m.clientHeight / 2)(document.getElementById('map'))) / cs;
   dispatchEvent(new Event('resize'));
   await new Promise(r => setTimeout(r, 300));
   return {
@@ -549,7 +549,7 @@ def test_the_word_list_names_only_words_half_in_sight(page: Page, site_url, erro
     across, down, up = keys
     page.evaluate(ONLY_WORDS_JS, keys)
     right = page.evaluate("innerWidth - (document.body.classList.contains('docked') ? 340 : 0)")
-    mid = page.evaluate("document.getElementById('map').clientHeight") / 2
+    mid = page.evaluate("(m => m.getBoundingClientRect().top + m.clientHeight / 2)(document.getElementById('map'))")
 
     def listed(key, sx, sy, cs=80):
         got = page.evaluate(PLACE_WORD_JS, {"key": key, "sx": sx, "sy": sy, "cs": cs})
@@ -575,7 +575,8 @@ def test_the_word_list_names_only_words_half_in_sight(page: Page, site_url, erro
     # the list.
     cs = 12
     open_tools(page)
-    panels = [("header.cartouche", down), ("#bar", up)]
+    # On a phone the map starts below the top bar, which holds the title box.
+    panels = [("#topbar" if size[0] < 700 else "header.cartouche", down), ("#bar", up)]
     for sel, key in panels:
         box = page.locator(sel).bounding_box()
         # Over the bar, at its left end: the open tools stand over its right.
@@ -766,10 +767,17 @@ def test_the_tools_drop_down_from_their_button_and_go_again(page: Page, site_url
     expect(stack).to_be_hidden()
     assert page.evaluate("document.getElementById('toolStack').inert")
 
-    # The map ends at the bar's top edge, and the bar runs to the screen's bottom.
+    # The map ends at the bar's top edge, and the bar runs to the screen's
+    # bottom. On a phone it starts at the bottom of a bar along the top.
     bar = page.locator("#bar").bounding_box()
-    assert page.evaluate("document.getElementById('map').clientHeight") == round(bar["y"])
+    box = page.locator("#map").bounding_box()
+    assert round(box["y"] + box["height"]) == round(bar["y"])
     assert round(bar["y"] + bar["height"]) == size[1] and bar["x"] == 0
+    if size[0] < 700:
+        top = page.locator("#topbar").bounding_box()
+        assert top["x"] == 0 and top["y"] == 0 and top["width"] == size[0] and round(box["y"]) == round(top["y"] + top["height"])
+    else:
+        assert box["y"] == 0
 
     # A tap opens it and focus moves in.
     button.click()
@@ -804,7 +812,7 @@ def test_the_tools_drop_down_from_their_button_and_go_again(page: Page, site_url
 
     # Dragging the map leaves it open; a tap on the map shuts it, and does nothing else.
     button.click()
-    cx, cy = 80, page.evaluate("document.getElementById('map').clientHeight") / 2  # clear of the stack, top right
+    cx, cy = 80, page.evaluate("(m => m.getBoundingClientRect().top + m.clientHeight / 2)(document.getElementById('map'))")  # clear of the stack, top right
     page.mouse.move(cx, cy)
     page.mouse.down()
     page.mouse.move(cx + 60, cy + 30, steps=5)
@@ -837,7 +845,7 @@ def test_the_shortcuts_work_with_the_tools_put_away(page: Page, site_url, errors
     page.keyboard.press("h")
     page.wait_for_function("window.__lf.cam.x === 6 && window.__lf.cam.y === 6")
     # Home lands in the middle of the map, above the bar.
-    mid = page.evaluate("document.getElementById('map').clientHeight / 2")
+    mid = page.evaluate("(m => m.getBoundingClientRect().top + m.clientHeight / 2)(document.getElementById('map'))")
     assert mid < page.locator("#bar").bounding_box()["y"] - 100
     page.keyboard.press("m")
     expect(page.locator("#sound")).to_have_attribute("aria-pressed", "false")

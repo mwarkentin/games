@@ -118,8 +118,10 @@ def test_shared_word_list_scrolls_only_sideways(page: Page, site_url, errors):
     full = "n => document.querySelectorAll('#legendList span.chip').length >= n"
     for phone, size in ((False, {"width": 1280, "height": 900}), (True, {"width": 375, "height": 740})):
         page.set_viewport_size(size)
-        page.evaluate("cs => { window.__lf.cam.cs = cs; dispatchEvent(new Event('resize')); }", 20 if phone else 38)
-        page.wait_for_function(full, arg=8 if phone else 10)
+        # At the origin, not wherever the survey's random spawn put the camera,
+        # which on a phone's shorter map (between its bars) can hold too few words.
+        page.evaluate("cs => { Object.assign(window.__lf.cam, { x: 6, y: 6, cs }); dispatchEvent(new Event('resize')); }", 12 if phone else 38)
+        page.wait_for_function(full, arg=12 if phone else 10)
         page.wait_for_timeout(300)  # and any update still to come
         chips_scroll_only_sideways(page)
     m = page.evaluate(CHIPS_JS)
@@ -314,7 +316,7 @@ def test_the_pencil_changes_your_initials(page: Page, site_url, errors):
 # Both ends of a word hidden at the origin, on screen and clear of the cards over the map.
 WORD_ENDS = """() => {
   const lf = window.__lf, dock = document.body.classList.contains('docked') ? 340 : 0;
-  const at = (x, y) => [(x + .5 - lf.cam.x) * lf.cam.cs + (innerWidth - dock) / 2, (y + .5 - lf.cam.y) * lf.cam.cs + document.getElementById('map').clientHeight / 2];
+  const at = (x, y) => [(x + .5 - lf.cam.x) * lf.cam.cs + (innerWidth - dock) / 2, (y + .5 - lf.cam.y) * lf.cam.cs + (m => m.getBoundingClientRect().top + m.clientHeight / 2)(document.getElementById('map'))];
   const clear = ([px, py]) => document.elementFromPoint(px, py) === document.querySelector('canvas');
   for (const w of lf.chunk(0, 0).words) {
     const ends = [at(w.x, w.y), at(...lf.wordEnd(w))];
@@ -667,7 +669,7 @@ def test_a_supernova_far_away_is_a_note_you_can_share(page: Page, site_url, erro
 
 SCREEN_OF = """([x, y]) => {
   const cam = window.__lf.cam, dock = document.body.classList.contains('docked') ? 340 : 0;
-  return [(x - cam.x) * cam.cs + (innerWidth - dock) / 2, (y - cam.y) * cam.cs + document.getElementById('map').clientHeight / 2];
+  return [(x - cam.x) * cam.cs + (innerWidth - dock) / 2, (y - cam.y) * cam.cs + (m => m.getBoundingClientRect().top + m.clientHeight / 2)(document.getElementById('map'))];
 }"""
 
 

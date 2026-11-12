@@ -15,7 +15,8 @@
 /* Layout: a full-bleed survey sheet (canvas) with map furniture floating on it — a cartouche (title + current territory) top-left,
    the tools and field-notes buttons top-right (the tools' stack drops down from theirs, and notes pop out of and fold back
    into the field notes), a solid bar along the bottom holding the word legend, and a field-notes drawer docked on the
-   right. The map ends at the bar's top edge (resize() measures it). */
+   right. On a phone the title and buttons sit in a solid bar along the top too. The map is the space between the bars
+   (resize() measures them and places the canvas there). */
 :root{
   --paper:#EBEEE7;
   --panel:#F7F8F4;
@@ -76,6 +77,10 @@ button:focus-visible,a:focus-visible,#map:focus-visible{outline:2px solid var(--
 
 .card{background:var(--panel);border:1px solid var(--rule);border-radius:8px;box-shadow:var(--shadow)}
 .eyebrow{font:500 10px/1 var(--f-mono);letter-spacing:.14em;text-transform:uppercase;color:var(--muted)}
+
+/* Top bar: on a phone, a solid bar holding the title and the buttons (see the
+   phone rules); wider, it has no box of its own and they float over the map. */
+.topbar{display:contents}
 
 /* Cartouche: map title block */
 .cartouche{position:fixed;top:var(--top);left:var(--gl);display:flex;align-items:stretch;max-width:calc(100% - 236px);outline:1px solid var(--rule);outline-offset:-5px;padding:3px}
@@ -334,7 +339,14 @@ body.docked .nova{left:calc((100% - var(--notes-w)) / 2)}
 .peek b{font-weight:600;letter-spacing:.08em}
 .peek span{color:var(--muted)}
 @media (max-width: 699px){
-  .cartouche{right:calc(var(--gr) + 96px);max-width:none;padding:2px;outline-offset:-4px}
+  /* The top bar, solid from edge to edge and up through the safe area, like the
+     bottom one: the title takes what the buttons leave, flat on the bar. */
+  .topbar{display:flex;align-items:stretch;gap:8px;position:fixed;top:0;left:0;right:0;z-index:20;background:var(--panel);border-bottom:1px solid var(--rule);
+    box-shadow:0 8px 22px -16px rgba(0,0,0,.4);padding:calc(env(safe-area-inset-top, 0px) + 10px) var(--gr) 8px var(--gl)}
+  .topbar .notes-toggle .badge{top:-5px;right:-5px}
+  .topbar .cartouche{position:static;flex:1;min-width:0;max-width:none;padding:2px;outline-offset:-4px;box-shadow:none}
+  .topbar .corner{position:static;z-index:auto}
+  .topbar .tools-btn,.topbar .notes-toggle{box-shadow:none}
   .brand{padding:7px 9px 6px 8px}
   .brand h1{font-size:17px}
   .brand small{display:none}
@@ -353,7 +365,7 @@ body.docked .nova{left:calc((100% - var(--notes-w)) / 2)}
   .legend-head{padding:0 var(--gr) 0 calc(var(--gl) - 2px)}
   .chips{flex:none;padding:4px var(--gr) 4px var(--gl)}
   .notes{top:auto;left:0;width:100%;height:min(80%, 680px);border-left:0;border-top:1px solid var(--rule);border-radius:14px 14px 0 0;transform:translateY(100%);padding-left:env(safe-area-inset-left, 0px)}
-  .coach{top:calc(var(--top) + 60px);right:var(--gr);width:auto}
+  .coach{top:calc(var(--top) + 68px);right:var(--gr);width:auto}
 }
 @media (prefers-reduced-motion: reduce){
   .notes,.toast,.bar,.tool-stack,.tool-stack > *,.tools-btn,.tools-btn svg circle{transition:none!important}
@@ -368,35 +380,37 @@ body.docked .nova{left:calc((100% - var(--notes-w)) / 2)}
 
 <canvas id="map" tabindex="0" aria-label="Endless word search grid. Drag to explore, pinch or Ctrl-scroll to zoom. Tap a word's first letter, then its last letter, to circle it."></canvas>
 
-<header class="cartouche card">
-  <div class="brand">
-    <h1>Letterfield</h1>
-    <small id="brandSub">Endless word search</small>
-  </div>
-  <div class="territory mark" id="territory">
-    <span class="swatch" aria-hidden="true"></span>
-    <div class="t-name" id="tName">&nbsp;</div>
-    <div class="t-meta"><span id="tTheme"></span><span class="t-coord"> · <span id="tCoord"></span></span><span id="tCharted" hidden></span></div>
-  </div>
-</header>
-
-<div class="corner">
-  <div class="tools" id="tools">
-    <button type="button" class="tools-btn" id="toolsBtn" aria-expanded="false" aria-controls="toolStack" aria-label="Tools" title="Tools: zoom, home, sound and music"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M4 7h9M17 7h3M4 17h3M11 17h9"/><circle cx="15" cy="7" r="2.2"/><circle cx="9" cy="17" r="2.2"/></svg></button>
-    <div class="tool-stack card" id="toolStack" role="group" aria-label="Tools" inert>
-      <button type="button" style="--i:0" id="zoomIn" aria-label="Zoom in" aria-keyshortcuts="+" title="Zoom in (+)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg><span aria-hidden="true">Zoom in</span><kbd aria-hidden="true">+</kbd></button>
-      <button type="button" style="--i:1" id="zoomOut" aria-label="Zoom out" aria-keyshortcuts="-" title="Zoom out (−)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M5 12h14"/></svg><span aria-hidden="true">Zoom out</span><kbd aria-hidden="true">−</kbd></button>
-      <button type="button" style="--i:2" id="home" aria-label="Return to the origin" aria-keyshortcuts="H" title="Return to the origin (H)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="6.5"/><circle cx="12" cy="12" r="1.6" fill="currentColor"/><path d="M12 2v4M12 18v4M2 12h4M18 12h4"/></svg><span aria-hidden="true">Origin</span><kbd aria-hidden="true">H</kbd></button>
-      <hr style="--i:3">
-      <button type="button" style="--i:4" id="sound" aria-pressed="true" aria-label="Sound" aria-keyshortcuts="M" title="Sound (M)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 9.5h3.5L12 6v12l-4.5-3.5H4z"/><path class="on" d="M15.5 9.2a4 4 0 0 1 0 5.6M18.2 6.6a7.6 7.6 0 0 1 0 10.8"/><path class="off" d="M16 9.5l5 5M21 9.5l-5 5"/></svg><span aria-hidden="true">Sound</span><kbd aria-hidden="true">M</kbd></button>
-      <button type="button" style="--i:5" id="music" aria-pressed="false" aria-label="Music" aria-keyshortcuts="B" title="Music (B)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 17.5V6l10-2v11.5"/><circle cx="6.5" cy="17.5" r="2.5"/><circle cx="16.5" cy="15.5" r="2.5"/><path class="off" d="M3.5 3.5l17 17"/></svg><span aria-hidden="true">Music</span><kbd aria-hidden="true">B</kbd></button>
+<div class="topbar" id="topbar">
+  <header class="cartouche card">
+    <div class="brand">
+      <h1>Letterfield</h1>
+      <small id="brandSub">Endless word search</small>
     </div>
+    <div class="territory mark" id="territory">
+      <span class="swatch" aria-hidden="true"></span>
+      <div class="t-name" id="tName">&nbsp;</div>
+      <div class="t-meta"><span id="tTheme"></span><span class="t-coord"> · <span id="tCoord"></span></span><span id="tCharted" hidden></span></div>
+    </div>
+  </header>
+
+  <div class="corner">
+    <div class="tools" id="tools">
+      <button type="button" class="tools-btn" id="toolsBtn" aria-expanded="false" aria-controls="toolStack" aria-label="Tools" title="Tools: zoom, home, sound and music"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M4 7h9M17 7h3M4 17h3M11 17h9"/><circle cx="15" cy="7" r="2.2"/><circle cx="9" cy="17" r="2.2"/></svg></button>
+      <div class="tool-stack card" id="toolStack" role="group" aria-label="Tools" inert>
+        <button type="button" style="--i:0" id="zoomIn" aria-label="Zoom in" aria-keyshortcuts="+" title="Zoom in (+)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg><span aria-hidden="true">Zoom in</span><kbd aria-hidden="true">+</kbd></button>
+        <button type="button" style="--i:1" id="zoomOut" aria-label="Zoom out" aria-keyshortcuts="-" title="Zoom out (−)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M5 12h14"/></svg><span aria-hidden="true">Zoom out</span><kbd aria-hidden="true">−</kbd></button>
+        <button type="button" style="--i:2" id="home" aria-label="Return to the origin" aria-keyshortcuts="H" title="Return to the origin (H)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="6.5"/><circle cx="12" cy="12" r="1.6" fill="currentColor"/><path d="M12 2v4M12 18v4M2 12h4M18 12h4"/></svg><span aria-hidden="true">Origin</span><kbd aria-hidden="true">H</kbd></button>
+        <hr style="--i:3">
+        <button type="button" style="--i:4" id="sound" aria-pressed="true" aria-label="Sound" aria-keyshortcuts="M" title="Sound (M)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 9.5h3.5L12 6v12l-4.5-3.5H4z"/><path class="on" d="M15.5 9.2a4 4 0 0 1 0 5.6M18.2 6.6a7.6 7.6 0 0 1 0 10.8"/><path class="off" d="M16 9.5l5 5M21 9.5l-5 5"/></svg><span aria-hidden="true">Sound</span><kbd aria-hidden="true">M</kbd></button>
+        <button type="button" style="--i:5" id="music" aria-pressed="false" aria-label="Music" aria-keyshortcuts="B" title="Music (B)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 17.5V6l10-2v11.5"/><circle cx="6.5" cy="17.5" r="2.5"/><circle cx="16.5" cy="15.5" r="2.5"/><path class="off" d="M3.5 3.5l17 17"/></svg><span aria-hidden="true">Music</span><kbd aria-hidden="true">B</kbd></button>
+      </div>
+    </div>
+    <button class="notes-toggle card" id="notesToggle" aria-expanded="false" aria-controls="notes">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 4h11a3 3 0 0 1 3 3v13H8a3 3 0 0 1-3-3V4z"/><path d="M5 17a3 3 0 0 1 3-3h11"/><path d="M9 8h6"/></svg>
+      <span class="label">Field notes</span>
+      <span class="badge" id="notesBadge">0</span>
+    </button>
   </div>
-  <button class="notes-toggle card" id="notesToggle" aria-expanded="false" aria-controls="notes">
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 4h11a3 3 0 0 1 3 3v13H8a3 3 0 0 1-3-3V4z"/><path d="M5 17a3 3 0 0 1 3-3h11"/><path d="M9 8h6"/></svg>
-    <span class="label">Field notes</span>
-    <span class="badge" id="notesBadge">0</span>
-  </button>
 </div>
 
 <footer class="bar" id="bar">
@@ -1708,7 +1722,10 @@ async function spawnSomewhere() {
 /* ---------- Canvas + colours ---------- */
 const canvas = $('#map');
 const ctx = canvas.getContext('2d', { alpha: false });
-let W = 1, H = 1, dpr = 1, dock = 0;
+let W = 1, H = 1, dpr = 1, dock = 0, mapTop = 0;
+const topEl = document.getElementById('topbar');
+// A pointer's height on the map, which starts below the top bar on a phone.
+const mapY = e => e.clientY - mapTop;
 const cam = { x: 6, y: 6, cs: 38 };
 let C = {}, TC = [], farRGB = [], REM = [], farRemRGB = [];
 
@@ -3065,7 +3082,7 @@ function pinchState() { const [a, b] = [...pointers.values()]; return { cx: (a.x
 canvas.addEventListener('pointerdown', e => {
   if (e.pointerType === 'mouse' && e.button > 1) return;
   try { canvas.setPointerCapture(e.pointerId); } catch (_) {}
-  pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+  pointers.set(e.pointerId, { x: e.clientX, y: mapY(e) });
   flight = null; inertia = null;
   if (pointers.size === 2) {
     if (gest && gest.type === 'seldrag') { sel.anchor = null; sel.end = null; }
@@ -3073,7 +3090,7 @@ canvas.addEventListener('pointerdown', e => {
     gest = { type: 'pinch', d0: s.d, cs0: cam.cs, wx: w.x, wy: w.y };
   } else if (pointers.size === 1) {
     const t = performance.now();
-    gest = { type: 'press', x0: e.clientX, y0: e.clientY, lx: e.clientX, ly: e.clientY, sd: e.shiftKey && e.button !== 1, samples: [{ t, x: e.clientX, y: e.clientY }] };
+    gest = { type: 'press', x0: e.clientX, y0: mapY(e), lx: e.clientX, ly: mapY(e), sd: e.shiftKey && e.button !== 1, samples: [{ t, x: e.clientX, y: mapY(e) }] };
   }
   invalidate();
 });
@@ -3081,12 +3098,12 @@ canvas.addEventListener('pointermove', e => {
   const p = pointers.get(e.pointerId);
   if (!p) {
     if (e.pointerType === 'mouse' && sel.anchor) {
-      const c = cellAtScreen(e.clientX, e.clientY), end = snapEnd(sel.anchor, c.wx, c.wy);
+      const c = cellAtScreen(e.clientX, mapY(e)), end = snapEnd(sel.anchor, c.wx, c.wy);
       if (!sel.end || end.x !== sel.end.x || end.y !== sel.end.y) { sel.end = end; invalidate(); }
     }
     return;
   }
-  p.x = e.clientX; p.y = e.clientY;
+  p.x = e.clientX; p.y = mapY(e);
   if (!gest) return;
   if (gest.type === 'pinch') {
     if (pointers.size < 2) return;
@@ -3095,20 +3112,20 @@ canvas.addEventListener('pointermove', e => {
     camChanged(); invalidate(); return;
   }
   if (gest.type === 'press') {
-    if (Math.hypot(e.clientX - gest.x0, e.clientY - gest.y0) < (e.pointerType === 'touch' ? 9 : 5)) return;
+    if (Math.hypot(e.clientX - gest.x0, mapY(e) - gest.y0) < (e.pointerType === 'touch' ? 9 : 5)) return;
     if (gest.sd && cam.cs >= LETTER_MIN && Intro.is('sign')) askSign();  // and it pans instead
     if (gest.sd && cam.cs >= LETTER_MIN && !Intro.is('sign')) { const c0 = cellAtScreen(gest.x0, gest.y0); gest.type = 'seldrag'; sel.anchor = { x: c0.x, y: c0.y }; }
     else { gest.type = 'pan'; canvas.classList.add('grabbing'); }
   }
   if (gest.type === 'pan') {
-    cam.x -= (e.clientX - gest.lx) / cam.cs; cam.y -= (e.clientY - gest.ly) / cam.cs;
-    gest.lx = e.clientX; gest.ly = e.clientY;
+    cam.x -= (e.clientX - gest.lx) / cam.cs; cam.y -= (mapY(e) - gest.ly) / cam.cs;
+    gest.lx = e.clientX; gest.ly = mapY(e);
     const t = performance.now();
-    gest.samples.push({ t, x: e.clientX, y: e.clientY });
+    gest.samples.push({ t, x: e.clientX, y: mapY(e) });
     while (gest.samples.length > 2 && t - gest.samples[0].t > 100) gest.samples.shift();
     camChanged(); invalidate();
   } else if (gest.type === 'seldrag') {
-    const c = cellAtScreen(e.clientX, e.clientY);
+    const c = cellAtScreen(e.clientX, mapY(e));
     sel.end = snapEnd(sel.anchor, c.wx, c.wy); invalidate();
   }
 });
@@ -3127,7 +3144,7 @@ function endPointer(e, cancelled) {
   if (cancelled) { if (g.type === 'seldrag') { sel.anchor = null; sel.end = null; } invalidate(); return; }
   if (g.type === 'press') {
     if (toolsOpen) setTools(false);  // a tap on the map puts the tools away, and does nothing else
-    else onTap(cellAtScreen(e.clientX, e.clientY));
+    else onTap(cellAtScreen(e.clientX, mapY(e)));
   }
   else if (g.type === 'seldrag') {
     const a = sel.anchor, b = sel.end; sel.anchor = null; sel.end = null;
@@ -3177,11 +3194,11 @@ function peekAt(px, py) {
   peekEl.hidden = false;
   const r = peekEl.getBoundingClientRect();
   const left = px + 14 + r.width > W - 8 ? px - 14 - r.width : px + 14, top = py + 16 + r.height > H - 8 ? py - 12 - r.height : py + 16;
-  peekEl.style.transform = `translate(${Math.round(left)}px, ${Math.round(top)}px)`;
+  peekEl.style.transform = `translate(${Math.round(left)}px, ${Math.round(top + mapTop)}px)`;
 }
 canvas.addEventListener('pointermove', e => {
   if (e.pointerType !== 'mouse' || e.buttons) return hidePeek();
-  peekPos = [e.clientX, e.clientY];
+  peekPos = [e.clientX, mapY(e)];
   if (!peekRaf) peekRaf = requestAnimationFrame(() => { peekRaf = 0; peekAt(...peekPos); });
 });
 canvas.addEventListener('pointerdown', hidePeek);
@@ -3195,7 +3212,7 @@ canvas.addEventListener('wheel', e => {
   flight = null; inertia = null;
   let dx = e.deltaX, dy = e.deltaY;
   if (e.deltaMode === 1) { dx *= 16; dy *= 16; } else if (e.deltaMode === 2) { dx *= W; dy *= H; }
-  if (e.ctrlKey || e.metaKey) zoomAt(e.clientX, e.clientY, Math.exp(-clamp(dy, -60, 60) * .01));
+  if (e.ctrlKey || e.metaKey) zoomAt(e.clientX, mapY(e), Math.exp(-clamp(dy, -60, 60) * .01));
   else { if (e.shiftKey && !dx) { dx = dy; dy = 0; } cam.x += dx / cam.cs; cam.y += dy / cam.cs; camChanged(); invalidate(); }
 }, { passive: false });
 
@@ -3280,7 +3297,7 @@ function coverRects() {
   for (const el of coverEls) {
     if (el.id === 'notes' && (!notesOpen || dock)) continue;  // shut, or beside the map rather than over it
     const r = el.getBoundingClientRect();
-    if (r.width > 0 && r.height > 0) covers.push({ l: r.left, r: r.right, t: r.top, b: r.bottom });
+    if (r.width > 0 && r.height > 0) covers.push({ l: r.left, r: r.right, t: r.top - mapTop, b: r.bottom - mapTop });
   }
   return covers;
 }
@@ -3420,7 +3437,7 @@ function toast(html, hue, ms = 2400, find = null, carry = false) {
   // below them instead. Measured without its transform, which shrinks it while
   // it's put away.
   const nb = $('.corner').getBoundingClientRect();
-  toastEl.style.top = nb.height ? `${Math.round(nb.bottom + 10)}px` : '';
+  toastEl.style.top = nb.height ? `${Math.round(Math.max(nb.bottom, mapTop) + 10)}px` : '';
   for (const el of [$('.cartouche'), $('#coach'), $('#signup'), toolsOpen && toolStack]) {
     const r = !el || el.hidden ? null : el.getBoundingClientRect();
     const l = toastEl.offsetLeft, t = toastEl.offsetTop, b = t + toastEl.offsetHeight;
@@ -3812,16 +3829,24 @@ $('#coachOk').addEventListener('click', () => { if (Intro.is('coach')) Intro.go(
 /* ---------- Boot ---------- */
 function resize() {
   dpr = Math.min(window.devicePixelRatio || 1, 3);
-  // The map ends at the bottom bar's top edge, so its middle, where a flight
-  // lands and a found word is centred, is the middle of what can be seen.
-  const barTop = barEl.getBoundingClientRect().top;
-  W = Math.max(1, window.innerWidth); H = Math.max(1, Math.round(barTop > 0 ? barTop : window.innerHeight));
+  // The map is the space between the bars (on a phone; wider, the top of it
+  // runs under the floating title), so its middle, where a flight lands and a
+  // found word is centred, is the middle of what can be seen. Pointer events
+  // on it are measured from its top (see mapY).
+  const barTop = barEl.getBoundingClientRect().top, top = topEl.getBoundingClientRect();
+  mapTop = top.height ? Math.round(top.bottom) : 0;
+  W = Math.max(1, window.innerWidth); H = Math.max(1, Math.round((barTop > 0 ? barTop : window.innerHeight) - mapTop));
+  canvas.style.top = mapTop + 'px';
   canvas.style.height = H + 'px';
   canvas.width = Math.round(W * dpr); canvas.height = Math.round(H * dpr);
   applyDock(); scheduleHud(); invalidate();
 }
 window.addEventListener('resize', resize);
-if (window.ResizeObserver) new ResizeObserver(() => { if (Math.round(barEl.getBoundingClientRect().top) !== H) resize(); }).observe(barEl);
+if (window.ResizeObserver) {
+  const ro = new ResizeObserver(() => { if (Math.round(barEl.getBoundingClientRect().top) !== mapTop + H || (topEl.getBoundingClientRect().bottom || 0) !== mapTop) resize(); });
+  ro.observe(barEl);
+  ro.observe(topEl);
+}
 matchMedia('(prefers-color-scheme: dark)').addEventListener('change', readColors);
 new MutationObserver(readColors).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme', 'class'] });
 function bumpFonts() { fontEpoch++; atlas.key = ''; invalidate(); }
