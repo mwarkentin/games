@@ -954,3 +954,32 @@ def test_a_finds_note_folds_into_the_field_notes_before_it_counts(page: Page, si
     page.wait_for_timeout(1000)
     assert page.evaluate("document.querySelectorAll('.toast').length") == 1, "the copy that folded in is gone"
     assert errors == []
+
+
+@pytest.mark.parametrize("motion", ["no-preference", "reduce"])
+def test_end_of_the_universe_prototype_plays_through(page: Page, site_url, errors, motion):
+    # The endgame prototype (see "The end of the universe" in worker/SURVEY.md),
+    # from the debug hook: every phase, its banners, and the map back after.
+    without_worker(page, site_url, "letterfield")
+    page.emulate_media(reduced_motion=motion)
+    page.goto(f"{site_url}/letterfield#debug")
+    page.click("#coachOk")
+    page.mouse.click(200, 300)  # a first tap, so its sound can start
+    assert page.evaluate("__lf.endgame({ tremor: .5, collapse: 1.5, dot: 1, build: 1, bang: .5, scatter: 1.5 })")
+    assert not page.evaluate("__lf.endgame()"), "a second end while one is playing"
+    banner = page.locator("#endgame")
+    expect(banner).to_contain_text("The last word")
+    page.wait_for_function("__lf.end() && __lf.end().name === 'dot'")
+    expect(banner).to_contain_text("The universe has ended")
+    page.wait_for_function("__lf.end() && __lf.end().name === 'scatter'")
+    expect(banner).to_contain_text("Universe 2")
+    page.wait_for_function("__lf.end() === null", timeout=10_000)
+    expect(banner).to_be_hidden()
+    expect(page.locator(".bar")).to_be_visible()
+
+
+def test_end_of_the_universe_sound_renders_offline(page: Page, site_url, errors):
+    without_worker(page, site_url, "letterfield")
+    page.goto(f"{site_url}/letterfield#debug")
+    size = page.evaluate("async () => (await __lf.endRender({ tremor: .5, collapse: 1, dot: 1, build: 1, bang: .5, scatter: .5, music: false })).size")
+    assert size > 44 + 44100 * 4 * 8

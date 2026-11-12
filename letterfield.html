@@ -2966,7 +2966,7 @@ function frame(now) {
     if (Math.hypot(inertia.vx, inertia.vy) < .02) inertia = null;
     anim = true; camChanged();
   }
-  if (draw(now)) anim = true;
+  if (END ? endDraw(now) : draw(now)) anim = true;
   if (anim) invalidate();
 }
 
@@ -3923,8 +3923,651 @@ updateHud();
 invalidate();
 if (redrawn) setTimeout(() => toast(`<i></i><b>The map has been redrawn</b><span>${NT} themes of about ${Math.round(THEMES.reduce((a, t) => a + t.words.length, 0) / NT / 10) * 10} words now, so a territory never repeats one · ${redrawn.kept ? `${redrawn.kept} of your ${redrawn.had} finds are still on it` : 'your old finds are not on it'}</span>`, null, 8000), 900);
 connectStore();
+/* ---------- The end of the universe (prototype) ---------- */
+// What the shared survey's ending will look and sound like, when the last
+// hidden word in the shared world is charted (see "The end of the universe"
+// in worker/SURVEY.md): the universe collapses into the final word's
+// territory, a single glowing point waits, energy builds, and a big bang
+// throws everything back out. Played only from the debug hook, on this page:
+// __lf.endgame({ dot: 20 }). Nothing is sent, and the map is the same after.
+// Escape stops it.
+let END = null;
+const END_PHASES = { tremor: 4, collapse: 22, dot: 20, build: 12, bang: 3, scatter: 9 };
+function endgame(opts = {}) {
+  if (END) return false;
+  const P = {};
+  for (const k in END_PHASES) P[k] = Number.isFinite(opts[k]) && opts[k] >= 0 ? opts[k] : END_PHASES[k];
+  const at = { tremor: 0 };
+  at.collapse = at.tremor + P.tremor; at.dot = at.collapse + P.collapse; at.build = at.dot + P.dot;
+  at.bang = at.build + P.build; at.scatter = at.bang + P.bang; at.end = at.scatter + P.scatter;
+  // The final word: as given, or the circled word nearest the middle of the
+  // screen, or a hidden word under it.
+  let word = opts.word && typeof opts.word === 'object' ? opts.word : null;
+  if (!word) {
+    let best = Infinity;
+    for (const e of [...found.values(), ...claims.values()]) {
+      const d = Math.hypot(e.x - cam.x, e.y - cam.y);
+      if (d < best && d < 60) { best = d; word = e; }
+    }
+  }
+  if (!word) word = chunk(fdiv(Math.floor(cam.x), CH), fdiv(Math.floor(cam.y), CH)).words[0];
+  const [ex, ey] = wordEnd(word), rx = fdiv(word.x, RC), ry = fdiv(word.y, RC);
+  const u = Number.isInteger(opts.universe) && opts.universe > 0 ? opts.universe : 1;
+  END = {
+    t0: performance.now(), P, at, word, ex, ey, u, rx, ry, th: regionTheme(rx, ry),
+    px: (word.x + ex) / 2 + .5, py: (word.y + ey) / 2 + .5,  // where everything goes: the word's middle
+    by: typeof opts.by === 'string' ? opts.by : word.by || myInitials() || 'ABC',
+    place: regionName(rx, ry), parts: null, debris: null, cam0: null, shown: '', scattered: false,
+    r: rng(h3(word.x, word.y, SEED ^ 0x3c6ef372)),
+  };
+  sel.anchor = null; sel.end = null; flight = null; inertia = null;
+  endChrome(true);
+  endAudio();
+  invalidate();
+  return true;
+}
+function endStop() {
+  if (!END) return;
+  if (END.bus) { END.bus.gain.cancelScheduledValues(0); END.bus.gain.value = 0; novaBuses.delete(END.bus); }
+  END = null;
+  endChrome(false);
+  if (musicNow) musicNow.wake();
+  invalidate();
+}
+window.addEventListener('keydown', e => { if (END && e.key === 'Escape') { e.stopImmediatePropagation(); endStop(); } }, true);
+// Where the end is: the phase, how far through it (0 to 1), and the seconds since it began.
+function endPhase(now) {
+  const s = (now - END.t0) / 1000, A = END.at;
+  for (const k of ['scatter', 'bang', 'build', 'dot', 'collapse', 'tremor']) {
+    if (s >= A[k]) return { name: k, u: END.P[k] ? clamp((s - A[k]) / END.P[k], 0, 1) : 1, s };
+  }
+  return { name: 'tremor', u: 0, s };
+}
+
+// The screen while it lasts: the controls fade, taps reach nothing, and a
+// banner says what's happening, in the supernova's style but grander.
+let endEl = null;
+function endChrome(on) {
+  if (!endEl) {
+    const st = document.createElement('style');
+    st.textContent = `
+.endgame{position:fixed;inset:0;z-index:60;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:calc(env(safe-area-inset-top,0px) + 24px) 20px calc(env(safe-area-inset-bottom,0px) + 24px);text-align:center;pointer-events:auto;touch-action:none;color:#f4f1ea;--c:hsl(var(--h,40) 95% 62%)}
+.endgame[hidden]{display:none}
+.endgame .end-msg{opacity:0;transition:opacity 2.4s ease}
+.endgame .end-msg.show{opacity:1}
+.endgame .end-msg.dim{opacity:.38;transition-duration:6s}
+.endgame small{display:block;font:500 11px/1.5 var(--f-mono);letter-spacing:.32em;text-transform:uppercase;opacity:.8}
+.endgame b{display:block;margin:.28em 0 .32em;font:800 clamp(34px,9vw,112px)/.92 var(--f-display);letter-spacing:.16em;margin-right:-.16em;text-transform:uppercase;text-shadow:0 0 18px var(--c),0 0 54px var(--c),0 0 120px var(--c)}
+.endgame .end-msg.show b{animation:end-word 6s cubic-bezier(.16,.9,.3,1) both}
+.endgame span{display:block;font:500 12px/1.6 var(--f-mono);letter-spacing:.14em;text-transform:uppercase;max-width:34em;margin:0 auto}
+.endgame span em{font-style:normal;color:var(--c);font-weight:700;letter-spacing:.2em}
+.endgame .end-top{position:absolute;left:0;right:0;top:calc(env(safe-area-inset-top,0px) + 18%);color:var(--ink);text-shadow:0 0 6px var(--paper),0 0 14px var(--paper)}
+.endgame .end-top b{font-size:clamp(26px,6vw,64px);color:var(--ink)}
+.endgame .end-mid.on-map{color:var(--ink);text-shadow:0 0 6px var(--paper),0 0 14px var(--paper)}
+.endgame .end-mid.on-map b{color:var(--ink)}
+@keyframes end-word{0%{transform:scale(.5);letter-spacing:.9em;filter:blur(10px)}18%{transform:scale(1.04);filter:blur(0)}40%{transform:scale(1)}100%{transform:scale(1.03);letter-spacing:.2em}}
+body.lf-ending .topbar,body.lf-ending .bar,body.lf-ending .notes,body.lf-ending .toast,body.lf-ending .nova,body.lf-ending .coach,body.lf-ending .corner,body.lf-ending .peek,body.lf-ending .survey-check,body.lf-ending .cartouche{opacity:0;transition:opacity 2.5s ease;pointer-events:none}
+@media (prefers-reduced-motion: reduce){.endgame .end-msg.show b{animation:none}}`;
+    document.head.appendChild(st);
+    endEl = document.createElement('div');
+    endEl.className = 'endgame'; endEl.id = 'endgame'; endEl.hidden = true;
+    endEl.setAttribute('role', 'status'); endEl.setAttribute('aria-live', 'polite');
+    endEl.innerHTML = '<div class="end-msg end-top"></div><div class="end-msg end-mid"></div>';
+    document.body.appendChild(endEl);
+  }
+  endEl.hidden = !on;
+  document.body.classList.toggle('lf-ending', on);
+  if (!on) document.body.style.background = '';
+  if (!on) for (const m of endEl.children) { m.className = m.className.replace(/ (show|dim|on-map)/g, ''); m.innerHTML = ''; }
+  else { endEl.style.setProperty('--h', THEMES[END.th].hue); END.shown = ''; }
+}
+function endSay(which, html, cls) {
+  const el = endEl.querySelector(which === 'top' ? '.end-top' : '.end-mid');
+  if (cls) el.classList.add(cls);
+  if (html === null) { el.classList.remove('show', 'dim'); return; }
+  el.innerHTML = html; el.classList.remove('dim'); void el.offsetWidth; el.classList.add('show');
+}
+function endBanners(ph) {
+  const E = END, step = (k, fn) => { if (!E.shown.includes(k)) { E.shown += k; fn(); } };
+  const word = `<em>${E.word.w}</em>`, n = E.u;
+  if (ph.name === 'tremor') step('a', () => endSay('top', `<small>Universe ${n}</small><b>The last word</b><span>${word} · charted by ${E.by} · ${E.place}</span>`));
+  if (ph.name === 'collapse' && ph.u > .3) step('b', () => endSay('top', null));
+  if (ph.name === 'dot' && ph.s - E.at.dot > Math.min(2, E.P.dot * .1)) step('c', () => endSay('mid',
+    `<small>Universe ${n} · ${AREA_TOTAL.toLocaleString()} words charted</small><b>The universe has ended</b><span>${word} in ${E.place}, charted by ${E.by}, was its last word</span>`));
+  if (ph.name === 'dot' && ph.s - E.at.dot > Math.max(8, E.P.dot * .45)) step('d', () => endEl.querySelector('.end-mid').classList.add('dim'));
+  if (ph.name === 'build' && ph.u > .15) step('e', () => endSay('mid', null));
+  if (ph.name === 'scatter' && ph.s - E.at.scatter > .6) step('f', () => endSay('mid', null, 'on-map') || endSay('mid',
+    `<small>Big bang</small><b>Universe ${n + 1}</b><span>seeded from ${word} · you were thrown to ${regionName(fdiv(Math.floor(cam.x), RC), fdiv(Math.floor(cam.y), RC))}</span>`));
+  if (ph.name === 'scatter' && ph.u > .8) step('g', () => endEl.querySelector('.end-mid').classList.remove('show'));
+}
+const AREA_TOTAL = 1119752;
+
+// What's on screen when the collapse begins, as particles that fall in: every
+// letter, the territories' tints in squares, circled words and carets, plus
+// streams of the rest of the universe arriving from beyond the edges.
+function endSnapshot() {
+  const E = END, cs = cam.cs, OX = (W - dock) / 2, OY = H / 2, r = E.r;
+  const vx0 = cam.x - OX / cs, vy0 = cam.y - OY / cs, vx1 = vx0 + W / cs, vy1 = vy0 + H / cs;
+  const parts = [], pxc = E.px, pyc = E.py;
+  const add = (o) => {
+    const dx = o.x - pxc, dy = o.y - pyc;
+    o.r0 = Math.hypot(dx, dy) + .01; o.a0 = Math.atan2(dy, dx);
+    parts.push(o);
+  };
+  const tintA = tintAlpha(cs);
+  for (let ry = fdiv(Math.floor(vy0), RC); ry <= fdiv(Math.floor(vy1), RC); ry++) {
+    for (let rx = fdiv(Math.floor(vx0), RC); rx <= fdiv(Math.floor(vx1), RC); rx++) {
+      const th = regionTheme(rx, ry);
+      for (let j = 0; j < 6; j++) for (let i = 0; i < 6; i++) {
+        const x = rx * RC + i * 8 + 4, y = ry * RC + j * 8 + 4;
+        if (x < vx0 - 4 || x > vx1 + 4 || y < vy0 - 4 || y > vy1 + 4) continue;
+        add({ k: 1, x, y, th, a: tintA, s: 8 });
+      }
+    }
+  }
+  const x0 = Math.floor(vx0), x1 = Math.floor(vx1), y0 = Math.floor(vy0), y1 = Math.floor(vy1);
+  const cells = (x1 - x0 + 1) * (y1 - y0 + 1), keep = Math.min(1, 3200 / cells);
+  if (cs >= LETTER_MIN) for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) {
+    if (keep < 1 && r() > keep) continue;
+    add({ k: 0, x: x + .5, y: y + .5, g: letterAt(x, y) });
+  }
+  for (const e of [...found.values(), ...claims.values()]) {
+    const [ex, ey] = wordEnd(e);
+    if (Math.max(e.x, ex) + 1 < vx0 || Math.min(e.x, ex) > vx1 || Math.max(e.y, ey) + 1 < vy0 || Math.min(e.y, ey) > vy1) continue;
+    add({ k: 2, x: (e.x + ex) / 2 + .5, y: (e.y + ey) / 2 + .5, th: e.th, len: Math.hypot(ex - e.x, ey - e.y), ang: Math.atan2(ey - e.y, ex - e.x), mine: found.has(e.key) });
+  }
+  for (const gh of ghosts.values()) add({ k: 3, x: gh.x, y: gh.y, hue: gh.hue });
+  // The far universe: streams from beyond the screen, arriving later.
+  const reach = Math.hypot(W, H) / cs;
+  for (let i = 0; i < 1400; i++) {
+    const a = r() * Math.PI * 2, d = reach * (.75 + r() * 1.6);
+    const x = pxc + Math.cos(a) * d, y = pyc + Math.sin(a) * d;
+    const th = regionTheme(fdiv(Math.floor(x), RC), fdiv(Math.floor(y), RC));
+    if (r() < .22) add({ k: 1, x, y, th, a: tintA, s: 4 + r() * 4, far: 1 });
+    else add({ k: 0, x, y, g: Math.floor(r() * 26), far: 1 });
+  }
+  let rmax = 1;
+  for (const p of parts) rmax = Math.max(rmax, p.r0);
+  for (const p of parts) {
+    // Nearer things fall first; the far universe keeps arriving till the end.
+    const q = p.r0 / rmax;
+    p.d = clamp(.03 + .62 * Math.pow(q, .85) * (.75 + .5 * r()), 0, .74);
+    p.f = .2 + .14 * r();
+    p.spin = 1.6 + 2.6 * r() + 2.2 * (1 - q);
+    p.wob = r() * Math.PI * 2;
+  }
+  E.parts = parts; E.rmax = rmax;
+  E.cam0 = { x: cam.x, y: cam.y, cs };
+}
+
+// Debris thrown out by the bang: letters, tints and sparks.
+function endDebris() {
+  const E = END, r = E.r, d = [];
+  for (let i = 0; i < 900; i++) {
+    const a = r() * Math.PI * 2, k = r();
+    d.push({ a, v: 180 + Math.pow(r(), 1.6) * 2400, k: k < .55 ? 0 : k < .8 ? 1 : 2, g: Math.floor(r() * 26), th: Math.floor(r() * THEMES.length), life: 2 + r() * 4, w: 1 + r() * 2.5, spin: (r() - .5) * 6 });
+  }
+  E.debris = d;
+}
+
+// Thrown to somewhere far-flung in the shared world, but never the same place
+// as the player next to you.
+function endScatter() {
+  const E = END, span = SURVEY_AREA * SECTOR;
+  const x = Math.round((Math.random() * 2 - 1) * span * .85), y = Math.round((Math.random() * 2 - 1) * span * .85);
+  cam.x = x + .5; cam.y = y + .5; cam.cs = clamp(E.cam0 ? E.cam0.cs : cam.cs, 16, 30);
+  camChanged();
+  E.scattered = true;
+}
+
+const endEase = t => t * t * (3 - 2 * t);
+let endGlyphs = { S: 0, c: null, key: '' };
+// Letters in white for the dark of the end, whatever the theme.
+function endAtlas(S) {
+  const key = S + '|' + fontEpoch;
+  if (endGlyphs.key === key) return endGlyphs.c;
+  const c = document.createElement('canvas'); c.width = S * 26; c.height = S;
+  const g = c.getContext('2d');
+  g.fillStyle = '#fff6e8'; g.font = `500 ${glyphPx(S)}px ${GRID_FONT}`; g.textAlign = 'center'; g.textBaseline = 'alphabetic';
+  const capH = g.measureText('H').actualBoundingBoxAscent || S * .3;
+  for (let i = 0; i < 26; i++) g.fillText(String.fromCharCode(65 + i), i * S + S / 2, S / 2 + capH / 2);
+  endGlyphs = { S, c, key };
+  return c;
+}
+
+// The page behind the canvas (the strips where the top and bottom bars were
+// on a phone) darkens with the universe.
+function endBg(dark) {
+  const v = Math.round(dark * 100) / 100;
+  if (END.bg === v) return;
+  END.bg = v;
+  const pr = hexRGB(C.paper), mix = i => Math.round(pr[i] + ([4, 3, 8][i] - pr[i]) * v);
+  document.body.style.background = `rgb(${mix(0)},${mix(1)},${mix(2)})`;
+}
+function endDraw(now) {
+  const E = END, ph = endPhase(now);
+  if (ph.s >= E.at.end) { endStop(); return draw(now); }
+  endBanners(ph);
+  const t = ph.s - E.at.bang;
+  endBg(ph.name === 'tremor' ? 0 : ph.name === 'collapse' ? clamp((ph.u - .55) / .4, 0, 1) ** 1.5 : ph.name === 'dot' || ph.name === 'build' ? 1
+    : clamp(1 - (t - .25) / Math.max(1, E.P.bang + E.P.scatter * .45), 0, 1) ** 1.3);
+  const hue = THEMES[E.th].hue;
+  if (ph.name === 'tremor') {
+    // The map as it is, shaking a little more each second, the final word lit.
+    const shake = RM ? 0 : 2.5 * ph.u * ph.u;
+    const ox = cam.x, oy = cam.y;
+    cam.x += (Math.random() * 2 - 1) * shake / cam.cs; cam.y += (Math.random() * 2 - 1) * shake / cam.cs;
+    draw(now);
+    cam.x = ox; cam.y = oy;
+    endWordGlow(now, ph.u, hue);
+    return true;
+  }
+  if (!E.parts) endSnapshot();
+  if (RM) return endDrawCalm(now, ph, hue);
+  if (ph.name === 'collapse') endCollapse(now, ph.u, hue);
+  else if (ph.name === 'dot') endDot(now, ph, hue, 0);
+  else if (ph.name === 'build') endDot(now, ph, hue, ph.u);
+  else endBang(now, ph, hue);
+  return true;
+}
+function endWordGlow(now, u, hue) {
+  const E = END, cs = cam.cs, OX = (W - dock) / 2, OY = H / 2;
+  const SX = wx => (wx - cam.x) * cs + OX, SY = wy => (wy - cam.y) * cs + OY;
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  const pulse = .55 + .45 * Math.sin(now / 160);
+  ctx.globalCompositeOperation = 'lighter';
+  capsule(SX(E.word.x + .5), SY(E.word.y + .5), SX(E.ex + .5), SY(E.ey + .5), cs * (.55 + .25 * pulse));
+  ctx.strokeStyle = `hsla(${hue}, 95%, 62%, ${.35 + .5 * u})`; ctx.lineWidth = 2 + 4 * pulse * u; ctx.stroke();
+  ctx.fillStyle = `hsla(${hue}, 95%, 60%, ${.12 + .2 * u * pulse})`; ctx.fill();
+  ctx.globalCompositeOperation = 'source-over';
+}
+
+function endCollapse(now, p, hue) {
+  const E = END, c0 = E.cam0;
+  // The camera is dragged after everything else, faster and faster, and it shakes.
+  const pull = Math.pow(p, 1.6);
+  const camX = c0.x + (E.px - c0.x) * endEase(clamp(p * 1.3, 0, 1)), camY = c0.y + (E.py - c0.y) * endEase(clamp(p * 1.3, 0, 1));
+  const cs = c0.cs * (1 + .5 * pull), shake = 1.5 + 12 * Math.pow(p, 2.2);
+  const OX = (W - dock) / 2 + (Math.random() * 2 - 1) * shake, OY = H / 2 + (Math.random() * 2 - 1) * shake;
+  const SX = wx => (wx - camX) * cs + OX, SY = wy => (wy - camY) * cs + OY;
+  const hx = SX(E.px), hy = SY(E.py), M = Math.min(W, H);
+  // The horizon grows, then shrinks to a point as the last of it falls in.
+  const Rh = M * (.012 + .085 * endEase(clamp(p / .6, 0, 1))) * (p > .82 ? Math.pow(1 - (p - .82) / .18, 1.5) : 1);
+
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.globalAlpha = 1;
+  ctx.fillStyle = C.paper; ctx.fillRect(0, 0, canvas.width, canvas.height);
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  // Light leaves the universe from the middle out.
+  const dark = clamp((p - .1) / .8, 0, 1);
+  const g = ctx.createRadialGradient(hx, hy, Rh, hx, hy, Math.max(Rh + 1, M * (.15 + 1.6 * dark)));
+  g.addColorStop(0, 'rgba(4,3,8,.97)'); g.addColorStop(1, 'rgba(4,3,8,0)');
+  ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+  ctx.fillStyle = `rgba(4,3,8,${clamp((p - .55) / .4, 0, 1) ** 1.5})`; ctx.fillRect(0, 0, W, H);
+
+  const S = Math.max(4, Math.round(cs * dpr)), img = endAtlas(S);
+  ensureAtlas(S);
+  const ink = atlas.c, Rv = Math.max(Rh + 1, M * (.15 + 1.6 * dark)), allDark = clamp((p - .55) / .4, 0, 1) ** 1.5;
+  for (const q of E.parts) {
+    const u = clamp((p - q.d) / q.f, 0, 1);
+    if (u >= 1) continue;
+    const fall = Math.pow(u, 2.3), r = q.r0 * (1 - fall);
+    const a = q.a0 + q.spin * Math.pow(u, 1.5) * (1 + 2.5 * fall) + (u === 0 ? .04 * Math.sin(now / 300 + q.wob) * p : 0);
+    // Before it falls, the tide already tugs it toward the hole.
+    const tug = u === 0 ? q.r0 * (1 - .06 * p * (q.far ? 0 : 1)) : r;
+    const wx = E.px + Math.cos(a) * tug, wy = E.py + Math.sin(a) * tug;
+    const x = SX(wx), y = SY(wy);
+    if (x < -80 || x > W + 80 || y < -80 || y > H + 80) continue;
+    const dpx = Math.hypot(x - hx, y - hy);
+    const near = clamp(1 - (dpx - Rh) / (M * .35), 0, 1);
+    const alpha = clamp((dpx - Rh * .9) / (Rh * .6 + 4), 0, 1);
+    if (alpha <= 0) continue;
+    // Spaghettified: stretched along the way it falls, squeezed across it.
+    const L = 1 + 6 * Math.pow(u, 2) + 3 * near * u, Wd = 1 / (1 + 1.8 * u * u + near * u);
+    const phi = Math.atan2(y - hy, x - hx) + .55 * u;
+    const ca = Math.cos(phi), sa = Math.sin(phi);
+    if (q.k === 0) {
+      ctx.setTransform(ca * L, sa * L, -sa * Wd, ca * Wd, x * dpr, y * dpr);
+      // White where the dark has reached it, so it stays readable.
+      const lit = C.dark ? 0 : Math.max(allDark, .97 * clamp(1 - (dpx - Rh) / (Rv - Rh), 0, 1));
+      ctx.globalAlpha = alpha * (1 - lit);
+      if (ctx.globalAlpha > .02) ctx.drawImage(ink, q.g * S, 0, S, S, -S / 2, -S / 2, S, S);
+      ctx.globalAlpha = alpha * lit;
+      if (ctx.globalAlpha > .02) ctx.drawImage(img, q.g * S, 0, S, S, -S / 2, -S / 2, S, S);
+    } else if (q.k === 1) {
+      // A tint smears out along its orbit, thinning as it goes.
+      const s = q.s * cs * dpr, tl = 1 + 2.5 * u, tw = 1 / (1 + 1.5 * u);
+      const ta = phi + Math.PI / 2, tc = Math.cos(ta), ts = Math.sin(ta);
+      ctx.setTransform(tc * tl, ts * tl, -ts * tw, tc * tw, x * dpr, y * dpr);
+      ctx.globalAlpha = Math.min(.24, q.a * (1 + .8 * u)) * alpha * (1 - .5 * u);
+      ctx.fillStyle = TC[q.th].tint;
+      ctx.fillRect(-s / 2, -s / 2, s, s);
+    } else if (q.k === 2) {
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      ctx.translate(x, y); ctx.rotate(q.ang + .8 * u * q.spin); ctx.scale(1 + 2 * u, 1 / (1 + u));
+      const len = q.len * cs / 2, rr = Math.max(1.6, cs * .4);
+      capsule(-len, 0, len, 0, rr);
+      ctx.globalAlpha = alpha * (q.mine ? 1 : .6);
+      if (q.mine) { ctx.fillStyle = TC[q.th].fill; ctx.fill(); }
+      ctx.strokeStyle = TC[q.th].stroke; ctx.lineWidth = 1.5; ctx.stroke();
+    } else {
+      ctx.setTransform(ca * L, sa * L, -sa * Wd, ca * Wd, x * dpr, y * dpr);
+      ctx.globalAlpha = alpha;
+      ctx.fillStyle = `hsl(${q.hue}, ${C.ms}, ${C.ml})`;
+      const w = clamp(cs * .07, 2, 3) * dpr, h = cs * .66 * dpr;
+      ctx.fillRect(-w / 2, -h / 2, w, h);
+    }
+  }
+  ctx.globalAlpha = 1;
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  // The accretion disc: hot arcs racing round the horizon, and its dark heart.
+  ctx.globalCompositeOperation = 'lighter';
+  const disc = clamp(p / .25, 0, 1) * (p > .9 ? 1 - (p - .9) / .1 : 1);
+  for (let i = 0; i < 9; i++) {
+    const rr = Rh * (1.25 + i * .22), spd = 3.2 / (1 + i * .4), a0 = now / 1000 * spd + i * 1.7;
+    ctx.strokeStyle = `hsla(${(hue + i * 6) % 360}, 95%, ${62 + i * 3}%, ${disc * (.42 - i * .035)})`;
+    ctx.lineWidth = Math.max(1, Rh * (.12 - i * .009));
+    ctx.beginPath(); ctx.arc(hx, hy, rr, a0, a0 + 2.2 + (i % 3) * .5); ctx.stroke();
+    ctx.beginPath(); ctx.arc(hx, hy, rr, a0 + Math.PI, a0 + Math.PI + 1.4); ctx.stroke();
+  }
+  const halo = ctx.createRadialGradient(hx, hy, Rh * .9, hx, hy, Rh * 2.4 + 2);
+  halo.addColorStop(0, `hsla(${hue}, 95%, 70%, ${.55 * disc})`); halo.addColorStop(1, `hsla(${hue}, 95%, 60%, 0)`);
+  ctx.fillStyle = halo; ctx.beginPath(); ctx.arc(hx, hy, Rh * 2.4 + 2, 0, Math.PI * 2); ctx.fill();
+  ctx.globalCompositeOperation = 'source-over';
+  ctx.fillStyle = '#020104';
+  ctx.beginPath(); ctx.arc(hx, hy, Rh, 0, Math.PI * 2); ctx.fill();
+  // The photon ring: a hair of light at the edge.
+  ctx.strokeStyle = `hsla(${hue}, 100%, 88%, ${.8 * disc})`; ctx.lineWidth = 1.2;
+  ctx.beginPath(); ctx.arc(hx, hy, Rh * 1.04, 0, Math.PI * 2); ctx.stroke();
+  // The very end of the collapse: everything else gone, the point it left.
+  if (p > .9) endPoint(hx, hy, hue, (p - .9) / .1, 0, now);
+}
+
+// The point: a core and a glow that breathes. charge (0 to 1) is the build.
+function endPoint(x, y, hue, show, charge, now) {
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  const breath = RM ? .5 : .5 + .5 * Math.sin(now / 1000 * Math.PI * 2 / 4.2);
+  const M = Math.min(W, H);
+  const R = (10 + 10 * breath) * (1 + 9 * charge * charge) * (M / 700 + .5);
+  const white = charge * charge;
+  ctx.globalCompositeOperation = 'lighter';
+  const g = ctx.createRadialGradient(x, y, 0, x, y, R * 3);
+  g.addColorStop(0, `hsla(${hue}, ${95 - 60 * white}%, ${82 + 14 * white}%, ${show})`);
+  g.addColorStop(.12, `hsla(${hue}, 95%, 66%, ${show * (.5 + .4 * breath)})`);
+  g.addColorStop(.45, `hsla(${hue}, 95%, 55%, ${show * (.12 + .1 * breath + .3 * charge)})`);
+  g.addColorStop(1, `hsla(${hue}, 95%, 50%, 0)`);
+  ctx.fillStyle = g; ctx.beginPath(); ctx.arc(x, y, R * 3, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = `rgba(255,252,244,${show})`;
+  ctx.beginPath(); ctx.arc(x, y, 1.6 + 2 * breath * (1 - charge) + 9 * charge * charge, 0, Math.PI * 2); ctx.fill();
+  ctx.globalCompositeOperation = 'source-over';
+}
+
+function endDot(now, ph, hue, charge) {
+  const E = END;
+  const shake = RM ? 0 : 14 * Math.pow(charge, 3);
+  const x = (W - dock) / 2 + (Math.random() * 2 - 1) * shake, y = H / 2 + (Math.random() * 2 - 1) * shake;
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.globalAlpha = 1; ctx.fillStyle = '#040308'; ctx.fillRect(0, 0, canvas.width, canvas.height);
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  if (charge > 0 && !RM) {
+    // Energy gathering: streaks of light rushing in, more and faster.
+    const r = rng(Math.floor(now / 50)), n = Math.floor(10 + 110 * charge * charge), M = Math.hypot(W, H) / 2;
+    ctx.globalCompositeOperation = 'lighter';
+    for (let i = 0; i < n; i++) {
+      const a = r() * Math.PI * 2, d = M * (.15 + r() * .9) * (1 - charge * .5), len = 20 + 140 * charge * r();
+      ctx.strokeStyle = `hsla(${(hue + r() * 40 - 20 + 360) % 360}, 95%, ${70 + 25 * charge}%, ${.15 + .5 * charge * r()})`;
+      ctx.lineWidth = 1 + 1.5 * r();
+      ctx.beginPath(); ctx.moveTo(x + Math.cos(a) * d, y + Math.sin(a) * d); ctx.lineTo(x + Math.cos(a) * Math.max(4, d - len), y + Math.sin(a) * Math.max(4, d - len)); ctx.stroke();
+    }
+    // Rays from the point, turning.
+    const rays = 14, spin = now / 1000 * (.2 + 1.2 * charge);
+    for (let i = 0; i < rays; i++) {
+      const a = spin + i * Math.PI * 2 / rays, L = Math.min(W, H) * (.08 + .7 * charge * charge) * (.6 + .4 * Math.sin(now / 90 + i * 3));
+      const gr = ctx.createLinearGradient(x, y, x + Math.cos(a) * L, y + Math.sin(a) * L);
+      gr.addColorStop(0, `hsla(${hue}, 95%, 85%, ${.35 * charge})`); gr.addColorStop(1, `hsla(${hue}, 95%, 70%, 0)`);
+      ctx.strokeStyle = gr; ctx.lineWidth = 1 + 3 * charge;
+      ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x + Math.cos(a) * L, y + Math.sin(a) * L); ctx.stroke();
+    }
+    ctx.globalCompositeOperation = 'source-over';
+  }
+  // The held breath: dark for an instant before the bang.
+  const held = ph.name === 'build' && (1 - ph.u) * E.P.build < .14;
+  endPoint(x, y, hue, held ? 0 : 1, charge, now);
+}
+
+function endBang(now, ph, hue) {
+  const E = END, t = ph.s - E.at.bang;
+  if (!E.debris) endDebris();
+  // Under the flash, the player is thrown somewhere far away, and the new
+  // universe (in this prototype, the same map) fades in around them.
+  if (!E.scattered && t > .25) endScatter();
+  const cx = (W - dock) / 2, cy = H / 2;
+  if (E.scattered) draw(now);
+  else { ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.fillStyle = '#040308'; ctx.fillRect(0, 0, canvas.width, canvas.height); }
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  const night = E.scattered ? clamp(1 - (t - .25) / Math.max(1, E.P.bang + E.P.scatter * .45), 0, 1) : 1;
+  ctx.globalAlpha = night ** 1.3; ctx.fillStyle = '#040308'; ctx.fillRect(0, 0, W, H); ctx.globalAlpha = 1;
+  const S = Math.max(4, Math.round(cam.cs * dpr)), img = endAtlas(S), M = Math.hypot(W, H);
+  ctx.globalCompositeOperation = 'lighter';
+  for (const d of E.debris) {
+    const life = t / d.life;
+    if (life >= 1) continue;
+    const dist = d.v * (1 - Math.exp(-t * 1.6)) / 1.6 * (M / 1400 + .4);
+    const x = cx + Math.cos(d.a) * dist, y = cy + Math.sin(d.a) * dist;
+    if (x < -60 || x > W + 60 || y < -60 || y > H + 60) continue;
+    const fade = (1 - life) ** 1.4, ca = Math.cos(d.a), sa = Math.sin(d.a), L = 1 + 4 * Math.exp(-t * 2.2);
+    if (d.k === 0) {
+      ctx.setTransform(ca * L, sa * L, -sa, ca, x * dpr, y * dpr);
+      ctx.globalAlpha = fade * .9; ctx.drawImage(img, d.g * S, 0, S, S, -S / 2, -S / 2, S, S);
+    } else if (d.k === 1) {
+      const s = 4 * cam.cs * dpr * .5;
+      ctx.setTransform(ca * L * 2, sa * L * 2, -sa, ca, x * dpr, y * dpr);
+      ctx.globalAlpha = fade * .18; ctx.fillStyle = TC[d.th].tint; ctx.fillRect(-s / 2, -s / 2, s, s);
+    } else {
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      ctx.globalAlpha = fade; ctx.strokeStyle = `hsla(${(hue + d.th) % 360}, 95%, 80%, 1)`; ctx.lineWidth = d.w;
+      ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x - ca * 30 * L, y - sa * 30 * L); ctx.stroke();
+    }
+  }
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  // The shockwave, and the flash over everything.
+  const R = M * .9 * (1 - Math.exp(-t * 1.5)), ring = clamp(1 - t / 3.5, 0, 1);
+  if (ring > 0) {
+    ctx.strokeStyle = `hsla(${hue}, 95%, 82%, ${ring * .8})`; ctx.lineWidth = 6 + 40 * ring;
+    ctx.beginPath(); ctx.arc(cx, cy, R, 0, Math.PI * 2); ctx.stroke();
+  }
+  ctx.globalCompositeOperation = 'source-over';
+  const flash = t < .06 ? t / .06 : Math.exp(-(t - .06) * 1.9);
+  ctx.globalAlpha = clamp(flash, 0, 1); ctx.fillStyle = '#fffaf0'; ctx.fillRect(0, 0, W, H);
+  ctx.globalAlpha = 1;
+}
+
+// Reduced motion: nothing pulls, spins or shakes. The map fades to dark, the
+// point glows, brightens, and the new map fades in through white.
+function endDrawCalm(now, ph, hue) {
+  const E = END;
+  if (ph.name === 'collapse') {
+    draw(now);
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.globalAlpha = clamp(ph.u * 1.15, 0, 1); ctx.fillStyle = '#040308'; ctx.fillRect(0, 0, W, H); ctx.globalAlpha = 1;
+    if (ph.u > .8) endPoint((W - dock) / 2, H / 2, hue, (ph.u - .8) / .2, 0, now);
+  } else if (ph.name === 'dot' || ph.name === 'build') {
+    ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.fillStyle = '#040308'; ctx.fillRect(0, 0, canvas.width, canvas.height);
+    endPoint((W - dock) / 2, H / 2, hue, 1, ph.name === 'build' ? ph.u * .8 : 0, now);
+  } else {
+    const t = ph.s - E.at.bang;
+    if (!E.scattered) endScatter();
+    draw(now);
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.globalAlpha = clamp(1 - t / 3, 0, 1); ctx.fillStyle = '#fffaf0'; ctx.fillRect(0, 0, W, H); ctx.globalAlpha = 1;
+  }
+  return true;
+}
+
+// The black hole's sound, and the bang's, for the whole end at once: the
+// music fades in the tremor; in the collapse a sub-bass rumble, a rising
+// swirl and a hiss of debris, cut dead as the last of it falls in; a faint
+// hum under the point; then a build of light and sound, a held breath and
+// the bang, its rumble and shimmer. Works in any audio context, offline ones
+// too; times are in seconds from t.
+function endSound(a, out, t, P = END_PHASES) {
+  const A = t + P.tremor, B = A + P.collapse, Cc = B + P.dot, D = Cc + P.build, end = D + P.bang + P.scatter + 6;
+  const bus = a.createGain(); bus.gain.value = 1; bus.connect(out);
+  const room = a.createConvolver(); room.buffer = roomOf(a);
+  const wet = a.createGain(); wet.gain.value = .55; room.connect(wet); wet.connect(bus);
+  const gain = (v, to = bus) => { const g = a.createGain(); g.gain.value = v; g.connect(to); return g; };
+  const filter = (type, f, q, to) => { const n = a.createBiquadFilter(); n.type = type; n.frequency.value = f; n.Q.value = q; n.connect(to); return n; };
+  const osc = (type, f, to, from, until) => { const o = a.createOscillator(); o.type = type; o.frequency.value = f; o.connect(to); o.start(from); o.stop(until); return o; };
+  const noise = (to, from, until) => { const n = a.createBufferSource(); n.buffer = noiseOf(a); n.loop = true; n.loopStart = Math.random(); n.connect(to); n.start(from, Math.random()); n.stop(until); return n; };
+  const env = (p, pts) => { p.setValueAtTime(pts[0][1], pts[0][0]); for (const [at, v, kind] of pts.slice(1)) kind ? p.exponentialRampToValueAtTime(v, at) : p.linearRampToValueAtTime(v, at); };
+  const panner = (to) => { if (!a.createStereoPanner) return to; const p = a.createStereoPanner(); p.connect(to); return p; };
+  const cut = B - .02;
+
+  // Tremor: a low groan under the fading music.
+  const groan = gain(0), groanLp = filter('lowpass', 120, 2, groan);
+  for (const f of [27.5, 27.9, 41.2]) osc('sawtooth', f, groanLp, t, cut);
+  env(groan.gain, [[t, 0], [A, .12], [cut - .3, .2], [cut, 0]]);
+
+  // Collapse: the sub-bass rumble, swelling...
+  const subAmp = gain(0), sub1 = osc('sine', 34, subAmp, A, cut), sub2 = osc('sine', 46, subAmp, A, cut);
+  env(sub1.frequency, [[A, 34], [cut, 26, 1]]); env(sub2.frequency, [[A, 46], [cut, 31, 1]]);
+  env(subAmp.gain, [[A, 0], [A + P.collapse * .3, .26], [cut - .4, .42], [cut, 0]]);
+  const rumAmp = gain(0), rumLp = filter('lowpass', 90, 1.2, rumAmp);
+  rumAmp.connect(room);
+  noise(rumLp, A, cut);
+  env(rumLp.frequency, [[A, 90], [cut, 240, 1]]);
+  env(rumAmp.gain, [[A, 0], [A + P.collapse * .5, .5], [cut - .3, .85], [cut, 0]]);
+  // ...the swirl: noise in a narrow band, climbing and whirling round the head...
+  for (const [side, f0, f1] of [[-1, 180, 2600], [1, 240, 3400]]) {
+    const amp = gain(0), pan = panner(amp), bp = filter('bandpass', f0, 7, pan);
+    amp.connect(room);
+    noise(bp, A, cut);
+    env(bp.frequency, [[A, f0], [cut, f1, 1]]);
+    const wob = gain(f0 * .25, bp.frequency), lfo = osc('sine', .25, wob, A, cut);
+    env(lfo.frequency, [[A, .25], [cut, 7, 1]]);
+    env(wob.gain, [[A, f0 * .25], [cut, f1 * .3, 1]]);
+    if (pan !== amp) { const sw = gain(.9, pan.pan), l2 = osc('sine', .18, sw, A, cut); l2.detune.value = side * 100; env(l2.frequency, [[A, .18], [cut, 3.5, 1]]); }
+    env(amp.gain, [[A, 0], [A + P.collapse * .6, .1], [cut - .2, .2], [cut, 0]]);
+  }
+  // ...a tone in it, two saws drawn up through a closing throat...
+  const toneAmp = gain(0), toneLp = filter('lowpass', 300, 4, toneAmp);
+  toneAmp.connect(room);
+  for (const m of [1, 1.007]) { const o = osc('sawtooth', 55 * m, toneLp, A, cut); env(o.frequency, [[A, 55 * m], [cut, 330 * m, 1]]); }
+  env(toneLp.frequency, [[A, 300], [cut, 2400, 1]]);
+  env(toneAmp.gain, [[A, 0], [A + P.collapse * .5, .025], [cut - .2, .07], [cut, 0]]);
+  // ...and the hiss and crackle of everything breaking up as it falls.
+  const hissAmp = gain(0), hissHp = filter('highpass', 3500, .7, hissAmp);
+  noise(hissHp, A, cut);
+  env(hissAmp.gain, [[A, 0], [cut - .3, .06], [cut, 0]]);
+  const grains = Math.round(70 + P.collapse * 6);
+  for (let i = 0; i < grains; i++) {
+    const at = A + P.collapse * Math.pow(Math.random(), .55) * .98;
+    if (at > cut - .05) continue;
+    const amp = gain(0), pan = panner(amp), bp = filter('bandpass', 800 + Math.random() * 6000, 3 + Math.random() * 8, pan);
+    if (pan !== amp) pan.pan.value = Math.random() * 2 - 1;
+    noise(bp, at, at + .2);
+    const lvl = .05 + .25 * ((at - A) / P.collapse);
+    env(amp.gain, [[at, 0], [at + .004, lvl], [at + .05 + Math.random() * .12, .0001, 1]]);
+  }
+  // The last gulp, then nothing.
+  const gulpAmp = gain(0), gulp = osc('sine', 220, gulpAmp, cut - .6, cut + .01);
+  env(gulp.frequency, [[cut - .6, 220], [cut, 18, 1]]);
+  env(gulpAmp.gain, [[cut - .6, 0], [cut - .45, .35], [cut, 0]]);
+
+  // The point: a faint hum, breathing with it.
+  const humAmp = gain(0), hum = gain(.5, humAmp);
+  for (const [f, v] of [[55, 1], [110.4, .5], [165.2, .25]]) { const g = gain(v, hum); osc('sine', f, g, B, D); }
+  const breath = gain(.5, hum.gain); osc('sine', 1 / 4.2, breath, B, D);
+  env(humAmp.gain, [[B, 0], [B + 2.5, 0], [B + Math.min(6, P.dot * .4 + 2.5), .045], [Cc, .05], [D - .3, .12], [D - .14, 0]]);
+
+  // The build: saws climbing three octaves through an opening filter, a
+  // throb getting faster, a noise riser and a sub swelling under it all.
+  const held = D - .14;  // the held breath
+  const buildAmp = gain(0), buildLp = filter('lowpass', 120, 6, buildAmp);
+  buildAmp.connect(room);
+  for (const m of [1, 1.005, 1.498, .5]) { const o = osc('sawtooth', 41.2 * m, buildLp, Cc, held); env(o.frequency, [[Cc, 41.2 * m], [held, 329.6 * m, 1]]); }
+  env(buildLp.frequency, [[Cc, 120], [held, 7000, 1]]);
+  env(buildAmp.gain, [[Cc, 0], [Cc + P.build * .5, .05], [held - .05, .13], [held, 0]]);
+  const throb = gain(0, buildAmp.gain), tl = osc('sine', 1.5, throb, Cc, held);
+  env(tl.frequency, [[Cc, 1.5], [held, 30, 1]]);
+  env(throb.gain, [[Cc, 0], [held - .05, .07], [held, 0]]);
+  const riseAmp = gain(0), riseBp = filter('bandpass', 250, 1.5, riseAmp);
+  riseAmp.connect(room);
+  noise(riseBp, Cc, held);
+  env(riseBp.frequency, [[Cc, 250], [held, 9000, 1]]);
+  env(riseAmp.gain, [[Cc, .0001], [held - .05, .2, 1], [held, 0]]);
+  const swellAmp = gain(0), swell = osc('sine', 30, swellAmp, Cc, held);
+  env(swell.frequency, [[Cc, 30], [held, 72, 1]]);
+  env(swellAmp.gain, [[Cc, 0], [held - .05, .35], [held, 0]]);
+
+  // The big bang: a boom falling away, a punch, a crack...
+  const boomAmp = gain(0), boom = osc('sine', 150, boomAmp, D, end);
+  env(boom.frequency, [[D, 150], [D + 2.4, 22, 1]]);
+  env(boomAmp.gain, [[D, 0], [D + .006, 1], [D + 5, .001, 1]]);
+  const punchAmp = gain(0), punch = osc('triangle', 1400, punchAmp, D, D + .3);
+  env(punch.frequency, [[D, 1400], [D + .1, 45, 1]]);
+  env(punchAmp.gain, [[D, 0], [D + .003, .6], [D + .18, .001, 1]]);
+  const crackAmp = gain(0);
+  noise(filter('highpass', 1200, .7, crackAmp), D, D + 1);
+  env(crackAmp.gain, [[D, 0], [D + .004, .65], [D + .6, .001, 1]]);
+  // ...a rumble rolling out to the edges of everything...
+  const blastAmp = gain(0), blastLp = filter('lowpass', 6000, .8, blastAmp);
+  blastAmp.connect(room);
+  noise(blastLp, D, end);
+  env(blastLp.frequency, [[D, 6000], [D + 7, 70, 1]]);
+  env(blastAmp.gain, [[D, 0], [D + .01, .85], [D + 9, .001, 1]]);
+  // ...debris whooshing past both ways...
+  for (const [from, to] of [[-.8, .8], [.8, -.8]]) {
+    const amp = gain(0), pan = panner(amp), bp = filter('bandpass', 3200, 2, pan);
+    if (pan !== amp) env(pan.pan, [[D, from], [D + 3.5, to]]);
+    noise(bp, D, D + 5);
+    env(bp.frequency, [[D, 3200], [D + 3.5, 220, 1]]);
+    env(amp.gain, [[D, 0], [D + .2, .22], [D + 4, .001, 1]]);
+  }
+  // ...and the new universe ringing out: a chord that rises and settles.
+  for (const [i, f] of [130.81, 196, 261.63, 329.63, 392, 523.25, 659.25, 783.99, 1046.5].entries()) {
+    const amp = gain(0, room), o = osc('sine', f * .5, amp, D, end);
+    env(o.frequency, [[D, f * .5], [D + 2.5, f, 1]]);
+    o.detune.value = (i % 2 ? 1 : -1) * (2 + i);
+    env(amp.gain, [[D + .2, 0], [D + 1.5 + i * .12, .045], [end - 2, .0005, 1], [end - .05, 0]]);
+    amp.connect(bus);
+  }
+  return bus;
+}
+// The page's own end: the music fades out (and comes back after, if it was
+// on), and the end's sound plays if sound is on.
+function endAudio() {
+  const E = END;
+  if (musicNow && ac) { glide(musicNow.master.gain, 0, Math.max(1.5, E.P.tremor + 2), ac); setTimeout(() => { if (END === E && musicNow) musicNow.hush(); }, (E.P.tremor + 2.2) * 1000); }
+  const a = startAudio();
+  if (!a) return;
+  E.bus = endSound(a, acOut, a.currentTime + .05, E.P);
+  novaBuses.add(E.bus);
+}
+// The sound of the end as a WAV file, for listening without the page:
+// rendered offline, with a few seconds of music fading under the tremor.
+async function endRender(opts = {}) {
+  const P = { ...END_PHASES, ...opts }, secs = P.tremor + P.collapse + P.dot + P.build + P.bang + P.scatter + 4, rate = 44100;
+  const off = new OfflineAudioContext(2, Math.ceil(secs * rate), rate), out = audioOut(off);
+  if (opts.music !== false) {
+    const master = off.createGain(); master.gain.value = MUSIC_LEVEL; master.connect(out);
+    const track = MUSIC_TRACKS[0](off, master); track.bus.gain.value = 1;
+    track.play(P.tremor + 3);
+    master.gain.setValueAtTime(MUSIC_LEVEL, 0); master.gain.linearRampToValueAtTime(0, P.tremor + 2);
+  }
+  endSound(off, out, 0, P);
+  const buf = await off.startRendering(), n = buf.length, view = new DataView(new ArrayBuffer(44 + n * 4));
+  const w = (o, s) => { for (let i = 0; i < s.length; i++) view.setUint8(o + i, s.charCodeAt(i)); };
+  w(0, 'RIFF'); view.setUint32(4, 36 + n * 4, true); w(8, 'WAVEfmt '); view.setUint32(16, 16, true); view.setUint16(20, 1, true); view.setUint16(22, 2, true);
+  view.setUint32(24, rate, true); view.setUint32(28, rate * 4, true); view.setUint16(32, 4, true); view.setUint16(34, 16, true); w(36, 'data'); view.setUint32(40, n * 4, true);
+  const L = buf.getChannelData(0), R = buf.getChannelData(1);
+  for (let i = 0; i < n; i++) { view.setInt16(44 + i * 4, clamp(L[i], -1, 1) * 32767, true); view.setInt16(46 + i * 4, clamp(R[i], -1, 1) * 32767, true); }
+  return new Blob([view], { type: 'audio/wav' });
+}
+
 if (location.hash === '#debug') window.__lf = { cam, found, claims, links, chunk, wordEnd, collect, territoryProgress, remnants: () => [...remnants().set], novas: () => [...novasSeen.values()], territoryName: regionName, world: () => world, supernova, novaSound, audioOut, musicTracks: MUSIC_TRACKS, music: () => musicNow && { state: ac.state, track: musicNow.track().name, nodes: musicNow.track().nodes.size, level: musicNow.master.gain.value, swap: musicNow.swap }, nova: () => nova,
   pass: () => Pass.state, intro: () => Intro.state, surveyStatus, linkStates: () => Object.fromEntries([...links].map(([k, l]) => [k, l.m.state])), outbox: () => [...outbox.values()].map(c => [c.e.w, c.m.state]), definitions: () => Object.fromEntries([...definitions].map(([k, d]) => [k, d.m.state])) };
+if (window.__lf) Object.assign(window.__lf, { endgame, endStop, endSound, endRender, end: () => END && endPhase(performance.now()) });
 
 })();
 </script>

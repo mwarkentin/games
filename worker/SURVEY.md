@@ -849,6 +849,256 @@ Durable Object on the account would then stop answering until midnight UTC,
 War's rooms included. On Paid, a day that busy every day of the month costs
 about 30 cents over the included million requests.
 
+## The end of the universe
+
+The shared world is finite: 1,119,752 hidden words. When the last one is
+charted, the universe ends for everyone at once. Every sector, letter and
+caret on every screen is dragged into the territory where the final word
+was found, the music stops and there's only the black hole; then a single
+glowing point, for a long while; then energy builds until a big bang flings
+everything back out, scatters the players, and seeds a new universe whose
+birthplace is the last word's. The survey never runs out.
+
+This section is the design. A prototype of what players see and hear runs
+in the game from the debug hook (`letterfield.html#debug`, then
+`__lf.endgame({ dot: 20 })`); nothing on the server does any of it yet.
+
+### When it comes
+
+The log's real rate, read on 2026-11-12: 337 hidden words in the first 2.7
+days, by two sets of initials, about 125 a day. At that pace the world
+lasts **about 25 years**. Two players at the daily cap (300 each) would take
+about 5 years; a crowd of 1,000 players charting 60 words a day each, about
+19 days. So the end could come in a viral fortnight or a quarter of a
+century from now, and either way nobody will be watching the code. It has
+to run entirely from the Worker as deployed, with no step by hand, and it
+can be played end to end on a Worker Preview long before (see "Testing it").
+
+### Detection, exactly once
+
+**The final word** is the hidden word whose claim is the latest of all, by
+the time its sector took it (`at`, then `key` to break a tie). Arrival order
+at the Atlas isn't used: it depends on when reports happen to go out, while
+`at` is stored with the claim and gives the same answer however often the
+question is asked. It's always the claim that set off the world's last
+supernova.
+
+- **Each sector knows when it's complete.** A territory lies in one sector,
+  and claims in a sector run one at a time, so the claim that completes a
+  sector's last territory is known exactly, as supernovas already are
+  (`supernova()`). The sector records it in a one-row `complete` table,
+  `[at, key, w, x, y, d, initials]`, in the same step as the claim.
+- **Its reports carry it.** A complete sector adds `last` to every report.
+  The report that would have gone out anyway carries it; if the sector then
+  goes quiet, the log alarm that already follows every claim sends it, so a
+  complete sector can't go silent with the Atlas not knowing.
+- **The Atlas stores it at once.** Charted counts are only written once a
+  minute, but a sector's `last` is written to the Atlas's `sectors` row the
+  moment it first arrives: 625 rows written in a universe's whole life.
+- **The check.** On each report, once all 625 sectors have a stored `last`,
+  the world is complete, whatever the (lazily saved) counts say. The final
+  word is the greatest `last`. The Atlas writes the end (below) to its
+  `universe` table in the same request, before it awaits anything, so the
+  Durable Object's output gate holds every reply until it's stored.
+- **Two claims landing together** in two sectors: both sectors become
+  complete, the second report to arrive finds 625 and ends the world, and
+  the final word is the later `at` of the two, whichever reported first.
+- **A late report** only makes the end later; it can't make it wrong, since
+  nothing ends until all 625 have spoken.
+- **An Atlas restart** reloads `sectors` with their `last`, and `universe`
+  with its state. A report after the end finds the state isn't `open` and
+  changes nothing: the move from `open` to `ending` is made once.
+- **Reports from another universe** (a sector that hasn't heard yet) carry
+  their universe number and are ignored for counting.
+
+### One shared timeline
+
+The end is a record, not a timer: `{u, final: [at, key, w, x, y, d,
+initials], place, start, phases, opens, relic}`. Every phase is a fixed
+offset from `start`, so anyone who holds the record and knows the time can
+say exactly where the end is, a page that joins half way through included.
+
+- **The Atlas picks `start`** 8 seconds after it detects the end, long
+  enough for the fan-out to reach every sector.
+- **The fan-out.** It sends the record to every sector that reported players
+  in the last two minutes (`POST /end`, all at once, a retry each), at most
+  625 Durable Object requests once per universe. Each sector stores it in
+  its own `universe` table and broadcasts `{t: 'end', ..., now}`.
+- **Joining late.** A sector's `hello` carries the record while the end is
+  under way, so a page that joins, or reconnects, during the dot drops into
+  the dot with the right time left.
+- **Sectors that weren't told** (asleep, or outside the shared world, which
+  doesn't report) learn on the first join after waking: they already ask the
+  Atlas who's past the daily cap then, and the answer gains the universe and
+  any end. Outside sectors start asking too, one request per waking.
+- **One clock.** `hello`, `end` and the world map carry the server's `now`.
+  The page keeps `offset = now - Date.now()` (from the fastest of the
+  answers it's had) and runs the end on `Date.now() + offset`, so screens a
+  few hundred milliseconds apart at worst see the collapse together.
+- **The world map** (`GET /v1/survey/world`) carries `universe` and, while
+  it lasts, `end`, so a page that isn't in any sector still hears.
+- **Players who were away** get a recap the next time they come: the page
+  remembers the last universe it saw (`letterfield.universe.v1`), and a
+  newer one plays a 25-second version (no long dot), then the banner, then
+  the new universe.
+
+**The phases.** In production:
+
+| phase | from `start` | lasts | what happens |
+| --- | --- | --- | --- |
+| tremor | -8 s | 8 s | "The last word has been charted": the final word glows, the ground shakes a little, the music fades out |
+| collapse | 0 | 40 s | every sector, letter, tint and caret is dragged in a spiral into the final word's territory; letters stretch and spaghettify; the camera is pulled helplessly along; the black hole's sound takes over |
+| the dot | 40 s | 3 min | a single glowing point that breathes, a faint hum, and the banner: "The universe has ended" |
+| the build | 3 min 40 s | 30 s | light and sound build and build |
+| big bang | 4 min 10 s | 3 s | a flash and a shockwave; everything is flung out to the edges |
+| scatter | 4 min 13 s | 12 s | the new universe fades in around each player, wherever they were thrown |
+| open | 4 min 25 s | | `opens`: claims are taken again |
+
+Three minutes is long enough to feel like "a long while" and for news to
+spread ("go to Letterfield now"), short enough that people stay. The
+phases go in the record, so they're the Atlas's to set: the testing knob
+shortens them, and the game's prototype takes them as options
+(`__lf.endgame({ collapse: 40, dot: 180, build: 30 })`).
+
+**Claims are refused** from the moment the Atlas detects the end until
+`opens`, with `{t: 'error', error: 'universe ending'}` ("The universe is
+ending · kept in your notes"). Only strays are left to find by then.
+
+**On reduced motion** nothing pulls, spins, stretches or shakes: the map
+fades to black, the dot glows without breathing, the build is a slow
+brightening, and the bang a fade through white into the new map. The banner
+and the sound are the same.
+
+### Universes
+
+The map gets a universe number, `u`, from 1. Universe 1 is today's map,
+exactly, so no claim, find or log row changes when this ships.
+
+- **Seeding.** The generator's seed becomes `SEED` for universe 1 and
+  `h3(SEED, MAP_VERSION, u)` after, for the chunks, the deal and the
+  territory names alike. `MAP_VERSION` still means "the themes and the
+  deal", so a new map and a new universe are separate things.
+- **Re-centred, not moved.** A new universe is a new grid on the same
+  coordinates: the shared world is still sectors -12 to 12. The other choice,
+  moving the shared area to wherever the last word was, would make `AREA`,
+  `inArea`, the world map, the log's `world` count and its virtual columns
+  all depend on the universe, and after a few universes the area could
+  wander anywhere. Re-centred, all of that is unchanged.
+- **The birthplace.** Themes stay where they are ((rx + 15 ry) mod 225 is
+  fixed), and every theme sits within 7 territories of the origin. So the
+  new universe is born in the territory nearest the origin with the final
+  word's theme: DRAGON's universe grows from the nearest Ember territory.
+  At the bang the page moves its camera from the old final word to the
+  birthplace, so the explosion's centre doesn't jump, and Home flies there
+  after.
+- **The relic.** The birthplace's middle chunk is dealt the final word
+  first (it's in the deck, being that theme's), so it's a real hidden word
+  in the new grid, charted from the start in its charter's name, with a
+  halo. Circling it says "Charted first by ABC, at the end of Universe 1".
+- **Totals.** A new universe hides a different number of words. The Atlas
+  counts them once when it opens (10,000 territories, about 2 s of CPU) and
+  keeps the number with the universe; tests count it for universes 2 and 3.
+- **Starting over, without a deploy.** Everything that holds claims reads
+  its universe from storage, and the universe follows from the record and
+  the clock: `ending` before `opens`, the next one from then on. So nothing
+  waits on a timer:
+  - a sector that finds the next universe open first sends its log (the old
+    universe's claims must reach D1), then deletes its claims and
+    supernovas, records the new universe and inserts the relic if it's
+    the birthplace's sector. Claims wait the few seconds that takes;
+  - the Atlas deletes its counts and `last`s, writes the new universe, and
+    counts its total;
+  - the page, told by its sector or the world map, sets the generator's
+    universe, clears its chunk cache and redraws.
+- **Two copies, one code.** The universe goes into both generators as
+  `setUniverse(u, relic)`, word for word in both, and
+  `worker/test/survey.test.js` runs the game's copy against the Worker's for
+  universes 1, 2 and 3, with and without a relic.
+
+### History
+
+Nothing is deleted. Universes follow each other in time, so a universe of
+the log is a range of time: every existing query, count table and index
+already works by time and needs no new column.
+
+- **`survey_universes`** (migration 0007): `u`, `opened`, `ended`, `total`,
+  the final word (`w, x, y, d, initials, at`) and its place, how many sets
+  of initials charted, and its top 10 surveyors. One row a universe.
+- **`survey_log_novas`** is keyed by territory, and every territory goes
+  supernova once per universe, so 0007 rebuilds it keyed by `(u, rx, ry)`.
+- **Territory names** depend on the universe, so the Worker names entries
+  (`places`) with the universe their time falls in, and a territory's view
+  takes `&u=`.
+- **The log page** gets an archive of universes (`?universes`) and a page
+  for each end (`?universe=1`): the final word, who charted it, where, when,
+  how long the universe lasted, how many words, surveyors and supernovas,
+  its top surveyors, and the last day's words. Periods that hold an end show
+  it as they show a supernova. The share Worker draws a card for it
+  (`/v/universe/1`).
+- **Field notes** keep a universe's finds in an archive
+  (`letterfield.archive.v1`: the universe, when it ended, its final word,
+  and the finds and supernovas), shown as a fold of their own, "Universe 1",
+  under the epic line. A find there opens the log's end page rather than
+  flying anywhere: its map is gone.
+- **How much.** Each universe adds about 1.12 M log rows (~150 MB with
+  indexes, as now) and 10,000 supernova rows. D1 allows 10 GB a database, so
+  the log holds about 60 universes: at this pace, a millennium.
+- **One-off costs of an end:** the fan-out, at most 625 Durable Object
+  requests; each sector deleting its ~1,800 claims and their index rows,
+  about 2.3 M rows written across the world (about $2.30 past the included
+  50 M), spread over the hours sectors take to wake; the Atlas's count, 2 s
+  of CPU. Pennies, once every few years.
+
+### Single-player
+
+Solo has no end: the map is endless and has no total. It gets the
+experience another way: once a shared universe has ended, its fold in the
+field notes has "Watch the end", which plays the recap where you are.
+
+### Fairness and abuse
+
+Charting the final word is the survey's one unrepeatable honour: the banner
+on every screen names it, the end page and its card lead with it, and it's
+the relic in the next universe, under its initials, for as long as that
+universe lasts.
+
+A script can know every remaining word (the generator is in the page, and
+sectors send their claims), so the end of the race is the one place a bot
+would bother. The defences:
+
+- **The last thousand.** When the Atlas's world total has fewer than 1,000
+  words left, it says so in its answers, and sectors in the shared world
+  take claims only from sockets that have sent a position within 200 cells
+  of the word for 10 seconds, and, once Turnstile has a site key, with a
+  pass. A person circling a word was already looking at it.
+- **The daily cap and the rate limits** still hold, per address.
+- **The honour is shared too.** The end names the last territory's top
+  surveyor and how many people charted the universe, so a script snatching
+  one word can't take the story.
+- **Watching.** The end page lists who charted the last day's words, and a
+  moderator can edit the universe's row like any log row.
+
+### Testing it
+
+A knob that shrinks the world, present only in local dev and Worker
+Previews:
+
+- `SURVEY_TEST_AREA` (in `[previews.vars]` and `.dev.vars`, never in the
+  top-level `[vars]`) makes the shared world sectors -n to n each way, `0`
+  for just sector 0,0 (16 territories, about 1,800 words). The world map
+  already sends `area`, so the game follows it.
+- With it set, `POST /v1/survey/test/fill?leave=3` charts every hidden word
+  in the shared world but three, in its sectors' own storage, signed `TST`,
+  so the end can be played by hand on a phone: circle the last three.
+- `SURVEY_TEST_DOT` shortens the dot, so a run takes a minute.
+- The Worker honours neither unless its own host is a Worker Preview's or
+  localhost, and a test reads `wrangler.toml` to check the production
+  `[vars]` has no `SURVEY_TEST_*`.
+
+On a pull request's Worker Preview, labelled `worker-preview`: fill, open
+the preview on two phones and a laptop, circle the last words, and watch
+all three end together.
+
 ## Not done yet
 
 - **A spending alert.** Workers Paid has no spending cap; `MAX_ONLINE`
