@@ -43,7 +43,7 @@ def test_game_has_required_metadata(filename):
     assert re.search(r"<title>\s*\S", text), "missing <title>"
     assert re.search(r'<meta\s+name="viewport"', text), "missing viewport meta tag"
     assert re.search(r'<meta\s+name="description"\s+content="\s*\S', text), (
-        "missing <meta name=\"description\" content=\"...\">"
+        'missing <meta name="description" content="...">'
     )
 
 
@@ -80,9 +80,7 @@ def test_game_loads_cleanly(page: Page, site_url, errors, filename, screen):
     page.goto(f"{site_url}/{filename.removesuffix('.html')}", wait_until="networkidle")
 
     assert errors == [], "console errors or failed requests"
-    assert page.evaluate("document.documentElement.scrollWidth") <= size["width"], (
-        "page scrolls sideways"
-    )
+    assert page.evaluate("document.documentElement.scrollWidth") <= size["width"], "page scrolls sideways"
     assert page.evaluate(SMALL_INPUTS_JS) == [], "inputs under 16px make iOS zoom"
 
 

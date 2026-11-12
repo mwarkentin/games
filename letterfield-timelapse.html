@@ -1,0 +1,978 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="description" content="Watch Letterfield's shared map being charted, word by word and supernova by supernova, replayed from the survey's log, and save it as a video.">
+<meta name="theme-color" media="(prefers-color-scheme: light)" content="#EBEEE7">
+<meta name="theme-color" media="(prefers-color-scheme: dark)" content="#0F171A">
+<meta name="apple-mobile-web-app-title" content="Timelapse">
+<!-- Part of Letterfield's home-screen app rather than an app of its own (see app_of in scripts/common.py). -->
+<meta name="games:app" content="letterfield">
+<title>Letterfield survey timelapse</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Big+Shoulders+Display:wght@700;800&family=Martian+Mono:wght@400;500&family=Schibsted+Grotesk:wght@400;500;600&display=swap">
+<style>
+/* The survey's history replayed on a map: the canvas fills the screen, the
+   date and counts sit at the top, the controls at the bottom. Letterfield's
+   colours and type, as in the survey log. */
+:root{
+  --paper:#EBEEE7; --panel:#F7F8F4; --ink:#1B2428; --muted:#59656A; --rule:#C6CFC6;
+  --accent:#2A43C2; --on-accent:#FFFFFF; --hover:rgba(27,36,40,.055);
+  --mark-s:58%; --mark-l:38%; --mode:light;
+  --f-display:"Big Shoulders Display","Arial Narrow",Impact,sans-serif;
+  --f-mono:"Martian Mono",ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+  --f-ui:"Schibsted Grotesk",system-ui,-apple-system,"Segoe UI",sans-serif;
+  color-scheme:light;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --paper:#0F171A; --panel:#162024; --ink:#E2E7DE; --muted:#93A19D; --rule:#2B3A3E;
+    --accent:#97A9FF; --on-accent:#0C1330; --hover:rgba(226,231,222,.06);
+    --mark-s:68%; --mark-l:68%; --mode:dark; color-scheme:dark;
+  }
+}
+:root[data-theme="dark"]{
+  --paper:#0F171A; --panel:#162024; --ink:#E2E7DE; --muted:#93A19D; --rule:#2B3A3E;
+  --accent:#97A9FF; --on-accent:#0C1330; --hover:rgba(226,231,222,.06);
+  --mark-s:68%; --mark-l:68%; --mode:dark; color-scheme:dark;
+}
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+html,body{height:100%;margin:0;overflow:hidden}
+body{background:var(--paper);color:var(--ink);font:15px/1.45 var(--f-ui);-webkit-tap-highlight-color:transparent;overscroll-behavior:none}
+a{color:var(--accent)}
+button,input{font:inherit;color:inherit}
+button:focus-visible,a:focus-visible,input:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.eyebrow{font:500 10px/1 var(--f-mono);letter-spacing:.14em;text-transform:uppercase;color:var(--muted)}
+
+#map{position:fixed;inset:0;width:100%;height:100%;display:block;touch-action:none;cursor:pointer}
+
+/* The top: where we are and when, and what's been charted by then. */
+.top{position:fixed;top:0;left:0;right:0;z-index:2;pointer-events:none;
+  padding:calc(env(safe-area-inset-top,0px) + 12px) max(16px, env(safe-area-inset-right,0px)) 18px max(16px, env(safe-area-inset-left,0px));
+  background:linear-gradient(var(--paper) 55%, color-mix(in srgb, var(--paper) 0%, transparent))}
+.top .row{display:flex;justify-content:space-between;align-items:flex-start;gap:10px}
+.top a,.top button{pointer-events:auto}
+.back{font:500 12px/1 var(--f-mono);text-decoration:none;padding:10px 12px;border:1px solid var(--rule);border-radius:999px;color:var(--ink);background:var(--panel);white-space:nowrap}
+.back:hover{background:var(--hover)}
+.when{margin:10px 0 0;font:800 34px/.95 var(--f-display);letter-spacing:.04em;text-transform:uppercase;font-variant-numeric:tabular-nums}
+.when small{display:block;margin-top:5px;font:500 13px/1 var(--f-mono);letter-spacing:.02em;color:var(--muted);text-transform:none}
+.counts{display:flex;gap:16px;margin-top:10px;font:400 11px/1.2 var(--f-mono);color:var(--muted)}
+.counts b{display:block;font:700 22px/1 var(--f-display);letter-spacing:.04em;color:var(--ink);font-variant-numeric:tabular-nums}
+
+/* The bottom: play, scrub, speed, save. */
+.panel{position:fixed;left:0;right:0;bottom:0;z-index:2;
+  padding:12px max(16px, env(safe-area-inset-right,0px)) calc(env(safe-area-inset-bottom,0px) + 10px) max(16px, env(safe-area-inset-left,0px));
+  background:color-mix(in srgb, var(--panel) 94%, transparent);border-top:1px solid var(--rule);-webkit-backdrop-filter:blur(6px);backdrop-filter:blur(6px)}
+.panel .inner{max-width:44rem;margin:0 auto}
+.scrub{display:flex;align-items:center;gap:12px}
+.play{flex:none;width:48px;height:48px;border-radius:50%;border:0;background:var(--ink);color:var(--paper);cursor:pointer;display:grid;place-items:center}
+.play svg{width:20px;height:20px;fill:currentColor}
+.play:disabled{opacity:.4;cursor:default}
+.track{flex:1;min-width:0}
+#scrub{width:100%;margin:0;height:28px;accent-color:var(--accent);cursor:pointer}
+.ends{display:flex;justify-content:space-between;font:400 10px/1 var(--f-mono);color:var(--muted);margin-top:2px}
+.ends .loaded{color:var(--accent)}
+.opts{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:center;gap:8px;margin-top:10px}
+.seg{display:flex;border:1px solid var(--rule);border-radius:999px;padding:3px;background:var(--paper)}
+.seg button{border:0;background:transparent;border-radius:999px;padding:8px 11px;font:500 12px/1 var(--f-mono);cursor:pointer;color:var(--muted);white-space:nowrap}
+.seg button[aria-pressed="true"]{background:var(--ink);color:var(--paper)}
+.pill{display:inline-flex;align-items:center;gap:6px;height:36px;padding:0 13px;border:1px solid var(--rule);border-radius:999px;background:var(--paper);color:var(--ink);font:500 12px/1 var(--f-mono);text-decoration:none;cursor:pointer;white-space:nowrap}
+.pill:hover{background:var(--hover)}
+.pill.main{background:var(--ink);color:var(--paper);border-color:var(--ink)}
+.foot{margin:10px 0 0;font:400 11px/1.4 var(--f-mono);color:var(--muted)}
+.foot a{color:var(--ink)}
+
+/* A territory, tapped. */
+.chip{position:fixed;z-index:3;left:50%;transform:translateX(-50%);width:min(22rem, calc(100% - 32px));
+  display:grid;grid-template-columns:12px minmax(0,1fr) auto;gap:4px 10px;align-items:center;
+  padding:12px 14px;background:var(--panel);border:1px solid var(--rule);border-radius:10px;box-shadow:0 6px 24px rgba(0,0,0,.14)}
+.chip .dot{width:12px;height:12px;border-radius:50%;background:hsl(var(--h,200) var(--mark-s) var(--mark-l))}
+.chip b{font:700 20px/1 var(--f-display);letter-spacing:.06em;text-transform:uppercase;overflow-wrap:anywhere}
+.chip p{grid-column:2 / 4;margin:0;font:400 11px/1.4 var(--f-mono);color:var(--muted)}
+.chip .x{border:0;background:transparent;font-size:18px;line-height:1;cursor:pointer;color:var(--muted);padding:4px}
+.chip a{grid-column:2 / 4;font:500 12px/1 var(--f-mono);margin-top:4px;color:var(--ink)}
+
+.status{position:fixed;z-index:3;left:50%;top:50%;transform:translate(-50%,-50%);width:min(22rem, calc(100% - 32px));text-align:center;color:var(--muted);background:var(--panel);border:1px solid var(--rule);border-radius:10px;padding:18px}
+.status strong{display:block;color:var(--ink);font:700 22px/1.1 var(--f-display);letter-spacing:.05em;text-transform:uppercase;margin-bottom:6px}
+.status button{margin-top:12px}
+
+/* Saving a video: the canvas being recorded, then the video. */
+dialog{border:1px solid var(--rule);border-radius:12px;background:var(--panel);color:var(--ink);padding:16px;width:min(26rem, calc(100% - 32px));max-height:calc(100% - 32px);overflow:auto}
+dialog::backdrop{background:rgba(10,14,16,.55)}
+dialog h2{margin:0 0 4px;font:800 26px/1 var(--f-display);letter-spacing:.05em;text-transform:uppercase}
+dialog p{margin:6px 0 0;font:400 12px/1.5 var(--f-mono);color:var(--muted)}
+.screen{margin-top:12px;aspect-ratio:1;width:100%;border-radius:8px;overflow:hidden;background:var(--paper);border:1px solid var(--rule)}
+.screen canvas,.screen video{display:block;width:100%;height:100%}
+.bar{height:6px;border-radius:3px;background:color-mix(in srgb, var(--accent) 18%, var(--panel));margin-top:10px;overflow:hidden}
+.bar i{display:block;height:100%;width:0;background:var(--accent)}
+.acts{display:flex;flex-wrap:wrap;gap:8px;justify-content:flex-end;margin-top:14px}
+
+@media (min-width:700px){.when{font-size:44px}}
+@media (max-width:380px){.when{font-size:30px}.seg button{padding:8px 9px}}
+</style>
+</head>
+<body>
+<canvas id="map" aria-label="The shared map, charted word by word. Tap a territory to see it in the log."></canvas>
+
+<div class="top" id="top">
+  <div class="row">
+    <div>
+      <div class="eyebrow">Letterfield · survey timelapse</div>
+      <h1 class="when" id="when" aria-live="off">…<small id="whenTime">&nbsp;</small></h1>
+    </div>
+    <a class="back" id="toLog" href="/letterfield-log">← Log</a>
+  </div>
+  <div class="counts">
+    <div><b id="nWords">0</b>words charted</div>
+    <div><b id="nNovas">0</b>supernovas</div>
+    <div><b id="nPlaces">0</b>territories</div>
+  </div>
+</div>
+
+<div class="status" id="status" hidden role="status">
+  <strong id="statusTitle"></strong>
+  <span id="statusText"></span>
+  <div><button type="button" class="pill" id="retry" hidden>Try again</button></div>
+</div>
+
+<div class="chip" id="chip" hidden role="dialog" aria-labelledby="chipName">
+  <i class="dot"></i>
+  <b id="chipName"></b>
+  <button type="button" class="x" id="chipClose" aria-label="Close">✕</button>
+  <p id="chipNote"></p>
+  <a id="chipLink" href="/letterfield-log">See it in the log →</a>
+</div>
+
+<div class="panel" id="panel">
+  <div class="inner">
+    <div class="scrub">
+      <button type="button" class="play" id="play" aria-label="Play" disabled>
+        <svg viewBox="0 0 20 20" id="playIcon" aria-hidden="true"><path d="M5 3l12 7-12 7z"/></svg>
+      </button>
+      <div class="track">
+        <input type="range" id="scrub" min="0" max="1000" step="1" value="0" aria-label="Time" disabled>
+        <div class="ends"><span id="startDay"></span><span id="loadedNote" class="loaded"></span><span id="endDay"></span></div>
+      </div>
+    </div>
+    <div class="opts">
+      <div class="seg" role="group" aria-label="Speed" id="speeds">
+        <button type="button" data-speed="0.5" aria-pressed="false">½×</button>
+        <button type="button" data-speed="1" aria-pressed="true">1×</button>
+        <button type="button" data-speed="2" aria-pressed="false">2×</button>
+        <button type="button" data-speed="4" aria-pressed="false">4×</button>
+      </div>
+      <button type="button" class="pill main" id="save" hidden disabled>Save video</button>
+    </div>
+    <p class="foot">Every word as it was charted, from the survey log. Quiet hours go by fast. Found a bug or have an idea? <a href="https://github.com/mwarkentin/games/issues/new/choose" target="_blank" rel="noopener" data-feedback>Send feedback</a></p>
+  </div>
+</div>
+
+<dialog id="rec" aria-labelledby="recTitle">
+  <h2 id="recTitle">Saving a video</h2>
+  <p id="recText"></p>
+  <div class="screen" id="recScreen"><canvas id="recCanvas" width="1080" height="1080"></canvas><video id="recVideo" controls playsinline muted loop hidden></video></div>
+  <div class="bar"><i id="recBar"></i></div>
+  <div class="acts">
+    <button type="button" class="pill" id="recCancel">Cancel</button>
+    <button type="button" class="pill" id="recShare" hidden>Share</button>
+    <a class="pill main" id="recDownload" hidden>Download</a>
+  </div>
+</dialog>
+
+<script>
+'use strict';
+// The survey's server (worker/src/survey-log.js). ?survey=<url> overrides it
+// for testing, as in letterfield-log.html.
+const SURVEY_URL = 'https://api.games.michaelwarkentin.com';
+// Raised with TIMELAPSE_VERSION in survey-log.js, so browsers drop the
+// settled days they've kept for good.
+const CACHE_VERSION = 1;
+const HOUR = 3600000, DAY = 86400000;
+const RC = 48;                 // cells per territory side
+const DIRS = [[1,0],[1,1],[0,1],[-1,1],[-1,0],[-1,-1],[0,-1],[1,-1]];
+const QUIET = 0.05;            // an hour with no words plays this share of the time of one with words
+const PLAY_S = 40;             // seconds the whole history plays in at 1×
+const GLOW_S = 1.4;            // seconds a newly charted word glows for
+const FLARE_S = 3.4;           // seconds a supernova's flare lasts
+const MIN_SPAN = 3 * RC;       // the camera never shows less than three territories across
+const LINK = 8;                // territories this close (in territories) are one cluster of charting
+const CLUSTER_MIN = [12, 0.05];  // a cluster the camera frames besides its main one: this many words, and this share of all
+const SWITCH = [2, 3];         // the main cluster moves to another only once it has twice the words, and 3 more
+const EASE = 1.4;              // how quickly the camera follows, per second
+const FETCHES = 3;             // days loaded at once
+const VIDEO_PX = 1080;         // a saved video is square, this many pixels a side,
+const VIDEO_S = 24;            // the whole history in this many seconds,
+const VIDEO_HOLD = [0.8, 3.2]; // held this long at the start and at the end (long enough for a last supernova to play out),
+const VIDEO_FPS = 30;          // at this many frames a second
+const K_SPEED = 'letterfield.timelapse.speed';
+
+const $ = s => document.querySelector(s);
+const api = (() => {
+  let url = SURVEY_URL;
+  try { const q = new URLSearchParams(location.search).get('survey'); if (q && /^(https?|wss?):\/\//.test(q)) url = q; } catch (_) {}
+  return url.replace(/\/+$/, '').replace(/^ws/, 'http');
+})();
+const LS = {
+  get(k) { try { return localStorage.getItem(k); } catch (_) { return null; } },
+  set(k, v) { try { localStorage.setItem(k, v); } catch (_) {} },
+};
+const RM = matchMedia('(prefers-reduced-motion: reduce)').matches;
+const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+const fdiv = (a, b) => Math.floor(a / b);
+const mod = (a, n) => ((a % n) + n) % n;
+const dateFmt = new Intl.DateTimeFormat(undefined, { weekday: 'short', month: 'short', day: 'numeric' });
+const dateYearFmt = new Intl.DateTimeFormat(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+const timeFmt = new Intl.DateTimeFormat(undefined, { hour: 'numeric', minute: '2-digit' });
+const shortFmt = new Intl.DateTimeFormat(undefined, { month: 'short', day: 'numeric' });
+
+/* ---------- State machines ---------- */
+// ---- BEGIN STATE MACHINE ----
+// The same in every page that has one (tests/test_state_machines.py checks).
+// An explicit state machine, as "State machines" in AGENTS.md describes: the
+// states something can be in, and the moves it may make from each. go(to)
+// makes a listed move and nothing else. It shows the new state as el's
+// data-<name> attribute (on <html> unless el says otherwise), for CSS, tests
+// and anyone reading the page, then calls onMove(to, from, ...args). Any
+// other move, like a state the table doesn't name, is a bug: it's refused
+// with a console error, which fails the tests, and the player carries on as
+// if it had never been tried. seq counts the moves made, so a timer or a
+// reply that waited can tell whether anything moved in the meantime.
+function machine(name, moves, state, { el = document.documentElement, onMove } = {}) {
+  const known = (s) => s in moves || (console.error(`${name}: no state called ${s}`), false);
+  Object.values(moves).flat().forEach(known);
+  known(state);
+  let seq = 0;
+  if (el) el.dataset[name] = state;
+  return {
+    get state() { return state; },
+    get seq() { return seq; },
+    is: (...states) => states.filter(known).includes(state),
+    can: (to) => known(to) && moves[state].includes(to),
+    go(to, ...args) {
+      if (!moves[state].includes(to)) {
+        console.error(`${name}: no move from ${state} to ${to}`);
+        return false;
+      }
+      const from = state;
+      state = to;
+      seq += 1;
+      if (el) el.dataset[name] = to;
+      if (onMove) onMove(to, from, ...args);
+      return true;
+    },
+  };
+}
+// ---- END STATE MACHINE ----
+
+/* ---------- The log, as the replay reads it ---------- */
+async function getJSON(path) {
+  const ctl = new AbortController(), timer = setTimeout(() => ctl.abort(), 15000);
+  try {
+    const res = await fetch(api + path + (path.includes('?') ? '&' : '?') + 'v=' + CACHE_VERSION, { signal: ctl.signal });
+    if (!res.ok) throw new Error('status ' + res.status);
+    return await res.json();
+  } finally { clearTimeout(timer); }
+}
+
+// The timeline: every hour from the first with words to the last, each taking
+// play time by whether anything was charted in it, so a quiet night goes by
+// in a blink. Play position p runs from 0 to P.
+let idx = null;           // the index: {hours, novas, bounds, themes, layout}
+let H0 = 0, NH = 0, cum = null, wt = null, P = 1, T0 = 0, T1 = 1, hourWords = null;
+function timeline(index) {
+  const hours = index.hours;
+  H0 = hours[0][0]; NH = hours.at(-1)[0] - H0 + 1;
+  wt = new Float64Array(NH).fill(QUIET); hourWords = new Float64Array(NH);
+  for (const [h, n] of hours) { wt[h - H0] = 1; hourWords[h - H0] = n; }
+  kfEvery = Math.max(1, Math.ceil(hours.reduce((a, h) => a + h[1], 0) / 1500));
+  cum = new Float64Array(NH + 1);
+  for (let i = 0; i < NH; i++) cum[i + 1] = cum[i] + wt[i];
+  P = cum[NH]; T0 = H0 * HOUR; T1 = (H0 + NH) * HOUR;
+}
+function timeAt(p) {
+  p = clamp(p, 0, P);
+  let lo = 0, hi = NH - 1;
+  while (lo < hi) { const m = (lo + hi + 1) >> 1; if (cum[m] <= p) lo = m; else hi = m - 1; }
+  return (H0 + lo + clamp((p - cum[lo]) / wt[lo], 0, 1)) * HOUR;
+}
+function playAt(t) {
+  const i = clamp(Math.floor(t / HOUR) - H0, 0, NH - 1);
+  return cum[i] + wt[i] * clamp(t / HOUR - H0 - i, 0, 1);
+}
+
+// Theme colours, from the index's hues: any territory's theme is
+// (rx + a ry) mod n, so the page needs none of the map's words.
+let TC = [], C = {};
+const themeOf = (rx, ry) => mod(rx + idx.layout[0] * ry, idx.layout[1]);
+function hslRGB(h, s, l) {
+  const k = n => (n + h / 30) % 12, a = s * Math.min(l, 1 - l);
+  const f = n => l - a * Math.max(-1, Math.min(k(n) - 3, Math.min(9 - k(n), 1)));
+  return [Math.round(f(0) * 255), Math.round(f(8) * 255), Math.round(f(4) * 255)];
+}
+function hexRGB(hex) {
+  const m = /^#?([0-9a-f]{6})$/i.exec(hex.trim());
+  const n = m ? parseInt(m[1], 16) : 0xEBEEE7;
+  return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+}
+function readColors() {
+  const st = getComputedStyle(document.documentElement), g = n => st.getPropertyValue(n).trim();
+  C = { paper: g('--paper'), ink: g('--ink'), muted: g('--muted'), panel: g('--panel'), accent: g('--accent'), dark: g('--mode') === 'dark',
+    ms: g('--mark-s') || '58%', ml: g('--mark-l') || '38%' };
+  C.paperRGB = hexRGB(C.paper);
+  if (!idx) return;
+  // As the game's far view and the notes' world map: a faint wash of each
+  // theme's colour, deeper where words are charted, and a remnant's deep
+  // shade once its territory has gone supernova.
+  const base = C.dark ? .06 : .07, deepL = C.dark ? .02 : .14, ra = C.dark ? .62 : .3;
+  const mix = (c, a) => C.paperRGB.map((p, i) => Math.round(p * (1 - a) + c[i] * a));
+  TC = idx.themes.map(([, hue]) => {
+    const tint = hslRGB(hue, .45, .5);
+    return {
+      hue, stroke: `hsl(${hue}, ${C.ms}, ${C.ml})`,
+      // Uncharted, faint; charted, from a clear wash to a strong one by how much of it is.
+      tint: [0, 1, 2, 3, 4, 5, 6, 7, 8].map(k => mix(tint, k ? (C.dark ? .2 : .22) + (C.dark ? .3 : .28) * k / 8 : base)),
+      rem: mix(hslRGB(hue, .5, deepL), ra),
+      glow: a => `hsla(${hue}, 95%, ${C.dark ? 70 : 60}%, ${a})`,
+      ring: a => `hsla(${hue}, 75%, ${C.dark ? 62 : 42}%, ${a})`,
+      star: `hsla(${hue}, ${C.dark ? 80 : 55}%, ${C.dark ? 86 : 34}%, 1)`,
+    };
+  });
+}
+
+// Days of the log, loaded oldest first a few at a time, and taken in order:
+// words up to `loadedUntil` are all here, so playback can start long before
+// the last day arrives.
+const W = [];             // [at, x, y, d, len, th, s], oldest first
+const NV = [];            // supernovas: [at, rx, ry, th], oldest first
+const dayStart = [];      // index into W where each loaded day starts, with its day
+let days = [], nextDay = 0, taken = 0, loadedUntil = 0, failures = 0;
+const got = new Map();    // day -> its words and supernovas, until it's taken in order
+
+// Where the charting is, for the camera. Territories with words join into
+// clusters, any two within LINK territories of each other, kept in a
+// union-find as words arrive (they only ever join). The camera frames the
+// biggest cluster and any other with real charting in it, so a few words
+// someone charted far out in the endless map don't shrink everything else to
+// a dot. What it frames is kept as a keyframe every few words.
+const terr = new Map(), buckets = new Map(), clusters = new Set();
+const kf = { n: [], x0: [], y0: [], x1: [], y1: [] };
+let kfEvery = 1;
+function root(a) { while (a.up !== a) { a.up = a.up.up; a = a.up; } return a; }
+function join(a, b) {
+  a = root(a); b = root(b);
+  if (a === b) return a;
+  if (a.n < b.n) [a, b] = [b, a];
+  b.up = a; clusters.delete(b);
+  a.n += b.n; a.last = Math.max(a.last, b.last);
+  a.x0 = Math.min(a.x0, b.x0); a.y0 = Math.min(a.y0, b.y0); a.x1 = Math.max(a.x1, b.x1); a.y1 = Math.max(a.y1, b.y1);
+  return a;
+}
+function cluster(x, y, at) {
+  const rx = fdiv(x, RC), ry = fdiv(y, RC), k = rx + ',' + ry;
+  let t = terr.get(k);
+  if (!t) {
+    t = { rx, ry, n: 0, last: at, x0: rx, y0: ry, x1: rx, y1: ry };
+    t.up = t; terr.set(k, t); clusters.add(t);
+    const bx = fdiv(rx, LINK), by = fdiv(ry, LINK);
+    for (let i = -1; i <= 1; i++) for (let j = -1; j <= 1; j++) {
+      for (const m of buckets.get((bx + i) + ',' + (by + j)) || []) {
+        if (Math.max(Math.abs(m.rx - rx), Math.abs(m.ry - ry)) <= LINK) join(t, m);
+      }
+    }
+    const bk = bx + ',' + by;
+    if (!buckets.has(bk)) buckets.set(bk, []);
+    buckets.get(bk).push(t);
+  }
+  const r = root(t);
+  r.n++; r.last = at;
+}
+// The main cluster is the one charting started in until another clearly
+// outgrows it, so a couple of words far off early on (2 to 1 is "most")
+// don't send the camera away and back.
+let framed = null;
+function keyframe() {
+  const thr = Math.max(CLUSTER_MIN[0], CLUSTER_MIN[1] * W.length);
+  let best = framed && root(framed), top = null;
+  for (const c of clusters) if (!top || c.n > top.n) top = c;
+  if (!best || (top.n >= SWITCH[0] * best.n && top.n - best.n >= SWITCH[1])) best = top;
+  framed = best;
+  let x0 = best.x0, y0 = best.y0, x1 = best.x1, y1 = best.y1;
+  for (const c of clusters) {
+    if (c === best || c.n < thr) continue;
+    x0 = Math.min(x0, c.x0); y0 = Math.min(y0, c.y0); x1 = Math.max(x1, c.x1); y1 = Math.max(y1, c.y1);
+  }
+  kf.n.push(W.length); kf.x0.push(x0); kf.y0.push(y0); kf.x1.push(x1); kf.y1.push(y1);
+}
+async function loadDay(day) {
+  const words = [], novas = [];
+  let after = null;
+  for (let pages = 0; pages < 400; pages++) {
+    const page = await getJSON(`/v1/survey/log/timelapse/${day}${after ? '?after=' + encodeURIComponent(after) : ''}`);
+    for (const w of page.words) words.push(w);
+    for (const n of page.novas) novas.push(n);
+    if (!page.next) break;
+    after = page.next;
+  }
+  return { words, novas };
+}
+function pump() {
+  while (nextDay < days.length && nextDay - taken < FETCHES) {
+    const day = days[nextDay++];
+    const attempt = (tries) => loadDay(day).then(r => { got.set(day, r); failures = 0; take(); }, () => {
+      failures++;
+      setTimeout(() => attempt(tries + 1), Math.min(30000, 1000 * 2 ** tries));
+      if (TL.is('loading') && failures > 2) TL.go('failed');
+    });
+    attempt(0);
+  }
+}
+function take() {
+  while (taken < days.length && got.has(days[taken])) {
+    const day = days[taken], { words, novas } = got.get(day), base = day * DAY;
+    got.delete(day);
+    dayStart.push([W.length, day]);
+    words.forEach((w, i) => {
+      const [t, x, y, d, len] = w;
+      W.push([base + t, x, y, d, len, w[5], w[6]]);
+      cluster(x, y, base + t);
+      if (W.length === 1 || W.length % kfEvery === 0 || i === words.length - 1) keyframe();
+    });
+    for (const n of novas) NV.push([base + n[0], n[1], n[2], n[3]]);
+    taken++;
+    loadedUntil = taken < days.length ? days[taken] * DAY : Infinity;
+  }
+  if (taken && TL.is('loading', 'failed')) startPlayback();
+  if (TL.is('waiting') && timeAt(pos) < loadedUntil) TL.go('playing');
+  if (taken === days.length) everythingLoaded();
+  showLoaded();
+  pump();
+  dirty = true;
+}
+let allLoaded = null, loadedYes = null;
+allLoaded = new Promise(r => { loadedYes = r; });
+function everythingLoaded() { loadedYes(); }
+// The first index into W (or NV) after time t.
+function upto(list, t) {
+  let lo = 0, hi = list.length;
+  while (lo < hi) { const m = (lo + hi) >> 1; if (list[m][0] <= t) lo = m + 1; else hi = m; }
+  return lo;
+}
+
+/* ---------- Playback ---------- */
+let pos = 0;              // play position, 0..P
+let speed = Number(LS.get(K_SPEED)) || 1;
+if (![0.5, 1, 2, 4].includes(speed)) speed = 1;
+const rate = (s = speed) => P / (PLAY_S / s);  // play units a second
+const TL = machine('tl', {
+  loading: ['paused', 'playing', 'empty', 'failed'],
+  failed: ['loading', 'paused', 'playing'],
+  empty: [],
+  paused: ['playing'],
+  playing: ['paused', 'waiting'],
+  waiting: ['playing', 'paused'],
+}, 'loading', { onMove: showTL });
+function showTL(to) {
+  const playing = to === 'playing' || to === 'waiting';
+  $('#play').setAttribute('aria-label', playing ? 'Pause' : 'Play');
+  $('#playIcon').innerHTML = playing ? '<path d="M5 3h4v14H5zM11 3h4v14h-4z"/>' : '<path d="M5 3l12 7-12 7z"/>';
+  const ready = !['loading', 'failed', 'empty'].includes(to);
+  $('#play').disabled = !ready;
+  $('#scrub').disabled = !ready;
+  $('#save').disabled = !ready;
+  const st = $('#status');
+  st.hidden = ready;
+  $('#retry').hidden = to !== 'failed';
+  if (to === 'loading') { $('#statusTitle').textContent = 'Loading the log'; $('#statusText').textContent = 'Every word charted so far, oldest first.'; }
+  if (to === 'failed') { $('#statusTitle').textContent = 'The log can’t be reached'; $('#statusText').textContent = 'Check your connection, or try again in a minute.'; }
+  if (to === 'empty') { $('#statusTitle').textContent = 'Nothing charted yet'; $('#statusText').innerHTML = 'Be the first: <a href="/letterfield">open the map</a>.'; }
+  if (to === 'waiting') $('#loadedNote').textContent = 'Loading…';
+  else showLoaded();
+  last = 0;
+  dirty = true;
+}
+function startPlayback() {
+  // Under reduced motion, it opens paused on the whole map so far; otherwise it plays from the start.
+  if (RM) { pos = P; snap = true; TL.go('paused'); }
+  else { pos = 0; snap = true; TL.go('playing'); }
+}
+function togglePlay() {
+  if (TL.is('playing', 'waiting')) TL.go('paused');
+  else if (TL.is('paused')) {
+    if (pos >= P) { pos = 0; snap = true; }
+    ended = null;
+    TL.go('playing');
+  }
+}
+function seek(p, snapNow = true) {
+  ended = null;
+  pos = clamp(p, 0, P);
+  if (snapNow) snap = true;
+  if (TL.is('waiting') && timeAt(pos) < loadedUntil) TL.go('playing');
+  dirty = true;
+}
+function showLoaded() {
+  if (!days.length || TL.is('waiting')) return;
+  $('#loadedNote').textContent = taken < days.length ? `${Math.round(100 * taken / days.length)}% loaded` : '';
+}
+
+/* ---------- Drawing ---------- */
+// One function draws a frame anywhere: the screen, or the square canvas a
+// video is recorded from. `view` says where (a rect clear of the controls),
+// `cam` keeps that canvas's camera, and `p` is the play position.
+const canvas = $('#map'), g0 = canvas.getContext('2d');
+const tcan = document.createElement('canvas'), tg = tcan.getContext('2d');
+let dirty = true, snap = true, last = 0;
+const mainCam = { x: 0, y: 0, s: 1, ok: false };
+const counts = new Map();  // charted hidden words per territory, up to `counted` words
+let counted = 0;
+function countTo(n) {
+  while (counted < n) { const w = W[counted++]; if (!w[6]) { const k = fdiv(w[1], RC) + ',' + fdiv(w[2], RC); counts.set(k, (counts.get(k) || 0) + 1); } }
+  while (counted > n) { const w = W[--counted]; if (!w[6]) { const k = fdiv(w[1], RC) + ',' + fdiv(w[2], RC), c = counts.get(k) - 1; if (c) counts.set(k, c); else counts.delete(k); } }
+}
+// What the camera should show after the first n words: the territories
+// where the charting is by then (see keyframe), a little more around them,
+// and never less than a few territories.
+function target(n, view) {
+  let x0, y0, x1, y1;
+  let lo = 0, hi = kf.n.length - 1;
+  while (lo < hi) { const m = (lo + hi + 1) >> 1; if (kf.n[m] <= n) lo = m; else hi = m - 1; }
+  if (kf.n.length) { x0 = kf.x0[lo] * RC; y0 = kf.y0[lo] * RC; x1 = (kf.x1[lo] + 1) * RC; y1 = (kf.y1[lo] + 1) * RC; }
+  else { x0 = 0; y0 = 0; x1 = RC; y1 = RC; }
+  const w = Math.max(MIN_SPAN, (x1 - x0) * 1.15), h = Math.max(MIN_SPAN, (y1 - y0) * 1.15);
+  return { x: (x0 + x1) / 2, y: (y0 + y1) / 2, s: Math.min(view.w / w, view.h / h) };
+}
+function moveCam(cam, to, dt, jump, view) {
+  // Somewhere many screens away is a cut, not a pan across nothing.
+  const far = cam.ok && Math.hypot(to.x - cam.x, to.y - cam.y) > 3 * view.w / Math.min(cam.s, to.s);
+  if (jump || far || !cam.ok || RM) { cam.x = to.x; cam.y = to.y; cam.s = to.s; cam.ok = true; return; }
+  const k = 1 - Math.exp(-dt * EASE);
+  cam.x += (to.x - cam.x) * k; cam.y += (to.y - cam.y) * k;
+  cam.s = Math.exp(Math.log(cam.s) + (Math.log(to.s) - Math.log(cam.s)) * k);
+}
+function h3(a, b) {
+  let h = Math.imul(a | 0, 0x27d4eb2d) ^ Math.imul(b | 0, 0x165667b1) ^ 0x3c6ef372;
+  h ^= h >>> 15; h = Math.imul(h, 0x85ebca6b); h ^= h >>> 13; h = Math.imul(h, 0xc2b2ae35); h ^= h >>> 16; return h >>> 0;
+}
+function rng(seed) {
+  let a = seed | 0;
+  return () => { a = (a + 0x6D2B79F5) | 0; let t = Math.imul(a ^ (a >>> 15), 1 | a); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
+}
+// Each day's words as one path per theme, made once, in cells.
+const dayPaths = new Map();
+function pathsOf(i) {
+  if (dayPaths.has(i)) return dayPaths.get(i);
+  const from = dayStart[i][0], to = i + 1 < dayStart.length ? dayStart[i + 1][0] : W.length;
+  // A day is taken whole, so its paths never change.
+  const paths = wordPaths(from, to);
+  dayPaths.set(i, paths);
+  return paths;
+}
+function wordPaths(from, to) {
+  const paths = new Map();
+  for (let j = from; j < to; j++) {
+    const [, x, y, d, len, th] = W[j];
+    let p = paths.get(th);
+    if (!p) paths.set(th, p = new Path2D());
+    p.moveTo(x + .5, y + .5); p.lineTo(x + .5 + DIRS[d][0] * (len - 1), y + .5 + DIRS[d][1] * (len - 1));
+  }
+  return paths;
+}
+function draw(g, view, cam, p, opts) {
+  const t = timeAt(p), n = upto(W, t), nNova = upto(NV, t);
+  countTo(n);
+  moveCam(cam, target(n, view), opts.dt, opts.jump, view);
+  const { width: CW, height: CH } = g.canvas, s = cam.s;
+  const ox = view.x + view.w / 2 - cam.x * s, oy = view.y + view.h / 2 - cam.y * s;
+  g.setTransform(1, 0, 0, 1, 0, 0);
+  g.globalAlpha = 1; g.globalCompositeOperation = 'source-over';
+  g.fillStyle = C.paper; g.fillRect(0, 0, CW, CH);
+  if (!idx || !TC.length) return { t, n, nNova };
+  // Territories: one pixel each on a small canvas, scaled up.
+  const rx0 = Math.floor(-ox / s / RC), ry0 = Math.floor(-oy / s / RC), rx1 = Math.floor((CW - ox) / s / RC), ry1 = Math.floor((CH - oy) / s / RC);
+  const tw = rx1 - rx0 + 1, th = ry1 - ry0 + 1, novaSet = new Set();
+  for (let i = 0; i < nNova; i++) novaSet.add(NV[i][1] + ',' + NV[i][2]);
+  if (tw * th <= 250000) {
+    if (tcan.width !== tw || tcan.height !== th) { tcan.width = tw; tcan.height = th; }
+    const img = tg.createImageData(tw, th), data = img.data;
+    for (let j = 0; j < th; j++) for (let i = 0; i < tw; i++) {
+      const rx = rx0 + i, ry = ry0 + j, k = rx + ',' + ry, T = TC[themeOf(rx, ry)];
+      const c = novaSet.has(k) ? T.rem : T.tint[Math.min(8, Math.ceil(8 * (counts.get(k) || 0) / 112))];
+      const o = (j * tw + i) * 4; data[o] = c[0]; data[o + 1] = c[1]; data[o + 2] = c[2]; data[o + 3] = 255;
+    }
+    tg.putImageData(img, 0, 0);
+    g.imageSmoothingEnabled = false;
+    g.drawImage(tcan, ox + rx0 * RC * s, oy + ry0 * RC * s, tw * RC * s, th * RC * s);
+    g.imageSmoothingEnabled = true;
+  }
+  const rpx = RC * s;
+  // Remnants: a lit core, and once they're big enough, a faint shell and a few stars.
+  for (let i = 0; i < nNova; i++) {
+    const [, rx, ry, q] = NV[i], R = TC[q], x0 = ox + rx * rpx, y0 = oy + ry * rpx, cx = x0 + rpx / 2, cy = y0 + rpx / 2;
+    if (cx < -rpx || cy < -rpx || cx > CW + rpx || cy > CH + rpx) continue;
+    const rad = Math.max(3, rpx * .35), gl = g.createRadialGradient(cx, cy, 0, cx, cy, rad);
+    gl.addColorStop(0, R.glow(.8)); gl.addColorStop(.4, R.glow(.35)); gl.addColorStop(1, R.glow(0));
+    g.fillStyle = gl; g.beginPath(); g.arc(cx, cy, rad, 0, Math.PI * 2); g.fill();
+    if (rpx >= 28) {
+      const sh = g.createRadialGradient(cx, cy, rpx * .26, cx, cy, rpx * .5), a = C.dark ? .05 : .11;
+      sh.addColorStop(0, R.ring(0)); sh.addColorStop(.6, R.ring(a)); sh.addColorStop(.75, R.ring(a * .45)); sh.addColorStop(1, R.ring(0));
+      g.fillStyle = sh; g.beginPath(); g.arc(cx, cy, rpx * .5, 0, Math.PI * 2); g.fill();
+      const r = rng(h3(rx, ry)), dot = Math.max(.8, s * .045);
+      g.fillStyle = R.star;
+      for (let k = 0; k < 20; k++) {
+        const sx = x0 + r() * rpx, sy = y0 + r() * rpx, big = r() < .2;
+        g.globalAlpha = (C.dark ? .35 : .28) * (.5 + r() * .5) * (big ? 1.4 : 1);
+        g.beginPath(); g.arc(sx, sy, dot * (big ? 1.6 : 1), 0, Math.PI * 2); g.fill();
+      }
+      g.globalAlpha = 1;
+    }
+  }
+  // Words: a stroke in its theme's colour across the cells it covers.
+  if (s > .12 && n) {
+    g.setTransform(s, 0, 0, s, ox, oy);
+    g.lineCap = 'round'; g.lineWidth = Math.max(.62, 1.1 / s); g.globalAlpha = C.dark ? .9 : .85;
+    let i = 0;
+    for (; i < dayStart.length && (i + 1 < dayStart.length ? dayStart[i + 1][0] : W.length) <= n; i++) {
+      for (const [q, path] of pathsOf(i)) { g.strokeStyle = TC[q].stroke; g.stroke(path); }
+    }
+    if (i < dayStart.length && dayStart[i][0] < n) for (const [q, path] of wordPaths(dayStart[i][0], n)) { g.strokeStyle = TC[q].stroke; g.stroke(path); }
+    g.setTransform(1, 0, 0, 1, 0, 0); g.globalAlpha = 1;
+  }
+  // Glows and flares run on their own clock, `fx`, which goes on past the end
+  // so a supernova among the last words plays out rather than freezing.
+  const r = opts.rate, live = !RM && r > 0, fx = opts.fx ?? p;
+  // Words just charted glow, and fade.
+  if (live) {
+    const from = fx - GLOW_S * r > P ? n : upto(W, timeAt(fx - GLOW_S * r));
+    g.globalCompositeOperation = C.dark ? 'lighter' : 'source-over';
+    for (let j = Math.max(from, n - 500); j < n; j++) {
+      const [at, x, y, d, len, q] = W[j], age = (fx - playAt(at)) / r / GLOW_S;
+      if (age < 0 || age >= 1) continue;
+      const a = 1 - age, mx = ox + (x + .5 + DIRS[d][0] * (len - 1) / 2) * s, my = oy + (y + .5 + DIRS[d][1] * (len - 1) / 2) * s;
+      const rad = Math.max(10, (len * .6 + 2) * s), gl = g.createRadialGradient(mx, my, 0, mx, my, rad);
+      gl.addColorStop(0, TC[q].glow(.55 * a)); gl.addColorStop(1, TC[q].glow(0));
+      g.fillStyle = gl; g.beginPath(); g.arc(mx, my, rad, 0, Math.PI * 2); g.fill();
+    }
+    g.globalCompositeOperation = 'source-over';
+  }
+  // Supernovas going off: a flash, and a shockwave rolling out.
+  if (live) {
+    for (let i = fx - FLARE_S * r > P ? nNova : upto(NV, timeAt(fx - FLARE_S * r)); i < nNova; i++) {
+      const [at, rx, ry, q] = NV[i], age = (fx - playAt(at)) / r;
+      if (age < 0 || age >= FLARE_S) continue;
+      const k = age / FLARE_S, cx = ox + (rx + .5) * rpx, cy = oy + (ry + .5) * rpx, R = TC[q];
+      const unit = Math.max(rpx, Math.min(view.w, view.h) * .12);
+      g.globalCompositeOperation = C.dark ? 'lighter' : 'source-over';
+      const flash = Math.max(0, 1 - age / 1.2), fr = unit * (.6 + 1.4 * Math.min(1, age / .5));
+      const fg = g.createRadialGradient(cx, cy, 0, cx, cy, fr);
+      fg.addColorStop(0, `rgba(255,255,255,${.9 * flash})`); fg.addColorStop(.25, R.glow(.8 * flash)); fg.addColorStop(1, R.glow(0));
+      g.fillStyle = fg; g.beginPath(); g.arc(cx, cy, fr, 0, Math.PI * 2); g.fill();
+      g.globalCompositeOperation = 'source-over';
+      const wave = unit * (.5 + 3.2 * (1 - (1 - k) ** 2));
+      g.strokeStyle = R.ring(.75 * (1 - k)); g.lineWidth = Math.max(2, unit * .12 * (1 - k));
+      g.beginPath(); g.arc(cx, cy, wave, 0, Math.PI * 2); g.stroke();
+    }
+  }
+  return { t, n, nNova };
+}
+
+// The screen's canvas, sized to the device's pixels, and the part of it the
+// controls don't cover.
+let view = { x: 0, y: 0, w: 1, h: 1 }, dpr = 1;
+function resize() {
+  dpr = Math.min(window.devicePixelRatio || 1, 2);
+  const w = Math.round(innerWidth * dpr), h = Math.round(innerHeight * dpr);
+  if (canvas.width !== w || canvas.height !== h) { canvas.width = w; canvas.height = h; }
+  const top = $('#top').getBoundingClientRect(), panel = $('#panel').getBoundingClientRect();
+  const y0 = (top.bottom - 10) * dpr, y1 = panel.top * dpr, pad = 10 * dpr;
+  view = { x: pad, y: y0, w: w - 2 * pad, h: Math.max(40, y1 - y0 - pad) };
+  snap = true; dirty = true;
+}
+
+/* ---------- The screen ---------- */
+let shown = { n: -1, nNova: -1, t: -1, places: -1 };
+function frame(now) {
+  requestAnimationFrame(frame);
+  const dt = last ? Math.min(.1, (now - last) / 1000) : 0;
+  last = now;
+  if (TL.is('playing')) {
+    pos = Math.min(P, pos + dt * rate());
+    if (timeAt(pos) >= loadedUntil) TL.go('waiting');
+    else if (pos >= P) { ended = { at: now, rate: rate() }; TL.go('paused'); }
+    dirty = true;
+  }
+  // Once nothing moves, the camera gets a moment to settle, then drawing stops until something changes.
+  // Played to the end: the last glows and flares carry on for a moment.
+  let fxRate = TL.is('playing') ? rate() : 0, fx = pos;
+  if (ended && TL.is('paused') && pos >= P) {
+    const after = (now - ended.at) / 1000;
+    if (after < FLARE_S) { fxRate = ended.rate; fx = P + after * ended.rate; dirty = true; }
+    else { ended = null; dirty = true; }
+  }
+  if (dirty) settle = 0;
+  else if (++settle > 90) return;
+  dirty = false;
+  if (!idx) return;
+  const jump = snap; snap = false;
+  const r = draw(g0, view, mainCam, pos, { dt, jump, rate: fxRate, fx });
+  showNumbers(r);
+}
+let settle = 0, ended = null;  // when and how fast playback reached the end, while its effects play out
+function showNumbers({ t, n, nNova }) {
+  const minute = Math.floor(t / 60000);
+  if (minute !== shown.t) {
+    shown.t = minute;
+    const d = new Date(t), thisYear = d.getFullYear() === new Date().getFullYear();
+    $('#when').firstChild.textContent = (thisYear ? dateFmt : dateYearFmt).format(d);
+    $('#whenTime').textContent = timeFmt.format(d);
+  }
+  // Words beyond what's loaded are counted from the index's hours.
+  let words = n;
+  if (t >= loadedUntil) {
+    words = W.length;
+    for (let i = Math.max(0, Math.floor(loadedUntil / HOUR) - H0); i < NH && (H0 + i + 1) * HOUR <= t; i++) words += hourWords[i];
+  }
+  if (words !== shown.n) { shown.n = words; $('#nWords').textContent = words.toLocaleString(); }
+  if (nNova !== shown.nNova) { shown.nNova = nNova; $('#nNovas').textContent = nNova.toLocaleString(); }
+  if (counts.size !== shown.places) { shown.places = counts.size; $('#nPlaces').textContent = counts.size.toLocaleString(); }
+  if (!scrubbing) $('#scrub').value = String(Math.round(1000 * pos / P));
+  $('#scrub').setAttribute('aria-valuetext', `${dateYearFmt.format(t)}, ${timeFmt.format(t)}`);
+}
+
+/* ---------- Controls ---------- */
+let scrubbing = false;
+$('#play').addEventListener('click', togglePlay);
+$('#scrub').addEventListener('input', e => { scrubbing = true; seek(P * Number(e.target.value) / 1000); });
+$('#scrub').addEventListener('change', () => { scrubbing = false; });
+function showSpeed() { for (const b of document.querySelectorAll('#speeds button')) b.setAttribute('aria-pressed', String(Number(b.dataset.speed) === speed)); }
+$('#speeds').addEventListener('click', e => {
+  const b = e.target.closest('button[data-speed]');
+  if (!b) return;
+  speed = Number(b.dataset.speed); LS.set(K_SPEED, String(speed)); showSpeed();
+});
+showSpeed();
+$('#retry').addEventListener('click', () => { if (TL.is('failed')) { TL.go('loading'); if (!idx) start(); } });
+addEventListener('keydown', e => {
+  if (e.metaKey || e.ctrlKey || e.altKey || REC.is('preparing', 'recording', 'done')) return;
+  if (e.key === 'Escape') { closeChip(); return; }
+  const inField = e.target.closest && e.target.closest('input, button, a, dialog');
+  if (TL.is('loading', 'failed', 'empty')) return;
+  if (e.key === ' ' && !inField) { e.preventDefault(); togglePlay(); }
+  else if (!inField && (e.key === 'ArrowRight' || e.key === 'ArrowLeft')) { e.preventDefault(); seek(pos + (e.key === 'ArrowRight' ? 1 : -1) * P / 50); }
+  else if (!inField && e.key === 'Home') seek(0);
+  else if (!inField && e.key === 'End') seek(P);
+});
+// The timelapse runs on a clock, so it stops when the tab is hidden.
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden && TL.is('playing', 'waiting')) TL.go('paused');
+  if (REC.is('recording')) { if (document.hidden) recPause(); else recResume(); }
+});
+addEventListener('resize', resize);
+matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => { readColors(); dirty = true; });
+
+// A tap on a territory names it, with a way to its page in the log.
+let down = null, chipAsk = 0;
+canvas.addEventListener('pointerdown', e => { down = { x: e.clientX, y: e.clientY }; });
+canvas.addEventListener('pointerup', e => {
+  if (!down || Math.hypot(e.clientX - down.x, e.clientY - down.y) > 8 || !idx) { down = null; return; }
+  down = null;
+  const s = mainCam.s, ox = view.x + view.w / 2 - mainCam.x * s, oy = view.y + view.h / 2 - mainCam.y * s;
+  const cx = (e.clientX * dpr - ox) / s, cy = (e.clientY * dpr - oy) / s, rx = fdiv(cx, RC), ry = fdiv(cy, RC), k = rx + ',' + ry;
+  const nova = NV.slice(0, upto(NV, timeAt(pos))).find(q => q[1] === rx && q[2] === ry);
+  if (!counts.get(k) && !nova) { closeChip(); return; }
+  openChip(rx, ry, counts.get(k) || 0, !!nova);
+});
+function openChip(rx, ry, n, nova) {
+  const chip = $('#chip'), ask = ++chipAsk;
+  chip.style.setProperty('--h', TC[themeOf(rx, ry)].hue);
+  chip.style.top = `${Math.round(view.y / dpr + 8)}px`;
+  $('#chipName').textContent = idx.themes[themeOf(rx, ry)][0];
+  $('#chipNote').textContent = `${n.toLocaleString()} hidden word${n === 1 ? '' : 's'} charted by then${nova ? ' · gone supernova' : ''}`;
+  const q = new URLSearchParams({ territory: `${rx},${ry}` });
+  const survey = new URLSearchParams(location.search).get('survey');
+  if (survey) q.set('survey', survey);
+  $('#chipLink').href = `/letterfield-log?${q.toString().replace('%2C', ',')}`;
+  chip.hidden = false;
+  getJSON(`/v1/survey/log/territory/${rx}/${ry}`).then(t => {
+    if (ask !== chipAsk || chip.hidden) return;
+    $('#chipName').textContent = t.name;
+    $('#chipNote').textContent += ` · ${t.charted.toLocaleString()} of ${t.total.toLocaleString()} now`;
+  }, () => {});
+}
+function closeChip() { chipAsk++; $('#chip').hidden = true; }
+$('#chipClose').addEventListener('click', closeChip);
+{
+  const survey = new URLSearchParams(location.search).get('survey');
+  if (survey) $('#toLog').href = `/letterfield-log?survey=${encodeURIComponent(survey)}`;
+}
+
+/* ---------- Saving a video ---------- */
+// The whole history, recorded in the browser from a square canvas of its
+// own at a fixed size and speed, so anyone can make a current one in half a
+// minute. Hidden where the browser can't record a canvas.
+const recCanvas = $('#recCanvas'), recG = recCanvas.getContext('2d');
+const canRecord = typeof MediaRecorder === 'function' && typeof recCanvas.captureStream === 'function';
+const TYPES = ['video/mp4;codecs=avc1', 'video/mp4', 'video/webm;codecs=vp9', 'video/webm;codecs=vp8', 'video/webm'];
+const recType = canRecord ? TYPES.find(t => { try { return MediaRecorder.isTypeSupported(t); } catch (_) { return false; } }) : null;
+$('#save').hidden = !recType;
+const REC = machine('rec', {
+  off: ['preparing'],
+  preparing: ['recording', 'off', 'failed'],
+  recording: ['done', 'off', 'failed'],
+  done: ['off'],
+  failed: ['off'],
+}, 'off', { onMove: showRec });
+let recorder = null, recUrl = null, recBlob = null, recClock = 0, recLast = 0, recPaused = false, videoSeconds = VIDEO_S;
+const dlg = $('#rec');
+function showRec(to) {
+  for (const e of [$('#top'), $('#panel'), canvas]) e.inert = to !== 'off';
+  $('#recCanvas').hidden = to === 'done';
+  $('#recVideo').hidden = to !== 'done';
+  $('#recDownload').hidden = to !== 'done';
+  $('#recShare').hidden = !(to === 'done' && recBlob && navigator.canShare && navigator.canShare({ files: [recFile()] }));
+  $('#recCancel').textContent = to === 'done' || to === 'failed' ? 'Close' : 'Cancel';
+  if (to === 'preparing') { $('#recTitle').textContent = 'Saving a video'; $('#recText').textContent = 'Loading every day of the log…'; $('#recBar').style.width = '0'; }
+  if (to === 'recording') $('#recText').textContent = `Recording ${VIDEO_PX}×${VIDEO_PX}, the whole survey in ${videoSeconds} seconds. Keep this tab open.`;
+  if (to === 'done') { $('#recTitle').textContent = 'Your video'; $('#recText').textContent = `${(recBlob.size / 1e6).toFixed(1)} MB, ${recType.startsWith('video/mp4') ? 'MP4' : 'WebM'}.`; }
+  if (to === 'failed') $('#recText').textContent = 'This browser couldn’t record the video.';
+  if (to === 'off') { if (dlg.open) dlg.close(); }
+  else if (!dlg.open) dlg.showModal();
+}
+const recName = () => `letterfield-timelapse-${new Date().toISOString().slice(0, 10)}.${recType.startsWith('video/mp4') ? 'mp4' : 'webm'}`;
+const recFile = () => new File([recBlob], recName(), { type: recBlob.type });
+$('#save').addEventListener('click', async () => {
+  if (!REC.is('off') || !recType) return;
+  if (TL.is('playing', 'waiting')) TL.go('paused');
+  closeChip();
+  REC.go('preparing');
+  const at = REC.seq;
+  await Promise.all([allLoaded, document.fonts ? document.fonts.ready : null]);
+  if (REC.seq !== at) return;
+  try { startRecording(); } catch (err) { console.warn(err); REC.go('failed'); }
+});
+function startRecording() {
+  const stream = recCanvas.captureStream(VIDEO_FPS), chunks = [];
+  recorder = new MediaRecorder(stream, { mimeType: recType, videoBitsPerSecond: 8e6 });
+  const mine = recorder;
+  recorder.ondataavailable = e => { if (e.data && e.data.size) chunks.push(e.data); };
+  recorder.onstop = () => {
+    stream.getTracks().forEach(t => t.stop());
+    if (recorder !== mine || !REC.is('recording')) return;
+    recBlob = new Blob(chunks, { type: recType.split(';')[0] });
+    if (recUrl) URL.revokeObjectURL(recUrl);
+    recUrl = URL.createObjectURL(recBlob);
+    $('#recVideo').src = recUrl;
+    $('#recDownload').href = recUrl;
+    $('#recDownload').download = recName();
+    REC.go('done');
+  };
+  recorder.onerror = () => { if (recorder === mine && REC.is('recording')) REC.go('failed'); };
+  recCam.ok = false; recClock = 0; recLast = 0; recPaused = false;
+  REC.go('recording');
+  recorder.start(500);
+  recFrame(performance.now());
+}
+const recCam = { x: 0, y: 0, s: 1, ok: false };
+function recFrame(now) {
+  if (!REC.is('recording') || recorder.state === 'inactive') return;
+  requestAnimationFrame(recFrame);
+  if (recPaused) { recLast = now; return; }
+  const dt = recLast ? Math.min(.1, (now - recLast) / 1000) : 0;
+  recLast = now; recClock += dt;
+  const [hold0, hold1] = VIDEO_HOLD, total = hold0 + videoSeconds + hold1;
+  const fx = P * Math.max(0, (recClock - hold0) / videoSeconds), p = Math.min(P, fx);
+  const S = VIDEO_PX, top = S * .19, bottom = S * .07;
+  const r = draw(recG, { x: S * .04, y: top, w: S * .92, h: S - top - bottom }, recCam, p, { dt, jump: !recCam.ok, rate: P / videoSeconds, fx });
+  hud(recG, r, p);
+  $('#recBar').style.width = `${(100 * Math.min(1, recClock / total)).toFixed(1)}%`;
+  if (recClock >= total && recorder.state === 'recording') recorder.stop();
+}
+// What a video says in its own frames: when, and how much is charted.
+function hud(g, { t, n, nNova }, p) {
+  const S = VIDEO_PX, pad = S * .045;
+  g.setTransform(1, 0, 0, 1, 0, 0);
+  const fade = g.createLinearGradient(0, 0, 0, S * .24);
+  fade.addColorStop(0, C.paper); fade.addColorStop(.7, C.paper); fade.addColorStop(1, C.paper + '00');
+  g.fillStyle = fade; g.fillRect(0, 0, S, S * .24);
+  g.fillStyle = C.muted; g.textBaseline = 'alphabetic';
+  g.font = `500 ${S * .019}px "Martian Mono", ui-monospace, Menlo, monospace`;
+  g.fillText('LETTERFIELD · SURVEY TIMELAPSE', pad, pad + S * .02);
+  g.fillStyle = C.ink;
+  g.font = `800 ${S * .072}px "Big Shoulders Display", "Arial Narrow", Impact, sans-serif`;
+  g.fillText(dateYearFmt.format(t).toUpperCase(), pad, pad + S * .1);
+  g.fillStyle = C.muted;
+  g.font = `500 ${S * .026}px "Martian Mono", ui-monospace, Menlo, monospace`;
+  g.fillText(timeFmt.format(t), pad, pad + S * .145);
+  g.textAlign = 'right';
+  g.fillStyle = C.ink;
+  g.font = `700 ${S * .05}px "Big Shoulders Display", "Arial Narrow", Impact, sans-serif`;
+  g.fillText(n.toLocaleString(), S - pad, pad + S * .065);
+  g.fillText(nNova.toLocaleString(), S - pad, pad + S * .135);
+  g.fillStyle = C.muted;
+  g.font = `400 ${S * .017}px "Martian Mono", ui-monospace, Menlo, monospace`;
+  g.fillText('words charted', S - pad, pad + S * .088);
+  g.fillText(nNova === 1 ? 'supernova' : 'supernovas', S - pad, pad + S * .158);
+  g.fillText('games.michaelwarkentin.com/letterfield-timelapse', S - pad, S - pad * .6);
+  g.textAlign = 'left';
+  g.fillStyle = C.accent; g.globalAlpha = .9;
+  g.fillRect(0, S - S * .006, S * p / P, S * .006);
+  g.globalAlpha = 1;
+}
+function recPause() { recPaused = true; try { recorder.pause(); } catch (_) {} }
+function recResume() { recPaused = false; try { recorder.resume(); } catch (_) {} }
+$('#recCancel').addEventListener('click', () => endRec());
+dlg.addEventListener('cancel', e => { e.preventDefault(); endRec(); });
+function endRec() {
+  if (REC.is('off')) return;
+  const r = recorder;
+  recorder = null;
+  REC.go('off');
+  if (r && r.state !== 'inactive') try { r.stop(); } catch (_) {}
+}
+$('#recShare').addEventListener('click', () => {
+  if (!recBlob) return;
+  navigator.share({ files: [recFile()], title: 'Letterfield survey timelapse' }).catch(() => {});
+});
+
+/* ---------- Start ---------- */
+async function start() {
+  const at = TL.seq;
+  let index;
+  try { index = await getJSON('/v1/survey/log/timelapse'); }
+  catch (_) { if (TL.seq === at && TL.is('loading')) TL.go('failed'); return; }
+  if (!TL.is('loading')) return;
+  if (!index.hours || !index.hours.length) { TL.go('empty'); return; }
+  idx = index;
+  readColors();
+  timeline(index);
+  days = [...new Set(index.hours.map(([h]) => fdiv(h * HOUR, DAY)))];
+  $('#startDay').textContent = shortFmt.format(T0);
+  $('#endDay').textContent = shortFmt.format(T1 - 1);
+  resize();
+  pump();
+}
+readColors();
+showTL('loading');
+resize();
+requestAnimationFrame(frame);
+start();
+
+// For tests and anyone curious: the play position, what's loaded and drawn.
+window.__tl = {
+  get state() { return TL.state; },
+  get rec() { return REC.state; },
+  get pos() { return pos; },
+  get P() { return P; },
+  get time() { return idx ? timeAt(pos) : null; },
+  get loaded() { return { days: taken, of: days.length, words: W.length, novas: NV.length }; },
+  get shown() { return { ...shown, places: counts.size }; },
+  get cam() { return { ...mainCam }; },
+  get videoBytes() { return recBlob ? recBlob.size : 0; },
+  set videoSeconds(s) { videoSeconds = s; },
+  seek: f => seek(P * f),
+};
+</script>
+</body>
+</html>

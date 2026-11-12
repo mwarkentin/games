@@ -1,0 +1,47 @@
+{
+  // Biome lints the JavaScript: worker/, share/, the scripts the build
+  // inlines (telemetry.js, feedback.js, analytics.js, sw.js), and every
+  // game's inline <script>. Only rules that catch bugs (undefined names,
+  // unused code, impossible conditions) are on, and its formatter is off:
+  // it would rewrite nearly every line of the games. See "Linting" in
+  // AGENTS.md. The version here, in scripts/lint.sh and in test.yml match.
+  "$schema": "https://biomejs.dev/schemas/2.6.7/schema.json",
+  "vcs": { "enabled": true, "clientKind": "git", "useIgnoreFile": true },
+  "files": { "includes": ["**", "!**/package-lock.json", "!**/*.svg"] },
+  "formatter": { "enabled": false },
+  "assist": { "enabled": false },
+  // Reads the inline <script> and <style> in each .html file.
+  "html": { "experimentalFullSupportEnabled": true, "formatter": { "enabled": false } },
+  // Sentry comes from telemetry.js's CDN script; WebSocketPair is the Workers runtime's.
+  "javascript": { "globals": ["Sentry", "WebSocketPair"] },
+  "linter": {
+    "rules": {
+      "preset": "none",
+      "correctness": {
+        "preset": "recommended",
+        "noUndeclaredVariables": "error",
+        "noUnusedVariables": "error",
+        "noUnusedImports": "error",
+        // Callbacks often take arguments they don't need.
+        "noUnusedFunctionParameters": "off"
+      },
+      "suspicious": {
+        "preset": "recommended",
+        // Idioms here rather than mistakes: forEach(x => set.add(x)),
+        // while ((m = re.exec(s))), and flyTo's { then } callback.
+        "useIterableCallbackReturn": "off",
+        "noAssignInExpressions": "off",
+        "noThenProperty": "off",
+        // CSS fallbacks: height: 52px; height: clamp(...vh...); height: clamp(...dvh...).
+        "noDuplicateProperties": "off"
+      }
+    }
+  },
+  "overrides": [
+    {
+      // The second check runs after an await, when the counts may have changed.
+      "includes": ["worker/src/survey.js"],
+      "linter": { "rules": { "suspicious": { "noDuplicateElseIf": "off" } } }
+    }
+  ]
+}

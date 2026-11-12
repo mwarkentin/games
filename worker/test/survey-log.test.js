@@ -17,6 +17,8 @@ import {
   TOP_MAX_DAYS, TOP_N, TOP_SLOW_CACHE_S, forgetLog, monthHours, readDay, readHour, readMonth, readSlice, readSpan, readTerritory,
   readTop, readTopHours, routeLog, sliceSql, writeLog, HOURS_SURVEYORS_SQL, HOURS_TERRITORIES_SQL, TOP_HOURS_MAX,
   NOVAS_SQL, NOVAS_BEFORE_SQL, NOVA_HOURS_SQL, NOVA_PAGE, NOVA_SQL, readNovas,
+  FOREVER_S, LAYOUT, TIMELAPSE_BOUNDS_SQL, TIMELAPSE_CACHE_S, TIMELAPSE_DAY_AFTER_SQL, TIMELAPSE_DAY_SQL, TIMELAPSE_HOURS_SQL,
+  TIMELAPSE_NOVAS_SQL, TIMELAPSE_NOVA_HOURS_SQL, TIMELAPSE_PAGE, TIMELAPSE_VERSION, readTimelapse, readTimelapseDay,
 } from '../src/survey-log.js';
 import { AREA, NEAR_PATH, NOVA_REACH, SECTOR, Sector, checkNova, novaNeighbours } from '../src/survey.js';
 
@@ -1111,5 +1113,142 @@ describe('supernovas reaching neighbouring sectors', () => {
     // The real one goes through.
     assert.equal((await post(good)).status, 204);
     assert.equal(p.sent.filter((m) => m.t === 'nova').length, 1);
+  });
+});
+
+describe('the timelapse', () => {
+  let db;
+  beforeEach(() => { db = fakeD1(); forgetLog(); });
+  const get = (path, now = NOW, env = { LOG_DB: db, ALLOWED_ORIGINS: ORIGIN }) =>
+    routeLog(new Request(`https://survey.test${path}`, { headers: { Origin: ORIGIN } }), env, now);
+
+  test('gives a day as only what drawing needs, oldest first, with its supernovas', async () => {
+    const day0 = DAY * DAY_MS;
+    const a = stored(0, 0, 0, day0 + 5000), b = stored(-30, 5, 1, day0 + 60000, '');
+    const stray = { key: keyOf('MONET', 1, 2, 3), w: 'MONET', x: 1, y: 2, d: 3, s: 1, initials: 'ABC', at: day0 + 90000 };
+    await writeLog(db, [stored(1, 1, 0, day0 - 1), a, b, stray, stored(2, 2, 0, day0 + DAY_MS)], [nova(0, 0, day0 + 60000), nova(3, 3, day0 - 5)]);
+    const page = await readTimelapseDay(db, DAY);
+    assert.equal(page.day, DAY);
+    assert.equal(page.next, null);
+    assert.deepEqual(page.words, [
+      [5000, a.x, a.y, a.d, a.w.length, regionTheme(fdiv(a.x, RC), fdiv(a.y, RC)), 0],
+      [60000, b.x, b.y, b.d, b.w.length, regionTheme(fdiv(b.x, RC), fdiv(b.y, RC)), 0],
+      [90000, 1, 2, 3, 5, VOCAB.get('MONET'), 1],  // a stray in its word's own theme
+    ]);
+    assert.deepEqual(page.novas, [[60000, 0, 0, regionTheme(0, 0)]]);
+    // No words or initials: a replay draws them, it doesn't read them.
+    assert.doesNotMatch(JSON.stringify(page), /ZED|ABC|MONET/);
+  });
+
+  test('pages through a busy day, with supernovas on the first page only', async () => {
+    const day0 = DAY * DAY_MS, busy = [];
+    for (let i = 0; i < TIMELAPSE_PAGE + 7; i++) busy.push(stored(i % 80, Math.floor(i / 80), i % 5, day0 + i));
+    await writeLog(db, busy, [nova(0, 0, day0 + 10)]);
+    const first = await readTimelapseDay(db, DAY);
+    assert.equal(first.words.length, TIMELAPSE_PAGE);
+    assert.equal(first.novas.length, 1);
+    const [at, ...key] = first.next.split('~');
+    const second = await readTimelapseDay(db, DAY, { at: Number(at), key: key.join('~') });
+    assert.equal(second.words.length, 7);
+    assert.deepEqual(second.novas, []);
+    assert.equal(second.next, null);
+    assert.deepEqual([...first.words, ...second.words].map((w) => w[0]), busy.map((r) => r.at - day0).sort((x, y) => x - y));
+  });
+
+  test('indexes the hours with words, the supernovas and the charted territories, with every theme', async () => {
+    assert.deepEqual(await readTimelapse(db), { hours: [], novas: [], bounds: null, themes: THEMES.map((t) => [t.name, t.hue]), layout: LAYOUT });
+    await writeLog(db, [stored(0, 0, 0, NOW), stored(0, 0, 1, NOW + 1), stored(-30, 5, 0, NOW - 2 * DAY_MS), stored(12, -9, 0, NOW - HOUR_MS),
+      { key: keyOf('MONET', 9000, 9000, 0), w: 'MONET', x: 9000, y: 9000, d: 0, s: 1, initials: '', at: NOW }],
+      [nova(0, 0, NOW), nova(1, 0, NOW + 2), nova(5, 5, NOW - 2 * DAY_MS)]);
+    const index = await readTimelapse(db);
+    assert.deepEqual(index.hours, [[HOUR - 48, 1], [HOUR - 1, 1], [HOUR, 3]]);
+    assert.deepEqual(index.novas, [[HOUR - 48, 1], [HOUR, 2]]);
+    // Hidden words only: the stray far out isn't in a territory's count.
+    const cells = [chunk(0, 0).words[0], chunk(-30, 5).words[0], chunk(12, -9).words[0]].map((w) => [fdiv(w.x, RC), fdiv(w.y, RC)]);
+    assert.deepEqual(index.bounds, [Math.min(...cells.map((c) => c[0])), Math.min(...cells.map((c) => c[1])),
+      Math.max(...cells.map((c) => c[0])), Math.max(...cells.map((c) => c[1]))]);
+  });
+
+  test('says how to work out any territory\'s theme from the themes alone', () => {
+    const [a, n] = LAYOUT;
+    assert.equal(n, THEMES.length);
+    for (let i = 0; i < 500; i++) {
+      const rx = Math.floor(Math.random() * 400) - 200, ry = Math.floor(Math.random() * 400) - 200;
+      assert.equal((((rx + a * ry) % n) + n) % n, regionTheme(rx, ry), `${rx},${ry}`);
+    }
+  });
+
+  test('reads along the table\'s order and the supernovas\' index, never a scan of the log', () => {
+    const from = DAY * DAY_MS, to = from + DAY_MS;
+    for (const p of [plan(db, TIMELAPSE_DAY_SQL, from, to, 10), plan(db, TIMELAPSE_DAY_AFTER_SQL, from, to, from, 'A', 10)]) {
+      assert.match(p, /SEARCH survey_log USING PRIMARY KEY \(at>\? AND at<\?\)/, p);
+      assert.doesNotMatch(p, /SCAN|TEMP B-TREE/, p);
+    }
+    const novas = plan(db, TIMELAPSE_NOVAS_SQL, from, to);
+    assert.match(novas, /SEARCH survey_log_novas USING COVERING INDEX survey_log_novas_by_time \(at>\? AND at<\?\)/, novas);
+    assert.doesNotMatch(novas, /TEMP B-TREE/, novas);
+    // The index reads the count tables and the supernovas over a range of days, never the log.
+    const hours = plan(db, TIMELAPSE_HOURS_SQL, 1, 2);
+    assert.match(hours, /SEARCH survey_log_hours USING PRIMARY KEY \(hour>\? AND hour<\?\)/, hours);
+    const bounds = plan(db, TIMELAPSE_BOUNDS_SQL, 1, 2);
+    assert.match(bounds, /SEARCH survey_log_territories USING PRIMARY KEY \(day>\? AND day<\?\)/, bounds);
+    const novaHours = plan(db, TIMELAPSE_NOVA_HOURS_SQL, 1, 2);
+    assert.match(novaHours, /SEARCH survey_log_novas USING COVERING INDEX survey_log_novas_by_time \(at>\? AND at<\?\)/, novaHours);
+    for (const p of [hours, bounds, novaHours]) assert.doesNotMatch(p, /SCAN/, p);
+  });
+
+  test('reads the index\'s settled days once and keeps them, and only the days since each minute', async () => {
+    await writeLog(db, [stored(0, 0, 0, NOW - 3 * DAY_MS), stored(-30, 5, 0, NOW - 1000)], [nova(0, 0, NOW - 3 * DAY_MS)]);
+    const env = { LOG_DB: db, ALLOWED_ORIGINS: ORIGIN };
+    const ranges = () => db.log.filter((q) => q.sql === TIMELAPSE_BOUNDS_SQL).map((q) => q.params);
+    const whole = await (await get('/v1/survey/log/timelapse', NOW, env)).json();
+    assert.deepEqual(whole.hours.map((h) => h[0]), [Math.floor((NOW - 3 * DAY_MS) / HOUR_MS), Math.floor((NOW - 1000) / HOUR_MS)]);
+    assert.deepEqual(whole.novas, [[Math.floor((NOW - 3 * DAY_MS) / HOUR_MS), 1]]);
+    const cut = Math.floor((NOW - SETTLED_MS) / DAY_MS);
+    assert.deepEqual(ranges(), [[0, cut], [cut, 1e7]]);
+    // A minute later: the recent days again, the settled ones from memory.
+    await get('/v1/survey/log/timelapse', NOW + TIMELAPSE_CACHE_S * 1000, env);
+    assert.deepEqual(ranges(), [[0, cut], [cut, 1e7], [cut, 1e7]]);
+    // The same answer as reading everything at once.
+    assert.deepEqual(whole, await readTimelapse(db));
+  });
+
+  test('keeps a settled day for good, today for seconds, and the index for a minute', async () => {
+    await writeLog(db, [stored(0, 0, 0, NOW - 1000), stored(1, 0, 0, NOW - 2 * DAY_MS)]);
+    const today = await get(`/v1/survey/log/timelapse/${DAY}`);
+    assert.equal(today.headers.get('Cache-Control'), `public, max-age=${LIVE_CACHE_S}`);
+    assert.equal(today.headers.get('Access-Control-Allow-Origin'), ORIGIN);
+    assert.equal((await today.json()).words.length, 1);
+    // Yesterday's last words can still be on their way just after midnight.
+    const midnight = DAY * DAY_MS + 60000;
+    assert.equal((await get(`/v1/survey/log/timelapse/${DAY - 1}`, midnight)).headers.get('Cache-Control'), `public, max-age=${LIVE_CACHE_S}`);
+    const settled = await get(`/v1/survey/log/timelapse/${DAY - 2}`);
+    assert.equal(settled.headers.get('Cache-Control'), `public, max-age=${FOREVER_S}, immutable`);
+    assert.equal((await settled.json()).words.length, 1);
+    const index = await get('/v1/survey/log/timelapse');
+    assert.equal(index.headers.get('Cache-Control'), `public, max-age=${TIMELAPSE_CACHE_S}`);
+    assert.equal((await index.json()).hours.length, 2);
+    assert.equal((await get(`/v1/survey/log/timelapse/${DAY}?after=${NOW}~ACORN~1~-2~3`)).status, 200);
+    assert.equal((await get(`/v1/survey/log/timelapse/${DAY}?after=nope`)).status, 400);
+    assert.equal((await get(`/v1/survey/log/timelapse/${DAY + 1}`)).status, 400);
+    assert.equal((await get(`/v1/survey/log/timelapse/${DAY}`, NOW, {})), null);
+    assert.equal(get('/v1/survey/log/timelapse/x'), null);
+  });
+
+  test('reads a settled day from D1 once, and keeps it under its version in Cloudflare\'s cache', async () => {
+    const kept = new Map();
+    globalThis.caches = { default: { match: async (r) => kept.get(r.url)?.clone(), put: async (r, res) => { kept.set(r.url, res); } } };
+    try {
+      await writeLog(db, [stored(1, 0, 0, NOW - 2 * DAY_MS)]);
+      const reads = () => db.log.filter((q) => q.sql.startsWith('SELECT')).length;
+      await get(`/v1/survey/log/timelapse/${DAY - 2}`);
+      const once = reads();
+      await get(`/v1/survey/log/timelapse/${DAY - 2}`, NOW + 30 * DAY_MS);
+      forgetLog();  // another Worker instance
+      await get(`/v1/survey/log/timelapse/${DAY - 2}`, NOW + 30 * DAY_MS);
+      assert.equal(reads(), once);
+      assert.deepEqual([...kept.keys()], [`https://survey.test/_cache/survey-log/m${MAP_VERSION}/timelapse/v${TIMELAPSE_VERSION}/${DAY - 2}`]);
+      assert.equal([...kept.values()][0].headers.get('Cache-Control'), `public, max-age=${FOREVER_S}, immutable`);
+    } finally { delete globalThis.caches; }
   });
 });

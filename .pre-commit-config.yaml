@@ -1,0 +1,19 @@
+# prek's pre-commit hook: `scripts/lint.sh --fix` on the staged files, so a
+# commit is linted, fixed and formatted the way CI's lint job checks it. The
+# tools' versions live in pyproject.toml's lint group and scripts/lint.sh,
+# not here. If the hook changes a file, the commit stops: look, `git add`,
+# and commit again. See "Linting" in AGENTS.md.
+#
+#   uv run --only-group lint prek install   # once per clone (cloud sessions
+#                                           # do it in .claude/hooks/session-start.sh)
+#   uv run --only-group lint prek run --all-files
+repos:
+  - repo: local
+    hooks:
+      - id: lint
+        name: scripts/lint.sh --fix
+        entry: scripts/lint.sh --fix
+        language: system
+        types_or: [python, javascript, html, json, shell, yaml]
+        exclude: (^|/)package-lock\.json$
+        require_serial: true

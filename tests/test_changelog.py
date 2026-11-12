@@ -67,8 +67,8 @@ def test_site_has_a_changelog_for_every_game_and_links_to_them(site_dir):
     games = json.loads((site_dir / "games.json").read_text("utf-8"))
     colophon = (site_dir / "colophon.html").read_text("utf-8")
     for game in games:
-        # Letterfield's survey log is part of Letterfield, and shares its changelog.
-        app = "letterfield" if game["slug"] == "letterfield-log" else game["slug"]
+        # Letterfield's survey log and timelapse are part of Letterfield, and share its changelog.
+        app = "letterfield" if game["slug"] in ("letterfield-log", "letterfield-timelapse") else game["slug"]
         assert game["changelog"] == f"/changelog/{app}"
         assert f'<a class="source" href="/changelog/{app}">changelog</a>' in colophon
     for app in changelog_apps():
