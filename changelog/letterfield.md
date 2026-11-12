@@ -2,8 +2,8 @@
 
 - The word list sits on a solid bar along the bottom, edge to edge, so no stray letters show around or under it. On a phone the title and buttons sit on a matching bar along the top, and the map is the space between them: a word you fly to lands in the middle of what you can see.
 - Zoom, return to the origin, sound and music now live behind one button at the top right, beside your field notes, leaving the bar to the words. A tap drops them down in a stack and a second tap, Escape or a tap on the map puts them away. Their keys (+, −, H, M and B) work either way.
-- A bell in the tools turns alerts off: no notes for your finds or for words other surveyors chart. Each find's circle still carries it into your field notes, drawing itself up into a bead that flies into the count. Answers to what you just did, like a word already in your notes, and supernovas still show.
-- Notes like a word you've found now pop out of the field notes, at the top right, and fold back into them when they're done. A find's note folds right into your count, which ticks up as it lands.
+- Notes now pop out of the field notes, at the top right, and fold back into them when they're done.
+- A word you find no longer brings up a note: you can see you've found it. Its circle draws itself up into a bead that flies into your field notes, and the count ticks up as it lands. Share it from your notes.
 
 ## 2026-11-11
 

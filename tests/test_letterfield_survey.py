@@ -149,7 +149,8 @@ def test_shared_map_shows_other_surveyors_and_their_words(page: Page, site_url, 
 
     # Circling a word nobody has charted claims it and credits you.
     circle(page, words[1])
-    expect(page.locator("#toast")).to_contain_text("First to chart it")
+    expect(page.locator("#findSay")).to_contain_text(f"{words[1][0]} · First to chart it")  # said, with no note
+    expect(page.locator("#toast")).not_to_have_class(re.compile(r"\bshow\b"))
     expect(page.locator("#tCharted")).to_have_text(re.compile(r"^ · 2/\d+ charted$"))
     w, x, y, d = words[1]
     assert fake.sent("claim") == [{"t": "claim", "w": w, "x": x, "y": y, "d": d, "sector": "0,0"}]
@@ -177,8 +178,9 @@ def test_a_word_charted_first_shares_where_it_came_in_the_worlds_count(page: Pag
     open_game(page, site_url, fake)
     expect(page.locator("#brandSub")).to_have_text("412,883 of 1,119,752 charted")
     circle(page, word)
-    expect(page.locator("#toast")).to_contain_text("First to chart it")
-    page.click("#toast .share")
+    expect(page.locator("#findSay")).to_contain_text("First to chart it")
+    open_notes(page)
+    page.locator("#finds").get_by_role("button", name=f"Share {word[0]}").click()
     pattern = rf"I just found {word[0]} in [A-Z][a-z]+ [A-Z][a-z]+ in Letterfield, before anyone else\. That was word 412,884 of 1,119,752 on the shared map\."
     assert re.fullmatch(pattern, page.evaluate("window.__shared[0].text"))
     # The link goes to the share Worker, whose page carries a picture of the word.
@@ -375,7 +377,7 @@ def test_initials_come_before_the_first_word(page: Page, site_url, errors):
     for x, y in target["ends"]:
         page.mouse.click(x, y)
     expect(page.locator("#notesBadge")).to_have_text("1", timeout=LANDS)
-    expect(page.locator("#toast")).to_contain_text(target["word"])
+    expect(page.locator("#findSay")).to_contain_text(target["word"])
     eventually(page, lambda: len(fake.sent("claim")) == 1)
 
     # Next time, straight to the map.
@@ -647,13 +649,10 @@ def test_a_supernova_you_saw_is_kept_in_your_notes_and_shares_its_card(page: Pag
     assert errors == []
 
 
-@pytest.mark.parametrize("alerts", ["on", "off"])
-def test_a_supernova_far_away_is_a_note_you_can_share(page: Page, site_url, errors, alerts):
+def test_a_supernova_far_away_is_a_note_you_can_share(page: Page, site_url, errors):
     words = territory_words(page, site_url)
     fake = FakeSurvey(claims=[[*w, 0, "MRW", NOW_MS - 60_000] for w in words[1:]])
     page.add_init_script(SHARE_SHEET_INIT)
-    if alerts == "off":  # rare enough to show all the same
-        page.add_init_script("localStorage.setItem('letterfield.toasts.v1', '0')")
     open_game(page, site_url, fake)
     eventually(page, lambda: "0,0" in fake.sockets)
     expect(page.locator("#tCharted")).to_have_text(f" · {len(words) - 1}/{len(words)} charted")
@@ -1023,7 +1022,7 @@ def test_a_claim_whose_answer_was_lost_with_its_socket_is_still_credited(page: P
     page.evaluate(HIDE, False)
     expect(page.locator("#surveyText")).to_contain_text("1 word charted first by you")
     assert page.evaluate("[...window.__lf.found.values()][0].f") == 1
-    expect(page.locator("#toast")).to_contain_text("First to chart it")
+    expect(page.locator("#findSay")).to_contain_text("First to chart it")
     assert len(fake.sent("claim")) == 1  # the sector already had it: not sent again
     assert errors == []
 
@@ -1039,7 +1038,7 @@ def test_a_claim_lost_on_the_way_is_sent_again_when_the_sector_is_rejoined(page:
     page.evaluate(HIDE, True)
     page.evaluate(HIDE, False)
     eventually(page, lambda: len(fake.sent("claim")) == 2)
-    expect(page.locator("#toast")).to_contain_text("First to chart it")
+    expect(page.locator("#findSay")).to_contain_text("First to chart it")
     assert page.evaluate("window.__lf.outbox()") == []
     assert errors == []
 
@@ -1285,27 +1284,4 @@ def test_the_world_map_shows_territories_charted_in_full_far_afield(page: Page, 
     page.click("#surveyMap summary")
     page.wait_for_function("window.__lf.remnants().length > 0")
     assert page.evaluate("window.__lf.remnants()") == ["-10,20"]
-    assert errors == []
-
-
-@pytest.mark.parametrize("alerts", ["on", "off"])
-def test_with_alerts_off_other_surveyors_charting_shows_no_note(page: Page, site_url, errors, alerts):
-    words = known_words(page, site_url)
-    if alerts == "off":
-        page.add_init_script("localStorage.setItem('letterfield.toasts.v1', '0')")
-    fake = FakeSurvey()
-    open_game(page, site_url, fake)
-    expect(page.locator("#toasts")).to_have_attribute("aria-pressed", "true" if alerts == "on" else "false")
-    eventually(page, lambda: "0,0" in fake.sockets)
-    expect(page.locator("#toast")).not_to_have_class(re.compile(r"\bshow\b"))
-    w, x, y, d = words[0]
-    page.evaluate(f"window.__lf.cam.x = {x}; window.__lf.cam.y = {y}")  # in view
-    fake.sockets["0,0"].send(json.dumps({"t": "claimed", "c": [w, x, y, d, 0, "SIS", NOW_MS], "by": "someone"}))
-    expect(page.locator("#tCharted")).to_have_text(re.compile(r"^ · 1/\d+ charted$"))
-    if alerts == "on":
-        expect(page.locator("#toast")).to_contain_text(f"{w}Just charted by SIS")
-    else:
-        page.wait_for_timeout(1000)
-        expect(page.locator("#toast")).not_to_have_class(re.compile(r"\bshow\b"))
-        expect(page.locator("#quietToast")).to_be_empty()  # nor read out
     assert errors == []
