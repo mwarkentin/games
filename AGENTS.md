@@ -611,7 +611,8 @@ time (War's battles, animations), so `-n auto` runs it on
 [pytest-xdist](https://pytest-xdist.readthedocs.io) workers, one per CPU.
 CI (`.github/workflows/test.yml`) goes further: pytest-split cuts it into
 up to three shards of about equal time, each a job of its own on four
-workers, and a job named `test` passes once every shard has. A pull request
+workers, and a job named `test` passes once every shard and the two
+Workers' node tests have (see Merging). A pull request
 runs only the tests its changes need (`scripts/select_tests.py`): one that
 only changes Letterfield runs Letterfield's tests and the ones covering
 every game, not War's. A branch pushed before it has a pull request runs
@@ -651,6 +652,38 @@ In a Claude Code on the web sandbox, the default network policy can block
 `Failed: https://...` for one of those hosts means the sandbox can't reach
 it, not that the game is broken. Ask for those hosts to be allowed. CI has
 full network access.
+
+## Merging
+
+`main` takes a pull request only once its `test` check has passed: a
+ruleset made by OpenTofu in mwarkentin/infra requires it, from GitHub
+Actions. That one check stands for the whole Test workflow, since the jobs
+under it change from one pull request to the next (`pytest (1/3)` is there
+or not, by what the plan picks), so never require a shard by name.
+
+- **It always reports.** `test` passes once every job the plan wanted has,
+  and fails if one failed or was cancelled, so a pull request of only docs
+  or only the Workers, which runs no pytest, still gets its answer. A run
+  cancelled by a newer push leaves the old commit cancelled; the new one
+  gets its own. A pull request from a fork runs it too, once its workflows
+  are approved, without secrets, which no test needs.
+- **Only pull requests make it.** A branch's push runs call the same job
+  `test (push)`, because the push run of a branch with an open pull request
+  skips everything and passes at once, and under the same name on the same
+  commit it would let the pull request merge before its own run finished.
+- **Not up to date.** A branch needn't have the latest `main` to merge:
+  with many sessions each on its own pull request, that would mean merging
+  `main` into every one after each merge. GitHub's merge queue would do
+  that for us, but isn't offered on a repository owned by a person. So two
+  pull requests that each pass can still break `main` together; `main`'s
+  own run, of the whole suite, catches that, and the fix is a new pull
+  request.
+- **Preview isn't required.** It needs secrets, which forks don't get, and
+  says nothing about whether the games work.
+- **The owner can bypass it,** with the "merge without waiting" box, for a
+  red CI that isn't the change's fault (a CDN down). Agents never merge.
+- **Auto-merge** is on: "Enable auto-merge" on a pull request merges it
+  (squashed) once `test` passes.
 
 ## Security
 

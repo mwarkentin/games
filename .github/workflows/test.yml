@@ -117,20 +117,49 @@ jobs:
           --splits ${{ strategy.job-total }} --group ${{ matrix.shard }} --splitting-algorithm least_duration
           $TESTS
 
-  # The one check to require: it passes once every shard has, or when
-  # pytest had nothing to do, and fails if any shard failed or was cancelled.
+  # The one check main requires before a pull request merges (see "Merging"
+  # in AGENTS.md). It passes once every shard, the worker job and the share
+  # job have, and fails if any failed or was cancelled. A job may be skipped
+  # only when the plan says it had nothing to do: pytest for a pull request
+  # that changes no file pytest reads, everything for a push run whose
+  # branch has an open pull request. It always reports, so the check never
+  # waits forever; a run cancelled by a newer push leaves it cancelled, on a
+  # commit that's no longer the pull request's head.
+  #
+  # Only pull_request runs call it "test". A branch's push runs call it
+  # "test (push)": the push run of a branch with an open pull request
+  # skips everything and passes in seconds, and under the same name, on the
+  # same commit, it would satisfy the requirement while the pull request's
+  # own run was still going, or after it failed.
   test:
-    needs: [plan, pytest]
+    needs: [plan, pytest, worker, share]
     if: ${{ !cancelled() }}
+    name: ${{ github.event_name == 'pull_request' && 'test' || 'test (push)' }}
     runs-on: ubuntu-latest
     steps:
-      - name: Check every shard passed
+      - name: Check every job passed
         env:
+          RUN: ${{ needs.plan.outputs.run }}
+          WANTS_PYTEST: ${{ needs.plan.outputs.pytest }}
           PLAN: ${{ needs.plan.result }}
           PYTEST: ${{ needs.pytest.result }}
+          WORKER: ${{ needs.worker.result }}
+          SHARE: ${{ needs.share.result }}
         run: |
-          echo "plan: $PLAN, pytest: $PYTEST"
-          [ "$PLAN" = success ] && { [ "$PYTEST" = success ] || [ "$PYTEST" = skipped ]; }
+          echo "plan: $PLAN (run: $RUN, pytest: $WANTS_PYTEST), pytest: $PYTEST, worker: $WORKER, share: $SHARE"
+          [ "$PLAN" = success ] || { echo "The plan job didn't succeed."; exit 1; }
+          # passed NAME RESULT WANTED: the job succeeded, or was skipped
+          # because the plan didn't want it.
+          passed() {
+            [ "$2" = success ] && return
+            [ "$2" = skipped ] && [ "$3" != true ] && return
+            echo "$1: $2"; return 1
+          }
+          ok=true
+          passed pytest "$PYTEST" "$([ "$RUN" = true ] && echo "$WANTS_PYTEST")" || ok=false
+          passed worker "$WORKER" "$RUN" || ok=false
+          passed share "$SHARE" "$RUN" || ok=false
+          $ok
 
   worker:
     needs: plan
