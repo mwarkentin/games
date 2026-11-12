@@ -332,6 +332,8 @@ body.docked .nova{left:calc((100% - var(--notes-w)) / 2)}
 #sound[aria-pressed="false"] .on,#sound[aria-pressed="true"] .off{display:none}
 #music[aria-pressed="false"] .on,#music[aria-pressed="true"] .off{display:none}
 #toasts[aria-pressed="true"] .off{display:none}
+.gather{position:fixed;left:0;top:0;z-index:60;pointer-events:none}
+.gather i{position:absolute;left:0;top:0;display:block;box-sizing:border-box;border-radius:999px}
 #music[aria-pressed="true"] svg{animation:drift 7s ease-in-out infinite}
 @keyframes drift{0%,100%{opacity:1}50%{opacity:.55}}
 /* Hover card: who's behind a caret, or who charted a word */
@@ -3427,7 +3429,7 @@ const TOAST_QUIET = { others: true, mine: true, reply: false, notice: false };
 let carrying = null, toastsOn = LS.get(K_TOASTS) !== '0';
 function toast(kind, html, hue, ms = 2400, find = null, carry = false) {
   if (!(kind in TOAST_QUIET)) console.error(`toast: no kind "${kind}"`);
-  if (!toastsOn && TOAST_QUIET[kind]) return quietToast(kind, html, carry);
+  if (!toastsOn && TOAST_QUIET[kind]) return quietToast(kind, html, find, carry);
   if (carrying && !(find && find.key === carrying.key)) foldToast(true);
   if (carry) { carrying = find; unlanded.add(find.key); }
   toastEl.innerHTML = html;
@@ -3464,16 +3466,84 @@ function toast(kind, html, hue, ms = 2400, find = null, carry = false) {
   toastTimer = setTimeout(hideToast, ms);
 }
 // A note kept quiet. Your own still reaches a screen reader, as the only word
-// of a find, and a find counts at once, the count bumping as it would have
-// when the note folded in. Other surveyors' news goes unsaid.
+// of a find, and a find's circle carries it into the field notes instead (see
+// gatherFind). Other surveyors' news goes unsaid.
 const quietEl = $('#quietToast');
-function quietToast(kind, html, carry) {
+function quietToast(kind, html, find, carry) {
   if (kind === 'mine') {
     const t = document.createElement('div');
     t.innerHTML = html;
     quietEl.textContent = [...t.children].map(c => c.textContent).filter(Boolean).join(', ');
   }
-  if (carry) { showCount(); bump(notesOpen ? $('#tWords') : notesBadge); }
+  if (carry) gatherFind(find);
+}
+// With alerts off, a find has no note to fold into the field notes, so its
+// circle does the carrying: once it's drawn, a copy lifts off the map, draws
+// in from both ends to a bead of the find's colour, and arcs over to the
+// count (the badge on the notes button, or the number atop the open notes),
+// which ticks up and bumps as the bead drops in. The circle stays on the map.
+// Off the map, with reduced motion or in a hidden tab, the find just counts.
+// A timer stands in for the animation's end, as in foldToast.
+const GATHER_LIFT = 320, GATHER_DRAW = 440, GATHER_FLY = 580, GATHER_BEAD = 12;
+function gatherFind(e) {
+  const key = e.key, to = notesOpen ? $('#tWords') : notesBadge;
+  unlanded.add(key);
+  let done = false;
+  const land = () => {
+    if (done) return;
+    done = true;
+    unlanded.delete(key);
+    showCount();
+    bump(to);
+  };
+  // Where the circle is on screen, as draw() puts it.
+  const cs = cam.cs, [ex, ey] = wordEnd(e), ox = (W - dock) / 2, oy = mapTop + H / 2;
+  const x0 = (e.x + .5 - cam.x) * cs + ox, y0 = (e.y + .5 - cam.y) * cs + oy;
+  const x1 = (ex + .5 - cam.x) * cs + ox, y1 = (ey + .5 - cam.y) * cs + oy;
+  const mx = (x0 + x1) / 2, my = (y0 + y1) / 2;
+  const range = document.createRange();
+  range.selectNodeContents(to);
+  const b = to === notesBadge ? to.getBoundingClientRect() : range.getBoundingClientRect();
+  const onMap = mx >= 0 && mx <= W - dock && my >= mapTop && my <= mapTop + H;
+  if (RM || document.hidden || !b.width || !onMap || !document.body.animate) return land();
+
+  const tc = TC[e.th], r = Math.max(1.6, cs * .4), lw = clamp(cs * .06, 1, 2.4);
+  const long = Math.hypot(x1 - x0, y1 - y0) + 2 * r + lw, tall = 2 * r + lw, turn = `rotate(${Math.atan2(y1 - y0, x1 - x0)}rad)`;
+  const g = document.createElement('div'), bead = document.createElement('i');
+  g.className = 'gather';
+  g.setAttribute('aria-hidden', 'true');
+  g.style.transform = `translate(${mx}px, ${my}px)`;
+  Object.assign(bead.style, { width: `${long}px`, height: `${tall}px`, background: tc.fill, borderColor: tc.stroke, borderWidth: `${lw}px`, borderStyle: e.s ? 'dashed' : 'solid', transform: `translate(-50%, -50%) ${turn}` });
+  g.append(bead);
+  document.body.append(g);
+  const finish = () => { g.remove(); land(); };
+
+  // It lifts a touch off the map, draws in from both ends, see-through as
+  // the circle is so the word shows, then condenses into a solid bead.
+  const dot = GATHER_BEAD, lifted = '0 4px 12px rgba(0,0,0,.22)', at = k => `translate(-50%, -50%) ${turn} scale(${k})`;
+  bead.animate([
+    { width: `${long}px`, height: `${tall}px`, background: tc.fill, transform: at(1), boxShadow: '0 0 0 rgba(0,0,0,0)', easing: 'cubic-bezier(.34,1.5,.64,1)' },
+    { width: `${long}px`, height: `${tall}px`, background: tc.fill, transform: at(1.06), boxShadow: lifted, offset: .2, easing: 'cubic-bezier(.6,0,.3,1)' },
+    { width: `${tall}px`, height: `${tall}px`, background: tc.fill, transform: at(1.06), boxShadow: lifted, offset: .64, easing: 'cubic-bezier(.3,0,.2,1)' },
+    { width: `${dot}px`, height: `${dot}px`, background: tc.stroke, borderColor: tc.stroke, transform: at(1), boxShadow: lifted },
+  ], { duration: GATHER_DRAW, delay: GATHER_LIFT, fill: 'both' });
+
+  // Then it arcs over to the count, swinging up off the straight line like
+  // something tossed, swelling a little on the way and dropping in.
+  const bx = b.left + b.width / 2, by = b.top + b.height / 2, dx = bx - mx, dy = by - my, f = dx < 0 ? -.3 : .3;
+  const cx = clamp(mx + dx / 2 + dy * f, 8, innerWidth - 8), cy = clamp(my + dy / 2 - dx * f, 8, innerHeight - 8);
+  const path = [];
+  for (let i = 0, n = 24; i <= n; i++) {
+    const t = i / n, u = 1 - t;
+    const x = u * u * mx + 2 * u * t * cx + t * t * bx, y = u * u * my + 2 * u * t * cy + t * t * by;
+    const k = t < .45 ? 1 + .25 * Math.sin(t / .45 * Math.PI / 2) : 1.25 - .65 * Math.pow((t - .45) / .55, 2);
+    path.push({ transform: `translate(${x}px, ${y}px) scale(${k})`, opacity: t > .92 ? 1 - (t - .92) / .08 : 1 });
+  }
+  const flyAt = GATHER_LIFT + GATHER_DRAW * .8;
+  // On the badge, it takes the badge's colour as it merges in.
+  if (to === notesBadge) bead.animate([{ background: tc.stroke, borderColor: tc.stroke }, { background: getComputedStyle(to).backgroundColor, borderColor: getComputedStyle(to).backgroundColor }], { duration: GATHER_FLY * .3, delay: flyAt + GATHER_FLY * .7, fill: 'forwards' });
+  g.animate(path, { duration: GATHER_FLY, delay: flyAt, easing: 'cubic-bezier(.45,.05,.35,1)', fill: 'both' }).finished.then(finish, finish);
+  setTimeout(() => { if (!done) finish(); }, flyAt + GATHER_FLY + 600);
 }
 const toastsBtn = $('#toasts');
 function setToasts(on) {

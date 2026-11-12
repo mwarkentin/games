@@ -209,11 +209,18 @@ def test_with_alerts_off_a_find_has_no_note_but_lands_in_the_notes(page: Page, s
     page.click("#coachOk")
     toast, count = page.locator("#toast"), page.locator("#tWords" if size[0] >= 1100 else "#notesBadge")
     word = page.evaluate("(o => [o.w, o.x, o.y, o.d])(window.__lf.chunk(0, 0).words[0])")
+    page.evaluate("([w, x, y]) => { window.__lf.cam.x = x; window.__lf.cam.y = y; }", word)  # in sight
     page.evaluate(COLLECT, [word])
-    # It counts at once, with no note to wait for, and a screen reader still hears of it.
-    expect(count).to_have_text("1", timeout=500)
+    # No note, but a screen reader still hears of it, and its circle carries it
+    # into the notes: a copy draws in to a bead and flies to the count, which
+    # waits for it.
     expect(page.locator("#quietToast")).to_contain_text(word[0])
-    page.wait_for_timeout(600)
+    bead = page.locator(".gather")
+    expect(bead).to_have_count(1)
+    assert bead.get_attribute("aria-hidden") == "true"
+    expect(count).to_have_text("0")
+    expect(count).to_have_text("1", timeout=LANDS)
+    expect(bead).to_have_count(0)
     expect(toast).not_to_have_class(re.compile(r"\bshow\b"))
     assert page.evaluate("JSON.parse(localStorage.getItem('letterfield.finds.v4')).length") == 1
     # Circling it again still answers: it's already in your notes.
@@ -224,6 +231,20 @@ def test_with_alerts_off_a_find_has_no_note_but_lands_in_the_notes(page: Page, s
     if page.locator("#notes").is_hidden():
         page.click("#notesToggle")
     expect(page.locator("#finds").get_by_role("button", name=f"Share {word[0]}")).to_be_visible()
+    assert errors == []
+
+
+def test_with_alerts_off_and_reduced_motion_a_find_counts_at_once(page: Page, site_url, errors):
+    page.emulate_media(reduced_motion="reduce")
+    without_worker(page, site_url, "letterfield")
+    page.add_init_script("localStorage.setItem('letterfield.toasts.v1', '0')")
+    page.goto(f"{site_url}/letterfield#debug")
+    page.click("#coachOk")
+    word = page.evaluate("(o => [o.w, o.x, o.y, o.d])(window.__lf.chunk(0, 0).words[0])")
+    page.evaluate("([w, x, y]) => { window.__lf.cam.x = x; window.__lf.cam.y = y; }", word)
+    page.evaluate(COLLECT, [word])
+    expect(page.locator("#notesBadge")).to_have_text("1", timeout=500)
+    assert page.locator(".gather").count() == 0
     assert errors == []
 
 
