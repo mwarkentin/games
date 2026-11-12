@@ -2,7 +2,7 @@
 
 - The word list sits on a solid bar along the bottom, edge to edge, so no stray letters show around or under it, and the map ends at its top: a word you fly to lands in the middle of what you can see.
 - Zoom, return to the origin, sound and music now live behind one button in that bar. A tap pops them up in a stack and a second tap, Escape or a tap on the map puts them away. Their keys (+, −, H, M and B) work either way.
-- Notes like a word you've found now pop out of the field notes, at the top right, and fold back into them when they're done. A find's coloured dot flies into your count, which ticks up as it lands.
+- Notes like a word you've found now pop out of the field notes, at the top right, and fold back into them when they're done. A find's note folds right into your count, which ticks up as it lands.
 
 ## 2026-11-11
 

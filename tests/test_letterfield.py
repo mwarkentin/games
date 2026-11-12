@@ -23,6 +23,10 @@ FIND_WORD_JS = """() => {
   return null;
 }"""
 
+# A find's note shows a while, then folds into the field notes, and the count
+# ticks up as it lands: this long, at most, after the find.
+LANDS = 10_000
+
 
 def test_circling_a_word_adds_it_to_field_notes(page: Page, site_url, errors):
     without_worker(page, site_url, "letterfield")  # alone, so the word list gives hints
@@ -36,12 +40,12 @@ def test_circling_a_word_adds_it_to_field_notes(page: Page, site_url, errors):
     assert target, "no legend word with both ends on open map"
     for x, y in target["ends"]:
         page.mouse.click(x, y)
-    expect(page.locator("#notesBadge")).to_have_text("1")
+    expect(page.locator("#notesBadge")).to_have_text("1", timeout=LANDS)
     expect(page.locator("#toast")).to_contain_text(target["word"])
 
     # Finds are kept in this browser and survive a reload.
     page.reload()
-    expect(page.locator("#notesBadge")).to_have_text("1")
+    expect(page.locator("#notesBadge")).to_have_text("1", timeout=LANDS)
     assert errors == []
 
 
@@ -65,7 +69,7 @@ def test_finds_from_an_older_map_carry_over_if_still_there(page: Page, site_url,
     page.goto(f"{site_url}/letterfield")
     expect(page.locator("#toast")).to_contain_text("The map has been redrawn")
     expect(page.locator("#toast")).to_contain_text("1 of your 2 finds are still on it")
-    expect(page.locator("#notesBadge")).to_have_text("1")
+    expect(page.locator("#notesBadge")).to_have_text("1", timeout=LANDS)
     # A long note stays on a phone's screen, padding and all, and wraps rather than cutting off.
     box = page.locator("#toast").bounding_box()
     assert box["x"] >= 16 and box["x"] + box["width"] <= 375 - 16, box
@@ -78,7 +82,7 @@ def test_finds_from_an_older_map_carry_over_if_still_there(page: Page, site_url,
 
     # The note shows once.
     page.reload()
-    expect(page.locator("#notesBadge")).to_have_text("1")
+    expect(page.locator("#notesBadge")).to_have_text("1", timeout=LANDS)
     page.wait_for_timeout(1500)
     expect(page.locator("#toast")).not_to_contain_text("redrawn")
     assert errors == []
@@ -392,10 +396,10 @@ def test_every_tab_keeps_the_field_notes_found_in_the_others(page: Page, site_ur
         page.wait_for_timeout(50)
     assert page.evaluate(stored) == want, "a tab's save wrote over the other's find"
     # Each tab takes in the other's as it's saved.
-    expect(page.locator("#notesBadge")).to_have_text("2")
-    expect(other.locator("#notesBadge")).to_have_text("2")
+    expect(page.locator("#notesBadge")).to_have_text("2", timeout=LANDS)
+    expect(other.locator("#notesBadge")).to_have_text("2", timeout=LANDS)
     page.reload()
-    expect(page.locator("#notesBadge")).to_have_text("2")
+    expect(page.locator("#notesBadge")).to_have_text("2", timeout=LANDS)
     assert errors == []
 
 
@@ -631,7 +635,7 @@ def test_the_word_list_can_name_every_word_left_in_the_territory(page: Page, sit
         # Found, it leaves the list rather than staying there crossed out.
         expect(page.locator(f'#legendList .chip:text-is("{target["word"]}")')).to_have_count(0)
         expect(page.locator("#legendList .found")).to_have_count(0)
-    expect(page.locator("#notesBadge")).to_have_text(str(finds))
+    expect(page.locator("#notesBadge")).to_have_text(str(finds), timeout=LANDS)
     whole.click()
     expect(whole).to_have_attribute("aria-pressed", "true")
     expect(view).to_have_attribute("aria-pressed", "false")
@@ -804,6 +808,7 @@ def test_the_tools_pop_up_from_the_bar_and_go_again(page: Page, site_url, errors
     page.mouse.move(cx + 60, cy + 30, steps=5)
     page.mouse.up()
     expect(button).to_have_attribute("aria-expanded", "true")
+    page.wait_for_timeout(1000)  # the drag's glide comes to rest
     cam = page.evaluate("({ ...window.__lf.cam })")
     page.mouse.click(cx, cy)
     expect(button).to_have_attribute("aria-expanded", "false")
@@ -839,4 +844,41 @@ def test_the_shortcuts_work_with_the_tools_put_away(page: Page, site_url, errors
     page.keyboard.press("b")
     expect(page.locator("#music")).to_have_attribute("aria-pressed", "false")
     expect(page.locator("#toolsBtn")).to_have_attribute("aria-expanded", "false")
+    assert errors == []
+
+
+@pytest.mark.parametrize("size", [(375, 740), (1280, 900)], ids=["phone", "desktop"])
+def test_a_finds_note_folds_into_the_field_notes_before_it_counts(page: Page, site_url, errors, size):
+    without_worker(page, site_url, "letterfield")
+    page.set_viewport_size({"width": size[0], "height": size[1]})
+    page.goto(f"{site_url}/letterfield#debug")
+    page.click("#coachOk")
+    words = page.evaluate("window.__lf.chunk(0, 0).words.slice(0, 2).map(o => [o.w, o.x, o.y, o.d])")
+    toast, count = page.locator("#toast"), page.locator("#tWords" if size[0] >= 1100 else "#notesBadge")
+    # The note shows by the field notes (under their button, or beside them
+    # docked), and the count waits for it.
+    page.evaluate(COLLECT, words[:1])
+    expect(toast).to_contain_text(words[0][0])
+    expect(toast).to_have_class(re.compile(r"\bshow\b"))
+    page.wait_for_timeout(500)  # done popping out
+    notes = page.locator("#notes" if size[0] >= 1100 else "#notesToggle").bounding_box()
+    box = toast.bounding_box()
+    if size[0] >= 1100:
+        assert abs(box["x"] + box["width"] - (notes["x"] - 16)) < 3 and box["y"] < 30, (box, notes)
+    else:
+        assert abs(box["x"] + box["width"] - (notes["x"] + notes["width"])) < 2 and box["y"] > notes["y"] + notes["height"], (box, notes)
+    page.wait_for_timeout(1000)
+    expect(count).to_have_text("0")
+    assert page.evaluate("JSON.parse(localStorage.getItem('letterfield.finds.v4')).length") == 1  # saved all the same
+    # A second find sends the first one's note in at once, then waits itself.
+    page.evaluate(COLLECT, words[1:])
+    expect(count).to_have_text("1", timeout=1500)
+    expect(toast).to_contain_text(words[1][0])
+    page.wait_for_timeout(1500)
+    expect(count).to_have_text("1")
+    # Its time up, it folds in, and the count catches up.
+    expect(count).to_have_text("2", timeout=LANDS)
+    expect(toast).not_to_have_class(re.compile(r"\bshow\b"))
+    page.wait_for_timeout(1000)
+    assert page.evaluate("document.querySelectorAll('.toast').length") == 1, "the copy that folded in is gone"
     assert errors == []

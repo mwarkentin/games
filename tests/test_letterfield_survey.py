@@ -23,6 +23,10 @@ from fake_survey import AREA_WORDS, DUMMY_TOKEN, FAKE_TURNSTILE, NOW_MS, TURNSTI
 
 SURVEY = "https://survey.test"
 
+# A find's note shows a while, then folds into the field notes, and the count
+# ticks up as it lands: this long, at most, after the find.
+LANDS = 10_000
+
 
 def without_turnstile(page: Page) -> None:
     """Serve the game with TURNSTILE_SITE_KEY blanked, so the survey joins without Cloudflare's check.
@@ -94,7 +98,7 @@ def test_without_a_survey_url_the_game_plays_alone(page: Page, site_url, errors)
     page.on("websocket", lambda ws: sockets.append(ws.url))
     open_game(page, site_url, None)
     circle(page, hidden_words(page)[0])
-    expect(page.locator("#notesBadge")).to_have_text("1")
+    expect(page.locator("#notesBadge")).to_have_text("1", timeout=LANDS)
     expect(page.locator("#survey")).to_be_hidden()
     expect(page.locator("#signup")).to_be_hidden()  # nothing to sign when playing alone
     expect(page.locator("#tCharted")).to_have_text(re.compile(r"^ · 1/\d+ found$"))
@@ -155,7 +159,7 @@ def test_shared_map_shows_other_surveyors_and_their_words(page: Page, site_url, 
     # Circling a word someone already charted finds nothing new: it's theirs.
     circle(page, words[0])
     expect(page.locator("#toast")).to_contain_text("Already charted by MRW")
-    expect(page.locator("#notesBadge")).to_have_text("1")
+    expect(page.locator("#notesBadge")).to_have_text("1", timeout=LANDS)
     page.wait_for_timeout(300)
     assert len(fake.sent("claim")) == 1
     assert errors == []
@@ -210,7 +214,7 @@ def test_circling_a_word_someone_charted_finds_nothing_new(page: Page, site_url,
     circle(page, words[1])
     eventually(page, lambda: len(fake.sent("claim")) == 1)
     assert fake.sent("claim")[0]["w"] == words[1][0]
-    expect(page.locator("#notesBadge")).to_have_text("1")
+    expect(page.locator("#notesBadge")).to_have_text("1", timeout=LANDS)
     assert errors == []
 
 
@@ -368,7 +372,7 @@ def test_initials_come_before_the_first_word(page: Page, site_url, errors):
     # Now the same taps circle the word.
     for x, y in target["ends"]:
         page.mouse.click(x, y)
-    expect(page.locator("#notesBadge")).to_have_text("1")
+    expect(page.locator("#notesBadge")).to_have_text("1", timeout=LANDS)
     expect(page.locator("#toast")).to_contain_text(target["word"])
     eventually(page, lambda: len(fake.sent("claim")) == 1)
 
@@ -455,7 +459,7 @@ def test_unreachable_survey_says_so_and_the_game_carries_on(page: Page, site_url
     expect(page.locator("#surveyText")).to_have_text("Survey offline. Your finds still save in this browser.")
     expect(page.locator("#survey")).to_have_attribute("data-state", "offline")
     circle(page, hidden_words(page)[0])
-    expect(page.locator("#notesBadge")).to_have_text("1")
+    expect(page.locator("#notesBadge")).to_have_text("1", timeout=LANDS)
     expect(page.locator("#tCharted")).to_be_hidden()
 
 
@@ -547,7 +551,7 @@ def test_full_sector_says_so(page: Page, site_url, errors):
     open_game(page, site_url, fake)
     expect(page.locator("#surveyText")).to_have_text("This part of the map is full right now. Your finds still save in this browser.")
     circle(page, hidden_words(page)[0])
-    expect(page.locator("#notesBadge")).to_have_text("1")
+    expect(page.locator("#notesBadge")).to_have_text("1", timeout=LANDS)
     page.wait_for_timeout(1500)
     assert len(fake.sectors) == 4  # and it doesn't keep knocking
     assert errors == []
@@ -948,7 +952,7 @@ def test_failed_check_leaves_you_surveying_alone_once_passes_are_required(page: 
         "Couldn’t check this is a person, so you’re surveying alone for now. Your finds still save in this browser.")
     expect(page.locator("#survey")).to_have_attribute("data-state", "offline")
     circle(page, hidden_words(page)[0])
-    expect(page.locator("#notesBadge")).to_have_text("1")
+    expect(page.locator("#notesBadge")).to_have_text("1", timeout=LANDS)
     page.wait_for_timeout(2500)
     assert fake.sectors == []
     tried = len(fake.urls)
@@ -964,7 +968,7 @@ def test_blocked_turnstile_leaves_you_surveying_alone_once_passes_are_required(p
     open_game(page, site_url, fake, f"&turnstile={SITE_KEY}")
     expect(page.locator("#surveyText")).to_contain_text("Couldn’t check this is a person")
     circle(page, hidden_words(page)[0])
-    expect(page.locator("#notesBadge")).to_have_text("1")
+    expect(page.locator("#notesBadge")).to_have_text("1", timeout=LANDS)
     assert fake.sectors == []
 
 
