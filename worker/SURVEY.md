@@ -294,6 +294,241 @@ already send it:
   daily counts per address, so an evicted Atlas starts the day again and
   forgets yesterday.
 
+## Surveyors and emotes
+
+The survey panel has a fold called **Surveyors**: everyone else in the shared
+world, nearest first, each with their initials, the territory they're in (in
+its theme's colour), how far away it is and whether they're active or idle.
+A row flies you to their territory, and on to their caret once you're close
+enough for its sector to say where they are. Beside each row, and on a
+right-click or a long press of someone's caret, is a row of **emotes**: seven
+small drawings to send them. The code is `src/survey-social.js`, with hooks in
+`survey.js`, and a section of `letterfield.html` of its own.
+
+### Where it lives: the field notes
+
+The list is a fold of the survey panel in the field notes, beside the world
+map, rather than a panel or a sheet of its own. Since #75 the screen is the
+map between two bars, the tools and the notes behind one corner of buttons,
+and anything about the survey folds into the notes: a new button would crowd
+a phone's top bar, and a sheet from the bottom bar would sit over the words.
+In the notes it's beside the world map, which does the same job at a glance
+(dots where people are, a tap to fly). On a computer the notes are docked, so
+the list stays in view while you play; on a phone they're a sheet, and a row
+puts it away as it flies, as a find does. Each row is two buttons (fly there,
+and emotes), so it works from a keyboard, and Escape folds an open row of
+emotes.
+
+### Who a player is
+
+Initials aren't unique, and a socket's id lasts only as long as the socket.
+So the game makes a random token (`letterfield.player.v1`, 128 bits) and sends
+it in its `me` message to every sector it joins. The sector names the player
+by 48 bits of the token's SHA-256 (`playerId`): the same id in every sector
+and every visit, used in presence, the list and emotes. Nobody else ever sees
+a token, and the id can't be chosen, so nobody can send as someone else. A
+game that sends no token (an older copy) keeps its socket's id, as before.
+
+The trade-off is a lasting pseudonym. It's what lets a mute outlast a visit,
+and it lets someone recognise "the same KIM" from day to day; it says nothing
+else about the player, and clearing the browser's storage makes a new one.
+Claims still aren't tied to it (see "Mine"). An iPhone's Home Screen app keeps
+its own storage, so it has its own token, id and mutes.
+
+### Where the list comes from: the Atlas, from the reports sectors already send
+
+Each sector already tells the Atlas its numbers every ≤ `REPORT_MS` while it's
+busy. Its report now also lists its surveyors: `[id, initials, rx, ry, idle,
+flags]` for each player whose view is centred in it, has an id and hasn't
+asked to be hidden. The Atlas builds a snapshot of everyone at most every
+`LIST_MS` (10 s), each Worker instance fetches it at most that often, and works
+out pages itself. `GET /v1/survey/surveyors?r=<rx>,<ry>&page=<n>&me=<id>`
+answers with the nearest 40 to territory (rx, ry), leaving the asker out, and
+says how many there are; a page further on gives the next 40, up to the
+nearest 1,000. Browsers keep an answer for 10 s, and the game asks every 20 s
+while the fold is open, the notes are open and the tab is on screen.
+
+- **Staying listed while still.** A sector only reports while messages come
+  in, and an idle player sends none, so the Atlas would forget them after
+  `ONLINE_MS`. An idle game now sends `{t: 'here'}` every 30 s, and a sector
+  reports at least every `REFRESH_MS` (50 s) while messages arrive, changed or
+  not. Players who sit still stay counted on the world map too.
+- **Leaving.** A listed player whose socket closes is taken off with a report
+  straight away, rather than lingering until `ONLINE_MS`.
+- **Moving between sectors.** For a few seconds someone can be in two
+  sectors' reports; the snapshot keeps them once, from the latest.
+- **Outside the shared world** sectors don't report, so the list covers the
+  shared world, like the world map. Emotes still reach a caret out there.
+
+**Why not push it.** The cheapest list would ride on the reports: the Atlas
+could answer each sector with the surveyors nearest it, and the sector pass
+that to sockets that asked, for no requests at all. But every player in a
+sector would get the same nearest 40, paging would mean asking the Atlas
+anyway, a player out of the shared world (or whose sector is full) would have
+no list, and the sector would send the list to each socket, which is the work
+that limits how many players a sector holds. The list is "global data" in
+eieio's sense, so it's served the way the world map is: over HTTP, cached.
+
+**Cost and scale.** The reports were going out anyway; they grow by about 32
+bytes a surveyor (24 KB for a full sector of 750). What's new is the list's
+requests: one Worker request per reader every 20 s, and one Atlas request per
+Worker instance every 10 s while anyone reads. Assuming one player in ten has
+it open at a time:
+
+| online | snapshot | readers | Worker requests a day | Worker instances reading | Atlas requests a day | a page's work in the Worker |
+| --- | --- | --- | --- | --- | --- | --- |
+| 10 | 0.3 KB | 1 | 4,300 | 1 | 8,600 | nothing |
+| 1,000 | 33 KB | 100 | 430,000 (~$0.13) | ~20 | 170,000 (~$0.03) | sorts a few dozen |
+| 10,000 | 330 KB | 1,000 | 4.3 M (~$1.30) | ~100 | 860,000 (~$0.13) | visits sectors nearest first, stops once the page is full |
+
+So 10,000 online all day adds about $1.50 a day, next to the ~$0.75 an hour
+the survey can cost at its ceiling. The page's work stays small at any size:
+the snapshot is grouped by sector, and a page visits sectors nearest first
+until it has its 40 and no nearer sector is left. The Atlas holds one entry
+per listed player in memory (25,000 at `MAX_ONLINE`, a few MB). `LIST_MS` and
+the game's 20 s are the knobs; past that, the push above.
+
+**Privacy.**
+
+- **Territory, not cell.** Sectors round each position to its territory
+  before reporting, so the Atlas never has cells. A list of exact cells would
+  let anyone follow a player across the whole world; a territory (48 × 48
+  cells) is enough to find them, and close up you see their caret, as before.
+- **Off the list.** "Show me on the list" (`letterfield.listed.v1`) sends
+  `hide: true`: the sector leaves you out of its reports, and you still show
+  as a caret to anyone near you. Hidden players only take emotes from players
+  in their own sector, who can see the caret anyway, so an id saved from an
+  earlier day can't reach them from afar.
+- **No addresses.** The list and emotes carry ids, initials, territories and
+  idle seconds. Hashed addresses stay in sectors, as before.
+
+### Emotes
+
+`{t: 'emote', to, e, s}` goes on the socket of the sector under the middle of
+the sender's view, which knows where they are; `s` is the sector the sender
+saw them in (their caret's, or their territory's from the list). If that's
+the same sector it's handed over there; otherwise it goes with an internal
+POST (`/emote`) to the recipient's sector, which only Workers binding
+`SECTORS` can reach. The recipient gets `{t: 'emote', from, ini, e, r}`, with
+the sender's territory, and the sender `{t: 'emoted', to, e}` with `ok` or why
+not. In view, an emote pops from the sender's caret as a bubble that springs
+up, drifts and fades (and simply shows and fades under reduced motion);
+otherwise it's a note saying who, what and where, with **Fly there**. A
+screen reader hears it either way.
+
+**Nobody sends as someone else.** The sender is whoever their socket says,
+from their token, never what the message says, and the internal path takes
+only what one sector passes another.
+
+**Limits.**
+
+- Each socket: 3 at once, then one every 4 s.
+- Each address: 20 a minute, across every sector (`SURVEY_EMOTES`, a
+  rate-limiting binding like the claims').
+- Kept by the recipient's sector, which every emote for its players passes
+  through, from anywhere: 3 a minute from one sender to one player (`slow
+  down`), and 6 every 10 s to one player from everyone (`busy`). Nobody can
+  be flooded, and a sender's four sockets get no more than one.
+- Only from players with initials and an id (`sign first`), and only to a
+  sector in the shared world or beside the sender's (`gone`), so emotes can't
+  be used to wake objects all over the endless map.
+- These limits live in memory; a sector that hibernates forgets them, and the
+  per-socket and per-address limits still hold.
+
+**Turning them off and muting.** "Take emotes" (`letterfield.emotes.v1`)
+sends `quiet: true`; the sector refuses emotes for them (`off`) and the list
+greys out their emotes. **Mute**, from a row or a caret, is kept on the device
+(`letterfield.muted.v1`, up to 200): a muted player's caret and emotes don't
+show, and they're never told. A muted player who clears their storage comes
+back with a new id; the per-address limits are what hold then.
+
+### The emotes
+
+Seven drawings on a 24 × 24 grid in the game's line style, the same paths in
+the buttons, the notes and the canvas (as `Path2D`). Not emoji: they look
+different on every device, and plenty of them can be made suggestive. None is
+text, and one emote never combines with another: each shows alone, at the
+sender's caret, and a new one from the same sender replaces the last, so they
+can't be strung into a message.
+
+| emote | means | why it's safe |
+| --- | --- | --- |
+| Wave | hello, goodbye | an open hand with its fingers together, leaning, with motion lines: no finger is singled out, and it reads as a wave rather than a raised palm |
+| Thanks | a hat tipped | a hat, the old gesture of thanks; nothing bodily |
+| Nice | a thumbs up | the near-universal "good" online. It's rude in a few places (parts of West Africa and the Middle East), which made it the closest call; it was asked for by name and kept |
+| Clap | well done | two flat palms meeting, with no fingers drawn; it can be sarcastic, but no worse than words would be, and there are none |
+| Great find | a sparkle | a four-pointed star |
+| Over here | a survey flag | how surveyors mark a spot, and it comes with the sender's territory to fly to |
+| Question | ? in a circle | punctuation, which can't spell anything |
+
+Left out: hearts, kisses, faces (they wink and stick out tongues), fruit and
+vegetables, every other hand shape (pointing, the OK sign, a fist, counted
+fingers), fire, skulls, letters, numbers and arrows.
+
+### Initials on a list
+
+The list puts initials in front of everyone in the shared world, not just
+whoever hovers a caret. Initials are still the only words anyone shows, so
+`BLOCKED_INITIALS` (in `leaderboard.js`, shared with the leaderboards, whose
+top 10s are just as public) now covers the common obscenities and slurs three
+letters can spell, 32 in all. It stops there: every combination left out is
+someone's real initials. A sector blanks blocked initials, and the list
+shows a blank as "···".
+
+## Guilds: the options
+
+Not built yet; this is the plan to choose from. A guild is a few players who
+want to find each other: mates first on the list, a note when one comes
+online, a badge on their carets.
+
+**What any option needs.**
+
+- **An identity that lasts.** The token above, which already exists. On an
+  iPhone the Home Screen app is a separate player, so it joins by link too.
+- **Joining by invite link or code only.** Nobody browses guilds.
+- **No free text.** Leaderboard groups have names players type, shown only to
+  members; on carets and lists they'd be in front of everyone.
+
+**The options.**
+
+| | (a) leaderboard groups | (b) Letterfield guilds | (c) follows |
+| --- | --- | --- | --- |
+| what | a group from `/v1/groups` is a guild; `games.groups` says which | one guild each, its own code (6 characters), a name made from fixed words ("Cobalt Compass Society") and a colour | follow a player from the list, on your device only; no shared group |
+| for | already exists, codes and `?join=` links work; a family's board doubles as its guild | one badge per caret; no typed names; a roster to cap and to keep last seen in; room for a guild view in the log | no server state at all; the list already has everything |
+| against | typed names; a player in five groups is in five guilds (which badge?); groups keep no members, so no last seen; joining a War board would make you a guild mate here | new endpoints and an object per guild | one-sided (you follow someone who doesn't know); no badge; not really a guild |
+
+**Recommended: (b).** Each piece:
+
+- **Membership** lives in a Durable Object per guild (`Guild`, keyed by its
+  code): name, colour, and up to 50 members with their initials and when they
+  were last seen. `POST /v1/survey/guilds` makes one (5 an hour per address),
+  `?guild=<code>` joins (20 an hour per address), and leaving is one tap. The
+  game keeps its guild's code (`letterfield.guild.v1`) and sends it in `me`;
+  the sector asks the guild's object once per socket whether the id is a
+  member, so a code alone doesn't put a badge on anyone.
+- **Online notes in the game** ride on the reports: a report's surveyors carry
+  their guild, and the Atlas's answer lists, for each guild in that sector,
+  which of its members are online and where. The sector passes that to its
+  members when it changes, and the game says "ABC came online". No extra
+  requests.
+- **Web Push while the game is closed: not now.** It needs VAPID keys made in
+  mwarkentin/infra, a subscription per player in D1, payloads encrypted in
+  the Worker (`aes128gcm` with Web Crypto), a `push` handler in `sw.js` and a
+  permission prompt; on an iPhone it only works from the Home Screen app.
+  Sending is cheap, but it's the most code and the most to get wrong, for
+  "come and play" rather than "they're here while you are". Worth it once
+  guilds are in use.
+- **The list:** online mates first, wherever they are, then everyone nearest;
+  offline mates under them with "last seen", from the guild's roster, which
+  the Atlas updates as a member drops off.
+- **A guild view in the log:** the guild's words charted needs each claim's
+  guild in the log (a column and an index, written by the sector, which knows
+  it at claim time). Later.
+- **Limits and cost:** 50 members and one guild per player keep every roster
+  small. The guild's object is asked on joins, leaves and each socket's first
+  `me`; online notes cost nothing new; "last seen" is one write per member per
+  visit.
+
 ## The log
 
 [letterfield-log](https://games.michaelwarkentin.com/letterfield-log) is a
@@ -901,7 +1136,9 @@ Usage per player-hour, from the design and the 700-player run:
 | an eieio-style viral fortnight: 5,000 online on average, up to the cap | 1.68 M | ~$12 | ~$27 | ~$12.50 | **~$57** |
 | the ceiling: `MAX_ONLINE` (25,000) online all the time | 25,000 an hour | ~$0.22/h | ~$0.40/h | ~$0.11/h | **at most ~$0.75 an hour (~$18 a day)** |
 
-The per-address limits don't change these figures. A rate-limiting binding
+The surveyor list and emotes add about $1.50 a day at 10,000 online (see
+"Surveyors and emotes"), mostly the list's own requests. The per-address
+limits don't change these figures. A rate-limiting binding
 isn't a Durable Object, so it adds no Durable Object requests, and neither
 pricing page lists a charge for it. The hashed address is worked out once
 per connection, in the Worker. The daily cap rides on the reports sectors
@@ -982,6 +1219,16 @@ about 30 cents over the included million requests.
   a few hundred thousand words, each settled week could be served as one
   binary file (a word fits in 8 bytes), or the page could draw far zoom
   levels from the territory counts alone.
+- **The surveyor list, pushed.** If its requests ever show in the bill, the
+  Atlas can answer each sector's report with the surveyors nearest it, for
+  the sector to pass on to sockets that asked (see "Why not push it").
+- **Emotes and toasts.** An emote's note is a note like any other; once notes
+  can be quietened by kind, emotes should be a kind of their own. "Take
+  emotes" already turns them off entirely.
+- **Reporting a player.** There's nothing to report but three letters, which
+  `BLOCKED_INITIALS` screens, and seven drawings; mute is on the device. A
+  muted player with a new token is a new id, held back only by the limits.
+- **Guilds.** See "Guilds: the options".
 - **Finds made offline stay personal.** Uploading them later would let
   anyone backdate a pile of claims at once.
 

@@ -1,0 +1,300 @@
+"""Letterfield's surveyor list and emotes, against the survey's fakes.
+
+The list is a fold of the survey panel, fetched from GET /v1/survey/surveyors
+(tests/fake_survey.py answers it); emotes go out and come back on the sector
+sockets. The real Worker's side is tested in worker/test/survey-social.test.js.
+The game starts at cell (6, 6), territory (0, 0) of sector (0, 0).
+"""
+
+from __future__ import annotations
+
+import hashlib
+import re
+
+from playwright.sync_api import Page, expect
+
+from fake_survey import FakeSurvey
+from test_letterfield_survey import eventually, open_game, open_notes
+
+TOKEN = "0" * 31 + "1"  # this browser's player token, as the game would make one
+PID = hashlib.sha256(f"letterfield-player:{TOKEN}".encode()).hexdigest()[:12]  # and the id the sectors give it
+
+# Everyone the list names: [id, initials, rx, ry, seconds idle, flags]. The
+# fake hands them out in this order; the game puts the nearest first.
+KIM = ["3f9a01c27be4", "KIM", 0, 0, 3, 0]
+ZED = ["8d22e5a90f13", "ZED", 1, 0, 45, 0]
+SAM = ["c41b7e0d9a55", "SAM", -2, 3, 400, 1]  # takes no emotes
+LOU = ["17e6b3f04c8a", "LOU", 7, -4, 2, 0]
+ANON = ["a90c5d2e61f7", "", 12, 9, 7300, 0]  # never signed
+KIM_CARET = [KIM[0], "KIM", 9.5, 7.0]  # KIM's caret, in sector 0,0's presence
+SHOWN = re.compile(r"\bshow\b")
+
+
+def start(page: Page, site_url: str, fake: FakeSurvey, viewport: dict | None = None) -> None:
+    """Opens the game on the survey, signed as MLW with our token, past the welcome card."""
+    open_game(page, site_url, fake, viewport=viewport)
+    page.evaluate(
+        "t => { localStorage.setItem('games.initials', '\"MLW\"'); localStorage.setItem('letterfield.coach.v1', '1');"
+        " localStorage.setItem('letterfield.player.v1', t); localStorage.removeItem('letterfield.cam.v1'); }",
+        TOKEN,
+    )
+    fake.received.clear()  # what the first load, with a token of its own, sent
+    page.reload()
+    expect(page.locator("#survey")).to_have_attribute("data-state", "live")
+    page.wait_for_function(f"window.__lf.pid() === '{PID}'")
+
+
+def open_list(page: Page) -> None:
+    open_notes(page)
+    if not page.locator("#surveyWho").evaluate("d => d.open"):
+        page.locator("#surveyWho summary").click()
+    expect(page.locator("html")).to_have_attribute("data-who", "ready")
+
+
+def wait_landed(page: Page, x: float, y: float) -> None:
+    page.wait_for_function(
+        "([x, y]) => Math.hypot(window.__lf.cam.x - x, window.__lf.cam.y - y) < .6", arg=[x, y], timeout=10_000
+    )
+
+
+def name_of(page: Page, rx: int, ry: int) -> str:
+    return page.evaluate("([rx, ry]) => window.__lf.territoryName(rx, ry)", [rx, ry])
+
+
+def test_the_list_names_everyone_nearest_first_and_flies_to_them(page: Page, site_url, errors):
+    fake = FakeSurvey(surveyors=[LOU, KIM, ANON, SAM, ZED], presence=[KIM_CARET, [ZED[0], "ZED", 60.5, 10.0]])
+    start(page, site_url, fake)
+    open_list(page)
+    expect(page.locator(".who-ini")).to_have_text(["KIM", "ZED", "SAM", "LOU", "···"])
+    expect(page.locator(".who-meta")).to_have_text(
+        [
+            "in your territory · active",
+            "1 territory away · idle",
+            "3 territories away · idle 6m · no emotes",
+            "7 territories away · active",
+            "12 territories away · idle 2h",
+        ]
+    )
+    expect(page.locator(".who-where").nth(3)).to_have_text(name_of(page, 7, -4))
+    expect(page.locator("#whoStatus")).to_have_text("5 other surveyors in the shared world, nearest first")
+    assert fake.list_asks[-1] == {"r": "0,0", "page": "0", "me": PID}  # asked from where we are, leaving us out
+
+    # A row flies there: straight to the caret when one of our sectors shows it...
+    page.locator(".who").nth(1).click()
+    wait_landed(page, 60.5, 10.0)
+    # ...and otherwise to the middle of their territory.
+    page.get_by_role("button", name=re.compile(r"^LOU, ")).click()
+    wait_landed(page, 7.5 * 48, -3.5 * 48)
+    expect(page.locator(".who-ini").first).to_have_text("LOU")  # nearest first, from where we are now
+
+    # Folded, it stops asking.
+    page.locator("#surveyWho summary").click()
+    expect(page.locator("html")).to_have_attribute("data-who", "closed")
+    assert errors == []
+
+
+def test_more_surveyors_come_a_page_at_a_time(page: Page, site_url, errors):
+    many = [[f"{i:012x}", "ABC", i // 8, 0, 0, 0] for i in range(1, 46)]
+    fake = FakeSurvey(surveyors=many)
+    start(page, site_url, fake)
+    open_list(page)
+    expect(page.locator(".who-row")).to_have_count(40)
+    page.click("#whoMore")
+    expect(page.locator(".who-row")).to_have_count(45)
+    expect(page.locator("#whoMore")).to_be_hidden()
+    assert errors == []
+
+
+def test_an_emote_goes_from_a_row_and_says_what_became_of_it(page: Page, site_url, errors):
+    fake = FakeSurvey(surveyors=[KIM, ZED, SAM], presence=[KIM_CARET])
+    start(page, site_url, fake)
+    open_list(page)
+    page.get_by_role("button", name="Emotes for ZED").click()
+    expect(page.get_by_role("button", name="Emotes for ZED")).to_have_attribute("aria-expanded", "true")
+    expect(page.locator(".who-emotes .emote")).to_have_count(7)
+    page.get_by_role("button", name="Thanks to ZED").click()
+    eventually(page, lambda: fake.sent("emote"))
+    # From the sector under the middle of the view, toward ZED's (territory 1,0 is in sector 0,0).
+    assert fake.sent("emote")[-1] == {"t": "emote", "to": ZED[0], "e": "thanks", "s": [0, 0], "sector": "0,0"}
+    expect(page.locator(".who-said")).to_have_text("Thanks: sent to ZED.")
+
+    # To a caret in view, it pops there for us too.
+    page.get_by_role("button", name="Emotes for KIM").click()
+    expect(page.locator(".who-emotes")).to_have_count(1)  # one row of emotes open at a time
+    page.get_by_role("button", name="Wave to KIM").click()
+    page.wait_for_function(f"window.__lf.pops().some(p => p[0] === '{KIM[0]}' && p[1] === 'wave')")
+    fake.emote_error = "off"
+    page.get_by_role("button", name="Clap to KIM").click()
+    expect(page.locator(".who-said")).to_have_text("KIM isn’t taking emotes.")
+    fake.emote_error = "slow down"
+    page.get_by_role("button", name="Nice to KIM").click()
+    expect(page.locator(".who-said")).to_have_text("Too quick: try again in a moment.")
+
+    # Escape folds the row, and leaves the notes open.
+    page.keyboard.press("Escape")
+    expect(page.locator(".who-emotes")).to_have_count(0)
+    expect(page.get_by_role("button", name="Emotes for KIM")).to_be_focused()
+    expect(page.locator("#notes")).to_be_visible()
+
+    # Someone who takes no emotes can still be muted, but not sent one.
+    page.get_by_role("button", name="Emotes for SAM").click()
+    expect(page.locator(".who-emotes .emote").first).to_be_disabled()
+    expect(page.locator(".who-said")).to_have_text("SAM isn’t taking emotes.")
+    assert errors == []
+
+
+def test_an_emote_pops_from_a_caret_in_view_or_comes_as_a_note_with_a_way_there(page: Page, site_url, errors):
+    fake = FakeSurvey(presence=[KIM_CARET])
+    start(page, site_url, fake)
+    page.wait_for_function(f"window.__lf.carets().includes('{KIM[0]}')")
+    toast = page.locator("#toast")
+
+    fake.emote("0,0", KIM[0], "KIM", "wave", [0, 0])
+    page.wait_for_function(f"window.__lf.pops().some(p => p[0] === '{KIM[0]}')")
+    expect(page.locator("#findSay")).to_have_text("KIM waved")
+    expect(toast).not_to_have_class(SHOWN)
+
+    fake.emote("0,0", LOU[0], "LOU", "great", [7, -4])
+    expect(toast).to_have_class(SHOWN)
+    expect(toast.locator("b")).to_have_text("LOU says great find")
+    expect(toast.locator("span")).to_have_text(f"{name_of(page, 7, -4)} · 7 territories away")
+    toast.get_by_role("button", name="Fly to LOU").click()
+    wait_landed(page, 7.5 * 48, -3.5 * 48)
+
+    # Anything that isn't one of the emotes, or from no one, is ignored.
+    for frame in (["0,0", LOU[0], "LOU", "kiss", [7, -4]], ["0,0", "not-an-id", "LOU", "wave", [7, -4]]):
+        fake.emote(*frame)
+    page.wait_for_timeout(300)
+    assert page.evaluate("window.__lf.pops()") == []
+    assert errors == []
+
+
+def test_muting_hides_a_surveyors_caret_and_emotes_and_is_remembered(page: Page, site_url, errors):
+    fake = FakeSurvey(surveyors=[KIM], presence=[KIM_CARET])
+    start(page, site_url, fake)
+    open_list(page)
+    page.wait_for_function(f"window.__lf.carets().includes('{KIM[0]}')")
+    page.get_by_role("button", name="Emotes for KIM").click()
+    page.get_by_role("button", name="Mute KIM").click()
+    expect(page.locator(".who-row")).to_have_class(re.compile(r"\bmuted\b"))
+    expect(page.locator(".who-meta")).to_have_text("in your territory · muted")
+    page.wait_for_function(f"!window.__lf.carets().includes('{KIM[0]}')")
+    fake.emote("0,0", KIM[0], "KIM", "wave", [0, 0])
+    page.wait_for_timeout(400)
+    assert page.evaluate("window.__lf.pops()") == []
+    expect(page.locator("#toast")).not_to_have_class(SHOWN)
+
+    # Remembered on this device.
+    page.reload()
+    expect(page.locator("#survey")).to_have_attribute("data-state", "live")
+    assert page.evaluate("window.__lf.muted()") == [KIM[0]]
+    page.wait_for_timeout(500)
+    assert KIM[0] not in page.evaluate("window.__lf.carets()")
+    open_list(page)
+    page.get_by_role("button", name="Emotes for KIM").click()
+    expect(page.locator(".who-emotes .emote")).to_have_count(0)  # nothing to send someone muted
+    page.get_by_role("button", name="Unmute KIM").click()
+    page.wait_for_function(f"window.__lf.carets().includes('{KIM[0]}')")
+    assert errors == []
+
+
+def test_the_list_and_emote_switches_tell_every_sector_and_are_remembered(page: Page, site_url, errors):
+    fake = FakeSurvey(surveyors=[KIM], presence=[KIM_CARET])
+    start(page, site_url, fake)
+    open_list(page)
+    sectors = {"-1,-1", "-1,0", "0,-1", "0,0"}
+    eventually(page, lambda: {m["sector"] for m in fake.sent("me")} == sectors)
+    assert all(m["token"] == TOKEN and "hide" not in m and "quiet" not in m for m in fake.sent("me"))
+
+    def latest() -> dict:
+        return {m["sector"]: m for m in fake.sent("me")}
+
+    page.uncheck("#whoListed")
+    eventually(page, lambda: all(m.get("hide") for m in latest().values()))
+    expect(page.locator("#whoStatus")).to_contain_text("You’re off the list.")
+    page.uncheck("#whoEmotes")
+    eventually(page, lambda: all(m.get("hide") and m.get("quiet") for m in latest().values()))
+    fake.emote("0,0", KIM[0], "KIM", "wave", [0, 0])
+    page.wait_for_timeout(400)
+    assert page.evaluate("window.__lf.pops()") == []
+
+    fake.received.clear()
+    page.reload()
+    eventually(page, lambda: len(fake.sent("me")) == 4)
+    assert all(m["hide"] is True and m["quiet"] is True and m["token"] == TOKEN for m in fake.sent("me"))
+    open_list(page)
+    expect(page.locator("#whoListed")).not_to_be_checked()
+    expect(page.locator("#whoEmotes")).not_to_be_checked()
+    assert errors == []
+
+
+def test_presence_by_player_id_never_shows_us_to_ourselves(page: Page, site_url, errors):
+    fake = FakeSurvey(presence=[[PID, "MLW", 6.0, 6.0], KIM_CARET])
+    start(page, site_url, fake)
+    expect(page.locator("#surveyText")).to_contain_text("Live · 1 other surveyor nearby")
+    page.wait_for_function(f"window.__lf.carets().includes('{KIM[0]}')")
+    assert page.evaluate("window.__lf.carets()") == [KIM[0]]
+    assert errors == []
+
+
+def test_a_caret_has_a_menu_of_emotes(page: Page, site_url, errors):
+    fake = FakeSurvey(presence=[KIM_CARET])
+    start(page, site_url, fake)
+    page.wait_for_function(f"window.__lf.carets().includes('{KIM[0]}')")
+    menu = page.locator("#caretMenu")
+    at = page.evaluate(f"window.__lf.caretXY('{KIM[0]}')")
+    page.mouse.click(at["x"], at["y"], button="right")
+    expect(menu).to_be_visible()
+    expect(menu.locator("#caretWho")).to_have_text("KIM")
+    expect(menu.get_by_role("button", name="Wave to KIM")).to_be_focused()
+    menu.get_by_role("button", name="Over here to KIM").click()
+    expect(menu).to_be_hidden()
+    eventually(page, lambda: fake.sent("emote"))
+    assert fake.sent("emote")[-1] == {"t": "emote", "to": KIM[0], "e": "here", "s": [0, 0], "sector": "0,0"}
+    page.wait_for_function(f"window.__lf.pops().some(p => p[0] === '{KIM[0]}' && p[1] === 'here')")
+
+    # Escape puts it away, back to the map; a right-click away from any caret opens nothing.
+    page.mouse.click(at["x"], at["y"], button="right")
+    expect(menu).to_be_visible()
+    page.keyboard.press("Escape")
+    expect(menu).to_be_hidden()
+    expect(page.locator("#map")).to_be_focused()
+    page.mouse.click(at["x"] - 150, at["y"] + 120, button="right")
+    expect(menu).to_be_hidden()
+    assert errors == []
+
+
+def test_the_list_says_when_it_cant_be_loaded(page: Page, site_url, errors):
+    fake = FakeSurvey(list_status=503)
+    start(page, site_url, fake)
+    open_notes(page)
+    page.locator("#surveyWho summary").click()
+    expect(page.locator("html")).to_have_attribute("data-who", "failed")
+    expect(page.locator("#whoStatus")).to_have_text("Couldn’t load the list. Trying again shortly.")
+    expect(page.locator(".who-row")).to_have_count(0)
+    # The browser logs the failed request; the game says so itself and carries on.
+    assert [e for e in errors if "503" not in e and "surveyors" not in e] == []
+
+
+def test_the_list_fits_a_phone(page: Page, site_url, errors):
+    fake = FakeSurvey(surveyors=[KIM, ZED, SAM, LOU, ANON], presence=[KIM_CARET])
+    start(page, site_url, fake, viewport={"width": 375, "height": 740})
+    open_list(page)
+    page.get_by_role("button", name="Emotes for ZED").click()
+    page.locator(".who-emotes").scroll_into_view_if_needed()
+    sizes = page.evaluate("""() => ({
+      page: document.scrollingElement.scrollWidth,
+      notes: [document.getElementById('notes').scrollWidth, document.getElementById('notes').clientWidth],
+      emotes: [...document.querySelectorAll('.who-emotes .emote')].map(b => b.getBoundingClientRect().width),
+      act: document.querySelector('.who-act').getBoundingClientRect().width,
+    })""")
+    assert sizes["page"] <= 375, sizes
+    assert sizes["notes"][0] <= sizes["notes"][1], sizes
+    assert min(sizes["emotes"]) >= 36 and sizes["act"] >= 40, sizes
+    page.get_by_role("button", name="Wave to ZED").click()
+    expect(page.locator(".who-said")).to_have_text("Wave: sent to ZED.")
+    # A row flies there and puts the notes away, which on a phone cover the map.
+    page.get_by_role("button", name=re.compile(r"^LOU, ")).click()
+    expect(page.locator("#notes")).to_be_hidden()
+    wait_landed(page, 7.5 * 48, -3.5 * 48)
+    assert errors == []

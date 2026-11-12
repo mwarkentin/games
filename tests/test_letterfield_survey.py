@@ -53,6 +53,7 @@ def open_game(page: Page, site_url: str, fake: FakeSurvey | None, query: str = "
     if fake:
         page.route_web_socket(re.compile(r"^wss://survey\.test/"), fake.handle)
         page.route(f"{SURVEY}/v1/survey/world", fake.handle_world)
+        page.route(f"{SURVEY}/v1/survey/surveyors*", fake.handle_list)
         page.goto(f"{site_url}/letterfield?survey={SURVEY}{query}#debug")
     else:
         without_worker(page, site_url, "letterfield")  # SURVEY_URL blanked: playing alone
@@ -690,9 +691,9 @@ def test_hovering_names_surveyors_and_who_charted_a_word(page: Page, site_url, e
     # The caret sits in the gap beside the cell in the middle of their view.
     page.mouse.move(*page.evaluate(SCREEN_OF, [10, 7.5]))
     expect(peek).to_be_visible()
-    expect(peek).to_have_text("KIDsurveying here")
+    expect(peek).to_have_text("KIDsurveying here · right-click for emotes")
     page.mouse.move(*page.evaluate(SCREEN_OF, [3, 9.5]))
-    expect(peek).to_have_text("A surveyorsurveying here")  # odd initials never reach the page
+    expect(peek).to_have_text("A surveyorsurveying here · right-click for emotes")  # odd initials never reach the page
 
     # A charted word names who got there first.
     dirs = [[1, 0], [1, 1], [0, 1], [-1, 1], [-1, 0], [-1, -1], [0, -1], [1, -1]]

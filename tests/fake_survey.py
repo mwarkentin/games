@@ -5,6 +5,10 @@ tests point it at https://survey.test and answer its sector WebSockets here
 with Playwright's route_web_socket, and its world map with route. The real
 Sector and Atlas are tested in worker/test/survey.test.js.
 
+It also fakes the surveyor list (GET /v1/survey/surveyors) and emotes:
+`surveyors` is everyone the list names, `emote()` sends the game one, and
+the emotes the game sends are answered as `emote_error` says.
+
 It also fakes Turnstile (worker/TURNSTILE.md): Cloudflare's widget script
 and the Worker's POST /v1/survey/pass.
 
@@ -19,6 +23,7 @@ import base64
 import json
 import re
 import time
+from urllib.parse import parse_qs, urlparse
 
 from playwright.sync_api import Route, WebSocketRoute
 
@@ -40,7 +45,7 @@ class FakeSurvey:
     """Answers each sector's WebSocket the way worker/src/survey.js does."""
 
     def __init__(self, claims=(), presence=(), taken=(), world=None, totals=None, full=None, refuse=None, refuse_passes=(),
-                 require_pass=False, hold=None, lose=None, rate=False):
+                 require_pass=False, hold=None, lose=None, rate=False, surveyors=(), emote_error=None, list_status=200):
         self.claims = list(claims)        # [w, x, y, d, s, initials, at] already charted in sector 0,0
         self.presence = list(presence)    # [id, initials, x, y] of other players in sector 0,0
         self.taken = {tuple(c[:4]): c for c in taken}  # words someone else charts first, just before us
@@ -54,6 +59,10 @@ class FakeSurvey:
         self.lose = lose                  # "answer": the sector keeps each claim but its answer is lost; "claim": the claim is,
                                           # as when the socket drops with it on the way
         self.rate = rate                  # claims are limited per socket, as the sector's CLAIM_BURST and CLAIM_REFILL_MS
+        self.surveyors = list(surveyors)  # [pid, initials, rx, ry, idle, flags] everyone the list names, nearest first
+        self.emote_error = emote_error    # why every emote the game sends is refused ('gone', 'slow down'...), or None
+        self.list_status = list_status    # what GET /v1/survey/surveyors answers with
+        self.list_asks: list[dict] = []   # the query of every request for the list
         self.held: list[WebSocketRoute] = []
         self.urls: list[str] = []         # the URL of every connection
         self.sectors: list[str] = []      # path of every connection
@@ -98,6 +107,10 @@ class FakeSurvey:
             self.received.append({**msg, "sector": key})
             if msg["t"] == "me":
                 me["initials"] = msg["initials"]
+            if msg["t"] == "emote":
+                answer = {"error": self.emote_error} if self.emote_error else {"ok": True}
+                ws.send(json.dumps({"t": "emoted", "to": msg["to"], "e": msg["e"], **answer}))
+                return
             if msg["t"] != "claim":
                 return
             word = (msg["w"], msg["x"], msg["y"], msg["d"])
@@ -125,6 +138,24 @@ class FakeSurvey:
 
     def handle_world(self, route: Route) -> None:
         route.fulfill(json=self.world, headers={"Access-Control-Allow-Origin": "*"})
+
+    def handle_list(self, route: Route) -> None:
+        """GET /v1/survey/surveyors, as worker/src/survey-social.js answers it, in the order given."""
+        size = 40  # LIST_PAGE
+        query = {k: v[0] for k, v in parse_qs(urlparse(route.request.url).query).items()}
+        self.list_asks.append(query)
+        cors = {"Access-Control-Allow-Origin": "*"}
+        if self.list_status != 200:
+            route.fulfill(status=self.list_status, json={"error": "atlas down"}, headers=cors)
+            return
+        page = int(query.get("page", 0))
+        who = [e for e in self.surveyors if e[0] != query.get("me")]
+        route.fulfill(json={"n": len(who), "page": page, "size": size, "more": len(who) > (page + 1) * size,
+                            "who": who[page * size:(page + 1) * size]}, headers=cors)
+
+    def emote(self, sector: str, sender: str, initials: str, e: str, r: list | None = None) -> None:
+        """Sends the game emote `e` on sector `sector`'s socket, from player `sender` in territory r."""
+        self.sockets[sector].send(json.dumps({"t": "emote", "from": sender, "ini": initials, "e": e, "r": r}))
 
     def sent(self, kind: str) -> list[dict]:
         return [m for m in self.received if m["t"] == kind]

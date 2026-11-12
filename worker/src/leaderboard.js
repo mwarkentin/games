@@ -33,8 +33,13 @@ export const CODE_ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
 export const CODE = /^[A-HJKMNP-Z2-9]{4}$/;
 const GROUP_NAME = /^[\p{L}\p{N}][\p{L}\p{N} '&.,!-]{0,23}$/u;
 export const INITIALS = /^[A-Z]{3}$/;
+// Initials nobody gets to show: a top 10 and Letterfield's list of everyone
+// surveying put them in front of every player, so the list covers the
+// common obscenities and slurs that three letters can spell, and no more:
+// every combination left out is also someone's real initials.
 export const BLOCKED_INITIALS = new Set([
   'ASS', 'CUM', 'DIC', 'DIK', 'FAG', 'FCK', 'FUC', 'FUK', 'KKK', 'NIG', 'SEX', 'SHT', 'TIT', 'WTF', 'XXX',
+  'CNT', 'COC', 'COK', 'DIX', 'FAP', 'FGT', 'FKU', 'FUQ', 'JAP', 'JIZ', 'KYS', 'NGA', 'NGR', 'PNS', 'TWT', 'VAG', 'WOP',
 ]);
 
 const isInt = (value, min, max) => Number.isInteger(value) && value >= min && value <= max;

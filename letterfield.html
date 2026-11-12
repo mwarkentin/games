@@ -274,6 +274,52 @@ body.docked .notes{box-shadow:none}
 .survey-map-note:empty{display:none}
 .survey-log{display:block;margin-top:6px;padding:4px 0;font:500 10px/1.3 var(--f-mono);letter-spacing:.14em;text-transform:uppercase;color:var(--muted)}
 .survey-log::after{content:" →"}
+/* Surveyors: everyone else in the shared world, nearest first, each a row that
+   flies you to their territory, with emotes to send them (see Surveyors). */
+.survey-who summary{display:flex;align-items:center;gap:6px}
+.who-count{letter-spacing:.06em}
+.who-status{margin:8px 0 4px;font:400 11px/1.45 var(--f-mono);color:var(--muted);white-space:pre-line}
+html[data-who="loading"] .who-status{animation:blink 1s infinite alternate}
+.who-list{list-style:none;margin:0 -6px;padding:0}
+.who-list li{display:flex;flex-wrap:wrap;align-items:center;gap:2px}
+.who{flex:1;min-width:0;display:grid;grid-template-columns:7px auto minmax(0,1fr);column-gap:9px;row-gap:4px;align-items:baseline;padding:8px 6px;border:0;border-radius:6px;background:transparent;text-align:left;cursor:pointer}
+.who:hover{background:var(--hover)}
+.who-caret{grid-row:span 2;align-self:center;justify-self:center;width:3px;height:17px;border-radius:1px;background:hsl(var(--g) var(--mark-s) var(--mark-l))}
+.who-ini{font:700 18px/1 var(--f-display);letter-spacing:.1em}
+.who-where{display:flex;align-items:center;gap:6px;min-width:0;font:500 12.5px/1.2 var(--f-ui)}
+.who-where i{flex:none;width:8px;height:8px;border-radius:50%;background:var(--c)}
+.who-where span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.who-meta{grid-column:2 / 4;font:400 10.5px/1.3 var(--f-mono);color:var(--muted)}
+.who-act{flex:none;width:40px;height:40px;display:grid;place-items:center;border:0;border-radius:50%;background:transparent;color:var(--muted);cursor:pointer}
+.who-act svg{width:19px;height:19px}
+.who-act:hover,.who-act[aria-expanded="true"]{background:var(--hover);color:var(--ink)}
+.who-row.muted .who-ini,.who-row.muted .who-where{color:var(--muted)}
+.who-row.muted .who-ini{text-decoration:line-through;text-decoration-thickness:1.5px}
+.who-emotes{flex:1 0 100%;box-sizing:border-box;padding:2px 6px 10px 22px}
+.emote-row{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:3px}
+.emote{aspect-ratio:1;max-height:44px;display:grid;place-items:center;padding:0;border:1px solid var(--rule);border-radius:8px;background:var(--panel);color:var(--ink);cursor:pointer}
+.emote svg{width:22px;height:22px}
+@media (hover: hover){.emote:hover{border-color:var(--ink)}}
+.emote:disabled{opacity:.35;cursor:default}
+.who-said{margin:7px 0 0;font:400 11px/1.4 var(--f-mono);color:var(--muted)}
+.who-said:empty{display:none}
+.who-mute,.who-more{font:500 11px/1 var(--f-mono);padding:8px 11px;border:1px solid var(--rule);border-radius:999px;background:transparent;color:var(--ink);cursor:pointer}
+.who-mute{margin-top:8px}
+.who-more{display:block;margin:6px auto 0}
+.who-opts{display:flex;flex-wrap:wrap;gap:0 16px;margin-top:10px;padding-top:6px;border-top:1px solid var(--rule)}
+.who-opts label{display:flex;align-items:center;gap:7px;min-height:36px;font-size:13px;cursor:pointer}
+.who-opts input{width:16px;height:16px;margin:0;accent-color:var(--accent)}
+.who-note{margin:2px 0 0;font-size:11.5px;line-height:1.4;color:var(--muted)}
+.toast i.emo{width:24px;height:24px;border-radius:0;background:none;color:var(--c)}
+.toast b.wraps{white-space:normal;line-height:1.05}
+/* A caret's own menu: emotes for that surveyor, from a right-click or a long press on their caret. */
+.caret-menu{position:fixed;left:0;top:0;z-index:36;width:min(300px, calc(100% - 32px));box-sizing:border-box;padding:10px 10px 8px}
+.caret-who{display:flex;align-items:baseline;gap:8px;margin:0 0 8px 2px}
+.caret-who b{font:700 18px/1 var(--f-display);letter-spacing:.1em}
+.caret-who span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font:400 11px/1.2 var(--f-mono);color:var(--muted)}
+.caret-menu .who-mute{margin-top:8px}
+.toast i.emo svg{display:block;width:24px;height:24px}
+@media (prefers-reduced-motion: reduce){html[data-who="loading"] .who-status{animation:none}}
 /* Only the list of finds may shrink: everything else keeps its own height. A section
    that scrolls (the theme chips) would otherwise be squashed to a sliver, since a flex
    item that scrolls may shrink to nothing, and spill over the finds. */
@@ -469,6 +515,17 @@ body.settling, body.settling *{transition:none!important}
       <canvas id="worldMap" width="200" height="200" aria-label="Map of the shared world: charted territories are darker, dots are players. Tap to fly there."></canvas>
       <p class="survey-map-note" id="worldNote"></p>
     </details>
+    <details class="survey-map survey-who" id="surveyWho">
+      <summary>Surveyors <span class="who-count" id="whoCount"></span></summary>
+      <p class="who-status" id="whoStatus" aria-live="polite"></p>
+      <ol class="who-list" id="whoList" aria-label="Surveyors in the shared world, nearest first"></ol>
+      <button type="button" class="who-more" id="whoMore" hidden>Show more</button>
+      <div class="who-opts">
+        <label><input type="checkbox" id="whoListed" checked> Show me on the list</label>
+        <label><input type="checkbox" id="whoEmotes" checked> Take emotes</label>
+      </div>
+      <p class="who-note">Off the list, surveyors near you still see your caret. Muting someone hides their caret and emotes on this device.</p>
+    </details>
     <a class="survey-log" href="/letterfield-log">Survey log: every word charted, hour by hour</a>
     <div class="survey-me" id="surveyMe" hidden>
       <span class="eyebrow">Surveyor</span><b id="surveyMeName"></b>
@@ -507,6 +564,7 @@ body.settling, body.settling *{transition:none!important}
 <div class="vh" id="findSay" role="status" aria-live="polite"></div>
 <div class="survey-check" id="surveyCheck"><p aria-live="polite">One tap to join the shared survey</p><div id="surveyWidget"></div></div>
 <div class="peek card mark" id="peek" hidden></div>
+<div class="caret-menu card" id="caretMenu" role="dialog" aria-labelledby="caretWho" hidden></div>
 <div class="nova" id="nova" role="status" aria-live="polite" hidden><b>Supernova</b><span id="novaText"></span></div>
 
 <script>
@@ -1356,7 +1414,7 @@ function connect(l) {
   ws.onopen = () => {
     if (l.ws !== ws) return;
     l.m.go('open');
-    tell(l, { t: 'me', initials: myInitials() });
+    tell(l, meMessage());
     sendPos();
   };
   ws.onmessage = ev => {
@@ -1479,8 +1537,13 @@ function onSurvey(l, m) {
   } else if (m.t === 'presence' && Array.isArray(m.p)) {
     const p = m.p.filter(q => Array.isArray(q) && typeof q[0] === 'string' && Number.isFinite(q[2]) && Number.isFinite(q[3]));
     l.n = m.n | 0;
-    l.counted = p.some(q => q[0] === l.you);
-    l.here = p.filter(q => q[0] !== l.you);
+    // A player is named by their own id (see Surveyors) once they've sent one, or else their socket's; ours is either.
+    const self = q => q[0] === l.you || (myPid && q[0] === myPid), ids = new Set();
+    l.counted = p.some(self);
+    l.here = p.filter(q => !self(q) && !ids.has(q[0]) && ids.add(q[0]));
+    seekSurveyor();
+  } else if (m.t === 'emote' || m.t === 'emoted') {
+    return onSocial(l, m);
   } else return;
   renderSurvey(); scheduleHud(); invalidate();
 }
@@ -2914,6 +2977,7 @@ function draw(now) {
   // the letters. It eases toward each new position; idle surveyors fade.
   const seen = new Set();
   for (const l of links.values()) for (const [id, ini, gx, gy] of l.here) {
+    if (muted.has(id)) continue;  // hidden on this device (see Surveyors)
     seen.add(id);
     let gh = ghosts.get(id);
     if (!gh) {
@@ -2937,6 +3001,7 @@ function draw(now) {
   }
   ctx.globalAlpha = 1;
   for (const id of ghosts.keys()) if (!seen.has(id)) ghosts.delete(id);
+  if (drawPops(now, cs, SX, SY)) anim = true;  // emotes popping from carets
 
   // Hint ping on a word's first letter
   if (hint) {
@@ -3267,7 +3332,7 @@ function peekAt(px, py) {
     if (d < nd) { nd = d; near = gh; }
   }
   if (near) {
-    html = `<i></i><b>${near.ini || 'A surveyor'}</b><span>${now - near.moved > IDLE_MS ? 'idle' : 'surveying here'}</span>`;
+    html = `<i></i><b>${near.ini || 'A surveyor'}</b><span>${now - near.moved > IDLE_MS ? 'idle' : 'surveying here'} · right-click for emotes</span>`;
     hue = near.hue;
   } else {
     const x = Math.floor(w.x), y = Math.floor(w.y);
@@ -3512,7 +3577,8 @@ const toastEl = $('#toast');
 let toastTimer = 0, toastMs = 0;
 // A note at the top of the map. Given a find, it offers to share it, and
 // stays long enough to tap, or while a pointer or focus is on it.
-// `find` is a find to offer to share, or { label, share } for anything else.
+// `find` is a find to offer to share, or { label, share } for anything else,
+// with { text, icon } for a button that does something other than share.
 // A find just made has no note (see gatherFind).
 function toast(html, hue, ms = 2400, find = null) {
   toastEl.innerHTML = html;
@@ -3523,7 +3589,7 @@ function toast(html, hue, ms = 2400, find = null) {
     const b = document.createElement('button');
     b.type = 'button';
     b.className = 'share';
-    b.innerHTML = SHARE_ICON + 'Share';
+    b.innerHTML = (act.icon || SHARE_ICON) + (act.text || 'Share');
     b.setAttribute('aria-label', act.label);
     b.addEventListener('click', act.share);
     toastEl.append(b);
@@ -3768,6 +3834,7 @@ function setNotes(open, remember = true) {
   if (remember) LS.set(K_NOTES, open ? '1' : '0');
   applyDock();
   if (open) { renderNotes(); refreshWorld(); }
+  syncWho();
   scheduleHud(); invalidate();
 }
 // The count of finds, on the notes button, and the tally atop the notes. A
@@ -3881,7 +3948,7 @@ function signAs(v, hint) {
     return false;
   }
   LS.set(K_INITIALS, JSON.stringify(v));
-  for (const l of links.values()) tell(l, { t: 'me', initials: v });
+  tellMe();
   surveyInput.value = signupInput.value = v;
   surveyHint.textContent = '';
   showSigning(false, hint === surveyHint);
@@ -3907,7 +3974,7 @@ surveyCancel.addEventListener('click', () => showSigning(false, true));
 surveySign.addEventListener('keydown', e => { if (e.key === 'Escape' && myInitials()) { e.stopPropagation(); showSigning(false, true); } });
 surveySign.addEventListener('submit', e => { e.preventDefault(); signAs(surveyInput.value, surveyHint); });
 signup.addEventListener('submit', e => { e.preventDefault(); signAs(signupInput.value, signupHint); });
-document.addEventListener('visibilitychange', () => { if (surveyApi) { surveyPaused = document.hidden; syncSurvey(); refreshWorld(); } });
+document.addEventListener('visibilitychange', () => { if (surveyApi) { surveyPaused = document.hidden; syncSurvey(); refreshWorld(); syncWho(); } });
 surveyMapEl.addEventListener('toggle', refreshWorld);
 worldCanvas.addEventListener('click', e => {
   if (!worldMap) return;
@@ -3940,6 +4007,393 @@ function showIntro(to, from) {
   if (from) LS.set(K_COACH, '1');
 }
 $('#coachOk').addEventListener('click', () => { if (Intro.is('coach')) Intro.go('exploring'); });
+
+/* ---------- Surveyors ---------- */
+// Who else is in the shared world, and emotes to send them (see "Surveyors and
+// emotes" in worker/SURVEY.md). The game keeps a random token, sends it to
+// every sector it joins, and the sectors name the player by its hash, the same
+// everywhere: in presence, the list and emotes. Nobody else ever sees the
+// token, so nobody can send as someone else. The list is a fold of the survey
+// panel, like the world map: the Worker's answer, nearest first, fetched while
+// it's open and on screen. Emotes are a few fixed drawings, never text.
+const K_PLAYER = 'letterfield.player.v1', K_MUTED = 'letterfield.muted.v1', K_LISTED = 'letterfield.listed.v1', K_EMOTES = 'letterfield.emotes.v1';
+const PID_RE = /^[0-9a-f]{12}$/, MUTED_MAX = 200, LIST_PAGES = 25;
+const WHO_REFRESH_MS = 20000, WHO_RETRY_MS = 20000, POP_MS = 2600, HERE_MS = 30000;
+// The emotes, in the Worker's order (EMOTES in worker/src/survey-social.js):
+// a name for buttons, what a note says the sender did, and one path on a
+// 24 × 24 grid in the game's line style. Why these and nothing else: "The
+// emotes" in worker/SURVEY.md.
+const EMOTES = [
+  { id: 'wave', name: 'Wave', did: 'waved', d: 'M7.13 22.82L5.01 16.39C3.19 16.33 1.37 15.23 1.55 13.9C1.8 12.81 3.07 12.75 4.28 13.48L3.62 10.81A3.88 3.88 0 0 1 11.14 8.93L13.67 21.18M5.25 6.67L6.37 11.15M7.75 6.04L8.87 10.53M17.2 4.6A5 5 0 0 1 19.6 8.4M18.6 1.8A8 8 0 0 1 22.4 7.8' },
+  { id: 'thanks', name: 'Thanks', did: 'tips their hat: thanks', d: 'M4.04 19.38Q13.34 18.88 21.16 13.82M7.18 18.05C5.2 12.27 6.4 8.52 9.63 7.47C12.87 6.42 16.04 8.75 17.83 14.58M6.47 15.54Q12.11 15.08 16.93 12.14M3.6 15.4 2.2 17.6M6 18.4 5.2 20.8' },
+  { id: 'nice', name: 'Nice', did: 'gave you a thumbs up', d: 'M3.5 11H6.5V20H3.5ZM6.5 11 10.2 4.2A1.9 1.9 0 0 1 13.6 5.7L12.6 9.6H18.6A2 2 0 0 1 20.5 12L19.3 18.4A2 2 0 0 1 17.3 20H6.5' },
+  { id: 'clap', name: 'Clap', did: 'applauded', d: 'M3.02 21.22L4.18 15.65C2.89 14.84 2.02 13.29 2.72 12.39C3.35 11.7 4.3 12.19 4.88 13.23L5.52 11.01A3.26 3.26 0 0 1 11.77 12.8L8.48 22.78M20.98 21.22L19.82 15.65C21.11 14.84 21.98 13.29 21.28 12.39C20.65 11.7 19.7 12.19 19.12 13.23L18.48 11.01A3.26 3.26 0 0 0 12.23 12.8L15.52 22.78M12 5.6V2.6M8.2 6.2 6.8 4.2M15.8 6.2 17.2 4.2' },
+  { id: 'great', name: 'Great find', did: 'says great find', d: 'M12 3.2C12.7 8.6 15.4 11.3 20.8 12 15.4 12.7 12.7 15.4 12 20.8 11.3 15.4 8.6 12.7 3.2 12 8.6 11.3 11.3 8.6 12 3.2ZM19 2.6V6.2M17.2 4.4H20.8' },
+  { id: 'here', name: 'Over here', did: 'is calling you over', d: 'M6 21.2V3.2M6 4.2H18L15.4 7.9 18 11.6H6M3.4 21.2H8.6' },
+  { id: 'what', name: 'Question', did: 'has a question', d: 'M12 3a9 9 0 1 1 0 18 9 9 0 0 1 0-18ZM9.4 9.4A2.7 2.7 0 0 1 14.6 10.1C14.6 11.9 12 12.3 12 14.1M12 17.2V17.3' },
+];
+const EMOTE_BY = Object.fromEntries(EMOTES.map(e => [e.id, e]));
+const emoteSvg = e => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="${e.d}"/></svg>`;
+const FLY_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 11.2 20 4l-7.2 16-2.2-6.6z"/></svg>';
+
+// The player's token: made once, kept on this device. Its hash (myPid) is
+// what everyone else calls us, worked out here as the sectors do, so the
+// game knows itself in presence and leaves itself off the list.
+const playerToken = (() => {
+  if (!surveyApi) return '';
+  let t = LS.get(K_PLAYER) || '';
+  if (!/^[0-9a-f]{32}$/.test(t)) {
+    try { t = [...crypto.getRandomValues(new Uint8Array(16))].map(b => b.toString(16).padStart(2, '0')).join(''); } catch (_) { return ''; }
+    LS.set(K_PLAYER, t);
+  }
+  return t;
+})();
+let myPid = '';
+if (playerToken && window.crypto && crypto.subtle) {
+  crypto.subtle.digest('SHA-256', new TextEncoder().encode('letterfield-player:' + playerToken))
+    .then(h => {
+      myPid = [...new Uint8Array(h).slice(0, 6)].map(b => b.toString(16).padStart(2, '0')).join('');
+      // Presence that came before we knew our own id: we were in it.
+      for (const l of links.values()) if (l.here.some(q => q[0] === myPid)) { l.here = l.here.filter(q => q[0] !== myPid); l.counted = true; }
+      renderSurvey(); invalidate();
+    }, () => {});
+}
+// Whether to be on the list, whether to take emotes, and who's muted: all on this device only.
+let listedOn = LS.get(K_LISTED) !== '0', emotesOn = LS.get(K_EMOTES) !== '0';
+const muted = new Set(readList(K_MUTED).filter(p => typeof p === 'string' && PID_RE.test(p)).slice(-MUTED_MAX));
+// What every sector is told about us when it's joined, and again when any of it changes.
+function meMessage() {
+  return { t: 'me', initials: myInitials(), ...(playerToken ? { token: playerToken } : {}), ...(listedOn ? {} : { hide: true }), ...(emotesOn ? {} : { quiet: true }) };
+}
+const tellMe = () => { for (const l of links.values()) tell(l, meMessage()); };
+// A caret's colour, from its id, as the map draws it.
+function hueOf(id) { let hue = 0; for (let i = 0; i < id.length; i++) hue = (hue * 31 + id.charCodeAt(i)) % 360; return hue; }
+const TERR_PER_SECTOR = SECTOR / RC;
+const camTerr = () => [fdiv(Math.floor(cam.x), RC), fdiv(Math.floor(cam.y), RC)];
+// How far a territory is, counted as the game counts "near": the larger of the two distances.
+function away(rx, ry) {
+  const [cx, cy] = camTerr(), d = Math.max(Math.abs(rx - cx), Math.abs(ry - cy));
+  return d === 0 ? 'in your territory' : d === 1 ? '1 territory away' : `${d.toLocaleString()} territories away`;
+}
+const idleText = sec => sec < IDLE_MS / 1000 ? 'active' : sec < 60 ? 'idle' : sec < 3600 ? `idle ${Math.floor(sec / 60)}m` : `idle ${Math.floor(sec / 3600)}h`;
+// Where a surveyor's caret is, if one of our sectors says: {x, y, l}.
+function caretOf(pid) {
+  for (const l of links.values()) for (const q of l.here) if (q[0] === pid) return { x: q[2], y: q[3], l };
+  return null;
+}
+function caretOnScreen(pid) {
+  const gh = ghosts.get(pid);
+  if (!gh || !caretOf(pid)) return false;
+  const px = (gh.x - cam.x) * cam.cs + (W - dock) / 2, py = (gh.y - cam.y) * cam.cs + H / 2;
+  return px > 12 && px < W - dock - 12 && py > 40 && py < H - 12;
+}
+
+// The list, shown on <html data-who>: closed (folded, the notes shut or the
+// tab hidden), loading, ready (it comes round again every WHO_REFRESH_MS),
+// refreshing (the last answer stays up meanwhile) or failed (tried again
+// after WHO_RETRY_MS). An answer that comes back after the list has moved on
+// is dropped.
+const whoEl = $('#surveyWho'), whoList = $('#whoList'), whoStatus = $('#whoStatus'), whoCount = $('#whoCount'), whoMore = $('#whoMore');
+let whoData = null, whoPages = 1, whoTimer = 0, whoOpen = '', whoAt = '', seek = null, lastHere = 0, pops = [];
+const whoSaid = new Map();  // pid → what became of the last emote we sent them
+const Who = machine('who', {
+  closed: ['loading'],
+  loading: ['ready', 'failed', 'closed'],
+  ready: ['refreshing', 'closed'],
+  refreshing: ['ready', 'failed', 'closed'],
+  failed: ['loading', 'closed'],
+}, 'closed', { onMove: whoMoved });
+function whoMoved(to) {
+  clearTimeout(whoTimer); whoTimer = 0;
+  if (to === 'loading' || to === 'refreshing') fetchWho();
+  if (to === 'ready' || to === 'failed') {
+    const at = Who.seq;
+    whoTimer = setTimeout(() => { if (Who.seq === at) Who.go(to === 'ready' ? 'refreshing' : 'loading'); }, to === 'ready' ? WHO_REFRESH_MS : WHO_RETRY_MS);
+  }
+  if (to === 'closed') whoOpen = '';
+  renderWho();
+}
+function syncWho() {
+  const want = !!surveyApi && notesOpen && whoEl.open && !surveyPaused;
+  if (want && Who.is('closed')) Who.go('loading');
+  else if (!want && !Who.is('closed')) Who.go('closed');
+}
+async function fetchWho() {
+  const at = Who.seq, [rx, ry] = camTerr(), ctl = new AbortController(), timer = setTimeout(() => ctl.abort(), 6000);
+  const url = page => `${surveyHttp}/v1/survey/surveyors?r=${rx},${ry}&page=${page}${myPid ? '&me=' + myPid : ''}`;
+  try {
+    const got = await Promise.all(Array.from({ length: whoPages }, (_, page) =>
+      fetch(url(page), { signal: ctl.signal }).then(res => (res.ok ? res.json() : Promise.reject(new Error(`list ${res.status}`))))));
+    if (Who.seq !== at) return;
+    if (!got.every(a => a && Number.isInteger(a.n) && Array.isArray(a.who))) throw new Error('bad list');
+    const seen = new Set(), who = [], now = Date.now();
+    for (const a of got) for (const e of a.who) {
+      if (!Array.isArray(e) || typeof e[0] !== 'string' || !PID_RE.test(e[0]) || seen.has(e[0]) || e[0] === myPid || ![e[2], e[3], e[4], e[5]].every(Number.isInteger)) continue;
+      seen.add(e[0]);
+      who.push({ pid: e[0], ini: typeof e[1] === 'string' && /^[A-Z]{3}$/.test(e[1]) ? e[1] : '', rx: e[2], ry: e[3], idle: e[4], quiet: !!(e[5] & 1), at: now });
+    }
+    whoData = { n: got[0].n, more: !!got[got.length - 1].more, who };
+    Who.go('ready');
+  } catch (_) {
+    if (Who.seq === at) Who.go('failed');
+  } finally {
+    clearTimeout(timer);
+  }
+}
+// Nearest first, from where we are now rather than where we asked from.
+function sortedWho() {
+  const [cx, cy] = camTerr(), d = s => Math.max(Math.abs(s.rx - cx), Math.abs(s.ry - cy)), h = s => Math.hypot(s.rx - cx, s.ry - cy);
+  return whoData.who.slice().sort((a, b) => d(a) - d(b) || h(a) - h(b) || a.idle - b.idle || (a.pid < b.pid ? -1 : 1));
+}
+function renderWho() {
+  if (!surveyApi) return;
+  const count = world ? `· ${world.players.toLocaleString()} online` : '';
+  if (whoCount.textContent !== count) whoCount.textContent = count;
+  if (!whoEl.open) return;
+  const st = Who.state;
+  let status;
+  if (!whoData) status = st === 'failed' ? 'Couldn’t load the list. Trying again shortly.' : 'Looking for surveyors…';
+  else {
+    status = whoData.n ? `${whoData.n.toLocaleString()} other surveyor${whoData.n === 1 ? '' : 's'} in the shared world, nearest first` : 'Nobody else is in the shared world right now.';
+    if (st === 'failed') status += ' · couldn’t refresh';
+  }
+  if (!listedOn) status += '\nYou’re off the list.';
+  whoStatus.textContent = status;
+  whoMore.hidden = !(whoData && whoData.more) || whoPages >= LIST_PAGES;
+  // Rows are drawn afresh; whatever had focus gets it back.
+  const f = document.activeElement, k = f && whoList.contains(f) ? f.dataset.k : '';
+  whoList.innerHTML = whoData ? sortedWho().map(whoRow).join('') : '';
+  if (k) { const el = whoList.querySelector(`[data-k="${k}"]`); if (el) try { el.focus({ preventScroll: true }); } catch (_) {} }
+}
+function whoRow(s) {
+  const th = THEMES[regionTheme(s.rx, s.ry)], name = regionName(s.rx, s.ry), m = muted.has(s.pid), open = whoOpen === s.pid;
+  const who = s.ini || 'A surveyor', idle = s.idle + Math.round((Date.now() - s.at) / 1000);
+  const meta = `${away(s.rx, s.ry)} · ${m ? 'muted' : idleText(idle)}${s.quiet && !m ? ' · no emotes' : ''}`;
+  return `<li class="who-row${m ? ' muted' : ''}">` +
+    `<button type="button" class="who mark" data-pid="${s.pid}" data-k="${s.pid}:fly" style="--h:${th.hue};--g:${hueOf(s.pid)}" aria-label="${who}, ${name}, ${meta}. Fly there">` +
+    `<span class="who-caret" aria-hidden="true"></span><b class="who-ini">${s.ini || '···'}</b><span class="who-where"><i aria-hidden="true"></i><span>${name}</span></span><span class="who-meta">${meta}</span></button>` +
+    `<button type="button" class="who-act" data-pid="${s.pid}" data-k="${s.pid}:act" aria-expanded="${open}"${open ? ` aria-controls="emo-${s.pid}"` : ''} aria-label="Emotes for ${who}" title="Emotes for ${who}">${emoteSvg(EMOTE_BY.wave)}</button>` +
+    (open ? whoPanel(s, who, m) : '') + '</li>';
+}
+function whoPanel(s, who, m) {
+  const said = whoSaid.get(s.pid) || (s.quiet && !m ? `${who} isn’t taking emotes.` : '');
+  return `<div class="who-emotes" id="emo-${s.pid}" role="group" aria-label="Emotes for ${who}">` +
+    (m ? '' : `<div class="emote-row">${EMOTES.map(e => `<button type="button" class="emote" data-pid="${s.pid}" data-e="${e.id}" data-k="${s.pid}:${e.id}" aria-label="${e.name} to ${who}" title="${e.name}"${s.quiet ? ' disabled' : ''}>${emoteSvg(e)}</button>`).join('')}</div>`) +
+    `<p class="who-said" aria-live="polite">${said}</p>` +
+    `<button type="button" class="who-mute" data-pid="${s.pid}" data-k="${s.pid}:mute">${m ? 'Unmute' : 'Mute'} ${who}</button></div>`;
+}
+whoList.addEventListener('click', e => {
+  const b = e.target.closest('button'), s = b && whoData && whoData.who.find(q => q.pid === b.dataset.pid);
+  if (!s) return;
+  if (b.classList.contains('who')) flyToSurveyor(s);
+  else if (b.classList.contains('who-act')) { whoOpen = whoOpen === s.pid ? '' : s.pid; whoSaid.delete(s.pid); renderWho(); }
+  else if (b.classList.contains('emote')) sendEmote(s, b.dataset.e);
+  else if (b.classList.contains('who-mute')) setMuted(s, !muted.has(s.pid));
+});
+// Escape folds an open row of emotes before it does anything else.
+whoList.addEventListener('keydown', e => {
+  if (e.key !== 'Escape' || !whoOpen) return;
+  e.stopPropagation();
+  const pid = whoOpen;
+  whoOpen = '';
+  renderWho();
+  const b = whoList.querySelector(`[data-k="${pid}:act"]`);
+  if (b) b.focus();
+});
+whoMore.addEventListener('click', () => { whoPages++; if (Who.is('ready')) Who.go('refreshing'); });
+whoEl.addEventListener('toggle', () => { syncWho(); renderWho(); });
+const listedEl = $('#whoListed'), emotesEl = $('#whoEmotes');
+listedEl.checked = listedOn;
+emotesEl.checked = emotesOn;
+listedEl.addEventListener('change', () => { listedOn = listedEl.checked; LS.set(K_LISTED, listedOn ? '1' : '0'); tellMe(); renderWho(); });
+emotesEl.addEventListener('change', () => { emotesOn = emotesEl.checked; LS.set(K_EMOTES, emotesOn ? '1' : '0'); tellMe(); if (!emotesOn) pops = []; renderWho(); invalidate(); });
+
+// Flies to a surveyor: straight to their caret if one of our sectors shows it,
+// otherwise to the middle of their territory, then on to their caret once
+// its sector, joined on landing, says where they are.
+function flyToSurveyor(s) {
+  if (!dock) setNotes(false, false);
+  const c = caretOf(s.pid);
+  seek = c ? null : { pid: s.pid, until: Date.now() + 10000 };
+  if (c) flyTo(c.x, c.y, Math.max(cam.cs, 30));
+  else flyTo((s.rx + .5) * RC, (s.ry + .5) * RC, Math.max(cam.cs, 30));
+}
+function seekSurveyor() {
+  if (!seek || flight) return;
+  if (Date.now() > seek.until) { seek = null; return; }
+  const c = caretOf(seek.pid);
+  if (c) { seek = null; flyTo(c.x, c.y, Math.max(cam.cs, 30), { min: 300, max: 900 }); }
+}
+function setMuted(s, on) {
+  if (on) muted.add(s.pid); else muted.delete(s.pid);
+  while (muted.size > MUTED_MAX) muted.delete(muted.values().next().value);
+  LS.set(K_MUTED, JSON.stringify([...muted]));
+  pops = pops.filter(p => p.pid !== s.pid);
+  renderWho(); invalidate();
+  say(`${on ? 'Muted' : 'Unmuted'} ${s.ini || 'that surveyor'}`);
+}
+// Sends an emote from the sector under the middle of the view, which knows
+// where we are, toward the sector where we saw them: their caret's, or their
+// territory's from the list.
+function sendEmote(s, id) {
+  const em = EMOTE_BY[id], home = links.get(sectorKey(Math.floor(cam.x), Math.floor(cam.y)));
+  if (!em) return;
+  if (!myInitials()) return said(s.pid, 'Sign your initials first, in the survey panel above.');
+  if (!home || !home.m.is('live')) return said(s.pid, 'Join the survey to send emotes.');
+  const c = caretOf(s.pid);
+  tell(home, { t: 'emote', to: s.pid, e: id, s: c ? [c.l.sx, c.l.sy] : [fdiv(s.rx, TERR_PER_SECTOR), fdiv(s.ry, TERR_PER_SECTOR)] });
+}
+function said(pid, text) {
+  whoSaid.set(pid, text);
+  const el = whoList.querySelector(`#emo-${pid} .who-said`) || (caretFor === pid && caretMenu.querySelector('.who-said'));
+  if (el) el.textContent = text; else say(text);
+}
+// What a sector says about emotes: what became of ours, or one for us.
+function onSocial(l, m) {
+  if (m.t === 'emoted') {
+    if (typeof m.to !== 'string' || !PID_RE.test(m.to)) return;
+    const em = EMOTE_BY[m.e], s = whoData && whoData.who.find(q => q.pid === m.to), who = (s && s.ini) || 'they';
+    const They = who === 'they' ? 'They' : who;
+    const why = { 'slow down': 'Too quick: try again in a moment.', gone: `${They} moved on.`, off: `${They} isn’t taking emotes.`, busy: `${They} had plenty of emotes just now: try again soon.`, 'sign first': 'Sign your initials first, in the survey panel above.' };
+    if (m.ok && em) {
+      said(m.to, `${em.name}: sent to ${who === 'they' ? 'them' : who}.`);
+      if (caretOnScreen(m.to)) pop(m.to, m.e);
+    } else said(m.to, why[m.error] || 'Couldn’t send that.');
+    if (m.error === 'gone' && Who.is('ready')) Who.go('refreshing');
+    return;
+  }
+  const em = EMOTE_BY[m.e];
+  if (!em || typeof m.from !== 'string' || !PID_RE.test(m.from) || !emotesOn || muted.has(m.from)) return;
+  const ini = typeof m.ini === 'string' && /^[A-Z]{3}$/.test(m.ini) ? m.ini : '', who = ini || 'A surveyor';
+  const r = Array.isArray(m.r) && m.r.length === 2 && m.r.every(v => Number.isInteger(v) && Math.abs(v) < 1e8) ? m.r : null;
+  // In view, it pops from their caret; otherwise a note says who and where, with a way there.
+  if (caretOnScreen(m.from)) { pop(m.from, m.e); say(`${who} ${em.did}`); return; }
+  const where = r ? `${regionName(r[0], r[1])} · ${away(r[0], r[1])}` : 'Somewhere on the map';
+  toast(`<i class="emo">${emoteSvg(em)}</i><b class="wraps">${who} ${em.did}</b><span>${where}</span>`, r ? THEMES[regionTheme(r[0], r[1])].hue : null, 4000,
+    r ? { label: `Fly to ${who}`, text: 'Fly there', icon: FLY_ICON, share: () => { hideToast(); flyToSurveyor({ pid: m.from, rx: r[0], ry: r[1] }); } } : null);
+}
+
+// An emote popping from a caret: a bubble that springs up, drifts and fades.
+function pop(pid, e) {
+  pops = pops.filter(p => p.pid !== pid);
+  pops.push({ pid, e, t0: performance.now() });
+  invalidate();
+}
+const popPaths = {};
+let popFill = { of: null, panel: '' };
+const springUp = x => { if (x >= 1) return 1; const c = 1.70158, u = x - 1; return 1 + (c + 1) * u * u * u + c * u * u; };
+function drawPops(now, cs, SX, SY) {
+  pops = pops.filter(p => now - p.t0 < POP_MS && !muted.has(p.pid));
+  if (!pops.length) return false;
+  if (popFill.of !== C) popFill = { of: C, panel: getComputedStyle(document.documentElement).getPropertyValue('--panel').trim() || C.paper };
+  for (const p of pops) {
+    const gh = ghosts.get(p.pid), em = EMOTE_BY[p.e];
+    if (!gh || !em) continue;
+    const t = (now - p.t0) / POP_MS, k = RM ? 1 : Math.max(.01, springUp((now - p.t0) / 320)), r = clamp(cs * .5, 13, 19);
+    const dot = cs < LETTER_MIN, x = dot ? SX(gh.x) : SX(Math.round(gh.x)), top = dot ? SY(gh.y) - 4 : SY(Math.floor(gh.y) + .5) - cs * .33;
+    ctx.save();
+    ctx.globalAlpha = t > .8 ? (1 - t) / .2 : 1;
+    ctx.translate(x, top - 3 - (RM ? 0 : 6 * t));
+    ctx.scale(k, k);
+    ctx.beginPath();
+    ctx.moveTo(-4, -r * .45); ctx.lineTo(0, 0); ctx.lineTo(4, -r * .45);  // a tail down to the caret
+    ctx.arc(0, -r - 2, r, Math.PI * .62, Math.PI * .38);
+    ctx.closePath();
+    ctx.fillStyle = popFill.panel; ctx.fill();
+    ctx.lineWidth = 1.5; ctx.strokeStyle = `hsl(${gh.hue}, ${C.ms}, ${C.ml})`; ctx.stroke();
+    const sc = r * 1.25 / 24;
+    ctx.translate(-12 * sc, -r - 2 - 12 * sc);
+    ctx.scale(sc, sc);
+    ctx.lineWidth = 1.9; ctx.lineCap = 'round'; ctx.lineJoin = 'round'; ctx.strokeStyle = C.ink;
+    ctx.stroke(popPaths[p.e] || (popPaths[p.e] = new Path2D(em.d)));
+    ctx.restore();
+  }
+  return true;
+}
+
+// A caret's menu: the same emotes and mute as the list, for the surveyor
+// right there, from a right-click or a long press on their caret. Escape, a
+// tap elsewhere or an emote sent puts it away. A single open-or-not, so no
+// machine: nothing waits on it.
+const caretMenu = $('#caretMenu');
+let caretFor = '', pressTimer = 0;
+// The surveyor whose caret is under (px, py) on the map, as the hover card finds them.
+function caretAt(px, py) {
+  const w = screenToWorld(px, py), cs = cam.cs;
+  let near = null, nd = cs < LETTER_MIN ? 10 : cs * .6;
+  for (const [id, gh] of ghosts) {
+    const d = cs < LETTER_MIN ? Math.hypot((gh.x - w.x) * cs, (gh.y - w.y) * cs) : Math.hypot((Math.round(gh.x) - w.x) * cs, (Math.floor(gh.y) + .5 - w.y) * cs);
+    if (d < nd && caretOf(id)) { nd = d; near = id; }
+  }
+  if (!near) return null;
+  const c = caretOf(near), gh = ghosts.get(near);
+  return { pid: near, ini: gh.ini || '', rx: fdiv(Math.floor(c.x), RC), ry: fdiv(Math.floor(c.y), RC) };
+}
+function openCaretMenu(s, px, py) {
+  hidePeek();
+  caretFor = s.pid;
+  const who = s.ini || 'A surveyor', m = muted.has(s.pid);
+  caretMenu.innerHTML = `<p class="caret-who"><b id="caretWho">${s.ini || '···'}</b><span>${regionName(s.rx, s.ry)}</span></p>` +
+    `<div class="emote-row">${EMOTES.map(e => `<button type="button" class="emote" data-e="${e.id}" aria-label="${e.name} to ${who}" title="${e.name}"${m ? ' disabled' : ''}>${emoteSvg(e)}</button>`).join('')}</div>` +
+    `<p class="who-said" aria-live="polite"></p><button type="button" class="who-mute">${m ? 'Unmute' : 'Mute'} ${who}</button>`;
+  caretMenu.hidden = false;
+  caretMenu._s = s;
+  const r = caretMenu.getBoundingClientRect(), y = py + mapTop;
+  const left = clamp(px - r.width / 2, 16, window.innerWidth - r.width - 16), top = y - r.height - 24 > mapTop + 8 ? y - r.height - 24 : Math.min(y + 24, window.innerHeight - r.height - 16);
+  caretMenu.style.transform = `translate(${Math.round(left)}px, ${Math.round(top)}px)`;
+  const first = caretMenu.querySelector('.emote:not(:disabled)') || caretMenu.querySelector('.who-mute');
+  try { first.focus({ preventScroll: true }); } catch (_) {}
+}
+function closeCaretMenu(refocus) {
+  if (caretMenu.hidden) return;
+  caretMenu.hidden = true;
+  caretFor = '';
+  if (refocus) try { canvas.focus({ preventScroll: true }); } catch (_) {}
+}
+caretMenu.addEventListener('click', e => {
+  const b = e.target.closest('button'), s = caretMenu._s;
+  if (!b || !s) return;
+  if (b.classList.contains('emote')) { sendEmote(s, b.dataset.e); closeCaretMenu(true); }
+  else if (b.classList.contains('who-mute')) { setMuted(s, !muted.has(s.pid)); closeCaretMenu(true); }
+});
+caretMenu.addEventListener('keydown', e => { if (e.key === 'Escape') { e.stopPropagation(); closeCaretMenu(true); } });
+document.addEventListener('pointerdown', e => { if (!caretMenu.hidden && !caretMenu.contains(e.target)) closeCaretMenu(false); }, true);
+canvas.addEventListener('contextmenu', e => {
+  const s = surveyApi && caretAt(e.clientX, mapY(e));
+  if (s) openCaretMenu(s, e.clientX, mapY(e));
+});
+// A long press on a caret, by touch, opens its menu instead of starting a word.
+canvas.addEventListener('pointerdown', e => {
+  clearTimeout(pressTimer);
+  if (e.pointerType === 'mouse' || !surveyApi || pointers.size !== 1) return;
+  const s = caretAt(e.clientX, mapY(e));
+  if (!s) return;
+  const x0 = e.clientX, y0 = mapY(e);
+  pressTimer = setTimeout(() => {
+    if (pointers.size !== 1 || !gest || gest.type !== 'press') return;
+    gest = null;  // so letting go doesn't tap the letter underneath
+    openCaretMenu(s, x0, y0);
+  }, 520);
+});
+for (const type of ['pointerup', 'pointercancel']) canvas.addEventListener(type, () => clearTimeout(pressTimer));
+canvas.addEventListener('pointermove', e => { if (gest && gest.type !== 'press') clearTimeout(pressTimer); else if (pressTimer && e.pointerType !== 'mouse' && gest && Math.hypot(e.clientX - gest.x0, mapY(e) - gest.y0) > 9) clearTimeout(pressTimer); });
+
+// An idle game says it's still here now and then, so its sector keeps
+// listing it; and the list keeps up with where we are.
+setInterval(() => {
+  if (!surveyApi) return;
+  renderWhoIfMoved();
+  if (surveyPaused) return;
+  const home = links.get(sectorKey(Math.floor(cam.x), Math.floor(cam.y))), now = Date.now();
+  if (!home || !home.m.is('live') || now - lastHere < HERE_MS || (posSent && posSent.l === home && now - posSent.at < HERE_MS)) return;
+  tell(home, { t: 'here' });
+  lastHere = now;
+}, 2000);
+function renderWhoIfMoved() {
+  const [rx, ry] = camTerr(), k = `${rx},${ry},${world ? world.players : ''}`;
+  if (k !== whoAt) { whoAt = k; renderWho(); }
+}
+if (surveyApi) renderWho();
 
 /* ---------- Boot ---------- */
 function resize() {
@@ -4008,6 +4462,8 @@ invalidate();
 if (redrawn) setTimeout(() => toast(`<i></i><b>The map has been redrawn</b><span>${NT} themes of about ${Math.round(THEMES.reduce((a, t) => a + t.words.length, 0) / NT / 10) * 10} words now, so a territory never repeats one · ${redrawn.kept ? `${redrawn.kept} of your ${redrawn.had} finds are still on it` : 'your old finds are not on it'}</span>`, null, 8000), 900);
 connectStore();
 if (location.hash === '#debug') window.__lf = { cam, found, claims, links, chunk, wordEnd, collect, territoryProgress, remnants: () => [...remnants().set], novas: () => [...novasSeen.values()], territoryName: regionName, world: () => world, supernova, novaSound, audioOut, musicTracks: MUSIC_TRACKS, audio: () => ac, music: () => musicNow && { state: ac.state, track: musicNow.track().name, nodes: musicNow.track().nodes.size, level: musicNow.master.gain.value, master: musicNow.master, volume: musicVol, target: musicLevel(), swap: musicNow.swap }, nova: () => nova,
+  who: () => Who.state, surveyors: () => whoData, pops: () => pops.map(p => [p.pid, p.e]), pid: () => myPid, muted: () => [...muted], carets: () => [...ghosts.keys()],
+  caretXY: id => { const gh = ghosts.get(id); return gh && { x: (Math.round(gh.x) - cam.x) * cam.cs + (W - dock) / 2, y: (Math.floor(gh.y) + .5 - cam.y) * cam.cs + H / 2 + mapTop }; },
   pass: () => Pass.state, intro: () => Intro.state, surveyStatus, linkStates: () => Object.fromEntries([...links].map(([k, l]) => [k, l.m.state])), outbox: () => [...outbox.values()].map(c => [c.e.w, c.m.state]), definitions: () => Object.fromEntries([...definitions].map(([k, d]) => [k, d.m.state])) };
 
 })();

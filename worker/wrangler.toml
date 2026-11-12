@@ -92,6 +92,17 @@ namespace_id = "7302"
   limit = 120
   period = 60
 
+# Letterfield's emotes (src/survey-social.js): sent per address, from any
+# socket in any sector. Each socket's own limit and each recipient's sector's
+# limits (a few a minute from one sender) still hold.
+[[ratelimits]]
+name = "SURVEY_EMOTES"
+namespace_id = "7304"
+
+  [ratelimits.simple]
+  limit = 20
+  period = 60
+
 # Letterfield's definitions (src/define.js): new words looked up on
 # Wiktionary or Wikipedia, per address. Words already kept in D1 don't count.
 [[ratelimits]]
@@ -165,6 +176,14 @@ namespace_id = "7312"
 
   [previews.ratelimits.simple]
   limit = 120
+  period = 60
+
+[[previews.ratelimits]]
+name = "SURVEY_EMOTES"
+namespace_id = "7314"
+
+  [previews.ratelimits.simple]
+  limit = 20
   period = 60
 
 [[previews.ratelimits]]

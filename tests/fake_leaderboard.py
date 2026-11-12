@@ -180,6 +180,7 @@ def stand_in_for_worker(context: BrowserContext) -> FakeLeaderboard:
     # Later routes win, so these go after the catch-all.
     survey = FakeSurvey()
     context.route(f"{WORKER_URL}/v1/survey/world", survey.handle_world)
+    context.route(f"{WORKER_URL}/v1/survey/surveyors*", survey.handle_list)
     context.route_web_socket(
         re.compile("^wss://" + re.escape(urlparse(WORKER_URL).netloc) + "/v1/survey/"), survey.handle
     )
