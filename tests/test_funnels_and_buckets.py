@@ -1,5 +1,6 @@
-from page_changes import repeated_no_op_writes
 from playwright.sync_api import Page, expect
+
+from page_changes import repeated_no_op_writes
 
 
 def test_typing_the_answer_pops_the_bubble(page: Page, site_url, errors):

@@ -9,8 +9,9 @@ import subprocess
 import sys
 import xml.etree.ElementTree as ET
 
-import build_index
 import pytest
+
+import build_index
 from build_colophon import format_message
 from build_sitemap import NAMESPACE, build_sitemap
 from common import (
@@ -41,10 +42,7 @@ from publish import current_release, inject_feedback, inject_telemetry
 
 
 def test_extract_urls_trims_punctuation_and_duplicates():
-    message = (
-        "Built in https://claude.ai/share/abc. See (https://example.com/x),\n"
-        "again https://claude.ai/share/abc"
-    )
+    message = "Built in https://claude.ai/share/abc. See (https://example.com/x),\nagain https://claude.ai/share/abc"
     assert extract_urls(message) == ["https://claude.ai/share/abc", "https://example.com/x"]
 
 
@@ -82,10 +80,24 @@ def test_build_index_fills_recent_section(monkeypatch):
     monkeypatch.setattr(build_index, "RECENT_LIMIT", 1)
     readme = "# Games\n\n<!-- recently starts -->\n<!-- recently stops -->\n\n## All\n"
     games = [
-        {"slug": "old", "filename": "old.html", "title": "Old", "url": "/old", "changelog": "/changelog/old",
-         "created": "2026-01-01T10:00:00-05:00", "updated": "2026-03-01T10:00:00-05:00"},
-        {"slug": "new", "filename": "new.html", "title": "New", "url": "/new", "changelog": None,
-         "created": "2026-02-01T10:00:00-05:00", "updated": "2026-02-01T10:00:00-05:00"},
+        {
+            "slug": "old",
+            "filename": "old.html",
+            "title": "Old",
+            "url": "/old",
+            "changelog": "/changelog/old",
+            "created": "2026-01-01T10:00:00-05:00",
+            "updated": "2026-03-01T10:00:00-05:00",
+        },
+        {
+            "slug": "new",
+            "filename": "new.html",
+            "title": "New",
+            "url": "/new",
+            "changelog": None,
+            "created": "2026-02-01T10:00:00-05:00",
+            "updated": "2026-02-01T10:00:00-05:00",
+        },
     ]
     page = build_index.build_index(readme, games)
     assert page.index("Recently added") < page.index("Recently updated") < page.index("<h2>All</h2>")
@@ -103,10 +115,7 @@ def test_build_sitemap_lists_games_and_generated_pages():
         {"url": "/a-game", "updated": "2026-10-20T09:00:00-04:00"},
     ]
     root = ET.fromstring(build_sitemap(games, {"/changelog/a-game": "2026-10-19"}))
-    entries = {
-        url.findtext(f"{{{NAMESPACE}}}loc"): url.findtext(f"{{{NAMESPACE}}}lastmod")
-        for url in root
-    }
+    entries = {url.findtext(f"{{{NAMESPACE}}}loc"): url.findtext(f"{{{NAMESPACE}}}lastmod") for url in root}
     assert list(entries) == [
         f"{BASE_URL}/",
         f"{BASE_URL}/a-game",
@@ -149,7 +158,9 @@ def test_inject_telemetry_goes_before_head_end_once():
     assert no_head == '<p>no head\n<script data-telemetry data-release="">\nrun();\n</script>\n'
 
 
-def test_games_are_published_with_only_previews_telemetry_feedback_analytics_and_app_links_added_and_colophon_entries(site_dir):
+def test_games_are_published_with_only_previews_telemetry_feedback_analytics_and_app_links_added_and_colophon_entries(
+    site_dir,
+):
     colophon = (site_dir / "colophon.html").read_text("utf-8")
     telemetry = (ROOT / "telemetry.js").read_text("utf-8")
     feedback = (ROOT / "feedback.js").read_text("utf-8")
@@ -250,12 +261,15 @@ def test_previews_are_1200x630_jpegs_small_enough_for_whatsapp():
 
 
 def test_point_text_moves_site_and_worker_urls_to_the_preview():
-    site, worker = "https://pr-7-games-preview.example.workers.dev", "https://pr-7-games-leaderboard.example.workers.dev"
+    site, worker = (
+        "https://pr-7-games-preview.example.workers.dev",
+        "https://pr-7-games-leaderboard.example.workers.dev",
+    )
     text = (
         f'<meta property="og:url" content="{BASE_URL}/war">'
-        f"<a href=\"{BASE_URL}\">home</a>"
+        f'<a href="{BASE_URL}">home</a>'
         f"const ROOMS_URL = '{WORKER_URL}';"
-        f"<a href=\"{BASE_URL}.evil.example/\">not ours</a>"
+        f'<a href="{BASE_URL}.evil.example/">not ours</a>'
         "if (location.hostname !== 'games.michaelwarkentin.com') return;"
     )
     pointed = point_text(text, site, worker)
@@ -273,7 +287,10 @@ def test_point_text_blanks_the_share_workers_address():
     # A preview's shares link to its own game: production's share Worker would
     # send people to the live site.
     text = "const SHARE_URL = 'https://share.michaelwarkentin.com';\nconst SHARE_URLS = 1;"
-    assert point_text(text, "https://pr-7-games-preview.example.workers.dev") == "const SHARE_URL = '';\nconst SHARE_URLS = 1;"
+    assert (
+        point_text(text, "https://pr-7-games-preview.example.workers.dev")
+        == "const SHARE_URL = '';\nconst SHARE_URLS = 1;"
+    )
 
 
 def test_point_text_points_shares_at_the_share_workers_preview():
@@ -286,7 +303,9 @@ def test_point_text_points_shares_at_the_share_workers_preview():
 def test_point_preview_points_letterfield_at_a_share_preview_only_when_given_one(site_dir, tmp_path):
     """As the workflow runs it, with and without a share Preview."""
     site, share = "https://pr-7-games-preview.example.workers.dev", "https://pr-7-games-share.example.workers.dev"
-    assert "const SHARE_URL = 'https://share.michaelwarkentin.com';" in (site_dir / "letterfield.html").read_text("utf-8")
+    assert "const SHARE_URL = 'https://share.michaelwarkentin.com';" in (site_dir / "letterfield.html").read_text(
+        "utf-8"
+    )
     for extra, expected in [([], ""), (["--share", share + "/"], share)]:
         preview = tmp_path / f"site{len(extra)}"
         shutil.copytree(site_dir, preview)
@@ -302,7 +321,10 @@ def test_point_preview_points_letterfield_at_a_share_preview_only_when_given_one
 def test_point_site_leaves_no_production_url_in_the_preview(site_dir, tmp_path):
     preview = tmp_path / "site"
     shutil.copytree(site_dir, preview)
-    site, worker = "https://pr-7-games-preview.example.workers.dev", "https://pr-7-games-leaderboard.example.workers.dev"
+    site, worker = (
+        "https://pr-7-games-preview.example.workers.dev",
+        "https://pr-7-games-leaderboard.example.workers.dev",
+    )
     changed = {path.relative_to(preview).as_posix() for path in point_site(preview, site, worker)}
     assert {"index.html", "war.html", "sitemap.xml", "robots.txt"} <= changed
     for path in preview.rglob("*"):
@@ -321,7 +343,10 @@ def test_point_site_leaves_no_production_url_in_the_preview(site_dir, tmp_path):
 
 
 def test_point_preview_takes_only_https_origins():
-    assert origin("https://pr-1-games-preview.mwarkentin.workers.dev/") == "https://pr-1-games-preview.mwarkentin.workers.dev"
+    assert (
+        origin("https://pr-1-games-preview.mwarkentin.workers.dev/")
+        == "https://pr-1-games-preview.mwarkentin.workers.dev"
+    )
     for bad in ["http://example.com", "https://example.com/path", "example.com", "https://ex ample.com"]:
         with pytest.raises(argparse.ArgumentTypeError):
             origin(bad)
@@ -347,8 +372,17 @@ def test_point_preview_runs_without_a_worker_preview(site_dir, tmp_path):
     shutil.copytree(site_dir, preview)
     site = "https://pr-7-games-preview.example.workers.dev"
     subprocess.run(
-        [sys.executable, str(ROOT / "scripts" / "point_preview.py"), str(preview), "--site", site,
-         "--banner", "Preview of #7", "--banner-link", "https://github.com/mwarkentin/games/pull/7"],
+        [
+            sys.executable,
+            str(ROOT / "scripts" / "point_preview.py"),
+            str(preview),
+            "--site",
+            site,
+            "--banner",
+            "Preview of #7",
+            "--banner-link",
+            "https://github.com/mwarkentin/games/pull/7",
+        ],
         check=True,
     )
     war = (preview / "war.html").read_text("utf-8")

@@ -11,9 +11,9 @@ preview) runs those games' tests, and every test file named for no game,
 which covers all of them at once (the smoke tests, the build, the PWA,
 feedback, telemetry...). Anything else changed means the whole suite: shared
 scripts, fakes, music, the workflow. Files no pytest test or build script
-reads (UNREAD: the Workers, their docs, AGENTS.md) don't count either way,
-and a pull request that only changes those runs no pytest at all. If a test
-starts reading one, take it out of UNREAD.
+reads (UNREAD: the Workers, their docs, AGENTS.md, the linters' own
+files) don't count either way, and a pull request that only changes those
+runs no pytest at all. If a test starts reading one, take it out of UNREAD.
 
 A game's tests are the test files named for one of its pages
 (tests/test_war_rooms.py is War's) and any other test file that loads one
@@ -42,7 +42,7 @@ from common import ROOT, app_of, game_files
 # run over four workers. The whole suite is about 1,200 s, so three shards.
 SHARD_SECONDS = 450
 MAX_SHARDS = 3
-UNREAD = re.compile(r"^(worker/|share/|preview/|docs/|AGENTS\.md$|CLAUDE\.md$)")
+UNREAD = re.compile(r"^(worker/|share/|preview/|docs/|AGENTS\.md$|CLAUDE\.md$|biome\.jsonc$|scripts/lint\.sh$)")
 
 
 def apps(root: Path) -> dict[str, str]:
@@ -121,7 +121,9 @@ def changed_since(base: str, root: Path = ROOT) -> list[str] | None:
     rename included as in a pull request's files, or None if git can't say."""
     result = subprocess.run(
         ["git", "diff", "--name-only", "--no-renames", f"{base}...HEAD"],
-        cwd=root, capture_output=True, text=True,
+        cwd=root,
+        capture_output=True,
+        text=True,
     )
     if result.returncode != 0:
         print(f"Can't compare with {base}, so testing everything: {result.stderr.strip()}", file=sys.stderr)

@@ -79,9 +79,7 @@ def add_banner(text: str, banner: str, link: str = "") -> str:
 
 def prefix_title(text: str, prefix: str) -> str:
     """Put prefix at the start of the page's <title>, once."""
-    return re.sub(
-        r"(<title[^>]*>)", lambda m: m.group(1) + html.escape(prefix, quote=False), text, count=1
-    )
+    return re.sub(r"(<title[^>]*>)", lambda m: m.group(1) + html.escape(prefix, quote=False), text, count=1)
 
 
 def point_site(

@@ -5,7 +5,16 @@ from __future__ import annotations
 import json
 
 import survey_watch
-from survey_watch import CAPPED_ALERT, RATE_ALERT, RATE_MIN_WORDS, UNPASSED_MIN_JOINS, UNPASSED_PER_HOUR, check, main, site_key_set
+from survey_watch import (
+    CAPPED_ALERT,
+    RATE_ALERT,
+    RATE_MIN_WORDS,
+    UNPASSED_MIN_JOINS,
+    UNPASSED_PER_HOUR,
+    check,
+    main,
+    site_key_set,
+)
 
 
 def world(**yesterday):

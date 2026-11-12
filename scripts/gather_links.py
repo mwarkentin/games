@@ -94,8 +94,7 @@ def gather(root: Path = ROOT) -> tuple[dict, list[dict]]:
                 "filename": filename,
                 "slug": slug,
                 "title": extract_title(text, slug),
-                "description": extract_docs_description(path.with_suffix(".docs.md"))
-                or extract_meta_description(text),
+                "description": extract_docs_description(path.with_suffix(".docs.md")) or extract_meta_description(text),
                 "url": f"/{slug}",
                 "changelog": changelog,
                 "created": commits[-1]["date"] if commits else None,
@@ -109,9 +108,7 @@ def gather(root: Path = ROOT) -> tuple[dict, list[dict]]:
 def main() -> None:
     links, games = gather()
     (ROOT / "gathered_links.json").write_text(json.dumps(links, indent=2), "utf-8")
-    (ROOT / "games.json").write_text(
-        json.dumps(games, indent=2, ensure_ascii=False), "utf-8"
-    )
+    (ROOT / "games.json").write_text(json.dumps(games, indent=2, ensure_ascii=False), "utf-8")
     print(f"Gathered history for {len(games)} games")
 
 

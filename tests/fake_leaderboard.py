@@ -53,13 +53,16 @@ class FakeLeaderboard:
         self.new_codes = iter(["K7QP", "W3XY", "H8MN"])
         self.reject_with = reject_with
         self.status = status
-        self.views: list[dict] = []   # query of every GET /v1/scores
-        self.posts: list[dict] = []   # body of every POST /v1/scores
+        self.views: list[dict] = []  # query of every GET /v1/scores
+        self.posts: list[dict] = []  # body of every POST /v1/scores
 
     def board(self, scope: str, difficulty: str = "all", mode: str = "all", since: int | None = None) -> list[dict]:
         rows = [
-            s for s in self.scores
-            if s["scope"] == scope and difficulty in ("all", s["difficulty"]) and mode in ("all", s["mode"])
+            s
+            for s in self.scores
+            if s["scope"] == scope
+            and difficulty in ("all", s["difficulty"])
+            and mode in ("all", s["mode"])
             and (since is None or s["at"] >= since)
         ]
         return sorted(rows, key=lambda s: (-s["score"], s["at"]))
@@ -71,7 +74,9 @@ class FakeLeaderboard:
 
     def rank(self, row: dict, since: int | None = None) -> int:
         board = self.board(row["scope"], row["difficulty"], row["mode"], since)
-        return 1 + sum(1 for s in board if s["score"] > row["score"] or (s["score"] == row["score"] and s["at"] < row["at"]))
+        return 1 + sum(
+            1 for s in board if s["score"] > row["score"] or (s["score"] == row["score"] and s["at"] < row["at"])
+        )
 
     def handle(self, route: Route) -> None:
         request = route.request
@@ -175,7 +180,9 @@ def stand_in_for_worker(context: BrowserContext) -> FakeLeaderboard:
     # Later routes win, so these go after the catch-all.
     survey = FakeSurvey()
     context.route(f"{WORKER_URL}/v1/survey/world", survey.handle_world)
-    context.route_web_socket(re.compile("^wss://" + re.escape(urlparse(WORKER_URL).netloc) + "/v1/survey/"), survey.handle)
+    context.route_web_socket(
+        re.compile("^wss://" + re.escape(urlparse(WORKER_URL).netloc) + "/v1/survey/"), survey.handle
+    )
     context.route(TURNSTILE_JS, lambda route: route.fulfill(content_type="application/javascript", body=FAKE_TURNSTILE))
     context.route(f"{WORKER_URL}/v1/survey/pass", FakePassDesk().handle)
     context.route(f"{WORKER_URL}/v1/survey/log/**", FakeSurveyLog().handle)  # later routes win
