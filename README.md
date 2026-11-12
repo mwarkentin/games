@@ -30,6 +30,7 @@ Some useful tools live next door at
 
 - [Letterfield](https://games.michaelwarkentin.com/letterfield): an endless word search across a map of themed territories
 - [Letterfield survey log](https://games.michaelwarkentin.com/letterfield-log): every word charted in Letterfield's shared survey, by the hour, day, week, month or year, with who and where charted most, any one surveyor's, territory's or theme's, or only the ones you charted first
+- [Letterfield survey timelapse](https://games.michaelwarkentin.com/letterfield-timelapse): the shared map charted word by word and supernova by supernova, replayed from the survey log, to watch or save as a video
 
 ## Cards
 
