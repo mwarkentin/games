@@ -7,6 +7,7 @@
 - Notes now pop out of the field notes, at the top right, and fold back into them when they're done.
 - “Hidden in view” only counts letters you can see whole. A row or column cut in half by the edge of the screen, the title or the buttons no longer puts its word on the list; half the word's letters still need to show in full.
 - A word you find no longer brings up a note: you can see you've found it. Its circle draws itself up into a bead that flies into your field notes, and the count ticks up as it lands. Share it from your notes.
+- On a computer, the game opens with your field notes and the buttons beside them already in place, rather than sliding over as it starts.
 
 ## 2026-11-11
 

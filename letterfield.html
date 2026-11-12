@@ -385,9 +385,12 @@ body.docked .nova{left:calc((100% - var(--notes-w)) / 2)}
   .sync-dot,.survey-dot{animation:none!important}
   #music[aria-pressed="true"] svg{animation:none}
 }
+/* Until the page has laid itself out, nothing slides: the notes, the bar and
+   the buttons beside them open where they belong rather than moving there. */
+body.settling, body.settling *{transition:none!important}
 </style>
 </head>
-<body>
+<body class="settling">
 
 <canvas id="map" tabindex="0" aria-label="Endless word search grid. Drag to explore, pinch or Ctrl-scroll to zoom. Tap a word's first letter, then its last letter, to circle it."></canvas>
 
@@ -3952,6 +3955,9 @@ notesToggle.setAttribute('aria-expanded', String(notesOpen));
 dock = notesOpen && W >= 1100 ? NOTES_W : 0;
 document.body.classList.toggle('docked', dock > 0);
 resize();
+// resize() has measured the page, so its styles are settled where they open;
+// from here a change slides.
+requestAnimationFrame(() => document.body.classList.remove('settling'));
 renderNotes();
 const startHash = parseHash(location.hash);
 if (startHash) {
