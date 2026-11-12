@@ -159,6 +159,18 @@ body.docked .corner .tools-btn{border-radius:8px;border-right:1px solid var(--ru
 .tool-stack svg{width:18px;height:18px;flex:none}
 .tool-stack kbd{font:500 10.5px/1 var(--f-mono);color:var(--muted);border:1px solid var(--rule);border-radius:4px;padding:3px 5px 2px;min-width:9px;text-align:center}
 @media (hover: none) and (pointer: coarse){.tool-stack kbd{display:none}}
+/* Music volume: a slider under the music button, always there (0 is off),
+   lined up with the buttons' labels and as tall as they are to touch. */
+.tool-vol{display:flex;align-items:center;gap:8px;height:44px;padding:0 10px 0 40px;cursor:pointer}
+.tool-vol input{flex:1;min-width:0;height:44px;margin:0;background:transparent;font-size:16px;cursor:pointer;-webkit-appearance:none;appearance:none;--v:75%}
+.tool-vol input:focus{outline:none}
+.tool-vol input::-webkit-slider-runnable-track{height:4px;border-radius:2px;background:linear-gradient(to right, var(--accent) var(--v), var(--rule) var(--v))}
+.tool-vol input::-moz-range-track{height:4px;border-radius:2px;background:linear-gradient(to right, var(--accent) var(--v), var(--rule) var(--v))}
+.tool-vol input::-webkit-slider-thumb{-webkit-appearance:none;appearance:none;width:20px;height:20px;margin-top:-8px;border:0;border-radius:50%;background:var(--ink);box-shadow:0 0 0 3px var(--panel)}
+.tool-vol input::-moz-range-thumb{width:20px;height:20px;border:0;border-radius:50%;background:var(--ink);box-shadow:0 0 0 3px var(--panel)}
+.tool-vol input:focus-visible::-webkit-slider-thumb{outline:2px solid var(--accent);outline-offset:2px}
+.tool-vol input:focus-visible::-moz-range-thumb{outline:2px solid var(--accent);outline-offset:2px}
+.tool-vol output{font:500 10.5px/1 var(--f-mono);color:var(--muted);min-width:3ch;text-align:right}
 
 /* Notes toggle */
 .notes-toggle{position:relative;display:flex;align-items:center;gap:8px;min-height:40px;box-sizing:border-box;padding:10px 12px;cursor:pointer;font:600 13px/1 var(--f-ui)}
@@ -417,6 +429,7 @@ body.settling, body.settling *{transition:none!important}
         <hr style="--i:3">
         <button type="button" style="--i:4" id="sound" aria-pressed="true" aria-label="Sound" aria-keyshortcuts="M" title="Sound (M)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 9.5h3.5L12 6v12l-4.5-3.5H4z"/><path class="on" d="M15.5 9.2a4 4 0 0 1 0 5.6M18.2 6.6a7.6 7.6 0 0 1 0 10.8"/><path class="off" d="M16 9.5l5 5M21 9.5l-5 5"/></svg><span aria-hidden="true">Sound</span><kbd aria-hidden="true">M</kbd></button>
         <button type="button" style="--i:5" id="music" aria-pressed="false" aria-label="Music" aria-keyshortcuts="B" title="Music (B)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 17.5V6l10-2v11.5"/><circle cx="6.5" cy="17.5" r="2.5"/><circle cx="16.5" cy="15.5" r="2.5"/><path class="off" d="M3.5 3.5l17 17"/></svg><span aria-hidden="true">Music</span><kbd aria-hidden="true">B</kbd></button>
+        <label style="--i:6" class="tool-vol" id="musicVolRow" title="Music volume ([ and ])"><span class="vh">Music volume</span><input type="range" id="musicVol" min="0" max="100" step="5" value="0" aria-keyshortcuts="[ ]"><output id="musicVolOut" for="musicVol" aria-hidden="true">0</output></label>
       </div>
     </div>
     <button class="notes-toggle card" id="notesToggle" aria-expanded="false" aria-controls="notes">
@@ -525,7 +538,7 @@ const DEAL = 9;
 const STRAY_MIN = 6;
 const NOTES_W = 340;
 // Field notes, by map: each redraw starts a new key and carries over any finds still there.
-const K_FINDS = 'letterfield.finds.v4', K_FINDS_OLD = ['letterfield.finds.v3', 'letterfield.finds.v2', 'letterfield.finds.v1'], K_CAM = 'letterfield.cam.v1', K_COACH = 'letterfield.coach.v1', K_NOTES = 'letterfield.notes.v1', K_SOUND = 'letterfield.sound.v1', K_MUSIC = 'letterfield.music.v1', K_LIST = 'letterfield.list.v1';
+const K_FINDS = 'letterfield.finds.v4', K_FINDS_OLD = ['letterfield.finds.v3', 'letterfield.finds.v2', 'letterfield.finds.v1'], K_CAM = 'letterfield.cam.v1', K_COACH = 'letterfield.coach.v1', K_NOTES = 'letterfield.notes.v1', K_SOUND = 'letterfield.sound.v1', K_MUSIC = 'letterfield.music.v1', K_MUSIC_VOL = 'letterfield.musicvol.v1', K_LIST = 'letterfield.list.v1';
 const K_INITIALS = 'games.initials';  // shared with the other games' leaderboards
 const K_PASS = 'letterfield.surveyPass.v1';
 // The shared survey (see worker/SURVEY.md), on the leaderboard Worker. With
@@ -2238,14 +2251,25 @@ const novaBuses = new Set();
 // The audio context, made on first use and shared by sound and music.
 function audioCtx() {
   if (!gestured || !(soundOn || musicOn)) return null;
+  if (ac && ac.state === 'closed') {  // the browser gave it up: start again on a new one
+    if (musicNow) { try { musicNow.end(); } catch (_) {} musicNow = null; }
+    ac = null;
+  }
   if (!ac) {
     const AC = window.AudioContext || window.webkitAudioContext;
     if (!AC) return null;
     try { ac = new AC(); } catch (_) { return null; }
     acOut = audioOut(ac);
   }
-  if (ac.state === 'suspended' && !document.hidden) ac.resume().catch(() => {});
+  wakeCtx();
   return ac;
+}
+// Anything but running means stopped: 'suspended', or Safari's 'interrupted'
+// after another app took the audio. A browser can refuse to resume outside a
+// tap or key (iOS does, coming back to the page), so every tap and key tries
+// again, whichever of sound and music is on.
+function wakeCtx() {
+  if (ac && ac.state !== 'running' && ac.state !== 'closed' && !document.hidden) ac.resume().catch(() => {});
 }
 function startAudio() { return soundOn ? audioCtx() : null; }
 // Gain, then a compressor and a limiter, so a blast never clips.
@@ -2259,8 +2283,9 @@ function audioOut(a) {
 }
 function onGesture(e) {
   gestured = true;
+  if (soundOn || musicOn) wakeCtx();
   if (e.target && e.target.closest && e.target.closest('#sound, #music')) return;  // the buttons decide
-  startAudio();
+  audioCtx();
   if (musicOn && !musicNow) startMusic();
 }
 window.addEventListener('pointerdown', onGesture, true);
@@ -2271,7 +2296,7 @@ document.addEventListener('visibilitychange', () => {
     if (musicNow) musicNow.hush();
     setTimeout(() => { if (document.hidden) ac.suspend().catch(() => {}); }, musicNow ? 700 : 0);
   } else if (soundOn || musicOn) {
-    ac.resume().catch(() => {});
+    wakeCtx();
     if (musicNow) musicNow.wake();
   }
 });
@@ -2300,7 +2325,15 @@ soundBtn.addEventListener('click', () => setSound(!soundOn));
 // minutes each, crossfading. Each keeps to about twenty oscillators, to go
 // easy on phones: Drift and Orbit use a pair of delays for an echo instead of
 // a reverb, and Chimes one convolver, fed mono.
-const MUSIC_LEVEL = .45, TRACK_TIME = 240;
+// The volume slider runs 0 to 100, and the music's gain is the square of
+// it, so the lower half isn't nearly silent. 75 is the level the music always
+// had (.45). The slider is always there and 0 is off: it shows 0 while the
+// music is off, dragging it up switches the music on at that level, and the
+// button switches it back on at the last level it had. musicVol is that
+// level, never 0.
+const MUSIC_MAX = .8, MUSIC_VOL = 75, TRACK_TIME = 240;
+let musicVol = (v => Number.isInteger(v) && v > 0 && v <= 100 ? v : MUSIC_VOL)(Number(LS.get(K_MUSIC_VOL) ?? MUSIC_VOL));
+const musicLevel = () => MUSIC_MAX * (musicVol / 100) ** 2;
 const hz = m => 440 * Math.pow(2, (m - 69) / 12);
 let musicNow = null;
 function glide(param, to, secs, a) {
@@ -2600,21 +2633,26 @@ function playMusic(a) {
     track.play(a.currentTime + 3);
   }
   function run() { clearInterval(timer); tick(); timer = setInterval(tick, 1000); }
+  let hushed = false;
   run();
-  glide(master.gain, MUSIC_LEVEL, 4, a);
+  glide(master.gain, musicLevel(), 4, a);
   return {
     track: () => track, master, swap,
-    hush() { clearInterval(timer); glide(master.gain, 0, .5, a); },
+    hush() { hushed = true; clearInterval(timer); glide(master.gain, 0, .5, a); },
     wake() {
       if (ended) return;
+      hushed = false;
       track.resync(a.currentTime);
-      run(); glide(master.gain, MUSIC_LEVEL, 2.5, a);
+      run(); glide(master.gain, musicLevel(), 2.5, a);
     },
-    end() {
+    // A move of the slider: a quick glide, short enough to follow a drag and
+    // long enough not to click. While hushed, wake() picks the level up.
+    level() { if (!ended && !hushed) glide(master.gain, musicLevel(), .04, a); },
+    end() {  // switched off: gone in half a second
       ended = true; clearInterval(timer);
-      glide(master.gain, 0, 2.5, a);
+      glide(master.gain, 0, .5, a);
       const t = track;
-      setTimeout(() => { t.stop(); master.disconnect(); }, 2800);
+      setTimeout(() => { t.stop(); master.disconnect(); }, 800);
     },
   };
 }
@@ -2624,15 +2662,36 @@ function startMusic() {
   musicNow = playMusic(a);
   if (document.hidden) musicNow.hush();
 }
-const musicBtn = $('#music');
+const musicBtn = $('#music'), musicVolEl = $('#musicVol'), musicVolOut = $('#musicVolOut');
+function showMusicVol() {
+  const v = musicOn ? musicVol : 0;
+  musicVolEl.value = String(v);
+  musicVolEl.style.setProperty('--v', v + '%');
+  musicVolEl.setAttribute('aria-valuetext', v ? `Music volume ${v}%` : 'Music off');
+  musicVolOut.textContent = String(v);
+}
+// A move of the slider, or [ and ]: 0 switches the music off, anything else
+// switches it on at that level.
+function setMusicVol(v) {
+  v = Math.max(0, Math.min(100, Math.round(v)));
+  if (!v) { if (musicOn) setMusic(false); else showMusicVol(); return; }
+  musicVol = v;
+  LS.set(K_MUSIC_VOL, String(v));
+  if (!musicOn) { setMusic(true); return; }
+  showMusicVol();
+  if (musicNow) musicNow.level(); else startMusic();
+}
+musicVolEl.addEventListener('input', () => { gestured = true; setMusicVol(+musicVolEl.value); });
 function setMusic(on) {
   musicOn = on;
   LS.set(K_MUSIC, on ? '1' : '0');
   musicBtn.setAttribute('aria-pressed', String(on));
+  showMusicVol();
   if (on) startMusic();
   else if (musicNow) { musicNow.end(); musicNow = null; }
 }
 musicBtn.setAttribute('aria-pressed', String(musicOn));
+showMusicVol();
 // Music left on from last time waits, silent, for the first tap: a tap on its
 // own button then starts it, rather than switching it off unheard.
 musicBtn.addEventListener('click', () => { gestured = true; if (musicOn && !musicNow) startMusic(); else setMusic(!musicOn); });
@@ -3293,6 +3352,7 @@ window.addEventListener('keydown', e => {
     return;
   }
   if (inNotes || e.metaKey || e.ctrlKey || e.altKey) return;
+  if (e.target === musicVolEl && /^(Arrow|Page|Home$|End$)/.test(e.key)) return;  // the slider's own keys
   const step = 180 / cam.cs, OX = cam.x, OY = cam.y;
   const k = e.key.length === 1 ? e.key.toLowerCase() : e.key;
   switch (k) {
@@ -3305,6 +3365,7 @@ window.addEventListener('keydown', e => {
     case 'n': setNotes(!notesOpen); break;
     case 'm': setSound(!soundOn); break;
     case 'b': setMusic(!musicOn); break;
+    case '[': case ']': setMusicVol((musicOn ? musicVol : 0) + (k === ']' ? 10 : -10)); break;
     case 'h': goHome(); break;
     default: return;
   }
@@ -3976,7 +4037,7 @@ updateHud();
 invalidate();
 if (redrawn) setTimeout(() => toast(`<i></i><b>The map has been redrawn</b><span>${NT} themes of about ${Math.round(THEMES.reduce((a, t) => a + t.words.length, 0) / NT / 10) * 10} words now, so a territory never repeats one · ${redrawn.kept ? `${redrawn.kept} of your ${redrawn.had} finds are still on it` : 'your old finds are not on it'}</span>`, null, 8000), 900);
 connectStore();
-if (location.hash === '#debug') window.__lf = { cam, found, claims, links, chunk, wordEnd, collect, territoryProgress, remnants: () => [...remnants().set], novas: () => [...novasSeen.values()], territoryName: regionName, world: () => world, supernova, novaSound, audioOut, musicTracks: MUSIC_TRACKS, music: () => musicNow && { state: ac.state, track: musicNow.track().name, nodes: musicNow.track().nodes.size, level: musicNow.master.gain.value, swap: musicNow.swap }, nova: () => nova,
+if (location.hash === '#debug') window.__lf = { cam, found, claims, links, chunk, wordEnd, collect, territoryProgress, remnants: () => [...remnants().set], novas: () => [...novasSeen.values()], territoryName: regionName, world: () => world, supernova, novaSound, audioOut, musicTracks: MUSIC_TRACKS, audio: () => ac, music: () => musicNow && { state: ac.state, track: musicNow.track().name, nodes: musicNow.track().nodes.size, level: musicNow.master.gain.value, master: musicNow.master, volume: musicVol, target: musicLevel(), swap: musicNow.swap }, nova: () => nova,
   pass: () => Pass.state, intro: () => Intro.state, surveyStatus, linkStates: () => Object.fromEntries([...links].map(([k, l]) => [k, l.m.state])), outbox: () => [...outbox.values()].map(c => [c.e.w, c.m.state]), definitions: () => Object.fromEntries([...definitions].map(([k, d]) => [k, d.m.state])) };
 
 })();
