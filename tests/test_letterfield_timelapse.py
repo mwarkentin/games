@@ -179,6 +179,36 @@ def test_frames_where_the_charting_is_not_a_few_words_far_out(page: Page, site_u
     assert errors == []
 
 
+def test_stays_where_charting_began_while_a_far_off_pair_briefly_has_more(page: Page, site_url, errors):
+    # As on PR 81's preview: a word near the origin, two far off, another near the origin, then
+    # nothing until the next day. For those hours the far pair has "most" words, 2 to 1, then 2 to 2.
+    def word(i, x, y, at):
+        return [f"P{i:02d}AAA", x, y, 0, 0, "", at, theme(x, y)]
+    start = (DAY - 2) * DAY_MS + 10 * HOUR_MS
+    pattern = [word(0, 2, -1, start), word(1, 8184, -10719, start + 120_000), word(2, 8186, -10718, start + 150_000),
+               word(3, 6, -16, start + 600_000), word(4, 13, 23, (DAY - 1) * DAY_MS + 15 * HOUR_MS)]
+    pattern += [word(5 + i, (i % 6) * 8, (i // 6) * 8, DAY * DAY_MS + 13 * HOUR_MS + i * 60_000) for i in range(30)]
+    fake = FakeSurveyLog(pattern, PLACES, {})
+    open_timelapse(page, site_url, fake)
+    page.wait_for_function("__tl.loaded.days === 3")
+    page.locator("#play").click()
+    expect(page.locator("html")).to_have_attribute("data-tl", "paused")
+    # Everywhere along the way, the camera is near the origin, never 10,000 cells off.
+    xs = page.evaluate("""async () => {
+      const out = [];
+      for (let i = 0; i <= 100; i++) {
+        __tl.seek(i / 100);
+        await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
+        out.push([__tl.shown.n, __tl.cam.x, __tl.cam.y]);
+      }
+      return out;
+    }""")
+    far = [s for s in xs if abs(s[1]) > 500 or abs(s[2]) > 500]
+    assert far == [], far[:5]
+    assert {s[0] for s in xs} >= {1, 3, 4}
+    assert errors == []
+
+
 def test_frames_a_second_cluster_once_it_has_real_charting(page: Page, site_url, errors):
     # Thirty words far out are charting in their own right: the camera takes them in.
     far = [[f"FAR{i:02d}AAA", 8186 + i % 40, -10719 + i, 0, 0, "", DAY * DAY_MS + 14 * HOUR_MS + i * 1000, theme(8186 + i % 40, -10719 + i)]

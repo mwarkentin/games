@@ -628,8 +628,9 @@ colour across the cells it covers, glowing as it lands. Territories fill
 in with their theme's tint as their hidden words are charted. Supernovas
 flash, throw off a shockwave and leave the remnant look the game uses. The
 camera widens to keep the charting so far in view: territories within 8 of
-each other count as one cluster, and it frames the biggest cluster plus
-any other with at least 12 words and 5% of all of them. A few words
+each other count as one cluster, and it frames the cluster charting began
+in (until another has twice its words and 3 more) plus any other with at
+least 12 words and 5% of all of them. A few words
 charted far out in the endless map stay drawn but off screen, rather than
 shrinking everything else to a dot (a preview's test words did). The page has play
 and pause, a scrubber, four speeds (the whole history in 80, 40, 20 or 10

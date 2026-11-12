@@ -199,7 +199,8 @@ const GLOW_S = 1.4;            // seconds a newly charted word glows for
 const FLARE_S = 3.4;           // seconds a supernova's flare lasts
 const MIN_SPAN = 3 * RC;       // the camera never shows less than three territories across
 const LINK = 8;                // territories this close (in territories) are one cluster of charting
-const CLUSTER_MIN = [12, 0.05];  // a cluster the camera frames besides the biggest: this many words, and this share of all
+const CLUSTER_MIN = [12, 0.05];  // a cluster the camera frames besides its main one: this many words, and this share of all
+const SWITCH = [2, 3];         // the main cluster moves to another only once it has twice the words, and 3 more
 const EASE = 1.4;              // how quickly the camera follows, per second
 const FETCHES = 3;             // days loaded at once
 const VIDEO_PX = 1080;         // a saved video is square, this many pixels a side,
@@ -388,11 +389,15 @@ function cluster(x, y, at) {
   const r = root(t);
   r.n++; r.last = at;
 }
-let framed = null;  // the biggest cluster at the last keyframe, kept on a tie so the camera doesn't flick between two
+// The main cluster is the one charting started in until another clearly
+// outgrows it, so a couple of words far off early on (2 to 1 is "most")
+// don't send the camera away and back.
+let framed = null;
 function keyframe() {
   const thr = Math.max(CLUSTER_MIN[0], CLUSTER_MIN[1] * W.length);
-  let best = framed && root(framed);
-  for (const c of clusters) if (!best || c.n > best.n) best = c;
+  let best = framed && root(framed), top = null;
+  for (const c of clusters) if (!top || c.n > top.n) top = c;
+  if (!best || (top.n >= SWITCH[0] * best.n && top.n - best.n >= SWITCH[1])) best = top;
   framed = best;
   let x0 = best.x0, y0 = best.y0, x1 = best.x1, y1 = best.y1;
   for (const c of clusters) {
@@ -539,8 +544,10 @@ function target(n, view) {
   const w = Math.max(MIN_SPAN, (x1 - x0) * 1.15), h = Math.max(MIN_SPAN, (y1 - y0) * 1.15);
   return { x: (x0 + x1) / 2, y: (y0 + y1) / 2, s: Math.min(view.w / w, view.h / h) };
 }
-function moveCam(cam, to, dt, jump) {
-  if (jump || !cam.ok || RM) { cam.x = to.x; cam.y = to.y; cam.s = to.s; cam.ok = true; return; }
+function moveCam(cam, to, dt, jump, view) {
+  // Somewhere many screens away is a cut, not a pan across nothing.
+  const far = cam.ok && Math.hypot(to.x - cam.x, to.y - cam.y) > 3 * view.w / Math.min(cam.s, to.s);
+  if (jump || far || !cam.ok || RM) { cam.x = to.x; cam.y = to.y; cam.s = to.s; cam.ok = true; return; }
   const k = 1 - Math.exp(-dt * EASE);
   cam.x += (to.x - cam.x) * k; cam.y += (to.y - cam.y) * k;
   cam.s = Math.exp(Math.log(cam.s) + (Math.log(to.s) - Math.log(cam.s)) * k);
@@ -576,7 +583,7 @@ function wordPaths(from, to) {
 function draw(g, view, cam, p, opts) {
   const t = timeAt(p), n = upto(W, t), nNova = upto(NV, t);
   countTo(n);
-  moveCam(cam, target(n, view), opts.dt, opts.jump);
+  moveCam(cam, target(n, view), opts.dt, opts.jump, view);
   const { width: CW, height: CH } = g.canvas, s = cam.s;
   const ox = view.x + view.w / 2 - cam.x * s, oy = view.y + view.h / 2 - cam.y * s;
   g.setTransform(1, 0, 0, 1, 0, 0);
