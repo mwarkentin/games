@@ -4,6 +4,7 @@
 - Zoom, return to the origin, sound and music now live behind one button at the top right, beside your field notes, leaving the bar to the words. A tap drops them down in a stack and a second tap, Escape or a tap on the map puts them away. Their keys (+, −, H, M and B) work either way.
 - Notes like a word you've found now pop out of the field notes, at the top right, and fold back into them when they're done. A find's note folds right into your count, which ticks up as it lands.
 - “Hidden in view” only counts letters you can see whole. A row or column cut in half by the edge of the screen, the title or the buttons no longer puts its word on the list; half the word's letters still need to show in full.
+- The music has a volume slider, just under its button in the tools, while it's on. It starts where the music always played, and remembers where you leave it; [ and ] turn it down and up from the keyboard.
 
 ## 2026-11-11
 

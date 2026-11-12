@@ -237,6 +237,98 @@ def test_music_fades_out_while_the_tab_is_hidden(page: Page, site_url, errors):
     assert errors == []
 
 
+HIDE_TAB = """hidden => {
+  Object.defineProperty(document, 'hidden', { configurable: true, get: () => hidden });
+  document.dispatchEvent(new Event('visibilitychange'));
+}"""
+LEVEL_IS = "v => window.__lf.music() && Math.abs(window.__lf.music().level - v) < 1e-3"
+
+
+def test_music_volume_slider_sits_under_the_music_button(page: Page, site_url, errors):
+    page.add_init_script(COUNT_AUDIO)
+    page.set_viewport_size({"width": 375, "height": 740})
+    page.goto(f"{site_url}/letterfield#debug")
+    page.wait_for_function("window.__lf")
+    open_tools_quietly(page)
+    slider = page.get_by_role("slider", name="Music volume")
+    # Only while the music is on.
+    expect(slider).to_be_hidden()
+    page.locator("#music").click()
+    expect(slider).to_be_visible()
+    expect(slider).to_have_attribute("aria-valuetext", "Music volume 75%")
+    assert page.locator("#toolStack #musicVol").count() == 1
+    box, music = page.locator("#musicVolRow").bounding_box(), page.locator("#music").bounding_box()
+    assert abs(box["y"] - music["y"] - music["height"]) < 1, "right under the music button"
+    assert box["height"] >= 44 and slider.bounding_box()["height"] >= 40
+    stack = page.locator("#toolStack").bounding_box()
+    assert stack["x"] >= 0 and stack["x"] + stack["width"] <= 375
+    assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
+    # The default is the level the music always had.
+    page.wait_for_function(LEVEL_IS, arg=.45, timeout=8000)
+    page.locator("#music").click()
+    expect(slider).to_be_hidden()
+    assert errors == []
+
+
+def test_music_volume_changes_the_gain_on_a_curve_and_is_kept(page: Page, site_url, errors):
+    page.add_init_script(COUNT_AUDIO + "localStorage.setItem('letterfield.music.v1', '1');")
+    page.goto(f"{site_url}/letterfield#debug")
+    page.wait_for_function("window.__lf")
+    page.keyboard.press("Shift")
+    page.wait_for_function("window.__lf.music() !== null")
+    open_tools_quietly(page)
+    slider = page.locator("#musicVol")
+
+    # Moving it glides the gain to the square of its value, in well under a
+    # tenth of a second, without starting the piece again.
+    page.wait_for_timeout(500)
+    track = page.evaluate("window.__lf.music().track")
+    slider.fill("50")
+    expect(slider).to_have_attribute("aria-valuetext", "Music volume 50%")
+    page.wait_for_function(LEVEL_IS, arg=.8 * .25, timeout=200)
+    assert page.evaluate("window.__lf.music().track") == track
+    assert page.evaluate("localStorage.getItem('letterfield.musicvol.v1')") == "50"
+
+    # The keys nudge it, without moving the map.
+    cam = page.evaluate("({ ...window.__lf.cam })")
+    slider.focus()
+    page.keyboard.press("ArrowRight")
+    expect(slider).to_have_attribute("aria-valuetext", "Music volume 55%")
+    page.locator("#map").focus()
+    page.keyboard.press("]")
+    expect(slider).to_have_attribute("aria-valuetext", "Music volume 65%")
+    page.keyboard.press("[")
+    page.keyboard.press("[")
+    expect(slider).to_have_attribute("aria-valuetext", "Music volume 45%")
+    page.wait_for_timeout(300)
+    assert page.evaluate("({ ...window.__lf.cam })") == cam
+    page.wait_for_function(LEVEL_IS, arg=.8 * .45 ** 2, timeout=500)
+
+    # At 0 it's silent, still on, and the slider stays to bring it back.
+    slider.fill("0")
+    page.wait_for_function(LEVEL_IS, arg=0, timeout=500)
+    expect(page.locator("#music")).to_have_attribute("aria-pressed", "true")
+    expect(slider).to_be_visible()
+    slider.fill("30")
+    page.wait_for_function(LEVEL_IS, arg=.8 * .09, timeout=500)
+
+    # Kept across a reload: the music fades in to it.
+    page.reload()
+    page.wait_for_function("window.__lf")
+    expect(page.locator("#musicVol")).to_have_value("30")
+    page.keyboard.press("Shift")
+    page.wait_for_function(LEVEL_IS, arg=.8 * .09, timeout=8000)
+
+    # And comes back to it after the tab is hidden and shown, even if it
+    # moved while the music was hushed.
+    page.evaluate(HIDE_TAB, True)
+    page.wait_for_function("window.__lf.music().state === 'suspended'")
+    page.evaluate("v => { const s = document.getElementById('musicVol'); s.value = v; s.dispatchEvent(new Event('input')); }", "60")
+    page.evaluate(HIDE_TAB, False)
+    page.wait_for_function(LEVEL_IS, arg=.8 * .36, timeout=6000)
+    assert errors == []
+
+
 def test_every_music_track_makes_sound_and_they_take_turns(page: Page, site_url, errors):
     page.add_init_script("localStorage.setItem('letterfield.coach.v1', '1'); localStorage.setItem('letterfield.music.v1', '1');")
     page.goto(f"{site_url}/letterfield#debug")
