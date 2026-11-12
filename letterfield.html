@@ -327,6 +327,11 @@ body.docked .nova{left:calc((100% - var(--notes-w)) / 2)}
 .nova span{display:block;margin-top:14px;font:500 12px/1.4 var(--f-mono);letter-spacing:.12em;text-transform:uppercase;color:var(--ink);text-shadow:0 0 4px var(--paper),0 0 10px var(--paper),0 0 18px var(--paper)}
 .nova.show{animation:nova 4.6s ease-out forwards}
 .nova.show b{animation:nova-word 4.6s cubic-bezier(.16,.9,.3,1) forwards}
+/* The burst and its shockwave say it, so the words are only for screen
+   readers, and for reduced motion, which has no shockwave to watch. */
+@media (prefers-reduced-motion: no-preference){
+  .nova{width:1px;height:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
+}
 @keyframes nova{0%{opacity:0}5%{opacity:1}80%{opacity:1}100%{opacity:0}}
 @keyframes nova-word{0%{transform:scale(.35);letter-spacing:.7em;filter:blur(8px)}14%{transform:scale(1.07);filter:blur(0)}30%{transform:scale(1)}100%{transform:scale(1.05);letter-spacing:.18em}}
 #sound[aria-pressed="false"] .on,#sound[aria-pressed="true"] .off{display:none}
@@ -1882,9 +1887,10 @@ function novaBanner() {
   const seen = nova.seen;
   novaTimer = setTimeout(() => {
     novaEl.classList.remove('show'); novaEl.hidden = true;
-    // Then the way to share it, and where it's kept.
+    // Then the way to share it, and where it's kept: once the shockwave has
+    // passed, or with reduced motion once the words have gone.
     if (seen) novaToast(seen);
-  }, 4700);
+  }, RM ? 4700 : NOVA_WAVE);
 }
 // Supernovas you were here for, kept in this browser and listed in the
 // field notes: the shared survey's, near enough to watch or far enough for a

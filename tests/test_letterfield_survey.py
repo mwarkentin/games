@@ -607,6 +607,27 @@ def test_someone_else_finishing_a_territory_nearby_sets_it_off_too(page: Page, s
     assert errors == []
 
 
+@pytest.mark.parametrize("motion", ["no-preference", "reduce"])
+def test_a_supernova_shows_rather_than_says_unless_motion_is_reduced(page: Page, site_url, errors, motion):
+    words = territory_words(page, site_url)
+    page.emulate_media(reduced_motion=motion)
+    fake = FakeSurvey(claims=[[*w, 0, "MRW", NOW_MS - 60_000] for w in words[1:]])
+    open_game(page, site_url, fake)
+    eventually(page, lambda: "0,0" in fake.sockets)
+    expect(page.locator("#tCharted")).to_have_text(f" · {len(words) - 1}/{len(words)} charted")
+    fake.sockets["0,0"].send(json.dumps({"t": "claimed", "c": [*words[0], 0, "SIS", NOW_MS], "by": "someone"}))
+    banner = page.locator("#nova")
+    expect(banner).to_have_attribute("role", "status")
+    expect(page.locator("#novaText")).to_contain_text("the last by SIS", timeout=6000)  # a screen reader still hears it
+    box = banner.bounding_box()
+    if motion == "reduce":
+        assert box["width"] > 200 and box["height"] > 40  # no shockwave to watch, so the words show
+    else:
+        assert box["width"] <= 1 and box["height"] <= 1
+    expect(page.locator("#toast")).to_contain_text("Supernova · kept in your field notes", timeout=8000)
+    assert errors == []
+
+
 SHARE_SHEET_INIT = """
   window.__shared = [];
   Object.defineProperty(navigator, 'share', { value: data => { window.__shared.push(data); return Promise.resolve(); }, configurable: true });
