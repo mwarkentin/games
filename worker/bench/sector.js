@@ -77,7 +77,7 @@ const posMs = time('position update', 20000, (i) => {
   sector.webSocketMessage(sockets[i % PLAYERS], `{"t":"pos","x":${i % 190},"y":${(i * 7) % 190}}`);
 });
 const frameMs = time(`presence frame to ${PLAYERS} sockets`, 200, () => sector.sendPresence());
-const joinMs = time(`join, with ${claimed} claims in the snapshot`, 200, () => {
+time(`join, with ${claimed} claims in the snapshot`, 200, () => {
   const ws = fakeSocket();
   sector.join(ws, 0, 0);
   state.getWebSockets().pop();

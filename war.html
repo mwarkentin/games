@@ -1218,6 +1218,8 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px s
 
 <script>
 'use strict';
+// The core is the Worker's too, so the page needn't use all of it.
+// biome-ignore-start lint/correctness/noUnusedVariables: rooms use the rest
 // ---- BEGIN WAR CORE ----
 // The rules of War and the pacing of a game, shared word for word by war.html
 // (solo games against bots) and worker/src/war.js (rooms played over the
@@ -1525,6 +1527,7 @@ function warStandings(game) {
   };
 }
 // ---- END WAR CORE ----
+// biome-ignore-end lint/correctness/noUnusedVariables: rooms use the rest
 
 // ---- Settings ----
 

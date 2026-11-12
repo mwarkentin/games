@@ -145,11 +145,14 @@ def test_nothing_loads_on_other_hosts(page: Page, site_url, counterscale):
 
 
 def test_a_tampered_tracker_never_runs(page: Page, production, counterscale):
-    page.route(TRACKER, lambda route: route.fulfill(
-        body="window.tampered = true; export const init = () => {}, trackPageview = () => {};",
-        content_type="text/javascript",
-        headers=CORS,
-    ))
+    page.route(
+        TRACKER,
+        lambda route: route.fulfill(
+            body="window.tampered = true; export const init = () => {}, trackPageview = () => {};",
+            content_type="text/javascript",
+            headers=CORS,
+        ),
+    )
     page.goto(f"{production}/air-traffic-controller", wait_until="networkidle")
     page.wait_for_timeout(300)
 

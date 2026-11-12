@@ -72,7 +72,11 @@ def check(world: dict, site_key: bool | None = None) -> list[str]:
                 f"(alert at {RATE_ALERT}; people manage about 60)."
             )
     unpassed = day.get("unpassed", 0)
-    if unpassed >= UNPASSED_MIN_JOINS and unpassed >= UNPASSED_PER_HOUR * hours and (site_key_set() if site_key is None else site_key):
+    if (
+        unpassed >= UNPASSED_MIN_JOINS
+        and unpassed >= UNPASSED_PER_HOUR * hours
+        and (site_key_set() if site_key is None else site_key)
+    ):
         reasons.append(
             f"{unpassed:,} sockets joined without a Turnstile pass in {hours:,} player-hours "
             f"(alert at {UNPASSED_PER_HOUR} an hour and {UNPASSED_MIN_JOINS:,} in all; a player roaming opens about 10 an hour, nearly all with a pass)."
@@ -98,7 +102,9 @@ def note(world: dict, reasons: list[str]) -> str:
 
 def fetch(url: str) -> dict | None:
     try:
-        with urllib.request.urlopen(urllib.request.Request(url, headers={"User-Agent": "games-survey-watch"}), timeout=20) as r:
+        with urllib.request.urlopen(
+            urllib.request.Request(url, headers={"User-Agent": "games-survey-watch"}), timeout=20
+        ) as r:
             return json.load(r)
     except (OSError, ValueError) as e:
         print(f"::warning::Couldn't read the survey's world map: {e}", file=sys.stderr)

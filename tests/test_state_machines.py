@@ -76,7 +76,11 @@ def test_any_other_move_is_refused_with_a_console_error(helper: Page):
       return { moved, state: m.state, seq: m.seq, shown: document.documentElement.dataset.screen, calls, logged };
     }""")
     assert result == {
-        "moved": False, "state": "menu", "seq": 0, "shown": "menu", "calls": 0,
+        "moved": False,
+        "state": "menu",
+        "seq": 0,
+        "shown": "menu",
+        "calls": 0,
         "logged": ["screen: no move from menu to menu"],
     }
 

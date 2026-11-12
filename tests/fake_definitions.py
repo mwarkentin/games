@@ -51,7 +51,8 @@ class FakeDefinitions:
             route.fulfill(status=answer, headers=headers, body='{"error":"try again later"}')
             return
         body = {
-            "word": word, "senses": answer,
+            "word": word,
+            "senses": answer,
             "source": "wiktionary" if answer else None,
             "title": word.lower() if answer else None,
             "url": f"https://en.wiktionary.org/wiki/{word.lower()}#English" if answer else None,

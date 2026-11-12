@@ -44,8 +44,18 @@ def test_icons_previews_and_tests_belong_to_their_game():
 
 
 def test_anything_shared_runs_the_whole_suite():
-    for path in ("feedback.js", "sw.js", "scripts/common.py", "tests/conftest.py", "tests/fake_survey.py",
-                 "README.md", "music/README.md", ".github/workflows/test.yml", ".test_durations", "uv.lock"):
+    for path in (
+        "feedback.js",
+        "sw.js",
+        "scripts/common.py",
+        "tests/conftest.py",
+        "tests/fake_survey.py",
+        "README.md",
+        "music/README.md",
+        ".github/workflows/test.yml",
+        ".test_durations",
+        "uv.lock",
+    ):
         result = select(["letterfield.html", path])
         assert result == {"pytest": True, "tests": [], "shards": list(range(1, MAX_SHARDS + 1))}, path
 
@@ -53,6 +63,7 @@ def test_anything_shared_runs_the_whole_suite():
 def test_files_no_test_reads_run_no_pytest_and_dont_widen_a_game():
     assert select(["worker/src/war.js", "share/src/card.js", "AGENTS.md", "docs/link-previews.md"])["pytest"] is False
     assert select(["worker/src/war.js", "war.html", "AGENTS.md"]) == select(["war.html"])
+    assert select(["biome.jsonc", "scripts/lint.sh"])["pytest"] is False
 
 
 def test_every_selection_is_a_set_of_real_test_files():
@@ -62,7 +73,9 @@ def test_every_selection_is_a_set_of_real_test_files():
 
 
 def git(root, *args):
-    subprocess.run(["git", "-c", "user.name=t", "-c", "user.email=t@example.com", *args], cwd=root, check=True, capture_output=True)
+    subprocess.run(
+        ["git", "-c", "user.name=t", "-c", "user.email=t@example.com", *args], cwd=root, check=True, capture_output=True
+    )
 
 
 def test_a_branch_pushed_before_its_pull_request_is_judged_by_its_changes_from_main(tmp_path):
@@ -84,4 +97,3 @@ def test_a_branch_pushed_before_its_pull_request_is_judged_by_its_changes_from_m
     git(tmp_path, "checkout", "-q", "claude/x")
     assert sorted(filter(None, changed_since("main", tmp_path))) == ["letterfield.html", "new.txt", "old.txt"]
     assert changed_since("no-such-branch", tmp_path) is None, "can't compare, so everything runs"
-

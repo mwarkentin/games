@@ -8,8 +8,9 @@ from __future__ import annotations
 
 from urllib.parse import parse_qs, urlparse
 
-from fake_leaderboard import API, FakeLeaderboard, Held, without_worker
 from playwright.sync_api import Page, expect
+
+from fake_leaderboard import API, FakeLeaderboard, Held, without_worker
 
 SINGLE_TABLE_NOTE = "Games with one times table are practice and don’t go on the leaderboard."
 UNAVAILABLE = "The leaderboard is unavailable right now."
@@ -18,8 +19,18 @@ START_OF_WEEK = "() => { const d = new Date(); d.setHours(0, 0, 0, 0); d.setDate
 START_OF_TODAY = "() => new Date().setHours(0, 0, 0, 0)"
 
 
-def row(initials: str, score: int, scope: str = "*", difficulty: str = "classic", mode: str = "normal", **extra) -> dict:
-    return {"initials": initials, "score": score, "level": 3, "scope": scope, "difficulty": difficulty, "mode": mode, **extra}
+def row(
+    initials: str, score: int, scope: str = "*", difficulty: str = "classic", mode: str = "normal", **extra
+) -> dict:
+    return {
+        "initials": initials,
+        "score": score,
+        "level": 3,
+        "scope": scope,
+        "difficulty": difficulty,
+        "mode": mode,
+        **extra,
+    }
 
 
 def open_game(page: Page, site_url: str, fake: FakeLeaderboard | Held | None, query: str = "") -> None:
@@ -87,8 +98,15 @@ def test_top_ten_score_saves_initials(page: Page, site_url, errors):
     assert entry.pop("seconds") >= 1
     assert entry.pop("since") == page.evaluate(START_OF_WEEK)
     assert entry == {
-        "game": "funnels-and-buckets", "difficulty": "classic", "mode": "normal", "initials": "ZED",
-        "score": 20, "level": 1, "popped": 1, "groups": [], "public": True,
+        "game": "funnels-and-buckets",
+        "difficulty": "classic",
+        "mode": "normal",
+        "initials": "ZED",
+        "score": 20,
+        "level": 1,
+        "popped": 1,
+        "groups": [],
+        "public": True,
     }
 
     # The menu shows the new entry, and the initials are remembered for next time.
@@ -142,12 +160,14 @@ def test_unavailable_leaderboard_does_not_block_the_game(page: Page, site_url):
 
 
 def test_leaderboard_screen_filters_by_difficulty_and_mode(page: Page, site_url, errors):
-    fake = FakeLeaderboard([
-        row("KID", 300),
-        row("MRW", 245, difficulty="challenge"),
-        row("SIS", 120, difficulty="starter", mode="easy"),
-        row("DAD", 90, difficulty="classic", mode="easy"),
-    ])
+    fake = FakeLeaderboard(
+        [
+            row("KID", 300),
+            row("MRW", 245, difficulty="challenge"),
+            row("SIS", 120, difficulty="starter", mode="easy"),
+            row("DAD", 90, difficulty="classic", mode="easy"),
+        ]
+    )
     open_game(page, site_url, fake)
     page.click("#lbOpenMenu")
     expect(page.locator("#lbOv")).to_be_visible()
@@ -166,7 +186,10 @@ def test_leaderboard_screen_filters_by_difficulty_and_mode(page: Page, site_url,
     expect(page.locator("#lbList")).to_be_hidden()
     expect(page.locator("#lbNote")).to_have_text("No scores here this week yet.")
     assert fake.views[-1] == {
-        "game": "funnels-and-buckets", "scope": "*", "difficulty": "challenge", "mode": "easy",
+        "game": "funnels-and-buckets",
+        "scope": "*",
+        "difficulty": "challenge",
+        "mode": "easy",
         "since": str(page.evaluate(START_OF_WEEK)),
     }
 
@@ -296,7 +319,9 @@ def test_group_members_save_to_their_groups(page: Page, site_url, errors):
     expect(page.locator("#lbPublic")).not_to_be_checked()
     page.check("#lbPublic")
     page.click("#lbSave")
-    expect(page.locator("#overLbNote")).to_have_text("Saved! #11 this week on Everyone, #3 this week in Family, #2 this week in Friends.")
+    expect(page.locator("#overLbNote")).to_have_text(
+        "Saved! #11 this week on Everyone, #3 this week in Family, #2 this week in Friends."
+    )
     assert errors == []
 
 

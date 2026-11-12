@@ -7,6 +7,7 @@ font's advance widths, in ems, so the Worker can fit text without a canvas).
 
 Run from the repo root after changing CHARS or a font: uv run share/scripts/fonts.py
 """
+
 import json
 import re
 import urllib.request
@@ -16,9 +17,17 @@ from fontTools import subset
 from fontTools.ttLib import TTFont
 
 HERE = Path(__file__).resolve().parent.parent
-CSS = ("https://fonts.googleapis.com/css2?family=Big+Shoulders+Display:wght@800"
-       "&family=Martian+Mono:wght@400;500&family=Schibsted+Grotesk:wght@500;600")
-NAMES = ["BigShouldersDisplay-800", "MartianMono-400", "MartianMono-500", "SchibstedGrotesk-500", "SchibstedGrotesk-600"]
+CSS = (
+    "https://fonts.googleapis.com/css2?family=Big+Shoulders+Display:wght@800"
+    "&family=Martian+Mono:wght@400;500&family=Schibsted+Grotesk:wght@500;600"
+)
+NAMES = [
+    "BigShouldersDisplay-800",
+    "MartianMono-400",
+    "MartianMono-500",
+    "SchibstedGrotesk-500",
+    "SchibstedGrotesk-600",
+]
 LICENCES = {
     "BigShouldersDisplay": "bigshouldersdisplay",
     "MartianMono": "martianmono",
@@ -57,7 +66,9 @@ def main() -> None:
         metrics[name] = {c: round(hmtx[cmap[ord(c)]][0] / upm, 4) for c in CHARS if ord(c) in cmap}
         print(f"{path.name}: {path.stat().st_size} bytes, {len(metrics[name])} characters")
     for family, slug in LICENCES.items():
-        (fonts / f"{family}-OFL.txt").write_bytes(get(f"https://raw.githubusercontent.com/google/fonts/main/ofl/{slug}/OFL.txt"))
+        (fonts / f"{family}-OFL.txt").write_bytes(
+            get(f"https://raw.githubusercontent.com/google/fonts/main/ofl/{slug}/OFL.txt")
+        )
     (HERE / "src" / "metrics.json").write_text(json.dumps(metrics, ensure_ascii=False, separators=(",", ":")) + "\n")
 
 

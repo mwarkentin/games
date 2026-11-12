@@ -17,7 +17,18 @@ import pytest
 from playwright.sync_api import Browser, BrowserContext, Page
 
 from build_pwa import build_service_worker
-from common import HOME_APP, ICON_SIZES, ROOT, app_of, extract_meta, extract_title, game_files, generated_pages, music_files, own_apps
+from common import (
+    HOME_APP,
+    ICON_SIZES,
+    ROOT,
+    app_of,
+    extract_meta,
+    extract_title,
+    game_files,
+    generated_pages,
+    music_files,
+    own_apps,
+)
 from fake_leaderboard import stand_in_for_worker
 from render_icons import render
 
