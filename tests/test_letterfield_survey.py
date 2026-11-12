@@ -740,7 +740,7 @@ OVERLAP = """([a, b]) => {
 # What a tap at the middle of each of an element's chips lands on: true where it reaches that chip.
 TAPS_REACH = """sel => [...document.querySelectorAll(sel)].map(el => {
   const r = el.getBoundingClientRect(), x = r.left + r.width / 2, y = r.top + r.height / 2;
-  return x < 0 || x > innerWidth ? true : el.contains(document.elementFromPoint(x, y));
+  return x < 0 || x >= innerWidth ? true : el.contains(document.elementFromPoint(x, y));  // off screen at the edge itself
 })"""
 
 
