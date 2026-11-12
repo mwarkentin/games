@@ -257,8 +257,9 @@ def test_with_alerts_off_a_supernova_still_plays_and_is_kept(page: Page, site_ur
     page.evaluate(COLLECT, words)
     expect(page.locator("#nova")).to_be_visible(timeout=5000)
     expect(page.locator("#nova")).to_be_hidden(timeout=10000)
-    page.wait_for_timeout(800)
-    expect(page.locator("#toast")).not_to_have_class(re.compile(r"\bshow\b"))
+    # Supernovas are rare enough that their note shows all the same.
+    expect(page.locator("#toast")).to_contain_text("Supernova · kept in your field notes")
+    expect(page.locator("#toast .share")).to_be_visible()
     if page.locator("#notes").is_hidden():
         page.click("#notesToggle")
     expect(page.locator("#novaList .find-share")).to_be_visible()

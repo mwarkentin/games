@@ -1436,7 +1436,7 @@ function onSurvey(l, m) {
         const mine = m.by === l.you, last = mine ? 'the last by you' : c.by ? `the last by ${c.by}` : '';
         const text = `${regionName(rx, ry)} · every hidden word charted${last ? ', ' + last : ''}`;
         const seen = sawNova({ rx, ry, t: Date.now(), w: c.w, x: c.x, y: c.y, d: c.d, by: c.by || '', mine, solo: false });
-        if (!nearView(rx, ry) || !supernova(rx, ry, { mine, text, seen })) setTimeout(() => (seen ? novaToast(seen, 'Went supernova · every hidden word charted') : toast('others', `<i></i><b>${regionName(rx, ry)}</b><span>Every hidden word here is charted</span>`, THEMES[regionTheme(rx, ry)].hue)), 1800);
+        if (!nearView(rx, ry) || !supernova(rx, ry, { mine, text, seen })) setTimeout(() => (seen ? novaToast(seen, 'Went supernova · every hidden word charted') : toast('notice', `<i></i><b>${regionName(rx, ry)}</b><span>Every hidden word here is charted</span>`, THEMES[regionTheme(rx, ry)].hue)), 1800);
       }
     }
   } else if (m.t === 'taken') {
@@ -1928,8 +1928,9 @@ async function shareNova(n) {
 }
 const novaAction = n => ({ label: `Share ${regionName(n.rx, n.ry)}’s supernova`, share: () => shareNova(n) });
 // The note a supernova leaves: where, that it's in your notes, and Share.
-function novaToast(n, line = 'Supernova · kept in your field notes', kind = n.mine ? 'mine' : 'others') {
-  toast(kind, `<i></i><b>${regionName(n.rx, n.ry)}</b><span>${line}</span>`, THEMES[regionTheme(n.rx, n.ry)].hue, SHARE_TOAST_MS, novaAction(n));
+// Supernovas are rare enough that it shows even with alerts off.
+function novaToast(n, line = 'Supernova · kept in your field notes') {
+  toast('notice', `<i></i><b>${regionName(n.rx, n.ry)}</b><span>${line}</span>`, THEMES[regionTheme(n.rx, n.ry)].hue, SHARE_TOAST_MS, novaAction(n));
 }
 // The field notes' list of them, newest first; each flies to its last word.
 const novasSec = $('#novasSec'), novaListEl = $('#novaList');
@@ -3423,8 +3424,8 @@ let toastTimer = 0, toastMs = 0;
 // switched off (the bell in the tools): 'others', what other surveyors did,
 // and 'mine', your own finds and how charting them went, are kept quiet then;
 // 'reply', the answer to something you just did (circled a word you have,
-// shared), and 'notice', errors and one-offs, show all the same. Every note
-// has to say which.
+// shared), and 'notice', errors and rare news like a supernova, show all the
+// same. Every note has to say which.
 const TOAST_QUIET = { others: true, mine: true, reply: false, notice: false };
 let carrying = null, toastsOn = LS.get(K_TOASTS) !== '0';
 function toast(kind, html, hue, ms = 2400, find = null, carry = false) {

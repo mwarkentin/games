@@ -647,10 +647,13 @@ def test_a_supernova_you_saw_is_kept_in_your_notes_and_shares_its_card(page: Pag
     assert errors == []
 
 
-def test_a_supernova_far_away_is_a_note_you_can_share(page: Page, site_url, errors):
+@pytest.mark.parametrize("alerts", ["on", "off"])
+def test_a_supernova_far_away_is_a_note_you_can_share(page: Page, site_url, errors, alerts):
     words = territory_words(page, site_url)
     fake = FakeSurvey(claims=[[*w, 0, "MRW", NOW_MS - 60_000] for w in words[1:]])
     page.add_init_script(SHARE_SHEET_INIT)
+    if alerts == "off":  # rare enough to show all the same
+        page.add_init_script("localStorage.setItem('letterfield.toasts.v1', '0')")
     open_game(page, site_url, fake)
     eventually(page, lambda: "0,0" in fake.sockets)
     expect(page.locator("#tCharted")).to_have_text(f" · {len(words) - 1}/{len(words)} charted")
