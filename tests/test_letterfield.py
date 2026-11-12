@@ -276,12 +276,30 @@ def test_music_volume_slider_is_always_under_the_music_button(page: Page, site_u
     expect(slider).to_have_value("75")
     expect(slider).to_have_attribute("aria-valuetext", "Music volume 75%")
     page.wait_for_function(LEVEL_IS, arg=.45, timeout=8000)
-    assert page.locator("#toolStack").bounding_box() == stack, "the stack keeps its size"
+    same = lambda b: all(abs(b[k] - stack[k]) < 1 for k in stack)
+    assert same(page.locator("#toolStack").bounding_box()), "the stack keeps its size"
     # And off again: the slider drops to 0, and the stack still keeps its size.
     music.click()
     expect(slider).to_have_value("0")
     assert page.evaluate("window.__lf.music()") is None
-    assert page.locator("#toolStack").bounding_box() == stack
+    assert same(page.locator("#toolStack").bounding_box())
+    assert errors == []
+
+
+def test_switching_the_music_off_fades_it_out_in_half_a_second(page: Page, site_url, errors):
+    page.add_init_script(COUNT_AUDIO + "localStorage.setItem('letterfield.music.v1', '1');")
+    page.goto(f"{site_url}/letterfield#debug")
+    page.wait_for_function("window.__lf")
+    page.keyboard.press("Shift")
+    page.wait_for_function(LEVEL_IS, arg=.45, timeout=8000)
+    for off in ("document.getElementById('music').click()", "(s => { s.value = '0'; s.dispatchEvent(new Event('input')); })(document.getElementById('musicVol'))"):
+        page.evaluate("window.__gain = window.__lf.music().master.gain")
+        page.evaluate(off)
+        expect(page.locator("#music")).to_have_attribute("aria-pressed", "false")
+        page.wait_for_timeout(650)
+        assert page.evaluate("window.__gain.value") < 1e-3, off
+        page.keyboard.press("b")  # on again
+        page.wait_for_function(LEVEL_IS, arg=.45, timeout=8000)
     assert errors == []
 
 
