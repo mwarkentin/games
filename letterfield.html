@@ -4040,6 +4040,8 @@ body.lf-ending .topbar,body.lf-ending .bar,body.lf-ending .notes,body.lf-ending 
   }
   endEl.hidden = !on;
   document.body.classList.toggle('lf-ending', on);
+  // Keys and taps reach nothing while it lasts, so nothing keeps its focus ring.
+  if (on && document.activeElement && document.activeElement !== document.body) document.activeElement.blur();
   if (!on) document.body.style.background = '';
   if (!on) for (const m of endEl.children) { m.className = m.className.replace(/ (show|dim|on-map)/g, ''); m.innerHTML = ''; }
   else { endEl.style.setProperty('--h', THEMES[END.th].hue); END.shown = ''; }
