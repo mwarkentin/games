@@ -584,3 +584,5 @@ Gaps to check by hand in step 7:
 - Browser Rendering's current price wasn't checked, since it isn't
   recommended.
 - satori-based bundle sizes were estimated, not measured.
+
+<!-- CI timing sample for #85, not for merging -->
