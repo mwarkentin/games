@@ -591,7 +591,8 @@ page loads nothing from a new host.
 
 ```sh
 uv run playwright install chromium   # once
-uv run pytest                        # builds the site into a temp dir, then tests it
+uv run pytest -n auto                # builds the site into a temp dir, then tests it over every CPU
+uv run pytest                        # the same, one test at a time
 node --disable-warning=ExperimentalWarning --test "worker/test/*.test.js"   # the leaderboard Worker
 (cd share && npm ci) && node --disable-warning=ExperimentalWarning --test "share/test/*.test.js"   # the share Worker
 uv run ./build.sh && python3 -m http.server -d _site 8000   # preview the real site
@@ -602,6 +603,33 @@ The smoke tests load every game at phone and desktop sizes and fail on
 console errors, uncaught exceptions, failed requests, sideways scrolling or
 text inputs under 16px. They also check the `<head>` metadata, CDN version
 pins and the README link.
+
+### Tests in parallel
+
+The suite takes about 20 minutes one test at a time, mostly in real game
+time (War's battles, animations), so `-n auto` runs it on
+[pytest-xdist](https://pytest-xdist.readthedocs.io) workers, one per CPU.
+CI (`.github/workflows/test.yml`) goes further: pytest-split cuts it into
+three shards of about equal time, each a job of its own on four workers,
+and a job named `test` passes once every shard has. So:
+
+- **Every test must pass alongside others,** in any order and in any worker.
+  Keep state in the test's own page, context or `tmp_path`, never in a
+  module-level variable, a fixed port or a file in the repo. The site is
+  built once per run (`site_dir` in `tests/conftest.py`, under a lock) and
+  is read-only.
+- **Measure what's at rest.** A busy machine runs pages slower, so a test
+  that reads a size or position while something is still moving fails now
+  and then. Wait for the animations on what's measured to finish (`e =>
+  Promise.all(e.getAnimations().map(a => a.finished))`) or for the state
+  the page reaches, never a fixed time.
+- **`.test_durations`** holds each test's time, for splitting the shards
+  evenly. New tests count as the average until it's refreshed, so refresh
+  it now and then, or when the shards' times drift apart:
+  `uv run pytest -n auto --store-durations`, and commit it.
+- CI skips pytest for a pull request that only changes `worker/` or
+  `share/`, since no pytest test reads them. A test that does needs that
+  pattern changed in the workflow's `plan` job.
 
 In a Claude Code on the web sandbox, the default network policy can block
 `cdn.jsdelivr.net`, `cdnjs.cloudflare.com`, `fonts.googleapis.com`,
