@@ -679,9 +679,10 @@ def test_a_supernova_far_away_passes_as_a_distant_wave_and_is_kept(page: Page, s
     expect(page.locator("#tCharted")).to_have_text(f" · {len(words) - 1}/{len(words)} charted")
     page.evaluate("window.__lf.cam.x = 600; window.__lf.cam.y = 600")  # more than three territories off
     fake.sockets["0,0"].send(json.dumps({"t": "claimed", "c": [*words[0], 0, "", NOW_MS], "by": "someone"}))
-    # No charge and no dimming: its shockwave comes straight in from the side it's on.
+    # No charge and no dimming: its shockwave comes straight in from the side it's on,
+    # bursting on the first frame drawn rather than after a charge of NOVA_CHARGE (2.6 s).
     page.wait_for_function("window.__lf.nova()?.distant === true", timeout=3000)
-    assert page.evaluate("window.__lf.nova().burst")
+    page.wait_for_function("window.__lf.nova()?.burst === true", timeout=1000)
     toast = page.locator("#toast")
     expect(toast).to_contain_text("Supernova · kept in your field notes", timeout=6000)
     toast.locator(".share").click()
@@ -776,7 +777,7 @@ def test_a_distant_supernova_comes_in_from_its_side(page: Page, site_url, errors
     word = page.evaluate("window.__lf.chunk(160, 0).words.map(o => [o.w, o.x, o.y, o.d])[0]")
     fake.nova("0,0", 40, 0, word, "", ago=3000)
     page.wait_for_function("window.__lf.nova()?.distant === true", timeout=3000)
-    page.wait_for_timeout(300)
+    page.wait_for_function("window.__lf.novaWave()?.R > 0", timeout=2000)  # drawn, and on its way
     wave = page.evaluate("window.__lf.novaWave()")
     assert wave["virtual"] and 390 < wave["cx"] < 390 * 3
     page.wait_for_timeout(1200)
