@@ -992,3 +992,20 @@ def test_end_of_the_universe_sound_renders_offline(page: Page, site_url, errors)
     page.goto(f"{site_url}/letterfield#debug")
     size = page.evaluate("async () => (await __lf.endRender({ tremor: .5, collapse: 1, dot: 1, build: 1, bang: .5, scatter: .5, music: false })).size")
     assert size > 44 + 44100 * 4 * 8
+
+
+def test_end_of_the_universe_keeps_your_initials(page: Page, site_url, errors):
+    # A new universe starts the map again, not the player: someone signed
+    # before the end isn't asked for initials after it, and is greeted by them.
+    without_worker(page, site_url, "letterfield")
+    page.add_init_script("""localStorage.setItem('games.initials', '"KAT"'); localStorage.setItem('letterfield.coach.v1', '1')""")
+    page.goto(f"{site_url}/letterfield#debug")
+    html = page.locator("html")
+    expect(html).to_have_attribute("data-intro", "exploring")
+    page.evaluate("__lf.endgame({ tremor: .3, collapse: .8, dot: .5, build: .5, bang: .3, scatter: 1.5, by: 'ABC' })")
+    page.wait_for_function("__lf.end() && __lf.end().name === 'scatter'")
+    expect(page.locator("#endgame")).to_contain_text("KAT, you were thrown to")
+    page.wait_for_function("__lf.end() === null", timeout=10_000)
+    expect(html).to_have_attribute("data-intro", "exploring")
+    expect(page.locator("#signup")).to_be_hidden()
+    assert page.evaluate("localStorage.getItem('games.initials')") == '"KAT"'

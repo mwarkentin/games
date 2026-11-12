@@ -1024,6 +1024,16 @@ exactly, so no claim, find or log row changes when this ships.
   `worker/test/survey.test.js` runs the game's copy against the Worker's for
   universes 1, 2 and 3, with and without a relic.
 
+- **The player carries over.** Only the map starts again. Initials
+  (`games.initials`, shared with the other games), groups, the public-board
+  choice, sound and music, and having seen the coach all stay as they were,
+  so nobody signs in again: the `intro` machine only asks while no initials
+  are saved, and a page that's signed never goes back to asking. Sockets to
+  the new universe's sectors send the same `me` as before. The banner greets
+  a signed player by their initials ("KAT, you were thrown to …"), and the
+  relic's charter keeps theirs on it. Field notes move to the archive (see
+  History); nothing else does.
+
 ### History
 
 Nothing is deleted. Universes follow each other in time, so a universe of

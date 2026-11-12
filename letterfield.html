@@ -4060,7 +4060,7 @@ function endBanners(ph) {
   if (ph.name === 'dot' && ph.s - E.at.dot > Math.max(8, E.P.dot * .45)) step('d', () => endEl.querySelector('.end-mid').classList.add('dim'));
   if (ph.name === 'build' && ph.u > .15) step('e', () => endSay('mid', null));
   if (ph.name === 'scatter' && ph.s - E.at.scatter > .6) step('f', () => endSay('mid', null, 'on-map') || endSay('mid',
-    `<small>Big bang</small><b>Universe ${n + 1}</b><span>seeded from ${word} · you were thrown to ${regionName(fdiv(Math.floor(E.bx), RC), fdiv(Math.floor(E.by), RC))}</span>`));
+    `<small>Big bang</small><b>Universe ${n + 1}</b><span>seeded from ${word} · ${myInitials() ? `${myInitials()}, you were` : 'you were'} thrown to ${regionName(fdiv(Math.floor(E.bx), RC), fdiv(Math.floor(E.by), RC))}</span>`));
   if (ph.name === 'scatter' && ph.u > .8) step('g', () => endEl.querySelector('.end-mid').classList.remove('show'));
 }
 const AREA_TOTAL = 1119752;
