@@ -246,6 +246,194 @@ def test_music_fades_out_while_the_tab_is_hidden(page: Page, site_url, errors):
     assert errors == []
 
 
+HIDE_TAB = """hidden => {
+  Object.defineProperty(document, 'hidden', { configurable: true, get: () => hidden });
+  document.dispatchEvent(new Event('visibilitychange'));
+}"""
+LEVEL_IS = "v => window.__lf.music() && Math.abs(window.__lf.music().level - v) < 1e-3"
+
+
+def test_music_volume_slider_is_always_under_the_music_button(page: Page, site_url, errors):
+    page.add_init_script(COUNT_AUDIO)
+    page.set_viewport_size({"width": 375, "height": 740})
+    page.goto(f"{site_url}/letterfield#debug")
+    page.wait_for_function("window.__lf")
+    open_tools_quietly(page)
+    slider, music = page.get_by_role("slider", name="Music volume"), page.locator("#music")
+    # There with the music off, at 0, so the stack keeps its size.
+    expect(slider).to_be_visible()
+    expect(slider).to_have_value("0")
+    expect(slider).to_have_attribute("aria-valuetext", "Music off")
+    page.wait_for_timeout(300)  # done popping up
+    stack = page.locator("#toolStack").bounding_box()
+    assert page.locator("#toolStack #musicVol").count() == 1
+    box, btn = page.locator("#musicVolRow").bounding_box(), music.bounding_box()
+    assert abs(box["y"] - btn["y"] - btn["height"]) < 1, "right under the music button"
+    assert box["height"] >= 44 and slider.bounding_box()["height"] >= 40
+    assert stack["x"] >= 0 and stack["x"] + stack["width"] <= 375
+    assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
+
+    # The button switches the music on at the level it always had.
+    music.click()
+    expect(slider).to_have_value("75")
+    expect(slider).to_have_attribute("aria-valuetext", "Music volume 75%")
+    page.wait_for_function(LEVEL_IS, arg=.45, timeout=8000)
+    same = lambda b: all(abs(b[k] - stack[k]) < 1 for k in stack)
+    assert same(page.locator("#toolStack").bounding_box()), "the stack keeps its size"
+    # And off again: the slider drops to 0, and the stack still keeps its size.
+    music.click()
+    expect(slider).to_have_value("0")
+    assert page.evaluate("window.__lf.music()") is None
+    assert same(page.locator("#toolStack").bounding_box())
+    assert errors == []
+
+
+def test_switching_the_music_off_fades_it_out_in_half_a_second(page: Page, site_url, errors):
+    page.add_init_script(COUNT_AUDIO + "localStorage.setItem('letterfield.music.v1', '1');")
+    page.goto(f"{site_url}/letterfield#debug")
+    page.wait_for_function("window.__lf")
+    page.keyboard.press("Shift")
+    page.wait_for_function(LEVEL_IS, arg=.45, timeout=8000)
+    for off in ("document.getElementById('music').click()", "(s => { s.value = '0'; s.dispatchEvent(new Event('input')); })(document.getElementById('musicVol'))"):
+        page.evaluate("window.__gain = window.__lf.music().master.gain")
+        page.evaluate(off)
+        expect(page.locator("#music")).to_have_attribute("aria-pressed", "false")
+        page.wait_for_timeout(650)
+        assert page.evaluate("window.__gain.value") < 1e-3, off
+        page.keyboard.press("b")  # on again
+        page.wait_for_function(LEVEL_IS, arg=.45, timeout=8000)
+    assert errors == []
+
+
+def test_music_volume_changes_the_gain_on_a_curve_and_is_kept(page: Page, site_url, errors):
+    page.add_init_script(COUNT_AUDIO + "localStorage.setItem('letterfield.music.v1', '1');")
+    page.goto(f"{site_url}/letterfield#debug")
+    page.wait_for_function("window.__lf")
+    page.keyboard.press("Shift")
+    page.wait_for_function("window.__lf.music() !== null")
+    open_tools_quietly(page)
+    slider, music = page.locator("#musicVol"), page.locator("#music")
+
+    # Moving it glides the gain to the square of its value, in well under a
+    # tenth of a second, without starting the piece again.
+    page.wait_for_timeout(500)
+    track = page.evaluate("window.__lf.music().track")
+    slider.fill("50")
+    expect(slider).to_have_attribute("aria-valuetext", "Music volume 50%")
+    page.wait_for_function(LEVEL_IS, arg=.8 * .25, timeout=200)
+    assert page.evaluate("window.__lf.music().track") == track
+    assert page.evaluate("localStorage.getItem('letterfield.musicvol.v1')") == "50"
+
+    # The keys nudge it, without moving the map.
+    cam = page.evaluate("({ ...window.__lf.cam })")
+    slider.focus()
+    page.keyboard.press("ArrowRight")
+    expect(slider).to_have_attribute("aria-valuetext", "Music volume 55%")
+    page.locator("#map").focus()
+    page.keyboard.press("]")
+    expect(slider).to_have_attribute("aria-valuetext", "Music volume 65%")
+    page.keyboard.press("[")
+    page.keyboard.press("[")
+    expect(slider).to_have_attribute("aria-valuetext", "Music volume 45%")
+    page.wait_for_timeout(300)
+    assert page.evaluate("({ ...window.__lf.cam })") == cam
+    page.wait_for_function(LEVEL_IS, arg=.8 * .45 ** 2, timeout=500)
+
+    # 0 is off: the button agrees, and the last level is kept for next time.
+    slider.fill("0")
+    expect(music).to_have_attribute("aria-pressed", "false")
+    expect(slider).to_have_attribute("aria-valuetext", "Music off")
+    assert page.evaluate("window.__lf.music()") is None
+    assert page.evaluate("localStorage.getItem('letterfield.music.v1')") == "0"
+    music.click()
+    expect(slider).to_have_value("45")
+    page.wait_for_function(LEVEL_IS, arg=.8 * .45 ** 2, timeout=8000)
+    # Off by the button, and up from 0 by the slider: on at that level.
+    music.click()
+    expect(slider).to_have_value("0")
+    slider.fill("30")
+    expect(music).to_have_attribute("aria-pressed", "true")
+    page.wait_for_function(LEVEL_IS, arg=.8 * .09, timeout=8000)
+    # ] from off switches it on too, at 10.
+    slider.fill("0")
+    page.locator("#map").focus()
+    page.keyboard.press("]")
+    expect(music).to_have_attribute("aria-pressed", "true")
+    expect(slider).to_have_value("10")
+    slider.fill("30")
+
+    # Kept across a reload: the music fades in to it.
+    page.reload()
+    page.wait_for_function("window.__lf")
+    expect(page.locator("#musicVol")).to_have_value("30")
+    page.keyboard.press("Shift")
+    page.wait_for_function(LEVEL_IS, arg=.8 * .09, timeout=8000)
+
+    # And comes back to it after the tab is hidden and shown, even if it
+    # moved while the music was hushed.
+    page.evaluate(HIDE_TAB, True)
+    page.wait_for_function("window.__lf.music().state === 'suspended'")
+    page.evaluate("v => { const s = document.getElementById('musicVol'); s.value = v; s.dispatchEvent(new Event('input')); }", "60")
+    page.evaluate(HIDE_TAB, False)
+    page.wait_for_function(LEVEL_IS, arg=.8 * .36, timeout=6000)
+    assert errors == []
+
+
+# Coming back to the page, iOS won't resume the audio outside a tap or key,
+# and Safari reports it 'interrupted' rather than 'suspended'. This makes
+# Chromium do the same: resume() does nothing while window.__refuse is set,
+# and a stopped context reads 'interrupted'.
+LIKE_IOS = """() => {
+  const ac = window.__lf.audio(), real = Object.getOwnPropertyDescriptor(BaseAudioContext.prototype, 'state').get;
+  const resume = ac.resume.bind(ac);
+  window.__refuse = true;
+  ac.resume = () => window.__refuse ? Promise.resolve() : resume();
+  Object.defineProperty(ac, 'state', { configurable: true, get: () => (s => s === 'suspended' ? 'interrupted' : s)(real.call(ac)) });
+}"""
+
+
+def music_back_after_hiding(page: Page) -> None:
+    """Plays the music, hides the tab, and shows it again with the browser refusing to resume."""
+    page.wait_for_function("window.__lf.music() && window.__lf.music().level > .1")
+    page.evaluate(LIKE_IOS)
+    page.evaluate(HIDE_TAB, True)
+    page.wait_for_function("window.__lf.music().state === 'interrupted'")
+    page.evaluate(HIDE_TAB, False)
+    page.wait_for_timeout(500)
+    assert page.evaluate("window.__lf.music().state") == "interrupted", "the browser refused, as iOS does"
+    page.evaluate("window.__refuse = false")  # a tap may resume it
+
+
+def test_music_comes_back_with_a_tap_after_the_browser_refuses_to_resume_it(page: Page, site_url, errors):
+    # Sound effects off: before, only a player with sound on got the audio
+    # back from a tap.
+    page.add_init_script(COUNT_AUDIO + "localStorage.setItem('letterfield.music.v1', '1'); localStorage.setItem('letterfield.sound.v1', '0');")
+    page.goto(f"{site_url}/letterfield#debug")
+    page.wait_for_function("window.__lf")
+    page.keyboard.press("Shift")
+    music_back_after_hiding(page)
+    page.mouse.click(80, page.evaluate("(m => m.getBoundingClientRect().top + m.clientHeight / 2)(document.getElementById('map'))"))
+    page.wait_for_function("window.__lf.music().state === 'running' && window.__lf.music().level > .1", timeout=4000)
+    assert errors == []
+
+
+def test_switching_the_music_off_and_on_brings_it_back_after_an_interruption(page: Page, site_url, errors):
+    page.add_init_script(COUNT_AUDIO + "localStorage.setItem('letterfield.music.v1', '1');")
+    page.goto(f"{site_url}/letterfield#debug")
+    page.wait_for_function("window.__lf")
+    page.keyboard.press("Shift")
+    music_back_after_hiding(page)
+    # The music button alone (its taps don't reach the general handler):
+    # before, an 'interrupted' context was never resumed.
+    open_tools_quietly(page)
+    page.evaluate("document.getElementById('music').click()")
+    expect(page.locator("#music")).to_have_attribute("aria-pressed", "false")
+    page.evaluate("document.getElementById('music').click()")
+    expect(page.locator("#music")).to_have_attribute("aria-pressed", "true")
+    page.wait_for_function("window.__lf.music() && window.__lf.music().state === 'running' && window.__lf.music().level > .1", timeout=6000)
+    assert errors == []
+
+
 def test_every_music_track_makes_sound_and_they_take_turns(page: Page, site_url, errors):
     page.add_init_script("localStorage.setItem('letterfield.coach.v1', '1'); localStorage.setItem('letterfield.music.v1', '1');")
     page.goto(f"{site_url}/letterfield#debug")

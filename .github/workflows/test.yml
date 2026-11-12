@@ -96,13 +96,19 @@ jobs:
       - name: Find Playwright's version
         id: playwright
         run: echo "version=$(uv run python -c 'import importlib.metadata as m; print(m.version("playwright"))')" >> "$GITHUB_OUTPUT"
+      # Only Chromium's headless shell, which is all headless tests launch:
+      # half the size of full Chromium, so the cache restores faster.
       - name: Cache Playwright browsers
         uses: actions/cache@v6
         with:
           path: ~/.cache/ms-playwright
-          key: playwright-${{ runner.os }}-${{ steps.playwright.outputs.version }}
+          key: playwright-shell-${{ runner.os }}-${{ steps.playwright.outputs.version }}
+      # No --with-deps: ubuntu-latest already has every library Chromium
+      # needs, and apt-get spent 13-28 s on fonts for scripts no game uses
+      # (CJK, Thai). If the runner image ever drops a library, Chromium
+      # fails to launch and names it; put --with-deps back then.
       - name: Install Chromium
-        run: uv run playwright install --with-deps chromium
+        run: uv run playwright install --only-shell chromium
       - name: Run tests
         env:
           TESTS: ${{ needs.plan.outputs.tests }} # empty for the whole suite
