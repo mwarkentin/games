@@ -583,7 +583,7 @@ page loads nothing from a new host.
    Start, make a move, check the score or board changed. A debug hook such
    as Funnels & Buckets' `#debug` / `window.__fb` makes this much easier.
    `tests/test_games.py` already smoke-tests every game.
-6. Run `uv run pytest` and make sure it passes.
+6. Run `uv run pytest` and `scripts/lint.sh`, and make sure both pass.
 7. In the commit message, say what changed and include the URL of the chat,
    artifact or agent session behind it.
 
@@ -597,12 +597,47 @@ node --disable-warning=ExperimentalWarning --test "worker/test/*.test.js"   # th
 (cd share && npm ci) && node --disable-warning=ExperimentalWarning --test "share/test/*.test.js"   # the share Worker
 uv run ./build.sh && python3 -m http.server -d _site 8000   # preview the real site
 uv run scripts/render_icons.py       # after drawing or changing an icon
+scripts/lint.sh                      # lint everything, as CI does
+scripts/lint.sh --fix                # fix and format what can be, then lint
 ```
 
 The smoke tests load every game at phone and desktop sizes and fail on
 console errors, uncaught exceptions, failed requests, sideways scrolling or
 text inputs under 16px. They also check the `<head>` metadata, CDN version
 pins and the README link.
+
+### Linting
+
+`scripts/lint.sh` runs one tool per language, each pinned to an exact
+version, and CI's `lint` job (in `.github/workflows/test.yml`) runs it on
+every push and pull request, in about half a minute. It fails on what it
+finds; it never pushes fixes, since a push made with the workflow's token
+starts no checks of its own and would race the sessions pushing to the same
+branch. Run `scripts/lint.sh --fix` before you commit.
+
+- **Python** (`scripts/`, `tests/`, `share/scripts/`): ruff, which lints
+  (pyflakes, bugbear, sorted imports, modern syntax) and formats at 120
+  columns. Its version and rules are in `pyproject.toml`.
+- **JavaScript** (`worker/`, `share/`, the scripts the build inlines and
+  every game's inline `<script>`): Biome, through `npx`, so the games still
+  need no npm. Only its rules that catch bugs are on (`biome.jsonc`):
+  undeclared names, unused variables and imports, impossible conditions.
+  Its formatter is off, because it would rewrite nearly every line of the
+  games. For a name used on purpose that it flags, write
+  `// biome-ignore lint/<group>/<rule>: <why>` above it.
+- **Shell:** shellcheck on `build.sh` and `scripts/lint.sh`, and actionlint
+  on the workflows, which also runs shellcheck on their `run:` steps. Both
+  report warnings and errors, not style.
+- **Markdown, HTML and CSS** aren't linted. The build already checks the
+  changelogs, and the smoke tests check what matters in each page.
+
+ruff, shellcheck and actionlint are the `lint` group in `pyproject.toml`, apart
+from `dev`, so the pytest jobs don't install them. Biome's version is in
+`scripts/lint.sh` and `biome.jsonc`'s `$schema`; change both together. The
+files that open pull requests change are listed under `[tool.ruff.format]
+exclude` (and in `per-file-ignores`) and left unformatted, so they don't
+conflict. Once a file's pull
+requests have merged, take it off the list and run `scripts/lint.sh --fix`.
 
 ### Tests in parallel
 
@@ -647,7 +682,7 @@ leave testing to the pull request. `main` always runs them all. So:
 In a Claude Code on the web sandbox, the default network policy can block
 `cdn.jsdelivr.net`, `cdnjs.cloudflare.com`, `fonts.googleapis.com`,
 `fonts.gstatic.com`, `browser.sentry-cdn.com`, `cdn.playwright.dev` and
-`registry.npmjs.org` (for `wrangler` and the share Worker). A test failing with
+`registry.npmjs.org` (for `wrangler`, the share Worker and Biome). A test failing with
 `Failed: https://...` for one of those hosts means the sandbox can't reach
 it, not that the game is broken. Ask for those hosts to be allowed. CI has
 full network access.

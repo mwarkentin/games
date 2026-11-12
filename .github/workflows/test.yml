@@ -132,6 +132,26 @@ jobs:
           echo "plan: $PLAN, pytest: $PYTEST"
           [ "$PLAN" = success ] && { [ "$PYTEST" = success ] || [ "$PYTEST" = skipped ]; }
 
+  # ruff, Biome, shellcheck and actionlint, as scripts/lint.sh runs them
+  # (see "Linting" in AGENTS.md). It only reports: `scripts/lint.sh --fix`
+  # fixes what it can, locally. It doesn't wait for plan's tests, only for
+  # whether this run has anything to do.
+  lint:
+    needs: plan
+    if: needs.plan.outputs.run == 'true'
+    runs-on: ubuntu-latest
+    env:
+      RUFF_OUTPUT_FORMAT: github # annotations on the pull request's lines
+      UV_LOCKED: 1 # fail if uv.lock is out of date, as uv sync --locked does
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10.2.0
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+      - name: Lint
+        run: scripts/lint.sh
+
   worker:
     needs: plan
     if: needs.plan.outputs.run == 'true'

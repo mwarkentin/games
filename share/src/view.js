@@ -21,7 +21,6 @@ import { novaSvg } from './nova.js';
 const HOUR = 3_600_000;
 export const LOG_BEGAN_HOUR = Date.UTC(2026, 10, 6) / HOUR;  // where all time starts, until the log's span says earlier
 const SLICE_MAX_HOURS = 24 * 3660;  // the most the log's view of one covers (SLICE_MAX_HOURS in survey-log.js)
-const PERIODS = ['hour', 'day', 'week', 'month', 'year'];
 export const VIEW_PATH = /^\/v\/(d\/)?(?:(surveyor)\/([A-Z]{3})|(theme)\/(\d{1,3}))\/(?:(all)|(hour|day|week|month|year)\/(\d{4})-(\d{2})-(\d{2})(?:T(\d{2}))?\/(\d{1,8})-(\d{1,8}))(\.png)?$/;
 export const TERRITORY_PATH = /^\/v\/(d\/)?territory\/(-?\d{1,8}),(-?\d{1,8})(\.png)?$/;
 
