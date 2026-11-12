@@ -9,14 +9,14 @@ test runs, with one territory charted whole: a supernova on the second day.
 from __future__ import annotations
 
 import re
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from playwright.sync_api import Page, expect
 
 from fake_leaderboard import Held
 from fake_survey_log import SURVEY, FakeSurveyLog
 
-NOW_MS = int(datetime(2026, 11, 6, 20, 30, tzinfo=timezone.utc).timestamp() * 1000)  # 3:30 PM in Toronto
+NOW_MS = int(datetime(2026, 11, 6, 20, 30, tzinfo=UTC).timestamp() * 1000)  # 3:30 PM in Toronto
 HOUR_MS = 3_600_000
 DAY_MS = 86_400_000
 DAY = NOW_MS // DAY_MS
@@ -162,8 +162,19 @@ def view_span(page: Page) -> float:
 
 def test_frames_where_the_charting_is_not_a_few_words_far_out(page: Page, site_url, errors):
     # Someone charted two words 170 territories east and 224 north of everyone else, as on a preview.
-    far = [[f"FAR{i}AAA", 8186 + i * 9, -10719, 0, 0, "", (DAY - 1) * DAY_MS + 9 * HOUR_MS + 30_000 + i, theme(8186 + i * 9, -10719)]
-           for i in range(2)]
+    far = [
+        [
+            f"FAR{i}AAA",
+            8186 + i * 9,
+            -10719,
+            0,
+            0,
+            "",
+            (DAY - 1) * DAY_MS + 9 * HOUR_MS + 30_000 + i,
+            theme(8186 + i * 9, -10719),
+        ]
+        for i in range(2)
+    ]
     page.set_viewport_size({"width": 375, "height": 740})
     fake = FakeSurveyLog(WORDS + far, PLACES, {}, totals={"0,0": 12})
     open_timelapse(page, site_url, fake)
@@ -184,9 +195,15 @@ def test_stays_where_charting_began_while_a_far_off_pair_briefly_has_more(page: 
     # nothing until the next day. For those hours the far pair has "most" words, 2 to 1, then 2 to 2.
     def word(i, x, y, at):
         return [f"P{i:02d}AAA", x, y, 0, 0, "", at, theme(x, y)]
+
     start = (DAY - 2) * DAY_MS + 10 * HOUR_MS
-    pattern = [word(0, 2, -1, start), word(1, 8184, -10719, start + 120_000), word(2, 8186, -10718, start + 150_000),
-               word(3, 6, -16, start + 600_000), word(4, 13, 23, (DAY - 1) * DAY_MS + 15 * HOUR_MS)]
+    pattern = [
+        word(0, 2, -1, start),
+        word(1, 8184, -10719, start + 120_000),
+        word(2, 8186, -10718, start + 150_000),
+        word(3, 6, -16, start + 600_000),
+        word(4, 13, 23, (DAY - 1) * DAY_MS + 15 * HOUR_MS),
+    ]
     pattern += [word(5 + i, (i % 6) * 8, (i // 6) * 8, DAY * DAY_MS + 13 * HOUR_MS + i * 60_000) for i in range(30)]
     fake = FakeSurveyLog(pattern, PLACES, {})
     open_timelapse(page, site_url, fake)
@@ -211,8 +228,19 @@ def test_stays_where_charting_began_while_a_far_off_pair_briefly_has_more(page: 
 
 def test_frames_a_second_cluster_once_it_has_real_charting(page: Page, site_url, errors):
     # Thirty words far out are charting in their own right: the camera takes them in.
-    far = [[f"FAR{i:02d}AAA", 8186 + i % 40, -10719 + i, 0, 0, "", DAY * DAY_MS + 14 * HOUR_MS + i * 1000, theme(8186 + i % 40, -10719 + i)]
-           for i in range(30)]
+    far = [
+        [
+            f"FAR{i:02d}AAA",
+            8186 + i % 40,
+            -10719 + i,
+            0,
+            0,
+            "",
+            DAY * DAY_MS + 14 * HOUR_MS + i * 1000,
+            theme(8186 + i % 40, -10719 + i),
+        ]
+        for i in range(30)
+    ]
     page.set_viewport_size({"width": 375, "height": 740})
     fake = FakeSurveyLog(WORDS + far, PLACES, {}, totals={"0,0": 12})
     open_timelapse(page, site_url, fake)
@@ -271,7 +299,9 @@ def test_a_tapped_territory_links_to_its_page_in_the_log(page: Page, site_url, e
     expect(chip).to_be_visible()
     expect(page.locator("#chipName")).to_have_text("Acorn Hollow")
     expect(page.locator("#chipNote")).to_contain_text("12 hidden words charted by then · gone supernova")
-    expect(page.locator("#chipLink")).to_have_attribute("href", f"/letterfield-log?territory=0,0&survey={SURVEY.replace(':', '%3A').replace('/', '%2F')}")
+    expect(page.locator("#chipLink")).to_have_attribute(
+        "href", f"/letterfield-log?territory=0,0&survey={SURVEY.replace(':', '%3A').replace('/', '%2F')}"
+    )
     page.keyboard.press("Escape")
     expect(chip).to_be_hidden()
     assert errors == []
