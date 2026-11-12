@@ -6,6 +6,7 @@
 - “Hidden in view” only counts letters you can see whole. A row or column cut in half by the edge of the screen, the title or the buttons no longer puts its word on the list; half the word's letters still need to show in full.
 - A word you find no longer brings up a note: you can see you've found it. Its circle draws itself up into a bead that flies into your field notes, and the count ticks up as it lands. Share it from your notes.
 - The music has a volume slider, just under its button in the tools, while it's on. It starts where the music always played, and remembers where you leave it; [ and ] turn it down and up from the keyboard.
+- Music that stopped while you were in another app comes back with your next tap, or by switching it off and on, even with sound effects off.
 
 ## 2026-11-11
 

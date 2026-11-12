@@ -2219,14 +2219,25 @@ const novaBuses = new Set();
 // The audio context, made on first use and shared by sound and music.
 function audioCtx() {
   if (!gestured || !(soundOn || musicOn)) return null;
+  if (ac && ac.state === 'closed') {  // the browser gave it up: start again on a new one
+    if (musicNow) { try { musicNow.end(); } catch (_) {} musicNow = null; }
+    ac = null;
+  }
   if (!ac) {
     const AC = window.AudioContext || window.webkitAudioContext;
     if (!AC) return null;
     try { ac = new AC(); } catch (_) { return null; }
     acOut = audioOut(ac);
   }
-  if (ac.state === 'suspended' && !document.hidden) ac.resume().catch(() => {});
+  wakeCtx();
   return ac;
+}
+// Anything but running means stopped: 'suspended', or Safari's 'interrupted'
+// after another app took the audio. A browser can refuse to resume outside a
+// tap or key (iOS does, coming back to the page), so every tap and key tries
+// again, whichever of sound and music is on.
+function wakeCtx() {
+  if (ac && ac.state !== 'running' && ac.state !== 'closed' && !document.hidden) ac.resume().catch(() => {});
 }
 function startAudio() { return soundOn ? audioCtx() : null; }
 // Gain, then a compressor and a limiter, so a blast never clips.
@@ -2240,8 +2251,9 @@ function audioOut(a) {
 }
 function onGesture(e) {
   gestured = true;
+  if (soundOn || musicOn) wakeCtx();
   if (e.target && e.target.closest && e.target.closest('#sound, #music')) return;  // the buttons decide
-  startAudio();
+  audioCtx();
   if (musicOn && !musicNow) startMusic();
 }
 window.addEventListener('pointerdown', onGesture, true);
@@ -2252,7 +2264,7 @@ document.addEventListener('visibilitychange', () => {
     if (musicNow) musicNow.hush();
     setTimeout(() => { if (document.hidden) ac.suspend().catch(() => {}); }, musicNow ? 700 : 0);
   } else if (soundOn || musicOn) {
-    ac.resume().catch(() => {});
+    wakeCtx();
     if (musicNow) musicNow.wake();
   }
 });
@@ -3983,7 +3995,7 @@ updateHud();
 invalidate();
 if (redrawn) setTimeout(() => toast(`<i></i><b>The map has been redrawn</b><span>${NT} themes of about ${Math.round(THEMES.reduce((a, t) => a + t.words.length, 0) / NT / 10) * 10} words now, so a territory never repeats one · ${redrawn.kept ? `${redrawn.kept} of your ${redrawn.had} finds are still on it` : 'your old finds are not on it'}</span>`, null, 8000), 900);
 connectStore();
-if (location.hash === '#debug') window.__lf = { cam, found, claims, links, chunk, wordEnd, collect, territoryProgress, remnants: () => [...remnants().set], novas: () => [...novasSeen.values()], territoryName: regionName, world: () => world, supernova, novaSound, audioOut, musicTracks: MUSIC_TRACKS, music: () => musicNow && { state: ac.state, track: musicNow.track().name, nodes: musicNow.track().nodes.size, level: musicNow.master.gain.value, volume: musicVol, target: musicLevel(), swap: musicNow.swap }, nova: () => nova,
+if (location.hash === '#debug') window.__lf = { cam, found, claims, links, chunk, wordEnd, collect, territoryProgress, remnants: () => [...remnants().set], novas: () => [...novasSeen.values()], territoryName: regionName, world: () => world, supernova, novaSound, audioOut, musicTracks: MUSIC_TRACKS, audio: () => ac, music: () => musicNow && { state: ac.state, track: musicNow.track().name, nodes: musicNow.track().nodes.size, level: musicNow.master.gain.value, volume: musicVol, target: musicLevel(), swap: musicNow.swap }, nova: () => nova,
   pass: () => Pass.state, intro: () => Intro.state, surveyStatus, linkStates: () => Object.fromEntries([...links].map(([k, l]) => [k, l.m.state])), outbox: () => [...outbox.values()].map(c => [c.e.w, c.m.state]), definitions: () => Object.fromEntries([...definitions].map(([k, d]) => [k, d.m.state])) };
 
 })();

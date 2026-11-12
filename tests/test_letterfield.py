@@ -336,6 +336,61 @@ def test_music_volume_changes_the_gain_on_a_curve_and_is_kept(page: Page, site_u
     assert errors == []
 
 
+# Coming back to the page, iOS won't resume the audio outside a tap or key,
+# and Safari reports it 'interrupted' rather than 'suspended'. This makes
+# Chromium do the same: resume() does nothing while window.__refuse is set,
+# and a stopped context reads 'interrupted'.
+LIKE_IOS = """() => {
+  const ac = window.__lf.audio(), real = Object.getOwnPropertyDescriptor(BaseAudioContext.prototype, 'state').get;
+  const resume = ac.resume.bind(ac);
+  window.__refuse = true;
+  ac.resume = () => window.__refuse ? Promise.resolve() : resume();
+  Object.defineProperty(ac, 'state', { configurable: true, get: () => (s => s === 'suspended' ? 'interrupted' : s)(real.call(ac)) });
+}"""
+
+
+def music_back_after_hiding(page: Page) -> None:
+    """Plays the music, hides the tab, and shows it again with the browser refusing to resume."""
+    page.wait_for_function("window.__lf.music() && window.__lf.music().level > .1")
+    page.evaluate(LIKE_IOS)
+    page.evaluate(HIDE_TAB, True)
+    page.wait_for_function("window.__lf.music().state === 'interrupted'")
+    page.evaluate(HIDE_TAB, False)
+    page.wait_for_timeout(500)
+    assert page.evaluate("window.__lf.music().state") == "interrupted", "the browser refused, as iOS does"
+    page.evaluate("window.__refuse = false")  # a tap may resume it
+
+
+def test_music_comes_back_with_a_tap_after_the_browser_refuses_to_resume_it(page: Page, site_url, errors):
+    # Sound effects off: before, only a player with sound on got the audio
+    # back from a tap.
+    page.add_init_script(COUNT_AUDIO + "localStorage.setItem('letterfield.music.v1', '1'); localStorage.setItem('letterfield.sound.v1', '0');")
+    page.goto(f"{site_url}/letterfield#debug")
+    page.wait_for_function("window.__lf")
+    page.keyboard.press("Shift")
+    music_back_after_hiding(page)
+    page.mouse.click(80, page.evaluate("(m => m.getBoundingClientRect().top + m.clientHeight / 2)(document.getElementById('map'))"))
+    page.wait_for_function("window.__lf.music().state === 'running' && window.__lf.music().level > .1", timeout=4000)
+    assert errors == []
+
+
+def test_switching_the_music_off_and_on_brings_it_back_after_an_interruption(page: Page, site_url, errors):
+    page.add_init_script(COUNT_AUDIO + "localStorage.setItem('letterfield.music.v1', '1');")
+    page.goto(f"{site_url}/letterfield#debug")
+    page.wait_for_function("window.__lf")
+    page.keyboard.press("Shift")
+    music_back_after_hiding(page)
+    # The music button alone (its taps don't reach the general handler):
+    # before, an 'interrupted' context was never resumed.
+    open_tools_quietly(page)
+    page.evaluate("document.getElementById('music').click()")
+    expect(page.locator("#music")).to_have_attribute("aria-pressed", "false")
+    page.evaluate("document.getElementById('music').click()")
+    expect(page.locator("#music")).to_have_attribute("aria-pressed", "true")
+    page.wait_for_function("window.__lf.music() && window.__lf.music().state === 'running' && window.__lf.music().level > .1", timeout=6000)
+    assert errors == []
+
+
 def test_every_music_track_makes_sound_and_they_take_turns(page: Page, site_url, errors):
     page.add_init_script("localStorage.setItem('letterfield.coach.v1', '1'); localStorage.setItem('letterfield.music.v1', '1');")
     page.goto(f"{site_url}/letterfield#debug")
