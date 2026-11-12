@@ -21,7 +21,7 @@ import html
 import json
 import re
 import sys
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 from common import GENERATED_PAGES, REPO_URL, ROOT, SITE_NAME, format_date, parse_date, render_page
@@ -77,9 +77,7 @@ def format_message(message: str) -> str:
         if match.group(1):
             url = match.group(1).rstrip(URL_TRAILING_PUNCTUATION)
             trailing = match.group(1)[len(url) :]
-            parts.append(
-                f'<a href="{html.escape(url)}">{html.escape(url)}</a>{html.escape(trailing)}'
-            )
+            parts.append(f'<a href="{html.escape(url)}">{html.escape(url)}</a>{html.escape(trailing)}')
         else:
             number = match.group(2)
             parts.append(f'<a href="{REPO_URL}/issues/{number}">#{number}</a>')
@@ -107,7 +105,7 @@ def render_history(commits: list[dict]) -> str:
 
 
 def build_colophon(pages: dict, games: list[dict]) -> str:
-    oldest = datetime.min.replace(tzinfo=timezone.utc)
+    oldest = datetime.min.replace(tzinfo=UTC)
     # Most recently changed first; games with no commits yet go last.
     ordered = sorted(games, key=lambda game: parse_date(game.get("updated")) or oldest, reverse=True)
 
@@ -116,9 +114,7 @@ def build_colophon(pages: dict, games: list[dict]) -> str:
         filename = game["filename"]
         description = game.get("description")
         commits = pages.get(filename, {}).get("commits", [])
-        changelog = (
-            f' <a class="source" href="{game["changelog"]}">changelog</a>' if game.get("changelog") else ""
-        )
+        changelog = f' <a class="source" href="{game["changelog"]}">changelog</a>' if game.get("changelog") else ""
         articles.append(f"""<article class="game" id="{filename}">
 <h2><a class="anchor" href="#{filename}">#</a> <a href="{game["url"]}">{html.escape(game["title"])}</a> <a class="source" href="{REPO_URL}/blob/main/{filename}">source</a>{changelog}</h2>
 {f"<p>{html.escape(description)}</p>" if description else ""}

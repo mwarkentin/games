@@ -34,7 +34,9 @@ def fake(page: Page) -> FakeDefinitions:
     return fake
 
 
-def open_game(page: Page, site_url: str, width: int = 375, height: int = 740, query: str = f"?define={DEFINE_API}") -> None:
+def open_game(
+    page: Page, site_url: str, width: int = 375, height: int = 740, query: str = f"?define={DEFINE_API}"
+) -> None:
     page.set_viewport_size({"width": width, "height": height})
     page.goto(f"{site_url}/letterfield{query}#debug")
     page.wait_for_function("window.__lf")
@@ -70,7 +72,9 @@ def test_a_found_words_meaning_opens_under_its_entry(page: Page, site_url, fake,
     expect(p).to_have_attribute("data-define", "ready")
     expect(p.locator(".def-sense")).to_have_count(2)
     expect(p.locator(".def-sense").first).to_have_text("nounA fragrant herb.")
-    expect(p.get_by_role("link", name="From Wiktionary")).to_have_attribute("href", f"https://en.wiktionary.org/wiki/{word['w'].lower()}#English")
+    expect(p.get_by_role("link", name="From Wiktionary")).to_have_attribute(
+        "href", f"https://en.wiktionary.org/wiki/{word['w'].lower()}#English"
+    )
     expect(p.get_by_role("link", name="CC BY-SA 4.0")).to_be_visible()
     assert fake.asked == [f"{word['w']}/{word['th']}"]
     assert page.evaluate("() => window.__lf.definitions()") == {f"{word['w']}/{word['th']}": "ready"}
@@ -109,8 +113,12 @@ def test_a_word_with_no_definition_offers_to_search(page: Page, site_url, fake, 
     p = panel(page, word["key"])
     expect(p).to_have_attribute("data-define", "none")
     expect(p).to_contain_text("No definition to hand")
-    expect(p.get_by_role("link", name="Wiktionary")).to_have_attribute("href", re.compile(r"^https://en\.wiktionary\.org/wiki/Special:Search\?search="))
-    expect(p.get_by_role("link", name="Wikipedia")).to_have_attribute("href", re.compile(r"^https://en\.wikipedia\.org/w/index\.php\?search="))
+    expect(p.get_by_role("link", name="Wiktionary")).to_have_attribute(
+        "href", re.compile(r"^https://en\.wiktionary\.org/wiki/Special:Search\?search=")
+    )
+    expect(p.get_by_role("link", name="Wikipedia")).to_have_attribute(
+        "href", re.compile(r"^https://en\.wikipedia\.org/w/index\.php\?search=")
+    )
     assert errors == []
 
 

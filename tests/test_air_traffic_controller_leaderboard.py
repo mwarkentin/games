@@ -11,17 +11,34 @@ from __future__ import annotations
 import json
 from urllib.parse import parse_qs, urlparse
 
-from fake_leaderboard import API, FakeLeaderboard, Held, without_worker
 from playwright.sync_api import Page, expect
+
+from fake_leaderboard import API, FakeLeaderboard, Held, without_worker
 
 UNAVAILABLE = "The leaderboard is unavailable right now."
 # Local midnight on Monday, as the page works it out.
 START_OF_WEEK = "() => { const d = new Date(); d.setHours(0, 0, 0, 0); d.setDate(d.getDate() - (d.getDay() + 6) % 7); return d.getTime(); }"
 
 
-def row(initials: str, handled: int, spare: int = 0, scope: str = "*", difficulty: str = "trainee", mode: str = "steady", **extra) -> dict:
+def row(
+    initials: str,
+    handled: int,
+    spare: int = 0,
+    scope: str = "*",
+    difficulty: str = "trainee",
+    mode: str = "steady",
+    **extra,
+) -> dict:
     score = handled * 10000 + spare
-    return {"initials": initials, "score": score, "level": handled, "scope": scope, "difficulty": difficulty, "mode": mode, **extra}
+    return {
+        "initials": initials,
+        "score": score,
+        "level": handled,
+        "scope": scope,
+        "difficulty": difficulty,
+        "mode": mode,
+        **extra,
+    }
 
 
 def open_game(page: Page, site_url: str, fake: FakeLeaderboard | Held | None, query: str = "") -> None:
@@ -73,7 +90,9 @@ def test_clean_shift_saves_initials(page: Page, site_url, errors):
     expect(page.locator("#resLbWhich")).to_have_text("Trainee · Steady · This week")
     expect(page.locator("#lbForm")).to_be_visible()
     expect(page.locator("#lbPublicRow")).to_be_hidden()
-    expect(page.locator("#resLbNote")).to_have_text("That’s #2 this week on the Trainee · Steady board. Add your initials.")
+    expect(page.locator("#resLbNote")).to_have_text(
+        "That’s #2 this week on the Trainee · Steady board. Add your initials."
+    )
     page.locator("#lbInitials").press_sequentially("z3e d")  # letters only, upper-cased as you type
     expect(page.locator("#lbInitials")).to_have_value("ZED")
     page.click("#lbSave")
@@ -81,10 +100,20 @@ def test_clean_shift_saves_initials(page: Page, site_url, errors):
     expect(page.locator("#resLbNote")).to_have_text("Saved! #2 this week on Everyone.")
     expect(page.locator("#resLbList li.mine")).to_have_text("2ZED8/8+10:00")
     expect(page.locator("#lbForm")).to_be_hidden()
-    assert fake.posts == [{
-        "game": "air-traffic-controller", "difficulty": "trainee", "mode": "steady", "score": 80600, "level": 8,
-        "sweeps": 80, "initials": "ZED", "groups": [], "public": True, "since": page.evaluate(START_OF_WEEK),
-    }]
+    assert fake.posts == [
+        {
+            "game": "air-traffic-controller",
+            "difficulty": "trainee",
+            "mode": "steady",
+            "score": 80600,
+            "level": 8,
+            "sweeps": 80,
+            "initials": "ZED",
+            "groups": [],
+            "public": True,
+            "since": page.evaluate(START_OF_WEEK),
+        }
+    ]
 
     # The menu shows the new entry, and the initials are remembered for next time.
     page.click("#btnMenu")
@@ -100,7 +129,9 @@ def test_lost_shift_ranks_by_aircraft_handled(page: Page, site_url, errors):
     open_game(page, site_url, fake)
     fly_shift(page, handled=5, sweeps=44)
     expect(page.locator("#resTitle")).to_have_text("Separation lost")
-    expect(page.locator("#resLbNote")).to_have_text("That’s #3 this week on the Trainee · Steady board. Add your initials.")
+    expect(page.locator("#resLbNote")).to_have_text(
+        "That’s #3 this week on the Trainee · Steady board. Add your initials."
+    )
     page.fill("#lbInitials", "DAD")
     page.click("#lbSave")
     expect(page.locator("#resLbNote")).to_have_text("Saved! #3 this week on Everyone.")
@@ -160,12 +191,14 @@ def test_unavailable_leaderboard_does_not_block_the_game(page: Page, site_url):
 
 
 def test_leaderboard_card_filters_by_shift_and_sweep(page: Page, site_url, errors):
-    fake = FakeLeaderboard([
-        row("KID", 8, spare=900),
-        row("MRW", 26, spare=60, difficulty="expert", mode="rush"),
-        row("SIS", 20, difficulty="easy"),
-        row("DAD", 4, mode="calm"),
-    ])
+    fake = FakeLeaderboard(
+        [
+            row("KID", 8, spare=900),
+            row("MRW", 26, spare=60, difficulty="expert", mode="rush"),
+            row("SIS", 20, difficulty="easy"),
+            row("DAD", 4, mode="calm"),
+        ]
+    )
     open_game(page, site_url, fake)
     page.click("#lbOpenMenu")
     expect(page.locator("#board")).to_be_visible()
@@ -182,7 +215,10 @@ def test_leaderboard_card_filters_by_shift_and_sweep(page: Page, site_url, error
     expect(page.locator("#lbList")).to_be_hidden()
     expect(page.locator("#lbNote")).to_have_text("No shifts here this week yet.")
     assert fake.views[-1] == {
-        "game": "air-traffic-controller", "scope": "*", "difficulty": "hard", "mode": "calm",
+        "game": "air-traffic-controller",
+        "scope": "*",
+        "difficulty": "hard",
+        "mode": "calm",
         "since": str(page.evaluate(START_OF_WEEK)),
     }
 

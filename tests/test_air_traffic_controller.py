@@ -1,7 +1,8 @@
 import re
 
-from page_changes import repeated_no_op_writes
 from playwright.sync_api import Page, expect
+
+from page_changes import repeated_no_op_writes
 
 
 def test_start_shift_and_give_an_instruction(page: Page, site_url, errors):
@@ -245,7 +246,11 @@ def test_land_takes_an_arrival_past_the_navaid_it_would_hold_at(page: Page, site
     page.click("#btnStart")
     page.click("#btnAdvance")
     # Southbound for α, on the line through OXV, with the hold arrivals start with.
-    edit_saved_shift(page, ONE_ARRIVAL_LEFT % "x: 5, y: 2, px: 5, py: 2, alt: 3, palt: 3, talt: 3, h: 4, hold: true, holding: false, hn: -1")
+    edit_saved_shift(
+        page,
+        ONE_ARRIVAL_LEFT
+        % "x: 5, y: 2, px: 5, py: 2, alt: 3, palt: 3, talt: 3, h: 4, hold: true, holding: false, hn: -1",
+    )
     page.click("#btnResume")
     expect(page.locator("#kHold")).to_have_class(re.compile(r"\bon\b"))  # the hold, armed
     page.click("#kLand")
@@ -260,12 +265,18 @@ def test_land_waits_for_the_approach_when_an_arrival_is_holding(page: Page, site
     page.goto(f"{site_url}/air-traffic-controller#debug")
     page.click("#btnStart")
     page.click("#btnAdvance")
-    edit_saved_shift(page, ONE_ARRIVAL_LEFT % "x: 5, y: 6, px: 5, py: 6, alt: 2, palt: 2, talt: 2, h: 4, hold: true, holding: true, hn: 0, hs: 0")
+    edit_saved_shift(
+        page,
+        ONE_ARRIVAL_LEFT
+        % "x: 5, y: 6, px: 5, py: 6, alt: 2, palt: 2, talt: 2, h: 4, hold: true, holding: true, hn: 0, hs: 0",
+    )
     page.click("#btnResume")
     cs = page.locator("#hCs").inner_text()
     page.click("#kLand")
     page.click("#kLand")
-    expect(page.locator("#radio .now")).to_have_text(f"{cs} cleared to land UNABLE, holding at OXV, clear an approach first")
+    expect(page.locator("#radio .now")).to_have_text(
+        f"{cs} cleared to land UNABLE, holding at OXV, clear an approach first"
+    )
     expect(page.locator("#kAppA")).to_be_enabled()  # still yours, and still holding
     page.click("#kAppA")
     page.click("#kLand")
@@ -281,14 +292,17 @@ def test_tapping_a_strip_drops_a_command_typed_for_another_aircraft(page: Page, 
     page.click("#btnStart")
     page.click("#btnAdvance")
     # Two jets in the air, A and B, and nobody else on frequency.
-    edit_saved_shift(page, """
+    edit_saved_shift(
+        page,
+        """
         g.ac.forEach((x, i) => Object.assign(x, { cs: 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'[i], state: 'sched', post: 999, et: 999 }));
         Object.assign(g.ac[0], { state: 'air', type: 'J', org: '7', dst: '2', x: 3, y: 12, px: 3, py: 12,
           alt: 3, palt: 3, talt: 3, h: 2, hold: false, ji: false });
         Object.assign(g.ac[1], { state: 'air', type: 'J', org: '5', dst: '1', x: 15, y: 20, px: 15, py: 20,
           alt: 4, palt: 4, talt: 4, h: 0, hold: false, ji: false });
         g.sel = null;
-    """)
+    """,
+    )
     page.click("#btnResume")
     page.keyboard.press("a")  # a command for A, begun
     expect(page.locator("#radio .kbd")).to_have_text("› A_")
