@@ -610,8 +610,11 @@ The suite takes about 20 minutes one test at a time, mostly in real game
 time (War's battles, animations), so `-n auto` runs it on
 [pytest-xdist](https://pytest-xdist.readthedocs.io) workers, one per CPU.
 CI (`.github/workflows/test.yml`) goes further: pytest-split cuts it into
-three shards of about equal time, each a job of its own on four workers,
-and a job named `test` passes once every shard has. So:
+up to three shards of about equal time, each a job of its own on four
+workers, and a job named `test` passes once every shard has. A pull request
+runs only the tests its changes need (`scripts/select_tests.py`): one that
+only changes Letterfield runs Letterfield's tests and the ones covering
+every game, not War's. `main` always runs them all. So:
 
 - **Every test must pass alongside others,** in any order and in any worker.
   Keep state in the test's own page, context or `tmp_path`, never in a
@@ -627,9 +630,17 @@ and a job named `test` passes once every shard has. So:
   evenly. New tests count as the average until it's refreshed, so refresh
   it now and then, or when the shards' times drift apart:
   `uv run pytest -n auto --store-durations`, and commit it.
-- CI skips pytest for a pull request that only changes `worker/` or
-  `share/`, since no pytest test reads them. A test that does needs that
-  pattern changed in the workflow's `plan` job.
+- **A game's tests** are the files named for one of its pages
+  (`tests/test_war_rooms.py` is War's) and any other test file that loads
+  one, found by its address in the file (`/war`, `"war"`, `war.html`). A
+  test named for no game runs for every game's pull request, and a change
+  to anything shared (`scripts/`, the fakes, `feedback.js`, the workflow)
+  runs the whole suite. Name a test file for its game, and give a page it
+  loads by its plain address, so it's picked.
+- **Files no test reads** (`worker/`, `share/`, `preview/`, `docs/`,
+  `AGENTS.md`) don't count: a pull request of only those runs no pytest.
+  A test that starts reading one needs it taken out of `UNREAD` in
+  `scripts/select_tests.py`.
 
 In a Claude Code on the web sandbox, the default network policy can block
 `cdn.jsdelivr.net`, `cdnjs.cloudflare.com`, `fonts.googleapis.com`,
