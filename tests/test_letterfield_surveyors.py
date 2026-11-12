@@ -298,3 +298,27 @@ def test_the_list_fits_a_phone(page: Page, site_url, errors):
     expect(page.locator("#notes")).to_be_hidden()
     wait_landed(page, 7.5 * 48, -3.5 * 48)
     assert errors == []
+
+
+def test_emotes_move_as_they_arrive_and_hold_still_under_reduced_motion(page: Page, site_url, errors):
+    fake = FakeSurvey()
+    start(page, site_url, fake)
+    # On the map: a wave rocks from the wrist, then settles.
+    turn, rise, width, height = page.evaluate("window.__lf.emoteMotion('wave', 180)")
+    assert abs(turn) > 5 and (rise, width, height) == (0, 1, 1)
+    assert page.evaluate("window.__lf.emoteMotion('wave', 1200)") == [0, 0, 1, 1]
+    assert page.evaluate("window.__lf.emoteMotion('great', 400)")[2] > 1  # the sparkle swells
+    # In a note, its icon plays the same move.
+    fake.emote("0,0", LOU[0], "LOU", "great", [7, -4])
+    icon = page.locator("#toast i.emo svg")
+    expect(icon).to_be_visible()
+    assert icon.evaluate("e => e.getAnimations().map(a => a.animationName)") == ["emo-great"]
+
+    page.emulate_media(reduced_motion="reduce")
+    page.reload()
+    expect(page.locator("#survey")).to_have_attribute("data-state", "live")
+    assert page.evaluate("window.__lf.emoteMotion('wave', 180)") == [0, 0, 1, 1]
+    fake.emote("0,0", LOU[0], "LOU", "wave", [7, -4])
+    expect(icon).to_be_visible()
+    assert icon.evaluate("e => e.getAnimations().length") == 0
+    assert errors == []

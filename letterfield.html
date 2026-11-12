@@ -4033,6 +4033,43 @@ const EMOTES = [
   { id: 'what', name: 'Question', did: 'has a question', d: 'M12 3a9 9 0 1 1 0 18 9 9 0 0 1 0-18ZM9.4 9.4A2.7 2.7 0 0 1 14.6 10.1C14.6 11.9 12 12.3 12 14.1M12 17.2V17.3' },
 ];
 const EMOTE_BY = Object.fromEntries(EMOTES.map(e => [e.id, e]));
+// How each emote moves as it arrives, once, over MOVE_MS: keyframes of [time
+// 0–1, turn in degrees, rise in grid units, width, height] about a pivot on
+// its 24 × 24 grid. The hand waves from the wrist, the hat lifts and tips,
+// the thumb bobs, the palms meet twice, the sparkle twinkles, the flag
+// flutters on its pole and the question mark tilts its head. The bubble on the
+// map and the note's icon both play them (the note through CSS made from this
+// table), and neither moves under reduced motion.
+const MOVE_MS = 1100;
+const EMOTE_MOVES = {
+  wave: { o: [7, 22], k: [[0], [.16, -16], [.34, 12], [.52, -12], [.7, 6], [1]] },
+  thanks: { o: [12, 17], k: [[0], [.3, -14, 3.5], [.62, -14, 3.5], [1]] },
+  nice: { o: [12, 20], k: [[0], [.25, 0, 3], [.5], [.7, 0, 1.2], [1]] },
+  clap: { o: [12, 14], k: [[0], [.2, 0, 0, .8, 1], [.4], [.6, 0, 0, .8, 1], [.8], [1]] },
+  great: { o: [12, 12], k: [[0], [.35, 20, 0, 1.25], [.7, 0, 0, .95], [1]] },
+  here: { o: [6, 21], k: [[0], [.2, 6], [.4, -5], [.6, 4], [.8, -2], [1]] },
+  what: { o: [12, 20], k: [[0], [.25, -12], [.55, 10], [.8, -4], [1]] },
+};
+const moveFrame = ([t, r = 0, up = 0, sx = 1, sy = sx]) => [t, r, up, sx, sy];
+// Where an emote is in its move, ms after it began: [turn, rise, width, height].
+function emoteMotion(id, ms) {
+  const m = EMOTE_MOVES[id], t = ms / MOVE_MS;
+  if (RM || !m || t <= 0 || t >= 1) return [0, 0, 1, 1];
+  const k = m.k.map(moveFrame), i = k.findIndex(f => f[0] >= t), a = k[i - 1], b = k[i];
+  const u = (t - a[0]) / (b[0] - a[0]), e = u * u * (3 - 2 * u);
+  return [1, 2, 3, 4].map(j => a[j] + (b[j] - a[j]) * e);
+}
+(() => {
+  const pct = v => `${+(v / 24 * 100).toFixed(2)}%`;
+  const css = EMOTES.map(({ id }) => {
+    const m = EMOTE_MOVES[id];
+    const frames = m.k.map(moveFrame).map(([t, r, up, sx, sy]) => `${Math.round(t * 100)}%{transform:translateY(${pct(-up)}) rotate(${r}deg) scale(${sx},${sy})}`).join('');
+    return `@keyframes emo-${id}{${frames}}.emo[data-e="${id}"] svg{transform-origin:${pct(m.o[0])} ${pct(m.o[1])};animation:emo-${id} ${MOVE_MS}ms ease-in-out .15s both}`;
+  }).join('');
+  const style = document.createElement('style');
+  style.textContent = `@media (prefers-reduced-motion: no-preference){${css}}`;
+  document.head.append(style);
+})();
 const emoteSvg = e => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="${e.d}"/></svg>`;
 const FLY_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 11.2 20 4l-7.2 16-2.2-6.6z"/></svg>';
 
@@ -4269,7 +4306,7 @@ function onSocial(l, m) {
   // In view, it pops from their caret; otherwise a note says who and where, with a way there.
   if (caretOnScreen(m.from)) { pop(m.from, m.e); say(`${who} ${em.did}`); return; }
   const where = r ? `${regionName(r[0], r[1])} · ${away(r[0], r[1])}` : 'Somewhere on the map';
-  toast(`<i class="emo">${emoteSvg(em)}</i><b class="wraps">${who} ${em.did}</b><span>${where}</span>`, r ? THEMES[regionTheme(r[0], r[1])].hue : null, 4000,
+  toast(`<i class="emo" data-e="${em.id}">${emoteSvg(em)}</i><b class="wraps">${who} ${em.did}</b><span>${where}</span>`, r ? THEMES[regionTheme(r[0], r[1])].hue : null, 4000,
     r ? { label: `Fly to ${who}`, text: 'Fly there', icon: FLY_ICON, share: () => { hideToast(); flyToSurveyor({ pid: m.from, rx: r[0], ry: r[1] }); } } : null);
 }
 
@@ -4301,9 +4338,10 @@ function drawPops(now, cs, SX, SY) {
     ctx.closePath();
     ctx.fillStyle = popFill.panel; ctx.fill();
     ctx.lineWidth = 1.5; ctx.strokeStyle = `hsl(${gh.hue}, ${C.ms}, ${C.ml})`; ctx.stroke();
-    const sc = r * 1.25 / 24;
+    const sc = r * 1.25 / 24, [turn, rise, mx, my] = emoteMotion(p.e, now - p.t0 - 150), [ox, oy] = EMOTE_MOVES[p.e].o;
     ctx.translate(-12 * sc, -r - 2 - 12 * sc);
     ctx.scale(sc, sc);
+    ctx.translate(ox, oy - rise); ctx.rotate(turn * Math.PI / 180); ctx.scale(mx, my); ctx.translate(-ox, -oy);
     ctx.lineWidth = 1.9; ctx.lineCap = 'round'; ctx.lineJoin = 'round'; ctx.strokeStyle = C.ink;
     ctx.stroke(popPaths[p.e] || (popPaths[p.e] = new Path2D(em.d)));
     ctx.restore();
@@ -4462,7 +4500,7 @@ invalidate();
 if (redrawn) setTimeout(() => toast(`<i></i><b>The map has been redrawn</b><span>${NT} themes of about ${Math.round(THEMES.reduce((a, t) => a + t.words.length, 0) / NT / 10) * 10} words now, so a territory never repeats one · ${redrawn.kept ? `${redrawn.kept} of your ${redrawn.had} finds are still on it` : 'your old finds are not on it'}</span>`, null, 8000), 900);
 connectStore();
 if (location.hash === '#debug') window.__lf = { cam, found, claims, links, chunk, wordEnd, collect, territoryProgress, remnants: () => [...remnants().set], novas: () => [...novasSeen.values()], territoryName: regionName, world: () => world, supernova, novaSound, audioOut, musicTracks: MUSIC_TRACKS, audio: () => ac, music: () => musicNow && { state: ac.state, track: musicNow.track().name, nodes: musicNow.track().nodes.size, level: musicNow.master.gain.value, master: musicNow.master, volume: musicVol, target: musicLevel(), swap: musicNow.swap }, nova: () => nova,
-  who: () => Who.state, surveyors: () => whoData, pops: () => pops.map(p => [p.pid, p.e]), pid: () => myPid, muted: () => [...muted], carets: () => [...ghosts.keys()],
+  who: () => Who.state, surveyors: () => whoData, emoteMotion, pops: () => pops.map(p => [p.pid, p.e]), pid: () => myPid, muted: () => [...muted], carets: () => [...ghosts.keys()],
   caretXY: id => { const gh = ghosts.get(id); return gh && { x: (Math.round(gh.x) - cam.x) * cam.cs + (W - dock) / 2, y: (Math.floor(gh.y) + .5 - cam.y) * cam.cs + H / 2 + mapTop }; },
   pass: () => Pass.state, intro: () => Intro.state, surveyStatus, linkStates: () => Object.fromEntries([...links].map(([k, l]) => [k, l.m.state])), outbox: () => [...outbox.values()].map(c => [c.e.w, c.m.state]), definitions: () => Object.fromEntries([...definitions].map(([k, d]) => [k, d.m.state])) };
 

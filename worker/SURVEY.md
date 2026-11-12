@@ -412,8 +412,12 @@ POST (`/emote`) to the recipient's sector, which only Workers binding
 `SECTORS` can reach. The recipient gets `{t: 'emote', from, ini, e, r}`, with
 the sender's territory, and the sender `{t: 'emoted', to, e}` with `ok` or why
 not. In view, an emote pops from the sender's caret as a bubble that springs
-up, drifts and fades (and simply shows and fades under reduced motion);
-otherwise it's a note saying who, what and where, with **Fly there**. A
+up, drifts and fades, while the drawing in it moves once: the hand waves from
+the wrist, the hat lifts and tips, the thumb bobs, the palms meet twice, the
+sparkle twinkles, the flag flutters and the question mark tilts. Otherwise
+it's a note saying who, what and where, with **Fly there**, and its icon makes
+the same move (CSS made from the same table, `EMOTE_MOVES`). Under reduced
+motion the bubble just shows and fades, and nothing moves. A
 screen reader hears it either way.
 
 **Nobody sends as someone else.** The sender is whoever their socket says,
