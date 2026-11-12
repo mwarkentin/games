@@ -6,7 +6,7 @@ requires-python = ">=3.12"
 dependencies = ["markdown"]
 
 [dependency-groups]
-dev = ["pytest", "pytest-playwright"]
+dev = ["pytest", "pytest-playwright", "pytest-xdist"]
 
 [tool.uv]
 package = false
