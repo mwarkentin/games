@@ -599,6 +599,7 @@ uv run ./build.sh && python3 -m http.server -d _site 8000   # preview the real s
 uv run scripts/render_icons.py       # after drawing or changing an icon
 scripts/lint.sh                      # lint everything, as CI does
 scripts/lint.sh --fix                # fix and format what can be, then lint
+uv run --only-group lint prek install   # once per clone: lint and fix staged files on each commit
 ```
 
 The smoke tests load every game at phone and desktop sizes and fail on
@@ -613,7 +614,7 @@ version, and CI's `lint` job (in `.github/workflows/test.yml`) runs it on
 every push and pull request, in about 15 seconds. It fails on what it
 finds; it never pushes fixes, since a push made with the workflow's token
 starts no checks of its own and would race the sessions pushing to the same
-branch. Run `scripts/lint.sh --fix` before you commit.
+branch. Fixes happen before the commit instead, with prek (below).
 
 - **Python** (`scripts/`, `tests/`, `share/scripts/`): ruff, which lints
   (pyflakes, bugbear, sorted imports, modern syntax) and formats at 120
@@ -625,19 +626,34 @@ branch. Run `scripts/lint.sh --fix` before you commit.
   Its formatter is off, because it would rewrite nearly every line of the
   games. For a name used on purpose that it flags, write
   `// biome-ignore lint/<group>/<rule>: <why>` above it.
-- **Shell:** shellcheck on `build.sh` and `scripts/lint.sh`, and actionlint
+- **Shell:** shellcheck on `build.sh` and the scripts beside it, and actionlint
   on the workflows, which also runs shellcheck on their `run:` steps. Both
   report warnings and errors, not style.
 - **Markdown, HTML and CSS** aren't linted. The build already checks the
   changelogs, and the smoke tests check what matters in each page.
 
-ruff, shellcheck and actionlint are the `lint` group in `pyproject.toml`, apart
+ruff, shellcheck, actionlint and prek are the `lint` group in `pyproject.toml`, apart
 from `dev`, so the pytest jobs don't install them. Biome's version is in
 `scripts/lint.sh` and `biome.jsonc`'s `$schema`; change both together. The
 files that open pull requests change are listed under `[tool.ruff.format]
 exclude` (and in `per-file-ignores`) and left unformatted, so they don't
-conflict. Once a file's pull
-requests have merged, take it off the list and run `scripts/lint.sh --fix`.
+conflict. Once a file's pull requests have merged, take it off the list and
+run `scripts/lint.sh --fix`.
+
+**Before each commit,** [prek](https://github.com/j178/prek)'s git hook runs
+`scripts/lint.sh --fix` on the staged files (`.pre-commit-config.yaml`). If
+it changes a file, the commit stops: look at the change, `git add` it and
+commit again. If it finds something it can't fix, fix that and commit again.
+Don't skip it with `--no-verify`; CI's `lint` job, which `test` requires,
+would only fail later.
+
+- **On your computer,** install the hook once per clone:
+  `uv run --only-group lint prek install`.
+- **In a Claude Code cloud session,** the clone is fresh and has no hook, so
+  `.claude/hooks/session-start.sh` (a SessionStart hook in
+  `.claude/settings.json`) installs the lint group and the hook when the
+  session starts, and skips both once they're there. It does nothing on
+  your own computer.
 
 ### Tests in parallel
 

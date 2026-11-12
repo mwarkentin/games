@@ -1,8 +1,10 @@
 #!/usr/bin/env bash
 # Lint everything, or fix what can be fixed. See "Linting" in AGENTS.md.
 #
-#   scripts/lint.sh          # check, as CI's lint job does
-#   scripts/lint.sh --fix    # fix and format, then check what's left
+#   scripts/lint.sh                 # check everything, as CI's lint job does
+#   scripts/lint.sh --fix           # fix and format everything, then check
+#   scripts/lint.sh --fix FILE...   # the same for these files, as prek's
+#                                   # pre-commit hook does for staged ones
 #
 # Python with ruff, JavaScript (the Workers, the inlined scripts and every
 # game's inline <script>) with Biome, build.sh with shellcheck and the
@@ -18,11 +20,8 @@ BIOME_VERSION=2.6.7
 export SHELLCHECK_OPTS="--severity=warning"
 
 fix=false
-case "${1:-}" in
-  --fix) fix=true ;;
-  "") ;;
-  *) echo "usage: scripts/lint.sh [--fix]" >&2; exit 2 ;;
-esac
+if [ "${1:-}" = --fix ]; then fix=true; shift; fi
+case "${1:-}" in -*) echo "usage: scripts/lint.sh [--fix] [FILE...]" >&2; exit 2 ;; esac
 
 # ruff, shellcheck and actionlint from the lint group alone, not the tests' deps.
 tool() { uv run --only-group lint "$@"; }
@@ -34,16 +33,39 @@ step() {
   "$@" || status=1
 }
 
-if $fix; then
-  step tool ruff check --fix
-  step tool ruff format
-  step biome lint --write
-else
-  step tool ruff check
-  step tool ruff format --check
-  step biome ci
+# With no files, everything. With files (prek's pre-commit hook passes the
+# staged ones), each tool gets those it reads, and ruff and Biome still skip
+# what their config excludes.
+py=() js=() sh=() workflows=()
+if [ $# = 0 ]; then
+  py=(.) js=(.) sh=(build.sh scripts/lint.sh .claude/hooks/session-start.sh) workflows=(.github/workflows/*.yml)
 fi
-step tool shellcheck build.sh scripts/lint.sh
-step tool actionlint
+for f in "$@"; do
+  case "$f" in
+    *.py) py+=("$f") ;;
+    *.js | *.mjs | *.html | *.json | *.jsonc) js+=("$f") ;;
+    *.sh) sh+=("$f") ;;
+  esac
+  case "$f" in .github/workflows/*.yml | .github/workflows/*.yaml) workflows+=("$f") ;; esac
+done
+
+if [ ${#py[@]} -gt 0 ]; then
+  if $fix; then
+    step tool ruff check --fix "${py[@]}"
+    step tool ruff format "${py[@]}"
+  else
+    step tool ruff check "${py[@]}"
+    step tool ruff format --check "${py[@]}"
+  fi
+fi
+if [ ${#js[@]} -gt 0 ]; then
+  if $fix; then
+    step biome lint --write --no-errors-on-unmatched --files-ignore-unknown=true "${js[@]}"
+  else
+    step biome ci --no-errors-on-unmatched --files-ignore-unknown=true "${js[@]}"
+  fi
+fi
+if [ ${#sh[@]} -gt 0 ]; then step tool shellcheck "${sh[@]}"; fi
+if [ ${#workflows[@]} -gt 0 ]; then step tool actionlint "${workflows[@]}"; fi
 
 exit $status

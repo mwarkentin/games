@@ -17,6 +17,7 @@ dev = [
 # don't install them: actionlint-py downloads its binary from GitHub.
 lint = [
     "actionlint-py==1.7.12.25",
+    "prek==0.5.10",
     "ruff==0.17.4",
     "shellcheck-py==0.11.0.1",
 ]
@@ -31,6 +32,8 @@ testpaths = ["tests"]
 # See "Linting" in AGENTS.md.
 [tool.ruff]
 line-length = 120
+# Excluded files stay excluded when prek names them on the command line.
+force-exclude = true
 target-version = "py312"
 # Modules the tests import from these, sorted as first-party.
 src = ["scripts", "tests"]

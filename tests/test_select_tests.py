@@ -63,7 +63,10 @@ def test_anything_shared_runs_the_whole_suite():
 def test_files_no_test_reads_run_no_pytest_and_dont_widen_a_game():
     assert select(["worker/src/war.js", "share/src/card.js", "AGENTS.md", "docs/link-previews.md"])["pytest"] is False
     assert select(["worker/src/war.js", "war.html", "AGENTS.md"]) == select(["war.html"])
-    assert select(["biome.jsonc", "scripts/lint.sh"])["pytest"] is False
+    assert (
+        select(["biome.jsonc", "scripts/lint.sh", ".pre-commit-config.yaml", ".claude/settings.json"])["pytest"]
+        is False
+    )
 
 
 def test_every_selection_is_a_set_of_real_test_files():

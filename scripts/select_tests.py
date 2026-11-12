@@ -42,7 +42,9 @@ from common import ROOT, app_of, game_files
 # run over four workers. The whole suite is about 1,200 s, so three shards.
 SHARD_SECONDS = 450
 MAX_SHARDS = 3
-UNREAD = re.compile(r"^(worker/|share/|preview/|docs/|AGENTS\.md$|CLAUDE\.md$|biome\.jsonc$|scripts/lint\.sh$)")
+UNREAD = re.compile(
+    r"^(worker/|share/|preview/|docs/|AGENTS\.md$|CLAUDE\.md$|biome\.jsonc$|scripts/lint\.sh$|\.pre-commit-config\.yaml$|\.claude/)"
+)
 
 
 def apps(root: Path) -> dict[str, str]:
