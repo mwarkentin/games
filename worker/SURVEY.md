@@ -615,6 +615,51 @@ hasn't got it yet.
 
 If the list can't be loaded, the period shows without its supernovas.
 
+**Seen from a neighbouring sector.** A page holds only the claims of the
+sectors it has joined (at most four, nearest the middle of the screen), so
+on its own it would only see a supernova in one of those. A territory one
+territory off, across the edge of a sector it hasn't joined, would go off
+unseen. So when a claim sets off a supernova, its sector tells the sectors
+nearby, and they tell their players:
+
+- **Who's told:** every other sector with a territory within `NOVA_REACH`
+  (3) territories of it, counting as the game's `nearView` does: the larger
+  of the two distances. A player whose view is centred that close is in one
+  of them, or in the territory's own sector, and the page always joins the
+  sector under the middle of its view. Sectors are 4 territories wide, so a
+  territory on a corner of its sector tells 3 neighbours, one on an edge 5,
+  and one of the middle four all 8 (`novaNeighbours()`).
+- **How:** after the claim has gone out, the sector POSTs
+  `{nova: [rx, ry, at, w, x, y, d, initials]}` (the territory, its last word
+  and who charted it, when) to each one's internal `/near` path, inside
+  `ctx.waitUntil`, so nothing waits on them and one that fails doesn't stop
+  the rest. Each broadcasts `{t: 'nova', n: [...]}` to its own players. Its
+  own players already had the claim, as ever.
+- **Only from a sector:** the public router forwards nothing but WebSocket
+  upgrades of sector paths, so `/near` can't be reached from outside, as
+  `/claim/<key>` and `/nova/<rx>/<ry>` can't. A neighbour still checks what
+  it's sent (`checkNova()`): a hidden word that's really there, in the
+  territory named, in another sector within reach of its own.
+- **On the page:** a `nova` frame plays the supernova if it's within reach
+  of the middle of the view, and is a note otherwise, as a claim that
+  completes a territory is; it's kept in the notes' supernovas, and the
+  territory becomes a remnant at once. A page joined to the territory's own
+  sector too leaves it to that sector's claim, which says whether the last
+  word was the player's own, and either way it goes off once.
+- **Reach:** 3 territories, as `nearView` has always used. At the closest
+  zoom that's far off screen, and the shockwave sweeps in from the edge
+  nearest it, two or three seconds after the flash. Zoomed right out (2
+  pixels a cell, 96 a territory), a phone shows about 2 territories each side
+  of the middle and a computer 5 or 6, so a supernova at the edge of a wide
+  screen is a note rather than a burst.
+
+**Cost:** at most 8 Durable Object requests per supernova, one per
+neighbour, and a broadcast in those with players. A neighbour with nobody in
+it is woken only to answer at once. Asking the Atlas which neighbours have
+players first would be a request too, and the Atlas only knows the shared
+world, so it isn't done. With 10,000 territories in the shared world, every
+supernova there ever will cost at most 80,000 requests: about a cent.
+
 **Caching** is the same as a surveyor's view: a range that ended an hour
 ago for a day, a running one for 15 seconds, or 2 minutes over more than two
 days, and a page through its own cursor. `CACHE_VERSION` didn't need
@@ -965,9 +1010,11 @@ about 30 cents over the included million requests.
 - **The log, live, beyond the hour.** The running hour reloads every 20
   seconds; a running day, week or longer shows what it had when opened. It
   could take claims from the sector sockets the game already uses.
-- **Supernovas, live.** A supernova far from you is a toast in the game,
-  and a line in the log once the log has it. The log's list could take them
-  from the sector sockets too, as the running hour could.
+- **Supernovas, live.** A supernova more than 3 territories from the middle
+  of your view is a toast in the game, even when it's on a wide, zoomed-out
+  screen, and a line in the log once the log has it. Nearer ones reach you
+  from neighbouring sectors too (see "Supernovas"). The log's list could
+  take them from the sector sockets, as the running hour could.
 - **Supernovas outside the shared world** are recorded and listed like any
   other, but the game's world map only covers the shared world, so far
   away ones only show as remnants when you're there.

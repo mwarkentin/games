@@ -47,6 +47,10 @@
 //                                   'daily limit' once its address has charted DAILY_CLAIMS today
 //   {t: 'presence', n, p}           players here ([id, initials, x, y]), about once a second
 //   {t: 'world', charted, total, players}   the whole world's totals, as they change
+//   {t: 'nova', n: [rx, ry, at, w, x, y, d, initials]}
+//                                   a territory in a neighbouring sector, within NOVA_REACH of this
+//                                   one, has gone supernova: the claim of its last hidden word, which
+//                                   that sector broadcast to its own players as an ordinary 'claimed'
 //   {t: 'unverified'}               from the Worker, while TURNSTILE_REQUIRED is "true", for a join
 //                                   without a good pass, which then
 //                                   closes with code 4001: the game gets a new pass and retries
@@ -89,6 +93,7 @@ export const ADDRESS_HEADER = 'X-Survey-Address';  // the hashed address, from t
 export const UNPASSED_HEADER = 'X-Survey-Unpassed';  // '1' on a join without a good Turnstile pass, from the Worker
 export const DAILY_CLAIMS = 300;      // words one address can chart in the shared world each UTC day
 export const DAILY_LIST_MAX = 2000;   // addresses past the daily cap that the Atlas hands out, latest first
+export const NOVA_REACH = 3;          // territories: a supernova this close to the middle of a player's view plays for them, as the game's nearView
 const DAY_MS = 86400000;
 const HOUR_MS = 3600000;
 const HASH = /^[0-9a-f]{64}$/;
@@ -102,6 +107,9 @@ export const CLAIM_PATH = /^\/claim\/([^/]{1,64})$/;
 // A territory's supernova, straight from its sector, for share cards made
 // in the seconds before the log has it: { nova: [as the log gives it] }.
 export const NOVA_PATH = /^\/nova\/(-?\d{1,8})\/(-?\d{1,8})$/;
+// A supernova in a neighbouring sector, POSTed by the sector that recorded
+// it: { nova: [rx, ry, at, w, x, y, d, initials] }, passed on to players here.
+export const NEAR_PATH = '/near';
 export const TOTALS_PATH = '/totals';
 export const WORLD_PATH = '/v1/survey/world';
 
@@ -148,6 +156,35 @@ export function checkClaim(claim, sx, sy) {
   const placed = chunk(fdiv(x, CH), fdiv(y, CH)).words.some((p) => p.key === key);
   if (!placed && w.length < STRAY_MIN) return { error: 'word is not there' };
   return { key, w, x, y, d, s: placed ? 0 : 1 };
+}
+
+// The other sectors with a territory within NOVA_REACH of territory (rx, ry),
+// counting as the game's nearView does (the larger of the two distances in
+// territories), so every player whose view is centred close enough to see a
+// supernova is in one of them or in its own sector. Sectors are 4 territories
+// wide and the reach is 3, so a territory on a sector's corner has three
+// neighbours to tell, one on an edge five, and one of the middle four all eight.
+export function novaNeighbours(rx, ry) {
+  const sx = fdiv(rx, TERR), sy = fdiv(ry, TERR), out = [];
+  for (let ny = fdiv(ry - NOVA_REACH, TERR); ny <= fdiv(ry + NOVA_REACH, TERR); ny++) {
+    for (let nx = fdiv(rx - NOVA_REACH, TERR); nx <= fdiv(rx + NOVA_REACH, TERR); nx++) if (nx !== sx || ny !== sy) out.push([nx, ny]);
+  }
+  return out;
+}
+
+// Whether a neighbour's supernova, as NEAR_PATH carries it, is one sector
+// (sx, sy) should pass on: a hidden word, really there, in a territory of
+// another sector within NOVA_REACH of this one. Only sectors can reach the
+// path, but this keeps a bad frame from going out to every player here.
+export function checkNova(n, sx, sy) {
+  if (!Array.isArray(n) || n.length !== 8) return false;
+  const [rx, ry, at, w, x, y, d, initials] = n;
+  if (![rx, ry].every((v) => isInt(v, -LIMIT, LIMIT)) || !isInt(at, 0, 1e14) || !(initials === '' || (typeof initials === 'string' && INITIALS.test(initials)))) return false;
+  if (fdiv(rx, TERR) === sx && fdiv(ry, TERR) === sy) return false;
+  const gap = (r, s) => Math.max(0, s * TERR - r, r - (s * TERR + TERR - 1));
+  if (Math.max(gap(rx, sx), gap(ry, sy)) > NOVA_REACH) return false;
+  const c = checkClaim({ w, x, y, d }, fdiv(x, SECTOR), fdiv(y, SECTOR));
+  return !c.error && !c.s && fdiv(x, RC) === rx && fdiv(y, RC) === ry;
 }
 
 // Answers the survey's paths, or returns null for any other path: a sector's
@@ -319,6 +356,7 @@ export class Sector {
     if (claim) return this.claimOf(decodeURIComponent(claim[1]));
     const nova = request.method === 'GET' && pathname.match(NOVA_PATH);
     if (nova) return this.novaOf(Number(nova[1]), Number(nova[2]));
+    if (request.method === 'POST' && pathname === NEAR_PATH) return this.near(request);
     const m = pathname.match(SECTOR_PATH);
     if (!m) return new Response('not found', { status: 404 });
     if (request.headers.get('Upgrade') !== 'websocket') return new Response('expected a WebSocket', { status: 426 });
@@ -346,6 +384,30 @@ export class Sector {
     return n
       ? Response.json({ nova: [n.rx, n.ry, n.at, n.w, n.x, n.y, n.d, n.initials, n.first, n.words, n.surveyors, n.top, n.top_n, regionTheme(n.rx, n.ry)] })
       : Response.json({ error: 'no supernova' }, { status: 404 });
+  }
+
+  // A neighbour's supernova, for the players here. A sector with nobody in
+  // it has nobody to tell, and doesn't know where it is either.
+  async near(request) {
+    let n = null;
+    try { n = (await request.json())?.nova; } catch { /* answered below */ }
+    if (!this.ctx.getWebSockets().length) return new Response(null, { status: 204 });
+    if (!checkNova(n, ...this.coords())) return new Response('bad supernova', { status: 400 });
+    broadcast(this.ctx, JSON.stringify({ t: 'nova', n }));
+    return new Response(null, { status: 204 });
+  }
+
+  // Tells the neighbouring sectors in reach about a supernova here, without
+  // holding up the claim's answer: each passes it on to its own players.
+  passOn(nova) {
+    if (!this.env.SECTORS) return;
+    const body = JSON.stringify({ nova });
+    const sent = Promise.all(novaNeighbours(nova[0], nova[1]).map(async ([nx, ny]) => {
+      try {
+        await this.env.SECTORS.get(this.env.SECTORS.idFromName(`${nx},${ny}`)).fetch(`https://sector${NEAR_PATH}`, { method: 'POST', body });
+      } catch { /* they'll see the remnant on the world map */ }
+    }));
+    this.ctx.waitUntil?.(sent);
   }
 
   fromAddress(address) {
@@ -476,7 +538,10 @@ export class Sector {
       const t = this.territory(c.x, c.y);
       if (this.counts) this.counts[t]++;
       else this.chartedCounts();
-      if (this.counts[t] === this.hiddenCounts()[t]) this.supernova(t);
+      if (this.counts[t] === this.hiddenCounts()[t]) {
+        const nova = this.supernova(t);
+        if (nova) this.passOn(nova);
+      }
     }
     this.hot = [c.x, c.y];
     if (me.address && inArea(...this.coords())) this.chartedBy.set(me.address, (this.chartedBy.get(me.address) ?? 0) + 1);
@@ -574,24 +639,26 @@ export class Sector {
   // word, who charted it, when the first was, and who charted most. A
   // territory lies inside one sector and claims here run one at a time, so
   // only one claim can be the last, and the row is written with that claim,
-  // before anything is awaited.
+  // before anything is awaited. Returns what neighbours are told
+  // ([rx, ry, at, w, x, y, d, initials]), or null if it was already recorded.
   supernova(t) {
     const [sx, sy] = this.coords(), rx = sx * TERR + (t % TERR), ry = sy * TERR + Math.floor(t / TERR);
     const rows = this.sql.exec(
       'SELECT w, x, y, d, initials, at FROM claims WHERE s = 0 AND x >= ? AND x < ? AND y >= ? AND y < ? ORDER BY at, key',
       rx * RC, rx * RC + RC, ry * RC, ry * RC + RC,
     ).toArray();
-    if (!rows.length) return;
+    if (!rows.length) return null;
     const by = new Map();
     for (const r of rows) if (r.initials) by.set(r.initials, (by.get(r.initials) ?? 0) + 1);
     // Who charted most, as the log ranks surveyors: most words, then initials.
     const [top, topN] = [...by].sort((a, b) => b[1] - a[1] || (a[0] < b[0] ? -1 : 1))[0] ?? ['', 0];
     const last = rows.at(-1);
-    this.sql.exec(
+    const inserted = this.sql.exec(
       `INSERT INTO novas (rx, ry, at, w, x, y, d, initials, first, words, surveyors, top, top_n)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT (rx, ry) DO NOTHING`,
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT (rx, ry) DO NOTHING RETURNING rx`,
       rx, ry, last.at, last.w, last.x, last.y, last.d, last.initials, rows[0].at, rows.length, by.size, top, topN,
-    );
+    ).toArray().length;
+    return inserted ? [rx, ry, last.at, last.w, last.x, last.y, last.d, last.initials] : null;
   }
 
   // Supernovas the sector hasn't recorded: territories completed before

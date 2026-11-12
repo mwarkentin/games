@@ -609,6 +609,27 @@ def test_someone_else_finishing_a_territory_nearby_sets_it_off_too(page: Page, s
     assert errors == []
 
 
+@pytest.mark.parametrize("motion", ["no-preference", "reduce"])
+def test_a_supernova_shows_rather_than_says_unless_motion_is_reduced(page: Page, site_url, errors, motion):
+    words = territory_words(page, site_url)
+    page.emulate_media(reduced_motion=motion)
+    fake = FakeSurvey(claims=[[*w, 0, "MRW", NOW_MS - 60_000] for w in words[1:]])
+    open_game(page, site_url, fake)
+    eventually(page, lambda: "0,0" in fake.sockets)
+    expect(page.locator("#tCharted")).to_have_text(f" · {len(words) - 1}/{len(words)} charted")
+    fake.sockets["0,0"].send(json.dumps({"t": "claimed", "c": [*words[0], 0, "SIS", NOW_MS], "by": "someone"}))
+    banner = page.locator("#nova")
+    expect(banner).to_have_attribute("role", "status")
+    expect(page.locator("#novaText")).to_contain_text("the last by SIS", timeout=6000)  # a screen reader still hears it
+    box = banner.bounding_box()
+    if motion == "reduce":
+        assert box["width"] > 200 and box["height"] > 40  # no shockwave to watch, so the words show
+    else:
+        assert box["width"] <= 1 and box["height"] <= 1
+    expect(page.locator("#toast")).to_contain_text("Supernova · kept in your field notes", timeout=8000)
+    assert errors == []
+
+
 SHARE_SHEET_INIT = """
   window.__shared = [];
   Object.defineProperty(navigator, 'share', { value: data => { window.__shared.push(data); return Promise.resolve(); }, configurable: true });
@@ -666,6 +687,104 @@ def test_a_supernova_far_away_is_a_note_you_can_share(page: Page, site_url, erro
     assert page.evaluate("window.__shared[0].text").endswith(f"the last, {words[0][0]}.")
     open_notes(page)
     expect(page.locator("#novaList .find-meta")).to_have_text(f"Went supernova · {words[0][0]}, every word charted")
+    assert errors == []
+
+
+# Territory (4, 0) is the top left corner of sector (1, 0), which a view
+# centred at (100, 6) doesn't reach: it sees sectors (0, 0) and (0, -1) only,
+# two territories off. Sector (0, 0) passes on its supernova.
+NEIGHBOUR = (4, 0)
+NEAR_CAM = "window.__lf.cam.x = 100; window.__lf.cam.y = 6"
+COUNT_NOTES = """() => {
+  window.__notes = [];
+  new MutationObserver(() => {
+    const t = document.getElementById('toast').textContent;
+    if (/supernova/i.test(t) && window.__notes.at(-1) !== t) window.__notes.push(t);
+  }).observe(document.getElementById('toast'), { childList: true, subtree: true, characterData: true });
+}"""
+
+
+def neighbour_word(page: Page) -> list:
+    """A word hidden in territory NEIGHBOUR, as its last."""
+    return page.evaluate("window.__lf.chunk(16, 0).words.map(o => [o.w, o.x, o.y, o.d])[0]")
+
+
+def test_a_supernova_in_a_neighbouring_sector_sweeps_across_the_view(page: Page, site_url, errors):
+    fake = FakeSurvey()
+    open_game(page, site_url, fake)
+    eventually(page, lambda: "0,0" in fake.sockets)
+    page.evaluate(NEAR_CAM)
+    assert "1,0" not in fake.sockets
+    word = neighbour_word(page)
+    fake.nova("0,0", *NEIGHBOUR, word, "SIS")
+    expect(page.locator("#nova")).to_be_visible(timeout=6000)
+    place = page.evaluate("window.__lf.territoryName(4, 0)")
+    expect(page.locator("#novaText")).to_have_text(f"{place} · every hidden word charted, the last by SIS")
+    assert page.evaluate("[window.__lf.nova()?.rx, window.__lf.nova()?.ry]") == list(NEIGHBOUR)
+    # It's a remnant now, though this page holds none of that sector's claims, and in your notes.
+    assert "4,0" in page.evaluate("window.__lf.remnants()")
+    open_notes(page)
+    expect(page.locator("#novaList li")).to_have_count(1)
+    expect(page.locator("#novaList .find-meta")).to_have_text(f"Went supernova · {word[0]}, the last by SIS")
+    assert errors == []
+
+
+def test_a_supernova_in_a_neighbouring_sector_out_of_sight_is_a_note(page: Page, site_url, errors):
+    fake = FakeSurvey()
+    open_game(page, site_url, fake)
+    eventually(page, lambda: "0,0" in fake.sockets)
+    page.evaluate(COUNT_NOTES)
+    # From the start at (6, 6), territory (4, 0) is four territories off.
+    word = neighbour_word(page)
+    fake.nova("0,0", *NEIGHBOUR, word)
+    expect(page.locator("#toast")).to_contain_text("Went supernova · every hidden word charted", timeout=6000)
+    assert page.locator("#nova").is_hidden()
+    assert "4,0" in page.evaluate("window.__lf.remnants()")
+    # Another neighbour passing on the same one changes nothing.
+    fake.nova("0,-1", *NEIGHBOUR, word)
+    page.wait_for_timeout(2500)
+    assert len(page.evaluate("window.__notes")) == 1
+    assert page.locator("#nova").is_hidden()
+    assert errors == []
+
+
+def test_two_neighbours_passing_on_one_supernova_play_it_once(page: Page, site_url, errors):
+    fake = FakeSurvey()
+    open_game(page, site_url, fake)
+    eventually(page, lambda: "0,0" in fake.sockets and "0,-1" in fake.sockets)
+    page.evaluate(NEAR_CAM)
+    word = neighbour_word(page)
+    fake.nova("0,0", *NEIGHBOUR, word, "SIS")
+    expect(page.locator("#nova")).to_be_visible(timeout=6000)
+    started = page.evaluate("window.__lf.nova().t0")
+    fake.nova("0,-1", *NEIGHBOUR, word, "SIS")
+    page.wait_for_timeout(300)
+    assert page.evaluate("window.__lf.nova()?.t0") == started
+    assert errors == []
+
+
+@pytest.mark.parametrize("first", ["claimed", "nova"])
+def test_the_claim_and_a_neighbours_news_of_it_play_it_once(page: Page, site_url, errors, first):
+    words = territory_words(page, site_url)
+    fake = FakeSurvey(claims=[[*w, 0, "MRW", NOW_MS - 60_000] for w in words[1:]])
+    open_game(page, site_url, fake)
+    eventually(page, lambda: "0,0" in fake.sockets and "-1,0" in fake.sockets)
+    expect(page.locator("#tCharted")).to_have_text(f" · {len(words) - 1}/{len(words)} charted")
+    page.evaluate(COUNT_NOTES)
+    claimed = json.dumps({"t": "claimed", "c": [*words[0], 0, "SIS", NOW_MS], "by": "someone"})
+    send = {"claimed": lambda: fake.sockets["0,0"].send(claimed), "nova": lambda: fake.nova("-1,0", 0, 0, words[0], "SIS")}
+    send[first]()
+    send["nova" if first == "claimed" else "claimed"]()
+    expect(page.locator("#nova")).to_be_visible(timeout=6000)
+    started = page.evaluate("window.__lf.nova().t0")
+    expect(page.locator("#novaText")).to_contain_text("the last by SIS")
+    expect(page.locator("#toast")).to_contain_text("Supernova · kept in your field notes", timeout=12000)
+    page.wait_for_timeout(500)
+    assert page.evaluate("window.__notes").count(page.evaluate("window.__notes")[0]) == 1
+    assert len(page.evaluate("window.__notes")) == 1
+    assert page.evaluate("window.__lf.nova()?.t0 ?? null") in (None, started)
+    open_notes(page)
+    expect(page.locator("#novaList li")).to_have_count(1)
     assert errors == []
 
 
