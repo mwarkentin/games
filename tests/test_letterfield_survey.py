@@ -23,6 +23,10 @@ from fake_survey import AREA_WORDS, DUMMY_TOKEN, FAKE_TURNSTILE, NOW_MS, TURNSTI
 
 SURVEY = "https://survey.test"
 
+# A find's note shows a while, then folds into the field notes, and the count
+# ticks up as it lands: this long, at most, after the find.
+LANDS = 10_000
+
 
 def without_turnstile(page: Page) -> None:
     """Serve the game with TURNSTILE_SITE_KEY blanked, so the survey joins without Cloudflare's check.
@@ -94,7 +98,7 @@ def test_without_a_survey_url_the_game_plays_alone(page: Page, site_url, errors)
     page.on("websocket", lambda ws: sockets.append(ws.url))
     open_game(page, site_url, None)
     circle(page, hidden_words(page)[0])
-    expect(page.locator("#notesBadge")).to_have_text("1")
+    expect(page.locator("#notesBadge")).to_have_text("1", timeout=LANDS)
     expect(page.locator("#survey")).to_be_hidden()
     expect(page.locator("#signup")).to_be_hidden()  # nothing to sign when playing alone
     expect(page.locator("#tCharted")).to_have_text(re.compile(r"^ · 1/\d+ found$"))
@@ -114,10 +118,12 @@ def test_shared_word_list_scrolls_only_sideways(page: Page, site_url, errors):
     full = "n => document.querySelectorAll('#legendList span.chip').length >= n"
     for phone, size in ((False, {"width": 1280, "height": 900}), (True, {"width": 375, "height": 740})):
         page.set_viewport_size(size)
-        page.evaluate("cs => { window.__lf.cam.cs = cs; dispatchEvent(new Event('resize')); }", 20 if phone else 38)
-        page.wait_for_function(full, arg=8 if phone else 10)
+        # At the origin, not wherever the survey's random spawn put the camera,
+        # which on a phone's shorter map (between its bars) can hold too few words.
+        page.evaluate("cs => { Object.assign(window.__lf.cam, { x: 6, y: 6, cs }); dispatchEvent(new Event('resize')); }", 12 if phone else 38)
+        page.wait_for_function(full, arg=12 if phone else 10)
         page.wait_for_timeout(300)  # and any update still to come
-        chips_scroll_only_sideways(page, phone)
+        chips_scroll_only_sideways(page)
     m = page.evaluate(CHIPS_JS)
     assert m["sw"] > m["cw"], m
     assert errors == []
@@ -155,7 +161,7 @@ def test_shared_map_shows_other_surveyors_and_their_words(page: Page, site_url, 
     # Circling a word someone already charted finds nothing new: it's theirs.
     circle(page, words[0])
     expect(page.locator("#toast")).to_contain_text("Already charted by MRW")
-    expect(page.locator("#notesBadge")).to_have_text("1")
+    expect(page.locator("#notesBadge")).to_have_text("1", timeout=LANDS)
     page.wait_for_timeout(300)
     assert len(fake.sent("claim")) == 1
     assert errors == []
@@ -210,7 +216,7 @@ def test_circling_a_word_someone_charted_finds_nothing_new(page: Page, site_url,
     circle(page, words[1])
     eventually(page, lambda: len(fake.sent("claim")) == 1)
     assert fake.sent("claim")[0]["w"] == words[1][0]
-    expect(page.locator("#notesBadge")).to_have_text("1")
+    expect(page.locator("#notesBadge")).to_have_text("1", timeout=LANDS)
     assert errors == []
 
 
@@ -310,7 +316,7 @@ def test_the_pencil_changes_your_initials(page: Page, site_url, errors):
 # Both ends of a word hidden at the origin, on screen and clear of the cards over the map.
 WORD_ENDS = """() => {
   const lf = window.__lf, dock = document.body.classList.contains('docked') ? 340 : 0;
-  const at = (x, y) => [(x + .5 - lf.cam.x) * lf.cam.cs + (innerWidth - dock) / 2, (y + .5 - lf.cam.y) * lf.cam.cs + innerHeight / 2];
+  const at = (x, y) => [(x + .5 - lf.cam.x) * lf.cam.cs + (innerWidth - dock) / 2, (y + .5 - lf.cam.y) * lf.cam.cs + (m => m.getBoundingClientRect().top + m.clientHeight / 2)(document.getElementById('map'))];
   const clear = ([px, py]) => document.elementFromPoint(px, py) === document.querySelector('canvas');
   for (const w of lf.chunk(0, 0).words) {
     const ends = [at(w.x, w.y), at(...lf.wordEnd(w))];
@@ -368,7 +374,7 @@ def test_initials_come_before_the_first_word(page: Page, site_url, errors):
     # Now the same taps circle the word.
     for x, y in target["ends"]:
         page.mouse.click(x, y)
-    expect(page.locator("#notesBadge")).to_have_text("1")
+    expect(page.locator("#notesBadge")).to_have_text("1", timeout=LANDS)
     expect(page.locator("#toast")).to_contain_text(target["word"])
     eventually(page, lambda: len(fake.sent("claim")) == 1)
 
@@ -455,7 +461,7 @@ def test_unreachable_survey_says_so_and_the_game_carries_on(page: Page, site_url
     expect(page.locator("#surveyText")).to_have_text("Survey offline. Your finds still save in this browser.")
     expect(page.locator("#survey")).to_have_attribute("data-state", "offline")
     circle(page, hidden_words(page)[0])
-    expect(page.locator("#notesBadge")).to_have_text("1")
+    expect(page.locator("#notesBadge")).to_have_text("1", timeout=LANDS)
     expect(page.locator("#tCharted")).to_be_hidden()
 
 
@@ -547,7 +553,7 @@ def test_full_sector_says_so(page: Page, site_url, errors):
     open_game(page, site_url, fake)
     expect(page.locator("#surveyText")).to_have_text("This part of the map is full right now. Your finds still save in this browser.")
     circle(page, hidden_words(page)[0])
-    expect(page.locator("#notesBadge")).to_have_text("1")
+    expect(page.locator("#notesBadge")).to_have_text("1", timeout=LANDS)
     page.wait_for_timeout(1500)
     assert len(fake.sectors) == 4  # and it doesn't keep knocking
     assert errors == []
@@ -663,7 +669,7 @@ def test_a_supernova_far_away_is_a_note_you_can_share(page: Page, site_url, erro
 
 SCREEN_OF = """([x, y]) => {
   const cam = window.__lf.cam, dock = document.body.classList.contains('docked') ? 340 : 0;
-  return [(x - cam.x) * cam.cs + (innerWidth - dock) / 2, (y - cam.y) * cam.cs + innerHeight / 2];
+  return [(x - cam.x) * cam.cs + (innerWidth - dock) / 2, (y - cam.y) * cam.cs + (m => m.getBoundingClientRect().top + m.clientHeight / 2)(document.getElementById('map'))];
 }"""
 
 
@@ -736,7 +742,7 @@ OVERLAP = """([a, b]) => {
 # What a tap at the middle of each of an element's chips lands on: true where it reaches that chip.
 TAPS_REACH = """sel => [...document.querySelectorAll(sel)].map(el => {
   const r = el.getBoundingClientRect(), x = r.left + r.width / 2, y = r.top + r.height / 2;
-  return x < 0 || x > innerWidth ? true : el.contains(document.elementFromPoint(x, y));
+  return x < 0 || x >= innerWidth ? true : el.contains(document.elementFromPoint(x, y));  // off screen at the edge itself
 })"""
 
 
@@ -803,7 +809,7 @@ def test_turnstile_shows_its_box_only_when_it_wants_a_tap(page: Page, site_url, 
     expect(page.locator("#surveyCheck")).to_have_class(re.compile("asking"))
     expect(page.locator("#surveyCheck")).to_contain_text("One tap to join the shared survey")
     expect(page.locator("#surveyText")).to_have_text("Checking this is a person, not a bot…")
-    for other in [".legend", ".instruments .zoom", "#signup", "#notes"]:
+    for other in ["#bar", "#signup", "#notes"]:
         assert not page.evaluate(OVERLAP, ["#surveyCheck", other]), f"the box covers {other}"
     assert fake.sectors == []
     page.evaluate("window.__tsSolve()")
@@ -828,13 +834,19 @@ def test_turnstile_box_keeps_clear_of_the_game_and_goes_once_passed(page: Page, 
     page.click("#signup button")
     expect(page.locator("#signup")).to_be_hidden()
     expect(page.locator(".fake-turnstile")).to_be_visible()
-    # While it asks, it's a small panel with its reason, clear of the legend and instruments.
+    # While it asks, it's a small panel with its reason, clear of the bottom bar,
+    # and of the tools' stack once that's open.
     expect(check.locator("p")).to_be_visible()
     expect(check.locator("p")).to_have_text("One tap to join the shared survey")
     box = check.bounding_box()
     assert box["x"] >= 16 and box["x"] + box["width"] <= phone["width"] - 16
-    for other in [".legend", ".instruments .zoom", ".cartouche", "#notesToggle"]:
+    for other in ["#bar", ".cartouche", "#notesToggle"]:
         assert not page.evaluate(OVERLAP, ["#surveyCheck", other]), f"the box covers {other}"
+    page.click("#toolsBtn")
+    expect(page.locator("#toolsBtn")).to_have_attribute("aria-expanded", "true")
+    for other in ["#bar", "#toolStack", ".cartouche", "#notesToggle"]:
+        assert not page.evaluate(OVERLAP, ["#surveyCheck", other]), f"the box covers {other} with the tools open"
+    page.click("#toolsBtn")
 
     page.evaluate("window.__tsSolve()")
     expect(page.locator("#survey")).to_have_attribute("data-state", "live")
@@ -877,7 +889,7 @@ def test_turnstile_box_asks_a_player_already_in_the_survey_once_passes_are_requi
     open_game(page, site_url, fake, f"&turnstile={SITE_KEY}", viewport={"width": 375, "height": 667})
     expect(page.locator("#surveyCheck")).to_have_class(re.compile("asking"))
     expect(page.locator("#surveyCheck p")).to_be_visible()
-    for other in [".legend", ".instruments .zoom"]:
+    for other in ["#bar"]:
         assert not page.evaluate(OVERLAP, ["#surveyCheck", other]), f"the box covers {other}"
     page.evaluate("window.__tsSolve()")
     expect(page.locator("#survey")).to_have_attribute("data-state", "live")
@@ -942,7 +954,7 @@ def test_failed_check_leaves_you_surveying_alone_once_passes_are_required(page: 
         "Couldn’t check this is a person, so you’re surveying alone for now. Your finds still save in this browser.")
     expect(page.locator("#survey")).to_have_attribute("data-state", "offline")
     circle(page, hidden_words(page)[0])
-    expect(page.locator("#notesBadge")).to_have_text("1")
+    expect(page.locator("#notesBadge")).to_have_text("1", timeout=LANDS)
     page.wait_for_timeout(2500)
     assert fake.sectors == []
     tried = len(fake.urls)
@@ -958,7 +970,7 @@ def test_blocked_turnstile_leaves_you_surveying_alone_once_passes_are_required(p
     open_game(page, site_url, fake, f"&turnstile={SITE_KEY}")
     expect(page.locator("#surveyText")).to_contain_text("Couldn’t check this is a person")
     circle(page, hidden_words(page)[0])
-    expect(page.locator("#notesBadge")).to_have_text("1")
+    expect(page.locator("#notesBadge")).to_have_text("1", timeout=LANDS)
     assert fake.sectors == []
 
 

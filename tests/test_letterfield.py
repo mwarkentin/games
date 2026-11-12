@@ -7,12 +7,13 @@ from fake_leaderboard import without_worker
 
 # Screen positions of a legend word's first and last letters, for a word whose
 # ends are both on open map rather than under a panel. Mirrors the game's
-# camera: it starts centred on cell (6, 6) with 38px cells.
+# camera: it starts centred on cell (6, 6) with 38px cells, in the middle of
+# the map, which ends at the bottom bar.
 FIND_WORD_JS = """() => {
   const cs = 38, start = 6, canvas = document.getElementById('map');
   const dock = document.body.classList.contains('docked') ? 340 : 0;
   const dirs = [[1,0],[1,1],[0,1],[-1,1],[-1,0],[-1,-1],[0,-1],[1,-1]];
-  const screen = (x, y) => [(x + .5 - start) * cs + (innerWidth - dock) / 2, (y + .5 - start) * cs + innerHeight / 2];
+  const screen = (x, y) => [(x + .5 - start) * cs + (innerWidth - dock) / 2, (y + .5 - start) * cs + (m => m.getBoundingClientRect().top + m.clientHeight / 2)(document.getElementById('map'))];
   for (const chip of document.querySelectorAll('#legendList .chip:not(.found)')) {
     const [word, x, y, d] = chip.dataset.key.split('~');
     const n = word.length - 1, [dx, dy] = dirs[+d];
@@ -21,6 +22,10 @@ FIND_WORD_JS = """() => {
   }
   return null;
 }"""
+
+# A find's note shows a while, then folds into the field notes, and the count
+# ticks up as it lands: this long, at most, after the find.
+LANDS = 10_000
 
 
 def test_circling_a_word_adds_it_to_field_notes(page: Page, site_url, errors):
@@ -35,12 +40,12 @@ def test_circling_a_word_adds_it_to_field_notes(page: Page, site_url, errors):
     assert target, "no legend word with both ends on open map"
     for x, y in target["ends"]:
         page.mouse.click(x, y)
-    expect(page.locator("#notesBadge")).to_have_text("1")
+    expect(page.locator("#notesBadge")).to_have_text("1", timeout=LANDS)
     expect(page.locator("#toast")).to_contain_text(target["word"])
 
     # Finds are kept in this browser and survive a reload.
     page.reload()
-    expect(page.locator("#notesBadge")).to_have_text("1")
+    expect(page.locator("#notesBadge")).to_have_text("1", timeout=LANDS)
     assert errors == []
 
 
@@ -64,7 +69,7 @@ def test_finds_from_an_older_map_carry_over_if_still_there(page: Page, site_url,
     page.goto(f"{site_url}/letterfield")
     expect(page.locator("#toast")).to_contain_text("The map has been redrawn")
     expect(page.locator("#toast")).to_contain_text("1 of your 2 finds are still on it")
-    expect(page.locator("#notesBadge")).to_have_text("1")
+    expect(page.locator("#notesBadge")).to_have_text("1", timeout=LANDS)
     # A long note stays on a phone's screen, padding and all, and wraps rather than cutting off.
     box = page.locator("#toast").bounding_box()
     assert box["x"] >= 16 and box["x"] + box["width"] <= 375 - 16, box
@@ -77,7 +82,7 @@ def test_finds_from_an_older_map_carry_over_if_still_there(page: Page, site_url,
 
     # The note shows once.
     page.reload()
-    expect(page.locator("#notesBadge")).to_have_text("1")
+    expect(page.locator("#notesBadge")).to_have_text("1", timeout=LANDS)
     page.wait_for_timeout(1500)
     expect(page.locator("#toast")).not_to_contain_text("redrawn")
     assert errors == []
@@ -138,10 +143,23 @@ def test_finding_every_word_in_a_territory_goes_supernova(page: Page, site_url, 
     assert errors == []
 
 
+def open_tools(page: Page) -> None:
+    """Opens the tools' stack from its button in the bottom bar."""
+    page.click("#toolsBtn")
+    expect(page.locator("#toolsBtn")).to_have_attribute("aria-expanded", "true")
+
+
+def open_tools_quietly(page: Page) -> None:
+    """Opens the tools' stack without a tap or key, either of which would start the audio."""
+    page.evaluate("document.getElementById('toolsBtn').click()")
+    expect(page.locator("#toolsBtn")).to_have_attribute("aria-expanded", "true")
+
+
 def test_sound_can_be_switched_off(page: Page, site_url, errors):
     page.add_init_script(COUNT_AUDIO)
     page.goto(f"{site_url}/letterfield#debug")
     page.wait_for_function("window.__lf")
+    open_tools_quietly(page)
     sound = page.locator("#sound")
     expect(sound).to_have_attribute("aria-pressed", "true")
     sound.click()
@@ -172,6 +190,7 @@ def test_music_starts_off_and_can_be_switched_on_and_off(page: Page, site_url, e
     page.add_init_script(COUNT_AUDIO)
     page.goto(f"{site_url}/letterfield#debug")
     page.wait_for_function("window.__lf")
+    open_tools_quietly(page)
     music = page.locator("#music")
     expect(music).to_have_attribute("aria-pressed", "false")
     page.keyboard.press("Shift")
@@ -377,10 +396,10 @@ def test_every_tab_keeps_the_field_notes_found_in_the_others(page: Page, site_ur
         page.wait_for_timeout(50)
     assert page.evaluate(stored) == want, "a tab's save wrote over the other's find"
     # Each tab takes in the other's as it's saved.
-    expect(page.locator("#notesBadge")).to_have_text("2")
-    expect(other.locator("#notesBadge")).to_have_text("2")
+    expect(page.locator("#notesBadge")).to_have_text("2", timeout=LANDS)
+    expect(other.locator("#notesBadge")).to_have_text("2", timeout=LANDS)
     page.reload()
-    expect(page.locator("#notesBadge")).to_have_text("2")
+    expect(page.locator("#notesBadge")).to_have_text("2", timeout=LANDS)
     assert errors == []
 
 
@@ -407,6 +426,7 @@ def test_music_left_on_starts_with_the_first_tap_on_its_button(page: Page, site_
     page.add_init_script(COUNT_AUDIO + "localStorage.setItem('letterfield.music.v1', '1');")
     page.goto(f"{site_url}/letterfield#debug")
     page.wait_for_function("window.__lf")
+    open_tools_quietly(page)
     music = page.locator("#music")
     expect(music).to_have_attribute("aria-pressed", "true")
     assert page.evaluate("window.__lf.music()") is None  # on, but waiting for a tap
@@ -428,18 +448,15 @@ CHIPS_JS = """() => {
 }"""
 
 
-def chips_scroll_only_sideways(page: Page, phone: bool) -> None:
-    """The word list never scrolls up and down: on a phone it's one row that
-    scrolls sideways, on a computer the words wrap inside the box."""
+def chips_scroll_only_sideways(page: Page) -> None:
+    """The word list never scrolls up and down: it's one row along the bottom
+    bar that scrolls sideways."""
     m = page.evaluate(CHIPS_JS)
     assert m["n"] > 0
     assert m["oy"] not in ("auto", "scroll"), m
     assert m["sh"] <= m["ch"], m
     # Every chip, struck through or not, sits inside the row's height.
-    if phone:
-        assert m["wrap"] == "nowrap" and m["ox"] == "auto", m
-    else:
-        assert m["wrap"] == "wrap" and m["sw"] <= m["cw"], m
+    assert m["wrap"] == "nowrap" and m["ox"] == "auto", m
 
 
 def test_the_word_list_never_scrolls_up_and_down(page: Page, site_url, errors):
@@ -455,7 +472,7 @@ def test_the_word_list_never_scrolls_up_and_down(page: Page, site_url, errors):
         `<li><button type="button" class="chip mark${i % 3 ? '' : ' found'}">${'QUARTERMASTER'.slice(0, 6 + i % 8)}</button></li>`).join('');
     }"""
     page.evaluate(fill)
-    chips_scroll_only_sideways(page, phone=True)
+    chips_scroll_only_sideways(page)
     m = page.evaluate(CHIPS_JS)
     assert m["sw"] > m["cw"], m  # too many to fit, so it scrolls sideways
     page.evaluate("document.getElementById('legendList').scrollLeft = 99999")
@@ -474,11 +491,11 @@ def test_the_word_list_never_scrolls_up_and_down(page: Page, site_url, errors):
       const o = parseFloat(getComputedStyle(a).outlineWidth) + parseFloat(getComputedStyle(a).outlineOffset);
       return c.top - o >= r.top && c.bottom + o <= r.bottom;
     }""")
-    chips_scroll_only_sideways(page, phone=True)
+    chips_scroll_only_sideways(page)
 
     page.set_viewport_size({"width": 1280, "height": 900})
     page.evaluate(fill)
-    chips_scroll_only_sideways(page, phone=False)
+    chips_scroll_only_sideways(page)
     assert errors == []
 
 
@@ -489,7 +506,7 @@ PLACE_WORD_JS = """async ({ key, sx, sy, cs }) => {
   const dock = document.body.classList.contains('docked') ? 340 : 0;
   lf.cam.cs = cs;
   lf.cam.x = +x + .5 - (sx - (innerWidth - dock) / 2) / cs;
-  lf.cam.y = +y + .5 - (sy - innerHeight / 2) / cs;
+  lf.cam.y = +y + .5 - (sy - (m => m.getBoundingClientRect().top + m.clientHeight / 2)(document.getElementById('map'))) / cs;
   dispatchEvent(new Event('resize'));
   await new Promise(r => setTimeout(r, 300));
   return {
@@ -532,7 +549,7 @@ def test_the_word_list_names_only_words_half_in_sight(page: Page, site_url, erro
     across, down, up = keys
     page.evaluate(ONLY_WORDS_JS, keys)
     right = page.evaluate("innerWidth - (document.body.classList.contains('docked') ? 340 : 0)")
-    mid = size[1] / 2
+    mid = page.evaluate("(m => m.getBoundingClientRect().top + m.clientHeight / 2)(document.getElementById('map'))")
 
     def listed(key, sx, sy, cs=80):
         got = page.evaluate(PLACE_WORD_JS, {"key": key, "sx": sx, "sy": sy, "cs": cs})
@@ -550,28 +567,32 @@ def test_the_word_list_names_only_words_half_in_sight(page: Page, site_url, erro
     seen, got = listed(across, -2.5 * cs, mid)
     assert not seen, got  # only its last two at the left edge
 
-    # Letters under a panel over the map can't be seen either. A word reading
-    # away from the title box (down), or from the word list or, on a phone, the
-    # zoom controls above it (up), with its first three letters under the panel
-    # isn't listed, and with only its first two there it is, where the rest
-    # lands on open map.
+    # Letters under a panel over the map, or under the bottom bar where the map
+    # ends, can't be seen either. A word reading away from the title box (down),
+    # or from the bar (up), with its first three letters under the panel isn't
+    # listed, and with only its first two there it is, where the rest lands on
+    # open map. The open tools don't count, so opening them never reshuffles
+    # the list.
     cs = 12
-    phone = size[0] < 700
-    panels = [("header.cartouche", down, True), ("section.legend", up, not phone)]
-    if phone:
-        panels.append((".zoom", up, True))
-    for sel, key, clear in panels:
+    open_tools(page)
+    # On a phone the map starts below the top bar, which holds the title box.
+    panels = [("#topbar" if size[0] < 700 else "header.cartouche", down), ("#bar", up)]
+    for sel, key in panels:
         box = page.locator(sel).bounding_box()
-        sx = box["x"] + box["width"] / 2
+        # Over the bar, at its left end: the open tools stand over its right.
+        sx = box["x"] + 60 if sel == "#bar" else box["x"] + box["width"] / 2
         if key == down:  # the first letters just inside its bottom edge
             hidden3, hidden2 = box["y"] + box["height"] - 2.5 * cs, box["y"] + box["height"] - 1.5 * cs
         else:  # just inside its top edge
             hidden3, hidden2 = box["y"] + 2.5 * cs, box["y"] + 1.5 * cs
         seen, got = listed(key, sx, hidden3, cs)
         assert not seen, (sel, got)
-        if clear:
-            seen, got = listed(key, sx, hidden2, cs)
-            assert seen, (sel, got)
+        seen, got = listed(key, sx, hidden2, cs)
+        assert seen, (sel, got)
+    page.wait_for_timeout(400)  # done dropping down
+    box = page.locator("#toolStack").bounding_box()
+    seen, got = listed(down, box["x"] + box["width"] / 2, box["y"] + box["height"] - 2.5 * cs, cs)
+    assert seen, ("#toolStack", got)
     assert errors == []
 
 
@@ -616,7 +637,7 @@ def test_the_word_list_can_name_every_word_left_in_the_territory(page: Page, sit
         # Found, it leaves the list rather than staying there crossed out.
         expect(page.locator(f'#legendList .chip:text-is("{target["word"]}")')).to_have_count(0)
         expect(page.locator("#legendList .found")).to_have_count(0)
-    expect(page.locator("#notesBadge")).to_have_text(str(finds))
+    expect(page.locator("#notesBadge")).to_have_text(str(finds), timeout=LANDS)
     whole.click()
     expect(whole).to_have_attribute("aria-pressed", "true")
     expect(view).to_have_attribute("aria-pressed", "false")
@@ -634,9 +655,10 @@ def test_the_word_list_can_name_every_word_left_in_the_territory(page: Page, sit
     m = page.evaluate(CHIPS_JS)
     assert m["oy"] not in ("auto", "scroll") and m["sh"] <= m["ch"], m
     assert m["ox"] == "auto" and m["sw"] > m["cw"], m
-    if size[0] >= 700:  # three rows on a computer, one on a phone
-        tops = page.evaluate("[...new Set([...document.querySelectorAll('#legendList .chip')].map(c => c.getBoundingClientRect().top))].length")
-        assert tops == 3, tops
+    # One row along the bottom bar, at any size.
+    tops = page.evaluate("[...new Set([...document.querySelectorAll('#legendList .chip')].map(c => c.getBoundingClientRect().top))].length")
+    assert tops == 1, tops
+    if size[0] >= 700:
         page.locator("#legendList").hover()
         page.mouse.wheel(0, 300)  # a mouse wheel moves it sideways
         page.wait_for_function("document.getElementById('legendList').scrollLeft > 0")
@@ -683,7 +705,7 @@ def test_the_title_box_always_shows_how_many_words_are_found(page: Page, site_ur
 TERRITORY_SHADE = """() => {
   const c = document.getElementById('map'), g = c.getContext('2d'), { cam } = window.__lf;
   const dock = document.body.classList.contains('docked') ? 340 : 0, k = c.width / innerWidth;
-  const sx = x => ((x - cam.x) * cam.cs + (innerWidth - dock) / 2) * k, sy = y => ((y - cam.y) * cam.cs + innerHeight / 2) * k;
+  const sx = x => ((x - cam.x) * cam.cs + (innerWidth - dock) / 2) * k, sy = y => ((y - cam.y) * cam.cs + document.getElementById('map').clientHeight / 2) * k;
   const x0 = Math.round(sx(1)), y0 = Math.round(sy(1)), w = Math.round(sx(11)) - x0, h = Math.round(sy(11)) - y0;
   const d = g.getImageData(x0, y0, w, h).data, m = [0, 0, 0];
   for (let i = 0; i < d.length; i += 4) for (let j = 0; j < 3; j++) m[j] += d[i + j];
@@ -730,4 +752,144 @@ def test_a_supernova_leaves_its_remnant_behind_the_shockwave(page: Page, site_ur
     assert page.evaluate("window.__lf.nova() !== null")
     assert page.evaluate("window.__lf.remnants()") == ["0,0"]
     page.wait_for_function("window.__lf.nova() === null", timeout=12000)
+    assert errors == []
+
+
+@pytest.mark.parametrize("size", [(375, 740), (1280, 900)], ids=["phone", "desktop"])
+def test_the_tools_drop_down_from_their_button_and_go_again(page: Page, site_url, errors, size):
+    without_worker(page, site_url, "letterfield")
+    page.set_viewport_size({"width": size[0], "height": size[1]})
+    page.goto(f"{site_url}/letterfield#debug")
+    page.click("#coachOk")
+    button, stack = page.locator("#toolsBtn"), page.locator("#toolStack")
+    # Closed at first: out of sight, out of reach of taps and Tab.
+    expect(button).to_have_attribute("aria-expanded", "false")
+    expect(stack).to_be_hidden()
+    assert page.evaluate("document.getElementById('toolStack').inert")
+
+    # The map ends at the bar's top edge, and the bar runs to the screen's
+    # bottom. On a phone it starts at the bottom of a bar along the top.
+    bar = page.locator("#bar").bounding_box()
+    box = page.locator("#map").bounding_box()
+    assert round(box["y"] + box["height"]) == round(bar["y"])
+    assert round(bar["y"] + bar["height"]) == size[1] and bar["x"] == 0
+    if size[0] < 700:
+        top = page.locator("#topbar").bounding_box()
+        assert top["x"] == 0 and top["y"] == 0 and top["width"] == size[0] and round(box["y"]) == round(top["y"] + top["height"])
+    else:
+        assert box["y"] == 0
+
+    # A tap opens it and focus moves in.
+    button.click()
+    expect(button).to_have_attribute("aria-expanded", "true")
+    expect(stack).to_be_visible()
+    expect(page.locator("#zoomIn")).to_be_focused()
+    page.wait_for_timeout(300)  # done popping up
+    box, tools = stack.bounding_box(), button.bounding_box()
+    assert box["y"] >= tools["y"] + tools["height"] and box["y"] + box["height"] <= bar["y"], "it drops from its button, clear of the word list"
+    assert abs(box["x"] + box["width"] - tools["x"] - tools["width"]) < 1
+    for el in ["#toolsBtn", "#music", "#sound", "#home", "#zoomIn", "#zoomOut"]:
+        b = page.locator(el).bounding_box()
+        assert b["width"] >= 40 and b["height"] >= 40, (el, b)
+    assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
+    # Left open, it starts shut all the same on the next visit.
+    page.reload()
+    expect(button).to_have_attribute("aria-expanded", "false")
+    expect(stack).to_be_hidden()
+    button.click()
+
+    # A second tap shuts it.
+    button.click()
+    expect(button).to_have_attribute("aria-expanded", "false")
+    expect(stack).to_be_hidden()
+
+    # Escape shuts it and brings focus back to the button.
+    button.click()
+    page.keyboard.press("Tab")
+    page.keyboard.press("Escape")
+    expect(button).to_have_attribute("aria-expanded", "false")
+    expect(button).to_be_focused()
+
+    # Dragging the map leaves it open; a tap on the map shuts it, and does nothing else.
+    button.click()
+    cx, cy = 80, page.evaluate("(m => m.getBoundingClientRect().top + m.clientHeight / 2)(document.getElementById('map'))")  # clear of the stack, top right
+    page.mouse.move(cx, cy)
+    page.mouse.down()
+    page.mouse.move(cx + 60, cy + 30, steps=5)
+    page.mouse.up()
+    expect(button).to_have_attribute("aria-expanded", "true")
+    page.wait_for_timeout(1000)  # the drag's glide comes to rest
+    cam = page.evaluate("({ ...window.__lf.cam })")
+    page.mouse.click(cx, cy)
+    expect(button).to_have_attribute("aria-expanded", "false")
+    expect(stack).to_be_hidden()
+    assert page.evaluate("({ ...window.__lf.cam })") == cam
+    assert errors == []
+
+
+def test_the_shortcuts_work_with_the_tools_put_away(page: Page, site_url, errors):
+    page.emulate_media(reduced_motion="reduce")  # flights land at once
+    without_worker(page, site_url, "letterfield")
+    page.set_viewport_size({"width": 375, "height": 740})
+    page.goto(f"{site_url}/letterfield#debug")
+    page.click("#coachOk")
+    expect(page.locator("#toolsBtn")).to_have_attribute("aria-expanded", "false")
+    page.locator("#map").focus()
+    cs = page.evaluate("window.__lf.cam.cs")
+    page.keyboard.press("+")
+    page.wait_for_function(f"window.__lf.cam.cs > {cs}")
+    page.keyboard.press("-")
+    page.wait_for_function(f"Math.abs(window.__lf.cam.cs - {cs}) < .01")
+    page.keyboard.press("d")
+    page.wait_for_function("window.__lf.cam.x > 7")
+    page.keyboard.press("h")
+    page.wait_for_function("window.__lf.cam.x === 6 && window.__lf.cam.y === 6")
+    # Home lands in the middle of the map, above the bar.
+    mid = page.evaluate("(m => m.getBoundingClientRect().top + m.clientHeight / 2)(document.getElementById('map'))")
+    assert mid < page.locator("#bar").bounding_box()["y"] - 100
+    page.keyboard.press("m")
+    expect(page.locator("#sound")).to_have_attribute("aria-pressed", "false")
+    page.keyboard.press("b")
+    expect(page.locator("#music")).to_have_attribute("aria-pressed", "true")
+    page.keyboard.press("b")
+    expect(page.locator("#music")).to_have_attribute("aria-pressed", "false")
+    expect(page.locator("#toolsBtn")).to_have_attribute("aria-expanded", "false")
+    assert errors == []
+
+
+@pytest.mark.parametrize("size", [(375, 740), (1280, 900)], ids=["phone", "desktop"])
+def test_a_finds_note_folds_into_the_field_notes_before_it_counts(page: Page, site_url, errors, size):
+    without_worker(page, site_url, "letterfield")
+    page.set_viewport_size({"width": size[0], "height": size[1]})
+    page.goto(f"{site_url}/letterfield#debug")
+    page.click("#coachOk")
+    words = page.evaluate("window.__lf.chunk(0, 0).words.slice(0, 2).map(o => [o.w, o.x, o.y, o.d])")
+    toast, count = page.locator("#toast"), page.locator("#tWords" if size[0] >= 1100 else "#notesBadge")
+    # The note shows by the field notes (under their button, or beside them
+    # docked), and the count waits for it.
+    page.evaluate(COLLECT, words[:1])
+    expect(toast).to_contain_text(words[0][0])
+    expect(toast).to_have_class(re.compile(r"\bshow\b"))
+    page.wait_for_timeout(500)  # done popping out
+    notes = page.locator("#notes" if size[0] >= 1100 else "#notesToggle").bounding_box()
+    box = toast.bounding_box()
+    if size[0] >= 1100:
+        tools = page.locator("#toolsBtn").bounding_box()
+        assert abs(box["x"] + box["width"] - (notes["x"] - 16)) < 3 and box["y"] > tools["y"] + tools["height"], (box, notes, tools)
+    else:
+        assert abs(box["x"] + box["width"] - (notes["x"] + notes["width"])) < 2 and box["y"] > notes["y"] + notes["height"], (box, notes)
+    page.wait_for_timeout(1000)
+    expect(count).to_have_text("0")
+    assert page.evaluate("JSON.parse(localStorage.getItem('letterfield.finds.v4')).length") == 1  # saved all the same
+    # A second find sends the first one's note in at once, then waits itself.
+    page.evaluate(COLLECT, words[1:])
+    expect(count).to_have_text("1", timeout=1500)
+    expect(toast).to_contain_text(words[1][0])
+    page.wait_for_timeout(1500)
+    expect(count).to_have_text("1")
+    # Its time up, it folds in, and the count catches up.
+    expect(count).to_have_text("2", timeout=LANDS)
+    expect(toast).not_to_have_class(re.compile(r"\bshow\b"))
+    page.wait_for_timeout(1000)
+    assert page.evaluate("document.querySelectorAll('.toast').length") == 1, "the copy that folded in is gone"
     assert errors == []
