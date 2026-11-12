@@ -159,10 +159,9 @@ body.docked .corner .tools-btn{border-radius:8px;border-right:1px solid var(--ru
 .tool-stack svg{width:18px;height:18px;flex:none}
 .tool-stack kbd{font:500 10.5px/1 var(--f-mono);color:var(--muted);border:1px solid var(--rule);border-radius:4px;padding:3px 5px 2px;min-width:9px;text-align:center}
 @media (hover: none) and (pointer: coarse){.tool-stack kbd{display:none}}
-/* Music volume: a slider under the music button, shown while the music is
-   on, lined up with the buttons' labels and as tall as they are to touch. */
+/* Music volume: a slider under the music button, always there (0 is off),
+   lined up with the buttons' labels and as tall as they are to touch. */
 .tool-vol{display:flex;align-items:center;gap:8px;height:44px;padding:0 10px 0 40px;cursor:pointer}
-.tool-vol[hidden]{display:none}
 .tool-vol input{flex:1;min-width:0;height:44px;margin:0;background:transparent;font-size:16px;cursor:pointer;-webkit-appearance:none;appearance:none;--v:75%}
 .tool-vol input:focus{outline:none}
 .tool-vol input::-webkit-slider-runnable-track{height:4px;border-radius:2px;background:linear-gradient(to right, var(--accent) var(--v), var(--rule) var(--v))}
@@ -425,7 +424,7 @@ body.settling, body.settling *{transition:none!important}
         <hr style="--i:3">
         <button type="button" style="--i:4" id="sound" aria-pressed="true" aria-label="Sound" aria-keyshortcuts="M" title="Sound (M)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 9.5h3.5L12 6v12l-4.5-3.5H4z"/><path class="on" d="M15.5 9.2a4 4 0 0 1 0 5.6M18.2 6.6a7.6 7.6 0 0 1 0 10.8"/><path class="off" d="M16 9.5l5 5M21 9.5l-5 5"/></svg><span aria-hidden="true">Sound</span><kbd aria-hidden="true">M</kbd></button>
         <button type="button" style="--i:5" id="music" aria-pressed="false" aria-label="Music" aria-keyshortcuts="B" title="Music (B)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 17.5V6l10-2v11.5"/><circle cx="6.5" cy="17.5" r="2.5"/><circle cx="16.5" cy="15.5" r="2.5"/><path class="off" d="M3.5 3.5l17 17"/></svg><span aria-hidden="true">Music</span><kbd aria-hidden="true">B</kbd></button>
-        <label style="--i:6" class="tool-vol" id="musicVolRow" title="Music volume ([ and ])" hidden><span class="vh">Music volume</span><input type="range" id="musicVol" min="0" max="100" step="5" value="75" aria-keyshortcuts="[ ]"><output id="musicVolOut" for="musicVol" aria-hidden="true">75</output></label>
+        <label style="--i:6" class="tool-vol" id="musicVolRow" title="Music volume ([ and ])"><span class="vh">Music volume</span><input type="range" id="musicVol" min="0" max="100" step="5" value="0" aria-keyshortcuts="[ ]"><output id="musicVolOut" for="musicVol" aria-hidden="true">0</output></label>
       </div>
     </div>
     <button class="notes-toggle card" id="notesToggle" aria-expanded="false" aria-controls="notes">
@@ -2298,10 +2297,12 @@ soundBtn.addEventListener('click', () => setSound(!soundOn));
 // a reverb, and Chimes one convolver, fed mono.
 // The volume slider runs 0 to 100, and the music's gain is the square of
 // it, so the lower half isn't nearly silent. 75 is the level the music always
-// had (.45). At 0 the music is still on, silent, and the slider stays to turn
-// it up again; the button alone switches it off.
+// had (.45). The slider is always there and 0 is off: it shows 0 while the
+// music is off, dragging it up switches the music on at that level, and the
+// button switches it back on at the last level it had. musicVol is that
+// level, never 0.
 const MUSIC_MAX = .8, MUSIC_VOL = 75, TRACK_TIME = 240;
-let musicVol = (v => Number.isInteger(v) && v >= 0 && v <= 100 ? v : MUSIC_VOL)(Number(LS.get(K_MUSIC_VOL) ?? MUSIC_VOL));
+let musicVol = (v => Number.isInteger(v) && v > 0 && v <= 100 ? v : MUSIC_VOL)(Number(LS.get(K_MUSIC_VOL) ?? MUSIC_VOL));
 const musicLevel = () => MUSIC_MAX * (musicVol / 100) ** 2;
 const hz = m => 440 * Math.pow(2, (m - 69) / 12);
 let musicNow = null;
@@ -2631,31 +2632,36 @@ function startMusic() {
   musicNow = playMusic(a);
   if (document.hidden) musicNow.hush();
 }
-const musicBtn = $('#music'), musicVolRow = $('#musicVolRow'), musicVolEl = $('#musicVol'), musicVolOut = $('#musicVolOut');
+const musicBtn = $('#music'), musicVolEl = $('#musicVol'), musicVolOut = $('#musicVolOut');
 function showMusicVol() {
-  musicVolEl.value = String(musicVol);
-  musicVolEl.style.setProperty('--v', musicVol + '%');
-  musicVolEl.setAttribute('aria-valuetext', `Music volume ${musicVol}%`);
-  musicVolOut.textContent = String(musicVol);
+  const v = musicOn ? musicVol : 0;
+  musicVolEl.value = String(v);
+  musicVolEl.style.setProperty('--v', v + '%');
+  musicVolEl.setAttribute('aria-valuetext', v ? `Music volume ${v}%` : 'Music off');
+  musicVolOut.textContent = String(v);
 }
+// A move of the slider, or [ and ]: 0 switches the music off, anything else
+// switches it on at that level.
 function setMusicVol(v) {
-  musicVol = Math.max(0, Math.min(100, Math.round(v)));
-  LS.set(K_MUSIC_VOL, String(musicVol));
+  v = Math.max(0, Math.min(100, Math.round(v)));
+  if (!v) { if (musicOn) setMusic(false); else showMusicVol(); return; }
+  musicVol = v;
+  LS.set(K_MUSIC_VOL, String(v));
+  if (!musicOn) { setMusic(true); return; }
   showMusicVol();
-  if (musicNow) musicNow.level();
+  if (musicNow) musicNow.level(); else startMusic();
 }
-showMusicVol();
-musicVolEl.addEventListener('input', () => setMusicVol(+musicVolEl.value));
+musicVolEl.addEventListener('input', () => { gestured = true; setMusicVol(+musicVolEl.value); });
 function setMusic(on) {
   musicOn = on;
   LS.set(K_MUSIC, on ? '1' : '0');
   musicBtn.setAttribute('aria-pressed', String(on));
-  musicVolRow.hidden = !on;
+  showMusicVol();
   if (on) startMusic();
   else if (musicNow) { musicNow.end(); musicNow = null; }
 }
 musicBtn.setAttribute('aria-pressed', String(musicOn));
-musicVolRow.hidden = !musicOn;
+showMusicVol();
 // Music left on from last time waits, silent, for the first tap: a tap on its
 // own button then starts it, rather than switching it off unheard.
 musicBtn.addEventListener('click', () => { gestured = true; if (musicOn && !musicNow) startMusic(); else setMusic(!musicOn); });
@@ -3329,7 +3335,7 @@ window.addEventListener('keydown', e => {
     case 'n': setNotes(!notesOpen); break;
     case 'm': setSound(!soundOn); break;
     case 'b': setMusic(!musicOn); break;
-    case '[': case ']': if (!musicOn) return; setMusicVol(musicVol + (k === ']' ? 10 : -10)); break;
+    case '[': case ']': setMusicVol((musicOn ? musicVol : 0) + (k === ']' ? 10 : -10)); break;
     case 'h': goHome(); break;
     default: return;
   }

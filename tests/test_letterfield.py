@@ -251,29 +251,37 @@ HIDE_TAB = """hidden => {
 LEVEL_IS = "v => window.__lf.music() && Math.abs(window.__lf.music().level - v) < 1e-3"
 
 
-def test_music_volume_slider_sits_under_the_music_button(page: Page, site_url, errors):
+def test_music_volume_slider_is_always_under_the_music_button(page: Page, site_url, errors):
     page.add_init_script(COUNT_AUDIO)
     page.set_viewport_size({"width": 375, "height": 740})
     page.goto(f"{site_url}/letterfield#debug")
     page.wait_for_function("window.__lf")
     open_tools_quietly(page)
-    slider = page.get_by_role("slider", name="Music volume")
-    # Only while the music is on.
-    expect(slider).to_be_hidden()
-    page.locator("#music").click()
+    slider, music = page.get_by_role("slider", name="Music volume"), page.locator("#music")
+    # There with the music off, at 0, so the stack keeps its size.
     expect(slider).to_be_visible()
-    expect(slider).to_have_attribute("aria-valuetext", "Music volume 75%")
-    assert page.locator("#toolStack #musicVol").count() == 1
-    box, music = page.locator("#musicVolRow").bounding_box(), page.locator("#music").bounding_box()
-    assert abs(box["y"] - music["y"] - music["height"]) < 1, "right under the music button"
-    assert box["height"] >= 44 and slider.bounding_box()["height"] >= 40
+    expect(slider).to_have_value("0")
+    expect(slider).to_have_attribute("aria-valuetext", "Music off")
+    page.wait_for_timeout(300)  # done popping up
     stack = page.locator("#toolStack").bounding_box()
+    assert page.locator("#toolStack #musicVol").count() == 1
+    box, btn = page.locator("#musicVolRow").bounding_box(), music.bounding_box()
+    assert abs(box["y"] - btn["y"] - btn["height"]) < 1, "right under the music button"
+    assert box["height"] >= 44 and slider.bounding_box()["height"] >= 40
     assert stack["x"] >= 0 and stack["x"] + stack["width"] <= 375
     assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
-    # The default is the level the music always had.
+
+    # The button switches the music on at the level it always had.
+    music.click()
+    expect(slider).to_have_value("75")
+    expect(slider).to_have_attribute("aria-valuetext", "Music volume 75%")
     page.wait_for_function(LEVEL_IS, arg=.45, timeout=8000)
-    page.locator("#music").click()
-    expect(slider).to_be_hidden()
+    assert page.locator("#toolStack").bounding_box() == stack, "the stack keeps its size"
+    # And off again: the slider drops to 0, and the stack still keeps its size.
+    music.click()
+    expect(slider).to_have_value("0")
+    assert page.evaluate("window.__lf.music()") is None
+    assert page.locator("#toolStack").bounding_box() == stack
     assert errors == []
 
 
@@ -284,7 +292,7 @@ def test_music_volume_changes_the_gain_on_a_curve_and_is_kept(page: Page, site_u
     page.keyboard.press("Shift")
     page.wait_for_function("window.__lf.music() !== null")
     open_tools_quietly(page)
-    slider = page.locator("#musicVol")
+    slider, music = page.locator("#musicVol"), page.locator("#music")
 
     # Moving it glides the gain to the square of its value, in well under a
     # tenth of a second, without starting the piece again.
@@ -311,13 +319,28 @@ def test_music_volume_changes_the_gain_on_a_curve_and_is_kept(page: Page, site_u
     assert page.evaluate("({ ...window.__lf.cam })") == cam
     page.wait_for_function(LEVEL_IS, arg=.8 * .45 ** 2, timeout=500)
 
-    # At 0 it's silent, still on, and the slider stays to bring it back.
+    # 0 is off: the button agrees, and the last level is kept for next time.
     slider.fill("0")
-    page.wait_for_function(LEVEL_IS, arg=0, timeout=500)
-    expect(page.locator("#music")).to_have_attribute("aria-pressed", "true")
-    expect(slider).to_be_visible()
+    expect(music).to_have_attribute("aria-pressed", "false")
+    expect(slider).to_have_attribute("aria-valuetext", "Music off")
+    assert page.evaluate("window.__lf.music()") is None
+    assert page.evaluate("localStorage.getItem('letterfield.music.v1')") == "0"
+    music.click()
+    expect(slider).to_have_value("45")
+    page.wait_for_function(LEVEL_IS, arg=.8 * .45 ** 2, timeout=8000)
+    # Off by the button, and up from 0 by the slider: on at that level.
+    music.click()
+    expect(slider).to_have_value("0")
     slider.fill("30")
-    page.wait_for_function(LEVEL_IS, arg=.8 * .09, timeout=500)
+    expect(music).to_have_attribute("aria-pressed", "true")
+    page.wait_for_function(LEVEL_IS, arg=.8 * .09, timeout=8000)
+    # ] from off switches it on too, at 10.
+    slider.fill("0")
+    page.locator("#map").focus()
+    page.keyboard.press("]")
+    expect(music).to_have_attribute("aria-pressed", "true")
+    expect(slider).to_have_value("10")
+    slider.fill("30")
 
     # Kept across a reload: the music fades in to it.
     page.reload()
