@@ -25,6 +25,8 @@ const LIMITS = {
   score: { max: 10, windowMs: 10 * 60 * 1000 },  // saves per IP address
   group: { max: 5, windowMs: HOUR },             // new groups per IP address
   room: { max: 20, windowMs: HOUR },             // new War rooms per IP address (see war.js)
+  guild: { max: 5, windowMs: HOUR },             // new Letterfield guilds per IP address (see survey-guild.js)
+  guildJoin: { max: 20, windowMs: HOUR },        // guilds joined per IP address
 };
 
 const PUBLIC = '*';

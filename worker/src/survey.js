@@ -34,10 +34,11 @@
 // and how far it scales.
 //
 // Messages are JSON. From the game:
-//   {t: 'me', initials, token, hide, quiet}
+//   {t: 'me', initials, token, hide, quiet, guild}
 //                                   initials to credit claims to ('' for none); the game's
 //                                   secret token, whose hash names the player (survey-social.js);
-//                                   hide: leave me out of the surveyor list; quiet: no emotes
+//                                   hide: leave me out of the surveyor list; quiet: no emotes;
+//                                   guild: their guild's code, checked with it (survey-guild.js)
 //   {t: 'pos', x, y} / {t: 'pos', away: true}
 //                                   where the player is looking, if in this sector
 //   {t: 'claim', w, x, y, d}        a word the player just circled
@@ -51,10 +52,12 @@
 //   {t: 'error', key, error}        to a claimer, for a word that isn't there, 'slow down'
 //                                   when the socket or its address claims too fast, or
 //                                   'daily limit' once its address has charted DAILY_CLAIMS today
-//   {t: 'presence', n, p}           players here ([id, initials, x, y]), about once a second; the
-//                                   id is the player's (from their token) once they've sent one
+//   {t: 'presence', n, p}           players here ([id, initials, x, y, guild tag?]), about once a
+//                                   second; the id is the player's (from their token) once they've sent one
 //   {t: 'emote', from, ini, e, r}   an emote for this player from player `from`, in territory r
 //   {t: 'emoted', to, e, ok|error}  what became of an emote this player sent
+//   {t: 'guild', tag, on}           which of this player's guild are online, and where
+//                                   ([id, initials, rx, ry, idle]), from the Atlas, as it changes
 //   {t: 'world', charted, total, players}   the whole world's totals, as they change
 //   {t: 'unverified'}               from the Worker, while TURNSTILE_REQUIRED is "true", for a join
 //                                   without a good pass, which then
@@ -75,6 +78,7 @@ import { BLOCKED_INITIALS, INITIALS, corsHeaders, hashAddress, json } from './le
 import { PASS_PATH, checkPass, handlePass } from './survey-pass.js';
 import { CH, DIRS, MAP_VERSION, RC, STRAY_MIN, VOCAB, chunk, fdiv, keyOf, letterAt, regionTheme, territoryTotal } from './letterfield-world.js';
 import { LOG_BATCH, LOG_MS, LOG_RETRY_MAX_MS, writeLog } from './survey-log.js';
+import { GUILD_RECHECK_MS, GUILD_TAG, GUILD_TAGS_MAX, checkGuild, matesFor, noteMates, passMates } from './survey-guild.js';
 import { ATLAS_LIST_PATH, EMOTE_PATH, LIST_MS, REFRESH_MS, goodWho, listed, sendEmote, snapshot, takeEmote, takeMe } from './survey-social.js';
 
 export const SECTOR = RC * 4;         // cells per sector side
@@ -451,6 +455,11 @@ export class Sector {
     } else if (msg.t === 'emote') {
       await sendEmote(this, ws, me, msg);
     }
+    // The guild the game names is checked when it's new, and now and then while they play.
+    if (me.guild && me.pid && !me.checking && this.now() - (me.guildAt ?? 0) >= GUILD_RECHECK_MS) {
+      const checked = checkGuild(this, ws, me);
+      this.ctx.waitUntil?.(checked);
+    }
     this.catchUp();
   }
 
@@ -636,12 +645,12 @@ export class Sector {
     this.left();
   }
 
-  // A socket closed. A player who was on the surveyor list comes off it with
-  // a report straight away, rather than lingering there for minutes.
+  // A socket closed. A player who was on the surveyor list (or their guild's)
+  // comes off it with a report straight away, rather than lingering for minutes.
   gone(ws) {
     let me = this.people?.get(ws);
     if (!me) try { me = ws.deserializeAttachment(); } catch { /* nothing kept */ }
-    if (me?.pid && !me.hide && me.x !== null && me.x !== undefined) this.reportDue = true;
+    if (me?.pid && (!me.hide || me.tag) && me.x !== null && me.x !== undefined) this.reportDue = true;
     this.people?.delete(ws);
   }
 
@@ -712,7 +721,7 @@ export class Sector {
     this.presenceAt = this.now();
     this.presenceDue = false;
     const here = this.here().sort((a, b) => b.moved - a.moved);
-    broadcast(this.ctx, JSON.stringify({ t: 'presence', n: here.length, p: here.slice(0, PRESENCE_MAX).map((p) => [p.pid || p.id, p.initials, p.x, p.y]) }));
+    broadcast(this.ctx, JSON.stringify({ t: 'presence', n: here.length, p: here.slice(0, PRESENCE_MAX).map((p) => [p.pid || p.id, p.initials, p.x, p.y, ...(p.tag ? [p.tag] : [])]) }));
     this.maybeReport();
   }
 
@@ -725,11 +734,13 @@ export class Sector {
     return [median(here.map((p) => p.x)), median(here.map((p) => p.y))];
   }
 
-  // The surveyors listed here, for a report: none leaves `who` out.
+  // The surveyors listed here, for a report, and the guilds of everyone here,
+  // for the Atlas to say which of their members are online: none leaves each out.
   listing() {
     const [sx, sy] = this.coords();
     const who = listed(this.everyone().values(), sx, sy, this.now());
-    return who.length ? { who } : {};
+    const tags = [...new Set([...this.everyone().values()].map((p) => p.tag).filter(Boolean))].slice(0, GUILD_TAGS_MAX);
+    return { ...(who.length ? { who } : {}), ...(tags.length ? { tags } : {}) };
   }
 
   // Whether an emote from here may go to sector (sx, sy): one in the shared
@@ -791,7 +802,7 @@ export class Sector {
           by: [], day: this.overDay, overAt: this.overAt, ...this.listing(),
         }),
       });
-      if (res.ok) this.heard(await res.json());
+      if (res.ok) { const world = await res.json(); this.heard(world); passMates(this, world.guilds); }
     } catch { /* claims go ahead */ }
   }
 
@@ -837,6 +848,7 @@ export class Sector {
       this.reporting = false;
     }
     this.heard(world);
+    passMates(this, world?.guilds);
     if (!isInt(world?.charted, 0, AREA_WORDS) || !isInt(world?.players, 0, 1e9)) return;
     if (this.world && world.charted === this.world.charted && world.players === this.world.players) return;
     this.world = { charted: world.charted, total: AREA_WORDS, players: world.players };
@@ -906,7 +918,8 @@ export class Atlas {
         && Array.isArray(r.charted) && r.charted.length === TERR * TERR && r.charted.every((n) => isInt(n, 0, 1000))
         && Array.isArray(by) && by.length <= MAX_PLAYERS * 4
         && by.every((e) => Array.isArray(e) && typeof e[0] === 'string' && HASH.test(e[0]) && isInt(e[1], 1, TERR * TERR * 1000))
-        && (r.unpassed === undefined || isInt(r.unpassed, 0, 1e6)) && goodWho(r.who, r.sx, r.sy, MAX_PLAYERS);
+        && (r.unpassed === undefined || isInt(r.unpassed, 0, 1e6)) && goodWho(r.who, r.sx, r.sy, MAX_PLAYERS)
+        && (r.tags === undefined || (Array.isArray(r.tags) && r.tags.length <= GUILD_TAGS_MAX && r.tags.every((t) => typeof t === 'string' && GUILD_TAG.test(t))));
       if (!ok) return json({ error: 'bad report' }, 400);
       this.tally();
       this.countCharted(by);
@@ -915,11 +928,15 @@ export class Atlas {
       const inside = (v, s) => Number.isInteger(v) && fdiv(v, SECTOR) === s;
       const hot = Array.isArray(r.hot) && inside(r.hot[0], r.sx) && inside(r.hot[1], r.sy) ? r.hot.slice(0, 2) : old?.hot ?? null;
       this.rows.set(key, { sx: r.sx, sy: r.sy, players: r.players, charted: r.charted, done, hot, who: r.who ?? [], at: this.now() });
+      noteMates(this, key, r.who, this.now());  // who's online in each guild (survey-guild.js)
       if (!old || old.done !== done) this.save(key);
       // The list of addresses past the cap goes back only when it has
       // changed since this sector last heard it.
       const fresh = r.day === this.day && r.overAt === this.overList.length;
-      return json({ ...this.totals(), day: this.day, overAt: this.overList.length, ...(fresh ? {} : { over: this.overList.slice(-DAILY_LIST_MAX) }) });
+      return json({
+        ...this.totals(), day: this.day, overAt: this.overList.length, ...(fresh ? {} : { over: this.overList.slice(-DAILY_LIST_MAX) }),
+        ...(r.tags?.length ? { guilds: matesFor(this, r.tags, this.now(), ONLINE_MS) } : {}),
+      });
     }
     if (request.method === 'GET' && pathname === TOTALS_PATH) return json(this.totals());
     // Everyone on the surveyor list, rebuilt at most every LIST_MS (survey-social.js).

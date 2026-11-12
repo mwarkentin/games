@@ -181,6 +181,7 @@ The machines each page keeps:
 | | `claim` (each claim of ours; `el: null`, see `__lf.outbox()`) | queued, sent, unanswered, answered |
 | | `define` (each found word's meaning; `el: null`, see `__lf.definitions()`) | loading, ready, none, failed |
 | | `who` (the list of surveyors) | closed, loading, ready, refreshing, failed |
+| | `guild` (the guild you're in) | out, naming, making, invited, joining, in, leaving |
 | `letterfield-log.html` | `log` (what the page shows) | loading, ready, refreshing, stale, failed |
 | `letterfield-timelapse.html` | `tl` (the replay) | loading, empty, failed, paused, playing, waiting |
 | | `rec` (saving a video) | off, preparing, recording, done, failed |
@@ -547,13 +548,16 @@ per sector of the map, plus an Atlas for the world's totals
   `worker/test/survey.test.js` runs the game's own code against it, so
   change both.
 - Its list of surveyors and their emotes are `worker/src/survey-social.js`
-  ("Surveyors and emotes" in `worker/SURVEY.md`). Players are named by a hash
-  of a random token the game keeps (`letterfield.player.v1`), never their
-  address; emotes are a fixed set of drawings, and nothing anywhere is free
-  text.
+  ("Surveyors and emotes" in `worker/SURVEY.md`), and its guilds
+  `worker/src/survey-guild.js`, a Durable Object per guild ("Guilds").
+  Players are named by a hash of a random token the game keeps
+  (`letterfield.player.v1`), never their address; emotes are a fixed set of
+  drawings, guild names are words from fixed lists, and nothing anywhere is
+  free text. Guild invite links are `?guild=<code>`.
 - Game tests fake the survey with `page.route_web_socket` and
   `tests/fake_survey.py`; see `tests/test_letterfield_survey.py`, and
-  `tests/test_letterfield_surveyors.py` for the list and emotes. The real
+  `tests/test_letterfield_surveyors.py` for the list and emotes and
+  `tests/test_letterfield_guilds.py` for guilds. The real
   Worker's stand-in answers the survey with an empty fake too, and its
   Turnstile check with a fake widget and pass, so no test reaches
   challenges.cloudflare.com. `without_worker()` blanks `SURVEY_URL` along

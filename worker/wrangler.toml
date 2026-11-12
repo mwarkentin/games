@@ -61,6 +61,12 @@ class_name = "Sector"
 name = "ATLAS"
 class_name = "Atlas"
 
+# Letterfield's guilds: one Durable Object per guild, named by its code (see
+# "Guilds" in SURVEY.md).
+[[durable_objects.bindings]]
+name = "GUILDS"
+class_name = "Guild"
+
 # Migrations run once each, in order, and a deployed tag can't change: add a
 # new tag for each new class.
 [[migrations]]
@@ -70,6 +76,10 @@ new_sqlite_classes = ["WarRoom"]
 [[migrations]]
 tag = "v2"
 new_sqlite_classes = ["Sector", "Atlas"]
+
+[[migrations]]
+tag = "v3"
+new_sqlite_classes = ["Guild"]
 
 # Letterfield's survey limits each player's address, hashed with IP_SALT,
 # across every sector (see "Bots" in SURVEY.md). Counts are kept per
@@ -156,6 +166,10 @@ class_name = "Sector"
 [[previews.durable_objects.bindings]]
 name = "ATLAS"
 class_name = "Atlas"
+
+[[previews.durable_objects.bindings]]
+name = "GUILDS"
+class_name = "Guild"
 
 # Counted apart from production's (Previews share these). The same limits,
 # except claims: 60 a minute rather than 6, so a test can chart a whole

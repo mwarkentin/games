@@ -397,8 +397,8 @@ the game's 20 s are the knobs; past that, the push above.
 - **Off the list.** "Show me on the list" (`letterfield.listed.v1`) sends
   `hide: true`: the sector leaves you out of its reports, and you still show
   as a caret to anyone near you. Hidden players only take emotes from players
-  in their own sector, who can see the caret anyway, so an id saved from an
-  earlier day can't reach them from afar.
+  in their own sector, who can see the caret anyway, and from their guild, so
+  an id saved from an earlier day can't reach them from afar.
 - **No addresses.** The list and emotes carry ids, initials, territories and
   idle seconds. Hashed addresses stay in sectors, as before.
 
@@ -479,59 +479,116 @@ letters can spell, 32 in all. It stops there: every combination left out is
 someone's real initials. A sector blanks blocked initials, and the list
 shows a blank as "···".
 
-## Guilds: the options
+## Guilds
 
-Not built yet; this is the plan to choose from. A guild is a few players who
-want to find each other: mates first on the list, a note when one comes
-online, a badge on their carets.
+A guild is a few surveyors who want to find each other. Its members come
+first on the surveyor list (those online with where they are, the rest with
+when they were last seen), a note says when one comes online, and their
+carets wear the guild's colour. One guild at a time, joined only from an
+invite link. The code is `src/survey-guild.js`, hooks in `survey.js` and
+`survey-social.js`, and the Guilds section of `letterfield.html`.
 
-**What any option needs.**
+### Why these guilds
 
-- **An identity that lasts.** The token above, which already exists. On an
-  iPhone the Home Screen app is a separate player, so it joins by link too.
-- **Joining by invite link or code only.** Nobody browses guilds.
-- **No free text.** Leaderboard groups have names players type, shown only to
-  members; on carets and lists they'd be in front of everyone.
-
-**The options.**
-
-| | (a) leaderboard groups | (b) Letterfield guilds | (c) follows |
+| | (a) leaderboard groups | (b) Letterfield guilds (chosen) | (c) follows |
 | --- | --- | --- | --- |
-| what | a group from `/v1/groups` is a guild; `games.groups` says which | one guild each, its own code (6 characters), a name made from fixed words ("Cobalt Compass Society") and a colour | follow a player from the list, on your device only; no shared group |
-| for | already exists, codes and `?join=` links work; a family's board doubles as its guild | one badge per caret; no typed names; a roster to cap and to keep last seen in; room for a guild view in the log | no server state at all; the list already has everything |
-| against | typed names; a player in five groups is in five guilds (which badge?); groups keep no members, so no last seen; joining a War board would make you a guild mate here | new endpoints and an object per guild | one-sided (you follow someone who doesn't know); no badge; not really a guild |
+| what | a group from `/v1/groups` is a guild; `games.groups` says which | one guild each, its own code, a name made from fixed words and a colour | follow a player from the list, on your device only |
+| for | already exists, codes and `?join=` links work | one badge per caret; no typed names; a roster to cap and to keep "last seen" in | no server state at all |
+| against | typed names in front of everyone; a player in five groups is in five guilds; groups keep no members, so no last seen; joining a War board would make you a guild mate here | new endpoints and an object per guild | one-sided; no badge; not really a guild |
 
-**Recommended: (b).** Each piece:
+### What a guild is
 
-- **Membership** lives in a Durable Object per guild (`Guild`, keyed by its
-  code): name, colour, and up to 50 members with their initials and when they
-  were last seen. `POST /v1/survey/guilds` makes one (5 an hour per address),
-  `?guild=<code>` joins (20 an hour per address), and leaving is one tap. The
-  game keeps its guild's code (`letterfield.guild.v1`) and sends it in `me`;
-  the sector asks the guild's object once per socket whether the id is a
-  member, so a code alone doesn't put a badge on anyone.
-- **Online notes in the game** ride on the reports: a report's surveyors carry
-  their guild, and the Atlas's answer lists, for each guild in that sector,
-  which of its members are online and where. The sector passes that to its
-  members when it changes, and the game says "ABC came online". No extra
-  requests.
-- **Web Push while the game is closed: not now.** It needs VAPID keys made in
-  mwarkentin/infra, a subscription per player in D1, payloads encrypted in
-  the Worker (`aes128gcm` with Web Crypto), a `push` handler in `sw.js` and a
-  permission prompt; on an iPhone it only works from the Home Screen app.
-  Sending is cheap, but it's the most code and the most to get wrong, for
-  "come and play" rather than "they're here while you are". Worth it once
-  guilds are in use.
-- **The list:** online mates first, wherever they are, then everyone nearest;
-  offline mates under them with "last seen", from the guild's roster, which
-  the Atlas updates as a member drops off.
+- **A Durable Object per guild** (`Guild`, named by its code), with its own
+  SQLite storage: a name, a random tag, and up to 50 members, each with their
+  initials and when they joined and were last seen. Its tables are made when
+  it's created and dropped when its last member leaves, so a wrong guess at a
+  code stores nothing and an ended guild's code is free again.
+- **No free text.** A name is three words from the game's lists: 16 colours,
+  16 instruments and 8 kinds of company ("Cobalt Compass Society"), 2,048
+  names in all, drawn at random until the founder likes one. The Worker keeps
+  only the three numbers (`GUILD_WORDS` says how long each list is, and a test
+  checks the game's lists agree). The colour is the first word's.
+- **The code is the key.** Six characters from the groups' alphabet (887
+  million codes), passed in an invite link (`?guild=<code>`), which the game
+  reads once and takes off the address. Everyone else only ever sees the
+  guild's **tag**, a random id that says which carets share a guild and
+  nothing more.
+
+```
+POST /v1/survey/guilds                 {token, initials, name: [a, b, c]} → 201 {code, name, tag, members}
+GET  /v1/survey/guilds/<code>          → {name, size}, for an invite to say what it's to
+POST /v1/survey/guilds/<code>/join     {token, initials} → {code, name, tag, members}
+POST /v1/survey/guilds/<code>/leave    {token} → {ok: true}; the last to leave ends it
+POST /v1/survey/guilds/<code>/roster   {token} → {code, name, tag, members}, members only
+  members: [[id, initials, seen], ...], most recently seen first
+```
+
+Players are named by their token, as everywhere in the survey, so nobody can
+join, leave or read a roster as someone else. A roster asked for by someone
+who isn't a member gets the same answer as a guild that doesn't exist.
+
+### Membership in the sectors
+
+- **Checked by the guild.** The game sends its guild's code in its `me`
+  message. The sector asks the guild (`POST /check`, internal) whether the
+  player is a member, and only then puts the guild's tag on their socket, so
+  knowing a code isn't enough to wear a guild's colour. It asks again every
+  15 minutes while they play, which takes the tag off anyone who has left and
+  keeps their "last seen" current (written at most every 10 minutes).
+- **On the map.** Presence gives each player's tag; the game draws a dot in
+  the guild's colour on top of a mate's caret (a ring when zoomed out), and
+  their hover card names the guild. Other guilds' tags mean nothing to it.
+- **Off the list, but not to your guild.** A hidden member stays out of the
+  public list but is still reported to their guild (flagged `FLAG_HIDDEN`),
+  and takes emotes from mates anywhere: an emote carries its sender's tag.
+
+### Who's online rides on the reports
+
+Each report's surveyors carry their guild's tag, and the report lists the
+guilds of everyone in the sector. The Atlas keeps who's online in each guild,
+replaced sector by sector as reports come in, and answers each report with
+the online members of the guilds that sector asked about. The sector passes
+`{t: 'guild', tag, on}` to its members whenever that changes. Idle time is
+coarse in it (active, under a minute, then whole minutes), so it changes when
+someone arrives, moves territory, leaves or idles another minute, not with
+every report. It costs no requests of its own.
+
+- **How soon:** within a report of the member's sector and of yours: 10 s
+  while they're busy, up to about a minute when they're still.
+- **In the game:** the first word after you arrive just says who's here;
+  anyone new after that gets a note ("ZED came online", with **Fly there**),
+  at most once in 10 minutes each.
+- **Outside the shared world** sectors don't report, so a member out there
+  shows as offline, with when they were last seen.
+
+### Cost
+
+- **The guild's object** is asked when a member makes, joins or leaves a
+  guild, opens a socket while in one (about 10 an hour while roaming) and
+  every 15 minutes while they play; and for the roster when the list opens,
+  then at most once a minute while it's open.
+- **Rows written:** "last seen" at most every 10 minutes per member playing.
+- **At 10,000 online with 3,000 in guilds:** about 42,000 checks an hour
+  (~$0.15 a day) and a few thousand roster reads (pennies). At 1,000 online,
+  a few cents a day. The online word rides on reports and frames that were
+  free already.
+- **Limits:** 50 members a guild; 5 new guilds and 20 joins an hour per
+  address, counted in D1 like new groups.
+
+### Left for later
+
+- **Web Push while the game is closed.** It needs VAPID keys made in
+  mwarkentin/infra, a subscription per player in D1, payloads encrypted in the
+  Worker (`aes128gcm` with Web Crypto), a `push` handler in `sw.js` and a
+  permission prompt; on an iPhone only the Home Screen app gets it. Worth it
+  once guilds are in use.
 - **A guild view in the log:** the guild's words charted needs each claim's
   guild in the log (a column and an index, written by the sector, which knows
-  it at claim time). Later.
-- **Limits and cost:** 50 members and one guild per player keep every roster
-  small. The guild's object is asked on joins, leaves and each socket's first
-  `me`; online notes cost nothing new; "last seen" is one write per member per
-  visit.
+  it at claim time).
+- **Running a guild.** There's no founder or removing a member: anyone can
+  mute anyone, or leave and start another.
+- **One guild at a time** is the game's rule; the Worker doesn't know a
+  player's other guilds, so two devices could join two.
 
 ## The log
 
@@ -1141,7 +1198,8 @@ Usage per player-hour, from the design and the 700-player run:
 | the ceiling: `MAX_ONLINE` (25,000) online all the time | 25,000 an hour | ~$0.22/h | ~$0.40/h | ~$0.11/h | **at most ~$0.75 an hour (~$18 a day)** |
 
 The surveyor list and emotes add about $1.50 a day at 10,000 online (see
-"Surveyors and emotes"), mostly the list's own requests. The per-address
+"Surveyors and emotes"), mostly the list's own requests, and guilds about
+$0.30 more (see "Guilds"). The per-address
 limits don't change these figures. A rate-limiting binding
 isn't a Durable Object, so it adds no Durable Object requests, and neither
 pricing page lists a charge for it. The hashed address is worked out once
@@ -1232,7 +1290,7 @@ about 30 cents over the included million requests.
 - **Reporting a player.** There's nothing to report but three letters, which
   `BLOCKED_INITIALS` screens, and seven drawings; mute is on the device. A
   muted player with a new token is a new id, held back only by the limits.
-- **Guilds.** See "Guilds: the options".
+- **Guilds:** see "Left for later" under "Guilds".
 - **Finds made offline stay personal.** Uploading them later would let
   anyone backdate a pile of claims at once.
 

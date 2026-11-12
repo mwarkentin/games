@@ -303,7 +303,30 @@ html[data-who="loading"] .who-status{animation:blink 1s infinite alternate}
 .emote:disabled{opacity:.35;cursor:default}
 .who-said{margin:7px 0 0;font:400 11px/1.4 var(--f-mono);color:var(--muted)}
 .who-said:empty{display:none}
-.who-mute,.who-more{font:500 11px/1 var(--f-mono);padding:8px 11px;border:1px solid var(--rule);border-radius:999px;background:transparent;color:var(--ink);cursor:pointer}
+.who-mute,.who-more,.pill{font:500 11px/1 var(--f-mono);padding:8px 11px;border:1px solid var(--rule);border-radius:999px;background:transparent;color:var(--ink);cursor:pointer}
+.pill:disabled{opacity:.5;cursor:default}
+/* Guilds: the card for yours at the top of the list, and a mark for mates (see Guilds). */
+.guild{margin:8px 0 4px;padding:9px 10px 10px;border:1px solid var(--rule);border-radius:7px}
+.guild p{margin:0 0 8px;font-size:12.5px;line-height:1.45;color:var(--muted)}
+.guild .guild-small{margin:8px 0 0;font-size:11.5px}
+.guild .guild-small:empty{display:none}
+.guild-name{display:flex;align-items:center;gap:8px;margin:0 0 6px;font:700 17px/1.1 var(--f-display);letter-spacing:.06em;text-transform:uppercase;color:var(--ink)}
+.guild-name i,.guild-dot{flex:none;width:10px;height:10px;border-radius:50%;background:hsl(var(--gh) var(--mark-s) var(--mark-l));box-shadow:0 0 0 3px hsl(var(--gh) var(--mark-s) var(--mark-l) / .22)}
+.guild .guild-meta{margin:-2px 0 8px 18px;font:400 10.5px/1.3 var(--f-mono)}
+.guild-err{color:var(--danger)!important}
+.guild-acts{display:flex;flex-wrap:wrap;align-items:center;gap:6px}
+.guild-acts .btn{padding:8px 12px}
+.toast i.guild-dot{width:10px;height:10px;border-radius:50%;background:hsl(var(--gh) var(--mark-s) var(--mark-l))}
+.who-head{display:flex;align-items:center;gap:7px;margin:10px 6px 2px;font:500 10px/1.2 var(--f-mono);letter-spacing:.12em;text-transform:uppercase;color:var(--muted)}
+.who-row.away .who{cursor:default}
+.who-row.away .who:hover{background:transparent}
+.who-row.away .who-ini,.who-row.away .who-where{color:var(--muted)}
+.who-ini .guild-dot{display:inline-block;width:7px;height:7px;margin-left:6px;vertical-align:middle;box-shadow:none}
+.who-head .guild-dot{width:8px;height:8px;box-shadow:none}
+.guild-invite p{margin:0 0 10px;font-size:13.5px;line-height:1.5}
+.guild-invite .eyebrow{margin-bottom:8px}
+.guild-invite .btn.ghost{background:transparent;color:var(--ink);border:1px solid var(--rule)}
+.guild-invite .coach-row{justify-content:flex-end}
 .who-mute{margin-top:8px}
 .who-more{display:block;margin:6px auto 0}
 .who-opts{display:flex;flex-wrap:wrap;gap:0 16px;margin-top:10px;padding-top:6px;border-top:1px solid var(--rule)}
@@ -517,6 +540,7 @@ body.settling, body.settling *{transition:none!important}
     </details>
     <details class="survey-map survey-who" id="surveyWho">
       <summary>Surveyors <span class="who-count" id="whoCount"></span></summary>
+      <div class="guild" id="guildCard"></div>
       <p class="who-status" id="whoStatus" aria-live="polite"></p>
       <ol class="who-list" id="whoList" aria-label="Surveyors in the shared world, nearest first"></ol>
       <button type="button" class="who-more" id="whoMore" hidden>Show more</button>
@@ -552,6 +576,8 @@ body.settling, body.settling *{transition:none!important}
   <p><strong>Every territory hides its own words</strong>, running in all eight directions. Tap a word's first letter, then its last, to circle it. Drag to wander; the grid never ends.</p>
   <div class="coach-row"><kbd>Shift-drag also circles</kbd><button type="button" class="btn" id="coachOk">Start exploring</button></div>
 </div>
+
+<div class="coach card guild-invite" id="guildInvite" role="dialog" aria-labelledby="guildInviteName" hidden></div>
 
 <form class="coach card signup" id="signup" hidden>
   <label for="signupInitials"><span id="signupHow"><strong>Every territory hides its own words</strong>, in all eight directions: tap a word's first letter, then its last, to circle it. Everyone charts this map together, so pick initials to sign the ones you find first.</span><span id="signupOnly" hidden><strong>Pick your initials to start.</strong> Everyone charts this map together, and every word you find first is signed with them.</span></label>
@@ -1542,8 +1568,8 @@ function onSurvey(l, m) {
     l.counted = p.some(self);
     l.here = p.filter(q => !self(q) && !ids.has(q[0]) && ids.add(q[0]));
     seekSurveyor();
-  } else if (m.t === 'emote' || m.t === 'emoted') {
-    return onSocial(l, m);
+  } else if (m.t === 'emote' || m.t === 'emoted' || m.t === 'guild') {
+    return m.t === 'guild' ? onGuild(m) : onSocial(l, m);
   } else return;
   renderSurvey(); scheduleHud(); invalidate();
 }
@@ -2976,7 +3002,8 @@ function draw(now) {
   // view, like someone else's cursor (a dot when zoomed out), and never text on
   // the letters. It eases toward each new position; idle surveyors fade.
   const seen = new Set();
-  for (const l of links.values()) for (const [id, ini, gx, gy] of l.here) {
+  const mateHue = myGuild ? guildHue(myGuild.name) : null;
+  for (const l of links.values()) for (const [id, ini, gx, gy, tag] of l.here) {
     if (muted.has(id)) continue;  // hidden on this device (see Surveyors)
     seen.add(id);
     let gh = ghosts.get(id);
@@ -2995,9 +3022,22 @@ function draw(now) {
     if (px < -40 || px > W + 40 || py < -20 || py > H + 20) continue;
     ctx.globalAlpha = 1 - .65 * clamp((now - gh.moved - IDLE_MS) / 2000, 0, 1);
     ctx.fillStyle = `hsl(${gh.hue}, ${C.ms}, ${C.ml})`;
-    if (cs < LETTER_MIN) { ctx.beginPath(); ctx.arc(px, py, 3, 0, Math.PI * 2); ctx.fill(); continue; }
+    // A mate's caret wears their guild's colour, as a dot on top (a ring when zoomed out).
+    const mate = mateHue !== null && tag === myGuild.tag;
+    gh.mate = mate;
+    if (cs < LETTER_MIN) {
+      ctx.beginPath(); ctx.arc(px, py, 3, 0, Math.PI * 2); ctx.fill();
+      if (mate) { ctx.strokeStyle = `hsl(${mateHue}, ${C.ms}, ${C.ml})`; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.arc(px, py, 5.5, 0, Math.PI * 2); ctx.stroke(); }
+      continue;
+    }
     const w = clamp(cs * .07, 2, 3), h = cs * .66;
     ctx.fillRect(SX(Math.round(gh.x)) - w / 2, SY(Math.floor(gh.y) + .5) - h / 2, w, h);
+    if (mate) {
+      const r = clamp(cs * .09, 2.5, 4);
+      ctx.beginPath(); ctx.arc(SX(Math.round(gh.x)), SY(Math.floor(gh.y) + .5) - h / 2 - r - 1, r, 0, Math.PI * 2);
+      ctx.fillStyle = `hsl(${mateHue}, ${C.ms}, ${C.ml})`; ctx.fill();
+      ctx.lineWidth = 1.2; ctx.strokeStyle = C.paper; ctx.stroke();
+    }
   }
   ctx.globalAlpha = 1;
   for (const id of ghosts.keys()) if (!seen.has(id)) ghosts.delete(id);
@@ -3332,7 +3372,7 @@ function peekAt(px, py) {
     if (d < nd) { nd = d; near = gh; }
   }
   if (near) {
-    html = `<i></i><b>${near.ini || 'A surveyor'}</b><span>${now - near.moved > IDLE_MS ? 'idle' : 'surveying here'} · right-click for emotes</span>`;
+    html = `<i></i><b>${near.ini || 'A surveyor'}</b><span>${near.mate ? `${guildName(myGuild.name)} · ` : ''}${now - near.moved > IDLE_MS ? 'idle' : 'surveying here'} · right-click for emotes</span>`;
     hue = near.hue;
   } else {
     const x = Math.floor(w.x), y = Math.floor(w.y);
@@ -4005,6 +4045,7 @@ function showIntro(to, from) {
   }
   if (from === 'sign' && document.activeElement === signupInput) signupInput.blur();
   if (from) LS.set(K_COACH, '1');
+  if (from) renderGuild();  // an invite waits for this card to go (see Guilds)
 }
 $('#coachOk').addEventListener('click', () => { if (Intro.is('coach')) Intro.go('exploring'); });
 
@@ -4100,7 +4141,7 @@ let listedOn = LS.get(K_LISTED) !== '0', emotesOn = LS.get(K_EMOTES) !== '0';
 const muted = new Set(readList(K_MUTED).filter(p => typeof p === 'string' && PID_RE.test(p)).slice(-MUTED_MAX));
 // What every sector is told about us when it's joined, and again when any of it changes.
 function meMessage() {
-  return { t: 'me', initials: myInitials(), ...(playerToken ? { token: playerToken } : {}), ...(listedOn ? {} : { hide: true }), ...(emotesOn ? {} : { quiet: true }) };
+  return { t: 'me', initials: myInitials(), ...(playerToken ? { token: playerToken } : {}), ...(listedOn ? {} : { hide: true }), ...(emotesOn ? {} : { quiet: true }), ...(myGuild ? { guild: myGuild.code } : {}) };
 }
 const tellMe = () => { for (const l of links.values()) tell(l, meMessage()); };
 // A caret's colour, from its id, as the map draws it.
@@ -4149,6 +4190,7 @@ function whoMoved(to) {
   }
   if (to === 'closed') whoOpen = '';
   renderWho();
+  if (to === 'ready' && myGuild) renderGuild();  // its count of mates online takes in the list (see Guilds)
 }
 function syncWho() {
   const want = !!surveyApi && notesOpen && whoEl.open && !surveyPaused;
@@ -4156,6 +4198,7 @@ function syncWho() {
   else if (!want && !Who.is('closed')) Who.go('closed');
 }
 async function fetchWho() {
+  if (myGuild && (Who.is('loading') || Date.now() - rosterAt >= ROSTER_MS)) fetchRoster();  // mates and when they were last seen (see Guilds)
   const at = Who.seq, [rx, ry] = camTerr(), ctl = new AbortController(), timer = setTimeout(() => ctl.abort(), 6000);
   const url = page => `${surveyHttp}/v1/survey/surveyors?r=${rx},${ry}&page=${page}${myPid ? '&me=' + myPid : ''}`;
   try {
@@ -4199,16 +4242,16 @@ function renderWho() {
   whoMore.hidden = !(whoData && whoData.more) || whoPages >= LIST_PAGES;
   // Rows are drawn afresh; whatever had focus gets it back.
   const f = document.activeElement, k = f && whoList.contains(f) ? f.dataset.k : '';
-  whoList.innerHTML = whoData ? sortedWho().map(whoRow).join('') : '';
+  whoList.innerHTML = whoListHtml();  // mates first, when we're in a guild (see Guilds)
   if (k) { const el = whoList.querySelector(`[data-k="${k}"]`); if (el) try { el.focus({ preventScroll: true }); } catch (_) {} }
 }
-function whoRow(s) {
+function whoRow(s, mate = false) {
   const th = THEMES[regionTheme(s.rx, s.ry)], name = regionName(s.rx, s.ry), m = muted.has(s.pid), open = whoOpen === s.pid;
   const who = s.ini || 'A surveyor', idle = s.idle + Math.round((Date.now() - s.at) / 1000);
   const meta = `${away(s.rx, s.ry)} · ${m ? 'muted' : idleText(idle)}${s.quiet && !m ? ' · no emotes' : ''}`;
   return `<li class="who-row${m ? ' muted' : ''}">` +
     `<button type="button" class="who mark" data-pid="${s.pid}" data-k="${s.pid}:fly" style="--h:${th.hue};--g:${hueOf(s.pid)}" aria-label="${who}, ${name}, ${meta}. Fly there">` +
-    `<span class="who-caret" aria-hidden="true"></span><b class="who-ini">${s.ini || '···'}</b><span class="who-where"><i aria-hidden="true"></i><span>${name}</span></span><span class="who-meta">${meta}</span></button>` +
+    `<span class="who-caret" aria-hidden="true"></span><b class="who-ini">${s.ini || '···'}${mate && myGuild ? `<i class="guild-dot" style="--gh:${guildHue(myGuild.name)}" title="In your guild"></i>` : ''}</b><span class="who-where"><i aria-hidden="true"></i><span>${name}</span></span><span class="who-meta">${meta}</span></button>` +
     `<button type="button" class="who-act" data-pid="${s.pid}" data-k="${s.pid}:act" aria-expanded="${open}"${open ? ` aria-controls="emo-${s.pid}"` : ''} aria-label="Emotes for ${who}" title="Emotes for ${who}">${emoteSvg(EMOTE_BY.wave)}</button>` +
     (open ? whoPanel(s, who, m) : '') + '</li>';
 }
@@ -4220,7 +4263,7 @@ function whoPanel(s, who, m) {
     `<button type="button" class="who-mute" data-pid="${s.pid}" data-k="${s.pid}:mute">${m ? 'Unmute' : 'Mute'} ${who}</button></div>`;
 }
 whoList.addEventListener('click', e => {
-  const b = e.target.closest('button'), s = b && whoData && whoData.who.find(q => q.pid === b.dataset.pid);
+  const b = e.target.closest('button'), s = b && whoFind(b.dataset.pid);
   if (!s) return;
   if (b.classList.contains('who')) flyToSurveyor(s);
   else if (b.classList.contains('who-act')) { whoOpen = whoOpen === s.pid ? '' : s.pid; whoSaid.delete(s.pid); renderWho(); }
@@ -4289,7 +4332,7 @@ function said(pid, text) {
 function onSocial(l, m) {
   if (m.t === 'emoted') {
     if (typeof m.to !== 'string' || !PID_RE.test(m.to)) return;
-    const em = EMOTE_BY[m.e], s = whoData && whoData.who.find(q => q.pid === m.to), who = (s && s.ini) || 'they';
+    const em = EMOTE_BY[m.e], s = whoFind(m.to), who = (s && s.ini) || 'they';
     const They = who === 'they' ? 'They' : who;
     const why = { 'slow down': 'Too quick: try again in a moment.', gone: `${They} moved on.`, off: `${They} isn’t taking emotes.`, busy: `${They} had plenty of emotes just now: try again soon.`, 'sign first': 'Sign your initials first, in the survey panel above.' };
     if (m.ok && em) {
@@ -4433,6 +4476,272 @@ function renderWhoIfMoved() {
 }
 if (surveyApi) renderWho();
 
+/* ---------- Guilds ---------- */
+// A guild is a few surveyors who find each other: mates first on the list,
+// with when the others were last seen, a note when one comes online and a
+// mark on their carets (see "Guilds" in worker/SURVEY.md). One guild at a
+// time, joined only from an invite link (?guild=<code>). Its name is three
+// words from these lists, never typed, and its colour comes from the first:
+// the Worker keeps only their numbers (GUILD_WORDS in worker/src/survey-guild.js
+// says how long each list is, and a test checks they agree).
+const GUILD_FIRST = [['Crimson', 350], ['Coral', 8], ['Copper', 22], ['Amber', 38], ['Golden', 50], ['Lime', 85], ['Fern', 115], ['Emerald', 145],
+  ['Jade', 165], ['Teal', 182], ['Azure', 200], ['Cobalt', 220], ['Indigo', 245], ['Violet', 270], ['Plum', 295], ['Rose', 325]];
+const GUILD_SECOND = ['Compass', 'Sextant', 'Lantern', 'Quill', 'Atlas', 'Meridian', 'Beacon', 'Theodolite', 'Chart', 'Lodestar', 'Spyglass', 'Waypoint', 'Ledger', 'Inkwell', 'Horizon', 'Contour'];
+const GUILD_THIRD = ['Society', 'Guild', 'Company', 'Circle', 'Club', 'Expedition', 'Survey', 'Fellowship'];
+const K_GUILD = 'letterfield.guild.v1', GUILD_CODE_RE = /^[A-HJKMNP-Z2-9]{6}$/, NOTE_AGAIN_MS = 10 * 60000;
+const goodName = n => Array.isArray(n) && n.length === 3 && [GUILD_FIRST, GUILD_SECOND, GUILD_THIRD].every((list, i) => Number.isInteger(n[i]) && n[i] >= 0 && n[i] < list.length);
+const guildName = n => `${GUILD_FIRST[n[0]][0]} ${GUILD_SECOND[n[1]]} ${GUILD_THIRD[n[2]]}`;
+const guildHue = n => GUILD_FIRST[n[0]][1];
+const randomName = () => [GUILD_FIRST, GUILD_SECOND, GUILD_THIRD].map(list => Math.floor(Math.random() * list.length));
+// The guild we're in, kept on this device: {code, name, tag}.
+let myGuild = (() => {
+  try { const g = JSON.parse(LS.get(K_GUILD) || 'null'); return g && GUILD_CODE_RE.test(g.code) && goodName(g.name) && /^[0-9a-f]{8}$/.test(g.tag) ? g : null; } catch (_) { return null; }
+})();
+let draftName = randomName(), guildError = '', askLeave = false, invite = null, guildHeard = false;
+let mates = new Map();      // id → {pid, ini, rx, ry, idle, at}: who of our guild is online, as our sectors last said
+let roster = [], rosterAt = 0;  // [{pid, ini, seen}]: every member, from the guild itself, fetched with the list
+const ROSTER_MS = 60000;    // as the list refreshes, the roster comes again at most this often
+const noted = new Map();    // id → when we last said they came online
+// The guild we're in, shown on <html data-guild>: out of one, naming a new
+// one (the name can be drawn again), making it, invited by a link (looking it
+// up and asking), joining, in one, or leaving. A reply that comes back after
+// we've moved on is dropped.
+const Membership = machine('guild', {
+  out: ['naming', 'invited'],
+  naming: ['making', 'out', 'invited'],
+  making: ['in', 'naming'],
+  invited: ['joining', 'out', 'in'],
+  joining: ['in', 'invited'],
+  in: ['leaving', 'invited', 'out'],
+  leaving: ['out', 'in'],
+}, myGuild ? 'in' : 'out', { onMove: guildMoved });
+function guildMoved(to, from) {
+  if (to !== 'in') askLeave = false;
+  if (from === 'in' || to === 'in' || to === 'out') { mates = new Map(); guildHeard = false; tellMe(); }
+  if (to === 'in' && Who.is('ready')) Who.go('refreshing');
+  renderGuild(); renderWho(); invalidate();
+}
+function saveGuild(g) {
+  myGuild = g;
+  if (g) LS.set(K_GUILD, JSON.stringify(g)); else try { localStorage.removeItem(K_GUILD); } catch (_) {}
+}
+// The Worker's guild paths: JSON sent as text/plain, so no preflight, as the leaderboards do.
+async function guildCall(path, body) {
+  const ctl = new AbortController(), timer = setTimeout(() => ctl.abort(), 8000);
+  try {
+    const res = await fetch(`${surveyHttp}/v1/survey/guilds${path}`, body === undefined ? { signal: ctl.signal } : { method: 'POST', headers: { 'Content-Type': 'text/plain' }, body: JSON.stringify(body), signal: ctl.signal });
+    const data = await res.json().catch(() => ({}));
+    return { status: res.status, data };
+  } catch (_) {
+    return { status: 0, data: {} };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+const goodGuild = d => d && GUILD_CODE_RE.test(d.code) && goodName(d.name) && /^[0-9a-f]{8}$/.test(d.tag);
+function takeRoster(members) {
+  roster = (Array.isArray(members) ? members : []).filter(m => Array.isArray(m) && typeof m[0] === 'string' && PID_RE.test(m[0]) && Number.isFinite(m[2]))
+    .map(m => ({ pid: m[0], ini: typeof m[1] === 'string' && /^[A-Z]{3}$/.test(m[1]) ? m[1] : '', seen: m[2] }));
+}
+async function startGuild() {
+  if (!Membership.is('naming')) return;
+  if (!myInitials()) { guildError = 'Sign your initials first, in the survey panel above.'; return renderGuild(); }
+  const at = Membership.seq;
+  Membership.go('making');
+  const { status, data } = await guildCall('', { token: playerToken, initials: myInitials(), name: draftName });
+  if (Membership.seq !== at + 1 || !Membership.is('making')) return;
+  if (status === 201 && goodGuild(data)) {
+    saveGuild({ code: data.code, name: data.name, tag: data.tag });
+    takeRoster(data.members);
+    guildError = '';
+    return Membership.go('in');
+  }
+  guildError = status === 429 ? 'Too many new guilds from this network: try again in an hour.' : 'Couldn’t start it. Try again in a moment.';
+  Membership.go('naming');
+}
+// An invite link: what the guild is, then whether to join it.
+async function lookUpInvite(code) {
+  invite = { code, name: null, size: 0, error: '' };
+  Membership.go('invited');
+  const at = Membership.seq;
+  const { status, data } = await guildCall(`/${code}`);
+  if (Membership.seq !== at || !invite || invite.code !== code) return;
+  if (status === 200 && goodName(data.name)) Object.assign(invite, { name: data.name, size: Number.isInteger(data.size) ? data.size : 0 });
+  else invite.error = status === 404 ? 'That invite isn’t good any more: its guild has ended.' : 'Couldn’t look up that invite.';
+  renderGuild();
+}
+async function joinInvite() {
+  if (!Membership.is('invited') || !invite || !invite.name) return;
+  if (!myInitials()) { invite.error = 'Pick your initials first.'; return renderGuild(); }
+  const left = myGuild, code = invite.code;
+  Membership.go('joining');
+  const at = Membership.seq;
+  const { status, data } = await guildCall(`/${code}/join`, { token: playerToken, initials: myInitials() });
+  if (Membership.seq !== at) return;
+  if (status === 200 && goodGuild(data)) {
+    if (left && left.code !== data.code) guildCall(`/${left.code}/leave`, { token: playerToken });  // one guild at a time
+    saveGuild({ code: data.code, name: data.name, tag: data.tag });
+    takeRoster(data.members);
+    invite = null;
+    toast(`<i class="guild-dot" style="--gh:${guildHue(data.name)}"></i><b class="wraps">${guildName(data.name)}</b><span>You’re in: your mates come first under Surveyors</span>`, null, 4000);
+    return Membership.go('in');
+  }
+  invite.error = status === 409 ? 'That guild is full.' : status === 429 ? 'Too many guilds joined from this network: try again later.' : 'Couldn’t join. Try again in a moment.';
+  Membership.go('invited');
+}
+function dismissInvite() {
+  if (!Membership.is('invited')) return;
+  invite = null;
+  Membership.go(myGuild ? 'in' : 'out');
+}
+async function leaveGuild() {
+  if (!Membership.is('in') || !myGuild) return;
+  const g = myGuild;
+  Membership.go('leaving');
+  const at = Membership.seq;
+  const { status } = await guildCall(`/${g.code}/leave`, { token: playerToken });
+  if (Membership.seq !== at) return;
+  if (status === 200) { saveGuild(null); roster = []; return Membership.go('out'); }
+  guildError = 'Couldn’t leave just now. Try again in a moment.';
+  Membership.go('in');
+}
+async function shareInvite() {
+  if (!myGuild) return;
+  const url = `${location.origin}${location.pathname}?guild=${myGuild.code}`, name = guildName(myGuild.name);
+  const done = text => { guildError = ''; const el = $('#guildSaid'); if (el) el.textContent = text; say(text); };
+  try {
+    if (navigator.share) { await navigator.share({ title: `The ${name}`, text: `Join the ${name} in Letterfield`, url }); return; }
+  } catch (e) { if (e && e.name === 'AbortError') return; }
+  try { await navigator.clipboard.writeText(url); done('Invite link copied: send it to whoever you’d like to join.'); }
+  catch (_) { done(url); }
+}
+// The roster, fetched with the list while it's open: who's in the guild, and when each was last seen.
+async function fetchRoster() {
+  if (!myGuild) return;
+  const g = myGuild;
+  rosterAt = Date.now();
+  const { status, data } = await guildCall(`/${g.code}/roster`, { token: playerToken });
+  if (myGuild !== g) return;
+  if (status === 200) { takeRoster(data.members); renderGuild(); renderWho(); }
+  else if (status === 404 && Membership.is('in')) {
+    // The guild doesn't have us any more (it ended, or we left from another device).
+    saveGuild(null); roster = [];
+    toast(`<i class="guild-dot" style="--gh:${guildHue(g.name)}"></i><b class="wraps">${guildName(g.name)}</b><span>You’re not in this guild any more</span>`, null, 4000);
+    Membership.go('out');
+  }
+}
+// Who of our guild is online, from a sector ({t: 'guild', tag, on}); anyone
+// who wasn't before gets a note, at most once in NOTE_AGAIN_MS each. The first
+// word after we arrive just says who's already here.
+function onGuild(m) {
+  if (!myGuild || m.tag !== myGuild.tag || !Array.isArray(m.on)) return;
+  const now = Date.now(), next = new Map();
+  for (const e of m.on) {
+    if (!Array.isArray(e) || typeof e[0] !== 'string' || !PID_RE.test(e[0]) || ![e[2], e[3], e[4]].every(Number.isInteger)) continue;
+    next.set(e[0], { pid: e[0], ini: typeof e[1] === 'string' && /^[A-Z]{3}$/.test(e[1]) ? e[1] : '', rx: e[2], ry: e[3], idle: e[4], at: now });
+  }
+  const arrived = guildHeard ? [...next.values()].filter(s => !mates.has(s.pid) && s.pid !== myPid && !muted.has(s.pid) && now - (noted.get(s.pid) || 0) > NOTE_AGAIN_MS) : [];
+  mates = next;
+  guildHeard = true;
+  if (arrived.length) {
+    for (const s of arrived) noted.set(s.pid, now);
+    const s = arrived[0], who = s.ini || 'A mate', more = arrived.length - 1;
+    toast(`<i class="guild-dot" style="--gh:${guildHue(myGuild.name)}"></i><b class="wraps">${who}${more ? ` and ${more} more` : ''} came online</b><span>${regionName(s.rx, s.ry)} · ${away(s.rx, s.ry)}</span>`, null, 4000,
+      { label: `Fly to ${who}`, text: 'Fly there', icon: FLY_ICON, share: () => { hideToast(); flyToSurveyor(s); } });
+  }
+  renderGuild(); renderWho(); invalidate();
+}
+// Mates for the list: online ones (from our sectors, or from the public list,
+// which may have them first), and the rest of the roster with when they were seen.
+function guildMates() {
+  const online = new Map(mates);
+  const inRoster = new Set(roster.map(m => m.pid));
+  if (whoData) for (const s of whoData.who) if (inRoster.has(s.pid) && !online.has(s.pid)) online.set(s.pid, s);
+  online.delete(myPid);
+  const offline = roster.filter(m => !online.has(m.pid) && m.pid !== myPid).sort((a, b) => b.seen - a.seen);
+  return { online: [...online.values()], offline, all: new Set([...inRoster, ...online.keys()]) };
+}
+const seenText = t => { const s = Math.max(0, (Date.now() - t) / 1000); return s < 120 ? 'just now' : s < 3600 ? `${Math.floor(s / 60)}m ago` : s < 172800 ? `${Math.floor(s / 3600)}h ago` : `${Math.floor(s / 86400)}d ago`; };
+// The list with mates on top: the guild's heading, mates online nearest first,
+// then the others with when they were last seen, then everyone else.
+function whoListHtml() {
+  const pub = whoData ? sortedWho() : [];
+  if (!myGuild || !Membership.is('in', 'leaving', 'invited', 'joining')) return pub.map(whoRow).join('');
+  const { online, offline, all } = guildMates(), [cx, cy] = camTerr();
+  const d = s => Math.max(Math.abs(s.rx - cx), Math.abs(s.ry - cy));
+  online.sort((a, b) => d(a) - d(b) || a.idle - b.idle);
+  const rest = pub.filter(s => !all.has(s.pid));
+  const mark = `<i class="guild-dot" style="--gh:${guildHue(myGuild.name)}" aria-hidden="true"></i>`;
+  return `<li class="who-head">${mark}<span>Your guild · ${online.length} online</span></li>` +
+    online.map(s => whoRow({ quiet: false, ...s }, true)).join('') +
+    offline.map(m => `<li class="who-row away"><div class="who"><span class="who-caret" aria-hidden="true" style="--g:${hueOf(m.pid)}"></span><b class="who-ini">${m.ini || '···'}</b><span class="who-where"><span>Offline</span></span><span class="who-meta">last seen ${seenText(m.seen)}</span></div></li>`).join('') +
+    (rest.length ? `<li class="who-head"><span>Everyone else</span></li>${rest.map(s => whoRow(s)).join('')}` : '');
+}
+// Anyone the list shows: from the public list or our guild.
+function whoFind(pid) {
+  return (whoData && whoData.who.find(q => q.pid === pid)) || mates.get(pid) || null;
+}
+
+const guildCard = $('#guildCard'), guildInvite = $('#guildInvite');
+function renderGuild() {
+  if (!surveyApi) return;
+  const st = Membership.state, err = guildError ? `<p class="guild-err" role="alert">${guildError}</p>` : '';
+  const named = (n, id = '') => `<b class="guild-name"${id ? ` id="${id}"` : ''} style="--gh:${guildHue(n)}"><i aria-hidden="true"></i><span>${guildName(n)}</span></b>`;
+  let html = '';
+  if (st === 'out') html = `<p>A guild is a few surveyors who find each other: mates first on this list, a note when one comes online, and a mark on their carets.</p><div class="guild-acts"><button type="button" class="pill" data-g="start">Start a guild</button></div><p class="guild-small">Or join one from a mate’s invite link.</p>`;
+  else if (st === 'naming' || st === 'making') html = `<p>Your guild will be called</p>${named(draftName)}${err}<div class="guild-acts"><button type="button" class="pill" data-g="redraw"${st === 'making' ? ' disabled' : ''}>Another name</button><button type="button" class="btn" data-g="create"${st === 'making' ? ' disabled' : ''}>${st === 'making' ? 'Starting…' : 'Start it'}</button><button type="button" class="pill" data-g="cancel"${st === 'making' ? ' disabled' : ''}>Cancel</button></div>`;
+  else if (myGuild) {
+    const { online } = guildMates(), size = Math.max(1, roster.length);
+    html = `${named(myGuild.name)}<p class="guild-meta">${size} member${size === 1 ? '' : 's'} · ${online.length} other${online.length === 1 ? '' : 's'} online</p>${err}<p class="guild-small" id="guildSaid" aria-live="polite"></p>` +
+      (askLeave
+        ? `<p>Leave the ${guildName(myGuild.name)}? You’d need a new invite to come back.</p><div class="guild-acts"><button type="button" class="pill" data-g="leave-yes">Leave</button><button type="button" class="pill" data-g="leave-no">Stay</button></div>`
+        : `<div class="guild-acts"><button type="button" class="pill" data-g="invite">Invite a mate</button><button type="button" class="pill" data-g="leave"${st === 'leaving' ? ' disabled' : ''}>${st === 'leaving' ? 'Leaving…' : 'Leave'}</button></div>`);
+  } else if (st === 'invited' || st === 'joining') html = '<p>Looking at an invite to a guild…</p>';
+  if (guildCard.innerHTML !== html) {
+    const f = document.activeElement, k = f && guildCard.contains(f) ? f.dataset.g : '';
+    guildCard.innerHTML = html;
+    if (k) { const el = guildCard.querySelector(`[data-g="${k}"]`) || guildCard.querySelector('button'); if (el) try { el.focus({ preventScroll: true }); } catch (_) {} }
+  }
+  // An invite is its own card over the map, once the card asking for initials has gone.
+  const asking = Membership.is('invited', 'joining') && invite && Intro.is('exploring');
+  guildInvite.hidden = !asking;
+  if (asking) {
+    const busy = Membership.is('joining');
+    guildInvite.innerHTML = invite.name
+      ? `<p class="eyebrow">Invited to a guild</p>${named(invite.name, 'guildInviteName')}<p>${invite.size} member${invite.size === 1 ? '' : 's'} so far. A guild finds each other on the map: mates first on the surveyor list, a note when one comes online, a mark on their carets.${myGuild && myGuild.code !== invite.code ? ` You’d leave the ${guildName(myGuild.name)}.` : ''}</p>${invite.error ? `<p class="guild-err" role="alert">${invite.error}</p>` : ''}<div class="coach-row"><button type="button" class="btn ghost" data-g="not-now">Not now</button><button type="button" class="btn" data-g="join"${busy ? ' disabled' : ''}>${busy ? 'Joining…' : 'Join'}</button></div>`
+      : `<p class="eyebrow" id="guildInviteName">Invited to a guild</p><p>${invite.error || 'Looking it up…'}</p><div class="coach-row"><button type="button" class="btn ghost" data-g="not-now">${invite.error ? 'Close' : 'Not now'}</button></div>`;
+  }
+}
+function onGuildClick(e) {
+  const b = e.target.closest('button[data-g]');
+  if (!b || b.disabled) return;
+  const g = b.dataset.g;
+  if (g === 'start' && Membership.is('out')) { guildError = ''; draftName = randomName(); Membership.go('naming'); }
+  else if (g === 'redraw' && Membership.is('naming')) { let n; do n = randomName(); while (guildName(n) === guildName(draftName)); draftName = n; renderGuild(); }
+  else if (g === 'create') startGuild();
+  else if (g === 'cancel' && Membership.is('naming')) { guildError = ''; Membership.go('out'); }
+  else if (g === 'invite') shareInvite();
+  else if (g === 'leave') { askLeave = true; renderGuild(); }
+  else if (g === 'leave-no') { askLeave = false; renderGuild(); }
+  else if (g === 'leave-yes') leaveGuild();
+  else if (g === 'join') joinInvite();
+  else if (g === 'not-now') dismissInvite();
+}
+guildCard.addEventListener('click', onGuildClick);
+guildInvite.addEventListener('click', onGuildClick);
+guildInvite.addEventListener('keydown', e => { if (e.key === 'Escape') { e.stopPropagation(); dismissInvite(); } });
+// An invite link: read once, then taken off the address, so a reload doesn't ask again and the code doesn't linger.
+if (surveyApi) {
+  let code = '';
+  try {
+    const u = new URL(location.href);
+    code = (u.searchParams.get('guild') || '').toUpperCase();
+    if (u.searchParams.has('guild')) { u.searchParams.delete('guild'); history.replaceState(history.state, '', u.pathname + u.search + u.hash); }
+  } catch (_) {}
+  if (GUILD_CODE_RE.test(code) && !(myGuild && myGuild.code === code)) lookUpInvite(code);
+  renderGuild();
+}
+
 /* ---------- Boot ---------- */
 function resize() {
   dpr = Math.min(window.devicePixelRatio || 1, 3);
@@ -4500,7 +4809,8 @@ invalidate();
 if (redrawn) setTimeout(() => toast(`<i></i><b>The map has been redrawn</b><span>${NT} themes of about ${Math.round(THEMES.reduce((a, t) => a + t.words.length, 0) / NT / 10) * 10} words now, so a territory never repeats one · ${redrawn.kept ? `${redrawn.kept} of your ${redrawn.had} finds are still on it` : 'your old finds are not on it'}</span>`, null, 8000), 900);
 connectStore();
 if (location.hash === '#debug') window.__lf = { cam, found, claims, links, chunk, wordEnd, collect, territoryProgress, remnants: () => [...remnants().set], novas: () => [...novasSeen.values()], territoryName: regionName, world: () => world, supernova, novaSound, audioOut, musicTracks: MUSIC_TRACKS, audio: () => ac, music: () => musicNow && { state: ac.state, track: musicNow.track().name, nodes: musicNow.track().nodes.size, level: musicNow.master.gain.value, master: musicNow.master, volume: musicVol, target: musicLevel(), swap: musicNow.swap }, nova: () => nova,
-  who: () => Who.state, surveyors: () => whoData, emoteMotion, pops: () => pops.map(p => [p.pid, p.e]), pid: () => myPid, muted: () => [...muted], carets: () => [...ghosts.keys()],
+  who: () => Who.state, surveyors: () => whoData, emoteMotion, guild: () => Membership.state, myGuild: () => myGuild, mates: () => [...mates.keys()], roster: () => roster,
+  guildWords: () => [GUILD_FIRST.length, GUILD_SECOND.length, GUILD_THIRD.length], pops: () => pops.map(p => [p.pid, p.e]), pid: () => myPid, muted: () => [...muted], carets: () => [...ghosts.keys()],
   caretXY: id => { const gh = ghosts.get(id); return gh && { x: (Math.round(gh.x) - cam.x) * cam.cs + (W - dock) / 2, y: (Math.floor(gh.y) + .5 - cam.y) * cam.cs + H / 2 + mapTop }; },
   pass: () => Pass.state, intro: () => Intro.state, surveyStatus, linkStates: () => Object.fromEntries([...links].map(([k, l]) => [k, l.m.state])), outbox: () => [...outbox.values()].map(c => [c.e.w, c.m.state]), definitions: () => Object.fromEntries([...definitions].map(([k, d]) => [k, d.m.state])) };
 
