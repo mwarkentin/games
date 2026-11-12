@@ -26,8 +26,10 @@ OTHER = {"code": "PQRS23", "name": [3, 4, 5], "tag": "0badf00d"}  # a guild of t
 
 
 def start(page: Page, site_url: str, links: FakeLinks, guilds: FakeGuilds | None = None, **kw) -> None:
-    """Opens the game on the survey with our token and `links` answering the link paths."""
+    """Opens the game on the survey with our token, `links` answering the link paths and
+    its `players` keeping linked devices in step."""
     page.route(f"{SURVEY}/v1/link**", links.handle)
+    page.route(f"{SURVEY}/v1/player/**", links.players.handle)
     start_guilds(page, site_url, FakeSurvey(), guilds or FakeGuilds(), **kw)
 
 

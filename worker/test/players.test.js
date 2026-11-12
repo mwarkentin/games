@@ -7,7 +7,8 @@ import { DatabaseSync } from 'node:sqlite';
 import { beforeEach, describe, test } from 'node:test';
 
 import worker from '../src/index.js';
-import { LINK_CODE, LINK_MS, cleanCarry, routeLinks } from '../src/players.js';
+import { FINDS_MAX, KEEP_MS, LINK_CODE, LINK_MS, Player, SYNC_GAP_MS, cleanCarry, routeLinks, routePlayers } from '../src/players.js';
+import { playerId } from '../src/survey-social.js';
 
 const ORIGIN = 'https://games.michaelwarkentin.com';
 const NOW = Date.UTC(2026, 10, 13, 12);
@@ -26,9 +27,35 @@ function fakeD1() {
   return { prepare: (sql) => statement(sql), raw: db };
 }
 
+// A Durable Object's storage: SQLite, an alarm and deleteAll.
+function fakeState() {
+  let db = new DatabaseSync(':memory:');
+  const state = {
+    alarm: null,
+    storage: {
+      sql: { exec(query, ...b) { const rows = db.prepare(query).all(...b); return { toArray: () => rows, one: () => rows[0] }; } },
+      setAlarm: async (t) => { state.alarm = t; },
+      deleteAlarm: async () => { state.alarm = null; },
+      deleteAll: async () => { db = new DatabaseSync(':memory:'); },
+    },
+    tables: () => db.prepare("SELECT name FROM sqlite_master WHERE type = 'table'").all().map((r) => r.name),
+  };
+  return state;
+}
+
+// The PLAYERS namespace: a Player per name, on one clock.
+function fakePlayers(clock) {
+  const players = new Map();
+  const get = (name) => {
+    if (!players.has(name)) { const state = fakeState(), p = new Player(state, {}); p.now = () => clock.now; p.state = state; players.set(name, p); }
+    return players.get(name);
+  };
+  return { players, get: (id) => ({ fetch: (url, init) => get(id).fetch(new Request(url, init)) }), idFromName: (name) => name, player: get };
+}
+
 describe('linking a device', () => {
   let env, ip;
-  beforeEach(() => { env = { ALLOWED_ORIGINS: ORIGIN, DB: fakeD1() }; ip = '203.0.113.5'; });
+  beforeEach(() => { env = { ALLOWED_ORIGINS: ORIGIN, DB: fakeD1(), PLAYERS: fakePlayers({ now: NOW }) }; ip = '203.0.113.5'; });
   const call = async (path, body, { now = NOW, method = 'POST', origin = ORIGIN } = {}) => {
     const res = await routeLinks(new Request(`https://survey.test${path}`, {
       method, headers: { Origin: origin, 'CF-Connecting-IP': ip }, ...(body === undefined ? {} : { body: JSON.stringify(body) }),
@@ -48,6 +75,8 @@ describe('linking a device', () => {
     assert.deepEqual(await call(`/v1/link/${made.code}/status`, { token: token(1) }), [200, { state: 'used' }]);
     // What it carried isn't kept once it's been handed over.
     assert.equal(env.DB.raw.prepare('SELECT carry FROM links').get().carry, '');
+    // And the player's devices keep in step from now on.
+    assert.ok(env.PLAYERS.player(await playerId(token(1))).meta());
   });
 
   test('says nothing about a code to anyone who did not make it', async () => {
@@ -99,5 +128,118 @@ describe('linking a device', () => {
     }), env);
     assert.equal(res.status, 201);
     assert.equal(routeLinks(new Request('https://survey.test/v1/linked'), env), null);
+  });
+});
+
+describe('syncing linked devices', () => {
+  let clock, env;
+  const find = (w, x, more = {}) => ({ w, x, y: 3, d: 0, t: NOW, s: 0, ...more });
+  const nova = (rx) => ({ rx, ry: 0, t: NOW, w: 'COMET', x: rx * 48, y: 2, d: 0, by: 'MLW', mine: true, solo: false });
+  beforeEach(() => { clock = { now: NOW }; env = { ALLOWED_ORIGINS: ORIGIN, PLAYERS: fakePlayers(clock) }; });
+  const sync = async (n, body, path = 'sync') => {
+    clock.now += SYNC_GAP_MS;
+    const res = await routePlayers(new Request(`https://survey.test/v1/player/${path}`, {
+      method: 'POST', headers: { Origin: ORIGIN }, body: JSON.stringify({ token: token(n), ...body }),
+    }), env);
+    return [res.status, await res.json()];
+  };
+  const start = async (n) => env.PLAYERS.player(await playerId(token(n))).start();
+
+  test('is off, and keeps nothing, until a link starts it', async () => {
+    assert.deepEqual(await sync(1, { finds: [find('COMET', 1)] }), [200, { off: true }]);
+    assert.deepEqual(env.PLAYERS.player(await playerId(token(1))).state.tables(), []);
+  });
+
+  test("carries one device's finds, supernovas and settings to another, and only what is new", async () => {
+    await start(1);
+    const settings = { initials: 'MLW', guild: null, muted: [], listed: true, emotes: true };
+    const [, a] = await sync(1, { epoch: '', since: 0, finds: [find('COMET', 1), find('ORBIT', 2)], novas: [nova(1)], settings, settingsAt: 5 });
+    assert.deepEqual([a.finds, a.novas, a.at], [[], [], 1]);  // its own come back to nobody
+    assert.match(a.epoch, /^[0-9a-f]{8}$/);
+    // The other device, new to it, hears everything, settings included.
+    const [, b] = await sync(1, { epoch: '', since: 0, finds: [find('NEBULA', 3)], settingsAt: 0 });
+    assert.deepEqual(b.finds.map((f) => f.w).sort(), ['COMET', 'ORBIT']);
+    assert.deepEqual([b.novas, b.settings, b.settingsAt, b.at], [[nova(1)], settings, 5, 2]);
+    // The first, next time, hears only the second's.
+    const [, again] = await sync(1, { epoch: a.epoch, since: a.at, settingsAt: 5 });
+    assert.deepEqual([again.finds.map((f) => f.w), again.novas, 'settings' in again], [['NEBULA'], [], false]);
+  });
+
+  test('keeps charted first once either device has it, and a find once', async () => {
+    await start(1);
+    const [, a] = await sync(1, { finds: [find('COMET', 1, { f: 1, n: 40 })] });
+    await sync(1, { epoch: a.epoch, since: a.at, finds: [find('COMET', 1), find('COMET', 1)] });
+    const [, b] = await sync(1, { since: 0 });
+    assert.deepEqual(b.finds, [find('COMET', 1, { f: 1, n: 40 })]);
+    await sync(1, { epoch: a.epoch, since: b.at, finds: [find('ORBIT', 2)] });
+    const [, c] = await sync(1, { epoch: a.epoch, since: b.at });
+    await sync(1, { epoch: a.epoch, since: c.at, finds: [find('ORBIT', 2, { f: 1 })] });
+    const [, d] = await sync(1, { epoch: a.epoch, since: c.at });
+    assert.deepEqual(d.finds, [find('ORBIT', 2, { f: 1 })]);
+  });
+
+  test('settings go with whichever device changed them last', async () => {
+    await start(1);
+    const as = (initials) => ({ initials, guild: null, muted: [], listed: true, emotes: true });
+    await sync(1, { settings: as('AAA'), settingsAt: 10 });
+    await sync(1, { settings: as('BBB'), settingsAt: 9 });
+    const [, b] = await sync(1, { settingsAt: 0 });
+    assert.deepEqual([b.settings.initials, b.settingsAt], ['AAA', 10]);
+    assert.equal((await sync(1, { settings: { initials: 'nope' }, settingsAt: 11 }))[1].settings?.initials, undefined);
+  });
+
+  test('a device from before a forget starts over', async () => {
+    await start(1);
+    const [, a] = await sync(1, { finds: [find('COMET', 1)] });
+    assert.deepEqual(await sync(1, {}, 'forget'), [200, { off: true }]);
+    assert.deepEqual(await sync(1, { epoch: a.epoch, since: a.at }), [200, { off: true }]);
+    await start(1);
+    await sync(1, { finds: [find('ORBIT', 2)] });
+    const [, b] = await sync(1, { epoch: a.epoch, since: a.at });  // its version means nothing now
+    assert.notEqual(b.epoch, a.epoch);
+    assert.deepEqual(b.finds.map((f) => f.w), ['ORBIT']);
+  });
+
+  test('takes only finds it can read, up to its limits, and a sync every few seconds', async () => {
+    await start(1);
+    const [, a] = await sync(1, { finds: [find('comet', 1), find('COMET', 1.5), { w: 'COMET' }, find('COMET', 1, { d: 9 }), find('COMET', 1)] });
+    assert.equal(a.at, 1);
+    const [, b] = await sync(1, { since: 0 });
+    assert.deepEqual(b.finds.map((f) => f.w), ['COMET']);
+    clock.now -= SYNC_GAP_MS - 1;
+    assert.equal((await sync(1, {}))[0], 429);
+    assert.equal((await sync(1, { finds: Array(2001).fill(find('ORBIT', 1)) }))[0], 413);
+    // A full set of notes takes no more.
+    const p = env.PLAYERS.player(await playerId(token(1)));
+    for (let i = 1; i < FINDS_MAX; i++) p.sql.exec('INSERT INTO finds (k, body, v) VALUES (?, ?, 1)', `X${i}`, '{}');
+    const [, c] = await sync(1, { since: 1, finds: [find('ORBIT', 5)] });
+    assert.deepEqual([c.at, p.sql.exec('SELECT COUNT(*) AS n FROM finds').one().n], [1, FINDS_MAX]);
+  });
+
+  test("forgets a player nobody's synced for half a year", async () => {
+    await start(1);
+    await sync(1, { finds: [find('COMET', 1)] });
+    const p = env.PLAYERS.player(await playerId(token(1)));
+    const first = p.state.alarm;
+    assert.equal(first, clock.now + KEEP_MS);
+    clock.now += KEEP_MS - 1000;
+    await sync(1, {});
+    clock.now = first;  // the first alarm, put off by the later sync
+    await p.alarm();
+    assert.ok(p.meta(), 'synced within the half year');
+    assert.equal(p.state.alarm, p.meta().synced + KEEP_MS);
+    clock.now = p.state.alarm;
+    await p.alarm();
+    assert.equal(p.meta(), null);
+  });
+
+  test('needs a real token and the site, and is what the Worker does with the paths', async () => {
+    assert.equal(routePlayers(new Request('https://survey.test/v1/player/nope'), env), null);
+    const bad = await routePlayers(new Request('https://survey.test/v1/player/sync', { method: 'POST', headers: { Origin: ORIGIN }, body: '{"token":"x"}' }), env);
+    assert.equal(bad.status, 400);
+    const away = await routePlayers(new Request('https://survey.test/v1/player/sync', { method: 'POST', headers: { Origin: 'https://evil.test' }, body: JSON.stringify({ token: token(1) }) }), env);
+    assert.equal(away.status, 403);
+    const res = await worker.fetch(new Request('https://survey.test/v1/player/sync', { method: 'POST', headers: { Origin: ORIGIN }, body: JSON.stringify({ token: token(1) }) }), env);
+    assert.deepEqual(await res.json(), { off: true });
   });
 });

@@ -182,7 +182,9 @@ def stand_in_for_worker(context: BrowserContext) -> FakeLeaderboard:
     context.route(f"{WORKER_URL}/v1/survey/world", survey.handle_world)
     context.route(f"{WORKER_URL}/v1/survey/surveyors*", survey.handle_list)
     context.route(f"{WORKER_URL}/v1/survey/guilds**", FakeGuilds().handle)
-    context.route(f"{WORKER_URL}/v1/link**", FakeLinks().handle)
+    links = FakeLinks()
+    context.route(f"{WORKER_URL}/v1/link**", links.handle)
+    context.route(f"{WORKER_URL}/v1/player/**", links.players.handle)
     context.route_web_socket(
         re.compile("^wss://" + re.escape(urlparse(WORKER_URL).netloc) + "/v1/survey/"), survey.handle
     )

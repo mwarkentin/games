@@ -619,7 +619,8 @@ on the site can name the same player later.
    **Use a code**. Either redeems it: `POST /v1/link/<code>` answers the
    token and the carried settings, once.
 4. That device takes the token and settings and reloads as the same
-   surveyor, with a note saying so.
+   surveyor, with a note saying so. Both devices then keep in step (see
+   "Syncing linked devices").
 
 What a link carries, checked by `cleanCarry` in `worker/src/players.js`:
 the initials, the guild (code, name and tag), the mutes, and the two
@@ -627,8 +628,8 @@ switches under Surveyors (on the list, taking emotes). Mutes from both
 devices are kept. Their guild wins; if they're in none and this device is
 in one, the linked surveyor joins this device's guild instead, so linking in
 either direction doesn't lose one. Either way the device's old self leaves
-its guild, since it won't be back. Finds, supernovas seen, sound and music
-stay on each device for now.
+its guild, since it won't be back. Field notes come from both devices from
+then on, through syncing; sound and music stay each device's own.
 
 ### Why a code, and how it's kept safe
 
@@ -654,6 +655,49 @@ token for ten minutes:
 A passkey would do this without a code, but needs an account to hang it on,
 which nothing else here has.
 
+### Syncing linked devices
+
+Once linked, devices keep their field notes, supernovas seen and the
+settings a link carries in step through a **Player**, a Durable Object per
+player id (`worker/src/players.js`), named by the token's hash so only the
+player's own devices reach it:
+
+    POST /v1/player/sync    {token, epoch, since, finds, novas, settings, settingsAt}
+                            → {epoch, at, finds, novas, settings?, settingsAt?} | {off: true}
+    POST /v1/player/forget  {token} → {off: true}
+
+- **Only a link starts one.** Redeeming a code starts the player's Player;
+  until then a sync answers `off` and stores nothing. So a player who never
+  linked a device keeps everything in their browser, as before, and making
+  Players costs as much as making codes, which is limited per address.
+- **A sync carries what's new.** Every row has the version it last changed
+  in. A device sends what changed on it since its last sync (the finds and
+  supernovas it's kept a list of, and its settings with when they last
+  changed) and the version it last heard, and gets back everything that
+  changed since then, apart from what it just sent. A Player that was
+  forgotten and started again has a new epoch, so a device that last heard
+  from the old one starts over and sends all it has.
+- **Merging can't lose anything.** Finds are keyed by word and place, as
+  between tabs: each is kept once, and "charted first" only ever comes on.
+  Supernovas are kept once each. Settings (initials, guild, mutes and the
+  two switches) go with whichever device changed them last, by its clock.
+- **When.** On opening the game, a few seconds after a find, a couple after
+  a settings change, when the tab comes back into view, and every minute
+  while it's open, so two devices open at once catch up within a minute. A
+  hidden tab doesn't sync.
+- **Limits.** 25,000 finds and 1,000 supernovas a player, 2,000 of either a
+  sync (more go in the next), one sync every 2 seconds, half a megabyte a
+  request.
+- **Stopping.** "Stop syncing" under the field notes' linking card stops
+  this device, or every device: that deletes the Player's storage, and the
+  others hear `off` at their next sync and stop too, with a note. Each
+  device keeps its notes as they are. A Player nobody has synced for 180
+  days deletes itself (an alarm, put off by each day's first sync).
+
+The game's `sync` machine (off, idle, syncing, failed) shows on `<html
+data-sync>`, and the line at the foot of the field notes says "Synced with
+your linked devices".
+
 ### Cost
 
 D1 only, and small: making a code sweeps expired rows and writes one;
@@ -661,6 +705,14 @@ redeeming it is two writes; each ask while it shows reads one row by its
 key (120 if left showing the full ten minutes, a few in a usual link). Even
 if every one of 10,000 players linked a device every day, that's well
 inside Workers Paid's included D1 reads and writes, so nothing extra.
+
+Syncing is a Durable Object request a minute for each open device, plus
+one per few finds, each writing a row per new find and one for the Player's
+version. Say 1,000 of 10,000 players link devices and play an hour a day:
+about 100,000 requests a day, 3 million a month, within the million
+included plus 30 cents; the rows written (a few million a month) and the
+storage (about 50 bytes a find, so 1,000 full notebooks are a gigabyte)
+stay inside what Workers Paid includes. Under a dollar a month.
 
 ## The log
 
@@ -1363,9 +1415,9 @@ about 30 cents over the included million requests.
   `BLOCKED_INITIALS` screens, and seven drawings; mute is on the device. A
   muted player with a new token is a new id, held back only by the limits.
 - **Guilds:** see "Left for later" under "Guilds".
-- **Syncing linked devices.** Linked devices share who they are, not what
-  they've found: field notes, supernovas seen and the sound and music
-  switches stay on each device.
+- **Syncing as it happens.** Two linked devices open at once catch up
+  within a minute. The Player could hold a WebSocket to each, hibernating,
+  and push a find the moment it lands, if a minute ever feels slow.
 - **Finds made offline stay personal.** Uploading them later would let
   anyone backdate a pile of claims at once.
 

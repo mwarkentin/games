@@ -12,7 +12,8 @@ the emotes the game sends are answered as `emote_error` says.
 FakeGuilds answers the guilds' paths (/v1/survey/guilds...), and `guild()`
 sends a sector's word of which of a guild are online.
 
-FakeLinks answers the paths for linking another device (/v1/link...); the
+FakeLinks answers the paths for linking another device (/v1/link...), and
+FakePlayers the ones that keep linked devices in step (/v1/player/...); the
 real ones are tested in worker/test/players.test.js.
 
 It also fakes Turnstile (worker/TURNSTILE.md): Cloudflare's widget script
@@ -289,8 +290,9 @@ class FakeLinks:
 
     ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ23456789"
 
-    def __init__(self, codes=None, status=None):
+    def __init__(self, codes=None, status=None, players: FakePlayers | None = None):
         self.codes = {code: {"state": "waiting", **link} for code, link in (codes or {}).items()}
+        self.players = players if players is not None else FakePlayers()  # redeeming a code starts syncing, as the Worker does
         self.status = status          # answer everything with this status instead, as a Worker in trouble would
         self.calls: list[tuple] = []  # (path, body) of every request
         self.made = 0
@@ -298,6 +300,7 @@ class FakeLinks:
     def use(self, code: str) -> None:
         """Another device redeems `code`."""
         self.codes[code]["state"] = "used"
+        self.players.start(player_id(self.codes[code]["token"]))
 
     def expire(self, code: str) -> None:
         self.codes[code]["state"] = "gone"
@@ -325,4 +328,77 @@ class FakeLinks:
         if not link or link["state"] != "waiting":
             return reply(404, {"error": "no such code, or it has run out"})
         link["state"] = "used"
+        self.players.start(player_id(link["token"]))
         return reply(200, {"token": link["token"], "carry": link["carry"]})
+
+
+class FakePlayers:
+    """The paths that keep linked devices in step, as worker/src/players.js's Player answers
+    them, for the player ids `started` (linking starts one). `add()` puts in what another
+    device would have sent."""
+
+    def __init__(self, started=()):
+        self.players: dict[str, dict] = {}
+        self.calls: list[tuple] = []  # (path, body) of every request
+        for pid in started:
+            self.start(pid)
+
+    def start(self, pid: str) -> None:
+        self.players.setdefault(
+            pid,
+            {"v": 0, "epoch": f"e{len(self.players):07x}", "finds": {}, "novas": {}, "settings": None, "settings_at": 0},
+        )
+
+    def add(self, pid: str, finds=(), novas=(), settings=None, settings_at=0) -> None:
+        p = self.players[pid]
+        p["v"] += 1
+        for f in finds:
+            p["finds"][f"{f['w']}@{f['x']},{f['y']},{f['d']}"] = (f, p["v"])
+        for n in novas:
+            p["novas"][f"{n['rx']},{n['ry']}"] = (n, p["v"])
+        if settings:
+            p["settings"], p["settings_at"] = settings, settings_at
+
+    def sent(self, path: str = "sync") -> list[dict]:
+        return [body for p, body in self.calls if p == path]
+
+    def handle(self, route: Route) -> None:
+        request = route.request
+        path = urlparse(request.url).path.removeprefix("/v1/player/")
+        body = json.loads(request.post_data or "{}")
+        self.calls.append((path, body))
+        pid = player_id(body["token"])
+
+        def reply(data: dict) -> None:
+            route.fulfill(status=200, json=data, headers={"Access-Control-Allow-Origin": "*"})
+
+        if path == "forget":
+            self.players.pop(pid, None)
+            return reply({"off": True})
+        p = self.players.get(pid)
+        if not p:
+            return reply({"off": True})
+        since = body.get("since", 0) if body.get("epoch") == p["epoch"] and body.get("since", 0) <= p["v"] else 0
+        v, wrote = p["v"] + 1, False
+        for f in body.get("finds", []):
+            k = f"{f['w']}@{f['x']},{f['y']},{f['d']}"
+            had = p["finds"].get(k)
+            if not had or (f.get("f") and not had[0].get("f")):
+                p["finds"][k], wrote = (f, v), True
+        for n in body.get("novas", []):
+            k = f"{n['rx']},{n['ry']}"
+            if k not in p["novas"]:
+                p["novas"][k], wrote = (n, v), True
+        theirs = body.get("settingsAt", 0)
+        if body.get("settings") and theirs > p["settings_at"]:
+            p["settings"], p["settings_at"] = body["settings"], theirs
+        if wrote:
+            p["v"] = v
+
+        def rows(table: str) -> list[dict]:
+            return [b for b, at in sorted(p[table].values(), key=lambda r: r[1]) if since < at != v]
+
+        out = {"epoch": p["epoch"], "at": p["v"], "finds": rows("finds"), "novas": rows("novas")}
+        if p["settings"] and p["settings_at"] > theirs:
+            out |= {"settings": p["settings"], "settingsAt": p["settings_at"]}
+        reply(out)

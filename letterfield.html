@@ -243,7 +243,7 @@ body.docked .notes{box-shadow:none}
 .sync{margin:0;padding:12px 18px 14px;border-top:1px solid var(--rule);display:flex;align-items:center;gap:8px;font:400 11px/1.3 var(--f-mono);color:var(--muted)}
 .sync .feedback{margin-left:auto;color:inherit}
 .sync-dot{width:7px;height:7px;border-radius:50%;background:var(--muted);flex:none}
-.sync[data-state="synced"] .sync-dot{background:hsl(150 var(--mark-s) var(--mark-l))}
+.sync[data-state="synced"] .sync-dot,.sync[data-state="devices"] .sync-dot{background:hsl(150 var(--mark-s) var(--mark-l))}
 .sync[data-state="connecting"] .sync-dot{animation:blink 1s infinite alternate}
 @keyframes blink{to{opacity:.25}}
 .survey{margin:12px 18px 0;padding:10px 12px 11px;border:1px solid var(--rule);border-radius:7px}
@@ -1157,8 +1157,9 @@ window.addEventListener('storage', e => {
 let coll = null, dbWritable = false, writeChain = Promise.resolve();
 const syncEl = $('#sync'), syncText = $('#syncText');
 function setSync(state) {
+  if (state === 'local' && devicesSyncing()) state = 'devices';  // see Syncing linked devices
   syncEl.dataset.state = state;
-  syncText.textContent = state === 'synced' ? 'Synced with your Claude account' : state === 'connecting' ? 'Connecting to your account…' : 'Saved in this browser';
+  syncText.textContent = state === 'synced' ? 'Synced with your Claude account' : state === 'connecting' ? 'Connecting to your account…' : state === 'devices' ? 'Synced with your linked devices' : 'Saved in this browser';
 }
 function queueWrite(e) {
   if (!coll || !dbWritable) return;
@@ -1694,7 +1695,7 @@ function firstToChart(c) {
     // Where it came in the shared world's count: the Atlas's last total plus
     // the words seen charted since (this one included).
     if (!c.s && inSurveyArea(c.x, c.y) && world) e.n = world.charted + worldExtra;
-    saveLocal(); queueWrite(e); renderNotes();
+    saveLocal(); queueWrite(e); syncLater('f', e.key); renderNotes();
   }
   // No note: on the survey nearly every find is charted first. The field
   // notes say so.
@@ -2045,8 +2046,9 @@ function loadNovas() {
   for (const o of readList(K_NOVAS)) { const n = cleanNova(o); if (n) novasSeen.set(n.rx + ',' + n.ry, n); }
 }
 loadNovas();
-// Records one, once: a territory goes supernova only once.
-function sawNova(o) {
+// Records one, once: a territory goes supernova only once. One that came
+// from a linked device (see Syncing linked devices) isn't sent back.
+function sawNova(o, synced = false) {
   const k = o.rx + ',' + o.ry, had = novasSeen.get(k);
   if (had) return had;
   const n = cleanNova(o);
@@ -2055,6 +2057,7 @@ function sawNova(o) {
   const list = [...novasSeen.values()].sort((a, b) => b.t - a.t).slice(0, NOVAS_MAX);
   if (list.length < novasSeen.size) { novasSeen.clear(); for (const v of list) novasSeen.set(v.rx + ',' + v.ry, v); }
   LS.set(K_NOVAS, JSON.stringify(list));
+  if (!synced) syncLater('n', k);
   if (notesOpen) renderNotes();
   return n;
 }
@@ -3274,7 +3277,7 @@ function collect(w, x, y, d, stray) {
   const e = sanitize({ w, x, y, d, t: Date.now(), s: stray ? 1 : 0 });
   e.born = performance.now();
   found.set(key, e);
-  saveLocal(); queueWrite(e); claimWord(e);
+  saveLocal(); queueWrite(e); syncLater('f', e.key); claimWord(e);
   const rx = fdiv(x, RC), ry = fdiv(y, RC);
   say(`${w} · ${stray ? 'Stray ' + THEMES[e.th].name.toLowerCase() + ' word' : THEMES[e.th].name} · ${regionName(rx, ry)}`);
   gatherFind(e);
@@ -4018,6 +4021,7 @@ function signAs(v, hint) {
     return false;
   }
   LS.set(K_INITIALS, JSON.stringify(v));
+  settingsChanged();
   tellMe();
   surveyInput.value = signupInput.value = v;
   surveyHint.textContent = '';
@@ -4321,8 +4325,8 @@ whoEl.addEventListener('toggle', () => { syncWho(); renderWho(); });
 const listedEl = $('#whoListed'), emotesEl = $('#whoEmotes');
 listedEl.checked = listedOn;
 emotesEl.checked = emotesOn;
-listedEl.addEventListener('change', () => { listedOn = listedEl.checked; LS.set(K_LISTED, listedOn ? '1' : '0'); tellMe(); renderWho(); });
-emotesEl.addEventListener('change', () => { emotesOn = emotesEl.checked; LS.set(K_EMOTES, emotesOn ? '1' : '0'); tellMe(); if (!emotesOn) pops = []; renderWho(); invalidate(); });
+listedEl.addEventListener('change', () => { listedOn = listedEl.checked; LS.set(K_LISTED, listedOn ? '1' : '0'); settingsChanged(); tellMe(); renderWho(); });
+emotesEl.addEventListener('change', () => { emotesOn = emotesEl.checked; LS.set(K_EMOTES, emotesOn ? '1' : '0'); settingsChanged(); tellMe(); if (!emotesOn) pops = []; renderWho(); invalidate(); });
 
 // Flies to a surveyor: straight to their caret if one of our sectors shows it,
 // otherwise to the middle of their territory, then on to their caret once
@@ -4344,6 +4348,7 @@ function setMuted(s, on) {
   if (on) muted.add(s.pid); else muted.delete(s.pid);
   while (muted.size > MUTED_MAX) muted.delete(muted.values().next().value);
   LS.set(K_MUTED, JSON.stringify([...muted]));
+  settingsChanged();
   pops = pops.filter(p => p.pid !== s.pid);
   renderWho(); invalidate();
   say(`${on ? 'Muted' : 'Unmuted'} ${s.ini || 'that surveyor'}`);
@@ -4543,7 +4548,7 @@ const noted = new Map();    // id → when we last said they came online
 // up and asking), joining, in one, or leaving. A reply that comes back after
 // we've moved on is dropped.
 const Membership = machine('guild', {
-  out: ['naming', 'invited'],
+  out: ['naming', 'invited', 'in'],
   naming: ['making', 'out', 'invited'],
   making: ['in', 'naming'],
   invited: ['joining', 'out', 'in'],
@@ -4557,9 +4562,10 @@ function guildMoved(to, from) {
   if (to === 'in' && Who.is('ready')) Who.go('refreshing');
   renderGuild(); renderWho(); invalidate();
 }
-function saveGuild(g) {
+function saveGuild(g, synced = false) {
   myGuild = g;
   if (g) LS.set(K_GUILD, JSON.stringify(g)); else try { localStorage.removeItem(K_GUILD); } catch (_) {}
+  if (!synced) settingsChanged();  // one from a linked device isn't sent back (see Syncing linked devices)
 }
 // The Worker's guild paths: JSON sent as text/plain, so no preflight, as the leaderboards do.
 async function guildCall(path, body) {
@@ -4778,6 +4784,172 @@ if (surveyApi) {
   renderGuild();
 }
 
+/* ---------- Syncing linked devices ---------- */
+// Linked devices keep their field notes, supernovas seen and settings in
+// step through the Worker (see "Syncing linked devices" in worker/SURVEY.md).
+// Only linking turns it on, so a device that's never been linked keeps all of
+// it here. Each sync sends what changed here since the last (the keys of
+// finds and supernovas waiting in `f` and `n`, and the settings with when
+// they last changed) and takes in what changed elsewhere since the version
+// it last heard (`at`, in the Worker's `epoch`). Finds merge as they do
+// between tabs: each is kept once, and charted first only ever comes on.
+// Settings go with whichever device changed them last.
+const K_SYNC = 'letterfield.sync.v1', SYNC_EVERY_MS = 60000, SYNC_SOON_MS = 5000, SYNC_GAP_MS = 2100, SYNC_BATCH = 2000;
+function readSync() {
+  try {
+    const o = JSON.parse(LS.get(K_SYNC) || 'null');
+    if (o && o.on) return { on: true, epoch: typeof o.epoch === 'string' ? o.epoch : '', at: Number.isInteger(o.at) ? o.at : 0, f: Array.isArray(o.f) ? o.f : [], n: Array.isArray(o.n) ? o.n : [], settingsAt: Number.isFinite(o.settingsAt) ? o.settingsAt : 0 };
+  } catch (_) {}
+  return null;
+}
+function writeSync(st) {
+  if (st) LS.set(K_SYNC, JSON.stringify(st));
+  else try { localStorage.removeItem(K_SYNC); } catch (_) {}
+}
+let syncTimer = 0, syncDue = 0, stopAsk = false;
+// Syncing, on <html data-sync>: off (never linked, or stopped), idle between
+// syncs, syncing, or failed (it tries again later). A reply that comes back
+// after it was stopped is dropped.
+const Sync = machine('sync', {
+  off: ['idle'],
+  idle: ['syncing', 'off'],
+  syncing: ['idle', 'failed', 'off'],
+  failed: ['syncing', 'off'],
+}, surveyApi && playerToken && readSync() ? 'idle' : 'off', { onMove: syncMoved });
+function devicesSyncing() { return !Sync.is('off'); }
+function syncMoved(to) {
+  if (to === 'off') { clearTimeout(syncTimer); syncDue = 0; stopAsk = false; }
+  if (syncEl.dataset.state === 'local' || syncEl.dataset.state === 'devices') setSync('local');
+  renderPair();
+}
+// The next sync, in `ms` unless one's due sooner already.
+function syncSoon(ms) {
+  if (Sync.is('off')) return;
+  const due = Date.now() + ms;
+  if (syncDue && syncDue <= due) return;
+  clearTimeout(syncTimer);
+  syncDue = due;
+  syncTimer = setTimeout(() => { syncDue = 0; syncNow(); }, ms);
+}
+function startSync(settingsAt) {
+  if (!surveyApi || !playerToken) return;
+  writeSync({ on: true, epoch: '', at: 0, f: [...found.keys()], n: [...novasSeen.keys()], settingsAt: (readSync() || {}).settingsAt || settingsAt });
+  if (Sync.is('off')) Sync.go('idle');
+  syncSoon(SYNC_GAP_MS);
+}
+// Something to send at the next sync: a find ('f') or a supernova ('n').
+function syncLater(kind, key) {
+  const st = readSync();
+  if (!st || Sync.is('off')) return;
+  if (!st[kind].includes(key)) { st[kind].push(key); writeSync(st); }
+  syncSoon(SYNC_SOON_MS);
+}
+function settingsChanged() {
+  const st = readSync();
+  if (!st || Sync.is('off')) return;
+  st.settingsAt = Date.now();
+  writeSync(st);
+  syncSoon(SYNC_GAP_MS);
+}
+async function syncNow() {
+  if (!Sync.is('idle', 'failed') || document.hidden) return;  // a hidden tab syncs when it shows again
+  const st = readSync();
+  if (!st) return Sync.go('off');
+  const sentF = st.f.slice(0, SYNC_BATCH), sentN = st.n.slice(0, SYNC_BATCH);
+  Sync.go('syncing');
+  const at = Sync.seq;
+  const { status, data } = await workerPost('/v1/player/sync', {
+    token: playerToken, epoch: st.epoch, since: st.at,
+    finds: sentF.map(k => found.get(k)).filter(Boolean).map(plain),
+    novas: sentN.map(k => novasSeen.get(k)).filter(Boolean),
+    settings: mySettings(), settingsAt: st.settingsAt,
+  });
+  if (Sync.seq !== at) return;
+  if (status === 200 && data.off) {
+    writeSync(null);
+    toast('<i></i><b>Syncing has stopped</b><span>Your field notes stay in this browser. Link a device again to sync.</span>', null, 5000);
+    return Sync.go('off');
+  }
+  if (status !== 200 || typeof data.epoch !== 'string' || !Number.isInteger(data.at)) {
+    Sync.go('failed');
+    return syncSoon(status === 429 ? SYNC_GAP_MS : 30000);
+  }
+  const now = readSync() || st;  // another tab may have added to it meanwhile
+  const sent = new Set([...sentF.map(k => 'f' + k), ...sentN.map(k => 'n' + k)]);
+  // The Worker started over (everything was forgotten, then linked again): send it all.
+  const fresh = st.epoch && data.epoch !== st.epoch;
+  now.f = fresh ? [...found.keys()] : now.f.filter(k => !sent.has('f' + k));
+  now.n = fresh ? [...novasSeen.keys()] : now.n.filter(k => !sent.has('n' + k));
+  now.epoch = data.epoch;
+  now.at = data.at;
+  takeSynced(data, now);
+  writeSync(now);
+  Sync.go('idle');
+  syncSoon(now.f.length || now.n.length ? SYNC_GAP_MS : SYNC_EVERY_MS);
+}
+// What came from linked devices, taken in as a save from another tab is.
+function takeSynced(data, st) {
+  let added = false;
+  for (const o of Array.isArray(data.finds) ? data.finds : []) {
+    const have = o && typeof o.w === 'string' ? found.get(keyOf(o.w, o.x, o.y, o.d)) : null;
+    if (have) {
+      if (o.f && !have.f) { have.f = 1; if (Number.isInteger(o.n) && o.n > 0 && o.n < 1e8) have.n = o.n; added = true; }
+      continue;
+    }
+    const e = sanitize(o);
+    if (e) { found.set(e.key, e); added = true; }
+  }
+  if (added) { saveLocal(); renderNotes(); scheduleHud(); invalidate(); }
+  for (const o of Array.isArray(data.novas) ? data.novas : []) { const n = cleanNova(o); if (n) sawNova(n, true); }
+  if (data.settings && Number.isFinite(data.settingsAt) && data.settingsAt > st.settingsAt) {
+    applySettings(data.settings);
+    st.settingsAt = data.settingsAt;
+  }
+}
+function applySettings(c) {
+  if (typeof c.initials === 'string' && /^[A-Z]{3}$/.test(c.initials) && c.initials !== myInitials()) {
+    LS.set(K_INITIALS, JSON.stringify(c.initials));
+    surveyInput.value = signupInput.value = c.initials;
+    showSigning(false);
+    if (Intro.is('sign')) Intro.go('exploring');
+  }
+  if (Array.isArray(c.muted)) {
+    muted.clear();
+    for (const p of c.muted.slice(-MUTED_MAX)) if (typeof p === 'string' && PID_RE.test(p)) muted.add(p);
+    LS.set(K_MUTED, JSON.stringify([...muted]));
+    pops = pops.filter(p => !muted.has(p.pid));
+  }
+  if (typeof c.listed === 'boolean') { listedOn = listedEl.checked = c.listed; LS.set(K_LISTED, listedOn ? '1' : '0'); }
+  if (typeof c.emotes === 'boolean') { emotesOn = emotesEl.checked = c.emotes; LS.set(K_EMOTES, emotesOn ? '1' : '0'); if (!emotesOn) pops = []; }
+  tellMe(); renderWho(); invalidate();
+  // The guild, if this device isn't in the middle of changing it itself.
+  const g = goodGuild(c.guild) ? { code: c.guild.code, name: c.guild.name, tag: c.guild.tag } : null;
+  if ((g && g.code) === (myGuild && myGuild.code) || !Membership.is('in', 'out')) return;
+  saveGuild(g, true);
+  roster = []; rosterAt = 0;
+  if (g && Membership.is('out')) Membership.go('in');
+  else if (!g) Membership.go('out');
+  else guildMoved('in', 'in');  // from one guild to another
+}
+async function stopSync(everywhere) {
+  writeSync(null);
+  if (!Sync.is('off')) Sync.go('off');
+  const { status } = everywhere ? await workerPost('/v1/player/forget', { token: playerToken }) : { status: 200 };
+  const said = status !== 200 ? 'Couldn’t reach the survey, so your other devices still sync. Try again in a moment.' : everywhere ? 'Syncing stopped on every device, and the copy kept for it is deleted.' : 'Syncing stopped on this device.';
+  const el = pairCard.querySelector('p');
+  if (el) el.textContent = said;
+  say(said);
+}
+document.addEventListener('visibilitychange', () => { if (!document.hidden) syncSoon(500); });
+// Another tab turned it on or off.
+window.addEventListener('storage', e => {
+  if (e.key !== K_SYNC) return;
+  const on = !!readSync();
+  if (on && Sync.is('off')) { Sync.go('idle'); syncSoon(SYNC_GAP_MS); }
+  else if (!on && !Sync.is('off')) Sync.go('off');
+});
+if (Sync.is('idle')) syncSoon(1000);
+
 /* ---------- Linking devices ---------- */
 // One surveyor on every device (see "One player, several devices" in
 // worker/SURVEY.md). A device that's already you asks the Worker for a
@@ -4831,10 +5003,14 @@ function pairUrl(code) {
 }
 const showCode = code => `${code.slice(0, 4)}-${code.slice(4)}`;
 const cleanCode = v => v.toUpperCase().replace(/[^A-Z0-9]/g, '');
-async function linkCall(path, body) {
+const linkCall = (path, body) => workerPost(`/v1/link${path}`, body);
+// The settings a link carries and syncing keeps in step.
+const mySettings = () => ({ initials: myInitials(), guild: myGuild && { code: myGuild.code, name: myGuild.name, tag: myGuild.tag }, muted: [...muted].slice(-MUTED_MAX), listed: listedOn, emotes: emotesOn });
+// The Worker's link and sync paths: JSON sent as text/plain, so no preflight.
+async function workerPost(path, body) {
   const ctl = new AbortController(), timer = setTimeout(() => ctl.abort(), 8000);
   try {
-    const res = await fetch(`${surveyHttp}/v1/link${path}`, { method: 'POST', headers: { 'Content-Type': 'text/plain' }, body: JSON.stringify(body), signal: ctl.signal });
+    const res = await fetch(`${surveyHttp}${path}`, { method: 'POST', headers: { 'Content-Type': 'text/plain' }, body: JSON.stringify(body), signal: ctl.signal });
     return { status: res.status, data: await res.json().catch(() => ({})) };
   } catch (_) {
     return { status: 0, data: {} };
@@ -4846,8 +5022,7 @@ async function makeCode() {
   if (!playerToken || !Pair.is('idle', 'showing', 'failed')) return;
   Pair.go('making');
   const at = Pair.seq;
-  const carry = { initials: myInitials(), guild: myGuild && { code: myGuild.code, name: myGuild.name, tag: myGuild.tag }, muted: [...muted].slice(-MUTED_MAX), listed: listedOn, emotes: emotesOn };
-  const { status, data } = await linkCall('', { token: playerToken, carry });
+  const { status, data } = await linkCall('', { token: playerToken, carry: mySettings() });
   if (Pair.seq !== at) return;
   if (status === 201 && LINK_CODE_RE.test(data.code)) {
     pairCode = { code: data.code, until: Date.now() + LINK_MS, gone: false };
@@ -4867,7 +5042,7 @@ function pollPair() {
     if (!document.hidden) {
       const { status, data } = await linkCall(`/${code.code}/status`, { token: playerToken });
       if (Pair.seq !== at) return;
-      if (status === 200 && data.state === 'used') return Pair.go('used');
+      if (status === 200 && data.state === 'used') { startSync(1); return Pair.go('used'); }
       if (status === 200 && data.state === 'gone') { code.gone = true; return renderPair(); }
     }
     renderPair();
@@ -4910,11 +5085,14 @@ async function takeLink(token, c) {
   }
   LS.set(K_PLAYER, token);
   if (initials) LS.set(K_INITIALS, JSON.stringify(initials));
-  saveGuild(guild);
+  saveGuild(guild, true);
   const theirs = Array.isArray(c.muted) ? c.muted.filter(p => typeof p === 'string' && PID_RE.test(p)) : [];
   LS.set(K_MUTED, JSON.stringify([...new Set([...muted, ...theirs])].slice(-MUTED_MAX)));
   if (typeof c.listed === 'boolean') LS.set(K_LISTED, c.listed ? '1' : '0');
   if (typeof c.emotes === 'boolean') LS.set(K_EMOTES, c.emotes ? '1' : '0');
+  // From now on the two keep in step, starting with everything here; these
+  // settings, mutes from both, are the newest.
+  writeSync({ on: true, epoch: '', at: 0, f: [...found.keys()], n: [...novasSeen.keys()], settingsAt: Date.now() });
 }
 async function sharePairLink() {
   if (!pairCode) return;
@@ -4971,14 +5149,15 @@ function renderPair() {
   const busy = st === 'redeeming';
   let html = '';  // while a link's offer is over the map, it's the one card about linking
   if (offering) { /* nothing here */ }
-  else if (st === 'idle') html = `<p>Play as the same surveyor on your phone, tablet and computer.</p><div class="pair-acts"><button type="button" class="pill" data-p="make">Link another device</button><button type="button" class="pill" data-p="enter">Use a code</button></div>`;
+  else if (st === 'idle' && stopAsk && devicesSyncing()) html = `<div class="pair-box"><p>Stop syncing this device, or every device? Every device also deletes the copy kept for syncing. Each keeps its notes as they are.</p><div class="pair-acts"><button type="button" class="pill" data-p="stop-here">This device</button><button type="button" class="pill" data-p="stop-all">Every device</button><button type="button" class="pill" data-p="stop-no">Keep syncing</button></div></div>`;
+  else if (st === 'idle') html = `<p>${devicesSyncing() ? 'Your field notes, supernovas, initials, guild and mutes keep in step with your linked devices.' : 'Play as the same surveyor on your phone, tablet and computer.'}</p><div class="pair-acts"><button type="button" class="pill" data-p="make">Link another device</button><button type="button" class="pill" data-p="enter">Use a code</button>${devicesSyncing() ? '<button type="button" class="pill" data-p="stop">Stop syncing</button>' : ''}</div>`;
   else if (st === 'making') html = `<div class="pair-box"><p class="eyebrow">Link another device</p><p>Making a code…</p></div>`;
   else if (st === 'showing' && pairCode && pairCode.gone) html = `<div class="pair-box"><p class="eyebrow">Link another device</p><p>That code has run out.</p><div class="pair-acts"><button type="button" class="btn" data-p="make">New code</button><button type="button" class="pill" data-p="close">Close</button></div></div>`;
   else if (st === 'showing' && pairCode) {
     const share = navigator.share && matchMedia('(pointer: coarse)').matches ? 'Share link' : 'Copy link';
-    html = `<div class="pair-box"><p class="eyebrow">Link another device</p><div class="pair-qr" id="pairQr"></div><p>Scan this with the other device’s camera, or open Letterfield there and choose <b>Use a code</b>:</p><b class="pair-code" id="pairCode">${showCode(pairCode.code)}</b><p class="pair-left" id="pairLeft"></p><p>Whoever uses it plays as you, so keep it to your own devices. It brings your initials, guild and mutes; finds stay on the device that found them.</p><div class="pair-acts"><button type="button" class="pill" data-p="share">${share}</button><button type="button" class="btn" data-p="close">Done</button></div><p class="pair-small" id="pairSaid" aria-live="polite"></p><p class="pair-small">On an iPhone, a Home Screen app keeps its own storage: type the code in there.</p></div>`;
+    html = `<div class="pair-box"><p class="eyebrow">Link another device</p><div class="pair-qr" id="pairQr"></div><p>Scan this with the other device’s camera, or open Letterfield there and choose <b>Use a code</b>:</p><b class="pair-code" id="pairCode">${showCode(pairCode.code)}</b><p class="pair-left" id="pairLeft"></p><p>Whoever uses it plays as you, so keep it to your own devices. It brings your initials, guild and mutes, and from then on your field notes keep in step on both.</p><div class="pair-acts"><button type="button" class="pill" data-p="share">${share}</button><button type="button" class="btn" data-p="close">Done</button></div><p class="pair-small" id="pairSaid" aria-live="polite"></p><p class="pair-small">On an iPhone, a Home Screen app keeps its own storage: type the code in there.</p></div>`;
   } else if (st === 'used') html = `<div class="pair-box"><p><b>Linked.</b> Your other device plays as ${myInitials() || 'you'} now.</p><div class="pair-acts"><button type="button" class="btn" data-p="close">Done</button></div></div>`;
-  else if (st === 'entering' || st === 'redeeming') html = `<form class="pair-box pair-enter" id="pairEnter"><label for="pairInput">The code from your other device, under <b>Link another device</b> there</label><input id="pairInput" maxlength="9" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="ABCD-EFGH"${busy ? ' disabled' : ''}><button type="submit" class="btn"${busy ? ' disabled' : ''}>${busy ? 'Linking…' : 'Link'}</button><button type="button" class="pill" data-p="close"${busy ? ' disabled' : ''}>Cancel</button>${err}<p class="pair-small">This device then plays as that surveyor: their initials and guild, with mutes from both.</p></form>`;
+  else if (st === 'entering' || st === 'redeeming') html = `<form class="pair-box pair-enter" id="pairEnter"><label for="pairInput">The code from your other device, under <b>Link another device</b> there</label><input id="pairInput" maxlength="9" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="ABCD-EFGH"${busy ? ' disabled' : ''}><button type="submit" class="btn"${busy ? ' disabled' : ''}>${busy ? 'Linking…' : 'Link'}</button><button type="button" class="pill" data-p="close"${busy ? ' disabled' : ''}>Cancel</button>${err}<p class="pair-small">This device then plays as that surveyor: their initials and guild, with mutes and field notes from both, kept in step.</p></form>`;
   else if (st === 'failed') html = `<div class="pair-box">${err}<div class="pair-acts"><button type="button" class="pill" data-p="make">Try again</button><button type="button" class="pill" data-p="close">Close</button></div></div>`;
   else if (st === 'done') html = `<div class="pair-box"><p><b>Linked.</b> Loading as your surveyor…</p></div>`;
   if (pairCard.innerHTML !== html) {
@@ -4998,7 +5177,7 @@ function renderPair() {
     const offer = st === 'failed'
       ? `${head}${err}<div class="coach-row"><button type="button" class="btn ghost" data-p="not-now">Close</button>${pairRetry ? '<button type="button" class="btn" data-p="link">Try again</button>' : ''}</div>`
       : st === 'done' ? `${head}<p><b>Linked.</b> Loading as your surveyor…</p>`
-        : `${head}<p>This link comes from another device. Link this one to it, and here you’ll be the same surveyor as there: the same initials and guild, with mutes from both. Finds stay on the device that found them.</p>${myGuild ? `<p>If they’re in a guild, this device leaves the ${guildName(myGuild.name)}.</p>` : ''}<div class="coach-row"><button type="button" class="btn ghost" data-p="not-now"${busy ? ' disabled' : ''}>Not now</button><button type="button" class="btn" data-p="link"${busy ? ' disabled' : ''}>${busy ? 'Linking…' : 'Link'}</button></div>`;
+        : `${head}<p>This link comes from another device. Link this one to it, and here you’ll be the same surveyor as there: the same initials and guild, with mutes and field notes from both, kept in step from then on.</p>${myGuild ? `<p>If they’re in a guild, this device leaves the ${guildName(myGuild.name)}.</p>` : ''}<div class="coach-row"><button type="button" class="btn ghost" data-p="not-now"${busy ? ' disabled' : ''}>Not now</button><button type="button" class="btn" data-p="link"${busy ? ' disabled' : ''}>${busy ? 'Linking…' : 'Link'}</button></div>`;
     if (pairOffer.innerHTML !== offer) pairOffer.innerHTML = offer;
   }
 }
@@ -5017,6 +5196,8 @@ function onPairClick(e) {
   else if (p === 'close' && Pair.is('showing', 'used', 'entering', 'failed')) Pair.go('idle');
   else if (p === 'link' && Intro.is('link')) redeemCode(linkAsked);
   else if (p === 'not-now') leaveOffer();
+  else if (p === 'stop' || p === 'stop-no') { stopAsk = p === 'stop'; renderPair(); try { pairCard.querySelector('button').focus({ preventScroll: true }); } catch (_) {} }
+  else if (p === 'stop-here' || p === 'stop-all') stopSync(p === 'stop-all');
 }
 pairCard.addEventListener('click', onPairClick);
 pairOffer.addEventListener('click', onPairClick);
@@ -5119,7 +5300,7 @@ if (redrawn) setTimeout(() => toast(`<i></i><b>The map has been redrawn</b><span
 connectStore();
 if (location.hash === '#debug') window.__lf = { cam, found, claims, links, chunk, wordEnd, collect, territoryProgress, remnants: () => [...remnants().set], novas: () => [...novasSeen.values()], territoryName: regionName, world: () => world, supernova, novaSound, audioOut, musicTracks: MUSIC_TRACKS, audio: () => ac, music: () => musicNow && { state: ac.state, track: musicNow.track().name, nodes: musicNow.track().nodes.size, level: musicNow.master.gain.value, master: musicNow.master, volume: musicVol, target: musicLevel(), swap: musicNow.swap }, nova: () => nova,
   who: () => Who.state, surveyors: () => whoData, emoteMotion, guild: () => Membership.state, myGuild: () => myGuild, mates: () => [...mates.keys()], roster: () => roster,
-  pair: () => Pair.state, pairCode: () => pairCode && pairCode.code,
+  pair: () => Pair.state, pairCode: () => pairCode && pairCode.code, sync: () => Sync.state, syncNow: () => { syncDue = 0; clearTimeout(syncTimer); return syncNow(); },
   guildWords: () => [GUILD_FIRST.length, GUILD_SECOND.length, GUILD_THIRD.length], pops: () => pops.map(p => [p.pid, p.e]), pid: () => myPid, muted: () => [...muted], carets: () => [...ghosts.keys()],
   caretXY: id => { const gh = ghosts.get(id); return gh && { x: (Math.round(gh.x) - cam.x) * cam.cs + (W - dock) / 2, y: (Math.floor(gh.y) + .5 - cam.y) * cam.cs + H / 2 + mapTop }; },
   pass: () => Pass.state, intro: () => Intro.state, surveyStatus, linkStates: () => Object.fromEntries([...links].map(([k, l]) => [k, l.m.state])), outbox: () => [...outbox.values()].map(c => [c.e.w, c.m.state]), definitions: () => Object.fromEntries([...definitions].map(([k, d]) => [k, d.m.state])) };

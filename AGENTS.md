@@ -183,6 +183,7 @@ The machines each page keeps:
 | | `who` (the list of surveyors) | closed, loading, ready, refreshing, failed |
 | | `guild` (the guild you're in) | out, naming, making, invited, joining, in, leaving |
 | | `pair` (linking another device) | idle, making, showing, used, entering, redeeming, done, failed |
+| | `sync` (keeping linked devices in step) | off, idle, syncing, failed |
 | `letterfield-log.html` | `log` (what the page shows) | loading, ready, refreshing, stale, failed |
 | `letterfield-timelapse.html` | `tl` (the replay) | loading, empty, failed, paused, playing, waiting |
 | | `rec` (saving a video) | off, preparing, recording, done, failed |
@@ -558,13 +559,16 @@ per sector of the map, plus an Atlas for the world's totals
 - Another device becomes the same player with a one-time code
   (`worker/src/players.js`, "One player, several devices" in
   `worker/SURVEY.md`), shown as a QR code, a `?link=<code>` link and eight
-  characters to type. It carries the token, initials, guild and mutes;
-  finds stay on each device.
+  characters to type. It carries the token, initials, guild and mutes, and
+  starts a Player (a Durable Object per player) that keeps the linked
+  devices' field notes, supernovas and settings in step ("Syncing linked
+  devices"). Nothing syncs for a player who never linked a device.
 - Game tests fake the survey with `page.route_web_socket` and
   `tests/fake_survey.py`; see `tests/test_letterfield_survey.py`, and
   `tests/test_letterfield_surveyors.py` for the list and emotes,
-  `tests/test_letterfield_guilds.py` for guilds and
-  `tests/test_letterfield_linking.py` for linking devices. The real
+  `tests/test_letterfield_guilds.py` for guilds,
+  `tests/test_letterfield_linking.py` for linking devices and
+  `tests/test_letterfield_sync.py` for syncing them. The real
   Worker's stand-in answers the survey with an empty fake too, and its
   Turnstile check with a fake widget and pass, so no test reaches
   challenges.cloudflare.com. `without_worker()` blanks `SURVEY_URL` along

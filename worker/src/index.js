@@ -13,20 +13,21 @@ import { routeDefine } from './define.js';
 import { corsHeaders, handle, json } from './leaderboard.js';
 import { routeSurvey } from './survey.js';
 import { routeLog } from './survey-log.js';
-import { routeLinks } from './players.js';
+import { routeLinks, routePlayers } from './players.js';
 import { routeGuilds } from './survey-guild.js';
 import { routeSurveyors } from './survey-social.js';
 import { handleWar } from './war.js';
 
 export { Atlas, Sector } from './survey.js';
 export { Guild } from './survey-guild.js';
+export { Player } from './players.js';
 export { WarRoom } from './war.js';
 
 export default {
   async fetch(request, env) {
     try {
       if (new URL(request.url).pathname.startsWith('/v1/war/')) return await handleWar(request, env);
-      const survey = routeSurvey(request, env) ?? routeSurveyors(request, env, corsHeaders, json) ?? routeGuilds(request, env) ?? routeLinks(request, env) ?? routeLog(request, env) ?? routeDefine(request, env);
+      const survey = routeSurvey(request, env) ?? routeSurveyors(request, env, corsHeaders, json) ?? routeGuilds(request, env) ?? routeLinks(request, env) ?? routePlayers(request, env) ?? routeLog(request, env) ?? routeDefine(request, env);
       return await (survey ?? handle(request, env));
     } catch (error) {
       console.error(error);

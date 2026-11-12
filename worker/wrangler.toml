@@ -67,6 +67,12 @@ class_name = "Atlas"
 name = "GUILDS"
 class_name = "Guild"
 
+# One player's notes, kept for the devices they've linked: one Durable Object
+# per player id (see "Syncing linked devices" in SURVEY.md).
+[[durable_objects.bindings]]
+name = "PLAYERS"
+class_name = "Player"
+
 # Migrations run once each, in order, and a deployed tag can't change: add a
 # new tag for each new class.
 [[migrations]]
@@ -80,6 +86,10 @@ new_sqlite_classes = ["Sector", "Atlas"]
 [[migrations]]
 tag = "v3"
 new_sqlite_classes = ["Guild"]
+
+[[migrations]]
+tag = "v4"
+new_sqlite_classes = ["Player"]
 
 # Letterfield's survey limits each player's address, hashed with IP_SALT,
 # across every sector (see "Bots" in SURVEY.md). Counts are kept per
@@ -170,6 +180,10 @@ class_name = "Atlas"
 [[previews.durable_objects.bindings]]
 name = "GUILDS"
 class_name = "Guild"
+
+[[previews.durable_objects.bindings]]
+name = "PLAYERS"
+class_name = "Player"
 
 # Counted apart from production's (Previews share these). The same limits,
 # except claims: 60 a minute rather than 6, so a test can chart a whole
