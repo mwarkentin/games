@@ -6,7 +6,21 @@ requires-python = ">=3.12"
 dependencies = ["markdown"]
 
 [dependency-groups]
-dev = ["pytest", "pytest-playwright", "pytest-split", "pytest-xdist"]
+dev = [
+    "pytest",
+    "pytest-playwright",
+    "pytest-split",
+    "pytest-xdist",
+]
+# The linters, which scripts/lint.sh runs with `uv run --only-group lint`
+# (see "Linting" in AGENTS.md). They're apart from dev so the pytest jobs
+# don't install them: actionlint-py downloads its binary from GitHub.
+lint = [
+    "actionlint-py==1.7.12.25",
+    "prek==0.5.10",
+    "ruff==0.17.4",
+    "shellcheck-py==0.11.0.1",
+]
 
 [tool.uv]
 package = false
@@ -14,3 +28,41 @@ package = false
 [tool.pytest.ini_options]
 pythonpath = ["scripts"]
 testpaths = ["tests"]
+
+# See "Linting" in AGENTS.md.
+[tool.ruff]
+line-length = 120
+# Excluded files stay excluded when prek names them on the command line.
+force-exclude = true
+target-version = "py312"
+# Modules the tests import from these, sorted as first-party.
+src = ["scripts", "tests"]
+
+[tool.ruff.lint]
+# Bugs first: pyflakes, pycodestyle's errors, bugbear, pylint's errors, plus
+# sorted imports and modern syntax, which ruff fixes itself.
+select = ["F", "E4", "E7", "E9", "B", "PLE", "I", "UP"]
+ignore = [
+  "E731", # a lambda assigned to a name reads fine in a test
+  "E741", # l for a line
+  "B905", # zip() over lists that are the same length by construction
+]
+
+# Files that pull requests in flight change, left unformatted and unsorted for
+# now so those don't conflict. Run `scripts/lint.sh --fix` on each once its
+# pull requests have merged, and take it off this list.
+[tool.ruff.format]
+exclude = [
+  "tests/conftest.py",
+  "tests/fake_survey.py",
+  "tests/fake_survey_log.py",
+  "tests/fake_war_room.py",
+  "tests/test_changelog.py",
+  "tests/test_letterfield.py",
+  "tests/test_letterfield_survey.py",
+  "tests/test_war.py",
+  "tests/test_war_rooms.py",
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/{conftest,fake_survey,fake_survey_log,fake_war_room,test_changelog,test_letterfield,test_letterfield_survey,test_war,test_war_rooms}.py" = ["I", "UP"]

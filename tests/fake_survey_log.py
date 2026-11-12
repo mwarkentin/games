@@ -7,7 +7,8 @@ real API is tested in worker/test/survey-log.test.js. Entries are the API's
 the names need the map's data, which only the Worker and the game hold.
 Supernovas are worked out from the entries, as a sector does, for each
 territory the test gives a total: once that many of its hidden words are in,
-the one that made it is the last word.
+the one that made it is the last word. The timelapse's index names every
+theme, so themes the test doesn't give get a made-up name and hue.
 """
 
 from __future__ import annotations
@@ -24,6 +25,8 @@ HOUR_MS = 3_600_000
 DAY_MS = 86_400_000
 PAGE = 500
 SLICE_PAGE = 100
+TIMELAPSE_PAGE = 5000
+THEME_COUNT, LAT_B = 225, 15  # a territory's theme is (rx + 15 ry) mod 225, as on map 4
 AREA_CELLS = (-12 * 192, 13 * 192)  # the shared world, x and y from..to-1
 
 
@@ -40,13 +43,14 @@ def month_hours(m: int) -> tuple[int, int]:
 
 class FakeSurveyLog:
     def __init__(self, entries=(), places=None, themes=None, page=PAGE, fail=False, now_ms=None,
-                 slice_page=SLICE_PAGE, totals=None):
+                 slice_page=SLICE_PAGE, totals=None, timelapse_page=TIMELAPSE_PAGE):
         self.entries = sorted(entries, key=lambda e: (e[6], e[0], e[1], e[2], e[3]))
         self.places = places or {}    # 'rx,ry' -> name
         self.themes = themes or {}    # theme index -> [name, hue]
         self.totals = totals or {}    # 'rx,ry' -> hidden words in that territory (112 if not given; only these go supernova)
         self.page = page
         self.slice_page = slice_page
+        self.timelapse_page = timelapse_page
         self.fail = fail
         self.now_ms = now_ms  # the Worker refuses days and hours after this one's, as the real one does
         self.requests: list[str] = []  # path and query of every request
@@ -70,6 +74,8 @@ class FakeSurveyLog:
         sliced = re.search(r"/v1/survey/log/(surveyor|theme)/([A-Z]{3}|\d+)/(\d+)/(\d+)(?:\?before=(\d+))?$", url)
         territory = re.search(r"/v1/survey/log/territory/(-?\d+)/(-?\d+)$", url)
         novas = re.search(r"/v1/survey/log/novas/(\d+)/(\d+)(?:\?before=(\d+))?$", url)
+        timelapse = re.search(r"/v1/survey/log/timelapse$", url)
+        timelapse_day = re.search(r"/v1/survey/log/timelapse/(\d+)(?:\?after=(\d+))?$", url)
         future = self.now_ms is not None and (
             (day and int(day[1]) > self.now_ms // DAY_MS) or (hour and int(hour[1]) > self.now_ms // HOUR_MS)
             or (month and month_hours(int(month[1]))[0] > self.now_ms // HOUR_MS)
@@ -77,6 +83,7 @@ class FakeSurveyLog:
             or (top_hours and int(top_hours[1]) > self.now_ms // HOUR_MS)
             or (sliced and int(sliced[3]) > self.now_ms // HOUR_MS)
             or (novas and int(novas[1]) > self.now_ms // HOUR_MS)
+            or (timelapse_day and int(timelapse_day[1]) > self.now_ms // DAY_MS)
         )
         if future:
             route.fulfill(status=400, headers=headers, body=json.dumps({"error": "that day has not started"}))
@@ -84,6 +91,29 @@ class FakeSurveyLog:
         if url.split("?")[0].endswith("/v1/survey/log/span"):
             hours = [e[6] // HOUR_MS for e in self.entries]
             body = {"first": min(hours, default=None), "last": max(hours, default=None)}
+        elif timelapse:
+            hours = Counter(e[6] // HOUR_MS for e in self.entries)
+            nova_hours = Counter(n[2] // HOUR_MS for n in self.novas())
+            hidden = [(e[1] // 48, e[2] // 48) for e in self.entries if e[4] == 0]
+            body = {
+                "hours": [[h, n] for h, n in sorted(hours.items())],
+                "novas": [[h, n] for h, n in sorted(nova_hours.items())],
+                "bounds": [min(r[0] for r in hidden), min(r[1] for r in hidden), max(r[0] for r in hidden), max(r[1] for r in hidden)]
+                if hidden else None,
+                "themes": [self.themes.get(i, [f"Theme {i}", i * 37 % 360]) for i in range(THEME_COUNT)],
+                "layout": [LAT_B, THEME_COUNT],
+            }
+        elif timelapse_day:
+            d, after = int(timelapse_day[1]), int(timelapse_day[2] or 0)
+            rows = [e for e in self.entries if e[6] // DAY_MS == d]
+            part = rows[after : after + self.timelapse_page]
+            body = {
+                "day": d,
+                "words": [[e[6] - d * DAY_MS, e[1], e[2], e[3], len(e[0]), e[7], e[4]] for e in part],
+                "novas": [] if after else [[n[2] - d * DAY_MS, n[0], n[1], n[13]] for n in sorted(self.novas(), key=lambda n: n[2]) if n[2] // DAY_MS == d],
+                # The real cursor is the last word's at~key; an offset does here.
+                "next": str(after + self.timelapse_page) if len(rows) > after + self.timelapse_page else None,
+            }
         elif month:
             first, last = month_hours(int(month[1]))
             counts = Counter(e[6] // HOUR_MS for e in self.entries if first <= e[6] // HOUR_MS < last)

@@ -134,11 +134,7 @@ def game_files(root: Path = ROOT) -> list[str]:
     they're published, listed and tested the same way, but join their game's
     home-screen app (see app_of).
     """
-    return sorted(
-        path.name
-        for path in root.glob("*.html")
-        if path.name not in GENERATED_PAGES
-    )
+    return sorted(path.name for path in root.glob("*.html") if path.name not in GENERATED_PAGES)
 
 
 def changelog_apps(root: Path = ROOT) -> list[str]:
@@ -285,16 +281,8 @@ def render_page(
 
     tip_source labels the header's tip link, which appears once TIP_URL is set.
     """
-    meta = (
-        f'\n<meta name="description" content="{html.escape(description)}">'
-        if description
-        else ""
-    )
-    tip = (
-        f'<a href="{html.escape(tip_link(tip_source or "games"))}">Tip jar</a>'
-        if TIP_URL
-        else ""
-    )
+    meta = f'\n<meta name="description" content="{html.escape(description)}">' if description else ""
+    tip = f'<a href="{html.escape(tip_link(tip_source or "games"))}">Tip jar</a>' if TIP_URL else ""
     page = f"""<!DOCTYPE html>
 <html lang="en">
 <head>

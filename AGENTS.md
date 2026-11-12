@@ -13,7 +13,8 @@ utilities; games live here so they get their own origin and their own rules.
   tested the same way but says `<meta name="games:app" content="letterfield">`:
   it joins that game's home-screen app, so it needs no icon or manifest of
   its own and its path must start with the game's (see `app_of` in
-  `scripts/common.py`).
+  `scripts/common.py`). `letterfield-timelapse.html`, the survey replayed on
+  a map, is another.
 - `README.md`: the game list. The build turns it into `index.html`.
 - `changelog/`: each game's changelog for players, `<game>.md`, which the
   build turns into `/changelog/<game>` (see Changelogs).
@@ -180,6 +181,8 @@ The machines each page keeps:
 | | `claim` (each claim of ours; `el: null`, see `__lf.outbox()`) | queued, sent, unanswered, answered |
 | | `define` (each found word's meaning; `el: null`, see `__lf.definitions()`) | loading, ready, none, failed |
 | `letterfield-log.html` | `log` (what the page shows) | loading, ready, refreshing, stale, failed |
+| `letterfield-timelapse.html` | `tl` (the replay) | loading, empty, failed, paused, playing, waiting |
+| | `rec` (saving a video) | off, preparing, recording, done, failed |
 | `war.html` | `screen` | menu, lobby, table, ending, over |
 | | `overlay` (what covers the screen) | none, pause, invite, styles, history |
 | | `session` (what the page plays through) | none, joining, solo, room |
@@ -583,7 +586,7 @@ page loads nothing from a new host.
    Start, make a move, check the score or board changed. A debug hook such
    as Funnels & Buckets' `#debug` / `window.__fb` makes this much easier.
    `tests/test_games.py` already smoke-tests every game.
-6. Run `uv run pytest` and make sure it passes.
+6. Run `uv run pytest` and `scripts/lint.sh`, and make sure both pass.
 7. In the commit message, say what changed and include the URL of the chat,
    artifact or agent session behind it.
 
@@ -597,6 +600,9 @@ node --disable-warning=ExperimentalWarning --test "worker/test/*.test.js"   # th
 (cd share && npm ci) && node --disable-warning=ExperimentalWarning --test "share/test/*.test.js"   # the share Worker
 uv run ./build.sh && python3 -m http.server -d _site 8000   # preview the real site
 uv run scripts/render_icons.py       # after drawing or changing an icon
+scripts/lint.sh                      # lint everything, as CI does
+scripts/lint.sh --fix                # fix and format what can be, then lint
+uv run --only-group lint prek install   # once per clone: lint and fix staged files on each commit
 ```
 
 The smoke tests load every game at phone and desktop sizes and fail on
@@ -604,14 +610,68 @@ console errors, uncaught exceptions, failed requests, sideways scrolling or
 text inputs under 16px. They also check the `<head>` metadata, CDN version
 pins and the README link.
 
+### Linting
+
+`scripts/lint.sh` runs one tool per language, each pinned to an exact
+version, and CI's `lint` job (in `.github/workflows/test.yml`) runs it on
+every push and pull request, in about 15 seconds. It fails on what it
+finds; it never pushes fixes, since a push made with the workflow's token
+starts no checks of its own and would race the sessions pushing to the same
+branch. Fixes happen before the commit instead, with prek (below).
+
+- **Python** (`scripts/`, `tests/`, `share/scripts/`): ruff, which lints
+  (pyflakes, bugbear, sorted imports, modern syntax) and formats at 120
+  columns. Its version and rules are in `pyproject.toml`.
+- **JavaScript** (`worker/`, `share/`, the scripts the build inlines and
+  every game's inline `<script>`): Biome, through `npx`, so the games still
+  need no npm. Only its rules that catch bugs are on (`biome.jsonc`):
+  undeclared names, unused variables and imports, impossible conditions.
+  Its formatter is off, because it would rewrite nearly every line of the
+  games. For a name used on purpose that it flags, write
+  `// biome-ignore lint/<group>/<rule>: <why>` above it.
+- **Shell:** shellcheck on `build.sh` and the scripts beside it, and actionlint
+  on the workflows, which also runs shellcheck on their `run:` steps. Both
+  report warnings and errors, not style.
+- **Markdown, HTML and CSS** aren't linted. The build already checks the
+  changelogs, and the smoke tests check what matters in each page.
+
+ruff, shellcheck, actionlint and prek are the `lint` group in `pyproject.toml`, apart
+from `dev`, so the pytest jobs don't install them. Biome's version is in
+`scripts/lint.sh` and `biome.jsonc`'s `$schema`; change both together. The
+files that open pull requests change are listed under `[tool.ruff.format]
+exclude` (and in `per-file-ignores`) and left unformatted, so they don't
+conflict. Once a file's pull requests have merged, take it off the list and
+run `scripts/lint.sh --fix`.
+
+**Before each commit,** [prek](https://github.com/j178/prek)'s git hook runs
+`scripts/lint.sh --fix` on the staged files (`.pre-commit-config.yaml`). If
+it changes a file, the commit stops: look at the change, `git add` it and
+commit again. If it finds something it can't fix, fix that and commit again.
+Don't skip it with `--no-verify`; CI's `lint` job, which `test` requires,
+would only fail later.
+
+- **On your computer,** install the hook once per clone:
+  `uv run --only-group lint prek install`.
+- **In a Claude Code cloud session,** the clone is fresh and has no hook, so
+  `.claude/hooks/session-start.sh` (a SessionStart hook in
+  `.claude/settings.json`) installs the lint group and the hook when the
+  session starts, and skips both once they're there. It does nothing on
+  your own computer.
+
 ### Tests in parallel
 
 The suite takes about 20 minutes one test at a time, mostly in real game
 time (War's battles, animations), so `-n auto` runs it on
 [pytest-xdist](https://pytest-xdist.readthedocs.io) workers, one per CPU.
 CI (`.github/workflows/test.yml`) goes further: pytest-split cuts it into
-three shards of about equal time, each a job of its own on four workers,
-and a job named `test` passes once every shard has. So:
+up to three shards of about equal time, each a job of its own on four
+workers, and a job named `test` passes once every shard, the lint job and
+the two Workers' node tests have (see Merging). A pull request
+runs only the tests its changes need (`scripts/select_tests.py`): one that
+only changes Letterfield runs Letterfield's tests and the ones covering
+every game, not War's. A branch pushed before it has a pull request runs
+what its changes from `main` need, the same way, and its later pushes
+leave testing to the pull request. `main` always runs them all. So:
 
 - **Every test must pass alongside others,** in any order and in any worker.
   Keep state in the test's own page, context or `tmp_path`, never in a
@@ -627,17 +687,63 @@ and a job named `test` passes once every shard has. So:
   evenly. New tests count as the average until it's refreshed, so refresh
   it now and then, or when the shards' times drift apart:
   `uv run pytest -n auto --store-durations`, and commit it.
-- CI skips pytest for a pull request that only changes `worker/` or
-  `share/`, since no pytest test reads them. A test that does needs that
-  pattern changed in the workflow's `plan` job.
+- **A game's tests** are the files named for one of its pages
+  (`tests/test_war_rooms.py` is War's) and any other test file that loads
+  one, found by its address in the file (`/war`, `"war"`, `war.html`). A
+  test named for no game runs for every game's pull request, and a change
+  to anything shared (`scripts/`, the fakes, `feedback.js`, the workflow)
+  runs the whole suite. Name a test file for its game, and give a page it
+  loads by its plain address, so it's picked.
+- **Files no test reads** (`worker/`, `share/`, `preview/`, `docs/`,
+  `AGENTS.md`) don't count: a pull request of only those runs no pytest.
+  A test that starts reading one needs it taken out of `UNREAD` in
+  `scripts/select_tests.py`.
 
 In a Claude Code on the web sandbox, the default network policy can block
 `cdn.jsdelivr.net`, `cdnjs.cloudflare.com`, `fonts.googleapis.com`,
 `fonts.gstatic.com`, `browser.sentry-cdn.com`, `cdn.playwright.dev` and
-`registry.npmjs.org` (for `wrangler` and the share Worker). A test failing with
+`registry.npmjs.org` (for `wrangler`, the share Worker and Biome). A test failing with
 `Failed: https://...` for one of those hosts means the sandbox can't reach
 it, not that the game is broken. Ask for those hosts to be allowed. CI has
 full network access.
+
+## Merging
+
+`main` takes a pull request only once its `test` check has passed: a
+ruleset made by OpenTofu in mwarkentin/infra requires it, from GitHub
+Actions. That one check stands for the whole Test workflow, since the jobs
+under it change from one pull request to the next (`pytest (1/3)` is there
+or not, by what the plan picks), so never require a shard by name.
+
+- **It always reports.** `test` passes once every job the plan wanted has,
+  and fails if one failed or was cancelled, so a pull request of only docs
+  or only the Workers, which runs no pytest, still gets its answer. A run
+  cancelled by a newer push leaves the old commit cancelled; the new one
+  gets its own. A pull request from a fork runs it too, once its workflows
+  are approved, without secrets, which no test needs.
+- **Only pull requests make it.** A branch's push runs call the same job
+  `test (push)`, because the push run of a branch with an open pull request
+  skips everything and passes at once, and under the same name on the same
+  commit it would let the pull request merge before its own run finished.
+- **Not up to date.** A branch needn't have the latest `main` to merge:
+  with many sessions each on its own pull request, that would mean merging
+  `main` into every one after each merge. GitHub's merge queue would do
+  that for us, but isn't offered on a repository owned by a person. So two
+  pull requests that each pass can still break `main` together; `main`'s
+  own run, of the whole suite, catches that, and the fix is a new pull
+  request.
+- **Preview isn't required.** It needs secrets, which forks don't get, and
+  says nothing about whether the games work.
+- **The owner can bypass it,** with the "merge without waiting" box, for a
+  red CI that isn't the change's fault (a CDN down). Agents never merge.
+- **Auto-merge** is on: "Enable auto-merge" on a pull request merges it
+  (squashed) once `test` passes.
+
+## Pull requests
+
+Agents open a pull request once their work is pushed, without asking first,
+and say in it what changed and how it was tested. Its Preview comment then
+gives the link to try it on a phone (see Previews).
 
 ## Security
 

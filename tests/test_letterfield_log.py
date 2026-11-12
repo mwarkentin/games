@@ -10,34 +10,44 @@ from __future__ import annotations
 
 import json
 import re
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from urllib.parse import parse_qs, urlsplit
 
 from playwright.sync_api import Page, expect
 
 from fake_survey_log import SURVEY, FakeSurveyLog
 
-NOW_MS = int(datetime(2026, 11, 6, 20, 30, tzinfo=timezone.utc).timestamp() * 1000)  # 3:30 PM in Toronto
+NOW_MS = int(datetime(2026, 11, 6, 20, 30, tzinfo=UTC).timestamp() * 1000)  # 3:30 PM in Toronto
 MINUTE = 60_000
 HOUR_MS = 3_600_000
 DAY_MS = 86_400_000
 PLACES = {"0,0": "Acorn Hollow", "1,0": "Monet Reach", "-1,2": "Zeus Point"}
 THEMES = {11: ["Forest", 40], 0: ["Old Masters", 56], 17: ["Olympus", 25]}
 
-ACORN = ["ACORN", 5, 7, 0, 0, "ZED", NOW_MS - 80 * MINUTE, 11]       # 2:10 PM
-MONET = ["MONET", 60, 3, 2, 1, "", NOW_MS - 25 * MINUTE, 0]          # 3:05 PM, a stray
+ACORN = ["ACORN", 5, 7, 0, 0, "ZED", NOW_MS - 80 * MINUTE, 11]  # 2:10 PM
+MONET = ["MONET", 60, 3, 2, 1, "", NOW_MS - 25 * MINUTE, 0]  # 3:05 PM, a stray
 ZEUS = ["ZEUS", -40, 100, 6, 0, "ABC", NOW_MS - 24 * 60 * MINUTE, 17]  # yesterday
 
 
-def open_log(page: Page, site_url: str, fake: FakeSurveyLog, query: str = "", finds=None,
-             now_ms: int = NOW_MS, running: bool = False, share: bool = True) -> None:
+def open_log(
+    page: Page,
+    site_url: str,
+    fake: FakeSurveyLog,
+    query: str = "",
+    finds=None,
+    now_ms: int = NOW_MS,
+    running: bool = False,
+    share: bool = True,
+) -> None:
     """Opens the log at `now_ms`, with the clock stopped there, or `running` on from it
     (for what happens as time passes: page.clock.fast_forward moves it on). With
     share=False, SHARE_URL is blanked, as on a preview without a share Worker."""
     if not share:
+
         def blank(route):
             response = route.fetch()
             route.fulfill(response=response, body=re.sub(r"\b(const SHARE_URL = )'[^']*'", r"\1''", response.text()))
+
         page.route(lambda url: urlsplit(url).path == "/letterfield-log", blank)
     if running:
         page.clock.install(time=now_ms / 1000)
@@ -139,7 +149,9 @@ def test_a_week_shows_its_days_and_who_and_where_charted_most(page: Page, site_u
     expect(page.locator("#chart .ticks span")).to_have_text(["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"])
     # Days to come can't be opened; days so far are listed newest first.
     expect(page.locator("#chart .bar.go")).to_have_count(5)
-    expect(page.locator(".row .when")).to_have_text(["Fri, Nov 6", "Thu, Nov 5", "Wed, Nov 4", "Tue, Nov 3", "Mon, Nov 2"])
+    expect(page.locator(".row .when")).to_have_text(
+        ["Fri, Nov 6", "Thu, Nov 5", "Wed, Nov 4", "Tue, Nov 3", "Mon, Nov 2"]
+    )
     expect(page.locator(".row .num")).to_have_text(["2", "1", "—", "—", "—"])
 
     cards = page.locator(".card")
@@ -203,7 +215,7 @@ def test_all_time_shows_how_much_of_the_world_is_charted(page: Page, site_url, e
 
 
 def test_all_time_draws_the_world_filling_in_month_by_month(page: Page, site_url, errors):
-    later = int(datetime(2027, 1, 10, 17, 0, tzinfo=timezone.utc).timestamp() * 1000)
+    later = int(datetime(2027, 1, 10, 17, 0, tzinfo=UTC).timestamp() * 1000)
     day = 86_400_000
     # Hidden words in ten territories of ten themes, over three months.
     words = [[f"W{chr(65 + i)}X", i * 48, 0, 0, 0, "ZED", later - (60 - 6 * i) * day, i] for i in range(10)]
@@ -230,7 +242,7 @@ def test_all_time_draws_the_world_filling_in_month_by_month(page: Page, site_url
 
 def test_all_time_starts_with_the_first_word_logged(page: Page, site_url, errors):
     # Words a sector held from before the log began, sent when it woke.
-    early = [["ACORN", 5, 7, 0, 0, "OLD", int(datetime(2026, 9, 20, tzinfo=timezone.utc).timestamp() * 1000), 11]]
+    early = [["ACORN", 5, 7, 0, 0, "OLD", int(datetime(2026, 9, 20, tzinfo=UTC).timestamp() * 1000), 11]]
     fake = FakeSurveyLog(early + [ACORN, MONET], PLACES, THEMES)
     open_log(page, site_url, fake, query="&period=all")
     expect(page.locator("#navLabel")).to_have_text("Since the first word, on Sep 20, 2026")
@@ -522,7 +534,7 @@ def test_a_live_hour_that_fails_to_refresh_keeps_its_words_and_tries_again(page:
 
 
 def test_a_day_that_ends_on_screen_stops_saying_live(page: Page, site_url, errors):
-    late = int(datetime(2026, 11, 7, 4, 59, 30, tzinfo=timezone.utc).timestamp() * 1000)  # 11:59:30 PM in Toronto
+    late = int(datetime(2026, 11, 7, 4, 59, 30, tzinfo=UTC).timestamp() * 1000)  # 11:59:30 PM in Toronto
     fake = FakeSurveyLog([ACORN, MONET, ZEUS], PLACES, THEMES)
     open_log(page, site_url, fake, now_ms=late, running=True)
     expect(page.locator("#sumTitle")).to_have_text("Today")
@@ -629,9 +641,9 @@ def test_a_theme_and_a_territory_share_lines_of_their_own(page: Page, site_url, 
 
 def test_a_day_and_an_hour_have_top_lists_of_their_own(page: Page, site_url, errors):
     page.set_viewport_size({"width": 375, "height": 740})
-    birch = ["BIRCH", 7, 9, 0, 0, "ZED", NOW_MS - 40 * MINUTE, 11]   # 2:50 PM
-    fern = ["FERN", 9, 11, 0, 0, "ABC", NOW_MS - 70 * MINUTE, 11]    # 2:20 PM
-    late = ["OAK", 11, 13, 0, 0, "ABC", NOW_MS - 16 * HOUR_MS, 11]   # 11:30 PM yesterday, the same UTC day
+    birch = ["BIRCH", 7, 9, 0, 0, "ZED", NOW_MS - 40 * MINUTE, 11]  # 2:50 PM
+    fern = ["FERN", 9, 11, 0, 0, "ABC", NOW_MS - 70 * MINUTE, 11]  # 2:20 PM
+    late = ["OAK", 11, 13, 0, 0, "ABC", NOW_MS - 16 * HOUR_MS, 11]  # 11:30 PM yesterday, the same UTC day
     fake = FakeSurveyLog([ACORN, MONET, ZEUS, birch, fern, late], PLACES, THEMES)
     open_log(page, site_url, fake)
     # Today in Toronto, counted by the hour: not the whole UTC day, which
@@ -719,8 +731,8 @@ def test_with_a_share_worker_a_view_links_to_its_card_with_no_picture_of_its_own
 
 
 # Monet Reach (1,0) hides two words in these tests; OAK, its last, comes in at 3:10 PM.
-BIRCH = ["BIRCH", 50, 4, 0, 0, "AMY", NOW_MS - 50 * MINUTE, 0]   # 2:40 PM
-OAK = ["OAK", 70, 10, 2, 0, "ZED", NOW_MS - 20 * MINUTE, 0]       # 3:10 PM
+BIRCH = ["BIRCH", 50, 4, 0, 0, "AMY", NOW_MS - 50 * MINUTE, 0]  # 2:40 PM
+OAK = ["OAK", 70, 10, 2, 0, "ZED", NOW_MS - 20 * MINUTE, 0]  # 3:10 PM
 NOVA_TOTALS = {"1,0": 2}
 
 
@@ -740,20 +752,26 @@ def test_supernovas_have_a_view_of_their_own(page: Page, site_url, errors):
     expect(nova).to_have_count(1)
     expect(nova.locator(".what")).to_have_text("Monet Reachwent supernova")
     expect(nova.locator(".when")).to_have_text(re.compile(r"Nov 6 · 3:10\s?PM"))
-    expect(nova.locator(".meta")).to_have_text("Every one of its 2 hidden words charted, in 30 minutes by 2 surveyors. The last, OAK, by ZED. Most by AMY (1).")
+    expect(nova.locator(".meta")).to_have_text(
+        "Every one of its 2 hidden words charted, in 30 minutes by 2 surveyors. The last, OAK, by ZED. Most by AMY (1)."
+    )
     expect(nova.get_by_role("link", name="OAK")).to_have_attribute("href", "/letterfield#f-oak-70-10-2")
     assert page.evaluate("document.documentElement.scrollWidth") <= 375
     # The territory opens from it, saying when it went and how.
     nova.get_by_role("link", name="Monet Reach").click()
     expect(page.locator("#focusName")).to_have_text("Monet Reach")
     expect(page.locator("#sumTitle")).to_have_text("Supernova")
-    expect(page.locator("#sumText")).to_have_text(re.compile(r"Every hidden word charted · Friday, November 6, 2026, 3:10\s?PM"))
+    expect(page.locator("#sumText")).to_have_text(
+        re.compile(r"Every hidden word charted · Friday, November 6, 2026, 3:10\s?PM")
+    )
     expect(tile(page, 0)).to_contain_text("Went supernovaNov 6")
     expect(tile(page, 1)).to_contain_text("First word to last30 minutes")
     expect(tile(page, 2)).to_contain_text("Most charted byAMY1 of its 2 · 2 surveyors in all")
     expect(page.locator("#chart .meter.whole")).to_have_attribute("aria-valuenow", "2")
     # Its fill runs the whole width (a meter is not a supernova's row).
-    widths = page.evaluate("(() => { const m = document.querySelector('#chart .meter'); return [m.clientWidth, m.querySelector('i').clientWidth]; })()")
+    widths = page.evaluate(
+        "(() => { const m = document.querySelector('#chart .meter'); return [m.clientWidth, m.querySelector('i').clientWidth]; })()"
+    )
     assert widths[1] >= widths[0] - 1 and widths[0] > 100
     # Its supernova sits just above the word that set it off.
     expect(page.locator("#log .entries > li")).to_have_count(4)
@@ -776,7 +794,9 @@ def test_a_day_and_an_hour_show_their_supernovas_where_they_happened(page: Page,
     strip = page.locator("#novaStrip .strip")
     expect(strip).to_contain_text("Monet Reach went supernova today: every hidden word charted")
     expect(page.locator(".bar.starred")).to_have_count(1)
-    expect(page.locator(".bar.starred")).to_have_attribute("aria-label", re.compile(r"3:00\s?PM – 4:00\s?PM: 2 words · 1 supernova"))
+    expect(page.locator(".bar.starred")).to_have_attribute(
+        "aria-label", re.compile(r"3:00\s?PM – 4:00\s?PM: 2 words · 1 supernova")
+    )
     three = page.locator(".hour").first
     expect(three.locator(".entries > li").nth(0)).to_have_class(re.compile(r"\bnova\b"))
     expect(three.locator(".entries > li").nth(1).locator(".word")).to_have_text("OAK")

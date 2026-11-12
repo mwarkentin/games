@@ -51,9 +51,7 @@ PAGES_LINE = re.compile(r"^const PAGES = .*;$", re.MULTILINE)
 MUSIC_LINE = re.compile(r"^const MUSIC = .*;$", re.MULTILINE)
 
 
-def build_manifest(
-    app: str, path: str, *, name: str, short_name: str, description: str, color: str
-) -> dict:
+def build_manifest(app: str, path: str, *, name: str, short_name: str, description: str, color: str) -> dict:
     icons = [
         {"src": f"/icons/{app}-{size}.png", "sizes": f"{size}x{size}", "type": "image/png"}
         for size in ICON_SIZES
@@ -122,8 +120,7 @@ def publish_pwa(site_dir: Path, root: Path = ROOT) -> dict[str, dict]:
     """Write the manifests, icons and sw.js into site_dir. Returns the manifests."""
     # A page in another game's app (see app_of) uses that game's manifest.
     manifests = {
-        slug: game_manifest(f"{slug}.html", (root / f"{slug}.html").read_text("utf-8"))
-        for slug in own_apps(root)
+        slug: game_manifest(f"{slug}.html", (root / f"{slug}.html").read_text("utf-8")) for slug in own_apps(root)
     }
     manifests[HOME_APP] = home_manifest()
 
