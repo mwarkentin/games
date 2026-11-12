@@ -18,10 +18,14 @@ concurrency:
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 jobs:
-  # Whether this run has anything to do, and whether pytest does. pytest
-  # reads nothing in worker/ or share/ (their own tests run in node below),
-  # so a pull request that only changes those skips it. If a pytest test
-  # ever reads them, take them out of the pattern here.
+  # Whether this run has anything to do, and which pytest tests it runs over
+  # how many shards. A pull request runs the tests its changed files need
+  # (scripts/select_tests.py): one that only changes Letterfield runs
+  # Letterfield's tests and those covering every game, not War's, and one
+  # that changes anything shared runs them all. A branch pushed before it has
+  # a pull request runs what its changes from main need, the same way, so a
+  # session's first push gets the narrow run its pull request would. main
+  # always runs them all.
   plan:
     runs-on: ubuntu-latest
     permissions:
@@ -30,7 +34,12 @@ jobs:
     outputs:
       run: ${{ steps.plan.outputs.run }}
       pytest: ${{ steps.plan.outputs.pytest }}
+      tests: ${{ steps.plan.outputs.tests }}
+      shards: ${{ steps.plan.outputs.shards }}
     steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0 # a branch's changes from main, for its push runs
       - id: plan
         env:
           GH_TOKEN: ${{ github.token }}
@@ -41,26 +50,33 @@ jobs:
           PR: ${{ github.event.pull_request.number }}
         run: |
           run=true
-          pytest=true
           if [ "$EVENT" = push ] && [ "$REF" != refs/heads/main ]; then
             open=$(gh pr list --repo "$REPO" --head "$BRANCH" --state open --json number --jq length)
             if [ "$open" != 0 ]; then
               echo "This branch has an open pull request, whose run tests this commit."
               run=false
             fi
-          elif [ "$EVENT" = pull_request ]; then
-            files=$(gh api --paginate "repos/$REPO/pulls/$PR/files" --jq '.[].filename')
-            if [ -n "$files" ] && ! grep -qvE '^(worker|share)/' <<< "$files"; then
-              echo "Only worker/ and share/ changed, so pytest has nothing to test."
-              pytest=false
-            fi
           fi
+          changed="$RUNNER_TEMP/changed.txt"
+          if [ "$EVENT" = pull_request ]; then
+            gh api --paginate "repos/$REPO/pulls/$PR/files" --jq '.[] | .filename, (.previous_filename // empty)' > "$changed"
+            plan=$(python3 scripts/select_tests.py < "$changed")
+          elif [ "$REF" != refs/heads/main ]; then
+            git fetch --quiet origin main
+            plan=$(python3 scripts/select_tests.py --base origin/main)
+          else
+            plan=$(python3 scripts/select_tests.py --all)
+          fi
+          echo "$plan" | python3 -m json.tool
           echo "run=$run" >> "$GITHUB_OUTPUT"
-          echo "pytest=$pytest" >> "$GITHUB_OUTPUT"
+          echo "pytest=$(jq -r .pytest <<< "$plan")" >> "$GITHUB_OUTPUT"
+          echo "tests=$(jq -r '.tests | join(" ")' <<< "$plan")" >> "$GITHUB_OUTPUT"
+          echo "shards=$(jq -c .shards <<< "$plan")" >> "$GITHUB_OUTPUT"
 
   # The Playwright suite, split into shards of about equal time by
   # pytest-split from the durations in .test_durations, each shard over
-  # four workers with pytest-xdist (see "Commands" in AGENTS.md).
+  # four workers with pytest-xdist (see "Commands" in AGENTS.md). The plan
+  # job picks the tests and how many shards they need, up to three.
   pytest:
     needs: plan
     if: needs.plan.outputs.run == 'true' && needs.plan.outputs.pytest == 'true'
@@ -69,7 +85,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        shard: [1, 2, 3] # more shards: add numbers here
+        shard: ${{ fromJSON(needs.plan.outputs.shards) }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -94,9 +110,12 @@ jobs:
       - name: Install Chromium
         run: uv run playwright install --only-shell chromium
       - name: Run tests
+        env:
+          TESTS: ${{ needs.plan.outputs.tests }} # empty for the whole suite
         run: >-
           uv run pytest -n 4 --dist worksteal
           --splits ${{ strategy.job-total }} --group ${{ matrix.shard }} --splitting-algorithm least_duration
+          $TESTS
 
   # The one check to require: it passes once every shard has, or when
   # pytest had nothing to do, and fails if any shard failed or was cancelled.

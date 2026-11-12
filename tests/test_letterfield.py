@@ -1087,7 +1087,11 @@ def test_the_tools_drop_down_from_their_button_and_go_again(page: Page, site_url
     page.mouse.move(cx + 60, cy + 30, steps=5)
     page.mouse.up()
     expect(button).to_have_attribute("aria-expanded", "true")
-    page.wait_for_timeout(1000)  # the drag's glide comes to rest
+    # The drag's glide comes to rest: the camera holds still from one frame to the next.
+    page.wait_for_function(
+        "() => { const c = JSON.stringify(window.__lf.cam), still = c === window.__camWas; window.__camWas = c; return still; }",
+        polling="raf",
+    )
     cam = page.evaluate("({ ...window.__lf.cam })")
     page.mouse.click(cx, cy)
     expect(button).to_have_attribute("aria-expanded", "false")
