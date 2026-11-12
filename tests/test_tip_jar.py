@@ -8,7 +8,6 @@ from __future__ import annotations
 import build_colophon
 import build_index
 import common
-
 from common import render_page, tip_link
 
 FAKE_TIP_URL = "https://buy.stripe.com/test_tipjar"

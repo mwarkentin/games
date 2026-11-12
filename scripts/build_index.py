@@ -37,9 +37,7 @@ EXTRA_CSS = """
 
 def select_recent(games: list[dict], key: str, exclude: frozenset[str] = frozenset()) -> list[dict]:
     dated = [
-        (parse_date(game.get(key)), game)
-        for game in games
-        if game["slug"] not in exclude and parse_date(game.get(key))
+        (parse_date(game.get(key)), game) for game in games if game["slug"] not in exclude and parse_date(game.get(key))
     ]
     dated.sort(key=lambda item: item[0], reverse=True)
     return [{**game, "when": when} for when, game in dated[:RECENT_LIMIT]]
@@ -59,7 +57,7 @@ def render_recent(games: list[dict]) -> str:
         items = "\n".join(
             f'<li><a href="{game["url"]}">{html.escape(game["title"])}</a>'
             f' <a class="muted" href="{game.get("changelog") or "/colophon#" + game["filename"]}">'
-            f'{format_date(game["when"])}</a></li>'
+            f"{format_date(game['when'])}</a></li>"
             for game in entries
         )
         sections.append(f"<section><h2>{heading}</h2>\n<ul>\n{items}\n</ul></section>")
@@ -72,13 +70,7 @@ def build_index(readme: str, games: list[dict]) -> str:
     body = markdown.markdown(readme, extensions=["extra"])
     start, end = body.find(START_MARKER), body.find(END_MARKER)
     if 0 <= start < end:
-        body = (
-            body[: start + len(START_MARKER)]
-            + "\n"
-            + render_recent(games)
-            + "\n"
-            + body[end:]
-        )
+        body = body[: start + len(START_MARKER)] + "\n" + render_recent(games) + "\n" + body[end:]
     return render_page(SITE_NAME, body, extra_css=EXTRA_CSS, tip_source="games-home")
 
 

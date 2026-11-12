@@ -25,9 +25,7 @@ ICONS = ROOT / "icons"
 
 def render(page: Page, svg: str, size: int) -> bytes:
     page.set_viewport_size({"width": size, "height": size})
-    page.set_content(
-        f"<style>html,body{{margin:0}}svg{{display:block;width:{size}px;height:{size}px}}</style>{svg}"
-    )
+    page.set_content(f"<style>html,body{{margin:0}}svg{{display:block;width:{size}px;height:{size}px}}</style>{svg}")
     return page.screenshot(type="png")
 
 

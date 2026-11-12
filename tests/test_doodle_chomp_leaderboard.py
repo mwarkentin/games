@@ -8,16 +8,27 @@ from __future__ import annotations
 
 from urllib.parse import parse_qs, urlparse
 
-from fake_leaderboard import API, FakeLeaderboard, Held, without_worker
 from playwright.sync_api import Page, expect
+
+from fake_leaderboard import API, FakeLeaderboard, Held, without_worker
 
 UNAVAILABLE = "The high-score board is unavailable right now."
 # Local midnight on Monday, as the page works it out.
 START_OF_WEEK = "() => { const d = new Date(); d.setHours(0, 0, 0, 0); d.setDate(d.getDate() - (d.getDay() + 6) % 7); return d.getTime(); }"
 
 
-def row(initials: str, score: int, scope: str = "*", difficulty: str = "explorer", mode: str = "multiples", **extra) -> dict:
-    return {"initials": initials, "score": score, "level": 3, "scope": scope, "difficulty": difficulty, "mode": mode, **extra}
+def row(
+    initials: str, score: int, scope: str = "*", difficulty: str = "explorer", mode: str = "multiples", **extra
+) -> dict:
+    return {
+        "initials": initials,
+        "score": score,
+        "level": 3,
+        "scope": scope,
+        "difficulty": difficulty,
+        "mode": mode,
+        **extra,
+    }
 
 
 def open_game(page: Page, site_url: str, fake: FakeLeaderboard | Held | None, query: str = "") -> None:
@@ -102,8 +113,15 @@ def test_top_ten_score_saves_initials(page: Page, site_url, errors):
     assert entry.pop("seconds") >= 1
     assert entry.pop("since") == page.evaluate(START_OF_WEEK)
     assert entry == {
-        "game": "doodle-chomp", "difficulty": "explorer", "mode": "multiples", "initials": "ZED",
-        "score": 30, "level": 1, "chomps": 2, "groups": [], "public": True,
+        "game": "doodle-chomp",
+        "difficulty": "explorer",
+        "mode": "multiples",
+        "initials": "ZED",
+        "score": 30,
+        "level": 1,
+        "chomps": 2,
+        "groups": [],
+        "public": True,
     }
     assert stored(page, "games.initials") == "ZED"
 
@@ -157,7 +175,11 @@ def test_kindergarten_has_its_own_board(page: Page, site_url, errors):
     expect(page.locator("#menuWhich")).to_have_text("Kindergarten · This week")
     expect(page.locator("#menuScoreList li")).to_have_text(["1KID90L3"])
     assert fake.views[-1] == {
-        "game": "doodle-chomp", "scope": "*", "difficulty": "starter", "mode": "kinder", "since": str(page.evaluate(START_OF_WEEK)),
+        "game": "doodle-chomp",
+        "scope": "*",
+        "difficulty": "starter",
+        "mode": "kinder",
+        "since": str(page.evaluate(START_OF_WEEK)),
     }
     assert errors == []
 
@@ -186,12 +208,14 @@ def test_unavailable_board_does_not_block_the_game(page: Page, site_url):
 
 
 def test_high_score_screen_filters_by_game_and_difficulty(page: Page, site_url, errors):
-    fake = FakeLeaderboard([
-        row("KID", 300),
-        row("MRW", 245, difficulty="expert"),
-        row("SIS", 120, mode="primes"),
-        row("DAD", 90, difficulty="starter", mode="kinder"),
-    ])
+    fake = FakeLeaderboard(
+        [
+            row("KID", 300),
+            row("MRW", 245, difficulty="expert"),
+            row("SIS", 120, mode="primes"),
+            row("DAD", 90, difficulty="starter", mode="kinder"),
+        ]
+    )
     open_game(page, site_url, fake)
     page.click("#lbOpenMenu")
     expect(page.locator("#lbOv")).to_be_visible()
@@ -199,7 +223,9 @@ def test_high_score_screen_filters_by_game_and_difficulty(page: Page, site_url, 
 
     # Everything, with each score's board under the initials.
     who = page.locator("#lbList li .who")
-    expect(who).to_have_text(["KIDMultiples · Explorer", "MRWMultiples · Expert", "SISPrimes · Explorer", "DADKindergarten"])
+    expect(who).to_have_text(
+        ["KIDMultiples · Explorer", "MRWMultiples · Expert", "SISPrimes · Explorer", "DADKindergarten"]
+    )
     page.select_option("#lbMode", "multiples")
     expect(who).to_have_text(["KIDMultiples · Explorer", "MRWMultiples · Expert"])
     page.select_option("#lbDiff", "expert")
@@ -208,7 +234,11 @@ def test_high_score_screen_filters_by_game_and_difficulty(page: Page, site_url, 
     expect(page.locator("#lbList")).to_be_hidden()
     expect(page.locator("#lbNote")).to_have_text("No scores here this week yet.")
     assert fake.views[-1] == {
-        "game": "doodle-chomp", "scope": "*", "difficulty": "expert", "mode": "primes", "since": str(page.evaluate(START_OF_WEEK)),
+        "game": "doodle-chomp",
+        "scope": "*",
+        "difficulty": "expert",
+        "mode": "primes",
+        "since": str(page.evaluate(START_OF_WEEK)),
     }
 
     # Game keys wait while the screen is open; Escape closes it.
@@ -292,7 +322,9 @@ def test_group_members_save_to_their_groups(page: Page, site_url, errors):
     page.click("#lbScopes button >> text=Family")
     page.click("#lbClose")
     expect(page.locator("#menuScoreList li")).to_have_text(["1MOM500L3"])
-    expect(page.locator("#sideWhich")).to_have_text("Multiples · Explorer · This week · Family")  # the margin has no tabs
+    expect(page.locator("#sideWhich")).to_have_text(
+        "Multiples · Explorer · This week · Family"
+    )  # the margin has no tabs
 
     # The menu's tabs switch its list, and the margin's, too.
     page.click("#menuScopes >> text=Everyone")

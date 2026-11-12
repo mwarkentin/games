@@ -121,7 +121,9 @@ def changed_since(base: str, root: Path = ROOT) -> list[str] | None:
     rename included as in a pull request's files, or None if git can't say."""
     result = subprocess.run(
         ["git", "diff", "--name-only", "--no-renames", f"{base}...HEAD"],
-        cwd=root, capture_output=True, text=True,
+        cwd=root,
+        capture_output=True,
+        text=True,
     )
     if result.returncode != 0:
         print(f"Can't compare with {base}, so testing everything: {result.stderr.strip()}", file=sys.stderr)
