@@ -750,6 +750,23 @@ def test_the_word_list_names_only_words_half_in_sight(page: Page, site_url, erro
     assert errors == []
 
 
+def test_a_desktop_opens_with_the_notes_docked_rather_than_sliding_there(page: Page, site_url, errors):
+    """The page opens with the notes beside the map and the buttons beside
+    them, already in place: nothing slides there as it starts, so what's over
+    the map is where it'll stay from the first frame."""
+    page.set_viewport_size({"width": 1280, "height": 900})
+    page.goto(f"{site_url}/letterfield#debug")
+    page.wait_for_function("window.__lf")
+    expect(page.locator("body")).to_have_class(re.compile(r"\bdocked\b"))
+    moving = page.evaluate("""() => document.getAnimations()
+      .filter(a => a instanceof CSSTransition && a.playState === 'running')
+      .map(a => `${a.effect.target.className || a.effect.target.id} ${a.transitionProperty}`)""")
+    assert moving == []
+    corner = page.locator(".corner").bounding_box()
+    assert corner["x"] + corner["width"] == 1280 - 340 - 16  # beside the notes
+    assert errors == []
+
+
 @pytest.mark.parametrize("size", [(375, 740), (1280, 900)], ids=["phone", "desktop"])
 def test_the_word_list_counts_only_whole_letters(page: Page, site_url, errors, size):
     """A letter cut by the map's edge or a panel isn't seen: a row or column
