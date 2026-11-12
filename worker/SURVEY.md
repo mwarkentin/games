@@ -393,6 +393,16 @@ GET /v1/survey/log/novas/<from>/<to>?before=<at>~<rx>~<ry>
      "novas": [[rx, ry, at, w, x, y, d, initials, first, words,
                 surveyors, top, topN, th], ...],   newest first, 100 a page
      "places", "themes", "next"}
+GET /v1/survey/log/timelapse
+  → {"hours": [[hour, words], ...], "novas": [[hour, supernovas], ...],
+     "bounds": [rx0, ry0, rx1, ry1] | null,          territories with hidden words charted
+     "themes": [[name, hue], ...],                    every theme, in order
+     "layout": [a, n]}                                a territory's theme is (rx + a·ry) mod n
+GET /v1/survey/log/timelapse/<day>   (day = UTC days since 1970)
+GET /v1/survey/log/timelapse/<day>?after=<at>~<key>
+  → {"day", "words": [[t, x, y, d, len, th, s], ...],   oldest first, 5,000 a page,
+     "novas": [[t, rx, ry, th], ...],                    t in ms since the day began;
+     "next": "<at>~<key>" | null}                        supernovas on the first page
 ```
 
 An hour comes oldest first, 500 entries a page; `next` is the `after` for the
@@ -610,6 +620,58 @@ ago for a day, a running one for 15 seconds, or 2 minutes over more than two
 days, and a page through its own cursor. `CACHE_VERSION` didn't need
 raising: no answer a browser already holds has changed.
 
+### The timelapse
+
+[letterfield-timelapse](https://games.michaelwarkentin.com/letterfield-timelapse)
+replays the log on a map. Each word appears as a stroke in its theme's
+colour across the cells it covers, glowing as it lands. Territories fill
+in with their theme's tint as their hidden words are charted. Supernovas
+flash, throw off a shockwave and leave the remnant look the game uses. The
+camera widens to keep everything charted so far in view. The page has play
+and pause, a scrubber, four speeds (the whole history in 80, 40, 20 or 10
+seconds) and a running count of words, supernovas and territories. A tap
+on a territory names it and links to its page in the log. Under reduced
+motion it opens paused on the whole map, and draws no glows, flashes or
+easing. It's its own page rather than a view of the log's: a canvas that
+owns the screen and records itself, where the log is a document that
+scrolls.
+
+**Nothing to regenerate.** It plays from the log as it stands each time
+it's opened. "Save video" records the same drawing in the browser
+(`canvas.captureStream()` and `MediaRecorder`, MP4 where the browser can,
+WebM otherwise) at 1080×1080, the whole history in 24 seconds, with the
+date and counts in the frame, so anyone can make a current video in half a
+minute without a server. It's hidden where the browser can't record.
+
+**What it can and can't show.** The log keeps every word charted (where,
+which way, how long, its theme, when) and every supernova, so the map
+filling in is exact. It doesn't keep where anyone looked or moved (carets
+are live only), how many were online over time (the Atlas knows only now),
+or places visited where nothing was charted. So it shows the map being
+charted, not people wandering.
+
+**The API, for drawing only.** A day comes oldest first with only what
+drawing needs: time into the day, start cell, direction, length, theme
+(a stray's is its word's) and whether it's a stray. It sends no words or
+initials. The index says which hours have words (and how many, so counts
+can run ahead of what's loaded), when supernovas went off, the charted
+territories' bounds, every theme's name and hue, and the layout of themes,
+so the page tints any territory with none of the map's words. The page
+loads the index, then days oldest first, three at a time, and starts
+playing as soon as the first has arrived. Past what's loaded, it waits.
+An hour with nothing charted takes a twentieth of the time of one with
+words, so a quiet night goes by in a blink.
+
+**Caching.** A day that ended an hour ago (`SETTLED_MS`) never changes, so
+it's kept for good: a `max-age` of a year and `immutable` for browsers, and
+the same in each Worker instance and Cloudflare's cache. Today is cached
+for 15 seconds. The index is cached for a minute, but the part covering
+settled days is kept for good, under the day it was cut at, and only the
+days since are read each minute. Every key carries `TIMELAPSE_VERSION`,
+and the page's requests carry its own `CACHE_VERSION`. Taking a word out
+of the log for moderation means raising both, or the old day stays in
+caches.
+
 ### Where, readably
 
 Coordinates mean little, so each answer names the territories its entries
@@ -656,6 +718,8 @@ manifest, icon or preview of its own, and since `/letterfield-log` starts
 with `/letterfield`, it's inside Letterfield's app scope. Letterfield's
 survey panel links to it. Its `SURVEY_URL` already points at the Worker,
 since it only reads; until the survey is on, the log is empty.
+`letterfield-timelapse.html` fits the same way, and the log's header links
+to it.
 
 ### Cost
 
@@ -696,6 +760,25 @@ the bill, the next step is a monthly level of the same counts. A surveyor's
 or theme's view reads its rows in the range three times: all time for
 someone with 10,000 words is about 30,000 rows, at most every 2 minutes per
 instance while it's running.
+
+**The timelapse** reads each word's row once per day it's kept. A full
+replay, cold, reads every word plus the index's count rows (one per hour
+with words, per territory per day, and per supernova):
+
+| | words | rows read, cold | sent to the browser |
+| --- | --- | --- | --- |
+| today (Nov 12, 2026) | 340 over 3 days, 2 supernovas | ~370 | ~9 KB of JSON |
+| 10× | 3,400 | ~3,900 | ~85 KB |
+| 100× | 34,000 | ~38,000 | ~850 KB (about a third gzipped) |
+| the whole world | 1.12 M | ~1.2 M | ~28 MB |
+
+Cold happens once per settled day per Cloudflare data centre, then never
+again (see "Caching" under "The timelapse"). After that a replay reads
+only today's rows, at most every 15 seconds per instance, and a day or two
+of the index's count rows, at most every minute. Next to the 25 billion
+rows read included each month, that's nothing. At whole-world scale it's
+the page's download, not the bill, that would want a coarser format (see
+"Not done yet").
 
 On the free plan, D1 and Durable Object storage each allow 100,000 rows
 written a day, so the log, with its counts and indexes (seven D1 rows a
@@ -883,6 +966,17 @@ about 30 cents over the included million requests.
 - **Supernovas outside the shared world** are recorded and listed like any
   other, but the game's world map only covers the shared world, so far
   away ones only show as remnants when you're there.
+- **A richer timelapse.** The log has nothing on where people went, only
+  what they charted. The Atlas could write how many surveyors were online
+  in each sector once an hour (625 rows an hour at most, a few cents a
+  year), so a later timelapse could show the crowd moving. Sectors could
+  also count visits to territories with nothing charted. Neither is
+  recorded yet, and a timelapse can never show the past of either.
+- **A smaller timelapse at world scale.** A day's words are about 25 bytes
+  each as JSON, so a whole world charted would be 28 MB to download. Past
+  a few hundred thousand words, each settled week could be served as one
+  binary file (a word fits in 8 bytes), or the page could draw far zoom
+  levels from the territory counts alone.
 - **Finds made offline stay personal.** Uploading them later would let
   anyone backdate a pile of claims at once.
 
@@ -919,6 +1013,9 @@ npx wrangler@4.151.0 d1 execute games-survey-log-previews --remote \
 ```
 
 Never point it at `games-survey-log` with `--remote`: that's the real log.
+For the timelapse, `node worker/bench/seed-log.js 9 explore` has surveyors
+push out from the origin a territory at a time and finish some, with their
+supernovas, so there's something to watch.
 
 [omcb]: https://eieio.games/blog/scaling-one-million-checkboxes
 [chess]: https://eieio.games/blog/a-million-realtime-chess-boards-in-a-single-process

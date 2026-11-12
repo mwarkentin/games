@@ -13,7 +13,8 @@ utilities; games live here so they get their own origin and their own rules.
   tested the same way but says `<meta name="games:app" content="letterfield">`:
   it joins that game's home-screen app, so it needs no icon or manifest of
   its own and its path must start with the game's (see `app_of` in
-  `scripts/common.py`).
+  `scripts/common.py`). `letterfield-timelapse.html`, the survey replayed on
+  a map, is another.
 - `README.md`: the game list. The build turns it into `index.html`.
 - `changelog/`: each game's changelog for players, `<game>.md`, which the
   build turns into `/changelog/<game>` (see Changelogs).
@@ -180,6 +181,8 @@ The machines each page keeps:
 | | `claim` (each claim of ours; `el: null`, see `__lf.outbox()`) | queued, sent, unanswered, answered |
 | | `define` (each found word's meaning; `el: null`, see `__lf.definitions()`) | loading, ready, none, failed |
 | `letterfield-log.html` | `log` (what the page shows) | loading, ready, refreshing, stale, failed |
+| `letterfield-timelapse.html` | `tl` (the replay) | loading, empty, failed, paused, playing, waiting |
+| | `rec` (saving a video) | off, preparing, recording, done, failed |
 | `war.html` | `screen` | menu, lobby, table, ending, over |
 | | `overlay` (what covers the screen) | none, pause, invite, styles, history |
 | | `session` (what the page plays through) | none, joining, solo, room |

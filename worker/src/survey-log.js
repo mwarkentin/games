@@ -33,6 +33,15 @@
 //                                    1970), at most TOP_HOURS_MAX, for a day or an hour in the
 //                                    page's own time zone: {from, to, hours: true, surveyors,
 //                                    territories, themes, hidden}
+//   GET /v1/survey/log/timelapse     what a replay of the whole log needs to know first (settled
+//                                    days' part kept for good, the rest read each minute): {hours:
+//                                    [[hour, words], ...], novas: [[hour, n], ...], bounds:
+//                                    [rx0, ry0, rx1, ry1] | null, themes: [[name, hue], ...],
+//                                    layout: [a, n]}, where a territory's theme is (rx + a ry) mod n
+//   GET /v1/survey/log/timelapse/<day>   one UTC day of the log, for drawing only, oldest first,
+//       [?after=<at>~<key>]          TIMELAPSE_PAGE words a page: {day, words: [[t, x, y, d, len,
+//                                    th, s], ...], novas: [[t, rx, ry, th], ...], next}, t in ms
+//                                    since the day began (supernovas on the first page only)
 //
 // Entries are [w, x, y, d, s, initials, at, th]: the claim as the game gets
 // it from a sector, plus its theme. A supernova, a territory whose every
@@ -100,6 +109,15 @@ export const TOP_N = 10;                // surveyors and territories in a top li
 export const TOP_MAX_DAYS = 3660;       // the longest range a top list covers
 export const TOP_SLOW_CACHE_S = 600;    // seconds a running top list over more than 2 days is cached for
 export const TOP_HOURS_MAX = 48;        // the longest run of hours a top list by hours covers (a local day is up to 26)
+export const LOG_TIMELAPSE_PATH = '/v1/survey/log/timelapse';
+export const LOG_TIMELAPSE_DAY_PATH = /^\/v1\/survey\/log\/timelapse\/(\d{1,6})$/;
+export const TIMELAPSE_PAGE = 5000;     // words in a page of a day's replay (about 25 bytes each)
+export const TIMELAPSE_CACHE_S = 60;    // seconds the replay's index is cached for
+export const FOREVER_S = 31536000;      // a settled day of the replay never changes: a year
+// Raised when a settled day's replay must change after all (a word taken out
+// for moderation, or the answer's shape): it's part of every cache key, and
+// the page's CACHE_VERSION goes up with it for browsers' copies.
+export const TIMELAPSE_VERSION = 1;
 const CURSOR = /^(\d{1,15})~([A-Z]{3,12}~-?\d{1,10}~-?\d{1,10}~[0-7])$/;
 const NOVA_CURSOR = /^(\d{1,15})~(-?\d{1,8})~(-?\d{1,8})$/;
 
@@ -173,6 +191,83 @@ export const HOURS_SURVEYORS_SQL = `SELECT initials, COUNT(*) AS n FROM survey_l
   WHERE at >= ? AND at < ? AND initials <> '' GROUP BY initials ORDER BY COUNT(*) DESC, initials LIMIT ${TOP_N}`;
 export const HOURS_TERRITORIES_SQL = `SELECT rx, ry, COUNT(*) AS n FROM survey_log
   WHERE at >= ? AND at < ? AND s = 0 GROUP BY rx, ry`;
+
+// The replay (letterfield-timelapse.html). Its index reads the count tables
+// and the supernovas, never the log itself: a row per hour with words, per
+// territory per day, and per supernova, over a range of days. A day reads
+// that day's rows, in time order.
+export const TIMELAPSE_HOURS_SQL = 'SELECT hour, n FROM survey_log_hours WHERE hour >= ? AND hour < ? AND n > 0 ORDER BY hour';
+export const TIMELAPSE_BOUNDS_SQL = `SELECT MIN(rx) AS rx0, MIN(ry) AS ry0, MAX(rx) AS rx1, MAX(ry) AS ry1
+  FROM survey_log_territories WHERE day >= ? AND day < ? AND n > 0`;
+export const TIMELAPSE_NOVA_HOURS_SQL = `SELECT at / ${HOUR_MS} AS hour, COUNT(*) AS n FROM survey_log_novas INDEXED BY survey_log_novas_by_time
+  WHERE at >= ? AND at < ? GROUP BY at / ${HOUR_MS} ORDER BY at / ${HOUR_MS}`;
+export const TIMELAPSE_DAY_SQL = `SELECT at, key, w, x, y, d, s FROM survey_log
+  WHERE at >= ? AND at < ? ORDER BY at, key LIMIT ?`;
+export const TIMELAPSE_DAY_AFTER_SQL = `SELECT at, key, w, x, y, d, s FROM survey_log
+  WHERE at >= ? AND at < ? AND (at, key) > (?, ?) ORDER BY at, key LIMIT ?`;
+export const TIMELAPSE_NOVAS_SQL = `SELECT at, rx, ry FROM survey_log_novas INDEXED BY survey_log_novas_by_time
+  WHERE at >= ? AND at < ? ORDER BY at, rx, ry`;
+// A territory's theme is (rx + a ry) mod n (regionTheme), so the page can tint
+// any territory from the themes' hues alone, with none of the map's words.
+export const LAYOUT = [regionTheme(0, 1), THEMES.length];
+const FAR = 1e7;  // days: past any the log will hold
+
+// The index over UTC days from..to-1: hours with words, supernovas by hour,
+// and the territories with hidden words charted (a stray far out can fall
+// outside them).
+export async function readTimelapsePart(db, from, to) {
+  const [hours, bounds, novas] = await Promise.all([
+    db.prepare(TIMELAPSE_HOURS_SQL).bind(from * 24, to * 24).all(),
+    db.prepare(TIMELAPSE_BOUNDS_SQL).bind(from, to).first(),
+    db.prepare(TIMELAPSE_NOVA_HOURS_SQL).bind(from * DAY_MS, to * DAY_MS).all(),
+  ]);
+  return {
+    hours: hours.results.map((r) => [r.hour, r.n]),
+    novas: novas.results.map((r) => [r.hour, r.n]),
+    bounds: bounds && bounds.rx0 !== null ? [bounds.rx0, bounds.ry0, bounds.rx1, bounds.ry1] : null,
+  };
+}
+
+// Everything a replay needs before its first day, and every theme's name and
+// hue. The days before `cut` have settled, so `settled` gives their part from
+// a cache (read once, kept for good); only the days since are read each time,
+// a day or two of rows whatever the log holds.
+export async function readTimelapse(db, cut = FAR, settled = (read) => read()) {
+  const [old, recent] = await Promise.all([settled(() => readTimelapsePart(db, 0, cut)), readTimelapsePart(db, cut, FAR)]);
+  const a = old.bounds, b = recent.bounds;
+  return {
+    hours: [...old.hours, ...recent.hours],
+    novas: [...old.novas, ...recent.novas],
+    bounds: a && b ? [Math.min(a[0], b[0]), Math.min(a[1], b[1]), Math.max(a[2], b[2]), Math.max(a[3], b[3])] : a ?? b,
+    themes: THEMES.map((t) => [t.name, t.hue]),
+    layout: LAYOUT,
+  };
+}
+
+// One UTC day of the log, as little as drawing it takes: when (ms into the
+// day), where it starts, which way, how long, its theme's colour and whether
+// it's a stray. No words or initials. Supernovas that day go on the first
+// page, since they're few (at most one a territory, ever).
+export async function readTimelapseDay(db, day, after = null) {
+  const from = day * DAY_MS, to = from + DAY_MS;
+  const [rows, novas] = await Promise.all([
+    (after ? db.prepare(TIMELAPSE_DAY_AFTER_SQL).bind(from, to, after.at, after.key, TIMELAPSE_PAGE + 1)
+      : db.prepare(TIMELAPSE_DAY_SQL).bind(from, to, TIMELAPSE_PAGE + 1)).all(),
+    after ? null : db.prepare(TIMELAPSE_NOVAS_SQL).bind(from, to).all(),
+  ]);
+  const list = rows.results, more = list.length > TIMELAPSE_PAGE;
+  if (more) list.length = TIMELAPSE_PAGE;
+  const last = list.at(-1);
+  return {
+    day,
+    words: list.map((r) => {
+      const rx = fdiv(r.x, RC), ry = fdiv(r.y, RC);
+      return [r.at - from, r.x, r.y, r.d, r.w.length, r.s ? strayTheme(r.w, rx, ry) : regionTheme(rx, ry), r.s];
+    }),
+    novas: novas ? novas.results.map((r) => [r.at - from, r.rx, r.ry, regionTheme(r.rx, r.ry)]) : [],
+    next: more ? `${last.at}~${last.key}` : null,
+  };
+}
 
 // One hour's entries, a page at a time, with the names the page shows.
 export async function readHour(db, hour, after = null) {
@@ -366,13 +461,35 @@ export function routeLog(request, env, now = Date.now()) {
   const topHours = url.pathname.match(LOG_TOP_HOURS_PATH);
   const surveyor = url.pathname.match(LOG_SURVEYOR_PATH), theme = url.pathname.match(LOG_THEME_PATH);
   const territory = url.pathname.match(LOG_TERRITORY_PATH), novas = url.pathname.match(LOG_NOVAS_PATH);
-  if (!(day || hour || month || top || topHours || span || surveyor || theme || territory || novas) || !env.LOG_DB) return null;
+  const timelapse = url.pathname === LOG_TIMELAPSE_PATH, timelapseDay = url.pathname.match(LOG_TIMELAPSE_DAY_PATH);
+  if (!(day || hour || month || top || topHours || span || surveyor || theme || territory || novas || timelapse || timelapseDay) || !env.LOG_DB) return null;
   const cors = corsHeaders(request, env);
   if (request.method !== 'GET') return json({ error: 'method not allowed' }, 405, cors);
   // Every answer is kept under this Worker's own host and map (see the top of this file).
-  const answer = (key, maxAge, read) => keep(`${url.host}/m${MAP_VERSION}/${key}`, maxAge, read, cors, now);
+  const answer = (key, maxAge, read, immutable = false) => keep(`${url.host}/m${MAP_VERSION}/${key}`, maxAge, read, cors, now, immutable);
   let ends, read, key, live = LIVE_CACHE_S;
   if (span) return answer('span', SPAN_CACHE_S, () => readSpan(env.LOG_DB));
+  if (timelapse) {
+    // Days that ended SETTLED_MS ago don't change: their part of the index is kept for good, under that day.
+    const cut = fdiv(now - SETTLED_MS, DAY_MS), base = `${url.host}/m${MAP_VERSION}/timelapse/v${TIMELAPSE_VERSION}`;
+    const settled = async (read) => JSON.parse(await kept(`${base}/index/${cut}`, FOREVER_S, read, now, true));
+    return answer(`timelapse/v${TIMELAPSE_VERSION}`, TIMELAPSE_CACHE_S, () => readTimelapse(env.LOG_DB, cut, settled));
+  }
+  if (timelapseDay) {
+    const d = Number(timelapseDay[1]);
+    if (d > fdiv(now, DAY_MS)) return json({ error: 'that day has not started' }, 400, cors);
+    const after = url.searchParams.get('after');
+    let cursor = null;
+    if (after !== null) {
+      const m = after.match(CURSOR);
+      if (!m) return json({ error: 'bad cursor' }, 400, cors);
+      cursor = { at: Number(m[1]), key: m[2] };
+    }
+    // A day that ended a while ago never changes, so it's kept for good: see TIMELAPSE_VERSION.
+    const settled = now >= (d + 1) * DAY_MS + SETTLED_MS;
+    return answer(`timelapse/v${TIMELAPSE_VERSION}/${d}${cursor ? `?after=${after}` : ''}`, settled ? FOREVER_S : LIVE_CACHE_S,
+      () => readTimelapseDay(env.LOG_DB, d, cursor), settled);
+  }
   if (territory) {
     const rx = Number(territory[1]), ry = Number(territory[2]);
     return answer(`territory/${rx}/${ry}`, LIVE_CACHE_S, () => readTerritory(env.LOG_DB, rx, ry));
@@ -457,12 +574,18 @@ export function routeLog(request, env, now = Date.now()) {
 
 // An answer from this instance's memory, Cloudflare's cache or `read`, kept
 // in both. `key` starts with the Worker's host.
-async function keep(key, maxAge, read, cors, now) {
-  const reply = (body) => new Response(body, {
-    headers: { ...cors, 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': `public, max-age=${maxAge}` },
+async function keep(key, maxAge, read, cors, now, immutable = false) {
+  const body = await kept(key, maxAge, read, now, immutable);
+  return new Response(body, {
+    headers: { ...cors, 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': cacheControl(maxAge, immutable) },
   });
-  const kept = memo.get(key);
-  if (kept && kept.until > now) return reply(kept.body);
+}
+const cacheControl = (maxAge, immutable) => `public, max-age=${maxAge}${immutable ? ', immutable' : ''}`;
+// The same, as the answer's text: from memory, Cloudflare's cache or `read`.
+async function kept(key, maxAge, read, now, immutable = false) {
+  const control = cacheControl(maxAge, immutable);
+  const held = memo.get(key);
+  if (held && held.until > now) return held.body;
   memo.delete(key);
   const cache = edgeCache(), cacheKey = new Request(`https://${key.replace('/', '/_cache/survey-log/')}`);
   let body = null;
@@ -473,10 +596,10 @@ async function keep(key, maxAge, read, cors, now) {
     body = JSON.stringify(await read());
     // Stored without CORS headers, which differ by origin; each answer adds its own.
     if (cache) {
-      try { await cache.put(cacheKey, new Response(body, { headers: { 'Cache-Control': `public, max-age=${maxAge}` } })); } catch { /* not cached */ }
+      try { await cache.put(cacheKey, new Response(body, { headers: { 'Cache-Control': control } })); } catch { /* not cached */ }
     }
   }
   memo.set(key, { body, until: now + maxAge * 1000 });
   while (memo.size > MEMO_MAX) memo.delete(memo.keys().next().value);
-  return reply(body);
+  return body;
 }
