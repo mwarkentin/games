@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import fcntl
 import functools
 import http.server
 import os
@@ -18,14 +19,28 @@ from fake_leaderboard import stand_in_for_worker
 
 @pytest.fixture(scope="session")
 def site_dir(tmp_path_factory) -> Path:
-    """The site exactly as build.sh assembles it for deploy."""
-    out = tmp_path_factory.mktemp("site")
-    subprocess.run(
-        ["bash", "build.sh"],
-        cwd=ROOT,
-        env={**os.environ, "SITE_DIR": str(out), "PYTHON": sys.executable},
-        check=True,
-    )
+    """The site exactly as build.sh assembles it for deploy.
+
+    Built once per run. Under pytest-xdist (`-n`) every worker asks for it,
+    and the build writes gathered_links.json and games.json into the repo,
+    so the first worker builds it under a lock in the run's shared temp
+    directory and the others wait, then use that copy.
+    """
+    shared = tmp_path_factory.getbasetemp()
+    if os.environ.get("PYTEST_XDIST_WORKER"):
+        shared = shared.parent  # each worker's basetemp sits in the run's
+    out = shared / "site"
+    done = shared / "site.built"
+    with open(shared / "site.lock", "w") as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        if not done.exists():
+            subprocess.run(
+                ["bash", "build.sh"],
+                cwd=ROOT,
+                env={**os.environ, "SITE_DIR": str(out), "PYTHON": sys.executable},
+                check=True,
+            )
+            done.touch()
     return out
 
 

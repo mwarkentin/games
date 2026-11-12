@@ -1,5 +1,9 @@
 name: Test
 
+# Pull requests run here on pull_request, and main on push. A branch pushed
+# before it has a pull request (as agent sessions do) runs on push too, but
+# once the branch has an open pull request its push runs skip, since the
+# pull_request run tests the same commit.
 on:
   push:
   pull_request:
@@ -7,27 +11,105 @@ on:
 permissions:
   contents: read
 
+# A newer push to the same branch or pull request cancels the run it
+# supersedes. Runs on main always finish.
+concurrency:
+  group: test-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
 jobs:
-  test:
+  # Whether this run has anything to do, and whether pytest does. pytest
+  # reads nothing in worker/ or share/ (their own tests run in node below),
+  # so a pull request that only changes those skips it. If a pytest test
+  # ever reads them, take them out of the pattern here.
+  plan:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      run: ${{ steps.plan.outputs.run }}
+      pytest: ${{ steps.plan.outputs.pytest }}
+    steps:
+      - id: plan
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          EVENT: ${{ github.event_name }}
+          REF: ${{ github.ref }}
+          BRANCH: ${{ github.ref_name }}
+          PR: ${{ github.event.pull_request.number }}
+        run: |
+          run=true
+          pytest=true
+          if [ "$EVENT" = push ] && [ "$REF" != refs/heads/main ]; then
+            open=$(gh pr list --repo "$REPO" --head "$BRANCH" --state open --json number --jq length)
+            if [ "$open" != 0 ]; then
+              echo "This branch has an open pull request, whose run tests this commit."
+              run=false
+            fi
+          elif [ "$EVENT" = pull_request ]; then
+            files=$(gh api --paginate "repos/$REPO/pulls/$PR/files" --jq '.[].filename')
+            if [ -n "$files" ] && ! grep -qvE '^(worker|share)/' <<< "$files"; then
+              echo "Only worker/ and share/ changed, so pytest has nothing to test."
+              pytest=false
+            fi
+          fi
+          echo "run=$run" >> "$GITHUB_OUTPUT"
+          echo "pytest=$pytest" >> "$GITHUB_OUTPUT"
+
+  # The Playwright suite, split into shards of about equal time by
+  # pytest-split from the durations in .test_durations, each shard over
+  # four workers with pytest-xdist (see "Commands" in AGENTS.md).
+  pytest:
+    needs: plan
+    if: needs.plan.outputs.run == 'true' && needs.plan.outputs.pytest == 'true'
+    name: pytest (${{ matrix.shard }}/${{ strategy.job-total }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3] # more shards: add numbers here
     steps:
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0 # the tests build the site, which reads git history
       - uses: astral-sh/setup-uv@v10.2.0
+      - name: Install dependencies
+        run: uv sync --locked
+      - name: Find Playwright's version
+        id: playwright
+        run: echo "version=$(uv run python -c 'import importlib.metadata as m; print(m.version("playwright"))')" >> "$GITHUB_OUTPUT"
       - name: Cache Playwright browsers
         uses: actions/cache@v6
         with:
           path: ~/.cache/ms-playwright
-          key: playwright-${{ runner.os }}-${{ hashFiles('uv.lock') }}
-      - name: Install dependencies
-        run: |
-          uv sync --locked
-          uv run playwright install --with-deps chromium
+          key: playwright-${{ runner.os }}-${{ steps.playwright.outputs.version }}
+      - name: Install Chromium
+        run: uv run playwright install --with-deps chromium
       - name: Run tests
-        run: uv run pytest
+        run: >-
+          uv run pytest -n 4 --dist worksteal
+          --splits ${{ strategy.job-total }} --group ${{ matrix.shard }} --splitting-algorithm least_duration
+
+  # The one check to require: it passes once every shard has, or when
+  # pytest had nothing to do, and fails if any shard failed or was cancelled.
+  test:
+    needs: [plan, pytest]
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check every shard passed
+        env:
+          PLAN: ${{ needs.plan.result }}
+          PYTEST: ${{ needs.pytest.result }}
+        run: |
+          echo "plan: $PLAN, pytest: $PYTEST"
+          [ "$PLAN" = success ] && { [ "$PYTEST" = success ] || [ "$PYTEST" = skipped ]; }
 
   worker:
+    needs: plan
+    if: needs.plan.outputs.run == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -38,6 +120,8 @@ jobs:
         run: node --disable-warning=ExperimentalWarning --test "worker/test/*.test.js"
 
   share:
+    needs: plan
+    if: needs.plan.outputs.run == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
