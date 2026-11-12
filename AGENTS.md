@@ -687,6 +687,12 @@ In a Claude Code on the web sandbox, the default network policy can block
 it, not that the game is broken. Ask for those hosts to be allowed. CI has
 full network access.
 
+## Pull requests
+
+Agents open a pull request once their work is pushed, without asking first,
+and say in it what changed and how it was tested. Its Preview comment then
+gives the link to try it on a phone (see Previews).
+
 ## Security
 
 This repo is public. Keep secrets, internal hostnames and work specifics out
