@@ -310,7 +310,7 @@ def test_the_pencil_changes_your_initials(page: Page, site_url, errors):
 # Both ends of a word hidden at the origin, on screen and clear of the cards over the map.
 WORD_ENDS = """() => {
   const lf = window.__lf, dock = document.body.classList.contains('docked') ? 340 : 0;
-  const at = (x, y) => [(x + .5 - lf.cam.x) * lf.cam.cs + (innerWidth - dock) / 2, (y + .5 - lf.cam.y) * lf.cam.cs + innerHeight / 2];
+  const at = (x, y) => [(x + .5 - lf.cam.x) * lf.cam.cs + (innerWidth - dock) / 2, (y + .5 - lf.cam.y) * lf.cam.cs + document.getElementById('map').clientHeight / 2];
   const clear = ([px, py]) => document.elementFromPoint(px, py) === document.querySelector('canvas');
   for (const w of lf.chunk(0, 0).words) {
     const ends = [at(w.x, w.y), at(...lf.wordEnd(w))];
@@ -663,7 +663,7 @@ def test_a_supernova_far_away_is_a_note_you_can_share(page: Page, site_url, erro
 
 SCREEN_OF = """([x, y]) => {
   const cam = window.__lf.cam, dock = document.body.classList.contains('docked') ? 340 : 0;
-  return [(x - cam.x) * cam.cs + (innerWidth - dock) / 2, (y - cam.y) * cam.cs + innerHeight / 2];
+  return [(x - cam.x) * cam.cs + (innerWidth - dock) / 2, (y - cam.y) * cam.cs + document.getElementById('map').clientHeight / 2];
 }"""
 
 
@@ -803,7 +803,7 @@ def test_turnstile_shows_its_box_only_when_it_wants_a_tap(page: Page, site_url, 
     expect(page.locator("#surveyCheck")).to_have_class(re.compile("asking"))
     expect(page.locator("#surveyCheck")).to_contain_text("One tap to join the shared survey")
     expect(page.locator("#surveyText")).to_have_text("Checking this is a person, not a bot…")
-    for other in [".legend", ".instruments .zoom", "#signup", "#notes"]:
+    for other in ["#bar", "#signup", "#notes"]:
         assert not page.evaluate(OVERLAP, ["#surveyCheck", other]), f"the box covers {other}"
     assert fake.sectors == []
     page.evaluate("window.__tsSolve()")
@@ -828,13 +828,19 @@ def test_turnstile_box_keeps_clear_of_the_game_and_goes_once_passed(page: Page, 
     page.click("#signup button")
     expect(page.locator("#signup")).to_be_hidden()
     expect(page.locator(".fake-turnstile")).to_be_visible()
-    # While it asks, it's a small panel with its reason, clear of the legend and instruments.
+    # While it asks, it's a small panel with its reason, clear of the bottom bar,
+    # and of the tools' stack once that's open.
     expect(check.locator("p")).to_be_visible()
     expect(check.locator("p")).to_have_text("One tap to join the shared survey")
     box = check.bounding_box()
     assert box["x"] >= 16 and box["x"] + box["width"] <= phone["width"] - 16
-    for other in [".legend", ".instruments .zoom", ".cartouche", "#notesToggle"]:
+    for other in ["#bar", ".cartouche", "#notesToggle"]:
         assert not page.evaluate(OVERLAP, ["#surveyCheck", other]), f"the box covers {other}"
+    page.click("#toolsBtn")
+    expect(page.locator("#toolsBtn")).to_have_attribute("aria-expanded", "true")
+    for other in ["#bar", "#toolStack", ".cartouche", "#notesToggle"]:
+        assert not page.evaluate(OVERLAP, ["#surveyCheck", other]), f"the box covers {other} with the tools open"
+    page.click("#toolsBtn")
 
     page.evaluate("window.__tsSolve()")
     expect(page.locator("#survey")).to_have_attribute("data-state", "live")
@@ -877,7 +883,7 @@ def test_turnstile_box_asks_a_player_already_in_the_survey_once_passes_are_requi
     open_game(page, site_url, fake, f"&turnstile={SITE_KEY}", viewport={"width": 375, "height": 667})
     expect(page.locator("#surveyCheck")).to_have_class(re.compile("asking"))
     expect(page.locator("#surveyCheck p")).to_be_visible()
-    for other in [".legend", ".instruments .zoom"]:
+    for other in ["#bar"]:
         assert not page.evaluate(OVERLAP, ["#surveyCheck", other]), f"the box covers {other}"
     page.evaluate("window.__tsSolve()")
     expect(page.locator("#survey")).to_have_attribute("data-state", "live")

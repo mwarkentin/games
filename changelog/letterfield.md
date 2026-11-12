@@ -1,3 +1,8 @@
+## 2026-11-12
+
+- The word list sits on a solid bar along the bottom, edge to edge, so no stray letters show around or under it, and the map ends at its top: a word you fly to lands in the middle of what you can see.
+- Zoom, return to the origin, sound and music now live behind one button in that bar. A tap pops them up in a stack and a second tap, Escape or a tap on the map puts them away; it remembers if you leave it open. Their keys (+, −, H, M and B) work either way.
+
 ## 2026-11-11
 
 - A supernova you see is kept in your field notes, under Supernovas, with its last word and who charted it, and a note after the burst offers to share it. Shared from the survey, its link shows a card of the territory exploding.

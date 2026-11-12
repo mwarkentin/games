@@ -13,7 +13,8 @@
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Big+Shoulders+Display:wght@700;800&family=Martian+Mono:wght@400;500&family=Schibsted+Grotesk:wght@400;500;600&display=swap">
 <style>
 /* Layout: a full-bleed survey sheet (canvas) with map furniture floating on it — a cartouche (title + current territory) top-left,
-   the word legend bottom-left, instruments bottom-right, and a field-notes drawer docked on the right. */
+   a solid bar along the bottom holding the word legend and the tools button (whose stack pops up above it), and a
+   field-notes drawer docked on the right. The map ends at the bar's top edge (resize() measures it). */
 :root{
   --paper:#EBEEE7;
   --panel:#F7F8F4;
@@ -60,7 +61,7 @@ button{font:inherit;color:inherit}
 button:focus-visible,a:focus-visible,#map:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 .mark{--c:hsl(var(--h,200) var(--mark-s) var(--mark-l))}
 
-#map{position:fixed;inset:0;width:100%;height:100%;display:block;touch-action:none;cursor:grab;outline:none}
+#map{position:fixed;top:0;left:0;width:100%;height:100%;display:block;touch-action:none;cursor:grab;outline:none}
 #map.grabbing{cursor:grabbing}
 #map.select{cursor:crosshair}
 
@@ -80,37 +81,50 @@ button:focus-visible,a:focus-visible,#map:focus-visible{outline:2px solid var(--
 .t-meta > *{flex:none;white-space:pre}
 .t-meta > #tTheme{flex:0 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis}
 
-/* Legend: words hidden in view */
-.legend{position:fixed;left:var(--gl);bottom:var(--bottom);width:304px;padding:11px 12px 12px}
-.legend-head{display:flex;justify-content:space-between;align-items:baseline;gap:12px;margin-bottom:9px}
-.legend-count{font:400 11px/1 var(--f-mono);color:var(--muted);font-variant-numeric:tabular-nums;white-space:nowrap}
+/* Bar: the word legend and the tools button, solid from edge to edge and down
+   through the safe area, so no map shows around or under it. On a wide screen
+   it's one row: the list's head, its chips scrolling sideways, then the tools. */
+.bar{position:fixed;left:0;right:0;bottom:0;display:flex;align-items:center;gap:14px;background:var(--panel);border-top:1px solid var(--rule);box-shadow:0 -8px 22px -16px rgba(0,0,0,.4);
+  padding:8px var(--gr) calc(env(safe-area-inset-bottom, 0px) + 8px) var(--gl);transition:right .28s ease}
+body.docked .bar{right:var(--notes-w)}
+.legend{flex:1;min-width:0;display:flex;align-items:center;gap:18px}
+.legend-head{flex:none;display:flex;justify-content:space-between;align-items:baseline;gap:12px}
+.legend-count{font:400 11px/1 var(--f-mono);color:var(--muted);font-variant-numeric:tabular-nums;white-space:nowrap;min-width:5ch}
 /* Which words the list names: those in view, or those left in the territory. */
 .list-mode{display:flex;gap:2px;margin:-9px 0 -9px -7px}
-.list-mode button{padding:9px 7px;border:0;background:none;cursor:pointer;text-underline-offset:4px}
+.list-mode button{padding:9px 7px;border:0;background:none;cursor:pointer;text-underline-offset:4px;white-space:nowrap}
 .list-mode button:hover{color:var(--ink)}
 .list-mode button[aria-pressed="true"]{color:var(--ink);text-decoration:underline;text-decoration-thickness:1.5px}
-/* A territory's words don't fit in the box: they run in three rows that
-   scroll sideways, never up and down. */
-.legend.whole .chips{display:grid;grid-auto-flow:column;grid-template-rows:repeat(3, auto);justify-content:start;overflow-x:auto;overflow-y:hidden;overscroll-behavior-x:contain;scrollbar-width:thin;padding:4px 2px;margin:-4px -2px}
-.legend.whole .legend-note{grid-row:1 / -1}
-.chips{list-style:none;margin:0;padding:0;display:flex;flex-wrap:wrap;gap:6px}
-.chips > li{display:flex} /* so a span chip's padding counts, as a button's does */
+/* One row that scrolls sideways only: overflow-x alone would make y auto too.
+   The 4px above and below, taken back by the margin, keep focus rings unclipped. */
+.chips{list-style:none;flex:1;min-width:0;min-height:26px;margin:-4px 0;padding:4px 2px;display:flex;flex-wrap:nowrap;align-items:center;gap:6px;overflow-x:auto;overflow-y:hidden;overscroll-behavior-x:contain;touch-action:pan-x;scrollbar-width:none}
+.chips::-webkit-scrollbar{display:none}
+.chips > li{display:flex;flex:none} /* so a span chip's padding counts, as a button's does */
 .chip{font:500 12px/1 var(--f-mono);letter-spacing:.07em;padding:7px 8px 6px;border:1px solid var(--rule);border-radius:5px;background:var(--panel);cursor:pointer;white-space:nowrap}
 .chip:hover{border-color:var(--ink)}
 .chip.found{color:var(--muted);text-decoration:line-through;text-decoration-thickness:2px;text-decoration-color:var(--c);border-style:dashed;cursor:default}
 span.chip{cursor:default}
 span.chip:hover{border-color:var(--rule)}
-.legend-note{font:400 12px/1.4 var(--f-ui);color:var(--muted);padding:2px 0}
+.legend-note{font:400 12px/1.4 var(--f-ui);color:var(--muted);padding:2px 0;white-space:nowrap}
 
-/* Instruments */
-.instruments{position:fixed;right:var(--gr);bottom:var(--bottom);display:flex;flex-direction:column;align-items:flex-end;gap:8px;pointer-events:none;transition:right .28s ease}
-.instruments > *{pointer-events:auto}
-body.docked .instruments{right:calc(var(--notes-w) + 16px)}
-.zoom{display:flex;flex-direction:column;overflow:hidden}
-.zoom button{flex:none;width:40px;height:40px;border:0;background:transparent;display:grid;place-items:center;cursor:pointer}
-.zoom button:hover{background:var(--hover)}
-.zoom button + button{border-top:1px solid var(--rule)}
-.zoom svg{width:17px;height:17px}
+/* Tools: one button in the bar; zoom, home, sound and music pop up above it as a
+   stack, and go again on a second tap, Escape or a tap on the map. Closed, the
+   stack takes no taps or focus (inert) and covers nothing. */
+.tools-btn{flex:none;width:44px;height:44px;border:1px solid var(--rule);border-radius:8px;background:var(--panel);display:grid;place-items:center;cursor:pointer;transition:background-color .12s ease, color .12s ease}
+.tools-btn:hover{background:var(--hover)}
+.tools-btn[aria-expanded="true"]{background:var(--ink);border-color:var(--ink);color:var(--panel)}
+.tools-btn svg{width:20px;height:20px}
+.tool-stack{position:absolute;right:var(--gr);bottom:calc(100% + 8px);display:flex;flex-direction:column;padding:4px;min-width:176px;box-sizing:border-box;
+  transform-origin:calc(100% - 22px) 100%;opacity:0;transform:translateY(10px) scale(.96);visibility:hidden;pointer-events:none;
+  transition:opacity .12s ease, transform .14s ease, visibility 0s linear .14s}
+.bar.tools-open .tool-stack{opacity:1;transform:none;visibility:visible;pointer-events:auto;transition:opacity .1s ease, transform .16s cubic-bezier(.2,.9,.3,1.15), visibility 0s}
+.tool-stack hr{margin:4px 6px;border:0;border-top:1px solid var(--rule)}
+.tool-stack button{display:flex;align-items:center;gap:11px;height:44px;padding:0 10px 0 11px;border:0;border-radius:6px;background:transparent;cursor:pointer;font:500 13.5px/1 var(--f-ui);text-align:left}
+.tool-stack button:hover{background:var(--hover)}
+.tool-stack button span{flex:1}
+.tool-stack svg{width:18px;height:18px;flex:none}
+.tool-stack kbd{font:500 10.5px/1 var(--f-mono);color:var(--muted);border:1px solid var(--rule);border-radius:4px;padding:3px 5px 2px;min-width:9px;text-align:center}
+@media (hover: none) and (pointer: coarse){.tool-stack kbd{display:none}}
 
 /* Notes toggle */
 .notes-toggle{position:fixed;top:var(--top);right:var(--gr);display:flex;align-items:center;gap:8px;padding:10px 12px;cursor:pointer;font:600 13px/1 var(--f-ui)}
@@ -225,8 +239,8 @@ body.docked .notes{box-shadow:none}
 .notes.has-survey .filters{position:sticky;top:0;z-index:1;background:var(--panel);margin-top:6px;padding-top:6px;box-shadow:0 1px 0 var(--rule)}
 .survey-hint:empty{display:none}
 /* Turnstile's check (see worker/TURNSTILE.md): empty and out of the way unless it needs a tap.
-   When it does, it's a small panel just above the word legend (and, on a phone, the
-   instruments; placeCheck() measures them), so it covers neither them nor the sign-up card
+   When it does, it's a small panel just above the bottom bar (and the tools' stack, if
+   it's open over the same side; placeCheck() measures them), so it covers neither them nor the sign-up card
    at the top, and it waits for that card to go (see below). It stays a moment after to show
    it passed, then goes. While it isn't showing, taps go through it to the map. */
 .survey-check{position:fixed;left:var(--gl);bottom:calc(var(--bottom) + 140px);z-index:40;max-width:calc(100% - var(--gl) - var(--gr));box-sizing:border-box}
@@ -303,25 +317,18 @@ body.docked .nova{left:calc((100% - var(--notes-w)) / 2)}
   .notes-toggle{padding:0;width:46px;height:46px;justify-content:center;gap:0}
   .notes-toggle .label{display:none}
   .notes-toggle .badge{position:absolute;top:-6px;right:-6px}
-  .legend{right:var(--gr);width:auto;padding:9px 0 10px}
-  .legend-head{padding:0 12px;margin-bottom:8px}
-  /* One row that scrolls sideways only: overflow-x alone would make y auto too.
-     The 4px above and below, taken back by the margin, keep focus rings unclipped. */
-  .chips{flex-wrap:nowrap;overflow-x:auto;overflow-y:hidden;overscroll-behavior-x:contain;touch-action:pan-x;scrollbar-width:none;padding:4px 12px;margin:-4px 0}
-  .chips::-webkit-scrollbar{display:none}
-  .chip{flex:none}
-  .legend.whole .chips{display:flex;padding:4px 12px;margin:-4px 0;scrollbar-width:none}
-  .legend-note{padding:2px 0}
-  .instruments{left:var(--gl);bottom:calc(var(--bottom) + 84px);flex-direction:row;justify-content:flex-end;align-items:flex-end}
-  .zoom{flex-direction:row}
-  .zoom button + button{border-top:0;border-left:1px solid var(--rule)}
-  .zoom button{width:38px}
+  /* The bar's list takes two rows, its head over its chips, which scroll from the
+     screen's left edge to the tools button; the button stands beside both. */
+  .bar{padding-left:0;gap:8px;padding-top:9px;padding-bottom:calc(env(safe-area-inset-bottom, 0px) + 9px)}
+  .legend{flex-direction:column;align-items:stretch;gap:8px}
+  .legend-head{padding:0 4px 0 calc(var(--gl) - 2px)}
+  .chips{flex:none;padding:4px 4px 4px var(--gl)}
   .notes{top:auto;left:0;width:100%;height:min(80%, 680px);border-left:0;border-top:1px solid var(--rule);border-radius:14px 14px 0 0;transform:translateY(100%);padding-left:env(safe-area-inset-left, 0px)}
   .coach{top:calc(var(--top) + 60px);right:var(--gr);width:auto}
   .toast{top:calc(var(--top) + 60px)}
 }
 @media (prefers-reduced-motion: reduce){
-  .notes,.toast,.instruments{transition:none}
+  .notes,.toast,.bar,.tool-stack,.tools-btn{transition:none}
   .find-def[data-define="loading"] .def-note{animation:none}
   .nova.show b{animation:none}
   .sync-dot,.survey-dot{animation:none!important}
@@ -351,26 +358,27 @@ body.docked .nova{left:calc((100% - var(--notes-w)) / 2)}
   <span class="badge" id="notesBadge">0</span>
 </button>
 
-<section class="legend card" aria-label="Words hidden in view">
-  <div class="legend-head">
-    <div class="list-mode" role="group" aria-label="Words to list">
-      <button type="button" class="eyebrow" id="listView" aria-pressed="true" title="Words hidden in view">Hidden in view</button>
-      <button type="button" class="eyebrow" id="listWhole" aria-pressed="false" title="Words still to find in this territory">Territory</button>
+<footer class="bar" id="bar">
+  <section class="legend" aria-label="Words hidden in view">
+    <div class="legend-head">
+      <div class="list-mode" role="group" aria-label="Words to list">
+        <button type="button" class="eyebrow" id="listView" aria-pressed="true" title="Words hidden in view">Hidden in view</button>
+        <button type="button" class="eyebrow" id="listWhole" aria-pressed="false" title="Words still to find in this territory">Territory</button>
+      </div>
+      <span class="legend-count" id="legendCount"></span>
     </div>
-    <span class="legend-count" id="legendCount"></span>
+    <ul class="chips" id="legendList"></ul>
+  </section>
+  <button type="button" class="tools-btn" id="toolsBtn" aria-expanded="false" aria-controls="toolStack" aria-label="Tools" title="Tools: zoom, home, sound and music"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M4 7h9M17 7h3M4 17h3M11 17h9"/><circle cx="15" cy="7" r="2.2"/><circle cx="9" cy="17" r="2.2"/></svg></button>
+  <div class="tool-stack card" id="toolStack" role="group" aria-label="Tools" inert>
+    <button type="button" id="music" aria-pressed="false" aria-label="Music" aria-keyshortcuts="B" title="Music (B)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 17.5V6l10-2v11.5"/><circle cx="6.5" cy="17.5" r="2.5"/><circle cx="16.5" cy="15.5" r="2.5"/><path class="off" d="M3.5 3.5l17 17"/></svg><span aria-hidden="true">Music</span><kbd aria-hidden="true">B</kbd></button>
+    <button type="button" id="sound" aria-pressed="true" aria-label="Sound" aria-keyshortcuts="M" title="Sound (M)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 9.5h3.5L12 6v12l-4.5-3.5H4z"/><path class="on" d="M15.5 9.2a4 4 0 0 1 0 5.6M18.2 6.6a7.6 7.6 0 0 1 0 10.8"/><path class="off" d="M16 9.5l5 5M21 9.5l-5 5"/></svg><span aria-hidden="true">Sound</span><kbd aria-hidden="true">M</kbd></button>
+    <hr>
+    <button type="button" id="home" aria-label="Return to the origin" aria-keyshortcuts="H" title="Return to the origin (H)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="6.5"/><circle cx="12" cy="12" r="1.6" fill="currentColor"/><path d="M12 2v4M12 18v4M2 12h4M18 12h4"/></svg><span aria-hidden="true">Origin</span><kbd aria-hidden="true">H</kbd></button>
+    <button type="button" id="zoomIn" aria-label="Zoom in" aria-keyshortcuts="+" title="Zoom in (+)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg><span aria-hidden="true">Zoom in</span><kbd aria-hidden="true">+</kbd></button>
+    <button type="button" id="zoomOut" aria-label="Zoom out" aria-keyshortcuts="-" title="Zoom out (−)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M5 12h14"/></svg><span aria-hidden="true">Zoom out</span><kbd aria-hidden="true">−</kbd></button>
   </div>
-  <ul class="chips" id="legendList"></ul>
-</section>
-
-<div class="instruments">
-  <div class="zoom card">
-    <button type="button" id="zoomIn" aria-label="Zoom in"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></button>
-    <button type="button" id="zoomOut" aria-label="Zoom out"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M5 12h14"/></svg></button>
-    <button type="button" id="home" aria-label="Return to the origin"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="6.5"/><circle cx="12" cy="12" r="1.6" fill="currentColor"/><path d="M12 2v4M12 18v4M2 12h4M18 12h4"/></svg></button>
-    <button type="button" id="sound" aria-pressed="true" aria-label="Sound" title="Sound (M)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 9.5h3.5L12 6v12l-4.5-3.5H4z"/><path class="on" d="M15.5 9.2a4 4 0 0 1 0 5.6M18.2 6.6a7.6 7.6 0 0 1 0 10.8"/><path class="off" d="M16 9.5l5 5M21 9.5l-5 5"/></svg></button>
-    <button type="button" id="music" aria-pressed="false" aria-label="Music" title="Music (B)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 17.5V6l10-2v11.5"/><circle cx="6.5" cy="17.5" r="2.5"/><circle cx="16.5" cy="15.5" r="2.5"/><path class="off" d="M3.5 3.5l17 17"/></svg></button>
-  </div>
-</div>
+</footer>
 
 <aside class="notes" id="notes" aria-label="Field notes">
   <div class="notes-head">
@@ -456,7 +464,7 @@ const DEAL = 9;
 const STRAY_MIN = 6;
 const NOTES_W = 340;
 // Field notes, by map: each redraw starts a new key and carries over any finds still there.
-const K_FINDS = 'letterfield.finds.v4', K_FINDS_OLD = ['letterfield.finds.v3', 'letterfield.finds.v2', 'letterfield.finds.v1'], K_CAM = 'letterfield.cam.v1', K_COACH = 'letterfield.coach.v1', K_NOTES = 'letterfield.notes.v1', K_SOUND = 'letterfield.sound.v1', K_MUSIC = 'letterfield.music.v1', K_LIST = 'letterfield.list.v1';
+const K_FINDS = 'letterfield.finds.v4', K_FINDS_OLD = ['letterfield.finds.v3', 'letterfield.finds.v2', 'letterfield.finds.v1'], K_CAM = 'letterfield.cam.v1', K_COACH = 'letterfield.coach.v1', K_NOTES = 'letterfield.notes.v1', K_SOUND = 'letterfield.sound.v1', K_MUSIC = 'letterfield.music.v1', K_LIST = 'letterfield.list.v1', K_TOOLS = 'letterfield.tools.v1';
 const K_INITIALS = 'games.initials';  // shared with the other games' leaderboards
 const K_PASS = 'letterfield.surveyPass.v1';
 // The shared survey (see worker/SURVEY.md), on the leaderboard Worker. With
@@ -1098,20 +1106,22 @@ function passMoved(to) {
   if (to === 'failed') dropWidget();
   renderSurvey();
 }
-// Sits the box 8px above whichever of the legend and instruments it would
-// otherwise cover, wherever they are at this size.
+// Sits the box 8px above the bottom bar, or the tools' stack while it's open
+// over the same side, wherever they are at this size.
 function placeCheck() {
   if (!surveyCheck.classList.contains('shown')) return;
   const left = surveyCheck.getBoundingClientRect().left, right = left + Math.max(surveyCheck.offsetWidth, 326);
   let top = innerHeight;
-  for (const el of document.querySelectorAll('.legend, .instruments > *')) {
+  for (const el of document.querySelectorAll('.bar, .bar.tools-open .tool-stack')) {
     const r = el.getBoundingClientRect();
-    if (r.width && r.left < right && r.right > left) top = Math.min(top, r.top);
+    // The stack may still be popping up: its place without the transform is where it ends.
+    const t = el.id === 'toolStack' ? el.offsetParent.getBoundingClientRect().top + el.offsetTop : r.top;
+    if (r.width && r.left < right && r.right > left) top = Math.min(top, t);
   }
   surveyCheck.style.bottom = top < innerHeight ? `${Math.round(innerHeight - top + 8)}px` : '';
 }
 addEventListener('resize', placeCheck);
-if (window.ResizeObserver) new ResizeObserver(placeCheck).observe($('.legend'));
+if (window.ResizeObserver) new ResizeObserver(placeCheck).observe($('.bar'));
 // Removes Turnstile's widget, if it's still the one given (any, by default),
 // and the box around it, so nothing is left over the game.
 function dropWidget(id = widgetId) {
@@ -3086,7 +3096,10 @@ function endPointer(e, cancelled) {
   const g = gest; gest = null;
   canvas.classList.remove('grabbing');
   if (cancelled) { if (g.type === 'seldrag') { sel.anchor = null; sel.end = null; } invalidate(); return; }
-  if (g.type === 'press') onTap(cellAtScreen(e.clientX, e.clientY));
+  if (g.type === 'press') {
+    if (toolsOpen) setTools(false);  // a tap on the map puts the tools away, and does nothing else
+    else onTap(cellAtScreen(e.clientX, e.clientY));
+  }
   else if (g.type === 'seldrag') {
     const a = sel.anchor, b = sel.end; sel.anchor = null; sel.end = null;
     if (a && b && (a.x !== b.x || a.y !== b.y)) tryCollect(a, b);
@@ -3167,6 +3180,7 @@ window.addEventListener('keydown', e => {
       invalidate(); return;
     }
     if (notesOpen && !dock) { setNotes(false); notesToggle.focus(); }
+    else if (toolsOpen) setTools(false, { refocus: true });
     return;
   }
   if (inNotes || e.metaKey || e.ctrlKey || e.altKey) return;
@@ -3225,9 +3239,10 @@ function updateHud() {
 // panel over its middle can leave both ends in sight. A letter can be seen
 // when its cell's centre is on the map and not under one of the panels over
 // it. Their boxes change with layout, not with the camera, so they're measured
-// again only after a resize, a change in their size or the end of a slide.
+// again only after a resize, a change in their size or the end of a slide. The
+// bottom bar isn't one: the map ends at its top edge.
 const SEEN_SHARE = .5;
-const coverEls = ['.cartouche', '#notesToggle', '.legend', '.zoom', '#notes'].map($);
+const coverEls = ['.cartouche', '#notesToggle', '#toolStack', '#notes'].map($);
 let covers = null;
 function coverRects() {
   if (covers) return covers;
@@ -3235,6 +3250,7 @@ function coverRects() {
   for (const el of coverEls) {
     if (el.id === 'notes' && (!notesOpen || dock)) continue;  // shut, or beside the map rather than over it
     if (el.id === 'notesToggle' && dock) continue;
+    if (el.id === 'toolStack' && !toolsOpen) continue;
     const r = el.getBoundingClientRect();
     if (r.width > 0 && r.height > 0) covers.push({ l: r.left, r: r.right, t: r.top, b: r.bottom });
   }
@@ -3243,7 +3259,7 @@ function coverRects() {
 const dropCovers = () => { covers = null; };
 if (window.ResizeObserver) { const ro = new ResizeObserver(dropCovers); coverEls.forEach(el => ro.observe(el)); }
 window.addEventListener('resize', dropCovers);
-for (const el of [$('#notes'), $('.instruments')]) el.addEventListener('transitionend', e => { if (e.target === el) { dropCovers(); scheduleHud(); } });
+for (const el of [$('#notes'), $('#toolStack')]) el.addEventListener('transitionend', e => { if (e.target === el) { dropCovers(); scheduleHud(); placeCheck(); } });
 function wordSeen(w, cs, OX, rects) {
   const [dx, dy] = DIRS[w.d], right = W - dock, len = w.w.length, need = Math.ceil(len * SEEN_SHARE);
   let seen = 0;
@@ -3589,6 +3605,26 @@ const defaultCs = () => (W < 700 ? 32 : 38);
 function goHome() { flyTo(6, 6, defaultCs()); }
 $('#home').addEventListener('click', goHome);
 
+// The tools button opens its stack and a second tap shuts it, as do Escape and
+// a tap on the map; whether it was left open is kept for next time. A single
+// boolean, so no machine: nothing waits on it. Opening moves focus into the
+// stack, and shutting it from there brings focus back to the button. The
+// keyboard shortcuts never need it open.
+const barEl = $('#bar'), toolsBtn = $('#toolsBtn'), toolStack = $('#toolStack');
+let toolsOpen = false;
+function setTools(open, { focus = false, refocus = false, remember = true } = {}) {
+  toolsOpen = open;
+  barEl.classList.toggle('tools-open', open);
+  toolsBtn.setAttribute('aria-expanded', String(open));
+  toolStack.inert = !open;
+  if (remember) LS.set(K_TOOLS, open ? '1' : '0');
+  if (open && focus) try { toolStack.querySelector('button').focus({ preventScroll: true }); } catch (_) {}
+  if (!open && (refocus || toolStack.contains(document.activeElement))) try { toolsBtn.focus({ preventScroll: true }); } catch (_) {}
+  dropCovers(); scheduleHud(); placeCheck();
+}
+toolsBtn.addEventListener('click', () => setTools(!toolsOpen, { focus: true }));
+setTools(LS.get(K_TOOLS) === '1', { remember: false });
+
 // On the shared survey, words are signed, so a player picks initials before
 // circling one (Intro's sign state): the card asks at the start, and a tap on
 // the map asks again until they do. For a new player the same card is the
@@ -3668,11 +3704,16 @@ $('#coachOk').addEventListener('click', () => { if (Intro.is('coach')) Intro.go(
 /* ---------- Boot ---------- */
 function resize() {
   dpr = Math.min(window.devicePixelRatio || 1, 3);
-  W = Math.max(1, window.innerWidth); H = Math.max(1, window.innerHeight);
+  // The map ends at the bottom bar's top edge, so its middle, where a flight
+  // lands and a found word is centred, is the middle of what can be seen.
+  const barTop = barEl.getBoundingClientRect().top;
+  W = Math.max(1, window.innerWidth); H = Math.max(1, Math.round(barTop > 0 ? barTop : window.innerHeight));
+  canvas.style.height = H + 'px';
   canvas.width = Math.round(W * dpr); canvas.height = Math.round(H * dpr);
   applyDock(); scheduleHud(); invalidate();
 }
 window.addEventListener('resize', resize);
+if (window.ResizeObserver) new ResizeObserver(() => { if (Math.round(barEl.getBoundingClientRect().top) !== H) resize(); }).observe(barEl);
 matchMedia('(prefers-color-scheme: dark)').addEventListener('change', readColors);
 new MutationObserver(readColors).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme', 'class'] });
 function bumpFonts() { fontEpoch++; atlas.key = ''; invalidate(); }

@@ -7,12 +7,13 @@ from fake_leaderboard import without_worker
 
 # Screen positions of a legend word's first and last letters, for a word whose
 # ends are both on open map rather than under a panel. Mirrors the game's
-# camera: it starts centred on cell (6, 6) with 38px cells.
+# camera: it starts centred on cell (6, 6) with 38px cells, in the middle of
+# the map, which ends at the bottom bar.
 FIND_WORD_JS = """() => {
   const cs = 38, start = 6, canvas = document.getElementById('map');
   const dock = document.body.classList.contains('docked') ? 340 : 0;
   const dirs = [[1,0],[1,1],[0,1],[-1,1],[-1,0],[-1,-1],[0,-1],[1,-1]];
-  const screen = (x, y) => [(x + .5 - start) * cs + (innerWidth - dock) / 2, (y + .5 - start) * cs + innerHeight / 2];
+  const screen = (x, y) => [(x + .5 - start) * cs + (innerWidth - dock) / 2, (y + .5 - start) * cs + document.getElementById('map').clientHeight / 2];
   for (const chip of document.querySelectorAll('#legendList .chip:not(.found)')) {
     const [word, x, y, d] = chip.dataset.key.split('~');
     const n = word.length - 1, [dx, dy] = dirs[+d];
@@ -138,8 +139,19 @@ def test_finding_every_word_in_a_territory_goes_supernova(page: Page, site_url, 
     assert errors == []
 
 
+def open_tools(page: Page) -> None:
+    """Opens the tools' stack from its button in the bottom bar."""
+    page.click("#toolsBtn")
+    expect(page.locator("#toolsBtn")).to_have_attribute("aria-expanded", "true")
+
+
+# The tools left open last time, so the test reaches them without a tap, which
+# would start the audio.
+TOOLS_OPEN = "localStorage.setItem('letterfield.tools.v1', '1');"
+
+
 def test_sound_can_be_switched_off(page: Page, site_url, errors):
-    page.add_init_script(COUNT_AUDIO)
+    page.add_init_script(COUNT_AUDIO + TOOLS_OPEN)
     page.goto(f"{site_url}/letterfield#debug")
     page.wait_for_function("window.__lf")
     sound = page.locator("#sound")
@@ -169,7 +181,7 @@ def test_supernova_with_reduced_motion_keeps_still(page: Page, site_url, errors)
 
 
 def test_music_starts_off_and_can_be_switched_on_and_off(page: Page, site_url, errors):
-    page.add_init_script(COUNT_AUDIO)
+    page.add_init_script(COUNT_AUDIO + TOOLS_OPEN)
     page.goto(f"{site_url}/letterfield#debug")
     page.wait_for_function("window.__lf")
     music = page.locator("#music")
@@ -404,7 +416,7 @@ def test_escape_while_dragging_a_circle_lets_it_go(page: Page, site_url, errors)
 
 
 def test_music_left_on_starts_with_the_first_tap_on_its_button(page: Page, site_url, errors):
-    page.add_init_script(COUNT_AUDIO + "localStorage.setItem('letterfield.music.v1', '1');")
+    page.add_init_script(COUNT_AUDIO + TOOLS_OPEN + "localStorage.setItem('letterfield.music.v1', '1');")
     page.goto(f"{site_url}/letterfield#debug")
     page.wait_for_function("window.__lf")
     music = page.locator("#music")
@@ -428,18 +440,15 @@ CHIPS_JS = """() => {
 }"""
 
 
-def chips_scroll_only_sideways(page: Page, phone: bool) -> None:
-    """The word list never scrolls up and down: on a phone it's one row that
-    scrolls sideways, on a computer the words wrap inside the box."""
+def chips_scroll_only_sideways(page: Page) -> None:
+    """The word list never scrolls up and down: it's one row along the bottom
+    bar that scrolls sideways."""
     m = page.evaluate(CHIPS_JS)
     assert m["n"] > 0
     assert m["oy"] not in ("auto", "scroll"), m
     assert m["sh"] <= m["ch"], m
     # Every chip, struck through or not, sits inside the row's height.
-    if phone:
-        assert m["wrap"] == "nowrap" and m["ox"] == "auto", m
-    else:
-        assert m["wrap"] == "wrap" and m["sw"] <= m["cw"], m
+    assert m["wrap"] == "nowrap" and m["ox"] == "auto", m
 
 
 def test_the_word_list_never_scrolls_up_and_down(page: Page, site_url, errors):
@@ -455,7 +464,7 @@ def test_the_word_list_never_scrolls_up_and_down(page: Page, site_url, errors):
         `<li><button type="button" class="chip mark${i % 3 ? '' : ' found'}">${'QUARTERMASTER'.slice(0, 6 + i % 8)}</button></li>`).join('');
     }"""
     page.evaluate(fill)
-    chips_scroll_only_sideways(page, phone=True)
+    chips_scroll_only_sideways(page)
     m = page.evaluate(CHIPS_JS)
     assert m["sw"] > m["cw"], m  # too many to fit, so it scrolls sideways
     page.evaluate("document.getElementById('legendList').scrollLeft = 99999")
@@ -474,11 +483,11 @@ def test_the_word_list_never_scrolls_up_and_down(page: Page, site_url, errors):
       const o = parseFloat(getComputedStyle(a).outlineWidth) + parseFloat(getComputedStyle(a).outlineOffset);
       return c.top - o >= r.top && c.bottom + o <= r.bottom;
     }""")
-    chips_scroll_only_sideways(page, phone=True)
+    chips_scroll_only_sideways(page)
 
     page.set_viewport_size({"width": 1280, "height": 900})
     page.evaluate(fill)
-    chips_scroll_only_sideways(page, phone=False)
+    chips_scroll_only_sideways(page)
     assert errors == []
 
 
@@ -489,7 +498,7 @@ PLACE_WORD_JS = """async ({ key, sx, sy, cs }) => {
   const dock = document.body.classList.contains('docked') ? 340 : 0;
   lf.cam.cs = cs;
   lf.cam.x = +x + .5 - (sx - (innerWidth - dock) / 2) / cs;
-  lf.cam.y = +y + .5 - (sy - innerHeight / 2) / cs;
+  lf.cam.y = +y + .5 - (sy - document.getElementById('map').clientHeight / 2) / cs;
   dispatchEvent(new Event('resize'));
   await new Promise(r => setTimeout(r, 300));
   return {
@@ -532,7 +541,7 @@ def test_the_word_list_names_only_words_half_in_sight(page: Page, site_url, erro
     across, down, up = keys
     page.evaluate(ONLY_WORDS_JS, keys)
     right = page.evaluate("innerWidth - (document.body.classList.contains('docked') ? 340 : 0)")
-    mid = size[1] / 2
+    mid = page.evaluate("document.getElementById('map').clientHeight") / 2
 
     def listed(key, sx, sy, cs=80):
         got = page.evaluate(PLACE_WORD_JS, {"key": key, "sx": sx, "sy": sy, "cs": cs})
@@ -550,28 +559,26 @@ def test_the_word_list_names_only_words_half_in_sight(page: Page, site_url, erro
     seen, got = listed(across, -2.5 * cs, mid)
     assert not seen, got  # only its last two at the left edge
 
-    # Letters under a panel over the map can't be seen either. A word reading
-    # away from the title box (down), or from the word list or, on a phone, the
-    # zoom controls above it (up), with its first three letters under the panel
-    # isn't listed, and with only its first two there it is, where the rest
-    # lands on open map.
+    # Letters under a panel over the map, or under the bottom bar where the map
+    # ends, can't be seen either. A word reading away from the title box (down),
+    # or from the bar or the open tools above it (up), with its first three
+    # letters under the panel isn't listed, and with only its first two there it
+    # is, where the rest lands on open map.
     cs = 12
-    phone = size[0] < 700
-    panels = [("header.cartouche", down, True), ("section.legend", up, not phone)]
-    if phone:
-        panels.append((".zoom", up, True))
-    for sel, key, clear in panels:
+    open_tools(page)
+    panels = [("header.cartouche", down), ("#bar", up), ("#toolStack", up)]
+    for sel, key in panels:
         box = page.locator(sel).bounding_box()
-        sx = box["x"] + box["width"] / 2
+        # Over the bar, at its left end: the open tools stand over its right.
+        sx = box["x"] + 60 if sel == "#bar" else box["x"] + box["width"] / 2
         if key == down:  # the first letters just inside its bottom edge
             hidden3, hidden2 = box["y"] + box["height"] - 2.5 * cs, box["y"] + box["height"] - 1.5 * cs
         else:  # just inside its top edge
             hidden3, hidden2 = box["y"] + 2.5 * cs, box["y"] + 1.5 * cs
         seen, got = listed(key, sx, hidden3, cs)
         assert not seen, (sel, got)
-        if clear:
-            seen, got = listed(key, sx, hidden2, cs)
-            assert seen, (sel, got)
+        seen, got = listed(key, sx, hidden2, cs)
+        assert seen, (sel, got)
     assert errors == []
 
 
@@ -634,9 +641,10 @@ def test_the_word_list_can_name_every_word_left_in_the_territory(page: Page, sit
     m = page.evaluate(CHIPS_JS)
     assert m["oy"] not in ("auto", "scroll") and m["sh"] <= m["ch"], m
     assert m["ox"] == "auto" and m["sw"] > m["cw"], m
-    if size[0] >= 700:  # three rows on a computer, one on a phone
-        tops = page.evaluate("[...new Set([...document.querySelectorAll('#legendList .chip')].map(c => c.getBoundingClientRect().top))].length")
-        assert tops == 3, tops
+    # One row along the bottom bar, at any size.
+    tops = page.evaluate("[...new Set([...document.querySelectorAll('#legendList .chip')].map(c => c.getBoundingClientRect().top))].length")
+    assert tops == 1, tops
+    if size[0] >= 700:
         page.locator("#legendList").hover()
         page.mouse.wheel(0, 300)  # a mouse wheel moves it sideways
         page.wait_for_function("document.getElementById('legendList').scrollLeft > 0")
@@ -683,7 +691,7 @@ def test_the_title_box_always_shows_how_many_words_are_found(page: Page, site_ur
 TERRITORY_SHADE = """() => {
   const c = document.getElementById('map'), g = c.getContext('2d'), { cam } = window.__lf;
   const dock = document.body.classList.contains('docked') ? 340 : 0, k = c.width / innerWidth;
-  const sx = x => ((x - cam.x) * cam.cs + (innerWidth - dock) / 2) * k, sy = y => ((y - cam.y) * cam.cs + innerHeight / 2) * k;
+  const sx = x => ((x - cam.x) * cam.cs + (innerWidth - dock) / 2) * k, sy = y => ((y - cam.y) * cam.cs + document.getElementById('map').clientHeight / 2) * k;
   const x0 = Math.round(sx(1)), y0 = Math.round(sy(1)), w = Math.round(sx(11)) - x0, h = Math.round(sy(11)) - y0;
   const d = g.getImageData(x0, y0, w, h).data, m = [0, 0, 0];
   for (let i = 0; i < d.length; i += 4) for (let j = 0; j < 3; j++) m[j] += d[i + j];
@@ -730,4 +738,99 @@ def test_a_supernova_leaves_its_remnant_behind_the_shockwave(page: Page, site_ur
     assert page.evaluate("window.__lf.nova() !== null")
     assert page.evaluate("window.__lf.remnants()") == ["0,0"]
     page.wait_for_function("window.__lf.nova() === null", timeout=12000)
+    assert errors == []
+
+
+@pytest.mark.parametrize("size", [(375, 740), (1280, 900)], ids=["phone", "desktop"])
+def test_the_tools_pop_up_from_the_bar_and_go_again(page: Page, site_url, errors, size):
+    without_worker(page, site_url, "letterfield")
+    page.set_viewport_size({"width": size[0], "height": size[1]})
+    page.goto(f"{site_url}/letterfield#debug")
+    page.click("#coachOk")
+    button, stack = page.locator("#toolsBtn"), page.locator("#toolStack")
+    # Closed at first: out of sight, out of reach of taps and Tab.
+    expect(button).to_have_attribute("aria-expanded", "false")
+    expect(stack).to_be_hidden()
+    assert page.evaluate("document.getElementById('toolStack').inert")
+
+    # The map ends at the bar's top edge, and the bar runs to the screen's bottom.
+    bar = page.locator("#bar").bounding_box()
+    assert page.evaluate("document.getElementById('map').clientHeight") == round(bar["y"])
+    assert round(bar["y"] + bar["height"]) == size[1] and bar["x"] == 0
+
+    # A tap opens it, focus moves in, and it's kept for next time.
+    button.click()
+    expect(button).to_have_attribute("aria-expanded", "true")
+    expect(stack).to_be_visible()
+    expect(page.locator("#music")).to_be_focused()
+    assert page.evaluate("localStorage.getItem('letterfield.tools.v1')") == "1"
+    page.wait_for_timeout(300)  # done popping up
+    box = stack.bounding_box()
+    assert box["y"] + box["height"] <= bar["y"], "it stands above the bar, clear of the word list"
+    for el in ["#toolsBtn", "#music", "#sound", "#home", "#zoomIn", "#zoomOut"]:
+        b = page.locator(el).bounding_box()
+        assert b["width"] >= 40 and b["height"] >= 40, (el, b)
+    assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
+    page.reload()
+    expect(button).to_have_attribute("aria-expanded", "true")
+    expect(stack).to_be_visible()
+
+    # A second tap shuts it.
+    button.click()
+    expect(button).to_have_attribute("aria-expanded", "false")
+    expect(stack).to_be_hidden()
+    assert page.evaluate("localStorage.getItem('letterfield.tools.v1')") == "0"
+
+    # Escape shuts it and brings focus back to the button.
+    button.click()
+    page.keyboard.press("Tab")
+    page.keyboard.press("Escape")
+    expect(button).to_have_attribute("aria-expanded", "false")
+    expect(button).to_be_focused()
+
+    # Dragging the map leaves it open; a tap on the map shuts it, and does nothing else.
+    button.click()
+    cx, cy = size[0] / 2, page.evaluate("document.getElementById('map').clientHeight") / 3
+    page.mouse.move(cx, cy)
+    page.mouse.down()
+    page.mouse.move(cx + 60, cy + 30, steps=5)
+    page.mouse.up()
+    expect(button).to_have_attribute("aria-expanded", "true")
+    cam = page.evaluate("({ ...window.__lf.cam })")
+    page.mouse.click(cx, cy)
+    expect(button).to_have_attribute("aria-expanded", "false")
+    expect(stack).to_be_hidden()
+    assert page.evaluate("({ ...window.__lf.cam })") == cam
+    page.reload()
+    expect(button).to_have_attribute("aria-expanded", "false")
+    assert errors == []
+
+
+def test_the_shortcuts_work_with_the_tools_put_away(page: Page, site_url, errors):
+    page.emulate_media(reduced_motion="reduce")  # flights land at once
+    without_worker(page, site_url, "letterfield")
+    page.set_viewport_size({"width": 375, "height": 740})
+    page.goto(f"{site_url}/letterfield#debug")
+    page.click("#coachOk")
+    expect(page.locator("#toolsBtn")).to_have_attribute("aria-expanded", "false")
+    page.locator("#map").focus()
+    cs = page.evaluate("window.__lf.cam.cs")
+    page.keyboard.press("+")
+    page.wait_for_function(f"window.__lf.cam.cs > {cs}")
+    page.keyboard.press("-")
+    page.wait_for_function(f"Math.abs(window.__lf.cam.cs - {cs}) < .01")
+    page.keyboard.press("d")
+    page.wait_for_function("window.__lf.cam.x > 7")
+    page.keyboard.press("h")
+    page.wait_for_function("window.__lf.cam.x === 6 && window.__lf.cam.y === 6")
+    # Home lands in the middle of the map, above the bar.
+    mid = page.evaluate("document.getElementById('map').clientHeight / 2")
+    assert mid < page.locator("#bar").bounding_box()["y"] - 100
+    page.keyboard.press("m")
+    expect(page.locator("#sound")).to_have_attribute("aria-pressed", "false")
+    page.keyboard.press("b")
+    expect(page.locator("#music")).to_have_attribute("aria-pressed", "true")
+    page.keyboard.press("b")
+    expect(page.locator("#music")).to_have_attribute("aria-pressed", "false")
+    expect(page.locator("#toolsBtn")).to_have_attribute("aria-expanded", "false")
     assert errors == []
