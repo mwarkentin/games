@@ -3974,7 +3974,7 @@ function endgame(opts = {}) {
     t0: performance.now(), P, at, word, ex, ey, u, rx, ry, th: regionTheme(rx, ry),
     px: (word.x + ex) / 2 + .5, py: (word.y + ey) / 2 + .5,  // where everything goes: the word's middle
     by: typeof opts.by === 'string' ? opts.by : word.by || myInitials() || 'ABC',
-    place: regionName(rx, ry), parts: null, debris: null, cam0: null, shown: '', scattered: false,
+    place: regionName(rx, ry), snap: null, born: null, sparks: null, streaks: null, cam0: null, shown: '', scattered: false,
     r: rng(h3(word.x, word.y, SEED ^ 0x3c6ef372)),
   };
   sel.anchor = null; sel.end = null; flight = null; inertia = null;
@@ -4059,82 +4059,192 @@ function endBanners(ph) {
 }
 const AREA_TOTAL = 1119752;
 
-// What's on screen when the collapse begins, as particles that fall in: every
-// letter, the territories' tints in squares, circled words and carets, plus
-// streams of the rest of the universe arriving from beyond the edges.
-function endSnapshot() {
-  const E = END, cs = cam.cs, OX = (W - dock) / 2, OY = H / 2, r = E.r;
-  const vx0 = cam.x - OX / cs, vy0 = cam.y - OY / cs, vx1 = vx0 + W / cs, vy1 = vy0 + H / cs;
-  const parts = [], pxc = E.px, pyc = E.py;
-  const add = (o) => {
-    const dx = o.x - pxc, dy = o.y - pyc;
-    o.r0 = Math.hypot(dx, dy) + .01; o.a0 = Math.atan2(dy, dx);
-    parts.push(o);
-  };
-  const tintA = tintAlpha(cs);
-  for (let ry = fdiv(Math.floor(vy0), RC); ry <= fdiv(Math.floor(vy1), RC); ry++) {
-    for (let rx = fdiv(Math.floor(vx0), RC); rx <= fdiv(Math.floor(vx1), RC); rx++) {
-      const th = regionTheme(rx, ry);
-      for (let j = 0; j < 6; j++) for (let i = 0; i < 6; i++) {
-        const x = rx * RC + i * 8 + 4, y = ry * RC + j * 8 + 4;
-        if (x < vx0 - 4 || x > vx1 + 4 || y < vy0 - 4 || y > vy1 + 4) continue;
-        add({ k: 1, x, y, th, a: tintA, s: 8 });
-      }
+// The collapse, and the bang after it, move everything as one flow round a
+// point, rather than as pieces each on its own path: a point first r0 cells
+// from the middle, at angle a0, is carried in to
+//   r² = r0² - V,  θ = a0 + k·ln(r0 / r)
+// once an area V (in square cells) has gone into the middle. Every patch of
+// the map keeps its area as it goes, and nothing crosses anything else, so
+// the letters never pile up: they stretch along the way in and thin across
+// it, more the closer they get (spaghettified), and k winds them into a
+// logarithmic spiral. Run backwards, the same flow is the big bang.
+const END_VOID = '#040308';
+// What the flow carries, around a middle (px, py), out to R cells: every
+// letter, each territory's tint (and its rules), circled words and carets.
+// Each as polar coordinates from the middle, worked out once.
+function endSnap(px, py, R, ghostsToo) {
+  const snap = { px, py, R, cells: [], terr: [], words: [], carets: [] };
+  const polar = (out, x, y) => { const dx = x - px, dy = y - py; out.push(Math.hypot(dx, dy) + 1e-6, Math.atan2(dy, dx)); };
+  if (cam.cs >= LETTER_MIN) {
+    for (let y = Math.floor(py - R); y <= Math.ceil(py + R); y++) for (let x = Math.floor(px - R); x <= Math.ceil(px + R); x++) {
+      const dx = x + .5 - px, dy = y + .5 - py;
+      if (dx * dx + dy * dy > R * R) continue;
+      polar(snap.cells, x + .5, y + .5);
+      snap.cells.push(letterAt(x, y));
     }
   }
-  const x0 = Math.floor(vx0), x1 = Math.floor(vx1), y0 = Math.floor(vy0), y1 = Math.floor(vy1);
-  const cells = (x1 - x0 + 1) * (y1 - y0 + 1), keep = Math.min(1, 3200 / cells);
-  if (cs >= LETTER_MIN) for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) {
-    if (keep < 1 && r() > keep) continue;
-    add({ k: 0, x: x + .5, y: y + .5, g: letterAt(x, y) });
+  // A territory's outline, a point every 2 cells (straight lines become
+  // spirals): top edge, right, bottom, left. Its top and left edges are the rules.
+  for (let ry = fdiv(Math.floor(py - R), RC); ry <= fdiv(Math.floor(py + R), RC); ry++) {
+    for (let rx = fdiv(Math.floor(px - R), RC); rx <= fdiv(Math.floor(px + R), RC); rx++) {
+      const x0 = rx * RC, y0 = ry * RC, pts = [], step = 2, n = RC / step;
+      for (let i = 0; i < n; i++) polar(pts, x0 + i * step, y0);
+      for (let i = 0; i < n; i++) polar(pts, x0 + RC, y0 + i * step);
+      for (let i = 0; i < n; i++) polar(pts, x0 + RC - i * step, y0 + RC);
+      for (let i = 0; i <= n; i++) polar(pts, x0, y0 + RC - i * step);
+      snap.terr.push({ th: regionTheme(rx, ry), pts, n });
+    }
   }
+  // Circled words as outlines, so they bend with their letters.
   for (const e of [...found.values(), ...claims.values()]) {
-    const [ex, ey] = wordEnd(e);
-    if (Math.max(e.x, ex) + 1 < vx0 || Math.min(e.x, ex) > vx1 || Math.max(e.y, ey) + 1 < vy0 || Math.min(e.y, ey) > vy1) continue;
-    add({ k: 2, x: (e.x + ex) / 2 + .5, y: (e.y + ey) / 2 + .5, th: e.th, len: Math.hypot(ex - e.x, ey - e.y), ang: Math.atan2(ey - e.y, ex - e.x), mine: found.has(e.key) });
+    if (e !== found.get(e.key) && found.has(e.key)) continue;
+    const [ex, ey] = wordEnd(e), ax = e.x + .5, ay = e.y + .5, bx = ex + .5, by = ey + .5;
+    if (Math.hypot((ax + bx) / 2 - px, (ay + by) / 2 - py) > R + 8) continue;
+    const len = Math.hypot(bx - ax, by - ay), ux = (bx - ax) / len, uy = (by - ay) / len, nx = -uy, ny = ux, rr = .4, pts = [];
+    const steps = Math.ceil(len / .5);
+    for (let i = 0; i <= steps; i++) polar(pts, ax + ux * len * i / steps + nx * rr, ay + uy * len * i / steps + ny * rr);
+    for (let i = 1; i < 10; i++) { const a = Math.PI / 2 - Math.PI * i / 10; polar(pts, bx + (ux * Math.cos(a) + nx * Math.sin(a)) * rr, by + (uy * Math.cos(a) + ny * Math.sin(a)) * rr); }
+    for (let i = 0; i <= steps; i++) polar(pts, bx - ux * len * i / steps - nx * rr, by - uy * len * i / steps - ny * rr);
+    for (let i = 1; i < 10; i++) { const a = -Math.PI / 2 - Math.PI * i / 10; polar(pts, ax + (ux * Math.cos(a) + nx * Math.sin(a)) * rr, ay + (uy * Math.cos(a) + ny * Math.sin(a)) * rr); }
+    snap.words.push({ th: e.th, s: e.s, mine: found.has(e.key), pts });
   }
-  for (const gh of ghosts.values()) add({ k: 3, x: gh.x, y: gh.y, hue: gh.hue });
-  // The far universe: streams from beyond the screen, arriving later.
-  const reach = Math.hypot(W, H) / cs;
-  for (let i = 0; i < 1400; i++) {
-    const a = r() * Math.PI * 2, d = reach * (.75 + r() * 1.6);
-    const x = pxc + Math.cos(a) * d, y = pyc + Math.sin(a) * d;
-    const th = regionTheme(fdiv(Math.floor(x), RC), fdiv(Math.floor(y), RC));
-    if (r() < .22) add({ k: 1, x, y, th, a: tintA, s: 4 + r() * 4, far: 1 });
-    else add({ k: 0, x, y, g: Math.floor(r() * 26), far: 1 });
-  }
-  let rmax = 1;
-  for (const p of parts) rmax = Math.max(rmax, p.r0);
-  for (const p of parts) {
-    // Nearer things fall first; the far universe keeps arriving till the end.
-    const q = p.r0 / rmax;
-    p.d = clamp(.03 + .62 * Math.pow(q, .85) * (.75 + .5 * r()), 0, .74);
-    p.f = .2 + .14 * r();
-    p.spin = 1.6 + 2.6 * r() + 2.2 * (1 - q);
-    p.wob = r() * Math.PI * 2;
-  }
-  E.parts = parts; E.rmax = rmax;
-  E.cam0 = { x: cam.x, y: cam.y, cs };
+  if (ghostsToo) for (const gh of ghosts.values()) { const o = []; polar(o, gh.x, gh.y); snap.carets.push({ r0: o[0], a0: o[1], hue: gh.hue }); }
+  return snap;
 }
 
-// Debris thrown out by the bang: letters, tints and sparks.
-function endDebris() {
-  const E = END, r = E.r, d = [];
-  for (let i = 0; i < 900; i++) {
-    const a = r() * Math.PI * 2, k = r();
-    d.push({ a, v: 180 + Math.pow(r(), 1.6) * 2400, k: k < .55 ? 0 : k < .8 ? 1 : 2, g: Math.floor(r() * 26), th: Math.floor(r() * THEMES.length), life: 2 + r() * 4, w: 1 + r() * 2.5, spin: (r() - .5) * 6 });
+// Draws a snapshot carried by the flow: V square cells gone in, wound by k,
+// seen from view v ({x, y, cs, OX, OY} in CSS pixels). With a hole (r, its
+// radius in cells, and reach, how far its dark spreads in pixels), letters
+// fade as they reach it and turn white where the dark has got to them.
+function endFlow(snap, V, k, v, hole) {
+  const { px, py, R } = snap, cs = v.cs, Rh = hole ? hole.r : 0;
+  const sx = wx => (wx - v.x) * cs + v.OX, sy = wy => (wy - v.y) * cs + v.OY;
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.globalAlpha = 1; ctx.fillStyle = END_VOID; ctx.fillRect(0, 0, canvas.width, canvas.height);
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  // What's left of the universe is a disk; beyond it there's nothing.
+  const edge = Math.sqrt(Math.max(0, R * R - V)), hx = sx(px), hy = sy(py), er = edge * cs;
+  if (er < .5) return;
+  ctx.save();
+  ctx.beginPath(); ctx.arc(hx, hy, er, 0, Math.PI * 2);
+  ctx.fillStyle = C.paper; ctx.fill(); ctx.clip();
+  // Where a point has been carried, in CSS pixels; one that has gone in is at the middle.
+  let ox = 0, oy = 0;
+  const at = (r0, a0) => {
+    const q = r0 * r0 - V;
+    if (q <= 0) { ox = hx; oy = hy; return 0; }
+    const r = Math.sqrt(q), t = a0 + k * Math.log(r0 / r);
+    ox = sx(px + r * Math.cos(t)); oy = sy(py + r * Math.sin(t));
+    return r;
+  };
+  // Tints, then the rules over them (a territory's top and left edges).
+  ctx.globalAlpha = tintAlpha(cs);
+  for (const t of snap.terr) {
+    const p = t.pts;
+    ctx.beginPath();
+    for (let i = 0; i < p.length; i += 2) { at(p[i], p[i + 1]); i ? ctx.lineTo(ox, oy) : ctx.moveTo(ox, oy); }
+    ctx.closePath(); ctx.fillStyle = TC[t.th].tint; ctx.fill();
   }
-  E.debris = d;
+  ctx.globalAlpha = 1;
+  ctx.strokeStyle = C.rule; ctx.lineWidth = 1; ctx.setLineDash(cs > 6 ? [5, 5] : []);
+  ctx.beginPath();
+  for (const t of snap.terr) {
+    const p = t.pts, n = t.n;
+    for (let i = 0; i <= n; i++) { at(p[i * 2], p[i * 2 + 1]); i ? ctx.lineTo(ox, oy) : ctx.moveTo(ox, oy); }
+    for (let i = 3 * n; i <= 4 * n; i++) { at(p[i * 2], p[i * 2 + 1]); i > 3 * n ? ctx.lineTo(ox, oy) : ctx.moveTo(ox, oy); }
+  }
+  ctx.stroke(); ctx.setLineDash([]);
+  // The dark round the hole, under the letters.
+  const reach = hole ? hole.reach : 0;
+  if (hole) {
+    const g = ctx.createRadialGradient(hx, hy, Rh * cs, hx, hy, reach);
+    g.addColorStop(0, 'rgba(4,3,8,.96)'); g.addColorStop(.45, 'rgba(4,3,8,.55)'); g.addColorStop(1, 'rgba(4,3,8,0)');
+    ctx.fillStyle = g; ctx.fillRect(hx - reach, hy - reach, reach * 2, reach * 2);
+  }
+  const fade = r => hole ? clamp((r - Rh) / Math.max(.8, Rh * .9), 0, 1) : 1;
+  // Circled words.
+  for (const w of snap.words) {
+    const p = w.pts;
+    let rmin = Infinity;
+    ctx.beginPath();
+    for (let i = 0; i < p.length; i += 2) { rmin = Math.min(rmin, at(p[i], p[i + 1])); i ? ctx.lineTo(ox, oy) : ctx.moveTo(ox, oy); }
+    ctx.closePath();
+    const a = fade(rmin);
+    if (a <= 0) continue;
+    ctx.globalAlpha = a * (w.mine ? 1 : .6);
+    if (w.mine) { ctx.fillStyle = TC[w.th].fill; ctx.fill(); }
+    ctx.lineWidth = clamp(cs * .06, 1, 2.4); ctx.strokeStyle = TC[w.th].stroke;
+    if (w.s) ctx.setLineDash([Math.max(2, cs * .16), Math.max(2, cs * .1)]);
+    ctx.stroke(); ctx.setLineDash([]);
+  }
+  ctx.globalAlpha = 1;
+  // Letters, and carets: each drawn through the flow's local stretch and turn
+  // at its middle (the derivative of the map above), so neighbours stay neighbours.
+  const csd = cs * dpr, S = Math.max(4, Math.round(csd)), sc = csd / S;
+  const la = clamp((cs - LETTER_MIN) / (LETTER_FULL - LETTER_MIN), 0, 1);
+  let J11 = 1, J12 = 0, J21 = 0, J22 = 1, X = 0, Y = 0, R1 = 0, m11 = 1;
+  const local = (r0, a0) => {
+    const q = r0 * r0 - V;
+    if (q <= Rh * Rh) return false;
+    const r = Math.sqrt(q), t = a0 + k * Math.log(r0 / r), ct = Math.cos(t), st = Math.sin(t);
+    m11 = r0 / r;
+    const m22 = 1 / m11, m21 = k * (m22 - m11), ca = Math.cos(a0), sa = Math.sin(a0);
+    const p1 = m21 * ca - m22 * sa, p2 = m21 * sa + m22 * ca, q1 = m11 * ca, q2 = m11 * sa;
+    J11 = ct * q1 - st * p1; J12 = ct * q2 - st * p2; J21 = st * q1 + ct * p1; J22 = st * q2 + ct * p2;
+    X = sx(px + r * ct); Y = sy(py + r * st); R1 = r;
+    return true;
+  };
+  if (la > 0 && snap.cells.length) {
+    ensureAtlas(S);
+    const ink = atlas.c, white = endAtlas(S), c = snap.cells, span = (reach - Rh * cs) || 1, margin = cs * 2;
+    for (let i = 0; i < c.length; i += 3) {
+      if (!local(c[i], c[i + 1])) continue;
+      const m = margin * m11;
+      if (X < -m || X > W + m || Y < -m || Y > H + m) continue;
+      const a = la * fade(R1) * (hole ? clamp((34 - m11) / 16, 0, 1) : clamp((7 - m11) / 4, 0, 1));
+      if (a <= .02) continue;
+      const lit = hole && !C.dark ? .97 * clamp(1 - (R1 * cs - Rh * cs) / span, 0, 1) : 0;
+      ctx.setTransform(J11 * sc, J21 * sc, J12 * sc, J22 * sc, X * dpr, Y * dpr);
+      if (lit < .98) { ctx.globalAlpha = a * (1 - lit); ctx.drawImage(ink, c[i + 2] * S, 0, S, S, -S / 2, -S / 2, S, S); }
+      if (lit > .02) { ctx.globalAlpha = a * lit; ctx.drawImage(white, c[i + 2] * S, 0, S, S, -S / 2, -S / 2, S, S); }
+    }
+  }
+  for (const g of snap.carets) {
+    if (!local(g.r0, g.a0)) continue;
+    ctx.setTransform(J11 * csd, J21 * csd, J12 * csd, J22 * csd, X * dpr, Y * dpr);
+    ctx.globalAlpha = fade(R1);
+    ctx.fillStyle = `hsl(${g.hue}, ${C.ms}, ${C.ml})`;
+    ctx.fillRect(-.04, -.33, .08, .66);
+  }
+  ctx.restore();
+  // The universe's edge fades into the void.
+  if (er < Math.hypot(W, H)) {
+    const g = ctx.createRadialGradient(hx, hy, er * .82, hx, hy, er + 1);
+    g.addColorStop(0, 'rgba(4,3,8,0)'); g.addColorStop(1, 'rgba(4,3,8,1)');
+    ctx.fillStyle = g; ctx.beginPath(); ctx.arc(hx, hy, er + 1, 0, Math.PI * 2); ctx.fill();
+  }
 }
 
-// Thrown to somewhere far-flung in the shared world, but never the same place
-// as the player next to you.
+// How far from the middle the screen reaches, in cells, so the flow carries
+// everything on it and a ring beyond.
+function endReach(px, py, v) {
+  let far = 0;
+  for (const [x, y] of [[0, 0], [W, 0], [0, H], [W, H]]) far = Math.max(far, Math.hypot(x - ((px - v.x) * v.cs + v.OX), y - ((py - v.y) * v.cs + v.OY)));
+  return Math.min(120, far / v.cs * 1.2 + 3);
+}
+// A tremor that moves smoothly: a few slow waves added up, -1 to 1.
+const endWobble = (t, s) => (Math.sin(t * 6.1 + s) + .6 * Math.sin(t * 9.7 + s * 2.3) + .3 * Math.sin(t * 15.3 + s * 3.1)) / 1.9;
+
+// Under the flash, the player is thrown somewhere far away in the shared
+// world, and the new universe (in this prototype, the same map) unfolds there.
 function endScatter() {
   const E = END, span = SURVEY_AREA * SECTOR;
   const x = Math.round((Math.random() * 2 - 1) * span * .85), y = Math.round((Math.random() * 2 - 1) * span * .85);
   cam.x = x + .5; cam.y = y + .5; cam.cs = clamp(E.cam0 ? E.cam0.cs : cam.cs, 16, 30);
   camChanged();
   E.scattered = true;
+  const v = { x: cam.x, y: cam.y, cs: cam.cs, OX: (W - dock) / 2, OY: H / 2 };
+  E.born = endSnap(cam.x, cam.y, endReach(cam.x, cam.y, v), false);
 }
 
 const endEase = t => t * t * (3 - 2 * t);
@@ -4161,143 +4271,82 @@ function endBg(dark) {
   const pr = hexRGB(C.paper), mix = i => Math.round(pr[i] + ([4, 3, 8][i] - pr[i]) * v);
   document.body.style.background = `rgb(${mix(0)},${mix(1)},${mix(2)})`;
 }
+// How much of the collapse's area has gone in, as a share of it: slowly at
+// first, then faster and faster.
+const endSwallow = p => p * p * (.25 + .75 * p);
+// The bang's: the new universe rushes out, then settles.
+const endUnfold = u => 1 - Math.pow(1 - u, 3);
+const END_K = 1.5;  // how tightly the collapse winds
+
 function endDraw(now) {
   const E = END, ph = endPhase(now);
   if (ph.s >= E.at.end) { endStop(); return draw(now); }
   endBanners(ph);
-  const t = ph.s - E.at.bang;
-  endBg(ph.name === 'tremor' ? 0 : ph.name === 'collapse' ? clamp((ph.u - .55) / .4, 0, 1) ** 1.5 : ph.name === 'dot' || ph.name === 'build' ? 1
-    : clamp(1 - (t - .25) / Math.max(1, E.P.bang + E.P.scatter * .45), 0, 1) ** 1.3);
   const hue = THEMES[E.th].hue;
   if (ph.name === 'tremor') {
-    // The map as it is, shaking a little more each second, the final word lit.
-    const shake = RM ? 0 : 2.5 * ph.u * ph.u;
-    const ox = cam.x, oy = cam.y;
-    cam.x += (Math.random() * 2 - 1) * shake / cam.cs; cam.y += (Math.random() * 2 - 1) * shake / cam.cs;
+    endBg(0);
+    // The map as it is, trembling a little more each second, the final word lit.
+    const amp = RM ? 0 : 2.2 * ph.u * ph.u, ox = cam.x, oy = cam.y;
+    cam.x += endWobble(ph.s, 1) * amp / cam.cs; cam.y += endWobble(ph.s, 4) * amp / cam.cs;
     draw(now);
     cam.x = ox; cam.y = oy;
     endWordGlow(now, ph.u, hue);
     return true;
   }
-  if (!E.parts) endSnapshot();
+  if (!E.snap) {
+    E.cam0 = { x: cam.x, y: cam.y, cs: cam.cs };
+    const v = { x: cam.x, y: cam.y, cs: cam.cs, OX: (W - dock) / 2, OY: H / 2 };
+    E.R = endReach(E.px, E.py, v);
+    E.snap = endSnap(E.px, E.py, E.R, true);
+  }
   if (RM) return endDrawCalm(now, ph, hue);
-  if (ph.name === 'collapse') endCollapse(now, ph.u, hue);
-  else if (ph.name === 'dot') endDot(now, ph, hue, 0);
-  else if (ph.name === 'build') endDot(now, ph, hue, ph.u);
-  else endBang(now, ph, hue);
+  if (ph.name === 'collapse') { endCollapse(now, ph, hue); return true; }
+  if (ph.name === 'dot' || ph.name === 'build') { endBg(1); endDot(now, ph, hue, ph.name === 'build' ? ph.u : 0); return true; }
+  endBang(now, ph, hue);
   return true;
 }
 function endWordGlow(now, u, hue) {
   const E = END, cs = cam.cs, OX = (W - dock) / 2, OY = H / 2;
   const SX = wx => (wx - cam.x) * cs + OX, SY = wy => (wy - cam.y) * cs + OY;
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-  const pulse = .55 + .45 * Math.sin(now / 160);
+  const pulse = .5 + .5 * Math.sin(now / 1000 * Math.PI * 2 / 1.6);
   ctx.globalCompositeOperation = 'lighter';
-  capsule(SX(E.word.x + .5), SY(E.word.y + .5), SX(E.ex + .5), SY(E.ey + .5), cs * (.55 + .25 * pulse));
-  ctx.strokeStyle = `hsla(${hue}, 95%, 62%, ${.35 + .5 * u})`; ctx.lineWidth = 2 + 4 * pulse * u; ctx.stroke();
-  ctx.fillStyle = `hsla(${hue}, 95%, 60%, ${.12 + .2 * u * pulse})`; ctx.fill();
+  capsule(SX(E.word.x + .5), SY(E.word.y + .5), SX(E.ex + .5), SY(E.ey + .5), cs * (.55 + .12 * pulse));
+  ctx.strokeStyle = `hsla(${hue}, 95%, 62%, ${.3 + .5 * u})`; ctx.lineWidth = 2 + 3 * pulse * u; ctx.stroke();
+  ctx.fillStyle = `hsla(${hue}, 95%, 60%, ${.1 + .18 * u * pulse})`; ctx.fill();
   ctx.globalCompositeOperation = 'source-over';
 }
 
-function endCollapse(now, p, hue) {
-  const E = END, c0 = E.cam0;
-  // The camera is dragged after everything else, faster and faster, and it shakes.
-  const pull = Math.pow(p, 1.6);
-  const camX = c0.x + (E.px - c0.x) * endEase(clamp(p * 1.3, 0, 1)), camY = c0.y + (E.py - c0.y) * endEase(clamp(p * 1.3, 0, 1));
-  const cs = c0.cs * (1 + .5 * pull), shake = 1.5 + 12 * Math.pow(p, 2.2);
-  const OX = (W - dock) / 2 + (Math.random() * 2 - 1) * shake, OY = H / 2 + (Math.random() * 2 - 1) * shake;
-  const SX = wx => (wx - camX) * cs + OX, SY = wy => (wy - camY) * cs + OY;
-  const hx = SX(E.px), hy = SY(E.py), M = Math.min(W, H);
-  // The horizon grows, then shrinks to a point as the last of it falls in.
-  const Rh = M * (.012 + .085 * endEase(clamp(p / .6, 0, 1))) * (p > .82 ? Math.pow(1 - (p - .82) / .18, 1.5) : 1);
-
-  ctx.setTransform(1, 0, 0, 1, 0, 0);
-  ctx.globalAlpha = 1;
-  ctx.fillStyle = C.paper; ctx.fillRect(0, 0, canvas.width, canvas.height);
+function endCollapse(now, ph, hue) {
+  const E = END, c0 = E.cam0, p = ph.u, M = Math.min(W, H);
+  // The camera is drawn in after everything else, and trembles more and more.
+  const pull = endEase(clamp(p * 1.4, 0, 1)), amp = 1 + 4 * p * p;
+  const v = {
+    x: c0.x + (E.px - c0.x) * pull, y: c0.y + (E.py - c0.y) * pull, cs: c0.cs,
+    OX: (W - dock * (1 - pull)) / 2 + endWobble(ph.s, 1) * amp, OY: H / 2 + endWobble(ph.s, 4) * amp,
+  };
+  const V = E.R * E.R * endSwallow(p), edge = Math.sqrt(Math.max(0, E.R * E.R - V));
+  // The hole grows, then shrinks to a point as the last of the universe goes in.
+  const Rh = Math.min(edge * .45, (M * .085 / v.cs) * endEase(clamp(p / .35, 0, 1)));
+  const reach = Rh * v.cs * (2.6 + 2.5 * p) + M * .12 * p;
+  endBg(clamp(1 - edge * v.cs / (Math.hypot(W, H) * .5), 0, 1));
+  endFlow(E.snap, V, END_K, v, { r: Rh, reach });
+  const hx = (E.px - v.x) * v.cs + v.OX, hy = (E.py - v.y) * v.cs + v.OY, rh = Rh * v.cs;
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-  // Light leaves the universe from the middle out.
-  const dark = clamp((p - .1) / .8, 0, 1);
-  const g = ctx.createRadialGradient(hx, hy, Rh, hx, hy, Math.max(Rh + 1, M * (.15 + 1.6 * dark)));
-  g.addColorStop(0, 'rgba(4,3,8,.97)'); g.addColorStop(1, 'rgba(4,3,8,0)');
-  ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
-  ctx.fillStyle = `rgba(4,3,8,${clamp((p - .55) / .4, 0, 1) ** 1.5})`; ctx.fillRect(0, 0, W, H);
-
-  const S = Math.max(4, Math.round(cs * dpr)), img = endAtlas(S);
-  ensureAtlas(S);
-  const ink = atlas.c, Rv = Math.max(Rh + 1, M * (.15 + 1.6 * dark)), allDark = clamp((p - .55) / .4, 0, 1) ** 1.5;
-  for (const q of E.parts) {
-    const u = clamp((p - q.d) / q.f, 0, 1);
-    if (u >= 1) continue;
-    const fall = Math.pow(u, 2.3), r = q.r0 * (1 - fall);
-    const a = q.a0 + q.spin * Math.pow(u, 1.5) * (1 + 2.5 * fall) + (u === 0 ? .04 * Math.sin(now / 300 + q.wob) * p : 0);
-    // Before it falls, the tide already tugs it toward the hole.
-    const tug = u === 0 ? q.r0 * (1 - .06 * p * (q.far ? 0 : 1)) : r;
-    const wx = E.px + Math.cos(a) * tug, wy = E.py + Math.sin(a) * tug;
-    const x = SX(wx), y = SY(wy);
-    if (x < -80 || x > W + 80 || y < -80 || y > H + 80) continue;
-    const dpx = Math.hypot(x - hx, y - hy);
-    const near = clamp(1 - (dpx - Rh) / (M * .35), 0, 1);
-    const alpha = clamp((dpx - Rh * .9) / (Rh * .6 + 4), 0, 1);
-    if (alpha <= 0) continue;
-    // Spaghettified: stretched along the way it falls, squeezed across it.
-    const L = 1 + 6 * Math.pow(u, 2) + 3 * near * u, Wd = 1 / (1 + 1.8 * u * u + near * u);
-    const phi = Math.atan2(y - hy, x - hx) + .55 * u;
-    const ca = Math.cos(phi), sa = Math.sin(phi);
-    if (q.k === 0) {
-      ctx.setTransform(ca * L, sa * L, -sa * Wd, ca * Wd, x * dpr, y * dpr);
-      // White where the dark has reached it, so it stays readable.
-      const lit = C.dark ? 0 : Math.max(allDark, .97 * clamp(1 - (dpx - Rh) / (Rv - Rh), 0, 1));
-      ctx.globalAlpha = alpha * (1 - lit);
-      if (ctx.globalAlpha > .02) ctx.drawImage(ink, q.g * S, 0, S, S, -S / 2, -S / 2, S, S);
-      ctx.globalAlpha = alpha * lit;
-      if (ctx.globalAlpha > .02) ctx.drawImage(img, q.g * S, 0, S, S, -S / 2, -S / 2, S, S);
-    } else if (q.k === 1) {
-      // A tint smears out along its orbit, thinning as it goes.
-      const s = q.s * cs * dpr, tl = 1 + 2.5 * u, tw = 1 / (1 + 1.5 * u);
-      const ta = phi + Math.PI / 2, tc = Math.cos(ta), ts = Math.sin(ta);
-      ctx.setTransform(tc * tl, ts * tl, -ts * tw, tc * tw, x * dpr, y * dpr);
-      ctx.globalAlpha = Math.min(.24, q.a * (1 + .8 * u)) * alpha * (1 - .5 * u);
-      ctx.fillStyle = TC[q.th].tint;
-      ctx.fillRect(-s / 2, -s / 2, s, s);
-    } else if (q.k === 2) {
-      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-      ctx.translate(x, y); ctx.rotate(q.ang + .8 * u * q.spin); ctx.scale(1 + 2 * u, 1 / (1 + u));
-      const len = q.len * cs / 2, rr = Math.max(1.6, cs * .4);
-      capsule(-len, 0, len, 0, rr);
-      ctx.globalAlpha = alpha * (q.mine ? 1 : .6);
-      if (q.mine) { ctx.fillStyle = TC[q.th].fill; ctx.fill(); }
-      ctx.strokeStyle = TC[q.th].stroke; ctx.lineWidth = 1.5; ctx.stroke();
-    } else {
-      ctx.setTransform(ca * L, sa * L, -sa * Wd, ca * Wd, x * dpr, y * dpr);
-      ctx.globalAlpha = alpha;
-      ctx.fillStyle = `hsl(${q.hue}, ${C.ms}, ${C.ml})`;
-      const w = clamp(cs * .07, 2, 3) * dpr, h = cs * .66 * dpr;
-      ctx.fillRect(-w / 2, -h / 2, w, h);
-    }
-  }
-  ctx.globalAlpha = 1;
-  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-  // The accretion disc: hot arcs racing round the horizon, and its dark heart.
+  // A glow of light caught just outside the horizon, the horizon, and a hair of light round it.
+  const glow = clamp(p / .2, 0, 1);
   ctx.globalCompositeOperation = 'lighter';
-  const disc = clamp(p / .25, 0, 1) * (p > .9 ? 1 - (p - .9) / .1 : 1);
-  for (let i = 0; i < 9; i++) {
-    const rr = Rh * (1.25 + i * .22), spd = 3.2 / (1 + i * .4), a0 = now / 1000 * spd + i * 1.7;
-    ctx.strokeStyle = `hsla(${(hue + i * 6) % 360}, 95%, ${62 + i * 3}%, ${disc * (.42 - i * .035)})`;
-    ctx.lineWidth = Math.max(1, Rh * (.12 - i * .009));
-    ctx.beginPath(); ctx.arc(hx, hy, rr, a0, a0 + 2.2 + (i % 3) * .5); ctx.stroke();
-    ctx.beginPath(); ctx.arc(hx, hy, rr, a0 + Math.PI, a0 + Math.PI + 1.4); ctx.stroke();
-  }
-  const halo = ctx.createRadialGradient(hx, hy, Rh * .9, hx, hy, Rh * 2.4 + 2);
-  halo.addColorStop(0, `hsla(${hue}, 95%, 70%, ${.55 * disc})`); halo.addColorStop(1, `hsla(${hue}, 95%, 60%, 0)`);
-  ctx.fillStyle = halo; ctx.beginPath(); ctx.arc(hx, hy, Rh * 2.4 + 2, 0, Math.PI * 2); ctx.fill();
+  const halo = ctx.createRadialGradient(hx, hy, rh * .95, hx, hy, rh * 2.2 + 2);
+  halo.addColorStop(0, `hsla(${hue}, 95%, 72%, ${.6 * glow})`); halo.addColorStop(.35, `hsla(${hue}, 95%, 60%, ${.22 * glow})`); halo.addColorStop(1, `hsla(${hue}, 95%, 55%, 0)`);
+  ctx.fillStyle = halo; ctx.beginPath(); ctx.arc(hx, hy, rh * 2.2 + 2, 0, Math.PI * 2); ctx.fill();
   ctx.globalCompositeOperation = 'source-over';
-  ctx.fillStyle = '#020104';
-  ctx.beginPath(); ctx.arc(hx, hy, Rh, 0, Math.PI * 2); ctx.fill();
-  // The photon ring: a hair of light at the edge.
-  ctx.strokeStyle = `hsla(${hue}, 100%, 88%, ${.8 * disc})`; ctx.lineWidth = 1.2;
-  ctx.beginPath(); ctx.arc(hx, hy, Rh * 1.04, 0, Math.PI * 2); ctx.stroke();
-  // The very end of the collapse: everything else gone, the point it left.
-  if (p > .9) endPoint(hx, hy, hue, (p - .9) / .1, 0, now);
+  if (rh > .3) {
+    ctx.fillStyle = '#020104'; ctx.beginPath(); ctx.arc(hx, hy, rh, 0, Math.PI * 2); ctx.fill();
+    ctx.strokeStyle = `hsla(${hue}, 100%, 88%, ${.75 * glow})`; ctx.lineWidth = 1.2;
+    ctx.beginPath(); ctx.arc(hx, hy, rh * 1.04, 0, Math.PI * 2); ctx.stroke();
+  }
+  // The point it leaves, brightening as the last goes in.
+  if (p > .88) endPoint(hx, hy, hue, endEase((p - .88) / .12), 0, now);
 }
 
 // The point: a core and a glow that breathes. charge (0 to 1) is the build.
@@ -4305,96 +4354,103 @@ function endPoint(x, y, hue, show, charge, now) {
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   const breath = RM ? .5 : .5 + .5 * Math.sin(now / 1000 * Math.PI * 2 / 4.2);
   const M = Math.min(W, H);
-  const R = (10 + 10 * breath) * (1 + 9 * charge * charge) * (M / 700 + .5);
+  const R = (10 + 10 * breath) * (1 + 6 * charge * charge) * (M / 700 + .5);
   const white = charge * charge;
   ctx.globalCompositeOperation = 'lighter';
   const g = ctx.createRadialGradient(x, y, 0, x, y, R * 3);
   g.addColorStop(0, `hsla(${hue}, ${95 - 60 * white}%, ${82 + 14 * white}%, ${show})`);
   g.addColorStop(.12, `hsla(${hue}, 95%, 66%, ${show * (.5 + .4 * breath)})`);
-  g.addColorStop(.45, `hsla(${hue}, 95%, 55%, ${show * (.12 + .1 * breath + .3 * charge)})`);
+  const halo = show * (.12 + .1 * breath + .25 * charge);
+  g.addColorStop(.35, `hsla(${hue}, 95%, 55%, ${halo})`);
+  g.addColorStop(.6, `hsla(${hue}, 95%, 52%, ${halo * .35})`);
+  g.addColorStop(.82, `hsla(${hue}, 95%, 50%, ${halo * .08})`);
   g.addColorStop(1, `hsla(${hue}, 95%, 50%, 0)`);
   ctx.fillStyle = g; ctx.beginPath(); ctx.arc(x, y, R * 3, 0, Math.PI * 2); ctx.fill();
   ctx.fillStyle = `rgba(255,252,244,${show})`;
-  ctx.beginPath(); ctx.arc(x, y, 1.6 + 2 * breath * (1 - charge) + 9 * charge * charge, 0, Math.PI * 2); ctx.fill();
+  ctx.beginPath(); ctx.arc(x, y, 1.6 + 2 * breath * (1 - charge) + 7 * charge * charge, 0, Math.PI * 2); ctx.fill();
   ctx.globalCompositeOperation = 'source-over';
 }
 
 function endDot(now, ph, hue, charge) {
-  const E = END;
-  const shake = RM ? 0 : 14 * Math.pow(charge, 3);
-  const x = (W - dock) / 2 + (Math.random() * 2 - 1) * shake, y = H / 2 + (Math.random() * 2 - 1) * shake;
+  const E = END, t = ph.s - E.at.dot;
+  const amp = RM ? 0 : 6 * Math.pow(charge, 3);
+  const x = W / 2 + endWobble(ph.s * 1.6, 2) * amp, y = H / 2 + endWobble(ph.s * 1.6, 5) * amp;
   ctx.setTransform(1, 0, 0, 1, 0, 0);
-  ctx.globalAlpha = 1; ctx.fillStyle = '#040308'; ctx.fillRect(0, 0, canvas.width, canvas.height);
+  ctx.globalAlpha = 1; ctx.fillStyle = END_VOID; ctx.fillRect(0, 0, canvas.width, canvas.height);
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   if (charge > 0 && !RM) {
-    // Energy gathering: streaks of light rushing in, more and faster.
-    const r = rng(Math.floor(now / 50)), n = Math.floor(10 + 110 * charge * charge), M = Math.hypot(W, H) / 2;
+    // Energy gathering: streaks of light drawn steadily in, more and faster.
+    if (!E.streaks) { const r = E.r; E.streaks = Array.from({ length: 150 }, () => ({ a: r() * Math.PI * 2, d: r(), sp: .5 + r(), len: .3 + r() * .7, w: .8 + r() * 1.4, h: r() * 40 - 20, on: r() })); }
+    const tb = ph.s - E.at.build, M = Math.hypot(W, H) / 2;
     ctx.globalCompositeOperation = 'lighter';
-    for (let i = 0; i < n; i++) {
-      const a = r() * Math.PI * 2, d = M * (.15 + r() * .9) * (1 - charge * .5), len = 20 + 140 * charge * r();
-      ctx.strokeStyle = `hsla(${(hue + r() * 40 - 20 + 360) % 360}, 95%, ${70 + 25 * charge}%, ${.15 + .5 * charge * r()})`;
-      ctx.lineWidth = 1 + 1.5 * r();
-      ctx.beginPath(); ctx.moveTo(x + Math.cos(a) * d, y + Math.sin(a) * d); ctx.lineTo(x + Math.cos(a) * Math.max(4, d - len), y + Math.sin(a) * Math.max(4, d - len)); ctx.stroke();
+    ctx.lineCap = 'round';
+    for (const s of E.streaks) {
+      if (s.on > charge * 1.25) continue;
+      const f = ((s.d - tb * s.sp * (.12 + .5 * charge)) % 1 + 1) % 1;
+      const d = M * (.06 + f), len = (16 + 90 * charge) * s.len * (.4 + f);
+      const a = clamp((charge * 1.25 - s.on) * 4, 0, 1) * Math.min(1, f * 5) * (.2 + .55 * charge);
+      ctx.strokeStyle = `hsla(${(hue + s.h + 360) % 360}, 95%, ${70 + 25 * charge}%, ${a})`;
+      ctx.lineWidth = s.w;
+      ctx.beginPath(); ctx.moveTo(x + Math.cos(s.a) * d, y + Math.sin(s.a) * d); ctx.lineTo(x + Math.cos(s.a) * (d + len), y + Math.sin(s.a) * (d + len)); ctx.stroke();
     }
-    // Rays from the point, turning.
-    const rays = 14, spin = now / 1000 * (.2 + 1.2 * charge);
+    ctx.lineCap = 'butt';
+    // Rays from the point, turning slowly.
+    const rays = 12, spin = tb * (.08 + .3 * charge);
     for (let i = 0; i < rays; i++) {
-      const a = spin + i * Math.PI * 2 / rays, L = Math.min(W, H) * (.08 + .7 * charge * charge) * (.6 + .4 * Math.sin(now / 90 + i * 3));
+      const a = spin + i * Math.PI * 2 / rays, L = Math.min(W, H) * (.06 + .55 * charge * charge) * (.8 + .2 * Math.sin(tb * 1.3 + i * 2.1));
       const gr = ctx.createLinearGradient(x, y, x + Math.cos(a) * L, y + Math.sin(a) * L);
-      gr.addColorStop(0, `hsla(${hue}, 95%, 85%, ${.35 * charge})`); gr.addColorStop(1, `hsla(${hue}, 95%, 70%, 0)`);
-      ctx.strokeStyle = gr; ctx.lineWidth = 1 + 3 * charge;
+      gr.addColorStop(0, `hsla(${hue}, 95%, 85%, ${.3 * charge})`); gr.addColorStop(1, `hsla(${hue}, 95%, 70%, 0)`);
+      ctx.strokeStyle = gr; ctx.lineWidth = 1 + 2.5 * charge;
       ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x + Math.cos(a) * L, y + Math.sin(a) * L); ctx.stroke();
     }
     ctx.globalCompositeOperation = 'source-over';
   }
   // The held breath: dark for an instant before the bang.
   const held = ph.name === 'build' && (1 - ph.u) * E.P.build < .14;
-  endPoint(x, y, hue, held ? 0 : 1, charge, now);
+  endPoint(x, y, hue, held ? 0 : Math.min(1, .7 + t), charge, now);
 }
 
 function endBang(now, ph, hue) {
-  const E = END, t = ph.s - E.at.bang;
-  if (!E.debris) endDebris();
-  // Under the flash, the player is thrown somewhere far away, and the new
-  // universe (in this prototype, the same map) fades in around them.
-  if (!E.scattered && t > .25) endScatter();
-  const cx = (W - dock) / 2, cy = H / 2;
-  if (E.scattered) draw(now);
-  else { ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.fillStyle = '#040308'; ctx.fillRect(0, 0, canvas.width, canvas.height); }
+  const E = END, t = ph.s - E.at.bang, unfold = E.P.bang + E.P.scatter * .6;
+  if (!E.scattered) endScatter();
+  const cx = (W - dock) / 2, cy = H / 2, M = Math.hypot(W, H);
+  const v = { x: cam.x, y: cam.y, cs: cam.cs, OX: cx, OY: cy };
+  const u = clamp(t / unfold, 0, 1), b = E.born;
+  if (u < 1) {
+    // The new universe pours out of the point and unwinds into place.
+    const V = b.R * b.R * (1 - endUnfold(u));
+    endBg(clamp(1 - Math.sqrt(b.R * b.R - V) * cam.cs / (M * .5), 0, 1));
+    endFlow(b, V, -END_K * .7, v, null);
+    // The heat it pours out of, cooling as it spreads.
+    const hot = 1 - u;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.globalCompositeOperation = 'lighter';
+    const g = ctx.createRadialGradient(cx, cy, 0, cx, cy, M * (.08 + .3 * u));
+    g.addColorStop(0, `hsla(${hue}, 90%, 85%, ${.9 * hot})`); g.addColorStop(1, `hsla(${hue}, 90%, 60%, 0)`);
+    ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+    ctx.globalCompositeOperation = 'source-over';
+  } else { endBg(0); draw(now); }
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-  const night = E.scattered ? clamp(1 - (t - .25) / Math.max(1, E.P.bang + E.P.scatter * .45), 0, 1) : 1;
-  ctx.globalAlpha = night ** 1.3; ctx.fillStyle = '#040308'; ctx.fillRect(0, 0, W, H); ctx.globalAlpha = 1;
-  const S = Math.max(4, Math.round(cam.cs * dpr)), img = endAtlas(S), M = Math.hypot(W, H);
+  // Sparks thrown out with it, and the shockwave.
+  if (!E.sparks) { const r = E.r; E.sparks = Array.from({ length: 260 }, () => ({ a: r() * Math.PI * 2, v: 300 + Math.pow(r(), 1.5) * 2200, life: 1.2 + r() * 2.6, w: .8 + r() * 2, h: r() * 50 - 25 })); }
   ctx.globalCompositeOperation = 'lighter';
-  for (const d of E.debris) {
-    const life = t / d.life;
+  ctx.lineCap = 'round';
+  for (const s of E.sparks) {
+    const life = t / s.life;
     if (life >= 1) continue;
-    const dist = d.v * (1 - Math.exp(-t * 1.6)) / 1.6 * (M / 1400 + .4);
-    const x = cx + Math.cos(d.a) * dist, y = cy + Math.sin(d.a) * dist;
-    if (x < -60 || x > W + 60 || y < -60 || y > H + 60) continue;
-    const fade = (1 - life) ** 1.4, ca = Math.cos(d.a), sa = Math.sin(d.a), L = 1 + 4 * Math.exp(-t * 2.2);
-    if (d.k === 0) {
-      ctx.setTransform(ca * L, sa * L, -sa, ca, x * dpr, y * dpr);
-      ctx.globalAlpha = fade * .9; ctx.drawImage(img, d.g * S, 0, S, S, -S / 2, -S / 2, S, S);
-    } else if (d.k === 1) {
-      const s = 4 * cam.cs * dpr * .5;
-      ctx.setTransform(ca * L * 2, sa * L * 2, -sa, ca, x * dpr, y * dpr);
-      ctx.globalAlpha = fade * .18; ctx.fillStyle = TC[d.th].tint; ctx.fillRect(-s / 2, -s / 2, s, s);
-    } else {
-      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-      ctx.globalAlpha = fade; ctx.strokeStyle = `hsla(${(hue + d.th) % 360}, 95%, 80%, 1)`; ctx.lineWidth = d.w;
-      ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x - ca * 30 * L, y - sa * 30 * L); ctx.stroke();
-    }
+    const d = s.v * (1 - Math.exp(-t * 1.8)) / 1.8 * (M / 1400 + .4), ca = Math.cos(s.a), sa = Math.sin(s.a);
+    const tail = 10 + 40 * Math.exp(-t * 2);
+    ctx.strokeStyle = `hsla(${(hue + s.h + 360) % 360}, 95%, 80%, ${(1 - life) ** 1.4})`; ctx.lineWidth = s.w;
+    ctx.beginPath(); ctx.moveTo(cx + ca * d, cy + sa * d); ctx.lineTo(cx + ca * Math.max(0, d - tail), cy + sa * Math.max(0, d - tail)); ctx.stroke();
   }
-  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-  // The shockwave, and the flash over everything.
-  const R = M * .9 * (1 - Math.exp(-t * 1.5)), ring = clamp(1 - t / 3.5, 0, 1);
+  ctx.lineCap = 'butt';
+  const R = M * .9 * (1 - Math.exp(-t * 1.4)), ring = clamp(1 - t / 3.2, 0, 1);
   if (ring > 0) {
-    ctx.strokeStyle = `hsla(${hue}, 95%, 82%, ${ring * .8})`; ctx.lineWidth = 6 + 40 * ring;
+    ctx.strokeStyle = `hsla(${hue}, 95%, 82%, ${ring * .7})`; ctx.lineWidth = 4 + 30 * ring;
     ctx.beginPath(); ctx.arc(cx, cy, R, 0, Math.PI * 2); ctx.stroke();
   }
   ctx.globalCompositeOperation = 'source-over';
-  const flash = t < .06 ? t / .06 : Math.exp(-(t - .06) * 1.9);
+  const flash = t < .06 ? t / .06 : Math.exp(-(t - .06) * 2.2);
   ctx.globalAlpha = clamp(flash, 0, 1); ctx.fillStyle = '#fffaf0'; ctx.fillRect(0, 0, W, H);
   ctx.globalAlpha = 1;
 }
@@ -4404,16 +4460,19 @@ function endBang(now, ph, hue) {
 function endDrawCalm(now, ph, hue) {
   const E = END;
   if (ph.name === 'collapse') {
+    endBg(ph.u);
     draw(now);
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    ctx.globalAlpha = clamp(ph.u * 1.15, 0, 1); ctx.fillStyle = '#040308'; ctx.fillRect(0, 0, W, H); ctx.globalAlpha = 1;
-    if (ph.u > .8) endPoint((W - dock) / 2, H / 2, hue, (ph.u - .8) / .2, 0, now);
+    ctx.globalAlpha = clamp(ph.u * 1.15, 0, 1); ctx.fillStyle = END_VOID; ctx.fillRect(0, 0, W, H); ctx.globalAlpha = 1;
+    if (ph.u > .8) endPoint(W / 2, H / 2, hue, (ph.u - .8) / .2, 0, now);
   } else if (ph.name === 'dot' || ph.name === 'build') {
-    ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.fillStyle = '#040308'; ctx.fillRect(0, 0, canvas.width, canvas.height);
-    endPoint((W - dock) / 2, H / 2, hue, 1, ph.name === 'build' ? ph.u * .8 : 0, now);
+    endBg(1);
+    ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.fillStyle = END_VOID; ctx.fillRect(0, 0, canvas.width, canvas.height);
+    endPoint(W / 2, H / 2, hue, 1, ph.name === 'build' ? ph.u * .8 : 0, now);
   } else {
     const t = ph.s - E.at.bang;
     if (!E.scattered) endScatter();
+    endBg(0);
     draw(now);
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.globalAlpha = clamp(1 - t / 3, 0, 1); ctx.fillStyle = '#fffaf0'; ctx.fillRect(0, 0, W, H); ctx.globalAlpha = 1;

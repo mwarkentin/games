@@ -960,6 +960,15 @@ phases go in the record, so they're the Atlas's to set: the testing knob
 shortens them, and the game's prototype takes them as options
 (`__lf.endgame({ collapse: 40, dot: 180, build: 30 })`).
 
+**How the collapse moves.** Everything goes in as one flow, not as pieces
+each on its own path: a point r0 cells from the final word is carried to
+r² = r0² − V, turned by k·ln(r0 / r), as an area V goes in. Every patch keeps
+its area, so letters never pile up or cross: rows bend into spiral arms, and
+each letter stretches along the way in and thins across it as it nears the
+hole. The universe that's left is a shrinking disk with nothing beyond it.
+The big bang is the same flow run backwards, unwinding the new universe out
+of the point. Tremors are slow waves, never a random jolt a frame.
+
 **Claims are refused** from the moment the Atlas detects the end until
 `opens`, with `{t: 'error', error: 'universe ending'}` ("The universe is
 ending · kept in your notes"). Only strays are left to find by then.
