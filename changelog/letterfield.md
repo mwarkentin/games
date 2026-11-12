@@ -1,6 +1,6 @@
 ## 2026-11-12
 
-- A supernova up to three territories from the middle of your screen goes off for you wherever it is, even across into the next part of the map: its shockwave sweeps in from that side, a little quieter for being further off. It's kept in your field notes and leaves its remnant straight away.
+- A supernova anywhere in the shared survey reaches you while you're online. Up to three territories away it goes off in full, even across into the next part of the map; further off, its shockwave passes across your screen from the side it went off on, with a distant rumble, at most one a minute. Every one you're online for is kept in your field notes, and leaves its remnant straight away.
 - A supernova no longer spells itself out across the screen: the burst and its shockwave say it, and the note to share it comes as soon as the wave has passed. With reduced motion, which has no shockwave, the words still show, and screen readers still hear them.
 - The word list sits on a solid bar along the bottom, edge to edge, so no stray letters show around or under it. On a phone the title and buttons sit on a matching bar along the top, and the map is the space between them: a word you fly to lands in the middle of what you can see.
 - Zoom, return to the origin, sound and music now live behind one button at the top right, beside your field notes, leaving the bar to the words. A tap drops them down in a stack and a second tap, Escape or a tap on the map puts them away. Their keys (+, −, H, M and B) work either way.

@@ -630,25 +630,66 @@ nearby, and they tell their players:
   `/claim/<key>` and `/nova/<rx>/<ry>` can't. A neighbour still checks what
   it's sent (`checkNova()`): a hidden word that's really there, in the
   territory named, in another sector within reach of its own.
-- **On the page:** a `nova` frame plays the supernova if it's within reach
-  of the middle of the view, and is a note otherwise, as a claim that
-  completes a territory is; it's kept in the notes' supernovas, and the
-  territory becomes a remnant at once. A page joined to the territory's own
-  sector too leaves it to that sector's claim, which says whether the last
-  word was the player's own, and either way it goes off once.
 - **Reach:** 3 territories, as `nearView` has always used. At the closest
   zoom that's far off screen, and the shockwave sweeps in from the edge
   nearest it, two or three seconds after the flash. Zoomed right out (2
   pixels a cell, 96 a territory), a phone shows about 2 territories each side
-  of the middle and a computer 5 or 6, so a supernova at the edge of a wide
-  screen is a note rather than a burst.
+  of the middle and a computer 5 or 6.
 
-**Cost:** at most 8 Durable Object requests per supernova, one per
-neighbour, and a broadcast in those with players. A neighbour with nobody in
-it is woken only to answer at once. Asking the Atlas which neighbours have
-players first would be a request too, and the Atlas only knows the shared
-world, so it isn't done. With 10,000 territories in the shared world, every
-supernova there ever will cost at most 80,000 requests: about a cent.
+**Seen from anywhere in the shared world.** Further off, a supernova
+travels with the reports sectors already send the Atlas:
+
+- **Up:** the sector that recorded it reports at once (or `NOVA_REPORT_MS`
+  after its last report), with `novas: [[rx, ry, at, w, x, y, d,
+  initials]]`. A report that fails keeps it for the next. The Atlas takes
+  one only if the word checks out against the map (`checkNovaWord()`), its
+  territory is in the reporting sector, and the same report's counts show
+  every hidden word there charted; a bad one is dropped and the report still
+  counts.
+- **Down:** the Atlas keeps them in memory for `RELAY_MS` (2 minutes, at
+  most `RELAY_MAX`), numbered in order by its own clock. Every report and
+  ask says how far its sector has got (`novaSeq`, kept in the sector's
+  storage so waking doesn't lose it, -1 for a sector that has never heard),
+  and the answer brings those since and the number to send next time; a
+  sector that has never heard starts from now. The sector passes each on as
+  the same `nova` frame, with `ago`, to the players who were there when it
+  went off, unless it's its own or a neighbour's it passed on already.
+- **When:** with a sector's next report, so within about 10 seconds where
+  people are moving, and later where nobody is: reports go with the next
+  message. One that waited past `RELAY_MS` isn't sent. Sectors outside the
+  shared world don't report, so their supernovas only reach their
+  neighbours.
+
+**On the page,** every supernova a player is online for, near or far, is
+kept in their notes' supernovas, and its territory becomes a remnant at
+once. How it plays depends on how far off it is:
+
+- **Within 3 territories** of the middle of the view, or your own: the
+  whole thing, charge, dimming, burst and shockwave, as before.
+- **Further off:** its shockwave passing, with no charge, dimming or flash:
+  a wave comes in from the side it went off on, from a centre no further
+  than about a screen away whatever the real distance, crosses the view in
+  2.4 seconds, and a muffled rumble comes from that side. Then the note to
+  share it. At most one a minute (`DISTANT_GAP`), and only while it's news
+  (under 20 seconds old, `NOVA_LATE`); others are kept in the notes
+  quietly. With reduced motion there's no wave: the words show instead.
+- **One that overlaps** another playing: a note if it's near, the notes
+  only if it's far.
+
+A page joined to the territory's own sector leaves it to that sector's
+claim, which says whether the last word was the player's own, and however
+many ways it hears of one, it goes off once.
+
+**Cost:** at most 8 Durable Object requests per supernova to its
+neighbours, and a broadcast in those with players. A neighbour with nobody
+in it is woken only to answer at once. Asking the Atlas which neighbours
+have players first would be a request too, and the Atlas only knows the
+shared world, so it isn't done. With 10,000 territories in the shared
+world, every supernova there ever will cost at most 80,000 requests: about a
+cent. The rest of the world hears through reports that go anyway, with one
+report brought forward per supernova, a row written in each sector that
+hears of one (its `novaSeq`), and a few hundred bytes in each answer while
+there's news.
 
 **Caching** is the same as a surveyor's view: a range that ended an hour
 ago for a day, a running one for 15 seconds, or 2 minutes over more than two
@@ -922,11 +963,14 @@ about 30 cents over the included million requests.
 - **The log, live, beyond the hour.** The running hour reloads every 20
   seconds; a running day, week or longer shows what it had when opened. It
   could take claims from the sector sockets the game already uses.
-- **Supernovas, live.** A supernova more than 3 territories from the middle
-  of your view is a toast in the game, even when it's on a wide, zoomed-out
-  screen, and a line in the log once the log has it. Nearer ones reach you
-  from neighbouring sectors too (see "Supernovas"). The log's list could
-  take them from the sector sockets, as the running hour could.
+- **Supernovas, live, in the log.** The game hears every supernova in the
+  shared world within seconds (see "Supernovas"), but the log's list only
+  has one once the log does. It could take them from the sector sockets, as
+  the running hour could.
+- **Supernovas from quiet sectors.** A sector reports with its next message,
+  so players who are online but not moving hear of a far supernova only once
+  someone there moves, and not at all after `RELAY_MS`. An alarm could
+  report for them, at the cost of waking quiet sectors.
 - **Supernovas outside the shared world** are recorded and listed like any
   other, but the game's world map only covers the shared world, so far
   away ones only show as remnants when you're there.

@@ -668,7 +668,7 @@ def test_a_supernova_you_saw_is_kept_in_your_notes_and_shares_its_card(page: Pag
     assert errors == []
 
 
-def test_a_supernova_far_away_is_a_note_you_can_share(page: Page, site_url, errors):
+def test_a_supernova_far_away_passes_as_a_distant_wave_and_is_kept(page: Page, site_url, errors):
     words = territory_words(page, site_url)
     fake = FakeSurvey(claims=[[*w, 0, "MRW", NOW_MS - 60_000] for w in words[1:]])
     page.add_init_script(SHARE_SHEET_INIT)
@@ -677,9 +677,11 @@ def test_a_supernova_far_away_is_a_note_you_can_share(page: Page, site_url, erro
     expect(page.locator("#tCharted")).to_have_text(f" · {len(words) - 1}/{len(words)} charted")
     page.evaluate("window.__lf.cam.x = 600; window.__lf.cam.y = 600")  # more than three territories off
     fake.sockets["0,0"].send(json.dumps({"t": "claimed", "c": [*words[0], 0, "", NOW_MS], "by": "someone"}))
+    # No charge and no dimming: its shockwave comes straight in from the side it's on.
+    page.wait_for_function("window.__lf.nova()?.distant === true", timeout=3000)
+    assert page.evaluate("window.__lf.nova().burst")
     toast = page.locator("#toast")
-    expect(toast).to_contain_text("Went supernova · every hidden word charted", timeout=6000)
-    assert page.locator("#nova").is_hidden()
+    expect(toast).to_contain_text("Supernova · kept in your field notes", timeout=6000)
     toast.locator(".share").click()
     page.wait_for_function("window.__shared.length === 1")
     assert page.evaluate("window.__shared[0].text").endswith(f"the last, {words[0][0]}.")
@@ -727,22 +729,57 @@ def test_a_supernova_in_a_neighbouring_sector_sweeps_across_the_view(page: Page,
     assert errors == []
 
 
-def test_a_supernova_in_a_neighbouring_sector_out_of_sight_is_a_note(page: Page, site_url, errors):
+def test_supernovas_further_off_pass_at_most_one_a_minute_and_all_are_kept(page: Page, site_url, errors):
     fake = FakeSurvey()
     open_game(page, site_url, fake)
     eventually(page, lambda: "0,0" in fake.sockets)
     page.evaluate(COUNT_NOTES)
-    # From the start at (6, 6), territory (4, 0) is four territories off.
+    # From the start at (6, 6), territory (4, 0) is four territories off: its wave passes.
     word = neighbour_word(page)
-    fake.nova("0,0", *NEIGHBOUR, word)
-    expect(page.locator("#toast")).to_contain_text("Went supernova · every hidden word charted", timeout=6000)
-    assert page.locator("#nova").is_hidden()
+    fake.nova("0,0", *NEIGHBOUR, word, "SIS")
+    page.wait_for_function("window.__lf.nova()?.rx === 4", timeout=3000)
+    assert page.evaluate("window.__lf.nova().distant")
     assert "4,0" in page.evaluate("window.__lf.remnants()")
+    expect(page.locator("#toast")).to_contain_text("Supernova · kept in your field notes", timeout=6000)
+    page.wait_for_function("window.__lf.nova() === null", timeout=6000)
     # Another neighbour passing on the same one changes nothing.
-    fake.nova("0,-1", *NEIGHBOUR, word)
-    page.wait_for_timeout(2500)
+    fake.nova("0,-1", *NEIGHBOUR, word, "SIS")
+    # One far across the shared world, from the Atlas, inside the minute: kept, but quietly.
+    far = page.evaluate("window.__lf.chunk(200, -120).words.map(o => [o.w, o.x, o.y, o.d])[0]")
+    fake.nova("0,0", 50, -30, far, "AMY", ago=4000)
+    page.wait_for_timeout(1500)
+    assert page.evaluate("window.__lf.nova()") is None
     assert len(page.evaluate("window.__notes")) == 1
-    assert page.locator("#nova").is_hidden()
+    assert sorted(page.evaluate("window.__lf.novas().map(n => n.rx + ',' + n.ry)")) == ["4,0", "50,-30"]
+    # A minute on, the next one passes, but not one that went off too long ago to be news.
+    page.evaluate("window.__lf.distantAt(-Infinity)")
+    old = page.evaluate("window.__lf.chunk(-200, 120).words.map(o => [o.w, o.x, o.y, o.d])[0]")
+    fake.nova("0,0", -50, 30, old, "", ago=30_000)
+    page.wait_for_timeout(800)
+    assert page.evaluate("window.__lf.nova()") is None
+    assert len(page.evaluate("window.__lf.novas()")) == 3
+    news = page.evaluate("window.__lf.chunk(-200, -120).words.map(o => [o.w, o.x, o.y, o.d])[0]")
+    fake.nova("0,0", -50, -30, news, "", ago=9000)
+    page.wait_for_function("window.__lf.nova()?.rx === -50", timeout=3000)
+    open_notes(page)
+    expect(page.locator("#novaList li")).to_have_count(4)
+    assert errors == []
+
+
+def test_a_distant_supernova_comes_in_from_its_side(page: Page, site_url, errors):
+    fake = FakeSurvey()
+    open_game(page, site_url, fake, viewport={"width": 390, "height": 844})
+    eventually(page, lambda: "0,0" in fake.sockets)
+    # Far off to the east, 40 territories away: its wave starts just off the right of the screen.
+    word = page.evaluate("window.__lf.chunk(160, 0).words.map(o => [o.w, o.x, o.y, o.d])[0]")
+    fake.nova("0,0", 40, 0, word, "", ago=3000)
+    page.wait_for_function("window.__lf.nova()?.distant === true", timeout=3000)
+    page.wait_for_timeout(300)
+    wave = page.evaluate("window.__lf.novaWave()")
+    assert wave["virtual"] and 390 < wave["cx"] < 390 * 3
+    page.wait_for_timeout(1200)
+    later = page.evaluate("window.__lf.novaWave()")
+    assert later["R"] > wave["R"] and later["amp"] > 0  # sweeping across, still strong
     assert errors == []
 
 
