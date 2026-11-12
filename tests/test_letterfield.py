@@ -23,9 +23,16 @@ FIND_WORD_JS = """() => {
   return null;
 }"""
 
-# A find's note shows a while, then folds into the field notes, and the count
-# ticks up as it lands: this long, at most, after the find.
+# A find's circle flies into the field notes, and the count ticks up as it
+# lands: this long, at most, after the find.
 LANDS = 10_000
+
+
+def share_from_notes(page: Page, word: str) -> None:
+    """Shares a find from the field notes, where every find can be shared."""
+    if page.locator("#notesToggle").get_attribute("aria-expanded") != "true":
+        page.click("#notesToggle")
+    page.locator("#finds").get_by_role("button", name=f"Share {word}").click()
 
 
 def test_circling_a_word_adds_it_to_field_notes(page: Page, site_url, errors):
@@ -41,7 +48,7 @@ def test_circling_a_word_adds_it_to_field_notes(page: Page, site_url, errors):
     for x, y in target["ends"]:
         page.mouse.click(x, y)
     expect(page.locator("#notesBadge")).to_have_text("1", timeout=LANDS)
-    expect(page.locator("#toast")).to_contain_text(target["word"])
+    expect(page.locator("#findSay")).to_contain_text(target["word"])
 
     # Finds are kept in this browser and survive a reload.
     page.reload()
@@ -303,22 +310,16 @@ def test_a_find_shares_what_it_is_where_and_a_link_to_it(page: Page, site_url, e
     page.wait_for_function("window.__lf")
     words = page.evaluate("window.__lf.chunk(0, 0).words.slice(0, 2).map(o => [o.w, o.x, o.y, o.d])")
     page.evaluate("([w, x, y, d]) => window.__lf.collect(w, x, y, d, false)", words[0])
-    toast = page.locator("#toast")
-    expect(toast).to_contain_text(words[0][0])
-    place = toast.locator("span").inner_text().split(" · ")[1]
-    toast.get_by_role("button", name=f"Share {words[0][0]}").click()
+    share_from_notes(page, words[0][0])
     shared = page.evaluate("window.__shared")
     w, x, y, d = words[0]
-    assert shared == [{
-        "title": "Letterfield",
-        "text": f"I just found {w} in {place} in Letterfield. That’s word 1 in my field notes.",
-        "url": f"{site_url}/letterfield#f-{w.lower()}-{x}-{y}-{d}",
-    }]
+    assert len(shared) == 1 and shared[0]["title"] == "Letterfield"
+    assert re.fullmatch(rf"I just found {w} in [^.]+ in Letterfield\. That’s word 1 in my field notes\.", shared[0]["text"]), shared[0]["text"]
+    assert shared[0]["url"] == f"{site_url}/letterfield#f-{w.lower()}-{x}-{y}-{d}"
     assert page.evaluate("document.documentElement.scrollWidth") <= 375
 
-    # Every find in the field notes can be shared too, counted by when it was found.
+    # Every find in the field notes can be shared, counted by when it was found.
     page.evaluate("([w, x, y, d]) => window.__lf.collect(w, x, y, d, false)", words[1])
-    page.click("#notesToggle")
     notes = page.locator("#finds")
     notes.get_by_role("button", name=f"Share {words[1][0]}").click()
     notes.get_by_role("button", name=f"Share {w}").click()
@@ -338,7 +339,7 @@ def test_with_a_share_worker_a_find_links_to_its_card_in_the_sharers_theme(page:
     page.wait_for_function("window.__lf")
     w, x, y, d = page.evaluate("(() => { const o = window.__lf.chunk(0, 0).words[0]; return [o.w, o.x, o.y, o.d]; })()")
     page.evaluate("([w, x, y, d]) => window.__lf.collect(w, x, y, d, false)", [w, x, y, d])
-    page.click("#toast .share")
+    share_from_notes(page, w)
     slug = f"f-{w.lower()}-{x}-{y}-{d}"
     assert page.evaluate("window.__shared")[0]["url"] == f"https://share.test/f/{slug}"
 
@@ -367,7 +368,7 @@ def test_without_a_share_sheet_a_find_is_copied(page: Page, site_url, errors):
     page.wait_for_function("window.__lf")
     w, x, y, d = page.evaluate("(() => { const o = window.__lf.chunk(0, 0).words[0]; return [o.w, o.x, o.y, o.d]; })()")
     page.evaluate("([w, x, y, d]) => window.__lf.collect(w, x, y, d, false)", [w, x, y, d])
-    page.click("#toast .share")
+    share_from_notes(page, w)
     expect(page.locator("#toast")).to_contain_text("Copied")
     copied = page.evaluate("window.__copied")
     assert copied.startswith(f"I just found {w} in ")
@@ -530,6 +531,19 @@ ONLY_WORDS_JS = """keys => {
 }"""
 
 
+def five_letter_words(page: Page) -> list[str]:
+    """Keys of a five-letter word reading right, one reading down and one
+    reading up, near where the map starts."""
+    keys = page.evaluate("""() => {
+      const keys = {};
+      for (let cy = -3; cy <= 3; cy++) for (let cx = -3; cx <= 3; cx++)
+        for (const w of window.__lf.chunk(cx, cy).words) if (w.w.length === 5) keys[w.d] ??= w.key;
+      return [keys[0], keys[2], keys[6]];
+    }""")
+    assert all(keys), keys
+    return keys
+
+
 @pytest.mark.parametrize("size", [(375, 740), (1280, 900)], ids=["phone", "desktop"])
 def test_the_word_list_names_only_words_half_in_sight(page: Page, site_url, errors, size):
     without_worker(page, site_url, "letterfield")  # alone, so each chip names its word
@@ -539,14 +553,7 @@ def test_the_word_list_names_only_words_half_in_sight(page: Page, site_url, erro
     expect(page.locator("#legendList .chip").first).to_be_visible()
     # Five-letter words reading right, down and up: each counts once any three
     # of its letters (half, rounded up) can be seen.
-    keys = page.evaluate("""() => {
-      const keys = {};
-      for (let cy = -3; cy <= 3; cy++) for (let cx = -3; cx <= 3; cx++)
-        for (const w of window.__lf.chunk(cx, cy).words) if (w.w.length === 5) keys[w.d] ??= w.key;
-      return [keys[0], keys[2], keys[6]];
-    }""")
-    assert all(keys), keys
-    across, down, up = keys
+    across, down, up = keys = five_letter_words(page)
     page.evaluate(ONLY_WORDS_JS, keys)
     right = page.evaluate("innerWidth - (document.body.classList.contains('docked') ? 340 : 0)")
     mid = page.evaluate("(m => m.getBoundingClientRect().top + m.clientHeight / 2)(document.getElementById('map'))")
@@ -593,6 +600,61 @@ def test_the_word_list_names_only_words_half_in_sight(page: Page, site_url, erro
     box = page.locator("#toolStack").bounding_box()
     seen, got = listed(down, box["x"] + box["width"] / 2, box["y"] + box["height"] - 2.5 * cs, cs)
     assert seen, ("#toolStack", got)
+    assert errors == []
+
+
+@pytest.mark.parametrize("size", [(375, 740), (1280, 900)], ids=["phone", "desktop"])
+def test_the_word_list_counts_only_whole_letters(page: Page, site_url, errors, size):
+    """A letter cut by the map's edge or a panel isn't seen: a row or column
+    half off the screen, or half under the title box or the tools, leaves its
+    word off the list, and the same word moved fully into view is on it. Each
+    letter's centre sits a pixel on the open side of the edge, so all of every
+    cell's centre is in sight while every letter is cut."""
+    without_worker(page, site_url, "letterfield")  # alone, so each chip names its word
+    page.set_viewport_size({"width": size[0], "height": size[1]})
+    page.goto(f"{site_url}/letterfield#debug")
+    page.click("#coachOk")
+    expect(page.locator("#legendList .chip").first).to_be_visible()
+    across, down, _ = keys = five_letter_words(page)
+    page.evaluate(ONLY_WORDS_JS, keys)
+    # Desktop docks the notes beside the map, so its right edge is theirs.
+    right = page.evaluate("innerWidth - (document.body.classList.contains('docked') ? 340 : 0)")
+    map_box = page.locator("#map").bounding_box()
+    top, bottom = map_box["y"], map_box["y"] + map_box["height"]
+    mid = (top + bottom) / 2
+
+    def listed(key, sx, sy, cs):
+        got = page.evaluate(PLACE_WORD_JS, {"key": key, "sx": sx, "sy": sy, "cs": cs})
+        return key in got["keys"]
+
+    # The smallest cells that show letters, middling ones and, on a desktop,
+    # cells zoomed right in.
+    bars = set()
+    for cs in (9, 30) + ((80,) if size[0] >= 700 else ()):
+        # (key, where its first letter is when cut, and when whole, what cuts it)
+        cases = [
+            (across, (right / 2 - 2 * cs, bottom - 1), (right / 2 - 2 * cs, bottom - .6 * cs), "bottom"),
+            (down, (1, mid - 2 * cs), (.6 * cs, mid - 2 * cs), "left"),
+            (down, (right - 1, mid - 2 * cs), (right - .6 * cs, mid - 2 * cs), "right"),
+        ]
+        cart = page.locator("header.cartouche").bounding_box()
+        if cart["y"] + cart["height"] > top:  # over the map: a row half under it
+            y = cart["y"] + cart["height"]
+            cases.append((across, (cart["x"] + 1.5 * cs, y + 1), (cart["x"] + 1.5 * cs, y + .6 * cs), "cartouche"))
+        else:  # above it, in the top bar: a row half off the map's top
+            cases.append((across, (right / 2 - 2 * cs, top + 1), (right / 2 - 2 * cs, top + .6 * cs), "top"))
+        tools = page.locator(".corner").bounding_box()
+        if tools["y"] + tools["height"] > top and cs < 30:  # a column half under its left edge
+            y0 = max(tools["y"], top) + .5 * cs
+            cases.append((down, (tools["x"] - 1, y0), (tools["x"] - .6 * cs, y0), "tools"))
+        for key, cut, whole, what in cases:
+            assert not listed(key, *cut, cs), (what, cs, "cut")
+            bars.add(page.locator("#bar").bounding_box()["height"])
+            assert listed(key, *whole, cs), (what, cs, "whole")
+            bars.add(page.locator("#bar").bounding_box()["height"])
+    # The bar stays the same height, empty or not, so the map doesn't move
+    # under a word as it comes and goes.
+    assert len(bars) == 1, bars
     assert errors == []
 
 
@@ -858,38 +920,46 @@ def test_the_shortcuts_work_with_the_tools_put_away(page: Page, site_url, errors
 
 
 @pytest.mark.parametrize("size", [(375, 740), (1280, 900)], ids=["phone", "desktop"])
-def test_a_finds_note_folds_into_the_field_notes_before_it_counts(page: Page, site_url, errors, size):
+def test_a_finds_circle_flies_into_the_field_notes_before_it_counts(page: Page, site_url, errors, size):
     without_worker(page, site_url, "letterfield")
     page.set_viewport_size({"width": size[0], "height": size[1]})
     page.goto(f"{site_url}/letterfield#debug")
     page.click("#coachOk")
     words = page.evaluate("window.__lf.chunk(0, 0).words.slice(0, 2).map(o => [o.w, o.x, o.y, o.d])")
-    toast, count = page.locator("#toast"), page.locator("#tWords" if size[0] >= 1100 else "#notesBadge")
-    # The note shows by the field notes (under their button, or beside them
-    # docked), and the count waits for it.
+    toast, count, bead = page.locator("#toast"), page.locator("#tWords" if size[0] >= 1100 else "#notesBadge"), page.locator(".gather")
+    page.evaluate("([w, x, y]) => { window.__lf.cam.x = x; window.__lf.cam.y = y; }", words[0])  # in sight
+    # No note: a copy of its circle draws in to a bead and flies to the count
+    # (on the notes button, or atop the docked notes), which waits for it. A
+    # screen reader still hears of the find.
     page.evaluate(COLLECT, words[:1])
-    expect(toast).to_contain_text(words[0][0])
-    expect(toast).to_have_class(re.compile(r"\bshow\b"))
-    page.wait_for_timeout(500)  # done popping out
-    notes = page.locator("#notes" if size[0] >= 1100 else "#notesToggle").bounding_box()
-    box = toast.bounding_box()
-    if size[0] >= 1100:
-        tools = page.locator("#toolsBtn").bounding_box()
-        assert abs(box["x"] + box["width"] - (notes["x"] - 16)) < 3 and box["y"] > tools["y"] + tools["height"], (box, notes, tools)
-    else:
-        assert abs(box["x"] + box["width"] - (notes["x"] + notes["width"])) < 2 and box["y"] > notes["y"] + notes["height"], (box, notes)
-    page.wait_for_timeout(1000)
+    expect(page.locator("#findSay")).to_contain_text(words[0][0])
+    expect(bead).to_have_count(1)
+    assert bead.get_attribute("aria-hidden") == "true"
     expect(count).to_have_text("0")
     assert page.evaluate("JSON.parse(localStorage.getItem('letterfield.finds.v4')).length") == 1  # saved all the same
-    # A second find sends the first one's note in at once, then waits itself.
-    page.evaluate(COLLECT, words[1:])
-    expect(count).to_have_text("1", timeout=1500)
-    expect(toast).to_contain_text(words[1][0])
-    page.wait_for_timeout(1500)
-    expect(count).to_have_text("1")
-    # Its time up, it folds in, and the count catches up.
-    expect(count).to_have_text("2", timeout=LANDS)
+    expect(count).to_have_text("1", timeout=LANDS)
+    expect(bead).to_have_count(0)
     expect(toast).not_to_have_class(re.compile(r"\bshow\b"))
-    page.wait_for_timeout(1000)
-    assert page.evaluate("document.querySelectorAll('.toast').length") == 1, "the copy that folded in is gone"
+    # Two at once fly in together, and each counts as it lands.
+    page.evaluate("([w, x, y]) => { window.__lf.cam.x = x; window.__lf.cam.y = y; }", words[1])
+    page.evaluate(COLLECT, words[1:])
+    expect(count).to_have_text("2", timeout=LANDS)
+    expect(bead).to_have_count(0)
+    # Circling one again still answers, with a note: it's already in your notes.
+    page.evaluate(COLLECT, words[:1])
+    expect(toast).to_contain_text(f"{words[0][0]}Already in your notes")
+    expect(toast).to_have_class(re.compile(r"\bshow\b"))
+    assert errors == []
+
+
+def test_with_reduced_motion_a_find_counts_at_once(page: Page, site_url, errors):
+    page.emulate_media(reduced_motion="reduce")
+    without_worker(page, site_url, "letterfield")
+    page.goto(f"{site_url}/letterfield#debug")
+    page.click("#coachOk")
+    word = page.evaluate("(o => [o.w, o.x, o.y, o.d])(window.__lf.chunk(0, 0).words[0])")
+    page.evaluate("([w, x, y]) => { window.__lf.cam.x = x; window.__lf.cam.y = y; }", word)
+    page.evaluate(COLLECT, [word])
+    expect(page.locator("#notesBadge")).to_have_text("1", timeout=500)
+    assert page.locator(".gather").count() == 0
     assert errors == []
