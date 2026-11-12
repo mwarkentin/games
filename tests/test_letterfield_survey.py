@@ -117,7 +117,7 @@ def test_shared_word_list_scrolls_only_sideways(page: Page, site_url, errors):
         page.evaluate("cs => { window.__lf.cam.cs = cs; dispatchEvent(new Event('resize')); }", 20 if phone else 38)
         page.wait_for_function(full, arg=8 if phone else 10)
         page.wait_for_timeout(300)  # and any update still to come
-        chips_scroll_only_sideways(page, phone)
+        chips_scroll_only_sideways(page)
     m = page.evaluate(CHIPS_JS)
     assert m["sw"] > m["cw"], m
     assert errors == []

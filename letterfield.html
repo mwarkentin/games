@@ -14,7 +14,8 @@
 <style>
 /* Layout: a full-bleed survey sheet (canvas) with map furniture floating on it — a cartouche (title + current territory) top-left,
    a solid bar along the bottom holding the word legend and the tools button (whose stack pops up above it), and a
-   field-notes drawer docked on the right. The map ends at the bar's top edge (resize() measures it). */
+   field-notes drawer docked on the right, whose corner notes pop out of and collapse back into. The map ends at the
+   bar's top edge (resize() measures it). */
 :root{
   --paper:#EBEEE7;
   --panel:#F7F8F4;
@@ -37,6 +38,14 @@
   --top:calc(env(safe-area-inset-top, 0px) + 12px);
   --bottom:calc(env(safe-area-inset-bottom, 0px) + 12px);
   --notes-w:340px;
+  /* One motion language for everything that moves: things settle in fast with
+     a little give (pop), and leave quicker than they came, speeding up as they go. */
+  --ease-out:cubic-bezier(.22,1,.36,1);
+  --ease-in:cubic-bezier(.55,0,.8,.3);
+  --ease-pop:cubic-bezier(.34,1.4,.64,1);
+  --t-fast:.14s;
+  --t-mid:.2s;
+  --t-slow:.34s;
 }
 @media (prefers-color-scheme: dark){
   :root:not([data-theme="light"]){
@@ -85,7 +94,7 @@ button:focus-visible,a:focus-visible,#map:focus-visible{outline:2px solid var(--
    through the safe area, so no map shows around or under it. On a wide screen
    it's one row: the list's head, its chips scrolling sideways, then the tools. */
 .bar{position:fixed;left:0;right:0;bottom:0;display:flex;align-items:center;gap:14px;background:var(--panel);border-top:1px solid var(--rule);box-shadow:0 -8px 22px -16px rgba(0,0,0,.4);
-  padding:8px var(--gr) calc(env(safe-area-inset-bottom, 0px) + 8px) var(--gl);transition:right .28s ease}
+  padding:8px var(--gr) calc(env(safe-area-inset-bottom, 0px) + 8px) var(--gl);transition:right var(--t-slow) var(--ease-out)}
 body.docked .bar{right:var(--notes-w)}
 .legend{flex:1;min-width:0;display:flex;align-items:center;gap:18px}
 .legend-head{flex:none;display:flex;justify-content:space-between;align-items:baseline;gap:12px}
@@ -110,14 +119,20 @@ span.chip:hover{border-color:var(--rule)}
 /* Tools: one button in the bar; zoom, home, sound and music pop up above it as a
    stack, and go again on a second tap, Escape or a tap on the map. Closed, the
    stack takes no taps or focus (inert) and covers nothing. */
-.tools-btn{flex:none;width:44px;height:44px;border:1px solid var(--rule);border-radius:8px;background:var(--panel);display:grid;place-items:center;cursor:pointer;transition:background-color .12s ease, color .12s ease}
+.tools-btn{flex:none;width:44px;height:44px;border:1px solid var(--rule);border-radius:8px;background:var(--panel);display:grid;place-items:center;cursor:pointer;transition:background-color var(--t-fast) var(--ease-out), color var(--t-fast) var(--ease-out), border-color var(--t-fast) var(--ease-out)}
+.tools-btn svg circle{transition:transform var(--t-slow) var(--ease-pop)}
+.tools-btn[aria-expanded="true"] svg circle:first-of-type{transform:translateX(-5px)}
+.tools-btn[aria-expanded="true"] svg circle:last-of-type{transform:translateX(5px)}
 @media (hover: hover){.tools-btn:hover{background:var(--hover)}}  /* a tap leaves no grey behind on a phone */
 .tools-btn[aria-expanded="true"]{background:var(--ink);border-color:var(--ink);color:var(--panel)}
 .tools-btn svg{width:20px;height:20px}
 .tool-stack{position:absolute;right:var(--gr);bottom:calc(100% + 8px);display:flex;flex-direction:column;padding:4px;min-width:176px;box-sizing:border-box;
-  transform-origin:calc(100% - 22px) 100%;opacity:0;transform:translateY(10px) scale(.96);visibility:hidden;pointer-events:none;
-  transition:opacity .12s ease, transform .14s ease, visibility 0s linear .14s}
-.bar.tools-open .tool-stack{opacity:1;transform:none;visibility:visible;pointer-events:auto;transition:opacity .1s ease, transform .16s cubic-bezier(.2,.9,.3,1.15), visibility 0s}
+  transform-origin:calc(100% - 22px) calc(100% + 30px);opacity:0;transform:translateY(8px) scale(.9);visibility:hidden;pointer-events:none;
+  transition:opacity var(--t-mid) var(--ease-in), transform var(--t-mid) var(--ease-in), visibility 0s linear var(--t-mid)}
+.bar.tools-open .tool-stack{opacity:1;transform:none;visibility:visible;pointer-events:auto;transition:opacity var(--t-fast) var(--ease-out), transform var(--t-slow) var(--ease-pop), visibility 0s}
+/* Its rows follow it up, nearest the button first (--i counts up from there). */
+.tool-stack > *{opacity:0;transform:translateY(6px);transition:opacity var(--t-fast) var(--ease-in), transform var(--t-fast) var(--ease-in)}
+.bar.tools-open .tool-stack > *{opacity:1;transform:none;transition:opacity var(--t-mid) var(--ease-out) calc(var(--i, 0) * 24ms), transform var(--t-slow) var(--ease-pop) calc(var(--i, 0) * 24ms)}
 .tool-stack hr{margin:4px 6px;border:0;border-top:1px solid var(--rule)}
 .tool-stack button{display:flex;align-items:center;gap:11px;height:44px;padding:0 10px 0 11px;border:0;border-radius:6px;background:transparent;cursor:pointer;font:500 13.5px/1 var(--f-ui);text-align:left}
 @media (hover: hover){.tool-stack button:hover{background:var(--hover)}}
@@ -135,8 +150,8 @@ body.docked .notes-toggle{visibility:hidden}
 /* Field notes drawer */
 .notes{position:fixed;top:0;right:0;bottom:0;width:var(--notes-w);max-width:100%;background:var(--panel);border-left:1px solid var(--rule);display:flex;flex-direction:column;
   padding-top:env(safe-area-inset-top, 0px);padding-bottom:env(safe-area-inset-bottom, 0px);padding-right:env(safe-area-inset-right, 0px);
-  transform:translateX(100%);visibility:hidden;transition:transform .28s ease, visibility 0s linear .28s;box-shadow:var(--shadow)}
-body.notes-open .notes{transform:none;visibility:visible;transition:transform .28s ease, visibility 0s}
+  transform:translateX(100%);visibility:hidden;transition:transform var(--t-slow) var(--ease-out), visibility 0s linear var(--t-slow);box-shadow:var(--shadow)}
+body.notes-open .notes{transform:none;visibility:visible;transition:transform var(--t-slow) var(--ease-out), visibility 0s}
 body.docked .notes{box-shadow:none}
 .notes-head{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;padding:18px 18px 12px}
 .notes-head h2{margin:0;font:800 30px/.9 var(--f-display);letter-spacing:.04em;text-transform:uppercase;text-wrap:balance}
@@ -266,11 +281,17 @@ body.docked .notes{box-shadow:none}
 html[data-intro="sign"] .survey-check{visibility:hidden}
 .signup .survey-hint{color:var(--ink)}
 .btn{font:600 13px/1 var(--f-ui);padding:9px 14px;border:0;border-radius:6px;background:var(--accent);color:var(--on-accent);cursor:pointer}
-/* Centred between the edges (and the docked notes) by auto margins rather than
-   left:50%, which would squeeze a long toast into half the screen. */
-.toast{position:fixed;top:var(--top);left:16px;right:16px;margin:0 auto;width:max-content;max-width:calc(100% - 32px);box-sizing:border-box;transform:translateY(-8px);opacity:0;pointer-events:none;display:grid;grid-template-columns:auto auto;align-items:center;column-gap:10px;row-gap:4px;padding:10px 16px 10px 14px;transition:opacity .2s ease, transform .2s ease}
-body.docked .toast{right:calc(var(--notes-w) + 16px);max-width:calc(100% - var(--notes-w) - 32px);top:calc(var(--top) + 70px)}
-.toast.show{opacity:1;transform:translateY(0)}
+/* A note pops out of the field notes, at the top right (beside them, when
+   they're docked), and collapses back into them when its time is up; a find's
+   dot flies on ahead into the count (see flyToNotes). toast() sets its top:
+   just under the notes button, clear of the cards at the top of the map. */
+.toast{position:fixed;top:var(--top);right:var(--gr);width:max-content;max-width:calc(100% - var(--gl) - var(--gr));box-sizing:border-box;pointer-events:none;display:grid;grid-template-columns:auto auto;align-items:center;column-gap:10px;row-gap:4px;padding:10px 16px 10px 14px;
+  transform-origin:calc(100% - 23px) -24px;opacity:0;transform:translateY(-6px) scale(.5);
+  transition:opacity var(--t-mid) var(--ease-in), transform var(--t-mid) var(--ease-in)}
+body.docked .toast{right:calc(var(--notes-w) + 16px);max-width:calc(100% - var(--notes-w) - 32px);transform-origin:calc(100% + 16px) 24px}
+.toast.show{opacity:1;transform:none;transition:opacity var(--t-fast) var(--ease-out), transform var(--t-slow) var(--ease-pop)}
+/* A find's dot, on its way from its note to the count. */
+.flier{position:fixed;left:0;top:0;width:10px;height:10px;margin:-5px 0 0 -5px;border-radius:50%;background:var(--c);box-shadow:0 0 0 3px color-mix(in srgb, var(--c) 25%, transparent), 0 0 14px var(--c);pointer-events:none;z-index:60}
 .toast i{grid-row:span 2;width:10px;height:10px;border-radius:50%;background:var(--c)}
 .toast b{font:700 19px/1 var(--f-display);letter-spacing:.07em;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .toast span{font:400 11px/1.35 var(--f-mono);color:var(--muted);overflow-wrap:anywhere}
@@ -284,7 +305,6 @@ body.docked .toast{right:calc(var(--notes-w) + 16px);max-width:calc(100% - var(-
 .toast:not(.show) .share{visibility:hidden}
 .vh{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
 
-@media (max-width: 1100px){ .toast{top:calc(var(--top) + 70px)} }
 
 /* Supernova: the banner when a territory is finished */
 .nova{position:fixed;left:50%;top:40%;transform:translate(-50%,-50%);width:max-content;max-width:calc(100% - 32px);text-align:center;pointer-events:none;opacity:0;--c:hsl(var(--h,200) 95% 60%)}
@@ -325,10 +345,9 @@ body.docked .nova{left:calc((100% - var(--notes-w)) / 2)}
   .chips{flex:none;padding:4px 4px 4px var(--gl)}
   .notes{top:auto;left:0;width:100%;height:min(80%, 680px);border-left:0;border-top:1px solid var(--rule);border-radius:14px 14px 0 0;transform:translateY(100%);padding-left:env(safe-area-inset-left, 0px)}
   .coach{top:calc(var(--top) + 60px);right:var(--gr);width:auto}
-  .toast{top:calc(var(--top) + 60px)}
 }
 @media (prefers-reduced-motion: reduce){
-  .notes,.toast,.bar,.tool-stack,.tools-btn{transition:none}
+  .notes,.toast,.bar,.tool-stack,.tool-stack > *,.tools-btn,.tools-btn svg circle{transition:none!important}
   .find-def[data-define="loading"] .def-note{animation:none}
   .nova.show b{animation:none}
   .sync-dot,.survey-dot{animation:none!important}
@@ -371,12 +390,12 @@ body.docked .nova{left:calc((100% - var(--notes-w)) / 2)}
   </section>
   <button type="button" class="tools-btn" id="toolsBtn" aria-expanded="false" aria-controls="toolStack" aria-label="Tools" title="Tools: zoom, home, sound and music"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M4 7h9M17 7h3M4 17h3M11 17h9"/><circle cx="15" cy="7" r="2.2"/><circle cx="9" cy="17" r="2.2"/></svg></button>
   <div class="tool-stack card" id="toolStack" role="group" aria-label="Tools" inert>
-    <button type="button" id="music" aria-pressed="false" aria-label="Music" aria-keyshortcuts="B" title="Music (B)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 17.5V6l10-2v11.5"/><circle cx="6.5" cy="17.5" r="2.5"/><circle cx="16.5" cy="15.5" r="2.5"/><path class="off" d="M3.5 3.5l17 17"/></svg><span aria-hidden="true">Music</span><kbd aria-hidden="true">B</kbd></button>
-    <button type="button" id="sound" aria-pressed="true" aria-label="Sound" aria-keyshortcuts="M" title="Sound (M)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 9.5h3.5L12 6v12l-4.5-3.5H4z"/><path class="on" d="M15.5 9.2a4 4 0 0 1 0 5.6M18.2 6.6a7.6 7.6 0 0 1 0 10.8"/><path class="off" d="M16 9.5l5 5M21 9.5l-5 5"/></svg><span aria-hidden="true">Sound</span><kbd aria-hidden="true">M</kbd></button>
-    <hr>
-    <button type="button" id="home" aria-label="Return to the origin" aria-keyshortcuts="H" title="Return to the origin (H)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="6.5"/><circle cx="12" cy="12" r="1.6" fill="currentColor"/><path d="M12 2v4M12 18v4M2 12h4M18 12h4"/></svg><span aria-hidden="true">Origin</span><kbd aria-hidden="true">H</kbd></button>
-    <button type="button" id="zoomIn" aria-label="Zoom in" aria-keyshortcuts="+" title="Zoom in (+)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg><span aria-hidden="true">Zoom in</span><kbd aria-hidden="true">+</kbd></button>
-    <button type="button" id="zoomOut" aria-label="Zoom out" aria-keyshortcuts="-" title="Zoom out (−)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M5 12h14"/></svg><span aria-hidden="true">Zoom out</span><kbd aria-hidden="true">−</kbd></button>
+    <button type="button" style="--i:5" id="music" aria-pressed="false" aria-label="Music" aria-keyshortcuts="B" title="Music (B)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 17.5V6l10-2v11.5"/><circle cx="6.5" cy="17.5" r="2.5"/><circle cx="16.5" cy="15.5" r="2.5"/><path class="off" d="M3.5 3.5l17 17"/></svg><span aria-hidden="true">Music</span><kbd aria-hidden="true">B</kbd></button>
+    <button type="button" style="--i:4" id="sound" aria-pressed="true" aria-label="Sound" aria-keyshortcuts="M" title="Sound (M)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 9.5h3.5L12 6v12l-4.5-3.5H4z"/><path class="on" d="M15.5 9.2a4 4 0 0 1 0 5.6M18.2 6.6a7.6 7.6 0 0 1 0 10.8"/><path class="off" d="M16 9.5l5 5M21 9.5l-5 5"/></svg><span aria-hidden="true">Sound</span><kbd aria-hidden="true">M</kbd></button>
+    <hr style="--i:3">
+    <button type="button" style="--i:2" id="home" aria-label="Return to the origin" aria-keyshortcuts="H" title="Return to the origin (H)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="6.5"/><circle cx="12" cy="12" r="1.6" fill="currentColor"/><path d="M12 2v4M12 18v4M2 12h4M18 12h4"/></svg><span aria-hidden="true">Origin</span><kbd aria-hidden="true">H</kbd></button>
+    <button type="button" style="--i:1" id="zoomIn" aria-label="Zoom in" aria-keyshortcuts="+" title="Zoom in (+)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg><span aria-hidden="true">Zoom in</span><kbd aria-hidden="true">+</kbd></button>
+    <button type="button" style="--i:0" id="zoomOut" aria-label="Zoom out" aria-keyshortcuts="-" title="Zoom out (−)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M5 12h14"/></svg><span aria-hidden="true">Zoom out</span><kbd aria-hidden="true">−</kbd></button>
   </div>
 </footer>
 
@@ -3005,6 +3024,7 @@ function collect(w, x, y, d, stray) {
   saveLocal(); queueWrite(e); claimWord(e);
   const rx = fdiv(x, RC), ry = fdiv(y, RC);
   toast(`<i></i><b>${w}</b><span>${stray ? 'Stray ' + THEMES[e.th].name.toLowerCase() + ' word' : THEMES[e.th].name} · ${regionName(rx, ry)}</span>`, THEMES[e.th].hue, 0, e);
+  flyToNotes(THEMES[e.th].hue);
   if (!stray) {
     const total = territoryTotal(rx, ry);
     if (territoryFound(rx, ry) === total) {
@@ -3380,14 +3400,19 @@ function toast(html, hue, ms = 2400, find = null) {
     toastEl.append(b);
     ms = Math.max(ms, SHARE_TOAST_MS);
   }
-  // A note never covers the card at the top of the map (the intro, or the
-  // box for your initials): it sits just below it instead.
-  toastEl.style.top = '';
-  const t = toastEl.getBoundingClientRect();
-  for (const el of [$('#coach'), $('#signup')]) {
+  // A note sits just under the notes button (at the top, beside the docked
+  // notes), and never covers the title or the card at the top of the map (the
+  // intro, or the box for your initials): it moves down below them instead.
+  // Measured without its transform, which shrinks it while it's put away.
+  const nb = notesToggle.getBoundingClientRect();
+  toastEl.style.top = !dock && nb.height ? `${Math.round(nb.bottom + 10)}px` : '';
+  for (const el of [$('.cartouche'), $('#coach'), $('#signup')]) {
     const r = el.hidden ? null : el.getBoundingClientRect();
-    if (r && r.width && r.left < t.right && t.left < r.right && r.top < t.bottom + 8 && t.top < r.bottom) toastEl.style.top = `${r.bottom + 8}px`;
+    const l = toastEl.offsetLeft, t = toastEl.offsetTop, b = t + toastEl.offsetHeight;
+    if (r && r.width && r.left < l + toastEl.offsetWidth && l < r.right && r.top < b + 8 && t < r.bottom) toastEl.style.top = `${Math.round(r.bottom + 8)}px`;
   }
+  // A note that replaces another gives a little bounce, so the change is seen.
+  if (toastEl.classList.contains('show') && !RM && toastEl.animate) toastEl.animate([{ transform: 'scale(.94)' }, { transform: 'none' }], { duration: 340, easing: 'cubic-bezier(.34,1.4,.64,1)' });
   toastEl.classList.add('show');
   toastMs = ms;
   clearTimeout(toastTimer);
@@ -3539,14 +3564,55 @@ function setNotes(open, remember = true) {
   if (open) { renderNotes(); refreshWorld(); }
   scheduleHud(); invalidate();
 }
+// The count of finds, on the notes button, and the tally atop the notes. While
+// a find's dot is on its way there (see flyToNotes) they wait, and change as it lands.
+let landing = 0, tally = null;
+function showCount(t = tally) {
+  tally = t;
+  if (landing || !t) return;
+  notesBadge.textContent = $('#tWords').textContent = t.words;
+  $('#tTerr').textContent = t.terr;
+  $('#tLong').textContent = t.long;
+}
+// A find's dot leaves its note, once the note has popped out, and arcs into
+// the count: on the notes button, or atop the notes while they're open. The
+// count bumps as it lands. A timer stands in for the animation's end, which a
+// hidden tab may never reach.
+function flyToNotes(hue) {
+  landing++;
+  let done = false;
+  const to = () => (notesOpen ? $('#tWords') : notesBadge);
+  const land = () => {
+    if (done) return;
+    done = true;
+    landing = Math.max(0, landing - 1);
+    showCount();
+    bump(to());
+  };
+  if (RM || !document.body.animate) return land();
+  setTimeout(land, 1100);
+  setTimeout(() => {
+    const from = toastEl.querySelector('i'), a = from && from.getBoundingClientRect(), b = to().getBoundingClientRect();
+    if (done || !a || !a.width || !b.width || document.hidden) return land();
+    const x0 = a.left + a.width / 2, y0 = a.top + a.height / 2, dx = b.left + b.width / 2 - x0, dy = b.top + b.height / 2 - y0;
+    const dot = document.createElement('i');
+    dot.className = 'flier mark';
+    dot.style.setProperty('--h', hue);
+    document.body.append(dot);
+    const at = (f, lift, s) => ({ transform: `translate(${x0 + dx * f}px, ${y0 + dy * f - lift}px) scale(${s})` });
+    dot.animate([at(0, 0, 1), at(.3, 26, 1.5), at(.7, 20, 1.1), { ...at(1, 0, .55), opacity: .85 }], { duration: 520, easing: 'cubic-bezier(.45,0,.2,1)' })
+      .finished.then(() => { dot.remove(); land(); }, () => { dot.remove(); land(); });
+  }, 260);
+}
+function bump(el) {
+  if (RM || !el || !el.animate) return;
+  el.animate([{ transform: 'scale(1)' }, { transform: 'scale(1.45)', offset: .3 }, { transform: 'scale(1)' }], { duration: 420, easing: 'cubic-bezier(.34,1.4,.64,1)' });
+}
 function renderNotes() {
   renderNovas();
   const all = [...found.values()].sort((a, b) => b.t - a.t);
-  notesBadge.textContent = all.length;
-  $('#tWords').textContent = all.length;
-  $('#tTerr').textContent = new Set(all.map(e => fdiv(e.x, RC) + ',' + fdiv(e.y, RC))).size;
   const longest = all.reduce((m, e) => (!m || e.w.length > m.w.length ? e : m), null);
-  $('#tLong').textContent = longest ? longest.w : '—';
+  showCount({ words: all.length, terr: new Set(all.map(e => fdiv(e.x, RC) + ',' + fdiv(e.y, RC))).size, long: longest ? longest.w : '—' });
   const counts = new Array(NT).fill(0);
   for (const e of all) counts[e.th]++;
   if (filter !== null && !counts[filter]) filter = null;
