@@ -1283,3 +1283,26 @@ def test_the_world_map_shows_territories_charted_in_full_far_afield(page: Page, 
     page.wait_for_function("window.__lf.remnants().length > 0")
     assert page.evaluate("window.__lf.remnants()") == ["-10,20"]
     assert errors == []
+
+
+@pytest.mark.parametrize("alerts", ["on", "off"])
+def test_with_alerts_off_other_surveyors_charting_shows_no_note(page: Page, site_url, errors, alerts):
+    words = known_words(page, site_url)
+    if alerts == "off":
+        page.add_init_script("localStorage.setItem('letterfield.toasts.v1', '0')")
+    fake = FakeSurvey()
+    open_game(page, site_url, fake)
+    expect(page.locator("#toasts")).to_have_attribute("aria-pressed", "true" if alerts == "on" else "false")
+    eventually(page, lambda: "0,0" in fake.sockets)
+    expect(page.locator("#toast")).not_to_have_class(re.compile(r"\bshow\b"))
+    w, x, y, d = words[0]
+    page.evaluate(f"window.__lf.cam.x = {x}; window.__lf.cam.y = {y}")  # in view
+    fake.sockets["0,0"].send(json.dumps({"t": "claimed", "c": [w, x, y, d, 0, "SIS", NOW_MS], "by": "someone"}))
+    expect(page.locator("#tCharted")).to_have_text(re.compile(r"^ · 1/\d+ charted$"))
+    if alerts == "on":
+        expect(page.locator("#toast")).to_contain_text(f"{w}Just charted by SIS")
+    else:
+        page.wait_for_timeout(1000)
+        expect(page.locator("#toast")).not_to_have_class(re.compile(r"\bshow\b"))
+        expect(page.locator("#quietToast")).to_be_empty()  # nor read out
+    assert errors == []

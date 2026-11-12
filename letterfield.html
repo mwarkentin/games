@@ -331,6 +331,7 @@ body.docked .nova{left:calc((100% - var(--notes-w)) / 2)}
 @keyframes nova-word{0%{transform:scale(.35);letter-spacing:.7em;filter:blur(8px)}14%{transform:scale(1.07);filter:blur(0)}30%{transform:scale(1)}100%{transform:scale(1.05);letter-spacing:.18em}}
 #sound[aria-pressed="false"] .on,#sound[aria-pressed="true"] .off{display:none}
 #music[aria-pressed="false"] .on,#music[aria-pressed="true"] .off{display:none}
+#toasts[aria-pressed="true"] .off{display:none}
 #music[aria-pressed="true"] svg{animation:drift 7s ease-in-out infinite}
 @keyframes drift{0%,100%{opacity:1}50%{opacity:.55}}
 /* Hover card: who's behind a caret, or who charted a word */
@@ -395,7 +396,7 @@ body.docked .nova{left:calc((100% - var(--notes-w)) / 2)}
 
   <div class="corner">
     <div class="tools" id="tools">
-      <button type="button" class="tools-btn" id="toolsBtn" aria-expanded="false" aria-controls="toolStack" aria-label="Tools" title="Tools: zoom, home, sound and music"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M4 7h9M17 7h3M4 17h3M11 17h9"/><circle cx="15" cy="7" r="2.2"/><circle cx="9" cy="17" r="2.2"/></svg></button>
+      <button type="button" class="tools-btn" id="toolsBtn" aria-expanded="false" aria-controls="toolStack" aria-label="Tools" title="Tools: zoom, home, sound, music and alerts"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M4 7h9M17 7h3M4 17h3M11 17h9"/><circle cx="15" cy="7" r="2.2"/><circle cx="9" cy="17" r="2.2"/></svg></button>
       <div class="tool-stack card" id="toolStack" role="group" aria-label="Tools" inert>
         <button type="button" style="--i:0" id="zoomIn" aria-label="Zoom in" aria-keyshortcuts="+" title="Zoom in (+)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg><span aria-hidden="true">Zoom in</span><kbd aria-hidden="true">+</kbd></button>
         <button type="button" style="--i:1" id="zoomOut" aria-label="Zoom out" aria-keyshortcuts="-" title="Zoom out (−)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M5 12h14"/></svg><span aria-hidden="true">Zoom out</span><kbd aria-hidden="true">−</kbd></button>
@@ -403,6 +404,7 @@ body.docked .nova{left:calc((100% - var(--notes-w)) / 2)}
         <hr style="--i:3">
         <button type="button" style="--i:4" id="sound" aria-pressed="true" aria-label="Sound" aria-keyshortcuts="M" title="Sound (M)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 9.5h3.5L12 6v12l-4.5-3.5H4z"/><path class="on" d="M15.5 9.2a4 4 0 0 1 0 5.6M18.2 6.6a7.6 7.6 0 0 1 0 10.8"/><path class="off" d="M16 9.5l5 5M21 9.5l-5 5"/></svg><span aria-hidden="true">Sound</span><kbd aria-hidden="true">M</kbd></button>
         <button type="button" style="--i:5" id="music" aria-pressed="false" aria-label="Music" aria-keyshortcuts="B" title="Music (B)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 17.5V6l10-2v11.5"/><circle cx="6.5" cy="17.5" r="2.5"/><circle cx="16.5" cy="15.5" r="2.5"/><path class="off" d="M3.5 3.5l17 17"/></svg><span aria-hidden="true">Music</span><kbd aria-hidden="true">B</kbd></button>
+        <button type="button" style="--i:6" id="toasts" aria-pressed="true" aria-label="Alerts" title="Alerts: your finds and other surveyors’ news"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6.5 16.5V11a5.5 5.5 0 0 1 11 0v5.5l1.5 2h-14z"/><path d="M10 21h4"/><path class="off" d="M3.5 3.5l17 17"/></svg><span aria-hidden="true">Alerts</span></button>
       </div>
     </div>
     <button class="notes-toggle card" id="notesToggle" aria-expanded="false" aria-controls="notes">
@@ -482,6 +484,7 @@ body.docked .nova{left:calc((100% - var(--notes-w)) / 2)}
 </form>
 
 <div class="toast card mark" id="toast" role="status" aria-live="polite"></div>
+<div class="vh" id="quietToast" role="status" aria-live="polite"></div>
 <div class="survey-check" id="surveyCheck"><p aria-live="polite">One tap to join the shared survey</p><div id="surveyWidget"></div></div>
 <div class="peek card mark" id="peek" hidden></div>
 <div class="nova" id="nova" role="status" aria-live="polite" hidden><b>Supernova</b><span id="novaText"></span></div>
@@ -510,7 +513,7 @@ const DEAL = 9;
 const STRAY_MIN = 6;
 const NOTES_W = 340;
 // Field notes, by map: each redraw starts a new key and carries over any finds still there.
-const K_FINDS = 'letterfield.finds.v4', K_FINDS_OLD = ['letterfield.finds.v3', 'letterfield.finds.v2', 'letterfield.finds.v1'], K_CAM = 'letterfield.cam.v1', K_COACH = 'letterfield.coach.v1', K_NOTES = 'letterfield.notes.v1', K_SOUND = 'letterfield.sound.v1', K_MUSIC = 'letterfield.music.v1', K_LIST = 'letterfield.list.v1';
+const K_FINDS = 'letterfield.finds.v4', K_FINDS_OLD = ['letterfield.finds.v3', 'letterfield.finds.v2', 'letterfield.finds.v1'], K_CAM = 'letterfield.cam.v1', K_COACH = 'letterfield.coach.v1', K_NOTES = 'letterfield.notes.v1', K_SOUND = 'letterfield.sound.v1', K_MUSIC = 'letterfield.music.v1', K_TOASTS = 'letterfield.toasts.v1', K_LIST = 'letterfield.list.v1';
 const K_INITIALS = 'games.initials';  // shared with the other games' leaderboards
 const K_PASS = 'letterfield.surveyPass.v1';
 // The shared survey (see worker/SURVEY.md), on the leaderboard Worker. With
@@ -1031,7 +1034,7 @@ function queueWrite(e) {
   writeChain = writeChain.then(attempt).catch(err => {
     const code = err && err.code;
     if (code === 'unavailable') return new Promise(r => setTimeout(r, 600 + Math.random() * 900)).then(attempt).catch(() => {});
-    if (code === 'quota_exceeded') { toast('<b>Notes are full</b><span>This map stores up to 25,000 finds</span>'); return; }
+    if (code === 'quota_exceeded') { toast('notice', '<b>Notes are full</b><span>This map stores up to 25,000 finds</span>'); return; }
     dbWritable = false; setSync('local');
   });
 }
@@ -1431,14 +1434,14 @@ function onSurvey(l, m) {
         const mine = m.by === l.you, last = mine ? 'the last by you' : c.by ? `the last by ${c.by}` : '';
         const text = `${regionName(rx, ry)} · every hidden word charted${last ? ', ' + last : ''}`;
         const seen = sawNova({ rx, ry, t: Date.now(), w: c.w, x: c.x, y: c.y, d: c.d, by: c.by || '', mine, solo: false });
-        if (!nearView(rx, ry) || !supernova(rx, ry, { mine, text, seen })) setTimeout(() => (seen ? novaToast(seen, 'Went supernova · every hidden word charted') : toast(`<i></i><b>${regionName(rx, ry)}</b><span>Every hidden word here is charted</span>`, THEMES[regionTheme(rx, ry)].hue)), 1800);
+        if (!nearView(rx, ry) || !supernova(rx, ry, { mine, text, seen })) setTimeout(() => (seen ? novaToast(seen, 'Went supernova · every hidden word charted') : toast('others', `<i></i><b>${regionName(rx, ry)}</b><span>Every hidden word here is charted</span>`, THEMES[regionTheme(rx, ry)].hue)), 1800);
       }
     }
   } else if (m.t === 'taken') {
     const c = addClaim(m.c, false), out = c && outbox.get(c.key);
     if (out && out.m.is('sent')) {
       out.m.go('answered');
-      toast(`<i></i><b>${c.w}</b><span>Charted first by ${c.by || 'another surveyor'} · ${rel(c.at)}</span>`, THEMES[c.th].hue, 0, found.get(c.key));
+      toast('mine', `<i></i><b>${c.w}</b><span>Charted first by ${c.by || 'another surveyor'} · ${rel(c.at)}</span>`, THEMES[c.th].hue, 0, found.get(c.key));
     }
   } else if (m.t === 'error') {
     const out = outbox.get(m.key);
@@ -1544,7 +1547,7 @@ function claimRefused(l, c, error) {
   c.m.go('answered');
   const why = { 'slow down': 'Too quick to chart', 'daily limit': 'Today’s charting limit reached' }[error];
   const e = why && !c.backlog ? found.get(c.e.key) : null;
-  if (e) toast(`<i></i><b>${e.w}</b><span>${why} · kept in your notes</span>`, THEMES[e.th].hue, 0, e);
+  if (e) toast('notice', `<i></i><b>${e.w}</b><span>${why} · kept in your notes</span>`, THEMES[e.th].hue, 0, e);
 }
 function firstToChart(c) {
   const e = found.get(c.key);
@@ -1555,7 +1558,7 @@ function firstToChart(c) {
     if (!c.s && inSurveyArea(c.x, c.y) && world) e.n = world.charted + worldExtra;
     saveLocal(); queueWrite(e); renderNotes();
   }
-  toast(`<i></i><b>${c.w}</b><span>First to chart it · ${regionName(fdiv(c.x, RC), fdiv(c.y, RC))}</span>`, THEMES[c.th].hue, 0, e);
+  toast('mine', `<i></i><b>${c.w}</b><span>First to chart it · ${regionName(fdiv(c.x, RC), fdiv(c.y, RC))}</span>`, THEMES[c.th].hue, 0, e);
 }
 // Someone else charted a word in view: say so now and then, never over another note.
 function news(c) {
@@ -1563,7 +1566,7 @@ function news(c) {
   const inView = Math.max(c.x, ex) + 1 > cam.x - hw && Math.min(c.x, ex) < cam.x + hw && Math.max(c.y, ey) + 1 > cam.y - hh && Math.min(c.y, ey) < cam.y + hh;
   if (!inView || now - lastNews < 8000 || toastEl.classList.contains('show')) return;
   lastNews = now;
-  toast(`<i></i><b>${c.w}</b><span>Just charted by ${c.by || 'another surveyor'}</span>`, THEMES[c.th].hue);
+  toast('others', `<i></i><b>${c.w}</b><span>Just charted by ${c.by || 'another surveyor'}</span>`, THEMES[c.th].hue);
 }
 // How many words a territory hides.
 function territoryTotal(rx, ry) {
@@ -1916,15 +1919,15 @@ async function shareNova(n) {
   }
   try {
     await navigator.clipboard.writeText(`${text} ${url}`);
-    toast(`<i></i><b>Copied</b><span>${regionName(n.rx, n.ry)}, ready to paste</span>`, hue);
+    toast('reply', `<i></i><b>Copied</b><span>${regionName(n.rx, n.ry)}, ready to paste</span>`, hue);
   } catch (_) {
-    toast(`<i></i><b>Couldn’t share</b><span>Copy this page’s address instead</span>`, hue);
+    toast('reply', `<i></i><b>Couldn’t share</b><span>Copy this page’s address instead</span>`, hue);
   }
 }
 const novaAction = n => ({ label: `Share ${regionName(n.rx, n.ry)}’s supernova`, share: () => shareNova(n) });
 // The note a supernova leaves: where, that it's in your notes, and Share.
-function novaToast(n, line = 'Supernova · kept in your field notes') {
-  toast(`<i></i><b>${regionName(n.rx, n.ry)}</b><span>${line}</span>`, THEMES[regionTheme(n.rx, n.ry)].hue, SHARE_TOAST_MS, novaAction(n));
+function novaToast(n, line = 'Supernova · kept in your field notes', kind = n.mine ? 'mine' : 'others') {
+  toast(kind, `<i></i><b>${regionName(n.rx, n.ry)}</b><span>${line}</span>`, THEMES[regionTheme(n.rx, n.ry)].hue, SHARE_TOAST_MS, novaAction(n));
 }
 // The field notes' list of them, newest first; each flies to its last word.
 const novasSec = $('#novasSec'), novaListEl = $('#novaList');
@@ -3033,7 +3036,7 @@ function collect(w, x, y, d, stray) {
   const key = keyOf(w, x, y, d);
   const have = found.get(key);
   if (have) {
-    toast(`<i></i><b>${w}</b><span>Already in your notes</span>`, THEMES[have.th].hue, 0, have);
+    toast('reply', `<i></i><b>${w}</b><span>Already in your notes</span>`, THEMES[have.th].hue, 0, have);
     pulse = { x, y, d, w, t0: performance.now() }; invalidate();
     return;
   }
@@ -3041,7 +3044,7 @@ function collect(w, x, y, d, stray) {
   // shows circled on the map, and circling it again finds nothing new.
   const theirs = claims.get(key);
   if (theirs) {
-    toast(`<i></i><b>${w}</b><span>Already charted by ${theirs.by || 'another surveyor'}</span>`, THEMES[theirs.th].hue);
+    toast('reply', `<i></i><b>${w}</b><span>Already charted by ${theirs.by || 'another surveyor'}</span>`, THEMES[theirs.th].hue);
     pulse = { x, y, d, w, t0: performance.now() }; invalidate();
     return;
   }
@@ -3050,7 +3053,7 @@ function collect(w, x, y, d, stray) {
   found.set(key, e);
   saveLocal(); queueWrite(e); claimWord(e);
   const rx = fdiv(x, RC), ry = fdiv(y, RC);
-  toast(`<i></i><b>${w}</b><span>${stray ? 'Stray ' + THEMES[e.th].name.toLowerCase() + ' word' : THEMES[e.th].name} · ${regionName(rx, ry)}</span>`, THEMES[e.th].hue, 0, e, true);
+  toast('mine', `<i></i><b>${w}</b><span>${stray ? 'Stray ' + THEMES[e.th].name.toLowerCase() + ' word' : THEMES[e.th].name} · ${regionName(rx, ry)}</span>`, THEMES[e.th].hue, 0, e, true);
   if (!stray) {
     const total = territoryTotal(rx, ry);
     if (territoryFound(rx, ry) === total) {
@@ -3413,8 +3416,18 @@ let toastTimer = 0, toastMs = 0;
 // a find just made, which the count waits for (see foldToast). A note about
 // another find, or anything else, sends the one on screen in first; one about
 // the same find carries it on.
-let carrying = null;
-function toast(html, hue, ms = 2400, find = null, carry = false) {
+//
+// `kind` says what the note is about, and so whether it shows with alerts
+// switched off (the bell in the tools): 'others', what other surveyors did,
+// and 'mine', your own finds and how charting them went, are kept quiet then;
+// 'reply', the answer to something you just did (circled a word you have,
+// shared), and 'notice', errors and one-offs, show all the same. Every note
+// has to say which.
+const TOAST_QUIET = { others: true, mine: true, reply: false, notice: false };
+let carrying = null, toastsOn = LS.get(K_TOASTS) !== '0';
+function toast(kind, html, hue, ms = 2400, find = null, carry = false) {
+  if (!(kind in TOAST_QUIET)) console.error(`toast: no kind "${kind}"`);
+  if (!toastsOn && TOAST_QUIET[kind]) return quietToast(kind, html, carry);
   if (carrying && !(find && find.key === carrying.key)) foldToast(true);
   if (carry) { carrying = find; unlanded.add(find.key); }
   toastEl.innerHTML = html;
@@ -3450,6 +3463,26 @@ function toast(html, hue, ms = 2400, find = null, carry = false) {
   clearTimeout(toastTimer);
   toastTimer = setTimeout(hideToast, ms);
 }
+// A note kept quiet. Your own still reaches a screen reader, as the only word
+// of a find, and a find counts at once, the count bumping as it would have
+// when the note folded in. Other surveyors' news goes unsaid.
+const quietEl = $('#quietToast');
+function quietToast(kind, html, carry) {
+  if (kind === 'mine') {
+    const t = document.createElement('div');
+    t.innerHTML = html;
+    quietEl.textContent = [...t.children].map(c => c.textContent).filter(Boolean).join(', ');
+  }
+  if (carry) { showCount(); bump(notesOpen ? $('#tWords') : notesBadge); }
+}
+const toastsBtn = $('#toasts');
+function setToasts(on) {
+  toastsOn = on;
+  LS.set(K_TOASTS, on ? '1' : '0');
+  toastsBtn.setAttribute('aria-pressed', String(on));
+}
+toastsBtn.setAttribute('aria-pressed', String(toastsOn));
+toastsBtn.addEventListener('click', () => setToasts(!toastsOn));
 const hideToast = () => (carrying ? foldToast(false) : toastEl.classList.remove('show'));
 // Sends the note on screen into the field notes: a copy of it gathers itself,
 // its words fade, and it squeezes into the count's own shape and colour (the
@@ -3553,9 +3586,9 @@ async function shareFind(e) {
   }
   try {
     await navigator.clipboard.writeText(`${text} ${url}`);
-    toast(`<i></i><b>Copied</b><span>${e.w}, ready to paste</span>`, THEMES[e.th].hue);
+    toast('reply', `<i></i><b>Copied</b><span>${e.w}, ready to paste</span>`, THEMES[e.th].hue);
   } catch (_) {
-    toast(`<i></i><b>Couldn’t share</b><span>Copy this page’s address instead</span>`, THEMES[e.th].hue);
+    toast('reply', `<i></i><b>Couldn’t share</b><span>Copy this page’s address instead</span>`, THEMES[e.th].hue);
   }
 }
 
@@ -3887,7 +3920,7 @@ if (surveyApi) {
 }
 updateHud();
 invalidate();
-if (redrawn) setTimeout(() => toast(`<i></i><b>The map has been redrawn</b><span>${NT} themes of about ${Math.round(THEMES.reduce((a, t) => a + t.words.length, 0) / NT / 10) * 10} words now, so a territory never repeats one · ${redrawn.kept ? `${redrawn.kept} of your ${redrawn.had} finds are still on it` : 'your old finds are not on it'}</span>`, null, 8000), 900);
+if (redrawn) setTimeout(() => toast('notice', `<i></i><b>The map has been redrawn</b><span>${NT} themes of about ${Math.round(THEMES.reduce((a, t) => a + t.words.length, 0) / NT / 10) * 10} words now, so a territory never repeats one · ${redrawn.kept ? `${redrawn.kept} of your ${redrawn.had} finds are still on it` : 'your old finds are not on it'}</span>`, null, 8000), 900);
 connectStore();
 if (location.hash === '#debug') window.__lf = { cam, found, claims, links, chunk, wordEnd, collect, territoryProgress, remnants: () => [...remnants().set], novas: () => [...novasSeen.values()], territoryName: regionName, world: () => world, supernova, novaSound, audioOut, musicTracks: MUSIC_TRACKS, music: () => musicNow && { state: ac.state, track: musicNow.track().name, nodes: musicNow.track().nodes.size, level: musicNow.master.gain.value, swap: musicNow.swap }, nova: () => nova,
   pass: () => Pass.state, intro: () => Intro.state, surveyStatus, linkStates: () => Object.fromEntries([...links].map(([k, l]) => [k, l.m.state])), outbox: () => [...outbox.values()].map(c => [c.e.w, c.m.state]), definitions: () => Object.fromEntries([...definitions].map(([k, d]) => [k, d.m.state])) };

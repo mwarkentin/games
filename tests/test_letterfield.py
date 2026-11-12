@@ -174,6 +174,76 @@ def test_sound_can_be_switched_off(page: Page, site_url, errors):
     assert errors == []
 
 
+def test_alerts_can_be_switched_off_and_stay_off(page: Page, site_url, errors):
+    without_worker(page, site_url, "letterfield")
+    page.goto(f"{site_url}/letterfield#debug")
+    page.click("#coachOk")
+    open_tools(page)
+    alerts = page.locator("#toasts")
+    expect(alerts).to_have_attribute("aria-pressed", "true")
+    expect(alerts).to_have_accessible_name("Alerts")
+    expect(alerts.locator(".off")).to_be_hidden()
+    alerts.click()
+    expect(alerts).to_have_attribute("aria-pressed", "false")
+    expect(alerts.locator(".off")).to_be_visible()  # the bell is struck through
+    assert page.evaluate("localStorage.getItem('letterfield.toasts.v1')") == "0"
+    page.reload()
+    expect(page.locator("#toasts")).to_have_attribute("aria-pressed", "false")
+    open_tools(page)
+    page.locator("#toasts").click()
+    expect(page.locator("#toasts")).to_have_attribute("aria-pressed", "true")
+    assert page.evaluate("localStorage.getItem('letterfield.toasts.v1')") == "1"
+    # Back on, a find has its note as ever.
+    word = page.evaluate("(o => [o.w, o.x, o.y, o.d])(window.__lf.chunk(0, 0).words[0])")
+    page.evaluate(COLLECT, [word])
+    expect(page.locator("#toast")).to_contain_text(word[0])
+    assert errors == []
+
+
+@pytest.mark.parametrize("size", [(375, 740), (1280, 900)], ids=["phone", "desktop"])
+def test_with_alerts_off_a_find_has_no_note_but_lands_in_the_notes(page: Page, site_url, errors, size):
+    without_worker(page, site_url, "letterfield")
+    page.add_init_script("localStorage.setItem('letterfield.toasts.v1', '0')")
+    page.set_viewport_size({"width": size[0], "height": size[1]})
+    page.goto(f"{site_url}/letterfield#debug")
+    page.click("#coachOk")
+    toast, count = page.locator("#toast"), page.locator("#tWords" if size[0] >= 1100 else "#notesBadge")
+    word = page.evaluate("(o => [o.w, o.x, o.y, o.d])(window.__lf.chunk(0, 0).words[0])")
+    page.evaluate(COLLECT, [word])
+    # It counts at once, with no note to wait for, and a screen reader still hears of it.
+    expect(count).to_have_text("1", timeout=500)
+    expect(page.locator("#quietToast")).to_contain_text(word[0])
+    page.wait_for_timeout(600)
+    expect(toast).not_to_have_class(re.compile(r"\bshow\b"))
+    assert page.evaluate("JSON.parse(localStorage.getItem('letterfield.finds.v4')).length") == 1
+    # Circling it again still answers: it's already in your notes.
+    page.evaluate(COLLECT, [word])
+    expect(toast).to_contain_text("Already in your notes")
+    expect(toast).to_have_class(re.compile(r"\bshow\b"))
+    # And it can be shared from the notes.
+    if page.locator("#notes").is_hidden():
+        page.click("#notesToggle")
+    expect(page.locator("#finds").get_by_role("button", name=f"Share {word[0]}")).to_be_visible()
+    assert errors == []
+
+
+def test_with_alerts_off_a_supernova_still_plays_and_is_kept(page: Page, site_url, errors):
+    without_worker(page, site_url, "letterfield")
+    page.add_init_script("localStorage.setItem('letterfield.toasts.v1', '0')")
+    page.goto(f"{site_url}/letterfield#debug")
+    page.wait_for_function("window.__lf")
+    words = page.evaluate(TERRITORY_WORDS)
+    page.evaluate(COLLECT, words)
+    expect(page.locator("#nova")).to_be_visible(timeout=5000)
+    expect(page.locator("#nova")).to_be_hidden(timeout=10000)
+    page.wait_for_timeout(800)
+    expect(page.locator("#toast")).not_to_have_class(re.compile(r"\bshow\b"))
+    if page.locator("#notes").is_hidden():
+        page.click("#notesToggle")
+    expect(page.locator("#novaList .find-share")).to_be_visible()
+    assert errors == []
+
+
 def test_supernova_with_reduced_motion_keeps_still(page: Page, site_url, errors):
     page.emulate_media(reduced_motion="reduce")
     page.add_init_script(COUNT_AUDIO)
@@ -788,7 +858,7 @@ def test_the_tools_drop_down_from_their_button_and_go_again(page: Page, site_url
     box, tools = stack.bounding_box(), button.bounding_box()
     assert box["y"] >= tools["y"] + tools["height"] and box["y"] + box["height"] <= bar["y"], "it drops from its button, clear of the word list"
     assert abs(box["x"] + box["width"] - tools["x"] - tools["width"]) < 1
-    for el in ["#toolsBtn", "#music", "#sound", "#home", "#zoomIn", "#zoomOut"]:
+    for el in ["#toolsBtn", "#toasts", "#music", "#sound", "#home", "#zoomIn", "#zoomOut"]:
         b = page.locator(el).bounding_box()
         assert b["width"] >= 40 and b["height"] >= 40, (el, b)
     assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
