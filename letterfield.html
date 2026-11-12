@@ -464,7 +464,7 @@ const DEAL = 9;
 const STRAY_MIN = 6;
 const NOTES_W = 340;
 // Field notes, by map: each redraw starts a new key and carries over any finds still there.
-const K_FINDS = 'letterfield.finds.v4', K_FINDS_OLD = ['letterfield.finds.v3', 'letterfield.finds.v2', 'letterfield.finds.v1'], K_CAM = 'letterfield.cam.v1', K_COACH = 'letterfield.coach.v1', K_NOTES = 'letterfield.notes.v1', K_SOUND = 'letterfield.sound.v1', K_MUSIC = 'letterfield.music.v1', K_LIST = 'letterfield.list.v1', K_TOOLS = 'letterfield.tools.v1';
+const K_FINDS = 'letterfield.finds.v4', K_FINDS_OLD = ['letterfield.finds.v3', 'letterfield.finds.v2', 'letterfield.finds.v1'], K_CAM = 'letterfield.cam.v1', K_COACH = 'letterfield.coach.v1', K_NOTES = 'letterfield.notes.v1', K_SOUND = 'letterfield.sound.v1', K_MUSIC = 'letterfield.music.v1', K_LIST = 'letterfield.list.v1';
 const K_INITIALS = 'games.initials';  // shared with the other games' leaderboards
 const K_PASS = 'letterfield.surveyPass.v1';
 // The shared survey (see worker/SURVEY.md), on the leaderboard Worker. With
@@ -3240,9 +3240,10 @@ function updateHud() {
 // when its cell's centre is on the map and not under one of the panels over
 // it. Their boxes change with layout, not with the camera, so they're measured
 // again only after a resize, a change in their size or the end of a slide. The
-// bottom bar isn't one: the map ends at its top edge.
+// bottom bar isn't one, since the map ends at its top edge, and nor is the open
+// tools' stack, so opening it doesn't reshuffle the list.
 const SEEN_SHARE = .5;
-const coverEls = ['.cartouche', '#notesToggle', '#toolStack', '#notes'].map($);
+const coverEls = ['.cartouche', '#notesToggle', '#notes'].map($);
 let covers = null;
 function coverRects() {
   if (covers) return covers;
@@ -3250,7 +3251,6 @@ function coverRects() {
   for (const el of coverEls) {
     if (el.id === 'notes' && (!notesOpen || dock)) continue;  // shut, or beside the map rather than over it
     if (el.id === 'notesToggle' && dock) continue;
-    if (el.id === 'toolStack' && !toolsOpen) continue;
     const r = el.getBoundingClientRect();
     if (r.width > 0 && r.height > 0) covers.push({ l: r.left, r: r.right, t: r.top, b: r.bottom });
   }
@@ -3259,7 +3259,8 @@ function coverRects() {
 const dropCovers = () => { covers = null; };
 if (window.ResizeObserver) { const ro = new ResizeObserver(dropCovers); coverEls.forEach(el => ro.observe(el)); }
 window.addEventListener('resize', dropCovers);
-for (const el of [$('#notes'), $('#toolStack')]) el.addEventListener('transitionend', e => { if (e.target === el) { dropCovers(); scheduleHud(); placeCheck(); } });
+$('#notes').addEventListener('transitionend', e => { if (e.target === e.currentTarget) { dropCovers(); scheduleHud(); } });
+$('#toolStack').addEventListener('transitionend', e => { if (e.target === e.currentTarget) placeCheck(); });
 function wordSeen(w, cs, OX, rects) {
   const [dx, dy] = DIRS[w.d], right = W - dock, len = w.w.length, need = Math.ceil(len * SEEN_SHARE);
   let seen = 0;
@@ -3606,24 +3607,22 @@ function goHome() { flyTo(6, 6, defaultCs()); }
 $('#home').addEventListener('click', goHome);
 
 // The tools button opens its stack and a second tap shuts it, as do Escape and
-// a tap on the map; whether it was left open is kept for next time. A single
-// boolean, so no machine: nothing waits on it. Opening moves focus into the
+// a tap on the map. It always starts shut. A single boolean, so no machine:
+// nothing waits on it. Opening moves focus into the
 // stack, and shutting it from there brings focus back to the button. The
 // keyboard shortcuts never need it open.
 const barEl = $('#bar'), toolsBtn = $('#toolsBtn'), toolStack = $('#toolStack');
 let toolsOpen = false;
-function setTools(open, { focus = false, refocus = false, remember = true } = {}) {
+function setTools(open, { focus = false, refocus = false } = {}) {
   toolsOpen = open;
   barEl.classList.toggle('tools-open', open);
   toolsBtn.setAttribute('aria-expanded', String(open));
   toolStack.inert = !open;
-  if (remember) LS.set(K_TOOLS, open ? '1' : '0');
   if (open && focus) try { toolStack.querySelector('button').focus({ preventScroll: true }); } catch (_) {}
   if (!open && (refocus || toolStack.contains(document.activeElement))) try { toolsBtn.focus({ preventScroll: true }); } catch (_) {}
-  dropCovers(); scheduleHud(); placeCheck();
+  placeCheck();
 }
 toolsBtn.addEventListener('click', () => setTools(!toolsOpen, { focus: true }));
-setTools(LS.get(K_TOOLS) === '1', { remember: false });
 
 // On the shared survey, words are signed, so a player picks initials before
 // circling one (Intro's sign state): the card asks at the start, and a tap on

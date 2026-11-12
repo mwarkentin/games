@@ -145,15 +145,17 @@ def open_tools(page: Page) -> None:
     expect(page.locator("#toolsBtn")).to_have_attribute("aria-expanded", "true")
 
 
-# The tools left open last time, so the test reaches them without a tap, which
-# would start the audio.
-TOOLS_OPEN = "localStorage.setItem('letterfield.tools.v1', '1');"
+def open_tools_quietly(page: Page) -> None:
+    """Opens the tools' stack without a tap or key, either of which would start the audio."""
+    page.evaluate("document.getElementById('toolsBtn').click()")
+    expect(page.locator("#toolsBtn")).to_have_attribute("aria-expanded", "true")
 
 
 def test_sound_can_be_switched_off(page: Page, site_url, errors):
-    page.add_init_script(COUNT_AUDIO + TOOLS_OPEN)
+    page.add_init_script(COUNT_AUDIO)
     page.goto(f"{site_url}/letterfield#debug")
     page.wait_for_function("window.__lf")
+    open_tools_quietly(page)
     sound = page.locator("#sound")
     expect(sound).to_have_attribute("aria-pressed", "true")
     sound.click()
@@ -181,9 +183,10 @@ def test_supernova_with_reduced_motion_keeps_still(page: Page, site_url, errors)
 
 
 def test_music_starts_off_and_can_be_switched_on_and_off(page: Page, site_url, errors):
-    page.add_init_script(COUNT_AUDIO + TOOLS_OPEN)
+    page.add_init_script(COUNT_AUDIO)
     page.goto(f"{site_url}/letterfield#debug")
     page.wait_for_function("window.__lf")
+    open_tools_quietly(page)
     music = page.locator("#music")
     expect(music).to_have_attribute("aria-pressed", "false")
     page.keyboard.press("Shift")
@@ -416,9 +419,10 @@ def test_escape_while_dragging_a_circle_lets_it_go(page: Page, site_url, errors)
 
 
 def test_music_left_on_starts_with_the_first_tap_on_its_button(page: Page, site_url, errors):
-    page.add_init_script(COUNT_AUDIO + TOOLS_OPEN + "localStorage.setItem('letterfield.music.v1', '1');")
+    page.add_init_script(COUNT_AUDIO + "localStorage.setItem('letterfield.music.v1', '1');")
     page.goto(f"{site_url}/letterfield#debug")
     page.wait_for_function("window.__lf")
+    open_tools_quietly(page)
     music = page.locator("#music")
     expect(music).to_have_attribute("aria-pressed", "true")
     assert page.evaluate("window.__lf.music()") is None  # on, but waiting for a tap
@@ -561,12 +565,13 @@ def test_the_word_list_names_only_words_half_in_sight(page: Page, site_url, erro
 
     # Letters under a panel over the map, or under the bottom bar where the map
     # ends, can't be seen either. A word reading away from the title box (down),
-    # or from the bar or the open tools above it (up), with its first three
-    # letters under the panel isn't listed, and with only its first two there it
-    # is, where the rest lands on open map.
+    # or from the bar (up), with its first three letters under the panel isn't
+    # listed, and with only its first two there it is, where the rest lands on
+    # open map. The open tools don't count, so opening them never reshuffles
+    # the list.
     cs = 12
     open_tools(page)
-    panels = [("header.cartouche", down), ("#bar", up), ("#toolStack", up)]
+    panels = [("header.cartouche", down), ("#bar", up)]
     for sel, key in panels:
         box = page.locator(sel).bounding_box()
         # Over the bar, at its left end: the open tools stand over its right.
@@ -579,6 +584,9 @@ def test_the_word_list_names_only_words_half_in_sight(page: Page, site_url, erro
         assert not seen, (sel, got)
         seen, got = listed(key, sx, hidden2, cs)
         assert seen, (sel, got)
+    box = page.locator("#toolStack").bounding_box()
+    seen, got = listed(up, box["x"] + box["width"] / 2, box["y"] + 2.5 * cs, cs)
+    assert seen, ("#toolStack", got)
     assert errors == []
 
 
@@ -758,12 +766,11 @@ def test_the_tools_pop_up_from_the_bar_and_go_again(page: Page, site_url, errors
     assert page.evaluate("document.getElementById('map').clientHeight") == round(bar["y"])
     assert round(bar["y"] + bar["height"]) == size[1] and bar["x"] == 0
 
-    # A tap opens it, focus moves in, and it's kept for next time.
+    # A tap opens it and focus moves in.
     button.click()
     expect(button).to_have_attribute("aria-expanded", "true")
     expect(stack).to_be_visible()
     expect(page.locator("#music")).to_be_focused()
-    assert page.evaluate("localStorage.getItem('letterfield.tools.v1')") == "1"
     page.wait_for_timeout(300)  # done popping up
     box = stack.bounding_box()
     assert box["y"] + box["height"] <= bar["y"], "it stands above the bar, clear of the word list"
@@ -771,15 +778,16 @@ def test_the_tools_pop_up_from_the_bar_and_go_again(page: Page, site_url, errors
         b = page.locator(el).bounding_box()
         assert b["width"] >= 40 and b["height"] >= 40, (el, b)
     assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
+    # Left open, it starts shut all the same on the next visit.
     page.reload()
-    expect(button).to_have_attribute("aria-expanded", "true")
-    expect(stack).to_be_visible()
+    expect(button).to_have_attribute("aria-expanded", "false")
+    expect(stack).to_be_hidden()
+    button.click()
 
     # A second tap shuts it.
     button.click()
     expect(button).to_have_attribute("aria-expanded", "false")
     expect(stack).to_be_hidden()
-    assert page.evaluate("localStorage.getItem('letterfield.tools.v1')") == "0"
 
     # Escape shuts it and brings focus back to the button.
     button.click()
@@ -801,8 +809,6 @@ def test_the_tools_pop_up_from_the_bar_and_go_again(page: Page, site_url, errors
     expect(button).to_have_attribute("aria-expanded", "false")
     expect(stack).to_be_hidden()
     assert page.evaluate("({ ...window.__lf.cam })") == cam
-    page.reload()
-    expect(button).to_have_attribute("aria-expanded", "false")
     assert errors == []
 
 
