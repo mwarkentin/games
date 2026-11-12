@@ -314,8 +314,8 @@ html[data-intro="sign"] .survey-check{visibility:hidden}
 .signup .survey-hint{color:var(--ink)}
 .btn{font:600 13px/1 var(--f-ui);padding:9px 14px;border:0;border-radius:6px;background:var(--accent);color:var(--on-accent);cursor:pointer}
 /* A note pops out of the field notes, at the top right (beside them, when
-   they're docked), and collapses back into them when its time is up. A find's
-   note folds right into the count, which ticks up as it lands (see foldToast).
+   they're docked), and collapses back into them when its time is up. A find
+   has no note: its circle flies into the count instead (see gatherFind).
    toast() sets its top: just under the notes button, clear of the cards at
    the top of the map. */
 .toast{position:fixed;top:var(--top);right:var(--gr);z-index:35;width:max-content;max-width:calc(100% - var(--gl) - var(--gr));box-sizing:border-box;pointer-events:none;display:grid;grid-template-columns:auto auto;align-items:center;column-gap:10px;row-gap:4px;padding:10px 16px 10px 14px;
@@ -334,6 +334,8 @@ body.docked .toast{right:calc(var(--notes-w) + 16px);max-width:calc(100% - var(-
 .share:focus-visible,.find-share:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 .toast .share{grid-row:1 / span 2;grid-column:3;margin-left:6px;padding:0 12px;height:36px;pointer-events:auto}
 .toast:not(.show) .share{visibility:hidden}
+.gather{position:fixed;left:0;top:0;z-index:60;pointer-events:none}
+.gather i{position:absolute;left:0;top:0;display:block;box-sizing:border-box;border-radius:999px}
 .vh{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
 
 
@@ -500,6 +502,7 @@ body.docked .nova{left:calc((100% - var(--notes-w)) / 2)}
 </form>
 
 <div class="toast card mark" id="toast" role="status" aria-live="polite"></div>
+<div class="vh" id="findSay" role="status" aria-live="polite"></div>
 <div class="survey-check" id="surveyCheck"><p aria-live="polite">One tap to join the shared survey</p><div id="surveyWidget"></div></div>
 <div class="peek card mark" id="peek" hidden></div>
 <div class="nova" id="nova" role="status" aria-live="polite" hidden><b>Supernova</b><span id="novaText"></span></div>
@@ -1573,7 +1576,9 @@ function firstToChart(c) {
     if (!c.s && inSurveyArea(c.x, c.y) && world) e.n = world.charted + worldExtra;
     saveLocal(); queueWrite(e); renderNotes();
   }
-  toast(`<i></i><b>${c.w}</b><span>First to chart it · ${regionName(fdiv(c.x, RC), fdiv(c.y, RC))}</span>`, THEMES[c.th].hue, 0, e);
+  // No note: on the survey nearly every find is charted first. The field
+  // notes say so.
+  say(`${c.w} · First to chart it`);
 }
 // Someone else charted a word in view: say so now and then, never over another note.
 function news(c) {
@@ -3115,7 +3120,8 @@ function collect(w, x, y, d, stray) {
   found.set(key, e);
   saveLocal(); queueWrite(e); claimWord(e);
   const rx = fdiv(x, RC), ry = fdiv(y, RC);
-  toast(`<i></i><b>${w}</b><span>${stray ? 'Stray ' + THEMES[e.th].name.toLowerCase() + ' word' : THEMES[e.th].name} · ${regionName(rx, ry)}</span>`, THEMES[e.th].hue, 0, e, true);
+  say(`${w} · ${stray ? 'Stray ' + THEMES[e.th].name.toLowerCase() + ' word' : THEMES[e.th].name} · ${regionName(rx, ry)}`);
+  gatherFind(e);
   if (!stray) {
     const total = territoryTotal(rx, ry);
     if (territoryFound(rx, ry) === total) {
@@ -3486,14 +3492,8 @@ let toastTimer = 0, toastMs = 0;
 // A note at the top of the map. Given a find, it offers to share it, and
 // stays long enough to tap, or while a pointer or focus is on it.
 // `find` is a find to offer to share, or { label, share } for anything else.
-// `carry` says the note carries that find into the field notes when it goes:
-// a find just made, which the count waits for (see foldToast). A note about
-// another find, or anything else, sends the one on screen in first; one about
-// the same find carries it on.
-let carrying = null;
-function toast(html, hue, ms = 2400, find = null, carry = false) {
-  if (carrying && !(find && find.key === carrying.key)) foldToast(true);
-  if (carry) { carrying = find; unlanded.add(find.key); }
+// A find just made has no note (see gatherFind).
+function toast(html, hue, ms = 2400, find = null) {
   toastEl.innerHTML = html;
   if (hue != null) toastEl.style.setProperty('--h', hue);
   toastEl.classList.toggle('can-share', !!find);
@@ -3527,21 +3527,25 @@ function toast(html, hue, ms = 2400, find = null, carry = false) {
   clearTimeout(toastTimer);
   toastTimer = setTimeout(hideToast, ms);
 }
-const hideToast = () => (carrying ? foldToast(false) : toastEl.classList.remove('show'));
-// Sends the note on screen into the field notes: a copy of it gathers itself,
-// its words fade, and it squeezes into the count's own shape and colour (the
-// badge on the notes button, or the number atop the open notes), while the
-// note itself goes at once or, when `next` is coming, makes way for it. The
-// count changes and bumps as the copy merges into it. A timer stands in for
-// the animation's end, which a hidden tab may not reach.
-function foldToast(next) {
-  const key = carrying.key;
-  carrying = null;
-  const to = notesOpen ? $('#tWords') : notesBadge;
-  // The badge, or just the digits of the number atop the notes, whose box is as wide as its column.
-  const a = toastEl.getBoundingClientRect(), range = document.createRange();
-  range.selectNodeContents(to);
-  const b = to === notesBadge ? to.getBoundingClientRect() : range.getBoundingClientRect();
+const hideToast = () => toastEl.classList.remove('show');
+// What a find has no note to say, said to a screen reader all the same.
+const findSay = $('#findSay');
+function say(text) {
+  findSay.textContent = '';
+  setTimeout(() => { findSay.textContent = text; }, 50);
+}
+// A find has no note: you can see you found it, so its circle carries it
+// into the field notes instead. Once it's drawn, a copy lifts off the map,
+// draws in from both ends to a bead of the find's colour, and arcs over to
+// the count (the badge on the notes button, or the number atop the open
+// notes), which ticks up and bumps as the bead drops in. The circle stays on
+// the map. Off the map, with reduced motion or in a hidden tab, the find just
+// counts. A timer stands in for the animation's end, which a hidden tab may
+// not reach.
+const GATHER_LIFT = 320, GATHER_DRAW = 440, GATHER_FLY = 580, GATHER_BEAD = 12;
+function gatherFind(e) {
+  const key = e.key, to = notesOpen ? $('#tWords') : notesBadge;
+  unlanded.add(key);
   let done = false;
   const land = () => {
     if (done) return;
@@ -3550,41 +3554,54 @@ function foldToast(next) {
     showCount();
     bump(to);
   };
-  const shown = toastEl.classList.contains('show');
-  const ghost = !RM && shown && a.width && b.width && !document.hidden && toastEl.animate ? toastEl.cloneNode(true) : null;
-  if (!next) {
-    if (ghost) toastEl.style.transition = 'none';
-    toastEl.classList.remove('show');
-    if (ghost) { void toastEl.offsetWidth; toastEl.style.transition = ''; }
+  // Where the circle is on screen, as draw() puts it.
+  const cs = cam.cs, [ex, ey] = wordEnd(e), ox = (W - dock) / 2, oy = mapTop + H / 2;
+  const x0 = (e.x + .5 - cam.x) * cs + ox, y0 = (e.y + .5 - cam.y) * cs + oy;
+  const x1 = (ex + .5 - cam.x) * cs + ox, y1 = (ey + .5 - cam.y) * cs + oy;
+  const mx = (x0 + x1) / 2, my = (y0 + y1) / 2;
+  const range = document.createRange();
+  range.selectNodeContents(to);
+  const b = to === notesBadge ? to.getBoundingClientRect() : range.getBoundingClientRect();
+  const onMap = mx >= 0 && mx <= W - dock && my >= mapTop && my <= mapTop + H;
+  if (RM || document.hidden || !b.width || !onMap || !document.body.animate) return land();
+
+  const tc = TC[e.th], r = Math.max(1.6, cs * .4), lw = clamp(cs * .06, 1, 2.4);
+  const long = Math.hypot(x1 - x0, y1 - y0) + 2 * r + lw, tall = 2 * r + lw, turn = `rotate(${Math.atan2(y1 - y0, x1 - x0)}rad)`;
+  const g = document.createElement('div'), bead = document.createElement('i');
+  g.className = 'gather';
+  g.setAttribute('aria-hidden', 'true');
+  g.style.transform = `translate(${mx}px, ${my}px)`;
+  Object.assign(bead.style, { width: `${long}px`, height: `${tall}px`, background: tc.fill, borderColor: tc.stroke, borderWidth: `${lw}px`, borderStyle: e.s ? 'dashed' : 'solid', transform: `translate(-50%, -50%) ${turn}` });
+  g.append(bead);
+  document.body.append(g);
+  const finish = () => { g.remove(); land(); };
+
+  // It lifts a touch off the map, draws in from both ends, see-through as
+  // the circle is so the word shows, then condenses into a solid bead.
+  const dot = GATHER_BEAD, lifted = '0 4px 12px rgba(0,0,0,.22)', at = k => `translate(-50%, -50%) ${turn} scale(${k})`;
+  bead.animate([
+    { width: `${long}px`, height: `${tall}px`, background: tc.fill, transform: at(1), boxShadow: '0 0 0 rgba(0,0,0,0)', easing: 'cubic-bezier(.34,1.5,.64,1)' },
+    { width: `${long}px`, height: `${tall}px`, background: tc.fill, transform: at(1.06), boxShadow: lifted, offset: .2, easing: 'cubic-bezier(.6,0,.3,1)' },
+    { width: `${tall}px`, height: `${tall}px`, background: tc.fill, transform: at(1.06), boxShadow: lifted, offset: .64, easing: 'cubic-bezier(.3,0,.2,1)' },
+    { width: `${dot}px`, height: `${dot}px`, background: tc.stroke, borderColor: tc.stroke, transform: at(1), boxShadow: lifted },
+  ], { duration: GATHER_DRAW, delay: GATHER_LIFT, fill: 'both' });
+
+  // Then it arcs over to the count, swinging up off the straight line like
+  // something tossed, swelling a little on the way and dropping in.
+  const bx = b.left + b.width / 2, by = b.top + b.height / 2, dx = bx - mx, dy = by - my, f = dx < 0 ? -.3 : .3;
+  const cx = clamp(mx + dx / 2 + dy * f, 8, innerWidth - 8), cy = clamp(my + dy / 2 - dx * f, 8, innerHeight - 8);
+  const path = [];
+  for (let i = 0, n = 24; i <= n; i++) {
+    const t = i / n, u = 1 - t;
+    const x = u * u * mx + 2 * u * t * cx + t * t * bx, y = u * u * my + 2 * u * t * cy + t * t * by;
+    const k = t < .45 ? 1 + .25 * Math.sin(t / .45 * Math.PI / 2) : 1.25 - .65 * Math.pow((t - .45) / .55, 2);
+    path.push({ transform: `translate(${x}px, ${y}px) scale(${k})`, opacity: t > .92 ? 1 - (t - .92) / .08 : 1 });
   }
-  if (!ghost) return land();
-  ghost.removeAttribute('id');
-  ghost.removeAttribute('role');
-  ghost.removeAttribute('aria-live');
-  ghost.setAttribute('aria-hidden', 'true');
-  ghost.inert = true;
-  Object.assign(ghost.style, { top: `${a.top}px`, left: `${a.left}px`, right: 'auto', width: `${a.width}px`, transition: 'none', transformOrigin: '0 0', zIndex: 60 });
-  document.body.append(ghost);
-  // At step t of the way, where it is, its size, and corners that round off
-  // only as it shrinks (given unscaled, so they come out round once scaled).
-  const sx = b.width / a.width, sy = b.height / a.height, dx = b.left - a.left, dy = b.top - a.top;
-  const at = (t, extra) => {
-    const kx = 1 + (sx - 1) * t, ky = 1 + (sy - 1) * t, R = 8 + (b.height / 2 - 8) * t * t;
-    return { transform: `translate(${dx * t}px, ${dy * t}px) scale(${kx}, ${ky})`, borderRadius: `${R / kx}px / ${R / ky}px`, ...extra };
-  };
-  // It takes the badge's colour as it merges into it, or the find's own as it
-  // fades into the number atop the notes, which has none.
-  const from = getComputedStyle(toastEl).backgroundColor, badge = to === notesBadge;
-  const fill = badge ? getComputedStyle(to).backgroundColor : getComputedStyle(toastEl.querySelector('i') || toastEl).backgroundColor;
-  for (const c of ghost.children) c.animate([{ opacity: 1 }, { opacity: 0 }], { duration: 140, delay: 60, easing: 'ease-in', fill: 'forwards' });
-  ghost.animate([
-    at(0, { backgroundColor: from, easing: 'cubic-bezier(.22,1,.36,1)' }),
-    { transform: 'scale(.95)', borderRadius: `${8 / .95}px`, backgroundColor: from, offset: .18, easing: 'cubic-bezier(.6,0,.4,1)' },
-    at(.6, { backgroundColor: from, offset: .62, easing: 'cubic-bezier(.4,0,.2,1)' }),
-    at(.9, { backgroundColor: fill, borderColor: 'transparent', boxShadow: 'none', opacity: 1, offset: .86, easing: 'cubic-bezier(.22,1,.36,1)' }),
-    at(1, { backgroundColor: fill, borderColor: 'transparent', boxShadow: 'none', opacity: badge ? 1 : 0 }),
-  ], { duration: 540, fill: 'forwards' }).finished.then(() => { ghost.remove(); land(); }, () => { ghost.remove(); land(); });
-  setTimeout(() => { if (!done) { ghost.remove(); land(); } }, 900);
+  const flyAt = GATHER_LIFT + GATHER_DRAW * .8;
+  // On the badge, it takes the badge's colour as it merges in.
+  if (to === notesBadge) bead.animate([{ background: tc.stroke, borderColor: tc.stroke }, { background: getComputedStyle(to).backgroundColor, borderColor: getComputedStyle(to).backgroundColor }], { duration: GATHER_FLY * .3, delay: flyAt + GATHER_FLY * .7, fill: 'forwards' });
+  g.animate(path, { duration: GATHER_FLY, delay: flyAt, easing: 'cubic-bezier(.45,.05,.35,1)', fill: 'both' }).finished.then(finish, finish);
+  setTimeout(() => { if (!done) finish(); }, flyAt + GATHER_FLY + 600);
 }
 const holdToast = () => clearTimeout(toastTimer);
 const releaseToast = () => {
@@ -3733,8 +3750,8 @@ function setNotes(open, remember = true) {
   scheduleHud(); invalidate();
 }
 // The count of finds, on the notes button, and the tally atop the notes. A
-// find counts once its note has gone into the notes (see foldToast): until
-// then its key is in unlanded.
+// find counts once its circle has flown into the notes (see gatherFind):
+// until then its key is in unlanded.
 const unlanded = new Set();
 function showCount(all = [...found.values()]) {
   const done = unlanded.size ? all.filter(e => !unlanded.has(e.key)) : all;
