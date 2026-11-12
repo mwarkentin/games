@@ -610,7 +610,7 @@ pins and the README link.
 
 `scripts/lint.sh` runs one tool per language, each pinned to an exact
 version, and CI's `lint` job (in `.github/workflows/test.yml`) runs it on
-every push and pull request, in about half a minute. It fails on what it
+every push and pull request, in about 15 seconds. It fails on what it
 finds; it never pushes fixes, since a push made with the workflow's token
 starts no checks of its own and would race the sessions pushing to the same
 branch. Run `scripts/lint.sh --fix` before you commit.
