@@ -78,6 +78,8 @@ def test_finds_from_an_older_map_carry_over_if_still_there(page: Page, site_url,
     expect(page.locator("#toast")).to_contain_text("1 of your 2 finds are still on it")
     expect(page.locator("#notesBadge")).to_have_text("1", timeout=LANDS)
     # A long note stays on a phone's screen, padding and all, and wraps rather than cutting off.
+    # Measured at rest: it pops in past its size, so mid-transition it pokes over the edge.
+    page.locator("#toast").evaluate("e => Promise.all(e.getAnimations().map(a => a.finished))")
     box = page.locator("#toast").bounding_box()
     assert box["x"] >= 16 and box["x"] + box["width"] <= 375 - 16, box
     line = page.locator("#toast span")
