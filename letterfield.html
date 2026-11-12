@@ -104,6 +104,7 @@ body.docked .bar{right:var(--notes-w)}
 .legend{flex:1;min-width:0;display:flex;align-items:center;gap:18px}
 .legend-head{flex:none;display:flex;justify-content:space-between;align-items:baseline;gap:12px}
 .legend-count{font:400 11px/1 var(--f-mono);color:var(--muted);font-variant-numeric:tabular-nums;white-space:nowrap;min-width:5ch}
+.legend-count:empty::before{content:'\200b'} /* a line of text even when empty, so the bar keeps its height */
 /* Which words the list names: those in view, or those left in the territory. */
 .list-mode{display:flex;gap:2px;margin:-9px 0 -9px -7px}
 .list-mode button{padding:9px 7px;border:0;background:none;cursor:pointer;text-underline-offset:4px;white-space:nowrap}
