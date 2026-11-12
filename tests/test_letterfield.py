@@ -530,6 +530,19 @@ ONLY_WORDS_JS = """keys => {
 }"""
 
 
+def five_letter_words(page: Page) -> list[str]:
+    """Keys of a five-letter word reading right, one reading down and one
+    reading up, near where the map starts."""
+    keys = page.evaluate("""() => {
+      const keys = {};
+      for (let cy = -3; cy <= 3; cy++) for (let cx = -3; cx <= 3; cx++)
+        for (const w of window.__lf.chunk(cx, cy).words) if (w.w.length === 5) keys[w.d] ??= w.key;
+      return [keys[0], keys[2], keys[6]];
+    }""")
+    assert all(keys), keys
+    return keys
+
+
 @pytest.mark.parametrize("size", [(375, 740), (1280, 900)], ids=["phone", "desktop"])
 def test_the_word_list_names_only_words_half_in_sight(page: Page, site_url, errors, size):
     without_worker(page, site_url, "letterfield")  # alone, so each chip names its word
@@ -539,14 +552,7 @@ def test_the_word_list_names_only_words_half_in_sight(page: Page, site_url, erro
     expect(page.locator("#legendList .chip").first).to_be_visible()
     # Five-letter words reading right, down and up: each counts once any three
     # of its letters (half, rounded up) can be seen.
-    keys = page.evaluate("""() => {
-      const keys = {};
-      for (let cy = -3; cy <= 3; cy++) for (let cx = -3; cx <= 3; cx++)
-        for (const w of window.__lf.chunk(cx, cy).words) if (w.w.length === 5) keys[w.d] ??= w.key;
-      return [keys[0], keys[2], keys[6]];
-    }""")
-    assert all(keys), keys
-    across, down, up = keys
+    across, down, up = keys = five_letter_words(page)
     page.evaluate(ONLY_WORDS_JS, keys)
     right = page.evaluate("innerWidth - (document.body.classList.contains('docked') ? 340 : 0)")
     mid = page.evaluate("(m => m.getBoundingClientRect().top + m.clientHeight / 2)(document.getElementById('map'))")
@@ -593,6 +599,61 @@ def test_the_word_list_names_only_words_half_in_sight(page: Page, site_url, erro
     box = page.locator("#toolStack").bounding_box()
     seen, got = listed(down, box["x"] + box["width"] / 2, box["y"] + box["height"] - 2.5 * cs, cs)
     assert seen, ("#toolStack", got)
+    assert errors == []
+
+
+@pytest.mark.parametrize("size", [(375, 740), (1280, 900)], ids=["phone", "desktop"])
+def test_the_word_list_counts_only_whole_letters(page: Page, site_url, errors, size):
+    """A letter cut by the map's edge or a panel isn't seen: a row or column
+    half off the screen, or half under the title box or the tools, leaves its
+    word off the list, and the same word moved fully into view is on it. Each
+    letter's centre sits a pixel on the open side of the edge, so all of every
+    cell's centre is in sight while every letter is cut."""
+    without_worker(page, site_url, "letterfield")  # alone, so each chip names its word
+    page.set_viewport_size({"width": size[0], "height": size[1]})
+    page.goto(f"{site_url}/letterfield#debug")
+    page.click("#coachOk")
+    expect(page.locator("#legendList .chip").first).to_be_visible()
+    across, down, _ = keys = five_letter_words(page)
+    page.evaluate(ONLY_WORDS_JS, keys)
+    # Desktop docks the notes beside the map, so its right edge is theirs.
+    right = page.evaluate("innerWidth - (document.body.classList.contains('docked') ? 340 : 0)")
+    map_box = page.locator("#map").bounding_box()
+    top, bottom = map_box["y"], map_box["y"] + map_box["height"]
+    mid = (top + bottom) / 2
+
+    def listed(key, sx, sy, cs):
+        got = page.evaluate(PLACE_WORD_JS, {"key": key, "sx": sx, "sy": sy, "cs": cs})
+        return key in got["keys"]
+
+    # The smallest cells that show letters, middling ones and, on a desktop,
+    # cells zoomed right in.
+    bars = set()
+    for cs in (9, 30) + ((80,) if size[0] >= 700 else ()):
+        # (key, where its first letter is when cut, and when whole, what cuts it)
+        cases = [
+            (across, (right / 2 - 2 * cs, bottom - 1), (right / 2 - 2 * cs, bottom - .6 * cs), "bottom"),
+            (down, (1, mid - 2 * cs), (.6 * cs, mid - 2 * cs), "left"),
+            (down, (right - 1, mid - 2 * cs), (right - .6 * cs, mid - 2 * cs), "right"),
+        ]
+        cart = page.locator("header.cartouche").bounding_box()
+        if cart["y"] + cart["height"] > top:  # over the map: a row half under it
+            y = cart["y"] + cart["height"]
+            cases.append((across, (cart["x"] + 1.5 * cs, y + 1), (cart["x"] + 1.5 * cs, y + .6 * cs), "cartouche"))
+        else:  # above it, in the top bar: a row half off the map's top
+            cases.append((across, (right / 2 - 2 * cs, top + 1), (right / 2 - 2 * cs, top + .6 * cs), "top"))
+        tools = page.locator(".corner").bounding_box()
+        if tools["y"] + tools["height"] > top and cs < 30:  # a column half under its left edge
+            y0 = max(tools["y"], top) + .5 * cs
+            cases.append((down, (tools["x"] - 1, y0), (tools["x"] - .6 * cs, y0), "tools"))
+        for key, cut, whole, what in cases:
+            assert not listed(key, *cut, cs), (what, cs, "cut")
+            bars.add(page.locator("#bar").bounding_box()["height"])
+            assert listed(key, *whole, cs), (what, cs, "whole")
+            bars.add(page.locator("#bar").bounding_box()["height"])
+    # The bar stays the same height, empty or not, so the map doesn't move
+    # under a word as it comes and goes.
+    assert len(bars) == 1, bars
     assert errors == []
 
 

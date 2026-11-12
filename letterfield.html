@@ -110,8 +110,11 @@ body.docked .bar{right:var(--notes-w)}
 .list-mode button:hover{color:var(--ink)}
 .list-mode button[aria-pressed="true"]{color:var(--ink);text-decoration:underline;text-decoration-thickness:1.5px}
 /* One row that scrolls sideways only: overflow-x alone would make y auto too.
-   The 4px above and below, taken back by the margin, keep focus rings unclipped. */
-.chips{list-style:none;flex:1;min-width:0;min-height:26px;margin:-4px 0;padding:4px 2px;display:flex;flex-wrap:nowrap;align-items:center;gap:6px;overflow-x:auto;overflow-y:hidden;overscroll-behavior-x:contain;touch-action:pan-x;scrollbar-width:none}
+   The 4px above and below, taken back by the margin, keep focus rings unclipped.
+   It's never shorter than a chip (12px of text, 13px of padding and a 1px
+   border), so emptying it doesn't shrink the bar: that would make the map
+   taller, move its middle and could bring back a word just cut by its edge. */
+.chips{list-style:none;flex:1;min-width:0;min-height:27px;margin:-4px 0;padding:4px 2px;display:flex;flex-wrap:nowrap;align-items:center;gap:6px;overflow-x:auto;overflow-y:hidden;overscroll-behavior-x:contain;touch-action:pan-x;scrollbar-width:none}
 .chips::-webkit-scrollbar{display:none}
 .chips > li{display:flex;flex:none} /* so a span chip's padding counts, as a button's does */
 .chip{font:500 12px/1 var(--f-mono);letter-spacing:.07em;padding:7px 8px 6px;border:1px solid var(--rule);border-radius:5px;background:var(--panel);cursor:pointer;white-space:nowrap}
@@ -1772,6 +1775,26 @@ const tintAlpha = cs => { const base = C.dark ? .075 : .09, far = C.dark ? .15 :
 /* Glyph atlas: 26 letters rendered once per zoom level, then blitted per cell */
 const atlas = { c: document.createElement('canvas'), S: 0, key: '' };
 let fontEpoch = 0;
+const glyphPx = S => Math.max(5, S * 0.42);  // a letter's font size in a tile of S device pixels
+// The box each drawn letter's ink fills, from its tile's centre, as a share
+// of its font size: [left, top, right, bottom] for A to Z, each placed as
+// ensureAtlas draws them, centred across with the capitals centred down.
+// Measured once per font, at a large size so rounding doesn't matter.
+const glyphInk = { epoch: -1, boxes: null };
+function glyphBoxes() {
+  if (glyphInk.epoch === fontEpoch) return glyphInk.boxes;
+  glyphInk.epoch = fontEpoch;
+  const g = document.createElement('canvas').getContext('2d'), F = 100;
+  g.font = `500 ${F}px ${GRID_FONT}`; g.textAlign = 'center'; g.textBaseline = 'alphabetic';
+  const capH = g.measureText('H').actualBoundingBoxAscent;
+  glyphInk.boxes = Array.from({ length: 26 }, (_, i) => {
+    if (!capH) return [-.4, -.5, .4, .5];  // no ink metrics: a generous guess
+    const m = g.measureText(String.fromCharCode(65 + i));
+    return [-m.actualBoundingBoxLeft, capH / 2 - m.actualBoundingBoxAscent, m.actualBoundingBoxRight, capH / 2 + m.actualBoundingBoxDescent].map(v => v / F);
+  });
+  return glyphInk.boxes;
+}
+
 function ensureAtlas(S) {
   const key = S + '|' + C.ink + '|' + fontEpoch;
   if (atlas.key === key) return;
@@ -1780,7 +1803,7 @@ function ensureAtlas(S) {
   const g = c.getContext('2d');
   g.clearRect(0, 0, c.width, c.height);
   g.fillStyle = C.ink;
-  g.font = `500 ${Math.max(5, S * 0.42)}px ${GRID_FONT}`;
+  g.font = `500 ${glyphPx(S)}px ${GRID_FONT}`;
   g.textAlign = 'center'; g.textBaseline = 'alphabetic';
   const m = g.measureText('H'), capH = m.actualBoundingBoxAscent || S * 0.3;
   for (let i = 0; i < 26; i++) g.fillText(String.fromCharCode(65 + i), i * S + S / 2, S / 2 + capH / 2);
@@ -3283,11 +3306,14 @@ function updateHud() {
 // A word counts as in view once half its letters can be seen, whichever half:
 // its start can be off the edge or under a panel while its end shows, and a
 // panel over its middle can leave both ends in sight. A letter can be seen
-// when its cell's centre is on the map and not under one of the panels over
-// it. Their boxes change with layout, not with the camera, so they're measured
-// again only after a resize, a change in their size or the end of a slide. The
-// bottom bar isn't one, since the map ends at its top edge, and nor is the open
-// tools' stack, so opening it doesn't reshuffle the list.
+// only when the whole of it is: the box its ink fills, drawn at this zoom, is
+// on the map and clear of every panel over it, so a row or column cut by the
+// map's edge or a panel doesn't count. That's the letter's own box rather than
+// its cell's, since a cell's padding can be clipped while its letter shows in
+// full. The panels' boxes change with layout, not with the camera, so they're
+// measured again only after a resize, a change in their size or the end of a
+// slide. The bottom bar isn't one, since the map ends at its top edge, and nor
+// is the open tools' stack, so opening it doesn't reshuffle the list.
 const SEEN_SHARE = .5;
 const coverEls = ['.cartouche', '.corner', '#notes'].map($);
 let covers = null;
@@ -3305,14 +3331,21 @@ const dropCovers = () => { covers = null; };
 if (window.ResizeObserver) { const ro = new ResizeObserver(dropCovers); coverEls.forEach(el => ro.observe(el)); }
 window.addEventListener('resize', dropCovers);
 $('#notes').addEventListener('transitionend', e => { if (e.target === e.currentTarget) { dropCovers(); scheduleHud(); } });
-function wordSeen(w, cs, OX, rects) {
+// Each letter's box as drawn at cells of cs pixels, in screen pixels from its
+// cell's centre. The atlas's tiles are whole device pixels, centred on cells.
+function glyphBoxesAt(cs) {
+  const f = glyphPx(Math.max(4, Math.round(cs * dpr))) / dpr;
+  return glyphBoxes().map(b => b.map(v => v * f));
+}
+function wordSeen(w, cs, OX, rects, boxes = glyphBoxesAt(cs)) {
   const [dx, dy] = DIRS[w.d], right = W - dock, len = w.w.length, need = Math.ceil(len * SEEN_SHARE);
   let seen = 0;
   letters: for (let i = 0; i < len; i++) {
     if (seen + len - i < need) return false;  // too few letters left to get there
     const sx = (w.x + dx * i + .5 - cam.x) * cs + OX, sy = (w.y + dy * i + .5 - cam.y) * cs + H / 2;
-    if (sx < 0 || sx >= right || sy < 0 || sy >= H) continue;
-    for (const c of rects) if (sx >= c.l && sx < c.r && sy >= c.t && sy < c.b) continue letters;
+    const [bl, bt, br, bb] = boxes[w.w.charCodeAt(i) - 65], l = sx + bl, t = sy + bt, r = sx + br, b = sy + bb;
+    if (l < 0 || r > right || t < 0 || b > H) continue;
+    for (const c of rects) if (r > c.l && l < c.r && b > c.t && t < c.b) continue letters;
     if (++seen >= need) return true;
   }
   return false;
@@ -3370,13 +3403,13 @@ function updateLegend() {
   }
   const OX = (W - dock) / 2;
   const vx0 = cam.x - OX / cs, vx1 = cam.x + (W - dock - OX) / cs, vy0 = cam.y - H / 2 / cs, vy1 = cam.y + H / 2 / cs;
-  const items = [], rects = coverRects();
+  const items = [], rects = coverRects(), boxes = glyphBoxesAt(cs);
   let gone = 0;
   for (let cy = fdiv(Math.floor(vy0), CH); cy <= fdiv(Math.floor(vy1), CH); cy++) {
     for (let cx = fdiv(Math.floor(vx0), CH); cx <= fdiv(Math.floor(vx1), CH); cx++) {
       for (const w of chunk(cx, cy).words) {
         const [ex, ey] = wordEnd(w);
-        if (Math.max(w.x, ex) + 1 <= vx0 || Math.min(w.x, ex) >= vx1 || Math.max(w.y, ey) + 1 <= vy0 || Math.min(w.y, ey) >= vy1 || !wordSeen(w, cs, OX, rects)) continue;
+        if (Math.max(w.x, ex) + 1 <= vx0 || Math.min(w.x, ex) >= vx1 || Math.max(w.y, ey) + 1 <= vy0 || Math.min(w.y, ey) >= vy1 || !wordSeen(w, cs, OX, rects, boxes)) continue;
         if (taken(w.key)) { gone++; continue; }
         const mx = (w.x + ex) / 2 + .5 - cam.x, my = (w.y + ey) / 2 + .5 - cam.y;
         items.push({ w, dist: mx * mx + my * my });
