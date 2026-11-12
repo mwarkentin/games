@@ -155,6 +155,46 @@ def test_starts_before_every_day_has_arrived_and_waits_for_the_rest(page: Page, 
     assert errors == []
 
 
+def view_span(page: Page) -> float:
+    """How many cells wide the map's view is."""
+    return page.evaluate("innerWidth * Math.min(devicePixelRatio || 1, 2) / __tl.cam.s")
+
+
+def test_frames_where_the_charting_is_not_a_few_words_far_out(page: Page, site_url, errors):
+    # Someone charted two words 170 territories east and 224 north of everyone else, as on a preview.
+    far = [[f"FAR{i}AAA", 8186 + i * 9, -10719, 0, 0, "", (DAY - 1) * DAY_MS + 9 * HOUR_MS + 30_000 + i, theme(8186 + i * 9, -10719)]
+           for i in range(2)]
+    page.set_viewport_size({"width": 375, "height": 740})
+    fake = FakeSurveyLog(WORDS + far, PLACES, {}, totals={"0,0": 12})
+    open_timelapse(page, site_url, fake)
+    page.wait_for_function("__tl.loaded.days === 3")
+    page.locator("#play").click()
+    page.locator("#scrub").fill("1000")
+    expect(page.locator("#nWords")).to_have_text("24")
+    page.wait_for_timeout(100)
+    # Everyone else is within a few territories; the far words stay on the map, off screen.
+    assert view_span(page) < 8 * 48
+    cam = page.evaluate("__tl.cam")
+    assert -3 * 48 < cam["x"] < 2 * 48 and -48 < cam["y"] < 3 * 48, cam
+    assert errors == []
+
+
+def test_frames_a_second_cluster_once_it_has_real_charting(page: Page, site_url, errors):
+    # Thirty words far out are charting in their own right: the camera takes them in.
+    far = [[f"FAR{i:02d}AAA", 8186 + i % 40, -10719 + i, 0, 0, "", DAY * DAY_MS + 14 * HOUR_MS + i * 1000, theme(8186 + i % 40, -10719 + i)]
+           for i in range(30)]
+    page.set_viewport_size({"width": 375, "height": 740})
+    fake = FakeSurveyLog(WORDS + far, PLACES, {}, totals={"0,0": 12})
+    open_timelapse(page, site_url, fake)
+    page.wait_for_function("__tl.loaded.days === 3")
+    page.locator("#play").click()
+    page.locator("#scrub").fill("1000")
+    expect(page.locator("#nWords")).to_have_text("52")
+    page.wait_for_timeout(100)
+    assert view_span(page) > 8000
+    assert errors == []
+
+
 def test_follows_a_busy_days_pages(page: Page, site_url, errors):
     fake = fake_log(timelapse_page=5)
     open_timelapse(page, site_url, fake)

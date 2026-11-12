@@ -198,6 +198,9 @@ const PLAY_S = 40;             // seconds the whole history plays in at 1×
 const GLOW_S = 1.4;            // seconds a newly charted word glows for
 const FLARE_S = 3.4;           // seconds a supernova's flare lasts
 const MIN_SPAN = 3 * RC;       // the camera never shows less than three territories across
+const LINK = 8;                // territories this close (in territories) are one cluster of charting
+const CLUSTER_MIN = [12, 0.05];  // a cluster the camera frames besides the biggest: this many words, and this share of all
+const EASE = 1.4;              // how quickly the camera follows, per second
 const FETCHES = 3;             // days loaded at once
 const VIDEO_PX = 1080;         // a saved video is square, this many pixels a side,
 const VIDEO_S = 24;            // the whole history in this many seconds,
@@ -283,6 +286,7 @@ function timeline(index) {
   H0 = hours[0][0]; NH = hours.at(-1)[0] - H0 + 1;
   wt = new Float64Array(NH).fill(QUIET); hourWords = new Float64Array(NH);
   for (const [h, n] of hours) { wt[h - H0] = 1; hourWords[h - H0] = n; }
+  kfEvery = Math.max(1, Math.ceil(hours.reduce((a, h) => a + h[1], 0) / 1500));
   cum = new Float64Array(NH + 1);
   for (let i = 0; i < NH; i++) cum[i + 1] = cum[i] + wt[i];
   P = cum[NH]; T0 = H0 * HOUR; T1 = (H0 + NH) * HOUR;
@@ -345,8 +349,56 @@ const NV = [];            // supernovas: [at, rx, ry, th], oldest first
 const dayStart = [];      // index into W where each loaded day starts, with its day
 let days = [], nextDay = 0, taken = 0, loadedUntil = 0, failures = 0;
 const got = new Map();    // day -> its words and supernovas, until it's taken in order
-let bx0 = Infinity, by0 = Infinity, bx1 = -Infinity, by1 = -Infinity;
-const pre = { x0: [], y0: [], x1: [], y1: [] };  // the charted area after each word
+
+// Where the charting is, for the camera. Territories with words join into
+// clusters, any two within LINK territories of each other, kept in a
+// union-find as words arrive (they only ever join). The camera frames the
+// biggest cluster and any other with real charting in it, so a few words
+// someone charted far out in the endless map don't shrink everything else to
+// a dot. What it frames is kept as a keyframe every few words.
+const terr = new Map(), buckets = new Map(), clusters = new Set();
+const kf = { n: [], x0: [], y0: [], x1: [], y1: [] };
+let kfEvery = 1;
+function root(a) { while (a.up !== a) { a.up = a.up.up; a = a.up; } return a; }
+function join(a, b) {
+  a = root(a); b = root(b);
+  if (a === b) return a;
+  if (a.n < b.n) [a, b] = [b, a];
+  b.up = a; clusters.delete(b);
+  a.n += b.n; a.last = Math.max(a.last, b.last);
+  a.x0 = Math.min(a.x0, b.x0); a.y0 = Math.min(a.y0, b.y0); a.x1 = Math.max(a.x1, b.x1); a.y1 = Math.max(a.y1, b.y1);
+  return a;
+}
+function cluster(x, y, at) {
+  const rx = fdiv(x, RC), ry = fdiv(y, RC), k = rx + ',' + ry;
+  let t = terr.get(k);
+  if (!t) {
+    t = { rx, ry, n: 0, last: at, x0: rx, y0: ry, x1: rx, y1: ry };
+    t.up = t; terr.set(k, t); clusters.add(t);
+    const bx = fdiv(rx, LINK), by = fdiv(ry, LINK);
+    for (let i = -1; i <= 1; i++) for (let j = -1; j <= 1; j++) {
+      for (const m of buckets.get((bx + i) + ',' + (by + j)) || []) {
+        if (Math.max(Math.abs(m.rx - rx), Math.abs(m.ry - ry)) <= LINK) join(t, m);
+      }
+    }
+    const bk = bx + ',' + by;
+    if (!buckets.has(bk)) buckets.set(bk, []);
+    buckets.get(bk).push(t);
+  }
+  const r = root(t);
+  r.n++; r.last = at;
+}
+function keyframe() {
+  const thr = Math.max(CLUSTER_MIN[0], CLUSTER_MIN[1] * W.length);
+  let best = null;
+  for (const c of clusters) if (!best || c.n > best.n || (c.n === best.n && c.last > best.last)) best = c;
+  let x0 = best.x0, y0 = best.y0, x1 = best.x1, y1 = best.y1;
+  for (const c of clusters) {
+    if (c === best || c.n < thr) continue;
+    x0 = Math.min(x0, c.x0); y0 = Math.min(y0, c.y0); x1 = Math.max(x1, c.x1); y1 = Math.max(y1, c.y1);
+  }
+  kf.n.push(W.length); kf.x0.push(x0); kf.y0.push(y0); kf.x1.push(x1); kf.y1.push(y1);
+}
 async function loadDay(day) {
   const words = [], novas = [];
   let after = null;
@@ -375,12 +427,12 @@ function take() {
     const day = days[taken], { words, novas } = got.get(day), base = day * DAY;
     got.delete(day);
     dayStart.push([W.length, day]);
-    for (const w of words) {
-      const [t, x, y, d, len] = w, ex = x + DIRS[d][0] * (len - 1), ey = y + DIRS[d][1] * (len - 1);
-      bx0 = Math.min(bx0, x, ex); by0 = Math.min(by0, y, ey); bx1 = Math.max(bx1, x, ex); by1 = Math.max(by1, y, ey);
-      pre.x0.push(bx0); pre.y0.push(by0); pre.x1.push(bx1); pre.y1.push(by1);
+    words.forEach((w, i) => {
+      const [t, x, y, d, len] = w;
       W.push([base + t, x, y, d, len, w[5], w[6]]);
-    }
+      cluster(x, y, base + t);
+      if (W.length === 1 || W.length % kfEvery === 0 || i === words.length - 1) keyframe();
+    });
     for (const n of novas) NV.push([base + n[0], n[1], n[2], n[3]]);
     taken++;
     loadedUntil = taken < days.length ? days[taken] * DAY : Infinity;
@@ -471,23 +523,21 @@ function countTo(n) {
   while (counted < n) { const w = W[counted++]; if (!w[6]) { const k = fdiv(w[1], RC) + ',' + fdiv(w[2], RC); counts.set(k, (counts.get(k) || 0) + 1); } }
   while (counted > n) { const w = W[--counted]; if (!w[6]) { const k = fdiv(w[1], RC) + ',' + fdiv(w[2], RC), c = counts.get(k) - 1; if (c) counts.set(k, c); else counts.delete(k); } }
 }
-// What the camera should show at time t: everything charted by then, a
-// little more around it, and never less than a few territories.
-function target(t, n, view) {
+// What the camera should show after the first n words: the territories
+// where the charting is by then (see keyframe), a little more around them,
+// and never less than a few territories.
+function target(n, view) {
   let x0, y0, x1, y1;
-  if (n > 0) { x0 = pre.x0[n - 1]; y0 = pre.y0[n - 1]; x1 = pre.x1[n - 1] + 1; y1 = pre.y1[n - 1] + 1; }
-  else if (W.length) { const w = W[0]; x0 = w[1]; y0 = w[2]; x1 = x0 + 1; y1 = y0 + 1; }
-  else if (idx && idx.bounds) { const b = idx.bounds; x0 = b[0] * RC; y0 = b[1] * RC; x1 = (b[2] + 1) * RC; y1 = (b[3] + 1) * RC; }
+  let lo = 0, hi = kf.n.length - 1;
+  while (lo < hi) { const m = (lo + hi + 1) >> 1; if (kf.n[m] <= n) lo = m; else hi = m - 1; }
+  if (kf.n.length) { x0 = kf.x0[lo] * RC; y0 = kf.y0[lo] * RC; x1 = (kf.x1[lo] + 1) * RC; y1 = (kf.y1[lo] + 1) * RC; }
   else { x0 = 0; y0 = 0; x1 = RC; y1 = RC; }
-  for (let i = 0, m = upto(NV, t); i < m; i++) {
-    const q = NV[i]; x0 = Math.min(x0, q[1] * RC); y0 = Math.min(y0, q[2] * RC); x1 = Math.max(x1, (q[1] + 1) * RC); y1 = Math.max(y1, (q[2] + 1) * RC);
-  }
-  const w = Math.max(MIN_SPAN, (x1 - x0) * 1.3), h = Math.max(MIN_SPAN, (y1 - y0) * 1.3);
+  const w = Math.max(MIN_SPAN, (x1 - x0) * 1.15), h = Math.max(MIN_SPAN, (y1 - y0) * 1.15);
   return { x: (x0 + x1) / 2, y: (y0 + y1) / 2, s: Math.min(view.w / w, view.h / h) };
 }
 function moveCam(cam, to, dt, jump) {
   if (jump || !cam.ok || RM) { cam.x = to.x; cam.y = to.y; cam.s = to.s; cam.ok = true; return; }
-  const k = 1 - Math.exp(-dt * 2.2);
+  const k = 1 - Math.exp(-dt * EASE);
   cam.x += (to.x - cam.x) * k; cam.y += (to.y - cam.y) * k;
   cam.s = Math.exp(Math.log(cam.s) + (Math.log(to.s) - Math.log(cam.s)) * k);
 }
@@ -522,7 +572,7 @@ function wordPaths(from, to) {
 function draw(g, view, cam, p, opts) {
   const t = timeAt(p), n = upto(W, t), nNova = upto(NV, t);
   countTo(n);
-  moveCam(cam, target(t, n, view), opts.dt, opts.jump);
+  moveCam(cam, target(n, view), opts.dt, opts.jump);
   const { width: CW, height: CH } = g.canvas, s = cam.s;
   const ox = view.x + view.w / 2 - cam.x * s, oy = view.y + view.h / 2 - cam.y * s;
   g.setTransform(1, 0, 0, 1, 0, 0);
