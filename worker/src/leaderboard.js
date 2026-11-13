@@ -25,6 +25,11 @@ const LIMITS = {
   score: { max: 10, windowMs: 10 * 60 * 1000 },  // saves per IP address
   group: { max: 5, windowMs: HOUR },             // new groups per IP address
   room: { max: 20, windowMs: HOUR },             // new War rooms per IP address (see war.js)
+  guild: { max: 5, windowMs: HOUR },             // new Letterfield guilds per IP address (see survey-guild.js)
+  guildJoin: { max: 20, windowMs: HOUR },        // guilds joined per IP address
+  link: { max: 10, windowMs: HOUR },             // codes made to link another device (see players.js)
+  linkTry: { max: 20, windowMs: HOUR },          // codes tried, right or wrong, recovery codes included
+  recovery: { max: 5, windowMs: HOUR },          // recovery codes made
 };
 
 const PUBLIC = '*';
@@ -33,8 +38,13 @@ export const CODE_ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
 export const CODE = /^[A-HJKMNP-Z2-9]{4}$/;
 const GROUP_NAME = /^[\p{L}\p{N}][\p{L}\p{N} '&.,!-]{0,23}$/u;
 export const INITIALS = /^[A-Z]{3}$/;
+// Initials nobody gets to show: a top 10 and Letterfield's list of everyone
+// surveying put them in front of every player, so the list covers the
+// common obscenities and slurs that three letters can spell, and no more:
+// every combination left out is also someone's real initials.
 export const BLOCKED_INITIALS = new Set([
   'ASS', 'CUM', 'DIC', 'DIK', 'FAG', 'FCK', 'FUC', 'FUK', 'KKK', 'NIG', 'SEX', 'SHT', 'TIT', 'WTF', 'XXX',
+  'CNT', 'COC', 'COK', 'DIX', 'FAP', 'FGT', 'FKU', 'FUQ', 'JAP', 'JIZ', 'KYS', 'NGA', 'NGR', 'PNS', 'TWT', 'VAG', 'WOP',
 ]);
 
 const isInt = (value, min, max) => Number.isInteger(value) && value >= min && value <= max;

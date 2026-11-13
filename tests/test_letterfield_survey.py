@@ -53,6 +53,7 @@ def open_game(page: Page, site_url: str, fake: FakeSurvey | None, query: str = "
     if fake:
         page.route_web_socket(re.compile(r"^wss://survey\.test/"), fake.handle)
         page.route(f"{SURVEY}/v1/survey/world", fake.handle_world)
+        page.route(f"{SURVEY}/v1/survey/surveyors*", fake.handle_list)
         page.goto(f"{site_url}/letterfield?survey={SURVEY}{query}#debug")
     else:
         without_worker(page, site_url, "letterfield")  # SURVEY_URL blanked: playing alone
@@ -64,6 +65,21 @@ def open_game(page: Page, site_url: str, fake: FakeSurvey | None, query: str = "
 def open_notes(page: Page) -> None:
     if page.locator("#notes").is_hidden():
         page.click("#notesToggle")
+
+
+def open_people(page: Page) -> None:
+    """Opens the surveyors' drawer: the list, with you at the top."""
+    if page.locator("#people").is_hidden():
+        page.click("#peopleBtn")
+    expect(page.locator("#people")).to_be_visible()
+
+
+def open_you(page: Page) -> None:
+    """Opens the surveyors' drawer on your page: your initials, guild, switches and devices."""
+    open_people(page)
+    if page.locator("#peopleYou").is_hidden():
+        page.click("#youRow")
+    expect(page.locator("#peopleYou")).to_be_visible()
 
 
 def hidden_words(page: Page) -> list[list]:
@@ -252,7 +268,7 @@ def test_signing_initials_tells_every_sector(page: Page, site_url, errors):
     fake = FakeSurvey()
     open_game(page, site_url, fake)
     expect(page.locator("#survey")).to_have_attribute("data-state", "live")
-    open_notes(page)
+    open_you(page)
     page.locator("#surveyInitials").press_sequentially("z3ed")
     expect(page.locator("#surveyInitials")).to_have_value("ZED")
     page.click("#surveySign button[type=submit]")
@@ -265,7 +281,7 @@ def test_signing_initials_tells_every_sector(page: Page, site_url, errors):
     # Next time, the game signs in with them straight away.
     fake.received.clear()
     page.reload()
-    open_notes(page)
+    open_you(page)
     expect(page.locator("#surveyMe")).to_be_visible()
     expect(page.locator("#surveyMeName")).to_have_text("ZED")
     expect(page.locator("#surveySign")).to_be_hidden()
@@ -282,18 +298,18 @@ def test_the_pencil_changes_your_initials(page: Page, site_url, errors):
     page.add_init_script("localStorage.setItem('games.initials', JSON.stringify('MLW'))")
     open_game(page, site_url, fake)
     expect(page.locator("#survey")).to_have_attribute("data-state", "live")
-    open_notes(page)
+    open_you(page)
     expect(page.locator("#surveyMe")).to_have_text(re.compile(r"Surveyor\s*MLW"))
     expect(page.locator("#surveySign")).to_be_hidden()
 
-    # Escape puts the pencil back without changing anything, and leaves the notes open.
+    # Escape puts the pencil back without changing anything, and leaves the drawer open.
     page.click("#surveyEdit")
     expect(page.locator("#surveyInitials")).to_be_focused()
     expect(page.locator("#surveyInitials")).to_have_value("MLW")
     page.keyboard.press("Escape")
     expect(page.locator("#surveySign")).to_be_hidden()
     expect(page.locator("#surveyEdit")).to_be_focused()
-    expect(page.locator("#notes")).to_be_visible()
+    expect(page.locator("#people")).to_be_visible()
 
     # Three letters or nothing; then the new ones go to every sector.
     page.click("#surveyEdit")
@@ -809,9 +825,9 @@ def test_hovering_names_surveyors_and_who_charted_a_word(page: Page, site_url, e
     # The caret sits in the gap beside the cell in the middle of their view.
     page.mouse.move(*page.evaluate(SCREEN_OF, [10, 7.5]))
     expect(peek).to_be_visible()
-    expect(peek).to_have_text("KIDsurveying here")
+    expect(peek).to_have_text("KIDsurveying here · right-click for emotes")
     page.mouse.move(*page.evaluate(SCREEN_OF, [3, 9.5]))
-    expect(peek).to_have_text("A surveyorsurveying here")  # odd initials never reach the page
+    expect(peek).to_have_text("A surveyorsurveying here · right-click for emotes")  # odd initials never reach the page
 
     # A charted word names who got there first.
     dirs = [[1, 0], [1, 1], [0, 1], [-1, 1], [-1, 0], [-1, -1], [0, -1], [1, -1]]

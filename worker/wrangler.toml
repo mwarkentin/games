@@ -61,6 +61,18 @@ class_name = "Sector"
 name = "ATLAS"
 class_name = "Atlas"
 
+# Letterfield's guilds: one Durable Object per guild, named by its code (see
+# "Guilds" in SURVEY.md).
+[[durable_objects.bindings]]
+name = "GUILDS"
+class_name = "Guild"
+
+# One player's notes, kept for the devices they've linked: one Durable Object
+# per player id (see "Syncing linked devices" in SURVEY.md).
+[[durable_objects.bindings]]
+name = "PLAYERS"
+class_name = "Player"
+
 # Migrations run once each, in order, and a deployed tag can't change: add a
 # new tag for each new class.
 [[migrations]]
@@ -70,6 +82,14 @@ new_sqlite_classes = ["WarRoom"]
 [[migrations]]
 tag = "v2"
 new_sqlite_classes = ["Sector", "Atlas"]
+
+[[migrations]]
+tag = "v3"
+new_sqlite_classes = ["Guild"]
+
+[[migrations]]
+tag = "v4"
+new_sqlite_classes = ["Player"]
 
 # Letterfield's survey limits each player's address, hashed with IP_SALT,
 # across every sector (see "Bots" in SURVEY.md). Counts are kept per
@@ -90,6 +110,17 @@ namespace_id = "7302"
 
   [ratelimits.simple]
   limit = 120
+  period = 60
+
+# Letterfield's emotes (src/survey-social.js): sent per address, from any
+# socket in any sector. Each socket's own limit and each recipient's sector's
+# limits (a few a minute from one sender) still hold.
+[[ratelimits]]
+name = "SURVEY_EMOTES"
+namespace_id = "7304"
+
+  [ratelimits.simple]
+  limit = 20
   period = 60
 
 # Letterfield's definitions (src/define.js): new words looked up on
@@ -146,6 +177,14 @@ class_name = "Sector"
 name = "ATLAS"
 class_name = "Atlas"
 
+[[previews.durable_objects.bindings]]
+name = "GUILDS"
+class_name = "Guild"
+
+[[previews.durable_objects.bindings]]
+name = "PLAYERS"
+class_name = "Player"
+
 # Counted apart from production's (Previews share these). The same limits,
 # except claims: 60 a minute rather than 6, so a test can chart a whole
 # territory in a few minutes. Each socket's own limit (CLAIM_BURST and
@@ -165,6 +204,14 @@ namespace_id = "7312"
 
   [previews.ratelimits.simple]
   limit = 120
+  period = 60
+
+[[previews.ratelimits]]
+name = "SURVEY_EMOTES"
+namespace_id = "7314"
+
+  [previews.ratelimits.simple]
+  limit = 20
   period = 60
 
 [[previews.ratelimits]]
