@@ -51,7 +51,43 @@ describe('parseView', () => {
       `/v/surveyor/ZED/hour/2026-11-10/${WEEK_FROM}-${WEEK_FROM + 1}`,  // an hour needs its hour
       `/v/surveyor/ZED/day/2026-11-20/${Date.UTC(2026, 10, 20, 5) / HOUR}-${Date.UTC(2026, 10, 21, 5) / HOUR}`,  // not started
       '/v/territory/1,2,3', '/v/surveyor/ZED', '/v/ZED/all',
+      '/v/guild/ZED/all', '/v/surveyor/c0ba17c0ba/all', '/v/theme/c0ba17c0ba/all',  // each kind's own key
+      '/v/guild/c0ba17c0/all', '/v/guild/ABCDEF/all',                     // a guild only by its log id, never its tag or code
     ]) assert.equal(parseView(path, NOW), null, path);
+  });
+});
+
+describe('a guild\'s card', () => {
+  const GUILD = { ...SLICE, name: 'Cobalt Compass Society', hue: 220, topSurveyors: [['KAT', 2], ['ZED', 1]] };
+
+  test('is named by its log id, and says what its members charted', () => {
+    const v = parseView(`/v/guild/c0ba17c0ba/${WEEK}`, NOW);
+    assert.deepEqual([v.kind, v.key, v.period], ['guild', 'c0ba17c0ba', 'week']);
+    assert.equal(parseView('/v/d/guild/c0ba17c0ba/all.png', NOW).png, true);
+    assert.equal(pagePath(v), '/letterfield-log?guild=c0ba17c0ba&period=week&day=2026-11-09');
+    assert.equal(logPaths(v, null, NOW), `/v1/survey/log/guild/c0ba17c0ba/${WEEK_FROM}/${WEEK_FROM + 168}`);
+    const s = summarize(v, GUILD, NOW);
+    assert.deepEqual([s.name, s.hue], ['Cobalt Compass Society', 220]);
+    assert.deepEqual(s.stats, [['Words charted first', '3'], ['Top member', 'KAT'], ['Top territory', 'Acorn Hollow']]);
+    assert.equal(s.line, 'The Cobalt Compass Society charted 3 words first in Letterfield’s shared survey in the week of 9 Nov 2026, most in Acorn Hollow.');
+    assert.equal(summarize(v, { ...GUILD, words: 0, entries: [], topTerritories: [] }, NOW).line,
+      'The Cobalt Compass Society charted no words in Letterfield’s shared survey in the week of 9 Nov 2026.');
+    const svg = viewSvg(v, s);
+    assert.ok(svg.includes('GUILD') && svg.includes('COBALT COMPASS SOCIETY'));
+  });
+
+  test('has a page and a card, unless the log has no name for the guild', async () => {
+    const path = `/v1/survey/log/guild/c0ba17c0ba/${WEEK_FROM}/${WEEK_FROM + 168}`;
+    renders = []; waits = []; delete globalThis.caches;
+    const realNow = Date.now; Date.now = () => NOW;
+    try {
+      const html = await (await get(`/v/guild/c0ba17c0ba/${WEEK}`, { SITE_URL: SITE, ...fakeLog({ [path]: GUILD }) })).text();
+      assert.equal(meta(html, 'og:title'), 'Cobalt Compass Society · Letterfield survey log');
+      assert.match(meta(html, 'og:image'), new RegExp(`^${SHARE}/v/guild/c0ba17c0ba/${WEEK}\\.png\\?s=`));
+      const unknown = await (await get(`/v/guild/c0ba17c0ba/${WEEK}`, { SITE_URL: SITE, ...fakeLog({ [path]: { ...GUILD, name: null, hue: null } }) })).text();
+      assert.equal(meta(unknown, 'og:title'), 'A guild · Letterfield survey log');
+      assert.equal(meta(unknown, 'og:image'), `${SITE}/previews/letterfield.jpg`);
+    } finally { Date.now = realNow; }
   });
 });
 

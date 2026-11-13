@@ -549,11 +549,11 @@ invite link. The code is `src/survey-guild.js`, hooks in `survey.js` and
   nothing more.
 
 ```
-POST /v1/survey/guilds                 {token, initials, name: [a, b, c]} → 201 {code, name, tag, members}
+POST /v1/survey/guilds                 {token, initials, name: [a, b, c]} → 201 {code, name, tag, lid, members}
 GET  /v1/survey/guilds/<code>          → {name, size}, for an invite to say what it's to
-POST /v1/survey/guilds/<code>/join     {token, initials} → {code, name, tag, members}
+POST /v1/survey/guilds/<code>/join     {token, initials} → {code, name, tag, lid, members}
 POST /v1/survey/guilds/<code>/leave    {token} → {ok: true}; the last to leave ends it
-POST /v1/survey/guilds/<code>/roster   {token} → {code, name, tag, members}, members only
+POST /v1/survey/guilds/<code>/roster   {token} → {code, name, tag, lid, members}, members only
   members: [[id, initials, seen], ...], most recently seen first
 ```
 
@@ -575,6 +575,8 @@ who isn't a member gets the same answer as a guild that doesn't exist.
 - **Off the list, but not to your guild.** A hidden member stays out of the
   public list but is still reported to their guild (flagged `FLAG_HIDDEN`),
   and takes emotes from mates anywhere: an emote carries its sender's tag.
+  Their words don't count for the guild in the survey log (see "Guilds"
+  under "The log").
 
 ### Who's online rides on the reports
 
@@ -616,9 +618,6 @@ every report. It costs no requests of its own.
   Worker (`aes128gcm` with Web Crypto), a `push` handler in `sw.js` and a
   permission prompt; on an iPhone only the Home Screen app gets it. Worth it
   once guilds are in use.
-- **A guild view in the log:** the guild's words charted needs each claim's
-  guild in the log (a column and an index, written by the sector, which knows
-  it at claim time).
 - **Running a guild.** There's no founder or removing a member: anyone can
   mute anyone, or leave and start another.
 - **One guild at a time** is the game's rule; the Worker doesn't know a
@@ -858,18 +857,21 @@ GET /v1/survey/log/month/<month> (month = UTC months since January 1970)
 GET /v1/survey/log/top/<from>/<to>   (UTC days from..to-1, at most 3,660)
   → {"from", "to", "surveyors": [[initials, words], ...10],
      "territories": [[rx, ry, name, th, words], ...10],
-     "themes": [[th, name, hue, words], ...], "hidden"}
+     "themes": [[th, name, hue, words], ...],
+     "guilds": [[lid, name, hue, words], ...10], "hidden"}
 GET /v1/survey/log/top/hours/<from>/<to>   (UTC hours from..to-1, at most 48)
   → the same, with "hours": true, for a day or an hour in the page's time zone
 GET /v1/survey/log/surveyor/<initials>/<from>/<to>   (UTC hours from..to-1)
 GET /v1/survey/log/theme/<th>/<from>/<to>
+GET /v1/survey/log/guild/<lid>/<from>/<to>
 GET /v1/survey/log/…/<from>/<to>?before=<at>~<key>
   → {"kind", "key", "from", "to", "words", "world",
      "hours": [[hour, words, world], ...],          hours with none left out
      "topTerritories": [[rx, ry, name, th, words], ...10],
-     "topThemes": [[th, name, hue, words], ...]     a surveyor's
-     "topSurveyors": [[initials, words], ...10]     a theme's
-     "name", "hue"                                  a theme's
+     "topThemes": [[th, name, hue, words], ...]     a surveyor's or guild's
+     "topSurveyors": [[initials, words], ...10]     a theme's or guild's
+     "name", "hue"                                  a theme's or guild's (a guild's null
+                                                    while the log has no name for it)
      "entries", "places", "themes", "next"}         newest first, 100 a page
 GET /v1/survey/log/territory/<rx>/<ry>
   → {"rx", "ry", "name", "th", "total", "charted",
@@ -997,6 +999,7 @@ address says what it is, so it can be shared or bookmarked:
 | --- | --- | --- | --- |
 | a surveyor | `?surveyor=ZED` | all of them, all time first | words signed ZED: chart, top territories and themes, the words by day |
 | a theme | `?theme=<n>` | all of them, all time first | hidden words in its territories: chart, top surveyors and territories, the words |
+| a guild | `?guild=<log id>` | all of them, all time first | words its members charted while in it: chart, members who charted most, top territories and themes, the words (see "Guilds" below) |
 | a territory | `?territory=<rx>,<ry>` | none: all time | how many of its hidden words are charted (a meter), top surveyors, every word, and a link to fly there |
 
 A surveyor's or theme's view opened from a period keeps it, so ZED from this
@@ -1038,6 +1041,70 @@ each, so even fully charted that's a short list, and the Worker counts its
 hidden words from the map. Settled ranges are cached for a day, as
 elsewhere; a running one for 15 seconds, or 2 minutes over more than two
 days, and a territory for 15 seconds.
+
+### Guilds
+
+A guild's words have a view of their own, and each period's top lists a
+**Top guilds** card after the top surveyors, once anyone has charted in a
+guild in it. A guild's page in the game (your page in the Surveyors drawer)
+links to its view, "Our words in the survey log". The code is
+`migrations-log/0007_survey_log_guilds.sql`, the guild parts of
+`src/survey-log.js` and `src/survey-guild.js`, and `noteGuild` and
+`flushLog` in `src/survey.js`.
+
+| | (a) top guilds only | (b) a guild's own view, and top guilds (chosen) | (c) the timelapse following a guild |
+| --- | --- | --- | --- |
+| what | a Top guilds card, with nowhere to go from it | (a), and each guild's words as a view like a surveyor's | one guild's words bright, everyone else's faint |
+| D1 rows a guild word | +1 (its day's count) | +2 (and the index of its words) | none past (b)'s |
+| for | cheapest | a guild sees its own work; members find it from the game | a guild's spread across the map, at a glance |
+| against | a dead end | an index | needs (b)'s index; a follow-up |
+
+**What a guild is in the log.** Each word carries the guild its charter was
+in when they charted it, by the guild's **log id**: a third random id (ten
+hex digits), apart from the code that invites and the tag carets wear. With
+the tag, anyone could match a guild's public page to the carets on the map
+wearing it; with a log id of its own, the page says what a guild charted and
+nothing about who is where. The guild makes it with itself, or, for one made
+before, the first time it's asked; the game learns it with the roster.
+
+**Who counts.** A sector knows at claim time whether the player is in a
+guild (their tag, which the guild confirmed), its log id and name (from the
+same check, `POST /check`, which now answers `{tag, lid, name}`), and whether
+they're off the surveyor list. A member off the list logs no guild: the
+log already shows every word with its initials, so a word counted for the
+guild as "a mate" would name them to anyone who matched its time in
+everyone's view. Words keep the guild they were charted in: leaving a guild
+takes nothing back, and words from before this have none. Your page in the
+game says so under the guild.
+
+**Names are public now.** Before, only mates saw their guild's name. A
+guild's name is three words from fixed lists, so it says nothing about
+anyone, but two guilds can share one: each has its own log id, so the top
+list and the view keep them apart, and nothing else in the log tells them
+apart. The Worker keeps the lists (`GUILD_FIRST`, `GUILD_SECOND`,
+`GUILD_THIRD`, with the first word's hue), and a test checks the game's
+match. A guild that ends keeps its name and words in the log.
+
+**In D1.** A `guild` column on `survey_log` ('' for none), a partial index
+`survey_log_by_guild (guild, at)` of guild words only, a daily count per
+guild kept by triggers (`survey_log_guild_days`) for the top lists, and
+`survey_log_guilds`, each guild's name as three numbers, which a sector sends
+with its first claims for that guild (it keeps the names in `guild_names`,
+written once per guild per sector). A view is a slice like a surveyor's,
+through its index; top guilds over days read the daily counts, and over
+hours the log's own rows in time order, as top surveyors do.
+
+**Cost.** A word in a guild writes two more D1 rows (the index and the
+day's count), so up to nine; a word in none, nothing more, since the column
+is on the row already written. A guild's name is one row, once. At a busy
+day's 30,000 words with a third in guilds, that's 20,000 more rows written,
+next to the 50 million included a month. Reading a guild's view costs what a
+surveyor's does; top guilds add a few hundred rows of daily counts to a long
+period's top lists.
+
+The guild's view and its share card are named by the log id
+(`/v/guild/<lid>/…`, in `share/src/view.js`); a guild the log has no name
+for gets the game's own preview.
 
 ### Supernovas
 
@@ -1264,7 +1331,8 @@ to it.
 On Workers Paid, per word charted: up to seven D1 rows written (the log's
 row, an update each to the hour's, the surveyor's and the territory's
 counts, and a row in each of the three indexes; no initials or a stray word
-skips two), one more row written in the sector (its time index), and a
+skips two), and two more for a word charted in a guild (its index and its
+day's count; see "Guilds" under "The log"), one more row written in the sector (its time index), and a
 share of an alarm. A supernova, once per territory (10,000 in the shared
 world), adds two rows written in its sector (the row and marking it sent)
 and two in D1 (the row and its index on time), and reads its territory's

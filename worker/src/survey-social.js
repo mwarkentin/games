@@ -39,6 +39,7 @@ export const PID = /^[0-9a-f]{12}$/;     // a player, as everyone else knows the
 export const TOKEN = /^[0-9a-f]{32}$/;   // the secret the game keeps, which only it and the sectors see
 export const GUILD_CODE = /^[A-HJKMNP-Z2-9]{6}$/;  // a guild's secret code: groups' alphabet, two letters longer (survey-guild.js)
 export const GUILD_TAG = /^[0-9a-f]{8}$/;          // a guild as anyone can see it: a random id
+export const GUILD_LOG_ID = /^[0-9a-f]{10}$/;      // a guild in the survey log: another random id, never its tag
 // The emotes, in the order the game shows them. Fixed drawings, never text:
 // see "The emotes" in SURVEY.md for why each is here and what was left out.
 export const EMOTES = ['wave', 'thanks', 'nice', 'clap', 'great', 'here', 'what'];
@@ -81,7 +82,7 @@ export function takeMe(me, msg) {
   let changed = hide !== !!me.hide || quiet !== !!me.quiet || guild !== (me.guild ?? null);
   me.hide = hide;
   me.quiet = quiet;
-  if (guild !== (me.guild ?? null)) { me.guild = guild; me.tag = null; me.guildAt = 0; }
+  if (guild !== (me.guild ?? null)) { me.guild = guild; me.tag = null; me.lid = null; me.guildAt = 0; }
   if (me.pid || typeof msg.token !== 'string' || !TOKEN.test(msg.token)) return changed;
   return playerId(msg.token).then((pid) => {
     if (!me.pid) { me.pid = pid; changed = true; }

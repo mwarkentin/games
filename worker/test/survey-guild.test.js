@@ -10,7 +10,11 @@ import { afterEach, beforeEach, describe, mock, test } from 'node:test';
 
 import worker from '../src/index.js';
 import { Atlas, ONLINE_MS, REPORT_MS, SECTOR, Sector } from '../src/survey.js';
-import { GUILD_CODE, GUILD_MAX, GUILD_RECHECK_MS, GUILD_WORDS, Guild, SEEN_MS, idleShown, matesFor, noteMates, passMates } from '../src/survey-guild.js';
+import { chunk } from '../src/letterfield-world.js';
+import {
+  GUILD_CODE, GUILD_FIRST, GUILD_LOG_ID, GUILD_MAX, GUILD_RECHECK_MS, GUILD_SECOND, GUILD_THIRD, GUILD_WORDS, Guild, SEEN_MS,
+  idleShown, matesFor, noteMates, passMates,
+} from '../src/survey-guild.js';
 import { FLAG_HIDDEN, REFRESH_MS, playerId, snapshot } from '../src/survey-social.js';
 
 const ORIGIN = 'https://games.michaelwarkentin.com';
@@ -18,6 +22,7 @@ const NOW = Date.UTC(2026, 10, 13, 12);
 const token = (n) => n.toString(16).padStart(32, '0');
 const settle = async () => { for (let i = 0; i < 5; i++) await new Promise((resolve) => setImmediate(resolve)); };
 const MIGRATIONS = new URL('../migrations/', import.meta.url);
+const LOG_MIGRATIONS = new URL('../migrations-log/', import.meta.url);
 
 function fakeState() {
   const db = new DatabaseSync(':memory:');
@@ -25,7 +30,7 @@ function fakeState() {
   return {
     db,
     sockets,
-    storage: { sql: { exec(query, ...b) { const rows = db.prepare(query).all(...b); return { toArray: () => rows, one: () => rows[0] }; } } },
+    storage: { sql: { exec(query, ...b) { const rows = db.prepare(query).all(...b); return { toArray: () => rows, one: () => rows[0] }; } }, setAlarm() {} },
     acceptWebSocket: (ws) => sockets.push(ws),
     getWebSockets: () => sockets.filter((ws) => ws.open),
   };
@@ -58,10 +63,22 @@ function fakeD1() {
   return { prepare: (sql) => statement(sql) };
 }
 
+// The survey log's D1, with its migrations, as much as sectors write to it.
+function fakeLogD1() {
+  const db = new DatabaseSync(':memory:');
+  for (const file of readdirSync(LOG_MIGRATIONS).sort()) db.exec(readFileSync(new URL(file, LOG_MIGRATIONS), 'utf8'));
+  const statement = (sql, params = []) => ({ bind: (...values) => statement(sql, values), run: () => db.prepare(sql).run(...params) });
+  return {
+    raw: db,
+    prepare: (sql) => statement(sql),
+    async batch(statements) { db.exec('BEGIN'); for (const st of statements) st.run(); db.exec('COMMIT'); },
+  };
+}
+
 // Sectors, an Atlas and guilds that reach each other, as the runtime's bindings would.
-function world({ db = null } = {}) {
+function world({ db = null, log = null } = {}) {
   const clock = { now: NOW }, sectors = new Map(), guilds = new Map();
-  const env = { ALLOWED_ORIGINS: ORIGIN, ...(db ? { DB: db } : {}) };
+  const env = { ALLOWED_ORIGINS: ORIGIN, ...(db ? { DB: db } : {}), ...(log ? { LOG_DB: log } : {}) };
   const atlas = new Atlas(fakeState(), env);
   atlas.now = () => clock.now;
   const guildAt = (name) => {
@@ -104,9 +121,29 @@ describe('a guild', () => {
     assert.equal(status, 201);
     assert.match(g.code, GUILD_CODE);
     assert.match(g.tag, /^[0-9a-f]{8}$/);
+    // Its id in the survey log is another random one, so its page there says nothing of whose carets are whose.
+    assert.match(g.lid, GUILD_LOG_ID);
+    assert.notEqual(g.lid.slice(0, 8), g.tag);
     assert.deepEqual(g.name, [3, 15, 7]);
     assert.deepEqual(g.members, [[await playerId(token(1)), 'ONE', NOW]]);
     assert.deepEqual(await w.call(`/v1/survey/guilds/${g.code}`), [200, { name: [3, 15, 7], size: 1 }]);
+  });
+
+  test('made before the log knew guilds, gets a log id the next time it is asked, and keeps it', async () => {
+    const g = await w.make();
+    const sql = w.guildAt(g.code).sql;
+    // As a guild from before: no lid column at all.
+    sql.exec('ALTER TABLE guild DROP COLUMN lid');
+    w.guildAt(g.code).lidReady = false;
+    const roster = async () => (await w.call(`/v1/survey/guilds/${g.code}/roster`, { token: token(1) }))[1];
+    const first = await roster();
+    assert.match(first.lid, GUILD_LOG_ID);
+    assert.equal((await roster()).lid, first.lid);
+    assert.equal(sql.exec('SELECT lid FROM guild').one().lid, first.lid);
+    // And the code is free again once it ends, for a guild with its own lid.
+    await w.call(`/v1/survey/guilds/${g.code}/leave`, { token: token(1) });
+    const again = await w.make(2, 'TWO', [1, 1, 1]);
+    assert.notEqual(again.lid, first.lid);
   });
 
   test('takes nobody it cannot name, and no name off the lists', async () => {
@@ -267,14 +304,64 @@ test("the Atlas's index of who's online forgets sectors that stop reporting", ()
   assert.deepEqual([0, 19, 20, 59, 60, 119, 120, 3601].map(idleShown), [0, 0, 20, 20, 60, 60, 120, 3600]);
 });
 
-test("the game's lists of words for names are as long as the Worker allows", () => {
+test("the game's lists of words for names, and the first word's hues, are the Worker's", () => {
   const html = readFileSync(new URL('../../letterfield.html', import.meta.url), 'utf8');
   const list = (name) => {
-    const m = html.match(new RegExp(`const ${name} = \\[([\\s\\S]*?)\\];`));
+    const m = html.match(new RegExp(`const ${name} = (\\[[\\s\\S]*?\\]);\\n`));
     assert.ok(m, `letterfield.html lost ${name}`);
-    return [...m[1].matchAll(/\[?'([A-Za-z]+)'/g)].map((w) => w[1]);
+    return JSON.parse(m[1].replace(/'/g, '"'));
   };
-  const lists = ['GUILD_FIRST', 'GUILD_SECOND', 'GUILD_THIRD'].map(list);
-  assert.deepEqual(lists.map((l) => l.length), GUILD_WORDS);
-  for (const l of lists) assert.equal(new Set(l).size, l.length, 'a word twice');
+  assert.deepEqual(list('GUILD_FIRST'), GUILD_FIRST);
+  assert.deepEqual(list('GUILD_SECOND'), GUILD_SECOND);
+  assert.deepEqual(list('GUILD_THIRD'), GUILD_THIRD);
+  assert.deepEqual([GUILD_FIRST, GUILD_SECOND, GUILD_THIRD].map((l) => l.length), GUILD_WORDS);
+  for (const l of [GUILD_FIRST.map((w) => w[0]), GUILD_SECOND, GUILD_THIRD]) assert.equal(new Set(l).size, l.length, 'a word twice');
+});
+
+describe("members' words in the survey log", () => {
+  let w, g, log;
+  beforeEach(async () => {
+    mock.timers.enable({ apis: ['setTimeout'] });
+    log = fakeLogD1();
+    w = world({ log });
+    g = await w.make(1, 'ONE', [11, 0, 0]);
+    await w.call(`/v1/survey/guilds/${g.code}/join`, { token: token(2), initials: 'TWO' });
+  });
+  afterEach(() => mock.timers.reset());
+
+  const word = (n) => { const { w: word, x, y, d } = chunk(n, 0).words[0]; return { w: word, x, y, d }; };
+  const claim = async (p, n) => { w.clock.now += 2000; await p.say({ t: 'claim', ...word(n) }); };
+  const logged = () => log.raw.prepare('SELECT w, initials, guild FROM survey_log ORDER BY at').all().map((r) => [r.w, r.initials, r.guild]);
+
+  test("count for the guild a member was in, by its log id, never for a hidden member or anyone else", async () => {
+    const one = await w.player(0, 0, { id: 1, initials: 'ONE', guild: g.code, x: 5, y: 5 });
+    const two = await w.player(0, 0, { id: 2, initials: 'TWO', guild: g.code, hide: true, x: 6, y: 6 });
+    const pretender = await w.player(0, 0, { id: 9, initials: 'NOT', guild: g.code, x: 9, y: 9 });
+    const loner = await w.player(0, 0, { id: 8, initials: 'SOL', x: 8, y: 8 });
+    await claim(one, 0);
+    await claim(two, 1);
+    await claim(pretender, 2);
+    await claim(loner, 3);
+    await one.sector.alarm();
+    assert.deepEqual(logged(), [[word(0).w, 'ONE', g.lid], [word(1).w, 'TWO', ''], [word(2).w, 'NOT', ''], [word(3).w, 'SOL', '']]);
+    // The guild's name went with its first word, and the code and tag went nowhere.
+    assert.deepEqual(log.raw.prepare('SELECT guild, a, b, c FROM survey_log_guilds').all().map((r) => ({ ...r })), [{ guild: g.lid, a: 11, b: 0, c: 0 }]);
+    const everything = JSON.stringify(log.raw.prepare('SELECT * FROM survey_log').all());
+    assert.ok(!everything.includes(g.code) && !everything.includes(g.tag));
+    // Coming back on the list, the member's words count again.
+    await two.say({ t: 'me', initials: 'TWO', token: token(2), hide: false, guild: g.code });
+    await settle();
+    await claim(two, 4);
+    await one.sector.alarm();
+    assert.deepEqual(logged().at(-1), [word(4).w, 'TWO', g.lid]);
+  });
+
+  test('stop counting for a guild once its member has left it', async () => {
+    const one = await w.player(0, 0, { id: 1, initials: 'ONE', guild: g.code, x: 5, y: 5 });
+    await w.call(`/v1/survey/guilds/${g.code}/leave`, { token: token(1) });
+    await w.tick(one, GUILD_RECHECK_MS);
+    await claim(one, 0);
+    await one.sector.alarm();
+    assert.deepEqual(logged(), [[word(0).w, 'ONE', '']]);
+  });
 });

@@ -204,6 +204,22 @@ def test_mates_come_first_with_when_the_rest_were_seen_and_a_note_when_one_comes
     assert errors == []
 
 
+def test_your_page_links_to_the_guilds_own_page_in_the_survey_log(page: Page, site_url, errors):
+    lid = "c0ba17c0ba"
+    guilds = FakeGuilds({CODE: {"name": NAME, "tag": TAG, "lid": lid, "members": [[PID, "MLW", NOW_MS]]}})
+    fake = FakeSurvey()
+    # Kept before the log knew guilds: no log id until the roster brings it.
+    start(page, site_url, fake, guilds, guild=MINE)
+    open_you(page)
+    link = page.locator('#guildCard a[data-g="log"]')
+    expect(link).to_have_attribute("href", f"/letterfield-log?guild={lid}")
+    expect(link).to_contain_text("Our words in the survey log")
+    expect(page.locator("#guildCard")).to_contain_text("While you’re off the list, they don’t.")
+    stored = json.loads(page.evaluate("localStorage.getItem('letterfield.guild.v1')"))
+    assert stored == {**MINE, "lid": lid}
+    assert errors == []
+
+
 def test_leaving_takes_you_out_and_tells_every_sector(page: Page, site_url, errors):
     guilds = in_cobalt([KIM[0], "KIM", NOW_MS])
     fake = FakeSurvey(surveyors=[KIM])

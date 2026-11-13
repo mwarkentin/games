@@ -371,7 +371,7 @@ behind it, and `share/README.md` how it works.
   While it's empty, Share hands out the game's own fragment link.
   `?share=<url>` overrides it for tests. A dark page hands out `/f/d/…`, so
   the card follows the sharer's theme.
-- The survey log's views (a surveyor's, theme's or territory's page) have
+- The survey log's views (a surveyor's, theme's, guild's or territory's page) have
   cards too, at `/v/…`: `letterfield-log.html` has a `SHARE_URL` of its own,
   and while it's empty Share links to the page and attaches the page's own
   picture. Their numbers come from the leaderboard Worker's log answers,

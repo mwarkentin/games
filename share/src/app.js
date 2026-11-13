@@ -6,7 +6,7 @@
 //   GET /f/<slug>.png    the card, 1200×630
 //   GET /f/d/<slug>…     the same, with a dark card (a dark page's share)
 //   GET /v/…             the same for a view of the survey log: a surveyor's,
-//                        theme's or territory's page (see view.js)
+//                        theme's, guild's or territory's page (see view.js)
 //
 // <slug> is the game's own fragment, f-<word>-<x>-<y>-<d>. Only words really
 // on the map are drawn. Everyone, bot or person, gets the same page: link
@@ -267,6 +267,8 @@ export async function logOf(env, v, now = Date.now()) {
   const a = await get(logPaths(v, span, now));
   if (!a || !Array.isArray(a.entries)) return null;
   if (v.kind === 'territory' ? !(Number.isInteger(a.charted) && Number.isInteger(a.total)) : !(Number.isInteger(a.words) && Number.isInteger(a.world))) return null;
+  // A guild the log has no name for has no card: the game's own preview stands in.
+  if (v.kind === 'guild' && typeof a.name !== 'string') return null;
   // A territory the log doesn't know has gone supernova may have done so in
   // the last half minute: its sector knows. One with nothing charted can't
   // have, so its sector isn't woken.
