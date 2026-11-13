@@ -14,7 +14,7 @@ import re
 from playwright.sync_api import Page, expect
 
 from fake_survey import FakeSurvey
-from test_letterfield_survey import eventually, open_game, open_people
+from test_letterfield_survey import eventually, open_game, open_people, open_tab
 
 TOKEN = "0" * 31 + "1"  # this browser's player token, as the game would make one
 PID = hashlib.sha256(f"games-player:{TOKEN}".encode()).hexdigest()[:12]  # and the id the sectors give it
@@ -207,6 +207,7 @@ def test_the_list_and_emote_switches_tell_every_sector_and_are_remembered(page: 
     def latest() -> dict:
         return {m["sector"]: m for m in fake.sent("me")}
 
+    open_tab(page, "You")
     page.uncheck("#whoListed")
     eventually(page, lambda: all(m.get("hide") for m in latest().values()))
     expect(page.locator("#whoStatus")).not_to_contain_text("off the list")  # the unticked box says so
@@ -220,7 +221,7 @@ def test_the_list_and_emote_switches_tell_every_sector_and_are_remembered(page: 
     page.reload()
     eventually(page, lambda: len(fake.sent("me")) == 4)
     assert all(m["hide"] is True and m["quiet"] is True and m["token"] == TOKEN for m in fake.sent("me"))
-    open_list(page)
+    open_people(page, "You")
     expect(page.locator("#whoListed")).not_to_be_checked()
     expect(page.locator("#whoEmotes")).not_to_be_checked()
     assert errors == []
@@ -358,4 +359,73 @@ def test_the_surveyors_have_a_button_and_drawer_of_their_own(page: Page, site_ur
     page.keyboard.press("Escape")
     expect(page.locator("#people")).to_be_hidden()
     expect(button).to_be_focused()
+    assert errors == []
+
+
+def test_the_drawer_has_tabs_for_online_your_guild_and_you(page: Page, site_url, errors):
+    fake = FakeSurvey(surveyors=[KIM, ZED], presence=[KIM_CARET])
+    start(page, site_url, fake, viewport={"width": 375, "height": 740})
+    open_list(page)
+    html, tabs = page.locator("html"), page.locator("#peopleTabs")
+    online, guild, you = (tabs.get_by_role("tab", name=n) for n in ("Online", "Guild", "You"))
+    # Online first, with its count, and only the tab shown is in the tab order.
+    expect(html).to_have_attribute("data-people-tab", "online")
+    expect(online).to_have_attribute("aria-selected", "true")
+    expect(online.locator(".tab-n")).to_have_text("2")
+    expect(page.locator("#paneOnline")).to_be_visible()
+    expect(page.locator("#paneGuild, #paneYou")).to_have_count(2)
+    expect(page.locator("#paneGuild")).to_be_hidden()
+    expect(page.locator("#paneYou")).to_be_hidden()
+    assert [t.get_attribute("tabindex") for t in (online, guild, you)] == ["0", "-1", "-1"]
+    guild.click()
+    expect(html).to_have_attribute("data-people-tab", "guild")
+    expect(page.locator("#guildCard")).to_contain_text("Start a guild")
+    expect(page.locator("#paneOnline")).to_be_hidden()
+    expect(page.locator(".who-row")).to_have_count(0)  # rows only in the tab shown
+    # Arrow keys go round them, Home and End to either end.
+    guild.focus()
+    for key, tab in (
+        ("ArrowRight", "you"),
+        ("ArrowRight", "online"),
+        ("ArrowLeft", "you"),
+        ("Home", "online"),
+        ("End", "you"),
+    ):
+        page.keyboard.press(key)
+        expect(html).to_have_attribute("data-people-tab", tab)
+        expect(tabs.locator(f'[data-tab="{tab}"]')).to_be_focused()
+    assert [t.get_attribute("tabindex") for t in (online, guild, you)] == ["-1", "-1", "0"]
+    expect(page.locator("#surveyMe")).to_contain_text("MLW")
+    expect(page.locator("#pairCard")).to_contain_text("Only on this device")
+    # The tab stays as it was when the drawer closes and opens again.
+    page.keyboard.press("Escape")
+    expect(page.locator("#people")).to_be_hidden()
+    page.click("#peopleBtn")
+    expect(html).to_have_attribute("data-people-tab", "you")
+    # Tabs a thumb can hit, and nothing wider than a phone.
+    heights = tabs.locator("[role=tab]").evaluate_all("ts => ts.map(t => t.getBoundingClientRect().height)")
+    assert min(heights) >= 40, heights
+    assert page.evaluate("document.scrollingElement.scrollWidth") <= 375
+    assert page.evaluate("(e => e.scrollWidth <= e.clientWidth)(document.getElementById('people'))")
+    assert errors == []
+
+
+def test_what_needs_your_initials_first_opens_you_to_sign(page: Page, site_url, errors):
+    fake = FakeSurvey(surveyors=[KIM, ZED], presence=[KIM_CARET])
+    start(page, site_url, fake)
+    open_list(page)
+    page.evaluate("localStorage.removeItem('games.initials')")  # as if never signed
+    page.get_by_role("button", name="Wave to ZED").click()
+    expect(page.locator("html")).to_have_attribute("data-people-tab", "you")
+    expect(page.locator("#surveyInitials")).to_be_focused()
+    expect(page.locator("#surveyHint")).to_have_text("Sign your initials first, to send emotes.")
+    assert fake.sent("emote") == []
+    open_tab(page, "Guild")
+    page.locator("#guildCard").get_by_role("button", name="Start a guild").click()
+    expect(page.locator("html")).to_have_attribute("data-people-tab", "you")
+    expect(page.locator("html")).to_have_attribute("data-guild", "out")
+    expect(page.locator("#surveyHint")).to_have_text("Sign your initials first, to start a guild.")
+    page.locator("#surveyInitials").fill("ZZQ")
+    page.keyboard.press("Enter")
+    expect(page.locator("#surveyMeName")).to_have_text("ZZQ")
     assert errors == []

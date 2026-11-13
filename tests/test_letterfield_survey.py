@@ -67,11 +67,19 @@ def open_notes(page: Page) -> None:
         page.click("#notesToggle")
 
 
-def open_people(page: Page) -> None:
-    """Opens the surveyors' drawer: the list, your guild, your initials and your devices."""
+def open_people(page: Page, tab: str | None = None) -> None:
+    """Opens the surveyors' drawer, at a tab if one's named: Online (the list),
+    Guild (your guild) or You (your initials, switches and devices)."""
     if page.locator("#people").is_hidden():
         page.click("#peopleBtn")
     expect(page.locator("#people")).to_be_visible()
+    if tab:
+        open_tab(page, tab)
+
+
+def open_tab(page: Page, tab: str) -> None:
+    page.locator("#peopleTabs").get_by_role("tab", name=tab).click()
+    expect(page.locator("html")).to_have_attribute("data-people-tab", tab.lower())
 
 
 def hidden_words(page: Page) -> list[list]:
@@ -260,7 +268,7 @@ def test_signing_initials_tells_every_sector(page: Page, site_url, errors):
     fake = FakeSurvey()
     open_game(page, site_url, fake)
     expect(page.locator("#survey")).to_have_attribute("data-state", "live")
-    open_people(page)
+    open_people(page, "You")
     page.locator("#surveyInitials").press_sequentially("z3ed")
     expect(page.locator("#surveyInitials")).to_have_value("ZED")
     page.click("#surveySign button[type=submit]")
@@ -273,7 +281,7 @@ def test_signing_initials_tells_every_sector(page: Page, site_url, errors):
     # Next time, the game signs in with them straight away.
     fake.received.clear()
     page.reload()
-    open_people(page)
+    open_people(page, "You")
     expect(page.locator("#surveyMe")).to_be_visible()
     expect(page.locator("#surveyMeName")).to_have_text("ZED")
     expect(page.locator("#surveySign")).to_be_hidden()
@@ -290,7 +298,7 @@ def test_the_pencil_changes_your_initials(page: Page, site_url, errors):
     page.add_init_script("localStorage.setItem('games.initials', JSON.stringify('MLW'))")
     open_game(page, site_url, fake)
     expect(page.locator("#survey")).to_have_attribute("data-state", "live")
-    open_people(page)
+    open_people(page, "You")
     expect(page.locator("#surveyMe")).to_have_text(re.compile(r"Surveyor\s*MLW"))
     expect(page.locator("#surveySign")).to_be_hidden()
 

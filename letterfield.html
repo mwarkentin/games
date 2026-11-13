@@ -200,8 +200,34 @@ body.docked .notes{box-shadow:none}
 .people{z-index:31;overflow-y:auto;overscroll-behavior:contain}
 .people > *{flex-shrink:0}
 .people-body{padding:0 18px 22px}
-.people-body > .guild:first-child{margin-top:0}
-.people-you{margin-top:14px;padding-top:4px;border-top:1px solid var(--rule)}
+.people-pane > .guild:first-child{margin-top:0}
+/* Three tabs, Online · Guild · You, under the drawer's title, which stay put
+   while a long list scrolls under them (see Surveyors). */
+.people-top{position:sticky;top:0;z-index:2;background:var(--panel)}
+.people-top .notes-head{align-items:center;padding-bottom:10px}
+.people-tabs{display:flex;gap:4px;margin:0 18px;padding:4px;border:1px solid var(--rule);border-radius:10px}
+.people-tab{flex:1;min-width:0;min-height:40px;display:flex;align-items:center;justify-content:center;gap:6px;padding:0 6px;border:0;border-radius:7px;background:transparent;color:var(--muted);font:600 14px/1 var(--f-ui);cursor:pointer;transition:background-color var(--t-fast) var(--ease-out), color var(--t-fast) var(--ease-out)}
+.people-tab[aria-selected="true"]{background:var(--ink);color:var(--panel)}
+@media (hover: hover){.people-tab:not([aria-selected="true"]):hover{background:var(--hover);color:var(--ink)}}
+.people-tab:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.tab-n{font:500 11px/1 var(--f-mono);padding:3px 6px 2px;border-radius:999px;background:var(--rule);color:var(--ink)}
+.tab-n[hidden],.people-tab .guild-dot[hidden]{display:none}
+.people-tab[aria-selected="true"] .tab-n{background:var(--panel);color:var(--ink)}
+.people-tab .guild-dot{width:8px;height:8px;box-shadow:none}
+.people-pane{padding-top:6px}
+.people-eyebrow{margin:22px 0 2px}
+/* You: your initials, the two switches, then your devices. */
+.set{display:flex;align-items:center;gap:12px;padding:11px 0;border-top:1px solid var(--rule);cursor:pointer}
+.set > span{flex:1;min-width:0}
+.set b{display:block;font-weight:600;font-size:15px}
+.set small{display:block;margin-top:3px;font-size:12.5px;line-height:1.4;color:var(--muted)}
+.set input{appearance:none;-webkit-appearance:none;flex:none;position:relative;width:46px;height:28px;margin:0;border-radius:14px;background:var(--rule);cursor:pointer;transition:background-color var(--t-fast) var(--ease-out)}
+.set input::after{content:"";position:absolute;top:4px;left:4px;width:20px;height:20px;border-radius:50%;background:var(--panel);box-shadow:0 1px 2px rgba(0,0,0,.25);transition:transform var(--t-fast) var(--ease-out)}
+.set input:checked{background:var(--accent)}
+.set input:checked::after{transform:translateX(18px)}
+.set input:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.people-pane .pair{margin-top:8px}
+@media (prefers-reduced-motion: reduce){.people-tab,.set input,.set input::after{transition:none}}
 .notes-head{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;padding:18px 18px 12px}
 .notes-head h2{margin:0;font:800 30px/.9 var(--f-display);letter-spacing:.04em;text-transform:uppercase;text-wrap:balance}
 .notes-sub{margin:7px 0 0;font-size:13px;color:var(--muted);max-width:30ch}
@@ -279,11 +305,13 @@ body.docked .notes{box-shadow:none}
 .survey-sign[hidden]{display:none}
 .survey-sign .btn.ghost{background:transparent;color:var(--ink);border:1px solid var(--rule)}
 /* Once signed, the panel just says who you are, with a pencil to change it. */
-.survey-me{display:flex;align-items:center;gap:8px;margin-top:8px}
+.survey-me{display:flex;align-items:center;gap:14px;margin-top:10px}
 .survey-me[hidden]{display:none}
-.survey-me b{font:700 20px/1 var(--f-display);letter-spacing:.12em}
-.survey-me .icon-btn{width:32px;height:32px;margin-left:-2px;border-color:transparent;color:var(--muted)}
-.survey-me .icon-btn:hover{color:var(--ink)}
+.me-av{flex:none;width:56px;height:56px;box-sizing:border-box;border:2px solid var(--accent);border-radius:50%;display:grid;place-items:center;font:800 21px/1 var(--f-display);letter-spacing:.06em}
+.me-who{flex:1;min-width:0;display:flex;flex-direction:column;gap:4px}
+.me-who b{font:800 26px/1 var(--f-display);letter-spacing:.1em}
+.me-who small{font-size:12.5px;color:var(--muted)}
+.survey-me .pill{flex:none;min-height:40px}
 .survey-hint{margin:7px 0 0;font-size:12px;color:var(--muted)}
 .survey-map{margin-top:9px}
 .survey-map summary{cursor:pointer;font:500 10px/1 var(--f-mono);letter-spacing:.14em;text-transform:uppercase;color:var(--muted);padding:4px 0}
@@ -386,10 +414,8 @@ html[data-who="loading"] .who-status{animation:blink 1s infinite alternate}
 .pair-offer .coach-row{justify-content:flex-end}
 .who-mute{margin-top:8px}
 .who-more{display:block;margin:6px auto 0}
-.who-opts{display:flex;flex-wrap:wrap;gap:0 16px;margin-top:10px;padding-top:6px;border-top:1px solid var(--rule)}
-.who-opts label{display:flex;align-items:center;gap:7px;min-height:36px;font-size:13px;cursor:pointer}
-.who-opts input{width:16px;height:16px;margin:0;accent-color:var(--accent)}
-.who-note{margin:2px 0 0;font-size:11.5px;line-height:1.4;color:var(--muted)}
+.who-note{margin:14px 0 0;padding-top:10px;border-top:1px solid var(--rule);font-size:12px;line-height:1.45;color:var(--muted)}
+.who-none{padding:6px 6px 8px;font-size:13px;color:var(--muted)}
 .toast i.emo{width:24px;height:24px;border-radius:0;background:none;color:var(--c)}
 .toast b.wraps{white-space:normal;line-height:1.05}
 /* A caret's own menu: emotes for that surveyor, from a right-click or a long press on their caret. */
@@ -634,27 +660,33 @@ body.settling, body.settling *{transition:none!important}
 </form>
 
 <aside class="people" id="people" aria-label="Surveyors">
-  <div class="notes-head">
-    <div>
+  <div class="people-top">
+    <div class="notes-head">
       <h2>Surveyors</h2>
-      <p class="notes-sub">Everyone charting the shared map with you. Tap one to fly there.</p>
+      <button type="button" class="icon-btn" id="peopleClose" aria-label="Close surveyors"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
     </div>
-    <button type="button" class="icon-btn" id="peopleClose" aria-label="Close surveyors"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+    <div class="people-tabs" role="tablist" aria-label="Surveyors" id="peopleTabs">
+      <button type="button" class="people-tab" role="tab" id="tabOnline" data-tab="online" aria-controls="paneOnline" aria-selected="true" tabindex="0">Online<span class="tab-n" id="tabOnlineN" hidden></span></button>
+      <button type="button" class="people-tab" role="tab" id="tabGuild" data-tab="guild" aria-controls="paneGuild" aria-selected="false" tabindex="-1"><i class="guild-dot" id="tabGuildDot" aria-hidden="true" hidden></i>Guild</button>
+      <button type="button" class="people-tab" role="tab" id="tabYou" data-tab="you" aria-controls="paneYou" aria-selected="false" tabindex="-1">You</button>
+    </div>
   </div>
   <div class="people-body">
-    <div class="guild" id="guildCard"></div>
-    <p class="who-status" id="whoStatus" aria-live="polite"></p>
-    <ol class="who-list" id="whoList" aria-label="Surveyors in the shared world, nearest first"></ol>
-    <button type="button" class="who-more" id="whoMore" hidden>Show more</button>
-    <div class="who-opts">
-      <label><input type="checkbox" id="whoListed" checked> Show me on the list</label>
-      <label><input type="checkbox" id="whoEmotes" checked> Take emotes</label>
-    </div>
-    <p class="who-note">Off the list, surveyors near you still see your caret. Muting someone hides their caret and emotes on this device.</p>
-    <section class="people-you" aria-label="You">
+    <section class="people-pane" id="paneOnline" role="tabpanel" aria-labelledby="tabOnline">
+      <p class="who-status" id="whoStatus" aria-live="polite"></p>
+      <ol class="who-list" id="whoList" aria-label="Surveyors in the shared world, nearest first"></ol>
+      <button type="button" class="who-more" id="whoMore" hidden>Show more</button>
+      <p class="who-note">Tap someone to fly to them. ⋯ has more emotes, and mute, which hides their caret and emotes on this device.</p>
+    </section>
+    <section class="people-pane" id="paneGuild" role="tabpanel" aria-labelledby="tabGuild" hidden>
+      <div class="guild" id="guildCard"></div>
+      <ol class="who-list" id="mateList" aria-label="Your guild"></ol>
+    </section>
+    <section class="people-pane" id="paneYou" role="tabpanel" aria-labelledby="tabYou" hidden>
       <div class="survey-me" id="surveyMe" hidden>
-        <span class="eyebrow">Surveyor</span><b id="surveyMeName"></b>
-        <button type="button" class="icon-btn" id="surveyEdit" aria-label="Change your initials" title="Change your initials"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 20h4L19 9l-4-4L4 16v4z"/><path d="M13.5 6.5l4 4"/></svg></button>
+        <span class="me-av" id="surveyMeAv" aria-hidden="true"></span>
+        <div class="me-who"><span class="eyebrow">Surveyor</span><b id="surveyMeName"></b><small>Signs the words you chart first</small></div>
+        <button type="button" class="pill" id="surveyEdit" aria-label="Change your initials">Change</button>
       </div>
       <form class="survey-sign" id="surveySign">
         <label for="surveyInitials">Sign the words you chart first</label>
@@ -663,6 +695,10 @@ body.settling, body.settling *{transition:none!important}
         <button type="button" class="btn ghost" id="surveyCancel" hidden>Cancel</button>
       </form>
       <p class="survey-hint" id="surveyHint"></p>
+      <p class="eyebrow people-eyebrow">On the map</p>
+      <label class="set"><span><b>Show me on the list</b><small>Off the list, surveyors near you still see your caret.</small></span><input type="checkbox" role="switch" id="whoListed" checked></label>
+      <label class="set"><span><b>Take emotes</b><small>Let others wave and cheer at you.</small></span><input type="checkbox" role="switch" id="whoEmotes" checked></label>
+      <p class="eyebrow people-eyebrow">Your devices</p>
       <div class="pair" id="pairCard"></div>
     </section>
   </div>
@@ -4119,6 +4155,7 @@ for (const input of [surveyInput, signupInput]) input.addEventListener('input', 
 function showSigning(editing, refocus) {
   const v = myInitials(), edit = editing || !v;
   $('#surveyMeName').textContent = v;
+  $('#surveyMeAv').textContent = v;
   surveyMe.hidden = edit; surveySign.hidden = !edit; surveyCancel.hidden = !v;
   if (edit) surveyInput.value = v;
   else surveyHint.textContent = '';
@@ -4289,7 +4326,8 @@ function caretOnScreen(pid) {
 
 // The surveyors' drawer: a button of its own beside the field notes, with a
 // count of who else is online, opens it over the notes (a sheet on a phone).
-// It holds the list, your guild, and you: your initials and your devices.
+// It has three tabs: Online (everyone else, nearest first), Guild (yours, or
+// starting one) and You (your initials, your switches and your devices).
 const peopleBtn = $('#peopleBtn'), peopleBadge = $('#peopleBadge');
 let peopleOpen = false;
 function setPeople(open) {
@@ -4304,13 +4342,57 @@ function setPeople(open) {
 peopleBtn.hidden = !surveyApi;
 peopleBtn.addEventListener('click', () => setPeople(!peopleOpen));
 $('#peopleClose').addEventListener('click', () => { setPeople(false); peopleBtn.focus(); });
+// The tab shown, on <html data-people-tab>: any to any. It stays as it was
+// when the drawer closes and opens again, while the page is open. What shows
+// follows from it here, in one place: the pane, each tab's aria-selected and
+// which one is in the tab order.
+const PEOPLE_TABS = ['online', 'guild', 'you'];
+const PeopleTab = machine('peopleTab', {
+  online: ['guild', 'you'],
+  guild: ['online', 'you'],
+  you: ['online', 'guild'],
+}, 'online', { onMove: peopleTabMoved });
+function peopleTabMoved(to) {
+  for (const t of PEOPLE_TABS) {
+    const tab = $(`[data-tab="${t}"]`), on = t === to;
+    tab.setAttribute('aria-selected', String(on));
+    tab.tabIndex = on ? 0 : -1;
+    $(`#${tab.getAttribute('aria-controls')}`).hidden = !on;
+  }
+  $('#people').scrollTop = 0;
+  renderWho();
+}
+function showTab(t) { if (!PeopleTab.is(t)) PeopleTab.go(t); }
+// Opens the drawer at a tab, for whatever pointed there.
+function openPeople(t) { showTab(t); if (!peopleOpen) setPeople(true); }
+const peopleTabs = $('#peopleTabs');
+peopleTabs.addEventListener('click', e => {
+  const b = e.target.closest('[data-tab]');
+  if (b) showTab(b.dataset.tab);
+});
+// Arrow keys go round the tabs, Home and End to either end, as tabs do.
+peopleTabs.addEventListener('keydown', e => {
+  const i = PEOPLE_TABS.indexOf(PeopleTab.state), n = PEOPLE_TABS.length;
+  const to = { ArrowRight: i + 1, ArrowLeft: i - 1 + n, Home: 0, End: n - 1 }[e.key];
+  if (to === undefined) return;
+  e.preventDefault();
+  showTab(PEOPLE_TABS[to % n]);
+  $(`[data-tab="${PeopleTab.state}"]`).focus();
+});
+// Something that needs your initials first: the You tab, with the form to sign.
+function signFirst(why) {
+  closeCaretMenu(false);  // from a caret's menu, it gives way to the drawer
+  openPeople('you');
+  showSigning(true, true);
+  surveyHint.textContent = why;
+}
 
 // The list, shown on <html data-who>: closed (the drawer shut or the
 // tab hidden), loading, ready (it comes round again every WHO_REFRESH_MS),
 // refreshing (the last answer stays up meanwhile) or failed (tried again
 // after WHO_RETRY_MS). An answer that comes back after the list has moved on
 // is dropped.
-const whoList = $('#whoList'), whoStatus = $('#whoStatus'), whoMore = $('#whoMore');
+const whoList = $('#whoList'), mateList = $('#mateList'), whoStatus = $('#whoStatus'), whoMore = $('#whoMore');
 let whoData = null, whoPages = 1, whoTimer = 0, whoOpen = '', whoAt = '', seek = null, lastHere = 0, pops = [];
 const whoSaid = new Map();  // pid → what became of the last emote we sent them
 const Who = machine('who', {
@@ -4374,6 +4456,13 @@ function renderWho() {
   peopleBadge.hidden = !others;
   peopleBtn.setAttribute('aria-label', others ? `Surveyors, ${others.toLocaleString()} online` : 'Surveyors');
   if (!peopleOpen) return;
+  // The tabs' marks: how many the list counts, and your guild's colour.
+  const tabN = $('#tabOnlineN'), n = whoData ? String(whoData.n) : '';
+  if (tabN.textContent !== n) tabN.textContent = n;
+  tabN.hidden = !n;
+  const dot = $('#tabGuildDot'), gh = inGuild() ? String(guildHue(myGuild.name)) : '';
+  dot.hidden = !gh;
+  if (gh) dot.style.setProperty('--gh', gh);
   const st = Who.state;
   let status;
   if (!whoData) status = st === 'failed' ? 'Couldn’t load the list. Trying again shortly.' : 'Looking for surveyors…';
@@ -4383,10 +4472,13 @@ function renderWho() {
   }
   whoStatus.textContent = status;
   whoMore.hidden = !(whoData && whoData.more) || whoPages >= LIST_PAGES;
-  // Rows are drawn afresh; whatever had focus gets it back.
-  const f = document.activeElement, k = f && whoList.contains(f) ? f.dataset.k : '';
-  whoList.innerHTML = whoListHtml();  // mates first, when we're in a guild (see Guilds)
-  if (k) { const el = whoList.querySelector(`[data-k="${k}"]`); if (el) try { el.focus({ preventScroll: true }); } catch (_) {} }
+  // Rows are drawn afresh, only in the tab shown (so no two share an id);
+  // whatever had focus gets it back.
+  const tab = PeopleTab.state, list = tab === 'online' ? whoList : tab === 'guild' ? mateList : null;
+  const f = document.activeElement, k = f && list && list.contains(f) ? f.dataset.k : '';
+  whoList.innerHTML = tab === 'online' ? whoListHtml() : '';  // mates online first, when we're in a guild (see Guilds)
+  mateList.innerHTML = tab === 'guild' ? mateListHtml() : '';
+  if (k) { const el = list.querySelector(`[data-k="${k}"]`); if (el) try { el.focus({ preventScroll: true }); } catch (_) {} }
 }
 // A row: their initials and where they are, which flies there; a wave, the
 // emote sent most; and ⋯ for the rest and mute. What became of the last emote
@@ -4410,24 +4502,25 @@ function whoPanel(s, who, m) {
     (m ? '' : `<div class="emote-row">${EMOTES.filter(e => e.id !== 'wave').map(e => `<button type="button" class="emote" data-pid="${s.pid}" data-e="${e.id}" data-k="${s.pid}:${e.id}" aria-label="${e.name} to ${who}" title="${e.name}"${s.quiet ? ' disabled' : ''}>${emoteSvg(e)}</button>`).join('')}</div>`) +
     `<button type="button" class="who-mute" data-pid="${s.pid}" data-k="${s.pid}:mute">${m ? 'Unmute' : 'Mute'} ${who}</button></div>`;
 }
-whoList.addEventListener('click', e => {
+function onWhoClick(e) {
   const b = e.target.closest('button'), s = b && whoFind(b.dataset.pid);
   if (!s) return;
   if (b.classList.contains('who')) flyToSurveyor(s);
   else if (b.classList.contains('who-act')) { whoOpen = whoOpen === s.pid ? '' : s.pid; whoSaid.clear(); renderWho(); }
   else if (b.dataset.e) sendEmote(s, b.dataset.e);
   else if (b.classList.contains('who-mute')) setMuted(s, !muted.has(s.pid));
-});
+}
 // Escape folds an open row of emotes before it does anything else.
-whoList.addEventListener('keydown', e => {
+function onWhoKey(e) {
   if (e.key !== 'Escape' || !whoOpen) return;
   e.stopPropagation();
-  const pid = whoOpen;
+  const pid = whoOpen, list = e.currentTarget;
   whoOpen = '';
   renderWho();
-  const b = whoList.querySelector(`[data-k="${pid}:act"]`);
+  const b = list.querySelector(`[data-k="${pid}:act"]`);
   if (b) b.focus();
-});
+}
+for (const list of [whoList, mateList]) { list.addEventListener('click', onWhoClick); list.addEventListener('keydown', onWhoKey); }
 whoMore.addEventListener('click', () => { whoPages++; if (Who.is('ready')) Who.go('refreshing'); });
 const listedEl = $('#whoListed'), emotesEl = $('#whoEmotes');
 listedEl.checked = listedOn;
@@ -4466,7 +4559,7 @@ function setMuted(s, on) {
 function sendEmote(s, id) {
   const em = EMOTE_BY[id], home = links.get(sectorKey(Math.floor(cam.x), Math.floor(cam.y)));
   if (!em) return;
-  if (!myInitials()) return said(s.pid, 'Sign your initials first, under You.');
+  if (!myInitials()) return signFirst('Sign your initials first, to send emotes.');
   if (!home || !home.m.is('live')) return said(s.pid, 'Join the survey to send emotes.');
   const c = caretOf(s.pid);
   tell(home, { t: 'emote', to: s.pid, e: id, s: c ? [c.l.sx, c.l.sy] : [fdiv(s.rx, TERR_PER_SECTOR), fdiv(s.ry, TERR_PER_SECTOR)] });
@@ -4474,8 +4567,9 @@ function sendEmote(s, id) {
 function said(pid, text) {
   whoSaid.clear();  // only the last one: an older one under another row goes
   whoSaid.set(pid, text);
-  for (const p of whoList.querySelectorAll('.who-said')) if (p.id !== `said-${pid}`) p.textContent = '';
-  const el = whoList.querySelector(`#said-${pid}`) || (caretFor === pid && caretMenu.querySelector('.who-said'));
+  const people = $('#people');
+  for (const p of people.querySelectorAll('.who-said')) if (p.id !== `said-${pid}`) p.textContent = '';
+  const el = people.querySelector(`#said-${pid}`) || (caretFor === pid && caretMenu.querySelector('.who-said'));
   if (el) el.textContent = text; else say(text);
 }
 // What a sector says about emotes: what became of ours, or one for us.
@@ -4734,7 +4828,8 @@ async function joinInvite() {
     saveGuild({ code: data.code, name: data.name, tag: data.tag });
     takeRoster(data.members);
     invite = null;
-    toast(`<i class="guild-dot" style="--gh:${guildHue(data.name)}"></i><b class="wraps">${guildName(data.name)}</b><span>You’re in: your mates come first under Surveyors</span>`, null, 4000);
+    showTab('guild');  // so Surveyors opens on your new guild
+    toast(`<i class="guild-dot" style="--gh:${guildHue(data.name)}"></i><b class="wraps">${guildName(data.name)}</b><span>You’re in: find your mates in Surveyors, under Guild</span>`, null, 4000);
     return Membership.go('in');
   }
   invite.error = status === 409 ? 'That guild is full.' : status === 429 ? 'Too many guilds joined from this network: try again later.' : 'Couldn’t join. Try again in a moment.';
@@ -4813,20 +4908,33 @@ function guildMates() {
   return { online: [...online.values()], offline, all: new Set([...inRoster, ...online.keys()]) };
 }
 const seenText = t => { const s = Math.max(0, (Date.now() - t) / 1000); return s < 120 ? 'just now' : s < 3600 ? `${Math.floor(s / 60)}m ago` : s < 172800 ? `${Math.floor(s / 3600)}h ago` : `${Math.floor(s / 86400)}d ago`; };
-// The list with mates on top: the guild's heading, mates online nearest first,
-// then the others with when they were last seen, then everyone else.
+const inGuild = () => !!myGuild && Membership.is('in', 'leaving', 'invited', 'joining');
+function matesOnline() {
+  const g = guildMates(), [cx, cy] = camTerr(), d = s => Math.max(Math.abs(s.rx - cx), Math.abs(s.ry - cy));
+  g.online.sort((a, b) => d(a) - d(b) || a.idle - b.idle);
+  return g;
+}
+// Online: everyone else, nearest first, with mates online on top under the
+// guild's heading when there are any.
 function whoListHtml() {
   const pub = whoData ? sortedWho() : [];
-  if (!myGuild || !Membership.is('in', 'leaving', 'invited', 'joining')) return pub.map(whoRow).join('');
-  const { online, offline, all } = guildMates(), [cx, cy] = camTerr();
-  const d = s => Math.max(Math.abs(s.rx - cx), Math.abs(s.ry - cy));
-  online.sort((a, b) => d(a) - d(b) || a.idle - b.idle);
+  const { online, all } = inGuild() ? matesOnline() : { online: [], all: new Set() };
+  if (!online.length) return pub.map(s => whoRow(s)).join('');
   const rest = pub.filter(s => !all.has(s.pid));
   const mark = `<i class="guild-dot" style="--gh:${guildHue(myGuild.name)}" aria-hidden="true"></i>`;
   return `<li class="who-head">${mark}<span>Your guild · ${online.length} online</span></li>` +
     online.map(s => whoRow({ quiet: false, ...s }, true)).join('') +
-    offline.map(m => `<li class="who-row away"><div class="who" style="--g:${hueOf(m.pid)}"><span class="who-av" aria-hidden="true"><b class="who-ini">${m.ini || '···'}</b></span><span class="who-where"><span>Offline</span></span><span class="who-meta">last seen ${seenText(m.seen)}</span></div></li>`).join('') +
     (rest.length ? `<li class="who-head"><span>Everyone else</span></li>${rest.map(s => whoRow(s)).join('')}` : '');
+}
+// Guild: under its card, every mate: those online nearest first, then the
+// rest with when they were last seen.
+function mateListHtml() {
+  if (!inGuild()) return '';
+  const { online, offline } = matesOnline();
+  return `<li class="who-head"><span>Online now · ${online.length}</span></li>` +
+    (online.length ? online.map(s => whoRow({ quiet: false, ...s })).join('') : '<li class="who-none">Nobody else from your guild is online right now.</li>') +
+    (offline.length ? '<li class="who-head"><span>Away</span></li>' : '') +
+    offline.map(m => `<li class="who-row away"><div class="who" style="--g:${hueOf(m.pid)}"><span class="who-av" aria-hidden="true"><b class="who-ini">${m.ini || '···'}</b></span><span class="who-where"><span>Offline</span></span><span class="who-meta">last seen ${seenText(m.seen)}</span></div></li>`).join('');
 }
 // Anyone the list shows: from the public list or our guild.
 function whoFind(pid) {
@@ -4870,7 +4978,10 @@ function onGuildClick(e) {
   const b = e.target.closest('button[data-g]');
   if (!b || b.disabled) return;
   const g = b.dataset.g;
-  if (g === 'start' && Membership.is('out')) { guildError = ''; draftName = randomName(); Membership.go('naming'); }
+  if (g === 'start' && Membership.is('out')) {
+    if (!myInitials()) return signFirst('Sign your initials first, to start a guild.');
+    guildError = ''; draftName = randomName(); Membership.go('naming');
+  }
   else if (g === 'redraw' && Membership.is('naming')) { let n; do n = randomName(); while (guildName(n) === guildName(draftName)); draftName = n; renderGuild(); }
   else if (g === 'create') startGuild();
   else if (g === 'cancel' && Membership.is('naming')) { guildError = ''; Membership.go('out'); }
@@ -5275,7 +5386,7 @@ function keepRecovery(how) {
   if (!recoveryCode) return;
   const code = inFours(recoveryCode), done = text => { const el = $('#pairSaid'); if (el) el.textContent = text; say(text); };
   if (how === 'file') {
-    const text = `Letterfield recovery code\n\n${code}\n\nTo be this surveyor again on any device, open Letterfield there and enter it under I have a code, in Surveyors.\nWhoever has it can play as you, so keep it safe. Made ${new Date().toDateString()}.\n`;
+    const text = `Letterfield recovery code\n\n${code}\n\nTo be this surveyor again on any device, open Letterfield there and enter it under I have a code, in Surveyors, under You.\nWhoever has it can play as you, so keep it safe. Made ${new Date().toDateString()}.\n`;
     const a = document.createElement('a');
     a.href = URL.createObjectURL(new Blob([text], { type: 'text/plain' }));
     a.download = 'letterfield-recovery-code.txt';
@@ -5439,6 +5550,7 @@ pairOffer.addEventListener('keydown', e => { if (e.key === 'Escape') { e.stopPro
 if (surveyApi) {
   let linked = '';
   try { linked = sessionStorage.getItem(K_LINKED) || ''; sessionStorage.removeItem(K_LINKED); } catch (_) {}
+  if (linked) showTab('you');  // where your devices are, if you look
   if (linked === 'linked') setTimeout(() => toast(`<i></i><b>Linked</b><span>This device plays as ${myInitials() || 'your surveyor'} now, as your other one does</span>`, null, 5000), 600);
   else if (linked === 'recovered') setTimeout(() => toast('<i></i><b>Welcome back</b><span>This device is your surveyor again, and your notes are on their way</span>', null, 5000), 600);
   renderPair();

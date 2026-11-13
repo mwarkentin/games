@@ -117,7 +117,7 @@ def test_finds_and_settings_go_both_ways(page: Page, site_url, errors):
 def test_stopping_here_or_everywhere(page: Page, site_url, errors):
     players = FakePlayers(started=[PID])
     start(page, site_url, players)
-    open_people(page)
+    open_people(page, "You")
     card = page.locator("#pairCard")
     expect(card).to_contain_text("Backed up and kept in step")
     card.get_by_role("button", name="Stop syncing").click()
@@ -134,7 +134,7 @@ def test_stopping_here_or_everywhere(page: Page, site_url, errors):
     page.evaluate(f"localStorage.setItem('letterfield.sync.v1', {json.dumps(json.dumps(ON))})")
     page.reload()
     expect(page.locator("html")).to_have_attribute("data-sync", "idle")
-    open_people(page)
+    open_people(page, "You")
     card.get_by_role("button", name="Stop syncing").click()
     card.get_by_role("button", name="Every device").click()
     expect(card).to_contain_text(

@@ -15,7 +15,7 @@ import time
 from playwright.sync_api import Page, expect
 
 from fake_survey import NOW_MS, FakeGuilds, FakeSurvey, player_id
-from test_letterfield_survey import SURVEY, eventually, open_game, open_people
+from test_letterfield_survey import SURVEY, eventually, open_game, open_people, open_tab
 from test_letterfield_surveyors import KIM, LOU, PID, TOKEN, ZED, open_list, wait_landed
 
 CODE, TAG, NAME = "KMN234", "c0ffee42", [11, 0, 0]  # the Cobalt Compass Society
@@ -62,6 +62,7 @@ def test_starting_a_guild_names_it_from_the_lists_and_puts_you_in_it(page: Page,
     fake, guilds = FakeSurvey(), FakeGuilds()
     start(page, site_url, fake, guilds)
     open_list(page)
+    open_tab(page, "Guild")
     card = page.locator("#guildCard")
     expect(page.locator("html")).to_have_attribute("data-guild", "out")
     card.get_by_role("button", name="Start a guild").click()
@@ -110,6 +111,10 @@ def test_an_invite_link_asks_once_initials_are_in_then_joins(page: Page, site_ur
     expect(page.locator("html")).to_have_attribute("data-guild", "in")
     expect(invite).to_be_hidden()
     expect(page.locator("#toast b")).to_have_text("Cobalt Compass Society")
+    # Surveyors now opens on your new guild.
+    expect(page.locator("html")).to_have_attribute("data-people-tab", "guild")
+    open_people(page)
+    expect(page.locator("#guildCard .guild-name")).to_have_text("Cobalt Compass Society")
     assert any(path == f"/{CODE}/join" for _, path, _ in guilds.calls)
     assert json.loads(page.evaluate("localStorage.getItem('letterfield.guild.v1')")) == MINE
     assert errors == []
@@ -139,10 +144,16 @@ def test_mates_come_first_with_when_the_rest_were_seen_and_a_note_when_one_comes
     start(page, site_url, fake, guilds, guild=MINE)
     open_list(page)
     expect(page.locator("html")).to_have_attribute("data-guild", "in")
+    # Online: mates online come first.
     expect(page.locator(".who-head")).to_have_text(["Your guild · 1 online", "Everyone else"])
-    expect(page.locator(".who-ini")).to_have_text(["KIM", "ZED", "LOU"])
+    expect(page.locator(".who-ini")).to_have_text(["KIM", "LOU"])
+    # Guild: every mate, with when the rest were last seen.
+    open_tab(page, "Guild")
+    expect(page.locator(".who-head")).to_have_text(["Online now · 1", "Away"])
+    expect(page.locator(".who-ini")).to_have_text(["KIM", "ZED"])
     expect(page.locator(".who-row.away .who-meta")).to_have_text("last seen 3h ago")
     expect(page.locator("#guildCard .guild-meta")).to_have_text("3 members · 1 other online")  # from the roster
+    open_tab(page, "Online")
     # A mate's caret wears the guild's colour, and its hover card names the guild.
     page.wait_for_function(f"window.__lf.carets().includes('{KIM[0]}')")
     at = page.evaluate(f"window.__lf.caretXY('{KIM[0]}')")
@@ -171,6 +182,8 @@ def test_leaving_takes_you_out_and_tells_every_sector(page: Page, site_url, erro
     start(page, site_url, fake, guilds, guild=MINE)
     open_list(page)
     eventually(page, lambda: len([m for m in fake.sent("me") if m.get("guild") == CODE]) == 4)
+    expect(page.locator(".who-head")).to_have_text(["Your guild · 1 online"])  # mates online first
+    open_tab(page, "Guild")
     card = page.locator("#guildCard")
     card.get_by_role("button", name="Leave").click()
     expect(card).to_contain_text("Leave the Cobalt Compass Society?")
@@ -213,6 +226,7 @@ def test_guilds_fit_a_phone(page: Page, site_url, errors):
     assert box["x"] >= 0 and box["x"] + box["width"] <= 375, box
     invite.get_by_role("button", name="Join").click()
     open_list(page)
+    expect(page.locator("html")).to_have_attribute("data-people-tab", "guild")
     expect(page.locator("#guildCard .guild-name")).to_have_text("Jade Theodolite Fellowship")
     sizes = page.evaluate("""() => ({ page: document.scrollingElement.scrollWidth,
       notes: [document.getElementById('people').scrollWidth, document.getElementById('people').clientWidth] })""")

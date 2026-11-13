@@ -27,7 +27,7 @@ def test_a_recovery_code_is_shown_once_and_keeps_a_backup(page: Page, site_url, 
     recovery = FakeRecovery(links.players)
     start(page, site_url, links, recovery=recovery)
     page.context.grant_permissions(["clipboard-read", "clipboard-write"])
-    open_people(page)
+    open_people(page, "You")
     card = page.locator("#pairCard")
     card.get_by_role("button", name="Recovery code").click()
     expect(page.locator("html")).to_have_attribute("data-pair", "recovery")
@@ -72,7 +72,7 @@ def test_entering_a_recovery_code_brings_the_surveyor_back(page: Page, site_url,
     links = FakeLinks(players=players)
     recovery = FakeRecovery(players, {CODE: THEIRS})
     start(page, site_url, links, recovery=recovery, initials="QQQ", viewport={"width": 375, "height": 740})
-    open_people(page)
+    open_people(page, "You")
     card = page.locator("#pairCard")
     card.get_by_role("button", name="I have a code").click()
     box = page.locator("#pairInput")
@@ -102,7 +102,7 @@ def test_the_code_fits_a_phone_on_one_line(page: Page, site_url, errors):
     for width in (375, 320):
         links = FakeLinks()
         start(page, site_url, links, recovery=FakeRecovery(links.players), viewport={"width": width, "height": 740})
-        open_people(page)
+        open_people(page, "You")
         card = page.locator("#pairCard")
         card.get_by_role("button", name="Recovery code").click()
         card.get_by_role(

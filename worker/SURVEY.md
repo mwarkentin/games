@@ -317,8 +317,23 @@ a panel over the docked notes. `P` opens and closes it, and Escape closes it.
 It started as a fold of the field notes, but with guilds, your initials,
 linking devices and recovery codes it outgrew them, and the notes are about
 the map and your finds. To make room on a phone's top bar, the title there
-is "LF". The drawer holds, in order: your guild, the list, its two switches,
-and you (your initials, linking another device, your recovery code). A row
+is "LF".
+
+The drawer has three tabs under its title, which stay put while a long list
+scrolls: **Online**, with the list's count, is everyone else nearest first,
+mates online on top under the guild's heading; **Guild**, with your guild's
+colour once you're in one, is the guild's card (start one, invite a mate,
+leave) over every mate, those online and then the rest with when they were
+last seen; **You** is your initials, the two switches (on the list, taking
+emotes) and your devices. Online answers who's here now, and Guild who's in
+your guild, so a mate online shows in both. The tab is the page's
+`peopleTab` machine (`data-people-tab` on `<html>`), any tab to any, kept
+while the drawer closes and opens again; they're ARIA tabs, so arrow keys,
+Home and End move between them and only the one shown is in the tab order.
+Whatever points somewhere opens the tab it means: a wave or "Start a guild"
+before you've signed opens You with the form to sign, joining from an invite
+leaves Surveyors on Guild, and linking or recovering on You. Rows are drawn
+only in the tab shown. A row
 puts a phone's drawer away as it flies, as a find does the notes. Each row
 is three buttons (fly there, wave, and ⋯), so it works from a keyboard, and
 Escape folds an open row of emotes before it closes the drawer. What became
