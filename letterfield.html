@@ -83,9 +83,10 @@ button:focus-visible,a:focus-visible,#map:focus-visible{outline:2px solid var(--
 .topbar{display:contents}
 
 /* Cartouche: map title block */
-.cartouche{position:fixed;top:var(--top);left:var(--gl);display:flex;align-items:stretch;max-width:calc(100% - 236px);outline:1px solid var(--rule);outline-offset:-5px;padding:3px}
+.cartouche{position:fixed;top:var(--top);left:var(--gl);display:flex;align-items:stretch;max-width:calc(100% - 276px);outline:1px solid var(--rule);outline-offset:-5px;padding:3px}
 .brand{padding:9px 14px 8px 12px;border-right:1px solid var(--rule);display:flex;flex-direction:column;justify-content:center;gap:5px}
 .brand h1{margin:0;font:800 27px/.85 var(--f-display);letter-spacing:.05em;text-transform:uppercase}
+.brand-short{display:none}
 .brand small{font:400 9px/1 var(--f-mono);letter-spacing:.16em;text-transform:uppercase;color:var(--muted)}
 .territory{padding:8px 14px 8px 12px;display:grid;grid-template-columns:auto minmax(0,1fr);column-gap:10px;row-gap:3px;align-items:center;min-width:0}
 .swatch{grid-row:1 / span 2;width:12px;height:12px;border-radius:50%;background:var(--c);box-shadow:0 0 0 3px color-mix(in srgb, var(--c) 22%, transparent)}
@@ -125,15 +126,26 @@ span.chip{cursor:default}
 span.chip:hover{border-color:var(--rule)}
 .legend-note{font:400 12px/1.4 var(--f-ui);color:var(--muted);padding:2px 0;white-space:nowrap}
 
-/* Corner: the tools button and the field notes button, top right (beside the
+/* Corner: the tools, surveyors and field notes buttons, top right (beside the
    docked notes, which then stand in for their button). Above the cards at the
-   top of the map, so the stack can drop over them, and under the notes drawer. */
+   top of the map, so the stack can drop over them, and under the drawers. */
 .corner{position:fixed;top:var(--top);right:var(--gr);z-index:20;display:flex;align-items:stretch;transition:right var(--t-slow) var(--ease-out)}
 body.docked .corner{right:calc(var(--notes-w) + 16px)}
-/* The two buttons are one card, split by a rule, so they take little of the top row. */
+/* The buttons are one card, split by rules, so they take little of the top row. */
 .corner .tools-btn{border-radius:8px 0 0 8px;border-right:0}
 body.docked .corner .tools-btn{border-radius:8px;border-right:1px solid var(--rule)}
+body.docked .corner:has(.people-btn:not([hidden])) .tools-btn{border-radius:8px 0 0 8px;border-right:0}
+.corner .people-btn{border-radius:0;border-right:0}
+body.docked .corner .people-btn{border-radius:0 8px 8px 0;border-right:1px solid var(--rule)}
 .corner .notes-toggle{border-radius:0 8px 8px 0}
+/* Surveyors: who else is charting the map, your guild, and you, in a drawer of their own (see Surveyors). */
+.people-btn{position:relative;flex:none;width:40px;height:40px;border:1px solid var(--rule);background:var(--panel);color:var(--ink);box-shadow:var(--shadow);display:grid;place-items:center;cursor:pointer;transition:background-color var(--t-fast) var(--ease-out), color var(--t-fast) var(--ease-out), border-color var(--t-fast) var(--ease-out)}
+.people-btn[hidden]{display:none}
+.people-btn svg{width:20px;height:20px}
+@media (hover: hover){.people-btn:hover{background:var(--hover)}}
+.people-btn[aria-expanded="true"]{background:var(--ink);border-color:var(--ink);color:var(--panel)}
+.people-btn .badge{position:absolute;top:-6px;right:-6px}
+.people-btn[aria-expanded="true"] .badge{box-shadow:0 0 0 2px var(--panel)}
 /* Tools: zoom, home, sound and music drop down from their button as a stack,
    and go again on a second tap, Escape or a tap on the map. Closed, the stack
    takes no taps or focus (inert) and covers nothing. */
@@ -178,12 +190,18 @@ body.docked .corner .tools-btn{border-radius:8px;border-right:1px solid var(--ru
 .badge{font:500 11px/1 var(--f-mono);background:var(--ink);color:var(--panel);border-radius:999px;padding:4px 7px 3px;font-variant-numeric:tabular-nums}
 body.docked .notes-toggle{display:none}
 
-/* Field notes drawer */
-.notes{position:fixed;top:0;right:0;bottom:0;z-index:30;width:var(--notes-w);max-width:100%;background:var(--panel);border-left:1px solid var(--rule);display:flex;flex-direction:column;
+/* Field notes drawer, and the surveyors' beside it */
+.notes,.people{position:fixed;top:0;right:0;bottom:0;z-index:30;width:var(--notes-w);max-width:100%;background:var(--panel);border-left:1px solid var(--rule);display:flex;flex-direction:column;
   padding-top:env(safe-area-inset-top, 0px);padding-bottom:env(safe-area-inset-bottom, 0px);padding-right:env(safe-area-inset-right, 0px);
   transform:translateX(100%);visibility:hidden;transition:transform var(--t-slow) var(--ease-out), visibility 0s linear var(--t-slow);box-shadow:var(--shadow)}
-body.notes-open .notes{transform:none;visibility:visible;transition:transform var(--t-slow) var(--ease-out), visibility 0s}
+body.notes-open .notes,body.people-open .people{transform:none;visibility:visible;transition:transform var(--t-slow) var(--ease-out), visibility 0s}
 body.docked .notes{box-shadow:none}
+/* Over the notes, docked or not, and the whole drawer scrolls. */
+.people{z-index:31;overflow-y:auto;overscroll-behavior:contain}
+.people > *{flex-shrink:0}
+.people-body{padding:0 18px 22px}
+.people-body > .guild:first-child{margin-top:0}
+.people-you{margin-top:14px;padding-top:4px;border-top:1px solid var(--rule)}
 .notes-head{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;padding:18px 18px 12px}
 .notes-head h2{margin:0;font:800 30px/.9 var(--f-display);letter-spacing:.04em;text-transform:uppercase;text-wrap:balance}
 .notes-sub{margin:7px 0 0;font-size:13px;color:var(--muted);max-width:30ch}
@@ -276,8 +294,6 @@ body.docked .notes{box-shadow:none}
 .survey-log::after{content:" →"}
 /* Surveyors: everyone else in the shared world, nearest first, each a row that
    flies you to their territory, with emotes to send them (see Surveyors). */
-.survey-who summary{display:flex;align-items:center;gap:6px}
-.who-count{letter-spacing:.06em}
 .who-status{margin:8px 0 4px;font:400 11px/1.45 var(--f-mono);color:var(--muted);white-space:pre-line}
 html[data-who="loading"] .who-status{animation:blink 1s infinite alternate}
 .who-list{list-style:none;margin:0 -6px;padding:0}
@@ -464,19 +480,22 @@ body.docked .nova{left:calc((100% - var(--notes-w)) / 2)}
      bottom one: the title takes what the buttons leave, flat on the bar. */
   .topbar{display:flex;align-items:stretch;gap:8px;position:fixed;top:0;left:0;right:0;z-index:20;background:var(--panel);border-bottom:1px solid var(--rule);
     box-shadow:0 8px 22px -16px rgba(0,0,0,.4);padding:calc(env(safe-area-inset-top, 0px) + 10px) var(--gr) 8px var(--gl)}
-  .topbar .notes-toggle .badge{top:-5px;right:-5px}
+  .topbar .notes-toggle .badge,.topbar .people-btn .badge{top:-5px;right:-5px}
   .topbar .cartouche{position:static;flex:1;min-width:0;max-width:none;padding:2px;outline-offset:-4px;box-shadow:none}
   .topbar .corner{position:static;z-index:auto}
-  .topbar .tools-btn,.topbar .notes-toggle{box-shadow:none}
-  .brand{padding:7px 9px 6px 8px}
-  .brand h1{font-size:17px}
+  .topbar .tools-btn,.topbar .notes-toggle,.topbar .people-btn{box-shadow:none}
+  /* The title is LF, so the territory has the room. */
+  .brand{padding:7px 9px 6px 9px}
+  .brand h1{font-size:21px;letter-spacing:.04em}
+  .brand-full{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
+  .brand-short{display:inline}
   .brand small{display:none}
   .territory{padding:6px 8px 6px 8px;column-gap:7px;row-gap:2px}
   .swatch{width:9px;height:9px}
   .t-name{font-size:15.5px}
   .t-meta{font-size:9.5px}
   .t-coord{display:none}  /* the grid reference is in each find's notes */
-  .notes-toggle,.tools-btn{padding:0;width:44px;height:46px;justify-content:center;gap:0}
+  .notes-toggle,.tools-btn,.people-btn{padding:0;width:44px;height:46px;justify-content:center;gap:0}
   .notes-toggle .label{display:none}
   .notes-toggle .badge{position:absolute;top:-6px;right:-6px}
   /* The bar's list takes two rows, its head over its chips, which scroll from
@@ -485,11 +504,11 @@ body.docked .nova{left:calc((100% - var(--notes-w)) / 2)}
   .legend{flex-direction:column;align-items:stretch;gap:8px}
   .legend-head{padding:0 var(--gr) 0 calc(var(--gl) - 2px)}
   .chips{flex:none;padding:4px var(--gr) 4px var(--gl)}
-  .notes{top:auto;left:0;width:100%;height:min(80%, 680px);border-left:0;border-top:1px solid var(--rule);border-radius:14px 14px 0 0;transform:translateY(100%);padding-left:env(safe-area-inset-left, 0px)}
+  .notes,.people{top:auto;left:0;width:100%;height:min(80%, 680px);border-left:0;border-top:1px solid var(--rule);border-radius:14px 14px 0 0;transform:translateY(100%);padding-left:env(safe-area-inset-left, 0px)}
   .coach{top:calc(var(--top) + 68px);right:var(--gr);width:auto}
 }
 @media (prefers-reduced-motion: reduce){
-  .notes,.toast,.bar,.tool-stack,.tool-stack > *,.tools-btn,.tools-btn svg circle{transition:none!important}
+  .notes,.people,.toast,.bar,.tool-stack,.tool-stack > *,.tools-btn,.tools-btn svg circle{transition:none!important}
   .find-def[data-define="loading"] .def-note{animation:none}
   .nova.show b{animation:none}
   .sync-dot,.survey-dot{animation:none!important}
@@ -507,7 +526,7 @@ body.settling, body.settling *{transition:none!important}
 <div class="topbar" id="topbar">
   <header class="cartouche card">
     <div class="brand">
-      <h1>Letterfield</h1>
+      <h1><span class="brand-full">Letterfield</span><span class="brand-short" aria-hidden="true">LF</span></h1>
       <small id="brandSub">Endless word search</small>
     </div>
     <div class="territory mark" id="territory">
@@ -530,6 +549,10 @@ body.settling, body.settling *{transition:none!important}
         <label style="--i:6" class="tool-vol" id="musicVolRow" title="Music volume ([ and ])"><span class="vh">Music volume</span><input type="range" id="musicVol" min="0" max="100" step="5" value="0" aria-keyshortcuts="[ ]"><output id="musicVolOut" for="musicVol" aria-hidden="true">0</output></label>
       </div>
     </div>
+    <button type="button" class="people-btn" id="peopleBtn" aria-expanded="false" aria-controls="people" aria-keyshortcuts="P" aria-label="Surveyors" title="Surveyors (P)" hidden>
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="8.2" r="3.7"/><path d="M4.8 20.2a7.2 7.2 0 0 1 14.4 0"/></svg>
+      <span class="badge" id="peopleBadge" aria-hidden="true" hidden>0</span>
+    </button>
     <button class="notes-toggle card" id="notesToggle" aria-expanded="false" aria-controls="notes">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 4h11a3 3 0 0 1 3 3v13H8a3 3 0 0 1-3-3V4z"/><path d="M5 17a3 3 0 0 1 3-3h11"/><path d="M9 8h6"/></svg>
       <span class="label">Field notes</span>
@@ -572,31 +595,7 @@ body.settling, body.settling *{transition:none!important}
       <canvas id="worldMap" width="200" height="200" aria-label="Map of the shared world: charted territories are darker, dots are players. Tap to fly there."></canvas>
       <p class="survey-map-note" id="worldNote"></p>
     </details>
-    <details class="survey-map survey-who" id="surveyWho">
-      <summary>Surveyors <span class="who-count" id="whoCount"></span></summary>
-      <div class="guild" id="guildCard"></div>
-      <p class="who-status" id="whoStatus" aria-live="polite"></p>
-      <ol class="who-list" id="whoList" aria-label="Surveyors in the shared world, nearest first"></ol>
-      <button type="button" class="who-more" id="whoMore" hidden>Show more</button>
-      <div class="who-opts">
-        <label><input type="checkbox" id="whoListed" checked> Show me on the list</label>
-        <label><input type="checkbox" id="whoEmotes" checked> Take emotes</label>
-      </div>
-      <p class="who-note">Off the list, surveyors near you still see your caret. Muting someone hides their caret and emotes on this device.</p>
-    </details>
     <a class="survey-log" href="/letterfield-log">Survey log: every word charted, hour by hour</a>
-    <div class="survey-me" id="surveyMe" hidden>
-      <span class="eyebrow">Surveyor</span><b id="surveyMeName"></b>
-      <button type="button" class="icon-btn" id="surveyEdit" aria-label="Change your initials" title="Change your initials"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 20h4L19 9l-4-4L4 16v4z"/><path d="M13.5 6.5l4 4"/></svg></button>
-    </div>
-    <form class="survey-sign" id="surveySign">
-      <label for="surveyInitials">Sign the words you chart first</label>
-      <input id="surveyInitials" maxlength="3" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="ABC" aria-describedby="surveyHint">
-      <button type="submit" class="btn">Sign</button>
-      <button type="button" class="btn ghost" id="surveyCancel" hidden>Cancel</button>
-    </form>
-    <p class="survey-hint" id="surveyHint"></p>
-    <div class="pair" id="pairCard"></div>
   </section>
   <section class="novas" id="novasSec" aria-labelledby="novasHead" hidden>
     <h3 class="eyebrow" id="novasHead">Supernovas</h3>
@@ -621,6 +620,41 @@ body.settling, body.settling *{transition:none!important}
   <kbd id="signupKbd">Shift-drag also circles</kbd>
   <p class="survey-hint" id="signupHint" aria-live="polite"></p>
 </form>
+
+<aside class="people" id="people" aria-label="Surveyors">
+  <div class="notes-head">
+    <div>
+      <h2>Surveyors</h2>
+      <p class="notes-sub">Everyone charting the shared map with you. Tap one to fly there.</p>
+    </div>
+    <button type="button" class="icon-btn" id="peopleClose" aria-label="Close surveyors"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+  </div>
+  <div class="people-body">
+    <div class="guild" id="guildCard"></div>
+    <p class="who-status" id="whoStatus" aria-live="polite"></p>
+    <ol class="who-list" id="whoList" aria-label="Surveyors in the shared world, nearest first"></ol>
+    <button type="button" class="who-more" id="whoMore" hidden>Show more</button>
+    <div class="who-opts">
+      <label><input type="checkbox" id="whoListed" checked> Show me on the list</label>
+      <label><input type="checkbox" id="whoEmotes" checked> Take emotes</label>
+    </div>
+    <p class="who-note">Off the list, surveyors near you still see your caret. Muting someone hides their caret and emotes on this device.</p>
+    <section class="people-you" aria-label="You">
+      <div class="survey-me" id="surveyMe" hidden>
+        <span class="eyebrow">Surveyor</span><b id="surveyMeName"></b>
+        <button type="button" class="icon-btn" id="surveyEdit" aria-label="Change your initials" title="Change your initials"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 20h4L19 9l-4-4L4 16v4z"/><path d="M13.5 6.5l4 4"/></svg></button>
+      </div>
+      <form class="survey-sign" id="surveySign">
+        <label for="surveyInitials">Sign the words you chart first</label>
+        <input id="surveyInitials" maxlength="3" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="ABC" aria-describedby="surveyHint">
+        <button type="submit" class="btn">Sign</button>
+        <button type="button" class="btn ghost" id="surveyCancel" hidden>Cancel</button>
+      </form>
+      <p class="survey-hint" id="surveyHint"></p>
+      <div class="pair" id="pairCard"></div>
+    </section>
+  </div>
+</aside>
 
 <div class="toast card mark" id="toast" role="status" aria-live="polite"></div>
 <div class="vh" id="findSay" role="status" aria-live="polite"></div>
@@ -3480,14 +3514,15 @@ canvas.addEventListener('wheel', e => {
 
 window.addEventListener('keydown', e => {
   if (e.key === 'Shift') canvas.classList.add('select');
-  const inNotes = e.target && e.target.closest && e.target.closest('.notes, .signup');
+  const inNotes = e.target && e.target.closest && e.target.closest('.notes, .people, .signup');
   if (e.key === 'Escape') {
     if (sel.anchor) {
       sel.anchor = null; sel.end = null;
       if (gest && gest.type === 'seldrag') gest = null;  // a drag that was circling stops here, button still down or not
       invalidate(); return;
     }
-    if (notesOpen && !dock) { setNotes(false); notesToggle.focus(); }
+    if (peopleOpen) { setPeople(false); peopleBtn.focus(); }
+    else if (notesOpen && !dock) { setNotes(false); notesToggle.focus(); }
     else if (toolsOpen) setTools(false, { refocus: true });
     return;
   }
@@ -3503,6 +3538,7 @@ window.addEventListener('keydown', e => {
     case '+': case '=': flyTo(cam.x, cam.y, cam.cs * 1.5, { min: 220, max: 320 }); break;
     case '-': case '_': flyTo(cam.x, cam.y, cam.cs / 1.5, { min: 220, max: 320 }); break;
     case 'n': setNotes(!notesOpen); break;
+    case 'p': if (surveyApi) setPeople(!peopleOpen); break;
     case 'm': setSound(!soundOn); break;
     case 'b': setMusic(!musicOn); break;
     case '[': case ']': setMusicVol((musicOn ? musicVol : 0) + (k === ']' ? 10 : -10)); break;
@@ -3933,6 +3969,7 @@ function applyDock() {
   document.body.classList.toggle('docked', nd > 0);
 }
 function setNotes(open, remember = true) {
+  if (open && peopleOpen && W < 1100) setPeople(false);  // one sheet at a time, unless the notes dock under the surveyors
   notesOpen = open;
   document.body.classList.toggle('notes-open', open);
   notesToggle.setAttribute('aria-expanded', String(open));
@@ -4238,12 +4275,30 @@ function caretOnScreen(pid) {
   return px > 12 && px < W - dock - 12 && py > 40 && py < H - 12;
 }
 
-// The list, shown on <html data-who>: closed (folded, the notes shut or the
+// The surveyors' drawer: a button of its own beside the field notes, with a
+// count of who else is online, opens it over the notes (a sheet on a phone).
+// It holds the list, your guild, and you: your initials and your devices.
+const peopleBtn = $('#peopleBtn'), peopleBadge = $('#peopleBadge');
+let peopleOpen = false;
+function setPeople(open) {
+  if (!surveyApi) open = false;
+  if (open && notesOpen && !dock) setNotes(false, false);  // one sheet at a time
+  peopleOpen = open;
+  document.body.classList.toggle('people-open', open);
+  peopleBtn.setAttribute('aria-expanded', String(open));
+  syncWho();
+  renderWho();
+}
+peopleBtn.hidden = !surveyApi;
+peopleBtn.addEventListener('click', () => setPeople(!peopleOpen));
+$('#peopleClose').addEventListener('click', () => { setPeople(false); peopleBtn.focus(); });
+
+// The list, shown on <html data-who>: closed (the drawer shut or the
 // tab hidden), loading, ready (it comes round again every WHO_REFRESH_MS),
 // refreshing (the last answer stays up meanwhile) or failed (tried again
 // after WHO_RETRY_MS). An answer that comes back after the list has moved on
 // is dropped.
-const whoEl = $('#surveyWho'), whoList = $('#whoList'), whoStatus = $('#whoStatus'), whoCount = $('#whoCount'), whoMore = $('#whoMore');
+const whoList = $('#whoList'), whoStatus = $('#whoStatus'), whoMore = $('#whoMore');
 let whoData = null, whoPages = 1, whoTimer = 0, whoOpen = '', whoAt = '', seek = null, lastHere = 0, pops = [];
 const whoSaid = new Map();  // pid → what became of the last emote we sent them
 const Who = machine('who', {
@@ -4265,7 +4320,7 @@ function whoMoved(to) {
   if (to === 'ready' && myGuild) renderGuild();  // its count of mates online takes in the list (see Guilds)
 }
 function syncWho() {
-  const want = !!surveyApi && notesOpen && whoEl.open && !surveyPaused;
+  const want = !!surveyApi && peopleOpen && !surveyPaused;
   if (want && Who.is('closed')) Who.go('loading');
   else if (!want && !Who.is('closed')) Who.go('closed');
 }
@@ -4284,7 +4339,7 @@ async function fetchWho() {
       seen.add(e[0]);
       who.push({ pid: e[0], ini: typeof e[1] === 'string' && /^[A-Z]{3}$/.test(e[1]) ? e[1] : '', rx: e[2], ry: e[3], idle: e[4], quiet: !!(e[5] & 1), at: now });
     }
-    whoData = { n: got[0].n, more: !!got[got.length - 1].more, who };
+    whoData = { n: got[0].n, more: !!got[got.length - 1].more, who, at: now };
     Who.go('ready');
   } catch (_) {
     if (Who.seq === at) Who.go('failed');
@@ -4299,9 +4354,14 @@ function sortedWho() {
 }
 function renderWho() {
   if (!surveyApi) return;
-  const count = world ? `· ${world.players.toLocaleString()} online` : '';
-  if (whoCount.textContent !== count) whoCount.textContent = count;
-  if (!whoEl.open) return;
+  // The button's count: everyone else online in the shared world. The list's
+  // own count while it's recent (it comes every few seconds while open); the
+  // world's total otherwise, which trails the Atlas's reports by a minute or so.
+  const others = whoData && Date.now() - whoData.at < 120000 ? whoData.n : world ? Math.max(0, world.players - 1) : 0;
+  if (peopleBadge.textContent !== String(others)) peopleBadge.textContent = others;
+  peopleBadge.hidden = !others;
+  peopleBtn.setAttribute('aria-label', others ? `Surveyors, ${others.toLocaleString()} online` : 'Surveyors');
+  if (!peopleOpen) return;
   const st = Who.state;
   let status;
   if (!whoData) status = st === 'failed' ? 'Couldn’t load the list. Trying again shortly.' : 'Looking for surveyors…';
@@ -4353,7 +4413,6 @@ whoList.addEventListener('keydown', e => {
   if (b) b.focus();
 });
 whoMore.addEventListener('click', () => { whoPages++; if (Who.is('ready')) Who.go('refreshing'); });
-whoEl.addEventListener('toggle', () => { syncWho(); renderWho(); });
 const listedEl = $('#whoListed'), emotesEl = $('#whoEmotes');
 listedEl.checked = listedOn;
 emotesEl.checked = emotesOn;
@@ -4364,7 +4423,7 @@ emotesEl.addEventListener('change', () => { emotesOn = emotesEl.checked; LS.set(
 // otherwise to the middle of their territory, then on to their caret once
 // its sector, joined on landing, says where they are.
 function flyToSurveyor(s) {
-  if (!dock) setNotes(false, false);
+  if (W < 1100) setPeople(false);  // a sheet over the map on a phone: it goes, as the notes do for a find
   const c = caretOf(s.pid);
   seek = c ? null : { pid: s.pid, until: Date.now() + 10000 };
   if (c) flyTo(c.x, c.y, Math.max(cam.cs, 30));
@@ -5429,7 +5488,7 @@ invalidate();
 if (redrawn) setTimeout(() => toast(`<i></i><b>The map has been redrawn</b><span>${NT} themes of about ${Math.round(THEMES.reduce((a, t) => a + t.words.length, 0) / NT / 10) * 10} words now, so a territory never repeats one · ${redrawn.kept ? `${redrawn.kept} of your ${redrawn.had} finds are still on it` : 'your old finds are not on it'}</span>`, null, 8000), 900);
 connectStore();
 if (location.hash === '#debug') window.__lf = { cam, found, claims, links, chunk, wordEnd, collect, territoryProgress, remnants: () => [...remnants().set], novas: () => [...novasSeen.values()], territoryName: regionName, world: () => world, supernova, novaSound, audioOut, musicTracks: MUSIC_TRACKS, audio: () => ac, music: () => musicNow && { state: ac.state, track: musicNow.track().name, nodes: musicNow.track().nodes.size, level: musicNow.master.gain.value, master: musicNow.master, volume: musicVol, target: musicLevel(), swap: musicNow.swap }, nova: () => nova,
-  who: () => Who.state, surveyors: () => whoData, emoteMotion, guild: () => Membership.state, myGuild: () => myGuild, mates: () => [...mates.keys()], roster: () => roster,
+  who: () => Who.state, surveyors: () => whoData, people: () => peopleOpen, emoteMotion, guild: () => Membership.state, myGuild: () => myGuild, mates: () => [...mates.keys()], roster: () => roster,
   pair: () => Pair.state, pairCode: () => pairCode && pairCode.code, recoveryCode: () => recoveryCode, sync: () => Sync.state, syncNow: () => { syncDue = 0; clearTimeout(syncTimer); return syncNow(); },
   guildWords: () => [GUILD_FIRST.length, GUILD_SECOND.length, GUILD_THIRD.length], pops: () => pops.map(p => [p.pid, p.e]), pid: () => myPid, muted: () => [...muted], carets: () => [...ghosts.keys()],
   caretXY: id => { const gh = ghosts.get(id); return gh && { x: (Math.round(gh.x) - cam.x) * cam.cs + (W - dock) / 2, y: (Math.floor(gh.y) + .5 - cam.y) * cam.cs + H / 2 + mapTop }; },

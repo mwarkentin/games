@@ -15,7 +15,7 @@ from playwright.sync_api import Page, expect
 
 from fake_survey import FakeLinks, FakePlayers, FakeRecovery, player_id
 from test_letterfield_linking import OTHER, THEIR_PID, THEIRS, start
-from test_letterfield_survey import open_notes
+from test_letterfield_survey import open_people
 from test_letterfield_surveyors import KIM, TOKEN
 from test_letterfield_sync import noted, words
 
@@ -27,7 +27,7 @@ def test_a_recovery_code_is_shown_once_and_keeps_a_backup(page: Page, site_url, 
     recovery = FakeRecovery(links.players)
     start(page, site_url, links, recovery=recovery)
     page.context.grant_permissions(["clipboard-read", "clipboard-write"])
-    open_notes(page)
+    open_people(page)
     card = page.locator("#pairCard")
     card.get_by_role("button", name="Recovery code").click()
     expect(page.locator("html")).to_have_attribute("data-pair", "recovery")
@@ -72,7 +72,7 @@ def test_entering_a_recovery_code_brings_the_surveyor_back(page: Page, site_url,
     links = FakeLinks(players=players)
     recovery = FakeRecovery(players, {CODE: THEIRS})
     start(page, site_url, links, recovery=recovery, initials="QQQ", viewport={"width": 375, "height": 740})
-    open_notes(page)
+    open_people(page)
     card = page.locator("#pairCard")
     card.get_by_role("button", name="Use a code").click()
     box = page.locator("#pairInput")
@@ -82,7 +82,7 @@ def test_entering_a_recovery_code_brings_the_surveyor_back(page: Page, site_url,
     expect(card.locator(".pair-err")).to_contain_text("That isn’t a recovery code we know")
     box.fill(CODE.lower())
     sizes = page.evaluate(
-        "[document.scrollingElement.scrollWidth, document.getElementById('notes').scrollWidth, document.getElementById('notes').clientWidth]"
+        "[document.scrollingElement.scrollWidth, document.getElementById('people').scrollWidth, document.getElementById('people').clientWidth]"
     )
     assert sizes[0] <= 375 and sizes[1] <= sizes[2], sizes
     card.get_by_role("button", name="Link", exact=True).click()
@@ -102,7 +102,7 @@ def test_the_code_fits_a_phone_on_one_line(page: Page, site_url, errors):
     for width in (375, 320):
         links = FakeLinks()
         start(page, site_url, links, recovery=FakeRecovery(links.players), viewport={"width": width, "height": 740})
-        open_notes(page)
+        open_people(page)
         card = page.locator("#pairCard")
         card.get_by_role("button", name="Recovery code").click()
         card.get_by_role(
@@ -111,8 +111,8 @@ def test_the_code_fits_a_phone_on_one_line(page: Page, site_url, errors):
         code = card.locator("#recoveryCode")
         expect(code).to_be_visible()
         sizes = page.evaluate(
-            "[document.scrollingElement.scrollWidth, document.getElementById('notes').scrollWidth,"
-            " document.getElementById('notes').clientWidth]"
+            "[document.scrollingElement.scrollWidth, document.getElementById('people').scrollWidth,"
+            " document.getElementById('people').clientWidth]"
         )
         assert sizes[0] <= width and sizes[1] <= sizes[2], (width, sizes)
         fit = code.evaluate(

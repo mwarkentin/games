@@ -15,7 +15,7 @@ import time
 from playwright.sync_api import Page, expect
 
 from fake_survey import NOW_MS, FakeGuilds, FakeSurvey, player_id
-from test_letterfield_survey import SURVEY, eventually, open_game, open_notes
+from test_letterfield_survey import SURVEY, eventually, open_game, open_people
 from test_letterfield_surveyors import KIM, LOU, PID, TOKEN, ZED, open_list, wait_landed
 
 CODE, TAG, NAME = "KMN234", "c0ffee42", [11, 0, 0]  # the Cobalt Compass Society
@@ -188,8 +188,7 @@ def test_leaving_takes_you_out_and_tells_every_sector(page: Page, site_url, erro
 
 def test_a_guild_that_no_longer_has_you_lets_you_go(page: Page, site_url, errors):
     start(page, site_url, FakeSurvey(), FakeGuilds(), guild=MINE)
-    open_notes(page)
-    page.locator("#surveyWho summary").click()
+    open_people(page)
     expect(page.locator("html")).to_have_attribute("data-guild", "out")
     expect(page.locator("#toast span")).to_have_text("You’re not in this guild any more")
     assert page.evaluate("localStorage.getItem('letterfield.guild.v1')") is None
@@ -216,7 +215,7 @@ def test_guilds_fit_a_phone(page: Page, site_url, errors):
     open_list(page)
     expect(page.locator("#guildCard .guild-name")).to_have_text("Jade Theodolite Fellowship")
     sizes = page.evaluate("""() => ({ page: document.scrollingElement.scrollWidth,
-      notes: [document.getElementById('notes').scrollWidth, document.getElementById('notes').clientWidth] })""")
+      notes: [document.getElementById('people').scrollWidth, document.getElementById('people').clientWidth] })""")
     assert sizes["page"] <= 375 and sizes["notes"][0] <= sizes["notes"][1], sizes
     assert player_id(TOKEN) == PID
     assert errors == []

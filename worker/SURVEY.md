@@ -305,19 +305,21 @@ right-click or a long press of someone's caret, is a row of **emotes**: seven
 small drawings to send them. The code is `src/survey-social.js`, with hooks in
 `survey.js`, and a section of `letterfield.html` of its own.
 
-### Where it lives: the field notes
+### Where it lives: a drawer of its own
 
-The list is a fold of the survey panel in the field notes, beside the world
-map, rather than a panel or a sheet of its own. Since #75 the screen is the
-map between two bars, the tools and the notes behind one corner of buttons,
-and anything about the survey folds into the notes: a new button would crowd
-a phone's top bar, and a sheet from the bottom bar would sit over the words.
-In the notes it's beside the world map, which does the same job at a glance
-(dots where people are, a tap to fly). On a computer the notes are docked, so
-the list stays in view while you play; on a phone they're a sheet, and a row
-puts it away as it flies, as a find does. Each row is two buttons (fly there,
-and emotes), so it works from a keyboard, and Escape folds an open row of
-emotes.
+The list has a button of its own in the corner, a person between the tools
+and the field notes, with a count of everyone else online (the list's own
+count while it's recent, the world's total otherwise). It opens a Surveyors
+drawer like the notes': a sheet from the bottom on a phone, and on a computer
+a panel over the docked notes. `P` opens and closes it, and Escape closes it.
+It started as a fold of the field notes, but with guilds, your initials,
+linking devices and recovery codes it outgrew them, and the notes are about
+the map and your finds. To make room on a phone's top bar, the title there
+is "LF". The drawer holds, in order: your guild, the list, its two switches,
+and you (your initials, linking another device, your recovery code). A row
+puts a phone's drawer away as it flies, as a find does the notes. Each row
+is two buttons (fly there, and emotes), so it works from a keyboard, and
+Escape folds an open row of emotes before it closes the drawer.
 
 ### Who a player is
 
@@ -602,8 +604,8 @@ on the site can name the same player later.
 
 ### How it goes
 
-1. On a device that's already you, **Link another device** (in the survey
-   panel of the field notes) asks the Worker for a code: `POST /v1/link
+1. On a device that's already you, **Link another device** (under "You" in
+   the Surveyors drawer) asks the Worker for a code: `POST /v1/link
    {token, carry}`. The Worker keeps the token and what it carries in D1
    (`links`, migration 0004) under eight random characters from the groups'
    alphabet, for ten minutes and one use.
@@ -723,7 +725,7 @@ player's own devices reach it:
 - **Limits.** 25,000 finds and 1,000 supernovas a player, 2,000 of either a
   sync (more go in the next), one sync every 2 seconds, half a megabyte a
   request.
-- **Stopping.** "Stop syncing" under the field notes' linking card stops
+- **Stopping.** "Stop syncing" under the Surveyors drawer's linking card stops
   this device, or every device: that deletes the Player's storage, and the
   others hear `off` at their next sync and stop too, with a note. Each
   device keeps its notes as they are. A Player nobody has synced for 180

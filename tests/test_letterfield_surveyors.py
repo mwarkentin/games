@@ -14,7 +14,7 @@ import re
 from playwright.sync_api import Page, expect
 
 from fake_survey import FakeSurvey
-from test_letterfield_survey import eventually, open_game, open_notes
+from test_letterfield_survey import eventually, open_game, open_people
 
 TOKEN = "0" * 31 + "1"  # this browser's player token, as the game would make one
 PID = hashlib.sha256(f"games-player:{TOKEN}".encode()).hexdigest()[:12]  # and the id the sectors give it
@@ -45,9 +45,7 @@ def start(page: Page, site_url: str, fake: FakeSurvey, viewport: dict | None = N
 
 
 def open_list(page: Page) -> None:
-    open_notes(page)
-    if not page.locator("#surveyWho").evaluate("d => d.open"):
-        page.locator("#surveyWho summary").click()
+    open_people(page)
     expect(page.locator("html")).to_have_attribute("data-who", "ready")
 
 
@@ -87,8 +85,8 @@ def test_the_list_names_everyone_nearest_first_and_flies_to_them(page: Page, sit
     wait_landed(page, 7.5 * 48, -3.5 * 48)
     expect(page.locator(".who-ini").first).to_have_text("LOU")  # nearest first, from where we are now
 
-    # Folded, it stops asking.
-    page.locator("#surveyWho summary").click()
+    # Put away, it stops asking.
+    page.locator("#peopleClose").click()
     expect(page.locator("html")).to_have_attribute("data-who", "closed")
     assert errors == []
 
@@ -130,11 +128,11 @@ def test_an_emote_goes_from_a_row_and_says_what_became_of_it(page: Page, site_ur
     page.get_by_role("button", name="Nice to KIM").click()
     expect(page.locator(".who-said")).to_have_text("Too quick: try again in a moment.")
 
-    # Escape folds the row, and leaves the notes open.
+    # Escape folds the row, and leaves the drawer open.
     page.keyboard.press("Escape")
     expect(page.locator(".who-emotes")).to_have_count(0)
     expect(page.get_by_role("button", name="Emotes for KIM")).to_be_focused()
-    expect(page.locator("#notes")).to_be_visible()
+    expect(page.locator("#people")).to_be_visible()
 
     # Someone who takes no emotes can still be muted, but not sent one.
     page.get_by_role("button", name="Emotes for SAM").click()
@@ -267,8 +265,7 @@ def test_a_caret_has_a_menu_of_emotes(page: Page, site_url, errors):
 def test_the_list_says_when_it_cant_be_loaded(page: Page, site_url, errors):
     fake = FakeSurvey(list_status=503)
     start(page, site_url, fake)
-    open_notes(page)
-    page.locator("#surveyWho summary").click()
+    open_people(page)
     expect(page.locator("html")).to_have_attribute("data-who", "failed")
     expect(page.locator("#whoStatus")).to_have_text("Couldn’t load the list. Trying again shortly.")
     expect(page.locator(".who-row")).to_have_count(0)
@@ -284,7 +281,7 @@ def test_the_list_fits_a_phone(page: Page, site_url, errors):
     page.locator(".who-emotes").scroll_into_view_if_needed()
     sizes = page.evaluate("""() => ({
       page: document.scrollingElement.scrollWidth,
-      notes: [document.getElementById('notes').scrollWidth, document.getElementById('notes').clientWidth],
+      notes: [document.getElementById('people').scrollWidth, document.getElementById('people').clientWidth],
       emotes: [...document.querySelectorAll('.who-emotes .emote')].map(b => b.getBoundingClientRect().width),
       act: document.querySelector('.who-act').getBoundingClientRect().width,
     })""")
@@ -293,9 +290,9 @@ def test_the_list_fits_a_phone(page: Page, site_url, errors):
     assert min(sizes["emotes"]) >= 36 and sizes["act"] >= 40, sizes
     page.get_by_role("button", name="Wave to ZED").click()
     expect(page.locator(".who-said")).to_have_text("Wave: sent to ZED.")
-    # A row flies there and puts the notes away, which on a phone cover the map.
+    # A row flies there and puts the drawer away, which on a phone covers the map.
     page.get_by_role("button", name=re.compile(r"^LOU, ")).click()
-    expect(page.locator("#notes")).to_be_hidden()
+    expect(page.locator("#people")).to_be_hidden()
     wait_landed(page, 7.5 * 48, -3.5 * 48)
     assert errors == []
 
@@ -321,4 +318,37 @@ def test_emotes_move_as_they_arrive_and_hold_still_under_reduced_motion(page: Pa
     fake.emote("0,0", LOU[0], "LOU", "wave", [7, -4])
     expect(icon).to_be_visible()
     assert icon.evaluate("e => e.getAnimations().length") == 0
+    assert errors == []
+
+
+def test_the_surveyors_have_a_button_and_drawer_of_their_own(page: Page, site_url, errors):
+    fake = FakeSurvey(surveyors=[KIM, ZED])
+    start(page, site_url, fake, viewport={"width": 375, "height": 740})
+    button = page.locator("#peopleBtn")
+    expect(button).to_be_visible()
+    # Nothing about surveyors is in the field notes now.
+    assert page.locator("#notes #whoList, #notes #guildCard, #notes #surveyMe, #notes #pairCard").count() == 0
+    # On a phone the title is LF, and still Letterfield to a screen reader.
+    expect(page.locator(".brand-short")).to_have_text("LF")
+    expect(page.locator(".brand-short")).to_be_visible()
+    expect(page.get_by_role("heading", level=1)).to_have_accessible_name("Letterfield")
+    # P opens it, with the list; its count comes from the list.
+    page.locator("#map").focus()
+    page.keyboard.press("p")
+    expect(page.locator("#people")).to_be_visible()
+    expect(page.locator("html")).to_have_attribute("data-who", "ready")
+    expect(page.locator("#peopleBadge")).to_have_text("2")
+    expect(button).to_have_attribute("aria-label", "Surveyors, 2 online")
+    # One sheet at a time on a phone: the notes take its place, and it theirs.
+    page.click("#notesToggle")
+    expect(page.locator("#notes")).to_be_visible()
+    expect(page.locator("#people")).to_be_hidden()
+    expect(page.locator("html")).to_have_attribute("data-who", "closed")
+    button.click()
+    expect(page.locator("#people")).to_be_visible()
+    expect(page.locator("#notes")).to_be_hidden()
+    # Escape puts it away and gives the button back the focus.
+    page.keyboard.press("Escape")
+    expect(page.locator("#people")).to_be_hidden()
+    expect(button).to_be_focused()
     assert errors == []
