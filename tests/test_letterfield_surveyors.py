@@ -107,37 +107,37 @@ def test_an_emote_goes_from_a_row_and_says_what_became_of_it(page: Page, site_ur
     fake = FakeSurvey(surveyors=[KIM, ZED, SAM], presence=[KIM_CARET])
     start(page, site_url, fake)
     open_list(page)
-    page.get_by_role("button", name="Emotes for ZED").click()
-    expect(page.get_by_role("button", name="Emotes for ZED")).to_have_attribute("aria-expanded", "true")
-    expect(page.locator(".who-emotes .emote")).to_have_count(7)
+    page.get_by_role("button", name="More for ZED").click()
+    expect(page.get_by_role("button", name="More for ZED")).to_have_attribute("aria-expanded", "true")
+    expect(page.locator(".who-emotes .emote")).to_have_count(6)  # wave sits on the row itself
     page.get_by_role("button", name="Thanks to ZED").click()
     eventually(page, lambda: fake.sent("emote"))
     # From the sector under the middle of the view, toward ZED's (territory 1,0 is in sector 0,0).
     assert fake.sent("emote")[-1] == {"t": "emote", "to": ZED[0], "e": "thanks", "s": [0, 0], "sector": "0,0"}
-    expect(page.locator(".who-said")).to_have_text("Thanks: sent to ZED.")
+    expect(page.locator(".who-said:not(:empty)")).to_have_text("Thanks: sent to ZED.")
 
     # To a caret in view, it pops there for us too.
-    page.get_by_role("button", name="Emotes for KIM").click()
+    page.get_by_role("button", name="More for KIM").click()
     expect(page.locator(".who-emotes")).to_have_count(1)  # one row of emotes open at a time
     page.get_by_role("button", name="Wave to KIM").click()
     page.wait_for_function(f"window.__lf.pops().some(p => p[0] === '{KIM[0]}' && p[1] === 'wave')")
     fake.emote_error = "off"
     page.get_by_role("button", name="Clap to KIM").click()
-    expect(page.locator(".who-said")).to_have_text("KIM isn’t taking emotes.")
+    expect(page.locator(".who-said:not(:empty)")).to_have_text("KIM isn’t taking emotes.")
     fake.emote_error = "slow down"
     page.get_by_role("button", name="Nice to KIM").click()
-    expect(page.locator(".who-said")).to_have_text("Too quick: try again in a moment.")
+    expect(page.locator(".who-said:not(:empty)")).to_have_text("Too quick: try again in a moment.")
 
     # Escape folds the row, and leaves the drawer open.
     page.keyboard.press("Escape")
     expect(page.locator(".who-emotes")).to_have_count(0)
-    expect(page.get_by_role("button", name="Emotes for KIM")).to_be_focused()
+    expect(page.get_by_role("button", name="More for KIM")).to_be_focused()
     expect(page.locator("#people")).to_be_visible()
 
     # Someone who takes no emotes can still be muted, but not sent one.
-    page.get_by_role("button", name="Emotes for SAM").click()
+    page.get_by_role("button", name="More for SAM").click()
     expect(page.locator(".who-emotes .emote").first).to_be_disabled()
-    expect(page.locator(".who-said")).to_have_text("SAM isn’t taking emotes.")
+    expect(page.locator(".who-said:not(:empty)")).to_have_text("SAM isn’t taking emotes.")
     assert errors == []
 
 
@@ -172,7 +172,7 @@ def test_muting_hides_a_surveyors_caret_and_emotes_and_is_remembered(page: Page,
     start(page, site_url, fake)
     open_list(page)
     page.wait_for_function(f"window.__lf.carets().includes('{KIM[0]}')")
-    page.get_by_role("button", name="Emotes for KIM").click()
+    page.get_by_role("button", name="More for KIM").click()
     page.get_by_role("button", name="Mute KIM").click()
     expect(page.locator(".who-row")).to_have_class(re.compile(r"\bmuted\b"))
     expect(page.locator(".who-meta")).to_have_text("in your territory · muted")
@@ -189,7 +189,7 @@ def test_muting_hides_a_surveyors_caret_and_emotes_and_is_remembered(page: Page,
     page.wait_for_timeout(500)
     assert KIM[0] not in page.evaluate("window.__lf.carets()")
     open_list(page)
-    page.get_by_role("button", name="Emotes for KIM").click()
+    page.get_by_role("button", name="More for KIM").click()
     expect(page.locator(".who-emotes .emote")).to_have_count(0)  # nothing to send someone muted
     page.get_by_role("button", name="Unmute KIM").click()
     page.wait_for_function(f"window.__lf.carets().includes('{KIM[0]}')")
@@ -277,19 +277,22 @@ def test_the_list_fits_a_phone(page: Page, site_url, errors):
     fake = FakeSurvey(surveyors=[KIM, ZED, SAM, LOU, ANON], presence=[KIM_CARET])
     start(page, site_url, fake, viewport={"width": 375, "height": 740})
     open_list(page)
-    page.get_by_role("button", name="Emotes for ZED").click()
+    page.get_by_role("button", name="More for ZED").click()
     page.locator(".who-emotes").scroll_into_view_if_needed()
     sizes = page.evaluate("""() => ({
       page: document.scrollingElement.scrollWidth,
       notes: [document.getElementById('people').scrollWidth, document.getElementById('people').clientWidth],
       emotes: [...document.querySelectorAll('.who-emotes .emote')].map(b => b.getBoundingClientRect().width),
       act: document.querySelector('.who-act').getBoundingClientRect().width,
+      wave: document.querySelector('.who-wave').getBoundingClientRect().height,
+      rows: [...document.querySelectorAll('.who-row:not(.away) > .who')].map(b => b.getBoundingClientRect().width),
     })""")
     assert sizes["page"] <= 375, sizes
     assert sizes["notes"][0] <= sizes["notes"][1], sizes
-    assert min(sizes["emotes"]) >= 36 and sizes["act"] >= 40, sizes
+    assert min(sizes["emotes"]) >= 36 and sizes["act"] >= 40 and sizes["wave"] >= 40, sizes
+    assert min(sizes["rows"]) >= 150, sizes  # room for where they are beside Wave and ⋯
     page.get_by_role("button", name="Wave to ZED").click()
-    expect(page.locator(".who-said")).to_have_text("Wave: sent to ZED.")
+    expect(page.locator(".who-said:not(:empty)")).to_have_text("Wave: sent to ZED.")
     # A row flies there and puts the drawer away, which on a phone covers the map.
     page.get_by_role("button", name=re.compile(r"^LOU, ")).click()
     expect(page.locator("#people")).to_be_hidden()

@@ -300,9 +300,11 @@ The survey panel has a fold called **Surveyors**: everyone else in the shared
 world, nearest first, each with their initials, the territory they're in (in
 its theme's colour), how far away it is and whether they're active or idle.
 A row flies you to their territory, and on to their caret once you're close
-enough for its sector to say where they are. Beside each row, and on a
-right-click or a long press of someone's caret, is a row of **emotes**: seven
-small drawings to send them. The code is `src/survey-social.js`, with hooks in
+enough for its sector to say where they are. Each row shows their initials
+in a disc of their caret's colour, with a **Wave** beside it, the emote sent
+most, and ⋯ for the other six and mute; a right-click or a long press of
+someone's caret offers all seven. These **emotes** are small drawings to send
+them. The code is `src/survey-social.js`, with hooks in
 `survey.js`, and a section of `letterfield.html` of its own.
 
 ### Where it lives: a drawer of its own
@@ -318,8 +320,12 @@ the map and your finds. To make room on a phone's top bar, the title there
 is "LF". The drawer holds, in order: your guild, the list, its two switches,
 and you (your initials, linking another device, your recovery code). A row
 puts a phone's drawer away as it flies, as a find does the notes. Each row
-is two buttons (fly there, and emotes), so it works from a keyboard, and
-Escape folds an open row of emotes before it closes the drawer.
+is three buttons (fly there, wave, and ⋯), so it works from a keyboard, and
+Escape folds an open row of emotes before it closes the drawer. What became
+of the last emote sent shows under its row. The card about your devices says
+first where your surveyor lives (only on this device, or backed up and kept
+in step), then offers each step by what it does: link another device, I have
+a code, save a recovery code.
 
 ### Who a player is
 
@@ -618,7 +624,7 @@ on the site can name the same player later.
    `waiting`, `used` or `gone`, and says "Linked" once it's used.
 3. The other device opens the link, which offers to link before anything
    else (the `link` state of the page's `intro`), or types the code under
-   **Use a code**. Either redeems it: `POST /v1/link/<code>` answers the
+   **I have a code**. Either redeems it: `POST /v1/link/<code>` answers the
    token and the carried settings, once.
 4. That device takes the token and settings and reloads as the same
    surveyor, with a note saying so. Both devices then keep in step (see
@@ -662,7 +668,7 @@ which nothing else here has.
 Linking needs a device that's already you. With none left (one phone,
 lost; every browser cleared), the token is gone, and with it the surveyor:
 their id, their guild and any synced notes. A recovery code is a long code
-the player saves once and enters on any device, under **Use a code**, to be
+the player saves once and enters on any device, under **I have a code**, to be
 that surveyor again.
 
     POST /v1/recovery         {token} → 201 {code, made}: a new code; any older one stops working

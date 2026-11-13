@@ -298,21 +298,29 @@ body.docked .notes{box-shadow:none}
 html[data-who="loading"] .who-status{animation:blink 1s infinite alternate}
 .who-list{list-style:none;margin:0 -6px;padding:0}
 .who-list li{display:flex;flex-wrap:wrap;align-items:center;gap:2px}
-.who{flex:1;min-width:0;display:grid;grid-template-columns:7px auto minmax(0,1fr);column-gap:9px;row-gap:4px;align-items:baseline;padding:8px 6px;border:0;border-radius:6px;background:transparent;text-align:left;cursor:pointer}
+.who{flex:1;min-width:0;display:grid;grid-template-columns:38px minmax(0,1fr);column-gap:11px;row-gap:3px;align-items:center;padding:7px 6px;border:0;border-radius:6px;background:transparent;text-align:left;cursor:pointer}
 .who:hover{background:var(--hover)}
-.who-caret{grid-row:span 2;align-self:center;justify-self:center;width:3px;height:17px;border-radius:1px;background:hsl(var(--g) var(--mark-s) var(--mark-l))}
-.who-ini{font:700 18px/1 var(--f-display);letter-spacing:.1em}
-.who-where{display:flex;align-items:center;gap:6px;min-width:0;font:500 12.5px/1.2 var(--f-ui)}
+/* Each surveyor's initials in a disc of their caret's colour, as on the map. */
+.who-av{grid-row:span 2;position:relative;width:38px;height:38px;border-radius:50%;display:grid;place-items:center;background:hsl(var(--g) var(--mark-s) var(--mark-l));color:var(--paper)}
+.who-ini{font:700 14px/1 var(--f-display);letter-spacing:.06em}
+.who-where{align-self:end;display:flex;align-items:center;gap:6px;min-width:0;font:500 13px/1.2 var(--f-ui)}
 .who-where i{flex:none;width:8px;height:8px;border-radius:50%;background:var(--c)}
 .who-where span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.who-meta{grid-column:2 / 4;font:400 10.5px/1.3 var(--f-mono);color:var(--muted)}
-.who-act{flex:none;width:40px;height:40px;display:grid;place-items:center;border:0;border-radius:50%;background:transparent;color:var(--muted);cursor:pointer}
-.who-act svg{width:19px;height:19px}
-.who-act:hover,.who-act[aria-expanded="true"]{background:var(--hover);color:var(--ink)}
-.who-row.muted .who-ini,.who-row.muted .who-where{color:var(--muted)}
+.who-meta{grid-column:2;align-self:start;font:400 10.5px/1.3 var(--f-mono);color:var(--muted)}
+.who-wave{flex:none;display:inline-flex;align-items:center;gap:6px;min-height:40px;padding:0 12px 0 10px;border:1px solid var(--rule);border-radius:999px;background:transparent;color:var(--ink);font:600 13px/1 var(--f-ui);cursor:pointer}
+.who-wave svg{width:17px;height:17px}
+@media (hover: hover){.who-wave:not(:disabled):hover{border-color:var(--ink)}}
+.who-wave:disabled{opacity:.4;cursor:default}
+.who-act{flex:none;width:40px;height:40px;display:grid;place-items:center;border:1px solid var(--rule);border-radius:50%;background:transparent;color:var(--ink);cursor:pointer}
+.who-act svg{width:18px;height:18px}
+.who-act:hover,.who-act[aria-expanded="true"]{background:var(--hover);border-color:var(--ink)}
+.who-row.muted .who-av{background:var(--rule);color:var(--muted)}
+.who-row.muted .who-where{color:var(--muted)}
 .who-row.muted .who-ini{text-decoration:line-through;text-decoration-thickness:1.5px}
-.who-emotes{flex:1 0 100%;box-sizing:border-box;padding:2px 6px 10px 22px}
+.who-emotes{flex:1 0 100%;box-sizing:border-box;padding:2px 6px 10px 55px}
 .emote-row{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:3px}
+.who-emotes .emote-row{grid-template-columns:repeat(6,minmax(0,1fr))}
+.who-row > .who-said{flex:1 0 100%;box-sizing:border-box;margin:0;padding:0 6px 8px 55px}
 .emote{aspect-ratio:1;max-height:44px;display:grid;place-items:center;padding:0;border:1px solid var(--rule);border-radius:8px;background:var(--panel);color:var(--ink);cursor:pointer}
 .emote svg{width:22px;height:22px}
 @media (hover: hover){.emote:hover{border-color:var(--ink)}}
@@ -336,8 +344,9 @@ html[data-who="loading"] .who-status{animation:blink 1s infinite alternate}
 .who-head{display:flex;align-items:center;gap:7px;margin:10px 6px 2px;font:500 10px/1.2 var(--f-mono);letter-spacing:.12em;text-transform:uppercase;color:var(--muted)}
 .who-row.away .who{cursor:default}
 .who-row.away .who:hover{background:transparent}
-.who-row.away .who-ini,.who-row.away .who-where{color:var(--muted)}
-.who-ini .guild-dot{display:inline-block;width:7px;height:7px;margin-left:6px;vertical-align:middle;box-shadow:none}
+.who-row.away .who-av{background:var(--rule);color:var(--ink)}
+.who-row.away .who-where{color:var(--muted)}
+.who-av .guild-dot{position:absolute;right:-2px;bottom:-2px;width:11px;height:11px;box-shadow:0 0 0 2px var(--panel)}
 .who-head .guild-dot{width:8px;height:8px;box-shadow:none}
 .guild-invite p{margin:0 0 10px;font-size:13.5px;line-height:1.5}
 .guild-invite .eyebrow{margin-bottom:8px}
@@ -348,6 +357,9 @@ html[data-who="loading"] .who-status{animation:blink 1s infinite alternate}
 .pair:empty{display:none}
 .pair p{margin:0 0 8px;font-size:12.5px;line-height:1.45;color:var(--muted)}
 .pair p b{color:var(--ink)}
+.pair-state{margin:0 0 10px}
+.pair-state b{display:block;font-weight:600;font-size:14px;color:var(--ink)}
+.pair-state span{display:block;margin-top:2px;font-size:12.5px;line-height:1.45;color:var(--muted)}
 .pair-acts{display:flex;flex-wrap:wrap;align-items:center;gap:6px}
 .pair-acts .btn{padding:8px 12px}
 .pair-box{padding:9px 10px 10px;border:1px solid var(--rule);border-radius:7px}
@@ -4376,29 +4388,34 @@ function renderWho() {
   whoList.innerHTML = whoListHtml();  // mates first, when we're in a guild (see Guilds)
   if (k) { const el = whoList.querySelector(`[data-k="${k}"]`); if (el) try { el.focus({ preventScroll: true }); } catch (_) {} }
 }
+// A row: their initials and where they are, which flies there; a wave, the
+// emote sent most; and ⋯ for the rest and mute. What became of the last emote
+// we sent shows under its row.
+const DOTS_SVG = '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="5.5" cy="12" r="1.8"/><circle cx="12" cy="12" r="1.8"/><circle cx="18.5" cy="12" r="1.8"/></svg>';
 function whoRow(s, mate = false) {
   const th = THEMES[regionTheme(s.rx, s.ry)], name = regionName(s.rx, s.ry), m = muted.has(s.pid), open = whoOpen === s.pid;
   const who = s.ini || 'A surveyor', idle = s.idle + Math.round((Date.now() - s.at) / 1000);
   const meta = `${away(s.rx, s.ry)} · ${m ? 'muted' : idleText(idle)}${s.quiet && !m ? ' · no emotes' : ''}`;
+  const said = whoSaid.get(s.pid) || (open && s.quiet && !m ? `${who} isn’t taking emotes.` : '');
   return `<li class="who-row${m ? ' muted' : ''}">` +
     `<button type="button" class="who mark" data-pid="${s.pid}" data-k="${s.pid}:fly" style="--h:${th.hue};--g:${hueOf(s.pid)}" aria-label="${who}, ${name}, ${meta}. Fly there">` +
-    `<span class="who-caret" aria-hidden="true"></span><b class="who-ini">${s.ini || '···'}${mate && myGuild ? `<i class="guild-dot" style="--gh:${guildHue(myGuild.name)}" title="In your guild"></i>` : ''}</b><span class="who-where"><i aria-hidden="true"></i><span>${name}</span></span><span class="who-meta">${meta}</span></button>` +
-    `<button type="button" class="who-act" data-pid="${s.pid}" data-k="${s.pid}:act" aria-expanded="${open}"${open ? ` aria-controls="emo-${s.pid}"` : ''} aria-label="Emotes for ${who}" title="Emotes for ${who}">${emoteSvg(EMOTE_BY.wave)}</button>` +
+    `<span class="who-av" aria-hidden="true"><b class="who-ini">${s.ini || '···'}</b>${mate && myGuild ? `<i class="guild-dot" style="--gh:${guildHue(myGuild.name)}" title="In your guild"></i>` : ''}</span><span class="who-where"><i aria-hidden="true"></i><span>${name}</span></span><span class="who-meta">${meta}</span></button>` +
+    (m ? '' : `<button type="button" class="who-wave" data-pid="${s.pid}" data-e="wave" data-k="${s.pid}:wave" aria-label="Wave to ${who}"${s.quiet ? ' disabled' : ''}>${emoteSvg(EMOTE_BY.wave)}<span aria-hidden="true">Wave</span></button>`) +
+    `<button type="button" class="who-act" data-pid="${s.pid}" data-k="${s.pid}:act" aria-expanded="${open}"${open ? ` aria-controls="emo-${s.pid}"` : ''} aria-label="More for ${who}" title="${m ? 'Unmute' : 'More emotes, and mute'}">${DOTS_SVG}</button>` +
+    `<p class="who-said" id="said-${s.pid}" aria-live="polite">${said}</p>` +
     (open ? whoPanel(s, who, m) : '') + '</li>';
 }
 function whoPanel(s, who, m) {
-  const said = whoSaid.get(s.pid) || (s.quiet && !m ? `${who} isn’t taking emotes.` : '');
   return `<div class="who-emotes" id="emo-${s.pid}" role="group" aria-label="Emotes for ${who}">` +
-    (m ? '' : `<div class="emote-row">${EMOTES.map(e => `<button type="button" class="emote" data-pid="${s.pid}" data-e="${e.id}" data-k="${s.pid}:${e.id}" aria-label="${e.name} to ${who}" title="${e.name}"${s.quiet ? ' disabled' : ''}>${emoteSvg(e)}</button>`).join('')}</div>`) +
-    `<p class="who-said" aria-live="polite">${said}</p>` +
+    (m ? '' : `<div class="emote-row">${EMOTES.filter(e => e.id !== 'wave').map(e => `<button type="button" class="emote" data-pid="${s.pid}" data-e="${e.id}" data-k="${s.pid}:${e.id}" aria-label="${e.name} to ${who}" title="${e.name}"${s.quiet ? ' disabled' : ''}>${emoteSvg(e)}</button>`).join('')}</div>`) +
     `<button type="button" class="who-mute" data-pid="${s.pid}" data-k="${s.pid}:mute">${m ? 'Unmute' : 'Mute'} ${who}</button></div>`;
 }
 whoList.addEventListener('click', e => {
   const b = e.target.closest('button'), s = b && whoFind(b.dataset.pid);
   if (!s) return;
   if (b.classList.contains('who')) flyToSurveyor(s);
-  else if (b.classList.contains('who-act')) { whoOpen = whoOpen === s.pid ? '' : s.pid; whoSaid.delete(s.pid); renderWho(); }
-  else if (b.classList.contains('emote')) sendEmote(s, b.dataset.e);
+  else if (b.classList.contains('who-act')) { whoOpen = whoOpen === s.pid ? '' : s.pid; whoSaid.clear(); renderWho(); }
+  else if (b.dataset.e) sendEmote(s, b.dataset.e);
   else if (b.classList.contains('who-mute')) setMuted(s, !muted.has(s.pid));
 });
 // Escape folds an open row of emotes before it does anything else.
@@ -4449,14 +4466,16 @@ function setMuted(s, on) {
 function sendEmote(s, id) {
   const em = EMOTE_BY[id], home = links.get(sectorKey(Math.floor(cam.x), Math.floor(cam.y)));
   if (!em) return;
-  if (!myInitials()) return said(s.pid, 'Sign your initials first, in the survey panel above.');
+  if (!myInitials()) return said(s.pid, 'Sign your initials first, under You.');
   if (!home || !home.m.is('live')) return said(s.pid, 'Join the survey to send emotes.');
   const c = caretOf(s.pid);
   tell(home, { t: 'emote', to: s.pid, e: id, s: c ? [c.l.sx, c.l.sy] : [fdiv(s.rx, TERR_PER_SECTOR), fdiv(s.ry, TERR_PER_SECTOR)] });
 }
 function said(pid, text) {
+  whoSaid.clear();  // only the last one: an older one under another row goes
   whoSaid.set(pid, text);
-  const el = whoList.querySelector(`#emo-${pid} .who-said`) || (caretFor === pid && caretMenu.querySelector('.who-said'));
+  for (const p of whoList.querySelectorAll('.who-said')) if (p.id !== `said-${pid}`) p.textContent = '';
+  const el = whoList.querySelector(`#said-${pid}`) || (caretFor === pid && caretMenu.querySelector('.who-said'));
   if (el) el.textContent = text; else say(text);
 }
 // What a sector says about emotes: what became of ours, or one for us.
@@ -4465,7 +4484,7 @@ function onSocial(l, m) {
     if (typeof m.to !== 'string' || !PID_RE.test(m.to)) return;
     const em = EMOTE_BY[m.e], s = whoFind(m.to), who = (s && s.ini) || 'they';
     const They = who === 'they' ? 'They' : who;
-    const why = { 'slow down': 'Too quick: try again in a moment.', gone: `${They} moved on.`, off: `${They} isn’t taking emotes.`, busy: `${They} had plenty of emotes just now: try again soon.`, 'sign first': 'Sign your initials first, in the survey panel above.' };
+    const why = { 'slow down': 'Too quick: try again in a moment.', gone: `${They} moved on.`, off: `${They} isn’t taking emotes.`, busy: `${They} had plenty of emotes just now: try again soon.`, 'sign first': 'Sign your initials first, under You.' };
     if (m.ok && em) {
       said(m.to, `${em.name}: sent to ${who === 'they' ? 'them' : who}.`);
       if (caretOnScreen(m.to)) pop(m.to, m.e);
@@ -4677,7 +4696,7 @@ function takeRoster(members) {
 }
 async function startGuild() {
   if (!Membership.is('naming')) return;
-  if (!myInitials()) { guildError = 'Sign your initials first, in the survey panel above.'; return renderGuild(); }
+  if (!myInitials()) { guildError = 'Sign your initials first, under You.'; return renderGuild(); }
   const at = Membership.seq;
   Membership.go('making');
   const { status, data } = await guildCall('', { token: playerToken, initials: myInitials(), name: draftName });
@@ -4806,7 +4825,7 @@ function whoListHtml() {
   const mark = `<i class="guild-dot" style="--gh:${guildHue(myGuild.name)}" aria-hidden="true"></i>`;
   return `<li class="who-head">${mark}<span>Your guild · ${online.length} online</span></li>` +
     online.map(s => whoRow({ quiet: false, ...s }, true)).join('') +
-    offline.map(m => `<li class="who-row away"><div class="who"><span class="who-caret" aria-hidden="true" style="--g:${hueOf(m.pid)}"></span><b class="who-ini">${m.ini || '···'}</b><span class="who-where"><span>Offline</span></span><span class="who-meta">last seen ${seenText(m.seen)}</span></div></li>`).join('') +
+    offline.map(m => `<li class="who-row away"><div class="who" style="--g:${hueOf(m.pid)}"><span class="who-av" aria-hidden="true"><b class="who-ini">${m.ini || '···'}</b></span><span class="who-where"><span>Offline</span></span><span class="who-meta">last seen ${seenText(m.seen)}</span></div></li>`).join('') +
     (rest.length ? `<li class="who-head"><span>Everyone else</span></li>${rest.map(s => whoRow(s)).join('')}` : '');
 }
 // Anyone the list shows: from the public list or our guild.
@@ -5030,7 +5049,7 @@ async function stopSync(everywhere) {
   const { status } = everywhere ? await workerPost('/v1/player/forget', { token: playerToken }) : { status: 200 };
   if (everywhere && status === 200) try { localStorage.removeItem(K_RECOVERY); } catch (_) {}  // the Worker took the code too
   const said = status !== 200 ? 'Couldn’t reach the survey, so your other devices still sync. Try again in a moment.' : everywhere ? 'Syncing stopped on every device, and the copy kept for it is deleted, with any recovery code.' : 'Syncing stopped on this device.';
-  const el = pairCard.querySelector('p');
+  const el = pairCard.querySelector('.pair-state span, p');  // under where this surveyor lives now
   if (el) el.textContent = said;
   say(said);
 }
@@ -5256,7 +5275,7 @@ function keepRecovery(how) {
   if (!recoveryCode) return;
   const code = inFours(recoveryCode), done = text => { const el = $('#pairSaid'); if (el) el.textContent = text; say(text); };
   if (how === 'file') {
-    const text = `Letterfield recovery code\n\n${code}\n\nTo be this surveyor again on any device, open Letterfield there and enter it under Use a code, in the field notes.\nWhoever has it can play as you, so keep it safe. Made ${new Date().toDateString()}.\n`;
+    const text = `Letterfield recovery code\n\n${code}\n\nTo be this surveyor again on any device, open Letterfield there and enter it under I have a code, in Surveyors.\nWhoever has it can play as you, so keep it safe. Made ${new Date().toDateString()}.\n`;
     const a = document.createElement('a');
     a.href = URL.createObjectURL(new Blob([text], { type: 'text/plain' }));
     a.download = 'letterfield-recovery-code.txt';
@@ -5322,18 +5341,23 @@ function renderPair() {
   let html = '';  // while a link's offer is over the map, it's the one card about linking
   if (offering) { /* nothing here */ }
   else if (st === 'idle' && stopAsk && devicesSyncing()) html = `<div class="pair-box"><p>Stop syncing this device, or every device? Every device also deletes the copy kept for syncing, and your recovery code if you saved one. Each keeps its notes as they are.</p><div class="pair-acts"><button type="button" class="pill" data-p="stop-here">This device</button><button type="button" class="pill" data-p="stop-all">Every device</button><button type="button" class="pill" data-p="stop-no">Keep syncing</button></div></div>`;
-  else if (st === 'idle') html = `<p>${devicesSyncing() ? 'Your field notes, supernovas, initials, guild and mutes are backed up, and keep in step with any device you link.' : 'Play as the same surveyor on your phone, tablet and computer.'}</p><div class="pair-acts"><button type="button" class="pill" data-p="make">Link another device</button><button type="button" class="pill" data-p="enter">Use a code</button><button type="button" class="pill" data-p="recovery">Recovery code</button>${devicesSyncing() ? '<button type="button" class="pill" data-p="stop">Stop syncing</button>' : ''}</div>`;
+  else if (st === 'idle') {
+    // Where this surveyor lives first, then each thing to do, named for what it does.
+    const on = devicesSyncing(), kept = !!Number(LS.get(K_RECOVERY));
+    html = `<div class="pair-state"><b>${on ? 'Backed up and kept in step' : 'Only on this device'}</b><span>${on ? 'Your field notes, supernovas, initials, guild and mutes, on every device you link.' : 'Link another device to play as the same surveyor on each, or save a recovery code in case this one is lost.'}</span></div>` +
+      `<div class="pair-acts"><button type="button" class="btn" data-p="make">Link another device</button><button type="button" class="pill" data-p="enter">I have a code</button><button type="button" class="pill" data-p="recovery"${kept ? ' aria-label="Recovery code, saved"' : ''}>${kept ? 'Recovery code ✓' : 'Save a recovery code'}</button>${on ? '<button type="button" class="pill" data-p="stop">Stop syncing</button>' : ''}</div>`;
+  }
   else if (st === 'recovery' || st === 'keeping' || st === 'removing') {
     const made = Number(LS.get(K_RECOVERY)) || 0, busy = st !== 'recovery';
     html = `<div class="pair-box"><p class="eyebrow">Recovery code</p>${made
       ? `<p>You saved one on ${new Date(made).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' })}. A new one replaces it, and the old one stops working.</p>`
       : '<p>A recovery code brings this surveyor back on any device, even if this one is lost or its storage cleared: your initials, guild and field notes. Saving one keeps a backup of your notes for it.</p>'}${recoveryNote ? `<p>${recoveryNote}</p>` : ''}${err}<div class="pair-acts"><button type="button" class="btn" data-p="keep"${busy ? ' disabled' : ''}>${st === 'keeping' ? 'Making…' : made ? 'Make a new one' : 'Make one'}</button>${made ? `<button type="button" class="pill" data-p="unkeep"${busy ? ' disabled' : ''}>${st === 'removing' ? 'Removing…' : 'Remove it'}</button>` : ''}<button type="button" class="pill" data-p="close"${busy ? ' disabled' : ''}>Close</button></div></div>`;
-  } else if (st === 'kept') html = `<div class="pair-box"><p class="eyebrow">Your recovery code</p><b class="pair-code pair-recovery" id="recoveryCode">${inFours(recoveryCode)}</b><p>Keep it somewhere safe, like a password manager: it won’t be shown again. To be this surveyor on any device, enter it there under <b>Use a code</b>.</p><p>Whoever has it can play as you. If it gets out, make a new one here, and this one stops working.</p><div class="pair-acts"><button type="button" class="pill" data-p="copy-recovery">Copy</button><button type="button" class="pill" data-p="file-recovery">Save as a file</button><button type="button" class="btn" data-p="close">Done</button></div><p class="pair-small" id="pairSaid" aria-live="polite"></p></div>`;
+  } else if (st === 'kept') html = `<div class="pair-box"><p class="eyebrow">Your recovery code</p><b class="pair-code pair-recovery" id="recoveryCode">${inFours(recoveryCode)}</b><p>Keep it somewhere safe, like a password manager: it won’t be shown again. To be this surveyor on any device, enter it there under <b>I have a code</b>.</p><p>Whoever has it can play as you. If it gets out, make a new one here, and this one stops working.</p><div class="pair-acts"><button type="button" class="pill" data-p="copy-recovery">Copy</button><button type="button" class="pill" data-p="file-recovery">Save as a file</button><button type="button" class="btn" data-p="close">Done</button></div><p class="pair-small" id="pairSaid" aria-live="polite"></p></div>`;
   else if (st === 'making') html = `<div class="pair-box"><p class="eyebrow">Link another device</p><p>Making a code…</p></div>`;
   else if (st === 'showing' && pairCode && pairCode.gone) html = `<div class="pair-box"><p class="eyebrow">Link another device</p><p>That code has run out.</p><div class="pair-acts"><button type="button" class="btn" data-p="make">New code</button><button type="button" class="pill" data-p="close">Close</button></div></div>`;
   else if (st === 'showing' && pairCode) {
     const share = navigator.share && matchMedia('(pointer: coarse)').matches ? 'Share link' : 'Copy link';
-    html = `<div class="pair-box"><p class="eyebrow">Link another device</p><div class="pair-qr" id="pairQr"></div><p>Scan this with the other device’s camera, or open Letterfield there and choose <b>Use a code</b>:</p><b class="pair-code" id="pairCode">${showCode(pairCode.code)}</b><p class="pair-left" id="pairLeft"></p><p>Whoever uses it plays as you, so keep it to your own devices. It brings your initials, guild and mutes, and from then on your field notes keep in step on both.</p><div class="pair-acts"><button type="button" class="pill" data-p="share">${share}</button><button type="button" class="btn" data-p="close">Done</button></div><p class="pair-small" id="pairSaid" aria-live="polite"></p><p class="pair-small">On an iPhone, a Home Screen app keeps its own storage: type the code in there.</p></div>`;
+    html = `<div class="pair-box"><p class="eyebrow">Link another device</p><div class="pair-qr" id="pairQr"></div><p>Scan this with the other device’s camera, or open Letterfield there and choose <b>I have a code</b>:</p><b class="pair-code" id="pairCode">${showCode(pairCode.code)}</b><p class="pair-left" id="pairLeft"></p><p>Whoever uses it plays as you, so keep it to your own devices. It brings your initials, guild and mutes, and from then on your field notes keep in step on both.</p><div class="pair-acts"><button type="button" class="pill" data-p="share">${share}</button><button type="button" class="btn" data-p="close">Done</button></div><p class="pair-small" id="pairSaid" aria-live="polite"></p><p class="pair-small">On an iPhone, a Home Screen app keeps its own storage: type the code in there.</p></div>`;
   } else if (st === 'used') html = `<div class="pair-box"><p><b>Linked.</b> Your other device plays as ${myInitials() || 'you'} now.</p><div class="pair-acts"><button type="button" class="btn" data-p="close">Done</button></div></div>`;
   else if (st === 'entering' || st === 'redeeming') html = `<form class="pair-box pair-enter" id="pairEnter"><label for="pairInput">The code from your other device, under <b>Link another device</b> there, or your recovery code</label><input id="pairInput" maxlength="24" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="ABCD-EFGH"${busy ? ' disabled' : ''}><button type="submit" class="btn"${busy ? ' disabled' : ''}>${busy ? 'Linking…' : 'Link'}</button><button type="button" class="pill" data-p="close"${busy ? ' disabled' : ''}>Cancel</button>${err}<p class="pair-small">This device then plays as that surveyor, with their initials and guild, and field notes from both, kept in step.</p></form>`;
   else if (st === 'failed') html = `<div class="pair-box">${err}<div class="pair-acts"><button type="button" class="pill" data-p="make">Try again</button><button type="button" class="pill" data-p="close">Close</button></div></div>`;

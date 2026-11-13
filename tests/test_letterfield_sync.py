@@ -119,7 +119,7 @@ def test_stopping_here_or_everywhere(page: Page, site_url, errors):
     start(page, site_url, players)
     open_people(page)
     card = page.locator("#pairCard")
-    expect(card).to_contain_text("keep in step with any device you link")
+    expect(card).to_contain_text("Backed up and kept in step")
     card.get_by_role("button", name="Stop syncing").click()
     expect(card).to_contain_text("Stop syncing this device, or every device?")
     card.get_by_role("button", name="Keep syncing").click()

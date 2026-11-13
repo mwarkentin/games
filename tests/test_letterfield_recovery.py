@@ -1,7 +1,7 @@
 """Letterfield's recovery codes, against the survey's fakes.
 
 A recovery code, saved by the player, brings their surveyor back on any
-device with no other to hand: entered under "Use a code", like a link code.
+device with no other to hand: entered under "I have a code", like a link code.
 tests/fake_survey.py's FakeRecovery answers the Worker's recovery paths; the
 real ones are tested in worker/test/players.test.js.
 """
@@ -74,7 +74,7 @@ def test_entering_a_recovery_code_brings_the_surveyor_back(page: Page, site_url,
     start(page, site_url, links, recovery=recovery, initials="QQQ", viewport={"width": 375, "height": 740})
     open_people(page)
     card = page.locator("#pairCard")
-    card.get_by_role("button", name="Use a code").click()
+    card.get_by_role("button", name="I have a code").click()
     box = page.locator("#pairInput")
     box.press_sequentially("bcdfghjkmnpqrstvwxyy")  # one wrong
     expect(box).to_have_value("BCDF-GHJK-MNPQ-RSTV-WXYY")
