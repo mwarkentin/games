@@ -208,6 +208,8 @@ def test_the_list_and_emote_switches_tell_every_sector_and_are_remembered(page: 
         return {m["sector"]: m for m in fake.sent("me")}
 
     open_you(page)  # the switches are on your page
+    # Off the list is off the public list only: the switch says who still sees you.
+    expect(page.locator("label", has=page.locator("#whoListed"))).to_contain_text("your guild and anyone near you")
     page.uncheck("#whoListed")
     eventually(page, lambda: all(m.get("hide") for m in latest().values()))
     expect(page.locator("#whoStatus")).not_to_contain_text("off the list")  # the unticked box says so
