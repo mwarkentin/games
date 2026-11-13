@@ -1159,6 +1159,13 @@ function chrome() {
   focusBar();
   $('#whose').hidden = !!focus;
   document.querySelector('.novas-link').hidden = focus?.kind === 'novas';
+  // A guild's view replays its own words; any other, everyone's.
+  {
+    const survey = new URLSearchParams(location.search).get('survey'), q = new URLSearchParams();
+    if (focus?.kind === 'guild') q.set('guild', focus.key);
+    if (survey) q.set('survey', survey);
+    $('#timelapseLink').href = '/letterfield-timelapse' + (q.size ? '?' + q : '');
+  }
   $('#periods').hidden = focus?.kind === 'territory';
   document.querySelector('.nav').hidden = focus?.kind === 'territory';
   $('#viewAll').setAttribute('aria-pressed', String(!state.mine));

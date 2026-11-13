@@ -386,7 +386,68 @@ def test_the_log_links_to_the_timelapse(page: Page, site_url, errors):
     page.route(f"{SURVEY}/v1/survey/log/**", fake.handle)
     page.goto(f"{site_url}/letterfield-log?survey={SURVEY}")
     page.locator("#timelapseLink").click()
-    page.wait_for_url(f"{site_url}/letterfield-timelapse")
-    expect(page.locator("html")).to_have_attribute("data-tl", re.compile("loading|failed|empty|playing"))
-    page.unroute(f"{SURVEY}/v1/survey/log/**")
-    errors.clear()  # without ?survey=, it asks the real Worker's stand-in, which has nothing
+    # Keeping the survey it was pointed at, as the timelapse's link back does.
+    page.wait_for_url(re.compile(r"/letterfield-timelapse\?survey="))
+    expect(page.locator("html")).to_have_attribute("data-tl", re.compile("paused|playing"))
+    assert errors == []
+
+
+COBALT = "c0ba17c0ba"
+GUILDS = {COBALT: ["Cobalt Compass Society", 220]}
+
+
+def test_follows_a_guild_its_words_bright_and_counted(page: Page, site_url, errors):
+    page.set_viewport_size({"width": 375, "height": 740})
+    # The guild charted five of the supernova's words and two of today's.
+    words = [[*w, COBALT] if i in (0, 1, 2, 3, 4, 18, 19) else w for i, w in enumerate(WORDS)]
+    fake = FakeSurveyLog(words, PLACES, {theme(2, 3): ["Forest", 40]}, totals={"0,0": 12}, guilds=GUILDS)
+    open_timelapse(page, site_url, fake, query=f"&guild={COBALT}")
+    follow = page.locator("#follow")
+    expect(follow).to_be_visible()
+    expect(follow).to_have_text("Following the Cobalt Compass Society×")
+    expect(follow).to_have_attribute("aria-label", "Stop following the Cobalt Compass Society")
+    page.wait_for_function("__tl.loaded.days === 3")
+    # Its words for the days it has any, beside each day's own, and none for the day it has none.
+    assert f"/timelapse/guild/{COBALT}" in fake.requests
+    assert sorted(r for r in fake.requests if r.startswith("/timelapse/guild/") and r.count("/") == 4) == [
+        f"/timelapse/guild/{COBALT}/{DAY - 1}",
+        f"/timelapse/guild/{COBALT}/{DAY}",
+    ]
+    page.locator("#play").click()
+    page.locator("#scrub").fill("1000")
+    expect(page.locator("#nGuild")).to_have_text("7")
+    expect(page.locator("#nWords")).to_have_text("22")
+    expect(page.locator("#guildCount")).to_be_visible()
+    expect(page.locator("#placesCount")).to_be_hidden()
+    page.evaluate("__tl.seek(0)")
+    expect(page.locator("#nGuild")).to_have_text("0")
+    # The way back to its page in the log, and to everyone's replay.
+    expect(page.locator("#toLog")).to_have_attribute("href", re.compile(f"^/letterfield-log\\?guild={COBALT}&survey="))
+    expect(follow).to_have_attribute("href", re.compile(r"^/letterfield-timelapse\?survey="))
+    assert page.evaluate("document.documentElement.scrollWidth") <= 375
+    assert errors == []
+
+
+def test_a_guild_the_log_doesnt_know_plays_everyones(page: Page, site_url, errors):
+    fake = fake_log(guilds=GUILDS)
+    open_timelapse(page, site_url, fake, query="&guild=ffffffffff")
+    page.wait_for_function("__tl.loaded.days === 3")
+    expect(page.locator("#follow")).to_be_hidden()
+    expect(page.locator("#placesCount")).to_be_visible()
+    assert not [r for r in fake.requests if r.startswith("/timelapse/guild/ffffffffff/")]
+    assert errors == []
+
+
+def test_a_guilds_page_in_the_log_replays_its_words(page: Page, site_url, errors):
+    fake = FakeSurveyLog([[*WORDS[0], COBALT]], PLACES, {theme(2, 3): ["Forest", 40]}, guilds=GUILDS)
+    page.clock.set_fixed_time(NOW_MS / 1000)
+    fake.now_ms = NOW_MS
+    page.route(f"{SURVEY}/v1/survey/log/**", fake.handle)
+    page.goto(f"{site_url}/letterfield-log?survey={SURVEY}&guild={COBALT}")
+    expect(page.locator("#focusName")).to_have_text("Cobalt Compass Society")
+    expect(page.locator("#timelapseLink")).to_have_attribute(
+        "href", re.compile(f"^/letterfield-timelapse\\?guild={COBALT}&survey=")
+    )
+    page.locator("#timelapseLink").click()
+    expect(page.locator("#follow")).to_be_visible()
+    assert errors == []
