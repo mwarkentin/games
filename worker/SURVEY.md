@@ -296,7 +296,7 @@ already send it:
 
 ## Surveyors and emotes
 
-The survey panel has a fold called **Surveyors**: everyone else in the shared
+The **Surveyors** drawer lists everyone else in the shared
 world, nearest first, each with their initials, the territory they're in (in
 its theme's colour), how far away it is and whether they're active or idle.
 A row flies you to their territory, and on to their caret once you're close
@@ -307,25 +307,42 @@ someone's caret offers all seven. These **emotes** are small drawings to send
 them. The code is `src/survey-social.js`, with hooks in
 `survey.js`, and a section of `letterfield.html` of its own.
 
-### Where it lives: a drawer of its own
+### Where it lives: two doors
 
-The list has a button of its own in the corner, a person between the tools
-and the field notes, with a count of everyone else online (the list's own
-count while it's recent, the world's total otherwise). It opens a Surveyors
-drawer like the notes': a sheet from the bottom on a phone, and on a computer
-a panel over the docked notes. `P` opens and closes it, and Escape closes it.
-It started as a fold of the field notes, but with guilds, your initials,
-linking devices and recovery codes it outgrew them, and the notes are about
-the map and your finds. To make room on a phone's top bar, the title there
-is "LF". The drawer holds, in order: your guild, the list, its two switches,
-and you (your initials, linking another device, your recovery code). A row
-puts a phone's drawer away as it flies, as a find does the notes. Each row
-is three buttons (fly there, wave, and ⋯), so it works from a keyboard, and
-Escape folds an open row of emotes before it closes the drawer. What became
-of the last emote sent shows under its row. The card about your devices says
-first where your surveyor lives (only on this device, or backed up and kept
-in step), then offers each step by what it does: link another device, I have
-a code, save a recovery code.
+The social side has two doors on the survey, one for everyone else and one
+for you, each to a drawer like the notes': a sheet from the bottom on a
+phone, and on a computer a panel over the docked notes. One is open at a
+time (the page's `sheet` machine: none, people or you), and on a phone the
+notes take turns with them too. Escape closes whichever is open and gives
+its door back the focus. They started as a fold of the field notes, but with
+guilds, your initials, linking devices and recovery codes they outgrew them,
+and the notes are about the map and your finds.
+
+- **Surveyors** is a person between the tools and the field notes, with a
+  count of everyone else online (the list's own count while it's recent, the
+  world's total otherwise), and `P`. Its drawer is only other people: at the
+  top, if you're in a guild, a strip of your mates' faces with the guild's
+  name, how many are online and Invite (online mates bright, a tap from
+  flying there; the rest dim, with when they were last seen); then everyone
+  online, nearest first, mates marked with the guild's dot, mates who keep off
+  the public list included. A row or a face puts a phone's drawer away as it
+  flies, as a find does the notes. Each row is three buttons (fly there,
+  wave, and ⋯), so it works from a keyboard, and Escape folds an open row of
+  emotes before it closes the drawer. What became of the last emote sent
+  shows under its row.
+- **You** is your initials in a ring of your caret's colour, and `Y`. On a
+  phone it takes the title's place in the top bar (the title was "LF" there,
+  to leave room for the territory's name, and is still "Letterfield" to a
+  screen reader); wider, where the whole title shows, it sits in the corner
+  beside the other buttons. Unsigned, it's a dashed ring with a person, and
+  opens on the form. Its drawer holds your initials with Change and your
+  guild's name under them; **On the map**, the two switches (on the list,
+  taking emotes); **Guild**, starting, inviting and leaving; and **Your
+  devices**, which says first where your surveyor lives (only on this
+  device, or backed up and kept in step), then offers each step by what it
+  does: link another device, I have a code, save a recovery code. Anything
+  that needs your initials first (an emote, a guild, joining from an invite)
+  opens it at the form; signed to join, it makes way for the invite again.
 
 ### Who a player is
 
@@ -490,9 +507,9 @@ shows a blank as "···".
 
 ## Guilds
 
-A guild is a few surveyors who want to find each other. Its members come
-first on the surveyor list (those online with where they are, the rest with
-when they were last seen), a note says when one comes online, and their
+A guild is a few surveyors who want to find each other. Its members' faces
+head the Surveyors drawer (those online a tap from flying there, the rest
+with when they were last seen), a note says when one comes online, and their
 carets wear the guild's colour. One guild at a time, joined only from an
 invite link. The code is `src/survey-guild.js`, hooks in `survey.js` and
 `survey-social.js`, and the Guilds section of `letterfield.html`.

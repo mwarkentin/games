@@ -68,10 +68,17 @@ def open_notes(page: Page) -> None:
 
 
 def open_people(page: Page) -> None:
-    """Opens the surveyors' drawer: the list, your guild, your initials and your devices."""
+    """Opens the Surveyors drawer: your guild's faces, and everyone else online."""
     if page.locator("#people").is_hidden():
         page.click("#peopleBtn")
     expect(page.locator("#people")).to_be_visible()
+
+
+def open_you(page: Page) -> None:
+    """Opens the You drawer from its door: your initials, settings, guild and devices."""
+    if page.locator("#you").is_hidden():
+        page.locator(".you-btn:visible").click()
+    expect(page.locator("#you")).to_be_visible()
 
 
 def hidden_words(page: Page) -> list[list]:
@@ -260,7 +267,7 @@ def test_signing_initials_tells_every_sector(page: Page, site_url, errors):
     fake = FakeSurvey()
     open_game(page, site_url, fake)
     expect(page.locator("#survey")).to_have_attribute("data-state", "live")
-    open_people(page)
+    open_you(page)
     page.locator("#surveyInitials").press_sequentially("z3ed")
     expect(page.locator("#surveyInitials")).to_have_value("ZED")
     page.click("#surveySign button[type=submit]")
@@ -273,7 +280,7 @@ def test_signing_initials_tells_every_sector(page: Page, site_url, errors):
     # Next time, the game signs in with them straight away.
     fake.received.clear()
     page.reload()
-    open_people(page)
+    open_you(page)
     expect(page.locator("#surveyMe")).to_be_visible()
     expect(page.locator("#surveyMeName")).to_have_text("ZED")
     expect(page.locator("#surveySign")).to_be_hidden()
@@ -290,8 +297,9 @@ def test_the_pencil_changes_your_initials(page: Page, site_url, errors):
     page.add_init_script("localStorage.setItem('games.initials', JSON.stringify('MLW'))")
     open_game(page, site_url, fake)
     expect(page.locator("#survey")).to_have_attribute("data-state", "live")
-    open_people(page)
-    expect(page.locator("#surveyMe")).to_have_text(re.compile(r"Surveyor\s*MLW"))
+    open_you(page)
+    expect(page.locator("#surveyMeName")).to_have_text("MLW")
+    expect(page.locator("#youAv")).to_have_text("MLW")
     expect(page.locator("#surveySign")).to_be_hidden()
 
     # Escape puts the pencil back without changing anything, and leaves the drawer open.
@@ -301,7 +309,7 @@ def test_the_pencil_changes_your_initials(page: Page, site_url, errors):
     page.keyboard.press("Escape")
     expect(page.locator("#surveySign")).to_be_hidden()
     expect(page.locator("#surveyEdit")).to_be_focused()
-    expect(page.locator("#people")).to_be_visible()
+    expect(page.locator("#you")).to_be_visible()
 
     # Three letters or nothing; then the new ones go to every sector.
     page.click("#surveyEdit")

@@ -14,7 +14,7 @@ import re
 from playwright.sync_api import Page, expect
 
 from fake_survey import FakeSurvey
-from test_letterfield_survey import eventually, open_game, open_people
+from test_letterfield_survey import eventually, open_game, open_people, open_you
 
 TOKEN = "0" * 31 + "1"  # this browser's player token, as the game would make one
 PID = hashlib.sha256(f"games-player:{TOKEN}".encode()).hexdigest()[:12]  # and the id the sectors give it
@@ -28,6 +28,14 @@ LOU = ["17e6b3f04c8a", "LOU", 7, -4, 2, 0]
 ANON = ["a90c5d2e61f7", "", 12, 9, 7300, 0]  # never signed
 KIM_CARET = [KIM[0], "KIM", 9.5, 7.0]  # KIM's caret, in sector 0,0's presence
 SHOWN = re.compile(r"\bshow\b")
+
+
+def hue_of(pid: str) -> int:
+    """A surveyor's caret colour, as the page works it out from their id."""
+    hue = 0
+    for ch in pid:
+        hue = (hue * 31 + ord(ch)) % 360
+    return hue
 
 
 def start(page: Page, site_url: str, fake: FakeSurvey, viewport: dict | None = None) -> None:
@@ -207,6 +215,7 @@ def test_the_list_and_emote_switches_tell_every_sector_and_are_remembered(page: 
     def latest() -> dict:
         return {m["sector"]: m for m in fake.sent("me")}
 
+    open_you(page)  # the two switches are about you
     page.uncheck("#whoListed")
     eventually(page, lambda: all(m.get("hide") for m in latest().values()))
     expect(page.locator("#whoStatus")).not_to_contain_text("off the list")  # the unticked box says so
@@ -331,9 +340,9 @@ def test_the_surveyors_have_a_button_and_drawer_of_their_own(page: Page, site_ur
     expect(button).to_be_visible()
     # Nothing about surveyors is in the field notes now.
     assert page.locator("#notes #whoList, #notes #guildCard, #notes #surveyMe, #notes #pairCard").count() == 0
-    # On a phone the title is LF, and still Letterfield to a screen reader.
-    expect(page.locator(".brand-short")).to_have_text("LF")
-    expect(page.locator(".brand-short")).to_be_visible()
+    # On a phone your own door takes the title's place, which is still Letterfield to a screen reader.
+    expect(page.locator(".brand-short")).to_be_hidden()
+    expect(page.locator("#youDoor")).to_be_visible()
     expect(page.get_by_role("heading", level=1)).to_have_accessible_name("Letterfield")
     # P opens it, with the list; its count comes from the list.
     page.locator("#map").focus()
@@ -358,4 +367,106 @@ def test_the_surveyors_have_a_button_and_drawer_of_their_own(page: Page, site_ur
     page.keyboard.press("Escape")
     expect(page.locator("#people")).to_be_hidden()
     expect(button).to_be_focused()
+    assert errors == []
+
+
+def test_your_own_door_opens_a_drawer_about_you(page: Page, site_url, errors):
+    fake = FakeSurvey(surveyors=[KIM, ZED])
+    start(page, site_url, fake, viewport={"width": 375, "height": 740})
+    door = page.locator("#youDoor")
+    # Your initials, in a ring of your caret's colour, where the title was; the corner's own is for wider screens.
+    expect(door).to_have_text("MLW")
+    expect(door).to_have_attribute("aria-label", "You, MLW")
+    expect(page.locator("#youCorner")).to_be_hidden()
+    hue = page.evaluate("getComputedStyle(document.getElementById('youDoor')).getPropertyValue('--g').trim()")
+    assert hue == str(hue_of(PID)), hue
+    door.click()
+    you = page.locator("#you")
+    expect(you).to_be_visible()
+    expect(page.locator("html")).to_have_attribute("data-sheet", "you")
+    expect(door).to_have_attribute("aria-expanded", "true")
+    expect(you.locator("#surveyMeName")).to_have_text("MLW")
+    for part in ("#whoListed", "#whoEmotes", "#guildCard", "#pairCard"):
+        assert you.locator(part).count() == 1, part
+    # The Surveyors drawer is only everyone else.
+    assert page.locator("#people #surveyMe, #people #whoListed, #people #guildCard, #people #pairCard").count() == 0
+    # One drawer at a time, the notes too, on a phone.
+    page.click("#peopleBtn")
+    expect(page.locator("#people")).to_be_visible()
+    expect(you).to_be_hidden()
+    expect(page.locator("html")).to_have_attribute("data-sheet", "people")
+    page.click("#notesToggle")
+    expect(page.locator("#notes")).to_be_visible()
+    expect(page.locator("#people")).to_be_hidden()
+    expect(page.locator("html")).to_have_attribute("data-sheet", "none")
+    door.click()
+    expect(you).to_be_visible()
+    expect(page.locator("#notes")).to_be_hidden()
+    # Escape puts it away and gives the door back the focus; Y opens it again.
+    page.keyboard.press("Escape")
+    expect(you).to_be_hidden()
+    expect(door).to_be_focused()
+    page.locator("#map").focus()
+    page.keyboard.press("y")
+    expect(you).to_be_visible()
+    page.keyboard.press("y")
+    expect(you).to_be_hidden()
+    door.click()
+    page.click("#youClose")
+    expect(you).to_be_hidden()
+    expect(door).to_be_focused()
+    sizes = page.evaluate("""() => ({ page: document.scrollingElement.scrollWidth,
+      bar: [document.getElementById('topbar').scrollWidth, innerWidth], door: document.getElementById('youDoor').getBoundingClientRect() })""")
+    assert sizes["page"] <= 375 and sizes["bar"][0] <= sizes["bar"][1], sizes
+    assert sizes["door"]["width"] >= 40 and sizes["door"]["height"] >= 40, sizes
+    assert errors == []
+
+
+def test_wider_the_door_sits_in_the_corner(page: Page, site_url, errors):
+    fake = FakeSurvey(surveyors=[KIM])
+    start(page, site_url, fake, viewport={"width": 1280, "height": 800})
+    expect(page.locator(".brand-full")).to_be_visible()
+    expect(page.locator("#youDoor")).to_be_hidden()
+    corner = page.locator("#youCorner")
+    expect(corner).to_have_text("MLW")
+    corner.click()
+    expect(page.locator("#you")).to_be_visible()
+    expect(page.locator("#notes")).to_be_visible()  # docked beside the map, under the drawer
+    page.keyboard.press("Escape")
+    expect(page.locator("#you")).to_be_hidden()
+    expect(corner).to_be_focused()
+    assert errors == []
+
+
+def test_unsigned_the_door_asks_for_initials_and_emotes_send_you_there(page: Page, site_url, errors):
+    fake = FakeSurvey(surveyors=[KIM])
+    open_game(page, site_url, fake)
+    page.evaluate(
+        "t => { localStorage.setItem('games.player', t); localStorage.setItem('letterfield.coach.v1', '1'); }", TOKEN
+    )
+    page.reload()
+    expect(page.locator("#survey")).to_have_attribute("data-state", "live")
+    expect(page.locator("#signup")).to_be_visible()  # the card asking for initials, over the map
+    door = page.locator(".you-btn:visible")
+    expect(door).to_have_attribute("aria-label", "You: sign your initials")
+    expect(door).to_have_class(re.compile(r"\bunsigned\b"))
+    # A wave before signing opens the You drawer at its form.
+    open_people(page)
+    expect(page.locator("html")).to_have_attribute("data-who", "ready")
+    page.get_by_role("button", name="Wave to KIM").click()
+    expect(page.locator("#you")).to_be_visible()
+    expect(page.locator("#surveyInitials")).to_be_focused()
+    expect(page.locator("#surveyHint")).to_have_text("Then send your emote again.")
+    assert fake.sent("emote") == []
+    # So does starting a guild.
+    page.locator("#guildCard").get_by_role("button", name="Start a guild").click()
+    page.locator("#guildCard").get_by_role("button", name="Start it").click()
+    expect(page.locator("#guildCard")).to_contain_text("Sign your initials first, at the top.")
+    expect(page.locator("#surveyInitials")).to_be_focused()
+    expect(page.locator("html")).to_have_attribute("data-guild", "naming")
+    page.keyboard.type("abc")
+    page.keyboard.press("Enter")
+    expect(page.locator("#surveyMeName")).to_have_text("ABC")
+    expect(door).to_have_attribute("aria-label", "You, ABC")
+    expect(door).to_have_text("ABC")
     assert errors == []

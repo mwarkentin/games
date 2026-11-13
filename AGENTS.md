@@ -180,6 +180,7 @@ The machines each page keeps:
 | | `link` (each sector's socket; `el: null`, see `__lf.linkStates()`) | connecting, open, live, backoff, closed |
 | | `claim` (each claim of ours; `el: null`, see `__lf.outbox()`) | queued, sent, unanswered, answered |
 | | `define` (each found word's meaning; `el: null`, see `__lf.definitions()`) | loading, ready, none, failed |
+| | `sheet` (which social drawer is open: Surveyors or You) | none, people, you |
 | | `who` (the list of surveyors) | closed, loading, ready, refreshing, failed |
 | | `guild` (the guild you're in) | out, naming, making, invited, joining, in, leaving |
 | | `pair` (linking another device, and the recovery code) | idle, making, showing, used, entering, redeeming, done, failed, recovery, keeping, kept, removing |

@@ -15,7 +15,7 @@ from playwright.sync_api import Page, expect
 from fake_survey import FakeGuilds, FakeLinks, FakePlayers, FakeSurvey
 from test_letterfield_guilds import MINE
 from test_letterfield_guilds import start as start_guilds
-from test_letterfield_survey import SURVEY, eventually, open_people
+from test_letterfield_survey import SURVEY, eventually, open_you
 from test_letterfield_surveyors import KIM, PID, TOKEN
 
 ON = {"on": True, "epoch": "", "at": 0, "f": [], "n": [], "settingsAt": 1}  # synced, nothing heard yet
@@ -117,7 +117,7 @@ def test_finds_and_settings_go_both_ways(page: Page, site_url, errors):
 def test_stopping_here_or_everywhere(page: Page, site_url, errors):
     players = FakePlayers(started=[PID])
     start(page, site_url, players)
-    open_people(page)
+    open_you(page)
     card = page.locator("#pairCard")
     expect(card).to_contain_text("Backed up and kept in step")
     card.get_by_role("button", name="Stop syncing").click()
@@ -134,7 +134,7 @@ def test_stopping_here_or_everywhere(page: Page, site_url, errors):
     page.evaluate(f"localStorage.setItem('letterfield.sync.v1', {json.dumps(json.dumps(ON))})")
     page.reload()
     expect(page.locator("html")).to_have_attribute("data-sync", "idle")
-    open_people(page)
+    open_you(page)
     card.get_by_role("button", name="Stop syncing").click()
     card.get_by_role("button", name="Every device").click()
     expect(card).to_contain_text(
