@@ -4369,7 +4369,6 @@ function renderWho() {
     status = whoData.n ? `${whoData.n.toLocaleString()} other surveyor${whoData.n === 1 ? '' : 's'} in the shared world, nearest first` : 'Nobody else is in the shared world right now.';
     if (st === 'failed') status += ' · couldn’t refresh';
   }
-  if (!listedOn) status += '\nYou’re off the list.';
   whoStatus.textContent = status;
   whoMore.hidden = !(whoData && whoData.more) || whoPages >= LIST_PAGES;
   // Rows are drawn afresh; whatever had focus gets it back.

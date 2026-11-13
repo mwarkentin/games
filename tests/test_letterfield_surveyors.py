@@ -209,7 +209,7 @@ def test_the_list_and_emote_switches_tell_every_sector_and_are_remembered(page: 
 
     page.uncheck("#whoListed")
     eventually(page, lambda: all(m.get("hide") for m in latest().values()))
-    expect(page.locator("#whoStatus")).to_contain_text("You’re off the list.")
+    expect(page.locator("#whoStatus")).not_to_contain_text("off the list")  # the unticked box says so
     page.uncheck("#whoEmotes")
     eventually(page, lambda: all(m.get("hide") and m.get("quiet") for m in latest().values()))
     fake.emote("0,0", KIM[0], "KIM", "wave", [0, 0])
