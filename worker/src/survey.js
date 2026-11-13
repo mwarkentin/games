@@ -59,10 +59,13 @@
 //   {t: 'guild', tag, on}           which of this player's guild are online, and where
 //                                   ([id, initials, rx, ry, idle]), from the Atlas, as it changes
 //   {t: 'world', charted, total, players}   the whole world's totals, as they change
-//   {t: 'nova', n: [rx, ry, at, w, x, y, d, initials]}
-//                                   a territory in a neighbouring sector, within NOVA_REACH of this
-//                                   one, has gone supernova: the claim of its last hidden word, which
-//                                   that sector broadcast to its own players as an ordinary 'claimed'
+//   {t: 'nova', n: [rx, ry, at, w, x, y, d, initials], ago}
+//                                   a territory in another sector has gone supernova, `ago` ms before:
+//                                   the claim of its last hidden word, which that sector broadcast to
+//                                   its own players as an ordinary 'claimed'. A neighbouring sector, with
+//                                   a territory within NOVA_REACH, passes it on at once; every other
+//                                   sector in the shared world hears it from the Atlas with its next
+//                                   report, and passes it on to players who were here when it went off
 //   {t: 'unverified'}               from the Worker, while TURNSTILE_REQUIRED is "true", for a join
 //                                   without a good pass, which then
 //                                   closes with code 4001: the game gets a new pass and retries
@@ -107,6 +110,9 @@ export const ADDRESS_HEADER = 'X-Survey-Address';  // the hashed address, from t
 export const UNPASSED_HEADER = 'X-Survey-Unpassed';  // '1' on a join without a good Turnstile pass, from the Worker
 export const DAILY_CLAIMS = 300;      // words one address can chart in the shared world each UTC day
 export const DAILY_LIST_MAX = 2000;   // addresses past the daily cap that the Atlas hands out, latest first
+export const RELAY_MS = ONLINE_MS;    // the Atlas keeps the shared world's supernovas this long, for sectors to pass on
+export const RELAY_MAX = 64;          // and at most this many
+export const NOVA_REPORT_MS = 1000;   // a sector with a supernova to report reports this soon after its last report
 export const NOVA_REACH = 3;          // territories: a supernova this close to the middle of a player's view plays for them, as the game's nearView
 const DAY_MS = 86400000;
 const HOUR_MS = 3600000;
@@ -186,19 +192,26 @@ export function novaNeighbours(rx, ry) {
   return out;
 }
 
+// Whether a supernova, as sectors pass it around ([rx, ry, at, w, x, y, d,
+// initials]), names a hidden word that's really there, in the territory named.
+export function checkNovaWord(n) {
+  if (!Array.isArray(n) || n.length !== 8) return false;
+  const [rx, ry, at, w, x, y, d, initials] = n;
+  if (![rx, ry].every((v) => isInt(v, -LIMIT, LIMIT)) || !isInt(at, 0, 1e14) || !(initials === '' || (typeof initials === 'string' && INITIALS.test(initials)))) return false;
+  const c = checkClaim({ w, x, y, d }, fdiv(x, SECTOR), fdiv(y, SECTOR));
+  return !c.error && !c.s && fdiv(x, RC) === rx && fdiv(y, RC) === ry;
+}
+
 // Whether a neighbour's supernova, as NEAR_PATH carries it, is one sector
 // (sx, sy) should pass on: a hidden word, really there, in a territory of
 // another sector within NOVA_REACH of this one. Only sectors can reach the
 // path, but this keeps a bad frame from going out to every player here.
 export function checkNova(n, sx, sy) {
-  if (!Array.isArray(n) || n.length !== 8) return false;
-  const [rx, ry, at, w, x, y, d, initials] = n;
-  if (![rx, ry].every((v) => isInt(v, -LIMIT, LIMIT)) || !isInt(at, 0, 1e14) || !(initials === '' || (typeof initials === 'string' && INITIALS.test(initials)))) return false;
+  if (!checkNovaWord(n)) return false;
+  const [rx, ry] = n;
   if (fdiv(rx, TERR) === sx && fdiv(ry, TERR) === sy) return false;
   const gap = (r, s) => Math.max(0, s * TERR - r, r - (s * TERR + TERR - 1));
-  if (Math.max(gap(rx, sx), gap(ry, sy)) > NOVA_REACH) return false;
-  const c = checkClaim({ w, x, y, d }, fdiv(x, SECTOR), fdiv(y, SECTOR));
-  return !c.error && !c.s && fdiv(x, RC) === rx && fdiv(y, RC) === ry;
+  return Math.max(gap(rx, sx), gap(ry, sy)) <= NOVA_REACH;
 }
 
 // Answers the survey's paths, or returns null for any other path: a sector's
@@ -338,6 +351,9 @@ export class Sector {
     this.logFails = 0;       // log writes that have failed in a row
     this.logChecked = false; // whether this object has looked for claims the log is missing since waking
     this.lastAt = null;      // the latest claim's time, read on the first claim after waking
+    this.novasOwed = [];     // supernovas here the Atlas hasn't heard of yet, to go with the next report
+    this.novasSent = new Set();  // 'rx,ry' of other sectors' supernovas already passed on to players here, since waking
+    this.novaSeq = null;     // the Atlas's latest supernova this sector has passed on (stored in `relayed`), read on first use
     this.sql.exec(`CREATE TABLE IF NOT EXISTS claims (
       key TEXT PRIMARY KEY, w TEXT NOT NULL, x INTEGER NOT NULL, y INTEGER NOT NULL, d INTEGER NOT NULL,
       s INTEGER NOT NULL, initials TEXT NOT NULL, at INTEGER NOT NULL) WITHOUT ROWID`);
@@ -358,6 +374,9 @@ export class Sector {
       rx INTEGER NOT NULL, ry INTEGER NOT NULL, at INTEGER NOT NULL, w TEXT NOT NULL, x INTEGER NOT NULL, y INTEGER NOT NULL,
       d INTEGER NOT NULL, initials TEXT NOT NULL, first INTEGER NOT NULL, words INTEGER NOT NULL, surveyors INTEGER NOT NULL,
       top TEXT NOT NULL, top_n INTEGER NOT NULL, logged INTEGER NOT NULL DEFAULT 0, PRIMARY KEY (rx, ry)) WITHOUT ROWID`);
+    // The shared world's supernovas this sector has passed on, by the
+    // Atlas's count, so one woken from hibernation picks up where it left off.
+    this.sql.exec('CREATE TABLE IF NOT EXISTS relayed (id INTEGER PRIMARY KEY CHECK (id = 0), seq INTEGER NOT NULL)');
     // Claims from an older map name words that aren't there any more.
     if (onOlderMap(this.sql)) {
       this.sql.exec('DELETE FROM claims');
@@ -414,8 +433,41 @@ export class Sector {
     try { n = (await request.json())?.nova; } catch { /* answered below */ }
     if (!this.ctx.getWebSockets().length) return new Response(null, { status: 204 });
     if (!checkNova(n, ...this.coords())) return new Response('bad supernova', { status: 400 });
-    broadcast(this.ctx, JSON.stringify({ t: 'nova', n }));
+    if (!this.novasSent.has(`${n[0]},${n[1]}`)) this.tellPlayers(n);
     return new Response(null, { status: 204 });
+  }
+
+  // Another sector's supernova, to the players here (those `who` picks, or all).
+  tellPlayers(n, who = null) {
+    if (this.novasSent.size >= 1000) this.novasSent.clear();
+    this.novasSent.add(`${n[0]},${n[1]}`);
+    const frame = JSON.stringify({ t: 'nova', n, ago: Math.max(0, this.now() - n[2]) });
+    for (const ws of this.ctx.getWebSockets()) {
+      const p = this.person(ws);
+      if (!who || (p && who(p))) { try { ws.send(frame); } catch { /* closing */ } }
+    }
+  }
+
+  heardNovaSeq() {
+    this.novaSeq ??= this.sql.exec('SELECT seq FROM relayed WHERE id = 0').toArray()[0]?.seq ?? -1;
+    return this.novaSeq;
+  }
+
+  // The shared world's supernovas, from the Atlas's answer to a report or an
+  // ask: each passed on to the players who were here when it went off, unless
+  // they've had it already (it's this sector's own, or a neighbour's).
+  relay(world) {
+    if (!isInt(world?.novaSeq, 0, 1e14)) return;
+    const [sx, sy] = this.coords() ?? [];
+    for (const n of Array.isArray(world.novas) ? world.novas : []) {
+      if (!Array.isArray(n) || n.length !== 8 || !isInt(n[0], -LIMIT, LIMIT) || !isInt(n[1], -LIMIT, LIMIT) || !isInt(n[2], 0, 1e14)) continue;
+      if (this.novasSent.has(`${n[0]},${n[1]}`) || (fdiv(n[0], TERR) === sx && fdiv(n[1], TERR) === sy)) continue;
+      this.tellPlayers(n, (p) => !(p.joined > n[2]));
+    }
+    if (world.novaSeq !== this.heardNovaSeq()) {
+      this.novaSeq = world.novaSeq;
+      this.sql.exec('INSERT INTO relayed (id, seq) VALUES (0, ?) ON CONFLICT (id) DO UPDATE SET seq = excluded.seq', world.novaSeq);
+    }
   }
 
   // Tells the neighbouring sectors in reach about a supernova here, without
@@ -457,7 +509,7 @@ export class Sector {
     this.ctx.acceptWebSocket(ws);
     this.where ??= [sx, sy];
     const id = crypto.randomUUID().slice(0, 8);
-    const me = { id, sx, sy, address, initials: '', x: null, y: null, moved: 0, saved: 0, tokens: CLAIM_BURST, refilled: this.now() };
+    const me = { id, sx, sy, address, initials: '', x: null, y: null, moved: 0, saved: 0, tokens: CLAIM_BURST, refilled: this.now(), joined: this.now() };
     ws.serializeAttachment(me);
     this.everyone().set(ws, me);
     // When everyone reconnects at once (after a deploy, say), each join just
@@ -571,7 +623,11 @@ export class Sector {
       else this.chartedCounts();
       if (this.counts[t] === this.hiddenCounts()[t]) {
         const nova = this.supernova(t);
-        if (nova) this.passOn(nova);
+        if (nova) {
+          this.passOn(nova);
+          // And to the Atlas, for every other sector in the shared world.
+          if (this.env.ATLAS && inArea(...this.coords())) this.novasOwed.push(nova);
+        }
       }
     }
     this.hot = [c.x, c.y];
@@ -862,6 +918,7 @@ export class Sector {
       this.overAt = isInt(world.overAt, 0, 1e9) ? world.overAt : 0;
     }
     if (world?.day === this.overDay) this.heardDay = this.overDay;
+    this.relay(world);
   }
 
   // Asks the Atlas who is past today's cap: a report without the words
@@ -882,7 +939,7 @@ export class Sector {
         method: 'POST',
         body: JSON.stringify({
           sx, sy, players: this.here().length, charted: this.chartedCounts(), hot: this.crowd() ?? this.hot,
-          by: [], day: this.overDay, overAt: this.overAt, ...this.listing(),
+          by: [], day: this.overDay, overAt: this.overAt, novaSeq: this.heardNovaSeq(), ...this.listing(),
         }),
       });
       if (res.ok) { const world = await res.json(); this.heard(world); passMates(this, world.guilds); }
@@ -893,11 +950,15 @@ export class Sector {
   // REPORT_MS, when something changed: with a later message, or when a player
   // leaves (`force`). A report timer would be pending most of the time in a
   // sector with a few people circling words, and bill it for all of it. The
-  // Atlas answers with the world's totals, which are passed on to players.
+  // Atlas answers with the world's totals, which are passed on to players,
+  // and the shared world's latest supernovas. A supernova here goes at once,
+  // or NOVA_REPORT_MS after the last report.
   maybeReport(force = false) {
     const where = this.coords();
     if (!this.env.ATLAS || !where || !inArea(...where)) return;
-    if (this.reporting || (!force && this.now() - this.reportedAt < REPORT_MS)) { this.reportDue = true; return; }
+    const since = this.now() - this.reportedAt;
+    const owed = this.novasOwed.length > 0 && since >= NOVA_REPORT_MS;
+    if (this.reporting || (!force && !owed && since < REPORT_MS)) { this.reportDue = true; return; }
     this.report();
   }
 
@@ -908,9 +969,10 @@ export class Sector {
     this.reporting = true;
     // Words charted by each address since the last report: sent once, or
     // put back to go with the next report if this one fails.
-    const by = this.chartedBy, unpassed = this.unpassed;
+    const by = this.chartedBy, unpassed = this.unpassed, novas = this.novasOwed;
     this.chartedBy = new Map();
     this.unpassed = 0;
+    this.novasOwed = [];
     this.overToday();
     let world;
     try {
@@ -919,6 +981,7 @@ export class Sector {
         body: JSON.stringify({
           sx, sy, players: this.here().length, charted: this.chartedCounts(), hot: this.crowd() ?? this.hot,
           by: [...by], day: this.overDay, overAt: this.overAt, ...(unpassed ? { unpassed } : {}), ...this.listing(),
+          novaSeq: this.heardNovaSeq(), ...(novas.length ? { novas } : {}),
         }),
       });
       if (!res.ok) throw new Error(`atlas ${res.status}`);
@@ -926,12 +989,14 @@ export class Sector {
     } catch {
       for (const [address, n] of by) this.chartedBy.set(address, (this.chartedBy.get(address) ?? 0) + n);
       this.unpassed += unpassed;
+      this.novasOwed.unshift(...novas);
       return;  // the totals just go out later
     } finally {
       this.reporting = false;
     }
     this.heard(world);
     passMates(this, world?.guilds);
+    if (this.novasOwed.length) this.maybeReport();  // one that came while this report was out
     if (!isInt(world?.charted, 0, AREA_WORDS) || !isInt(world?.players, 0, 1e9)) return;
     if (this.world && world.charted === this.world.charted && world.players === this.world.players) return;
     this.world = { charted: world.charted, total: AREA_WORDS, players: world.players };
@@ -973,6 +1038,13 @@ export class Atlas {
     this.yesterday = null;
     this.hour = { at: -1, charted: 0, playerHours: 0 };
     this.sampledAt = 0;
+    // The shared world's latest supernovas, as sectors report them, for every
+    // sector to pass on with its next report: {seq, n, at}, numbered in order
+    // by the Atlas's clock so a sector's count survives the Atlas being
+    // evicted. Kept in memory, for RELAY_MS.
+    this.novas = [];
+    this.novaKeys = new Set();  // 'rx,ry' of every one heard since waking, so a resent report adds none twice
+    this.lastNovaSeq = 0;
     this.sql.exec(`CREATE TABLE IF NOT EXISTS sectors (
       sx INTEGER NOT NULL, sy INTEGER NOT NULL, charted TEXT NOT NULL, done INTEGER NOT NULL,
       PRIMARY KEY (sx, sy)) WITHOUT ROWID`);
@@ -1002,7 +1074,8 @@ export class Atlas {
         && Array.isArray(by) && by.length <= MAX_PLAYERS * 4
         && by.every((e) => Array.isArray(e) && typeof e[0] === 'string' && HASH.test(e[0]) && isInt(e[1], 1, TERR * TERR * 1000))
         && (r.unpassed === undefined || isInt(r.unpassed, 0, 1e6)) && goodWho(r.who, r.sx, r.sy, MAX_PLAYERS)
-        && (r.tags === undefined || (Array.isArray(r.tags) && r.tags.length <= GUILD_TAGS_MAX && r.tags.every((t) => typeof t === 'string' && GUILD_TAG.test(t))));
+        && (r.tags === undefined || (Array.isArray(r.tags) && r.tags.length <= GUILD_TAGS_MAX && r.tags.every((t) => typeof t === 'string' && GUILD_TAG.test(t))))
+        && (r.novaSeq === undefined || Number.isInteger(r.novaSeq)) && (r.novas === undefined || (Array.isArray(r.novas) && r.novas.length <= TERR * TERR));
       if (!ok) return json({ error: 'bad report' }, 400);
       this.tally();
       this.countCharted(by);
@@ -1013,12 +1086,14 @@ export class Atlas {
       this.rows.set(key, { sx: r.sx, sy: r.sy, players: r.players, charted: r.charted, done, hot, who: r.who ?? [], at: this.now() });
       noteMates(this, key, r.who, this.now());  // who's online in each guild (survey-guild.js)
       if (!old || old.done !== done) this.save(key);
+      this.takeNovas(r);
       // The list of addresses past the cap goes back only when it has
       // changed since this sector last heard it.
       const fresh = r.day === this.day && r.overAt === this.overList.length;
       return json({
         ...this.totals(), day: this.day, overAt: this.overList.length, ...(fresh ? {} : { over: this.overList.slice(-DAILY_LIST_MAX) }),
         ...(r.tags?.length ? { guilds: matesFor(this, r.tags, this.now(), ONLINE_MS) } : {}),
+        ...this.novasFor(r.novaSeq),
       });
     }
     if (request.method === 'GET' && pathname === TOTALS_PATH) return json(this.totals());
@@ -1034,6 +1109,33 @@ export class Atlas {
       return new Response(this.view.body, { headers: { 'Content-Type': 'application/json; charset=utf-8' } });
     }
     return json({ error: 'not found' }, 404);
+  }
+
+  // Supernovas a sector reports, each checked against the map and against
+  // the sector's own counts in the same report, which must show its
+  // territory complete. A bad one is dropped; the report still counts.
+  takeNovas(r) {
+    for (const n of r.novas ?? []) {
+      if (!checkNovaWord(n)) continue;
+      const [rx, ry] = n, k = `${rx},${ry}`;
+      if (fdiv(rx, TERR) !== r.sx || fdiv(ry, TERR) !== r.sy || this.novaKeys.has(k)) continue;
+      if (r.charted[(ry - r.sy * TERR) * TERR + rx - r.sx * TERR] !== territoryTotal(rx, ry)) continue;
+      this.lastNovaSeq = Math.max(this.now(), this.lastNovaSeq) + 1;
+      this.novas.push({ seq: this.lastNovaSeq, n, at: this.now() });
+      this.novaKeys.add(k);
+    }
+  }
+
+  // What goes back to a sector that has passed on supernovas up to `seq`:
+  // those since, and the count to send next time. A sector that has never
+  // heard any (-1) starts from now: its players weren't there for the rest.
+  novasFor(seq) {
+    if (!Number.isInteger(seq)) return {};
+    const cut = this.now() - RELAY_MS;
+    while (this.novas.length && (this.novas[0].at < cut || this.novas.length > RELAY_MAX)) this.novas.shift();
+    if (seq < 0) return { novaSeq: Math.max(this.now(), this.lastNovaSeq) };
+    const novas = this.novas.filter((e) => e.seq > seq).map((e) => e.n);
+    return { novaSeq: Math.max(seq, this.lastNovaSeq), ...(novas.length ? { novas } : {}) };
   }
 
   countCharted(by) {

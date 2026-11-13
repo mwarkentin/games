@@ -569,7 +569,7 @@ describe('Sector', () => {
     const [a, b] = [join(2, -3), join(2, -3)];
     await claim(a, words[0]);
     await settle();
-    assert.deepEqual(reports, [{ sx: 2, sy: -3, players: 0, charted: countsFor(1), hot: [words[0].x, words[0].y], by: [], day: TODAY, overAt: 0 }]);
+    assert.deepEqual(reports, [{ sx: 2, sy: -3, players: 0, charted: countsFor(1), hot: [words[0].x, words[0].y], by: [], day: TODAY, overAt: 0, novaSeq: -1 }]);
     assert.deepEqual(b.last('world'), { t: 'world', charted: 1001, total: AREA_WORDS, players: 40 });
 
     // Changes within REPORT_MS wait for the first message after it.
@@ -581,7 +581,7 @@ describe('Sector', () => {
     clock += REPORT_MS;
     await say(b, { t: 'pos', x: 401, y: -500 });
     await settle();
-    assert.deepEqual(reports[1], { sx: 2, sy: -3, players: 1, charted: countsFor(2), hot: [401, -500], by: [], day: TODAY, overAt: 0 });  // where the player is
+    assert.deepEqual(reports[1], { sx: 2, sy: -3, players: 1, charted: countsFor(2), hot: [401, -500], by: [], day: TODAY, overAt: 0, novaSeq: -1 });  // where the player is
     assert.deepEqual(b.last('world'), { t: 'world', charted: 1002, total: AREA_WORDS, players: 40 });
     // Later joiners get the totals straight away.
     assert.deepEqual(join(2, -3).sent[1], { t: 'world', charted: 1002, total: AREA_WORDS, players: 40 });

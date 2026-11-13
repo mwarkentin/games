@@ -22,7 +22,7 @@ import {
   FOREVER_S, LAYOUT, TIMELAPSE_BOUNDS_SQL, TIMELAPSE_CACHE_S, TIMELAPSE_DAY_AFTER_SQL, TIMELAPSE_DAY_SQL, TIMELAPSE_HOURS_SQL,
   TIMELAPSE_NOVAS_SQL, TIMELAPSE_NOVA_HOURS_SQL, TIMELAPSE_PAGE, TIMELAPSE_VERSION, readTimelapse, readTimelapseDay, readTimelapseGuildDay,
 } from '../src/survey-log.js';
-import { AREA, NEAR_PATH, NOVA_REACH, SECTOR, Sector, checkNova, novaNeighbours } from '../src/survey.js';
+import { AREA, Atlas, NEAR_PATH, NOVA_REACH, NOVA_REPORT_MS, RELAY_MS, REPORT_MS, SECTOR, Sector, checkNova, novaNeighbours } from '../src/survey.js';
 
 const MIGRATIONS = new URL('../migrations-log/', import.meta.url);
 const ORIGIN = 'https://games.michaelwarkentin.com';
@@ -1111,7 +1111,7 @@ describe('supernovas reaching neighbouring sectors', () => {
     assert.equal(ws.sent.filter((m) => m.t === 'claimed').length, 1);
     assert.equal(pending.length, 1);
     await settle();
-    const frame = { t: 'nova', n: [1, 2, clock, last.w, last.x, last.y, last.d, 'AMY'] };
+    const frame = { t: 'nova', n: [1, 2, clock, last.w, last.x, last.y, last.d, 'AMY'], ago: 0 };
     for (const p of [left, above, corner, corner2]) assert.deepEqual(p.sent.filter((m) => m.t === 'nova'), [frame]);
     assert.deepEqual(ws.sent.filter((m) => m.t === 'nova'), []);  // its own players had the claim
     assert.deepEqual(posts.map((p) => p.name).sort(), sorted(novaNeighbours(1, 2)));
@@ -1196,6 +1196,176 @@ describe('supernovas reaching neighbouring sectors', () => {
     // The real one goes through.
     assert.equal((await post(good)).status, 204);
     assert.equal(p.sent.filter((m) => m.t === 'nova').length, 1);
+  });
+});
+
+describe('supernovas reaching the whole shared world, through the Atlas', () => {
+  let clock, logged, sectors, states, pending, atlasObject, atlasDown;
+  beforeEach(() => {
+    logged = mock.method(console, 'log', () => {});
+    mock.timers.enable({ apis: ['setTimeout'] });
+    clock = NOW;
+    sectors = new Map();
+    states = new Map();
+    pending = [];
+    atlasDown = false;
+    atlasObject = new Atlas(fakeState(), {});
+    atlasObject.now = () => clock;
+  });
+  afterEach(() => { mock.timers.reset(); logged.mock.restore(); });
+
+  const reports = [];
+  const env = {
+    SECTORS: { idFromName: (name) => name, get: (name) => ({ fetch: (url, init) => sectorAt(name).fetch(new Request(url, init)) }) },
+    ATLAS: {
+      idFromName: (name) => name,
+      get: () => ({
+        fetch: async (url, init) => {
+          if (atlasDown) throw new Error('atlas down');
+          reports.push(JSON.parse(init.body));
+          return atlasObject.fetch(new Request(url, init));
+        },
+      }),
+    },
+  };
+  // A sector as a Durable Object: its storage outlives the object, which `wake` replaces, as eviction does.
+  function sectorAt(name, wake = false) {
+    if (!states.has(name)) { const st = fakeState(); st.waitUntil = (p) => pending.push(p); states.set(name, st); }
+    if (wake || !sectors.has(name)) {
+      const s = new Sector(states.get(name), env);
+      s.now = () => clock;
+      sectors.set(name, s);
+    }
+    return sectors.get(name);
+  }
+  // Lets every report and message in flight finish.
+  async function settle() {
+    for (let i = 0; i < 20; i++) {
+      while (pending.length) await pending.shift();
+      await new Promise((r) => setImmediate(r));
+    }
+  }
+  function join(name) {
+    const ws = fakeSocket(), [sx, sy] = name.split(',').map(Number);
+    sectorAt(name).join(ws, sx, sy);
+    return ws;
+  }
+  // A player looking around: the message a sector's owed report goes out with.
+  async function look(name, ws) {
+    const [sx, sy] = name.split(',').map(Number);
+    await sectorAt(name).webSocketMessage(ws, JSON.stringify({ t: 'pos', x: sx * SECTOR + 10 + (clock % 50), y: sy * SECTOR + 10 }));
+    await settle();
+  }
+  // Territory (rx, ry) charted but for its last word, which a player then charts.
+  async function chartLast(rx, ry) {
+    const words = territoryWords(rx, ry), name = `${fdiv(rx, 4)},${fdiv(ry, 4)}`;
+    const sql = states.has(name) ? states.get(name).storage.sql : (sectorAt(name), states.get(name).storage.sql);
+    words.slice(0, -1).forEach((o, i) => sql.exec(
+      'INSERT INTO claims (key, w, x, y, d, s, initials, at) VALUES (?, ?, ?, ?, ?, 0, ?, ?)', o.key, o.w, o.x, o.y, o.d, 'OLD', NOW - 1e6 + i,
+    ));
+    const ws = join(name);
+    clock += 2000;
+    const last = words.at(-1);
+    await sectorAt(name).webSocketMessage(ws, JSON.stringify({ t: 'claim', w: last.w, x: last.x, y: last.y, d: last.d }));
+    await settle();
+    return { ws, last, at: clock, name };
+  }
+  const novasTo = (ws) => ws.sent.filter((m) => m.t === 'nova');
+
+  test('go from their sector to the Atlas at once, and on to every sector with its next report', async () => {
+    reports.length = 0;
+    // A player far off, in sector 5,5, whose sector has reported once and so counts from then.
+    const far = join('5,5');
+    await look('5,5', far);
+    assert.equal(reports.at(-1).novaSeq, -1);
+    // Territory 1,2 goes supernova in sector 0,0: its report goes at once, with it.
+    const { ws: there, last, at } = await chartLast(1, 2);
+    const sent = reports.find((r) => r.novas);
+    assert.deepEqual(sent.novas, [[1, 2, at, last.w, last.x, last.y, last.d, '']]);
+    assert.deepEqual([sent.sx, sent.sy], [0, 0]);
+    // Someone joins 5,5 after it went off; then 5,5's next report brings it.
+    clock += 3000;
+    const late = join('5,5');
+    clock += REPORT_MS;
+    await look('5,5', far);
+    assert.deepEqual(novasTo(far), [{ t: 'nova', n: [1, 2, at, last.w, last.x, last.y, last.d, ''], ago: clock - at }]);
+    assert.deepEqual(novasTo(late), []);  // they weren't here for it
+    assert.deepEqual(novasTo(there), []);  // its own players had the claim
+    // Only once, even after 5,5 is evicted and woken again.
+    clock += REPORT_MS;
+    sectorAt('5,5', true);
+    await look('5,5', far);
+    assert.equal(novasTo(far).length, 1);
+    assert.ok(reports.at(-1).novaSeq > 0);
+  });
+
+  test('a neighbour that passed it on already doesn\'t again', async () => {
+    const beside = join('-1,0');
+    await look('-1,0', beside);
+    await chartLast(0, 0);  // a corner of 0,0, beside -1,0
+    assert.equal(novasTo(beside).length, 1);
+    clock += REPORT_MS;
+    await look('-1,0', beside);
+    assert.equal(novasTo(beside).length, 1);
+  });
+
+  test('a supernova the Atlas holds goes for RELAY_MS, and a sector new to them starts from now', async () => {
+    const quiet = join('5,5');
+    await look('5,5', quiet);
+    await chartLast(1, 2);
+    // 5,5 stays quiet past RELAY_MS: it's gone by the time it reports.
+    clock += RELAY_MS + 1000;
+    await look('5,5', quiet);
+    assert.deepEqual(novasTo(quiet), []);
+    // A sector that has never reported hears none from before.
+    await chartLast(9, 9);
+    const fresh = join('-5,-5');
+    await look('-5,-5', fresh);
+    assert.deepEqual(novasTo(fresh), []);
+  });
+
+  test('a report that fails keeps its supernova for the next, soon after', async () => {
+    const far = join('5,5');
+    await look('5,5', far);
+    atlasDown = true;
+    const { ws, at } = await chartLast(1, 2);
+    atlasDown = false;
+    reports.length = 0;
+    clock += NOVA_REPORT_MS;
+    await look('0,0', ws);
+    assert.equal(reports.length, 1);
+    assert.equal(reports[0].novas[0][2], at);
+    clock += REPORT_MS;
+    await look('5,5', far);
+    assert.equal(novasTo(far).length, 1);
+  });
+
+  test('the Atlas takes only real supernovas, from their own sector, with every word charted', async () => {
+    const report = async (body) => {
+      const res = await atlasObject.fetch(new Request('https://atlas/report', { method: 'POST', body: JSON.stringify({ players: 0, by: [], ...body }) }));
+      return [res.status, await res.json()];
+    };
+    const words = territoryWords(1, 2), o = words.at(-1);
+    const nova = [1, 2, NOW, o.w, o.x, o.y, o.d, 'AMY'];
+    const full = Array(16).fill(0);
+    full[2 * 4 + 1] = words.length;  // territory 1,2 of sector 0,0
+    const listen = (await report({ sx: 3, sy: 3, charted: Array(16).fill(0), novaSeq: -1 }))[1].novaSeq;
+    const heard = async () => (await report({ sx: 3, sy: 3, charted: Array(16).fill(0), novaSeq: listen }))[1].novas ?? [];
+    for (const [why, body] of [
+      ['not every word charted', { sx: 0, sy: 0, charted: Array(16).fill(0), novas: [nova] }],
+      ['from another sector', { sx: 1, sy: 0, charted: full, novas: [nova] }],
+      ['not the word there', { sx: 0, sy: 0, charted: full, novas: [[1, 2, NOW, o.w, o.x + 1, o.y, o.d, 'AMY']] }],
+      ['not initials', { sx: 0, sy: 0, charted: full, novas: [[1, 2, NOW, o.w, o.x, o.y, o.d, '<b>']] }],
+      ['not a supernova', { sx: 0, sy: 0, charted: full, novas: ['nope', null, [1, 2]] }],
+    ]) {
+      const [status] = await report(body);
+      assert.equal(status, 200, why);  // the report still counts
+      assert.deepEqual(await heard(), [], why);
+    }
+    assert.equal((await report({ sx: 0, sy: 0, charted: full, novas: 'nope' }))[0], 400);
+    await report({ sx: 0, sy: 0, charted: full, novas: [nova] });
+    await report({ sx: 0, sy: 0, charted: full, novas: [nova] });  // resent: once
+    assert.deepEqual(await heard(), [nova]);
   });
 });
 
