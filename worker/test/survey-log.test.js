@@ -18,8 +18,9 @@ import {
   readTop, readTopHours, routeLog, sliceSql, writeLog, HOURS_SURVEYORS_SQL, HOURS_TERRITORIES_SQL, TOP_HOURS_MAX,
   NOVAS_SQL, NOVAS_BEFORE_SQL, NOVA_HOURS_SQL, NOVA_PAGE, NOVA_SQL, readNovas,
   GUILDS_SQL, GUILD_NAME_SQL, HOURS_GUILDS_SQL, LOG_ROWS_PER_INSERT,
+  TIMELAPSE_GUILD_DAYS_SQL, TIMELAPSE_GUILD_DAY_SQL, TIMELAPSE_GUILD_DAY_AFTER_SQL,
   FOREVER_S, LAYOUT, TIMELAPSE_BOUNDS_SQL, TIMELAPSE_CACHE_S, TIMELAPSE_DAY_AFTER_SQL, TIMELAPSE_DAY_SQL, TIMELAPSE_HOURS_SQL,
-  TIMELAPSE_NOVAS_SQL, TIMELAPSE_NOVA_HOURS_SQL, TIMELAPSE_PAGE, TIMELAPSE_VERSION, readTimelapse, readTimelapseDay,
+  TIMELAPSE_NOVAS_SQL, TIMELAPSE_NOVA_HOURS_SQL, TIMELAPSE_PAGE, TIMELAPSE_VERSION, readTimelapse, readTimelapseDay, readTimelapseGuildDay,
 } from '../src/survey-log.js';
 import { AREA, NEAR_PATH, NOVA_REACH, SECTOR, Sector, checkNova, novaNeighbours } from '../src/survey.js';
 
@@ -1195,6 +1196,51 @@ describe('supernovas reaching neighbouring sectors', () => {
     // The real one goes through.
     assert.equal((await post(good)).status, 204);
     assert.equal(p.sent.filter((m) => m.t === 'nova').length, 1);
+  });
+});
+
+describe('the timelapse following a guild', () => {
+  let db;
+  beforeEach(() => { db = fakeD1(); forgetLog(); });
+  const COBALT = 'c0ba17c0ba';
+  const at = (x, y, time, guild = COBALT) => ({ key: keyOf('ACORN', x, y, 0), w: 'ACORN', x, y, d: 0, s: 0, initials: 'ZED', at: time, guild });
+  const get = async (path, now = NOW) => {
+    const res = await routeLog(new Request(`https://survey.test${path}`, { headers: { Origin: ORIGIN } }), { LOG_DB: db, ALLOWED_ORIGINS: ORIGIN }, now);
+    return [res.status, await res.json(), res.headers.get('Cache-Control')];
+  };
+
+  test('says the guild\'s name and colour and the days it has words on, then each day\'s words', async () => {
+    await writeLog(db, [at(1, 1, NOW - DAY_MS), at(2, 2, NOW), at(3, 3, NOW + 1, ''), at(4, 4, NOW + 2), at(5, 5, NOW + 3, 'eeeeeeeeee')],
+      [], [{ lid: COBALT, a: 11, b: 0, c: 0 }]);
+    const [, index, cache] = await get(`/v1/survey/log/timelapse/guild/${COBALT}`);
+    assert.deepEqual(index, { name: 'Cobalt Compass Society', hue: 220, days: [[DAY - 1, 1], [DAY, 2]] });
+    assert.equal(cache, `public, max-age=${TIMELAPSE_CACHE_S}`);
+    const [, today, live] = await get(`/v1/survey/log/timelapse/guild/${COBALT}/${DAY}`);
+    assert.deepEqual(today, { day: DAY, words: [[NOW - DAY * DAY_MS, 2, 2, 0], [NOW + 2 - DAY * DAY_MS, 4, 4, 0]], next: null });
+    assert.equal(live, `public, max-age=${LIVE_CACHE_S}`);
+    // A settled day is kept for good, as the day's own words are.
+    const [, , kept] = await get(`/v1/survey/log/timelapse/guild/${COBALT}/${DAY - 1}`);
+    assert.equal(kept, `public, max-age=${FOREVER_S}, immutable`);
+    assert.deepEqual((await get('/v1/survey/log/timelapse/guild/ffffffffff'))[1], { name: null, hue: null, days: [] });
+    assert.equal((await get(`/v1/survey/log/timelapse/guild/${COBALT}/${DAY + 1}`))[0], 400);
+    assert.equal((await get(`/v1/survey/log/timelapse/guild/${COBALT}/${DAY}?after=nope`))[0], 400);
+  });
+
+  test('pages through a busy day of the guild\'s, along its own index', async () => {
+    const rows = Array.from({ length: TIMELAPSE_PAGE + 3 }, (_, i) => at(i % 900, Math.floor(i / 900), NOW + i));
+    await writeLog(db, rows, [], [{ lid: COBALT, a: 11, b: 0, c: 0 }]);
+    const one = await readTimelapseGuildDay(db, COBALT, DAY);
+    assert.equal(one.words.length, TIMELAPSE_PAGE);
+    const [ms, ...key] = one.next.split('~');
+    const two = await readTimelapseGuildDay(db, COBALT, DAY, { at: Number(ms), key: key.join('~') });
+    assert.equal(two.words.length, 3);
+    assert.equal(two.next, null);
+    assert.match(plan(db, TIMELAPSE_GUILD_DAYS_SQL, COBALT), /SEARCH survey_log_guild_days USING (COVERING )?INDEX survey_log_guild_days_by_guild \(guild=\?\)/);
+    for (const [sql, args] of [[TIMELAPSE_GUILD_DAY_SQL, [COBALT, 1, 2, 10]], [TIMELAPSE_GUILD_DAY_AFTER_SQL, [COBALT, 1, 2, 1, 'A', 10]]]) {
+      const p = plan(db, sql, ...args);
+      assert.match(p, /SEARCH survey_log USING (COVERING )?INDEX survey_log_by_guild/);
+      assert.doesNotMatch(p, /TEMP B-TREE/);
+    }
   });
 });
 

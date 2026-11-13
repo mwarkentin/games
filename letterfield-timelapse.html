@@ -61,6 +61,11 @@ button:focus-visible,a:focus-visible,input:focus-visible{outline:2px solid var(-
 .when small{display:block;margin-top:5px;font:500 13px/1 var(--f-mono);letter-spacing:.02em;color:var(--muted);text-transform:none}
 .counts{display:flex;gap:16px;margin-top:10px;font:400 11px/1.2 var(--f-mono);color:var(--muted)}
 .counts b{display:block;font:700 22px/1 var(--f-display);letter-spacing:.04em;color:var(--ink);font-variant-numeric:tabular-nums}
+/* Following a guild: its words in its colour, and a way to stop. */
+.counts .theirs b{color:hsl(var(--gh,220) var(--mark-s) var(--mark-l))}
+.follow{display:inline-flex;align-items:center;gap:8px;margin-top:10px;min-height:36px;box-sizing:border-box;padding:6px 12px;border:1px solid hsl(var(--gh,220) var(--mark-s) var(--mark-l));border-radius:999px;background:var(--panel);color:var(--ink);font:500 12px/1.2 var(--f-ui);text-decoration:none;max-width:100%}
+.follow i{flex:none;width:9px;height:9px;border-radius:50%;background:hsl(var(--gh,220) var(--mark-s) var(--mark-l))}
+.follow span{color:var(--muted);font:500 12px/1 var(--f-mono)}
 
 /* The bottom: play, scrub, speed, save. */
 .panel{position:fixed;left:0;right:0;bottom:0;z-index:2;
@@ -128,8 +133,10 @@ dialog p{margin:6px 0 0;font:400 12px/1.5 var(--f-mono);color:var(--muted)}
   <div class="counts">
     <div><b id="nWords">0</b>words charted</div>
     <div><b id="nNovas">0</b>supernovas</div>
-    <div><b id="nPlaces">0</b>territories</div>
+    <div id="placesCount"><b id="nPlaces">0</b>territories</div>
+    <div class="theirs" id="guildCount" hidden><b id="nGuild">0</b>their words</div>
   </div>
+  <a class="follow" id="follow" hidden href="/letterfield-timelapse"><i aria-hidden="true"></i><b id="followName"></b><span aria-hidden="true">×</span></a>
 </div>
 
 <div class="status" id="status" hidden role="status">
@@ -208,6 +215,7 @@ const VIDEO_S = 24;            // the whole history in this many seconds,
 const VIDEO_HOLD = [0.8, 3.2]; // held this long at the start and at the end (long enough for a last supernova to play out),
 const VIDEO_FPS = 30;          // at this many frames a second
 const K_SPEED = 'letterfield.timelapse.speed';
+const FAINT = 0.22;            // how strongly everyone else's words show while following a guild
 
 const $ = s => document.querySelector(s);
 const api = (() => {
@@ -215,6 +223,10 @@ const api = (() => {
   try { const q = new URLSearchParams(location.search).get('survey'); if (q && /^(https?|wss?):\/\//.test(q)) url = q; } catch (_) {}
   return url.replace(/\/+$/, '').replace(/^ws/, 'http');
 })();
+// ?guild=<log id> follows a guild: its words bright in its colour, everyone
+// else's faint. The log knows a guild by this id, never its code or tag.
+const followLid = (() => { try { const g = new URLSearchParams(location.search).get('guild'); return /^[0-9a-f]{10}$/.test(g || '') ? g : null; } catch (_) { return null; } })();
+let follow = null;        // {name, hue, days: Set of UTC days with its words}, once the log has said
 const LS = {
   get(k) { try { return localStorage.getItem(k); } catch (_) { return null; } },
   set(k, v) { try { localStorage.setItem(k, v); } catch (_) {} },
@@ -322,6 +334,11 @@ function readColors() {
   C = { paper: g('--paper'), ink: g('--ink'), muted: g('--muted'), panel: g('--panel'), accent: g('--accent'), dark: g('--mode') === 'dark',
     ms: g('--mark-s') || '58%', ml: g('--mark-l') || '38%' };
   C.paperRGB = hexRGB(C.paper);
+  // The followed guild's colour, from the first word of its name, as on its carets in the game.
+  if (follow) {
+    follow.stroke = `hsl(${follow.hue}, 78%, ${C.dark ? 66 : 42}%)`;
+    follow.glow = a => `hsla(${follow.hue}, 95%, ${C.dark ? 70 : 55}%, ${a})`;
+  }
   if (!idx) return;
   // As the game's far view and the notes' world map: a faint wash of each
   // theme's colour, deeper where words are charted, and a remnant's deep
@@ -345,7 +362,8 @@ function readColors() {
 // Days of the log, loaded oldest first a few at a time, and taken in order:
 // words up to `loadedUntil` are all here, so playback can start long before
 // the last day arrives.
-const W = [];             // [at, x, y, d, len, th, s], oldest first
+const W = [];             // [at, x, y, d, len, th, s, g], oldest first; g is 1 for the followed guild's
+const GW = [0];           // how many of the followed guild's words come before each index into W
 const NV = [];            // supernovas: [at, rx, ry, th], oldest first
 const dayStart = [];      // index into W where each loaded day starts, with its day
 let days = [], nextDay = 0, taken = 0, loadedUntil = 0, failures = 0;
@@ -406,17 +424,23 @@ function keyframe() {
   }
   kf.n.push(W.length); kf.x0.push(x0); kf.y0.push(y0); kf.x1.push(x1); kf.y1.push(y1);
 }
-async function loadDay(day) {
-  const words = [], novas = [];
+async function pages(path, each) {
   let after = null;
-  for (let pages = 0; pages < 400; pages++) {
-    const page = await getJSON(`/v1/survey/log/timelapse/${day}${after ? '?after=' + encodeURIComponent(after) : ''}`);
-    for (const w of page.words) words.push(w);
-    for (const n of page.novas) novas.push(n);
+  for (let n = 0; n < 400; n++) {
+    const page = await getJSON(path + (after ? '?after=' + encodeURIComponent(after) : ''));
+    each(page);
     if (!page.next) break;
     after = page.next;
   }
-  return { words, novas };
+}
+async function loadDay(day) {
+  const words = [], novas = [], theirs = new Set();
+  await Promise.all([
+    pages(`/v1/survey/log/timelapse/${day}`, page => { for (const w of page.words) words.push(w); for (const n of page.novas) novas.push(n); }),
+    // The followed guild's words that day, by where each starts and when, to pick out of the day's.
+    follow && follow.days.has(day) ? pages(`/v1/survey/log/timelapse/guild/${followLid}/${day}`, page => { for (const w of page.words) theirs.add(w.join(',')); }) : null,
+  ]);
+  return { words, novas, theirs };
 }
 function pump() {
   while (nextDay < days.length && nextDay - taken < FETCHES) {
@@ -431,12 +455,13 @@ function pump() {
 }
 function take() {
   while (taken < days.length && got.has(days[taken])) {
-    const day = days[taken], { words, novas } = got.get(day), base = day * DAY;
+    const day = days[taken], { words, novas, theirs } = got.get(day), base = day * DAY;
     got.delete(day);
     dayStart.push([W.length, day]);
     words.forEach((w, i) => {
-      const [t, x, y, d, len] = w;
-      W.push([base + t, x, y, d, len, w[5], w[6]]);
+      const [t, x, y, d, len] = w, mine = theirs.has(`${t},${x},${y},${d}`) ? 1 : 0;
+      W.push([base + t, x, y, d, len, w[5], w[6], mine]);
+      GW.push(GW.at(-1) + mine);
       cluster(x, y, base + t);
       if (W.length === 1 || W.length % kfEvery === 0 || i === words.length - 1) keyframe();
     });
@@ -570,12 +595,13 @@ function pathsOf(i) {
   dayPaths.set(i, paths);
   return paths;
 }
+// The followed guild's words go in a path of their own, under 'guild'.
 function wordPaths(from, to) {
   const paths = new Map();
   for (let j = from; j < to; j++) {
-    const [, x, y, d, len, th] = W[j];
-    let p = paths.get(th);
-    if (!p) paths.set(th, p = new Path2D());
+    const [, x, y, d, len, th, , mine] = W[j], key = mine ? 'guild' : th;
+    let p = paths.get(key);
+    if (!p) paths.set(key, p = new Path2D());
     p.moveTo(x + .5, y + .5); p.lineTo(x + .5 + DIRS[d][0] * (len - 1), y + .5 + DIRS[d][1] * (len - 1));
   }
   return paths;
@@ -629,15 +655,21 @@ function draw(g, view, cam, p, opts) {
       g.globalAlpha = 1;
     }
   }
-  // Words: a stroke in its theme's colour across the cells it covers.
+  // Words: a stroke in its theme's colour across the cells it covers. While
+  // following a guild, everyone else's are faint and the guild's go on top,
+  // bolder, in its colour.
   if (s > .12 && n) {
     g.setTransform(s, 0, 0, s, ox, oy);
-    g.lineCap = 'round'; g.lineWidth = Math.max(.62, 1.1 / s); g.globalAlpha = C.dark ? .9 : .85;
+    const width = Math.max(.62, 1.1 / s), alpha = C.dark ? .9 : .85, theirs = [];
+    g.lineCap = 'round'; g.lineWidth = width; g.globalAlpha = follow ? alpha * FAINT : alpha;
+    const stroke = paths => { for (const [q, path] of paths) { if (q === 'guild') theirs.push(path); else { g.strokeStyle = TC[q].stroke; g.stroke(path); } } };
     let i = 0;
-    for (; i < dayStart.length && (i + 1 < dayStart.length ? dayStart[i + 1][0] : W.length) <= n; i++) {
-      for (const [q, path] of pathsOf(i)) { g.strokeStyle = TC[q].stroke; g.stroke(path); }
+    for (; i < dayStart.length && (i + 1 < dayStart.length ? dayStart[i + 1][0] : W.length) <= n; i++) stroke(pathsOf(i));
+    if (i < dayStart.length && dayStart[i][0] < n) stroke(wordPaths(dayStart[i][0], n));
+    if (follow && theirs.length) {
+      g.globalAlpha = 1; g.lineWidth = width * 1.7; g.strokeStyle = follow.stroke;
+      for (const path of theirs) g.stroke(path);
     }
-    if (i < dayStart.length && dayStart[i][0] < n) for (const [q, path] of wordPaths(dayStart[i][0], n)) { g.strokeStyle = TC[q].stroke; g.stroke(path); }
     g.setTransform(1, 0, 0, 1, 0, 0); g.globalAlpha = 1;
   }
   // Glows and flares run on their own clock, `fx`, which goes on past the end
@@ -648,11 +680,11 @@ function draw(g, view, cam, p, opts) {
     const from = fx - GLOW_S * r > P ? n : upto(W, timeAt(fx - GLOW_S * r));
     g.globalCompositeOperation = C.dark ? 'lighter' : 'source-over';
     for (let j = Math.max(from, n - 500); j < n; j++) {
-      const [at, x, y, d, len, q] = W[j], age = (fx - playAt(at)) / r / GLOW_S;
-      if (age < 0 || age >= 1) continue;
+      const [at, x, y, d, len, q, , mine] = W[j], age = (fx - playAt(at)) / r / GLOW_S;
+      if (age < 0 || age >= 1 || (follow && !mine)) continue;  // following a guild, only its words glow
       const a = 1 - age, mx = ox + (x + .5 + DIRS[d][0] * (len - 1) / 2) * s, my = oy + (y + .5 + DIRS[d][1] * (len - 1) / 2) * s;
-      const rad = Math.max(10, (len * .6 + 2) * s), gl = g.createRadialGradient(mx, my, 0, mx, my, rad);
-      gl.addColorStop(0, TC[q].glow(.55 * a)); gl.addColorStop(1, TC[q].glow(0));
+      const rad = Math.max(10, (len * .6 + 2) * s), gl = g.createRadialGradient(mx, my, 0, mx, my, rad), glow = mine && follow ? follow.glow : TC[q].glow;
+      gl.addColorStop(0, glow(.55 * a)); gl.addColorStop(1, glow(0));
       g.fillStyle = gl; g.beginPath(); g.arc(mx, my, rad, 0, Math.PI * 2); g.fill();
     }
     g.globalCompositeOperation = 'source-over';
@@ -737,6 +769,7 @@ function showNumbers({ t, n, nNova }) {
   if (words !== shown.n) { shown.n = words; $('#nWords').textContent = words.toLocaleString(); }
   if (nNova !== shown.nNova) { shown.nNova = nNova; $('#nNovas').textContent = nNova.toLocaleString(); }
   if (counts.size !== shown.places) { shown.places = counts.size; $('#nPlaces').textContent = counts.size.toLocaleString(); }
+  if (follow && GW[Math.min(n, GW.length - 1)] !== shown.theirs) { shown.theirs = GW[Math.min(n, GW.length - 1)]; $('#nGuild').textContent = shown.theirs.toLocaleString(); }
   if (!scrubbing) $('#scrub').value = String(Math.round(1000 * pos / P));
   $('#scrub').setAttribute('aria-valuetext', `${dateYearFmt.format(t)}, ${timeFmt.format(t)}`);
 }
@@ -802,6 +835,21 @@ function openChip(rx, ry, n, nova) {
   }, () => {});
 }
 function closeChip() { chipAsk++; $('#chip').hidden = true; }
+// The guild being followed, in its colour, with the way back to everyone's
+// replay and to its own page in the log.
+function showFollow() {
+  const survey = new URLSearchParams(location.search).get('survey'), q = survey ? `survey=${encodeURIComponent(survey)}` : '';
+  if (!follow) return;
+  document.documentElement.style.setProperty('--gh', follow.hue);
+  $('#followName').textContent = `Following the ${follow.name}`;
+  $('#follow').setAttribute('aria-label', `Stop following the ${follow.name}`);
+  $('#follow').href = `/letterfield-timelapse${q ? '?' + q : ''}`;
+  $('#follow').hidden = false;
+  $('#guildCount').hidden = false;
+  $('#placesCount').hidden = true;
+  $('#toLog').href = `/letterfield-log?guild=${followLid}${q ? '&' + q : ''}`;
+  resize();
+}
 $('#chipClose').addEventListener('click', closeChip);
 {
   const survey = new URLSearchParams(location.search).get('survey');
@@ -944,6 +992,17 @@ async function start() {
   catch (_) { if (TL.seq === at && TL.is('loading')) TL.go('failed'); return; }
   if (!TL.is('loading')) return;
   if (!index.hours || !index.hours.length) { TL.go('empty'); return; }
+  // A guild to follow is known before the first day loads, so every day
+  // picks out its words, and before the index is taken, so nothing draws
+  // from half of it.
+  if (followLid) {
+    try {
+      const f = await getJSON(`/v1/survey/log/timelapse/guild/${followLid}`);
+      if (typeof f.name === 'string' && Number.isFinite(f.hue) && Array.isArray(f.days)) follow = { name: f.name, hue: f.hue, days: new Set(f.days.map(d => d[0])) };
+    } catch (_) { /* played without following, as for a guild the log doesn't know */ }
+    if (TL.seq !== at || !TL.is('loading')) return;
+    showFollow();
+  }
   idx = index;
   readColors();
   timeline(index);

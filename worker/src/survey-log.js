@@ -46,6 +46,12 @@
 //       [?after=<at>~<key>]          TIMELAPSE_PAGE words a page: {day, words: [[t, x, y, d, len,
 //                                    th, s], ...], novas: [[t, rx, ry, th], ...], next}, t in ms
 //                                    since the day began (supernovas on the first page only)
+//   GET /v1/survey/log/timelapse/guild/<lid>   a guild to follow in the replay: {name, hue,
+//                                    days: [[day, words], ...]}, name and hue null while the log
+//                                    has no name for it
+//   GET /v1/survey/log/timelapse/guild/<lid>/<day>   that guild's words in one UTC day, oldest
+//       [?after=<at>~<key>]          first, TIMELAPSE_PAGE a page: {day, words: [[t, x, y, d], ...],
+//                                    next}, to pick out of the day's own words
 //
 // Entries are [w, x, y, d, s, initials, at, th]: the claim as the game gets
 // it from a sector, plus its theme. A supernova, a territory whose every
@@ -122,6 +128,8 @@ export const TOP_SLOW_CACHE_S = 600;    // seconds a running top list over more 
 export const TOP_HOURS_MAX = 48;        // the longest run of hours a top list by hours covers (a local day is up to 26)
 export const LOG_TIMELAPSE_PATH = '/v1/survey/log/timelapse';
 export const LOG_TIMELAPSE_DAY_PATH = /^\/v1\/survey\/log\/timelapse\/(\d{1,6})$/;
+export const LOG_TIMELAPSE_GUILD_PATH = /^\/v1\/survey\/log\/timelapse\/guild\/([0-9a-f]{10})$/;
+export const LOG_TIMELAPSE_GUILD_DAY_PATH = /^\/v1\/survey\/log\/timelapse\/guild\/([0-9a-f]{10})\/(\d{1,6})$/;
 export const TIMELAPSE_PAGE = 5000;     // words in a page of a day's replay (about 25 bytes each)
 export const TIMELAPSE_CACHE_S = 60;    // seconds the replay's index is cached for
 export const FOREVER_S = 31536000;      // a settled day of the replay never changes: a year
@@ -275,6 +283,32 @@ export async function readTimelapse(db, cut = FAR, settled = (read) => read()) {
     themes: THEMES.map((t) => [t.name, t.hue]),
     layout: LAYOUT,
   };
+}
+
+// A guild to follow in the replay: its name and colour, and the days it has
+// words on, from its daily counts. Its words come a day at a time, through
+// their own index, as where each starts and when: the page picks them out of
+// the day's words, which it has already.
+export const TIMELAPSE_GUILD_DAYS_SQL = 'SELECT day, n FROM survey_log_guild_days WHERE guild = ? AND n > 0 ORDER BY day';
+const GUILD_DAY = `SELECT at, key, x, y, d FROM survey_log INDEXED BY survey_log_by_guild WHERE guild = ? AND guild <> '' AND at >= ? AND at < ?`;
+export const TIMELAPSE_GUILD_DAY_SQL = `${GUILD_DAY} ORDER BY at, key LIMIT ?`;
+export const TIMELAPSE_GUILD_DAY_AFTER_SQL = `${GUILD_DAY} AND (at, key) > (?, ?) ORDER BY at, key LIMIT ?`;
+export async function readTimelapseGuild(db, lid) {
+  const [days, guild] = await Promise.all([
+    db.prepare(TIMELAPSE_GUILD_DAYS_SQL).bind(lid).all(),
+    db.prepare(GUILD_NAME_SQL).bind(lid).first(),
+  ]);
+  const name = guild ? named(guild) : null;
+  return { name: name?.[0] ?? null, hue: name?.[1] ?? null, days: days.results.map((r) => [r.day, r.n]) };
+}
+export async function readTimelapseGuildDay(db, lid, day, after = null) {
+  const from = day * DAY_MS, to = from + DAY_MS;
+  const rows = (await (after ? db.prepare(TIMELAPSE_GUILD_DAY_AFTER_SQL).bind(lid, from, to, after.at, after.key, TIMELAPSE_PAGE + 1)
+    : db.prepare(TIMELAPSE_GUILD_DAY_SQL).bind(lid, from, to, TIMELAPSE_PAGE + 1)).all()).results;
+  const more = rows.length > TIMELAPSE_PAGE;
+  if (more) rows.length = TIMELAPSE_PAGE;
+  const last = rows.at(-1);
+  return { day, words: rows.map((r) => [r.at - from, r.x, r.y, r.d]), next: more ? `${last.at}~${last.key}` : null };
 }
 
 // One UTC day of the log, as little as drawing it takes: when (ms into the
@@ -502,7 +536,8 @@ export function routeLog(request, env, now = Date.now()) {
   const surveyor = url.pathname.match(LOG_SURVEYOR_PATH), theme = url.pathname.match(LOG_THEME_PATH), guild = url.pathname.match(LOG_GUILD_PATH);
   const territory = url.pathname.match(LOG_TERRITORY_PATH), novas = url.pathname.match(LOG_NOVAS_PATH);
   const timelapse = url.pathname === LOG_TIMELAPSE_PATH, timelapseDay = url.pathname.match(LOG_TIMELAPSE_DAY_PATH);
-  if (!(day || hour || month || top || topHours || span || surveyor || theme || guild || territory || novas || timelapse || timelapseDay) || !env.LOG_DB) return null;
+  const follow = url.pathname.match(LOG_TIMELAPSE_GUILD_PATH), followDay = url.pathname.match(LOG_TIMELAPSE_GUILD_DAY_PATH);
+  if (!(day || hour || month || top || topHours || span || surveyor || theme || guild || territory || novas || timelapse || timelapseDay || follow || followDay) || !env.LOG_DB) return null;
   const cors = corsHeaders(request, env);
   if (request.method !== 'GET') return json({ error: 'method not allowed' }, 405, cors);
   // Every answer is kept under this Worker's own host and map (see the top of this file).
@@ -514,6 +549,22 @@ export function routeLog(request, env, now = Date.now()) {
     const cut = fdiv(now - SETTLED_MS, DAY_MS), base = `${url.host}/m${MAP_VERSION}/timelapse/v${TIMELAPSE_VERSION}`;
     const settled = async (read) => JSON.parse(await kept(`${base}/index/${cut}`, FOREVER_S, read, now, true));
     return answer(`timelapse/v${TIMELAPSE_VERSION}`, TIMELAPSE_CACHE_S, () => readTimelapse(env.LOG_DB, cut, settled));
+  }
+  if (follow) return answer(`timelapse/v${TIMELAPSE_VERSION}/guild/${follow[1]}`, TIMELAPSE_CACHE_S, () => readTimelapseGuild(env.LOG_DB, follow[1]));
+  if (followDay) {
+    const lid = followDay[1], d = Number(followDay[2]);
+    if (d > fdiv(now, DAY_MS)) return json({ error: 'that day has not started' }, 400, cors);
+    const after = url.searchParams.get('after');
+    let cursor = null;
+    if (after !== null) {
+      const m = after.match(CURSOR);
+      if (!m) return json({ error: 'bad cursor' }, 400, cors);
+      cursor = { at: Number(m[1]), key: m[2] };
+    }
+    // A guild's settled day never changes either.
+    const settled = now >= (d + 1) * DAY_MS + SETTLED_MS;
+    return answer(`timelapse/v${TIMELAPSE_VERSION}/guild/${lid}/${d}${cursor ? `?after=${after}` : ''}`, settled ? FOREVER_S : LIVE_CACHE_S,
+      () => readTimelapseGuildDay(env.LOG_DB, lid, d, cursor), settled);
   }
   if (timelapseDay) {
     const d = Number(timelapseDay[1]);

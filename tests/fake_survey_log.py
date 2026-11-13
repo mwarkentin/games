@@ -85,6 +85,8 @@ class FakeSurveyLog:
         novas = re.search(r"/v1/survey/log/novas/(\d+)/(\d+)(?:\?before=(\d+))?$", url)
         timelapse = re.search(r"/v1/survey/log/timelapse$", url)
         timelapse_day = re.search(r"/v1/survey/log/timelapse/(\d+)(?:\?after=(\d+))?$", url)
+        follow = re.search(r"/v1/survey/log/timelapse/guild/([0-9a-f]{10})$", url)
+        follow_day = re.search(r"/v1/survey/log/timelapse/guild/([0-9a-f]{10})/(\d+)$", url)
         future = self.now_ms is not None and (
             (day and int(day[1]) > self.now_ms // DAY_MS) or (hour and int(hour[1]) > self.now_ms // HOUR_MS)
             or (month and month_hours(int(month[1]))[0] > self.now_ms // HOUR_MS)
@@ -93,6 +95,7 @@ class FakeSurveyLog:
             or (sliced and int(sliced[3]) > self.now_ms // HOUR_MS)
             or (novas and int(novas[1]) > self.now_ms // HOUR_MS)
             or (timelapse_day and int(timelapse_day[1]) > self.now_ms // DAY_MS)
+            or (follow_day and int(follow_day[2]) > self.now_ms // DAY_MS)
         )
         if future:
             route.fulfill(status=400, headers=headers, body=json.dumps({"error": "that day has not started"}))
@@ -112,6 +115,15 @@ class FakeSurveyLog:
                 "themes": [self.themes.get(i, [f"Theme {i}", i * 37 % 360]) for i in range(THEME_COUNT)],
                 "layout": [LAT_B, THEME_COUNT],
             }
+        elif follow:
+            lid = follow[1]
+            days = Counter(e[6] // DAY_MS for e in self.entries if guild_of(e) == lid)
+            name, hue = self.guilds.get(lid, [None, None])
+            body = {"name": name, "hue": hue, "days": [[d, n] for d, n in sorted(days.items())]}
+        elif follow_day:
+            lid, d = follow_day[1], int(follow_day[2])
+            rows = [e for e in self.entries if guild_of(e) == lid and e[6] // DAY_MS == d]
+            body = {"day": d, "words": [[e[6] - d * DAY_MS, e[1], e[2], e[3]] for e in rows], "next": None}
         elif timelapse_day:
             d, after = int(timelapse_day[1]), int(timelapse_day[2] or 0)
             rows = [e for e in self.entries if e[6] // DAY_MS == d]

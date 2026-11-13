@@ -893,6 +893,11 @@ GET /v1/survey/log/timelapse/<day>?after=<at>~<key>
   → {"day", "words": [[t, x, y, d, len, th, s], ...],   oldest first, 5,000 a page,
      "novas": [[t, rx, ry, th], ...],                    t in ms since the day began;
      "next": "<at>~<key>" | null}                        supernovas on the first page
+GET /v1/survey/log/timelapse/guild/<lid>
+  → {"name", "hue", "days": [[day, words], ...]}         name and hue null while the log has none
+GET /v1/survey/log/timelapse/guild/<lid>/<day>
+GET /v1/survey/log/timelapse/guild/<lid>/<day>?after=<at>~<key>
+  → {"day", "words": [[t, x, y, d], ...], "next"}        that guild's, oldest first, 5,000 a page
 ```
 
 An hour comes oldest first, 500 entries a page; `next` is the `after` for the
@@ -1057,7 +1062,7 @@ links to its view, "Our words in the survey log". The code is
 | what | a Top guilds card, with nowhere to go from it | (a), and each guild's words as a view like a surveyor's | one guild's words bright, everyone else's faint |
 | D1 rows a guild word | +1 (its day's count) | +2 (and the index of its words) | none past (b)'s |
 | for | cheapest | a guild sees its own work; members find it from the game | a guild's spread across the map, at a glance |
-| against | a dead end | an index | needs (b)'s index; a follow-up |
+| against | a dead end | an index | needs (b)'s index; built after it (see "Following a guild" under "The timelapse") |
 
 **What a guild is in the log.** Each word carries the guild its charter was
 in when they charted it, by the guild's **log id**: a third random id (ten
@@ -1276,6 +1281,25 @@ days since are read each minute. Every key carries `TIMELAPSE_VERSION`,
 and the page's requests carry its own `CACHE_VERSION`. Taking a word out
 of the log for moderation means raising both, or the old day stays in
 caches.
+
+**Following a guild.** `?guild=<log id>` replays everyone's words as
+before, but faint, with one guild's on top in its colour, bolder, and only
+theirs glowing. A count of "their words" takes the territories' place, a
+pill names the guild ("Following the Cobalt Compass Society", which drops
+it), and ← Log goes to the guild's page in the log. That page's Timelapse
+button opens this. The page asks the guild's index (its name, colour and
+the days it has words on, from its daily counts through
+`survey_log_guild_days_by_guild`, migration 0008) before the first day,
+then, beside each such day, that guild's words that day, through their
+own index, as only where each starts and when, which it picks out of the
+day's words it already has. A guild's day is kept like a day of the log:
+for good once settled, 15 seconds while running. A guild the log has no
+name for plays everyone's, unfollowed. The saved video draws the same.
+
+It costs one more D1 row written per guild per day it charts in (the new
+index holds no count, so a day's later words don't touch it), and reading
+a followed replay reads the guild's words once more, a small slice of the
+days it's in.
 
 ### Where, readably
 
