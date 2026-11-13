@@ -144,7 +144,10 @@ def test_starts_before_every_day_has_arrived_and_waits_for_the_rest(page: Page, 
     expect(html).to_have_attribute("data-tl", "playing")
     expect(page.locator("#loadedNote")).to_have_text("67% loaded")
     # Jumped past them, it waits, counting the hours it doesn't have yet from the index.
-    page.evaluate("__tl.seek(0.999)")
+    # To the middle of the last hour, after today's words (13:00 to 13:15 UTC) but
+    # short of its end: a slow frame still playing on after the jump moves it on a
+    # little (up to 0.1 s of play), and at the very end that hour would count too.
+    page.evaluate("__tl.seek((__tl.P - 0.5) / __tl.P)")
     expect(html).to_have_attribute("data-tl", "waiting")
     expect(page.locator("#loadedNote")).to_have_text("Loading…")
     expect(page.locator("#nWords")).to_have_text("18")
