@@ -68,10 +68,18 @@ def open_notes(page: Page) -> None:
 
 
 def open_people(page: Page) -> None:
-    """Opens the surveyors' drawer: the list, your guild, your initials and your devices."""
+    """Opens the surveyors' drawer: the list, with you at the top."""
     if page.locator("#people").is_hidden():
         page.click("#peopleBtn")
     expect(page.locator("#people")).to_be_visible()
+
+
+def open_you(page: Page) -> None:
+    """Opens the surveyors' drawer on your page: your initials, guild, switches and devices."""
+    open_people(page)
+    if page.locator("#peopleYou").is_hidden():
+        page.click("#youRow")
+    expect(page.locator("#peopleYou")).to_be_visible()
 
 
 def hidden_words(page: Page) -> list[list]:
@@ -260,7 +268,7 @@ def test_signing_initials_tells_every_sector(page: Page, site_url, errors):
     fake = FakeSurvey()
     open_game(page, site_url, fake)
     expect(page.locator("#survey")).to_have_attribute("data-state", "live")
-    open_people(page)
+    open_you(page)
     page.locator("#surveyInitials").press_sequentially("z3ed")
     expect(page.locator("#surveyInitials")).to_have_value("ZED")
     page.click("#surveySign button[type=submit]")
@@ -273,7 +281,7 @@ def test_signing_initials_tells_every_sector(page: Page, site_url, errors):
     # Next time, the game signs in with them straight away.
     fake.received.clear()
     page.reload()
-    open_people(page)
+    open_you(page)
     expect(page.locator("#surveyMe")).to_be_visible()
     expect(page.locator("#surveyMeName")).to_have_text("ZED")
     expect(page.locator("#surveySign")).to_be_hidden()
@@ -290,7 +298,7 @@ def test_the_pencil_changes_your_initials(page: Page, site_url, errors):
     page.add_init_script("localStorage.setItem('games.initials', JSON.stringify('MLW'))")
     open_game(page, site_url, fake)
     expect(page.locator("#survey")).to_have_attribute("data-state", "live")
-    open_people(page)
+    open_you(page)
     expect(page.locator("#surveyMe")).to_have_text(re.compile(r"Surveyor\s*MLW"))
     expect(page.locator("#surveySign")).to_be_hidden()
 

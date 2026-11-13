@@ -17,7 +17,7 @@ from playwright.sync_api import Page, expect
 from fake_survey import FakeGuilds, FakeLinks, FakeRecovery, FakeSurvey, player_id
 from test_letterfield_guilds import CODE, MINE, NAME, TAG, in_cobalt
 from test_letterfield_guilds import start as start_guilds
-from test_letterfield_survey import SURVEY, eventually, open_people
+from test_letterfield_survey import SURVEY, eventually, open_you
 from test_letterfield_surveyors import KIM, LOU, PID, TOKEN
 
 THEIRS = "f" * 32  # the other device's token
@@ -58,7 +58,7 @@ def test_a_code_shows_as_a_qr_code_and_a_link_and_hears_when_its_used(page: Page
     page.reload()
     page.wait_for_function(f"window.__lf.pid() === '{PID}'")
     page.context.grant_permissions(["clipboard-read", "clipboard-write"])
-    open_people(page)
+    open_you(page)
     card = page.locator("#pairCard")
     card.get_by_role("button", name="Link another device").click()
     expect(page.locator("html")).to_have_attribute("data-pair", "showing")
@@ -93,7 +93,7 @@ def test_a_code_shows_as_a_qr_code_and_a_link_and_hears_when_its_used(page: Page
 def test_a_code_that_runs_out_can_be_made_again(page: Page, site_url, errors):
     links = FakeLinks()
     start(page, site_url, links)
-    open_people(page)
+    open_you(page)
     card = page.locator("#pairCard")
     card.get_by_role("button", name="Link another device").click()
     expect(page.locator("html")).to_have_attribute("data-pair", "showing")
@@ -172,7 +172,7 @@ def test_this_devices_guild_comes_along_when_theirs_is_none(page: Page, site_url
 def test_typing_a_code_links_and_a_bad_one_says_so(page: Page, site_url, errors):
     links = FakeLinks({"CDEFGHJK": {"token": THEIRS, "carry": {"initials": "ZED"}}})
     start(page, site_url, links, viewport={"width": 375, "height": 740})
-    open_people(page)
+    open_you(page)
     card = page.locator("#pairCard")
     card.get_by_role("button", name="I have a code").click()
     expect(page.locator("html")).to_have_attribute("data-pair", "entering")
@@ -203,7 +203,7 @@ def test_typing_a_code_links_and_a_bad_one_says_so(page: Page, site_url, errors)
 
 def test_the_code_fits_a_phone(page: Page, site_url, errors):
     start(page, site_url, FakeLinks(), viewport={"width": 375, "height": 740})
-    open_people(page)
+    open_you(page)
     page.locator("#pairCard").get_by_role("button", name="Link another device").click()
     expect(page.locator(".pair-qr svg")).to_be_visible()
     sizes = page.evaluate("""() => ({ page: document.scrollingElement.scrollWidth,
@@ -217,7 +217,7 @@ def test_the_code_stays_put_while_it_asks_whether_its_been_used(page: Page, site
     """Each ask redrew the whole card, QR code and all, so the notes jumped back up as it did."""
     links = FakeLinks()
     start(page, site_url, links, viewport={"width": 375, "height": 740})
-    open_people(page)
+    open_you(page)
     page.locator("#pairCard").get_by_role("button", name="Link another device").click()
     expect(page.locator(".pair-qr svg")).to_be_visible()
     # Read down to the bottom of the card, as a player scanning it would.

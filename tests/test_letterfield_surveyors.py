@@ -14,7 +14,7 @@ import re
 from playwright.sync_api import Page, expect
 
 from fake_survey import FakeSurvey
-from test_letterfield_survey import eventually, open_game, open_people
+from test_letterfield_survey import eventually, open_game, open_people, open_you
 
 TOKEN = "0" * 31 + "1"  # this browser's player token, as the game would make one
 PID = hashlib.sha256(f"games-player:{TOKEN}".encode()).hexdigest()[:12]  # and the id the sectors give it
@@ -207,6 +207,7 @@ def test_the_list_and_emote_switches_tell_every_sector_and_are_remembered(page: 
     def latest() -> dict:
         return {m["sector"]: m for m in fake.sent("me")}
 
+    open_you(page)  # the switches are on your page
     page.uncheck("#whoListed")
     eventually(page, lambda: all(m.get("hide") for m in latest().values()))
     expect(page.locator("#whoStatus")).not_to_contain_text("off the list")  # the unticked box says so
@@ -358,4 +359,65 @@ def test_the_surveyors_have_a_button_and_drawer_of_their_own(page: Page, site_ur
     page.keyboard.press("Escape")
     expect(page.locator("#people")).to_be_hidden()
     expect(button).to_be_focused()
+    assert errors == []
+
+
+def test_your_page_opens_from_the_first_row_and_goes_back(page: Page, site_url, errors):
+    fake = FakeSurvey(surveyors=[KIM, ZED], presence=[KIM_CARET])
+    start(page, site_url, fake, viewport={"width": 375, "height": 740})
+    open_list(page)
+    html, you = page.locator("html"), page.locator("#youRow")
+    expect(html).to_have_attribute("data-people-page", "list")
+    # The list is just people, you first: what's yours waits on your page.
+    expect(you).to_contain_text("MLW (you)")
+    expect(you).to_contain_text("On the list · emotes on · this device only")
+    for mine in ("#surveyMe", "#guildCard", "#pairCard", "#whoListed", "#whoEmotes"):
+        expect(page.locator(mine)).to_be_hidden()
+    you.click()
+    expect(html).to_have_attribute("data-people-page", "you")
+    expect(page.locator("#youBack")).to_be_focused()
+    expect(page.locator("#peopleList")).to_be_hidden()
+    expect(page.locator("#surveyMeName")).to_have_text("MLW")
+    expect(page.locator("#pairHead")).to_have_text("Devices · this device only")
+    page.uncheck("#whoListed")
+    # Back to the list, with focus on the row that opened it, which says what changed.
+    page.locator("#youBack").click()
+    expect(html).to_have_attribute("data-people-page", "list")
+    expect(you).to_be_focused()
+    expect(you).to_contain_text("Off the list · emotes on")
+    # Escape goes back to the list first, then puts the drawer away.
+    you.click()
+    page.keyboard.press("Escape")
+    expect(html).to_have_attribute("data-people-page", "list")
+    expect(you).to_be_focused()
+    expect(page.locator("#people")).to_be_visible()
+    page.keyboard.press("Escape")
+    expect(page.locator("#people")).to_be_hidden()
+    # Shut from your page, it opens on the list again.
+    open_you(page)
+    page.locator("#youClose").click()
+    expect(page.locator("#people")).to_be_hidden()
+    expect(page.locator("#peopleBtn")).to_be_focused()
+    page.click("#peopleBtn")
+    expect(html).to_have_attribute("data-people-page", "list")
+    expect(page.locator("#peopleList")).to_be_visible()
+    assert errors == []
+
+
+def test_an_emote_before_signing_opens_your_page_to_sign(page: Page, site_url, errors):
+    fake = FakeSurvey(surveyors=[KIM], presence=[KIM_CARET])
+    start(page, site_url, fake)
+    page.evaluate("localStorage.removeItem('games.initials')")  # say another tab took them away
+    open_list(page)
+    page.get_by_role("button", name="Wave to KIM").click()
+    expect(page.locator("html")).to_have_attribute("data-people-page", "you")
+    expect(page.locator("#surveyInitials")).to_be_focused()
+    expect(page.locator("#surveyHint")).to_have_text("Sign your initials to send emotes.")
+    assert fake.sent("emote") == []
+    page.keyboard.type("mlw")
+    page.keyboard.press("Enter")
+    expect(page.locator("#surveyMeName")).to_have_text("MLW")
+    page.locator("#youBack").click()
+    page.get_by_role("button", name="Wave to KIM").click()
+    eventually(page, lambda: fake.sent("emote"))
     assert errors == []

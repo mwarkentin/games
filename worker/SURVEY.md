@@ -317,15 +317,37 @@ a panel over the docked notes. `P` opens and closes it, and Escape closes it.
 It started as a fold of the field notes, but with guilds, your initials,
 linking devices and recovery codes it outgrew them, and the notes are about
 the map and your finds. To make room on a phone's top bar, the title there
-is "LF". The drawer holds, in order: your guild, the list, its two switches,
-and you (your initials, linking another device, your recovery code). A row
-puts a phone's drawer away as it flies, as a find does the notes. Each row
-is three buttons (fly there, wave, and ⋯), so it works from a keyboard, and
-Escape folds an open row of emotes before it closes the drawer. What became
-of the last emote sent shows under its row. The card about your devices says
-first where your surveyor lives (only on this device, or backed up and kept
-in step), then offers each step by what it does: link another device, I have
-a code, save a recovery code.
+is "LF".
+
+The drawer has two pages, one at a time (the page's `peoplePage` machine,
+shown as `<html data-people-page>`), so the list is only people and
+everything about you is one tap away:
+
+- **The list.** First a row for you: your initials in a ring of your
+  caret's colour, and a line saying how you show (on or off the list,
+  emotes on or off) and where you're kept (this device only, or synced). It
+  opens your page. Then your guild, if you're in one, under a heading with
+  its name, how many mates are online and "+ Invite", which copies the
+  invite link (and says "Link copied" for a moment); mates online come
+  first, then those offline with when they were last seen. Then everyone
+  else, nearest first. A row puts a phone's drawer away as it flies, as a
+  find does the notes. Each row is three buttons (fly there, wave, and ⋯),
+  so it works from a keyboard, and Escape folds an open row of emotes. What
+  became of the last emote sent shows under its row.
+- **You**, behind "‹ Surveyors": your initials, large, with Change (or the
+  form to sign, until you have some), then grouped rows. Guild: its name and
+  numbers, Invite a mate, Leave guild; or Start a guild, which lives only
+  here, since the list is for people rather than an offer most will pass
+  over every time. On the map: the two switches. Devices, whose heading
+  says where your surveyor lives (this device only, or backed up and in
+  step): Link another device, I have a code, Recovery code (saved or not),
+  and Stop syncing once syncing. Each opens its own steps in place.
+
+Anything that needs your page opens it, with focus where it's needed:
+waving or starting a guild before signing goes to the form, with a line
+saying why, as does joining from an invite. Escape on your page goes back to
+the list, with focus on your row, and a second closes the drawer; it always
+opens on the list.
 
 ### Who a player is
 
