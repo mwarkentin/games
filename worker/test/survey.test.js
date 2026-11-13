@@ -1117,14 +1117,14 @@ describe('a new map', () => {
     // A sector from map 2, before maps had versions: a claim, logged.
     new Sector(state, {});
     sql.exec('DROP TABLE map');
-    sql.exec("INSERT INTO claims VALUES ('ACORN~1~2~0', 'ACORN', 1, 2, 0, 0, 'ZED', 5)");
+    sql.exec("INSERT INTO claims (key, w, x, y, d, s, initials, at) VALUES ('ACORN~1~2~0', 'ACORN', 1, 2, 0, 0, 'ZED', 5)");
     sql.exec('INSERT INTO logged VALUES (0, 5)');
     new Sector(state, {});
     assert.equal(count(sql, 'claims'), 0);
     assert.equal(count(sql, 'logged'), 0);
     assert.equal(sql.exec('SELECT version FROM map').one().version, MAP_VERSION);
     // Claims on this map stay when it wakes again.
-    sql.exec("INSERT INTO claims VALUES ('BARK~1~2~0', 'BARK', 1, 2, 0, 0, 'ZED', 6)");
+    sql.exec("INSERT INTO claims (key, w, x, y, d, s, initials, at) VALUES ('BARK~1~2~0', 'BARK', 1, 2, 0, 0, 'ZED', 6)");
     new Sector(state, {});
     assert.equal(count(sql, 'claims'), 1);
   });

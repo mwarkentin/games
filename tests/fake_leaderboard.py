@@ -20,7 +20,7 @@ from urllib.parse import parse_qs, urlparse
 
 from playwright.sync_api import BrowserContext, Page, Route
 
-from fake_survey import FAKE_TURNSTILE, TURNSTILE_JS, FakePassDesk, FakeSurvey
+from fake_survey import FAKE_TURNSTILE, TURNSTILE_JS, FakeGuilds, FakeLinks, FakePassDesk, FakeRecovery, FakeSurvey
 
 API = "https://leaderboard.test"
 # LEADERBOARD_URL in the games, ROOMS_URL in war.html, SURVEY_URL in letterfield.html and
@@ -180,6 +180,12 @@ def stand_in_for_worker(context: BrowserContext) -> FakeLeaderboard:
     # Later routes win, so these go after the catch-all.
     survey = FakeSurvey()
     context.route(f"{WORKER_URL}/v1/survey/world", survey.handle_world)
+    context.route(f"{WORKER_URL}/v1/survey/surveyors*", survey.handle_list)
+    context.route(f"{WORKER_URL}/v1/survey/guilds**", FakeGuilds().handle)
+    links = FakeLinks()
+    context.route(f"{WORKER_URL}/v1/link**", links.handle)
+    context.route(f"{WORKER_URL}/v1/player/**", links.players.handle)
+    context.route(f"{WORKER_URL}/v1/recovery**", FakeRecovery(links.players).handle)
     context.route_web_socket(
         re.compile("^wss://" + re.escape(urlparse(WORKER_URL).netloc) + "/v1/survey/"), survey.handle
     )

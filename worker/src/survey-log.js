@@ -12,10 +12,13 @@
 //                                    how many were hidden words in the shared world
 //   GET /v1/survey/log/surveyor/<initials>/<from>/<to>   one surveyor's words over UTC hours
 //   GET /v1/survey/log/theme/<th>/<from>/<to>            one theme's hidden words over UTC hours
+//   GET /v1/survey/log/guild/<lid>/<from>/<to>           one guild's words over UTC hours
 //       [?before=<at>~<key>]         from..to-1 (hours since 1970): {kind, key, from, to, words,
 //                                    world, hours: [[hour, words, world], ...], topTerritories,
-//                                    name and hue (a theme's),
-//                                    topThemes (a surveyor's), topSurveyors (a theme's),
+//                                    name and hue (a theme's or a guild's; a guild's name
+//                                    is null until the log has it),
+//                                    topThemes (a surveyor's or guild's), topSurveyors (a theme's
+//                                    or guild's),
 //                                    entries (newest first, SLICE_PAGE a page), places, themes, next}
 //   GET /v1/survey/log/territory/<rx>/<ry>   every word charted in a territory, newest first, with
 //                                    its name, theme, how many hidden words it has and how many
@@ -28,11 +31,12 @@
 //   GET /v1/survey/log/top/<from>/<to>   the most charted over UTC days from..to-1 (days since
 //                                    1970): {from, to, surveyors: [[initials, words], ...],
 //                                    territories: [[rx, ry, name, th, words], ...],
-//                                    themes: [[th, name, hue, words], ...], hidden}
+//                                    themes: [[th, name, hue, words], ...],
+//                                    guilds: [[lid, name, hue, words], ...], hidden}
 //   GET /v1/survey/log/top/hours/<from>/<to>   the same over UTC hours from..to-1 (hours since
 //                                    1970), at most TOP_HOURS_MAX, for a day or an hour in the
 //                                    page's own time zone: {from, to, hours: true, surveyors,
-//                                    territories, themes, hidden}
+//                                    territories, themes, guilds, hidden}
 //   GET /v1/survey/log/timelapse     what a replay of the whole log needs to know first (settled
 //                                    days' part kept for good, the rest read each minute): {hours:
 //                                    [[hour, words], ...], novas: [[hour, n], ...], bounds:
@@ -42,6 +46,12 @@
 //       [?after=<at>~<key>]          TIMELAPSE_PAGE words a page: {day, words: [[t, x, y, d, len,
 //                                    th, s], ...], novas: [[t, rx, ry, th], ...], next}, t in ms
 //                                    since the day began (supernovas on the first page only)
+//   GET /v1/survey/log/timelapse/guild/<lid>   a guild to follow in the replay: {name, hue,
+//                                    days: [[day, words], ...]}, name and hue null while the log
+//                                    has no name for it
+//   GET /v1/survey/log/timelapse/guild/<lid>/<day>   that guild's words in one UTC day, oldest
+//       [?after=<at>~<key>]          first, TIMELAPSE_PAGE a page: {day, words: [[t, x, y, d], ...],
+//                                    next}, to pick out of the day's own words
 //
 // Entries are [w, x, y, d, s, initials, at, th]: the claim as the game gets
 // it from a sector, plus its theme. A supernova, a territory whose every
@@ -59,6 +69,11 @@
 // the first time it wakes. Rows are keyed by (at, key), so a resent row is
 // ignored. The table is ordered by time (migrations-log/0001_survey_log.sql, in LOG_DB), so
 // reading an hour reads only that hour's rows.
+//
+// A guild is known in the log by its log id (survey-guild.js), never its
+// tag or code, and counts the words its members charted while in it, except
+// a member's off the surveyor list, which the sector logs with no guild. Its
+// name comes with its first words (survey_log_guilds).
 //
 // The longer views read counts, not the log: triggers in D1 keep words per
 // hour, per day per set of initials and per day per territory as rows go in
@@ -78,10 +93,11 @@
 
 import { corsHeaders, json } from './leaderboard.js';
 import { MAP_VERSION, RC, THEMES, fdiv, regionName, regionTheme, strayTheme, territoryTotal } from './letterfield-world.js';
+import { GUILD_LOG_ID, goodName, guildHue, guildName } from './survey-guild.js';
 
 export const LOG_MS = 30000;            // a sector copies new claims to D1 at most this often
 export const LOG_BATCH = 240;           // claims copied at once; more go a second later
-export const LOG_ROWS_PER_INSERT = 12;  // D1 takes 100 bound values per statement, and a row has 8
+export const LOG_ROWS_PER_INSERT = 11;  // D1 takes 100 bound values per statement, and a row has 9
 export const LOG_RETRY_MAX_MS = 600000; // a sector whose writes fail tries again at most this far apart
 export const LOG_PAGE = 500;            // entries per page of an hour
 export const SETTLED_MS = 3600000;      // an hour or day that ended this long ago is cached for a day
@@ -97,6 +113,7 @@ export const LOG_TOP_HOURS_PATH = /^\/v1\/survey\/log\/top\/hours\/(\d{1,8})\/(\
 export const LOG_SPAN_PATH = '/v1/survey/log/span';
 export const LOG_SURVEYOR_PATH = /^\/v1\/survey\/log\/surveyor\/([A-Z]{3})\/(\d{1,8})\/(\d{1,8})$/;
 export const LOG_THEME_PATH = /^\/v1\/survey\/log\/theme\/(\d{1,3})\/(\d{1,8})\/(\d{1,8})$/;
+export const LOG_GUILD_PATH = /^\/v1\/survey\/log\/guild\/([0-9a-f]{10})\/(\d{1,8})\/(\d{1,8})$/;
 export const LOG_TERRITORY_PATH = /^\/v1\/survey\/log\/territory\/(-?\d{1,8})\/(-?\d{1,8})$/;
 export const SLICE_PAGE = 100;          // words in a page of a surveyor's or theme's
 export const SLICE_MAX_HOURS = 24 * 3660;  // the longest range a surveyor's or theme's view covers
@@ -111,6 +128,8 @@ export const TOP_SLOW_CACHE_S = 600;    // seconds a running top list over more 
 export const TOP_HOURS_MAX = 48;        // the longest run of hours a top list by hours covers (a local day is up to 26)
 export const LOG_TIMELAPSE_PATH = '/v1/survey/log/timelapse';
 export const LOG_TIMELAPSE_DAY_PATH = /^\/v1\/survey\/log\/timelapse\/(\d{1,6})$/;
+export const LOG_TIMELAPSE_GUILD_PATH = /^\/v1\/survey\/log\/timelapse\/guild\/([0-9a-f]{10})$/;
+export const LOG_TIMELAPSE_GUILD_DAY_PATH = /^\/v1\/survey\/log\/timelapse\/guild\/([0-9a-f]{10})\/(\d{1,6})$/;
 export const TIMELAPSE_PAGE = 5000;     // words in a page of a day's replay (about 25 bytes each)
 export const TIMELAPSE_CACHE_S = 60;    // seconds the replay's index is cached for
 export const FOREVER_S = 31536000;      // a settled day of the replay never changes: a year
@@ -123,9 +142,19 @@ const NOVA_CURSOR = /^(\d{1,15})~(-?\d{1,8})~(-?\d{1,8})$/;
 
 // Copies claims, as a sector stores them, to D1 in one batch, which D1 runs
 // as one transaction: all of them or none. Supernovas the sector has seen go
-// in the same batch (a row binds 13 values, so 7 to a statement).
-export async function writeLog(db, rows, novas = []) {
+// in the same batch (a row binds 13 values, so 7 to a statement), and so do
+// the names of the guilds the claims count for ({lid, a, b, c}), which D1
+// keeps once each.
+export async function writeLog(db, rows, novas = [], guilds = []) {
   const statements = [];
+  const names = guilds.filter((g) => GUILD_LOG_ID.test(g.lid) && goodName([g.a, g.b, g.c]));
+  for (let i = 0; i < names.length; i += 25) {
+    const part = names.slice(i, i + 25);
+    statements.push(
+      db.prepare(`INSERT OR IGNORE INTO survey_log_guilds (guild, a, b, c) VALUES ${part.map(() => '(?, ?, ?, ?)').join(', ')}`)
+        .bind(...part.flatMap((g) => [g.lid, g.a, g.b, g.c])),
+    );
+  }
   for (let i = 0; i < novas.length; i += 7) {
     const part = novas.slice(i, i + 7);
     statements.push(
@@ -136,8 +165,8 @@ export async function writeLog(db, rows, novas = []) {
   for (let i = 0; i < rows.length; i += LOG_ROWS_PER_INSERT) {
     const part = rows.slice(i, i + LOG_ROWS_PER_INSERT);
     statements.push(
-      db.prepare(`INSERT OR IGNORE INTO survey_log (at, key, w, x, y, d, s, initials) VALUES ${part.map(() => '(?, ?, ?, ?, ?, ?, ?, ?)').join(', ')}`)
-        .bind(...part.flatMap((r) => [r.at, r.key, r.w, r.x, r.y, r.d, r.s, r.initials])),
+      db.prepare(`INSERT OR IGNORE INTO survey_log (at, key, w, x, y, d, s, initials, guild) VALUES ${part.map(() => '(?, ?, ?, ?, ?, ?, ?, ?, ?)').join(', ')}`)
+        .bind(...part.flatMap((r) => [r.at, r.key, r.w, r.x, r.y, r.d, r.s, r.initials, GUILD_LOG_ID.test(r.guild ?? '') ? r.guild : ''])),
     );
   }
   if (statements.length) await db.batch(statements);
@@ -155,7 +184,11 @@ export const SLICES = {
   surveyor: { index: 'survey_log_by_initials', where: "initials = ? AND initials <> ''" },
   theme: { index: 'survey_log_by_theme', where: 's = 0 AND th = ?' },
   territory: { index: 'survey_log_by_territory', where: 'rx = ? AND ry = ?' },
+  guild: { index: 'survey_log_by_guild', where: "guild = ? AND guild <> ''" },
 };
+// A guild's name, as three numbers into the lists (survey-guild.js).
+export const GUILD_NAME_SQL = 'SELECT a, b, c FROM survey_log_guilds WHERE guild = ?';
+const named = (r) => (goodName([r.a, r.b, r.c]) ? [guildName([r.a, r.b, r.c]), guildHue([r.a, r.b, r.c])] : null);
 // Hidden words in the shared world: sectors -12 to 12 (AREA in survey.js), 4 territories a side.
 const WORLD = `(s = 0 AND x >= ${-12 * 4 * RC} AND x < ${13 * 4 * RC} AND y >= ${-12 * 4 * RC} AND y < ${13 * 4 * RC})`;
 export const sliceSql = (kind, after = false) => {
@@ -191,6 +224,14 @@ export const HOURS_SURVEYORS_SQL = `SELECT initials, COUNT(*) AS n FROM survey_l
   WHERE at >= ? AND at < ? AND initials <> '' GROUP BY initials ORDER BY COUNT(*) DESC, initials LIMIT ${TOP_N}`;
 export const HOURS_TERRITORIES_SQL = `SELECT rx, ry, COUNT(*) AS n FROM survey_log
   WHERE at >= ? AND at < ? AND s = 0 GROUP BY rx, ry`;
+// Top guilds, from their daily counts or, over hours, the log's own rows,
+// each with its name. A guild whose name the log hasn't got is left out.
+export const GUILDS_SQL = `SELECT t.guild, t.n, g.a, g.b, g.c FROM (SELECT guild, SUM(n) AS n FROM survey_log_guild_days
+  WHERE day >= ? AND day < ? GROUP BY guild HAVING SUM(n) > 0) AS t JOIN survey_log_guilds AS g ON g.guild = t.guild
+  ORDER BY t.n DESC, t.guild LIMIT ${TOP_N}`;
+export const HOURS_GUILDS_SQL = `SELECT t.guild, t.n, g.a, g.b, g.c FROM (SELECT guild, COUNT(*) AS n FROM survey_log
+  WHERE at >= ? AND at < ? AND guild <> '' GROUP BY guild) AS t JOIN survey_log_guilds AS g ON g.guild = t.guild
+  ORDER BY t.n DESC, t.guild LIMIT ${TOP_N}`;
 
 // The replay (letterfield-timelapse.html). Its index reads the count tables
 // and the supernovas, never the log itself: a row per hour with words, per
@@ -242,6 +283,32 @@ export async function readTimelapse(db, cut = FAR, settled = (read) => read()) {
     themes: THEMES.map((t) => [t.name, t.hue]),
     layout: LAYOUT,
   };
+}
+
+// A guild to follow in the replay: its name and colour, and the days it has
+// words on, from its daily counts. Its words come a day at a time, through
+// their own index, as where each starts and when: the page picks them out of
+// the day's words, which it has already.
+export const TIMELAPSE_GUILD_DAYS_SQL = 'SELECT day, n FROM survey_log_guild_days WHERE guild = ? AND n > 0 ORDER BY day';
+const GUILD_DAY = `SELECT at, key, x, y, d FROM survey_log INDEXED BY survey_log_by_guild WHERE guild = ? AND guild <> '' AND at >= ? AND at < ?`;
+export const TIMELAPSE_GUILD_DAY_SQL = `${GUILD_DAY} ORDER BY at, key LIMIT ?`;
+export const TIMELAPSE_GUILD_DAY_AFTER_SQL = `${GUILD_DAY} AND (at, key) > (?, ?) ORDER BY at, key LIMIT ?`;
+export async function readTimelapseGuild(db, lid) {
+  const [days, guild] = await Promise.all([
+    db.prepare(TIMELAPSE_GUILD_DAYS_SQL).bind(lid).all(),
+    db.prepare(GUILD_NAME_SQL).bind(lid).first(),
+  ]);
+  const name = guild ? named(guild) : null;
+  return { name: name?.[0] ?? null, hue: name?.[1] ?? null, days: days.results.map((r) => [r.day, r.n]) };
+}
+export async function readTimelapseGuildDay(db, lid, day, after = null) {
+  const from = day * DAY_MS, to = from + DAY_MS;
+  const rows = (await (after ? db.prepare(TIMELAPSE_GUILD_DAY_AFTER_SQL).bind(lid, from, to, after.at, after.key, TIMELAPSE_PAGE + 1)
+    : db.prepare(TIMELAPSE_GUILD_DAY_SQL).bind(lid, from, to, TIMELAPSE_PAGE + 1)).all()).results;
+  const more = rows.length > TIMELAPSE_PAGE;
+  if (more) rows.length = TIMELAPSE_PAGE;
+  const last = rows.at(-1);
+  return { day, words: rows.map((r) => [r.at - from, r.x, r.y, r.d]), next: more ? `${last.at}~${last.key}` : null };
 }
 
 // One UTC day of the log, as little as drawing it takes: when (ms into the
@@ -297,18 +364,21 @@ function entryOf(r, places, themes) {
 const ranked = (rows) => rows.sort((a, b) => b.n - a.n || a.ry - b.ry || a.rx - b.rx);
 const territoryRow = (r) => [r.rx, r.ry, regionName(r.rx, r.ry), regionTheme(r.rx, r.ry), r.n];
 
-// One surveyor's words, or one theme's hidden words, over UTC hours from..to:
-// how many in each hour, where (and for a surveyor, in which themes), who
-// (for a theme), and the newest, a page at a time. Reads the rows of that
-// surveyor or theme in the range, through its own index.
+// One surveyor's words, one theme's hidden words or one guild's words, over
+// UTC hours from..to: how many in each hour, where (and for a surveyor or a
+// guild, in which themes), who (for a theme or a guild), and the newest, a
+// page at a time. Reads the rows of that surveyor, theme or guild in the
+// range, through its own index.
 export async function readSlice(db, kind, key, fromHour, toHour, before = null) {
   const sql = sliceSql(kind, !!before), range = [key, fromHour * HOUR_MS, toHour * HOUR_MS];
-  const [hours, places, people, rows] = await Promise.all([
+  const [hours, places, people, rows, guild] = await Promise.all([
     db.prepare(sql.hours).bind(...range).all(),
     db.prepare(sql.places).bind(...range).all(),
-    kind === 'theme' ? db.prepare(sql.people).bind(...range).all() : null,
+    kind !== 'surveyor' ? db.prepare(sql.people).bind(...range).all() : null,
     db.prepare(sql.entries).bind(...range, ...(before ? [before.at, before.key] : []), SLICE_PAGE + 1).all(),
+    kind === 'guild' ? db.prepare(GUILD_NAME_SQL).bind(key).first() : null,
   ]);
+  const name = guild ? named(guild) : null;
   const list = rows.results, more = list.length > SLICE_PAGE;
   if (more) list.length = SLICE_PAGE;
   const placeNames = {}, themeNames = {};
@@ -322,11 +392,12 @@ export async function readSlice(db, kind, key, fromHour, toHour, before = null) 
   return {
     kind, key, from: fromHour, to: toHour,
     ...(kind === 'theme' ? { name: THEMES[key].name, hue: THEMES[key].hue } : {}),
+    ...(kind === 'guild' ? { name: name?.[0] ?? null, hue: name?.[1] ?? null } : {}),
     words: hours.results.reduce((a, r) => a + r.n, 0),
     world: hours.results.reduce((a, r) => a + r.world, 0),
     hours: hours.results.sort((a, b) => a.hour - b.hour).map((r) => [r.hour, r.n, r.world]),
     topTerritories: ranked(places.results).slice(0, TOP_N).map(territoryRow),
-    ...(kind === 'surveyor' ? { topThemes: [...byTheme].sort((a, b) => b[1] - a[1] || a[0] - b[0]).map(([th, n]) => [th, THEMES[th].name, THEMES[th].hue, n]) } : {}),
+    ...(kind !== 'theme' ? { topThemes: [...byTheme].sort((a, b) => b[1] - a[1] || a[0] - b[0]).map(([th, n]) => [th, THEMES[th].name, THEMES[th].hue, n]) } : {}),
     ...(people ? { topSurveyors: people.results.map((r) => [r.initials, r.n]) } : {}),
     entries, places: placeNames, themes: themeNames, next: more ? `${last.at}~${last.key}` : null,
   };
@@ -410,13 +481,14 @@ export async function readSpan(db) {
 }
 
 // The most charted over a run of UTC days: surveyors by their initials,
-// territories by hidden words charted in them, and every theme those
-// territories have. Initials aren't unique, so a "surveyor" is everyone who
-// typed the same three letters.
+// territories by hidden words charted in them, every theme those territories
+// have, and guilds by the words their members charted in them. Initials
+// aren't unique, so a "surveyor" is everyone who typed the same three letters.
 export async function readTop(db, from, to) {
   return tops(from, to, await Promise.all([
     db.prepare(SURVEYORS_SQL).bind(from, to).all(),
     db.prepare(TERRITORIES_SQL).bind(from, to).all(),
+    db.prepare(GUILDS_SQL).bind(from, to).all(),
   ]));
 }
 // The same over UTC hours from..to: a day or an hour in the page's own time
@@ -426,9 +498,10 @@ export async function readTopHours(db, from, to) {
   return { ...tops(from, to, await Promise.all([
     db.prepare(HOURS_SURVEYORS_SQL).bind(...range).all(),
     db.prepare(HOURS_TERRITORIES_SQL).bind(...range).all(),
+    db.prepare(HOURS_GUILDS_SQL).bind(...range).all(),
   ])), hours: true };
 }
-function tops(from, to, [surveyors, territories]) {
+function tops(from, to, [surveyors, territories, guilds]) {
   const byTheme = new Map();
   let hidden = 0;
   for (const r of territories.results) {
@@ -441,6 +514,7 @@ function tops(from, to, [surveyors, territories]) {
     surveyors: surveyors.results.map((r) => [r.initials, r.n]),
     territories: ranked(territories.results).slice(0, TOP_N).map(territoryRow),
     themes: [...byTheme].sort((a, b) => b[1] - a[1] || a[0] - b[0]).map(([th, n]) => [th, THEMES[th].name, THEMES[th].hue, n]),
+    guilds: guilds.results.flatMap((r) => { const n = named(r); return n ? [[r.guild, n[0], n[1], r.n]] : []; }),
   };
 }
 
@@ -459,10 +533,11 @@ export function routeLog(request, env, now = Date.now()) {
   const day = url.pathname.match(LOG_DAY_PATH), hour = url.pathname.match(LOG_HOUR_PATH);
   const month = url.pathname.match(LOG_MONTH_PATH), top = url.pathname.match(LOG_TOP_PATH), span = url.pathname === LOG_SPAN_PATH;
   const topHours = url.pathname.match(LOG_TOP_HOURS_PATH);
-  const surveyor = url.pathname.match(LOG_SURVEYOR_PATH), theme = url.pathname.match(LOG_THEME_PATH);
+  const surveyor = url.pathname.match(LOG_SURVEYOR_PATH), theme = url.pathname.match(LOG_THEME_PATH), guild = url.pathname.match(LOG_GUILD_PATH);
   const territory = url.pathname.match(LOG_TERRITORY_PATH), novas = url.pathname.match(LOG_NOVAS_PATH);
   const timelapse = url.pathname === LOG_TIMELAPSE_PATH, timelapseDay = url.pathname.match(LOG_TIMELAPSE_DAY_PATH);
-  if (!(day || hour || month || top || topHours || span || surveyor || theme || territory || novas || timelapse || timelapseDay) || !env.LOG_DB) return null;
+  const follow = url.pathname.match(LOG_TIMELAPSE_GUILD_PATH), followDay = url.pathname.match(LOG_TIMELAPSE_GUILD_DAY_PATH);
+  if (!(day || hour || month || top || topHours || span || surveyor || theme || guild || territory || novas || timelapse || timelapseDay || follow || followDay) || !env.LOG_DB) return null;
   const cors = corsHeaders(request, env);
   if (request.method !== 'GET') return json({ error: 'method not allowed' }, 405, cors);
   // Every answer is kept under this Worker's own host and map (see the top of this file).
@@ -474,6 +549,22 @@ export function routeLog(request, env, now = Date.now()) {
     const cut = fdiv(now - SETTLED_MS, DAY_MS), base = `${url.host}/m${MAP_VERSION}/timelapse/v${TIMELAPSE_VERSION}`;
     const settled = async (read) => JSON.parse(await kept(`${base}/index/${cut}`, FOREVER_S, read, now, true));
     return answer(`timelapse/v${TIMELAPSE_VERSION}`, TIMELAPSE_CACHE_S, () => readTimelapse(env.LOG_DB, cut, settled));
+  }
+  if (follow) return answer(`timelapse/v${TIMELAPSE_VERSION}/guild/${follow[1]}`, TIMELAPSE_CACHE_S, () => readTimelapseGuild(env.LOG_DB, follow[1]));
+  if (followDay) {
+    const lid = followDay[1], d = Number(followDay[2]);
+    if (d > fdiv(now, DAY_MS)) return json({ error: 'that day has not started' }, 400, cors);
+    const after = url.searchParams.get('after');
+    let cursor = null;
+    if (after !== null) {
+      const m = after.match(CURSOR);
+      if (!m) return json({ error: 'bad cursor' }, 400, cors);
+      cursor = { at: Number(m[1]), key: m[2] };
+    }
+    // A guild's settled day never changes either.
+    const settled = now >= (d + 1) * DAY_MS + SETTLED_MS;
+    return answer(`timelapse/v${TIMELAPSE_VERSION}/guild/${lid}/${d}${cursor ? `?after=${after}` : ''}`, settled ? FOREVER_S : LIVE_CACHE_S,
+      () => readTimelapseGuildDay(env.LOG_DB, lid, d, cursor), settled);
   }
   if (timelapseDay) {
     const d = Number(timelapseDay[1]);
@@ -509,8 +600,8 @@ export function routeLog(request, env, now = Date.now()) {
     return answer(`novas/${from}/${to}${cursor ? `?before=${before}` : ''}`, settled ? 86400 : to - from > 48 ? SLICE_SLOW_CACHE_S : LIVE_CACHE_S,
       () => readNovas(env.LOG_DB, from, to, cursor));
   }
-  if (surveyor || theme) {
-    const [, key, a, b] = surveyor ?? theme, from = Number(a), to = Number(b);
+  if (surveyor || theme || guild) {
+    const [, key, a, b] = surveyor ?? theme ?? guild, from = Number(a), to = Number(b);
     if (theme && !(Number(key) < THEMES.length)) return json({ error: 'no such theme' }, 400, cors);
     if (!(from < to) || to - from > SLICE_MAX_HOURS) return json({ error: 'bad range of hours' }, 400, cors);
     if (from > fdiv(now, HOUR_MS)) return json({ error: 'that hour has not started' }, 400, cors);
@@ -521,7 +612,7 @@ export function routeLog(request, env, now = Date.now()) {
       if (!m) return json({ error: 'bad cursor' }, 400, cors);
       cursor = { at: Number(m[1]), key: m[2] };
     }
-    const kind = surveyor ? 'surveyor' : 'theme', k = surveyor ? key : Number(key);
+    const kind = surveyor ? 'surveyor' : guild ? 'guild' : 'theme', k = theme ? Number(key) : key;
     const settled = now >= to * HOUR_MS + SETTLED_MS;
     const live = to - from > 48 ? SLICE_SLOW_CACHE_S : LIVE_CACHE_S;
     return answer(`${kind}/${k}/${from}/${to}${cursor ? `?before=${after}` : ''}`, settled ? 86400 : live,

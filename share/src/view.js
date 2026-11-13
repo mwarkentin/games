@@ -1,10 +1,11 @@
-// Survey log views as cards: a surveyor's, a theme's or a territory's page of
+// Survey log views as cards: a surveyor's, a theme's, a guild's or a territory's page of
 // letterfield-log.html, drawn as that page's own share picture
 // (shareImage() there) from the log's own answers.
 //
 //   /v/surveyor/<initials>/<period>/<when>/<from>-<to>   one surveyor's period
 //   /v/theme/<th>/<period>/<when>/<from>-<to>            one theme's period
-//   /v/surveyor/<initials>/all, /v/theme/<th>/all        all time
+//   /v/guild/<lid>/<period>/<when>/<from>-<to>           one guild's period, by its log id
+//   /v/surveyor/<initials>/all, /v/theme/<th>/all, /v/guild/<lid>/all   all time
 //   /v/territory/<rx>,<ry>                               a territory, all time
 //   /v/d/…  the dark card; ….png the card itself
 //
@@ -21,7 +22,8 @@ import { novaSvg } from './nova.js';
 const HOUR = 3_600_000;
 export const LOG_BEGAN_HOUR = Date.UTC(2026, 10, 6) / HOUR;  // where all time starts, until the log's span says earlier
 const SLICE_MAX_HOURS = 24 * 3660;  // the most the log's view of one covers (SLICE_MAX_HOURS in survey-log.js)
-export const VIEW_PATH = /^\/v\/(d\/)?(?:(surveyor)\/([A-Z]{3})|(theme)\/(\d{1,3}))\/(?:(all)|(hour|day|week|month|year)\/(\d{4})-(\d{2})-(\d{2})(?:T(\d{2}))?\/(\d{1,8})-(\d{1,8}))(\.png)?$/;
+export const VIEW_PATH = /^\/v\/(d\/)?(surveyor|theme|guild)\/([A-Z]{3}|\d{1,3}|[0-9a-f]{10})\/(?:(all)|(hour|day|week|month|year)\/(\d{4})-(\d{2})-(\d{2})(?:T(\d{2}))?\/(\d{1,8})-(\d{1,8}))(\.png)?$/;
+const KEYS = { surveyor: /^[A-Z]{3}$/, theme: /^\d{1,3}$/, guild: /^[0-9a-f]{10}$/ };
 export const TERRITORY_PATH = /^\/v\/(d\/)?territory\/(-?\d{1,8}),(-?\d{1,8})(\.png)?$/;
 
 const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
@@ -60,17 +62,18 @@ export function parseView(pathname, now = Date.now()) {
   if (t) return { kind: 'territory', rx: Number(t[2]), ry: Number(t[3]), dark: !!t[1], png: !!t[4], period: 'all' };
   const m = VIEW_PATH.exec(pathname);
   if (!m) return null;
-  const view = m[2] ? { kind: 'surveyor', key: m[3] } : { kind: 'theme', key: Number(m[5]) };
+  if (!KEYS[m[2]].test(m[3])) return null;
+  const view = { kind: m[2], key: m[2] === 'theme' ? Number(m[3]) : m[3] };
   if (view.kind === 'theme' && !(view.key < THEMES.length)) return null;
-  Object.assign(view, { dark: !!m[1], png: !!m[14] });
-  if (m[6]) return { ...view, period: 'all' };
-  const period = m[7], [y, mo, d] = [Number(m[8]), Number(m[9]), Number(m[10])], h = m[11] === undefined ? null : Number(m[11]);
+  Object.assign(view, { dark: !!m[1], png: !!m[12] });
+  if (m[4]) return { ...view, period: 'all' };
+  const period = m[5], [y, mo, d] = [Number(m[6]), Number(m[7]), Number(m[8])], h = m[9] === undefined ? null : Number(m[9]);
   if ((period === 'hour') !== (h !== null) || (h !== null && h > 23)) return null;
   const [start, end] = wall(period, y, mo, d, h ?? 0);
   const date = new Date(start);
   if (date.getUTCFullYear() !== y || date.getUTCMonth() !== mo - 1 || date.getUTCDate() !== d) return null;
   if ((period === 'week' && date.getUTCDay() !== 1) || (period === 'month' && d !== 1) || (period === 'year' && (mo !== 1 || d !== 1))) return null;
-  const from = Number(m[12]), to = Number(m[13]);
+  const from = Number(m[10]), to = Number(m[11]);
   // Where the period starts, in UTC hours, for any offset from UTC-12 to UTC+14.
   if (from * HOUR < start - 15 * HOUR || from * HOUR > start + 13 * HOUR) return null;
   if (Math.abs((to - from) - (end - start) / HOUR) > 2 || !(from < to) || to - from > SLICE_MAX_HOURS) return null;
@@ -102,8 +105,10 @@ export function logPaths(v, span, now = Date.now()) {
 }
 
 // The view's name, and its theme's hue where it has one, known without asking.
+// A guild's is only known from the log's answer (summarize).
 export function nameOf(v) {
   if (v.kind === 'surveyor') return { name: v.key };
+  if (v.kind === 'guild') return { name: 'A guild' };
   if (v.kind === 'theme') return { name: THEMES[v.key].name, hue: THEMES[v.key].hue };
   const th = regionTheme(v.rx, v.ry);
   return { name: regionName(v.rx, v.ry), hue: THEMES[th].hue };
@@ -126,7 +131,8 @@ export function whenOf(v, now = Date.now()) {
 // What a card shows of the log's answer: three numbers, the latest words, a
 // line for the page's description, and a token that changes when they do.
 export function summarize(v, a, now = Date.now()) {
-  const { name, hue } = nameOf(v), when = whenOf(v, now);
+  const { name, hue } = v.kind === 'guild' && typeof a?.name === 'string' ? { name: a.name, hue: Number.isFinite(a.hue) ? a.hue : undefined } : nameOf(v);
+  const when = whenOf(v, now);
   const entries = Array.isArray(a?.entries) ? a.entries.filter((e) => Array.isArray(e) && typeof e[0] === 'string') : [];
   const themes = a?.themes && typeof a.themes === 'object' ? a.themes : {};
   const words = entries.slice(0, 12).map((e) => ({ w: e[0], hue: themes[e[7]]?.[1], stray: !!e[4] }));
@@ -152,6 +158,13 @@ export function summarize(v, a, now = Date.now()) {
     line = a.words
       ? `${name} charted ${plural(a.words, 'word')} first in Letterfield’s shared survey ${when.said}${top ? `, most in ${top}` : ''}.`
       : `No words signed ${name} in Letterfield’s shared survey ${when.said}.`;
+  } else if (v.kind === 'guild') {
+    count = a.words;
+    const who = Array.isArray(a?.topSurveyors?.[0]) ? a.topSurveyors[0][0] : null;
+    stats = [['Words charted first', num(a.words)], ['Top member', who || '—'], ['Top territory', top || '—']];
+    line = a.words
+      ? `The ${name} charted ${plural(a.words, 'word')} first in Letterfield’s shared survey ${when.said}${top ? `, most in ${top}` : ''}.`
+      : `The ${name} charted no words in Letterfield’s shared survey ${when.said}.`;
   } else {
     count = a.words;
     const who = Array.isArray(a?.topSurveyors?.[0]) ? a.topSurveyors[0][0] : null;
@@ -173,7 +186,7 @@ export function viewSvg(v, s, { dark = false, host = 'games.michaelwarkentin.com
     ? `<circle cx="${x}" cy="${y}" r="${r - 1.5}" fill="none" stroke="${mark(hue)}" stroke-width="3" stroke-dasharray="4 3"/>`
     : `<circle cx="${x}" cy="${y}" r="${r}" fill="${mark(hue)}"/>`);
   out.push(`<rect width="${W}" height="${H}" fill="${C.paper}"/><rect width="${W}" height="10" fill="${C.accent}"/>`);
-  const kind = { surveyor: 'SURVEYOR', theme: 'THEME', territory: 'TERRITORY' }[v.kind];
+  const kind = { surveyor: 'SURVEYOR', theme: 'THEME', guild: 'GUILD', territory: 'TERRITORY' }[v.kind];
   const head = `LETTERFIELD · SURVEY LOG · ${kind}`;
   out.push(text(head, X, 84, 'mono5', 20, C.muted, 0.14));
   // The site's address on the right, where it fits beside the heading.

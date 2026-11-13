@@ -17,8 +17,10 @@ import {
   TOP_MAX_DAYS, TOP_N, TOP_SLOW_CACHE_S, forgetLog, monthHours, readDay, readHour, readMonth, readSlice, readSpan, readTerritory,
   readTop, readTopHours, routeLog, sliceSql, writeLog, HOURS_SURVEYORS_SQL, HOURS_TERRITORIES_SQL, TOP_HOURS_MAX,
   NOVAS_SQL, NOVAS_BEFORE_SQL, NOVA_HOURS_SQL, NOVA_PAGE, NOVA_SQL, readNovas,
+  GUILDS_SQL, GUILD_NAME_SQL, HOURS_GUILDS_SQL, LOG_ROWS_PER_INSERT,
+  TIMELAPSE_GUILD_DAYS_SQL, TIMELAPSE_GUILD_DAY_SQL, TIMELAPSE_GUILD_DAY_AFTER_SQL,
   FOREVER_S, LAYOUT, TIMELAPSE_BOUNDS_SQL, TIMELAPSE_CACHE_S, TIMELAPSE_DAY_AFTER_SQL, TIMELAPSE_DAY_SQL, TIMELAPSE_HOURS_SQL,
-  TIMELAPSE_NOVAS_SQL, TIMELAPSE_NOVA_HOURS_SQL, TIMELAPSE_PAGE, TIMELAPSE_VERSION, readTimelapse, readTimelapseDay,
+  TIMELAPSE_NOVAS_SQL, TIMELAPSE_NOVA_HOURS_SQL, TIMELAPSE_PAGE, TIMELAPSE_VERSION, readTimelapse, readTimelapseDay, readTimelapseGuildDay,
 } from '../src/survey-log.js';
 import { AREA, Atlas, NEAR_PATH, NOVA_REACH, NOVA_REPORT_MS, RELAY_MS, REPORT_MS, SECTOR, Sector, checkNova, novaNeighbours } from '../src/survey.js';
 
@@ -28,6 +30,8 @@ const NOW = Date.UTC(2026, 10, 6, 14, 30);
 const HOUR = Math.floor(NOW / HOUR_MS);
 const DAY = Math.floor(NOW / DAY_MS);
 
+// The column today's writes need, for tests of an older log (it came in 0007).
+const GUILD_COLUMN = "ALTER TABLE survey_log ADD COLUMN guild TEXT NOT NULL DEFAULT ''";
 const migrations = () => readdirSync(MIGRATIONS).sort().map((file) => readFileSync(new URL(file, MIGRATIONS), 'utf8'));
 
 // D1 as it stands after the given number of migrations (all by default).
@@ -192,6 +196,7 @@ describe('the log\'s counts', () => {
 
   test('count words logged before the counts existed', async () => {
     db = fakeD1(1);
+    db.raw.exec(GUILD_COLUMN);
     await writeLog(db, [at(0, 0, NOW), at(3000, 0, NOW + 1, { initials: 'AMY' }), at(5, 5, NOW + 2, { s: 1 })]);
     db.raw.exec(migrations()[1]);
     await writeLog(db, [at(7, 7, NOW + 3)]);
@@ -267,6 +272,7 @@ describe('the log\'s counts', () => {
 
   test('start over with the new map: the log and its counts emptied, and counting again after', async () => {
     db = fakeD1(3);
+    db.raw.exec(GUILD_COLUMN);
     await writeLog(db, [at(0, 0, NOW), at(48, 0, NOW + 1, { initials: 'AMY' }), at(5, 5, NOW + 2, { s: 1 })]);
     db.raw.exec(migrations()[3]);
     for (const table of ['survey_log', 'survey_log_hours', 'survey_log_surveyors', 'survey_log_territories']) {
@@ -372,6 +378,83 @@ describe('one surveyor, theme or territory', () => {
         if (part === 'entries' || part === 'after') assert.doesNotMatch(p, /TEMP B-TREE/, `${kind} ${part}: ${p}`);
       }
     }
+  });
+});
+
+describe('guilds in the log', () => {
+  let db;
+  beforeEach(() => { db = fakeD1(); forgetLog(); });
+  const COBALT = 'c0ba17c0ba', AMBER = 'a3be7a3be7';
+  const named = [{ lid: COBALT, a: 11, b: 0, c: 0 }, { lid: AMBER, a: 3, b: 2, c: 3 }];
+  const at = (x, y, time, { s = 0, initials = 'ZED', w = 'ACORN', guild = COBALT } = {}) => ({ key: keyOf(w, x, y, 0), w, x, y, d: 0, s, initials, at: time, guild });
+
+  test('keep each word\'s guild, and each guild\'s name once', async () => {
+    await writeLog(db, [at(0, 0, NOW), at(1, 0, NOW + 1, { guild: '' }), at(2, 0, NOW + 2, { guild: 'not an id' })], [], named);
+    await writeLog(db, [at(3, 0, NOW + 3)], [], [{ lid: COBALT, a: 0, b: 0, c: 0 }, { lid: 'bad', a: 0, b: 0, c: 0 }, { lid: 'abcdefabcd', a: 99, b: 0, c: 0 }]);
+    assert.deepEqual(db.raw.prepare('SELECT guild FROM survey_log ORDER BY at').all().map((r) => r.guild), [COBALT, '', '', COBALT]);
+    // A name never changes, so the first one sent stays; nothing off the lists goes in.
+    assert.deepEqual(db.raw.prepare('SELECT guild, a, b, c FROM survey_log_guilds ORDER BY guild').all().map((r) => ({ ...r })),
+      [{ guild: AMBER, a: 3, b: 2, c: 3 }, { guild: COBALT, a: 11, b: 0, c: 0 }]);
+    assert.deepEqual(db.raw.prepare('SELECT day, guild, n FROM survey_log_guild_days').all().map((r) => ({ ...r })), [{ day: DAY, guild: COBALT, n: 2 }]);
+    db.raw.exec(`DELETE FROM survey_log WHERE at = ${NOW}`);
+    assert.equal(db.raw.prepare('SELECT n FROM survey_log_guild_days').get().n, 1);
+    // A row binds 9 values now, and D1 takes 100 a statement.
+    assert.ok(LOG_ROWS_PER_INSERT * 9 <= 100);
+  });
+
+  test('give one guild\'s words, with its name, colour, members and themes', async () => {
+    await writeLog(db, [
+      at(1, 1, NOW), at(2, 2, NOW + 1, { initials: 'AMY' }), at(48, 0, NOW + 2, { initials: 'AMY' }),
+      at(5, 5, NOW + 3, { s: 1, w: 'BARK' }), at(6, 6, NOW + 4, { guild: AMBER }), at(7, 7, NOW + 5, { guild: '' }),
+      at(8, 8, NOW - 2 * DAY_MS),
+    ], [], named);
+    const one = await readSlice(db, 'guild', COBALT, HOUR, HOUR + 1);
+    assert.deepEqual([one.kind, one.key, one.name, one.hue], ['guild', COBALT, 'Cobalt Compass Society', 220]);
+    assert.equal(one.words, 4);
+    assert.deepEqual(one.topSurveyors, [['AMY', 2], ['ZED', 2]]);
+    assert.deepEqual(one.topTerritories.map((r) => [r[0], r[1], r[4]]), [[0, 0, 2], [1, 0, 1]]);
+    assert.equal(one.topThemes.reduce((a, r) => a + r[3], 0), 3);
+    assert.deepEqual(one.entries.map((e) => e[0]), ['BARK', 'ACORN', 'ACORN', 'ACORN']);
+    // A guild the log has no name for yet (or never had) says so.
+    const none = await readSlice(db, 'guild', 'ffffffffff', HOUR, HOUR + 1);
+    assert.deepEqual([none.name, none.hue, none.words], [null, null, 0]);
+    assert.match(plan(db, GUILD_NAME_SQL, COBALT), /SEARCH survey_log_guilds USING PRIMARY KEY/);
+  });
+
+  test('rank guilds over days and over hours, leaving out any the log has no name for', async () => {
+    await writeLog(db, [
+      at(1, 1, NOW), at(2, 2, NOW + 1), at(3, 3, NOW + 2, { guild: AMBER }), at(4, 4, NOW + 3, { guild: '' }),
+      at(5, 5, NOW + 4, { guild: 'eeeeeeeeee' }), at(6, 6, NOW - 2 * DAY_MS, { guild: AMBER }),
+    ], [], named);
+    const days = await readTop(db, DAY - 7, DAY + 1);
+    // A tie goes to the lower id, as surveyors' ties go to the earlier initials.
+    assert.deepEqual(days.guilds, [[AMBER, 'Amber Lantern Circle', 38, 2], [COBALT, 'Cobalt Compass Society', 220, 2]]);
+    assert.deepEqual((await readTop(db, DAY, DAY + 1)).guilds, [[COBALT, 'Cobalt Compass Society', 220, 2], [AMBER, 'Amber Lantern Circle', 38, 1]]);
+    assert.deepEqual((await readTopHours(db, HOUR, HOUR + 1)).guilds, [[COBALT, 'Cobalt Compass Society', 220, 2], [AMBER, 'Amber Lantern Circle', 38, 1]]);
+    assert.match(plan(db, GUILDS_SQL, 1, 2), /SEARCH survey_log_guild_days USING PRIMARY KEY \(day>\? AND day<\?\)/);
+    // Over hours, the log's own rows in time order, as for surveyors: never all of a guild's words.
+    const p = plan(db, HOURS_GUILDS_SQL, 1, 2);
+    assert.match(p, /SEARCH survey_log USING PRIMARY KEY \(at>\? AND at<\?\)/);
+    assert.doesNotMatch(p, /survey_log_by_guild/);
+  });
+
+  test('are answered by their log id, cached as a surveyor is', async () => {
+    await writeLog(db, [at(1, 1, NOW)], [], named);
+    const env = { LOG_DB: db, ALLOWED_ORIGINS: ORIGIN };
+    const get = async (path) => {
+      const res = await routeLog(new Request(`https://survey.test${path}`, { headers: { Origin: ORIGIN } }), env, NOW);
+      return [res.status, await res.json(), res.headers.get('Cache-Control')];
+    };
+    const [status, body, cache] = await get(`/v1/survey/log/guild/${COBALT}/${HOUR}/${HOUR + 1}`);
+    assert.equal(status, 200);
+    assert.equal(body.name, 'Cobalt Compass Society');
+    assert.equal(cache, `public, max-age=${LIVE_CACHE_S}`);
+    assert.equal((await get(`/v1/survey/log/guild/${COBALT}/${HOUR - 24 * 7}/${HOUR + 1}`))[2], `public, max-age=${SLICE_SLOW_CACHE_S}`);
+    assert.equal((await get(`/v1/survey/log/guild/${COBALT}/${HOUR - 48}/${HOUR - 24}`))[2], 'public, max-age=86400');
+    assert.equal((await get(`/v1/survey/log/guild/${COBALT}/${HOUR + 5}/${HOUR + 6}`))[0], 400);
+    // A guild is only ever asked for by its log id: never a tag (8 digits) or a code.
+    assert.equal(await routeLog(new Request(`https://survey.test/v1/survey/log/guild/c0ba17c0/${HOUR}/${HOUR + 1}`), env, NOW), null);
+    assert.equal(await routeLog(new Request(`https://survey.test/v1/survey/log/guild/ABCDEF/${HOUR}/${HOUR + 1}`), env, NOW), null);
   });
 });
 
@@ -1283,6 +1366,51 @@ describe('supernovas reaching the whole shared world, through the Atlas', () => 
     await report({ sx: 0, sy: 0, charted: full, novas: [nova] });
     await report({ sx: 0, sy: 0, charted: full, novas: [nova] });  // resent: once
     assert.deepEqual(await heard(), [nova]);
+  });
+});
+
+describe('the timelapse following a guild', () => {
+  let db;
+  beforeEach(() => { db = fakeD1(); forgetLog(); });
+  const COBALT = 'c0ba17c0ba';
+  const at = (x, y, time, guild = COBALT) => ({ key: keyOf('ACORN', x, y, 0), w: 'ACORN', x, y, d: 0, s: 0, initials: 'ZED', at: time, guild });
+  const get = async (path, now = NOW) => {
+    const res = await routeLog(new Request(`https://survey.test${path}`, { headers: { Origin: ORIGIN } }), { LOG_DB: db, ALLOWED_ORIGINS: ORIGIN }, now);
+    return [res.status, await res.json(), res.headers.get('Cache-Control')];
+  };
+
+  test('says the guild\'s name and colour and the days it has words on, then each day\'s words', async () => {
+    await writeLog(db, [at(1, 1, NOW - DAY_MS), at(2, 2, NOW), at(3, 3, NOW + 1, ''), at(4, 4, NOW + 2), at(5, 5, NOW + 3, 'eeeeeeeeee')],
+      [], [{ lid: COBALT, a: 11, b: 0, c: 0 }]);
+    const [, index, cache] = await get(`/v1/survey/log/timelapse/guild/${COBALT}`);
+    assert.deepEqual(index, { name: 'Cobalt Compass Society', hue: 220, days: [[DAY - 1, 1], [DAY, 2]] });
+    assert.equal(cache, `public, max-age=${TIMELAPSE_CACHE_S}`);
+    const [, today, live] = await get(`/v1/survey/log/timelapse/guild/${COBALT}/${DAY}`);
+    assert.deepEqual(today, { day: DAY, words: [[NOW - DAY * DAY_MS, 2, 2, 0], [NOW + 2 - DAY * DAY_MS, 4, 4, 0]], next: null });
+    assert.equal(live, `public, max-age=${LIVE_CACHE_S}`);
+    // A settled day is kept for good, as the day's own words are.
+    const [, , kept] = await get(`/v1/survey/log/timelapse/guild/${COBALT}/${DAY - 1}`);
+    assert.equal(kept, `public, max-age=${FOREVER_S}, immutable`);
+    assert.deepEqual((await get('/v1/survey/log/timelapse/guild/ffffffffff'))[1], { name: null, hue: null, days: [] });
+    assert.equal((await get(`/v1/survey/log/timelapse/guild/${COBALT}/${DAY + 1}`))[0], 400);
+    assert.equal((await get(`/v1/survey/log/timelapse/guild/${COBALT}/${DAY}?after=nope`))[0], 400);
+  });
+
+  test('pages through a busy day of the guild\'s, along its own index', async () => {
+    const rows = Array.from({ length: TIMELAPSE_PAGE + 3 }, (_, i) => at(i % 900, Math.floor(i / 900), NOW + i));
+    await writeLog(db, rows, [], [{ lid: COBALT, a: 11, b: 0, c: 0 }]);
+    const one = await readTimelapseGuildDay(db, COBALT, DAY);
+    assert.equal(one.words.length, TIMELAPSE_PAGE);
+    const [ms, ...key] = one.next.split('~');
+    const two = await readTimelapseGuildDay(db, COBALT, DAY, { at: Number(ms), key: key.join('~') });
+    assert.equal(two.words.length, 3);
+    assert.equal(two.next, null);
+    assert.match(plan(db, TIMELAPSE_GUILD_DAYS_SQL, COBALT), /SEARCH survey_log_guild_days USING (COVERING )?INDEX survey_log_guild_days_by_guild \(guild=\?\)/);
+    for (const [sql, args] of [[TIMELAPSE_GUILD_DAY_SQL, [COBALT, 1, 2, 10]], [TIMELAPSE_GUILD_DAY_AFTER_SQL, [COBALT, 1, 2, 1, 'A', 10]]]) {
+      const p = plan(db, sql, ...args);
+      assert.match(p, /SEARCH survey_log USING (COVERING )?INDEX survey_log_by_guild/);
+      assert.doesNotMatch(p, /TEMP B-TREE/);
+    }
   });
 });
 

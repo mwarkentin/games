@@ -294,6 +294,493 @@ already send it:
   daily counts per address, so an evicted Atlas starts the day again and
   forgets yesterday.
 
+## Surveyors and emotes
+
+The survey panel has a fold called **Surveyors**: everyone else in the shared
+world, nearest first, each with their initials, the territory they're in (in
+its theme's colour), how far away it is and whether they're active or idle.
+A row flies you to their territory, and on to their caret once you're close
+enough for its sector to say where they are. Each row shows their initials
+in a disc of their caret's colour, with a **Wave** beside it, the emote sent
+most, and ⋯ for the other six and mute; a right-click or a long press of
+someone's caret offers all seven. These **emotes** are small drawings to send
+them. The code is `src/survey-social.js`, with hooks in
+`survey.js`, and a section of `letterfield.html` of its own.
+
+### Where it lives: a drawer of its own
+
+The list has a button of its own in the corner, a person between the tools
+and the field notes, with a count of everyone else online (the list's own
+count while it's recent, the world's total otherwise). It opens a Surveyors
+drawer like the notes': a sheet from the bottom on a phone, and on a computer
+a panel over the docked notes. `P` opens and closes it, and Escape closes it.
+It started as a fold of the field notes, but with guilds, your initials,
+linking devices and recovery codes it outgrew them, and the notes are about
+the map and your finds. To make room on a phone's top bar, the title there
+is "LF".
+
+The drawer has two pages, one at a time (the page's `peoplePage` machine,
+shown as `<html data-people-page>`), so the list is only people and
+everything about you is one tap away:
+
+- **The list.** First a row for you: your initials in a ring of your
+  caret's colour, and a line saying how you show (on or off the list,
+  emotes on or off) and where you're kept (this device only, or synced). It
+  opens your page. Then your guild, if you're in one, under a heading with
+  its name, how many mates are online and "+ Invite", which copies the
+  invite link (and says "Link copied" for a moment); mates online come
+  first, then those offline with when they were last seen. Then everyone
+  else, nearest first. A row puts a phone's drawer away as it flies, as a
+  find does the notes. Each row is three buttons (fly there, wave, and ⋯),
+  so it works from a keyboard, and Escape folds an open row of emotes. What
+  became of the last emote sent shows under its row.
+- **You**, behind "‹ Surveyors": your initials, large, with Change (or the
+  form to sign, until you have some), then grouped rows. Guild: its name and
+  numbers, Invite a mate, Leave guild; or Start a guild, which lives only
+  here, since the list is for people rather than an offer most will pass
+  over every time. On the map: the two switches. Devices, whose heading
+  says where your surveyor lives (this device only, or backed up and in
+  step): Link another device, I have a code, Recovery code (saved or not),
+  and Stop syncing once syncing. Each opens its own steps in place.
+
+Anything that needs your page opens it, with focus where it's needed:
+waving or starting a guild before signing goes to the form, with a line
+saying why, as does joining from an invite. Escape on your page goes back to
+the list, with focus on your row, and a second closes the drawer; it always
+opens on the list.
+
+### Who a player is
+
+Initials aren't unique, and a socket's id lasts only as long as the socket.
+So the game makes a random token (`games.player`, 128 bits, a key without a game prefix so any game can share it) and sends
+it in its `me` message to every sector it joins. The sector names the player
+by 48 bits of the token's SHA-256 (`playerId`): the same id in every sector
+and every visit, used in presence, the list and emotes. Nobody else ever sees
+a token, and the id can't be chosen, so nobody can send as someone else. A
+game that sends no token (an older copy) keeps its socket's id, as before.
+
+The trade-off is a lasting pseudonym. It's what lets a mute outlast a visit,
+and it lets someone recognise "the same KIM" from day to day; it says nothing
+else about the player, and clearing the browser's storage makes a new one.
+Claims still aren't tied to it (see "Mine"). Each device has its own until
+it's linked to another (see "One player, several devices"); an iPhone's Home
+Screen app counts as a device of its own, since it keeps its own storage.
+
+### Where the list comes from: the Atlas, from the reports sectors already send
+
+Each sector already tells the Atlas its numbers every ≤ `REPORT_MS` while it's
+busy. Its report now also lists its surveyors: `[id, initials, rx, ry, idle,
+flags]` for each player whose view is centred in it, has an id and hasn't
+asked to be hidden. The Atlas builds a snapshot of everyone at most every
+`LIST_MS` (10 s), each Worker instance fetches it at most that often, and works
+out pages itself. `GET /v1/survey/surveyors?r=<rx>,<ry>&page=<n>&me=<id>`
+answers with the nearest 40 to territory (rx, ry), leaving the asker out, and
+says how many there are; a page further on gives the next 40, up to the
+nearest 1,000. Browsers keep an answer for 10 s, and the game asks every 20 s
+while the fold is open, the notes are open and the tab is on screen.
+
+- **Staying listed while still.** A sector only reports while messages come
+  in, and an idle player sends none, so the Atlas would forget them after
+  `ONLINE_MS`. An idle game now sends `{t: 'here'}` every 30 s, and a sector
+  reports at least every `REFRESH_MS` (50 s) while messages arrive, changed or
+  not. Players who sit still stay counted on the world map too.
+- **Leaving.** A listed player whose socket closes is taken off with a report
+  straight away, rather than lingering until `ONLINE_MS`.
+- **Moving between sectors.** For a few seconds someone can be in two
+  sectors' reports; the snapshot keeps them once, from the latest.
+- **Outside the shared world** sectors don't report, so the list covers the
+  shared world, like the world map. Emotes still reach a caret out there.
+
+**Why not push it.** The cheapest list would ride on the reports: the Atlas
+could answer each sector with the surveyors nearest it, and the sector pass
+that to sockets that asked, for no requests at all. But every player in a
+sector would get the same nearest 40, paging would mean asking the Atlas
+anyway, a player out of the shared world (or whose sector is full) would have
+no list, and the sector would send the list to each socket, which is the work
+that limits how many players a sector holds. The list is "global data" in
+eieio's sense, so it's served the way the world map is: over HTTP, cached.
+
+**Cost and scale.** The reports were going out anyway; they grow by about 32
+bytes a surveyor (24 KB for a full sector of 750). What's new is the list's
+requests: one Worker request per reader every 20 s, and one Atlas request per
+Worker instance every 10 s while anyone reads. Assuming one player in ten has
+it open at a time:
+
+| online | snapshot | readers | Worker requests a day | Worker instances reading | Atlas requests a day | a page's work in the Worker |
+| --- | --- | --- | --- | --- | --- | --- |
+| 10 | 0.3 KB | 1 | 4,300 | 1 | 8,600 | nothing |
+| 1,000 | 33 KB | 100 | 430,000 (~$0.13) | ~20 | 170,000 (~$0.03) | sorts a few dozen |
+| 10,000 | 330 KB | 1,000 | 4.3 M (~$1.30) | ~100 | 860,000 (~$0.13) | visits sectors nearest first, stops once the page is full |
+
+So 10,000 online all day adds about $1.50 a day, next to the ~$0.75 an hour
+the survey can cost at its ceiling. The page's work stays small at any size:
+the snapshot is grouped by sector, and a page visits sectors nearest first
+until it has its 40 and no nearer sector is left. The Atlas holds one entry
+per listed player in memory (25,000 at `MAX_ONLINE`, a few MB). `LIST_MS` and
+the game's 20 s are the knobs; past that, the push above.
+
+**Privacy.**
+
+- **Territory, not cell.** Sectors round each position to its territory
+  before reporting, so the Atlas never has cells. A list of exact cells would
+  let anyone follow a player across the whole world; a territory (48 × 48
+  cells) is enough to find them, and close up you see their caret, as before.
+- **Off the list.** "Show me on the list" (`letterfield.listed.v1`) sends
+  `hide: true`: the sector leaves you out of its reports, and you still show
+  as a caret to anyone near you. Hidden players only take emotes from players
+  in their own sector, who can see the caret anyway, and from their guild, so
+  an id saved from an earlier day can't reach them from afar.
+- **No addresses.** The list and emotes carry ids, initials, territories and
+  idle seconds. Hashed addresses stay in sectors, as before.
+
+### Emotes
+
+`{t: 'emote', to, e, s}` goes on the socket of the sector under the middle of
+the sender's view, which knows where they are; `s` is the sector the sender
+saw them in (their caret's, or their territory's from the list). If that's
+the same sector it's handed over there; otherwise it goes with an internal
+POST (`/emote`) to the recipient's sector, which only Workers binding
+`SECTORS` can reach. The recipient gets `{t: 'emote', from, ini, e, r}`, with
+the sender's territory, and the sender `{t: 'emoted', to, e}` with `ok` or why
+not. In view, an emote pops from the sender's caret as a bubble that springs
+up, drifts and fades, while the drawing in it moves once: the hand waves from
+the wrist, the hat lifts and tips, the thumb bobs, the palms meet twice, the
+sparkle twinkles, the flag flutters and the question mark tilts. Otherwise
+it's a note saying who, what and where, with **Fly there**, and its icon makes
+the same move (CSS made from the same table, `EMOTE_MOVES`). Under reduced
+motion the bubble just shows and fades, and nothing moves. A
+screen reader hears it either way.
+
+**Nobody sends as someone else.** The sender is whoever their socket says,
+from their token, never what the message says, and the internal path takes
+only what one sector passes another.
+
+**Limits.**
+
+- Each socket: 3 at once, then one every 4 s.
+- Each address: 20 a minute, across every sector (`SURVEY_EMOTES`, a
+  rate-limiting binding like the claims').
+- Kept by the recipient's sector, which every emote for its players passes
+  through, from anywhere: 3 a minute from one sender to one player (`slow
+  down`), and 6 every 10 s to one player from everyone (`busy`). Nobody can
+  be flooded, and a sender's four sockets get no more than one.
+- Only from players with initials and an id (`sign first`), and only to a
+  sector in the shared world or beside the sender's (`gone`), so emotes can't
+  be used to wake objects all over the endless map.
+- These limits live in memory; a sector that hibernates forgets them, and the
+  per-socket and per-address limits still hold.
+
+**Turning them off and muting.** "Take emotes" (`letterfield.emotes.v1`)
+sends `quiet: true`; the sector refuses emotes for them (`off`) and the list
+greys out their emotes. **Mute**, from a row or a caret, is kept on the device
+(`letterfield.muted.v1`, up to 200): a muted player's caret and emotes don't
+show, and they're never told. A muted player who clears their storage comes
+back with a new id; the per-address limits are what hold then.
+
+### The emotes
+
+Seven drawings on a 24 × 24 grid in the game's line style, the same paths in
+the buttons, the notes and the canvas (as `Path2D`). Not emoji: they look
+different on every device, and plenty of them can be made suggestive. None is
+text, and one emote never combines with another: each shows alone, at the
+sender's caret, and a new one from the same sender replaces the last, so they
+can't be strung into a message.
+
+| emote | means | why it's safe |
+| --- | --- | --- |
+| Wave | hello, goodbye | an open hand with its fingers together, leaning, with motion lines: no finger is singled out, and it reads as a wave rather than a raised palm |
+| Thanks | a hat tipped | a hat, the old gesture of thanks; nothing bodily |
+| Nice | a thumbs up | the near-universal "good" online. It's rude in a few places (parts of West Africa and the Middle East), which made it the closest call; it was asked for by name and kept |
+| Clap | well done | two flat palms meeting, with no fingers drawn; it can be sarcastic, but no worse than words would be, and there are none |
+| Great find | a sparkle | a four-pointed star |
+| Over here | a survey flag | how surveyors mark a spot, and it comes with the sender's territory to fly to |
+| Question | ? in a circle | punctuation, which can't spell anything |
+
+Left out: hearts, kisses, faces (they wink and stick out tongues), fruit and
+vegetables, every other hand shape (pointing, the OK sign, a fist, counted
+fingers), fire, skulls, letters, numbers and arrows.
+
+### Initials on a list
+
+The list puts initials in front of everyone in the shared world, not just
+whoever hovers a caret. Initials are still the only words anyone shows, so
+`BLOCKED_INITIALS` (in `leaderboard.js`, shared with the leaderboards, whose
+top 10s are just as public) now covers the common obscenities and slurs three
+letters can spell, 32 in all. It stops there: every combination left out is
+someone's real initials. A sector blanks blocked initials, and the list
+shows a blank as "···".
+
+## Guilds
+
+A guild is a few surveyors who want to find each other. Its members come
+first on the surveyor list (those online with where they are, the rest with
+when they were last seen), a note says when one comes online, and their
+carets wear the guild's colour. One guild at a time, joined only from an
+invite link. The code is `src/survey-guild.js`, hooks in `survey.js` and
+`survey-social.js`, and the Guilds section of `letterfield.html`.
+
+### Why these guilds
+
+| | (a) leaderboard groups | (b) Letterfield guilds (chosen) | (c) follows |
+| --- | --- | --- | --- |
+| what | a group from `/v1/groups` is a guild; `games.groups` says which | one guild each, its own code, a name made from fixed words and a colour | follow a player from the list, on your device only |
+| for | already exists, codes and `?join=` links work | one badge per caret; no typed names; a roster to cap and to keep "last seen" in | no server state at all |
+| against | typed names in front of everyone; a player in five groups is in five guilds; groups keep no members, so no last seen; joining a War board would make you a guild mate here | new endpoints and an object per guild | one-sided; no badge; not really a guild |
+
+### What a guild is
+
+- **A Durable Object per guild** (`Guild`, named by its code), with its own
+  SQLite storage: a name, a random tag, and up to 50 members, each with their
+  initials and when they joined and were last seen. Its tables are made when
+  it's created and dropped when its last member leaves, so a wrong guess at a
+  code stores nothing and an ended guild's code is free again.
+- **No free text.** A name is three words from the game's lists: 16 colours,
+  16 instruments and 8 kinds of company ("Cobalt Compass Society"), 2,048
+  names in all, drawn at random until the founder likes one. The Worker keeps
+  only the three numbers (`GUILD_WORDS` says how long each list is, and a test
+  checks the game's lists agree). The colour is the first word's.
+- **The code is the key.** Six characters from the groups' alphabet (887
+  million codes), passed in an invite link (`?guild=<code>`), which the game
+  reads once and takes off the address. A player can be in one guild at a
+  time, so an invite while they're in another asks "Switch guilds?": both
+  guilds by name, a warning that joining takes them out of theirs (and ends
+  it if they're its only member), and Stay or Leave and join. Everyone else only ever sees the
+  guild's **tag**, a random id that says which carets share a guild and
+  nothing more.
+
+```
+POST /v1/survey/guilds                 {token, initials, name: [a, b, c]} → 201 {code, name, tag, lid, members}
+GET  /v1/survey/guilds/<code>          → {name, size}, for an invite to say what it's to
+POST /v1/survey/guilds/<code>/join     {token, initials} → {code, name, tag, lid, members}
+POST /v1/survey/guilds/<code>/leave    {token} → {ok: true}; the last to leave ends it
+POST /v1/survey/guilds/<code>/roster   {token} → {code, name, tag, lid, members}, members only
+  members: [[id, initials, seen], ...], most recently seen first
+```
+
+Players are named by their token, as everywhere in the survey, so nobody can
+join, leave or read a roster as someone else. A roster asked for by someone
+who isn't a member gets the same answer as a guild that doesn't exist.
+
+### Membership in the sectors
+
+- **Checked by the guild.** The game sends its guild's code in its `me`
+  message. The sector asks the guild (`POST /check`, internal) whether the
+  player is a member, and only then puts the guild's tag on their socket, so
+  knowing a code isn't enough to wear a guild's colour. It asks again every
+  15 minutes while they play, which takes the tag off anyone who has left and
+  keeps their "last seen" current (written at most every 10 minutes).
+- **On the map.** Presence gives each player's tag; the game draws a dot in
+  the guild's colour on top of a mate's caret (a ring when zoomed out), and
+  their hover card names the guild. Other guilds' tags mean nothing to it.
+- **Off the list, but not to your guild.** A hidden member stays out of the
+  public list but is still reported to their guild (flagged `FLAG_HIDDEN`),
+  and takes emotes from mates anywhere: an emote carries its sender's tag.
+  Their words don't count for the guild in the survey log (see "Guilds"
+  under "The log").
+
+### Who's online rides on the reports
+
+Each report's surveyors carry their guild's tag, and the report lists the
+guilds of everyone in the sector. The Atlas keeps who's online in each guild,
+replaced sector by sector as reports come in, and answers each report with
+the online members of the guilds that sector asked about. The sector passes
+`{t: 'guild', tag, on}` to its members whenever that changes. Idle time is
+coarse in it (active, under a minute, then whole minutes), so it changes when
+someone arrives, moves territory, leaves or idles another minute, not with
+every report. It costs no requests of its own.
+
+- **How soon:** within a report of the member's sector and of yours: 10 s
+  while they're busy, up to about a minute when they're still.
+- **In the game:** the first word after you arrive just says who's here;
+  anyone new after that gets a note ("ZED came online", with **Fly there**),
+  at most once in 10 minutes each.
+- **Outside the shared world** sectors don't report, so a member out there
+  shows as offline, with when they were last seen.
+
+### Cost
+
+- **The guild's object** is asked when a member makes, joins or leaves a
+  guild, opens a socket while in one (about 10 an hour while roaming) and
+  every 15 minutes while they play; and for the roster when the list opens,
+  then at most once a minute while it's open.
+- **Rows written:** "last seen" at most every 10 minutes per member playing.
+- **At 10,000 online with 3,000 in guilds:** about 42,000 checks an hour
+  (~$0.15 a day) and a few thousand roster reads (pennies). At 1,000 online,
+  a few cents a day. The online word rides on reports and frames that were
+  free already.
+- **Limits:** 50 members a guild; 5 new guilds and 20 joins an hour per
+  address, counted in D1 like new groups.
+
+### Left for later
+
+- **Web Push while the game is closed.** It needs VAPID keys made in
+  mwarkentin/infra, a subscription per player in D1, payloads encrypted in the
+  Worker (`aes128gcm` with Web Crypto), a `push` handler in `sw.js` and a
+  permission prompt; on an iPhone only the Home Screen app gets it. Worth it
+  once guilds are in use.
+- **Running a guild.** There's no founder or removing a member: anyone can
+  mute anyone, or leave and start another.
+- **One guild at a time** is the game's rule; the Worker doesn't know a
+  player's other guilds, so two devices could join two.
+
+## One player, several devices
+
+A player is a token in one browser's storage, so the same person on a phone,
+a tablet and a computer was three surveyors: three ids, three sets of mutes,
+and only one of them in their guild, all signing with the same initials.
+Linking makes them one. It's built for Letterfield, but the token is kept as
+`games.player`, without a game's prefix like `games.initials`, so any game
+on the site can name the same player later.
+
+### How it goes
+
+1. On a device that's already you, **Link another device** (under "You" in
+   the Surveyors drawer) asks the Worker for a code: `POST /v1/link
+   {token, carry}`. The Worker keeps the token and what it carries in D1
+   (`links`, migration 0004) under eight random characters from the groups'
+   alphabet, for ten minutes and one use.
+2. The device shows the code three ways: a QR code that opens
+   `/letterfield?link=<code>`, the same link to copy or share, and the code
+   itself, `ABCD-EFGH`, to type on a device with no camera or into an
+   iPhone's Home Screen app (a scanned link opens Safari, whose storage the
+   app doesn't share). While it shows, it asks every 5 seconds
+   (`POST /v1/link/<code>/status {token}`) whether the code is still
+   `waiting`, `used` or `gone`, and says "Linked" once it's used.
+3. The other device opens the link, which offers to link before anything
+   else (the `link` state of the page's `intro`), or types the code under
+   **I have a code**. Either redeems it: `POST /v1/link/<code>` answers the
+   token and the carried settings, once.
+4. That device takes the token and settings and reloads as the same
+   surveyor, with a note saying so. Both devices then keep in step (see
+   "Syncing linked devices").
+
+What a link carries, checked by `cleanCarry` in `worker/src/players.js`:
+the initials, the guild (code, name and tag), the mutes, and the two
+switches under Surveyors (on the list, taking emotes). Mutes from both
+devices are kept. Their guild wins; if they're in none and this device is
+in one, the linked surveyor joins this device's guild instead, so linking in
+either direction doesn't lose one. Either way the device's old self leaves
+its guild, since it won't be back. Field notes come from both devices from
+then on, through syncing; sound and music stay each device's own.
+
+### Why a code, and how it's kept safe
+
+Whoever redeems a code becomes that player, so a code is as good as the
+token for ten minutes:
+
+- **It can't be guessed.** Eight characters from a 31-letter alphabet is
+  852 billion codes, and every try counts against the address's limit
+  (`linkTry`, 20 an hour, right or wrong), as making codes does (`link`, 10
+  an hour). With a thousand codes live at once, a try has about one chance
+  in 850 million.
+- **It works once.** One `UPDATE … WHERE used = 0 … RETURNING` claims it, so
+  two devices redeeming at once can't both have it, and what it carried is
+  wiped from the row as soon as it's handed over. The row stays until it
+  runs out, so the device that made it can hear it was used.
+- **Only its maker hears about it.** `/status` answers `gone` to anyone who
+  doesn't send the token that made the code.
+- **The token never travels in an address.** It goes in request bodies
+  only; the link holds just the code, and the page takes `?link=` off the
+  address as soon as it's read. The page says that whoever uses a code
+  plays as you, so keep it to your own devices.
+
+A passkey would do this without a code, but needs an account to hang it on,
+which nothing else here has.
+
+### A recovery code
+
+Linking needs a device that's already you. With none left (one phone,
+lost; every browser cleared), the token is gone, and with it the surveyor:
+their id, their guild and any synced notes. A recovery code is a long code
+the player saves once and enters on any device, under **I have a code**, to be
+that surveyor again.
+
+    POST /v1/recovery         {token} → 201 {code, made}: a new code; any older one stops working
+    POST /v1/recovery/use     {code} → {token, made}, or 404
+    POST /v1/recovery/remove  {token} → {ok}
+
+- **Twenty characters** from the groups' alphabet, about 99 bits, shown in
+  fours: `BCDF-GHJK-MNPQ-RSTV-WXYZ`. It's shown once, with Copy and "Save as
+  a file", and the warning that whoever has it plays as you.
+- **The Worker keeps neither the code nor the token.** A code's SHA-512
+  gives the D1 row's id (its first half) and an AES-GCM key (its second)
+  that seals the token. The row holds the id, the player id, the sealed
+  token and when it was made (`recovery`, migration 0005), so reading D1
+  gives no one a token, and only the code opens its row.
+- **One code a player.** A new one replaces the old, which stops working,
+  so a code that gets out is put right by making another. "Remove it" takes
+  it away, and stopping syncing on every device takes it too.
+- **It keeps a backup.** Saving a code starts the player's Player and
+  marks it saved, which exempts it from the 180-day clear-out while the
+  code lasts. Using the code on a new device turns syncing on there with
+  this device's settings older than the backup's, so the first sync brings
+  back the initials, guild, mutes and notes; that device's own notes join
+  them, and its old self leaves its guild.
+- **Guessing it** is hopeless at 99 bits, and tries count against the same
+  per-address limit as link codes' (`linkTry`). Making codes has a limit of
+  its own (`recovery`, 5 an hour).
+- **Cost:** a D1 row per player who saves one, and a Player kept for them.
+  Nothing measurable.
+
+### Syncing linked devices
+
+Once linked, devices keep their field notes, supernovas seen and the
+settings a link carries in step through a **Player**, a Durable Object per
+player id (`worker/src/players.js`), named by the token's hash so only the
+player's own devices reach it:
+
+    POST /v1/player/sync    {token, epoch, since, finds, novas, settings, settingsAt}
+                            → {epoch, at, finds, novas, settings?, settingsAt?} | {off: true}
+    POST /v1/player/forget  {token} → {off: true}
+
+- **Only a link starts one.** Redeeming a code starts the player's Player;
+  until then a sync answers `off` and stores nothing. So a player who never
+  linked a device keeps everything in their browser, as before, and making
+  Players costs as much as making codes, which is limited per address.
+- **A sync carries what's new.** Every row has the version it last changed
+  in. A device sends what changed on it since its last sync (the finds and
+  supernovas it's kept a list of, and its settings with when they last
+  changed) and the version it last heard, and gets back everything that
+  changed since then, apart from what it just sent. A Player that was
+  forgotten and started again has a new epoch, so a device that last heard
+  from the old one starts over and sends all it has.
+- **Merging can't lose anything.** Finds are keyed by word and place, as
+  between tabs: each is kept once, and "charted first" only ever comes on.
+  Supernovas are kept once each. Settings (initials, guild, mutes and the
+  two switches) go with whichever device changed them last, by its clock.
+- **When.** On opening the game, a few seconds after a find, a couple after
+  a settings change, when the tab comes back into view, and every minute
+  while it's open, so two devices open at once catch up within a minute. A
+  hidden tab doesn't sync.
+- **Limits.** 25,000 finds and 1,000 supernovas a player, 2,000 of either a
+  sync (more go in the next), one sync every 2 seconds, half a megabyte a
+  request.
+- **Stopping.** "Stop syncing" under the Surveyors drawer's linking card stops
+  this device, or every device: that deletes the Player's storage, and the
+  others hear `off` at their next sync and stop too, with a note. Each
+  device keeps its notes as they are. A Player nobody has synced for 180
+  days deletes itself (an alarm, put off by each day's first sync).
+
+The game's `sync` machine (off, idle, syncing, failed) shows on `<html
+data-sync>`, and the line at the foot of the field notes says "Synced with
+your linked devices".
+
+### Cost
+
+D1 only, and small: making a code sweeps expired rows and writes one;
+redeeming it is two writes; each ask while it shows reads one row by its
+key (120 if left showing the full ten minutes, a few in a usual link). Even
+if every one of 10,000 players linked a device every day, that's well
+inside Workers Paid's included D1 reads and writes, so nothing extra.
+
+Syncing is a Durable Object request a minute for each open device, plus
+one per few finds, each writing a row per new find and one for the Player's
+version. Say 1,000 of 10,000 players link devices and play an hour a day:
+about 100,000 requests a day, 3 million a month, within the million
+included plus 30 cents; the rows written (a few million a month) and the
+storage (about 50 bytes a find, so 1,000 full notebooks are a gigabyte)
+stay inside what Workers Paid includes. Under a dollar a month.
+
 ## The log
 
 [letterfield-log](https://games.michaelwarkentin.com/letterfield-log) is a
@@ -370,18 +857,21 @@ GET /v1/survey/log/month/<month> (month = UTC months since January 1970)
 GET /v1/survey/log/top/<from>/<to>   (UTC days from..to-1, at most 3,660)
   → {"from", "to", "surveyors": [[initials, words], ...10],
      "territories": [[rx, ry, name, th, words], ...10],
-     "themes": [[th, name, hue, words], ...], "hidden"}
+     "themes": [[th, name, hue, words], ...],
+     "guilds": [[lid, name, hue, words], ...10], "hidden"}
 GET /v1/survey/log/top/hours/<from>/<to>   (UTC hours from..to-1, at most 48)
   → the same, with "hours": true, for a day or an hour in the page's time zone
 GET /v1/survey/log/surveyor/<initials>/<from>/<to>   (UTC hours from..to-1)
 GET /v1/survey/log/theme/<th>/<from>/<to>
+GET /v1/survey/log/guild/<lid>/<from>/<to>
 GET /v1/survey/log/…/<from>/<to>?before=<at>~<key>
   → {"kind", "key", "from", "to", "words", "world",
      "hours": [[hour, words, world], ...],          hours with none left out
      "topTerritories": [[rx, ry, name, th, words], ...10],
-     "topThemes": [[th, name, hue, words], ...]     a surveyor's
-     "topSurveyors": [[initials, words], ...10]     a theme's
-     "name", "hue"                                  a theme's
+     "topThemes": [[th, name, hue, words], ...]     a surveyor's or guild's
+     "topSurveyors": [[initials, words], ...10]     a theme's or guild's
+     "name", "hue"                                  a theme's or guild's (a guild's null
+                                                    while the log has no name for it)
      "entries", "places", "themes", "next"}         newest first, 100 a page
 GET /v1/survey/log/territory/<rx>/<ry>
   → {"rx", "ry", "name", "th", "total", "charted",
@@ -403,6 +893,11 @@ GET /v1/survey/log/timelapse/<day>?after=<at>~<key>
   → {"day", "words": [[t, x, y, d, len, th, s], ...],   oldest first, 5,000 a page,
      "novas": [[t, rx, ry, th], ...],                    t in ms since the day began;
      "next": "<at>~<key>" | null}                        supernovas on the first page
+GET /v1/survey/log/timelapse/guild/<lid>
+  → {"name", "hue", "days": [[day, words], ...]}         name and hue null while the log has none
+GET /v1/survey/log/timelapse/guild/<lid>/<day>
+GET /v1/survey/log/timelapse/guild/<lid>/<day>?after=<at>~<key>
+  → {"day", "words": [[t, x, y, d], ...], "next"}        that guild's, oldest first, 5,000 a page
 ```
 
 An hour comes oldest first, 500 entries a page; `next` is the `after` for the
@@ -509,6 +1004,7 @@ address says what it is, so it can be shared or bookmarked:
 | --- | --- | --- | --- |
 | a surveyor | `?surveyor=ZED` | all of them, all time first | words signed ZED: chart, top territories and themes, the words by day |
 | a theme | `?theme=<n>` | all of them, all time first | hidden words in its territories: chart, top surveyors and territories, the words |
+| a guild | `?guild=<log id>` | all of them, all time first | words its members charted while in it: chart, members who charted most, top territories and themes, the words (see "Guilds" below) |
 | a territory | `?territory=<rx>,<ry>` | none: all time | how many of its hidden words are charted (a meter), top surveyors, every word, and a link to fly there |
 
 A surveyor's or theme's view opened from a period keeps it, so ZED from this
@@ -550,6 +1046,70 @@ each, so even fully charted that's a short list, and the Worker counts its
 hidden words from the map. Settled ranges are cached for a day, as
 elsewhere; a running one for 15 seconds, or 2 minutes over more than two
 days, and a territory for 15 seconds.
+
+### Guilds
+
+A guild's words have a view of their own, and each period's top lists a
+**Top guilds** card after the top surveyors, once anyone has charted in a
+guild in it. A guild's page in the game (your page in the Surveyors drawer)
+links to its view, "Our words in the survey log". The code is
+`migrations-log/0007_survey_log_guilds.sql`, the guild parts of
+`src/survey-log.js` and `src/survey-guild.js`, and `noteGuild` and
+`flushLog` in `src/survey.js`.
+
+| | (a) top guilds only | (b) a guild's own view, and top guilds (chosen) | (c) the timelapse following a guild |
+| --- | --- | --- | --- |
+| what | a Top guilds card, with nowhere to go from it | (a), and each guild's words as a view like a surveyor's | one guild's words bright, everyone else's faint |
+| D1 rows a guild word | +1 (its day's count) | +2 (and the index of its words) | none past (b)'s |
+| for | cheapest | a guild sees its own work; members find it from the game | a guild's spread across the map, at a glance |
+| against | a dead end | an index | needs (b)'s index; built after it (see "Following a guild" under "The timelapse") |
+
+**What a guild is in the log.** Each word carries the guild its charter was
+in when they charted it, by the guild's **log id**: a third random id (ten
+hex digits), apart from the code that invites and the tag carets wear. With
+the tag, anyone could match a guild's public page to the carets on the map
+wearing it; with a log id of its own, the page says what a guild charted and
+nothing about who is where. The guild makes it with itself, or, for one made
+before, the first time it's asked; the game learns it with the roster.
+
+**Who counts.** A sector knows at claim time whether the player is in a
+guild (their tag, which the guild confirmed), its log id and name (from the
+same check, `POST /check`, which now answers `{tag, lid, name}`), and whether
+they're off the surveyor list. A member off the list logs no guild: the
+log already shows every word with its initials, so a word counted for the
+guild as "a mate" would name them to anyone who matched its time in
+everyone's view. Words keep the guild they were charted in: leaving a guild
+takes nothing back, and words from before this have none. Your page in the
+game says so under the guild.
+
+**Names are public now.** Before, only mates saw their guild's name. A
+guild's name is three words from fixed lists, so it says nothing about
+anyone, but two guilds can share one: each has its own log id, so the top
+list and the view keep them apart, and nothing else in the log tells them
+apart. The Worker keeps the lists (`GUILD_FIRST`, `GUILD_SECOND`,
+`GUILD_THIRD`, with the first word's hue), and a test checks the game's
+match. A guild that ends keeps its name and words in the log.
+
+**In D1.** A `guild` column on `survey_log` ('' for none), a partial index
+`survey_log_by_guild (guild, at)` of guild words only, a daily count per
+guild kept by triggers (`survey_log_guild_days`) for the top lists, and
+`survey_log_guilds`, each guild's name as three numbers, which a sector sends
+with its first claims for that guild (it keeps the names in `guild_names`,
+written once per guild per sector). A view is a slice like a surveyor's,
+through its index; top guilds over days read the daily counts, and over
+hours the log's own rows in time order, as top surveyors do.
+
+**Cost.** A word in a guild writes two more D1 rows (the index and the
+day's count), so up to nine; a word in none, nothing more, since the column
+is on the row already written. A guild's name is one row, once. At a busy
+day's 30,000 words with a third in guilds, that's 20,000 more rows written,
+next to the 50 million included a month. Reading a guild's view costs what a
+surveyor's does; top guilds add a few hundred rows of daily counts to a long
+period's top lists.
+
+The guild's view and its share card are named by the log id
+(`/v/guild/<lid>/…`, in `share/src/view.js`); a guild the log has no name
+for gets the game's own preview.
 
 ### Supernovas
 
@@ -763,6 +1323,25 @@ and the page's requests carry its own `CACHE_VERSION`. Taking a word out
 of the log for moderation means raising both, or the old day stays in
 caches.
 
+**Following a guild.** `?guild=<log id>` replays everyone's words as
+before, but faint, with one guild's on top in its colour, bolder, and only
+theirs glowing. A count of "their words" takes the territories' place, a
+pill names the guild ("Following the Cobalt Compass Society", which drops
+it), and ← Log goes to the guild's page in the log. That page's Timelapse
+button opens this. The page asks the guild's index (its name, colour and
+the days it has words on, from its daily counts through
+`survey_log_guild_days_by_guild`, migration 0008) before the first day,
+then, beside each such day, that guild's words that day, through their
+own index, as only where each starts and when, which it picks out of the
+day's words it already has. A guild's day is kept like a day of the log:
+for good once settled, 15 seconds while running. A guild the log has no
+name for plays everyone's, unfollowed. The saved video draws the same.
+
+It costs one more D1 row written per guild per day it charts in (the new
+index holds no count, so a day's later words don't touch it), and reading
+a followed replay reads the guild's words once more, a small slice of the
+days it's in.
+
 ### Where, readably
 
 Coordinates mean little, so each answer names the territories its entries
@@ -817,7 +1396,8 @@ to it.
 On Workers Paid, per word charted: up to seven D1 rows written (the log's
 row, an update each to the hour's, the surveyor's and the territory's
 counts, and a row in each of the three indexes; no initials or a stray word
-skips two), one more row written in the sector (its time index), and a
+skips two), and two more for a word charted in a guild (its index and its
+day's count; see "Guilds" under "The log"), one more row written in the sector (its time index), and a
 share of an alarm. A supernova, once per territory (10,000 in the shared
 world), adds two rows written in its sector (the row and marking it sent)
 and two in D1 (the row and its index on time), and reads its territory's
@@ -987,7 +1567,10 @@ Usage per player-hour, from the design and the 700-player run:
 | an eieio-style viral fortnight: 5,000 online on average, up to the cap | 1.68 M | ~$12 | ~$27 | ~$12.50 | **~$57** |
 | the ceiling: `MAX_ONLINE` (25,000) online all the time | 25,000 an hour | ~$0.22/h | ~$0.40/h | ~$0.11/h | **at most ~$0.75 an hour (~$18 a day)** |
 
-The per-address limits don't change these figures. A rate-limiting binding
+The surveyor list and emotes add about $1.50 a day at 10,000 online (see
+"Surveyors and emotes"), mostly the list's own requests, and guilds about
+$0.30 more (see "Guilds"). The per-address
+limits don't change these figures. A rate-limiting binding
 isn't a Durable Object, so it adds no Durable Object requests, and neither
 pricing page lists a charge for it. The hashed address is worked out once
 per connection, in the Worker. The daily cap rides on the reports sectors
@@ -1073,6 +1656,22 @@ about 30 cents over the included million requests.
   a few hundred thousand words, each settled week could be served as one
   binary file (a word fits in 8 bytes), or the page could draw far zoom
   levels from the territory counts alone.
+- **The surveyor list, pushed.** If its requests ever show in the bill, the
+  Atlas can answer each sector's report with the surveyors nearest it, for
+  the sector to pass on to sockets that asked (see "Why not push it").
+- **Emotes and toasts.** An emote's note is a note like any other; once notes
+  can be quietened by kind, emotes should be a kind of their own. "Take
+  emotes" already turns them off entirely.
+- **Reporting a player.** There's nothing to report but three letters, which
+  `BLOCKED_INITIALS` screens, and seven drawings; mute is on the device. A
+  muted player with a new token is a new id, held back only by the limits.
+- **Guilds:** see "Left for later" under "Guilds".
+- **Passkeys.** A passkey, synced by the player's own iCloud Keychain or
+  Google account, could bring a surveyor back with no code to keep. It
+  needs WebAuthn credentials stored and checked in the Worker.
+- **Syncing as it happens.** Two linked devices open at once catch up
+  within a minute. The Player could hold a WebSocket to each, hibernating,
+  and push a find the moment it lands, if a minute ever feels slow.
 - **Finds made offline stay personal.** Uploading them later would let
   anyone backdate a pile of claims at once.
 

@@ -283,7 +283,7 @@ html[data-log="loading"] #chart{opacity:.5}
 
   <div id="log"></div>
 
-  <p class="foot">Times are yours, in <span id="zone"></span>. Top lists for a week or longer count whole days in UTC, and initials are whatever each surveyor typed in, so they aren’t unique. “Mine” lists the words this browser charted first, from Letterfield’s field notes; nothing about you is sent to find them. A surveyor’s, territory’s or theme’s own view has an address of its own to share. A territory goes supernova once every one of its hidden words is charted.</p>
+  <p class="foot">Times are yours, in <span id="zone"></span>. Top lists for a week or longer count whole days in UTC, and initials are whatever each surveyor typed in, so they aren’t unique. “Mine” lists the words this browser charted first, from Letterfield’s field notes; nothing about you is sent to find them. A surveyor’s, guild’s, territory’s or theme’s own view has an address of its own to share. A guild counts the words its members chart while in it, except those of members off the surveyor list. A territory goes supernova once every one of its hidden words is charted.</p>
   <p class="foot feedback">Found a bug or have an idea? <a href="https://github.com/mwarkentin/games/issues/new/choose" target="_blank" rel="noopener" data-feedback>Send feedback</a></p>
 </main>
 <div class="tip" id="tip" role="tooltip" hidden></div>
@@ -968,16 +968,19 @@ function pieceRows(unit, buckets, open) {
 /* ---------- State ---------- */
 // The view is all in the address, so any of it can be shared or bookmarked:
 // ?period=, ?day= and ?hour= say when, and one of ?surveyor=<initials>,
-// ?theme=<n> or ?territory=<rx>,<ry> narrows it to theirs. Everyone's opens
+// ?theme=<n>, ?guild=<log id> or ?territory=<rx>,<ry> narrows it to theirs. Everyone's opens
 // on today; theirs on all time, which a territory always shows.
 const state = { period: 'day', start: startOf('day', Date.now()), mine: false, focus: null, run: 0 };
-const FOCUS_KEYS = ['surveyor', 'theme', 'territory', 'supernovas'];
+const FOCUS_KEYS = ['surveyor', 'theme', 'guild', 'territory', 'supernovas'];
 const defaultPeriod = f => f ? 'all' : 'day';
 function focusOf(q) {
   const initials = (q.get('surveyor') || '').toUpperCase();
   if (/^[A-Z]{3}$/.test(initials)) return { kind: 'surveyor', key: initials };
   const th = q.get('theme') || '';
   if (/^\d{1,3}$/.test(th)) return { kind: 'theme', key: Number(th) };
+  // A guild by its id in the log, never its code or the tag its carets wear.
+  const lid = q.get('guild') || '';
+  if (/^[0-9a-f]{10}$/.test(lid)) return { kind: 'guild', key: lid };
   const m = /^(-?\d{1,8}),(-?\d{1,8})$/.exec(q.get('territory') || '');
   if (m) return { kind: 'territory', rx: Number(m[1]), ry: Number(m[2]) };
   if (q.has('supernovas')) return { kind: 'novas' };
@@ -1026,6 +1029,7 @@ function urlFor({ focus = state.focus, period = state.period, start = state.star
   for (const k of [...FOCUS_KEYS, 'period', 'day', 'hour', 'view']) q.delete(k);
   if (focus?.kind === 'surveyor') q.set('surveyor', focus.key);
   else if (focus?.kind === 'theme') q.set('theme', String(focus.key));
+  else if (focus?.kind === 'guild') q.set('guild', focus.key);
   else if (focus?.kind === 'territory') q.set('territory', `${focus.rx},${focus.ry}`);
   else if (focus?.kind === 'novas') q.set('supernovas', '');
   if (focus?.kind !== 'territory') {
@@ -1092,8 +1096,9 @@ function titles(p, s, e) {
 }
 
 // Names seen so far, so a view of one can say whose it is before its own
-// answer arrives: 'rx,ry' → [name, theme] and theme → [name, hue].
-const known = { places: {}, themes: {} };
+// answer arrives: 'rx,ry' → [name, theme], theme → [name, hue] and a
+// guild's log id → [name, hue].
+const known = { places: {}, themes: {}, guilds: {} };
 function learn(data) {
   for (const [k, v] of Object.entries(data?.places || {})) if (typeof v === 'string') known.places[k] = [v, known.places[k]?.[1]];
   for (const [k, v] of Object.entries(data?.themes || {})) if (Array.isArray(v) && typeof v[0] === 'string') known.themes[k] = v;
@@ -1122,6 +1127,12 @@ function focusBar() {
     label = t ? t[0] : `Theme ${f.key}`;
     hue = t?.[1];
     note = ['Hidden words charted in territories with this theme.'];
+  } else if (f.kind === 'guild') {
+    const g = known.guilds[f.key];
+    kind = 'Guild';
+    label = g ? g[0] : 'A guild';
+    hue = g?.[1];
+    note = ['Every word its members charted while in it. Members who keep off the surveyor list aren’t counted.'];
   } else {
     const [name, th] = known.places[`${f.rx},${f.ry}`] || [];
     const t = th !== undefined ? known.themes[th] : null;
@@ -1148,6 +1159,13 @@ function chrome() {
   focusBar();
   $('#whose').hidden = !!focus;
   document.querySelector('.novas-link').hidden = focus?.kind === 'novas';
+  // A guild's view replays its own words; any other, everyone's.
+  {
+    const survey = new URLSearchParams(location.search).get('survey'), q = new URLSearchParams();
+    if (focus?.kind === 'guild') q.set('guild', focus.key);
+    if (survey) q.set('survey', survey);
+    $('#timelapseLink').href = '/letterfield-timelapse' + (q.size ? '?' + q : '');
+  }
   $('#periods').hidden = focus?.kind === 'territory';
   document.querySelector('.nav').hidden = focus?.kind === 'territory';
   $('#viewAll').setAttribute('aria-pressed', String(!state.mine));
@@ -1396,6 +1414,8 @@ async function loadTops(run, start, end, byHour = false) {
   const span = to - from === 1 ? fullDate.format(from * DAY + DAY / 2) : `${monthDay.format(from * DAY + DAY / 2)} – ${fullDate.format((to - 1) * DAY + DAY / 2)}`;
   cardsEl.replaceChildren(
     rankCard('Top surveyors', surveyorRows(top.surveyors), `By initials, which anyone can share${byHour ? '' : ` · UTC days ${span}`}`),
+    // Guilds only once there are some: a period nobody charted in one has no card.
+    ...(guildRows(top.guilds).length ? [rankCard('Top guilds', guildRows(top.guilds), 'Words their members charted while in them')] : []),
     rankCard('Top territories', territoryRows(top.territories, top.themes), 'Hidden words charted in each'),
     rankCard('Themes', themeRows(top.themes), 'Hidden words, by their territory’s theme'),
   );
@@ -1411,6 +1431,10 @@ function territoryRows(rows, themes) {
     return { label: r[2], n: r[4], hue: known.themes[r[3]]?.[1], focus: { kind: 'territory', rx: r[0], ry: r[1] } };
   });
 }
+// A guild's name is three words from fixed lists, so two can share one: each
+// row opens its own guild's view, by its log id.
+const guildRows = rows => (Array.isArray(rows) ? rows : []).filter(r => okRow(r, 3) && /^[0-9a-f]{10}$/.test(r[0]) && typeof r[1] === 'string' && Number.isFinite(r[2]))
+  .map(r => { known.guilds[r[0]] = [r[1], r[2]]; return { label: r[1], n: r[3], hue: r[2], focus: { kind: 'guild', key: r[0] } }; });
 function themeRows(rows) {
   const themes = (Array.isArray(rows) ? rows : []).filter(r => okRow(r, 3) && okRow(r, 0) && typeof r[1] === 'string').map(r => {
     known.themes[r[0]] = [r[1], r[2]];
@@ -1421,10 +1445,10 @@ function themeRows(rows) {
   return shown;
 }
 
-/* ---------- One surveyor, theme or territory ---------- */
+/* ---------- One surveyor, theme, guild or territory ---------- */
 const SLICE_PAGES = 20;  // pages (100 each) of one hour a view of one reads for its minutes
-// A surveyor's or theme's period, from its own answer: the chart, who or
-// where most, and its words, a hundred at a time.
+// A surveyor's, theme's or guild's period, from its own answer: the chart,
+// who or where most, and its words, a hundred at a time.
 async function renderSlice(run, f, p, start, end, firsts) {
   const base = `/v1/survey/log/${f.kind}/${f.key}/${fdiv(start, HOUR)}/${fdiv(end - 1, HOUR) + 1}`, live = isLive(end);
   const page = async before => {
@@ -1436,6 +1460,7 @@ async function renderSlice(run, f, p, start, end, firsts) {
   const first = await page(null);
   if (run !== state.run) return;
   if (f.kind === 'theme' && typeof first.name === 'string') known.themes[f.key] = [first.name, first.hue];
+  if (f.kind === 'guild' && typeof first.name === 'string' && Number.isFinite(first.hue)) known.guilds[f.key] = [first.name, first.hue];
   for (const r of first.topTerritories || []) if (okRow(r, 3)) learnPlace(r[0], r[1], r[2], r[3]);
   focusBar();
   const data = { places: { ...first.places }, themes: { ...first.themes } };
@@ -1456,17 +1481,22 @@ async function renderSlice(run, f, p, start, end, firsts) {
   const openPiece = t => open(UNIT[p] === 'month' ? 'month' : 'day', t);
   if (p === 'year') chartEl.replaceChildren(yearCalendar(new Date(start).getFullYear(), buckets, t => open('day', t), t => open('month', t)));
   else chartEl.replaceChildren(columnChart(p, buckets, p === 'hour' ? null : p === 'day' ? b => open('hour', b.from) : b => openPiece(b.from)));
-  // A surveyor's themes first, so each of their territories has its theme's hue.
-  const themes = f.kind === 'surveyor' ? themeRows(first.topThemes) : [];
+  // A surveyor's or guild's themes first, so each of their territories has its theme's hue.
+  const themes = f.kind !== 'theme' ? themeRows(first.topThemes) : [];
   const places = territoryRows(first.topTerritories, null);
-  cardsEl.replaceChildren(...(total ? f.kind === 'surveyor'
+  const cards = f.kind === 'surveyor'
     ? [rankCard('Top territories', places, 'Hidden words charted in each'), rankCard('Themes', themes, 'Hidden words, by their territory’s theme')]
-    : [rankCard('Top surveyors', surveyorRows(first.topSurveyors), 'By initials, which anyone can share'), rankCard('Top territories', places, 'Hidden words charted in each')]
-    : []));
+    : f.kind === 'guild'
+      ? [rankCard('Members who charted most', surveyorRows(first.topSurveyors), 'By initials, as everywhere in the log'), rankCard('Top territories', places, 'Hidden words charted in each'), rankCard('Themes', themes, 'Hidden words, by their territory’s theme')]
+      : [rankCard('Top surveyors', surveyorRows(first.topSurveyors), 'By initials, which anyone can share'), rankCard('Top territories', places, 'Hidden words charted in each')];
+  cardsEl.replaceChildren(...(total ? cards : []));
   entries = entries.filter(e => e[6] >= start && e[6] < end);
   shareSlice(run, f, p, start, end, { total, world: buckets.reduce((a, b) => a + b.world, 0), places, surveyors: surveyorRows(first.topSurveyors), words: latestWords(entries, data) });
   if (!entries.length) {
-    return status('Nothing charted', f.kind === 'surveyor' ? `No words signed ${f.key} in this period.` : 'No hidden words with this theme charted in this period.');
+    // A guild the log has never had a word from has no name there either.
+    if (f.kind === 'guild' && !known.guilds[f.key]) return status('No such guild', 'The log has no words from this guild. A guild’s words show here once its members chart some.');
+    return status('Nothing charted', f.kind === 'surveyor' ? `No words signed ${f.key} in this period.`
+      : f.kind === 'guild' ? 'This guild’s members charted no words in this period.' : 'No hidden words with this theme charted in this period.');
   }
   // Words under each hour of a day or hour, else under each day.
   const unit = p === 'hour' || p === 'day' ? 'hour' : 'day';
@@ -1484,6 +1514,16 @@ function shareSlice(run, f, p, start, end, { total, world, places, surveyors, wo
       text: total
         ? `${f.key} charted ${plural(total, 'word')} first in Letterfield’s shared survey ${said}${top ? `, most in ${top}` : ''}.${latestSaid(words)}`
         : `No words signed ${f.key} in Letterfield’s shared survey ${said}.`,
+    });
+  }
+  if (f.kind === 'guild') {
+    const [name, hue] = known.guilds[f.key] || ['A guild'];
+    return offerShare(run, {
+      kind: 'Guild', name, hue, when: whenShown(p, start, end), words,
+      stats: [['Words charted first', total.toLocaleString()], ['Top member', surveyors[0]?.label || '—'], ['Top territory', top || '—']],
+      text: total
+        ? `The ${name} charted ${plural(total, 'word')} first in Letterfield’s shared survey ${said}${top ? `, most in ${top}` : ''}.${latestSaid(words)}`
+        : `The ${name} charted no words in Letterfield’s shared survey ${said}.`,
     });
   }
   const [name, hue] = known.themes[f.key] || [`Theme ${f.key}`];

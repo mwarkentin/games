@@ -8,7 +8,10 @@ the names need the map's data, which only the Worker and the game hold.
 Supernovas are worked out from the entries, as a sector does, for each
 territory the test gives a total: once that many of its hidden words are in,
 the one that made it is the last word. The timelapse's index names every
-theme, so themes the test doesn't give get a made-up name and hue.
+theme, so themes the test doesn't give get a made-up name and hue. An entry
+can carry a ninth item, the log id of the guild it counts for, which the
+real log keeps in a column of its own and never sends with entries; the
+test names each guild in `guilds`.
 """
 
 from __future__ import annotations
@@ -34,6 +37,11 @@ def in_world(e) -> bool:
     return e[4] == 0 and all(AREA_CELLS[0] <= v < AREA_CELLS[1] for v in (e[1], e[2]))
 
 
+def guild_of(e) -> str:
+    """The log id of the guild an entry counts for, or '' for none."""
+    return e[8] if len(e) > 8 else ""
+
+
 def month_hours(m: int) -> tuple[int, int]:
     """A UTC month's first and last-plus-one hour, months since January 1970."""
     def start(k: int) -> int:
@@ -43,10 +51,11 @@ def month_hours(m: int) -> tuple[int, int]:
 
 class FakeSurveyLog:
     def __init__(self, entries=(), places=None, themes=None, page=PAGE, fail=False, now_ms=None,
-                 slice_page=SLICE_PAGE, totals=None, timelapse_page=TIMELAPSE_PAGE):
+                 slice_page=SLICE_PAGE, totals=None, timelapse_page=TIMELAPSE_PAGE, guilds=None):
         self.entries = sorted(entries, key=lambda e: (e[6], e[0], e[1], e[2], e[3]))
         self.places = places or {}    # 'rx,ry' -> name
         self.themes = themes or {}    # theme index -> [name, hue]
+        self.guilds = guilds or {}    # log id -> [name, hue]
         self.totals = totals or {}    # 'rx,ry' -> hidden words in that territory (112 if not given; only these go supernova)
         self.page = page
         self.slice_page = slice_page
@@ -71,11 +80,13 @@ class FakeSurveyLog:
         month = re.search(r"/v1/survey/log/month/(\d+)$", url)
         top = re.search(r"/v1/survey/log/top/(\d+)/(\d+)$", url)
         top_hours = re.search(r"/v1/survey/log/top/hours/(\d+)/(\d+)$", url)
-        sliced = re.search(r"/v1/survey/log/(surveyor|theme)/([A-Z]{3}|\d+)/(\d+)/(\d+)(?:\?before=(\d+))?$", url)
+        sliced = re.search(r"/v1/survey/log/(surveyor|theme|guild)/([A-Z]{3}|[0-9a-f]{10}|\d+)/(\d+)/(\d+)(?:\?before=(\d+))?$", url)
         territory = re.search(r"/v1/survey/log/territory/(-?\d+)/(-?\d+)$", url)
         novas = re.search(r"/v1/survey/log/novas/(\d+)/(\d+)(?:\?before=(\d+))?$", url)
         timelapse = re.search(r"/v1/survey/log/timelapse$", url)
         timelapse_day = re.search(r"/v1/survey/log/timelapse/(\d+)(?:\?after=(\d+))?$", url)
+        follow = re.search(r"/v1/survey/log/timelapse/guild/([0-9a-f]{10})$", url)
+        follow_day = re.search(r"/v1/survey/log/timelapse/guild/([0-9a-f]{10})/(\d+)$", url)
         future = self.now_ms is not None and (
             (day and int(day[1]) > self.now_ms // DAY_MS) or (hour and int(hour[1]) > self.now_ms // HOUR_MS)
             or (month and month_hours(int(month[1]))[0] > self.now_ms // HOUR_MS)
@@ -84,6 +95,7 @@ class FakeSurveyLog:
             or (sliced and int(sliced[3]) > self.now_ms // HOUR_MS)
             or (novas and int(novas[1]) > self.now_ms // HOUR_MS)
             or (timelapse_day and int(timelapse_day[1]) > self.now_ms // DAY_MS)
+            or (follow_day and int(follow_day[2]) > self.now_ms // DAY_MS)
         )
         if future:
             route.fulfill(status=400, headers=headers, body=json.dumps({"error": "that day has not started"}))
@@ -103,6 +115,15 @@ class FakeSurveyLog:
                 "themes": [self.themes.get(i, [f"Theme {i}", i * 37 % 360]) for i in range(THEME_COUNT)],
                 "layout": [LAT_B, THEME_COUNT],
             }
+        elif follow:
+            lid = follow[1]
+            days = Counter(e[6] // DAY_MS for e in self.entries if guild_of(e) == lid)
+            name, hue = self.guilds.get(lid, [None, None])
+            body = {"name": name, "hue": hue, "days": [[d, n] for d, n in sorted(days.items())]}
+        elif follow_day:
+            lid, d = follow_day[1], int(follow_day[2])
+            rows = [e for e in self.entries if guild_of(e) == lid and e[6] // DAY_MS == d]
+            body = {"day": d, "words": [[e[6] - d * DAY_MS, e[1], e[2], e[3]] for e in rows], "next": None}
         elif timelapse_day:
             d, after = int(timelapse_day[1]), int(timelapse_day[2] or 0)
             rows = [e for e in self.entries if e[6] // DAY_MS == d]
@@ -142,18 +163,26 @@ class FakeSurveyLog:
                     [th, *self.themes.get(th, [f"Theme {th}", 200]), n]
                     for th, n in sorted(themes.items(), key=lambda r: (-r[1], r[0]))
                 ],
+                "guilds": [
+                    [g, *self.guilds[g], n]
+                    for g, n in sorted(Counter(guild_of(e) for e in rows if guild_of(e) in self.guilds).items(), key=lambda r: (-r[1], r[0]))[:10]
+                ],
             }
         elif sliced:
             kind, key, first, last, before = sliced[1], sliced[2], int(sliced[3]), int(sliced[4]), int(sliced[5] or 0)
             if kind == "theme" and int(key) not in self.themes:
                 route.fulfill(status=400, headers=headers, body=json.dumps({"error": "no such theme"}))
                 return
-            mine = (lambda e: e[5] == key) if kind == "surveyor" else (lambda e: e[4] == 0 and e[7] == int(key))
+            mine = {
+                "surveyor": lambda e: e[5] == key,
+                "guild": lambda e: guild_of(e) == key,
+                "theme": lambda e: e[4] == 0 and e[7] == int(key),
+            }[kind]
             rows = [e for e in self.entries if mine(e) and first <= e[6] // HOUR_MS < last]
             counts = Counter(e[6] // HOUR_MS for e in rows)
             world = Counter(e[6] // HOUR_MS for e in rows if in_world(e))
             body = {
-                "kind": kind, "key": key if kind == "surveyor" else int(key), "from": first, "to": last,
+                "kind": kind, "key": int(key) if kind == "theme" else key, "from": first, "to": last,
                 "words": len(rows), "world": sum(world.values()),
                 "hours": [[h, n, world[h]] for h, n in sorted(counts.items())],
                 **self.tops(rows, kind),
@@ -161,6 +190,8 @@ class FakeSurveyLog:
             }
             if kind == "theme":
                 body["name"], body["hue"] = self.themes[int(key)]
+            if kind == "guild":
+                body["name"], body["hue"] = self.guilds.get(key, [None, None])
         elif novas and self.fail_novas:
             route.fulfill(status=503, headers=headers, body=json.dumps({"error": "server error"}))
             return
@@ -205,7 +236,7 @@ class FakeSurveyLog:
             rx = lambda e: f"{e[1] // 48},{e[2] // 48}"
             body = {
                 "hour": h,
-                "entries": rows,
+                "entries": [e[:8] for e in rows],
                 "places": {rx(e): self.places[rx(e)] for e in rows if rx(e) in self.places},
                 "themes": {str(e[7]): self.themes[e[7]] for e in rows if e[7] in self.themes},
                 # The real cursor is the last entry's at~key; an offset does here.
@@ -235,7 +266,7 @@ class FakeSurveyLog:
         part = rows[start : start + size]
         place = lambda e: f"{e[1] // 48},{e[2] // 48}"
         return {
-            "entries": part,
+            "entries": [e[:8] for e in part],
             "places": {place(e): self.places[place(e)] for e in part if place(e) in self.places},
             "themes": {str(e[7]): self.themes[e[7]] for e in part if e[7] in self.themes},
             "next": str(start + size) if len(rows) > start + size else None,
@@ -249,14 +280,14 @@ class FakeSurveyLog:
             [rx, ry, self.places.get(f"{rx},{ry}", f"Place {rx},{ry}"), theme_of[(rx, ry)], n]
             for (rx, ry), n in sorted(places.items(), key=lambda r: (-r[1], r[0][1], r[0][0]))[:10]
         ]}
-        if kind == "surveyor":
+        if kind in ("surveyor", "guild"):
             themes = Counter()
             for place, n in places.items():
                 themes[theme_of[place]] += n
             out["topThemes"] = [
                 [th, *self.themes.get(th, [f"Theme {th}", 200]), n] for th, n in sorted(themes.items(), key=lambda r: (-r[1], r[0]))
             ]
-        else:
+        if kind != "surveyor":
             people = Counter(e[5] for e in rows if e[5])
             out["topSurveyors"] = [[i, n] for i, n in sorted(people.items(), key=lambda r: (-r[1], r[0]))[:10]]
         return out

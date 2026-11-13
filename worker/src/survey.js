@@ -34,10 +34,17 @@
 // and how far it scales.
 //
 // Messages are JSON. From the game:
-//   {t: 'me', initials}             initials to credit claims to ('' for none)
+//   {t: 'me', initials, token, hide, quiet, guild}
+//                                   initials to credit claims to ('' for none); the game's
+//                                   secret token, whose hash names the player (survey-social.js);
+//                                   hide: leave me out of the surveyor list; quiet: no emotes;
+//                                   guild: their guild's code, checked with it (survey-guild.js)
 //   {t: 'pos', x, y} / {t: 'pos', away: true}
 //                                   where the player is looking, if in this sector
 //   {t: 'claim', w, x, y, d}        a word the player just circled
+//   {t: 'here'}                     still here: an idle game sends it now and then, so the
+//                                   sector keeps listing it (see REFRESH_MS)
+//   {t: 'emote', to, e, s}          emote e for player `to`, seen in sector s (survey-social.js)
 // To the game (a frame may also be a JSON array of these, sent together):
 //   {t: 'hello', you, sector, claims}   on joining; claims are [w, x, y, d, s, initials, at]
 //   {t: 'claimed', c, by}           a new claim, to everyone; `by` is the claimer's id
@@ -45,7 +52,12 @@
 //   {t: 'error', key, error}        to a claimer, for a word that isn't there, 'slow down'
 //                                   when the socket or its address claims too fast, or
 //                                   'daily limit' once its address has charted DAILY_CLAIMS today
-//   {t: 'presence', n, p}           players here ([id, initials, x, y]), about once a second
+//   {t: 'presence', n, p}           players here ([id, initials, x, y, guild tag?]), about once a
+//                                   second; the id is the player's (from their token) once they've sent one
+//   {t: 'emote', from, ini, e, r}   an emote for this player from player `from`, in territory r
+//   {t: 'emoted', to, e, ok|error}  what became of an emote this player sent
+//   {t: 'guild', tag, on}           which of this player's guild are online, and where
+//                                   ([id, initials, rx, ry, idle]), from the Atlas, as it changes
 //   {t: 'world', charted, total, players}   the whole world's totals, as they change
 //   {t: 'nova', n: [rx, ry, at, w, x, y, d, initials], ago}
 //                                   a territory in another sector has gone supernova, `ago` ms before:
@@ -73,6 +85,8 @@ import { BLOCKED_INITIALS, INITIALS, corsHeaders, hashAddress, json } from './le
 import { PASS_PATH, checkPass, handlePass } from './survey-pass.js';
 import { CH, DIRS, MAP_VERSION, RC, STRAY_MIN, VOCAB, chunk, fdiv, keyOf, letterAt, regionTheme, territoryTotal } from './letterfield-world.js';
 import { LOG_BATCH, LOG_MS, LOG_RETRY_MAX_MS, writeLog } from './survey-log.js';
+import { GUILD_RECHECK_MS, GUILD_TAG, GUILD_TAGS_MAX, checkGuild, matesFor, noteMates, passMates } from './survey-guild.js';
+import { ATLAS_LIST_PATH, EMOTE_PATH, LIST_MS, REFRESH_MS, goodWho, listed, sendEmote, snapshot, takeEmote, takeMe } from './survey-social.js';
 
 export const SECTOR = RC * 4;         // cells per sector side
 export const MAX_PLAYERS = 750;       // sockets one sector accepts (bench/load.js: one sector saturates between 750 and 1,000)
@@ -348,6 +362,11 @@ export class Sector {
     // before the log starts with none logged, so it sends its old claims too.
     this.sql.exec('CREATE INDEX IF NOT EXISTS claims_by_time ON claims (at, key)');
     this.sql.exec('CREATE TABLE IF NOT EXISTS logged (id INTEGER PRIMARY KEY CHECK (id = 0), at INTEGER NOT NULL)');
+    // Each claim's guild, as the log knows it: the log id of the guild its
+    // charter was in, '' for none or for a charter off the surveyor list. The
+    // guilds' names go to the log with their claims (noteGuild, flushLog).
+    try { this.sql.exec('SELECT guild FROM claims LIMIT 0'); } catch { this.sql.exec("ALTER TABLE claims ADD COLUMN guild TEXT NOT NULL DEFAULT ''"); }
+    this.sql.exec('CREATE TABLE IF NOT EXISTS guild_names (lid TEXT PRIMARY KEY, a INTEGER NOT NULL, b INTEGER NOT NULL, c INTEGER NOT NULL) WITHOUT ROWID');
     // Supernovas: the sector's territories whose every hidden word is
     // charted, each recorded by the claim that completed it (supernova()),
     // and copied to the log once it has their last word (logged = 1).
@@ -375,6 +394,8 @@ export class Sector {
     if (claim) return this.claimOf(decodeURIComponent(claim[1]));
     const nova = request.method === 'GET' && pathname.match(NOVA_PATH);
     if (nova) return this.novaOf(Number(nova[1]), Number(nova[2]));
+    // An emote for a player here, from another sector (survey-social.js).
+    if (request.method === 'POST' && pathname === EMOTE_PATH) return takeEmote(this, request);
     if (request.method === 'POST' && pathname === NEAR_PATH) return this.near(request);
     const m = pathname.match(SECTOR_PATH);
     if (!m) return new Response('not found', { status: 404 });
@@ -536,7 +557,10 @@ export class Sector {
     if (!me || !msg) return;
     if (msg.t === 'me') {
       const initials = typeof msg.initials === 'string' && INITIALS.test(msg.initials) && !BLOCKED_INITIALS.has(msg.initials) ? msg.initials : '';
-      if (initials !== me.initials) { me.initials = initials; this.save(ws, me); this.schedulePresence(false); }
+      // Who the player is, and whether they're listed or take emotes: for the surveyor list.
+      const social = await takeMe(me, msg);
+      if (social) this.reportDue = true;
+      if (initials !== me.initials || social) { me.initials = initials; this.save(ws, me); this.schedulePresence(false); }
     } else if (msg.t === 'pos') {
       const ok = [msg.x, msg.y].every((v) => Number.isFinite(v) && Math.abs(v) < LIMIT);
       const away = msg.away || !ok;
@@ -547,6 +571,13 @@ export class Sector {
       this.schedulePresence(away);
     } else if (msg.t === 'claim') {
       await this.claim(ws, me, msg);
+    } else if (msg.t === 'emote') {
+      await sendEmote(this, ws, me, msg);
+    }
+    // The guild the game names is checked when it's new, and now and then while they play.
+    if (me.guild && me.pid && !me.checking && this.now() - (me.guildAt ?? 0) >= GUILD_RECHECK_MS) {
+      const checked = checkGuild(this, ws, me);
+      this.ctx.waitUntil?.(checked);
     }
     this.catchUp();
   }
@@ -574,9 +605,9 @@ export class Sector {
     // claims in order of time) can't skip it.
     const at = this.claimTime(now);
     const inserted = this.sql.exec(
-      `INSERT INTO claims (key, w, x, y, d, s, initials, at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      `INSERT INTO claims (key, w, x, y, d, s, initials, at, guild) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT (key) DO NOTHING RETURNING key`,
-      c.key, c.w, c.x, c.y, c.d, c.s, me.initials, at,
+      c.key, c.w, c.x, c.y, c.d, c.s, me.initials, at, (!me.hide && me.tag && me.lid) || '',
     ).toArray().length;
     if (!inserted) {
       const first = this.sql.exec('SELECT w, x, y, d, s, initials, at FROM claims WHERE key = ?', c.key).one();
@@ -620,7 +651,13 @@ export class Sector {
   }
 
   unlogged(limit) {
-    return this.sql.exec('SELECT key, w, x, y, d, s, initials, at FROM claims WHERE at >= ? ORDER BY at, key LIMIT ?', this.logMark(), limit).toArray();
+    return this.sql.exec('SELECT key, w, x, y, d, s, initials, at, guild FROM claims WHERE at >= ? ORDER BY at, key LIMIT ?', this.logMark(), limit).toArray();
+  }
+
+  // A guild's name, from its own answer to a member's check (checkGuild), kept
+  // for the log: names never change, so each is written here once.
+  noteGuild(lid, [a, b, c]) {
+    this.sql.exec('INSERT INTO guild_names (lid, a, b, c) VALUES (?, ?, ?, ?) ON CONFLICT (lid) DO NOTHING', lid, a, b, c);
   }
 
   // Copies new claims to the log within LOG_MS, from an alarm. An alarm,
@@ -670,7 +707,11 @@ export class Sector {
     const upTo = rows.length ? rows.at(-1).at : mark;
     const novas = this.sql.exec('SELECT * FROM novas WHERE logged = 0 AND at <= ?', upTo).toArray();
     if (!rows.length && !novas.length) return false;
-    await writeLog(this.env.LOG_DB, rows, novas);
+    // The names of the guilds these claims count for, which D1 keeps once each.
+    // A sector only ever sees a few guilds, so all their names are read.
+    const lids = new Set(rows.map((r) => r.guild).filter(Boolean));
+    const guilds = lids.size ? this.sql.exec('SELECT lid, a, b, c FROM guild_names').toArray().filter((g) => lids.has(g.lid)) : [];
+    await writeLog(this.env.LOG_DB, rows, novas, guilds);
     if (rows.length) this.sql.exec('INSERT INTO logged (id, at) VALUES (0, ?) ON CONFLICT (id) DO UPDATE SET at = excluded.at', upTo);
     for (const n of novas) this.sql.exec('UPDATE novas SET logged = 1 WHERE rx = ? AND ry = ?', n.rx, n.ry);
     return rows.length === LOG_BATCH;
@@ -733,13 +774,22 @@ export class Sector {
 
   async webSocketClose(ws) {
     try { ws.close(1000); } catch { /* already closed */ }
-    this.people?.delete(ws);
+    this.gone(ws);
     this.left();
   }
 
   async webSocketError(ws) {
-    this.people?.delete(ws);
+    this.gone(ws);
     this.left();
+  }
+
+  // A socket closed. A player who was on the surveyor list (or their guild's)
+  // comes off it with a report straight away, rather than lingering for minutes.
+  gone(ws) {
+    let me = this.people?.get(ws);
+    if (!me) try { me = ws.deserializeAttachment(); } catch { /* nothing kept */ }
+    if (me?.pid && (!me.hide || me.tag) && me.x !== null && me.x !== undefined) this.reportDue = true;
+    this.people?.delete(ws);
   }
 
   save(ws, me) {
@@ -758,7 +808,10 @@ export class Sector {
   catchUp() {
     if (this.batch.length) this.sendBatch();
     if (this.presenceDue && this.now() - this.presenceAt >= PRESENCE_MS) this.sendPresence();
-    if (this.reportDue) this.maybeReport();
+    // At least every REFRESH_MS while anything comes in, changed or not, so the
+    // Atlas keeps counting and listing players who sit still (their game says
+    // 'here' every so often).
+    if (this.reportDue || this.now() - this.reportedAt >= REFRESH_MS) this.maybeReport();
   }
 
   // Sending each claim to every socket costs players × claims sends, which
@@ -805,8 +858,9 @@ export class Sector {
   sendPresence() {
     this.presenceAt = this.now();
     this.presenceDue = false;
-    const here = this.here().sort((a, b) => b.moved - a.moved);
-    broadcast(this.ctx, JSON.stringify({ t: 'presence', n: here.length, p: here.slice(0, PRESENCE_MAX).map((p) => [p.id, p.initials, p.x, p.y]) }));
+    // One caret a player: a player on two linked devices here shows where they last moved.
+    const seen = new Set(), here = this.here().sort((a, b) => b.moved - a.moved).filter((p) => { const id = p.pid || p.id; return !seen.has(id) && seen.add(id); });
+    broadcast(this.ctx, JSON.stringify({ t: 'presence', n: here.length, p: here.slice(0, PRESENCE_MAX).map((p) => [p.pid || p.id, p.initials, p.x, p.y, ...(p.tag ? [p.tag] : [])]) }));
     this.maybeReport();
   }
 
@@ -817,6 +871,22 @@ export class Sector {
     if (!here.length) return null;
     const median = (values) => Math.floor(values.sort((a, b) => a - b)[values.length >> 1]);
     return [median(here.map((p) => p.x)), median(here.map((p) => p.y))];
+  }
+
+  // The surveyors listed here, for a report, and the guilds of everyone here,
+  // for the Atlas to say which of their members are online: none leaves each out.
+  listing() {
+    const [sx, sy] = this.coords();
+    const who = listed(this.everyone().values(), sx, sy, this.now());
+    const tags = [...new Set([...this.everyone().values()].map((p) => p.tag).filter(Boolean))].slice(0, GUILD_TAGS_MAX);
+    return { ...(who.length ? { who } : {}), ...(tags.length ? { tags } : {}) };
+  }
+
+  // Whether an emote from here may go to sector (sx, sy): one in the shared
+  // world, which the surveyor list covers, or one beside this, in view.
+  reaches(sx, sy) {
+    const [x, y] = this.coords();
+    return inArea(sx, sy) || Math.max(Math.abs(sx - x), Math.abs(sy - y)) <= 1;
   }
 
   // Addresses past the daily cap; a new UTC day starts with none.
@@ -869,10 +939,10 @@ export class Sector {
         method: 'POST',
         body: JSON.stringify({
           sx, sy, players: this.here().length, charted: this.chartedCounts(), hot: this.crowd() ?? this.hot,
-          by: [], day: this.overDay, overAt: this.overAt, novaSeq: this.heardNovaSeq(),
+          by: [], day: this.overDay, overAt: this.overAt, novaSeq: this.heardNovaSeq(), ...this.listing(),
         }),
       });
-      if (res.ok) this.heard(await res.json());
+      if (res.ok) { const world = await res.json(); this.heard(world); passMates(this, world.guilds); }
     } catch { /* claims go ahead */ }
   }
 
@@ -910,7 +980,7 @@ export class Sector {
         method: 'POST',
         body: JSON.stringify({
           sx, sy, players: this.here().length, charted: this.chartedCounts(), hot: this.crowd() ?? this.hot,
-          by: [...by], day: this.overDay, overAt: this.overAt, ...(unpassed ? { unpassed } : {}),
+          by: [...by], day: this.overDay, overAt: this.overAt, ...(unpassed ? { unpassed } : {}), ...this.listing(),
           novaSeq: this.heardNovaSeq(), ...(novas.length ? { novas } : {}),
         }),
       });
@@ -925,6 +995,7 @@ export class Sector {
       this.reporting = false;
     }
     this.heard(world);
+    passMates(this, world?.guilds);
     if (this.novasOwed.length) this.maybeReport();  // one that came while this report was out
     if (!isInt(world?.charted, 0, AREA_WORDS) || !isInt(world?.players, 0, 1e9)) return;
     if (this.world && world.charted === this.world.charted && world.players === this.world.players) return;
@@ -943,10 +1014,11 @@ export class Atlas {
     this.env = env;
     this.sql = ctx.storage.sql;
     this.now = () => Date.now();
-    this.rows = null;      // 'sx,sy' → {sx, sy, players, charted: [16 counts], done, at}, loaded on first use
+    this.rows = null;      // 'sx,sy' → {sx, sy, players, charted: [16 counts], done, hot, who, at}, loaded on first use
     this.dirty = new Set();
     this.saveTimer = null;
     this.view = null;      // the world map as JSON, rebuilt at most every VIEW_MS
+    this.list = null;      // everyone on the surveyor list as JSON, rebuilt at most every LIST_MS
     this.daily = dailyClaims(env);
     // Words each address charted today (UTC), and those past the daily cap in
     // the order they got there. Kept in memory only: the Atlas hears from
@@ -984,7 +1056,7 @@ export class Atlas {
     if (!this.rows) {
       this.rows = new Map();
       for (const r of this.sql.exec('SELECT sx, sy, charted, done FROM sectors').toArray()) {
-        this.rows.set(`${r.sx},${r.sy}`, { sx: r.sx, sy: r.sy, players: 0, charted: r.charted.split(',').map(Number), done: r.done, hot: null, at: 0 });
+        this.rows.set(`${r.sx},${r.sy}`, { sx: r.sx, sy: r.sy, players: 0, charted: r.charted.split(',').map(Number), done: r.done, hot: null, who: [], at: 0 });
       }
     }
     return this.rows;
@@ -1001,7 +1073,8 @@ export class Atlas {
         && Array.isArray(r.charted) && r.charted.length === TERR * TERR && r.charted.every((n) => isInt(n, 0, 1000))
         && Array.isArray(by) && by.length <= MAX_PLAYERS * 4
         && by.every((e) => Array.isArray(e) && typeof e[0] === 'string' && HASH.test(e[0]) && isInt(e[1], 1, TERR * TERR * 1000))
-        && (r.unpassed === undefined || isInt(r.unpassed, 0, 1e6))
+        && (r.unpassed === undefined || isInt(r.unpassed, 0, 1e6)) && goodWho(r.who, r.sx, r.sy, MAX_PLAYERS)
+        && (r.tags === undefined || (Array.isArray(r.tags) && r.tags.length <= GUILD_TAGS_MAX && r.tags.every((t) => typeof t === 'string' && GUILD_TAG.test(t))))
         && (r.novaSeq === undefined || Number.isInteger(r.novaSeq)) && (r.novas === undefined || (Array.isArray(r.novas) && r.novas.length <= TERR * TERR));
       if (!ok) return json({ error: 'bad report' }, 400);
       this.tally();
@@ -1010,7 +1083,8 @@ export class Atlas {
       const key = `${r.sx},${r.sy}`, done = r.charted.reduce((a, b) => a + b, 0), old = this.load().get(key);
       const inside = (v, s) => Number.isInteger(v) && fdiv(v, SECTOR) === s;
       const hot = Array.isArray(r.hot) && inside(r.hot[0], r.sx) && inside(r.hot[1], r.sy) ? r.hot.slice(0, 2) : old?.hot ?? null;
-      this.rows.set(key, { sx: r.sx, sy: r.sy, players: r.players, charted: r.charted, done, hot, at: this.now() });
+      this.rows.set(key, { sx: r.sx, sy: r.sy, players: r.players, charted: r.charted, done, hot, who: r.who ?? [], at: this.now() });
+      noteMates(this, key, r.who, this.now());  // who's online in each guild (survey-guild.js)
       if (!old || old.done !== done) this.save(key);
       this.takeNovas(r);
       // The list of addresses past the cap goes back only when it has
@@ -1018,10 +1092,17 @@ export class Atlas {
       const fresh = r.day === this.day && r.overAt === this.overList.length;
       return json({
         ...this.totals(), day: this.day, overAt: this.overList.length, ...(fresh ? {} : { over: this.overList.slice(-DAILY_LIST_MAX) }),
+        ...(r.tags?.length ? { guilds: matesFor(this, r.tags, this.now(), ONLINE_MS) } : {}),
         ...this.novasFor(r.novaSeq),
       });
     }
     if (request.method === 'GET' && pathname === TOTALS_PATH) return json(this.totals());
+    // Everyone on the surveyor list, rebuilt at most every LIST_MS (survey-social.js).
+    if (request.method === 'GET' && pathname === ATLAS_LIST_PATH) {
+      const now = this.now();
+      if (!this.list || now - this.list.at >= LIST_MS) this.list = { at: now, body: JSON.stringify(snapshot(this.load().values(), now, ONLINE_MS)) };
+      return new Response(this.list.body, { headers: { 'Content-Type': 'application/json; charset=utf-8' } });
+    }
     if (request.method === 'GET' && pathname === '/world') {
       const now = this.now();
       if (!this.view || now - this.view.at >= VIEW_MS) this.view = { at: now, body: JSON.stringify(this.worldMap()) };
