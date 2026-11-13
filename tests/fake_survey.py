@@ -244,7 +244,8 @@ def player_id(token: str) -> str:
 
 class FakeGuilds:
     """The guilds' paths, as worker/src/survey-guild.js answers them. `guilds` maps a
-    code to {"name": [a, b, c], "tag": "8 hex", "members": [[id, initials, seen], ...]}."""
+    code to {"name": [a, b, c], "tag": "8 hex", "members": [[id, initials, seen], ...]}, with
+    "lid" (10 hex, the guild's id in the survey log) if it has one."""
 
     def __init__(self, guilds=None, status=None):
         self.guilds = {code: {**g, "members": [list(m) for m in g["members"]]} for code, g in (guilds or {}).items()}
@@ -269,7 +270,8 @@ class FakeGuilds:
             self.made += 1
             code = f"GDN{'ABCDEFGHJKMNPQRSTUVWXYZ23456789'[self.made]}22"  # the game's alphabet: no 0, 1, I, L or O
             tag = f"{0xC0DE0000 + self.made:08x}"
-            self.guilds[code] = {"name": body["name"], "tag": tag, "members": [[pid, body["initials"], NOW_MS]]}
+            lid = f"{0xC0DE000000 + self.made:010x}"
+            self.guilds[code] = {"name": body["name"], "tag": tag, "lid": lid, "members": [[pid, body["initials"], NOW_MS]]}
             return reply(201, {"code": code, **self.guilds[code]})
         parts = path.strip("/").split("/")
         g = self.guilds.get(parts[0])

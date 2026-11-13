@@ -346,6 +346,11 @@ export class Sector {
     // before the log starts with none logged, so it sends its old claims too.
     this.sql.exec('CREATE INDEX IF NOT EXISTS claims_by_time ON claims (at, key)');
     this.sql.exec('CREATE TABLE IF NOT EXISTS logged (id INTEGER PRIMARY KEY CHECK (id = 0), at INTEGER NOT NULL)');
+    // Each claim's guild, as the log knows it: the log id of the guild its
+    // charter was in, '' for none or for a charter off the surveyor list. The
+    // guilds' names go to the log with their claims (noteGuild, flushLog).
+    try { this.sql.exec('SELECT guild FROM claims LIMIT 0'); } catch { this.sql.exec("ALTER TABLE claims ADD COLUMN guild TEXT NOT NULL DEFAULT ''"); }
+    this.sql.exec('CREATE TABLE IF NOT EXISTS guild_names (lid TEXT PRIMARY KEY, a INTEGER NOT NULL, b INTEGER NOT NULL, c INTEGER NOT NULL) WITHOUT ROWID');
     // Supernovas: the sector's territories whose every hidden word is
     // charted, each recorded by the claim that completed it (supernova()),
     // and copied to the log once it has their last word (logged = 1).
@@ -548,9 +553,9 @@ export class Sector {
     // claims in order of time) can't skip it.
     const at = this.claimTime(now);
     const inserted = this.sql.exec(
-      `INSERT INTO claims (key, w, x, y, d, s, initials, at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      `INSERT INTO claims (key, w, x, y, d, s, initials, at, guild) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT (key) DO NOTHING RETURNING key`,
-      c.key, c.w, c.x, c.y, c.d, c.s, me.initials, at,
+      c.key, c.w, c.x, c.y, c.d, c.s, me.initials, at, (!me.hide && me.tag && me.lid) || '',
     ).toArray().length;
     if (!inserted) {
       const first = this.sql.exec('SELECT w, x, y, d, s, initials, at FROM claims WHERE key = ?', c.key).one();
@@ -590,7 +595,13 @@ export class Sector {
   }
 
   unlogged(limit) {
-    return this.sql.exec('SELECT key, w, x, y, d, s, initials, at FROM claims WHERE at >= ? ORDER BY at, key LIMIT ?', this.logMark(), limit).toArray();
+    return this.sql.exec('SELECT key, w, x, y, d, s, initials, at, guild FROM claims WHERE at >= ? ORDER BY at, key LIMIT ?', this.logMark(), limit).toArray();
+  }
+
+  // A guild's name, from its own answer to a member's check (checkGuild), kept
+  // for the log: names never change, so each is written here once.
+  noteGuild(lid, [a, b, c]) {
+    this.sql.exec('INSERT INTO guild_names (lid, a, b, c) VALUES (?, ?, ?, ?) ON CONFLICT (lid) DO NOTHING', lid, a, b, c);
   }
 
   // Copies new claims to the log within LOG_MS, from an alarm. An alarm,
@@ -640,7 +651,11 @@ export class Sector {
     const upTo = rows.length ? rows.at(-1).at : mark;
     const novas = this.sql.exec('SELECT * FROM novas WHERE logged = 0 AND at <= ?', upTo).toArray();
     if (!rows.length && !novas.length) return false;
-    await writeLog(this.env.LOG_DB, rows, novas);
+    // The names of the guilds these claims count for, which D1 keeps once each.
+    // A sector only ever sees a few guilds, so all their names are read.
+    const lids = new Set(rows.map((r) => r.guild).filter(Boolean));
+    const guilds = lids.size ? this.sql.exec('SELECT lid, a, b, c FROM guild_names').toArray().filter((g) => lids.has(g.lid)) : [];
+    await writeLog(this.env.LOG_DB, rows, novas, guilds);
     if (rows.length) this.sql.exec('INSERT INTO logged (id, at) VALUES (0, ?) ON CONFLICT (id) DO UPDATE SET at = excluded.at', upTo);
     for (const n of novas) this.sql.exec('UPDATE novas SET logged = 1 WHERE rx = ? AND ry = ?', n.rx, n.ry);
     return rows.length === LOG_BATCH;

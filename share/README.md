@@ -94,7 +94,7 @@ and `worker_domains.tf` there), in this order:
 
 ## Survey log views
 
-A surveyor's, theme's or territory's page of `letterfield-log.html` has a
+A surveyor's, theme's, guild's or territory's page of `letterfield-log.html` has a
 Share button too. With `SHARE_URL` set in that page, Share hands out this
 Worker's `/v/` address for the view instead of the page's own, and attaches
 no picture of its own, since the link's card is one (`src/view.js`):
@@ -102,7 +102,8 @@ no picture of its own, since the link's card is one (`src/view.js`):
 ```
 GET /v/surveyor/<initials>/<period>/<when>/<from>-<to>   a surveyor's day, week…
 GET /v/theme/<th>/<period>/<when>/<from>-<to>            a theme's
-GET /v/surveyor/<initials>/all, /v/theme/<th>/all        all time
+GET /v/guild/<lid>/<period>/<when>/<from>-<to>           a guild's, by its log id (never its code or tag)
+GET /v/surveyor/<initials>/all, /v/theme/<th>/all        all time (and /v/guild/<lid>/all)
 GET /v/territory/<rx>,<ry>                               a territory (all time), a supernova once it's gone off
 GET /v/d/…, ….png                                        dark; the card itself
 ```

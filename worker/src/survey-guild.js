@@ -4,12 +4,13 @@
 // "Guilds" in SURVEY.md for the design and what it costs.
 //
 //   POST /v1/survey/guilds                 {token, initials, name: [a, b, c]}
-//     → 201 {code, name, tag, members}     a new guild, with you in it
+//     → 201 {code, name, tag, lid, members}     a new guild, with you in it
 //   GET  /v1/survey/guilds/<code>          → {name, size}, to say what an invite is to
-//   POST /v1/survey/guilds/<code>/join     {token, initials} → {code, name, tag, members}
+//   POST /v1/survey/guilds/<code>/join     {token, initials} → {code, name, tag, lid, members}
 //   POST /v1/survey/guilds/<code>/leave    {token} → {ok: true}; the last to leave ends it
-//   POST /v1/survey/guilds/<code>/roster   {token} → {code, name, tag, members}, for members only
-//     members are [[id, initials, seen], ...], most recently seen first
+//   POST /v1/survey/guilds/<code>/roster   {token} → {code, name, tag, lid, members}, for members only
+//     members are [[id, initials, seen], ...], most recently seen first, and
+//     lid is the guild's id in the survey log, for its page there
 //
 // No free text: a guild's name is three words from fixed lists, which the
 // game keeps (GUILD_WORDS says how long each is), and its colour comes from
@@ -17,18 +18,33 @@
 // The code stays secret among members: what everyone else can see is the
 // guild's tag, a random id that only says which carets share a guild.
 //
+// A guild has a third id, its log id, for the survey log (survey-log.js):
+// random again, so a guild's public page in the log can't be matched to the
+// carets wearing its tag. A guild made before the log knew guilds gets one
+// the first time it's asked.
+//
 // Sectors check membership here (POST /check, internal) when a player's game
 // names its guild, and again every GUILD_RECHECK_MS while they play, which is
-// also how a member's "last seen" stays current. The Atlas keeps who's online
+// also how a member's "last seen" stays current. The answer gives the tag, the
+// log id and the name, which the sector logs with each claim the member makes. The Atlas keeps who's online
 // in each guild from the reports sectors already send it (noteMates,
 // matesFor), and sectors pass that on to members as {t: 'guild', tag, on}.
 
 import { BLOCKED_INITIALS, CODE_ALPHABET, HttpError, INITIALS, corsHeaders, hashIp, json, rateLimit } from './leaderboard.js';
-import { GUILD_CODE, GUILD_TAG, PID, TOKEN, playerId } from './survey-social.js';
+import { GUILD_CODE, GUILD_LOG_ID, GUILD_TAG, PID, TOKEN, playerId } from './survey-social.js';
 
-export { GUILD_CODE, GUILD_TAG };
+export { GUILD_CODE, GUILD_LOG_ID, GUILD_TAG };
 export const GUILD_MAX = 50;                 // members a guild holds
-export const GUILD_WORDS = [16, 16, 8];      // the game's lists of words for names
+// The words of guilds' names, with the first word's hue, as the game's lists
+// (GUILD_FIRST, GUILD_SECOND, GUILD_THIRD in letterfield.html; a test checks
+// they match), so the survey log can name a guild without the game.
+export const GUILD_FIRST = [['Crimson', 350], ['Coral', 8], ['Copper', 22], ['Amber', 38], ['Golden', 50], ['Lime', 85], ['Fern', 115], ['Emerald', 145],
+  ['Jade', 165], ['Teal', 182], ['Azure', 200], ['Cobalt', 220], ['Indigo', 245], ['Violet', 270], ['Plum', 295], ['Rose', 325]];
+export const GUILD_SECOND = ['Compass', 'Sextant', 'Lantern', 'Quill', 'Atlas', 'Meridian', 'Beacon', 'Theodolite', 'Chart', 'Lodestar', 'Spyglass', 'Waypoint', 'Ledger', 'Inkwell', 'Horizon', 'Contour'];
+export const GUILD_THIRD = ['Society', 'Guild', 'Company', 'Circle', 'Club', 'Expedition', 'Survey', 'Fellowship'];
+export const GUILD_WORDS = [GUILD_FIRST.length, GUILD_SECOND.length, GUILD_THIRD.length];
+export const guildName = (n) => `${GUILD_FIRST[n[0]][0]} ${GUILD_SECOND[n[1]]} ${GUILD_THIRD[n[2]]}`;
+export const guildHue = (n) => GUILD_FIRST[n[0]][1];
 export const GUILD_RECHECK_MS = 15 * 60000;  // a sector checks a playing member again this often
 export const SEEN_MS = 10 * 60000;           // "last seen" is written at most this often
 export const GUILD_TAGS_MAX = 100;           // guilds one report can ask about
@@ -36,6 +52,7 @@ const GUILDS_PATH = '/v1/survey/guilds';
 const GUILD_PATH = /^\/v1\/survey\/guilds\/([^/]{1,16})(?:\/(join|leave|roster))?$/;
 const MAX_BODY = 1024;
 
+const randomHex = (bytes) => [...crypto.getRandomValues(new Uint8Array(bytes))].map((b) => b.toString(16).padStart(2, '0')).join('');
 const isInt = (v, min, max) => Number.isInteger(v) && v >= min && v <= max;
 const guildOf = (env, code) => env.GUILDS.get(env.GUILDS.idFromName(code));
 const ask = (env, code, path, body) => guildOf(env, code).fetch(`https://guild${path}`, body === undefined ? undefined : { method: 'POST', body: JSON.stringify(body) });
@@ -107,7 +124,13 @@ export class Guild {
 
   meta() {
     if (!this.sql.exec("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'guild'").toArray().length) return null;
-    return this.sql.exec('SELECT a, b, c, tag FROM guild WHERE id = 0').toArray()[0] ?? null;
+    // A guild from before the log knew guilds has no log id yet: it gets one now.
+    if (!this.lidReady) {
+      try { this.sql.exec('SELECT lid FROM guild LIMIT 0'); } catch { this.sql.exec('ALTER TABLE guild ADD COLUMN lid TEXT'); }
+      this.sql.exec('UPDATE guild SET lid = ? WHERE id = 0 AND lid IS NULL', randomHex(5));
+      this.lidReady = true;
+    }
+    return this.sql.exec('SELECT a, b, c, tag, lid FROM guild WHERE id = 0').toArray()[0] ?? null;
   }
 
   members() {
@@ -115,7 +138,7 @@ export class Guild {
   }
 
   whole(g) {
-    return { name: [g.a, g.b, g.c], tag: g.tag, members: this.members() };
+    return { name: [g.a, g.b, g.c], tag: g.tag, lid: g.lid, members: this.members() };
   }
 
   isMember(pid) {
@@ -139,10 +162,10 @@ export class Guild {
     if (pathname === '/create') {
       if (g) return reply({ error: 'code taken' }, 409);
       if (!initials || !goodName(body.name)) return reply({ error: 'bad request' }, 400);
-      this.sql.exec('CREATE TABLE IF NOT EXISTS guild (id INTEGER PRIMARY KEY CHECK (id = 0), a INTEGER NOT NULL, b INTEGER NOT NULL, c INTEGER NOT NULL, tag TEXT NOT NULL, created INTEGER NOT NULL)');
+      this.sql.exec('CREATE TABLE IF NOT EXISTS guild (id INTEGER PRIMARY KEY CHECK (id = 0), a INTEGER NOT NULL, b INTEGER NOT NULL, c INTEGER NOT NULL, tag TEXT NOT NULL, created INTEGER NOT NULL, lid TEXT)');
       this.sql.exec('CREATE TABLE IF NOT EXISTS members (pid TEXT PRIMARY KEY, initials TEXT NOT NULL, joined INTEGER NOT NULL, seen INTEGER NOT NULL) WITHOUT ROWID');
-      const tag = [...crypto.getRandomValues(new Uint8Array(4))].map((b) => b.toString(16).padStart(2, '0')).join('');
-      this.sql.exec('INSERT INTO guild (id, a, b, c, tag, created) VALUES (0, ?, ?, ?, ?, ?)', ...body.name, tag, now);
+      this.sql.exec('INSERT INTO guild (id, a, b, c, tag, created, lid) VALUES (0, ?, ?, ?, ?, ?, ?)', ...body.name, randomHex(4), now, randomHex(5));
+      this.lidReady = true;
       this.sql.exec('INSERT INTO members (pid, initials, joined, seen) VALUES (?, ?, ?, ?)', pid, initials, now, now);
       return reply(this.whole(this.meta()), 201);
     }
@@ -152,6 +175,7 @@ export class Guild {
         if (!this.sql.exec('SELECT COUNT(*) AS n FROM members').one().n) {
           this.sql.exec('DROP TABLE members');
           this.sql.exec('DROP TABLE guild');
+          this.lidReady = false;
         }
       }
       return reply({ ok: true });
@@ -172,7 +196,7 @@ export class Guild {
       if (now - member.seen >= SEEN_MS || (initials && initials !== member.initials)) {
         this.sql.exec('UPDATE members SET initials = ?, seen = ? WHERE pid = ?', initials ?? member.initials, now, pid);
       }
-      return reply({ tag: g.tag });
+      return reply({ tag: g.tag, lid: g.lid, name: [g.a, g.b, g.c] });
     }
     return reply({ error: 'not found' }, 404);
   }
@@ -186,11 +210,11 @@ export async function checkGuild(sector, ws, me) {
   if (!sector.env.GUILDS || !me.guild || !me.pid || me.checking) return;
   const code = me.guild;
   me.checking = true;
-  let tag = me.tag ?? null;
+  let tag = me.tag ?? null, lid = me.lid ?? null, name = null;
   try {
     const res = await ask(sector.env, code, '/check', { pid: me.pid, initials: me.initials || null });
-    if (res.ok) tag = (await res.json()).tag;
-    else if (res.status === 404) tag = null;
+    if (res.ok) ({ tag, lid = null, name = null } = await res.json());
+    else if (res.status === 404) tag = lid = null;
     else return;
     me.guildAt = sector.now();
   } catch {
@@ -200,7 +224,14 @@ export async function checkGuild(sector, ws, me) {
   }
   if (me.guild !== code) return;  // the game named another guild while we asked
   if (typeof tag === 'string' && !GUILD_TAG.test(tag)) tag = null;
-  if (tag === (me.tag ?? null)) return;
+  // The log id goes with the member's claims, and the guild's name to the log
+  // with them (Sector.noteGuild), unless the tag came off.
+  if (!tag || typeof lid !== 'string' || !GUILD_LOG_ID.test(lid)) lid = null;
+  if (lid && goodName(name)) sector.noteGuild?.(lid, name);
+  else lid = null;
+  const lidChanged = lid !== (me.lid ?? null);
+  me.lid = lid;
+  if (tag === (me.tag ?? null)) { if (lidChanged) sector.save(ws, me); return; }
   me.tag = tag;
   sector.save(ws, me);
   sector.reportDue = true;
