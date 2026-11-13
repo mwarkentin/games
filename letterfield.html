@@ -402,6 +402,15 @@ html[data-who="loading"] .who-status{animation:blink 1s infinite alternate}
 .guild-invite .eyebrow{margin-bottom:8px}
 .guild-invite .btn.ghost{background:transparent;color:var(--ink);border:1px solid var(--rule)}
 .guild-invite .coach-row{justify-content:flex-end}
+/* Switching guilds from an invite: the one you're in above the one you'd join, and a warning. */
+.guild-swap{margin:0 0 10px;padding:10px 12px;border:1px solid var(--rule);border-radius:8px}
+.guild-invite .guild-swap p{margin:0}
+.guild-swap .guild-name{margin:3px 0 0}
+.guild-swap .guild-meta{margin:2px 0 0 18px}
+.guild-swap-label{font:500 10px/1.2 var(--f-mono);letter-spacing:.12em;text-transform:uppercase;color:var(--muted)}
+.guild-invite .guild-swap .guild-swap-to{margin-top:10px;padding-top:10px;border-top:1px solid var(--rule)}
+.guild-invite .guild-warn{display:flex;gap:9px;align-items:flex-start;padding:9px 11px;border:1px solid var(--danger);border-radius:8px;font-size:13px;line-height:1.45}
+.guild-warn svg{flex:none;width:18px;height:18px;margin-top:1px;color:var(--danger)}
 /* Linking devices: a code that carries this surveyor to another device, or one to type in (see Linking devices). */
 .pair{margin-top:10px;container-type:inline-size}
 #pairHead + .pair{margin-top:0}
@@ -4782,6 +4791,7 @@ function guildMoved(to, from) {
   if (to !== 'in') askLeave = false;
   if (from === 'in' || to === 'in' || to === 'out') { mates = new Map(); guildHeard = false; tellMe(); }
   if (to === 'in' && Who.is('ready')) Who.go('refreshing');
+  if (to === 'invited' && myGuild && Date.now() - rosterAt >= ROSTER_MS) fetchRoster();  // how many the switch would leave behind
   renderGuild(); renderWho(); invalidate();
 }
 function saveGuild(g, synced = false) {
@@ -4847,7 +4857,7 @@ async function joinInvite() {
     saveGuild({ code: data.code, name: data.name, tag: data.tag });
     takeRoster(data.members);
     invite = null;
-    toast(`<i class="guild-dot" style="--gh:${guildHue(data.name)}"></i><b class="wraps">${guildName(data.name)}</b><span>You’re in: your mates come first under Surveyors</span>`, null, 4000);
+    toast(`<i class="guild-dot" style="--gh:${guildHue(data.name)}"></i><b class="wraps">${guildName(data.name)}</b><span>${left && left.code !== data.code ? `You’re in, and out of the ${guildName(left.name)}` : 'You’re in: your mates come first under Surveyors'}</span>`, null, 4000);
     return Membership.go('in');
   }
   invite.error = status === 409 ? 'That guild is full.' : status === 429 ? 'Too many guilds joined from this network: try again later.' : 'Couldn’t join. Try again in a moment.';
@@ -4985,9 +4995,17 @@ function renderGuild() {
   guildInvite.hidden = !asking;
   if (asking) {
     const busy = Membership.is('joining');
-    guildInvite.innerHTML = invite.name
-      ? `<p class="eyebrow">Invited to a guild</p>${named(invite.name, 'guildInviteName')}<p>${invite.size} member${invite.size === 1 ? '' : 's'} so far. A guild finds each other on the map: mates first on the surveyor list, a note when one comes online, a mark on their carets.${myGuild && myGuild.code !== invite.code ? ` You’d leave the ${guildName(myGuild.name)}.` : ''}</p>${invite.error ? `<p class="guild-err" role="alert">${invite.error}</p>` : ''}<div class="coach-row"><button type="button" class="btn ghost" data-g="not-now">Not now</button><button type="button" class="btn" data-g="join"${busy ? ' disabled' : ''}>${busy ? 'Joining…' : 'Join'}</button></div>`
-      : `<p class="eyebrow" id="guildInviteName">Invited to a guild</p><p>${invite.error || 'Looking it up…'}</p><div class="coach-row"><button type="button" class="btn ghost" data-g="not-now">${invite.error ? 'Close' : 'Not now'}</button></div>`;
+    // Already in another guild: say so plainly, both guilds side by side, since joining this one takes you out of that one.
+    const other = myGuild && myGuild.code !== invite.code ? myGuild : null;
+    const known = other && rosterAt && roster.length, only = known && roster.length <= 1;
+    const theirs = `${invite.size} member${invite.size === 1 ? '' : 's'} so far`;
+    guildInvite.innerHTML = !invite.name
+      ? `<p class="eyebrow" id="guildInviteName">Invited to a guild</p><p>${invite.error || 'Looking it up…'}</p><div class="coach-row"><button type="button" class="btn ghost" data-g="not-now">${invite.error ? 'Close' : 'Not now'}</button></div>`
+      : other
+        ? `<p class="eyebrow">Switch guilds?</p><div class="guild-swap"><p class="guild-swap-label">You’re in</p>${named(other.name)}${known ? `<p class="guild-meta">${roster.length} member${roster.length === 1 ? '' : 's'}</p>` : ''}<p class="guild-swap-label guild-swap-to">Invited to</p>${named(invite.name, 'guildInviteName')}<p class="guild-meta">${theirs}</p></div>` +
+          `<p class="guild-warn" role="note"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3.5 22 20.5H2Z"/><path d="M12 10v4.5M12 17.6v.1"/></svg><span>You can be in one guild at a time. Joining the ${guildName(invite.name)} takes you out of the ${guildName(other.name)}, and you’d need a new invite to go back.${only ? ' You’re its only member, so it ends when you leave.' : ''}</span></p>` +
+          `${invite.error ? `<p class="guild-err" role="alert">${invite.error}</p>` : ''}<div class="coach-row"><button type="button" class="btn ghost" data-g="not-now">Stay</button><button type="button" class="btn" data-g="join"${busy ? ' disabled' : ''}>${busy ? 'Switching…' : 'Leave and join'}</button></div>`
+        : `<p class="eyebrow">Invited to a guild</p>${named(invite.name, 'guildInviteName')}<p>${theirs}. A guild finds each other on the map: mates first on the surveyor list, a note when one comes online, a mark on their carets.</p>${invite.error ? `<p class="guild-err" role="alert">${invite.error}</p>` : ''}<div class="coach-row"><button type="button" class="btn ghost" data-g="not-now">Not now</button><button type="button" class="btn" data-g="join"${busy ? ' disabled' : ''}>${busy ? 'Joining…' : 'Join'}</button></div>`;
   }
 }
 function onGuildClick(e) {

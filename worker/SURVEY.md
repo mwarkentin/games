@@ -541,7 +541,10 @@ invite link. The code is `src/survey-guild.js`, hooks in `survey.js` and
   checks the game's lists agree). The colour is the first word's.
 - **The code is the key.** Six characters from the groups' alphabet (887
   million codes), passed in an invite link (`?guild=<code>`), which the game
-  reads once and takes off the address. Everyone else only ever sees the
+  reads once and takes off the address. A player can be in one guild at a
+  time, so an invite while they're in another asks "Switch guilds?": both
+  guilds by name, a warning that joining takes them out of theirs (and ends
+  it if they're its only member), and Stay or Leave and join. Everyone else only ever sees the
   guild's **tag**, a random id that says which carets share a guild and
   nothing more.
 

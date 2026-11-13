@@ -134,6 +134,38 @@ def test_an_invite_can_wait_or_be_no_good(page: Page, site_url, errors):
     assert errors == [] or all("404" in e for e in errors)
 
 
+def test_an_invite_while_in_another_guild_warns_before_switching(page: Page, site_url, errors):
+    other, other_name = "QRT567", [3, 1, 2]
+    guilds = in_cobalt()  # just us in it
+    guilds.guilds[other] = {"name": other_name, "tag": "0ddba11a", "members": [[KIM[0], "KIM", NOW_MS]]}
+    start(page, site_url, FakeSurvey(), guilds, query=f"&guild={other}", guild=MINE)
+    invite = page.locator("#guildInvite")
+    expect(invite).to_be_visible()
+    # Both guilds by name, the one you're in first, and a warning that says what joining costs.
+    expect(invite.locator(".eyebrow")).to_have_text("Switch guilds?")
+    expect(invite.locator(".guild-name").first).to_have_text("Cobalt Compass Society")
+    theirs = invite.locator("#guildInviteName").text_content()
+    expect(invite.locator(".guild-warn")).to_contain_text(
+        f"Joining the {theirs} takes you out of the Cobalt Compass Society, and you’d need a new invite to go back."
+    )
+    expect(invite.locator(".guild-warn")).to_contain_text("You’re its only member, so it ends when you leave.")
+    expect(invite).to_contain_text("1 member so far")
+    invite.get_by_role("button", name="Stay").click()
+    expect(invite).to_be_hidden()
+    expect(page.locator("html")).to_have_attribute("data-guild", "in")
+    assert json.loads(page.evaluate("localStorage.getItem('letterfield.guild.v1')")) == MINE
+    assert all(path != f"/{other}/join" for _, path, _ in guilds.calls)
+
+    page.goto("about:blank")
+    page.goto(f"{site_url}/letterfield?survey={SURVEY}&guild={other}#debug")
+    invite.get_by_role("button", name="Leave and join").click()
+    expect(page.locator("html")).to_have_attribute("data-guild", "in")
+    expect(page.locator("#toast span")).to_have_text("You’re in, and out of the Cobalt Compass Society")
+    eventually(page, lambda: any(path == f"/{CODE}/leave" for _, path, _ in guilds.calls))
+    assert json.loads(page.evaluate("localStorage.getItem('letterfield.guild.v1')"))["code"] == other
+    assert errors == []
+
+
 def test_mates_come_first_with_when_the_rest_were_seen_and_a_note_when_one_comes_online(page: Page, site_url, errors):
     three_hours = int(time.time() * 1000) - 3 * 3_600_000 - 60_000
     guilds = in_cobalt([KIM[0], "KIM", NOW_MS], [ZED[0], "ZED", three_hours])
@@ -255,7 +287,8 @@ def test_invite_from_the_lists_heading_and_sign_first_for_an_invite(page: Page, 
     # An invite to another guild, with no initials to join as: your page, to sign.
     page.goto(f"{site_url}/letterfield?survey={SURVEY}&guild=PQR789#debug")
     invite = page.locator("#guildInvite")
-    expect(invite.locator(".guild-name")).to_have_text("Jade Theodolite Fellowship")
+    expect(invite.locator("#guildInviteName")).to_have_text("Jade Theodolite Fellowship")
+    expect(invite.locator(".eyebrow")).to_have_text("Switch guilds?")  # we're in the Cobalt Compass Society
     page.evaluate("localStorage.removeItem('games.initials')")
     invite.get_by_role("button", name="Join").click()
     expect(page.locator("#people")).to_be_visible()
