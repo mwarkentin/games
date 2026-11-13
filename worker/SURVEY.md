@@ -655,6 +655,41 @@ token for ten minutes:
 A passkey would do this without a code, but needs an account to hang it on,
 which nothing else here has.
 
+### A recovery code
+
+Linking needs a device that's already you. With none left (one phone,
+lost; every browser cleared), the token is gone, and with it the surveyor:
+their id, their guild and any synced notes. A recovery code is a long code
+the player saves once and enters on any device, under **Use a code**, to be
+that surveyor again.
+
+    POST /v1/recovery         {token} → 201 {code, made}: a new code; any older one stops working
+    POST /v1/recovery/use     {code} → {token, made}, or 404
+    POST /v1/recovery/remove  {token} → {ok}
+
+- **Twenty characters** from the groups' alphabet, about 99 bits, shown in
+  fours: `BCDF-GHJK-MNPQ-RSTV-WXYZ`. It's shown once, with Copy and "Save as
+  a file", and the warning that whoever has it plays as you.
+- **The Worker keeps neither the code nor the token.** A code's SHA-512
+  gives the D1 row's id (its first half) and an AES-GCM key (its second)
+  that seals the token. The row holds the id, the player id, the sealed
+  token and when it was made (`recovery`, migration 0005), so reading D1
+  gives no one a token, and only the code opens its row.
+- **One code a player.** A new one replaces the old, which stops working,
+  so a code that gets out is put right by making another. "Remove it" takes
+  it away, and stopping syncing on every device takes it too.
+- **It keeps a backup.** Saving a code starts the player's Player and
+  marks it saved, which exempts it from the 180-day clear-out while the
+  code lasts. Using the code on a new device turns syncing on there with
+  this device's settings older than the backup's, so the first sync brings
+  back the initials, guild, mutes and notes; that device's own notes join
+  them, and its old self leaves its guild.
+- **Guessing it** is hopeless at 99 bits, and tries count against the same
+  per-address limit as link codes' (`linkTry`). Making codes has a limit of
+  its own (`recovery`, 5 an hour).
+- **Cost:** a D1 row per player who saves one, and a Player kept for them.
+  Nothing measurable.
+
 ### Syncing linked devices
 
 Once linked, devices keep their field notes, supernovas seen and the
@@ -1462,6 +1497,9 @@ about 30 cents over the included million requests.
   `BLOCKED_INITIALS` screens, and seven drawings; mute is on the device. A
   muted player with a new token is a new id, held back only by the limits.
 - **Guilds:** see "Left for later" under "Guilds".
+- **Passkeys.** A passkey, synced by the player's own iCloud Keychain or
+  Google account, could bring a surveyor back with no code to keep. It
+  needs WebAuthn credentials stored and checked in the Worker.
 - **Syncing as it happens.** Two linked devices open at once catch up
   within a minute. The Player could hold a WebSocket to each, hibernating,
   and push a find the moment it lands, if a minute ever feels slow.

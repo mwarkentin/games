@@ -12,9 +12,10 @@ the emotes the game sends are answered as `emote_error` says.
 FakeGuilds answers the guilds' paths (/v1/survey/guilds...), and `guild()`
 sends a sector's word of which of a guild are online.
 
-FakeLinks answers the paths for linking another device (/v1/link...), and
-FakePlayers the ones that keep linked devices in step (/v1/player/...); the
-real ones are tested in worker/test/players.test.js.
+FakeLinks answers the paths for linking another device (/v1/link...),
+FakePlayers the ones that keep linked devices in step (/v1/player/...), and
+FakeRecovery the recovery codes' (/v1/recovery...); the real ones are tested
+in worker/test/players.test.js.
 
 It also fakes Turnstile (worker/TURNSTILE.md): Cloudflare's widget script
 and the Worker's POST /v1/survey/pass.
@@ -407,3 +408,38 @@ class FakePlayers:
         if p["settings"] and p["settings_at"] > theirs:
             out |= {"settings": p["settings"], "settingsAt": p["settings_at"]}
         reply(out)
+
+
+class FakeRecovery:
+    """The recovery codes' paths, as worker/src/players.js answers them. `codes` maps a code to
+    the token it brings back; making or using one starts that player's backup in `players`."""
+
+    def __init__(self, players: FakePlayers, codes=None):
+        self.players = players
+        self.codes = dict(codes or {})
+        self.calls: list[tuple] = []  # (path, body) of every request
+        self.made = 0
+
+    def handle(self, route: Route) -> None:
+        request = route.request
+        path = urlparse(request.url).path.removeprefix("/v1/recovery")
+        body = json.loads(request.post_data or "{}")
+        self.calls.append((path, body))
+
+        def reply(status: int, data: dict) -> None:
+            route.fulfill(status=status, json=data, headers={"Access-Control-Allow-Origin": "*"})
+
+        if path == "/use":
+            token = self.codes.get(re.sub("[^A-Z0-9]", "", str(body.get("code", "")).upper()))
+            if not token:
+                return reply(404, {"error": "no such code"})
+            self.players.start(player_id(token))
+            return reply(200, {"token": token, "made": NOW_MS})
+        self.codes = {c: t for c, t in self.codes.items() if t != body["token"]}  # one code a player
+        if path == "/remove":
+            return reply(200, {"ok": True})
+        self.made += 1
+        code = "KMNPQRSTUVWXYZ23456" + FakeLinks.ALPHABET[self.made]
+        self.codes[code] = body["token"]
+        self.players.start(player_id(body["token"]))
+        return reply(201, {"code": code, "made": NOW_MS})

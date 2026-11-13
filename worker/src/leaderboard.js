@@ -28,7 +28,8 @@ const LIMITS = {
   guild: { max: 5, windowMs: HOUR },             // new Letterfield guilds per IP address (see survey-guild.js)
   guildJoin: { max: 20, windowMs: HOUR },        // guilds joined per IP address
   link: { max: 10, windowMs: HOUR },             // codes made to link another device (see players.js)
-  linkTry: { max: 20, windowMs: HOUR },          // codes tried, right or wrong
+  linkTry: { max: 20, windowMs: HOUR },          // codes tried, right or wrong, recovery codes included
+  recovery: { max: 5, windowMs: HOUR },          // recovery codes made
 };
 
 const PUBLIC = '*';

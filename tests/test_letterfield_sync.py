@@ -119,7 +119,7 @@ def test_stopping_here_or_everywhere(page: Page, site_url, errors):
     start(page, site_url, players)
     open_notes(page)
     card = page.locator("#pairCard")
-    expect(card).to_contain_text("keep in step with your linked devices")
+    expect(card).to_contain_text("keep in step with any device you link")
     card.get_by_role("button", name="Stop syncing").click()
     expect(card).to_contain_text("Stop syncing this device, or every device?")
     card.get_by_role("button", name="Keep syncing").click()
@@ -137,7 +137,9 @@ def test_stopping_here_or_everywhere(page: Page, site_url, errors):
     open_notes(page)
     card.get_by_role("button", name="Stop syncing").click()
     card.get_by_role("button", name="Every device").click()
-    expect(card).to_contain_text("Syncing stopped on every device, and the copy kept for it is deleted.")
+    expect(card).to_contain_text(
+        "Syncing stopped on every device, and the copy kept for it is deleted, with any recovery code."
+    )
     eventually(page, lambda: PID not in players.players)
     assert [b["token"] for b in players.sent("forget")] == [TOKEN]
     assert errors == []

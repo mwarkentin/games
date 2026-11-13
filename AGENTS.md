@@ -182,7 +182,7 @@ The machines each page keeps:
 | | `define` (each found word's meaning; `el: null`, see `__lf.definitions()`) | loading, ready, none, failed |
 | | `who` (the list of surveyors) | closed, loading, ready, refreshing, failed |
 | | `guild` (the guild you're in) | out, naming, making, invited, joining, in, leaving |
-| | `pair` (linking another device) | idle, making, showing, used, entering, redeeming, done, failed |
+| | `pair` (linking another device, and the recovery code) | idle, making, showing, used, entering, redeeming, done, failed, recovery, keeping, kept, removing |
 | | `sync` (keeping linked devices in step) | off, idle, syncing, failed |
 | `letterfield-log.html` | `log` (what the page shows) | loading, ready, refreshing, stale, failed |
 | `letterfield-timelapse.html` | `tl` (the replay) | loading, empty, failed, paused, playing, waiting |
@@ -562,13 +562,17 @@ per sector of the map, plus an Atlas for the world's totals
   characters to type. It carries the token, initials, guild and mutes, and
   starts a Player (a Durable Object per player) that keeps the linked
   devices' field notes, supernovas and settings in step ("Syncing linked
-  devices"). Nothing syncs for a player who never linked a device.
+  devices"). Nothing syncs for a player who never linked a device. A
+  recovery code, which the player saves, does the same with no other device
+  to hand ("A recovery code"); the Worker keeps the token sealed with it,
+  never the code or the token.
 - Game tests fake the survey with `page.route_web_socket` and
   `tests/fake_survey.py`; see `tests/test_letterfield_survey.py`, and
   `tests/test_letterfield_surveyors.py` for the list and emotes,
   `tests/test_letterfield_guilds.py` for guilds,
-  `tests/test_letterfield_linking.py` for linking devices and
-  `tests/test_letterfield_sync.py` for syncing them. The real
+  `tests/test_letterfield_linking.py` for linking devices,
+  `tests/test_letterfield_sync.py` for syncing them and
+  `tests/test_letterfield_recovery.py` for recovery codes. The real
   Worker's stand-in answers the survey with an empty fake too, and its
   Turnstile check with a fake widget and pass, so no test reaches
   challenges.cloudflare.com. `without_worker()` blanks `SURVEY_URL` along

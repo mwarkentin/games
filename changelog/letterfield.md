@@ -1,8 +1,12 @@
-## 2026-11-12
+## 2026-11-13
 
 - Play as the same surveyor on your phone, tablet and computer. Under your initials in the field notes, “Link another device” shows a QR code to scan with the other one, or a code to type there under “Use a code”. The other device takes your initials, your guild and your mutes, and from then on your field notes and supernovas keep in step on both, as do your initials, guild and mutes if you change them. “Stop syncing” stops it on one device or all of them.
 - Guilds, for surveyors who want to find each other. Start one under Surveyors in your field notes (its name and colour are drawn for you) and send mates an invite link. Your guild comes first on the list, with when the others were last seen; a note tells you when one comes online, with a way to fly there; and mates' carets wear the guild's colour. Off the list, your guild still sees you.
 - On the shared survey, your field notes list everyone else surveying, under Surveyors, nearest first: who they are, which territory they're in and whether they're active. Tap one to fly to them, or send them a wave, a thank-you, a thumbs up or one of a few other little drawings; right-click or long-press someone's caret for the same. One sent to you pops from their caret if they're in view, with a little move of its own (the hand waves, the hat tips, the flag flutters), or comes as a note with a way to fly there. You can leave yourself off the list, turn emotes off, or mute anyone, which hides their caret and emotes on your device.
+- A recovery code brings your surveyor back on any device, even with no other to hand: your initials, guild and field notes. Make one under "Recovery code" in the field notes, keep it somewhere safe, and enter it on any device under "Use a code". A new one replaces the old.
+
+## 2026-11-12
+
 - A supernova up to three territories from the middle of your screen goes off for you wherever it is, even across into the next part of the map: its shockwave sweeps in from that side, a little quieter for being further off. It's kept in your field notes and leaves its remnant straight away.
 - A supernova no longer spells itself out across the screen: the burst and its shockwave say it, and the note to share it comes as soon as the wave has passed. With reduced motion, which has no shockwave, the words still show, and screen readers still hear them.
 - A timelapse of the shared survey, from “Timelapse” at the top of the survey log: the map charted word by word, territories filling in with their themes' colours and supernovas going off, from the first word to the latest, with a scrubber, speeds and a tap on any territory to see it in the log. “Save video” records it in your browser as a square video to share.

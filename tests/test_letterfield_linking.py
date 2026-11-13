@@ -14,7 +14,7 @@ import re
 
 from playwright.sync_api import Page, expect
 
-from fake_survey import FakeGuilds, FakeLinks, FakeSurvey, player_id
+from fake_survey import FakeGuilds, FakeLinks, FakeRecovery, FakeSurvey, player_id
 from test_letterfield_guilds import CODE, MINE, NAME, TAG, in_cobalt
 from test_letterfield_guilds import start as start_guilds
 from test_letterfield_survey import SURVEY, open_notes
@@ -25,11 +25,19 @@ THEIR_PID = player_id(THEIRS)
 OTHER = {"code": "PQRS23", "name": [3, 4, 5], "tag": "0badf00d"}  # a guild of theirs
 
 
-def start(page: Page, site_url: str, links: FakeLinks, guilds: FakeGuilds | None = None, **kw) -> None:
-    """Opens the game on the survey with our token, `links` answering the link paths and
-    its `players` keeping linked devices in step."""
+def start(
+    page: Page,
+    site_url: str,
+    links: FakeLinks,
+    guilds: FakeGuilds | None = None,
+    recovery: FakeRecovery | None = None,
+    **kw,
+) -> None:
+    """Opens the game on the survey with our token, `links` answering the link paths, its
+    `players` keeping linked devices in step, and `recovery` (or none) the recovery codes'."""
     page.route(f"{SURVEY}/v1/link**", links.handle)
     page.route(f"{SURVEY}/v1/player/**", links.players.handle)
+    page.route(f"{SURVEY}/v1/recovery**", (recovery or FakeRecovery(links.players)).handle)
     start_guilds(page, site_url, FakeSurvey(), guilds or FakeGuilds(), **kw)
 
 
@@ -173,7 +181,9 @@ def test_typing_a_code_links_and_a_bad_one_says_so(page: Page, site_url, errors)
     assert page.evaluate("getComputedStyle(document.getElementById('pairInput')).fontSize") == "16px"
     box.press_sequentially("abcd")
     page.keyboard.press("Enter")
-    expect(card.locator(".pair-err")).to_have_text("A code is eight letters and digits, like ABCD-EFGH.")
+    expect(card.locator(".pair-err")).to_have_text(
+        "A code is eight letters and digits, like ABCD-EFGH, or twenty for a recovery code."
+    )
     box.press_sequentially("efgh")
     expect(box).to_have_value("ABCD-EFGH")
     page.keyboard.press("Enter")

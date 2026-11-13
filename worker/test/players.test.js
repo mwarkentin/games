@@ -7,7 +7,7 @@ import { DatabaseSync } from 'node:sqlite';
 import { beforeEach, describe, test } from 'node:test';
 
 import worker from '../src/index.js';
-import { FINDS_MAX, KEEP_MS, LINK_CODE, LINK_MS, Player, SYNC_GAP_MS, cleanCarry, routeLinks, routePlayers } from '../src/players.js';
+import { FINDS_MAX, KEEP_MS, LINK_CODE, LINK_MS, Player, RECOVERY_CODE, SYNC_GAP_MS, cleanCarry, recoveryKeys, routeLinks, routePlayers, routeRecovery } from '../src/players.js';
 import { playerId } from '../src/survey-social.js';
 
 const ORIGIN = 'https://games.michaelwarkentin.com';
@@ -241,5 +241,85 @@ describe('syncing linked devices', () => {
     assert.equal(away.status, 403);
     const res = await worker.fetch(new Request('https://survey.test/v1/player/sync', { method: 'POST', headers: { Origin: ORIGIN }, body: JSON.stringify({ token: token(1) }) }), env);
     assert.deepEqual(await res.json(), { off: true });
+  });
+});
+
+describe('recovery codes', () => {
+  let clock, env, ip;
+  beforeEach(() => { clock = { now: NOW }; env = { ALLOWED_ORIGINS: ORIGIN, DB: fakeD1(), PLAYERS: fakePlayers(clock) }; ip = '203.0.113.7'; });
+  const call = async (path, body, { origin = ORIGIN } = {}) => {
+    const res = await routeRecovery(new Request(`https://survey.test/v1/recovery${path}`, {
+      method: 'POST', headers: { Origin: origin, 'CF-Connecting-IP': ip }, body: JSON.stringify(body),
+    }), env, clock.now);
+    return [res.status, await res.json()];
+  };
+  const player = async (n) => env.PLAYERS.player(await playerId(token(n)));
+
+  test('brings the player back on any device, and keeps their notes while it does', async () => {
+    const [status, made] = await call('', { token: token(1) });
+    assert.equal(status, 201);
+    assert.match(made.code, RECOVERY_CODE);
+    assert.equal(made.made, NOW);
+    assert.equal((await player(1)).meta().saved, 1);
+    // Typed in any case, with or without its dashes.
+    const typed = made.code.toLowerCase().match(/.{4}/g).join('-');
+    assert.deepEqual(await call('/use', { code: typed }), [200, { token: token(1) }]);
+    assert.deepEqual(await call('/use', { code: made.code }), [200, { token: token(1) }]);  // as often as it's needed
+    assert.deepEqual(await call('/use', { code: 'ABCDEFGHJKMNPQRSTUVW' }), [404, { error: 'no such code' }]);
+  });
+
+  test("keeps neither the code nor the token where anyone could read them", async () => {
+    const [, made] = await call('', { token: token(1) });
+    const rows = env.DB.raw.prepare('SELECT * FROM recovery').all();
+    assert.equal(rows.length, 1);
+    const stored = JSON.stringify(rows);
+    assert.ok(!stored.includes(token(1)) && !stored.includes(made.code), stored);
+    assert.equal(rows[0].id, (await recoveryKeys(made.code)).id);
+    assert.equal(rows[0].pid, await playerId(token(1)));
+  });
+
+  test('a new code replaces the old, and a removed one works no more', async () => {
+    const [, first] = await call('', { token: token(1) });
+    const [, second] = await call('', { token: token(1) });
+    assert.notEqual(first.code, second.code);
+    assert.equal((await call('/use', { code: first.code }))[0], 404);
+    assert.equal((await call('/use', { code: second.code }))[0], 200);
+    assert.deepEqual(await call('/remove', { token: token(1) }), [200, { ok: true }]);
+    assert.equal((await call('/use', { code: second.code }))[0], 404);
+    const p = await player(1);
+    assert.equal(p.meta().saved, 0);
+    assert.equal(p.state.alarm, clock.now + KEEP_MS);  // back under the clear-out
+  });
+
+  test('a saved code keeps the notes past the clear-out; stopping everywhere takes the code too', async () => {
+    const [, made] = await call('', { token: token(1) });
+    const p = await player(1);
+    clock.now += 2 * KEEP_MS;
+    await p.alarm();
+    assert.ok(p.meta(), 'kept while a code is saved');
+    const res = await routePlayers(new Request('https://survey.test/v1/player/forget', { method: 'POST', headers: { Origin: ORIGIN }, body: JSON.stringify({ token: token(1) }) }), env);
+    assert.deepEqual(await res.json(), { off: true });
+    assert.equal(p.meta(), null);
+    assert.equal((await call('/use', { code: made.code }))[0], 404);
+  });
+
+  test('limits codes made, and tries along with link codes', async () => {
+    const made = [];
+    for (let i = 0; i < 6; i++) made.push((await call('', { token: token(1) }))[0]);
+    assert.deepEqual(made.slice(-2), [201, 429]);
+    ip = '203.0.113.8';
+    const tries = [];
+    for (let i = 0; i < 20; i++) tries.push((await call('/use', { code: 'nope' }))[0]);
+    assert.ok(tries.every((t) => t === 404));
+    const link = await routeLinks(new Request('https://survey.test/v1/link/ABCDEFGH', { method: 'POST', headers: { Origin: ORIGIN, 'CF-Connecting-IP': ip }, body: '{}' }), env, clock.now);
+    assert.equal(link.status, 429);
+  });
+
+  test('needs a real token and the site, and is what the Worker does with the paths', async () => {
+    assert.equal((await call('', { token: 'nope' }))[0], 400);
+    assert.equal((await call('', { token: token(1) }, { origin: 'https://evil.test' }))[0], 403);
+    assert.equal(routeRecovery(new Request('https://survey.test/v1/recovered'), env), null);
+    const res = await worker.fetch(new Request('https://survey.test/v1/recovery', { method: 'POST', headers: { Origin: ORIGIN }, body: JSON.stringify({ token: token(2) }) }), env);
+    assert.equal(res.status, 201);
   });
 });

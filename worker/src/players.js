@@ -23,7 +23,16 @@
 //
 //   POST /v1/player/sync    {token, epoch, since, finds, novas, settings, settingsAt}
 //                           → {epoch, at, finds, novas, settings?, settingsAt?} | {off: true}
-//   POST /v1/player/forget  {token} → {off: true}: everything kept for syncing goes
+//   POST /v1/player/forget  {token} → {off: true}: everything kept for syncing goes,
+//                           and the recovery code with it
+//
+// A recovery code brings a player back on any device, with no other device
+// to hand ("A recovery code" in SURVEY.md). Saving one also keeps their notes
+// in a Player, out of reach of the half-yearly clear-out.
+//
+//   POST /v1/recovery         {token} → 201 {code, made}: a new code; any older one stops working
+//   POST /v1/recovery/use     {code} → {token}, or 404
+//   POST /v1/recovery/remove  {token} → {ok}
 
 import { CODE_ALPHABET, HttpError, INITIALS, corsHeaders, hashIp, json, rateLimit } from './leaderboard.js';
 import { goodName } from './survey-guild.js';
@@ -153,7 +162,7 @@ export class Player {
 
   meta() {
     if (!this.sql.exec("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'meta'").toArray().length) return null;
-    return this.sql.exec('SELECT v, epoch, settings, settings_at, synced, kept FROM meta WHERE id = 0').toArray()[0] ?? null;
+    return this.sql.exec('SELECT v, epoch, settings, settings_at, synced, kept, saved FROM meta WHERE id = 0').toArray()[0] ?? null;
   }
 
   start() {
@@ -162,7 +171,7 @@ export class Player {
     this.sql.exec('CREATE INDEX IF NOT EXISTS finds_v ON finds (v)');
     this.sql.exec('CREATE TABLE IF NOT EXISTS novas (k TEXT PRIMARY KEY, body TEXT NOT NULL, v INTEGER NOT NULL) WITHOUT ROWID');
     this.sql.exec('CREATE INDEX IF NOT EXISTS novas_v ON novas (v)');
-    this.sql.exec('CREATE TABLE IF NOT EXISTS meta (id INTEGER PRIMARY KEY, v INTEGER NOT NULL, epoch TEXT NOT NULL, settings TEXT, settings_at INTEGER NOT NULL, synced INTEGER NOT NULL, kept INTEGER NOT NULL)');
+    this.sql.exec('CREATE TABLE IF NOT EXISTS meta (id INTEGER PRIMARY KEY, v INTEGER NOT NULL, epoch TEXT NOT NULL, settings TEXT, settings_at INTEGER NOT NULL, synced INTEGER NOT NULL, kept INTEGER NOT NULL, saved INTEGER NOT NULL DEFAULT 0)');
     const epoch = [...crypto.getRandomValues(new Uint8Array(4))].map((b) => b.toString(16).padStart(2, '0')).join('');
     this.sql.exec('INSERT INTO meta (id, v, epoch, settings, settings_at, synced, kept) VALUES (0, 0, ?, NULL, 0, ?, 0)', epoch, this.now());
   }
@@ -220,8 +229,16 @@ export class Player {
     }, 200];
   }
 
+  // Whether a recovery code is saved for this player: if so, the clear-out leaves it be.
+  async save(on) {
+    this.start();
+    this.sql.exec('UPDATE meta SET saved = ? WHERE id = 0', on ? 1 : 0);
+    if (!on) await this.ctx.storage.setAlarm(this.now() + KEEP_MS);
+  }
+
   async alarm() {
     const m = this.meta();
+    if (m?.saved) return;  // a saved recovery code keeps it; removing the code sets the alarm again
     if (!m || this.now() - m.synced >= KEEP_MS) return this.forget();
     await this.ctx.storage.setAlarm(m.synced + KEEP_MS);
   }
@@ -231,6 +248,7 @@ export class Player {
     let body = {};
     try { body = await request.json(); } catch { return Response.json({ error: 'bad request' }, { status: 400 }); }
     if (pathname === '/start') { this.start(); return Response.json({ ok: true }); }
+    if (pathname === '/save') { await this.save(body.on === true); return Response.json({ ok: true }); }
     if (pathname === '/forget') { await this.forget(); return Response.json({ off: true }); }
     if (pathname === '/sync') { const [out, status] = await this.sync(body); return Response.json(out, { status }); }
     return Response.json({ error: 'not found' }, { status: 404 });
@@ -254,8 +272,81 @@ export function routePlayers(request, env) {
       try { body = JSON.parse(text); } catch { throw new HttpError(400, 'body must be JSON'); }
       if (typeof body?.token !== 'string' || !TOKEN.test(body.token)) throw new HttpError(400, 'token must be 32 hex digits');
       const { token, ...rest } = body;
-      const res = await playerStub(env, await playerId(token)).fetch(`https://player/${m[1]}`, { method: 'POST', body: JSON.stringify(rest) });
+      const pid = await playerId(token);
+      // Stopping everywhere takes the recovery code too: there'd be nothing kept for it to bring back.
+      if (m[1] === 'forget' && env.DB) await env.DB.prepare('DELETE FROM recovery WHERE pid = ?').bind(pid).run();
+      const res = await playerStub(env, pid).fetch(`https://player/${m[1]}`, { method: 'POST', body: JSON.stringify(rest) });
       return json(await res.json(), res.status, cors);
+    } catch (error) {
+      if (error instanceof HttpError) return json({ error: error.message }, error.status, cors);
+      throw error;
+    }
+  })();
+}
+
+/* ---------- Recovery codes ---------- */
+
+export const RECOVERY_CODE = /^[A-HJKMNP-Z2-9]{20}$/;  // 31^20, about 99 bits
+const RECOVERY_PATH = /^\/v1\/recovery(?:\/(use|remove))?$/;
+const hex = (bytes) => [...bytes].map((b) => b.toString(16).padStart(2, '0')).join('');
+
+// A code's row id and the key its token is sealed with, both from its SHA-512.
+export async function recoveryKeys(code) {
+  const digest = new Uint8Array(await crypto.subtle.digest('SHA-512', new TextEncoder().encode(`games-recovery:${code}`)));
+  const key = await crypto.subtle.importKey('raw', digest.slice(32), 'AES-GCM', false, ['encrypt', 'decrypt']);
+  return { id: hex(digest.slice(0, 16)), key };
+}
+
+async function seal(key, token) {
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const sealed = new Uint8Array(await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, key, new TextEncoder().encode(token)));
+  return btoa(String.fromCharCode(...iv, ...sealed));
+}
+
+async function unseal(key, box) {
+  const bytes = Uint8Array.from(atob(box), (c) => c.charCodeAt(0));
+  return new TextDecoder().decode(await crypto.subtle.decrypt({ name: 'AES-GCM', iv: bytes.slice(0, 12) }, key, bytes.slice(12)));
+}
+
+// The recovery paths, or null for any other.
+export function routeRecovery(request, env, now = Date.now()) {
+  const m = new URL(request.url).pathname.match(RECOVERY_PATH);
+  if (!m || !env.DB || !env.PLAYERS) return null;
+  const cors = corsHeaders(request, env);
+  return (async () => {
+    try {
+      if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers: cors });
+      if (request.method !== 'POST') throw new HttpError(405, 'method not allowed');
+      if (!cors['Access-Control-Allow-Origin']) throw new HttpError(403, 'origin not allowed');
+      const body = await readBody(request);
+      const db = env.DB, address = await hashIp(request, env.IP_SALT);
+      if (m[1] === 'use') {
+        // Every try counts, with link codes', right or wrong.
+        await rateLimit(db, 'linkTry', address, now);
+        const code = typeof body?.code === 'string' ? body.code.toUpperCase().replace(/[^A-Z0-9]/g, '') : '';
+        if (!RECOVERY_CODE.test(code)) throw new HttpError(404, 'no such code');
+        const { id, key } = await recoveryKeys(code);
+        const row = await db.prepare('SELECT pid, box FROM recovery WHERE id = ?').bind(id).first();
+        if (!row) throw new HttpError(404, 'no such code');
+        const token = await unseal(key, row.box);
+        await playerStub(env, row.pid).fetch('https://player/save', { method: 'POST', body: '{"on":true}' });
+        return json({ token }, 200, cors);
+      }
+      if (typeof body?.token !== 'string' || !TOKEN.test(body.token)) throw new HttpError(400, 'token must be 32 hex digits');
+      const pid = await playerId(body.token);
+      if (m[1] === 'remove') {
+        await db.prepare('DELETE FROM recovery WHERE pid = ?').bind(pid).run();
+        await playerStub(env, pid).fetch('https://player/save', { method: 'POST', body: '{"on":false}' });
+        return json({ ok: true }, 200, cors);
+      }
+      await rateLimit(db, 'recovery', address, now);
+      const code = [...crypto.getRandomValues(new Uint8Array(20))].map((b) => CODE_ALPHABET[b % CODE_ALPHABET.length]).join('');
+      const { id, key } = await recoveryKeys(code);
+      // One code a player: a new one replaces the old.
+      await db.prepare('DELETE FROM recovery WHERE pid = ?').bind(pid).run();
+      await db.prepare('INSERT INTO recovery (id, pid, box, made) VALUES (?, ?, ?, ?)').bind(id, pid, await seal(key, body.token), now).run();
+      await playerStub(env, pid).fetch('https://player/save', { method: 'POST', body: '{"on":true}' });
+      return json({ code, made: now }, 201, cors);
     } catch (error) {
       if (error instanceof HttpError) return json({ error: error.message }, error.status, cors);
       throw error;
