@@ -98,19 +98,27 @@ def test_entering_a_recovery_code_brings_the_surveyor_back(page: Page, site_url,
     assert errors == [] or all("404" in e for e in errors)
 
 
-def test_the_code_fits_a_phone(page: Page, site_url, errors):
-    links = FakeLinks()
-    start(page, site_url, links, recovery=FakeRecovery(links.players), viewport={"width": 375, "height": 740})
-    open_notes(page)
-    card = page.locator("#pairCard")
-    card.get_by_role("button", name="Recovery code").click()
-    card.get_by_role("button", name="Make one").click()
-    expect(card.locator("#recoveryCode")).to_be_visible()
-    sizes = page.evaluate(
-        "[document.scrollingElement.scrollWidth, document.getElementById('notes').scrollWidth, document.getElementById('notes').clientWidth]"
-    )
-    assert sizes[0] <= 375 and sizes[1] <= sizes[2], sizes
-    code = card.locator("#recoveryCode").bounding_box()
-    notes = page.locator("#notes").bounding_box()
-    assert code["x"] + code["width"] <= notes["x"] + notes["width"], (code, notes)
+def test_the_code_fits_a_phone_on_one_line(page: Page, site_url, errors):
+    for width in (375, 320):
+        links = FakeLinks()
+        start(page, site_url, links, recovery=FakeRecovery(links.players), viewport={"width": width, "height": 740})
+        open_notes(page)
+        card = page.locator("#pairCard")
+        card.get_by_role("button", name="Recovery code").click()
+        card.get_by_role(
+            "button", name=re.compile(r"^Make (one|a new one)$")
+        ).click()  # the second time, it knows the first
+        code = card.locator("#recoveryCode")
+        expect(code).to_be_visible()
+        sizes = page.evaluate(
+            "[document.scrollingElement.scrollWidth, document.getElementById('notes').scrollWidth,"
+            " document.getElementById('notes').clientWidth]"
+        )
+        assert sizes[0] <= width and sizes[1] <= sizes[2], (width, sizes)
+        fit = code.evaluate(
+            """e => { const r = document.createRange(); r.selectNodeContents(e);
+          const t = r.getBoundingClientRect(), b = e.getBoundingClientRect();
+          return { lines: r.getClientRects().length, inside: t.left >= b.left && t.right <= b.right }; }"""
+        )
+        assert fit == {"lines": 1, "inside": True}, (width, fit)
     assert errors == []

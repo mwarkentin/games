@@ -328,7 +328,7 @@ html[data-who="loading"] .who-status{animation:blink 1s infinite alternate}
 .guild-invite .btn.ghost{background:transparent;color:var(--ink);border:1px solid var(--rule)}
 .guild-invite .coach-row{justify-content:flex-end}
 /* Linking devices: a code that carries this surveyor to another device, or one to type in (see Linking devices). */
-.pair{margin-top:10px}
+.pair{margin-top:10px;container-type:inline-size}
 .pair:empty{display:none}
 .pair p{margin:0 0 8px;font-size:12.5px;line-height:1.45;color:var(--muted)}
 .pair p b{color:var(--ink)}
@@ -349,8 +349,8 @@ html[data-who="loading"] .who-status{animation:blink 1s infinite alternate}
 .pair-enter input:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
 .pair-enter .btn{padding:9px 12px}
 .pair-enter > p{flex:1 0 100%;margin:0}
-.pair-recovery{font-size:18px;letter-spacing:.1em;line-height:1.35}
-.pair-recovery span{display:inline-block}
+/* A recovery code is 24 characters, and wide ones in Martian Mono: sized to the card's width so it always fits on one line. */
+.pair-recovery{font-size:13px;font-size:min(17px, 4.8cqw);letter-spacing:.04em;white-space:nowrap}
 .pair-err{color:var(--danger)!important}
 .pair-offer p{margin:0 0 10px;font-size:13.5px;line-height:1.5}
 .pair-offer .eyebrow{margin-bottom:8px}
@@ -5267,7 +5267,7 @@ function renderPair() {
     html = `<div class="pair-box"><p class="eyebrow">Recovery code</p>${made
       ? `<p>You saved one on ${new Date(made).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' })}. A new one replaces it, and the old one stops working.</p>`
       : '<p>A recovery code brings this surveyor back on any device, even if this one is lost or its storage cleared: your initials, guild and field notes. Saving one keeps a backup of your notes for it.</p>'}${recoveryNote ? `<p>${recoveryNote}</p>` : ''}${err}<div class="pair-acts"><button type="button" class="btn" data-p="keep"${busy ? ' disabled' : ''}>${st === 'keeping' ? 'Making…' : made ? 'Make a new one' : 'Make one'}</button>${made ? `<button type="button" class="pill" data-p="unkeep"${busy ? ' disabled' : ''}>${st === 'removing' ? 'Removing…' : 'Remove it'}</button>` : ''}<button type="button" class="pill" data-p="close"${busy ? ' disabled' : ''}>Close</button></div></div>`;
-  } else if (st === 'kept') html = `<div class="pair-box"><p class="eyebrow">Your recovery code</p><b class="pair-code pair-recovery" id="recoveryCode">${inFours(recoveryCode).split('-').map((g, i, all) => `<span>${g}${i < all.length - 1 ? '-' : ''}</span>`).join('')}</b><p>Keep it somewhere safe, like a password manager: it won’t be shown again. To be this surveyor on any device, enter it there under <b>Use a code</b>.</p><p>Whoever has it can play as you. If it gets out, make a new one here, and this one stops working.</p><div class="pair-acts"><button type="button" class="pill" data-p="copy-recovery">Copy</button><button type="button" class="pill" data-p="file-recovery">Save as a file</button><button type="button" class="btn" data-p="close">Done</button></div><p class="pair-small" id="pairSaid" aria-live="polite"></p></div>`;
+  } else if (st === 'kept') html = `<div class="pair-box"><p class="eyebrow">Your recovery code</p><b class="pair-code pair-recovery" id="recoveryCode">${inFours(recoveryCode)}</b><p>Keep it somewhere safe, like a password manager: it won’t be shown again. To be this surveyor on any device, enter it there under <b>Use a code</b>.</p><p>Whoever has it can play as you. If it gets out, make a new one here, and this one stops working.</p><div class="pair-acts"><button type="button" class="pill" data-p="copy-recovery">Copy</button><button type="button" class="pill" data-p="file-recovery">Save as a file</button><button type="button" class="btn" data-p="close">Done</button></div><p class="pair-small" id="pairSaid" aria-live="polite"></p></div>`;
   else if (st === 'making') html = `<div class="pair-box"><p class="eyebrow">Link another device</p><p>Making a code…</p></div>`;
   else if (st === 'showing' && pairCode && pairCode.gone) html = `<div class="pair-box"><p class="eyebrow">Link another device</p><p>That code has run out.</p><div class="pair-acts"><button type="button" class="btn" data-p="make">New code</button><button type="button" class="pill" data-p="close">Close</button></div></div>`;
   else if (st === 'showing' && pairCode) {
