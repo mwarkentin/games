@@ -144,7 +144,7 @@ body.docked .corner .people-btn{border-radius:0 8px 8px 0;border-right:1px solid
 .people-btn svg{width:20px;height:20px}
 @media (hover: hover){.people-btn:hover{background:var(--hover)}}
 .people-btn[aria-expanded="true"]{background:var(--ink);border-color:var(--ink);color:var(--panel)}
-.people-btn .badge{position:absolute;top:-6px;right:-6px}
+.people-btn .badge{position:absolute;top:-6px;right:-6px;z-index:1}  /* over the notes button beside it, which comes after it */
 .people-btn[aria-expanded="true"] .badge{box-shadow:0 0 0 2px var(--panel)}
 /* Tools: zoom, home, sound and music drop down from their button as a stack,
    and go again on a second tap, Escape or a tap on the map. Closed, the stack

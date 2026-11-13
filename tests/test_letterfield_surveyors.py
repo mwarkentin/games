@@ -339,6 +339,10 @@ def test_the_surveyors_have_a_button_and_drawer_of_their_own(page: Page, site_ur
     expect(page.locator("html")).to_have_attribute("data-who", "ready")
     expect(page.locator("#peopleBadge")).to_have_text("2")
     expect(button).to_have_attribute("aria-label", "Surveyors, 2 online")
+    # The badge hangs over the notes button's corner, and shows on top of it.
+    on_top = page.evaluate("""() => { const b = document.getElementById('peopleBadge').getBoundingClientRect();
+      return document.elementFromPoint(b.right - 3, b.top + b.height / 2) === document.getElementById('peopleBadge'); }""")
+    assert on_top
     # One sheet at a time on a phone: the notes take its place, and it theirs.
     page.click("#notesToggle")
     expect(page.locator("#notes")).to_be_visible()
