@@ -4771,8 +4771,11 @@ function renderGuild() {
         ? `<p>Leave the ${guildName(myGuild.name)}? You’d need a new invite to come back.</p><div class="guild-acts"><button type="button" class="pill" data-g="leave-yes">Leave</button><button type="button" class="pill" data-g="leave-no">Stay</button></div>`
         : `<div class="guild-acts"><button type="button" class="pill" data-g="invite">Invite a mate</button><button type="button" class="pill" data-g="leave"${st === 'leaving' ? ' disabled' : ''}>${st === 'leaving' ? 'Leaving…' : 'Leave'}</button></div>`);
   } else if (st === 'invited' || st === 'joining') html = '<p>Looking at an invite to a guild…</p>';
-  if (guildCard.innerHTML !== html) {
+  // Against what it last drew, not its live HTML, which notes written into it
+  // since (and how a browser writes out `disabled`) always make different.
+  if (guildCard.dataset.drawn !== html) {
     const f = document.activeElement, k = f && guildCard.contains(f) ? f.dataset.g : '';
+    guildCard.dataset.drawn = html;
     guildCard.innerHTML = html;
     if (k) { const el = guildCard.querySelector(`[data-g="${k}"]`) || guildCard.querySelector('button'); if (el) try { el.focus({ preventScroll: true }); } catch (_) {} }
   }
@@ -5277,9 +5280,14 @@ function renderPair() {
   else if (st === 'entering' || st === 'redeeming') html = `<form class="pair-box pair-enter" id="pairEnter"><label for="pairInput">The code from your other device, under <b>Link another device</b> there, or your recovery code</label><input id="pairInput" maxlength="24" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="ABCD-EFGH"${busy ? ' disabled' : ''}><button type="submit" class="btn"${busy ? ' disabled' : ''}>${busy ? 'Linking…' : 'Link'}</button><button type="button" class="pill" data-p="close"${busy ? ' disabled' : ''}>Cancel</button>${err}<p class="pair-small">This device then plays as that surveyor, with their initials and guild, and field notes from both, kept in step.</p></form>`;
   else if (st === 'failed') html = `<div class="pair-box">${err}<div class="pair-acts"><button type="button" class="pill" data-p="make">Try again</button><button type="button" class="pill" data-p="close">Close</button></div></div>`;
   else if (st === 'done') html = `<div class="pair-box"><p><b>Linked.</b> Loading as your surveyor…</p></div>`;
-  if (pairCard.innerHTML !== html) {
+  // Against what it last drew, not its live HTML: the QR code, the minutes left and
+  // any note are written into it after, so that never matches, and drawing it again
+  // each time it asked about the code emptied the QR code for a moment, and the
+  // notes, a little shorter, jumped back up.
+  if (pairCard.dataset.drawn !== html) {
     const f = document.activeElement, k = f && pairCard.contains(f) ? f.dataset.p || f.id : '';
     const typed = $('#pairInput') ? $('#pairInput').value : '';
+    pairCard.dataset.drawn = html;
     pairCard.innerHTML = html;
     if ($('#pairInput')) $('#pairInput').value = typed;
     if (k) { const el = pairCard.querySelector(`[data-p="${k}"]`) || (k === 'pairInput' && $('#pairInput')) || pairCard.querySelector('button, input'); if (el && !el.disabled) try { el.focus({ preventScroll: true }); } catch (_) {} }
@@ -5295,7 +5303,7 @@ function renderPair() {
       ? `${head}${err}<div class="coach-row"><button type="button" class="btn ghost" data-p="not-now">Close</button>${pairRetry ? '<button type="button" class="btn" data-p="link">Try again</button>' : ''}</div>`
       : st === 'done' ? `${head}<p><b>Linked.</b> Loading as your surveyor…</p>`
         : `${head}<p>This link comes from another device. Link this one to it, and here you’ll be the same surveyor as there: the same initials and guild, with mutes and field notes from both, kept in step from then on.</p>${myGuild ? `<p>If they’re in a guild, this device leaves the ${guildName(myGuild.name)}.</p>` : ''}<div class="coach-row"><button type="button" class="btn ghost" data-p="not-now"${busy ? ' disabled' : ''}>Not now</button><button type="button" class="btn" data-p="link"${busy ? ' disabled' : ''}>${busy ? 'Linking…' : 'Link'}</button></div>`;
-    if (pairOffer.innerHTML !== offer) pairOffer.innerHTML = offer;
+    if (pairOffer.dataset.drawn !== offer) { pairOffer.dataset.drawn = offer; pairOffer.innerHTML = offer; }
   }
 }
 function leaveOffer() {
