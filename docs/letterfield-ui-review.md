@@ -25,7 +25,7 @@ Line numbers are as of commit 7bae950 and drift as the files change.
 | 10 | "Charted first" on nearly every entry, and messy rows | a with b; cards under day headings, a time on each row, rows on one grid | To build |
 | 11 | The theme cut to "Fe…" on a phone | b: "3/113" without "charted", and no LF mark on phones | To build |
 | 12 | "Origin" means nothing to most players | b and c: Map centre, and Last find once you have a find | To build |
-| 13 | Internal words show through | a: fix the words; 16 random guild words, without "Survey" | To build |
+| 13 | Internal words show through | a: fix the words ("bonus word" for "stray"); 16 random guild words, without "Survey" | To build |
 | 14 | The tools menu hides its state; the volume floats | c: a mixer, a slider each for effects and music; zoom in one row | To build |
 | 15 | Buttons with the same job look different; risky ones look harmless | a: filled and outlined buttons, red to end or delete; Stop syncing as rows; white inputs | To build |
 | 16 | Small visual glitches | a: fix each in place | To build |
@@ -36,7 +36,8 @@ Line numbers are as of commit 7bae950 and drift as the files change.
 | 21 | The hour view uses a day's controls; the log's header | A new header (a way back, tabs for what's listed, periods as tabs, the card's title as navigator); b with d: ‹ stops at the first word | To build |
 | 22 | A new guild's page says "No such guild" | a plus c: named, "hasn't charted a word yet"; its Timelapse link waits for a first word | To build |
 | 23 | Moving between the game, log and timelapse loses your place | a: a link back to the page you came from steps back in history | To build |
-| 24–29 | | Open | |
+| 24 | Numbers nobody explains | a with c: the third tile fits the view; the UTC note under the Top lists heading | To build |
+| 25–29 | | Open | |
 
 ## The game
 
@@ -260,8 +261,9 @@ outlined (someone else's) versus filled (yours).
     The empty state's "with its territory, grid reference and the bearing it
     reads in" changes to match.
 - **When building:** the book and share buttons keep a tap area of at least
-  40px, as now, even where they're drawn smaller; a stray keeps its dashed
-  dot (ringed if charted first) and says "stray" on the second line, as an
+  40px, as now, even where they're drawn smaller; a bonus word (13's name
+  for a stray) keeps its dashed dot (ringed if charted first) and says
+  "bonus word" on the second line, as an
   exception does; a word's meaning opens full width under its row; the
   Supernovas list above takes the same columns (star, place, time, share);
   a theme filter keeps the day headings and cards. On a phone the title box
@@ -339,9 +341,12 @@ count's place reads as every word charted.
     (`letterfield.html` and `worker/src/survey-guild.js`, kept the same by
     a test). None is longer than "Fellowship", which the guild tests use as
     the longest.
-  - **"stray" becomes "found by chance"** under a find in the notes (10's
-    second line), in what screen readers hear ("Festivals word found by
-    chance") and in a shared find's text.
+  - **"stray" becomes "bonus word"** (first decided as "found by chance",
+    renamed while deciding 24, the usual name in word games for a real word
+    that isn't on the list): under a find in the notes (10's second line),
+    in the survey log's rows ("bonus circuitry word"), in what screen
+    readers hear ("Bonus festivals word") and in a shared find's text
+    ("LANTERN, a bonus festivals word,").
   - **6b's "full" becomes "crowded"** in the title. The panel's sentence,
     "This part of the map is full right now", stays.
 - **When building:** deploy the Worker before the site, or a new guild drawn
@@ -656,12 +661,27 @@ Screen app on an iPhone has none.
 
 ### 24. Numbers nobody explains
 
+A day shows "Words charted 79" beside "In the shared world 72" with nothing
+to say why they differ (the 7 are bonus words, which don't count towards
+the world), and "<0.01% of its hidden words", a share that will read <0.01%
+on any day or week for a long time. For a week or longer the top lists
+count whole days in UTC, which only the first card says.
+
 - **a. Make the third tile fit the view** (world percentage on All time
-  only, first). *Recommended.*
+  only, first). *Recommended,* with c.
 - **b. A one-line key.**
-- **c. The UTC note on every card.**
+- **c. The UTC note on every card**, or once where it covers them all.
 - **Machines:** none.
-- **Decided:** open.
+- **Decided: a with c** (after a mockup):
+  - On a day, week, month or year the third tile is "Hidden words · 72 ·
+    plus 7 bonus words", which explains the first tile's count; on All
+    time it's "Shared world · 0.09% charted · 1,030 of its hidden words",
+    leading with the share where it means something. The bonus words are
+    counted from the log's own data, with the rare word beyond the shared
+    map counted in the same line.
+  - The UTC note leaves the first card for the "Top lists" heading that 20
+    adds ("Counted in whole days in UTC, Nov 9 – 13, 2026"), so it covers
+    all four cards; the heading shows on every width, not only on a phone.
 
 ### 25. One idea, many names, across the three pages
 
