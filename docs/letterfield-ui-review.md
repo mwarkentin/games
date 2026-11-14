@@ -30,7 +30,8 @@ Line numbers are as of commit 7bae950 and drift as the files change.
 | 15 | Buttons with the same job look different; risky ones look harmless | a: filled and outlined buttons, red to end or delete; Stop syncing as rows; white inputs | To build |
 | 16 | Small visual glitches | a: fix each in place | To build |
 | 17 | Small flow and copy fixes | 1a: a Muted list on your page; 2a: the link in a box; 3: a and b, "Survey log and timelapse ↗" and ↗ on links out | To build |
-| 18–29 | | Open | |
+| 18 | Sharing the Supernovas page gives out a dead link | b: a Supernovas card in the share Worker | To build |
+| 19–29 | | Open | |
 
 ## The game
 
@@ -492,13 +493,30 @@ Options:
 
 ### 18. Sharing the Supernovas page gives out a dead link
 
-`/v/novas/undefined/all`, which the share Worker doesn't serve.
+The page has no key of its own, so `viewPath()` makes
+`/v/novas/undefined/all`, which the share Worker answers with a bare "not
+found".
 
-- **a. Give that page no share address.** *Recommended.*
+- **a. Give that page no share address**, so Share gives the log's own link.
+  *Recommended:* a one-line fix, with b free to follow.
 - **b. A Supernovas card in the share Worker.**
 - **c. Hide Share there.**
 - **Machines:** none.
-- **Decided:** open.
+- **Decided: b.**
+  - **Its address:** `/v/novas/all`, or `/v/novas/<period>/<when>/<from>-<to>`
+    pinned like the other views', with `d/` for a dark page and no key;
+    `viewPath()` and `share/src/view.js` agree, as they must.
+  - **Its card:** the share Worker asks the leaderboard Worker (through the
+    `LOG` binding) for `/v1/survey/log/novas/<from>/<to>` and draws what the
+    page's own picture shows: "Supernovas", the period, the counts
+    (Supernovas, Latest, Quickest) and the latest supernovas' last words in
+    their themes' colours, with the page's line as its text ("3 territories
+    went supernova in Letterfield's shared survey this week, every hidden
+    word charted. Latest: …"). The card's page sends people on to
+    `/letterfield-log?supernovas` for the same period.
+  - Tests in `share/test/` for the address, the card and where it sends
+    people, and in the log's tests for the page's share address; AGENTS.md's
+    Share cards section names Supernovas among the views with cards.
 
 ### 19. "Live" on views that don't update
 
