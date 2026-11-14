@@ -27,7 +27,8 @@ Line numbers are as of commit 7bae950 and drift as the files change.
 | 12 | "Origin" means nothing to most players | b and c: Map centre, and Last find once you have a find | To build |
 | 13 | Internal words show through | a: fix the words; 16 random guild words, without "Survey" | To build |
 | 14 | The tools menu hides its state; the volume floats | c: a mixer, a slider each for effects and music; zoom in one row | To build |
-| 15–29 | | Open | |
+| 15 | Buttons with the same job look different; risky ones look harmless | a: filled and outlined buttons, red to end or delete; Stop syncing as rows; white inputs | To build |
+| 16–29 | | Open | |
 
 ## The game
 
@@ -375,15 +376,44 @@ opens the notes. Taken up when the owner asked about the menu's structure.
 
 ### 15. Buttons with the same job look different; destructive ones look harmless
 
-- **a. Two button styles, pills for small in-row actions, danger colour on
-  destructive choices.** *Recommended.*
-- **b. Pills get the normal font and height.**
-- **c. Danger colour only on "Leave" and "Every device".**
+The drawer's cards mix three styles for their choices with no rule between
+them: filled ("Start it", "Done"), outlined ("Cancel" by your initials,
+"Stay" on an invite) and small pills in the mono font ("Cancel" naming a
+guild, "Stay" leaving one, "Close", "Copy"), which read as tags and stand
+about 30px tall against the game's 40px. "Leave", "Every device" (which
+deletes the copy kept for syncing and the recovery code) and "Remove it"
+look just like the safe choices beside them, and the Stop syncing row isn't
+red though Leave guild is.
+
+- **a. Two kinds of button:** filled for a card's main choice and outlined
+  for the rest, in the normal font at 40px, and red for one that ends or
+  deletes something; pills only for small actions within a row (Change
+  beside your initials, Try again on a meaning, the list's Mute and More).
+  *Recommended:* one rule to learn, which the buttons outside the drawer
+  already follow.
+- **b. Pills in the normal font and height**, the main one filled, risky
+  ones red.
+- **c. Red on the risky ones only.**
 - **Machines (any option):** the two confirmations are flags outside their
-  machines. Add `confirming` to `guild` and `stop` and `stopping` to `pair`.
-  `stopping` fixes a confirmed bug: the reply to "Every device" writes into
-  whatever card is open (it overwrote the recovery card's heading).
-- **Decided:** open.
+  machines (`askLeave`, `stopAsk`). Add `confirming` to `guild` and `stop`
+  and `stopping` to `pair`. `stopping` fixes a confirmed bug: the reply to
+  "Every device" writes into whatever card is open (it overwrote the
+  recovery card's heading), with a test that holds the reply back.
+- **Decided: a** (after two rounds of mockups), with:
+  - **Stop syncing as rows:** "Stop syncing where? Each device keeps its
+    notes as they are.", then two rows in a group, "This device" (the
+    others keep syncing) and "Every device" in red (also deletes the copy
+    kept for syncing, and your recovery code), then "Keep syncing" as an
+    outlined button. The rule: a yes or no gets buttons (Leave and Stay); a
+    choice between things to do gets rows, as the drawer's other choices
+    do.
+  - **Text inputs white in light mode** (initials, on the first-visit card
+    and your page, and the code entry), so they read as fields to type in
+    rather than greyed out. Dark mode's darker well stays as it is.
+  - The Stop syncing row turns red, like Leave guild.
+- **When building:** in the dark theme a red button's text is dark, since
+  that theme's red is a light coral; the code entry's Cancel follows the
+  rule too.
 
 ### 16. Small visual glitches
 
