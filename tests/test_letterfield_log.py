@@ -80,30 +80,34 @@ def test_shows_the_days_words_hour_by_hour_newest_first(page: Page, site_url, er
     expect(page.locator("#sumText")).to_have_text(re.compile(r"Friday, November 6, 2026\s*·\s*So far\s*·\s*Pick a day"))
     expect(tile(page, 0)).to_contain_text("Words charted2")
     # A tie goes to the earlier hour.
-    expect(tile(page, 1)).to_contain_text("Busiest hour2:00 PM – 3:00 PM1 word")
-    # ACORN is a hidden word in the shared world; MONET is a stray.
-    expect(tile(page, 2)).to_contain_text("In the shared world1")
+    expect(tile(page, 1)).to_contain_text("Busiest hour2–3 PM1 word")
+    # ACORN is a hidden word in the universe; MONET is a bonus word.
+    expect(tile(page, 2)).to_have_text("Hidden words1plus 1 bonus word")
     expect(page.locator("#chart .bar")).to_have_count(24)
     expect(page.locator("#chart .bar.some")).to_have_count(2)
     hours = page.locator(".hour h3")
     expect(hours).to_have_count(2)
-    expect(hours.nth(0)).to_contain_text("3:00 PM – 4:00 PM")
-    expect(hours.nth(1)).to_contain_text("2:00 PM – 3:00 PM")
+    expect(hours.nth(0)).to_contain_text("3–4 PM")
+    expect(hours.nth(1)).to_contain_text("2–3 PM")
 
     acorn = page.locator(".entry", has_text="ACORN")
     expect(acorn).to_contain_text("2:10 PM · ZED")
-    expect(acorn).to_contain_text("Acorn Hollow · 5E · 7S · → E · Forest")
+    # The field notes' grid: the word with its bearing drawn, the time and
+    # initials, then its place and theme, without a grid reference.
+    expect(acorn.locator(".meta")).to_have_text("Acorn Hollow · Forest")
+    expect(acorn.get_by_role("img", name="bearing E")).to_be_visible()
     expect(acorn.locator("a.fly")).to_have_attribute("href", "/letterfield#f-acorn-5-7-0")
     monet = page.locator(".entry", has_text="MONET")
-    expect(monet).to_have_class("entry mark stray")
+    expect(monet).to_have_class("entry mark bonus")
     expect(monet).to_contain_text("3:05 PM · —")
-    expect(monet).to_contain_text("stray old masters word")
+    expect(monet.locator(".meta")).to_have_text("Monet Reach · bonus old masters word")
     # The day before has its own page, and today is as late as it goes.
     expect(page.locator("#next")).to_be_disabled()
     page.click("#prev")
     expect(page.locator("#sumTitle")).to_have_text("Yesterday")
     expect(page.locator(".entry")).to_have_count(1)
-    expect(page.locator(".entry")).to_contain_text("Zeus Point · 40W · 100S · ↑ N · Olympus")
+    expect(page.locator(".entry .meta")).to_have_text("Zeus Point · Olympus")
+    expect(page.locator(".entry").get_by_role("img", name="bearing N")).to_be_visible()
     assert "day=2026-11-05" in page.url
     assert page.evaluate("document.documentElement.scrollWidth") <= 375
     assert errors == []
@@ -133,7 +137,7 @@ def test_an_hour_opens_minute_by_minute_and_the_running_one_says_so_far(page: Pa
     page.click("#up")
     expect(page.locator("#sumTitle")).to_have_text("Today")
     # Each hour of the day opens the same way.
-    page.locator(".hour h3", has_text="2:00 PM").get_by_role("button", name="Minute by minute").click()
+    page.locator(".hour h3", has_text="2–3 PM").get_by_role("button", name="Minute by minute").click()
     expect(page.locator("#sumTitle")).to_have_text("2:00 PM – 3:00 PM")
     assert errors == []
 
@@ -146,7 +150,7 @@ def test_a_week_shows_its_days_and_who_and_where_charted_most(page: Page, site_u
     expect(page.locator("#sumText")).to_have_text(re.compile(r"^Nov 2 – Nov 8, 2026\s*·\s*So far\s*·\s*Pick a day$"))
     expect(tile(page, 0)).to_contain_text("Words charted3")
     expect(tile(page, 1)).to_contain_text("Busiest dayFri, Nov 62 words")
-    expect(tile(page, 2)).to_contain_text("In the shared world2")
+    expect(tile(page, 2)).to_have_text("Hidden words2plus 1 bonus word")
     expect(page.locator("#chart .ticks span")).to_have_text(["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"])
     # Days to come can't be opened; days so far are listed newest first.
     expect(page.locator("#chart .bar.go")).to_have_count(5)
@@ -205,7 +209,9 @@ def test_all_time_shows_how_much_of_the_world_is_charted(page: Page, site_url, e
     # ZEUS, the day before the log began, came from a sector sending its older words.
     expect(page.locator("#sumText")).to_have_text("Since the first word, on Nov 5, 2026")
     expect(page.locator("#prev")).to_be_hidden()
-    expect(page.locator(".chart .ymax").nth(1)).to_have_text("2 of 1,119,752 hidden words in the shared world · <0.01%")
+    expect(page.locator(".chart .ymax").nth(1)).to_have_text("2 of 1,119,752 hidden words in the universe · <0.01%")
+    # All time's third tile is the share of the universe charted.
+    expect(tile(page, 2)).to_have_text("Universe<0.01% charted2 of its hidden words")
     expect(page.locator(".meter")).to_have_attribute("aria-valuenow", "2")
     # One month is a meter; the line that rises toward the whole world needs two.
     expect(page.locator("svg.line")).to_have_count(0)
@@ -660,7 +666,7 @@ def test_a_day_and_an_hour_have_top_lists_of_their_own(page: Page, site_url, err
     assert page.evaluate("document.documentElement.scrollWidth") <= 375
 
     # Minute by minute, the hour's own.
-    page.locator(".hour h3", has_text="2:00").get_by_role("button", name="Minute by minute").click()
+    page.locator(".hour h3", has_text="2–3 PM").get_by_role("button", name="Minute by minute").click()
     expect(page.locator("#sumTitle")).to_contain_text("2:00")
     wait_for_request(page, fake, f"/top/hours/{hour - 1}/{hour}")
     expect(surveyors.locator(".rank .lbl")).to_have_text(["ZED", "ABC"])
@@ -812,9 +818,7 @@ def test_a_day_and_an_hour_show_their_supernovas_where_they_happened(page: Page,
     strip = page.locator("#novaStrip .strip")
     expect(strip).to_contain_text("Monet Reach went supernova today: every hidden word charted")
     expect(page.locator(".bar.starred")).to_have_count(1)
-    expect(page.locator(".bar.starred")).to_have_attribute(
-        "aria-label", re.compile(r"3:00\s?PM – 4:00\s?PM: 2 words · 1 supernova")
-    )
+    expect(page.locator(".bar.starred")).to_have_attribute("aria-label", re.compile(r"3–4\s?PM: 2 words · 1 supernova"))
     three = page.locator(".hour").first
     expect(three.locator(".entries > li").nth(0)).to_have_class(re.compile(r"\bnova\b"))
     expect(three.locator(".entries > li").nth(1).locator(".word")).to_have_text("OAK")
@@ -975,4 +979,107 @@ def test_a_shared_link_draws_what_its_address_says_before_the_log_answers(page: 
     # The tiles and chart came in where their placeholders were, the same size.
     assert abs(page.locator("#tiles").evaluate("e => e.getBoundingClientRect().height") - tiles_h) <= 8
     assert abs(page.locator("#chart .plot").evaluate("e => e.getBoundingClientRect().height") - chart_h) <= 1
+    assert errors == []
+
+
+# ---------- The body: words first on a phone, and sizes for fingers ----------
+
+
+def top(page: Page, selector: str) -> float:
+    return page.locator(selector).first.evaluate("e => e.getBoundingClientRect().top + scrollY")
+
+
+def test_on_a_phone_the_words_come_before_the_top_lists(page: Page, site_url, errors):
+    page.set_viewport_size({"width": 375, "height": 740})
+    fake = FakeSurveyLog([ACORN, MONET, ZEUS, BIRCH, OAK], PLACES, THEMES, totals=NOVA_TOTALS)
+    open_log(page, site_url, fake, query="&period=week")
+    expect(page.locator(".row")).to_have_count(5)
+    expect(page.locator("#cards .card:not(.ph-card)")).to_have_count(3)
+    # The supernova note right under the chart, starting with the chart's ✦.
+    expect(page.locator("#summary #novaStrip .strip")).to_contain_text("Monet Reach went supernova this week")
+    expect(page.locator("#novaStrip .spark")).to_have_text("✦")
+    assert top(page, "#log") < top(page, "#tops")
+    expect(page.locator("#topsHead")).to_have_text("Top lists")
+    # The week's lists count whole UTC days, said once under the heading.
+    expect(page.locator("#utc")).to_have_text("Counted in whole days in UTC, Nov 2 – 6, 2026")
+    expect(page.locator(".card").first).not_to_contain_text("UTC")
+    expect(page.locator("#jump")).to_be_visible()
+    page.click("#jump")
+    expect(page.locator("#tops")).to_be_in_viewport()
+
+    # On a computer, where the cards sit two abreast, the top lists come first, still under their heading.
+    page.set_viewport_size({"width": 1000, "height": 800})
+    expect(page.locator("#jump")).to_be_hidden()
+    expect(page.locator("#topsHead")).to_be_visible()
+    assert top(page, "#tops") < top(page, "#log")
+
+    # A day's lists are counted by the hour, so there's no UTC note.
+    page.locator("#periods [data-p=day]").click()
+    expect(page.locator("#cards .card:not(.ph-card)")).to_have_count(3)
+    expect(page.locator("#utc")).to_be_hidden()
+    assert errors == []
+
+
+TAP = """(el) => {
+  el.dispatchEvent(new PointerEvent('pointerdown', { pointerType: 'touch', bubbles: true }));
+  el.dispatchEvent(new MouseEvent('click', { detail: 1, bubbles: true }));
+}"""
+
+
+def test_a_first_tap_on_a_bar_shows_its_value_and_a_second_opens_it(page: Page, site_url, errors):
+    page.set_viewport_size({"width": 375, "height": 740})
+    fake = FakeSurveyLog([ACORN, MONET, ZEUS], PLACES, THEMES)
+    open_log(page, site_url, fake)
+    expect(page.locator("#chart .bar.some")).to_have_count(2)
+    bar = page.locator("#chart .bar").nth(14)
+    bar.evaluate(TAP)
+    expect(page.locator("#tip")).to_be_visible()
+    expect(page.locator("#tip")).to_have_text(re.compile(r"1 word\s*2–3\s?PM\s*Tap again to open"))
+    expect(page.locator("#sumTitle")).to_have_text("Today")
+    # A tap on another bar picks that one instead.
+    page.locator("#chart .bar").nth(15).evaluate(TAP)
+    expect(page.locator("#tip")).to_contain_text("3–4")
+    expect(page.locator("#sumTitle")).to_have_text("Today")
+    page.locator("#chart .bar").nth(15).evaluate(TAP)
+    expect(page.locator("#sumTitle")).to_have_text(re.compile(r"3:00\s?PM – 4:00\s?PM"))
+    expect(page.locator("#tip")).to_be_hidden()
+
+    # A year's days the same.
+    page.locator("#periods [data-p=year]").click()
+    day = page.get_by_role("button", name="Thu, Nov 5: 1 word")
+    day.evaluate(TAP)
+    expect(page.locator("#tip")).to_contain_text("Tap again to open")
+    expect(page.locator("#sumTitle")).to_have_text("2026")
+    day.evaluate(TAP)
+    expect(page.locator("#sumTitle")).to_have_text("Yesterday")
+    assert errors == []
+
+
+def test_rows_and_buttons_are_big_enough_for_a_finger_and_names_wrap(page: Page, site_url, errors):
+    page.set_viewport_size({"width": 375, "height": 740})
+    long = {"0,0": "Emerald Theodolite Fellowship Hollow"}
+    fake = FakeSurveyLog([ACORN, MONET, ZEUS], {**PLACES, **long}, THEMES)
+    open_log(page, site_url, fake)
+    expect(page.locator(".entry")).to_have_count(2)
+    expect(page.locator("#cards .card:not(.ph-card)")).to_have_count(3)
+    heights = page.evaluate(
+        """sel => [...document.querySelectorAll(sel)].map(e => e.getBoundingClientRect().height).filter(h => h > 0)""",
+        ".entry, .rank li, .hour h3 button, #focus .pill, #lists button, .periods button",
+    )
+    assert heights and min(heights) >= 40, heights
+    assert (
+        min(
+            page.evaluate(
+                "[...document.querySelectorAll('.entry, .rank li')].map(e => e.getBoundingClientRect().height)"
+            )
+        )
+        >= 44
+    )
+    # An hour's heading stays on one line, and a long name wraps rather than being cut.
+    for h in page.locator(".hour h3").all():
+        assert h.evaluate("e => e.getBoundingClientRect().height") < 70
+    name = page.locator(".card", has_text="Top territories").locator(".rank .lbl span").first
+    expect(name).to_have_text("Emerald Theodolite Fellowship Hollow")
+    assert name.evaluate("e => e.scrollWidth <= e.clientWidth + 1")
+    assert page.evaluate("document.documentElement.scrollWidth") <= 375
     assert errors == []

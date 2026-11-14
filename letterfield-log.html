@@ -102,7 +102,7 @@ header p{margin:8px 0 0;color:var(--muted);max-width:40ch}
 .ph{color:transparent!important;background:color-mix(in srgb, var(--rule) 50%, var(--panel));border-radius:4px}
 .tile .ph{width:70%}
 /* A tile's label and note take two lines on a phone, one on a computer. */
-.ph-tile{min-height:88px}
+.ph-tile{min-height:80px}
 @media (min-width:640px){.ph-tile{min-height:62px}}
 .tile b.ph{width:45%}
 .ph-plot{height:96px;border-radius:4px 4px 0 0}
@@ -138,6 +138,7 @@ header p{margin:8px 0 0;color:var(--muted);max-width:40ch}
 .meter i{display:block;height:100%;background:var(--accent);border-radius:4px;min-width:2px}
 .tip{position:absolute;z-index:5;pointer-events:none;background:var(--ink);color:var(--paper);border-radius:6px;padding:6px 8px;font:400 11px/1.35 var(--f-mono);white-space:nowrap;transform:translate(-50%, calc(-100% - 8px))}
 .tip b{display:block;font-weight:500;font-size:13px}
+.tip .hint{display:block;margin-top:2px;opacity:.75}
 
 /* The year: twelve small month calendars, one cell a day, darker for more. */
 .year{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px 10px;margin-top:14px}
@@ -156,25 +157,35 @@ header p{margin:8px 0 0;color:var(--muted);max-width:40ch}
 .scale{display:flex;align-items:center;justify-content:flex-end;gap:3px;margin-top:10px;font:400 10px/1 var(--f-mono);color:var(--muted)}
 .scale i{width:10px;height:10px;border-radius:2px}
 
+.body{display:flex;flex-direction:column}
+.tops{margin-top:18px}
+.tops h2{margin:0;font:700 22px/1 var(--f-display);letter-spacing:.05em;text-transform:uppercase}
+.tops .utc{margin:4px 0 0;font:400 11px/1.4 var(--f-mono);color:var(--muted)}
+.tops .cards{margin-top:10px}
+.jump{display:inline-flex;align-items:center;min-height:40px;margin-top:4px;font:500 12px/1 var(--f-mono);color:var(--accent)}
+@media (min-width:640px){
+  .jump{display:none}
+  .tops{order:-1;margin:0 0 8px}
+}
 .cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(15rem,1fr));gap:8px;margin-bottom:8px}
 .card{background:var(--panel);border:1px solid var(--rule);border-radius:8px;padding:12px 14px;min-width:0}
 .card h3{margin:0 0 8px;font:700 18px/1 var(--f-display);letter-spacing:.05em;text-transform:uppercase}
 .card .note{margin:8px 0 0;font:400 10.5px/1.4 var(--f-mono);color:var(--muted)}
 .rank{list-style:none;margin:0;padding:0}
-.rank li{display:grid;grid-template-columns:minmax(0,9rem) minmax(0,1fr) auto;align-items:center;gap:8px;padding:4px 0;font-size:13px}
+.rank li{display:grid;grid-template-columns:minmax(0,9rem) minmax(0,1fr) auto;align-items:center;gap:8px;min-height:44px;padding:4px 0;font-size:13px}
 .rank li.go{position:relative;border-radius:4px}
 .rank li.go:hover{background:var(--hover)}
 .rank li.go a{color:inherit;text-decoration:none}
 .rank li.go a::after{content:"";position:absolute;inset:-2px -6px;border-radius:4px}
 .rank li.go:hover .lbl a span{text-decoration-style:solid}
-.rank .lbl{display:flex;align-items:center;gap:6px;min-width:0;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+.rank .lbl{display:flex;align-items:center;gap:6px;min-width:0;line-height:1.25}
 .rank .lbl .dot{flex:none}
-.rank .lbl span{overflow:hidden;text-overflow:ellipsis}
+.rank .lbl span{min-width:0;overflow-wrap:anywhere}
 .track{height:8px;min-width:0}
 .track i{display:block;height:100%;max-width:100%;background:var(--accent);border-radius:0 4px 4px 0;min-width:2px}
 .num{font:500 12px/1 var(--f-mono);font-variant-numeric:tabular-nums;text-align:right}
 .rows{list-style:none;margin:0;padding:4px 0}
-.row{width:100%;display:grid;grid-template-columns:minmax(0,9.5rem) minmax(0,1fr) 4.5rem;align-items:center;gap:10px;padding:10px 8px;border:0;border-radius:6px;background:transparent;text-align:left;cursor:pointer}
+.row{width:100%;display:grid;grid-template-columns:minmax(0,9.5rem) minmax(0,1fr) 4.5rem;align-items:center;gap:10px;min-height:44px;padding:10px 8px;border:0;border-radius:6px;background:transparent;text-align:left;cursor:pointer}
 .row:hover{background:var(--hover)}
 .row:disabled{cursor:default;color:var(--muted)}
 .row .when{font:700 18px/1 var(--f-display);letter-spacing:.05em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -186,20 +197,23 @@ header p{margin:8px 0 0;color:var(--muted);max-width:40ch}
 .focus p{margin:6px 0 0;color:var(--muted);font:400 11.5px/1.5 var(--f-mono)}
 .focus p a{color:var(--ink)}
 .focus .acts{display:flex;gap:6px;flex-wrap:wrap}
-.pill{display:inline-flex;align-items:center;gap:6px;height:36px;padding:0 12px;border:1px solid var(--rule);border-radius:999px;background:var(--paper);color:var(--ink);font:500 12px/1 var(--f-mono);text-decoration:none;cursor:pointer;white-space:nowrap}
+.pill{display:inline-flex;align-items:center;gap:6px;height:40px;padding:0 12px;border:1px solid var(--rule);border-radius:999px;background:var(--paper);color:var(--ink);font:500 12px/1 var(--f-mono);text-decoration:none;cursor:pointer;white-space:nowrap}
 .pill:hover{background:var(--hover)}
 .pill.main{background:var(--ink);color:var(--paper);border-color:var(--ink)}
-.more{display:block;margin:10px auto 0;border:1px solid var(--rule);background:var(--panel);border-radius:999px;padding:10px 16px;cursor:pointer;font:500 12px/1 var(--f-mono)}
+.more{display:block;min-height:40px;margin:10px auto 0;border:1px solid var(--rule);background:var(--panel);border-radius:999px;padding:10px 16px;cursor:pointer;font:500 12px/1 var(--f-mono)}
 .status{color:var(--muted);padding:18px 2px;max-width:40ch}
 .status strong{display:block;color:var(--ink);font:700 20px/1.1 var(--f-display);letter-spacing:.05em;text-transform:uppercase;margin-bottom:6px}
-.status button{margin-top:10px;border:1px solid var(--rule);background:var(--panel);border-radius:999px;padding:8px 14px;cursor:pointer;font:500 12px/1 var(--f-mono)}
+.status button{min-height:40px;margin-top:10px;border:1px solid var(--rule);background:var(--panel);border-radius:999px;padding:8px 14px;cursor:pointer;font:500 12px/1 var(--f-mono)}
 
 .hour{margin-top:6px}
-.hour h3{position:sticky;top:0;z-index:1;margin:0;display:flex;justify-content:space-between;align-items:baseline;gap:10px;padding:calc(env(safe-area-inset-top,0px) + 10px) 2px 8px;background:var(--paper);border-bottom:1px solid var(--rule);font:700 20px/1 var(--f-display);letter-spacing:.06em}
-.hour h3 span{font:400 11px/1 var(--f-mono);letter-spacing:0;color:var(--muted);display:flex;align-items:baseline;gap:8px}
-.hour h3 button{border:1px solid var(--rule);background:var(--panel);border-radius:999px;padding:5px 9px;font:500 10.5px/1 var(--f-mono);cursor:pointer;color:var(--ink)}
+.hour h3{position:sticky;top:0;z-index:1;margin:0;display:flex;justify-content:space-between;align-items:center;gap:10px;padding:calc(env(safe-area-inset-top,0px) + 10px) 2px 8px;background:var(--paper);border-bottom:1px solid var(--rule);font:700 20px/1 var(--f-display);letter-spacing:.06em}
+.hour h3{white-space:nowrap}
+.hour h3 span{font:400 11px/1 var(--f-mono);letter-spacing:0;color:var(--muted);display:flex;align-items:center;gap:8px}
+.hour h3 button{min-height:40px;border:1px solid var(--rule);background:var(--panel);border-radius:999px;padding:0 12px;font:500 10.5px/1 var(--f-mono);cursor:pointer;color:var(--ink)}
 .entries{list-style:none;margin:0;padding:4px 0}
-.entry{position:relative;display:grid;grid-template-columns:10px minmax(0,1fr) auto;column-gap:12px;row-gap:5px;align-items:baseline;padding:10px 8px;border-radius:6px}
+.entry{position:relative;display:grid;grid-template-columns:10px minmax(0,1fr) auto;column-gap:12px;row-gap:5px;align-items:baseline;min-height:44px;padding:10px 8px;border-radius:6px}
+.entry .head{display:flex;align-items:center;gap:6px;min-width:0}
+.bearing{flex:none;width:13px;height:13px;fill:none;stroke:var(--muted);stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round}
 .entry:hover{background:var(--hover)}
 /* The word flies to the map, from anywhere on its row; who, where and which
    theme sit above that and open their own views. */
@@ -209,7 +223,7 @@ header p{margin:8px 0 0;color:var(--muted);max-width:40ch}
 .entry a.to,.rank li.go .lbl a span,.focus p a{text-decoration:underline dotted;text-decoration-color:color-mix(in srgb, currentColor 50%, transparent);text-underline-offset:3px}
 .entry a.to:hover{text-decoration-style:solid}
 .dot{width:10px;height:10px;border-radius:50%;background:var(--c);align-self:center}
-.entry.stray .dot{background:transparent;border:2px dashed var(--c)}
+.entry.bonus .dot{background:transparent;border:2px dashed var(--c)}
 .word{font:700 21px/1 var(--f-display);letter-spacing:.07em;min-width:0;overflow:hidden;text-overflow:ellipsis}
 .who{font:400 11px/1 var(--f-mono);color:var(--muted);white-space:nowrap;font-variant-numeric:tabular-nums}
 .who b{font-weight:500;color:var(--ink)}
@@ -235,11 +249,12 @@ header p{margin:8px 0 0;color:var(--muted);max-width:40ch}
 .nova .meta{grid-column:2 / 4}
 .nova a.to{position:relative;z-index:1;color:inherit;text-decoration:underline dotted;text-decoration-color:color-mix(in srgb, currentColor 50%, transparent);text-underline-offset:3px}
 .novas{list-style:none;margin:0;padding:4px 0}
-.strip{display:grid;grid-template-columns:18px minmax(0,1fr) auto;align-items:center;gap:6px 10px;margin:0 0 8px;padding:10px 14px;border-radius:8px;
+.strip{display:grid;grid-template-columns:14px minmax(0,1fr) auto;align-items:center;gap:6px 8px;margin:12px 0 0;padding:10px 12px;border-radius:8px;
   background:linear-gradient(100deg, hsl(var(--h,200) 55% 50% / .14), var(--panel) 75%);border:1px solid hsl(var(--h,200) 45% 50% / .3);font-size:13px}
 .strip b{font-weight:600}
 .strip a{color:var(--ink)}
-.strip .all{font:500 12px/1 var(--f-mono);white-space:nowrap}
+.strip .all{display:inline-flex;align-items:center;min-height:40px;font:500 12px/1 var(--f-mono);white-space:nowrap}
+.strip .spark{font-size:13px;line-height:1;color:var(--accent);text-align:center}
 @media (max-width:520px){.strip .all{grid-column:2 / 4;justify-self:end}}
 .meter.whole{background:hsl(var(--h,200) 45% 50% / .2)}
 .meter.whole i{background:linear-gradient(90deg, hsl(var(--h,200) 70% 45%), hsl(var(--h,200) 90% 65%))}
@@ -300,18 +315,25 @@ header p{margin:8px 0 0;color:var(--muted);max-width:40ch}
     <div class="share-row" id="novasShare" hidden><button type="button" class="pill main" id="shareNovas">Share</button></div>
     <div class="tiles" id="tiles"></div>
     <div id="chart"></div>
+    <div id="novaStrip"></div>
+    <a class="jump" id="jump" href="#tops" hidden>Top lists ↓</a>
   </section>
   <!-- Kept here, out of sight, while the caption, which is redrawn, has no place for them. -->
   <div hidden id="spare"><span class="pick" id="pick"><button type="button" class="link" id="pickBtn" tabindex="-1" aria-hidden="true">Pick a day</button><input type="date" id="dayInput" aria-label="Pick a day"></span>
   <button type="button" class="link" id="up">↑ The whole day</button></div>
 
-  <div class="cards" id="cards"></div>
+  <!-- The words come first on a phone, and the top lists after them; on a
+       computer, where the cards sit two abreast, the top lists come first. -->
+  <div class="body">
+    <div id="log"></div>
+    <section class="tops" id="tops" aria-labelledby="topsHead" hidden>
+      <h2 id="topsHead">Top lists</h2>
+      <p class="utc" id="utc" hidden></p>
+      <div class="cards" id="cards"></div>
+    </section>
+  </div>
 
-  <div id="novaStrip"></div>
-
-  <div id="log"></div>
-
-  <p class="foot">Times are yours, in <span id="zone"></span>. Top lists for a week or longer count whole days in UTC, and initials are whatever each surveyor typed in, so they aren’t unique. “Mine” lists the words this browser charted first, from Letterfield’s field notes; nothing about you is sent to find them. A surveyor’s, guild’s, territory’s or theme’s own view has an address of its own to share. A guild counts the words its members chart while in it, except those of members off the surveyor list. A territory goes supernova once every one of its hidden words is charted.</p>
+  <p class="foot">Times are yours, in <span id="zone"></span>. Initials are whatever each surveyor typed in, so they aren’t unique. “Mine” lists the words this browser charted first, from Letterfield’s field notes; nothing about you is sent to find them. A surveyor’s, guild’s, territory’s or theme’s own view has an address of its own to share. A guild counts the words its members chart while in it, except those of members off the surveyor list. A territory goes supernova once every one of its hidden words is charted.</p>
   <p class="foot feedback">Found a bug or have an idea? <a href="https://github.com/mwarkentin/games/issues/new/choose" target="_blank" rel="noopener" data-feedback>Send feedback</a></p>
 </main>
 <div class="tip" id="tip" role="tooltip" hidden></div>
@@ -327,7 +349,6 @@ const SURVEY_URL = 'https://api.games.michaelwarkentin.com';
 const SHARE_URL = 'https://share.michaelwarkentin.com';
 const K_FINDS = 'letterfield.finds.v4';  // Letterfield's field notes, on this origin (K_FINDS in letterfield.html)
 const HOUR = 3600000, DAY = 86400000, MINUTE = 60000;
-const DARROW = ['→','↘','↓','↙','←','↖','↑','↗'];
 const DNAME = ['E','SE','S','SW','W','NW','N','NE'];
 const RC = 48;            // cells per territory side
 const AREA_CELLS = [-12 * 192, 13 * 192];  // the shared world, x and y from..to-1 (sectors -12 to 12)
@@ -389,6 +410,19 @@ const isoDay = t => { const d = new Date(t); return `${d.getFullYear()}-${String
 const parseDay = s => { const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(s || ''); return m ? new Date(+m[1], +m[2] - 1, +m[3]).getTime() : null; };
 const utcDate = new Intl.DateTimeFormat(undefined, { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' });
 const hourRange = (a, b) => `${timeFmt.format(a)} – ${timeFmt.format(b)}`;
+// An hour as a heading says it, short enough for one line on a phone: "3–4 PM",
+// "11 AM – 12 PM" across noon, "15–16" on a 24-hour clock. An hour that doesn't
+// start on the hour (a time zone half an hour off) keeps its minutes.
+function hourShort(a, b) {
+  const part = t => {
+    const ps = hourFmt.formatToParts(t);
+    return { h: ps.find(x => x.type === 'hour')?.value, p: ps.find(x => x.type === 'dayPeriod')?.value || '' };
+  };
+  if (new Date(a).getMinutes() || new Date(b).getMinutes()) return hourRange(a, b);
+  const x = part(a), y = part(b);
+  if (!x.h || !y.h) return hourRange(a, b);
+  return x.p === y.p ? `${x.h}–${y.h}${x.p ? ' ' + x.p : ''}` : `${x.h} ${x.p} – ${y.h} ${y.p}`;
+}
 
 /* ---------- State machines ---------- */
 // ---- BEGIN STATE MACHINE ----
@@ -496,7 +530,7 @@ function tally(buckets, points) {
 function bucketLabel(p, b) {
   const u = UNIT[p];
   if (u === 'minute') return timeFmt.format(b.from);
-  if (u === 'hour') return hourRange(b.from, b.to);
+  if (u === 'hour') return hourShort(b.from, b.to);
   if (u === 'day') return shortDay.format(b.from);
   return monthFmt.format(b.from);
 }
@@ -688,7 +722,10 @@ function novaStrip(found, p, start, end) {
   const all = el('a', 'all', 'Supernovas →');
   all.href = focusHref({ kind: 'novas' });
   all.dataset.go = '';
-  box.append(el('i', 'star'), line, all);
+  // The chart's ✦, so the mark explains itself.
+  const spark = el('span', 'spark', '✦');
+  spark.setAttribute('aria-hidden', 'true');
+  box.append(spark, line, all);
   stripEl.append(box);
 }
 // Supernovas, newest first: a period's, with a chart of when, and each one.
@@ -768,33 +805,48 @@ function toFocus(f, node, cls = 'to') {
   return a;
 }
 
-// One word: tapping it flies to the map; its surveyor, territory and theme
-// open their own views.
+// A word's bearing, drawn: an arrow turned to it (0 east, then clockwise in eighths).
+function bearing(d) {
+  const ns = 'http://www.w3.org/2000/svg', svg = document.createElementNS(ns, 'svg'), path = document.createElementNS(ns, 'path');
+  svg.setAttribute('class', 'bearing');
+  svg.setAttribute('viewBox', '-6 -6 12 12');
+  svg.setAttribute('role', 'img');
+  svg.setAttribute('aria-label', `bearing ${DNAME[d]}`);
+  path.setAttribute('d', 'M-4.5 0H4M1 -3L4.5 0L1 3');
+  path.setAttribute('transform', `rotate(${45 * d})`);
+  svg.append(path);
+  return svg;
+}
+
+// One word, on the field notes' grid: its marker, the word with its bearing,
+// the time and initials, and under them its place and theme. Tapping it
+// flies to the map; its surveyor, territory and theme open their own views.
 function entryRow(e, data, mine) {
   const [w, x, y, d, s, initials, at, th] = e;
   const key = keyOf(w, x, y, d), signed = /^[A-Z]{3}$/.test(initials || '');
-  const li = el('li', 'entry mark' + (s ? ' stray' : ''));
+  const li = el('li', 'entry mark' + (s ? ' bonus' : ''));
   const theme = data.themes[th];
   if (theme && Number.isFinite(theme[1])) li.style.setProperty('--h', theme[1]);
   const a = el('a', 'fly word', w);
   a.href = flyHref(w, x, y, d);
   a.title = `${w}: charted first${signed ? ' by ' + initials : ''}, ${new Date(at).toLocaleString()}. Fly there on the map.`;
-  li.append(el('i', 'dot'), a);
+  const head = el('span', 'head');
+  head.append(a, bearing(d));
+  li.append(el('i', 'dot'), head);
   const who = el('span', 'who');
   who.append(timeFmt.format(at) + ' · ');
   who.append(signed ? toFocus({ kind: 'surveyor', key: initials }, el('b', '', initials)) : el('b', '', '—'));
   if (mine.has(key)) who.append(el('span', 'you', 'you'));
   li.append(who);
-  const meta = el('span', 'meta');
+  const meta = el('span', 'meta'), parts = [];
   const rx = fdiv(x, RC), ry = fdiv(y, RC), place = data.places[`${rx},${ry}`];
-  if (typeof place === 'string') meta.append(toFocus({ kind: 'territory', rx, ry }, el('b', '', place)), ' · ');
-  meta.append(`${fmtCoord(x, y)} · ${DARROW[d]} ${DNAME[d]}`);
+  if (typeof place === 'string') parts.push(toFocus({ kind: 'territory', rx, ry }, el('b', '', place)));
   if (theme && typeof theme[0] === 'string') {
-    // A stray's theme is its word's, not the territory's: the theme's own
-    // view counts hidden words only, so a stray doesn't link there.
-    if (s) meta.append(' · stray ' + theme[0].toLowerCase() + ' word');
-    else meta.append(' · ', toFocus({ kind: 'theme', key: th }, document.createTextNode(theme[0])));
-  } else if (s) meta.append(' · stray');
+    // A bonus word's theme is its word's, not the territory's: the theme's own
+    // view counts hidden words only, so a bonus word doesn't link there.
+    parts.push(s ? `bonus ${theme[0].toLowerCase()} word` : toFocus({ kind: 'theme', key: th }, document.createTextNode(theme[0])));
+  } else if (s) parts.push('bonus word');
+  meta.append(...parts.flatMap((p, i) => i ? [' · ', p] : [p]));
   li.append(meta);
   return li;
 }
@@ -810,7 +862,7 @@ function wordGroups(unit, firsts, countOf) {
       if (!last || last.from !== from) {
         const to = shift(unit, from, 1), n = countOf(from, to);
         const s = el('section', 'hour');
-        const head = el('h3', '', unit === 'hour' ? hourRange(from, to) : (new Date(from).getFullYear() === new Date().getFullYear() ? dayFmt : dayYearFmt).format(from));
+        const head = el('h3', '', unit === 'hour' ? hourShort(from, to) : (new Date(from).getFullYear() === new Date().getFullYear() ? dayFmt : dayYearFmt).format(from));
         if (n) head.append(el('span', '', plural(n, 'word')));
         last = { from, list: el('ol', 'entries') };
         s.append(head, last.list);
@@ -825,20 +877,38 @@ function wordGroups(unit, firsts, countOf) {
 // One tooltip for every chart: the value first, then what it's for. It only
 // repeats what the lists below the chart already say.
 const tip = $('#tip');
-function showTip(target, value, label) {
+function showTip(target, value, label, hint = '') {
   tip.replaceChildren(el('b', '', value), label);
+  if (hint) tip.append(el('span', 'hint', hint));
   tip.hidden = false;
   const r = target.getBoundingClientRect();
   const x = Math.min(Math.max(r.left + r.width / 2, 70), document.documentElement.clientWidth - 70);
   tip.style.left = (x + scrollX) + 'px';
   tip.style.top = (r.top + scrollY) + 'px';
 }
-const hideTip = () => { tip.hidden = true; };
-function hoverable(node, value, label) {
-  node.addEventListener('pointerenter', () => showTip(node, value, label));
-  node.addEventListener('pointerleave', hideTip);
-  node.addEventListener('focus', () => showTip(node, value, label));
-  node.addEventListener('blur', hideTip);
+let picked = null, lastPointer = 'mouse';
+const hideTip = () => { tip.hidden = true; picked = null; };
+// A chart's bar or a calendar's day. With a mouse, hovering shows its value
+// and a click opens it at once. A first tap shows its value, with "Tap again
+// to open", and a second opens it, since a finger can't hover and a bar is
+// only a few pixels wide. At most one is picked at a time; a tap anywhere
+// else puts it down.
+addEventListener('pointerdown', e => {
+  lastPointer = e.pointerType;
+  if (picked && !picked.contains(e.target)) hideTip();
+}, true);
+function pickable(node, value, label, go = null) {
+  node.addEventListener('pointerenter', e => { if (e.pointerType === 'mouse') showTip(node, value, label); });
+  node.addEventListener('pointerleave', e => { if (e.pointerType === 'mouse' && picked !== node) hideTip(); });
+  node.addEventListener('focus', () => { if (picked !== node) showTip(node, value, label); });
+  node.addEventListener('blur', () => { if (picked !== node) hideTip(); });
+  node.addEventListener('click', e => {
+    // A key press (detail 0) or a mouse opens at once; a tap first shows the value.
+    const tap = e.detail !== 0 && (lastPointer === 'touch' || lastPointer === 'pen');
+    if (go && (!tap || picked === node)) { hideTip(); go(); return; }
+    showTip(node, value, label, go ? 'Tap again to open' : '');
+    picked = node;
+  });
 }
 
 // A column chart of words per piece of the period. Tapping a column opens
@@ -865,8 +935,9 @@ function columnChart(p, buckets, go, { what = 'word', stars = null } = {}) {
     const value = plural(b.n, what) + (novas ? ` · ${plural(novas, 'supernova')}` : '');
     if (novas) bar.classList.add('starred');
     bar.setAttribute('aria-label', `${label}: ${value}`);
-    hoverable(bar, value, label);
-    if (go && b.from <= now) { bar.classList.add('go'); bar.onclick = () => { hideTip(); go(b); }; }
+    const opens = go && b.from <= now;
+    pickable(bar, value, label, opens ? () => go(b) : null);
+    if (opens) bar.classList.add('go');
     else bar.tabIndex = b.n ? 0 : -1;
     plot.append(bar);
     ticks.append(el('span', '', tickLabel(p, b, i, buckets.length)));
@@ -903,8 +974,8 @@ function yearCalendar(year, buckets, openDay, openMonth) {
       cell.type = 'button';
       const label = shortDay.format(b.from), value = later ? 'still to come' : plural(b.n, 'word');
       cell.setAttribute('aria-label', `${label}: ${value}`);
-      hoverable(cell, value, label);
-      if (!later) { cell.classList.add('go'); cell.onclick = () => { hideTip(); openDay(b.from); }; }
+      pickable(cell, value, label, later ? null : () => openDay(b.from));
+      if (!later) cell.classList.add('go');
       else cell.tabIndex = -1;
       cells.append(cell);
     }
@@ -919,21 +990,21 @@ function yearCalendar(year, buckets, openDay, openMonth) {
   return wrap;
 }
 
-// All time's running total of hidden words charted in the shared world, as a
-// line rising toward the whole world, with a meter for how far it's got.
+// All time's running total of hidden words charted in the universe, as a
+// line rising toward the whole of it, with a meter for how far it's got.
 function progressChart(buckets) {
   const wrap = el('div', 'chart');
   let sum = 0;
   const now = Date.now();
   const points = buckets.filter(b => b.from <= now).map(b => ({ b, v: (sum += b.world) }));
   const top = Math.max(1, sum);
-  const head = el('div', 'ymax', `${sum.toLocaleString()} of ${WORLD_WORDS.toLocaleString()} hidden words in the shared world · ${pct(sum)}`);
+  const head = el('div', 'ymax', `${sum.toLocaleString()} of ${WORLD_WORDS.toLocaleString()} hidden words in the universe · ${pct(sum)}`);
   const meter = el('div', 'meter');
   const fill = el('i');
   fill.style.width = Math.min(100, 100 * sum / WORLD_WORDS) + '%';
   meter.append(fill);
   meter.setAttribute('role', 'meter');
-  meter.setAttribute('aria-label', 'Share of the shared world charted');
+  meter.setAttribute('aria-label', 'Share of the universe charted');
   meter.setAttribute('aria-valuemin', '0');
   meter.setAttribute('aria-valuemax', String(WORLD_WORDS));
   meter.setAttribute('aria-valuenow', String(sum));
@@ -962,7 +1033,7 @@ function progressChart(buckets) {
     hit.type = 'button';
     const label = `By the end of ${monthFmt.format(q.b.from)}`, value = `${q.v.toLocaleString()} · ${pct(q.v)}`;
     hit.setAttribute('aria-label', `${label}: ${value}`);
-    hoverable(hit, value, label);
+    pickable(hit, value, label);
     overlay.append(hit);
     ticks.append(el('span', '', tickLabel('all', q.b, i, points.length)));
   });
@@ -1072,6 +1143,8 @@ function readUrl() {
 }
 readUrl();
 const logEl = $('#log'), chartEl = $('#chart'), cardsEl = $('#cards'), stripEl = $('#novaStrip'), dayInput = $('#dayInput');
+// The Top lists heading, and the way down to it, only with top lists to show.
+new MutationObserver(() => { $('#tops').hidden = $('#jump').hidden = !cardsEl.children.length; }).observe(cardsEl, { childList: true });
 $('#zone').textContent = Intl.DateTimeFormat().resolvedOptions().timeZone || 'your time zone';
 const BASE_TITLE = document.title;
 let observer = null, liveTimer = 0, liveUntil = 0;  // liveUntil: when the period shown as still running ends
@@ -1323,7 +1396,7 @@ async function render(quiet = false) {
   let end = chrome();
   // A refresh in place keeps everything on screen until the new copy comes;
   // anything else holds each part's space with a placeholder.
-  if (!Log.is('refreshing')) placeholders();
+  if (!Log.is('refreshing')) { placeholders(); utcNote(null); }
   if (!api) {
     tiles([]); chartEl.replaceChildren(); cardsEl.replaceChildren();
     status('Not open yet', 'The shared survey isn’t running yet, so there’s nothing to log.');
@@ -1434,15 +1507,20 @@ function scheduleRefresh(run, end) {
 
 function busiest(p, buckets) {
   const b = buckets.reduce((a, c) => (c.n > (a ? a.n : 0) ? c : a), null);
-  return b ? [UNIT[p] === 'hour' ? hourRange(b.from, b.to) : bucketLabel(p, b), plural(b.n, 'word')] : ['—', ''];
+  return b ? [bucketLabel(p, b), plural(b.n, 'word')] : ['—', ''];
 }
+// The third tile fits the view: a period's hidden words, which the words
+// charted less its bonus words make (and the rare word charted beyond the
+// universe's edge, counted with them); all time's share of the universe.
 function summaryTiles(p, buckets, mine, label = 'Words charted') {
   const total = buckets.reduce((a, b) => a + b.n, 0), world = buckets.reduce((a, b) => a + b.world, 0);
-  const [when, much] = busiest(p, buckets);
+  const [when, much] = busiest(p, buckets), bonus = total - world;
   tiles([
     [mine ? 'Charted first by you' : label, total.toLocaleString(), ''],
     [`Busiest ${UNIT[p]}`, when, much],
-    ['In the shared world', world.toLocaleString(), `${pct(world)} of its hidden words`],
+    p === 'all'
+      ? ['Universe', `${pct(world)} charted`, `${world.toLocaleString()} of its hidden words`]
+      : ['Hidden words', world.toLocaleString(), bonus > 0 ? `plus ${plural(bonus, 'bonus word')}` : ''],
   ]);
   return total;
 }
@@ -1488,7 +1566,7 @@ function hourSection(b, n) {
   s.id = 'h' + b.from;
   s.dataset.from = b.from;
   s.dataset.to = b.to;
-  const head = el('h3', '', hourRange(b.from, b.to));
+  const head = el('h3', '', hourShort(b.from, b.to));
   const side = el('span', '', plural(n, 'word'));
   const zoom = el('button', '', 'Minute by minute');
   zoom.type = 'button';
@@ -1576,6 +1654,9 @@ async function renderLong(run, p, start, end, firsts, mine) {
 // hour, so they cover just that day or hour in this time zone (a time zone
 // half an hour off UTC adds the half hour either side). Longer periods' come
 // from whole UTC days, so they can run a few hours past the period's edges.
+// "Nov 9 – 13, 2026" or "Nov 9, 2026": UTC days, first to last.
+const utcDays = (a, b) => (a === b ? utcDate.format(a) : utcDate.formatRange(a, b));
+function utcNote(text) { $('#utc').hidden = !text; $('#utc').textContent = text || ''; }
 let topsRun = 0;  // the run whose top lists are on their way, so its placeholders stay for them
 async function loadTops(run, start, end, byHour = false) {
   topsRun = run;
@@ -1588,9 +1669,11 @@ async function loadTops(run, start, end, byHour = false) {
     return;
   }
   if (run !== state.run || !top || !Array.isArray(top.surveyors)) return;
-  const span = to - from === 1 ? fullDate.format(from * DAY + DAY / 2) : `${monthDay.format(from * DAY + DAY / 2)} – ${fullDate.format((to - 1) * DAY + DAY / 2)}`;
+  // A week or longer counts whole UTC days, which can run a few hours past
+  // the period's edges: said once, under the heading, for all four lists.
+  utcNote(byHour ? null : `Counted in whole days in UTC, ${utcDays(from * DAY, (to - 1) * DAY)}`);
   cardsEl.replaceChildren(
-    rankCard('Top surveyors', surveyorRows(top.surveyors), `By initials, which anyone can share${byHour ? '' : ` · UTC days ${span}`}`),
+    rankCard('Top surveyors', surveyorRows(top.surveyors), 'By initials, which anyone can share'),
     // Guilds only once there are some: a period nobody charted in one has no card.
     ...(guildRows(top.guilds).length ? [rankCard('Top guilds', guildRows(top.guilds), 'Words their members charted while in them')] : []),
     rankCard('Top territories', territoryRows(top.territories, top.themes), 'Hidden words charted in each'),
