@@ -99,7 +99,7 @@ def test_the_devices_cards_buttons_follow_one_rule(page: Page, site_url, errors,
 def test_entering_a_recovery_code_brings_the_surveyor_back(page: Page, site_url, errors):
     theirs = words(page, site_url, 1)
     players = FakePlayers(started=[THEIR_PID])
-    settings = {"initials": "ZED", "guild": OTHER, "muted": [KIM[0]], "listed": True, "emotes": True}
+    settings = {"initials": "ZED", "guild": OTHER, "muted": [KIM[0]], "mutedAs": {}, "emotes": True}
     players.add(THEIR_PID, finds=theirs, settings=settings, settings_at=5)
     links = FakeLinks(players=players)
     recovery = FakeRecovery(players, {CODE: THEIRS})

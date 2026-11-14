@@ -68,7 +68,7 @@ def test_a_device_never_linked_keeps_everything_here(page: Page, site_url, error
     players = FakePlayers()
     start(page, site_url, players, synced=False)
     expect(page.locator("html")).to_have_attribute("data-sync", "off")
-    page.locator("#whoListed").evaluate("e => e.click()")
+    page.locator("#whoEmotes").evaluate("e => e.click()")
     page.wait_for_timeout(3000)
     assert players.calls == []
     # Your page is the one place that says so: no Stop syncing, and no recovery code saved.
@@ -89,7 +89,7 @@ def test_finds_and_settings_go_both_ways(page: Page, site_url, errors):
     eventually(page, lambda: len(players.sent()) >= 1)
     first = players.sent()[0]
     assert first["since"] == 0 and first["settingsAt"] == 1
-    assert first["settings"] == {"initials": "MLW", "guild": None, "muted": [], "listed": True, "emotes": True}
+    assert first["settings"] == {"initials": "MLW", "guild": None, "muted": [], "mutedAs": {}, "emotes": True}
     page.wait_for_function(f"window.__lf.found.size === {len(mine) + 1}")
     assert noted(page) == sorted([f["w"] for f in mine] + [theirs["w"]])
     assert page.evaluate(f"[...window.__lf.found.values()].find(e => e.w === '{theirs['w']}').f") == 1
@@ -99,19 +99,21 @@ def test_finds_and_settings_go_both_ways(page: Page, site_url, errors):
     assert saved["f"] == [] and saved["at"] == 2 and saved["epoch"] == players.players[PID]["epoch"]
 
     # A change here goes up soon after...
-    page.locator("#whoListed").evaluate("e => e.click()")
-    eventually(page, lambda: players.players[PID]["settings"]["listed"] is False, timeout_ms=8000)
+    page.locator("#whoEmotes").evaluate("e => e.click()")
+    eventually(page, lambda: players.players[PID]["settings"]["emotes"] is False, timeout_ms=8000)
     # ...and one there comes down: new initials, a mute and a guild.
     at = page.evaluate("Date.now()")  # just after our own change, so an echo of it would be later still
     players.add(
         PID,
-        settings={"initials": "ZED", "guild": MINE, "muted": [KIM[0]], "listed": False, "emotes": True},
+        settings={"initials": "ZED", "guild": MINE, "muted": [KIM[0]], "mutedAs": {KIM[0]: ["KIM", 9]}, "emotes": True},
         settings_at=at,
     )
     page.evaluate("window.__lf.syncNow()")
     expect(page.locator("#surveyMeName")).to_have_text("ZED")
     expect(page.locator("html")).to_have_attribute("data-guild", "in")
     assert page.evaluate("window.__lf.muted()") == [KIM[0]]
+    # Who they muted comes with it, for the Muted list here.
+    assert json.loads(page.evaluate("localStorage.getItem('letterfield.mutedAs.v1')")) == {KIM[0]: ["KIM", 9]}
     assert json.loads(page.evaluate("localStorage.getItem('games.initials')")) == "ZED"
     # Nothing it took in goes back up as a change of its own.
     page.wait_for_timeout(2500)

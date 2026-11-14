@@ -430,11 +430,11 @@ the game's 20 s are the knobs; past that, the push above.
   before reporting, so the Atlas never has cells. A list of exact cells would
   let anyone follow a player across the whole world; a territory (48 × 48
   cells) is enough to find them, and close up you see their caret, as before.
-- **Off the list.** "Show me on the list" (`letterfield.listed.v1`) sends
-  `hide: true`: the sector leaves you out of its reports, and you still show
-  as a caret to anyone near you. Hidden players only take emotes from players
-  in their own sector, who can see the caret anyway, and from their guild, so
-  an id saved from an earlier day can't reach them from afar.
+- **Everyone online is listed.** The survey is played together, so nobody
+  keeps off the list: the switch that once did ("Show me on the list") is
+  gone, and an older game's `hide` asks for nothing. Muting someone hides
+  their caret, emotes and come-online notes on your own devices, and "Take
+  emotes" turns emotes off for everyone.
 - **No addresses.** The list and emotes carry ids, initials, territories and
   idle seconds. Hashed addresses stay in sectors, as before.
 
@@ -580,11 +580,6 @@ who isn't a member gets the same answer as a guild that doesn't exist.
 - **On the map.** Presence gives each player's tag; the game draws a dot in
   the guild's colour on top of a mate's caret (a ring when zoomed out), and
   their hover card names the guild. Other guilds' tags mean nothing to it.
-- **Off the list, but not to your guild.** A hidden member stays out of the
-  public list but is still reported to their guild (flagged `FLAG_HIDDEN`),
-  and takes emotes from mates anywhere: an emote carries its sender's tag.
-  Their words don't count for the guild in the survey log (see "Guilds"
-  under "The log").
 
 ### Who's online rides on the reports
 
@@ -663,9 +658,9 @@ on the site can name the same player later.
    "Syncing linked devices").
 
 What a link carries, checked by `cleanCarry` in `worker/src/players.js`:
-the initials, the guild (code, name and tag), the mutes, and the two
-switches under Surveyors (on the list, taking emotes). Mutes from both
-devices are kept. Their guild wins; if they're in none and this device is
+the initials, the guild (code, name and tag), the mutes, with who each
+muted surveyor was and when (for the Muted list on your page), and the
+switch under Surveyors for taking emotes. Mutes from both devices are kept. Their guild wins; if they're in none and this device is
 in one, the linked surveyor joins this device's guild instead, so linking in
 either direction doesn't lose one. Either way the device's old self leaves
 its guild, since it won't be back. Field notes come from both devices from
@@ -755,7 +750,7 @@ player's own devices reach it:
 - **Merging can't lose anything.** Finds are keyed by word and place, as
   between tabs: each is kept once, and "charted first" only ever comes on.
   Supernovas are kept once each. Settings (initials, guild, mutes and the
-  two switches) go with whichever device changed them last, by its clock.
+  emotes switch) go with whichever device changed them last, by its clock.
 - **When.** On opening the game, a few seconds after a find, a couple after
   a settings change, when the tab comes back into view, and every minute
   while it's open, so two devices open at once catch up within a minute. A
@@ -1082,11 +1077,11 @@ before, the first time it's asked; the game learns it with the roster.
 
 **Who counts.** A sector knows at claim time whether the player is in a
 guild (their tag, which the guild confirmed), its log id and name (from the
-same check, `POST /check`, which now answers `{tag, lid, name}`), and whether
-they're off the surveyor list. A member off the list logs no guild: the
-log already shows every word with its initials, so a word counted for the
-guild as "a mate" would name them to anyone who matched its time in
-everyone's view. Words keep the guild they were charted in: leaving a guild
+same check, `POST /check`, which now answers `{tag, lid, name}`), and every
+member's words count for their guild. (While surveyors could keep off the
+surveyor list, a member off it logged no guild, since the log shows every
+word with its initials and time; that went with the list's switch.) Words
+keep the guild they were charted in: leaving a guild
 takes nothing back, and words from before this have none. Your page in the
 game says so under the guild.
 

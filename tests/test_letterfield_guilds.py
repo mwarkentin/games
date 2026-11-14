@@ -215,7 +215,11 @@ def test_your_page_links_to_the_guilds_own_page_in_the_survey_log(page: Page, si
     # With the guild's name as its word numbers, for a log that hasn't seen it chart a word.
     expect(link).to_have_attribute("href", f"/letterfield-log?guild={lid}&name={'-'.join(map(str, NAME))}")
     expect(link).to_contain_text("Our words in the survey log")
-    expect(page.locator("#guildCard")).to_contain_text("While you’re off the list, they don’t.")
+    # Every member's words count: there's no keeping off the list now.
+    expect(page.locator("#guildCard")).to_contain_text(
+        "Words you chart while in a guild count for it in the survey log"
+    )
+    expect(page.locator("#guildCard")).not_to_contain_text("off the list")
     stored = json.loads(page.evaluate("localStorage.getItem('letterfield.guild.v1')"))
     assert stored == {**MINE, "lid": lid}
     assert errors == []

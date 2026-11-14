@@ -131,7 +131,7 @@ describe('the surveyor list', () => {
     const one = await w.player(0, 0, { id: 1, initials: 'ONE', ...at(1, 2) });
     w.clock.now += 3000;
     const two = await w.player(0, 0, { id: 2, initials: 'TWO', quiet: true, ...at(3, 3) });
-    await w.player(0, 0, { id: 3, initials: 'HID', hide: true, ...at(0, 0) });   // hidden from the list
+    const hid = await w.player(0, 0, { id: 3, initials: 'HID', hide: true, ...at(0, 0) });  // an older game's hide asks for nothing now
     await w.player(0, 0, { id: null, initials: 'OLD', ...at(0, 1) });            // an older game, with no token
     await w.player(0, 0, { id: 4, initials: 'AWY' });                            // joined, but looking elsewhere
     await w.player(0, 0, { id: 5, initials: 'OUT', x: SECTOR + 5, y: 5 });       // says it's somewhere it isn't
@@ -142,11 +142,12 @@ describe('the surveyor list', () => {
     assert.deepEqual(reports.at(-1).who, [
       [await pid(6), 'NEW', 2, 0, 10, 0],
       [await pid(2), 'TWO', 3, 3, 20, FLAG_QUIET],
+      [await pid(3), 'HID', 0, 0, 20, 0],
       [await pid(1), 'ONE', 1, 2, 23, 0],
     ]);
     assert.equal(reports.at(-1).players, 6);  // everyone placed still counts
-    // Nobody listed: no list in the report at all.
-    for (const [p, i] of [[one, 1], [two, 2], [last, 6]]) await p.say({ t: 'me', initials: 'ANY', token: token(i), hide: true });
+    // Nobody placed: no list in the report at all.
+    for (const p of [one, two, hid, last]) await p.say({ t: 'pos', away: true });
     await w.tick(last, REPORT_MS);
     assert.equal('who' in reports.at(-1), false);
   });
@@ -196,8 +197,8 @@ describe('the surveyor list', () => {
     await settle();
     assert.equal(reports.length, before + 1);
     assert.deepEqual(reports.at(-1).who.map((e) => e[0]).sort(), [players[1].pid, players[2].pid].sort());
-    // One who wasn't listed leaves without a report of its own.
-    const quiet = await w.player(0, 0, { id: 9, hide: true, x: 9, y: 9 });
+    // One who wasn't listed, looking elsewhere, leaves without a report of its own.
+    const quiet = await w.player(0, 0, { id: 9 });
     await w.tick(quiet, REPORT_MS);
     w.clock.now += 10;
     const then = reports.length;
@@ -426,18 +427,18 @@ describe('emotes', () => {
     assert.deepEqual(crowd.slice(INBOX_MAX).map((p) => p.ws.last('emoted').error), ['busy', 'busy']);
   });
 
-  test("don't reach anyone who turned them off, or a hidden player from afar", async () => {
+  test("don't reach anyone who turned them off, and reach everyone else, near or far", async () => {
     const quiet = await w.player(0, 0, { id: 2, quiet: true });
-    const hidden = await w.player(0, 0, { id: 3, hide: true });
+    const old = await w.player(0, 0, { id: 3, hide: true });  // an older game's hide asks for nothing now
     const near = await w.player(0, 0, { id: 1 });
     const far = await w.player(3, 3, { id: 4 });
     await emote(near, quiet);
     assert.equal(near.ws.last('emoted').error, 'off');
-    await emote(near, hidden);
+    await emote(near, old);
     assert.equal(near.ws.last('emoted').ok, true);
-    await emote(far, hidden, 'wave', [0, 0]);
-    assert.equal(far.ws.last('emoted').error, 'gone');
-    assert.equal(hidden.ws.all('emote').length, 1);
+    await emote(far, old, 'wave', [0, 0]);
+    assert.equal(far.ws.last('emoted').ok, true);
+    assert.equal(old.ws.all('emote').length, 2);
     assert.equal(quiet.ws.all('emote').length, 0);
   });
 

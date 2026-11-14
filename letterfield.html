@@ -238,6 +238,18 @@ body.docked .notes{box-shadow:none}
 .you-text b small{font:500 11px/1 var(--f-mono);letter-spacing:.06em;color:var(--muted)}
 .you-text > span{display:block;margin-top:5px;font-size:12.5px;line-height:1.3;color:var(--muted)}
 .chev{flex:none;width:16px;height:16px;color:var(--muted)}
+/* The Muted row opens, like a fold, to everyone you've muted, each with an Unmute pill. */
+.you-count{flex:none;font:500 12px/1 var(--f-mono);color:var(--muted);font-variant-numeric:tabular-nums}
+#mutedRow .chev{transition:transform var(--t-fast) var(--ease-out)}
+#mutedRow[aria-expanded="true"] .chev{transform:rotate(90deg)}
+@media (prefers-reduced-motion: reduce){#mutedRow .chev{transition:none}}
+.muted-list{border-top:1px solid var(--rule)}
+.muted-list ul{list-style:none;margin:0;padding:0}
+.muted-row{display:flex;align-items:center;gap:10px;min-height:48px;box-sizing:border-box;padding:6px 14px;border-top:1px solid var(--rule)}
+.muted-row:first-child{border-top:0}
+.muted-ini{flex:none;font:700 16px/1 var(--f-display);letter-spacing:.1em;color:var(--ink)}
+.muted-when{flex:1;min-width:0;font:400 11px/1.3 var(--f-mono);color:var(--muted)}
+.muted-none{margin:0;padding:11px 14px 12px;font-size:12.5px;line-height:1.45;color:var(--muted)}
 .who-foot{margin:14px 0 0;padding-top:12px;border-top:1px solid var(--rule);font-size:12.5px;line-height:1.45;color:var(--muted)}
 /* Your page: back to the list, who you are, then grouped rows (iOS-settings-like): guild, the map, devices. */
 .you-head{align-items:center;padding-top:12px;padding-bottom:6px}
@@ -483,7 +495,6 @@ html[data-who="loading"] .who-status{animation:blink 1s infinite alternate}
 .card p.eyebrow,.pair p.eyebrow,.guild p.eyebrow{font-size:10px;line-height:1;color:var(--muted)}
 .who-mute{margin-top:8px}
 .who-more{display:block;margin:6px auto 0}
-.who-note{margin:7px 4px 0;font-size:12px;line-height:1.4;color:var(--muted)}
 .toast i.emo{width:24px;height:24px;border-radius:0;background:none;color:var(--c)}
 .toast b.wraps{white-space:normal;line-height:1.05}
 /* A caret's own menu: emotes for that surveyor, from a right-click or a long press on their caret. */
@@ -773,10 +784,10 @@ body.settling, body.settling *{transition:none!important}
       <div class="group guild" id="guildCard"></div>
       <p class="you-eb">On the map</p>
       <div class="group">
-        <label class="you-item"><span>Show me on the list<small>Off it, your guild and anyone near you still see you.</small></span><input type="checkbox" class="sw" role="switch" id="whoListed" checked></label>
         <label class="you-item"><span>Take emotes<small>Let others wave and cheer at you.</small></span><input type="checkbox" class="sw" role="switch" id="whoEmotes" checked></label>
+        <button type="button" class="you-item" id="mutedRow" aria-expanded="false" aria-controls="mutedList"><span>Muted<small>Their carets, emotes and notes stay hidden on your devices</small></span><b class="you-count" id="mutedCount">None</b><svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg></button>
+        <div class="muted-list" id="mutedList" hidden></div>
       </div>
-      <p class="who-note">Muting someone, under ⋯ beside their name, hides their caret and emotes on this device.</p>
       <p class="you-eb" id="pairHead" hidden>Devices</p>
       <div class="pair" id="pairCard"></div>
     </div>
@@ -4464,7 +4475,7 @@ $('#coachOk').addEventListener('click', () => { if (Intro.is('coach')) Intro.go(
 // token, so nobody can send as someone else. The list is a fold of the survey
 // panel, like the world map: the Worker's answer, nearest first, fetched while
 // it's open and on screen. Emotes are a few fixed drawings, never text.
-const K_PLAYER = 'games.player', K_MUTED = 'letterfield.muted.v1', K_LISTED = 'letterfield.listed.v1', K_EMOTES = 'letterfield.emotes.v1';
+const K_PLAYER = 'games.player', K_MUTED = 'letterfield.muted.v1', K_MUTED_AS = 'letterfield.mutedAs.v1', K_EMOTES = 'letterfield.emotes.v1';
 const PID_RE = /^[0-9a-f]{12}$/, MUTED_MAX = 200, LIST_PAGES = 25;
 const WHO_REFRESH_MS = 20000, WHO_RETRY_MS = 20000, POP_MS = 2600, HERE_MS = 30000;
 // The emotes, in the Worker's order (EMOTES in worker/src/survey-social.js):
@@ -4543,12 +4554,27 @@ if (playerToken && window.crypto && crypto.subtle) {
       renderSurvey(); invalidate(); renderYouRow();
     }, () => {});
 }
-// Whether to be on the list, whether to take emotes, and who's muted: all on this device only.
-let listedOn = LS.get(K_LISTED) !== '0', emotesOn = LS.get(K_EMOTES) !== '0';
+// Whether to take emotes, and who's muted, kept on this device (and on
+// linked ones, see Syncing linked devices). Everyone online is on the list:
+// a switch to keep off it went, so its old key goes too.
+let emotesOn = LS.get(K_EMOTES) !== '0';
+try { localStorage.removeItem('letterfield.listed.v1'); } catch (_) {}
 const muted = new Set(readList(K_MUTED).filter(p => typeof p === 'string' && PID_RE.test(p)).slice(-MUTED_MAX));
+// Who each muted surveyor was when muted, and when: id → [initials, ms], for
+// the Muted list. Kept since the list came: anyone muted before, or whose
+// details haven't reached this device, is "A surveyor" there.
+const goodMutedAs = v => Array.isArray(v) && v.length === 2 && (v[0] === '' || /^[A-Z]{3}$/.test(v[0])) && Number.isInteger(v[1]) && v[1] >= 0 && v[1] <= 1e15;
+const mutedAsOf = o => (o && typeof o === 'object' && !Array.isArray(o) ? Object.entries(o).filter(([p, v]) => PID_RE.test(p) && goodMutedAs(v)) : []);
+const mutedAs = new Map((() => { try { return mutedAsOf(JSON.parse(LS.get(K_MUTED_AS) || '{}')); } catch (_) { return []; } })().filter(([p]) => muted.has(p)));
+const mutedAsSaved = () => Object.fromEntries([...mutedAs].filter(([p]) => muted.has(p)));
+function saveMuted() {
+  for (const p of mutedAs.keys()) if (!muted.has(p)) mutedAs.delete(p);
+  LS.set(K_MUTED, JSON.stringify([...muted]));
+  LS.set(K_MUTED_AS, JSON.stringify(mutedAsSaved()));
+}
 // What every sector is told about us when it's joined, and again when any of it changes.
 function meMessage() {
-  return { t: 'me', initials: myInitials(), ...(playerToken ? { token: playerToken } : {}), ...(listedOn ? {} : { hide: true }), ...(emotesOn ? {} : { quiet: true }), ...(myGuild ? { guild: myGuild.code } : {}) };
+  return { t: 'me', initials: myInitials(), ...(playerToken ? { token: playerToken } : {}), ...(emotesOn ? {} : { quiet: true }), ...(myGuild ? { guild: myGuild.code } : {}) };
 }
 const tellMe = () => { for (const l of links.values()) tell(l, meMessage()); };
 // A caret's colour, from its id, as the map draws it.
@@ -4765,10 +4791,8 @@ whoList.addEventListener('keydown', e => {
   if (b) b.focus();
 });
 whoMore.addEventListener('click', () => { whoPages++; if (Who.is('ready')) Who.go('refreshing'); });
-const listedEl = $('#whoListed'), emotesEl = $('#whoEmotes');
-listedEl.checked = listedOn;
+const emotesEl = $('#whoEmotes');
 emotesEl.checked = emotesOn;
-listedEl.addEventListener('change', () => { listedOn = listedEl.checked; LS.set(K_LISTED, listedOn ? '1' : '0'); settingsChanged(); tellMe(); renderWho(); });
 emotesEl.addEventListener('change', () => { emotesOn = emotesEl.checked; LS.set(K_EMOTES, emotesOn ? '1' : '0'); settingsChanged(); tellMe(); if (!emotesOn) pops = []; renderWho(); invalidate(); });
 
 // Flies to a surveyor: straight to their caret if one of our sectors shows it,
@@ -4788,14 +4812,48 @@ function seekSurveyor() {
   if (c) { seek = null; flyTo(c.x, c.y, Math.max(cam.cs, 30), { min: 300, max: 900 }); }
 }
 function setMuted(s, on) {
-  if (on) muted.add(s.pid); else muted.delete(s.pid);
+  if (on) { muted.add(s.pid); mutedAs.set(s.pid, [s.ini || '', Date.now()]); } else muted.delete(s.pid);
   while (muted.size > MUTED_MAX) muted.delete(muted.values().next().value);
-  LS.set(K_MUTED, JSON.stringify([...muted]));
+  saveMuted();
   settingsChanged();
   pops = pops.filter(p => p.pid !== s.pid);
-  renderWho(); invalidate();
+  renderWho(); renderMuted(); invalidate();
   say(`${on ? 'Muted' : 'Unmuted'} ${s.ini || 'that surveyor'}`);
 }
+// The Muted row on your page, and the list it opens: newest first, each with
+// the initials they had when muted (or have now, if this device never knew),
+// when, and an Unmute pill. It opens and shuts like a fold: a single boolean.
+const mutedRow = $('#mutedRow'), mutedListEl = $('#mutedList');
+let mutedOpen = false;
+function renderMuted() {
+  $('#mutedCount').textContent = muted.size ? String(muted.size) : 'None';
+  mutedRow.setAttribute('aria-expanded', String(mutedOpen));
+  mutedListEl.hidden = !mutedOpen;
+  if (!mutedOpen) return;
+  const thisYear = new Date().getFullYear();
+  const when = at => (at ? `Muted ${new Date(at).toLocaleDateString(undefined, { day: 'numeric', month: 'short', ...(new Date(at).getFullYear() === thisYear ? {} : { year: 'numeric' }) })}` : '');
+  const rows = [...muted].map(pid => {
+    const [ini, at] = mutedAs.get(pid) || ['', 0], now = whoFind(pid);
+    return { pid, ini: ini || (now && now.ini) || '', at };
+  }).sort((a, b) => b.at - a.at);
+  const html = rows.length
+    ? `<ul>${rows.map(r => `<li class="muted-row"><b class="muted-ini">${r.ini || 'A surveyor'}</b><span class="muted-when">${when(r.at)}</span><button type="button" class="pill" data-unmute="${r.pid}" aria-label="Unmute ${r.ini || 'this surveyor'}">Unmute</button></li>`).join('')}</ul>`
+    : '<p class="muted-none">Nobody’s muted. To mute someone, open ⋯ beside their name on the list, or long-press their caret on the map.</p>';
+  if (mutedListEl.dataset.drawn !== html) { mutedListEl.dataset.drawn = html; mutedListEl.innerHTML = html; }
+}
+mutedRow.addEventListener('click', () => { mutedOpen = !mutedOpen; renderMuted(); });
+mutedListEl.addEventListener('click', e => {
+  const b = e.target.closest('button[data-unmute]');
+  if (!b) return;
+  const pid = b.dataset.unmute, row = b.closest('li'), next = row && (row.nextElementSibling || row.previousElementSibling);
+  const to = next && next.querySelector('button') ? next.querySelector('button').dataset.unmute : '';
+  const [ini] = mutedAs.get(pid) || [''];
+  setMuted({ pid, ini: ini || (whoFind(pid) || {}).ini || '' }, false);
+  // Focus goes to the next one down (or up), or back to the row once nobody's left.
+  const el = (to && mutedListEl.querySelector(`[data-unmute="${to}"]`)) || mutedRow;
+  try { el.focus({ preventScroll: true }); } catch (_) {}
+});
+renderMuted();
 // Sends an emote from the sector under the middle of the view, which knows
 // where we are, toward the sector where we saw them: their caret's, or their
 // territory's from the list.
@@ -5210,7 +5268,7 @@ function renderGuild() {
         : `<button type="button" class="you-item" data-g="invite"><span>Invite someone<small>A link to send them</small></span>${CHEV}</button>` +
           (LID_RE.test(myGuild.lid || '') ? `<a class="you-item" data-g="log" href="/letterfield-log?guild=${myGuild.lid}&name=${myGuild.name.join('-')}"><span>Our words in the survey log<small>The guild’s own page, which anyone can open</small></span>${CHEV}</a>` : '') +
           `<button type="button" class="you-item danger" data-g="leave"${st === 'leaving' ? ' disabled' : ''}><span>${st === 'leaving' ? 'Leaving…' : 'Leave guild'}</span></button>` +
-          `<p class="guild-small">Words you chart while in a guild count for it in the survey log, under its name. While you’re off the list, they don’t.</p>`);
+          `<p class="guild-small">Words you chart while in a guild count for it in the survey log, under its name.</p>`);
   } else if (st === 'invited' || st === 'joining') html = '<p class="you-pad">Looking at an invite to a guild…</p>';
   // Against what it last drew, not its live HTML, which notes written into it
   // since (and how a browser writes out `disabled`) always make different.
@@ -5400,10 +5458,11 @@ function applySettings(c) {
   if (Array.isArray(c.muted)) {
     muted.clear();
     for (const p of c.muted.slice(-MUTED_MAX)) if (typeof p === 'string' && PID_RE.test(p)) muted.add(p);
-    LS.set(K_MUTED, JSON.stringify([...muted]));
+    for (const [p, v] of mutedAsOf(c.mutedAs)) if (muted.has(p)) mutedAs.set(p, v);  // what we knew stays for any it doesn't name
+    saveMuted();
     pops = pops.filter(p => !muted.has(p.pid));
+    renderMuted();
   }
-  if (typeof c.listed === 'boolean') { listedOn = listedEl.checked = c.listed; LS.set(K_LISTED, listedOn ? '1' : '0'); }
   if (typeof c.emotes === 'boolean') { emotesOn = emotesEl.checked = c.emotes; LS.set(K_EMOTES, emotesOn ? '1' : '0'); if (!emotesOn) pops = []; }
   tellMe(); renderWho(); invalidate();
   // The guild, if this device isn't in the middle of changing it itself.
@@ -5508,7 +5567,7 @@ const cleanCode = v => v.toUpperCase().replace(/[^A-Z0-9]/g, '');
 const inFours = v => (v.match(/.{1,4}/g) || []).join('-');
 const linkCall = (path, body) => workerPost(`/v1/link${path}`, body);
 // The settings a link carries and syncing keeps in step.
-const mySettings = () => ({ initials: myInitials(), guild: myGuild && { code: myGuild.code, name: myGuild.name, tag: myGuild.tag }, muted: [...muted].slice(-MUTED_MAX), listed: listedOn, emotes: emotesOn });
+const mySettings = () => ({ initials: myInitials(), guild: myGuild && { code: myGuild.code, name: myGuild.name, tag: myGuild.tag }, muted: [...muted].slice(-MUTED_MAX), mutedAs: mutedAsSaved(), emotes: emotesOn });
 // The Worker's link and sync paths: JSON sent as text/plain, so no preflight.
 async function workerPost(path, body) {
   const ctl = new AbortController(), timer = setTimeout(() => ctl.abort(), 8000);
@@ -5592,8 +5651,9 @@ async function takeLink(token, c) {
   if (initials) LS.set(K_INITIALS, JSON.stringify(initials));
   saveGuild(guild, true);
   const theirs = Array.isArray(c.muted) ? c.muted.filter(p => typeof p === 'string' && PID_RE.test(p)) : [];
-  LS.set(K_MUTED, JSON.stringify([...new Set([...muted, ...theirs])].slice(-MUTED_MAX)));
-  if (typeof c.listed === 'boolean') LS.set(K_LISTED, c.listed ? '1' : '0');
+  const both = [...new Set([...muted, ...theirs])].slice(-MUTED_MAX);
+  LS.set(K_MUTED, JSON.stringify(both));
+  LS.set(K_MUTED_AS, JSON.stringify(Object.fromEntries([...mutedAsOf(c.mutedAs), ...mutedAs].filter(([p]) => both.includes(p)))));
   if (typeof c.emotes === 'boolean') LS.set(K_EMOTES, c.emotes ? '1' : '0');
   // From now on the two keep in step, starting with everything here; these
   // settings, mutes from both, are the newest.

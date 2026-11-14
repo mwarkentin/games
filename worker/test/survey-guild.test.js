@@ -15,7 +15,7 @@ import {
   GUILD_CODE, GUILD_FIRST, GUILD_LOG_ID, GUILD_MAX, GUILD_RECHECK_MS, GUILD_SECOND, GUILD_THIRD, GUILD_WORDS, Guild, SEEN_MS,
   idleShown, matesFor, noteMates, passMates,
 } from '../src/survey-guild.js';
-import { FLAG_HIDDEN, REFRESH_MS, playerId, snapshot } from '../src/survey-social.js';
+import { FLAG_QUIET, REFRESH_MS, playerId, snapshot } from '../src/survey-social.js';
 
 const ORIGIN = 'https://games.michaelwarkentin.com';
 const NOW = Date.UTC(2026, 10, 13, 12);
@@ -250,8 +250,8 @@ describe('membership in sectors', () => {
   test('tells members which of their guild are online and where, as it changes, and nobody else', async () => {
     const one = await w.player(0, 0, { id: 1, initials: 'ONE', guild: g.code, x: 5, y: 5 });
     const outsider = await w.player(0, 0, { id: 7, initials: 'OUT', x: 7, y: 7 });
-    const two = await w.player(3, 3, { id: 2, initials: 'TWO', guild: g.code, hide: true, x: 3 * SECTOR + 50, y: 3 * SECTOR + 2 });
-    await w.tick(two);                // 3,3 reports TWO, hidden but in the guild
+    const two = await w.player(3, 3, { id: 2, initials: 'TWO', guild: g.code, x: 3 * SECTOR + 50, y: 3 * SECTOR + 2 });
+    await w.tick(two);                // 3,3 reports TWO
     await w.tick(one, REFRESH_MS);    // 0,0 reports again, and hears who's online
     const frame = one.ws.last('guild');
     assert.equal(frame.tag, g.tag);
@@ -263,8 +263,8 @@ describe('membership in sectors', () => {
     const sent = one.ws.all('guild').length;
     passMates(one.sector, { [g.tag]: frame.on });
     assert.equal(one.ws.all('guild').length, sent);
-    // A member closing the game drops off at once, hidden or not, even just
-    // after positions went out, when nothing else would report it.
+    // A member closing the game drops off at once, even just after positions
+    // went out, when nothing else would report it.
     w.clock.now += REPORT_MS;
     await two.say({ t: 'pos', x: 3 * SECTOR + 51, y: 3 * SECTOR + 2 });
     await settle();
@@ -274,25 +274,26 @@ describe('membership in sectors', () => {
     await settle();
     await w.tick(one, REFRESH_MS);
     assert.deepEqual(one.ws.last('guild').on.map((e) => e[0]), [one.pid]);
-    // A hidden member stays off the public list, while their guild still sees them.
-    assert.equal(snapshot(w.atlas.load().values(), w.clock.now, ONLINE_MS).sectors.flatMap((s) => s[2]).some((e) => e[0] === two.pid), false);
+    // Members are on the public list like everyone else, until they go.
+    const listedNow = snapshot(w.atlas.load().values(), w.clock.now, ONLINE_MS).sectors.flatMap((s) => s[2]).map((e) => e[0]);
+    assert.ok(listedNow.includes(one.pid) && !listedNow.includes(two.pid), JSON.stringify(listedNow));
   });
 
-  test('a hidden member hears emotes from their guild, from anywhere', async () => {
-    const hidden = await w.player(3, 3, { id: 2, initials: 'TWO', guild: g.code, hide: true, x: 3 * SECTOR + 50, y: 3 * SECTOR + 2 });
+  test("a member hears emotes from anyone, from anywhere, even asking to hide as older games could", async () => {
+    const two = await w.player(3, 3, { id: 2, initials: 'TWO', guild: g.code, hide: true, x: 3 * SECTOR + 50, y: 3 * SECTOR + 2 });
     const mate = await w.player(0, 0, { id: 1, initials: 'ONE', guild: g.code, x: 5, y: 5 });
     const stranger = await w.player(0, 0, { id: 7, initials: 'OUT', x: 6, y: 6 });
-    await mate.say({ t: 'emote', to: hidden.pid, e: 'wave', s: [3, 3] });
-    await stranger.say({ t: 'emote', to: hidden.pid, e: 'wave', s: [3, 3] });
+    await mate.say({ t: 'emote', to: two.pid, e: 'wave', s: [3, 3] });
+    await stranger.say({ t: 'emote', to: two.pid, e: 'wave', s: [3, 3] });
     assert.equal(mate.ws.last('emoted').ok, true);
-    assert.equal(stranger.ws.last('emoted').error, 'gone');
-    assert.deepEqual(hidden.ws.all('emote').map((m) => m.ini), ['ONE']);
+    assert.equal(stranger.ws.last('emoted').ok, true);
+    assert.deepEqual(two.ws.all('emote').map((m) => m.ini), ['ONE', 'OUT']);
   });
 });
 
 test("the Atlas's index of who's online forgets sectors that stop reporting", () => {
   const atlas = {};
-  noteMates(atlas, '0,0', [['aaaaaaaaaaaa', 'ONE', 1, 1, 0, 0, 'deadbeef'], ['bbbbbbbbbbbb', 'TWO', 2, 2, 0, FLAG_HIDDEN, 'deadbeef']], NOW);
+  noteMates(atlas, '0,0', [['aaaaaaaaaaaa', 'ONE', 1, 1, 0, 0, 'deadbeef'], ['bbbbbbbbbbbb', 'TWO', 2, 2, 0, FLAG_QUIET, 'deadbeef']], NOW);
   noteMates(atlas, '1,0', [['cccccccccccc', 'SIX', 4, 1, 3, 0, 'deadbeef']], NOW + 1000);
   assert.deepEqual(matesFor(atlas, ['deadbeef', 'feedface'], NOW + 2000, ONLINE_MS), {
     deadbeef: [['aaaaaaaaaaaa', 'ONE', 1, 1, 0], ['bbbbbbbbbbbb', 'TWO', 2, 2, 0], ['cccccccccccc', 'SIX', 4, 1, 0]],
@@ -338,8 +339,9 @@ describe("members' words in the survey log", () => {
   const claim = async (p, n) => { w.clock.now += 2000; await p.say({ t: 'claim', ...word(n) }); };
   const logged = () => log.raw.prepare('SELECT w, initials, guild FROM survey_log ORDER BY at').all().map((r) => [r.w, r.initials, r.guild]);
 
-  test("count for the guild a member was in, by its log id, never for a hidden member or anyone else", async () => {
+  test("count for the guild a member was in, by its log id, and for nobody else", async () => {
     const one = await w.player(0, 0, { id: 1, initials: 'ONE', guild: g.code, x: 5, y: 5 });
+    // Every member's words count: an older game's ask to keep off the list changes nothing.
     const two = await w.player(0, 0, { id: 2, initials: 'TWO', guild: g.code, hide: true, x: 6, y: 6 });
     const pretender = await w.player(0, 0, { id: 9, initials: 'NOT', guild: g.code, x: 9, y: 9 });
     const loner = await w.player(0, 0, { id: 8, initials: 'SOL', x: 8, y: 8 });
@@ -348,17 +350,11 @@ describe("members' words in the survey log", () => {
     await claim(pretender, 2);
     await claim(loner, 3);
     await one.sector.alarm();
-    assert.deepEqual(logged(), [[word(0).w, 'ONE', g.lid], [word(1).w, 'TWO', ''], [word(2).w, 'NOT', ''], [word(3).w, 'SOL', '']]);
+    assert.deepEqual(logged(), [[word(0).w, 'ONE', g.lid], [word(1).w, 'TWO', g.lid], [word(2).w, 'NOT', ''], [word(3).w, 'SOL', '']]);
     // The guild's name went with its first word, and the code and tag went nowhere.
     assert.deepEqual(log.raw.prepare('SELECT guild, a, b, c FROM survey_log_guilds').all().map((r) => ({ ...r })), [{ guild: g.lid, a: 11, b: 0, c: 0 }]);
     const everything = JSON.stringify(log.raw.prepare('SELECT * FROM survey_log').all());
     assert.ok(!everything.includes(g.code) && !everything.includes(g.tag));
-    // Coming back on the list, the member's words count again.
-    await two.say({ t: 'me', initials: 'TWO', token: token(2), hide: false, guild: g.code });
-    await settle();
-    await claim(two, 4);
-    await one.sector.alarm();
-    assert.deepEqual(logged().at(-1), [word(4).w, 'TWO', g.lid]);
   });
 
   test('stop counting for a guild once its member has left it', async () => {

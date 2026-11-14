@@ -43,8 +43,7 @@ export const GUILD_LOG_ID = /^[0-9a-f]{10}$/;      // a guild in the survey log:
 // The emotes, in the order the game shows them. Fixed drawings, never text:
 // see "The emotes" in SURVEY.md for why each is here and what was left out.
 export const EMOTES = ['wave', 'thanks', 'nice', 'clap', 'great', 'here', 'what'];
-export const FLAG_QUIET = 1;             // a listed surveyor who takes no emotes
-export const FLAG_HIDDEN = 2;            // off the list, but still shown to their guild
+export const FLAG_QUIET = 1;             // a surveyor who takes no emotes (2 was for one off the list, which there no longer is)
 export const LIST_PATH = '/v1/survey/surveyors';
 export const ATLAS_LIST_PATH = '/surveyors';
 export const EMOTE_PATH = '/emote';      // internal: an emote for a player in this sector, from another
@@ -70,17 +69,15 @@ export async function playerId(token) {
   return [...new Uint8Array(digest).slice(0, 6)].map((b) => b.toString(16).padStart(2, '0')).join('');
 }
 
-// What a `me` message says besides initials: the player's token, whether to
-// leave them out of the list (hide), whether they take emotes (quiet) and
-// their guild's code, which the sector checks with the guild (checkGuild in
+// What a `me` message says besides initials: the player's token, whether
+// they take emotes (quiet) and their guild's code, which the sector checks with the guild (checkGuild in
 // survey-guild.js) before the guild's tag goes on their socket. The flags
 // count straight away; the id once its hash is worked out. Returns (a promise
 // of) whether anything changed. A socket keeps the first id it's given.
 export function takeMe(me, msg) {
-  const hide = msg.hide === true, quiet = msg.quiet === true;
+  const quiet = msg.quiet === true;  // an older game's `hide` asks for nothing now: everyone online is listed
   const guild = typeof msg.guild === 'string' && GUILD_CODE.test(msg.guild) ? msg.guild : null;
-  let changed = hide !== !!me.hide || quiet !== !!me.quiet || guild !== (me.guild ?? null);
-  me.hide = hide;
+  let changed = quiet !== !!me.quiet || guild !== (me.guild ?? null);
   me.quiet = quiet;
   if (guild !== (me.guild ?? null)) { me.guild = guild; me.tag = null; me.lid = null; me.guildAt = 0; }
   if (me.pid || typeof msg.token !== 'string' || !TOKEN.test(msg.token)) return changed;
@@ -90,15 +87,14 @@ export function takeMe(me, msg) {
   });
 }
 
-// The sector's surveyors for its report: those placed here who have an id and
-// haven't hidden, once each (a player with two tabs open is one), by
-// territory, most recently moved first: [pid, initials, rx, ry, idle, flags],
-// and the guild's tag for a member. A hidden member is in it too, marked
-// FLAG_HIDDEN, for their guild; the public list leaves them out.
+// The sector's surveyors for its report: everyone placed here who has an id,
+// once each (a player with two tabs open is one), by territory, most recently
+// moved first: [pid, initials, rx, ry, idle, flags], and the guild's tag for
+// a member.
 export function listed(people, sx, sy, now) {
   const by = new Map();
   for (const p of people) {
-    if (p.x === null || p.x === undefined || !p.pid || (p.hide && !p.tag)) continue;
+    if (p.x === null || p.x === undefined || !p.pid) continue;
     const rx = fdiv(Math.floor(p.x), RC), ry = fdiv(Math.floor(p.y), RC);
     if (fdiv(rx, TERR) !== sx || fdiv(ry, TERR) !== sy) continue;  // a position outside the sector says nothing true
     const had = by.get(p.pid);
@@ -107,7 +103,7 @@ export function listed(people, sx, sy, now) {
   }
   return [...by.values()].sort((a, b) => b.moved - a.moved).map((p) => [
     p.pid, p.initials, fdiv(Math.floor(p.x), RC), fdiv(Math.floor(p.y), RC),
-    Math.min(IDLE_MAX, Math.max(0, Math.round((now - p.moved) / 1000))), (p.quiet ? FLAG_QUIET : 0) | (p.hide ? FLAG_HIDDEN : 0),
+    Math.min(IDLE_MAX, Math.max(0, Math.round((now - p.moved) / 1000))), p.quiet ? FLAG_QUIET : 0,
     ...(p.tag ? [p.tag] : []),
   ]);
 }
@@ -124,14 +120,13 @@ export function goodWho(who, sx, sy, max) {
 // The Atlas's snapshot of everyone listed, from sectors that reported in the
 // last `online` ms: each player once, from the latest report that has them
 // (someone crossing into another sector can be in two for a few seconds),
-// with idle counted to now. Grouped by sector, for working out pages. Hidden
-// guild members and every guild's tag stay out of it.
+// with idle counted to now. Grouped by sector, for working out pages. Every
+// guild's tag stays out of it.
 export function snapshot(rows, now, online) {
   const latest = new Map();
   for (const r of rows) {
     if (now - r.at >= online || !r.who?.length) continue;
     for (const e of r.who) {
-      if (e[5] & FLAG_HIDDEN) continue;
       const had = latest.get(e[0]);
       if (!had || had.r.at < r.at) latest.set(e[0], { r, e });
     }
@@ -199,7 +194,7 @@ export function routeSurveyors(request, env, corsHeaders, json) {
 // player `to`, whom the sender saw in sector s. The sender is who their socket
 // says, never who the message says. Answered with {t: 'emoted', to, e} and
 // ok, or why not: 'sign first' (no id or initials yet), 'slow down', 'gone'
-// (not there, or hidden from anyone not in their sector), 'off' (they take no
+// (not there), 'off' (they take no
 // emotes), 'busy' (they've been sent plenty just now) or 'bad emote'.
 export async function sendEmote(sector, ws, me, msg) {
   const to = typeof msg.to === 'string' && PID.test(msg.to) ? msg.to : null, e = EMOTES.includes(msg.e) ? msg.e : null;
@@ -217,8 +212,8 @@ export async function sendEmote(sector, ws, me, msg) {
   const [sx, sy] = sector.coords();
   // Where the sender is, by territory, for the recipient's "fly there".
   const r = me.x === null || me.x === undefined ? null : [fdiv(Math.floor(me.x), RC), fdiv(Math.floor(me.y), RC)];
-  const card = { from: me.pid, ini: me.initials, e, to, r, tag: me.tag ?? null };
-  if (s[0] === sx && s[1] === sy) return answer(deliver(sector, card, true));
+  const card = { from: me.pid, ini: me.initials, e, to, r };
+  if (s[0] === sx && s[1] === sy) return answer(deliver(sector, card));
   // Only to sectors a list or a caret could have shown: the shared world, or a neighbour in view.
   if (!sector.reaches(s[0], s[1])) return answer('gone');
   answer(await forward(sector.env, s, card));
@@ -237,25 +232,23 @@ async function forward(env, [sx, sy], card) {
 
 const goodCard = (c) => c && typeof c.from === 'string' && PID.test(c.from) && typeof c.to === 'string' && PID.test(c.to) && c.from !== c.to
   && EMOTES.includes(c.e) && (c.ini === '' || (typeof c.ini === 'string' && INITIALS.test(c.ini)))
-  && (c.r === null || (Array.isArray(c.r) && c.r.length === 2 && c.r.every((v) => isInt(v, -1e8, 1e8))))
-  && (c.tag === undefined || c.tag === null || (typeof c.tag === 'string' && GUILD_TAG.test(c.tag)));
+  && (c.r === null || (Array.isArray(c.r) && c.r.length === 2 && c.r.every((v) => isInt(v, -1e8, 1e8))));
 
 // POST EMOTE_PATH: an emote another sector passes on, for a player here.
 export async function takeEmote(sector, request) {
   let card = null;
   try { card = await request.json(); } catch { /* answered below */ }
   if (!goodCard(card)) return Response.json({ error: 'bad emote' }, { status: 400 });
-  return Response.json({ error: deliver(sector, { from: card.from, ini: card.ini, e: card.e, to: card.to, r: card.r, tag: card.tag ?? null }, false) });
+  return Response.json({ error: deliver(sector, { from: card.from, ini: card.ini, e: card.e, to: card.to, r: card.r }) });
 }
 
 // Hands an emote to the player it's for, if they're here and take it; returns
-// null, or why not. `local`: the sender is in this sector too. A hidden player
-// only hears from those (they can see the caret anyway), and from their guild. The limits are kept
-// here, where every emote for this player passes, in memory: a sector that
-// hibernates forgets them, and the per-socket and per-address limits still hold.
-export function deliver(sector, card, local) {
+// null, or why not. The limits are kept here, where every emote for this
+// player passes, in memory: a sector that hibernates forgets them, and the
+// per-socket and per-address limits still hold.
+export function deliver(sector, card) {
   const now = sector.now(), to = [];
-  for (const [ws, p] of sector.everyone()) if (p.pid === card.to && (local || !p.hide || (card.tag && card.tag === p.tag))) to.push([ws, p]);
+  for (const [ws, p] of sector.everyone()) if (p.pid === card.to) to.push([ws, p]);
   if (!to.length) return 'gone';
   if (to.every(([, p]) => p.quiet)) return 'off';
   const inbox = (sector.inbox ??= new Map());

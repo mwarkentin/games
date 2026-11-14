@@ -9,6 +9,7 @@ The game starts at cell (6, 6), territory (0, 0) of sector (0, 0).
 from __future__ import annotations
 
 import hashlib
+import json
 import re
 
 import pytest
@@ -200,25 +201,24 @@ def test_muting_hides_a_surveyors_caret_and_emotes_and_is_remembered(page: Page,
     assert errors == []
 
 
-def test_the_list_and_emote_switches_tell_every_sector_and_are_remembered(page: Page, site_url, errors):
+def test_everyone_is_listed_and_the_emote_switch_tells_every_sector(page: Page, site_url, errors):
+    # A switch to keep off the list, left off from before it went, asks for nothing, and goes.
+    page.add_init_script("localStorage.setItem('letterfield.listed.v1', '0')")
     fake = FakeSurvey(surveyors=[KIM], presence=[KIM_CARET])
     start(page, site_url, fake)
     open_list(page)
     sectors = {"-1,-1", "-1,0", "0,-1", "0,0"}
     eventually(page, lambda: {m["sector"] for m in fake.sent("me")} == sectors)
     assert all(m["token"] == TOKEN and "hide" not in m and "quiet" not in m for m in fake.sent("me"))
+    assert page.evaluate("localStorage.getItem('letterfield.listed.v1')") is None
 
     def latest() -> dict:
         return {m["sector"]: m for m in fake.sent("me")}
 
-    open_you(page)  # the switches are on your page
-    # Off the list is off the public list only: the switch says who still sees you.
-    expect(page.locator("label", has=page.locator("#whoListed"))).to_contain_text("your guild and anyone near you")
-    page.uncheck("#whoListed")
-    eventually(page, lambda: all(m.get("hide") for m in latest().values()))
-    expect(page.locator("#whoStatus")).not_to_contain_text("off the list")  # the unticked box says so
+    open_you(page)  # the switch is on your page, the only one there now
+    expect(page.locator("#peopleYou .sw")).to_have_count(1)
     page.uncheck("#whoEmotes")
-    eventually(page, lambda: all(m.get("hide") and m.get("quiet") for m in latest().values()))
+    eventually(page, lambda: all(m.get("quiet") for m in latest().values()))
     fake.emote("0,0", KIM[0], "KIM", "wave", [0, 0])
     page.wait_for_timeout(400)
     assert page.evaluate("window.__lf.pops()") == []
@@ -226,10 +226,49 @@ def test_the_list_and_emote_switches_tell_every_sector_and_are_remembered(page: 
     fake.received.clear()
     page.reload()
     eventually(page, lambda: len(fake.sent("me")) == 4)
-    assert all(m["hide"] is True and m["quiet"] is True and m["token"] == TOKEN for m in fake.sent("me"))
-    open_list(page)
-    expect(page.locator("#whoListed")).not_to_be_checked()
+    assert all(m["quiet"] is True and "hide" not in m and m["token"] == TOKEN for m in fake.sent("me"))
     expect(page.locator("#whoEmotes")).not_to_be_checked()
+    assert errors == []
+
+
+def test_the_muted_list_unmutes_anyone_even_once_they_have_gone(page: Page, site_url, errors):
+    # ZED was muted before the list kept who anyone was.
+    page.add_init_script(f"""if (!sessionStorage.getItem('seeded')) {{
+      sessionStorage.setItem('seeded', '1');
+      localStorage.setItem('letterfield.muted.v1', JSON.stringify(['{ZED[0]}']));
+    }}""")
+    fake = FakeSurvey(surveyors=[KIM], presence=[KIM_CARET])
+    start(page, site_url, fake)
+    open_list(page)
+    page.get_by_role("button", name="More for KIM").click()
+    page.get_by_role("button", name="Mute KIM").click()
+    page.wait_for_function(f"!window.__lf.carets().includes('{KIM[0]}')")
+    kept = json.loads(page.evaluate("localStorage.getItem('letterfield.mutedAs.v1')"))
+    assert list(kept) == [KIM[0]] and kept[KIM[0]][0] == "KIM"
+
+    # KIM goes, and the page comes back: the list still knows who they were.
+    fake.surveyors, fake.presence = [], []
+    page.reload()
+    open_you(page)
+    row = page.locator("#mutedRow")
+    expect(row).to_contain_text("Their carets, emotes and notes stay hidden on your devices")
+    expect(page.locator("#mutedCount")).to_have_text("2")
+    expect(page.locator("#mutedList")).to_be_hidden()
+    row.click()
+    expect(row).to_have_attribute("aria-expanded", "true")
+    rows = page.locator(".muted-row")
+    # Newest first; one muted before the list kept names is "A surveyor".
+    expect(rows.locator(".muted-ini")).to_have_text(["KIM", "A surveyor"])
+    expect(rows.first.locator(".muted-when")).to_have_text(re.compile(r"^Muted [A-Z][a-z]{2} \d{1,2}$"))
+    page.get_by_role("button", name="Unmute this surveyor").click()
+    expect(rows).to_have_count(1)
+    expect(page.get_by_role("button", name="Unmute KIM")).to_be_focused()
+    page.get_by_role("button", name="Unmute KIM").click()
+    expect(page.locator(".muted-none")).to_contain_text("Nobody’s muted.")
+    expect(row).to_be_focused()
+    expect(page.locator("#mutedCount")).to_have_text("None")
+    assert page.evaluate("window.__lf.muted()") == []
+    assert page.evaluate("localStorage.getItem('letterfield.mutedAs.v1')") == "{}"
     assert errors == []
 
 
@@ -416,7 +455,7 @@ def test_your_page_opens_from_the_first_row_and_goes_back(page: Page, site_url, 
     # row names what's there, never how it's set, which shows only on your page.
     expect(you).to_contain_text("MLW (you)")
     expect(you).to_contain_text("Initials, guild and devices")
-    for mine in ("#surveyMe", "#guildCard", "#pairCard", "#whoListed", "#whoEmotes"):
+    for mine in ("#surveyMe", "#guildCard", "#pairCard", "#mutedRow", "#whoEmotes"):
         expect(page.locator(mine)).to_be_hidden()
     you.click()
     expect(html).to_have_attribute("data-people-page", "you")
@@ -424,12 +463,12 @@ def test_your_page_opens_from_the_first_row_and_goes_back(page: Page, site_url, 
     expect(page.locator("#peopleList")).to_be_hidden()
     expect(page.locator("#surveyMeName")).to_have_text("MLW")
     expect(page.locator("#pairHead")).to_have_text("Devices")
-    page.uncheck("#whoListed")
+    page.uncheck("#whoEmotes")
     # Back to the list, with focus on the row that opened it, which doesn't repeat the change.
     page.locator("#youBack").click()
     expect(html).to_have_attribute("data-people-page", "list")
     expect(you).to_be_focused()
-    expect(you).not_to_contain_text("Off the list")
+    expect(you).not_to_contain_text("emotes")
     expect(you).to_contain_text("Initials, guild and devices")
     # Escape goes back to the list first, then puts the drawer away.
     you.click()
