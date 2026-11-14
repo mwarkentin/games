@@ -23,7 +23,8 @@ Line numbers are as of commit 7bae950 and drift as the files change.
 | 8 | Emotes are unlabelled icons on a phone | a: a label under each icon | To build |
 | 9 | The word bar's chips, count and switch | a with b: plain tags, an honest count, a real switch | To build |
 | 10 | "Charted first" on nearly every entry, and messy rows | a with b; cards under day headings, a time on each row, rows on one grid | To build |
-| 11–29 | | Open | |
+| 11 | The theme cut to "Fe…" on a phone | b: "3/113" without "charted", and no LF mark on phones | To build |
+| 12–29 | | Open | |
 
 ## The game
 
@@ -254,14 +255,31 @@ outlined (someone else's) versus filled (yours).
 
 ### 11. The theme is cut to "Fe…" on a phone
 
-Measured at 375px: the count leaves the theme 22px.
+Measured at 375px: the count ("· 3/113 charted", 106px) leaves the theme
+22px, and only 2 of 225 theme names fit, though the theme is the clue to
+what's hidden. With 6b the count also gives way to "joining…", "offline" or
+"full", so the choice must fit those too ("offline" is as wide as the widest
+count, "112/113").
 
-- **a. Drop "charted" from the count.** *Recommended.* 75px: 204 of 225
-  theme names fit.
-- **b. Drop the "LF" mark.** Alone, 59px.
-- **c. Leave the count to the word bar.**
+- **a. Drop "charted"** (and "found" when playing alone): "Festivals ·
+  3/113". The theme gets 62–75px: 204 of 225 fit at a low count, 167 at a
+  three-digit count or offline. Keeps LF. Once 6b drops the panel's
+  territory line, nothing on a phone says what's counted.
+- **b. a, and no LF mark on phones.** *Recommended.* 99–112px: 220–223 of
+  225 fit in every state (only "Weights & Measures" and "Pioneers of
+  Science" are cut), and every territory name fits (13 in 2,601 are cut
+  today). The mark tells a phone player nothing the tab or the Home Screen
+  icon doesn't.
+- **c. A percentage:** "Festivals · 2%". 82–95px while live, but "offline"
+  needs as much room as a's widest count, and the territory's size is lost.
+- Not offered: moving the count out of the title box, which would reverse
+  11-11's "always shows how many words of the territory are found" and
+  leave 6b's states nowhere to go.
 - **Machines:** none.
-- **Decided:** open.
+- **Decided: b** (after mockups). On phones (under 700px) only: the count
+  reads "3/113", with "3 of 113 words charted" as its accessible name, and
+  the brand box goes, keeping its "Letterfield" heading for screen readers.
+  Wider screens keep "Letterfield" and "3/113 charted".
 
 ### 12. "Origin" means nothing to most players
 
