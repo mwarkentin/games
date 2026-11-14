@@ -11,6 +11,7 @@ from __future__ import annotations
 import hashlib
 import re
 
+import pytest
 from playwright.sync_api import Page, expect
 
 from fake_survey import FakeSurvey
@@ -261,6 +262,40 @@ def test_a_caret_has_a_menu_of_emotes(page: Page, site_url, errors):
     expect(menu).to_be_hidden()
     expect(page.locator("#map")).to_be_focused()
     page.mouse.click(at["x"] - 150, at["y"] + 120, button="right")
+    expect(menu).to_be_hidden()
+    assert errors == []
+
+
+@pytest.mark.browser_context_args(has_touch=True, is_mobile=True)
+def test_a_long_press_on_a_caret_opens_its_menu_not_a_selection(page: Page, site_url, errors):
+    fake = FakeSurvey(presence=[KIM_CARET])
+    start(page, site_url, fake, viewport={"width": 375, "height": 740})
+    page.wait_for_function(f"window.__lf.carets().includes('{KIM[0]}')")
+    # A phone's own long press selects text or shows its copy callout, which cancels the game's
+    # press; no iPhone runs here, so check the rules that stop it: the page isn't selectable, and
+    # what players copy by hand still is.
+    assert page.evaluate("getComputedStyle(document.body).userSelect") == "none"
+    assert page.evaluate("getComputedStyle(document.querySelector('#notes')).userSelect") == "text"
+    assert page.evaluate("getComputedStyle(document.querySelector('#people')).userSelect") == "text"
+
+    cdp = page.context.new_cdp_session(page)
+
+    def touch(kind: str, x: float, y: float) -> None:
+        points = [] if kind == "touchEnd" else [{"x": x, "y": y}]
+        cdp.send("Input.dispatchTouchEvent", {"type": kind, "touchPoints": points})
+
+    menu = page.locator("#caretMenu")
+    at = page.evaluate(f"window.__lf.caretXY('{KIM[0]}')")
+    touch("touchStart", at["x"], at["y"])
+    page.wait_for_timeout(800)  # past the game's long press
+    touch("touchEnd", at["x"], at["y"])
+    expect(menu).to_be_visible()
+    expect(menu.locator("#caretWho")).to_have_text("KIM")
+    assert page.evaluate("String(getSelection())") == ""
+
+    # Letting go moves focus to the map, so another touch, away from the caret, puts it away.
+    touch("touchStart", at["x"] - 150, at["y"] + 120)
+    touch("touchEnd", at["x"] - 150, at["y"] + 120)
     expect(menu).to_be_hidden()
     assert errors == []
 
