@@ -20,7 +20,8 @@ Line numbers are as of commit 7bae950 and drift as the files change.
 | 5 | Four different counts of who's online | a: one count, in the badge and the list's line | To build |
 | 6 | Nothing on a phone's map says the survey is offline | b with d: the title says it; waiting claims kept in storage | To build |
 | 7 | Carets and circles only explain themselves to a mouse | b: two lines of copy; long press fixed on phones | Copy to build; long press in its own session and PR |
-| 8–29 | | Open | |
+| 8 | Emotes are unlabelled icons on a phone | a: a label under each icon | To build |
+| 9–29 | | Open | |
 
 ## The game
 
@@ -190,7 +191,11 @@ outlined (someone else's) versus filled (yours).
 - **b. Long-press an icon to see its name first.**
 - Either way, one tense in the notes emotes leave.
 - **Machines:** none.
-- **Decided:** open.
+- **Decided: a.** A label under each icon in the list's ⋯ panel and the
+  caret's menu, which goes to two rows (4 and 3) for room; "Nice" becomes
+  "Thumbs up" (names only; the Worker knows emotes by id); and the notes
+  emotes leave all read in the present tense ("KIM waves", "gives you a
+  thumbs up", "applauds").
 
 ### 9. The word bar: chips look tappable, the count disagrees, the toggle doesn't look like one
 
