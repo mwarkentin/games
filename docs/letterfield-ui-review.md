@@ -32,7 +32,8 @@ Line numbers are as of commit 7bae950 and drift as the files change.
 | 17 | Small flow and copy fixes | 1a: a Muted list on your page; 2a: the link in a box; 3: a and b, "Survey log and timelapse ↗" and ↗ on links out | To build |
 | 18 | Sharing the Supernovas page gives out a dead link | b: a Supernovas card in the share Worker | To build |
 | 19 | "Live" on views that don't update | No badge: "So far" on any period still running; the hour still updates quietly | To build |
-| 20–29 | | Open | |
+| 20 | On a phone, the words come last | a with c: words straight after the chart, its supernova note under it | To build |
+| 21–29 | | Open | |
 
 ## The game
 
@@ -543,11 +544,22 @@ reload keeps the last copy and tries again, still saying Live.
 
 ### 20. On a phone, the words come last
 
-- **a. Words first.** *Recommended.*
+Four top-list cards (surveyors, guilds, territories, themes: about 1,150px)
+stand between the chart and the first word, 2.7 screens down. The supernova
+note sits between them and the words, far from the chart's unexplained ✦,
+and one paragraph at the foot explains seven things.
+
+- **a. Words first.** *Recommended,* with c.
 - **b. Notes next to what they explain.**
 - **c. The supernova strip under the chart, ✦ labelled.**
 - **Machines:** none.
-- **Decided:** open.
+- **Decided: a with c** (after a mockup). On a phone (under 640px) the
+  words follow the chart, and the top lists come after them under a "Top
+  lists" heading, with a "Top lists ↓" link under the chart to jump there;
+  on a computer, where the cards sit two abreast, the order stays. The
+  supernova note sits right under the chart and starts with the chart's ✦,
+  so the mark explains itself. The log's word rows wrap as the field notes'
+  did before 10; that's taken up with 28.
 
 ### 21. The hour view uses a day's controls
 
