@@ -2392,18 +2392,13 @@ h2 { margin: 0; font-family: var(--font-display); font-weight: 400; font-size: 3
   }
 
   /* ================= boot ================= */
-  function start(data) {
-    data = data || {};
-    settings = sanitize(data.settings || store.get('fb.settings', DEFAULTS));
+  function start() {
+    settings = sanitize(store.get('fb.settings', DEFAULTS));
     const nb = (v) => Math.max(0, +v || 0);
-    const saved = data.bests || {};
-    bests = {
-      normal: nb(saved.normal != null ? saved.normal : data.best != null ? data.best : store.get(BEST_KEYS.normal, 0)),
-      easy: nb(saved.easy != null ? saved.easy : store.get(BEST_KEYS.easy, 0)),
-    };
-    muted = !!(data.muted != null ? data.muted : store.get('fb.muted', false));
+    bests = { normal: nb(store.get(BEST_KEYS.normal, 0)), easy: nb(store.get(BEST_KEYS.easy, 0)) };
+    muted = !!store.get('fb.muted', false);
     Sound.setMuted(muted); syncMute();
-    setupHaptics(data.haptics != null ? !!data.haptics : store.get('fb.haptics', true) !== false);
+    setupHaptics(store.get('fb.haptics', true) !== false);
     writeForm(settings);
     updateMenuBest();
     layer();
@@ -2419,7 +2414,6 @@ h2 { margin: 0; font-family: var(--font-display); font-weight: 400; font-size: 3
       ]).then(drawIcons).catch(() => {});
     }
     bindUI();
-    try { if (window.claude && window.claude.hot && window.claude.hot.snapshot) window.claude.hot.snapshot(() => ({ settings, bests, muted, haptics: Haptics.on })); } catch (e) { /* ignore */ }
     if (DEBUG) {
       window.__fb = {
         peek: () => ({ state: Screen.state, save: Save.state, board: Board.state, score, level, popped, wrongs, missed, input, fills: fills.slice(), visitor: visitor && visitor.kind,
@@ -2437,8 +2431,7 @@ h2 { margin: 0; font-family: var(--font-display); font-weight: 400; font-size: 3
     handleInvite();
   }
 
-  const hot = window.claude && window.claude.hot;
-  if (hot && hot.ready) hot.ready(start); else start((hot && hot.data) || {});
+  start();
 })();
 </script>
 </body>

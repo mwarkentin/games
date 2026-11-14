@@ -1164,10 +1164,9 @@ function drawScope(now) {
 // stays awake only then. ending is the moment the scope shows how a shift
 // ended, before its report covers it. The leaderboard card (board) opens
 // over the menu, the report or, from an invite link, a paused shift, and
-// closes back to it. menu → paused and menu → report are boot bringing back
-// a saved shift or a hot snapshot.
+// closes back to it. menu → paused is boot bringing back a saved shift.
 const Screen = machine('screen', {
-  menu: ['playing', 'board', 'paused', 'report'],
+  menu: ['playing', 'board', 'paused'],
   playing: ['paused', 'ending'],
   paused: ['playing', 'menu', 'board'],
   ending: ['report'],
@@ -1518,7 +1517,7 @@ function showResultBoard() {
   if (!Leaderboard.api || !G || !G.result) return;
   offerRank = null;
   // A shift with an aircraft handled may be worth saving; one saved already
-  // (a hot snapshot's) isn't offered again.
+  // isn't offered again.
   if (shiftEntry(G).level && !G.entry && Save.is('none')) Save.go('checking');
   decideSave(null);
   refreshResultList();
@@ -1962,22 +1961,20 @@ async function requestWake() {
 function releaseWake() { try { if (wakeLock) wakeLock.release(); } catch (e) { /* ignore */ } wakeLock = null; }
 
 /* ---------- Boot ---------- */
-function boot(data) {
-  if (!(data && data.game)) data = { game: savedShift(), restored: true };
+function boot() {
+  const saved = savedShift();
   readColors();
   resize();
   if (window.ResizeObserver) new ResizeObserver(resize).observe(wrap); else window.addEventListener('resize', resize);
   buildMenu();
   paintScreen();
-  if (data && data.game && data.game.v === 1) {
-    G = data.game;
+  if (saved && saved.v === 1) {
+    G = saved;
     if (!G.slowest) G.slowest = G.speed;   // saved before shifts were filed by their slowest sweep
-    if (G.state === 'running' || G.state === 'paused') {
-      // Back paused, at the start of its sweep.
-      G.state = 'paused'; pausedFrac = 0; lastTickAt = performance.now();
-      $('#pauseSummary').textContent = `${data.restored ? 'Picked up where you left off. ' : ''}${pauseSummary()}`;
-      Screen.go('paused');
-    } else if (G.state === 'over') Screen.go('report');
+    // Back paused, at the start of its sweep (a saved shift is running or paused).
+    G.state = 'paused'; pausedFrac = 0; lastTickAt = performance.now();
+    $('#pauseSummary').textContent = `Picked up where you left off. ${pauseSummary()}`;
+    Screen.go('paused');
   }
   renderAll();
   if (Screen.is('menu')) focusCard();
@@ -2008,11 +2005,7 @@ if (location.hash === '#debug') {
   };
 }
 
-const hot = window.claude && window.claude.hot;
-if (hot && hot.snapshot) {
-  try { hot.snapshot(() => ({ game: G ? JSON.parse(JSON.stringify(G)) : null, frac: pausedFrac })); } catch (e) { /* ignore */ }
-}
-if (hot && hot.ready) hot.ready(boot); else boot((hot && hot.data) || {});
+boot();
 })();
 </script>
 </body>
