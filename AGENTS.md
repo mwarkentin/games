@@ -89,6 +89,10 @@ utilities; games live here so they get their own origin and their own rules.
   no audio files.
 - Pause when the tab is hidden (`visibilitychange`) if the game runs on a
   timer.
+- Anything a page loads gets a placeholder its own size ahead of time
+  (numbers, a chart, a list, a name), so nothing jumps as it arrives: a still
+  block under `prefers-reduced-motion`, a gentle pulse otherwise. Draw what
+  the page already knows, from its address or storage, at once.
 - Give players one "Send feedback" link marked `data-feedback` (see
   Feedback, under Telemetry).
 - Keep scores and settings in `localStorage`, with keys prefixed by the
@@ -595,6 +599,35 @@ page loads nothing from a new host.
   Worker's text in the page as text, never HTML.
 - Game tests fake it with `page.route` and `tests/fake_definitions.py`; the
   real Worker's stand-in answers it too.
+
+## Letterfield's words
+
+One name for each idea, in the game, the survey log, the timelapse, share
+cards and the changelog, so players never wonder whether two words mean two
+things. Use these in everything a player reads (code can keep its own
+names, like `region` or `stray`):
+
+| Idea | Say | Not |
+|---|---|---|
+| Playing on one map together | the shared survey ("the survey" once that's clear) | |
+| Someone playing it | surveyor | player |
+| The area charted together | the universe (its map: "Universe map") | the shared world, the shared map, World |
+| A theme's patch of the map | territory | region, sector, area |
+| The people in a guild | members | mates |
+| Your list of words | field notes ("your notes" after that) | |
+| A word in them | a find | |
+| The words a territory hides | hidden words | words alone, where it matters |
+| A real word turned up by chance | bonus word | stray, found by chance |
+| Being first to a word on the survey | charted first; someone else's is "charted by ZED" | claimed |
+| Circling a word alone | found | charted |
+| The three letters | initials, which sign your words | name, tag |
+| The map played back | timelapse | replay |
+| The log's lists of the most charted | top lists | rankings |
+
+And the names of the tools: Map centre, Last find, the Effects and Music
+sliders. A survey that can't take more people here is "crowded", and a
+period still running is "so far", never "live". Never show internal words
+like sector, Atlas, claim or pass.
 
 ## Adding or changing a game
 
