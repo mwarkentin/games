@@ -105,14 +105,20 @@ def test_a_code_that_runs_out_can_be_made_again(page: Page, site_url, errors):
     card.get_by_role("button", name="Link another device").click()
     expect(page.locator("html")).to_have_attribute("data-pair", "showing")
     first = page.evaluate("window.__lf.pairCode()")
+    # Another of this surveyor's devices makes a code, which retires this one well before its time.
     links.expire(first)
-    expect(card).to_contain_text("That code has run out.", timeout=10_000)
+    expect(card).to_contain_text("A newer code replaced it.", timeout=10_000)
     expect(page.locator("html")).to_have_attribute("data-pair-code", "gone")
     expect(card.locator(".pair-qr")).to_have_count(0)
     card.get_by_role("button", name="New code").click()
     expect(page.locator("html")).to_have_attribute("data-pair", "showing")
     expect(page.locator("html")).to_have_attribute("data-pair-code", "waiting")
     expect(card.locator(".pair-code")).not_to_have_text(f"{first[:4]}-{first[4:]}")
+    # Its ten minutes go by: it has run out.
+    page.evaluate("() => { const real = Date.now; Date.now = () => real() + 11 * 60000; }")
+    expect(card).to_contain_text("That code has run out.", timeout=10_000)
+    card.get_by_role("button", name="New code").click()
+    expect(page.locator("html")).to_have_attribute("data-pair-code", "waiting")
     # Escape puts it away.
     card.get_by_role("button", name="Done").focus()
     page.keyboard.press("Escape")

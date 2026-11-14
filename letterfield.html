@@ -249,6 +249,7 @@ body.docked .notes{box-shadow:none}
 .muted-row:first-child{border-top:0}
 .muted-ini{flex:none;font:700 16px/1 var(--f-display);letter-spacing:.1em;color:var(--ink)}
 .muted-when{flex:1;min-width:0;font:400 11px/1.3 var(--f-mono);color:var(--muted)}
+.muted-row .pill{flex:none;min-height:40px}
 .muted-none{margin:0;padding:11px 14px 12px;font-size:12.5px;line-height:1.45;color:var(--muted)}
 .who-foot{margin:14px 0 0;padding-top:12px;border-top:1px solid var(--rule);font-size:12.5px;line-height:1.45;color:var(--muted)}
 /* Your page: back to the list, who you are, then grouped rows (iOS-settings-like): guild, the map, devices. */
@@ -444,10 +445,13 @@ html[data-who="loading"] .who-status{animation:blink 1s infinite alternate}
 .who-av .guild-dot{position:absolute;right:-2px;bottom:-2px;width:11px;height:11px;box-shadow:0 0 0 2px var(--panel)}
 .who-head .guild-dot{width:8px;height:8px;box-shadow:none}
 .who-guild{margin:12px 6px 2px 9px;gap:10px;font:700 15px/1.1 var(--f-display);letter-spacing:.08em;color:var(--ink)}
+/* The list's rows space their parts 2px apart; a heading's dot and name want room. */
+.who-list li.who-head{gap:7px}
+.who-list li.who-guild{gap:10px}
 .who-guild .guild-dot{width:10px;height:10px;box-shadow:0 0 0 3px hsl(var(--gh) var(--mark-s) var(--mark-l) / .22)}
 .who-head-name{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .who-head-n{flex:none;font:400 10.5px/1 var(--f-mono);letter-spacing:.02em;text-transform:none;color:var(--muted)}
-.who-invite{flex:none;min-height:36px;margin:-8px -4px -8px 0;padding:0 8px;border:0;background:none;color:var(--accent);font:600 13px/1 var(--f-ui);letter-spacing:0;text-transform:none;cursor:pointer}
+.who-invite{flex:none;min-height:40px;margin:-10px -4px -10px 0;padding:0 8px;border:0;background:none;color:var(--accent);font:600 13px/1 var(--f-ui);letter-spacing:0;text-transform:none;cursor:pointer}
 .guild-invite p{margin:0 0 10px;font-size:13.5px;line-height:1.5}
 .guild-invite .eyebrow{margin-bottom:8px}
 .guild-invite .coach-row{justify-content:flex-end}
@@ -788,7 +792,7 @@ body.settling, body.settling *{transition:none!important}
       <p class="you-eb">On the map</p>
       <div class="group">
         <label class="you-item"><span>Take emotes<small>Let others wave and cheer at you.</small></span><input type="checkbox" class="sw" role="switch" id="whoEmotes" checked></label>
-        <button type="button" class="you-item" id="mutedRow" aria-expanded="false" aria-controls="mutedList"><span>Muted<small>Their carets, emotes and notes stay hidden on your devices</small></span><b class="you-count" id="mutedCount">None</b><svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg></button>
+        <button type="button" class="you-item" id="mutedRow" aria-expanded="false" aria-controls="mutedList"><span>Muted<small>Their carets, emotes and come-online notes stay hidden on your devices</small></span><b class="you-count" id="mutedCount">None</b><svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg></button>
         <div class="muted-list" id="mutedList" hidden></div>
       </div>
       <p class="you-eb" id="pairHead" hidden>Devices</p>
@@ -4869,24 +4873,26 @@ function sendEmote(s, id) {
   const c = caretOf(s.pid);
   tell(home, { t: 'emote', to: s.pid, e: id, s: c ? [c.l.sx, c.l.sy] : [fdiv(s.rx, TERR_PER_SECTOR), fdiv(s.ry, TERR_PER_SECTOR)] });
 }
-function said(pid, text) {
+function said(pid, text, loud = false) {
   whoSaid.clear();  // only the last one: an older one under another row goes
   whoSaid.set(pid, text);
   for (const p of whoList.querySelectorAll('.who-said')) if (p.id !== `said-${pid}`) p.textContent = '';
   const el = whoList.querySelector(`#said-${pid}`) || (caretFor === pid && caretMenu.querySelector('.who-said'));
-  if (el) el.textContent = text; else say(text);
+  const shown = el && el.getClientRects().length;  // a row in a closed drawer shows nothing
+  if (el) el.textContent = text;
+  if (!shown) { say(text); if (loud) toast(`<i></i><b class="wraps">${text}</b>`, null, 4000); }
 }
 // What a sector says about emotes: what became of ours, or one for us.
 function onSocial(l, m) {
   if (m.t === 'emoted') {
     if (typeof m.to !== 'string' || !PID_RE.test(m.to)) return;
-    const em = EMOTE_BY[m.e], s = whoFind(m.to), who = (s && s.ini) || 'they';
+    const em = EMOTE_BY[m.e], s = whoFind(m.to), gh = ghosts.get(m.to), who = (s && s.ini) || (gh && gh.ini) || 'they';
     const They = who === 'they' ? 'They' : who;
-    const why = { 'slow down': 'Too quick: try again in a moment.', gone: `${They} moved on.`, off: `${They} isn’t taking emotes.`, busy: `${They} had plenty of emotes just now: try again soon.`, 'sign first': 'Sign your initials first, under You.' };
+    const why = { 'slow down': 'Too quick: try again in a moment.', gone: `${They} moved on.`, off: `${who === 'they' ? 'They aren’t' : `${who} isn’t`} taking emotes.`, busy: `${They} had plenty of emotes just now: try again soon.`, 'sign first': 'Sign your initials first, under You.' };
     if (m.ok && em) {
       said(m.to, `${em.name}: sent to ${who === 'they' ? 'them' : who}.`);
       if (caretOnScreen(m.to)) pop(m.to, m.e);
-    } else said(m.to, why[m.error] || 'Couldn’t send that.');
+    } else said(m.to, why[m.error] || 'Couldn’t send that.', true);
     if (m.error === 'gone' && Who.is('ready')) Who.go('refreshing');
     return;
   }
@@ -4961,10 +4967,10 @@ function caretAt(px, py) {
 function openCaretMenu(s, px, py) {
   hidePeek();
   caretFor = s.pid;
-  const who = s.ini || 'A surveyor', m = muted.has(s.pid);
+  const who = s.ini || 'A surveyor', m = muted.has(s.pid), listed = whoFind(s.pid), quiet = !m && !!(listed && listed.quiet);
   caretMenu.innerHTML = `<p class="caret-who"><b id="caretWho">${s.ini || '···'}</b><span>${regionName(s.rx, s.ry)}</span></p>` +
-    `<div class="emote-row">${EMOTES.map(e => `<button type="button" class="emote" data-e="${e.id}" aria-label="${e.name} to ${who}" title="${e.name}"${m ? ' disabled' : ''}>${emoteSvg(e)}<span aria-hidden="true">${e.name}</span></button>`).join('')}</div>` +
-    `<p class="who-said" aria-live="polite"></p><button type="button" class="who-mute">${m ? 'Unmute' : 'Mute'} ${who}</button>`;
+    `<div class="emote-row">${EMOTES.map(e => `<button type="button" class="emote" data-e="${e.id}" aria-label="${e.name} to ${who}" title="${e.name}"${m || quiet ? ' disabled' : ''}>${emoteSvg(e)}<span aria-hidden="true">${e.name}</span></button>`).join('')}</div>` +
+    `<p class="who-said" aria-live="polite">${quiet ? `${who} isn’t taking emotes.` : ''}</p><button type="button" class="who-mute">${m ? 'Unmute' : 'Mute'} ${who}</button>`;
   caretMenu.hidden = false;
   caretMenu._s = s;
   const r = caretMenu.getBoundingClientRect(), y = py + mapTop;
@@ -5140,7 +5146,7 @@ async function joinInvite() {
     saveGuild(guildOf(data));
     takeRoster(data.members);
     invite = null;
-    toast(`<i class="guild-dot" style="--gh:${guildHue(data.name)}"></i><b class="wraps">${guildName(data.name)}</b><span>${left && left.code !== data.code ? `You’re in, and out of the ${guildName(left.name)}` : 'You’re in: your mates come first under Surveyors'}</span>`, null, 4000);
+    toast(`<i class="guild-dot" style="--gh:${guildHue(data.name)}"></i><b class="wraps">${guildName(data.name)}</b><span>${left && left.code !== data.code ? `You’re in, and out of the ${guildName(left.name)}` : 'You’re in: its members come first under Surveyors'}</span>`, null, 4000);
     return Membership.go('in');
   }
   invite.error = status === 409 ? 'That guild is full.' : status === 429 ? 'Too many guilds joined from this network: try again later.' : 'Couldn’t join. Try again in a moment.';
@@ -5414,6 +5420,7 @@ async function syncNow() {
   if (Sync.seq !== at) return;
   if (status === 200 && data.off) {
     writeSync(null);
+    try { localStorage.removeItem(K_RECOVERY); } catch (_) {}  // stopped on every device: the recovery code went with it
     toast('<i></i><b>Syncing has stopped</b><span>Your field notes stay in this browser. Link a device again to sync.</span>', null, 5000);
     return Sync.go('off');
   }
@@ -5487,7 +5494,7 @@ function applySettings(c) {
 // into whatever card is open by then.
 async function stopSync(everywhere) {
   if (!Pair.is('stop')) return;
-  if (everywhere) Pair.go('stopping');
+  if (everywhere) { Pair.go('stopping'); try { $('#pairStopping').focus({ preventScroll: true }); } catch (_) {} }
   const at = Pair.seq;
   writeSync(null);
   if (!Sync.is('off')) Sync.go('off');
@@ -5497,7 +5504,10 @@ async function stopSync(everywhere) {
   say(said);
   if (everywhere && (Pair.seq !== at || !Pair.is('stopping'))) return;
   pairNote = said;
+  const had = pairCard.contains(document.activeElement) || document.activeElement === document.body;
   if (Pair.is('stopping', 'stop')) Pair.go('idle'); else renderPair();
+  // The answer has the focus, unless the player has moved on to something else.
+  if (had) try { pairCard.querySelector('.pair-note').focus({ preventScroll: true }); } catch (_) {}
 }
 document.addEventListener('visibilitychange', () => { if (!document.hidden) syncSoon(500); });
 // Another tab turned it on or off.
@@ -5836,13 +5846,13 @@ function renderPair() {
   if (offering) { /* nothing here */ }
   else if (st === 'stop') {
     // A choice between things to do, so rows, as the drawer's other choices are; then a way out.
-    const made = Number(LS.get(K_RECOVERY)) || 0;
+    // Any recovery code goes too, whichever device saved it (only that one knows there is one).
     html = '<p class="pair-ask">Stop syncing where? Each device keeps its notes as they are.</p>' +
       '<div class="group"><button type="button" class="you-item" data-p="stop-here"><span>This device<small>The others keep syncing</small></span></button>' +
-      `<button type="button" class="you-item danger" data-p="stop-all"><span>Every device<small>Also deletes the copy kept for syncing${made ? ', and your recovery code' : ''}</small></span></button></div>` +
+      '<button type="button" class="you-item danger" data-p="stop-all"><span>Every device<small>Also deletes the copy kept for syncing, and any recovery code</small></span></button></div>' +
       '<div class="pair-acts pair-keep"><button type="button" class="btn ghost" data-p="stop-no">Keep syncing</button></div>';
   }
-  else if (st === 'stopping') html = '<p class="pair-ask" role="status">Stopping syncing on every device…</p>';
+  else if (st === 'stopping') html = '<p class="pair-ask" role="status" tabindex="-1" id="pairStopping">Stopping syncing on every device…</p>';
   else if (st === 'idle') {
     // Each thing to do, named for what it does. Whether this surveyor's notes are
     // backed up shows once, on the row that stops it (or, while it's off, by the
@@ -5851,7 +5861,7 @@ function renderPair() {
     html = `<div class="group"><button type="button" class="you-item" data-p="make"><span>Link another device<small>Play as the same surveyor on each</small></span>${CHEV}</button>` +
       `<button type="button" class="you-item" data-p="enter"><span>I have a code<small>From another device, or one you saved</small></span>${CHEV}</button>` +
       `<button type="button" class="you-item" data-p="recovery"><span>Recovery code<small>${made ? `Saved ${new Date(made).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' })}` : 'Not saved: one brings you back if this device is lost'}</small></span>${CHEV}</button>` +
-      `${on ? '<button type="button" class="you-item danger" data-p="stop"><span>Stop syncing<small>Your notes and settings are backed up</small></span></button>' : ''}</div><p class="pair-note" aria-live="polite">${pairNote}</p>`;
+      `${on ? '<button type="button" class="you-item danger" data-p="stop"><span>Stop syncing<small>Your notes and settings are backed up</small></span></button>' : ''}</div><p class="pair-note" aria-live="polite" tabindex="-1">${pairNote}</p>`;
   }
   else if (st === 'recovery' || st === 'keeping' || st === 'removing') {
     const made = Number(LS.get(K_RECOVERY)) || 0, busy = st !== 'recovery';
@@ -5860,7 +5870,7 @@ function renderPair() {
       : '<p>A recovery code brings this surveyor back on any device, even if this one is lost or its storage cleared: your initials, guild and field notes. Saving one keeps a backup of your notes for it.</p>'}${recoveryNote ? `<p>${recoveryNote}</p>` : ''}${err}<div class="pair-acts"><button type="button" class="btn" data-p="keep"${busy ? ' disabled' : ''}>${st === 'keeping' ? 'Making…' : made ? 'Make a new one' : 'Make one'}</button>${made ? `<button type="button" class="btn danger" data-p="unkeep"${busy ? ' disabled' : ''}>${st === 'removing' ? 'Removing…' : 'Remove it'}</button>` : ''}<button type="button" class="btn ghost" data-p="close"${busy ? ' disabled' : ''}>Close</button></div></div>`;
   } else if (st === 'kept') html = `<div class="pair-box"><p class="eyebrow">Your recovery code</p><b class="pair-code pair-recovery" id="recoveryCode">${inFours(recoveryCode)}</b><p>Keep it somewhere safe, like a password manager: it won’t be shown again. To be this surveyor on any device, enter it there under <b>I have a code</b>.</p><p>Whoever has it can play as you. If it gets out, make a new one here, and this one stops working.</p><div class="pair-acts"><button type="button" class="btn ghost" data-p="copy-recovery">Copy</button><button type="button" class="btn ghost" data-p="file-recovery">Save as a file</button><button type="button" class="btn" data-p="close">Done</button></div><p class="pair-small" id="pairSaid" aria-live="polite"></p></div>`;
   else if (st === 'making') html = `<div class="pair-box"><p class="eyebrow">Link another device</p><p>Making a code…</p></div>`;
-  else if (st === 'showing' && PairCode.is('gone')) html = `<div class="pair-box"><p class="eyebrow">Link another device</p><p>That code has run out.</p><div class="pair-acts"><button type="button" class="btn" data-p="make">New code</button><button type="button" class="btn ghost" data-p="close">Close</button></div></div>`;
+  else if (st === 'showing' && PairCode.is('gone')) html = `<div class="pair-box"><p class="eyebrow">Link another device</p><p>${linkCode && Date.now() < linkCode.until - 5000 ? 'A newer code replaced it.' : 'That code has run out.'}</p><div class="pair-acts"><button type="button" class="btn" data-p="make">New code</button><button type="button" class="btn ghost" data-p="close">Close</button></div></div>`;
   else if (st === 'showing' && linkCode) {
     const share = navigator.share && matchMedia('(pointer: coarse)').matches ? 'Share link' : 'Copy link';
     html = `<div class="pair-box"><p class="eyebrow">Link another device</p><div class="pair-qr" id="pairQr"></div><p>Scan this with the other device’s camera, or open Letterfield there and choose <b>I have a code</b>:</p><b class="pair-code" id="pairCode">${showCode(linkCode.code)}</b><p class="pair-left" id="pairLeft"></p><p>Whoever uses it plays as you, so keep it to your own devices. It brings your initials, guild and mutes, and from then on your field notes keep in step on both.</p><div class="pair-acts"><button type="button" class="btn ghost" data-p="share">${share}</button><button type="button" class="btn" data-p="close">Done</button></div><p class="pair-small" id="pairSaid" aria-live="polite"></p><p class="pair-small">On an iPhone, a Home Screen app keeps its own storage: type the code in there.</p></div>`;
@@ -5938,6 +5948,7 @@ pairCard.addEventListener('submit', e => {
   redeemCode(code);
 });
 pairCard.addEventListener('keydown', e => {
+  if (e.key === 'Escape' && Pair.is('stopping')) { e.stopPropagation(); return; }  // waiting for its answer, which comes here
   if (e.key !== 'Escape' || !Pair.is('showing', 'used', 'entering', 'failed', 'recovery', 'kept', 'stop')) return;
   e.stopPropagation();
   Pair.go('idle');

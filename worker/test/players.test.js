@@ -303,8 +303,9 @@ describe('recovery codes', () => {
     assert.equal((await player(1)).meta().saved, 1);
     // Typed in any case, with or without its dashes.
     const typed = made.code.toLowerCase().match(/.{4}/g).join('-');
-    assert.deepEqual(await call('/use', { code: typed }), [200, { token: token(1) }]);
-    assert.deepEqual(await call('/use', { code: made.code }), [200, { token: token(1) }]);  // as often as it's needed
+    // With when it was made, so the device it brings back says it's saved.
+    assert.deepEqual(await call('/use', { code: typed }), [200, { token: token(1), made: NOW }]);
+    assert.deepEqual(await call('/use', { code: made.code }), [200, { token: token(1), made: NOW }]);  // as often as it's needed
     assert.deepEqual(await call('/use', { code: 'ABCDEFGHJKMNPQRSTUVW' }), [404, { error: 'no such code' }]);
   });
 

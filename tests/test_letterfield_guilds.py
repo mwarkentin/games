@@ -112,6 +112,7 @@ def test_an_invite_link_asks_once_initials_are_in_then_joins(page: Page, site_ur
     expect(page.locator("html")).to_have_attribute("data-guild", "in")
     expect(invite).to_be_hidden()
     expect(page.locator("#toast b")).to_have_text("Cobalt Compass Society")
+    expect(page.locator("#toast span")).to_have_text("You’re in: its members come first under Surveyors")
     assert any(path == f"/{CODE}/join" for _, path, _ in guilds.calls)
     assert json.loads(page.evaluate("localStorage.getItem('letterfield.guild.v1')")) == MINE
     assert errors == []
@@ -178,6 +179,12 @@ def test_mates_come_first_with_when_the_rest_were_seen_and_a_note_when_one_comes
     expect(page.locator(".who-guild .who-head-name")).to_have_text("Cobalt Compass Society")
     expect(page.locator(".who-guild .who-head-n")).to_have_text("1 online")
     expect(page.locator(".who-head").nth(1)).to_have_text("Everyone else")
+    # The guild's dot keeps clear of its name, and Invite is as tall as the drawer's other buttons,
+    # measured once the drawer has finished sliding in.
+    page.locator("#people").evaluate("e => Promise.all(e.getAnimations({ subtree: true }).map(a => a.finished))")
+    gap, invite = page.evaluate("""() => { const box = s => document.querySelector(s).getBoundingClientRect();
+      return [box('.who-guild .who-head-name').left - box('.who-guild .guild-dot').right, box('.who-invite').height]; }""")
+    assert gap >= 8 and invite >= 40, (gap, invite)
     expect(page.locator(".who-ini")).to_have_text(["KIM", "ZED", "LOU"])
     expect(page.locator(".who-row.away .who-meta")).to_have_text("last seen 3h ago")
     # From the roster, on your page.

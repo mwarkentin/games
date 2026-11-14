@@ -32,7 +32,7 @@
 // in a Player, out of reach of the half-yearly clear-out.
 //
 //   POST /v1/recovery         {token} → 201 {code, made}: a new code; any older one stops working
-//   POST /v1/recovery/use     {code} → {token}, or 404
+//   POST /v1/recovery/use     {code} → {token, made}, or 404: made says when the code was, for the device it brings back
 //   POST /v1/recovery/remove  {token} → {ok}
 
 import { CODE_ALPHABET, HttpError, INITIALS, corsHeaders, hashIp, json, rateLimit } from './leaderboard.js';
@@ -346,11 +346,11 @@ export function routeRecovery(request, env, now = Date.now()) {
         const code = typeof body?.code === 'string' ? body.code.toUpperCase().replace(/[^A-Z0-9]/g, '') : '';
         if (!RECOVERY_CODE.test(code)) throw new HttpError(404, 'no such code');
         const { id, key } = await recoveryKeys(code);
-        const row = await db.prepare('SELECT pid, box FROM recovery WHERE id = ?').bind(id).first();
+        const row = await db.prepare('SELECT pid, box, made FROM recovery WHERE id = ?').bind(id).first();
         if (!row) throw new HttpError(404, 'no such code');
         const token = await unseal(key, row.box);
         await playerStub(env, row.pid).fetch('https://player/save', { method: 'POST', body: '{"on":true}' });
-        return json({ token }, 200, cors);
+        return json({ token, made: row.made }, 200, cors);
       }
       if (typeof body?.token !== 'string' || !TOKEN.test(body.token)) throw new HttpError(400, 'token must be 32 hex digits');
       const pid = await playerId(body.token);

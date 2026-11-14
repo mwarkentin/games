@@ -251,7 +251,7 @@ def test_the_muted_list_unmutes_anyone_even_once_they_have_gone(page: Page, site
     page.reload()
     open_you(page)
     row = page.locator("#mutedRow")
-    expect(row).to_contain_text("Their carets, emotes and notes stay hidden on your devices")
+    expect(row).to_contain_text("Their carets, emotes and come-online notes stay hidden on your devices")
     expect(page.locator("#mutedCount")).to_have_text("2")
     expect(page.locator("#mutedList")).to_be_hidden()
     row.click()
@@ -260,6 +260,7 @@ def test_the_muted_list_unmutes_anyone_even_once_they_have_gone(page: Page, site
     # Newest first; one muted before the list kept names is "A surveyor".
     expect(rows.locator(".muted-ini")).to_have_text(["KIM", "A surveyor"])
     expect(rows.first.locator(".muted-when")).to_have_text(re.compile(r"^Muted [A-Z][a-z]{2} \d{1,2}$"))
+    assert rows.first.locator(".pill").bounding_box()["height"] >= 40  # as tall as Change on the same page
     page.get_by_role("button", name="Unmute this surveyor").click()
     expect(rows).to_have_count(1)
     expect(page.get_by_role("button", name="Unmute KIM")).to_be_focused()
@@ -310,6 +311,32 @@ def test_a_caret_has_a_menu_of_emotes(page: Page, site_url, errors):
     expect(page.locator("#map")).to_be_focused()
     page.mouse.click(at["x"] - 150, at["y"] + 120, button="right")
     expect(menu).to_be_hidden()
+    assert errors == []
+
+
+def test_a_caret_menu_knows_who_takes_no_emotes_and_a_refusal_always_shows(page: Page, site_url, errors):
+    """A caret's menu offered emotes to someone who takes none, and closed before the refusal came,
+    which then went to a row in the closed list, or only to a screen reader, as "They isn't"."""
+    fake = FakeSurvey(surveyors=[KIM, SAM], presence=[KIM_CARET, [SAM[0], "SAM", 13.5, 5.0]])
+    start(page, site_url, fake)
+    open_list(page)  # the list tells the page SAM takes no emotes
+    page.click("#peopleBtn")
+    expect(page.locator("#people")).to_be_hidden()
+    page.wait_for_function(f"['{KIM[0]}', '{SAM[0]}'].every(id => window.__lf.carets().includes(id))")
+    menu = page.locator("#caretMenu")
+    at = page.evaluate(f"window.__lf.caretXY('{SAM[0]}')")
+    page.mouse.click(at["x"], at["y"], button="right")
+    expect(menu.locator("#caretWho")).to_have_text("SAM")
+    expect(menu.locator(".emote:not(:disabled)")).to_have_count(0)
+    expect(menu.locator(".who-said")).to_have_text("SAM isn’t taking emotes.")
+    page.keyboard.press("Escape")
+    # KIM turned emotes off since the list last heard: the refusal still shows, as a note.
+    fake.emote_error = "off"
+    at = page.evaluate(f"window.__lf.caretXY('{KIM[0]}')")
+    page.mouse.click(at["x"], at["y"], button="right")
+    menu.get_by_role("button", name="Thanks to KIM").click()
+    expect(menu).to_be_hidden()
+    expect(page.locator("#toast b")).to_have_text("KIM isn’t taking emotes.")
     assert errors == []
 
 

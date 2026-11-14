@@ -136,7 +136,10 @@ def test_stopping_here_or_everywhere(page: Page, site_url, errors):
     # Where to stop is a choice between things to do, so it's rows, then a way out.
     expect(card.locator(".pair-ask")).to_have_text("Stop syncing where? Each device keeps its notes as they are.")
     expect(card.locator(".you-item")).to_have_text(
-        ["This deviceThe others keep syncing", "Every deviceAlso deletes the copy kept for syncing"]
+        [
+            "This deviceThe others keep syncing",
+            "Every deviceAlso deletes the copy kept for syncing, and any recovery code",
+        ]
     )
     expect(card.get_by_role("button", name="This device")).to_be_focused()
     expect(card.get_by_role("button", name="Every device")).to_have_class(re.compile(r"\bdanger\b"))
@@ -180,23 +183,34 @@ def test_stopping_everywhere_waits_for_the_worker_and_answers_under_the_rows(pag
     expect(card.get_by_role("button", name="Recovery code")).to_have_count(0)
     expect(card).to_have_text("Stopping syncing on every device…")
     expect(html).to_have_attribute("data-pair", "stopping")
+    # Focus waits on the card too, and Escape doesn't take the page away from under the answer.
+    expect(card.locator("#pairStopping")).to_be_focused()
+    page.keyboard.press("Escape")
+    expect(html).to_have_attribute("data-people-page", "you")
     held.release()
     expect(html).to_have_attribute("data-pair", "idle")
-    expect(card.locator(".pair-note")).to_have_text(
+    note = card.locator(".pair-note")
+    expect(note).to_have_text(
         "Syncing stopped on every device, and the copy kept for it is deleted, with any recovery code."
     )
+    expect(note).to_be_focused()
     expect(card.get_by_role("button", name="Recovery code")).to_contain_text("Not saved")  # its row, whole
     eventually(page, lambda: PID not in players.players)
     assert errors == []
 
 
 def test_stopped_elsewhere_stops_here_too(page: Page, site_url, errors):
+    # This device saved a recovery code, which stopping on every device took with it.
+    page.add_init_script("""if (location.protocol.startsWith('http') && !sessionStorage.getItem('seeded')) {
+      sessionStorage.setItem('seeded', '1'); localStorage.setItem('letterfield.recovery.v1', '1700000000000'); }""")
     start(page, site_url, FakePlayers())  # nothing started for us: stopped on every device
     expect(page.locator("html")).to_have_attribute("data-sync", "off", timeout=8000)
     expect(page.locator("#toast b")).to_have_text("Syncing has stopped")
     assert page.evaluate("localStorage.getItem('letterfield.sync.v1')") is None
+    assert page.evaluate("localStorage.getItem('letterfield.recovery.v1')") is None
     open_you(page)
     expect(page.locator("#pairCard").get_by_role("button", name="Stop syncing")).to_have_count(0)
+    expect(page.locator("#pairCard").get_by_role("button", name="Recovery code")).to_contain_text("Not saved")
     assert errors == []
 
 
