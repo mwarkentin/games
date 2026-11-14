@@ -370,9 +370,10 @@ def test_your_page_opens_from_the_first_row_and_goes_back(page: Page, site_url, 
     open_list(page)
     html, you = page.locator("html"), page.locator("#youRow")
     expect(html).to_have_attribute("data-people-page", "list")
-    # The list is just people, you first: what's yours waits on your page.
+    # The list is just people, you first: what's yours waits on your page. Your
+    # row names what's there, never how it's set, which shows only on your page.
     expect(you).to_contain_text("MLW (you)")
-    expect(you).to_contain_text("On the list · emotes on · this device only")
+    expect(you).to_contain_text("Initials, guild and devices")
     for mine in ("#surveyMe", "#guildCard", "#pairCard", "#whoListed", "#whoEmotes"):
         expect(page.locator(mine)).to_be_hidden()
     you.click()
@@ -380,13 +381,14 @@ def test_your_page_opens_from_the_first_row_and_goes_back(page: Page, site_url, 
     expect(page.locator("#youBack")).to_be_focused()
     expect(page.locator("#peopleList")).to_be_hidden()
     expect(page.locator("#surveyMeName")).to_have_text("MLW")
-    expect(page.locator("#pairHead")).to_have_text("Devices · this device only")
+    expect(page.locator("#pairHead")).to_have_text("Devices")
     page.uncheck("#whoListed")
-    # Back to the list, with focus on the row that opened it, which says what changed.
+    # Back to the list, with focus on the row that opened it, which doesn't repeat the change.
     page.locator("#youBack").click()
     expect(html).to_have_attribute("data-people-page", "list")
     expect(you).to_be_focused()
-    expect(you).to_contain_text("Off the list · emotes on")
+    expect(you).not_to_contain_text("Off the list")
+    expect(you).to_contain_text("Initials, guild and devices")
     # Escape goes back to the list first, then puts the drawer away.
     you.click()
     page.keyboard.press("Escape")

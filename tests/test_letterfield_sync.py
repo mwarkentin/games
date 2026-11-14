@@ -70,7 +70,11 @@ def test_a_device_never_linked_keeps_everything_here(page: Page, site_url, error
     page.locator("#whoListed").evaluate("e => e.click()")
     page.wait_for_timeout(3000)
     assert players.calls == []
-    expect(page.locator("#syncText")).to_have_text("Saved in this browser")
+    # Your page is the one place that says so: no Stop syncing, and no recovery code saved.
+    open_you(page)
+    card = page.locator("#pairCard")
+    expect(card.get_by_role("button", name="Stop syncing")).to_have_count(0)
+    expect(card.get_by_role("button", name="Recovery code")).to_contain_text("Not saved")
     assert errors == []
 
 
@@ -80,7 +84,7 @@ def test_finds_and_settings_go_both_ways(page: Page, site_url, errors):
     # The other device sent a find already, charted first.
     players.add(PID, finds=[{**theirs, "f": 1, "n": 77}])
     start(page, site_url, players, finds=mine)
-    expect(page.locator("#syncText")).to_have_text("Synced with your linked devices")
+    expect(page.locator("html")).not_to_have_attribute("data-sync", "off")
     eventually(page, lambda: len(players.sent()) >= 1)
     first = players.sent()[0]
     assert first["since"] == 0 and first["settingsAt"] == 1
@@ -88,7 +92,7 @@ def test_finds_and_settings_go_both_ways(page: Page, site_url, errors):
     page.wait_for_function(f"window.__lf.found.size === {len(mine) + 1}")
     assert noted(page) == sorted([f["w"] for f in mine] + [theirs["w"]])
     assert page.evaluate(f"[...window.__lf.found.values()].find(e => e.w === '{theirs['w']}').f") == 1
-    # Every find is up there now; the game says so in its notes too.
+    # Every find is up there now.
     assert sorted(f["w"] for f in first["finds"]) == sorted(f["w"] for f in mine)
     saved = json.loads(page.evaluate("localStorage.getItem('letterfield.sync.v1')"))
     assert saved["f"] == [] and saved["at"] == 2 and saved["epoch"] == players.players[PID]["epoch"]
@@ -119,7 +123,9 @@ def test_stopping_here_or_everywhere(page: Page, site_url, errors):
     start(page, site_url, players)
     open_you(page)
     card = page.locator("#pairCard")
-    expect(page.locator("#pairHead")).to_have_text("Devices · backed up and in step")
+    # The row that stops it is the one place that says you're backed up.
+    expect(page.locator("#pairHead")).to_have_text("Devices")
+    expect(card.get_by_role("button", name="Stop syncing")).to_contain_text("Your notes and settings are backed up")
     card.get_by_role("button", name="Stop syncing").click()
     expect(card).to_contain_text("Stop syncing this device, or every device?")
     card.get_by_role("button", name="Keep syncing").click()
@@ -127,7 +133,7 @@ def test_stopping_here_or_everywhere(page: Page, site_url, errors):
     card.get_by_role("button", name="This device").click()
     expect(page.locator("html")).to_have_attribute("data-sync", "off")
     expect(card).to_contain_text("Syncing stopped on this device.")
-    expect(page.locator("#syncText")).to_have_text("Saved in this browser")
+    expect(card.get_by_role("button", name="Stop syncing")).to_have_count(0)
     assert players.sent("forget") == [] and PID in players.players
     assert page.evaluate("localStorage.getItem('letterfield.sync.v1')") is None
 
@@ -150,7 +156,8 @@ def test_stopped_elsewhere_stops_here_too(page: Page, site_url, errors):
     expect(page.locator("html")).to_have_attribute("data-sync", "off", timeout=8000)
     expect(page.locator("#toast b")).to_have_text("Syncing has stopped")
     assert page.evaluate("localStorage.getItem('letterfield.sync.v1')") is None
-    expect(page.locator("#syncText")).to_have_text("Saved in this browser")
+    open_you(page)
+    expect(page.locator("#pairCard").get_by_role("button", name="Stop syncing")).to_have_count(0)
     assert errors == []
 
 

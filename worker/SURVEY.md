@@ -324,9 +324,8 @@ shown as `<html data-people-page>`), so the list is only people and
 everything about you is one tap away:
 
 - **The list.** First a row for you: your initials in a ring of your
-  caret's colour, and a line saying how you show (on or off the list,
-  emotes on or off) and where you're kept (this device only, or synced). It
-  opens your page. Then your guild, if you're in one, under a heading with
+  caret's colour, and a line naming what's on your page (initials, guild
+  and devices), never how each is set. It opens your page. Then your guild, if you're in one, under a heading with
   its name, how many mates are online and "+ Invite", which copies the
   invite link (and says "Link copied" for a moment); mates online come
   first, then those offline with when they were last seen. Then everyone
@@ -338,10 +337,16 @@ everything about you is one tap away:
   form to sign, until you have some), then grouped rows. Guild: its name and
   numbers, Invite a mate, Leave guild; or Start a guild, which lives only
   here, since the list is for people rather than an offer most will pass
-  over every time. On the map: the two switches. Devices, whose heading
-  says where your surveyor lives (this device only, or backed up and in
-  step): Link another device, I have a code, Recovery code (saved or not),
-  and Stop syncing once syncing. Each opens its own steps in place.
+  over every time. On the map: the two switches. Devices: Link another
+  device, I have a code, Recovery code (saved or not), and Stop syncing
+  once syncing, which says your notes and settings are backed up. Each
+  opens its own steps in place.
+
+  Each setting of yours shows once, beside the control that changes it:
+  the switches show how you show, the recovery code whether it's saved,
+  and Stop syncing that you're backed up. Nothing else repeats them (not
+  your row in the list, nor the foot of the field notes, which only offers
+  feedback).
 
 Anything that needs your page opens it, with focus where it's needed:
 waving or starting a guild before signing goes to the form, with a line

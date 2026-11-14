@@ -297,11 +297,8 @@ label.you-item{cursor:pointer}
 .find-meta b{font-weight:500;color:var(--ink)}
 .finds-empty{display:block!important;padding:18px 10px;color:var(--muted);font-size:14px;max-width:36ch}
 .finds-empty strong{display:block;color:var(--ink);font:700 18px/1.1 var(--f-display);letter-spacing:.05em;text-transform:uppercase;margin-bottom:6px}
-.sync{margin:0;padding:12px 18px 14px;border-top:1px solid var(--rule);display:flex;align-items:center;gap:8px;font:400 11px/1.3 var(--f-mono);color:var(--muted)}
-.sync .feedback{margin-left:auto;color:inherit}
-.sync-dot{width:7px;height:7px;border-radius:50%;background:var(--muted);flex:none}
-.sync[data-state="synced"] .sync-dot,.sync[data-state="devices"] .sync-dot{background:hsl(150 var(--mark-s) var(--mark-l))}
-.sync[data-state="connecting"] .sync-dot{animation:blink 1s infinite alternate}
+.notes-foot{margin:0;padding:12px 18px 14px;border-top:1px solid var(--rule);font:400 11px/1.3 var(--f-mono);color:var(--muted)}
+.notes-foot .feedback{color:inherit}
 @keyframes blink{to{opacity:.25}}
 .survey{margin:12px 18px 0;padding:10px 12px 11px;border:1px solid var(--rule);border-radius:7px}
 .survey-head{display:flex;align-items:center;gap:8px;margin-bottom:7px}
@@ -583,7 +580,7 @@ body.docked .nova{left:calc((100% - var(--notes-w)) / 2)}
   .notes,.people,.toast,.bar,.tool-stack,.tool-stack > *,.tools-btn,.tools-btn svg circle{transition:none!important}
   .find-def[data-define="loading"] .def-note{animation:none}
   .nova.show b{animation:none}
-  .sync-dot,.survey-dot{animation:none!important}
+  .survey-dot{animation:none!important}
   #music[aria-pressed="true"] svg{animation:none}
 }
 /* Until the page has laid itself out, nothing slides: the notes, the bar and
@@ -675,7 +672,7 @@ body.settling, body.settling *{transition:none!important}
   </section>
   <div class="filters" id="filters" role="group" aria-label="Filter by theme"></div>
   <ol class="finds" id="finds"></ol>
-  <p class="sync" id="sync" data-state="local"><span class="sync-dot" aria-hidden="true"></span><span id="syncText">Saved in this browser</span><a class="feedback" href="https://github.com/mwarkentin/games/issues/new/choose" target="_blank" rel="noopener" data-feedback>Send feedback</a></p>
+  <p class="notes-foot" id="notesFoot">Found a bug or have an idea? <a class="feedback" href="https://github.com/mwarkentin/games/issues/new/choose" target="_blank" rel="noopener" data-feedback>Send feedback</a></p>
 </aside>
 
 <div class="coach card" id="coach" role="note" hidden>
@@ -1280,57 +1277,6 @@ window.addEventListener('storage', e => {
   if (added) { renderNotes(); scheduleHud(); invalidate(); }
 });
 
-let coll = null, dbWritable = false, writeChain = Promise.resolve();
-const syncEl = $('#sync'), syncText = $('#syncText');
-function setSync(state) {
-  if (state === 'local' && devicesSyncing()) state = 'devices';  // see Syncing linked devices
-  syncEl.dataset.state = state;
-  syncText.textContent = state === 'synced' ? 'Synced with your Claude account' : state === 'connecting' ? 'Connecting to your account…' : state === 'devices' ? 'Synced with your linked devices' : 'Saved in this browser';
-}
-function queueWrite(e) {
-  if (!coll || !dbWritable) return;
-  const ref = coll.doc(e.key), body = plain(e);
-  const attempt = () => ref.set(body);
-  writeChain = writeChain.then(attempt).catch(err => {
-    const code = err && err.code;
-    if (code === 'unavailable') return new Promise(r => setTimeout(r, 600 + Math.random() * 900)).then(attempt).catch(() => {});
-    if (code === 'quota_exceeded') { toast('<b>Notes are full</b><span>This map stores up to 25,000 finds</span>'); return; }
-    dbWritable = false; setSync('local');
-  });
-}
-async function connectStore() {
-  const cl = window.claude;
-  if (!cl || typeof cl.use !== 'function') return setSync('local');
-  setSync('connecting');
-  let db = null, user = null;
-  try { [db, user] = await Promise.all([cl.use('db'), cl.use('user')]); } catch (_) {}
-  if (!db || !user) return setSync('local');
-  let uid = null, canWrite = null;
-  try { uid = await user.id(); } catch (_) {}
-  if (!uid) return setSync('local');
-  try { canWrite = await user.can('data.write'); } catch (_) {}
-  if (canWrite === false) return setSync('local');
-  try { coll = db.collection('data/users/' + uid); } catch (_) { return setSync('local'); }
-  dbWritable = true;
-  let first = true;
-  coll.onSnapshot(snap => {
-    let changed = false;
-    const remote = new Set();
-    for (const doc of snap.docs) {
-      remote.add(doc.id);
-      if (found.has(doc.id)) continue;
-      const e = sanitize(doc.data());
-      if (e && e.key === doc.id) { found.set(e.key, e); changed = true; }
-    }
-    if (first) {
-      first = false;
-      for (const e of found.values()) if (!remote.has(e.key)) queueWrite(e);
-    }
-    if (dbWritable) setSync('synced');
-    if (changed) { saveLocal(); renderNotes(); scheduleHud(); invalidate(); }
-  }, () => { coll = null; dbWritable = false; setSync('local'); });
-}
-
 /* ---------- Shared survey ---------- */
 // Everyone explores the same map. With a survey server, each word is credited
 // to whoever circles it first, and other surveyors show up as they wander. The
@@ -1828,7 +1774,7 @@ function firstToChart(c) {
     // Where it came in the shared world's count: the Atlas's last total plus
     // the words seen charted since (this one included).
     if (!c.s && inSurveyArea(c.x, c.y) && world) e.n = world.charted + worldExtra;
-    saveLocal(); queueWrite(e); syncLater('f', e.key); renderNotes();
+    saveLocal(); syncLater('f', e.key); renderNotes();
   }
   // No note: on the survey nearly every find is charted first. The field
   // notes say so.
@@ -3482,7 +3428,7 @@ function collect(w, x, y, d, stray) {
   const e = sanitize({ w, x, y, d, t: Date.now(), s: stray ? 1 : 0 });
   e.born = performance.now();
   found.set(key, e);
-  saveLocal(); queueWrite(e); syncLater('f', e.key); claimWord(e);
+  saveLocal(); syncLater('f', e.key); claimWord(e);
   const rx = fdiv(x, RC), ry = fdiv(y, RC);
   say(`${w} · ${stray ? 'Stray ' + THEMES[e.th].name.toLowerCase() + ' word' : THEMES[e.th].name} · ${regionName(rx, ry)}`);
   gatherFind(e);
@@ -4468,16 +4414,18 @@ $('#peopleClose').addEventListener('click', closePeople);
 $('#youClose').addEventListener('click', closePeople);
 youRow.addEventListener('click', () => { if (PeoplePage.is('list')) PeoplePage.go('you'); });
 youBack.addEventListener('click', () => { if (PeoplePage.is('you')) PeoplePage.go('list'); });
-// The first row of the list: you, how you show to others, and where you're kept.
+// The first row of the list: you, and the way to your page. It names what's
+// there rather than how each is set: each setting shows once, on your page,
+// beside the control that changes it.
 function renderYouRow() {
   if (!surveyApi) return;
   const ini = myInitials(), g = myPid ? hueOf(myPid) : '';
   for (const av of [$('#youRowAv'), $('#surveyMeAv')]) { av.textContent = ini || '···'; if (g !== '') av.style.setProperty('--g', g); }
-  const line = ini ? [listedOn ? 'On the list' : 'Off the list', emotesOn ? 'emotes on' : 'emotes off', devicesSyncing() ? 'synced' : 'this device only'].join(' · ') : 'Sign your initials to sign your finds';
+  const line = ini ? 'Initials, guild and devices' : 'Sign your initials to sign your finds';
   const name = ini ? `${ini} <small>(you)</small>` : 'You';
   if ($('#youRowName').innerHTML !== name) $('#youRowName').innerHTML = name;
   $('#youRowLine').textContent = line;
-  youRow.setAttribute('aria-label', `You${ini ? `, ${ini}` : ''}: ${line}. Your initials, guild, switches and devices`);
+  youRow.setAttribute('aria-label', ini ? `You, ${ini}: your initials, guild, switches and devices` : `You: ${line}`);
 }
 
 // The list, shown on <html data-who>: closed (the drawer shut or the
@@ -5142,7 +5090,6 @@ const Sync = machine('sync', {
 function devicesSyncing() { return !Sync.is('off'); }
 function syncMoved(to, from) {
   if (to === 'off') { clearTimeout(syncTimer); syncDue = 0; stopAsk = false; }
-  if (syncEl.dataset.state === 'local' || syncEl.dataset.state === 'devices') setSync('local');
   if (to === 'off' || from === 'off') renderPair();  // the linking card says whether it's on
 }
 // The next sync, in `ms` unless one's due sooner already.
@@ -5554,12 +5501,14 @@ function renderPair() {
   if (offering) { /* nothing here */ }
   else if (st === 'idle' && stopAsk && devicesSyncing()) html = `<div class="pair-box"><p>Stop syncing this device, or every device? Every device also deletes the copy kept for syncing, and your recovery code if you saved one. Each keeps its notes as they are.</p><div class="pair-acts"><button type="button" class="pill" data-p="stop-here">This device</button><button type="button" class="pill" data-p="stop-all">Every device</button><button type="button" class="pill" data-p="stop-no">Keep syncing</button></div></div>`;
   else if (st === 'idle') {
-    // Each thing to do, named for what it does; where this surveyor lives is the section's heading.
+    // Each thing to do, named for what it does. Whether this surveyor's notes are
+    // backed up shows once, on the row that stops it (or, while it's off, by the
+    // recovery code's "Not saved").
     const on = devicesSyncing(), made = Number(LS.get(K_RECOVERY)) || 0;
     html = `<div class="group"><button type="button" class="you-item" data-p="make"><span>Link another device<small>Play as the same surveyor on each</small></span>${CHEV}</button>` +
       `<button type="button" class="you-item" data-p="enter"><span>I have a code<small>From another device, or one you saved</small></span>${CHEV}</button>` +
       `<button type="button" class="you-item" data-p="recovery"><span>Recovery code<small>${made ? `Saved ${new Date(made).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' })}` : 'Not saved: one brings you back if this device is lost'}</small></span>${CHEV}</button>` +
-      `${on ? '<button type="button" class="you-item" data-p="stop"><span>Stop syncing</span></button>' : ''}</div><p class="pair-note" aria-live="polite"></p>`;
+      `${on ? '<button type="button" class="you-item" data-p="stop"><span>Stop syncing<small>Your notes and settings are backed up</small></span></button>' : ''}</div><p class="pair-note" aria-live="polite"></p>`;
   }
   else if (st === 'recovery' || st === 'keeping' || st === 'removing') {
     const made = Number(LS.get(K_RECOVERY)) || 0, busy = st !== 'recovery';
@@ -5581,8 +5530,6 @@ function renderPair() {
   // each time it asked about the code emptied the QR code for a moment, and the
   // notes, a little shorter, jumped back up.
   pairHead.hidden = !html;
-  pairHead.textContent = `Devices · ${devicesSyncing() ? 'backed up and in step' : 'this device only'}`;
-  renderYouRow();
   if (pairCard.dataset.drawn !== html) {
     const f = document.activeElement, k = f && pairCard.contains(f) ? f.dataset.p || f.id : '';
     const typed = $('#pairInput') ? $('#pairInput').value : '';
@@ -5726,7 +5673,6 @@ if (surveyApi) {
 updateHud();
 invalidate();
 if (redrawn) setTimeout(() => toast(`<i></i><b>The map has been redrawn</b><span>${NT} themes of about ${Math.round(THEMES.reduce((a, t) => a + t.words.length, 0) / NT / 10) * 10} words now, so a territory never repeats one · ${redrawn.kept ? `${redrawn.kept} of your ${redrawn.had} finds are still on it` : 'your old finds are not on it'}</span>`, null, 8000), 900);
-connectStore();
 if (location.hash === '#debug') window.__lf = { cam, found, claims, links, chunk, wordEnd, collect, territoryProgress, remnants: () => [...remnants().set], novas: () => [...novasSeen.values()], territoryName: regionName, world: () => world, supernova, novaSound, audioOut, musicTracks: MUSIC_TRACKS, audio: () => ac, music: () => musicNow && { state: ac.state, track: musicNow.track().name, nodes: musicNow.track().nodes.size, level: musicNow.master.gain.value, master: musicNow.master, volume: musicVol, target: musicLevel(), swap: musicNow.swap }, nova: () => nova, novaWave: () => nova && novaLast && { cx: novaLast.cx, cy: novaLast.cy, R: novaLast.R || 0, amp: novaLast.amp, virtual: novaLast.virtual }, distantAt: v => { distantAt = v; },
   who: () => Who.state, surveyors: () => whoData, people: () => peopleOpen, peoplePage: () => PeoplePage.state, emoteMotion, guild: () => Membership.state, myGuild: () => myGuild, mates: () => [...mates.keys()], roster: () => roster,
   pair: () => Pair.state, pairCode: () => pairCode && pairCode.code, recoveryCode: () => recoveryCode, sync: () => Sync.state, syncNow: () => { syncDue = 0; clearTimeout(syncTimer); return syncNow(); },
