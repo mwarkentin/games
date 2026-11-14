@@ -31,7 +31,8 @@ Line numbers are as of commit 7bae950 and drift as the files change.
 | 16 | Small visual glitches | a: fix each in place | To build |
 | 17 | Small flow and copy fixes | 1a: a Muted list on your page; 2a: the link in a box; 3: a and b, "Survey log and timelapse ↗" and ↗ on links out | To build |
 | 18 | Sharing the Supernovas page gives out a dead link | b: a Supernovas card in the share Worker | To build |
-| 19–29 | | Open | |
+| 19 | "Live" on views that don't update | No badge: "So far" on any period still running; the hour still updates quietly | To build |
+| 20–29 | | Open | |
 
 ## The game
 
@@ -520,12 +521,25 @@ found".
 
 ### 19. "Live" on views that don't update
 
-- **a. "Live" on the running hour only; "So far" elsewhere.** *Recommended.*
-- **b. Reload days and weeks every minute.**
+Any period still running (today, this week, month or year, and the running
+hour) wears "Live", but only the running hour reloads, every minute; the
+others reload once, when they end, to drop the badge and open the way on.
+Five words charted in five minutes left "Today · Live" unchanged. A failed
+reload keeps the last copy and tries again, still saying Live.
+
+- **a. "Live" on the running hour only; "So far" elsewhere.** *Recommended,*
+  with c.
+- **b. Reload days and weeks every minute:** the log's heaviest questions,
+  from every open page, for numbers that move slowly.
 - **c. "Not updating · Try again" when stale.**
 - **Machines:** a and c give `log` a move handler (it has none) and set the
   badge there from its state.
-- **Decided:** open.
+- **Decided: no badge at all** (asked what Live means, the owner chose to
+  drop it). A period still running says "So far", the running hour
+  included; the running hour still reloads every minute, without saying so,
+  and a period that ends while it's open still reloads once to open the way
+  on. Nothing promises it's live, so a failed reload keeps retrying quietly
+  as it does now, and `log` needs no change.
 
 ### 20. On a phone, the words come last
 
