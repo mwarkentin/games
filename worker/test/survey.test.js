@@ -239,6 +239,19 @@ describe('Sector', () => {
     assert.equal(kept.length, 2);
   });
 
+  test("saves where a surveyor is as soon as it's known, so one who sits still survives the sector sleeping", async () => {
+    const ws = join();
+    await say(ws, { t: 'me', initials: 'ZED' });
+    clock += 1000;  // well inside SAVE_POS_MS of that save
+    await say(ws, { t: 'pos', x: 10.5, y: 12.5 });
+    const kept = ws.deserializeAttachment();  // all a socket keeps when its sector is evicted
+    assert.deepEqual([kept.x, kept.y], [10.5, 12.5]);
+    // Moving on from there is saved at most every SAVE_POS_MS, as before.
+    clock += 1000;
+    await say(ws, { t: 'pos', x: 11.5, y: 12.5 });
+    assert.equal(ws.deserializeAttachment().x, 10.5);
+  });
+
   test('credits a word to the first player to claim it', async () => {
     const [a, b] = [join(), join()];
     await say(a, { t: 'me', initials: 'AAA' });

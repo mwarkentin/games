@@ -11,6 +11,7 @@ from __future__ import annotations
 import json
 import re
 
+import pytest
 from playwright.sync_api import Page, expect
 
 from fake_survey import FakeLinks, FakePlayers, FakeRecovery, player_id
@@ -64,10 +65,41 @@ def test_a_recovery_code_is_shown_once_and_keeps_a_backup(page: Page, site_url, 
     assert errors == []
 
 
+@pytest.mark.parametrize("scheme", ["light", "dark"])
+def test_the_devices_cards_buttons_follow_one_rule(page: Page, site_url, errors, scheme):
+    page.emulate_media(color_scheme=scheme)
+    links = FakeLinks()
+    start(page, site_url, links, recovery=FakeRecovery(links.players))
+    open_you(page)
+    card = page.locator("#pairCard")
+    card.get_by_role("button", name="Recovery code").click()
+    card.get_by_role("button", name="Make one").click()
+    card.get_by_role("button", name="Done").click()
+    card.get_by_role("button", name="Recovery code").click()
+    # Its heading is an eyebrow, 10px, whatever size the card's paragraphs are.
+    expect(card.locator(".eyebrow")).to_have_css("font-size", "10px")
+    # Filled for the main choice, red for the one that deletes, outlined for the rest, all 40px tall.
+    buttons = [card.get_by_role("button", name=n) for n in ("Make a new one", "Remove it", "Close")]
+    for b, kind in zip(buttons, ("btn", "btn danger", "btn ghost"), strict=True):
+        expect(b).to_have_class(kind)
+        assert b.bounding_box()["height"] >= 40
+    # Red's text is white on the light theme's red, and dark on the dark theme's coral.
+    light = scheme == "light"
+    expect(buttons[1]).to_have_css("color", "rgb(255, 255, 255)" if light else "rgb(42, 15, 10)")
+    # A text input is white in the light theme, so it reads as a field to type in.
+    buttons[2].click()
+    card.get_by_role("button", name="I have a code").click()
+    box = page.locator("#pairInput")
+    expect(box).to_have_css("background-color", "rgb(255, 255, 255)" if light else "rgb(15, 23, 26)")
+    assert box.bounding_box()["height"] >= 40
+    expect(card.get_by_role("button", name="Cancel")).to_have_class("btn ghost")
+    assert errors == []
+
+
 def test_entering_a_recovery_code_brings_the_surveyor_back(page: Page, site_url, errors):
     theirs = words(page, site_url, 1)
     players = FakePlayers(started=[THEIR_PID])
-    settings = {"initials": "ZED", "guild": OTHER, "muted": [KIM[0]], "listed": True, "emotes": True}
+    settings = {"initials": "ZED", "guild": OTHER, "muted": [KIM[0]], "mutedAs": {}, "emotes": True}
     players.add(THEIR_PID, finds=theirs, settings=settings, settings_at=5)
     links = FakeLinks(players=players)
     recovery = FakeRecovery(players, {CODE: THEIRS})

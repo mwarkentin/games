@@ -60,7 +60,7 @@ class FakeSurvey:
         self.taken = {tuple(c[:4]): c for c in taken}  # words someone else charts first, just before us
         self.world = world or world_map()  # what GET /v1/survey/world answers
         self.totals = totals              # a {t: world} message each sector sends after hello
-        self.full = full                  # "sector" or "world": every sector turns players away
+        self.full = full                  # "sector" or "world": every sector turns players away; or {sector key: "sector" or "world"}, those only
         self.refuse = refuse              # "slow down" or "daily limit": every claim is refused with it
         self.refuse_passes = set(refuse_passes)  # survey passes the Worker turns away, as expired or another address's
         self.require_pass = require_pass  # joins without a pass are turned away, as with TURNSTILE_REQUIRED = "true"
@@ -100,8 +100,9 @@ class FakeSurvey:
         self.sockets[key] = ws
         you = f"you-{key}-{len(self.sectors)}"  # every socket is someone new to the sector
         home = key == "0,0"
-        if self.full:
-            ws.send(json.dumps({"t": "full", "world": self.full == "world"}))
+        full = self.full.get(key) if isinstance(self.full, dict) else self.full
+        if full:
+            ws.send(json.dumps({"t": "full", "world": full == "world"}))
             return
         ws.send(json.dumps({"t": "hello", "you": you, "sector": [int(sector[1]), int(sector[2])],
                             "claims": self.claims if home else []}))
@@ -326,6 +327,10 @@ class FakeLinks:
         if self.status:
             return reply(self.status, {"error": "link error"})
         if path == "":
+            # A new code retires any older one of theirs nobody used, as the Worker does.
+            for link in self.codes.values():
+                if link["token"] == body["token"] and link["state"] == "waiting":
+                    link["state"] = "gone"
             self.made += 1
             code = "CDEFGHJ" + self.ALPHABET[self.made]
             self.codes[code] = {"token": body["token"], "carry": body["carry"], "state": "waiting"}
