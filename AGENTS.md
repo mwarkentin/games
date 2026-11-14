@@ -489,7 +489,10 @@ Controller take part like this:
   a points score encodes its ranking in one (see Air Traffic Controller in
   `GAMES`).
 - Groups are private boards shared by a four-character code: `POST
-  /v1/groups` starts one and `GET /v1/groups/<code>` looks one up. Invite
+  /v1/groups` starts one and `GET /v1/groups/<code>` looks one up. A
+  group's name goes through the same word filter as War's players
+  (`nameIsKind()`, see Multiplayer rooms), and a name that fails gets a 400
+  the page shows as it is. Invite
   links are `?join=<code>`. Groups work across games, so the joined groups
   (`games.groups`), the player's initials (`games.initials`) and their
   public-board choice (`games.public`) are shared `localStorage` keys
@@ -526,6 +529,15 @@ Object that holds the game and every player's WebSocket (`worker/src/war.js`).
   the page. The rules sit between `BEGIN WAR CORE` and `END WAR CORE`
   markers, word for word the same in `war.html` and `worker/src/war.js`, and
   `worker/test/war.test.js` checks they match, so change both.
+- Players' names go through a word filter, `nameIsKind()` in
+  `worker/src/names.js`, which leaderboard groups' names go through too.
+  `war.html` keeps a copy between `BEGIN NAME CHECK` and `END NAME CHECK`
+  markers, word for word, and `worker/test/war.test.js` checks they match.
+  The page checks a name before it asks for a room, and the room refuses
+  one that fails. Words that turn up inside ordinary names (ass in Cassandra, shit in
+  Yamashita) count only on their own, so add a word to `NAME_ANYWHERE` only
+  if no name hides it, and add an ordinary name that does to the test of
+  names that get through.
 - A slam says which card it turns over, so cards show face up as they're
   played. A game can be slow, with no clock: the room waits for everyone
   connected, and the host can flip over the cards of anyone holding it up.
