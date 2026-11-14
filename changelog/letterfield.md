@@ -1,3 +1,7 @@
+## 2026-11-14
+
+- Circling a word another surveyor charted first now offers “Add to notes”, to keep it in your field notes all the same. It's still theirs: it doesn't count as charted first by you.
+
 ## 2026-11-13
 
 - Guilds in the survey log. Each period's top lists have a Top guilds card, and a guild opens its own page: the words its members charted while in it, who charted most, where, and a card to share. “Our words in the survey log” on your page in the Surveyors drawer goes straight there. Words count for the guild you're in when you chart them; while you're off the surveyor list, they don't. A guild's name shows in the log, but never its invite link.

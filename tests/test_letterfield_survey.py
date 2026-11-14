@@ -227,7 +227,6 @@ def test_circling_a_word_someone_charted_finds_nothing_new(page: Page, site_url,
     expect(page.locator("#survey")).to_have_attribute("data-state", "live")
     circle(page, words[0])
     expect(page.locator("#toast")).to_contain_text(f"{words[0][0]}Already charted by MRW")
-    expect(page.locator("#toast .share")).to_have_count(0)
     assert page.evaluate("window.__lf.found.size") == 0
     expect(page.locator("#notesBadge")).to_have_text("0")
     # A word nobody has charted is found and claimed as ever.
@@ -235,6 +234,31 @@ def test_circling_a_word_someone_charted_finds_nothing_new(page: Page, site_url,
     eventually(page, lambda: len(fake.sent("claim")) == 1)
     assert fake.sent("claim")[0]["w"] == words[1][0]
     expect(page.locator("#notesBadge")).to_have_text("1", timeout=LANDS)
+    assert errors == []
+
+
+def test_a_word_someone_charted_can_go_in_the_field_notes(page: Page, site_url, errors):
+    words = known_words(page, site_url)
+    fake = FakeSurvey(claims=[[*words[0], 0, "MRW", NOW_MS - 60_000]])
+    open_game(page, site_url, fake)
+    expect(page.locator("#survey")).to_have_attribute("data-state", "live")
+    circle(page, words[0])
+    toast = page.locator("#toast")
+    expect(toast).to_contain_text(f"{words[0][0]}Already charted by MRW")
+    toast.get_by_role("button", name=f"Add {words[0][0]} to your field notes").click()
+    expect(toast).not_to_have_class(re.compile(r"\bshow\b"))
+    expect(page.locator("#notesBadge")).to_have_text("1", timeout=LANDS)
+    # It's in the notes as a find of ours, not charted first, and nothing is claimed: it's MRW's.
+    assert page.evaluate(f"window.__lf.found.get('{'~'.join(map(str, words[0]))}').f") == 0
+    page.wait_for_timeout(300)
+    assert fake.sent("claim") == []
+    open_notes(page)
+    expect(page.locator("#finds .find-meta")).to_have_count(1)
+    expect(page.locator("#finds .find-meta")).not_to_contain_text("charted first")
+    # Circled again, it's already in the notes.
+    circle(page, words[0])
+    expect(toast).to_contain_text("Already in your notes")
+    assert fake.sent("claim") == []
     assert errors == []
 
 
