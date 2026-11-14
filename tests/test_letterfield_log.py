@@ -1152,7 +1152,34 @@ def test_all_of_pick_a_day_opens_the_date_picker(page: Page, site_url, errors):
     box = page.locator("#sumText .pick").bounding_box()
     hit = page.locator("#dayInput").bounding_box()
     # The date input is the whole box, a finger's height, not a strip through its middle.
-    assert hit["height"] >= 38 and abs(hit["height"] - box["height"]) < 1 and abs(hit["y"] - box["y"]) < 1
+    assert hit["height"] >= 40 and abs(hit["height"] - box["height"]) < 1 and abs(hit["y"] - box["y"]) < 1
     # And "So far" stays on one line.
     assert page.evaluate("[...document.querySelectorAll('#sumText')].every(e => !/So\\s*\\n/.test(e.innerText))")
+    assert errors == []
+
+
+def test_your_own_word_keeps_its_room_and_its_time_lines_up(page: Page, site_url, errors):
+    page.set_viewport_size({"width": 375, "height": 740})
+    long = ["EMOTIONAL", 5, 7, 0, 0, "ZED", NOW_MS - 30 * MINUTE, 11]
+    other = ["HEADPIECE", 9, 7, 0, 0, "ABC", NOW_MS - 20 * MINUTE, 11]
+    finds = [{"w": "EMOTIONAL", "x": 5, "y": 7, "d": 0, "t": long[6], "s": 0, "f": 1}]
+    open_log(
+        page,
+        site_url,
+        FakeSurveyLog([long, other, BIRCH, OAK], PLACES, THEMES, totals=NOVA_TOTALS),
+        query="&period=hour",
+        finds=finds,
+    )
+    expect(page.locator(".entry")).to_have_count(3)  # this hour's: OAK, HEADPIECE and EMOTIONAL
+    # "you" goes first on the second line, so the word isn't cut and every time starts in one place.
+    expect(entry(page, "EMOTIONAL").locator(".meta .you")).to_have_text("you")
+    rows = page.evaluate("""[...document.querySelectorAll('.entry')].map(e => {
+      const w = e.querySelector('.word');
+      return [w.scrollWidth <= w.clientWidth, Math.round(e.querySelector('.who').getBoundingClientRect().right)];
+    })""")
+    assert all(fits for fits, _ in rows), rows
+    assert len({right for _, right in rows}) == 1, rows
+    # A supernova's links are as easy to tap as a word row's.
+    heights = page.evaluate("[...document.querySelectorAll('.nova a.to')].map(a => a.getBoundingClientRect().height)")
+    assert heights and min(heights) >= 24, heights
     assert errors == []

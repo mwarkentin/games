@@ -86,7 +86,7 @@ header p{margin:8px 0 0;color:var(--muted);max-width:40ch}
 .summary .caption .sep{padding:0 .4em}
 .summary .note{margin:6px 0 0;text-align:center;color:var(--muted);font:400 12px/1.5 var(--f-ui)}
 .link{border:0;background:transparent;padding:10px 2px;margin:-10px 0;font:inherit;color:var(--accent);cursor:pointer;text-decoration:underline;text-underline-offset:3px}
-.pick{position:relative;display:inline-block;padding:10px 2px;margin:-10px 0;vertical-align:baseline}
+.pick{position:relative;display:inline-block;padding:11px 2px;margin:-11px 0;vertical-align:baseline}
 .pick .link{padding:0;margin:0}
 /* The date picker sits over "Pick a day", so a tap on a phone opens it. */
 .pick input{position:absolute;inset:0;width:100%;height:100%;opacity:0;border:0;padding:0;font-size:16px;cursor:pointer}
@@ -234,7 +234,7 @@ header p{margin:8px 0 0;color:var(--muted);max-width:40ch}
 .word{font:700 21px/1 var(--f-display);letter-spacing:.07em;min-width:0;overflow:hidden;text-overflow:ellipsis}
 .who{font:400 11px/1 var(--f-mono);color:var(--muted);white-space:nowrap;font-variant-numeric:tabular-nums}
 .who b{font-weight:500;color:var(--ink)}
-.you{display:inline-block;margin-left:6px;padding:3px 6px;border-radius:999px;background:var(--accent);color:var(--on-accent);font:500 9px/1 var(--f-mono);letter-spacing:.08em;text-transform:uppercase;vertical-align:1px}
+.you{display:inline-block;margin-right:8px;padding:3px 6px;border-radius:999px;background:var(--accent);color:var(--on-accent);font:500 9px/1 var(--f-mono);letter-spacing:.08em;text-transform:uppercase;vertical-align:1px}
 .entry > .meta{grid-row:2;align-self:start}
 .meta{grid-column:2 / 4;font:400 11px/1.4 var(--f-mono);color:var(--muted);font-variant-numeric:tabular-nums;overflow-wrap:anywhere}
 .meta b{font-weight:500;color:var(--ink)}
@@ -269,7 +269,7 @@ header p{margin:8px 0 0;color:var(--muted);max-width:40ch}
 .nova .what small{display:block;margin-top:3px;font:500 10px/1.2 var(--f-mono);letter-spacing:.12em;color:var(--muted)}
 .nova .when{font:400 11px/1.3 var(--f-mono);color:var(--muted);text-align:right;white-space:nowrap;font-variant-numeric:tabular-nums}
 .nova .meta{grid-column:2 / 4}
-.nova a.to{position:relative;z-index:1;color:inherit;text-decoration:underline dotted;text-decoration-color:color-mix(in srgb, currentColor 50%, transparent);text-underline-offset:3px}
+.nova a.to{position:relative;z-index:1;display:inline-block;padding:6px 3px;margin:-6px -3px;border-radius:4px;color:inherit;text-decoration:underline dotted;text-decoration-color:color-mix(in srgb, currentColor 50%, transparent);text-underline-offset:3px}
 .novas{list-style:none;margin:0;padding:4px 0}
 .strip{display:grid;grid-template-columns:14px minmax(0,1fr) auto;align-items:center;gap:6px 8px;margin:12px 0 0;padding:10px 12px;border-radius:8px;
   background:linear-gradient(100deg, hsl(var(--h,200) 55% 50% / .14), var(--panel) 75%);border:1px solid hsl(var(--h,200) 45% 50% / .3);font-size:13px}
@@ -866,9 +866,10 @@ function entryRow(e, data, mine) {
   const who = el('span', 'who');
   who.append(timeFmt.format(at) + ' · ');
   who.append(signed ? toFocus({ kind: 'surveyor', key: initials }, el('b', '', initials)) : el('b', '', '—'));
-  if (mine.has(key)) who.append(el('span', 'you', 'you'));
   li.append(who);
   const meta = el('span', 'meta'), parts = [];
+  // Yours says so first on the second line, so your word keeps its room and its time lines up.
+  if (mine.has(key)) meta.append(el('span', 'you', 'you'));
   const rx = fdiv(x, RC), ry = fdiv(y, RC), place = data.places[`${rx},${ry}`];
   if (typeof place === 'string') parts.push(toFocus({ kind: 'territory', rx, ry }, el('b', '', place)));
   if (theme && typeof theme[0] === 'string') {
@@ -1198,7 +1199,8 @@ function tiles(list) {
   const box = $('#tiles');
   box.replaceChildren(...list.map(([label, value, sub]) => {
     const t = el('div', 'tile');
-    t.append(el('span', '', label), el('b', '', value));
+    // A time's AM or PM stays with its hour: "9:24 PM", "11 PM – 12 AM" break only at the dash.
+    t.append(el('span', '', label), el('b', '', String(value).replace(/(\d) (AM|PM|am|pm)\b/g, '$1\u00a0$2')));
     if (sub) t.append(el('small', '', sub));
     return t;
   }));
