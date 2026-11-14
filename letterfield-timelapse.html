@@ -84,6 +84,10 @@ button:focus-visible,a:focus-visible,input:focus-visible{outline:2px solid var(-
 .seg{display:flex;border:1px solid var(--rule);border-radius:999px;padding:3px;background:var(--paper)}
 .seg button{border:0;background:transparent;border-radius:999px;padding:8px 11px;font:500 12px/1 var(--f-mono);cursor:pointer;color:var(--muted);white-space:nowrap}
 .seg button[aria-pressed="true"]{background:var(--ink);color:var(--paper)}
+/* Disabled while the log loads, like the Play button. */
+.seg button:disabled,.pill:disabled{opacity:.4;cursor:default}
+.pill:disabled:hover{background:var(--paper)}
+.pill.main:disabled:hover{background:var(--ink)}
 .pill{display:inline-flex;align-items:center;gap:6px;height:36px;padding:0 13px;border:1px solid var(--rule);border-radius:999px;background:var(--paper);color:var(--ink);font:500 12px/1 var(--f-mono);text-decoration:none;cursor:pointer;white-space:nowrap}
 .pill:hover{background:var(--hover)}
 .pill.main{background:var(--ink);color:var(--paper);border-color:var(--ink)}
@@ -103,6 +107,8 @@ button:focus-visible,a:focus-visible,input:focus-visible{outline:2px solid var(-
 .status{position:fixed;z-index:3;left:50%;top:50%;transform:translate(-50%,-50%);width:min(22rem, calc(100% - 32px));text-align:center;color:var(--muted);background:var(--panel);border:1px solid var(--rule);border-radius:10px;padding:18px}
 .status strong{display:block;color:var(--ink);font:700 22px/1.1 var(--f-display);letter-spacing:.05em;text-transform:uppercase;margin-bottom:6px}
 .status button{margin-top:12px}
+/* Caught up with days still loading: a note over the map, which carries on by itself. */
+[data-tl="waiting"] .status{pointer-events:none}
 
 /* Saving a video: the canvas being recorded, then the video. */
 dialog{border:1px solid var(--rule);border-radius:12px;background:var(--panel);color:var(--ink);padding:16px;width:min(26rem, calc(100% - 32px));max-height:calc(100% - 32px);overflow:auto}
@@ -131,10 +137,10 @@ dialog p{margin:6px 0 0;font:400 12px/1.5 var(--f-mono);color:var(--muted)}
     <a class="back" id="toLog" href="/letterfield-log">← Log</a>
   </div>
   <div class="counts">
-    <div><b id="nWords">0</b>words charted</div>
-    <div><b id="nNovas">0</b>supernovas</div>
-    <div id="placesCount"><b id="nPlaces">0</b>territories</div>
-    <div class="theirs" id="guildCount" hidden><b id="nGuild">0</b>their words</div>
+    <div><b id="nWords">0</b><span id="lWords">words</span> charted</div>
+    <div><b id="nNovas">0</b><span id="lNovas">supernovas</span></div>
+    <div id="placesCount"><b id="nPlaces">0</b><span id="lPlaces">territories</span></div>
+    <div class="theirs" id="guildCount" hidden><b id="nGuild">0</b>by the guild</div>
   </div>
   <a class="follow" id="follow" hidden href="/letterfield-timelapse"><i aria-hidden="true"></i><b id="followName"></b><span aria-hidden="true">×</span></a>
 </div>
@@ -507,13 +513,14 @@ function showTL(to) {
   $('#play').disabled = !ready;
   $('#scrub').disabled = !ready;
   $('#save').disabled = !ready;
+  for (const b of document.querySelectorAll('#speeds button')) b.disabled = !ready;
   const st = $('#status');
-  st.hidden = ready;
+  st.hidden = ready && to !== 'waiting';
   $('#retry').hidden = to !== 'failed';
   if (to === 'loading') { $('#statusTitle').textContent = 'Loading the log'; $('#statusText').textContent = 'Every word charted so far, oldest first.'; }
   if (to === 'failed') { $('#statusTitle').textContent = 'The log can’t be reached'; $('#statusText').textContent = 'Check your connection, or try again in a minute.'; }
   if (to === 'empty') { $('#statusTitle').textContent = 'Nothing charted yet'; $('#statusText').innerHTML = 'Be the first: <a href="/letterfield">open the map</a>.'; }
-  if (to === 'waiting') $('#loadedNote').textContent = 'Loading…';
+  if (to === 'waiting') { $('#loadedNote').textContent = 'Loading…'; showWaiting(); }
   else showLoaded();
   last = 0;
   dirty = true;
@@ -536,7 +543,13 @@ function seek(p, snapNow = true) {
   pos = clamp(p, 0, P);
   if (snapNow) snap = true;
   if (TL.is('waiting') && timeAt(pos) < loadedUntil) TL.go('playing');
+  else if (TL.is('waiting')) showWaiting();
   dirty = true;
+}
+// The day the timelapse has caught up with and waits for, over the map.
+function showWaiting() {
+  $('#statusTitle').textContent = `Waiting for ${shortFmt.format(timeAt(pos))}…`;
+  $('#statusText').textContent = 'That day is still loading. The timelapse carries on once it’s in.';
 }
 function showLoaded() {
   if (!days.length || TL.is('waiting')) return;
@@ -766,9 +779,9 @@ function showNumbers({ t, n, nNova }) {
     words = W.length;
     for (let i = Math.max(0, Math.floor(loadedUntil / HOUR) - H0); i < NH && (H0 + i + 1) * HOUR <= t; i++) words += hourWords[i];
   }
-  if (words !== shown.n) { shown.n = words; $('#nWords').textContent = words.toLocaleString(); }
-  if (nNova !== shown.nNova) { shown.nNova = nNova; $('#nNovas').textContent = nNova.toLocaleString(); }
-  if (counts.size !== shown.places) { shown.places = counts.size; $('#nPlaces').textContent = counts.size.toLocaleString(); }
+  if (words !== shown.n) { shown.n = words; $('#nWords').textContent = words.toLocaleString(); $('#lWords').textContent = words === 1 ? 'word' : 'words'; }
+  if (nNova !== shown.nNova) { shown.nNova = nNova; $('#nNovas').textContent = nNova.toLocaleString(); $('#lNovas').textContent = nNova === 1 ? 'supernova' : 'supernovas'; }
+  if (counts.size !== shown.places) { shown.places = counts.size; $('#nPlaces').textContent = counts.size.toLocaleString(); $('#lPlaces').textContent = counts.size === 1 ? 'territory' : 'territories'; }
   if (follow && GW[Math.min(n, GW.length - 1)] !== shown.theirs) { shown.theirs = GW[Math.min(n, GW.length - 1)]; $('#nGuild').textContent = shown.theirs.toLocaleString(); }
   if (!scrubbing) $('#scrub').value = String(Math.round(1000 * pos / P));
   $('#scrub').setAttribute('aria-valuetext', `${dateYearFmt.format(t)}, ${timeFmt.format(t)}`);
@@ -934,7 +947,7 @@ function recFrame(now) {
   recLast = now; recClock += dt;
   const [hold0, hold1] = VIDEO_HOLD, total = hold0 + videoSeconds + hold1;
   const fx = P * Math.max(0, (recClock - hold0) / videoSeconds), p = Math.min(P, fx);
-  const S = VIDEO_PX, top = S * .19, bottom = S * .07;
+  const S = VIDEO_PX, top = S * (follow ? .235 : .19), bottom = S * .07;
   const r = draw(recG, { x: S * .04, y: top, w: S * .92, h: S - top - bottom }, recCam, p, { dt, jump: !recCam.ok, rate: P / videoSeconds, fx });
   hud(recG, r, p);
   $('#recBar').style.width = `${(100 * Math.min(1, recClock / total)).toFixed(1)}%`;
@@ -944,9 +957,9 @@ function recFrame(now) {
 function hud(g, { t, n, nNova }, p) {
   const S = VIDEO_PX, pad = S * .045;
   g.setTransform(1, 0, 0, 1, 0, 0);
-  const fade = g.createLinearGradient(0, 0, 0, S * .24);
+  const fadeH = S * (follow ? .285 : .24), fade = g.createLinearGradient(0, 0, 0, fadeH);
   fade.addColorStop(0, C.paper); fade.addColorStop(.7, C.paper); fade.addColorStop(1, C.paper + '00');
-  g.fillStyle = fade; g.fillRect(0, 0, S, S * .24);
+  g.fillStyle = fade; g.fillRect(0, 0, S, fadeH);
   g.fillStyle = C.muted; g.textBaseline = 'alphabetic';
   g.font = `500 ${S * .019}px "Martian Mono", ui-monospace, Menlo, monospace`;
   g.fillText('LETTERFIELD · SURVEY TIMELAPSE', pad, pad + S * .02);
@@ -963,10 +976,18 @@ function hud(g, { t, n, nNova }, p) {
   g.fillText(nNova.toLocaleString(), S - pad, pad + S * .135);
   g.fillStyle = C.muted;
   g.font = `400 ${S * .017}px "Martian Mono", ui-monospace, Menlo, monospace`;
-  g.fillText('words charted', S - pad, pad + S * .088);
+  g.fillText(n === 1 ? 'word charted' : 'words charted', S - pad, pad + S * .088);
   g.fillText(nNova === 1 ? 'supernova' : 'supernovas', S - pad, pad + S * .158);
   g.fillText('games.michaelwarkentin.com/letterfield-timelapse', S - pad, S - pad * .6);
   g.textAlign = 'left';
+  // Following a guild: its name, in its colour, as on the page.
+  if (follow) {
+    const y = pad + S * .2, r = S * .009;
+    g.fillStyle = follow.stroke;
+    g.beginPath(); g.arc(pad + r, y - r * 1.1, r, 0, Math.PI * 2); g.fill();
+    g.font = `500 ${S * .026}px "Schibsted Grotesk", system-ui, sans-serif`;
+    g.fillText(`Following the ${follow.name}`, pad + r * 3, y, S - 2 * pad - r * 3);
+  }
   g.fillStyle = C.accent; g.globalAlpha = .9;
   g.fillRect(0, S - S * .006, S * p / P, S * .006);
   g.globalAlpha = 1;
