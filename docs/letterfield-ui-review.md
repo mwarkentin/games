@@ -22,7 +22,8 @@ Line numbers are as of commit 7bae950 and drift as the files change.
 | 7 | Carets and circles only explain themselves to a mouse | b: two lines of copy; long press fixed on phones | Copy to build; long press in its own session and PR |
 | 8 | Emotes are unlabelled icons on a phone | a: a label under each icon | To build |
 | 9 | The word bar's chips, count and switch | a with b: plain tags, an honest count, a real switch | To build |
-| 10–29 | | Open | |
+| 10 | "Charted first" on nearly every entry, and messy rows | a with b; cards under day headings, a time on each row, rows on one grid | To build |
+| 11–29 | | Open | |
 
 ## The game
 
@@ -216,7 +217,40 @@ outlined (someone else's) versus filled (yours).
 - **b. A small mark on the dot.**
 - **c. A tally only.**
 - **Machines:** none.
-- **Decided:** open.
+- **Decided: a with b, and the rows rebuilt** (after four rounds of
+  mockups). A ring around the dot marks a word you charted first; a word
+  someone else charted first says "charted by ZED" on a second line. The
+  owner also found the rows messy (places wrapping, uneven alignment), so:
+  - **Grouped by day, then by visit.** A heading for each day (Today,
+    Yesterday, then the weekday and date), newest first. Under it, each
+    visit to a territory that day is a card: a stripe of the theme's colour
+    down its left edge, and the territory and theme at its head. Coming
+    back to a territory later that day starts a new card, so the list keeps
+    its order in time.
+  - **A time on each row,** the clock time ("3:42 PM") instead of how long
+    ago.
+  - **Every row on one grid:** marker, word with its bearing, time, book,
+    share, each centred on the word's line. The marker (dot or ring) has one
+    centre; the time column has a fixed width, right-aligned, with
+    even-width figures; the card's heading starts where the words start.
+    The second line sits under the word without moving anything on the
+    first.
+  - **The bearing is drawn,** an arrow beside the word, the same size in all
+    eight directions; its compass point leaves the text but stays in what a
+    screen reader hears ("reads south-west"). This also fixes 16's arrow
+    split from its compass point.
+  - **The grid reference leaves the rows;** tapping a row still flies there.
+    The empty state's "with its territory, grid reference and the bearing it
+    reads in" changes to match.
+- **When building:** the book and share buttons keep a tap area of at least
+  40px, as now, even where they're drawn smaller; a stray keeps its dashed
+  dot (ringed if charted first) and says "stray" on the second line, as an
+  exception does; a word's meaning opens full width under its row; the
+  Supernovas list above takes the same columns (star, place, time, share);
+  a theme filter keeps the day headings and cards. On a phone the title box
+  hides the grid reference because "the grid reference is in each find's
+  notes"; after this it shows nowhere on a phone, which is fine (nothing
+  asks a player for one), but that comment changes.
 
 ### 11. The theme is cut to "Fe…" on a phone
 
@@ -274,8 +308,8 @@ Measured at 375px: the count leaves the theme 22px.
 ### 16. Small visual glitches
 
 Card headings at 12.5–13.5px instead of 10px; the hover card under the
-docked notes; the arrow split from its compass point; the badges at 0; on a
-tablet, open notes over the title.
+docked notes; the badges at 0; on a tablet, open notes over the title. (The
+arrow split from its compass point is fixed by 10's drawn bearing.)
 
 - **a. Fix each in place.** *Recommended.*
 - **b. On a tablet, dock the notes from 768px or shorten the title box.**
