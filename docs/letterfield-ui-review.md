@@ -28,7 +28,8 @@ Line numbers are as of commit 7bae950 and drift as the files change.
 | 13 | Internal words show through | a: fix the words; 16 random guild words, without "Survey" | To build |
 | 14 | The tools menu hides its state; the volume floats | c: a mixer, a slider each for effects and music; zoom in one row | To build |
 | 15 | Buttons with the same job look different; risky ones look harmless | a: filled and outlined buttons, red to end or delete; Stop syncing as rows; white inputs | To build |
-| 16–29 | | Open | |
+| 16 | Small visual glitches | a: fix each in place | To build |
+| 17–29 | | Open | |
 
 ## The game
 
@@ -417,14 +418,30 @@ red though Leave guild is.
 
 ### 16. Small visual glitches
 
-Card headings at 12.5–13.5px instead of 10px; the hover card under the
-docked notes; the badges at 0; on a tablet, open notes over the title. (The
-arrow split from its compass point is fixed by 10's drawn bearing.)
+- **Card headings** in the devices card and the guild invite are 12.5px and
+  13.5px, not 10px: `.pair p` and `.guild-invite p` outrank `.eyebrow`.
+- **A caret's hover card** near the docked notes slides under them: it picks
+  its side from the window's width (`W`), not the map's (`W - dock`).
+- **The notes button's badge** shows 0 before a first find (the Surveyors
+  button's already hides at 0).
+- **On a tablet** (700 to 1,099px wide), the notes open over the map and
+  cover the end of the title box, cutting off the count and shortening the
+  theme.
+- The arrow split from its compass point is fixed by 10's drawn bearing.
+
+Options:
 
 - **a. Fix each in place.** *Recommended.*
-- **b. On a tablet, dock the notes from 768px or shorten the title box.**
+- **b. On a tablet, dock the notes from 768px.** Measured: at 768px the map
+  would be 428px wide, shared with the buttons, which squeezes the title as
+  on a phone.
 - **Machines:** none.
-- **Decided:** open.
+- **Decided: a** (after mockups): a heading rule that outranks the cards'
+  paragraphs; the hover card's side chosen from the map's width; no badge
+  at 0, so the first find brings it in; and on a tablet, while the notes are
+  open over the map, the Letterfield block steps aside and the title box
+  ends before the notes, leaving room for the whole territory, theme and
+  count.
 
 ### 17. Small flow and copy fixes
 
