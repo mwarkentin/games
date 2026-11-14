@@ -110,7 +110,10 @@ def test_an_emote_goes_from_a_row_and_says_what_became_of_it(page: Page, site_ur
     open_list(page)
     page.get_by_role("button", name="More for ZED").click()
     expect(page.get_by_role("button", name="More for ZED")).to_have_attribute("aria-expanded", "true")
-    expect(page.locator(".who-emotes .emote")).to_have_count(6)  # wave sits on the row itself
+    # Each named under its icon (wave sits on the row itself), in two rows.
+    emotes = page.locator(".who-emotes .emote")
+    expect(emotes).to_have_text(["Thanks", "Thumbs up", "Clap", "Great find", "Over here", "Question"])
+    assert len({round(b["y"]) for b in (e.bounding_box() for e in emotes.all())}) == 2
     page.get_by_role("button", name="Thanks to ZED").click()
     eventually(page, lambda: fake.sent("emote"))
     # From the sector under the middle of the view, toward ZED's (territory 1,0 is in sector 0,0).
@@ -126,7 +129,7 @@ def test_an_emote_goes_from_a_row_and_says_what_became_of_it(page: Page, site_ur
     page.get_by_role("button", name="Clap to KIM").click()
     expect(page.locator(".who-said:not(:empty)")).to_have_text("KIM isn’t taking emotes.")
     fake.emote_error = "slow down"
-    page.get_by_role("button", name="Nice to KIM").click()
+    page.get_by_role("button", name="Thumbs up to KIM").click()
     expect(page.locator(".who-said:not(:empty)")).to_have_text("Too quick: try again in a moment.")
 
     # Escape folds the row, and leaves the drawer open.
@@ -150,7 +153,7 @@ def test_an_emote_pops_from_a_caret_in_view_or_comes_as_a_note_with_a_way_there(
 
     fake.emote("0,0", KIM[0], "KIM", "wave", [0, 0])
     page.wait_for_function(f"window.__lf.pops().some(p => p[0] === '{KIM[0]}')")
-    expect(page.locator("#findSay")).to_have_text("KIM waved")
+    expect(page.locator("#findSay")).to_have_text("KIM waves")
     expect(toast).not_to_have_class(SHOWN)
 
     fake.emote("0,0", LOU[0], "LOU", "great", [7, -4])
@@ -249,6 +252,11 @@ def test_a_caret_has_a_menu_of_emotes(page: Page, site_url, errors):
     expect(menu).to_be_visible()
     expect(menu.locator("#caretWho")).to_have_text("KIM")
     expect(menu.get_by_role("button", name="Wave to KIM")).to_be_focused()
+    # All seven, each named under its icon, four and three to a row.
+    emotes = menu.locator(".emote")
+    expect(emotes).to_have_text(["Wave", "Thanks", "Thumbs up", "Clap", "Great find", "Over here", "Question"])
+    rows = [round(e.bounding_box()["y"]) for e in emotes.all()]
+    assert rows[:4] == [rows[0]] * 4 and rows[4:] == [rows[4]] * 3 and rows[4] > rows[0], rows
     menu.get_by_role("button", name="Over here to KIM").click()
     expect(menu).to_be_hidden()
     eventually(page, lambda: fake.sent("emote"))

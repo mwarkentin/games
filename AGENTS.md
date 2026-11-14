@@ -186,7 +186,7 @@ The machines each page keeps:
 | | `define` (each found word's meaning; `el: null`, see `__lf.definitions()`) | loading, ready, none, failed |
 | | `who` (the list of surveyors) | closed, loading, ready, refreshing, failed |
 | | `peoplePage` (the Surveyors drawer's page) | list, you |
-| | `guild` (the guild you're in) | out, naming, making, invited, joining, in, leaving |
+| | `guild` (the guild you're in) | out, naming, making, invited, joining, in, confirming, leaving |
 | | `pair` (linking another device, and the recovery code) | idle, making, showing, used, entering, redeeming, done, failed, recovery, keeping, kept, removing |
 | | `sync` (keeping linked devices in step) | off, idle, syncing, failed |
 | `letterfield-log.html` | `log` (what the page shows) | loading, ready, refreshing, stale, failed |

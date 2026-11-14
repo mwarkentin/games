@@ -9,6 +9,7 @@ paths; the real Player is tested in worker/test/players.test.js.
 from __future__ import annotations
 
 import json
+import re
 
 from playwright.sync_api import Page, expect
 
@@ -125,10 +126,20 @@ def test_stopping_here_or_everywhere(page: Page, site_url, errors):
     card = page.locator("#pairCard")
     # The row that stops it is the one place that says you're backed up.
     expect(page.locator("#pairHead")).to_have_text("Devices")
-    expect(card.get_by_role("button", name="Stop syncing")).to_contain_text("Your notes and settings are backed up")
-    card.get_by_role("button", name="Stop syncing").click()
-    expect(card).to_contain_text("Stop syncing this device, or every device?")
-    card.get_by_role("button", name="Keep syncing").click()
+    stop = card.get_by_role("button", name="Stop syncing")
+    expect(stop).to_contain_text("Your notes and settings are backed up")
+    expect(stop).to_have_class(re.compile(r"\bdanger\b"))  # red, as Leave guild is
+    stop.click()
+    # Where to stop is a choice between things to do, so it's rows, then a way out.
+    expect(card.locator(".pair-ask")).to_have_text("Stop syncing where? Each device keeps its notes as they are.")
+    expect(card.locator(".you-item")).to_have_text(
+        ["This deviceThe others keep syncing", "Every deviceAlso deletes the copy kept for syncing"]
+    )
+    expect(card.get_by_role("button", name="This device")).to_be_focused()
+    expect(card.get_by_role("button", name="Every device")).to_have_class(re.compile(r"\bdanger\b"))
+    expect(card.get_by_role("button", name="Keep syncing", exact=True)).to_have_class(re.compile(r"\bbtn ghost\b"))
+    card.get_by_role("button", name="Keep syncing", exact=True).click()
+    expect(stop).to_be_focused()
     card.get_by_role("button", name="Stop syncing").click()
     card.get_by_role("button", name="This device").click()
     expect(page.locator("html")).to_have_attribute("data-sync", "off")

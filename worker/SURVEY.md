@@ -495,7 +495,7 @@ can't be strung into a message.
 | --- | --- | --- |
 | Wave | hello, goodbye | an open hand with its fingers together, leaning, with motion lines: no finger is singled out, and it reads as a wave rather than a raised palm |
 | Thanks | a hat tipped | a hat, the old gesture of thanks; nothing bodily |
-| Nice | a thumbs up | the near-universal "good" online. It's rude in a few places (parts of West Africa and the Middle East), which made it the closest call; it was asked for by name and kept |
+| Thumbs up | a thumbs up | the near-universal "good" online. It's rude in a few places (parts of West Africa and the Middle East), which made it the closest call; it was asked for by name and kept |
 | Clap | well done | two flat palms meeting, with no fingers drawn; it can be sarcastic, but no worse than words would be, and there are none |
 | Great find | a sparkle | a four-pointed star |
 | Over here | a survey flag | how surveyors mark a spot, and it comes with the sender's territory to fly to |
@@ -540,10 +540,13 @@ invite link. The code is `src/survey-guild.js`, hooks in `survey.js` and
   it's created and dropped when its last member leaves, so a wrong guess at a
   code stores nothing and an ended guild's code is free again.
 - **No free text.** A name is three words from the game's lists: 16 colours,
-  16 instruments and 8 kinds of company ("Cobalt Compass Society"), 2,048
+  16 instruments and 16 kinds of company ("Cobalt Compass Society"), 4,096
   names in all, drawn at random until the founder likes one. The Worker keeps
   only the three numbers (`GUILD_WORDS` says how long each list is, and a test
-  checks the game's lists agree). The colour is the first word's.
+  checks the game's lists agree), so changing a word renames every guild
+  that has it: the third list's "Survey", which read like another survey
+  beside the shared one, became "Lodge". New words only go on the end. The
+  colour is the first word's.
 - **The code is the key.** Six characters from the groups' alphabet (887
   million codes), passed in an invite link (`?guild=<code>`), which the game
   reads once and takes off the address. A player can be in one guild at a

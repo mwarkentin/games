@@ -316,6 +316,11 @@ test("the game's lists of words for names, and the first word's hues, are the Wo
   assert.deepEqual(list('GUILD_THIRD'), GUILD_THIRD);
   assert.deepEqual([GUILD_FIRST, GUILD_SECOND, GUILD_THIRD].map((l) => l.length), GUILD_WORDS);
   for (const l of [GUILD_FIRST.map((w) => w[0]), GUILD_SECOND, GUILD_THIRD]) assert.equal(new Set(l).size, l.length, 'a word twice');
+  // A name is kept as numbers, so a word keeps its place: "Survey" (6) became
+  // "Lodge", and new words went on the end. The longest still fits a phone.
+  assert.deepEqual(GUILD_THIRD.slice(0, 8), ['Society', 'Guild', 'Company', 'Circle', 'Club', 'Expedition', 'Lodge', 'Fellowship']);
+  assert.ok(!GUILD_THIRD.includes('Survey'), 'a guild named like another survey');
+  for (const l of [GUILD_FIRST.map((w) => w[0]), GUILD_SECOND, GUILD_THIRD]) for (const w of l) assert.ok(w.length <= 'Fellowship'.length, w);
 });
 
 describe("members' words in the survey log", () => {

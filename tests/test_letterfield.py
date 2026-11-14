@@ -271,7 +271,7 @@ def test_the_tools_are_three_groups_and_a_mixer(page: Page, site_url, errors):
     expect(effects).to_have_value("100")
     expect(slider).to_have_value("0")  # the music's off, so its slider's at 0
     expect(slider).to_have_attribute("aria-valuetext", "Music off")
-    page.wait_for_timeout(300)  # done popping up
+    stack.evaluate("e => Promise.all(e.getAnimations({ subtree: true }).map(a => a.finished))")  # done popping up
     box = stack.bounding_box()
     for row in page.locator(".tool-mix").all():
         assert row.bounding_box()["height"] >= 44
