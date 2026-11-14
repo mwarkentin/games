@@ -66,7 +66,12 @@ body{
   padding-left:max(16px, env(safe-area-inset-left, 0px));
   padding-right:max(16px, env(safe-area-inset-right, 0px));
   -webkit-tap-highlight-color:transparent;overscroll-behavior:none;
+  /* A long press on the map is the game's (a caret's menu), not the phone's selection or callout. */
+  -webkit-user-select:none;user-select:none;-webkit-touch-callout:none;
 }
+/* What players read or copy by hand stays selectable: the field notes and their definitions, the
+   Surveyors drawer with its invite link and codes, and anything typed. */
+.notes,.people,input,textarea{-webkit-user-select:text;user-select:text;-webkit-touch-callout:default}
 button{font:inherit;color:inherit}
 button:focus-visible,a:focus-visible,#map:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 .mark{--c:hsl(var(--h,200) var(--mark-s) var(--mark-l))}
