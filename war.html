@@ -8016,8 +8016,9 @@ function startSolo() {
 const NAME_OK = /^[\p{L}\p{N}][\p{L}\p{N} '&.,!?-]{0,15}$/u;
 
 // ---- BEGIN NAME CHECK ----
-// The names other players see in a room, checked the same way by war.html
-// (before it asks for a room) and worker/src/war.js (which has the last word).
+// Names other people see: players in a War room, and leaderboard groups.
+// war.html checks a name this way before it asks for a room, and the Worker
+// (worker/src/names.js, for rooms and groups alike) has the last word.
 // worker/test/war.test.js checks that the two copies match, so change both.
 // Accents come off, digits that look like letters count as those letters, and
 // any letter may repeat ("fuuuck"). Words that turn up inside ordinary names

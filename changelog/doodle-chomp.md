@@ -1,3 +1,8 @@
+## 2026-11-14
+
+- A group's name with a rude word in it is turned away, so a class or
+  family board always has a name that's fine for any age.
+
 ## 2026-11-10
 
 - A “Send feedback” link under How to play, for bugs and ideas. A GitHub issue from it comes with the game and your device filled in.

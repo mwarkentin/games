@@ -374,6 +374,16 @@ describe('groups', () => {
     assert.equal((await createGroup('Ünïcode & Friends')).status, 201);
   });
 
+  test('names with rude words in them are turned away', async () => {
+    for (const name of ['Fuck Off', 'Sh1t Heads', 'Big Ass Class']) {
+      const response = await createGroup(name);
+      assert.equal(response.status, 400, name);
+      assert.equal((await response.json()).error, 'pick a different name, please');
+    }
+    assert.equal((await createGroup("Mrs. Cassidy's class")).status, 201);
+    assert.equal((await createGroup('Room 12 Hancock')).status, 201);
+  });
+
   test('only allowed pages can create groups, five an hour per IP address', async () => {
     assert.equal((await createGroup('Nope', { origin: 'https://example.com' })).status, 403);
     for (let i = 0; i < 5; i++) assert.equal((await createGroup(`Group ${i}`)).status, 201);

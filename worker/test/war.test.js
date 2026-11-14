@@ -10,9 +10,10 @@ import { DatabaseSync } from 'node:sqlite';
 import { afterEach, beforeEach, describe, mock, test } from 'node:test';
 
 import {
-  EXPIRE_MS, MAX_SOCKETS, WAR, WarRoom, cleanDeck, cleanName, handleWar, nameIsKind, warDeal, warDueAt, warNewGame, warRank, warResolve,
+  EXPIRE_MS, MAX_SOCKETS, WAR, WarRoom, cleanDeck, cleanName, handleWar, warDeal, warDueAt, warNewGame, warRank, warResolve,
   warFlop, warGather, warShort, warSlam, warStandings, warUpCard,
 } from '../src/war.js';
+import { nameIsKind } from '../src/names.js';
 // The room's state machine, as a namespace so the rest still runs against a
 // war.js without one.
 import * as warRoom from '../src/war.js';
@@ -399,8 +400,8 @@ test('war.html checks names the same way as the Worker', () => {
     return match[1];
   };
   const page = readFileSync(new URL('../../war.html', import.meta.url), 'utf8');
-  const worker = readFileSync(new URL('../src/war.js', import.meta.url), 'utf8');
-  assert.equal(check(page), check(worker), 'the name check in war.html and worker/src/war.js must match word for word');
+  const worker = readFileSync(new URL('../src/names.js', import.meta.url), 'utf8');
+  assert.equal(check(page), check(worker), 'the name check in war.html and worker/src/names.js must match word for word');
 });
 
 test('rude names are turned away, however they are spelled', () => {
