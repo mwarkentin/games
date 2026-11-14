@@ -35,7 +35,8 @@ Line numbers are as of commit 7bae950 and drift as the files change.
 | 20 | On a phone, the words come last | a with c: words straight after the chart, its supernova note under it | To build |
 | 21 | The hour view uses a day's controls; the log's header | A new header (a way back, tabs for what's listed, periods as tabs, the card's title as navigator); b with d: ‹ stops at the first word | To build |
 | 22 | A new guild's page says "No such guild" | a plus c: named, "hasn't charted a word yet"; its Timelapse link waits for a first word | To build |
-| 23–29 | | Open | |
+| 23 | Moving between the game, log and timelapse loses your place | a: a link back to the page you came from steps back in history | To build |
+| 24–29 | | Open | |
 
 ## The game
 
@@ -634,12 +635,24 @@ guild, quietly plays everyone's words.
 
 ### 23. Moving between the game, log and timelapse loses your place
 
+The links between the three pages always open a fresh copy: log (a past
+week, a surveyor's page, scrolled) → a word on the map → the game's link
+back opens today's log at the top; a guild's page → its timelapse → "← Log"
+opens today's log; the timelapse → "See it in the log" → "▶ Timelapse"
+starts the replay over. The browser's back button gets it right, but a Home
+Screen app on an iPhone has none.
+
 - **a. Go back in history when you came from the other page.**
-  *Recommended.*
-- **b. More links.**
+  *Recommended:* the log's address holds its view, so a step back returns
+  to it, scroll and all, in the Home Screen app too.
+- **b. More links** that carry your place.
 - **c. One way out of a guild's view.**
 - **Machines:** none.
-- **Decided:** open.
+- **Decided: a.** Each page notes in the tab's session storage the pages
+  of the three it came through. A link whose page is the one just before
+  in the tab's history steps back instead (a general link, like "Survey
+  log and timelapse", matches any view of the log; a specific one, like a
+  guild's row, only that view), and anything else stays a normal link.
 
 ### 24. Numbers nobody explains
 
