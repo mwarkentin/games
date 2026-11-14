@@ -25,7 +25,9 @@ Line numbers are as of commit 7bae950 and drift as the files change.
 | 10 | "Charted first" on nearly every entry, and messy rows | a with b; cards under day headings, a time on each row, rows on one grid | To build |
 | 11 | The theme cut to "Fe…" on a phone | b: "3/113" without "charted", and no LF mark on phones | To build |
 | 12 | "Origin" means nothing to most players | b and c: Map centre, and Last find once you have a find | To build |
-| 13–29 | | Open | |
+| 13 | | Open | |
+| 14 | The tools menu hides its state; the volume floats | c: a mixer, a slider each for effects and music; zoom in one row | To build |
+| 15–29 | | Open | |
 
 ## The game
 
@@ -314,14 +316,41 @@ it's the oldest, most charted part of the map.
 
 ### 14. The tools menu hides its state; the shortcuts are uneven
 
-- **a. "On" / "Off" at the end of each row**, from the settings.
-  *Recommended.* Music's one hidden state (waiting for the first tap) can't
-  be seen, since opening the menu is itself a tap.
-- **b. Switches.**
-- **c. Show N in the notes button's tooltip;** consider M muting everything.
+Sound and Music show on or off only by a line through their icon. The music
+volume floats in a row of its own, with no visible label and a bare number
+("0" with music off), its thumb at 0 reading as a bullet. Nothing says N
+opens the notes. Taken up when the owner asked about the menu's structure.
+
+- **a. Tidy:** the rows as they are, "Sound" renamed "Sound effects" (it
+  never touched music), "On" or "Off" at the end of each, and the volume
+  tucked under Music while it plays.
+- **b. Grouped:** zoom in one row, the switches your page in the Surveyors
+  drawer already uses, and the volume under Music's switch while it plays.
+  *Recommended:* one switch for every setting, and a volume that plainly
+  belongs to Music.
+- **c. A mixer:** a slider each for effects and music, 0 being off.
+- In all three, the notes button's tooltip says "Field notes (N)", like the
+  Surveyors button's "(P)".
 - **Machines:** none, unless rows show playback ("Paused, tap to resume"),
-  which needs a `music` machine first.
-- **Decided:** open.
+  which needs a `music` machine first. Music's one hidden state (waiting for
+  the first tap) can't be seen, since opening the menu is itself a tap.
+- **Decided: c** (option 3 in the mockups). The menu, in three groups:
+  - **Zoom,** one row, with − and + side by side.
+  - **Map centre and Last find** (see 12).
+  - **Effects and Music,** a row each: icon, name, slider. A slider at 0 is
+    off; sliding up turns it on at that level; tapping the icon turns it
+    off, or back on where it was, and a line goes through the icon while
+    it's off. That's today's music button and slider, applied to both.
+    Effects (today only supernovas, near and far) gain a volume of their
+    own: a gain between them and the output, starting where they play now.
+    Music left on from last time still waits for the first tap, which its
+    icon then starts rather than switching it off unheard.
+  - **Keys:** M and B still switch effects and music, and [ and ] still
+    turn the music down and up; on a computer the tooltips say so (the −
+    and + buttons' too), and the notes button's says "Field notes (N)".
+  - Both levels stay on the device, as sound and music do now (they aren't
+    among the settings linked devices share). Screen readers hear "Sound
+    effects volume" and "Music volume", with "Off" at 0.
 
 ### 15. Buttons with the same job look different; destructive ones look harmless
 
