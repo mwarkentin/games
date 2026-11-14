@@ -17,7 +17,8 @@ Line numbers are as of commit 7bae950 and drift as the files change.
 | 2 | "Done" on a link code can leave this device out of sync | a: keep checking in the background | To build |
 | 3 | Sync told three ways, and falsely after a recovery code | Each setting shown once, beside its control; Claude code removed | Built in #101 |
 | 4 | "Show me on the list" also stops guild credit | Remove the option: everyone online is listed | To build |
-| 5–29 | | Open | |
+| 5 | Four different counts of who's online | a: one count, in the badge and the list's line | To build |
+| 6–29 | | Open | |
 
 ## The game
 
@@ -130,24 +131,34 @@ parts of the map the game is connected to.
 - **Machines:** none. (The earlier option of always showing the list's count
   on the badge, with a background refresh and a `quiet` state in `who`,
   gains nothing once nobody is hidden.)
-- **Decided:** open.
+- **Decided: a.**
 
 ### 6. On a phone, nothing on the map says the survey is offline
 
-Only the notes say so, and undersell it: words found offline are claimed
-when it's back, but only while the page stays open (waiting claims live in
-memory).
+Only the panel in the field notes says so; the title just loses its count.
+Its wording undersells it: words found offline are claimed when it's back,
+but only while the page stays open, since waiting claims live in memory.
+The panel also repeats the title (this territory's count) and, on a
+computer, the line under "Letterfield" (the world's count). The title only
+checks the sector you're in, the panel any sector, so they can disagree.
 
 - **a. A status chip in the top bar.** Needs room the phone's bar doesn't
-  have, and a delay to avoid flicker on every load.
-- **b. Say it in the title, where the count goes:** "Festivals · offline".
-  *Recommended.* No layout change; the title then uses the panel's status
-  function rather than checking only the home sector.
-- **c. Honest wording in the notes**, with "as long as this page stays
-  open", or keep waiting claims in storage (a `claim` machine restored on
-  load).
-- **Machines:** none new; the status is worked out from the `link` and
-  `pass` machines.
+  have, and a delay so it doesn't flash on every load.
+- **b. The title says it, and the panel stops repeating the title.**
+  *Recommended.* The title reads "Festivals · 3/113" when live and
+  "Festivals · joining…", "· offline" or "· full" otherwise, from the state
+  of the sector you're in. The panel drops its territory line and status
+  dot, says what's wrong only when it isn't live, and keeps the world's
+  count; the line under "Letterfield" goes back to "Endless word search".
+- **c. Only honest wording in the panel**, with "as long as this page stays
+  open".
+- **d. With any: keep words waiting to be charted in storage**, so a reload
+  doesn't lose their claim and the panel needn't add a caveat. *Recommended
+  with b.*
+- **Machines:** a: its delay checks nothing moved. b: none new; the title
+  reads the existing `link` and `pass` machines. d: the `claim` machines
+  restored from storage on load, with a test (find a word offline, reload,
+  come online, expect the claim) that fails today.
 - **Decided:** open.
 
 ### 7. Carets and circles only explain themselves to a mouse
