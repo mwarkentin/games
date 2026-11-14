@@ -124,3 +124,40 @@ def test_without_the_worker_a_word_only_links_out(page: Page, site_url, errors):
     )
     assert fake.asked == []
     assert errors == []
+
+
+def test_the_book_is_level_with_its_word_and_scrolls_under_the_hours_heading(page: Page, site_url, errors):
+    page.set_viewport_size({"width": 375, "height": 600})
+    words = [
+        "FORTY",
+        "BOUQUET",
+        "NEWLYWED",
+        "TALC",
+        "FLICK",
+        "TIERED",
+        "SLAG",
+        "WOOER",
+        "FINAL",
+        "DEAREST",
+        "BIRCH",
+        "CEDAR",
+    ]
+    rows = [[w, 3 * i, 7, i % 8, 0, "ZED", ACORN[6] + i * 1000, 11] for i, w in enumerate(words)]
+    page.route(f"{DEFINE_API}/**", FakeDefinitions().handle)
+    open_log(page, site_url, FakeSurveyLog(rows, PLACES, THEMES), query=f"&define={DEFINE_API}")
+    expect(page.locator(".entry")).to_have_count(12)
+    middles = page.evaluate("""[...document.querySelectorAll('.entry')].map(e => {
+      const w = e.querySelector('.word').getBoundingClientRect(), b = e.querySelector('.define').getBoundingClientRect();
+      return Math.abs((w.top + w.height / 2) - (b.top + b.height / 2));
+    })""")
+    assert max(middles) <= 1, middles
+    # Scrolled so rows pass under the hour's heading, which stays on top of their links and books.
+    page.evaluate("document.querySelectorAll('.entry')[5].scrollIntoView({ block: 'start' })")
+    page.wait_for_function("document.querySelector('.hour h3').getBoundingClientRect().top <= 1")
+    covered = page.evaluate("""(() => {
+      const h = document.querySelector('.hour h3').getBoundingClientRect();
+      return [h.left + 4, h.right - 24, h.right - 4].flatMap(x => [h.top + h.height / 2, h.bottom - 4]
+        .map(y => !!document.elementFromPoint(x, y)?.closest('.hour h3')));
+    })()""")
+    assert all(covered), covered
+    assert errors == []
