@@ -5,7 +5,7 @@
 // other device redeems it for the token and a few settings, and is then the
 // same player. See "One player, several devices" in SURVEY.md.
 //
-//   POST /v1/link                   {token, carry} → 201 {code, expires}
+//   POST /v1/link                   {token, carry} → 201 {code, expires}; any older unused code of theirs stops working
 //   POST /v1/link/<code>/status     {token} → {state}: waiting, used or gone (gone to anyone who didn't make it)
 //   POST /v1/link/<code>            {} → {token, carry}, once; then 404
 //
@@ -94,6 +94,8 @@ export function routeLinks(request, env, now = Date.now()) {
         if (!carry) throw new HttpError(400, 'carry is not something a link takes');
         await rateLimit(db, 'link', address, now);
         await db.prepare('DELETE FROM links WHERE expires < ?').bind(now).run();
+        // A new code retires any this player made before and nobody used, as a new recovery code does.
+        await db.prepare('DELETE FROM links WHERE token = ? AND used = 0').bind(body.token).run();
         for (let attempt = 0; attempt < 8; attempt++) {
           const code = [...crypto.getRandomValues(new Uint8Array(8))].map((b) => CODE_ALPHABET[b % CODE_ALPHABET.length]).join('');
           const made = await db.prepare('INSERT INTO links (code, token, carry, expires) VALUES (?, ?, ?, ?) ON CONFLICT (code) DO NOTHING RETURNING code')

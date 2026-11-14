@@ -13,6 +13,7 @@ import re
 
 from playwright.sync_api import Page, expect
 
+from fake_leaderboard import Held
 from fake_survey import FakeGuilds, FakeLinks, FakePlayers, FakeSurvey
 from test_letterfield_guilds import MINE
 from test_letterfield_guilds import start as start_guilds
@@ -161,6 +162,31 @@ def test_stopping_here_or_everywhere(page: Page, site_url, errors):
     )
     eventually(page, lambda: PID not in players.players)
     assert [b["token"] for b in players.sent("forget")] == [TOKEN]
+    assert errors == []
+
+
+def test_stopping_everywhere_waits_for_the_worker_and_answers_under_the_rows(page: Page, site_url, errors):
+    """Its answer used to go into whatever card was open by then: once, over the recovery code's heading."""
+    players = FakePlayers(started=[PID])
+    start(page, site_url, players)
+    held = Held(players, lambda r: r.url.endswith("/v1/player/forget"))
+    page.route(f"{SURVEY}/v1/player/**", held.handle)
+    open_you(page)
+    html, card = page.locator("html"), page.locator("#pairCard")
+    card.get_by_role("button", name="Stop syncing").click()
+    card.get_by_role("button", name="Every device").click()
+    held.wait_for(page)
+    # Nothing else opens while it waits, so its answer can't land in another card.
+    expect(card.get_by_role("button", name="Recovery code")).to_have_count(0)
+    expect(card).to_have_text("Stopping syncing on every device…")
+    expect(html).to_have_attribute("data-pair", "stopping")
+    held.release()
+    expect(html).to_have_attribute("data-pair", "idle")
+    expect(card.locator(".pair-note")).to_have_text(
+        "Syncing stopped on every device, and the copy kept for it is deleted, with any recovery code."
+    )
+    expect(card.get_by_role("button", name="Recovery code")).to_contain_text("Not saved")  # its row, whole
+    eventually(page, lambda: PID not in players.players)
     assert errors == []
 
 

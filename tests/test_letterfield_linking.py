@@ -107,14 +107,50 @@ def test_a_code_that_runs_out_can_be_made_again(page: Page, site_url, errors):
     first = page.evaluate("window.__lf.pairCode()")
     links.expire(first)
     expect(card).to_contain_text("That code has run out.", timeout=10_000)
+    expect(page.locator("html")).to_have_attribute("data-pair-code", "gone")
     expect(card.locator(".pair-qr")).to_have_count(0)
     card.get_by_role("button", name="New code").click()
     expect(page.locator("html")).to_have_attribute("data-pair", "showing")
+    expect(page.locator("html")).to_have_attribute("data-pair-code", "waiting")
     expect(card.locator(".pair-code")).not_to_have_text(f"{first[:4]}-{first[4:]}")
     # Escape puts it away.
     card.get_by_role("button", name="Done").focus()
     page.keyboard.press("Escape")
     expect(page.locator("html")).to_have_attribute("data-pair", "idle")
+    assert errors == []
+
+
+def test_done_leaves_the_code_watched_until_its_used_even_across_a_reload(page: Page, site_url, errors):
+    """Done used to stop asking about a code that still worked, so a device that used it later
+    linked and synced while this one never did, and never said so."""
+    links = FakeLinks()
+    start(page, site_url, links)
+    open_you(page)
+    html, card = page.locator("html"), page.locator("#pairCard")
+    card.get_by_role("button", name="Link another device").click()
+    expect(card.locator(".pair-code")).to_be_visible()
+    code = page.evaluate("window.__lf.pairCode()")
+    card.get_by_role("button", name="Done").click()
+    # The page is reloaded, and the other device uses the code much later.
+    page.reload()
+    page.wait_for_function(f"window.__lf && window.__lf.pid() === '{PID}'")
+    links.use(code)
+    expect(page.locator("#toast b")).to_have_text("Linked", timeout=10_000)
+    expect(page.locator("#toast span")).to_have_text("Your other device plays as MLW now")
+    expect(html).not_to_have_attribute("data-sync", "off")  # this device keeps in step too
+    expect(html).to_have_attribute("data-pair-code", "used")
+    assert page.evaluate("localStorage.getItem('letterfield.linkCode.v1')") is None
+
+    # A code still waiting, opened again, shows again, rather than being retired for a new one.
+    open_you(page)
+    card.get_by_role("button", name="Link another device").click()
+    expect(card.locator(".pair-code")).to_be_visible()
+    second = page.evaluate("window.__lf.pairCode()")
+    card.get_by_role("button", name="Done").click()
+    expect(html).to_have_attribute("data-pair-code", "waiting")
+    card.get_by_role("button", name="Link another device").click()
+    expect(card.locator(".pair-code")).to_have_text(f"{second[:4]}-{second[4:]}")
+    assert links.made == 2
     assert errors == []
 
 

@@ -187,7 +187,8 @@ The machines each page keeps:
 | | `who` (the list of surveyors) | closed, loading, ready, refreshing, failed |
 | | `peoplePage` (the Surveyors drawer's page) | list, you |
 | | `guild` (the guild you're in) | out, naming, making, invited, joining, in, confirming, leaving |
-| | `pair` (linking another device, and the recovery code) | idle, making, showing, used, entering, redeeming, done, failed, recovery, keeping, kept, removing |
+| | `pair` (linking another device, and the recovery code) | idle, making, showing, used, entering, redeeming, done, failed, recovery, keeping, kept, removing, stop, stopping |
+| | `pairCode` (a link code made here, watched until used) | none, making, waiting, used, gone |
 | | `sync` (keeping linked devices in step) | off, idle, syncing, failed |
 | `letterfield-log.html` | `log` (what the page shows) | loading, ready, refreshing, stale, failed |
 | `letterfield-timelapse.html` | `tl` (the replay) | loading, empty, failed, paused, playing, waiting |

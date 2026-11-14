@@ -326,6 +326,10 @@ class FakeLinks:
         if self.status:
             return reply(self.status, {"error": "link error"})
         if path == "":
+            # A new code retires any older one of theirs nobody used, as the Worker does.
+            for link in self.codes.values():
+                if link["token"] == body["token"] and link["state"] == "waiting":
+                    link["state"] = "gone"
             self.made += 1
             code = "CDEFGHJ" + self.ALPHABET[self.made]
             self.codes[code] = {"token": body["token"], "carry": body["carry"], "state": "waiting"}

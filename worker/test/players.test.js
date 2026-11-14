@@ -79,6 +79,20 @@ describe('linking a device', () => {
     assert.ok(env.PLAYERS.player(await playerId(token(1))).meta());
   });
 
+  test('retires an older code nobody used when a new one is made', async () => {
+    const [, first] = await call('/v1/link', { token: token(1), carry });
+    const [, theirs] = await call('/v1/link', { token: token(2), carry });
+    const [, second] = await call('/v1/link', { token: token(1), carry });
+    assert.deepEqual(await call(`/v1/link/${first.code}/status`, { token: token(1) }), [200, { state: 'gone' }]);
+    assert.equal((await call(`/v1/link/${first.code}`, {}))[0], 404);
+    // The new one works, and someone else's code is left alone.
+    assert.deepEqual(await call(`/v1/link/${theirs.code}/status`, { token: token(2) }), [200, { state: 'waiting' }]);
+    assert.deepEqual(await call(`/v1/link/${second.code}`, {}), [200, { token: token(1), carry }]);
+    // One already used is kept, so its maker still hears it was used.
+    await call('/v1/link', { token: token(1), carry });
+    assert.deepEqual(await call(`/v1/link/${second.code}/status`, { token: token(1) }), [200, { state: 'used' }]);
+  });
+
   test('says nothing about a code to anyone who did not make it', async () => {
     const [, made] = await call('/v1/link', { token: token(1), carry });
     assert.deepEqual(await call(`/v1/link/${made.code}/status`, { token: token(2) }), [200, { state: 'gone' }]);

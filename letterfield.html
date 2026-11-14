@@ -5349,7 +5349,7 @@ function writeSync(st) {
   if (st) LS.set(K_SYNC, JSON.stringify(st));
   else try { localStorage.removeItem(K_SYNC); } catch (_) {}
 }
-let syncTimer = 0, syncDue = 0, stopAsk = false;
+let syncTimer = 0, syncDue = 0;
 // Syncing, on <html data-sync>: off (never linked, or stopped), idle between
 // syncs, syncing, or failed (it tries again later). A reply that comes back
 // after it was stopped is dropped.
@@ -5361,7 +5361,8 @@ const Sync = machine('sync', {
 }, surveyApi && playerToken && readSync() ? 'idle' : 'off', { onMove: syncMoved });
 function devicesSyncing() { return !Sync.is('off'); }
 function syncMoved(to, from) {
-  if (to === 'off') { clearTimeout(syncTimer); syncDue = 0; stopAsk = false; }
+  if (to === 'off') { clearTimeout(syncTimer); syncDue = 0; }
+  if (to === 'off' && Pair.is('stop')) Pair.go('idle');  // stopped elsewhere: nothing left to ask
   if (to === 'off' || from === 'off') renderPair();  // the linking card says whether it's on
 }
 // The next sync, in `ms` unless one's due sooner already.
@@ -5477,15 +5478,22 @@ function applySettings(c) {
     guildMoved('in', 'in');
   }
 }
+// Stopping here is at once; everywhere waits for the Worker (pair's
+// `stopping`), and its answer goes under the rows once they're back, never
+// into whatever card is open by then.
 async function stopSync(everywhere) {
+  if (!Pair.is('stop')) return;
+  if (everywhere) Pair.go('stopping');
+  const at = Pair.seq;
   writeSync(null);
   if (!Sync.is('off')) Sync.go('off');
   const { status } = everywhere ? await workerPost('/v1/player/forget', { token: playerToken }) : { status: 200 };
   if (everywhere && status === 200) try { localStorage.removeItem(K_RECOVERY); } catch (_) {}  // the Worker took the code too
   const said = status !== 200 ? 'Couldn’t reach the survey, so your other devices still sync. Try again in a moment.' : everywhere ? 'Syncing stopped on every device, and the copy kept for it is deleted, with any recovery code.' : 'Syncing stopped on this device.';
-  const el = pairCard.querySelector('.pair-note, p');  // under the rows
-  if (el) el.textContent = said;
   say(said);
+  if (everywhere && (Pair.seq !== at || !Pair.is('stopping'))) return;
+  pairNote = said;
+  if (Pair.is('stopping', 'stop')) Pair.go('idle'); else renderPair();
 }
 document.addEventListener('visibilitychange', () => { if (!document.hidden) syncSoon(500); });
 // Another tab turned it on or off.
@@ -5507,7 +5515,7 @@ if (Sync.is('idle')) syncSoon(1000);
 // same initials and guild, with mutes from both. Finds stay on the device
 // that found them. Whoever has the code becomes you, so it's only ever shown
 // here, never sent anywhere but the Worker.
-const LINK_CODE_RE = /^[A-HJKMNP-Z2-9]{8}$/, TOKEN_RE = /^[0-9a-f]{32}$/, LINK_MS = 10 * 60000, LINK_POLL_MS = 5000, K_LINKED = 'letterfield.linked';
+const LINK_CODE_RE = /^[A-HJKMNP-Z2-9]{8}$/, TOKEN_RE = /^[0-9a-f]{32}$/, LINK_MS = 10 * 60000, LINK_POLL_MS = 5000, K_LINKED = 'letterfield.linked', K_LINK_CODE = 'letterfield.linkCode.v1';
 // A recovery code: twenty characters, kept by the player, that bring this
 // surveyor back on any device with no other to hand ("A recovery code" in
 // worker/SURVEY.md). Saving one keeps a backup of the notes, as linking does.
@@ -5515,17 +5523,27 @@ const LINK_CODE_RE = /^[A-HJKMNP-Z2-9]{8}$/, TOKEN_RE = /^[0-9a-f]{32}$/, LINK_M
 const RECOVERY_RE = /^[A-HJKMNP-Z2-9]{20}$/, K_RECOVERY = 'letterfield.recovery.v1';
 let recoveryCode = '', recoveryNote = '';
 const pairCard = $('#pairCard'), pairOffer = $('#pairOffer');
-let pairCode = null;    // {code, until, gone}: the code shown here, until when by this device's clock, and whether it's run out
-let pairError = '', pairRetry = false, pairTimer = 0;
+// The link code made here, {code, until} (until when by this device's clock),
+// kept so a reload goes on watching it.
+let linkCode = (() => {
+  try {
+    const o = JSON.parse(LS.get(K_LINK_CODE) || 'null'), now = Date.now();
+    return o && LINK_CODE_RE.test(o.code) && Number.isInteger(o.until) && o.until > now && o.until <= now + LINK_MS ? { code: o.code, until: o.until } : null;
+  } catch (_) { return null; }
+})();
+let pairError = '', pairRetry = false, pairNote = '', codeTimer = 0;
 // Linking, on <html data-pair>: nothing under way (idle); a code being made,
 // shown (until it's used, runs out or is put away) and used; a code being
 // typed in; a code being redeemed, typed or from a link; done, reloading as
 // the linked surveyor; or a failure to say. A reply that comes back after the
 // player has moved on is dropped.
 // The recovery code's card is here too: open (recovery), a code being made
-// (keeping) and shown once (kept), or being removed (removing).
+// (keeping) and shown once (kept), or being removed (removing). And asking
+// where to stop syncing (stop), then waiting to hear it's stopped on every
+// device (stopping). The code itself lives on in pairCode, below, when its
+// card is put away.
 const Pair = machine('pair', {
-  idle: ['making', 'entering', 'redeeming', 'recovery'],
+  idle: ['making', 'showing', 'entering', 'redeeming', 'recovery', 'stop'],
   making: ['showing', 'failed'],
   showing: ['used', 'making', 'idle'],
   used: ['idle'],
@@ -5537,15 +5555,44 @@ const Pair = machine('pair', {
   keeping: ['kept', 'recovery'],
   kept: ['idle'],
   removing: ['recovery'],
+  stop: ['idle', 'stopping'],
+  stopping: ['idle'],
 }, 'idle', { onMove: pairMoved });
 function pairMoved(to, from) {
-  clearTimeout(pairTimer);
-  if (to === 'idle' || to === 'making') { pairCode = null; pairError = ''; }
+  if (to === 'idle' || to === 'making') pairError = '';
+  if (to !== 'idle') pairNote = '';
   if (from === 'kept') recoveryCode = '';  // shown once
   if (to === 'idle' || to === 'keeping') recoveryNote = '';
-  if (to === 'showing') pollPair();
   renderPair();
 }
+// The link code made here, on <html data-pair-code>: none, being made,
+// waiting to be used (watched in the background, card or no card, and across
+// a reload, until it's used or runs out), used or gone. Making another
+// retires it, on the Worker too. A reply about a code we've moved on from is
+// dropped.
+const PairCode = machine('pairCode', {
+  none: ['making'],
+  making: ['waiting', 'none'],
+  waiting: ['used', 'gone', 'making'],
+  used: ['making'],
+  gone: ['making'],
+}, surveyApi && playerToken && linkCode ? 'waiting' : 'none', { onMove: pairCodeMoved });
+function pairCodeMoved(to) {
+  clearTimeout(codeTimer);
+  if (to === 'waiting') LS.set(K_LINK_CODE, JSON.stringify(linkCode));
+  else try { localStorage.removeItem(K_LINK_CODE); } catch (_) {}
+  if (to === 'making') linkCode = null;
+  if (to === 'waiting') pollCode();
+  if (to === 'used') {
+    startSync(1);
+    // Its card says so if it's open; otherwise a note does, however long ago it was put away.
+    if (Pair.is('showing')) Pair.go('used');
+    else toast(`<i></i><b>Linked</b><span>Your other device plays as ${myInitials() || 'you'} now</span>`, null, 5000);
+  }
+  renderPair();
+}
+if (!linkCode) try { localStorage.removeItem(K_LINK_CODE); } catch (_) {}
+if (PairCode.is('waiting')) pollCode();  // a code made before a reload, still to be used
 // ?link=<code>: read once, then taken off the address, like a guild's invite.
 function readLinkAsked() {
   if (!surveyApi) return '';
@@ -5581,34 +5628,39 @@ async function workerPost(path, body) {
   }
 }
 async function makeCode() {
-  if (!playerToken || !Pair.is('idle', 'showing', 'failed')) return;
+  if (!playerToken || !Pair.is('idle', 'showing', 'failed') || PairCode.is('making')) return;
   Pair.go('making');
-  const at = Pair.seq;
+  PairCode.go('making');
+  const at = PairCode.seq;
   const { status, data } = await linkCall('', { token: playerToken, carry: mySettings() });
-  if (Pair.seq !== at) return;
+  if (PairCode.seq !== at) return;
   if (status === 201 && LINK_CODE_RE.test(data.code)) {
-    pairCode = { code: data.code, until: Date.now() + LINK_MS, gone: false };
-    return Pair.go('showing');
+    linkCode = { code: data.code, until: Date.now() + LINK_MS };
+    PairCode.go('waiting');
+    if (Pair.is('making')) Pair.go('showing');
+    return;
   }
+  PairCode.go('none');
   pairError = status === 429 ? 'That’s a lot of codes for one network: try again in a while.' : 'Couldn’t make a code. Try again in a moment.';
-  Pair.go('failed');
+  if (Pair.is('making')) Pair.go('failed');
 }
-// While a code's shown, ask now and then whether it's been used, until it runs out.
-function pollPair() {
-  clearTimeout(pairTimer);
-  const code = pairCode, at = Pair.seq;
-  if (!Pair.is('showing') || !code || code.gone) return;
-  pairTimer = setTimeout(async () => {
-    if (Pair.seq !== at) return;
-    if (Date.now() >= code.until) { code.gone = true; return renderPair(); }
+// While a code waits, ask now and then whether it's been used, until it runs
+// out: with its card open or put away, but not while the page is hidden.
+function pollCode() {
+  clearTimeout(codeTimer);
+  const at = PairCode.seq;
+  if (!PairCode.is('waiting') || !linkCode) return;
+  codeTimer = setTimeout(async () => {
+    if (PairCode.seq !== at) return;
+    if (Date.now() >= linkCode.until) return PairCode.go('gone');
     if (!document.hidden) {
-      const { status, data } = await linkCall(`/${code.code}/status`, { token: playerToken });
-      if (Pair.seq !== at) return;
-      if (status === 200 && data.state === 'used') { startSync(1); return Pair.go('used'); }
-      if (status === 200 && data.state === 'gone') { code.gone = true; return renderPair(); }
+      const { status, data } = await linkCall(`/${linkCode.code}/status`, { token: playerToken });
+      if (PairCode.seq !== at) return;
+      if (status === 200 && data.state === 'used') return PairCode.go('used');
+      if (status === 200 && data.state === 'gone') return PairCode.go('gone');
     }
-    renderPair();
-    pollPair();
+    if (Pair.is('showing')) renderPair();  // the minutes left
+    pollCode();
   }, LINK_POLL_MS);
 }
 async function redeemCode(code) {
@@ -5648,6 +5700,7 @@ async function takeLink(token, c) {
     await guildCall(`/${mine.code}/leave`, { token: old });
   }
   LS.set(K_PLAYER, token);
+  try { localStorage.removeItem(K_LINK_CODE); } catch (_) {}  // a code made here was for the self it leaves
   if (initials) LS.set(K_INITIALS, JSON.stringify(initials));
   saveGuild(guild, true);
   const theirs = Array.isArray(c.muted) ? c.muted.filter(p => typeof p === 'string' && PID_RE.test(p)) : [];
@@ -5665,6 +5718,7 @@ async function takeLink(token, c) {
 // self leaves its guild, since it won't be back.
 async function takeRecovered(token, made) {
   const old = playerToken;
+  try { localStorage.removeItem(K_LINK_CODE); } catch (_) {}  // a code made here was for the self it leaves
   if (token !== old) {
     if (myGuild) await guildCall(`/${myGuild.code}/leave`, { token: old });
     LS.set(K_PLAYER, token);
@@ -5721,8 +5775,8 @@ function keepRecovery(how) {
   navigator.clipboard.writeText(code).then(() => done('Copied.'), () => done(code));
 }
 async function sharePairLink() {
-  if (!pairCode) return;
-  const url = pairUrl(pairCode.code);
+  if (!linkCode) return;
+  const url = pairUrl(linkCode.code);
   const done = text => { const el = $('#pairSaid'); if (el) el.textContent = text; say(text); };
   try {
     if (navigator.share && matchMedia('(pointer: coarse)').matches) { await navigator.share({ title: 'Letterfield', text: 'Link a device to my surveyor', url }); return; }
@@ -5776,7 +5830,7 @@ function renderPair() {
   const busy = st === 'redeeming';
   let html = '';  // while a link's offer is over the map, it's the one card about linking
   if (offering) { /* nothing here */ }
-  else if (st === 'idle' && stopAsk && devicesSyncing()) {
+  else if (st === 'stop') {
     // A choice between things to do, so rows, as the drawer's other choices are; then a way out.
     const made = Number(LS.get(K_RECOVERY)) || 0;
     html = '<p class="pair-ask">Stop syncing where? Each device keeps its notes as they are.</p>' +
@@ -5784,6 +5838,7 @@ function renderPair() {
       `<button type="button" class="you-item danger" data-p="stop-all"><span>Every device<small>Also deletes the copy kept for syncing${made ? ', and your recovery code' : ''}</small></span></button></div>` +
       '<div class="pair-acts pair-keep"><button type="button" class="btn ghost" data-p="stop-no">Keep syncing</button></div>';
   }
+  else if (st === 'stopping') html = '<p class="pair-ask" role="status">Stopping syncing on every device…</p>';
   else if (st === 'idle') {
     // Each thing to do, named for what it does. Whether this surveyor's notes are
     // backed up shows once, on the row that stops it (or, while it's off, by the
@@ -5792,7 +5847,7 @@ function renderPair() {
     html = `<div class="group"><button type="button" class="you-item" data-p="make"><span>Link another device<small>Play as the same surveyor on each</small></span>${CHEV}</button>` +
       `<button type="button" class="you-item" data-p="enter"><span>I have a code<small>From another device, or one you saved</small></span>${CHEV}</button>` +
       `<button type="button" class="you-item" data-p="recovery"><span>Recovery code<small>${made ? `Saved ${new Date(made).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' })}` : 'Not saved: one brings you back if this device is lost'}</small></span>${CHEV}</button>` +
-      `${on ? '<button type="button" class="you-item danger" data-p="stop"><span>Stop syncing<small>Your notes and settings are backed up</small></span></button>' : ''}</div><p class="pair-note" aria-live="polite"></p>`;
+      `${on ? '<button type="button" class="you-item danger" data-p="stop"><span>Stop syncing<small>Your notes and settings are backed up</small></span></button>' : ''}</div><p class="pair-note" aria-live="polite">${pairNote}</p>`;
   }
   else if (st === 'recovery' || st === 'keeping' || st === 'removing') {
     const made = Number(LS.get(K_RECOVERY)) || 0, busy = st !== 'recovery';
@@ -5801,10 +5856,10 @@ function renderPair() {
       : '<p>A recovery code brings this surveyor back on any device, even if this one is lost or its storage cleared: your initials, guild and field notes. Saving one keeps a backup of your notes for it.</p>'}${recoveryNote ? `<p>${recoveryNote}</p>` : ''}${err}<div class="pair-acts"><button type="button" class="btn" data-p="keep"${busy ? ' disabled' : ''}>${st === 'keeping' ? 'Making…' : made ? 'Make a new one' : 'Make one'}</button>${made ? `<button type="button" class="btn danger" data-p="unkeep"${busy ? ' disabled' : ''}>${st === 'removing' ? 'Removing…' : 'Remove it'}</button>` : ''}<button type="button" class="btn ghost" data-p="close"${busy ? ' disabled' : ''}>Close</button></div></div>`;
   } else if (st === 'kept') html = `<div class="pair-box"><p class="eyebrow">Your recovery code</p><b class="pair-code pair-recovery" id="recoveryCode">${inFours(recoveryCode)}</b><p>Keep it somewhere safe, like a password manager: it won’t be shown again. To be this surveyor on any device, enter it there under <b>I have a code</b>.</p><p>Whoever has it can play as you. If it gets out, make a new one here, and this one stops working.</p><div class="pair-acts"><button type="button" class="btn ghost" data-p="copy-recovery">Copy</button><button type="button" class="btn ghost" data-p="file-recovery">Save as a file</button><button type="button" class="btn" data-p="close">Done</button></div><p class="pair-small" id="pairSaid" aria-live="polite"></p></div>`;
   else if (st === 'making') html = `<div class="pair-box"><p class="eyebrow">Link another device</p><p>Making a code…</p></div>`;
-  else if (st === 'showing' && pairCode && pairCode.gone) html = `<div class="pair-box"><p class="eyebrow">Link another device</p><p>That code has run out.</p><div class="pair-acts"><button type="button" class="btn" data-p="make">New code</button><button type="button" class="btn ghost" data-p="close">Close</button></div></div>`;
-  else if (st === 'showing' && pairCode) {
+  else if (st === 'showing' && PairCode.is('gone')) html = `<div class="pair-box"><p class="eyebrow">Link another device</p><p>That code has run out.</p><div class="pair-acts"><button type="button" class="btn" data-p="make">New code</button><button type="button" class="btn ghost" data-p="close">Close</button></div></div>`;
+  else if (st === 'showing' && linkCode) {
     const share = navigator.share && matchMedia('(pointer: coarse)').matches ? 'Share link' : 'Copy link';
-    html = `<div class="pair-box"><p class="eyebrow">Link another device</p><div class="pair-qr" id="pairQr"></div><p>Scan this with the other device’s camera, or open Letterfield there and choose <b>I have a code</b>:</p><b class="pair-code" id="pairCode">${showCode(pairCode.code)}</b><p class="pair-left" id="pairLeft"></p><p>Whoever uses it plays as you, so keep it to your own devices. It brings your initials, guild and mutes, and from then on your field notes keep in step on both.</p><div class="pair-acts"><button type="button" class="btn ghost" data-p="share">${share}</button><button type="button" class="btn" data-p="close">Done</button></div><p class="pair-small" id="pairSaid" aria-live="polite"></p><p class="pair-small">On an iPhone, a Home Screen app keeps its own storage: type the code in there.</p></div>`;
+    html = `<div class="pair-box"><p class="eyebrow">Link another device</p><div class="pair-qr" id="pairQr"></div><p>Scan this with the other device’s camera, or open Letterfield there and choose <b>I have a code</b>:</p><b class="pair-code" id="pairCode">${showCode(linkCode.code)}</b><p class="pair-left" id="pairLeft"></p><p>Whoever uses it plays as you, so keep it to your own devices. It brings your initials, guild and mutes, and from then on your field notes keep in step on both.</p><div class="pair-acts"><button type="button" class="btn ghost" data-p="share">${share}</button><button type="button" class="btn" data-p="close">Done</button></div><p class="pair-small" id="pairSaid" aria-live="polite"></p><p class="pair-small">On an iPhone, a Home Screen app keeps its own storage: type the code in there.</p></div>`;
   } else if (st === 'used') html = `<div class="pair-box"><p><b>Linked.</b> Your other device plays as ${myInitials() || 'you'} now.</p><div class="pair-acts"><button type="button" class="btn" data-p="close">Done</button></div></div>`;
   else if (st === 'entering' || st === 'redeeming') html = `<form class="pair-box pair-enter" id="pairEnter"><label for="pairInput">The code from your other device, under <b>Link another device</b> there, or your recovery code</label><input id="pairInput" maxlength="24" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="ABCD-EFGH"${busy ? ' disabled' : ''}><button type="submit" class="btn"${busy ? ' disabled' : ''}>${busy ? 'Linking…' : 'Link'}</button><button type="button" class="btn ghost" data-p="close"${busy ? ' disabled' : ''}>Cancel</button>${err}<p class="pair-small">This device then plays as that surveyor, with their initials and guild, and field notes from both, kept in step.</p></form>`;
   else if (st === 'failed') html = `<div class="pair-box">${err}<div class="pair-acts"><button type="button" class="btn" data-p="make">Try again</button><button type="button" class="btn ghost" data-p="close">Close</button></div></div>`;
@@ -5822,9 +5877,9 @@ function renderPair() {
     if ($('#pairInput')) $('#pairInput').value = typed;
     if (k) { const el = pairCard.querySelector(`[data-p="${k}"]`) || (k === 'pairInput' && $('#pairInput')) || pairCard.querySelector('button, input'); if (el && !el.disabled) try { el.focus({ preventScroll: true }); } catch (_) {} }
   }
-  if (st === 'showing' && pairCode && !pairCode.gone) {
-    drawQr($('#pairQr'), pairUrl(pairCode.code));
-    const m = Math.max(1, Math.ceil((pairCode.until - Date.now()) / 60000));
+  if (st === 'showing' && PairCode.is('waiting') && linkCode) {
+    drawQr($('#pairQr'), pairUrl(linkCode.code));
+    const m = Math.max(1, Math.ceil((linkCode.until - Date.now()) / 60000));
     $('#pairLeft').textContent = `Good for ${m} more minute${m === 1 ? '' : 's'}, once`;
   }
   if (offering) {
@@ -5845,7 +5900,8 @@ function onPairClick(e) {
   const b = e.target.closest('button[data-p]');
   if (!b || b.disabled) return;
   const p = b.dataset.p;
-  if (p === 'make') makeCode();
+  if (p === 'make' && Pair.is('idle') && PairCode.is('waiting')) Pair.go('showing');  // the code still waiting, again
+  else if (p === 'make') makeCode();
   else if (p === 'enter' && Pair.is('idle')) { Pair.go('entering'); try { $('#pairInput').focus({ preventScroll: true }); } catch (_) {} }
   else if (p === 'share') sharePairLink();
   else if (p === 'close' && Pair.is('showing', 'used', 'entering', 'failed', 'recovery', 'kept')) Pair.go('idle');
@@ -5855,7 +5911,8 @@ function onPairClick(e) {
   else if (p === 'copy-recovery' || p === 'file-recovery') keepRecovery(p === 'file-recovery' ? 'file' : 'copy');
   else if (p === 'link' && Intro.is('link')) redeemCode(linkAsked);
   else if (p === 'not-now') leaveOffer();
-  else if (p === 'stop' || p === 'stop-no') { stopAsk = p === 'stop'; renderPair(); try { pairCard.querySelector(stopAsk ? 'button' : '[data-p="stop"]').focus({ preventScroll: true }); } catch (_) {} }
+  else if (p === 'stop' && Pair.is('idle') && devicesSyncing()) { Pair.go('stop'); try { pairCard.querySelector('button').focus({ preventScroll: true }); } catch (_) {} }
+  else if (p === 'stop-no' && Pair.is('stop')) { Pair.go('idle'); try { pairCard.querySelector('[data-p="stop"]').focus({ preventScroll: true }); } catch (_) {} }
   else if (p === 'stop-here' || p === 'stop-all') stopSync(p === 'stop-all');
 }
 pairCard.addEventListener('click', onPairClick);
@@ -5877,7 +5934,7 @@ pairCard.addEventListener('submit', e => {
   redeemCode(code);
 });
 pairCard.addEventListener('keydown', e => {
-  if (e.key !== 'Escape' || !Pair.is('showing', 'used', 'entering', 'failed', 'recovery', 'kept')) return;
+  if (e.key !== 'Escape' || !Pair.is('showing', 'used', 'entering', 'failed', 'recovery', 'kept', 'stop')) return;
   e.stopPropagation();
   Pair.go('idle');
   try { pairCard.querySelector('button').focus({ preventScroll: true }); } catch (_) {}
@@ -5960,7 +6017,7 @@ invalidate();
 if (redrawn) setTimeout(() => toast(`<i></i><b>The map has been redrawn</b><span>${NT} themes of about ${Math.round(THEMES.reduce((a, t) => a + t.words.length, 0) / NT / 10) * 10} words now, so a territory never repeats one · ${redrawn.kept ? `${redrawn.kept} of your ${redrawn.had} finds are still on it` : 'your old finds are not on it'}</span>`, null, 8000), 900);
 if (location.hash === '#debug') window.__lf = { cam, found, claims, links, chunk, wordEnd, collect, territoryProgress, remnants: () => [...remnants().set], novas: () => [...novasSeen.values()], territoryName: regionName, world: () => world, supernova, novaSound, audioOut, musicTracks: MUSIC_TRACKS, audio: () => ac, music: () => musicNow && { state: ac.state, track: musicNow.track().name, nodes: musicNow.track().nodes.size, level: musicNow.master.gain.value, master: musicNow.master, volume: musicVol, target: musicLevel(), swap: musicNow.swap }, nova: () => nova, novaWave: () => nova && novaLast && { cx: novaLast.cx, cy: novaLast.cy, R: novaLast.R || 0, amp: novaLast.amp, virtual: novaLast.virtual }, distantAt: v => { distantAt = v; },
   who: () => Who.state, surveyors: () => whoData, people: () => peopleOpen, peoplePage: () => PeoplePage.state, emoteMotion, guild: () => Membership.state, myGuild: () => myGuild, mates: () => [...mates.keys()], roster: () => roster,
-  pair: () => Pair.state, pairCode: () => pairCode && pairCode.code, recoveryCode: () => recoveryCode, sync: () => Sync.state, syncNow: () => { syncDue = 0; clearTimeout(syncTimer); return syncNow(); },
+  pair: () => Pair.state, pairCode: () => linkCode && linkCode.code, linkCodeState: () => PairCode.state, recoveryCode: () => recoveryCode, sync: () => Sync.state, syncNow: () => { syncDue = 0; clearTimeout(syncTimer); return syncNow(); },
   guildWords: () => [GUILD_FIRST.length, GUILD_SECOND.length, GUILD_THIRD.length], pops: () => pops.map(p => [p.pid, p.e]), pid: () => myPid, muted: () => [...muted], carets: () => [...ghosts.keys()],
   caretXY: id => { const gh = ghosts.get(id); return gh && { x: (Math.round(gh.x) - cam.x) * cam.cs + (W - dock) / 2, y: (Math.floor(gh.y) + .5 - cam.y) * cam.cs + H / 2 + mapTop }; },
   pass: () => Pass.state, intro: () => Intro.state, surveyStatus, linkStates: () => Object.fromEntries([...links].map(([k, l]) => [k, l.m.state])), outbox: () => [...outbox.values()].map(c => [c.e.w, c.m.state]), definitions: () => Object.fromEntries([...definitions].map(([k, d]) => [k, d.m.state])) };
