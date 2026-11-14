@@ -2097,7 +2097,8 @@ function offerShare(run, c) {
 
 // The view on screen as the share Worker's address (share/src/view.js): its
 // period pinned by its first day here and the UTC hours it covers, which are
-// the hours this page asks the log for, so the card counts what the page did.
+// the hours this page asks the log for, so the card counts what the page did,
+// and a guild's name as ?name=.
 // A dark page shares the dark card.
 function viewPath() {
   const f = state.focus;
@@ -2107,9 +2108,12 @@ function viewPath() {
   if (f.kind === 'territory') return `/v/${dark}territory/${f.rx},${f.ry}`;
   // Supernovas have no key: their card is the period's.
   const base = f.kind === 'novas' ? `/v/${dark}novas` : `/v/${dark}${f.kind}/${f.key}`, { period: p, start: s } = state;
-  if (p === 'all') return `${base}/all`;
+  // A guild's name goes with it, so a guild the log has no word from yet is
+  // still named on its card and the page it sends people to.
+  const n = f.kind === 'guild' ? guildNumbers(f) : null, name = n ? `?name=${n.join('-')}` : '';
+  if (p === 'all') return `${base}/all${name}`;
   const hour = p === 'hour' ? 'T' + String(new Date(s).getHours()).padStart(2, '0') : '';
-  return `${base}/${p}/${isoDay(s)}${hour}/${fdiv(s, HOUR)}-${fdiv(endOf(p, s) - 1, HOUR) + 1}`;
+  return `${base}/${p}/${isoDay(s)}${hour}/${fdiv(s, HOUR)}-${fdiv(endOf(p, s) - 1, HOUR) + 1}${name}`;
 }
 
 // The picture: the page's own colours and type, on a card the size link

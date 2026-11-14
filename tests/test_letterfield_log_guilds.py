@@ -70,7 +70,7 @@ def test_top_guilds_open_a_guilds_own_view_with_an_address_to_share(page: Page, 
     assert page.evaluate("window.__copied") == (
         "The Cobalt Compass Society charted 3 words first in Letterfield’s shared survey this week, most in Acorn Hollow."
         " Latest: BIRCH, FERN, OAK."
-        f"\nhttps://share.michaelwarkentin.com/v/guild/{COBALT}/week/2026-11-02/{week}-{week + 7 * 24}"
+        f"\nhttps://share.michaelwarkentin.com/v/guild/{COBALT}/week/2026-11-02/{week}-{week + 7 * 24}?name=11-0-0"
     )
     # A member's initials open their own view, as anywhere in the log.
     page.locator(".card", has_text="Members who charted most").get_by_role("link", name="ZED").click()
@@ -122,6 +122,21 @@ def test_a_new_guilds_page_is_named_from_its_address(page: Page, site_url, error
     )
     # Its timelapse would have nothing to play, so the link waits for a first word.
     expect(page.locator("#timelapseLink")).to_be_hidden()
+    assert errors == []
+
+
+def test_a_new_guild_shares_its_name_with_its_card(page: Page, site_url, errors):
+    # The share Worker can't learn a guild's name from the log until it has a word, so the link carries it.
+    fake = FakeSurveyLog([ACORN], PLACES, THEMES, guilds={})
+    page.add_init_script(NO_SHARE_SHEET)
+    open_log(page, site_url, fake, query=f"&guild={COBALT}&name=11-0-0#debug")
+    expect(page.locator(".status")).to_contain_text("The Cobalt Compass Society hasn’t charted a word yet.")
+    page.wait_for_function("window.__log.share()?.run === window.__log.state.run")
+    page.click("#share")
+    expect(page.locator("#share")).to_have_text("Copied")
+    assert page.evaluate("window.__copied").endswith(
+        f"\nhttps://share.michaelwarkentin.com/v/guild/{COBALT}/all?name=11-0-0"
+    )
     assert errors == []
 
 

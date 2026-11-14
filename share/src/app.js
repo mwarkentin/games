@@ -40,7 +40,7 @@ export async function handle(request, env, ctx, render) {
   if (request.method !== 'GET' && request.method !== 'HEAD') return new Response('method not allowed', { status: 405 });
   if (url.pathname === '/') return Response.redirect(`${site(env)}/letterfield`, 302);
   if (url.pathname.startsWith('/v/')) {
-    const v = parseView(url.pathname);
+    const v = parseView(url.pathname, Date.now(), url.search);
     if (!v) return new Response('not found', { status: 404 });
     return v.png ? viewImage(request, env, ctx, render, v) : viewPage(request, env, ctx, v);
   }
@@ -269,8 +269,9 @@ export async function logOf(env, v, now = Date.now()) {
   if (v.kind === 'novas') return a && Array.isArray(a.novas) && Number.isInteger(a.count) ? summarize(v, a, now) : null;
   if (!a || !Array.isArray(a.entries)) return null;
   if (v.kind === 'territory' ? !(Number.isInteger(a.charted) && Number.isInteger(a.total)) : !(Number.isInteger(a.words) && Number.isInteger(a.world))) return null;
-  // A guild the log has no name for has no card: the game's own preview stands in.
-  if (v.kind === 'guild' && typeof a.name !== 'string') return null;
+  // A guild the log has no name for, and whose address gives none, has no card:
+  // the game's own preview stands in.
+  if (v.kind === 'guild' && typeof a.name !== 'string' && !v.named) return null;
   // A territory the log doesn't know has gone supernova may have done so in
   // the last half minute: its sector knows. One with nothing charted can't
   // have, so its sector isn't woken.
@@ -283,19 +284,21 @@ export async function logOf(env, v, now = Date.now()) {
 
 const viewSlug = (v) => (v.kind === 'territory' ? `territory/${v.rx},${v.ry}`
   : `${v.kind === 'novas' ? 'novas' : `${v.kind}/${v.key}`}/${v.period === 'all' ? 'all' : `${v.period}/${v.y}-${String(v.mo).padStart(2, '0')}-${String(v.d).padStart(2, '0')}${v.period === 'hour' ? `T${String(v.h).padStart(2, '0')}` : ''}/${v.from}-${v.to}`}`);
+// A guild's name in its address, kept on its card's address and its page's.
+const named = (v) => (v.named ? `name=${v.named.join('-')}` : '');
 
 async function viewPage(request, env, ctx, v) {
   const cache = await edgeCache();
-  const url = new URL(request.url), key = new Request(url.origin + url.pathname);
+  const url = new URL(request.url), self = url.origin + url.pathname + (named(v) ? `?${named(v)}` : ''), key = new Request(self);
   const hit = await cache?.match(key);
   if (hit) return hit;
   const s = await logOf(env, v);
   const { name } = s ?? nameOf(v);
   const title = `${name} · Letterfield survey log`;
   const description = s ? s.line : 'Every word charted in Letterfield’s shared survey: what, where, by whom and when.';
-  const image = s ? `${url.origin}/v/${v.dark ? 'd/' : ''}${viewSlug(v)}.png?s=${encodeURIComponent(s.token)}` : `${site(env)}/previews/letterfield.jpg`;
+  const image = s ? `${url.origin}/v/${v.dark ? 'd/' : ''}${viewSlug(v)}.png?${named(v) ? `${named(v)}&` : ''}s=${encodeURIComponent(s.token)}` : `${site(env)}/previews/letterfield.jpg`;
   const alt = !s ? 'Letterfield' : v.kind === 'novas' ? 'Supernovas in Letterfield\'s survey log' : `${name}'s page of Letterfield's survey log`;
-  return htmlPage({ title, description, image, alt, png: !!s, self: url.origin + url.pathname, target: `${site(env)}${pagePath(v, s?.name)}`, linkText: `Open ${name} in Letterfield's survey log` }, cache, key, ctx);
+  return htmlPage({ title, description, image, alt, png: !!s, self, target: `${site(env)}${pagePath(v, s?.name)}`, linkText: `Open ${name} in Letterfield's survey log` }, cache, key, ctx);
 }
 
 async function viewImage(request, env, ctx, render, v) {

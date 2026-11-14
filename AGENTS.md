@@ -387,8 +387,9 @@ behind it, and `share/README.md` how it works.
   addresses pin the period by its first day and its UTC hours, so the page's
   `viewPath()` and `share/src/view.js` must agree. The Supernovas card
   (`/v/novas/…`) counts the period's supernovas from `/v1/survey/log/novas/…`
-  and shows the latest ones' last words; a guild's card page passes the
-  guild's name on to the log (`?name=`), so the page names it at once.
+  and shows the latest ones' last words. A guild's name rides along as
+  `?name=<a>-<b>-<c>` on its `/v/` address and on the link to its page, so a
+  guild with no words yet, which the log has no name for, is still named.
 - The Worker checks the word is on the map with `worker/src/`'s own code,
   asks the word's sector who charted it and the Atlas how much of the shared
   map is charted (internal paths on the leaderboard Worker's Durable

@@ -9,6 +9,8 @@
 //   /v/territory/<rx>,<ry>                               a territory, all time
 //   /v/novas/<period>/<when>/<from>-<to>, /v/novas/all   the supernovas of a period, or all time
 //   /v/d/…  the dark card; ….png the card itself
+//   ?name=<a>-<b>-<c>  on a guild's: its name as three word numbers, for a
+//                      guild the log has no word (so no name) from yet
 //
 // A period is pinned to where it starts in the sharer's own time zone: <when>
 // is its first day there (YYYY-MM-DD, with Thh for an hour), which names it on
@@ -17,7 +19,7 @@
 // its link on Friday, wherever it's opened.
 
 import { THEMES, regionName, regionTheme } from '../../worker/src/letterfield-world.js';
-import { GUILD_FIRST, GUILD_SECOND, GUILD_THIRD } from '../../worker/src/survey-guild.js';
+import { GUILD_FIRST, GUILD_SECOND, GUILD_THIRD, goodName, guildHue, guildName } from '../../worker/src/survey-guild.js';
 import { H, PALETTES, W, fit, measure, text } from './card.js';
 import { novaSvg } from './nova.js';
 
@@ -61,7 +63,15 @@ function wall(period, y, m, d, h) {
 // The view an address names, or null for one that doesn't name a real one:
 // a date that isn't one, a week that doesn't start on a Monday, or hours that
 // can't be that period in any time zone (UTC-12 to UTC+14).
-export function parseView(pathname, now = Date.now()) {
+// A guild's name from its address, ?name=<a>-<b>-<c>, as the log page's own
+// address carries it: three word numbers, each in its list's range, or null.
+export function namedFrom(search) {
+  const m = /^(\d{1,2})-(\d{1,2})-(\d{1,2})$/.exec(new URLSearchParams(search ?? '').get('name') ?? '');
+  const n = m && [1, 2, 3].map((i) => Number(m[i]));
+  return goodName(n) ? n : null;
+}
+
+export function parseView(pathname, now = Date.now(), search = '') {
   const t = TERRITORY_PATH.exec(pathname);
   if (t) return { kind: 'territory', rx: Number(t[2]), ry: Number(t[3]), dark: !!t[1], png: !!t[4], period: 'all' };
   const n = NOVAS_PATH.exec(pathname);
@@ -72,6 +82,7 @@ export function parseView(pathname, now = Date.now()) {
   const view = { kind: m[2], key: m[2] === 'theme' ? Number(m[3]) : m[3] };
   if (view.kind === 'theme' && !(view.key < THEMES.length)) return null;
   Object.assign(view, { dark: !!m[1], png: !!m[12] });
+  if (view.kind === 'guild') view.named = namedFrom(search);
   return pinned(view, m.slice(4, 12), now);
 }
 
@@ -131,10 +142,11 @@ export function logPaths(v, span, now = Date.now()) {
 }
 
 // The view's name, and its theme's hue where it has one, known without asking.
-// A guild's is only known from the log's answer (summarize).
+// A guild's comes from the log's answer (summarize), or from its address
+// while the log has no word from it.
 export function nameOf(v) {
   if (v.kind === 'surveyor') return { name: v.key };
-  if (v.kind === 'guild') return { name: 'A guild' };
+  if (v.kind === 'guild') return v.named ? { name: guildName(v.named), hue: guildHue(v.named) } : { name: 'A guild' };
   if (v.kind === 'novas') return { name: 'Supernovas' };
   if (v.kind === 'theme') return { name: THEMES[v.key].name, hue: THEMES[v.key].hue };
   const th = regionTheme(v.rx, v.ry);

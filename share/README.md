@@ -107,6 +107,7 @@ GET /v/surveyor/<initials>/all, /v/theme/<th>/all        all time (and /v/guild/
 GET /v/territory/<rx>,<ry>                               a territory (all time), a supernova once it's gone off
 GET /v/novas/<period>/<when>/<from>-<to>, /v/novas/all   the Supernovas tab: a period's supernovas, or all time's
 GET /v/d/…, ….png                                        dark; the card itself
+?name=<a>-<b>-<c>                                        on a guild's: its name, for a guild with no words yet
 ```
 
 - **Pinned:** `<period>` is `hour`, `day`, `week`, `month` or `year`;
@@ -132,7 +133,9 @@ GET /v/d/…, ….png                                        dark; the card itse
   The page sends people on to `/letterfield-log?supernovas` for that period.
 - **A guild's page** sends people to the guild's page in the log with its
   name as `?name=<a>-<b>-<c>` (its three word numbers), so the page names it
-  before the log answers.
+  before the log answers. The log page's Share adds the same `?name=` to a
+  guild's `/v/` address, and the card uses it, checked against the word
+  lists, while the log has no word (so no name) from the guild.
 - **A supernova** has a card of its own (`src/nova.js`): a territory whose
   every hidden word is charted, drawn as the game's supernova just after
   the burst, in the territory theme's hue. A white-hot core with a cross of

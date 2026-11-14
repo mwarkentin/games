@@ -341,3 +341,23 @@ describe('the Supernovas page', () => {
     assert.ok(renders.at(-1).includes('>SUPERNOVAS<') && renders.at(-1).includes('>OAK<'));
   });
 });
+
+describe('a new guild\'s page', () => {
+  test('is named from its address while the log has no word from it, and passes the name on', async () => {
+    const env = {
+      SITE_URL: SITE,
+      LOG: { fetch: async () => Response.json({ words: 0, world: 0, hours: [], entries: [], themes: {} }) },
+    };
+    const html = await (await get('/v/guild/c0ba17c0ba/all?name=11-0-0', env)).text();
+    assert.equal(meta(html, 'og:title'), 'Cobalt Compass Society · Letterfield survey log');
+    assert.equal(meta(html, 'og:description'), 'The Cobalt Compass Society charted no words in Letterfield’s shared survey so far.');
+    assert.equal(meta(html, 'og:url'), 'https://share.test/v/guild/c0ba17c0ba/all?name=11-0-0');
+    assert.match(meta(html, 'og:image'), /^https:\/\/share\.test\/v\/guild\/c0ba17c0ba\/all\.png\?name=11-0-0&s=/);
+    assert.match(html, /url=https:\/\/games\.test\/letterfield-log\?guild=c0ba17c0ba&amp;name=11-0-0">/);
+    await get(meta(html, 'og:image').replace('https://share.test', ''), env);
+    assert.ok(renders.at(-1).includes('>COBALT COMPASS SOCIETY<'));
+    // A name out of range names nothing: no card, and "A guild".
+    const bad = await (await get('/v/guild/c0ba17c0ba/all?name=16-0-0', env)).text();
+    assert.equal(meta(bad, 'og:title'), 'A guild · Letterfield survey log');
+  });
+});
