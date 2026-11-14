@@ -101,6 +101,16 @@ def test_pauses_scrubs_and_counts_what_was_charted_by_then(page: Page, site_url,
     supernova_at = WORDS[11][6]
     page.evaluate("__tl.seek(0)")
     expect(page.locator("#nWords")).to_have_text("1")
+    # One of each says so.
+    counts = page.locator(".counts")
+    expect(counts).to_contain_text("1word charted")
+    expect(counts).to_contain_text("0supernovas")
+    expect(counts).to_contain_text("1territory")
+    page.evaluate("__tl.seek(1)")
+    expect(counts).to_contain_text("22words charted")
+    expect(counts).to_contain_text("1supernova")
+    expect(counts).to_contain_text("3territories")
+    page.evaluate("__tl.seek(0)")
     # Keys work from anywhere but a control, which keeps its own.
     page.evaluate("document.activeElement.blur()")
     page.keyboard.press("End")
@@ -151,8 +161,14 @@ def test_starts_before_every_day_has_arrived_and_waits_for_the_rest(page: Page, 
     expect(html).to_have_attribute("data-tl", "waiting")
     expect(page.locator("#loadedNote")).to_have_text("Loading…")
     expect(page.locator("#nWords")).to_have_text("18")
+    # Over the map, the day it waits for, under a Pause button, since it carries on by itself.
+    expect(page.locator("#status")).to_be_visible()
+    expect(page.locator("#statusTitle")).to_have_text("Waiting for Nov 6…")
+    expect(page.locator("#retry")).to_be_hidden()
+    expect(page.locator("#play")).to_have_attribute("aria-label", "Pause")
     held.release()
     expect(html).not_to_have_attribute("data-tl", "waiting")
+    expect(page.locator("#status")).to_be_hidden()
     expect(page.locator("#nWords")).to_have_text("22")
     expect(page.locator("#loadedNote")).to_have_text("")
     assert errors == []
@@ -282,6 +298,17 @@ def test_starts_paused_on_the_whole_map_with_reduced_motion(page: Page, site_url
     assert errors == []
 
 
+def tap_territory_0_0(page: Page) -> None:
+    """Tap the middle of territory 0,0, where the camera puts it."""
+    x, y = page.evaluate("""() => {
+      const c = __tl.cam, s = c.s / Math.min(devicePixelRatio || 1, 2);
+      const top = document.querySelector('#top').getBoundingClientRect(), panel = document.querySelector('#panel').getBoundingClientRect();
+      const vx = 10, vy = top.bottom - 10, vw = innerWidth - 20, vh = panel.top - vy - 10;
+      return [vx + vw / 2 + (24 - c.x) * s, vy + vh / 2 + (24 - c.y) * s];
+    }""")
+    page.mouse.click(x, y)
+
+
 def test_a_tapped_territory_links_to_its_page_in_the_log(page: Page, site_url, errors):
     page.set_viewport_size({"width": 375, "height": 740})
     fake = fake_log()
@@ -290,24 +317,51 @@ def test_a_tapped_territory_links_to_its_page_in_the_log(page: Page, site_url, e
     page.locator("#play").click()
     page.locator("#scrub").fill("1000")
     page.wait_for_timeout(100)
-    # The middle of territory 0,0, where the camera puts it.
-    x, y = page.evaluate("""() => {
-      const c = __tl.cam, s = c.s / Math.min(devicePixelRatio || 1, 2);
-      const top = document.querySelector('#top').getBoundingClientRect(), panel = document.querySelector('#panel').getBoundingClientRect();
-      const vx = 10, vy = top.bottom - 10, vw = innerWidth - 20, vh = panel.top - vy - 10;
-      return [vx + vw / 2 + (24 - c.x) * s, vy + vh / 2 + (24 - c.y) * s];
-    }""")
-    page.mouse.click(x, y)
+    tap_territory_0_0(page)
     chip = page.locator("#chip")
     expect(chip).to_be_visible()
     expect(page.locator("#chipName")).to_have_text("Acorn Hollow")
-    expect(page.locator("#chipNote")).to_contain_text("12 hidden words charted by then · gone supernova")
+    # What was charted by the timelapse's date, then what's charted now.
+    expect(page.locator("#chipNote")).to_have_text("12 hidden words charted by Nov 6 · gone supernova · 12 of 12 now")
     expect(page.locator("#chipLink")).to_have_attribute(
         "href", f"/letterfield-log?territory=0,0&survey={SURVEY.replace(':', '%3A').replace('/', '%2F')}"
     )
     page.keyboard.press("Escape")
     expect(chip).to_be_hidden()
     assert errors == []
+
+
+def test_a_territory_is_named_by_its_theme_until_the_log_names_it(page: Page, site_url, errors):
+    page.set_viewport_size({"width": 375, "height": 740})
+    fake = fake_log()
+    held = Held(fake, lambda r: "/log/territory/" in r.url)
+    open_timelapse(page, site_url, fake, held.handle)
+    page.wait_for_function("__tl.loaded.days === 3")
+    page.locator("#play").click()
+    # The morning of Nov 5, after the territory's first eleven words.
+    page.evaluate(
+        f"(() => {{ for (let f = 0; f <= 1; f += 0.001) {{ __tl.seek(f); if (__tl.time >= {WORDS[10][6]}) return; }} }})()"
+    )
+    page.wait_for_timeout(100)
+    tap_territory_0_0(page)
+    held.wait_for(page)
+    name, note = page.locator("#chipName"), page.locator("#chipNote")
+    expect(name).to_have_text("A Forest territory")
+    expect(note).to_have_text("11 hidden words charted by Nov 5")
+    # The log can't be reached: it keeps its theme's name.
+    held.routes.pop(0).fulfill(status=503, headers={"Access-Control-Allow-Origin": "*"}, body="{}")
+    page.wait_for_timeout(200)
+    expect(name).to_have_text("A Forest territory")
+    expect(note).to_have_text("11 hidden words charted by Nov 5")
+    # Tapped again, it answers with the territory's name and what's charted now.
+    page.keyboard.press("Escape")
+    tap_territory_0_0(page)
+    held.wait_for(page)
+    held.release()
+    expect(name).to_have_text("Acorn Hollow")
+    expect(note).to_have_text("11 hidden words charted by Nov 5 · 12 of 12 now")
+    assert all("503" in e for e in errors), errors
+    errors.clear()
 
 
 def test_saves_a_video_of_the_whole_survey(page: Page, site_url, errors):
@@ -357,6 +411,24 @@ def test_hides_save_video_where_the_browser_cant_record(page: Page, site_url, er
     open_timelapse(page, site_url, fake_log())
     expect(page.locator("html")).to_have_attribute("data-tl", "playing")
     expect(page.locator("#save")).to_be_hidden()
+    assert errors == []
+
+
+def test_the_controls_look_disabled_until_the_log_is_in(page: Page, site_url, errors):
+    fake = fake_log()
+    held = Held(fake, lambda r: r.url.split("?")[0].endswith("/log/timelapse"))
+    open_timelapse(page, site_url, fake, held.handle)
+    held.wait_for(page)
+    expect(page.locator("html")).to_have_attribute("data-tl", "loading")
+    speeds = page.locator("#speeds button")
+    for b in [page.locator("#play"), page.locator("#save"), *speeds.all()]:
+        expect(b).to_be_disabled()
+        assert float(b.evaluate("e => getComputedStyle(e).opacity")) < 0.5
+    held.release()
+    expect(page.locator("html")).to_have_attribute("data-tl", "playing")
+    for b in [page.locator("#play"), page.locator("#save"), *speeds.all()]:
+        expect(b).to_be_enabled()
+        assert b.evaluate("e => getComputedStyle(e).opacity") == "1"
     assert errors == []
 
 
@@ -421,6 +493,7 @@ def test_follows_a_guild_its_words_bright_and_counted(page: Page, site_url, erro
     expect(page.locator("#nGuild")).to_have_text("7")
     expect(page.locator("#nWords")).to_have_text("22")
     expect(page.locator("#guildCount")).to_be_visible()
+    expect(page.locator("#guildCount")).to_have_text("7by the guild")
     expect(page.locator("#placesCount")).to_be_hidden()
     page.evaluate("__tl.seek(0)")
     expect(page.locator("#nGuild")).to_have_text("0")
@@ -428,6 +501,34 @@ def test_follows_a_guild_its_words_bright_and_counted(page: Page, site_url, erro
     expect(page.locator("#toLog")).to_have_attribute("href", re.compile(f"^/letterfield-log\\?guild={COBALT}&survey="))
     expect(follow).to_have_attribute("href", re.compile(r"^/letterfield-timelapse\?survey="))
     assert page.evaluate("document.documentElement.scrollWidth") <= 375
+    assert errors == []
+
+
+def test_a_video_made_following_a_guild_names_it_in_its_colour(page: Page, site_url, errors):
+    page.emulate_media(color_scheme="light")
+    fake = FakeSurveyLog(
+        [[*w, COBALT] if i < 5 else w for i, w in enumerate(WORDS)],
+        PLACES,
+        {theme(2, 3): ["Forest", 40]},
+        totals={"0,0": 12},
+        guilds=GUILDS,
+    )
+    open_timelapse(page, site_url, fake, query=f"&guild={COBALT}")
+    html = page.locator("html")
+    page.wait_for_function("__tl.loaded.days === 3")
+    page.evaluate("__tl.videoSeconds = 20")
+    page.locator("#save").click()
+    expect(html).to_have_attribute("data-rec", "recording")
+    page.wait_for_timeout(300)
+    # The dot before its name, in the guild's colour: hsl(220, 78%, 42%) on a light page.
+    rgb = page.evaluate("""() => {
+      const S = 1080, pad = S * .045, r = S * .009;
+      return [...document.querySelector('#recCanvas').getContext('2d')
+        .getImageData(Math.round(pad + r), Math.round(pad + S * .2 - r * 1.1), 1, 1).data].slice(0, 3);
+    }""")
+    assert all(abs(a - b) <= 3 for a, b in zip(rgb, [24, 79, 191], strict=True)), rgb
+    page.keyboard.press("Escape")
+    expect(html).to_have_attribute("data-rec", "off")
     assert errors == []
 
 
