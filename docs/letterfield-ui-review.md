@@ -21,7 +21,8 @@ Line numbers are as of commit 7bae950 and drift as the files change.
 | 6 | Nothing on a phone's map says the survey is offline | b with d: the title says it; waiting claims kept in storage | To build |
 | 7 | Carets and circles only explain themselves to a mouse | b: two lines of copy; long press fixed on phones | Copy to build; long press in its own session and PR |
 | 8 | Emotes are unlabelled icons on a phone | a: a label under each icon | To build |
-| 9–29 | | Open | |
+| 9 | The word bar's chips, count and switch | a with b: plain tags, an honest count, a real switch | To build |
+| 10–29 | | Open | |
 
 ## The game
 
@@ -203,7 +204,10 @@ outlined (someone else's) versus filled (yours).
 - **b. A real two-way switch** ("In view / Whole territory").
 - **c. A sheet for the whole territory.** Machine: a third sheet on phones
   wants a `sheet` machine (none, notes, people, words), like War's `overlay`.
-- **Decided:** open.
+- **Decided: a with b** (after mockups). Chips you can't tap lose their
+  borders and read as plain words; the count says "14 of 21" when the bar
+  cuts the list and "9 left" when it doesn't; the switch becomes a pill,
+  "In view / Territory", styled like the log's.
 
 ### 10. "Charted first" is on nearly every entry
 
