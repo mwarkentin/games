@@ -89,6 +89,10 @@ utilities; games live here so they get their own origin and their own rules.
   no audio files.
 - Pause when the tab is hidden (`visibilitychange`) if the game runs on a
   timer.
+- Anything a page loads gets a placeholder its own size ahead of time
+  (numbers, a chart, a list, a name), so nothing jumps as it arrives: a still
+  block under `prefers-reduced-motion`, a gentle pulse otherwise. Draw what
+  the page already knows, from its address or storage, at once.
 - Give players one "Send feedback" link marked `data-feedback` (see
   Feedback, under Telemetry).
 - Keep scores and settings in `localStorage`, with keys prefixed by the
@@ -178,12 +182,13 @@ The machines each page keeps:
 | `letterfield.html` | `intro` (the card over the map at the start) | link, sign, coach, exploring |
 | | `pass` (the survey's Turnstile pass) | off, none, loading, checking, asking, sending, good, failed |
 | | `link` (each sector's socket; `el: null`, see `__lf.linkStates()`) | connecting, open, live, backoff, closed |
-| | `claim` (each claim of ours; `el: null`, see `__lf.outbox()`) | queued, sent, unanswered, answered |
+| | `claim` (each claim of ours; `el: null`, see `__lf.outbox()`) | queued, sent, unanswered, first, theirs, refused |
 | | `define` (each found word's meaning; `el: null`, see `__lf.definitions()`) | loading, ready, none, failed |
 | | `who` (the list of surveyors) | closed, loading, ready, refreshing, failed |
 | | `peoplePage` (the Surveyors drawer's page) | list, you |
-| | `guild` (the guild you're in) | out, naming, making, invited, joining, in, leaving |
-| | `pair` (linking another device, and the recovery code) | idle, making, showing, used, entering, redeeming, done, failed, recovery, keeping, kept, removing |
+| | `guild` (the guild you're in) | out, naming, making, invited, joining, in, confirming, leaving |
+| | `pair` (linking another device, and the recovery code) | idle, making, showing, used, entering, redeeming, done, failed, recovery, keeping, kept, removing, stop, stopping |
+| | `pairCode` (a link code made here, watched until used) | none, making, waiting, used, gone |
 | | `sync` (keeping linked devices in step) | off, idle, syncing, failed |
 | `letterfield-log.html` | `log` (what the page shows) | loading, ready, refreshing, stale, failed |
 | `letterfield-timelapse.html` | `tl` (the replay) | loading, empty, failed, paused, playing, waiting |
@@ -595,6 +600,35 @@ page loads nothing from a new host.
   Worker's text in the page as text, never HTML.
 - Game tests fake it with `page.route` and `tests/fake_definitions.py`; the
   real Worker's stand-in answers it too.
+
+## Letterfield's words
+
+One name for each idea, in the game, the survey log, the timelapse, share
+cards and the changelog, so players never wonder whether two words mean two
+things. Use these in everything a player reads (code can keep its own
+names, like `region` or `stray`):
+
+| Idea | Say | Not |
+|---|---|---|
+| Playing on one map together | the shared survey ("the survey" once that's clear) | |
+| Someone playing it | surveyor | player |
+| The area charted together | the universe (its map: "Universe map") | the shared world, the shared map, World |
+| A theme's patch of the map | territory | region, sector, area |
+| The people in a guild | members | mates |
+| Your list of words | field notes ("your notes" after that) | |
+| A word in them | a find | |
+| The words a territory hides | hidden words | words alone, where it matters |
+| A real word turned up by chance | bonus word | stray, found by chance |
+| Being first to a word on the survey | charted first; someone else's is "charted by ZED" | claimed |
+| Circling a word alone | found | charted |
+| The three letters | initials, which sign your words | name, tag |
+| The map played back | timelapse | replay |
+| The log's lists of the most charted | top lists | rankings |
+
+And the names of the tools: Map centre, Last find, the Effects and Music
+sliders. A survey that can't take more people here is "crowded", and a
+period still running is "so far", never "live". Never show internal words
+like sector, Atlas, claim or pass.
 
 ## Adding or changing a game
 

@@ -20,12 +20,14 @@
 :root{
   --paper:#EBEEE7;
   --panel:#F7F8F4;
+  --field:#FFFFFF;
   --ink:#1B2428;
   --muted:#59656A;
   --rule:#C6CFC6;
   --accent:#2A43C2;
   --on-accent:#FFFFFF;
   --danger:#B23A2C;
+  --on-danger:#FFFFFF;
   --hover:rgba(27,36,40,.055);
   --shadow:0 10px 28px -14px rgba(27,36,40,.38);
   --mark-s:58%;
@@ -50,14 +52,14 @@
 }
 @media (prefers-color-scheme: dark){
   :root:not([data-theme="light"]){
-    --paper:#0F171A; --panel:#162024; --ink:#E2E7DE; --muted:#93A19D; --rule:#2B3A3E;
-    --accent:#97A9FF; --on-accent:#0C1330; --danger:#FF8D7C; --hover:rgba(226,231,222,.06);
+    --paper:#0F171A; --panel:#162024; --field:#0F171A; --ink:#E2E7DE; --muted:#93A19D; --rule:#2B3A3E;
+    --accent:#97A9FF; --on-accent:#0C1330; --danger:#FF8D7C; --on-danger:#2A0F0A; --hover:rgba(226,231,222,.06);
     --shadow:0 14px 32px -14px rgba(0,0,0,.7); --mark-s:68%; --mark-l:68%; --mode:dark; color-scheme:dark;
   }
 }
 :root[data-theme="dark"]{
-  --paper:#0F171A; --panel:#162024; --ink:#E2E7DE; --muted:#93A19D; --rule:#2B3A3E;
-  --accent:#97A9FF; --on-accent:#0C1330; --danger:#FF8D7C; --hover:rgba(226,231,222,.06);
+  --paper:#0F171A; --panel:#162024; --field:#0F171A; --ink:#E2E7DE; --muted:#93A19D; --rule:#2B3A3E;
+  --accent:#97A9FF; --on-accent:#0C1330; --danger:#FF8D7C; --on-danger:#2A0F0A; --hover:rgba(226,231,222,.06);
   --shadow:0 14px 32px -14px rgba(0,0,0,.7); --mark-s:68%; --mark-l:68%; --mode:dark; color-scheme:dark;
 }
 html,body{height:100%;overflow:hidden}
@@ -91,8 +93,13 @@ button:focus-visible,a:focus-visible,#map:focus-visible{outline:2px solid var(--
 .cartouche{position:fixed;top:var(--top);left:var(--gl);display:flex;align-items:stretch;max-width:calc(100% - 276px);outline:1px solid var(--rule);outline-offset:-5px;padding:3px}
 .brand{padding:9px 14px 8px 12px;border-right:1px solid var(--rule);display:flex;flex-direction:column;justify-content:center;gap:5px}
 .brand h1{margin:0;font:800 27px/.85 var(--f-display);letter-spacing:.05em;text-transform:uppercase}
-.brand-short{display:none}
 .brand small{font:400 9px/1 var(--f-mono);letter-spacing:.16em;text-transform:uppercase;color:var(--muted)}
+/* On a tablet the notes open over the map: the title steps out of their way,
+   leaving the territory the room before them. */
+@media (min-width:700px){
+  body.notes-open:not(.docked) .brand{position:absolute;width:1px;height:1px;padding:0;border:0;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
+  body.notes-open:not(.docked) .cartouche{max-width:calc(100% - var(--notes-w) - 40px)}
+}
 .territory{padding:8px 14px 8px 12px;display:grid;grid-template-columns:auto minmax(0,1fr);column-gap:10px;row-gap:3px;align-items:center;min-width:0}
 .swatch{grid-row:1 / span 2;width:12px;height:12px;border-radius:50%;background:var(--c);box-shadow:0 0 0 3px color-mix(in srgb, var(--c) 22%, transparent)}
 .t-name{font:700 20px/1 var(--f-display);letter-spacing:.05em;text-transform:uppercase;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -111,11 +118,13 @@ body.docked .bar{right:var(--notes-w)}
 .legend-head{flex:none;display:flex;justify-content:space-between;align-items:baseline;gap:12px}
 .legend-count{font:400 11px/1 var(--f-mono);color:var(--muted);font-variant-numeric:tabular-nums;white-space:nowrap;min-width:5ch}
 .legend-count:empty::before{content:'\200b'} /* a line of text even when empty, so the bar keeps its height */
-/* Which words the list names: those in view, or those left in the territory. */
-.list-mode{display:flex;gap:2px;margin:-9px 0 -9px -7px}
-.list-mode button{padding:9px 7px;border:0;background:none;cursor:pointer;text-underline-offset:4px;white-space:nowrap}
+.legend-head{align-items:center}
+/* Which words the list names, those in view or those left in the territory: a
+   two-way switch, as the survey log's are. */
+.list-mode{display:flex;border:1px solid var(--rule);border-radius:999px;padding:2px;background:var(--panel);margin:-5px 0}
+.list-mode button{padding:7px 10px 6px;border:0;border-radius:999px;background:none;cursor:pointer;white-space:nowrap;color:var(--muted)}
 .list-mode button:hover{color:var(--ink)}
-.list-mode button[aria-pressed="true"]{color:var(--ink);text-decoration:underline;text-decoration-thickness:1.5px}
+.list-mode button[aria-pressed="true"]{background:var(--ink);color:var(--panel)}
 /* One row that scrolls sideways only: overflow-x alone would make y auto too.
    The 4px above and below, taken back by the margin, keep focus rings unclipped.
    It's never shorter than a chip (12px of text, 13px of padding and a 1px
@@ -127,8 +136,10 @@ body.docked .bar{right:var(--notes-w)}
 .chip{font:500 12px/1 var(--f-mono);letter-spacing:.07em;padding:7px 8px 6px;border:1px solid var(--rule);border-radius:5px;background:var(--panel);cursor:pointer;white-space:nowrap}
 .chip:hover{border-color:var(--ink)}
 .chip.found{color:var(--muted);text-decoration:line-through;text-decoration-thickness:2px;text-decoration-color:var(--c);border-style:dashed;cursor:default}
-span.chip{cursor:default}
-span.chip:hover{border-color:var(--rule)}
+/* A word you can't tap (on the shared survey, or in the territory's list) is
+   a plain word, not a button: no border, so only what's tappable looks it. */
+span.chip{cursor:default;border-color:transparent;background:transparent;padding-left:4px;padding-right:4px}
+span.chip:hover{border-color:transparent}
 .legend-note{font:400 12px/1.4 var(--f-ui);color:var(--muted);padding:2px 0;white-space:nowrap}
 
 /* Corner: the tools, surveyors and field notes buttons, top right (beside the
@@ -151,9 +162,10 @@ body.docked .corner .people-btn{border-radius:0 8px 8px 0;border-right:1px solid
 .people-btn[aria-expanded="true"]{background:var(--ink);border-color:var(--ink);color:var(--panel)}
 .people-btn .badge{position:absolute;top:-6px;right:-6px;z-index:1}  /* over the notes button beside it, which comes after it */
 .people-btn[aria-expanded="true"] .badge{box-shadow:0 0 0 2px var(--panel)}
-/* Tools: zoom, home, sound and music drop down from their button as a stack,
-   and go again on a second tap, Escape or a tap on the map. Closed, the stack
-   takes no taps or focus (inert) and covers nothing. */
+/* Tools drop down from their button as a stack, in three groups (zoom, the
+   places to fly to, and a mixer for sound effects and music), and go again on
+   a second tap, Escape or a tap on the map. Closed, the stack takes no taps or
+   focus (inert) and covers nothing. */
 .tools{position:relative}
 .tools-btn{flex:none;width:40px;height:40px;border:1px solid var(--rule);border-radius:8px;background:var(--panel);box-shadow:var(--shadow);display:grid;place-items:center;cursor:pointer;transition:background-color var(--t-fast) var(--ease-out), color var(--t-fast) var(--ease-out), border-color var(--t-fast) var(--ease-out)}
 .tools-btn svg circle{transition:transform var(--t-slow) var(--ease-pop)}
@@ -162,7 +174,7 @@ body.docked .corner .people-btn{border-radius:0 8px 8px 0;border-right:1px solid
 @media (hover: hover){.tools-btn:hover{background:var(--hover)}}  /* a tap leaves no grey behind on a phone */
 .tools-btn[aria-expanded="true"]{background:var(--ink);border-color:var(--ink);color:var(--panel)}
 .tools-btn svg{width:20px;height:20px}
-.tool-stack{position:absolute;right:0;top:calc(100% + 8px);display:flex;flex-direction:column;padding:4px;min-width:176px;box-sizing:border-box;
+.tool-stack{position:absolute;right:0;top:calc(100% + 8px);display:flex;flex-direction:column;padding:4px;width:248px;max-width:calc(100vw - var(--gl) - var(--gr));box-sizing:border-box;
   transform-origin:calc(100% - 20px) -28px;opacity:0;transform:translateY(-8px) scale(.9);visibility:hidden;pointer-events:none;
   transition:opacity var(--t-mid) var(--ease-in), transform var(--t-mid) var(--ease-in), visibility 0s linear var(--t-mid)}
 .tools.open .tool-stack{opacity:1;transform:none;visibility:visible;pointer-events:auto;transition:opacity var(--t-fast) var(--ease-out), transform var(--t-slow) var(--ease-pop), visibility 0s}
@@ -176,18 +188,26 @@ body.docked .corner .people-btn{border-radius:0 8px 8px 0;border-right:1px solid
 .tool-stack svg{width:18px;height:18px;flex:none}
 .tool-stack kbd{font:500 10.5px/1 var(--f-mono);color:var(--muted);border:1px solid var(--rule);border-radius:4px;padding:3px 5px 2px;min-width:9px;text-align:center}
 @media (hover: none) and (pointer: coarse){.tool-stack kbd{display:none}}
-/* Music volume: a slider under the music button, always there (0 is off),
-   lined up with the buttons' labels and as tall as they are to touch. */
-.tool-vol{display:flex;align-items:center;gap:8px;height:44px;padding:0 10px 0 40px;cursor:pointer}
-.tool-vol input{flex:1;min-width:0;height:44px;margin:0;background:transparent;font-size:16px;cursor:pointer;-webkit-appearance:none;appearance:none;--v:75%}
-.tool-vol input:focus{outline:none}
-.tool-vol input::-webkit-slider-runnable-track{height:4px;border-radius:2px;background:linear-gradient(to right, var(--accent) var(--v), var(--rule) var(--v))}
-.tool-vol input::-moz-range-track{height:4px;border-radius:2px;background:linear-gradient(to right, var(--accent) var(--v), var(--rule) var(--v))}
-.tool-vol input::-webkit-slider-thumb{-webkit-appearance:none;appearance:none;width:20px;height:20px;margin-top:-8px;border:0;border-radius:50%;background:var(--ink);box-shadow:0 0 0 3px var(--panel)}
-.tool-vol input::-moz-range-thumb{width:20px;height:20px;border:0;border-radius:50%;background:var(--ink);box-shadow:0 0 0 3px var(--panel)}
-.tool-vol input:focus-visible::-webkit-slider-thumb{outline:2px solid var(--accent);outline-offset:2px}
-.tool-vol input:focus-visible::-moz-range-thumb{outline:2px solid var(--accent);outline-offset:2px}
-.tool-vol output{font:500 10.5px/1 var(--f-mono);color:var(--muted);min-width:3ch;text-align:right}
+/* Zoom: one row, − and + side by side, as on any map. */
+.tool-zoom{display:flex;align-items:center;gap:11px;height:44px;padding:0 4px 0 11px;font:500 13.5px/1 var(--f-ui)}
+.tool-zoom > span{flex:1}
+.tool-step{display:flex;border:1px solid var(--rule);border-radius:8px;overflow:hidden}
+.tool-stack .tool-step button{width:40px;height:40px;padding:0;gap:0;justify-content:center;border-radius:0}
+.tool-step button + button{border-left:1px solid var(--rule)}
+.tool-stack .tool-step svg{width:16px;height:16px}
+/* The mixer: a row each for sound effects and music, its icon a switch (a line
+   through it while it's off) and its slider how loud, 0 being off. */
+.tool-mix{display:grid;grid-template-columns:40px 50px minmax(0,1fr);align-items:center;column-gap:4px;height:44px;padding:0 14px 0 1px;font:500 13.5px/1 var(--f-ui);color:var(--ink)}
+.tool-stack .tool-mix button{width:40px;height:40px;padding:0;gap:0;justify-content:center}
+.tool-mix label{cursor:pointer}
+.tool-mix input{min-width:0;height:44px;margin:0;background:transparent;font-size:16px;cursor:pointer;-webkit-appearance:none;appearance:none;--v:75%}
+.tool-mix input:focus{outline:none}
+.tool-mix input::-webkit-slider-runnable-track{height:4px;border-radius:2px;background:linear-gradient(to right, var(--accent) var(--v), var(--rule) var(--v))}
+.tool-mix input::-moz-range-track{height:4px;border-radius:2px;background:linear-gradient(to right, var(--accent) var(--v), var(--rule) var(--v))}
+.tool-mix input::-webkit-slider-thumb{-webkit-appearance:none;appearance:none;width:20px;height:20px;margin-top:-8px;border:0;border-radius:50%;background:var(--ink);box-shadow:0 0 0 3px var(--panel)}
+.tool-mix input::-moz-range-thumb{width:20px;height:20px;border:0;border-radius:50%;background:var(--ink);box-shadow:0 0 0 3px var(--panel)}
+.tool-mix input:focus-visible::-webkit-slider-thumb{outline:2px solid var(--accent);outline-offset:2px}
+.tool-mix input:focus-visible::-moz-range-thumb{outline:2px solid var(--accent);outline-offset:2px}
 
 /* Notes toggle */
 .notes-toggle{position:relative;display:flex;align-items:center;gap:8px;min-height:40px;box-sizing:border-box;padding:10px 12px;cursor:pointer;font:600 13px/1 var(--f-ui)}
@@ -218,6 +238,18 @@ body.docked .notes{box-shadow:none}
 .you-text b small{font:500 11px/1 var(--f-mono);letter-spacing:.06em;color:var(--muted)}
 .you-text > span{display:block;margin-top:5px;font-size:12.5px;line-height:1.3;color:var(--muted)}
 .chev{flex:none;width:16px;height:16px;color:var(--muted)}
+/* The Muted row opens, like a fold, to everyone you've muted, each with an Unmute pill. */
+.you-count{flex:none;font:500 12px/1 var(--f-mono);color:var(--muted);font-variant-numeric:tabular-nums}
+#mutedRow .chev{transition:transform var(--t-fast) var(--ease-out)}
+#mutedRow[aria-expanded="true"] .chev{transform:rotate(90deg)}
+@media (prefers-reduced-motion: reduce){#mutedRow .chev{transition:none}}
+.muted-list{border-top:1px solid var(--rule)}
+.muted-list ul{list-style:none;margin:0;padding:0}
+.muted-row{display:flex;align-items:center;gap:10px;min-height:48px;box-sizing:border-box;padding:6px 14px;border-top:1px solid var(--rule)}
+.muted-row:first-child{border-top:0}
+.muted-ini{flex:none;font:700 16px/1 var(--f-display);letter-spacing:.1em;color:var(--ink)}
+.muted-when{flex:1;min-width:0;font:400 11px/1.3 var(--f-mono);color:var(--muted)}
+.muted-none{margin:0;padding:11px 14px 12px;font-size:12.5px;line-height:1.45;color:var(--muted)}
 .who-foot{margin:14px 0 0;padding-top:12px;border-top:1px solid var(--rule);font-size:12.5px;line-height:1.45;color:var(--muted)}
 /* Your page: back to the list, who you are, then grouped rows (iOS-settings-like): guild, the map, devices. */
 .you-head{align-items:center;padding-top:12px;padding-bottom:6px}
@@ -265,19 +297,32 @@ label.you-item{cursor:pointer}
 .filter{flex:none;display:flex;align-items:center;gap:6px;font:500 11px/1 var(--f-mono);padding:6px 8px;border:1px solid var(--rule);border-radius:999px;background:transparent;cursor:pointer;color:var(--muted)}
 .filter i{width:8px;height:8px;border-radius:50%;background:var(--c)}
 .filter[aria-pressed="true"]{border-color:var(--ink);color:var(--ink);background:var(--hover)}
-.finds{list-style:none;margin:0;padding:6px 8px 10px;overflow-y:auto;flex:1;min-height:0;overscroll-behavior:contain}
-.finds li{display:flex;align-items:center;gap:2px}
-.find{flex:1;min-width:0;display:grid;grid-template-columns:10px minmax(0,1fr) auto;column-gap:12px;row-gap:5px;align-items:baseline;padding:10px 10px;border-radius:6px;color:inherit;text-decoration:none}
+.finds{list-style:none;margin:0;padding:2px 10px 12px;overflow-y:auto;flex:1;min-height:0;overscroll-behavior:contain}
+/* Finds, newest first: a heading for each day, then a card for each visit to
+   a territory that day, its theme's colour down the side. Every row sits on
+   one grid, each part centred on the word's line: marker, word and bearing,
+   time, then the book and share buttons; a second line, when there's
+   anything to say, sits under the word without moving the first. */
+.finds > li.day{display:block;margin:18px 2px 0;padding:0 0 7px;border-bottom:1px solid var(--rule);font:800 17px/1 var(--f-display);letter-spacing:.06em;text-transform:uppercase;color:var(--ink)}
+.finds > li.day:first-child{margin-top:6px}
+.finds > li.run{display:block;margin:10px 0 0;border:1px solid var(--rule);border-left:4px solid var(--c);border-radius:10px;overflow:hidden}
+.run-head{display:flex;align-items:baseline;gap:10px;margin:0;padding:9px 12px 8px 34px;background:var(--hover);border-bottom:1px solid var(--rule);font:500 10px/1.2 var(--f-mono);letter-spacing:.12em;text-transform:uppercase;color:var(--muted);min-width:0}
+.run-head b{font-weight:600;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.run-head span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.run ol{list-style:none;margin:0;padding:0}
+.run li.row + li.row{border-top:1px solid var(--rule)}
+li.row{display:grid;grid-template-columns:minmax(0,1fr) 40px 40px;align-items:start;padding-right:2px}
+li.row > button{margin-top:2px}
+.find{min-width:0;display:grid;grid-template-columns:20px minmax(0,1fr) auto;column-gap:8px;row-gap:0;align-items:center;min-height:44px;padding:5px 4px 5px 6px;box-sizing:border-box;border-radius:6px;color:inherit;text-decoration:none}
 .find-share{flex:none;width:40px;height:40px;display:grid;place-items:center;border:0;border-radius:50%;background:transparent;color:var(--muted);cursor:pointer}
 .find-share svg{width:17px;height:17px}
 .find-share:hover{background:var(--hover);color:var(--ink)}
-.finds li{flex-wrap:wrap}
 .find-define{flex:none;width:40px;height:40px;display:grid;place-items:center;border:0;border-radius:50%;background:transparent;color:var(--muted);cursor:pointer}
 .find-define svg{width:17px;height:17px}
 .find-define:hover{background:var(--hover);color:var(--ink)}
 .find-define[aria-expanded="true"]{background:var(--hover);color:var(--ink)}
 /* A found word's meaning, opened under its entry (see Definitions). */
-.find-def{flex:1 0 100%;box-sizing:border-box;margin:0 0 8px;padding:10px 12px 11px 32px;font-size:14px;line-height:1.45;color:var(--ink)}
+.find-def{grid-column:1 / -1;box-sizing:border-box;margin:0 0 8px;padding:6px 12px 11px 34px;font-size:14px;line-height:1.45;color:var(--ink)}
 .def-sense{margin:0 0 6px;overflow-wrap:anywhere}
 .def-sense i{font:italic 400 12px/1 var(--f-mono);color:var(--muted);margin-right:6px}
 .def-note{margin:0 0 6px;color:var(--muted)}
@@ -291,14 +336,19 @@ label.you-item{cursor:pointer}
 .novas{flex:none;padding:10px 8px 4px;border-bottom:1px solid var(--rule)}
 .novas h3{margin:0 10px 2px}
 .novas ol{list-style:none;margin:0;padding:0;max-height:min(30vh, 260px);overflow-y:auto;overscroll-behavior:contain}
-.novas li{display:flex;align-items:center;gap:2px}
-.nova-star{width:12px;height:12px;margin:0 -1px;border-radius:50%;align-self:center;background:radial-gradient(circle, #fff 0 16%, hsl(var(--h,200) 90% 62%) 32%, hsl(var(--h,200) 80% 50% / .35) 56%, transparent 72%);box-shadow:0 0 0 1.5px hsl(var(--h,200) 60% 50% / .35)}
+.novas li.row > .find-share{grid-column:3}
+.nova-star{width:12px;height:12px;justify-self:center;border-radius:50%;align-self:center;background:radial-gradient(circle, #fff 0 16%, hsl(var(--h,200) 90% 62%) 32%, hsl(var(--h,200) 80% 50% / .35) 56%, transparent 72%);box-shadow:0 0 0 1.5px hsl(var(--h,200) 60% 50% / .35)}
 .nova-find .find-word{font-size:17px}
-.find-dot{width:10px;height:10px;border-radius:50%;background:var(--c);align-self:center}
+.find-dot{width:10px;height:10px;border-radius:50%;background:var(--c);justify-self:center}
 .find.stray .find-dot{background:transparent;border:2px dashed var(--c);width:10px;height:10px;box-sizing:border-box}
-.find-word{font:700 21px/1 var(--f-display);letter-spacing:.07em;min-width:0;overflow:hidden;text-overflow:ellipsis}
-.find-when{font:400 10.5px/1 var(--f-mono);color:var(--muted);white-space:nowrap}
-.find-meta{grid-column:2 / 4;font:400 11px/1.4 var(--f-mono);color:var(--muted);font-variant-numeric:tabular-nums}
+/* Charted first by you: a ring round the dot, which keeps its centre. */
+.find-dot.first{box-shadow:0 0 0 2.5px var(--panel),0 0 0 4px var(--c)}
+.find-word{display:flex;align-items:center;gap:7px;min-width:0;font:700 21px/1 var(--f-display);letter-spacing:.07em;padding-top:1px}
+.find-w{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+/* The bearing it reads in, drawn, so every direction is the same size. */
+.find-dir{flex:none;width:14px;height:14px;margin-top:-1px;color:var(--muted);fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
+.find-when{min-width:62px;text-align:right;font:400 10.5px/1 var(--f-mono);color:var(--muted);white-space:nowrap;font-variant-numeric:tabular-nums}
+.find-meta{grid-row:2;grid-column:2 / 4;margin:-3px 0 2px;font:400 11px/1.3 var(--f-mono);color:var(--muted)}
 .find-meta b{font-weight:500;color:var(--ink)}
 .finds-empty{display:block!important;padding:18px 10px;color:var(--muted);font-size:14px;max-width:36ch}
 .finds-empty strong{display:block;color:var(--ink);font:700 18px/1.1 var(--f-display);letter-spacing:.05em;text-transform:uppercase;margin-bottom:6px}
@@ -307,18 +357,13 @@ label.you-item{cursor:pointer}
 @keyframes blink{to{opacity:.25}}
 .survey{margin:12px 18px 0;padding:10px 12px 11px;border:1px solid var(--rule);border-radius:7px}
 .survey-head{display:flex;align-items:center;gap:8px;margin-bottom:7px}
-.survey-dot{width:7px;height:7px;border-radius:50%;background:var(--muted);flex:none}
-.survey[data-state="live"] .survey-dot{background:hsl(150 var(--mark-s) var(--mark-l))}
-.survey[data-state="offline"] .survey-dot{background:var(--danger)}
-.survey[data-state="connecting"] .survey-dot{animation:blink 1s infinite alternate}
 .survey-text{margin:0;font:400 11.5px/1.5 var(--f-mono);color:var(--muted);white-space:pre-line}
 .survey-sign{display:flex;align-items:center;gap:8px;margin-top:10px}
 .survey-sign label{flex:1;min-width:0;font-size:13px}
-.survey-sign input,.signup input{width:74px;flex:none;box-sizing:border-box;font:500 16px/1 var(--f-mono);letter-spacing:.18em;text-transform:uppercase;padding:7px 6px 7px 9px;border:1px solid var(--rule);border-radius:6px;background:var(--paper);color:var(--ink)}
+.survey-sign input,.signup input{width:74px;flex:none;box-sizing:border-box;font:500 16px/1 var(--f-mono);letter-spacing:.18em;text-transform:uppercase;height:40px;padding:0 6px 0 9px;border:1px solid var(--rule);border-radius:6px;background:var(--field);color:var(--ink)}
 .survey-sign input:focus-visible,.signup input:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
-.survey-sign .btn{flex:none;padding:9px 12px}
+.survey-sign .btn{flex:none}
 .survey-sign[hidden]{display:none}
-.survey-sign .btn.ghost{background:transparent;color:var(--ink);border:1px solid var(--rule)}
 /* Once signed, the panel just says who you are, with a pencil to change it. */
 .survey-me{display:flex;align-items:center;gap:14px;margin-top:4px}
 .survey-me[hidden]{display:none}
@@ -360,11 +405,11 @@ html[data-who="loading"] .who-status{animation:blink 1s infinite alternate}
 .who-row.muted .who-where{color:var(--muted)}
 .who-row.muted .who-ini{text-decoration:line-through;text-decoration-thickness:1.5px}
 .who-emotes{flex:1 0 100%;box-sizing:border-box;padding:2px 6px 10px 55px}
-.emote-row{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:3px}
-.who-emotes .emote-row{grid-template-columns:repeat(6,minmax(0,1fr))}
+.emote-row{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:4px}
+.who-emotes .emote-row{grid-template-columns:repeat(3,minmax(0,1fr))}
 .who-row > .who-said{flex:1 0 100%;box-sizing:border-box;margin:0;padding:0 6px 8px 55px}
-.emote{aspect-ratio:1;max-height:44px;display:grid;place-items:center;padding:0;border:1px solid var(--rule);border-radius:8px;background:var(--panel);color:var(--ink);cursor:pointer}
-.emote svg{width:22px;height:22px}
+.emote{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:5px;min-height:58px;padding:8px 2px 7px;border:1px solid var(--rule);border-radius:8px;background:var(--panel);color:var(--ink);font:500 11px/1.15 var(--f-ui);text-align:center;cursor:pointer}
+.emote svg{width:22px;height:22px;flex:none}
 @media (hover: hover){.emote:hover{border-color:var(--ink)}}
 .emote:disabled{opacity:.35;cursor:default}
 .who-said{margin:7px 0 0;font:400 11px/1.4 var(--f-mono);color:var(--muted)}
@@ -387,7 +432,6 @@ html[data-who="loading"] .who-status{animation:blink 1s infinite alternate}
 .guild .guild-meta{margin:-2px 0 8px 18px;font:400 10.5px/1.3 var(--f-mono)}
 .guild-err{color:var(--danger)!important}
 .guild-acts{display:flex;flex-wrap:wrap;align-items:center;gap:6px}
-.guild-acts .btn{padding:8px 12px}
 .toast i.guild-dot{width:10px;height:10px;border-radius:50%;background:hsl(var(--gh) var(--mark-s) var(--mark-l))}
 .who-head{display:flex;align-items:center;gap:7px;margin:10px 6px 2px;font:500 10px/1.2 var(--f-mono);letter-spacing:.12em;text-transform:uppercase;color:var(--muted)}
 .who-row.away .who{cursor:default}
@@ -403,7 +447,6 @@ html[data-who="loading"] .who-status{animation:blink 1s infinite alternate}
 .who-invite{flex:none;min-height:36px;margin:-8px -4px -8px 0;padding:0 8px;border:0;background:none;color:var(--accent);font:600 13px/1 var(--f-ui);letter-spacing:0;text-transform:none;cursor:pointer}
 .guild-invite p{margin:0 0 10px;font-size:13.5px;line-height:1.5}
 .guild-invite .eyebrow{margin-bottom:8px}
-.guild-invite .btn.ghost{background:transparent;color:var(--ink);border:1px solid var(--rule)}
 .guild-invite .coach-row{justify-content:flex-end}
 /* Switching guilds from an invite: the one you're in above the one you'd join, and a warning. */
 .guild-swap{margin:0 0 10px;padding:10px 12px;border:1px solid var(--rule);border-radius:8px}
@@ -426,7 +469,8 @@ html[data-who="loading"] .who-status{animation:blink 1s infinite alternate}
 .pair-state b{display:block;font-weight:600;font-size:14px;color:var(--ink)}
 .pair-state span{display:block;margin-top:2px;font-size:12.5px;line-height:1.45;color:var(--muted)}
 .pair-acts{display:flex;flex-wrap:wrap;align-items:center;gap:6px}
-.pair-acts .btn{padding:8px 12px}
+.pair p.pair-ask{margin:0 4px 8px;font-size:13.5px;color:var(--ink)}
+.pair-keep{margin-top:10px}
 .pair-box{padding:9px 10px 10px;border:1px solid var(--rule);border-radius:7px}
 .pair-box .eyebrow{margin:0 0 8px}
 .pair-qr{width:176px;aspect-ratio:1;margin:2px auto 10px;padding:8px;box-sizing:border-box;background:#fff;border-radius:6px}
@@ -438,20 +482,19 @@ html[data-who="loading"] .who-status{animation:blink 1s infinite alternate}
 .pair .pair-small:empty{display:none}
 .pair-enter{display:flex;flex-wrap:wrap;align-items:center;gap:8px}
 .pair-enter label{flex:1 0 100%;font-size:13px}
-.pair-enter input{width:auto;flex:1 0 100%;max-width:19em;box-sizing:border-box;font:500 16px/1 var(--f-mono);letter-spacing:.12em;text-transform:uppercase;padding:7px 9px;border:1px solid var(--rule);border-radius:6px;background:var(--paper);color:var(--ink)}
+.pair-enter input{width:auto;flex:1 0 100%;max-width:19em;box-sizing:border-box;font:500 16px/1 var(--f-mono);letter-spacing:.12em;text-transform:uppercase;height:40px;padding:0 9px;border:1px solid var(--rule);border-radius:6px;background:var(--field);color:var(--ink)}
 .pair-enter input:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
-.pair-enter .btn{padding:9px 12px}
 .pair-enter > p{flex:1 0 100%;margin:0}
 /* A recovery code is 24 characters, and wide ones in Martian Mono: sized to the card's width so it always fits on one line. */
 .pair-recovery{font-size:13px;font-size:min(17px, 4.8cqw);letter-spacing:.04em;white-space:nowrap}
 .pair-err{color:var(--danger)!important}
 .pair-offer p{margin:0 0 10px;font-size:13.5px;line-height:1.5}
 .pair-offer .eyebrow{margin-bottom:8px}
-.pair-offer .btn.ghost{background:transparent;color:var(--ink);border:1px solid var(--rule)}
 .pair-offer .coach-row{justify-content:flex-end}
+/* A card's heading is an eyebrow, 10px, whatever size the card's paragraphs are. */
+.card p.eyebrow,.pair p.eyebrow,.guild p.eyebrow{font-size:10px;line-height:1;color:var(--muted)}
 .who-mute{margin-top:8px}
 .who-more{display:block;margin:6px auto 0}
-.who-note{margin:7px 4px 0;font-size:12px;line-height:1.4;color:var(--muted)}
 .toast i.emo{width:24px;height:24px;border-radius:0;background:none;color:var(--c)}
 .toast b.wraps{white-space:normal;line-height:1.05}
 /* A caret's own menu: emotes for that surveyor, from a right-click or a long press on their caret. */
@@ -499,7 +542,16 @@ html[data-who="loading"] .who-status{animation:blink 1s infinite alternate}
 /* Turnstile's box waits for the card asking for initials to go, so a first visit asks one thing at a time. */
 html[data-intro="sign"] .survey-check{visibility:hidden}
 .signup .survey-hint{color:var(--ink)}
-.btn{font:600 13px/1 var(--f-ui);padding:9px 14px;border:0;border-radius:6px;background:var(--accent);color:var(--on-accent);cursor:pointer}
+.btn{display:inline-flex;align-items:center;justify-content:center;min-height:40px;box-sizing:border-box;font:600 13px/1.15 var(--f-ui);padding:0 14px;border:1px solid var(--accent);border-radius:6px;background:var(--accent);color:var(--on-accent);text-align:center;cursor:pointer}
+/* Buttons follow one rule: filled for a card's main choice, outlined (ghost)
+   for the rest, and red (danger) for one that ends or deletes something, all
+   in the UI font at 40px. A yes or no gets buttons; a choice between things
+   to do gets rows (.you-item). Pills are only for small actions within a row:
+   Change beside your initials, Try again on a meaning, the list's Mute and More. */
+.btn.ghost{background:transparent;color:var(--ink);border-color:var(--rule)}
+@media (hover: hover){.btn.ghost:not(:disabled):hover{background:var(--hover)}}
+.btn.danger{background:var(--danger);border-color:var(--danger);color:var(--on-danger)}
+.btn:disabled{opacity:.55;cursor:default}
 /* A note pops out of the field notes, at the top right (beside them, when
    they're docked), and collapses back into them when its time is up. A find
    has no note: its circle flies into the count instead (see gatherFind).
@@ -513,6 +565,9 @@ body.docked .toast{right:calc(var(--notes-w) + 16px);max-width:calc(100% - var(-
 .toast i{grid-row:span 2;width:10px;height:10px;border-radius:50%;background:var(--c)}
 .toast b{font:700 19px/1 var(--f-display);letter-spacing:.07em;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .toast span{font:400 11px/1.35 var(--f-mono);color:var(--muted);overflow-wrap:anywhere}
+/* A link to copy by hand, when the browser won't: one tap selects it all. */
+.toast.holds{width:min(400px, calc(100% - var(--gl) - var(--gr)))}
+.toast-link{grid-column:2;display:block;margin-top:6px;padding:8px 10px;border:1px solid var(--rule);border-radius:6px;background:var(--field);font:500 12px/1.35 var(--f-mono);color:var(--ink);overflow-wrap:anywhere;user-select:all;-webkit-user-select:all;pointer-events:auto}
 /* A find's toast offers to share it: the only part of a toast that takes a tap. */
 .toast.can-share{grid-template-columns:auto minmax(0,1fr) auto;padding-right:10px}
 .share{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--rule);border-radius:999px;background:transparent;color:var(--ink);font:500 11.5px/1 var(--f-mono);cursor:pointer;white-space:nowrap}
@@ -558,17 +613,14 @@ body.docked .nova{left:calc((100% - var(--notes-w)) / 2)}
   .topbar .cartouche{position:static;flex:1;min-width:0;max-width:none;padding:2px;outline-offset:-4px;box-shadow:none}
   .topbar .corner{position:static;z-index:auto}
   .topbar .tools-btn,.topbar .notes-toggle,.topbar .people-btn{box-shadow:none}
-  /* The title is LF, so the territory has the room. */
-  .brand{padding:7px 9px 6px 9px}
-  .brand h1{font-size:21px;letter-spacing:.04em}
-  .brand-full{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
-  .brand-short{display:inline}
-  .brand small{display:none}
+  /* No title on a phone, so the territory has the room: the tab and the Home
+     Screen icon say what this is, and a screen reader still hears it. */
+  .brand{position:absolute;width:1px;height:1px;padding:0;border:0;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
   .territory{padding:6px 8px 6px 8px;column-gap:7px;row-gap:2px}
   .swatch{width:9px;height:9px}
   .t-name{font-size:15.5px}
   .t-meta{font-size:9.5px}
-  .t-coord{display:none}  /* the grid reference is in each find's notes */
+  .t-coord{display:none}  /* no room for the grid reference on a phone */
   .notes-toggle,.tools-btn,.people-btn{padding:0;width:44px;height:46px;justify-content:center;gap:0}
   .notes-toggle .label{display:none}
   .notes-toggle .badge{position:absolute;top:-6px;right:-6px}
@@ -585,7 +637,6 @@ body.docked .nova{left:calc((100% - var(--notes-w)) / 2)}
   .notes,.people,.toast,.bar,.tool-stack,.tool-stack > *,.tools-btn,.tools-btn svg circle{transition:none!important}
   .find-def[data-define="loading"] .def-note{animation:none}
   .nova.show b{animation:none}
-  .survey-dot{animation:none!important}
   #music[aria-pressed="true"] svg{animation:none}
 }
 /* Until the page has laid itself out, nothing slides: the notes, the bar and
@@ -600,7 +651,7 @@ body.settling, body.settling *{transition:none!important}
 <div class="topbar" id="topbar">
   <header class="cartouche card">
     <div class="brand">
-      <h1><span class="brand-full">Letterfield</span><span class="brand-short" aria-hidden="true">LF</span></h1>
+      <h1>Letterfield</h1>
       <small id="brandSub">Endless word search</small>
     </div>
     <div class="territory mark" id="territory">
@@ -612,22 +663,22 @@ body.settling, body.settling *{transition:none!important}
 
   <div class="corner">
     <div class="tools" id="tools">
-      <button type="button" class="tools-btn" id="toolsBtn" aria-expanded="false" aria-controls="toolStack" aria-label="Tools" title="Tools: zoom, home, sound and music"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M4 7h9M17 7h3M4 17h3M11 17h9"/><circle cx="15" cy="7" r="2.2"/><circle cx="9" cy="17" r="2.2"/></svg></button>
+      <button type="button" class="tools-btn" id="toolsBtn" aria-expanded="false" aria-controls="toolStack" aria-label="Tools" title="Tools: zoom, places, sound effects and music"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M4 7h9M17 7h3M4 17h3M11 17h9"/><circle cx="15" cy="7" r="2.2"/><circle cx="9" cy="17" r="2.2"/></svg></button>
       <div class="tool-stack card" id="toolStack" role="group" aria-label="Tools" inert>
-        <button type="button" style="--i:0" id="zoomIn" aria-label="Zoom in" aria-keyshortcuts="+" title="Zoom in (+)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg><span aria-hidden="true">Zoom in</span><kbd aria-hidden="true">+</kbd></button>
-        <button type="button" style="--i:1" id="zoomOut" aria-label="Zoom out" aria-keyshortcuts="-" title="Zoom out (−)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M5 12h14"/></svg><span aria-hidden="true">Zoom out</span><kbd aria-hidden="true">−</kbd></button>
-        <button type="button" style="--i:2" id="home" aria-label="Return to the origin" aria-keyshortcuts="H" title="Return to the origin (H)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="6.5"/><circle cx="12" cy="12" r="1.6" fill="currentColor"/><path d="M12 2v4M12 18v4M2 12h4M18 12h4"/></svg><span aria-hidden="true">Origin</span><kbd aria-hidden="true">H</kbd></button>
-        <hr style="--i:3">
-        <button type="button" style="--i:4" id="sound" aria-pressed="true" aria-label="Sound" aria-keyshortcuts="M" title="Sound (M)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 9.5h3.5L12 6v12l-4.5-3.5H4z"/><path class="on" d="M15.5 9.2a4 4 0 0 1 0 5.6M18.2 6.6a7.6 7.6 0 0 1 0 10.8"/><path class="off" d="M16 9.5l5 5M21 9.5l-5 5"/></svg><span aria-hidden="true">Sound</span><kbd aria-hidden="true">M</kbd></button>
-        <button type="button" style="--i:5" id="music" aria-pressed="false" aria-label="Music" aria-keyshortcuts="B" title="Music (B)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 17.5V6l10-2v11.5"/><circle cx="6.5" cy="17.5" r="2.5"/><circle cx="16.5" cy="15.5" r="2.5"/><path class="off" d="M3.5 3.5l17 17"/></svg><span aria-hidden="true">Music</span><kbd aria-hidden="true">B</kbd></button>
-        <label style="--i:6" class="tool-vol" id="musicVolRow" title="Music volume ([ and ])"><span class="vh">Music volume</span><input type="range" id="musicVol" min="0" max="100" step="5" value="0" aria-keyshortcuts="[ ]"><output id="musicVolOut" for="musicVol" aria-hidden="true">0</output></label>
+        <div class="tool-zoom" style="--i:0"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6"/><path d="M15 15l5 5"/></svg><span aria-hidden="true">Zoom</span><div class="tool-step"><button type="button" id="zoomOut" aria-label="Zoom out" aria-keyshortcuts="-" title="Zoom out (−)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M5 12h14"/></svg></button><button type="button" id="zoomIn" aria-label="Zoom in" aria-keyshortcuts="+" title="Zoom in (+)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></button></div></div>
+        <hr style="--i:1">
+        <button type="button" style="--i:2" id="home" aria-label="Map centre" aria-keyshortcuts="H" title="Map centre (H)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="6.5"/><circle cx="12" cy="12" r="1.6" fill="currentColor"/><path d="M12 2v4M12 18v4M2 12h4M18 12h4"/></svg><span aria-hidden="true">Map centre</span><kbd aria-hidden="true">H</kbd></button>
+        <button type="button" style="--i:3" id="lastFind" aria-label="Last find" aria-keyshortcuts="L" title="Last find (L)" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 21s-6.2-5.9-6.2-11a6.2 6.2 0 0 1 12.4 0c0 5.1-6.2 11-6.2 11z"/><circle cx="12" cy="10" r="2.1"/></svg><span aria-hidden="true">Last find</span><kbd aria-hidden="true">L</kbd></button>
+        <hr style="--i:4">
+        <div class="tool-mix" style="--i:5"><button type="button" id="sound" aria-pressed="true" aria-label="Sound effects" aria-keyshortcuts="M" title="Sound effects (M)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 9.5h3.5L12 6v12l-4.5-3.5H4z"/><path class="on" d="M15.5 9.2a4 4 0 0 1 0 5.6M18.2 6.6a7.6 7.6 0 0 1 0 10.8"/><path class="off" d="M16 9.5l5 5M21 9.5l-5 5"/></svg></button><label for="soundVol" aria-hidden="true">Effects</label><input type="range" id="soundVol" min="0" max="100" step="5" value="100" aria-label="Sound effects volume" title="Sound effects volume"></div>
+        <div class="tool-mix" style="--i:6"><button type="button" id="music" aria-pressed="false" aria-label="Music" aria-keyshortcuts="B" title="Music (B)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 17.5V6l10-2v11.5"/><circle cx="6.5" cy="17.5" r="2.5"/><circle cx="16.5" cy="15.5" r="2.5"/><path class="off" d="M3.5 3.5l17 17"/></svg></button><label for="musicVol" aria-hidden="true">Music</label><input type="range" id="musicVol" min="0" max="100" step="5" value="0" aria-keyshortcuts="[ ]" aria-label="Music volume" title="Music volume ([ and ])"></div>
       </div>
     </div>
     <button type="button" class="people-btn" id="peopleBtn" aria-expanded="false" aria-controls="people" aria-keyshortcuts="P" aria-label="Surveyors" title="Surveyors (P)" hidden>
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="8.2" r="3.7"/><path d="M4.8 20.2a7.2 7.2 0 0 1 14.4 0"/></svg>
       <span class="badge" id="peopleBadge" aria-hidden="true" hidden>0</span>
     </button>
-    <button class="notes-toggle card" id="notesToggle" aria-expanded="false" aria-controls="notes">
+    <button class="notes-toggle card" id="notesToggle" aria-expanded="false" aria-controls="notes" aria-keyshortcuts="N" title="Field notes (N)">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 4h11a3 3 0 0 1 3 3v13H8a3 3 0 0 1-3-3V4z"/><path d="M5 17a3 3 0 0 1 3-3h11"/><path d="M9 8h6"/></svg>
       <span class="label">Field notes</span>
       <span class="badge" id="notesBadge">0</span>
@@ -639,7 +690,7 @@ body.settling, body.settling *{transition:none!important}
   <section class="legend" aria-label="Words hidden in view">
     <div class="legend-head">
       <div class="list-mode" role="group" aria-label="Words to list">
-        <button type="button" class="eyebrow" id="listView" aria-pressed="true" title="Words hidden in view">Hidden in view</button>
+        <button type="button" class="eyebrow" id="listView" aria-pressed="true" title="Words hidden in view">In view</button>
         <button type="button" class="eyebrow" id="listWhole" aria-pressed="false" title="Words still to find in this territory">Territory</button>
       </div>
       <span class="legend-count" id="legendCount"></span>
@@ -662,11 +713,11 @@ body.settling, body.settling *{transition:none!important}
     <div><dt>Longest</dt><dd id="tLong">—</dd></div>
   </dl>
   <section class="survey" id="survey" data-state="connecting" aria-label="Shared survey" hidden>
-    <div class="survey-head"><span class="survey-dot" aria-hidden="true"></span><span class="eyebrow">Shared survey</span></div>
+    <div class="survey-head"><span class="eyebrow">Shared survey</span></div>
     <p class="survey-text" id="surveyText"></p>
     <details class="survey-map" id="surveyMap">
-      <summary>World map</summary>
-      <canvas id="worldMap" width="200" height="200" aria-label="Map of the shared world: charted territories are darker, dots are players. Tap to fly there."></canvas>
+      <summary>Universe map</summary>
+      <canvas id="worldMap" width="200" height="200" aria-label="Map of the universe: charted territories are darker, dots are surveyors. Tap to fly there."></canvas>
       <p class="survey-map-note" id="worldNote"></p>
     </details>
     <a class="survey-log" href="/letterfield-log">Survey log: every word charted, hour by hour</a>
@@ -689,7 +740,7 @@ body.settling, body.settling *{transition:none!important}
 <div class="coach card pair-offer" id="pairOffer" role="dialog" aria-labelledby="pairOfferHead" hidden></div>
 
 <form class="coach card signup" id="signup" hidden>
-  <label for="signupInitials"><span id="signupHow"><strong>Every territory hides its own words</strong>, in all eight directions: tap a word's first letter, then its last, to circle it. Everyone charts this map together, so pick initials to sign the ones you find first.</span><span id="signupOnly" hidden><strong>Pick your initials to start.</strong> Everyone charts this map together, and every word you find first is signed with them.</span></label>
+  <label for="signupInitials"><span id="signupHow"><strong>Every territory hides its own words</strong>, in all eight directions: tap a word's first letter, then its last, to circle it. Everyone charts this map together, so pick initials to sign the ones you find first. Coloured bars are other surveyors. Outlined words are already charted.</span><span id="signupOnly" hidden><strong>Pick your initials to start.</strong> Everyone charts this map together, and every word you find first is signed with them.</span></label>
   <div class="coach-row"><input id="signupInitials" maxlength="3" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="ABC" aria-describedby="signupHint"><button type="submit" class="btn">Start surveying</button></div>
   <kbd id="signupKbd">Shift-drag also circles</kbd>
   <p class="survey-hint" id="signupHint" aria-live="polite"></p>
@@ -705,9 +756,9 @@ body.settling, body.settling *{transition:none!important}
     <div class="people-body">
       <button type="button" class="you-row" id="youRow"><span class="you-av" id="youRowAv" aria-hidden="true"></span><span class="you-text"><b id="youRowName"></b><span id="youRowLine"></span></span><svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg></button>
       <p class="who-status" id="whoStatus" aria-live="polite"></p>
-      <ol class="who-list" id="whoList" aria-label="Surveyors in the shared world, nearest first"></ol>
+      <ol class="who-list" id="whoList" aria-label="Surveyors online, nearest first"></ol>
       <button type="button" class="who-more" id="whoMore" hidden>Show more</button>
-      <p class="who-foot">Tap a name to fly there. More emotes and mute are under ⋯.</p>
+      <p class="who-foot">Tap a name to fly there. More emotes and mute are under ⋯. On the map, long-press someone’s caret (or right-click it) for the same.</p>
     </div>
   </div>
   <section class="people-page" id="peopleYou" aria-labelledby="youTitle" hidden>
@@ -733,10 +784,10 @@ body.settling, body.settling *{transition:none!important}
       <div class="group guild" id="guildCard"></div>
       <p class="you-eb">On the map</p>
       <div class="group">
-        <label class="you-item"><span>Show me on the list<small>Off it, your guild and anyone near you still see you.</small></span><input type="checkbox" class="sw" role="switch" id="whoListed" checked></label>
         <label class="you-item"><span>Take emotes<small>Let others wave and cheer at you.</small></span><input type="checkbox" class="sw" role="switch" id="whoEmotes" checked></label>
+        <button type="button" class="you-item" id="mutedRow" aria-expanded="false" aria-controls="mutedList"><span>Muted<small>Their carets, emotes and notes stay hidden on your devices</small></span><b class="you-count" id="mutedCount">None</b><svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg></button>
+        <div class="muted-list" id="mutedList" hidden></div>
       </div>
-      <p class="who-note">Muting someone, under ⋯ beside their name, hides their caret and emotes on this device.</p>
       <p class="you-eb" id="pairHead" hidden>Devices</p>
       <div class="pair" id="pairCard"></div>
     </div>
@@ -762,8 +813,6 @@ const RG = 4;           // chunks per territory side
 const RC = CH * RG;     // cells per territory side (48)
 const LETTER_MIN = 9, LETTER_FULL = 13, ZMIN = 2, ZMAX = 80;
 const DIRS = [[1,0],[1,1],[0,1],[-1,1],[-1,0],[-1,-1],[0,-1],[1,-1]];
-const DNAME = ['E','SE','S','SW','W','NW','N','NE'];
-const DARROW = ['→','↘','↓','↙','←','↖','↑','↗'];
 const DWEIGHT = [3,2,3,1,1,1,1,2], DW_TOTAL = 14;
 // A territory deals its 16 chunks' words from one shuffled deck of its theme:
 // each chunk gets the next DEAL cards and places 6 to 8 of them, so with at
@@ -774,7 +823,7 @@ const DEAL = 9;
 const STRAY_MIN = 6;
 const NOTES_W = 340;
 // Field notes, by map: each redraw starts a new key and carries over any finds still there.
-const K_FINDS = 'letterfield.finds.v4', K_FINDS_OLD = ['letterfield.finds.v3', 'letterfield.finds.v2', 'letterfield.finds.v1'], K_CAM = 'letterfield.cam.v1', K_COACH = 'letterfield.coach.v1', K_NOTES = 'letterfield.notes.v1', K_SOUND = 'letterfield.sound.v1', K_MUSIC = 'letterfield.music.v1', K_MUSIC_VOL = 'letterfield.musicvol.v1', K_LIST = 'letterfield.list.v1';
+const K_FINDS = 'letterfield.finds.v4', K_FINDS_OLD = ['letterfield.finds.v3', 'letterfield.finds.v2', 'letterfield.finds.v1'], K_CAM = 'letterfield.cam.v1', K_COACH = 'letterfield.coach.v1', K_NOTES = 'letterfield.notes.v1', K_SOUND = 'letterfield.sound.v1', K_SOUND_VOL = 'letterfield.soundvol.v1', K_MUSIC = 'letterfield.music.v1', K_MUSIC_VOL = 'letterfield.musicvol.v1', K_LIST = 'letterfield.list.v1', K_OUTBOX = 'letterfield.outbox.v1';
 const K_INITIALS = 'games.initials';  // shared with the other games' leaderboards
 const K_PASS = 'letterfield.surveyPass.v1';
 // The shared survey (see worker/SURVEY.md), on the leaderboard Worker. With
@@ -1228,9 +1277,22 @@ function sanitize(o) {
   if (s && w.length < STRAY_MIN) return null;
   const f = o.f ? 1 : 0;
   const n = f && Number.isInteger(o.n) && o.n > 0 && o.n < 1e8 ? o.n : 0;  // where a word charted first came in the world's count
+  const b = !f && goodBy(o.b) ? o.b : '';  // who charted it first, when it wasn't you (? for someone unsigned)
   const t = Number.isFinite(Number(o.t)) ? Number(o.t) : Date.now();
   const th = s ? strayTheme(w, fdiv(x, RC), fdiv(y, RC)) : regionTheme(fdiv(x, RC), fdiv(y, RC));
-  return { key, w, x, y, d, t, s, f, n, th, born: 0 };
+  return { key, w, x, y, d, t, s, f, n, b, th, born: 0 };
+}
+const goodBy = b => typeof b === 'string' && (/^[A-Z]{3}$/.test(b) || b === '?');
+// What another tab or device knows of a find, taken into ours: charted first
+// only ever comes on, and so does who charted it otherwise, until it's ours.
+function mergeFind(have, o) {
+  if (o.f && !have.f) {
+    have.f = 1; have.b = '';
+    if (Number.isInteger(o.n) && o.n > 0 && o.n < 1e8) have.n = o.n;
+    return true;
+  }
+  if (!have.f && !have.b && goodBy(o.b)) { have.b = o.b; return true; }
+  return false;
 }
 let redrawn = null;  // {kept, had} the first time a player from an older map comes back
 const readList = k => { try { const a = JSON.parse(LS.get(k) || '[]'); return Array.isArray(a) ? a : []; } catch (_) { return []; } };
@@ -1247,7 +1309,7 @@ function loadLocal() {
   redrawn = { kept: found.size, had: old.length };
   saveLocal();
 }
-const plain = e => ({ w: e.w, x: e.x, y: e.y, d: e.d, t: e.t, s: e.s, ...(e.f ? { f: 1 } : {}), ...(e.n ? { n: e.n } : {}) });
+const plain = e => ({ w: e.w, x: e.x, y: e.y, d: e.d, t: e.t, s: e.s, ...(e.f ? { f: 1 } : {}), ...(e.n ? { n: e.n } : {}), ...(e.b && !e.f ? { b: e.b } : {}) });
 // Every tab of the game in this browser shares one set of field notes. Each
 // save takes in what other tabs saved since, so it never writes over their
 // finds, and a save in another tab is taken in here as it happens. A word
@@ -1260,8 +1322,8 @@ function takeInStored() {
     const have = o && typeof o.w === 'string' ? found.get(keyOf(o.w, o.x, o.y, o.d)) : null;
     if (have) {
       stored.add(have.key);
-      if (o.f && !have.f) { have.f = 1; if (Number.isInteger(o.n) && o.n > 0 && o.n < 1e8) have.n = o.n; added = true; }
-      else if (have.f && !o.f) behind = true;
+      if (mergeFind(have, o)) added = true;
+      else if ((have.f && !o.f) || (have.b && !o.b && !o.f)) behind = true;
       continue;
     }
     const e = sanitize(o);
@@ -1633,7 +1695,7 @@ function onSurvey(l, m) {
     if (!c) return;
     if (!c.s && inSurveyArea(c.x, c.y)) worldExtra++;
     const out = outbox.get(c.key);
-    if (m.by === l.you && out && out.m.is('sent')) { out.m.go('answered'); firstToChart(c); }
+    if (m.by === l.you && out && out.m.is('sent')) { out.m.go('first'); firstToChart(c); }
     else {
       if (out) out.beaten = true;  // someone else charted it while ours was on its way
       if (!found.has(c.key)) news(c);
@@ -1658,7 +1720,7 @@ function onSurvey(l, m) {
   } else if (m.t === 'taken') {
     const c = addClaim(m.c, false), out = c && outbox.get(c.key);
     if (out && out.m.is('sent')) {
-      out.m.go('answered');
+      out.m.go('theirs');
       toast(`<i></i><b>${c.w}</b><span>Charted first by ${c.by || 'another surveyor'} · ${rel(c.at)}</span>`, THEMES[c.th].hue, 0, found.get(c.key));
     }
   } else if (m.t === 'error') {
@@ -1701,28 +1763,62 @@ function addClaim(r, live) {
 // Our own claims, a state machine each (el: null): queued (circled while its
 // sector wasn't live, or waiting its turn under the sector's limit), sent (out
 // on a live socket), unanswered (its socket closed before the answer came:
-// the sector is asked again when it's next joined) and answered, when it
-// leaves the outbox. A word circled while the survey is joining, reconnecting
-// or checking for a pass is claimed as soon as its sector is live.
+// the sector is asked again when it's next joined), and then how it ended,
+// when it leaves the outbox: first (ours), theirs (someone else charted it
+// first) or refused (the sector turned it down). However it ends, the word
+// stays in the notes; theirs marks it with who charted it (see chartedBy). A
+// word circled while the survey is joining, reconnecting or checking for a
+// pass is claimed as soon as its sector is live, and claims still out are
+// kept in storage, so a reload carries on with them (see saveOutbox).
 const CLAIM_MOVES = {
-  queued: ['sent', 'answered'],
-  sent: ['answered', 'unanswered', 'queued'],
-  unanswered: ['sent', 'answered'],
-  answered: [],
+  queued: ['sent', 'theirs'],
+  sent: ['first', 'theirs', 'refused', 'unanswered', 'queued'],
+  unanswered: ['sent', 'first', 'theirs'],
+  first: [], theirs: [], refused: [],
 };
+const CLAIM_ENDS = ['first', 'theirs', 'refused'];
 // A sector takes a burst of claims from a socket, then one every 1.5 s
 // (CLAIM_BURST and CLAIM_REFILL_MS in worker/src/survey.js). The game keeps a
 // little inside that, so time on the way can't push a claim over.
 const CLAIM_BURST = 4, CLAIM_REFILL_MS = 1600;
-function claimWord(e) {
+// `from` is queued for a word just circled; a claim read back from storage
+// starts queued, or unanswered if it may have reached its sector already.
+function claimWord(e, from = 'queued') {
   // A word someone else charted, added to the notes anyway, is theirs already.
   if (!surveyApi || outbox.has(e.key) || claims.has(e.key)) return;
-  const l = links.get(sectorKey(e.x, e.y));
+  const l = links.get(sectorKey(e.x, e.y)), restored = from !== 'queued';
   // `backlog`: it waited for its sector, rather than going as it was circled.
-  const c = { e, l: null, backlog: !(l && l.m.is('live')), initials: '', known: false, beaten: false };
-  c.m = machine('claim', CLAIM_MOVES, 'queued', { el: null, onMove: to => { if (to === 'answered') outbox.delete(e.key); } });
+  const c = { e, l: null, backlog: restored || !(l && l.m.is('live')), initials: restored ? myInitials() : '', known: false, beaten: false };
+  c.m = machine('claim', CLAIM_MOVES, from, { el: null, onMove: to => {
+    if (CLAIM_ENDS.includes(to)) outbox.delete(e.key);
+    if (to === 'theirs') chartedBy(e.key);
+    saveOutbox();
+  } });
   outbox.set(e.key, c);
-  if (l) flushClaims(l);
+  saveOutbox();
+  if (l && !restored) flushClaims(l);
+}
+// Claims still out, kept in storage so a reload doesn't lose them, as [w, x,
+// y, d, 1 if it may have reached its sector]: read back once the survey
+// starts (restoreOutbox), each claim as one that waited.
+function saveOutbox() {
+  LS.set(K_OUTBOX, JSON.stringify([...outbox.values()].map(c => [c.e.w, c.e.x, c.e.y, c.e.d, c.m.is('sent', 'unanswered') ? 1 : 0])));
+}
+function restoreOutbox() {
+  for (const o of readList(K_OUTBOX)) {
+    if (!Array.isArray(o)) continue;
+    const e = found.get(keyOf(o[0], o[1], o[2], o[3]));
+    if (e && !e.f && !e.b) claimWord(e, o[4] ? 'unanswered' : 'queued');
+  }
+  saveOutbox();
+}
+// A word of ours that someone else charted first stays in the notes, marked
+// with who did ("charted by ZED"): the credit is theirs.
+function chartedBy(key) {
+  const e = found.get(key), got = claims.get(key);
+  if (!e || e.f || e.b) return;
+  e.b = got && got.by ? got.by : '?';
+  saveLocal(); syncLater('f', e.key); renderNotes();
 }
 // Sends l's sector the claims waiting for it, oldest first, as fast as the
 // sector takes them, and comes back for the rest when it will.
@@ -1734,7 +1830,7 @@ function flushClaims(l) {
   l.refilled = now;
   for (const c of outbox.values()) {
     if (!c.m.is('queued', 'unanswered') || sectorKey(c.e.x, c.e.y) !== l.k) continue;
-    if (c.backlog && claims.has(c.e.key)) { c.m.go('answered'); continue; }  // someone charted it while it waited
+    if (c.backlog && claims.has(c.e.key)) { c.m.go('theirs'); continue; }  // someone charted it while it waited
     if (l.tokens < 1) { l.flush = setTimeout(() => flushClaims(l), (1 - l.tokens) * CLAIM_REFILL_MS); return; }
     l.tokens -= 1;
     Object.assign(c, { l, initials: myInitials(), known: claims.has(c.e.key) });
@@ -1752,8 +1848,8 @@ function settleClaims(l) {
     if (!c.m.is('unanswered') || sectorKey(c.e.x, c.e.y) !== l.k) continue;
     const got = claims.get(c.e.key);
     if (!got) { c.backlog = true; continue; }  // it never arrived: it goes again
-    c.m.go('answered');
-    if (c.initials && got.by === c.initials && !c.known && !c.beaten) firstToChart(got);
+    if (c.initials && got.by === c.initials && !c.known && !c.beaten) { c.m.go('first'); firstToChart(got); }
+    else c.m.go('theirs');
   }
   flushClaims(l);
 }
@@ -1768,7 +1864,7 @@ function claimRefused(l, c, error) {
     l.tokens = 1 - 60000 / CLAIM_REFILL_MS;  // this sector's claims wait a minute
     return flushClaims(l);
   }
-  c.m.go('answered');
+  c.m.go('refused');
   const why = { 'slow down': 'Too quick to chart', 'daily limit': 'Today’s charting limit reached' }[error];
   const e = why && !c.backlog ? found.get(c.e.key) : null;
   if (e) toast(`<i></i><b>${e.w}</b><span>${why} · kept in your notes</span>`, THEMES[e.th].hue, 0, e);
@@ -1846,6 +1942,14 @@ function goneSupernova(rx, ry, o) {
 const nearView = (rx, ry) => Math.max(Math.abs(rx - fdiv(Math.floor(cam.x), RC)), Math.abs(ry - fdiv(Math.floor(cam.y), RC))) <= 3;
 // Where the shared survey stands, worked out afresh from the links and the
 // pass every time, so the panel's dot and its words always agree.
+// What the title says while the sector you're in isn't live: joining…, offline
+// or crowded (too many surveyors to take more), or nothing when it's live.
+function hereStatus(cx, cy) {
+  const home = links.get(sectorKey(cx, cy));
+  if (home && home.m.is('live')) return '';
+  const s = surveyStatus();
+  return s === 'full-world' || s === 'full-sector' ? 'crowded' : s === 'offline' || s === 'alone' ? 'offline' : 'joining…';
+}
 function surveyStatus() {
   let live = false, failed = false;
   for (const l of links.values()) {
@@ -1878,16 +1982,13 @@ function renderSurvey() {
   surveyEl.dataset.state = status === 'live' ? 'live' : SURVEY_STATUS[status][0];
   // The live count ticks up with claims seen nearby between the Atlas's totals, and never runs backwards.
   if (world) worldShown = Math.min(world.total, Math.max(worldShown, world.charted + worldExtra));
-  if (world && W >= 700) $('#brandSub').textContent = `${worldShown.toLocaleString()} of ${world.total.toLocaleString()} charted`;
+  // Live, the panel keeps to what nothing else says: the universe's count and
+  // yours. The title says how this territory is going, and the Surveyors
+  // button who's online. Otherwise it says what's wrong.
   if (status !== 'live') { surveyText.textContent = SURVEY_STATUS[status][1]; return; }
-  let others = 0, firsts = 0;
-  for (const l of links.values()) if (l.m.is('live')) others += Math.max(0, l.n - (l.counted ? 1 : 0));
+  let firsts = 0;
   for (const e of found.values()) if (e.f) firsts++;
-  const cx = Math.floor(cam.x), cy = Math.floor(cam.y), rx = fdiv(cx, RC), ry = fdiv(cy, RC), here = links.get(sectorKey(cx, cy));
-  const [done, total] = here && here.m.is('live') ? territoryProgress(rx, ry) : [0, 0];
-  surveyText.textContent = `Live · ${others} other surveyor${others === 1 ? '' : 's'} nearby\n` +
-    (world ? `World: ${worldShown.toLocaleString()} of ${world.total.toLocaleString()} charted · ${world.players.toLocaleString()} online\n` : '') +
-    (total ? `${regionName(rx, ry)}: ${done} of ${total} charted\n` : '') +
+  surveyText.textContent = (world ? `Universe: ${worldShown.toLocaleString()} of ${world.total.toLocaleString()} charted\n` : '') +
     `${firsts} word${firsts === 1 ? '' : 's'} charted first by you`;
 }
 
@@ -1951,12 +2052,12 @@ function drawWorld() {
     g.strokeStyle = C.paper; g.lineWidth = px / 60; g.stroke();
     g.strokeStyle = C.danger; g.lineWidth = px / 150; g.stroke();
   }
-  const online = worldMap.sectors.reduce((a, q) => a + q[2], 0);
-  worldNote.textContent = `${online.toLocaleString()} surveyor${online === 1 ? '' : 's'} in ${worldMap.sectors.length} sector${worldMap.sectors.length === 1 ? '' : 's'}`;
+  worldNote.textContent = '';  // the Surveyors button counts who's online
 }
 async function refreshWorld() {
   clearTimeout(worldTimer); worldTimer = 0;
   if (!surveyApi || !surveyMapEl.open || !notesOpen || surveyPaused) return;
+  drawWorld();  // what's known already (a new player's start asked for it), at once, then the latest
   if (await fetchWorld()) { drawWorld(); renderSurvey(); }
   else worldNote.textContent = 'Couldn’t load the world map.';
   if (surveyMapEl.open) worldTimer = setTimeout(refreshWorld, 20000);
@@ -2196,7 +2297,7 @@ async function shareNova(n) {
     await navigator.clipboard.writeText(`${text} ${url}`);
     toast(`<i></i><b>Copied</b><span>${regionName(n.rx, n.ry)}, ready to paste</span>`, hue);
   } catch (_) {
-    toast(`<i></i><b>Couldn’t share</b><span>Copy this page’s address instead</span>`, hue);
+    copyFailed(`${regionName(n.rx, n.ry)}’s supernova`, url, hue);
   }
 }
 const novaAction = n => ({ label: `Share ${regionName(n.rx, n.ry)}’s supernova`, share: () => shareNova(n) });
@@ -2206,14 +2307,17 @@ function novaToast(n, line = 'Supernova · kept in your field notes') {
 }
 // The field notes' list of them, newest first; each flies to its last word.
 const novasSec = $('#novasSec'), novaListEl = $('#novaList');
+const clockFmt = new Intl.DateTimeFormat(undefined, { hour: 'numeric', minute: '2-digit' });
+// When a supernova went off: its time today, its day before.
+const novaWhen = t => (new Date(t).toDateString() === new Date().toDateString() ? clockFmt.format(t) : new Date(t).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }));
 function renderNovas() {
   const list = [...novasSeen.values()].sort((a, b) => b.t - a.t);
   novasSec.hidden = !list.length;
   $('#novasHead').textContent = list.length === 1 ? 'Supernova' : `Supernovas · ${list.length}`;
   novaListEl.innerHTML = list.map(n => {
     const k = n.rx + ',' + n.ry, place = regionName(n.rx, n.ry), who = n.solo ? 'all found by you' : n.mine ? 'the last by you' : n.by ? `the last by ${n.by}` : 'every word charted';
-    return `<li><a class="find mark nova-find" href="#${hashOf(n)}" data-nova="${k}" style="--h:${THEMES[regionTheme(n.rx, n.ry)].hue}">` +
-      `<span class="nova-star" aria-hidden="true"></span><span class="find-word">${place}</span><span class="find-when">${rel(n.t)}</span>` +
+    return `<li class="row"><a class="find mark nova-find" href="#${hashOf(n)}" data-nova="${k}" style="--h:${THEMES[regionTheme(n.rx, n.ry)].hue}">` +
+      `<span class="nova-star" aria-hidden="true"></span><span class="find-word"><span class="find-w">${place}</span></span><span class="find-when">${novaWhen(n.t)}</span>` +
       `<span class="find-meta">Went supernova · <b>${n.w}</b>, ${who}</span></a>` +
       `<button type="button" class="find-share" data-nova="${k}" aria-label="Share ${place}’s supernova" title="Share ${place}’s supernova">${SHARE_ICON}</button></li>`;
   }).join('');
@@ -2469,7 +2573,11 @@ function drawRemnants(vx0, vy0, vx1, vy1, cs, SX, SY) {
 // A supernova makes a sound, and there's music to explore by. Nothing starts
 // before the first tap or key. The speaker button (or M) turns the sound off,
 // the note button (or B) turns the music on: it starts off.
-let soundOn = LS.get(K_SOUND) !== '0', musicOn = LS.get(K_MUSIC) === '1', gestured = false, ac = null, acOut = null;
+let soundOn = LS.get(K_SOUND) !== '0', musicOn = LS.get(K_MUSIC) === '1', gestured = false, ac = null, acOut = null, fxOut = null;
+// How loud sound effects are, 5 to 100 (100, where they always played, to
+// start); 0 on the slider is off, which keeps this for next time.
+let soundVol = (v => (Number.isInteger(v) && v >= 5 && v <= 100 ? v : 100))(Number(LS.get(K_SOUND_VOL)));
+const fxLevel = () => (soundVol / 100) ** 2;
 const novaBuses = new Set();
 // The audio context, made on first use and shared by sound and music.
 function audioCtx() {
@@ -2483,6 +2591,10 @@ function audioCtx() {
     if (!AC) return null;
     try { ac = new AC(); } catch (_) { return null; }
     acOut = audioOut(ac);
+    // Sound effects go through a gain of their own, the mixer's Effects slider.
+    fxOut = ac.createGain();
+    fxOut.gain.value = fxLevel();
+    fxOut.connect(acOut);
   }
   wakeCtx();
   return ac;
@@ -2527,20 +2639,41 @@ document.addEventListener('visibilitychange', () => {
 function playNova(far, pan = null) {
   const a = startAudio();
   if (!a) return;
-  const bus = pan === null ? novaSound(a, acOut, a.currentTime + .03, far) : distantSound(a, acOut, a.currentTime + .03, pan);
+  const bus = pan === null ? novaSound(a, fxOut, a.currentTime + .03, far) : distantSound(a, fxOut, a.currentTime + .03, pan);
   novaBuses.add(bus);
   setTimeout(() => novaBuses.delete(bus), NOVA_END + 2000);
 }
-const soundBtn = $('#sound');
+// The mixer's Effects row: its icon switches sound effects off and back on at
+// their level, and its slider sets the level, 0 switching them off and
+// anything else on.
+const soundBtn = $('#sound'), soundVolEl = $('#soundVol');
+function showSoundVol() {
+  const v = soundOn ? soundVol : 0;
+  soundVolEl.value = String(v);
+  soundVolEl.style.setProperty('--v', v + '%');
+  soundVolEl.setAttribute('aria-valuetext', v ? `Sound effects volume ${v}%` : 'Sound effects off');
+}
 function setSound(on) {
   soundOn = on;
   LS.set(K_SOUND, on ? '1' : '0');
   soundBtn.setAttribute('aria-pressed', String(on));
-  if (on) startAudio();
+  showSoundVol();
+  if (on) { startAudio(); if (fxOut) fxOut.gain.value = fxLevel(); }
   else { for (const b of novaBuses) b.gain.value = 0; novaBuses.clear(); }
 }
+function setSoundVol(v) {
+  v = Math.max(0, Math.min(100, Math.round(v)));
+  if (!v) { if (soundOn) setSound(false); else showSoundVol(); return; }
+  soundVol = v;
+  LS.set(K_SOUND_VOL, String(v));
+  if (!soundOn) { setSound(true); return; }
+  showSoundVol();
+  if (fxOut) fxOut.gain.setTargetAtTime(fxLevel(), ac.currentTime, .03);
+}
 soundBtn.setAttribute('aria-pressed', String(soundOn));
+showSoundVol();
 soundBtn.addEventListener('click', () => setSound(!soundOn));
+soundVolEl.addEventListener('input', () => { gestured = true; setSoundVol(+soundVolEl.value); });
 
 /* ---------- Music ---------- */
 // Three pieces, made as they play, so none loops or has a seam: Drift, slow
@@ -2886,13 +3019,12 @@ function startMusic() {
   musicNow = playMusic(a);
   if (document.hidden) musicNow.hush();
 }
-const musicBtn = $('#music'), musicVolEl = $('#musicVol'), musicVolOut = $('#musicVolOut');
+const musicBtn = $('#music'), musicVolEl = $('#musicVol');
 function showMusicVol() {
   const v = musicOn ? musicVol : 0;
   musicVolEl.value = String(v);
   musicVolEl.style.setProperty('--v', v + '%');
   musicVolEl.setAttribute('aria-valuetext', v ? `Music volume ${v}%` : 'Music off');
-  musicVolOut.textContent = String(v);
 }
 // A move of the slider, or [ and ]: 0 switches the music off, anything else
 // switches it on at that level.
@@ -3434,14 +3566,17 @@ function collect(w, x, y, d, stray, keep = false) {
     pulse = { x, y, d, w, t0: performance.now() }; invalidate();
     return;
   }
-  const e = sanitize({ w, x, y, d, t: Date.now(), s: stray ? 1 : 0 });
+  const e = sanitize({ w, x, y, d, t: Date.now(), s: stray ? 1 : 0, b: theirs ? theirs.by || '?' : '' });
   e.born = performance.now();
   found.set(key, e);
   saveLocal(); syncLater('f', e.key); claimWord(e);
   const rx = fdiv(x, RC), ry = fdiv(y, RC);
-  say(`${w} · ${stray ? 'Stray ' + THEMES[e.th].name.toLowerCase() + ' word' : THEMES[e.th].name} · ${regionName(rx, ry)}`);
+  say(`${w} · ${stray ? 'Bonus ' + THEMES[e.th].name.toLowerCase() + ' word' : THEMES[e.th].name} · ${regionName(rx, ry)}`);
   gatherFind(e);
-  if (!stray && !keep) {  // someone else's word, added to the notes, sets off nothing: it went off when it was charted
+  // Alone, finding a territory's last word sets it off. On the shared survey
+  // the survey says when one goes (goneSupernova): your own count of its words
+  // would set it off again, after a reload, for one charted long ago.
+  if (!stray && !surveyApi) {
     const total = territoryTotal(rx, ry);
     if (territoryFound(rx, ry) === total) {
       const seen = sawNova({ rx, ry, t: e.t, w, x, y, d, by: '', mine: true, solo: !surveyApi });
@@ -3583,7 +3718,8 @@ function peekAt(px, py) {
   peekEl.style.setProperty('--h', hue);
   peekEl.hidden = false;
   const r = peekEl.getBoundingClientRect();
-  const left = px + 14 + r.width > W - 8 ? px - 14 - r.width : px + 14, top = py + 16 + r.height > H - 8 ? py - 12 - r.height : py + 16;
+  // Its side is chosen from the map's width, which stops at the docked notes.
+  const left = px + 14 + r.width > W - dock - 8 ? px - 14 - r.width : px + 14, top = py + 16 + r.height > H - 8 ? py - 12 - r.height : py + 16;
   peekEl.style.transform = `translate(${Math.round(left)}px, ${Math.round(top + mapTop)}px)`;
 }
 canvas.addEventListener('pointermove', e => {
@@ -3622,7 +3758,7 @@ window.addEventListener('keydown', e => {
     return;
   }
   if (inNotes || e.metaKey || e.ctrlKey || e.altKey) return;
-  if (e.target === musicVolEl && /^(Arrow|Page|Home$|End$)/.test(e.key)) return;  // the slider's own keys
+  if ((e.target === musicVolEl || e.target === soundVolEl) && /^(Arrow|Page|Home$|End$)/.test(e.key)) return;  // a slider's own keys
   const step = 180 / cam.cs, OX = cam.x, OY = cam.y;
   const k = e.key.length === 1 ? e.key.toLowerCase() : e.key;
   switch (k) {
@@ -3638,6 +3774,7 @@ window.addEventListener('keydown', e => {
     case 'b': setMusic(!musicOn); break;
     case '[': case ']': setMusicVol((musicOn ? musicVol : 0) + (k === ']' ? 10 : -10)); break;
     case 'h': goHome(); break;
+    case 'l': goLastFind(); break;
     default: return;
   }
   e.preventDefault();
@@ -3664,14 +3801,23 @@ function updateHud() {
     if (notesOpen) drawWorld();  // moves "you are here" on the world map
   }
   tCoord.textContent = fmtCoord(cx, cy);
-  if (surveyApi) {
+  // How much of the territory is charted (or found, alone), on a phone just
+  // "3/113" to leave the theme room; while the survey isn't live here, what
+  // it's doing instead (see hereStatus).
+  const short = innerWidth < 700;
+  tCharted.hidden = false;
+  if (surveyApi && inSurveyArea(cx, cy)) {
     syncSurvey();
-    const l = links.get(sectorKey(cx, cy)), [done, total] = l && l.m.is('live') ? territoryProgress(rx, ry) : [0, 0];
-    tCharted.hidden = !total;
-    if (total) tCharted.textContent = ` · ${done}/${total} charted`;
+    const status = hereStatus(cx, cy);
+    if (status) tCharted.textContent = ` · ${status}`;
+    else {
+      const [done, total] = territoryProgress(rx, ry);
+      tCharted.innerHTML = short ? `<span aria-hidden="true"> · ${done}/${total}</span><span class="vh">, ${done} of ${total} words charted</span>` : ` · ${done}/${total} charted`;
+    }
   } else {
-    tCharted.hidden = false;
-    tCharted.textContent = ` · ${territoryFound(rx, ry)}/${territoryTotal(rx, ry)} found`;
+    if (surveyApi) syncSurvey();
+    const done = territoryFound(rx, ry), total = territoryTotal(rx, ry);
+    tCharted.innerHTML = short ? `<span aria-hidden="true"> · ${done}/${total}</span><span class="vh">, ${done} of ${total} words found</span>` : ` · ${done}/${total} found`;
   }
   updateLegend();
 }
@@ -3789,8 +3935,9 @@ function updateLegend() {
     }
   }
   items.sort((a, b) => a.dist - b.dist);
-  legendCount.textContent = items.length ? `${items.length} left` : '';
   const shown = items.slice(0, 14).sort((a, b) => (a.w.w < b.w.w ? -1 : a.w.w > b.w.w ? 1 : 0));
+  // "14 of 21" when the list names only the nearest; "9 left" when it names them all.
+  legendCount.textContent = !items.length ? '' : items.length > shown.length ? `${shown.length} of ${items.length}` : `${items.length} left`;
   const sig = shown.map(i => i.w.key).join('|') + (shown.length ? '' : ' ' + !!gone);
   if (sig === legendSig) return;
   legendSig = sig;
@@ -3818,6 +3965,7 @@ let toastTimer = 0, toastMs = 0;
 // A find just made has no note (see gatherFind).
 function toast(html, hue, ms = 2400, find = null) {
   toastEl.innerHTML = html;
+  toastEl.classList.remove('holds');
   if (hue != null) toastEl.style.setProperty('--h', hue);
   toastEl.classList.toggle('can-share', !!find);
   if (find) {
@@ -3884,7 +4032,12 @@ function gatherFind(e) {
   const mx = (x0 + x1) / 2, my = (y0 + y1) / 2;
   const range = document.createRange();
   range.selectNodeContents(to);
+  // Before a first find there's no badge to fly to: it's measured where it
+  // will show, and comes in as the bead lands.
+  const away = to === notesBadge && to.hidden;
+  if (away) { to.style.visibility = 'hidden'; to.hidden = false; }
   const b = to === notesBadge ? to.getBoundingClientRect() : range.getBoundingClientRect();
+  if (away) { to.hidden = true; to.style.visibility = ''; }
   const onMap = mx >= 0 && mx <= W - dock && my >= mapTop && my <= mapTop + H;
   if (RM || document.hidden || !b.width || !onMap || !document.body.animate) return land();
 
@@ -3958,9 +4111,9 @@ const shareUrl = e => shareBase
   : location.origin + location.pathname + location.search + '#' + hashOf(e);
 function shareText(e) {
   const place = regionName(fdiv(e.x, RC), fdiv(e.y, RC));
-  const word = e.s ? `${e.w}, a stray ${THEMES[e.th].name.toLowerCase()} word,` : e.w;
+  const word = e.s ? `${e.w}, a bonus ${THEMES[e.th].name.toLowerCase()} word,` : e.w;
   const lead = `I ${Date.now() - e.t < SHARE_JUST_MS ? 'just ' : ''}found ${word} in ${place} in Letterfield`;
-  if (e.f && e.n) return `${lead}, before anyone else. That was word ${e.n.toLocaleString()} of ${(world ? world.total : SURVEY_WORDS).toLocaleString()} on the shared map.`;
+  if (e.f && e.n) return `${lead}, before anyone else. That was word ${e.n.toLocaleString()} of ${(world ? world.total : SURVEY_WORDS).toLocaleString()} in the universe.`;
   if (e.f) return `${lead}, before anyone else.`;
   const nth = [...found.values()].filter(o => o.t <= e.t).length;
   return `${lead}. That’s word ${nth.toLocaleString()} in my field notes.`;
@@ -3974,8 +4127,20 @@ async function shareFind(e) {
     await navigator.clipboard.writeText(`${text} ${url}`);
     toast(`<i></i><b>Copied</b><span>${e.w}, ready to paste</span>`, THEMES[e.th].hue);
   } catch (_) {
-    toast(`<i></i><b>Couldn’t share</b><span>Copy this page’s address instead</span>`, THEMES[e.th].hue);
+    copyFailed(`${e.w}’s link`, url, THEMES[e.th].hue);
   }
+}
+// When the browser won't copy, the link shows in a box that one tap selects
+// whole, and the note stays until a tap anywhere else.
+function copyFailed(what, url, hue) {
+  toast(`<i></i><b>Couldn’t copy it</b><span>Here’s ${what} to copy</span><code class="toast-link">${escHtml(url)}</code>`, hue, 10 * 60000);
+  toastEl.classList.add('holds');
+  const away = ev => {
+    if (toastEl.contains(ev.target)) return;
+    document.removeEventListener('pointerdown', away, true);
+    if (toastEl.classList.contains('holds')) hideToast();
+  };
+  document.addEventListener('pointerdown', away, true);
 }
 
 /* ---------- Definitions ---------- */
@@ -4084,6 +4249,8 @@ function showCount(all = [...found.values()]) {
   const done = unlanded.size ? all.filter(e => !unlanded.has(e.key)) : all;
   const longest = done.reduce((m, e) => (!m || e.w.length > m.w.length ? e : m), null);
   notesBadge.textContent = $('#tWords').textContent = done.length;
+  notesBadge.hidden = !done.length;
+  $('#lastFind').hidden = !all.length;
   $('#tTerr').textContent = new Set(done.map(e => fdiv(e.x, RC) + ',' + fdiv(e.y, RC))).size;
   $('#tLong').textContent = longest ? longest.w : '—';
 }
@@ -4104,17 +4271,53 @@ function renderNotes() {
       used.map(i => `<button type="button" class="filter mark" data-f="${i}" style="--h:${THEMES[i].hue}" aria-pressed="${filter === i}"><i></i>${THEMES[i].name} ${counts[i]}</button>`).join('')
     : '';
   const rows = filter === null ? all : all.filter(e => e.th === filter);
-  findsEl.innerHTML = all.length
-    ? rows.map(e => {
-        const rx = fdiv(e.x, RC), ry = fdiv(e.y, RC);
-        return `<li><a class="find mark${e.s ? ' stray' : ''}" href="#${hashOf(e)}" data-key="${e.key}" style="--h:${THEMES[e.th].hue}">` +
-          `<span class="find-dot" aria-hidden="true"></span><span class="find-word">${e.w}</span><span class="find-when">${rel(e.t)}</span>` +
-          `<span class="find-meta"><b>${regionName(rx, ry)}</b> · ${fmtCoord(e.x, e.y)} · ${DARROW[e.d]} ${DNAME[e.d]}${e.s ? ' · stray' : ''}${e.f ? ' · charted first' : ''}</span></a>` +
-          `<button type="button" class="find-define" data-key="${e.key}" aria-expanded="${defOpen === e.key}"${defOpen === e.key ? ` aria-controls="def-${e.key}"` : ''} aria-label="What ${e.w} means" title="What ${e.w} means">${BOOK_ICON}</button>` +
-          `<button type="button" class="find-share" data-key="${e.key}" aria-label="Share ${e.w}" title="Share ${e.w}">${SHARE_ICON}</button>` +
-          (defOpen === e.key ? defPanel(e) : '') + '</li>';
-      }).join('')
-    : '<li class="finds-empty"><strong>No words yet</strong>Circle a word on the map and it lands here with its territory, grid reference and the bearing it reads in. Tap an entry later to fly straight back to it.</li>';
+  if (!all.length) {
+    findsEl.innerHTML = '<li class="finds-empty"><strong>No words yet</strong>Circle a word on the map and it lands here with its territory and the bearing it reads in. Tap an entry later to fly straight back to it.</li>';
+    return;
+  }
+  // A heading for each day, then a card for each visit to a territory that
+  // day: coming back to one later starts a new card, so the order stays time's.
+  let html = '', day = '', place = '', open = false;
+  const now = new Date();
+  for (const e of rows) {
+    const d = dayLabel(e.t, now), rx = fdiv(e.x, RC), ry = fdiv(e.y, RC), k = rx + ',' + ry;
+    if (d !== day || k !== place) {
+      if (open) html += '</ol></li>';
+      if (d !== day) { html += `<li class="day">${d}</li>`; day = d; }
+      const th = THEMES[regionTheme(rx, ry)];
+      html += `<li class="run mark" style="--h:${th.hue}"><p class="run-head"><b>${regionName(rx, ry)}</b><span>${th.name}</span></p><ol>`;
+      open = true; place = k;
+    }
+    html += findRow(e);
+  }
+  findsEl.innerHTML = html + (open ? '</ol></li>' : '');
+}
+const DIR_WORDS = ['east', 'south-east', 'south', 'south-west', 'west', 'north-west', 'north', 'north-east'];
+const bearing = d => `<svg class="find-dir" viewBox="0 0 16 16" style="transform:rotate(${d * 45}deg)" aria-hidden="true"><path d="M2.5 8h10M9 4.5 12.5 8 9 11.5"/></svg>`;
+function dayLabel(t, now = new Date()) {
+  const d = new Date(t), y = new Date(now);
+  y.setDate(now.getDate() - 1);
+  if (d.toDateString() === now.toDateString()) return 'Today';
+  if (d.toDateString() === y.toDateString()) return 'Yesterday';
+  return d.toLocaleDateString(undefined, { weekday: 'long', month: 'short', day: 'numeric', ...(d.getFullYear() !== now.getFullYear() ? { year: 'numeric' } : {}) });
+}
+// A find's second line, if it has anything to say: that it's a bonus word (a
+// real word the territory doesn't hide), and who charted it, when it wasn't
+// you. Charted first by you is the ring round its dot.
+function findNote(e) {
+  const bonus = e.s ? `bonus ${THEMES[e.th].name.toLowerCase()} word` : '';
+  const by = e.b ? `charted by ${e.b === '?' ? 'another surveyor' : e.b}` : '';
+  return [bonus, by].filter(Boolean).join(' · ');
+}
+function findRow(e) {
+  const note = findNote(e), place = regionName(fdiv(e.x, RC), fdiv(e.y, RC));
+  const label = `${e.w}, ${place}, reads ${DIR_WORDS[e.d]}${e.f ? ', charted first' : ''}${note ? ', ' + note : ''}. Fly there`;
+  return `<li class="row"><a class="find mark${e.s ? ' stray' : ''}" href="#${hashOf(e)}" data-key="${e.key}" style="--h:${THEMES[e.th].hue}" aria-label="${label}">` +
+    `<span class="find-dot${e.f ? ' first' : ''}" aria-hidden="true"></span><span class="find-word"><span class="find-w">${e.w}</span>${bearing(e.d)}</span>` +
+    `<span class="find-when">${clockFmt.format(e.t)}</span>${note ? `<span class="find-meta">${note}</span>` : ''}</a>` +
+    `<button type="button" class="find-define" data-key="${e.key}" aria-expanded="${defOpen === e.key}"${defOpen === e.key ? ` aria-controls="def-${e.key}"` : ''} aria-label="What ${e.w} means" title="What ${e.w} means">${BOOK_ICON}</button>` +
+    `<button type="button" class="find-share" data-key="${e.key}" aria-label="Share ${e.w}" title="Share ${e.w}">${SHARE_ICON}</button>` +
+    (defOpen === e.key ? defPanel(e) : '') + '</li>';
 }
 filtersEl.addEventListener('click', e => {
   const b = e.target.closest('.filter'); if (!b) return;
@@ -4153,6 +4356,15 @@ $('#zoomOut').addEventListener('click', () => flyTo(cam.x, cam.y, cam.cs / 1.6, 
 const defaultCs = () => (W < 700 ? 32 : 38);
 function goHome() { flyTo(6, 6, defaultCs()); }
 $('#home').addEventListener('click', goHome);
+// Last find flies to your newest find and pulses it, as tapping it in the
+// notes does. It joins the tools with your first find.
+const lastFindBtn = $('#lastFind');
+function goLastFind() {
+  let last = null;
+  for (const e of found.values()) if (!last || e.t > last.t) last = e;
+  if (last) goToEntry(last);
+}
+lastFindBtn.addEventListener('click', goLastFind);
 
 // The tools button opens its stack and a second tap shuts it, as do Escape and
 // a tap on the map. It always starts shut. A single boolean, so no machine:
@@ -4264,7 +4476,7 @@ $('#coachOk').addEventListener('click', () => { if (Intro.is('coach')) Intro.go(
 // token, so nobody can send as someone else. The list is a fold of the survey
 // panel, like the world map: the Worker's answer, nearest first, fetched while
 // it's open and on screen. Emotes are a few fixed drawings, never text.
-const K_PLAYER = 'games.player', K_MUTED = 'letterfield.muted.v1', K_LISTED = 'letterfield.listed.v1', K_EMOTES = 'letterfield.emotes.v1';
+const K_PLAYER = 'games.player', K_MUTED = 'letterfield.muted.v1', K_MUTED_AS = 'letterfield.mutedAs.v1', K_EMOTES = 'letterfield.emotes.v1';
 const PID_RE = /^[0-9a-f]{12}$/, MUTED_MAX = 200, LIST_PAGES = 25;
 const WHO_REFRESH_MS = 20000, WHO_RETRY_MS = 20000, POP_MS = 2600, HERE_MS = 30000;
 // The emotes, in the Worker's order (EMOTES in worker/src/survey-social.js):
@@ -4272,10 +4484,10 @@ const WHO_REFRESH_MS = 20000, WHO_RETRY_MS = 20000, POP_MS = 2600, HERE_MS = 300
 // 24 × 24 grid in the game's line style. Why these and nothing else: "The
 // emotes" in worker/SURVEY.md.
 const EMOTES = [
-  { id: 'wave', name: 'Wave', did: 'waved', d: 'M7.13 22.82L5.01 16.39C3.19 16.33 1.37 15.23 1.55 13.9C1.8 12.81 3.07 12.75 4.28 13.48L3.62 10.81A3.88 3.88 0 0 1 11.14 8.93L13.67 21.18M5.25 6.67L6.37 11.15M7.75 6.04L8.87 10.53M17.2 4.6A5 5 0 0 1 19.6 8.4M18.6 1.8A8 8 0 0 1 22.4 7.8' },
+  { id: 'wave', name: 'Wave', did: 'waves', d: 'M7.13 22.82L5.01 16.39C3.19 16.33 1.37 15.23 1.55 13.9C1.8 12.81 3.07 12.75 4.28 13.48L3.62 10.81A3.88 3.88 0 0 1 11.14 8.93L13.67 21.18M5.25 6.67L6.37 11.15M7.75 6.04L8.87 10.53M17.2 4.6A5 5 0 0 1 19.6 8.4M18.6 1.8A8 8 0 0 1 22.4 7.8' },
   { id: 'thanks', name: 'Thanks', did: 'tips their hat: thanks', d: 'M4.04 19.38Q13.34 18.88 21.16 13.82M7.18 18.05C5.2 12.27 6.4 8.52 9.63 7.47C12.87 6.42 16.04 8.75 17.83 14.58M6.47 15.54Q12.11 15.08 16.93 12.14M3.6 15.4 2.2 17.6M6 18.4 5.2 20.8' },
-  { id: 'nice', name: 'Nice', did: 'gave you a thumbs up', d: 'M3.5 11H6.5V20H3.5ZM6.5 11 10.2 4.2A1.9 1.9 0 0 1 13.6 5.7L12.6 9.6H18.6A2 2 0 0 1 20.5 12L19.3 18.4A2 2 0 0 1 17.3 20H6.5' },
-  { id: 'clap', name: 'Clap', did: 'applauded', d: 'M3.02 21.22L4.18 15.65C2.89 14.84 2.02 13.29 2.72 12.39C3.35 11.7 4.3 12.19 4.88 13.23L5.52 11.01A3.26 3.26 0 0 1 11.77 12.8L8.48 22.78M20.98 21.22L19.82 15.65C21.11 14.84 21.98 13.29 21.28 12.39C20.65 11.7 19.7 12.19 19.12 13.23L18.48 11.01A3.26 3.26 0 0 0 12.23 12.8L15.52 22.78M12 5.6V2.6M8.2 6.2 6.8 4.2M15.8 6.2 17.2 4.2' },
+  { id: 'nice', name: 'Thumbs up', did: 'gives you a thumbs up', d: 'M3.5 11H6.5V20H3.5ZM6.5 11 10.2 4.2A1.9 1.9 0 0 1 13.6 5.7L12.6 9.6H18.6A2 2 0 0 1 20.5 12L19.3 18.4A2 2 0 0 1 17.3 20H6.5' },
+  { id: 'clap', name: 'Clap', did: 'applauds', d: 'M3.02 21.22L4.18 15.65C2.89 14.84 2.02 13.29 2.72 12.39C3.35 11.7 4.3 12.19 4.88 13.23L5.52 11.01A3.26 3.26 0 0 1 11.77 12.8L8.48 22.78M20.98 21.22L19.82 15.65C21.11 14.84 21.98 13.29 21.28 12.39C20.65 11.7 19.7 12.19 19.12 13.23L18.48 11.01A3.26 3.26 0 0 0 12.23 12.8L15.52 22.78M12 5.6V2.6M8.2 6.2 6.8 4.2M15.8 6.2 17.2 4.2' },
   { id: 'great', name: 'Great find', did: 'says great find', d: 'M12 3.2C12.7 8.6 15.4 11.3 20.8 12 15.4 12.7 12.7 15.4 12 20.8 11.3 15.4 8.6 12.7 3.2 12 8.6 11.3 11.3 8.6 12 3.2ZM19 2.6V6.2M17.2 4.4H20.8' },
   { id: 'here', name: 'Over here', did: 'is calling you over', d: 'M6 21.2V3.2M6 4.2H18L15.4 7.9 18 11.6H6M3.4 21.2H8.6' },
   { id: 'what', name: 'Question', did: 'has a question', d: 'M12 3a9 9 0 1 1 0 18 9 9 0 0 1 0-18ZM9.4 9.4A2.7 2.7 0 0 1 14.6 10.1C14.6 11.9 12 12.3 12 14.1M12 17.2V17.3' },
@@ -4343,12 +4555,27 @@ if (playerToken && window.crypto && crypto.subtle) {
       renderSurvey(); invalidate(); renderYouRow();
     }, () => {});
 }
-// Whether to be on the list, whether to take emotes, and who's muted: all on this device only.
-let listedOn = LS.get(K_LISTED) !== '0', emotesOn = LS.get(K_EMOTES) !== '0';
+// Whether to take emotes, and who's muted, kept on this device (and on
+// linked ones, see Syncing linked devices). Everyone online is on the list:
+// a switch to keep off it went, so its old key goes too.
+let emotesOn = LS.get(K_EMOTES) !== '0';
+try { localStorage.removeItem('letterfield.listed.v1'); } catch (_) {}
 const muted = new Set(readList(K_MUTED).filter(p => typeof p === 'string' && PID_RE.test(p)).slice(-MUTED_MAX));
+// Who each muted surveyor was when muted, and when: id → [initials, ms], for
+// the Muted list. Kept since the list came: anyone muted before, or whose
+// details haven't reached this device, is "A surveyor" there.
+const goodMutedAs = v => Array.isArray(v) && v.length === 2 && (v[0] === '' || /^[A-Z]{3}$/.test(v[0])) && Number.isInteger(v[1]) && v[1] >= 0 && v[1] <= 1e15;
+const mutedAsOf = o => (o && typeof o === 'object' && !Array.isArray(o) ? Object.entries(o).filter(([p, v]) => PID_RE.test(p) && goodMutedAs(v)) : []);
+const mutedAs = new Map((() => { try { return mutedAsOf(JSON.parse(LS.get(K_MUTED_AS) || '{}')); } catch (_) { return []; } })().filter(([p]) => muted.has(p)));
+const mutedAsSaved = () => Object.fromEntries([...mutedAs].filter(([p]) => muted.has(p)));
+function saveMuted() {
+  for (const p of mutedAs.keys()) if (!muted.has(p)) mutedAs.delete(p);
+  LS.set(K_MUTED, JSON.stringify([...muted]));
+  LS.set(K_MUTED_AS, JSON.stringify(mutedAsSaved()));
+}
 // What every sector is told about us when it's joined, and again when any of it changes.
 function meMessage() {
-  return { t: 'me', initials: myInitials(), ...(playerToken ? { token: playerToken } : {}), ...(listedOn ? {} : { hide: true }), ...(emotesOn ? {} : { quiet: true }), ...(myGuild ? { guild: myGuild.code } : {}) };
+  return { t: 'me', initials: myInitials(), ...(playerToken ? { token: playerToken } : {}), ...(emotesOn ? {} : { quiet: true }), ...(myGuild ? { guild: myGuild.code } : {}) };
 }
 const tellMe = () => { for (const l of links.values()) tell(l, meMessage()); };
 // A caret's colour, from its id, as the map draws it.
@@ -4513,7 +4740,7 @@ function renderWho() {
   let status;
   if (!whoData) status = st === 'failed' ? 'Couldn’t load the list. Trying again shortly.' : 'Looking for surveyors…';
   else {
-    status = whoData.n ? `${whoData.n.toLocaleString()} other surveyor${whoData.n === 1 ? '' : 's'} in the shared world, nearest first` : 'Nobody else is in the shared world right now.';
+    status = whoData.n ? `${whoData.n.toLocaleString()} other surveyor${whoData.n === 1 ? '' : 's'} online, nearest first` : 'Nobody else is surveying right now.';
     if (st === 'failed') status += ' · couldn’t refresh';
   }
   whoStatus.textContent = status;
@@ -4542,7 +4769,7 @@ function whoRow(s, mate = false) {
 }
 function whoPanel(s, who, m) {
   return `<div class="who-emotes" id="emo-${s.pid}" role="group" aria-label="Emotes for ${who}">` +
-    (m ? '' : `<div class="emote-row">${EMOTES.filter(e => e.id !== 'wave').map(e => `<button type="button" class="emote" data-pid="${s.pid}" data-e="${e.id}" data-k="${s.pid}:${e.id}" aria-label="${e.name} to ${who}" title="${e.name}"${s.quiet ? ' disabled' : ''}>${emoteSvg(e)}</button>`).join('')}</div>`) +
+    (m ? '' : `<div class="emote-row">${EMOTES.filter(e => e.id !== 'wave').map(e => `<button type="button" class="emote" data-pid="${s.pid}" data-e="${e.id}" data-k="${s.pid}:${e.id}" aria-label="${e.name} to ${who}" title="${e.name}"${s.quiet ? ' disabled' : ''}>${emoteSvg(e)}<span aria-hidden="true">${e.name}</span></button>`).join('')}</div>`) +
     `<button type="button" class="who-mute" data-pid="${s.pid}" data-k="${s.pid}:mute">${m ? 'Unmute' : 'Mute'} ${who}</button></div>`;
 }
 whoList.addEventListener('click', e => {
@@ -4565,10 +4792,8 @@ whoList.addEventListener('keydown', e => {
   if (b) b.focus();
 });
 whoMore.addEventListener('click', () => { whoPages++; if (Who.is('ready')) Who.go('refreshing'); });
-const listedEl = $('#whoListed'), emotesEl = $('#whoEmotes');
-listedEl.checked = listedOn;
+const emotesEl = $('#whoEmotes');
 emotesEl.checked = emotesOn;
-listedEl.addEventListener('change', () => { listedOn = listedEl.checked; LS.set(K_LISTED, listedOn ? '1' : '0'); settingsChanged(); tellMe(); renderWho(); });
 emotesEl.addEventListener('change', () => { emotesOn = emotesEl.checked; LS.set(K_EMOTES, emotesOn ? '1' : '0'); settingsChanged(); tellMe(); if (!emotesOn) pops = []; renderWho(); invalidate(); });
 
 // Flies to a surveyor: straight to their caret if one of our sectors shows it,
@@ -4588,14 +4813,48 @@ function seekSurveyor() {
   if (c) { seek = null; flyTo(c.x, c.y, Math.max(cam.cs, 30), { min: 300, max: 900 }); }
 }
 function setMuted(s, on) {
-  if (on) muted.add(s.pid); else muted.delete(s.pid);
+  if (on) { muted.add(s.pid); mutedAs.set(s.pid, [s.ini || '', Date.now()]); } else muted.delete(s.pid);
   while (muted.size > MUTED_MAX) muted.delete(muted.values().next().value);
-  LS.set(K_MUTED, JSON.stringify([...muted]));
+  saveMuted();
   settingsChanged();
   pops = pops.filter(p => p.pid !== s.pid);
-  renderWho(); invalidate();
+  renderWho(); renderMuted(); invalidate();
   say(`${on ? 'Muted' : 'Unmuted'} ${s.ini || 'that surveyor'}`);
 }
+// The Muted row on your page, and the list it opens: newest first, each with
+// the initials they had when muted (or have now, if this device never knew),
+// when, and an Unmute pill. It opens and shuts like a fold: a single boolean.
+const mutedRow = $('#mutedRow'), mutedListEl = $('#mutedList');
+let mutedOpen = false;
+function renderMuted() {
+  $('#mutedCount').textContent = muted.size ? String(muted.size) : 'None';
+  mutedRow.setAttribute('aria-expanded', String(mutedOpen));
+  mutedListEl.hidden = !mutedOpen;
+  if (!mutedOpen) return;
+  const thisYear = new Date().getFullYear();
+  const when = at => (at ? `Muted ${new Date(at).toLocaleDateString(undefined, { day: 'numeric', month: 'short', ...(new Date(at).getFullYear() === thisYear ? {} : { year: 'numeric' }) })}` : '');
+  const rows = [...muted].map(pid => {
+    const [ini, at] = mutedAs.get(pid) || ['', 0], now = whoFind(pid);
+    return { pid, ini: ini || (now && now.ini) || '', at };
+  }).sort((a, b) => b.at - a.at);
+  const html = rows.length
+    ? `<ul>${rows.map(r => `<li class="muted-row"><b class="muted-ini">${r.ini || 'A surveyor'}</b><span class="muted-when">${when(r.at)}</span><button type="button" class="pill" data-unmute="${r.pid}" aria-label="Unmute ${r.ini || 'this surveyor'}">Unmute</button></li>`).join('')}</ul>`
+    : '<p class="muted-none">Nobody’s muted. To mute someone, open ⋯ beside their name on the list, or long-press their caret on the map.</p>';
+  if (mutedListEl.dataset.drawn !== html) { mutedListEl.dataset.drawn = html; mutedListEl.innerHTML = html; }
+}
+mutedRow.addEventListener('click', () => { mutedOpen = !mutedOpen; renderMuted(); });
+mutedListEl.addEventListener('click', e => {
+  const b = e.target.closest('button[data-unmute]');
+  if (!b) return;
+  const pid = b.dataset.unmute, row = b.closest('li'), next = row && (row.nextElementSibling || row.previousElementSibling);
+  const to = next && next.querySelector('button') ? next.querySelector('button').dataset.unmute : '';
+  const [ini] = mutedAs.get(pid) || [''];
+  setMuted({ pid, ini: ini || (whoFind(pid) || {}).ini || '' }, false);
+  // Focus goes to the next one down (or up), or back to the row once nobody's left.
+  const el = (to && mutedListEl.querySelector(`[data-unmute="${to}"]`)) || mutedRow;
+  try { el.focus({ preventScroll: true }); } catch (_) {}
+});
+renderMuted();
 // Sends an emote from the sector under the middle of the view, which knows
 // where we are, toward the sector where we saw them: their caret's, or their
 // territory's from the list.
@@ -4701,7 +4960,7 @@ function openCaretMenu(s, px, py) {
   caretFor = s.pid;
   const who = s.ini || 'A surveyor', m = muted.has(s.pid);
   caretMenu.innerHTML = `<p class="caret-who"><b id="caretWho">${s.ini || '···'}</b><span>${regionName(s.rx, s.ry)}</span></p>` +
-    `<div class="emote-row">${EMOTES.map(e => `<button type="button" class="emote" data-e="${e.id}" aria-label="${e.name} to ${who}" title="${e.name}"${m ? ' disabled' : ''}>${emoteSvg(e)}</button>`).join('')}</div>` +
+    `<div class="emote-row">${EMOTES.map(e => `<button type="button" class="emote" data-e="${e.id}" aria-label="${e.name} to ${who}" title="${e.name}"${m ? ' disabled' : ''}>${emoteSvg(e)}<span aria-hidden="true">${e.name}</span></button>`).join('')}</div>` +
     `<p class="who-said" aria-live="polite"></p><button type="button" class="who-mute">${m ? 'Unmute' : 'Mute'} ${who}</button>`;
   caretMenu.hidden = false;
   caretMenu._s = s;
@@ -4773,7 +5032,7 @@ if (surveyApi) renderWho();
 const GUILD_FIRST = [['Crimson', 350], ['Coral', 8], ['Copper', 22], ['Amber', 38], ['Golden', 50], ['Lime', 85], ['Fern', 115], ['Emerald', 145],
   ['Jade', 165], ['Teal', 182], ['Azure', 200], ['Cobalt', 220], ['Indigo', 245], ['Violet', 270], ['Plum', 295], ['Rose', 325]];
 const GUILD_SECOND = ['Compass', 'Sextant', 'Lantern', 'Quill', 'Atlas', 'Meridian', 'Beacon', 'Theodolite', 'Chart', 'Lodestar', 'Spyglass', 'Waypoint', 'Ledger', 'Inkwell', 'Horizon', 'Contour'];
-const GUILD_THIRD = ['Society', 'Guild', 'Company', 'Circle', 'Club', 'Expedition', 'Survey', 'Fellowship'];
+const GUILD_THIRD = ['Society', 'Guild', 'Company', 'Circle', 'Club', 'Expedition', 'Lodge', 'Fellowship', 'League', 'Order', 'Corps', 'Bureau', 'Institute', 'Academy', 'Alliance', 'Caravan'];
 const K_GUILD = 'letterfield.guild.v1', GUILD_CODE_RE = /^[A-HJKMNP-Z2-9]{6}$/, NOTE_AGAIN_MS = 10 * 60000;
 const goodName = n => Array.isArray(n) && n.length === 3 && [GUILD_FIRST, GUILD_SECOND, GUILD_THIRD].every((list, i) => Number.isInteger(n[i]) && n[i] >= 0 && n[i] < list.length);
 const guildName = n => `${GUILD_FIRST[n[0]][0]} ${GUILD_SECOND[n[1]]} ${GUILD_THIRD[n[2]]}`;
@@ -4785,28 +5044,30 @@ const randomName = () => [GUILD_FIRST, GUILD_SECOND, GUILD_THIRD].map(list => Ma
 let myGuild = (() => {
   try { const g = JSON.parse(LS.get(K_GUILD) || 'null'); return g && GUILD_CODE_RE.test(g.code) && goodName(g.name) && /^[0-9a-f]{8}$/.test(g.tag) ? g : null; } catch (_) { return null; }
 })();
-let draftName = randomName(), guildError = '', askLeave = false, invite = null, guildHeard = false;
+let draftName = randomName(), guildError = '', invite = null, guildHeard = false;
 let mates = new Map();      // id → {pid, ini, rx, ry, idle, at}: who of our guild is online, as our sectors last said
 let roster = [], rosterAt = 0;  // [{pid, ini, seen}]: every member, from the guild itself, fetched with the list
 const ROSTER_MS = 60000;    // as the list refreshes, the roster comes again at most this often
 const noted = new Map();    // id → when we last said they came online
 // The guild we're in, shown on <html data-guild>: out of one, naming a new
 // one (the name can be drawn again), making it, invited by a link (looking it
-// up and asking), joining, in one, or leaving. A reply that comes back after
-// we've moved on is dropped.
+// up and asking), joining, in one, asking whether to leave it (confirming),
+// or leaving. A reply that comes back after we've moved on is dropped.
 const Membership = machine('guild', {
   out: ['naming', 'invited', 'in'],
   naming: ['making', 'out', 'invited'],
   making: ['in', 'naming'],
   invited: ['joining', 'out', 'in'],
   joining: ['in', 'invited'],
-  in: ['leaving', 'invited', 'out'],
+  in: ['confirming', 'invited', 'out'],
+  confirming: ['in', 'leaving', 'invited', 'out'],
   leaving: ['out', 'in'],
 }, myGuild ? 'in' : 'out', { onMove: guildMoved });
 function guildMoved(to, from) {
-  if (to !== 'in') askLeave = false;
-  if (from === 'in' || to === 'in' || to === 'out') { mates = new Map(); guildHeard = false; tellMe(); }
-  if (to === 'in' && Who.is('ready')) Who.go('refreshing');
+  // Asking whether to leave, and staying, changes nothing about the guild.
+  const asked = (from === 'in' && to === 'confirming') || (from === 'confirming' && to === 'in');
+  if (!asked && (from === 'in' || from === 'confirming' || to === 'in' || to === 'out')) { mates = new Map(); guildHeard = false; tellMe(); }
+  if (to === 'in' && !asked && Who.is('ready')) Who.go('refreshing');
   if (to === 'invited' && myGuild && Date.now() - rosterAt >= ROSTER_MS) fetchRoster();  // how many the switch would leave behind
   renderGuild(); renderWho(); invalidate();
 }
@@ -4888,7 +5149,7 @@ function dismissInvite() {
   Membership.go(myGuild ? 'in' : 'out');
 }
 async function leaveGuild() {
-  if (!Membership.is('in') || !myGuild) return;
+  if (!Membership.is('confirming') || !myGuild) return;
   const g = myGuild;
   Membership.go('leaving');
   const at = Membership.seq;
@@ -4930,7 +5191,7 @@ async function fetchRoster() {
     if (LID_RE.test(data.lid) && data.lid !== g.lid) saveGuild({ ...g, lid: data.lid }, true);
     renderGuild(); renderWho();
   }
-  else if (status === 404 && Membership.is('in')) {
+  else if (status === 404 && Membership.is('in', 'confirming')) {
     // The guild doesn't have us any more (it ended, or we left from another device).
     saveGuild(null); roster = [];
     toast(`<i class="guild-dot" style="--gh:${guildHue(g.name)}"></i><b class="wraps">${guildName(g.name)}</b><span>You’re not in this guild any more</span>`, null, 4000);
@@ -4952,7 +5213,7 @@ function onGuild(m) {
   guildHeard = true;
   if (arrived.length) {
     for (const s of arrived) noted.set(s.pid, now);
-    const s = arrived[0], who = s.ini || 'A mate', more = arrived.length - 1;
+    const s = arrived[0], who = s.ini || 'A member', more = arrived.length - 1;
     toast(`<i class="guild-dot" style="--gh:${guildHue(myGuild.name)}"></i><b class="wraps">${who}${more ? ` and ${more} more` : ''} came online</b><span>${regionName(s.rx, s.ry)} · ${away(s.rx, s.ry)}</span>`, null, 4000,
       { label: `Fly to ${who}`, text: 'Fly there', icon: FLY_ICON, share: () => { hideToast(); flyToSurveyor(s); } });
   }
@@ -4973,13 +5234,13 @@ const seenText = t => { const s = Math.max(0, (Date.now() - t) / 1000); return s
 // then the others with when they were last seen, then everyone else.
 function whoListHtml() {
   const pub = whoData ? sortedWho() : [];
-  if (!myGuild || !Membership.is('in', 'leaving', 'invited', 'joining')) return pub.map(whoRow).join('');
+  if (!myGuild || !Membership.is('in', 'confirming', 'leaving', 'invited', 'joining')) return pub.map(whoRow).join('');
   const { online, offline, all } = guildMates(), [cx, cy] = camTerr();
   const d = s => Math.max(Math.abs(s.rx - cx), Math.abs(s.ry - cy));
   online.sort((a, b) => d(a) - d(b) || a.idle - b.idle);
   const rest = pub.filter(s => !all.has(s.pid));
   const mark = `<i class="guild-dot" style="--gh:${guildHue(myGuild.name)}" aria-hidden="true"></i>`, name = guildName(myGuild.name);
-  const inv = Membership.is('in') ? `<button type="button" class="who-invite" data-g="invite" data-k="guild:invite" aria-label="Invite a mate to the ${name}">${Date.now() - invitedAt < INVITED_MS ? 'Link copied' : '+ Invite'}</button>` : '';
+  const inv = Membership.is('in', 'confirming') ? `<button type="button" class="who-invite" data-g="invite" data-k="guild:invite" aria-label="Invite someone to the ${name}">${Date.now() - invitedAt < INVITED_MS ? 'Link copied' : '+ Invite'}</button>` : '';
   return `<li class="who-head who-guild">${mark}<span class="who-head-name">${name}</span><span class="who-head-n">${online.length} online</span>${inv}</li>` +
     online.map(s => whoRow({ quiet: false, ...s }, true)).join('') +
     offline.map(m => `<li class="who-row away"><div class="who" style="--g:${hueOf(m.pid)}"><span class="who-av" aria-hidden="true"><b class="who-ini">${m.ini || '···'}</b></span><span class="who-where"><span>Offline</span></span><span class="who-meta">last seen ${seenText(m.seen)}</span></div></li>`).join('') +
@@ -4998,22 +5259,23 @@ function renderGuild() {
   const named = (n, id = '') => `<b class="guild-name"${id ? ` id="${id}"` : ''} style="--gh:${guildHue(n)}"><i aria-hidden="true"></i><span>${guildName(n)}</span></b>`;
   let html = '';
   // Rows in a group on your page: the guild, then each thing to do with it.
-  if (st === 'out') html = `<button type="button" class="you-item" data-g="start"><span>Start a guild<small>A few surveyors who find each other: mates first on the list, a note when one comes online, a mark on their carets.</small></span>${CHEV}</button><p class="guild-small">Or join one from a mate’s invite link.</p>`;
-  else if (st === 'naming' || st === 'making') html = `<div class="you-pad"><p>Your guild will be called</p>${named(draftName)}${err}<div class="guild-acts" style="margin-top:10px"><button type="button" class="pill" data-g="redraw"${st === 'making' ? ' disabled' : ''}>Another name</button><button type="button" class="btn" data-g="create"${st === 'making' ? ' disabled' : ''}>${st === 'making' ? 'Starting…' : 'Start it'}</button><button type="button" class="pill" data-g="cancel"${st === 'making' ? ' disabled' : ''}>Cancel</button></div></div>`;
+  if (st === 'out') html = `<button type="button" class="you-item" data-g="start"><span>Start a guild<small>A few surveyors who find each other: members first on the list, a note when one comes online, a mark on their carets.</small></span>${CHEV}</button><p class="guild-small">Or join one from a member’s invite link.</p>`;
+  else if (st === 'naming' || st === 'making') html = `<div class="you-pad"><p>Your guild will be called</p>${named(draftName)}${err}<div class="guild-acts" style="margin-top:10px"><button type="button" class="btn ghost" data-g="redraw"${st === 'making' ? ' disabled' : ''}>Another name</button><button type="button" class="btn" data-g="create"${st === 'making' ? ' disabled' : ''}>${st === 'making' ? 'Starting…' : 'Start it'}</button><button type="button" class="btn ghost" data-g="cancel"${st === 'making' ? ' disabled' : ''}>Cancel</button></div></div>`;
   else if (myGuild) {
     const { online } = guildMates(), size = Math.max(1, roster.length);
     html = `<div class="you-item guild-row">${named(myGuild.name)}<p class="guild-meta">${size} member${size === 1 ? '' : 's'} · ${online.length} other${online.length === 1 ? '' : 's'} online</p></div>${err}<p class="guild-small" id="guildSaid" aria-live="polite"></p>` +
-      (askLeave
-        ? `<div class="you-pad"><p>Leave the ${guildName(myGuild.name)}? You’d need a new invite to come back.</p><div class="guild-acts"><button type="button" class="pill" data-g="leave-yes">Leave</button><button type="button" class="pill" data-g="leave-no">Stay</button></div></div>`
-        : `<button type="button" class="you-item" data-g="invite"><span>Invite a mate<small>A link to send them</small></span>${CHEV}</button>` +
-          (LID_RE.test(myGuild.lid || '') ? `<a class="you-item" data-g="log" href="/letterfield-log?guild=${myGuild.lid}"><span>Our words in the survey log<small>The guild’s own page, which anyone can open</small></span>${CHEV}</a>` : '') +
+      (st === 'confirming'
+        ? `<div class="you-pad"><p>Leave the ${guildName(myGuild.name)}? You’d need a new invite to come back.</p><div class="guild-acts"><button type="button" class="btn danger" data-g="leave-yes">Leave</button><button type="button" class="btn ghost" data-g="leave-no">Stay</button></div></div>`
+        : `<button type="button" class="you-item" data-g="invite"><span>Invite someone<small>A link to send them</small></span>${CHEV}</button>` +
+          (LID_RE.test(myGuild.lid || '') ? `<a class="you-item" data-g="log" href="/letterfield-log?guild=${myGuild.lid}&name=${myGuild.name.join('-')}"><span>Our words in the survey log<small>The guild’s own page, which anyone can open</small></span>${CHEV}</a>` : '') +
           `<button type="button" class="you-item danger" data-g="leave"${st === 'leaving' ? ' disabled' : ''}><span>${st === 'leaving' ? 'Leaving…' : 'Leave guild'}</span></button>` +
-          `<p class="guild-small">Words you chart while in a guild count for it in the survey log, under its name. While you’re off the list, they don’t.</p>`);
+          `<p class="guild-small">Words you chart while in a guild count for it in the survey log, under its name.</p>`);
   } else if (st === 'invited' || st === 'joining') html = '<p class="you-pad">Looking at an invite to a guild…</p>';
   // Against what it last drew, not its live HTML, which notes written into it
   // since (and how a browser writes out `disabled`) always make different.
   if (guildCard.dataset.drawn !== html) {
-    const f = document.activeElement, k = f && guildCard.contains(f) ? f.dataset.g : '';
+    const f = document.activeElement, was = f && guildCard.contains(f) ? f.dataset.g : '';
+    const k = { leave: 'leave-no', 'leave-no': 'leave' }[was] || was;  // asked whether to leave, Stay has the focus, not Leave
     guildCard.dataset.drawn = html;
     guildCard.innerHTML = html;
     if (k) { const el = guildCard.querySelector(`[data-g="${k}"]`) || guildCard.querySelector('button'); if (el) try { el.focus({ preventScroll: true }); } catch (_) {} }
@@ -5033,7 +5295,7 @@ function renderGuild() {
         ? `<p class="eyebrow">Switch guilds?</p><div class="guild-swap"><p class="guild-swap-label">You’re in</p>${named(other.name)}${known ? `<p class="guild-meta">${roster.length} member${roster.length === 1 ? '' : 's'}</p>` : ''}<p class="guild-swap-label guild-swap-to">Invited to</p>${named(invite.name, 'guildInviteName')}<p class="guild-meta">${theirs}</p></div>` +
           `<p class="guild-warn" role="note"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3.5 22 20.5H2Z"/><path d="M12 10v4.5M12 17.6v.1"/></svg><span>You can be in one guild at a time. Joining the ${guildName(invite.name)} takes you out of the ${guildName(other.name)}, and you’d need a new invite to go back.${only ? ' You’re its only member, so it ends when you leave.' : ''}</span></p>` +
           `${invite.error ? `<p class="guild-err" role="alert">${invite.error}</p>` : ''}<div class="coach-row"><button type="button" class="btn ghost" data-g="not-now">Stay</button><button type="button" class="btn" data-g="join"${busy ? ' disabled' : ''}>${busy ? 'Switching…' : 'Leave and join'}</button></div>`
-        : `<p class="eyebrow">Invited to a guild</p>${named(invite.name, 'guildInviteName')}<p>${theirs}. A guild finds each other on the map: mates first on the surveyor list, a note when one comes online, a mark on their carets.</p>${invite.error ? `<p class="guild-err" role="alert">${invite.error}</p>` : ''}<div class="coach-row"><button type="button" class="btn ghost" data-g="not-now">Not now</button><button type="button" class="btn" data-g="join"${busy ? ' disabled' : ''}>${busy ? 'Joining…' : 'Join'}</button></div>`;
+        : `<p class="eyebrow">Invited to a guild</p>${named(invite.name, 'guildInviteName')}<p>${theirs}. A guild finds each other on the map: members first on the surveyor list, a note when one comes online, a mark on their carets.</p>${invite.error ? `<p class="guild-err" role="alert">${invite.error}</p>` : ''}<div class="coach-row"><button type="button" class="btn ghost" data-g="not-now">Not now</button><button type="button" class="btn" data-g="join"${busy ? ' disabled' : ''}>${busy ? 'Joining…' : 'Join'}</button></div>`;
   }
 }
 function onGuildClick(e) {
@@ -5045,8 +5307,8 @@ function onGuildClick(e) {
   else if (g === 'create') startGuild();
   else if (g === 'cancel' && Membership.is('naming')) { guildError = ''; Membership.go('out'); }
   else if (g === 'invite') shareInvite();
-  else if (g === 'leave') { askLeave = true; renderGuild(); }
-  else if (g === 'leave-no') { askLeave = false; renderGuild(); }
+  else if (g === 'leave' && Membership.is('in')) Membership.go('confirming');
+  else if (g === 'leave-no' && Membership.is('confirming')) Membership.go('in');
   else if (g === 'leave-yes') leaveGuild();
   else if (g === 'join') joinInvite();
   else if (g === 'not-now') dismissInvite();
@@ -5088,7 +5350,7 @@ function writeSync(st) {
   if (st) LS.set(K_SYNC, JSON.stringify(st));
   else try { localStorage.removeItem(K_SYNC); } catch (_) {}
 }
-let syncTimer = 0, syncDue = 0, stopAsk = false;
+let syncTimer = 0, syncDue = 0;
 // Syncing, on <html data-sync>: off (never linked, or stopped), idle between
 // syncs, syncing, or failed (it tries again later). A reply that comes back
 // after it was stopped is dropped.
@@ -5100,7 +5362,8 @@ const Sync = machine('sync', {
 }, surveyApi && playerToken && readSync() ? 'idle' : 'off', { onMove: syncMoved });
 function devicesSyncing() { return !Sync.is('off'); }
 function syncMoved(to, from) {
-  if (to === 'off') { clearTimeout(syncTimer); syncDue = 0; stopAsk = false; }
+  if (to === 'off') { clearTimeout(syncTimer); syncDue = 0; }
+  if (to === 'off' && Pair.is('stop')) Pair.go('idle');  // stopped elsewhere: nothing left to ask
   if (to === 'off' || from === 'off') renderPair();  // the linking card says whether it's on
 }
 // The next sync, in `ms` unless one's due sooner already.
@@ -5174,7 +5437,7 @@ function takeSynced(data, st) {
   for (const o of Array.isArray(data.finds) ? data.finds : []) {
     const have = o && typeof o.w === 'string' ? found.get(keyOf(o.w, o.x, o.y, o.d)) : null;
     if (have) {
-      if (o.f && !have.f) { have.f = 1; if (Number.isInteger(o.n) && o.n > 0 && o.n < 1e8) have.n = o.n; added = true; }
+      if (mergeFind(have, o)) added = true;
       continue;
     }
     const e = sanitize(o);
@@ -5197,30 +5460,41 @@ function applySettings(c) {
   if (Array.isArray(c.muted)) {
     muted.clear();
     for (const p of c.muted.slice(-MUTED_MAX)) if (typeof p === 'string' && PID_RE.test(p)) muted.add(p);
-    LS.set(K_MUTED, JSON.stringify([...muted]));
+    for (const [p, v] of mutedAsOf(c.mutedAs)) if (muted.has(p)) mutedAs.set(p, v);  // what we knew stays for any it doesn't name
+    saveMuted();
     pops = pops.filter(p => !muted.has(p.pid));
+    renderMuted();
   }
-  if (typeof c.listed === 'boolean') { listedOn = listedEl.checked = c.listed; LS.set(K_LISTED, listedOn ? '1' : '0'); }
   if (typeof c.emotes === 'boolean') { emotesOn = emotesEl.checked = c.emotes; LS.set(K_EMOTES, emotesOn ? '1' : '0'); if (!emotesOn) pops = []; }
   tellMe(); renderWho(); invalidate();
   // The guild, if this device isn't in the middle of changing it itself.
   const g = goodGuild(c.guild) ? { code: c.guild.code, name: c.guild.name, tag: c.guild.tag } : null;
-  if ((g && g.code) === (myGuild && myGuild.code) || !Membership.is('in', 'out')) return;
+  if ((g && g.code) === (myGuild && myGuild.code) || !Membership.is('in', 'confirming', 'out')) return;
   saveGuild(g, true);
   roster = []; rosterAt = 0;
   if (g && Membership.is('out')) Membership.go('in');
   else if (!g) Membership.go('out');
-  else guildMoved('in', 'in');  // from one guild to another
+  else {  // from one guild to another, no longer asking about leaving the old one
+    if (Membership.is('confirming')) Membership.go('in');
+    guildMoved('in', 'in');
+  }
 }
+// Stopping here is at once; everywhere waits for the Worker (pair's
+// `stopping`), and its answer goes under the rows once they're back, never
+// into whatever card is open by then.
 async function stopSync(everywhere) {
+  if (!Pair.is('stop')) return;
+  if (everywhere) Pair.go('stopping');
+  const at = Pair.seq;
   writeSync(null);
   if (!Sync.is('off')) Sync.go('off');
   const { status } = everywhere ? await workerPost('/v1/player/forget', { token: playerToken }) : { status: 200 };
   if (everywhere && status === 200) try { localStorage.removeItem(K_RECOVERY); } catch (_) {}  // the Worker took the code too
   const said = status !== 200 ? 'Couldn’t reach the survey, so your other devices still sync. Try again in a moment.' : everywhere ? 'Syncing stopped on every device, and the copy kept for it is deleted, with any recovery code.' : 'Syncing stopped on this device.';
-  const el = pairCard.querySelector('.pair-note, p');  // under the rows
-  if (el) el.textContent = said;
   say(said);
+  if (everywhere && (Pair.seq !== at || !Pair.is('stopping'))) return;
+  pairNote = said;
+  if (Pair.is('stopping', 'stop')) Pair.go('idle'); else renderPair();
 }
 document.addEventListener('visibilitychange', () => { if (!document.hidden) syncSoon(500); });
 // Another tab turned it on or off.
@@ -5242,7 +5516,7 @@ if (Sync.is('idle')) syncSoon(1000);
 // same initials and guild, with mutes from both. Finds stay on the device
 // that found them. Whoever has the code becomes you, so it's only ever shown
 // here, never sent anywhere but the Worker.
-const LINK_CODE_RE = /^[A-HJKMNP-Z2-9]{8}$/, TOKEN_RE = /^[0-9a-f]{32}$/, LINK_MS = 10 * 60000, LINK_POLL_MS = 5000, K_LINKED = 'letterfield.linked';
+const LINK_CODE_RE = /^[A-HJKMNP-Z2-9]{8}$/, TOKEN_RE = /^[0-9a-f]{32}$/, LINK_MS = 10 * 60000, LINK_POLL_MS = 5000, K_LINKED = 'letterfield.linked', K_LINK_CODE = 'letterfield.linkCode.v1';
 // A recovery code: twenty characters, kept by the player, that bring this
 // surveyor back on any device with no other to hand ("A recovery code" in
 // worker/SURVEY.md). Saving one keeps a backup of the notes, as linking does.
@@ -5250,17 +5524,27 @@ const LINK_CODE_RE = /^[A-HJKMNP-Z2-9]{8}$/, TOKEN_RE = /^[0-9a-f]{32}$/, LINK_M
 const RECOVERY_RE = /^[A-HJKMNP-Z2-9]{20}$/, K_RECOVERY = 'letterfield.recovery.v1';
 let recoveryCode = '', recoveryNote = '';
 const pairCard = $('#pairCard'), pairOffer = $('#pairOffer');
-let pairCode = null;    // {code, until, gone}: the code shown here, until when by this device's clock, and whether it's run out
-let pairError = '', pairRetry = false, pairTimer = 0;
+// The link code made here, {code, until} (until when by this device's clock),
+// kept so a reload goes on watching it.
+let linkCode = (() => {
+  try {
+    const o = JSON.parse(LS.get(K_LINK_CODE) || 'null'), now = Date.now();
+    return o && LINK_CODE_RE.test(o.code) && Number.isInteger(o.until) && o.until > now && o.until <= now + LINK_MS ? { code: o.code, until: o.until } : null;
+  } catch (_) { return null; }
+})();
+let pairError = '', pairRetry = false, pairNote = '', codeTimer = 0;
 // Linking, on <html data-pair>: nothing under way (idle); a code being made,
 // shown (until it's used, runs out or is put away) and used; a code being
 // typed in; a code being redeemed, typed or from a link; done, reloading as
 // the linked surveyor; or a failure to say. A reply that comes back after the
 // player has moved on is dropped.
 // The recovery code's card is here too: open (recovery), a code being made
-// (keeping) and shown once (kept), or being removed (removing).
+// (keeping) and shown once (kept), or being removed (removing). And asking
+// where to stop syncing (stop), then waiting to hear it's stopped on every
+// device (stopping). The code itself lives on in pairCode, below, when its
+// card is put away.
 const Pair = machine('pair', {
-  idle: ['making', 'entering', 'redeeming', 'recovery'],
+  idle: ['making', 'showing', 'entering', 'redeeming', 'recovery', 'stop'],
   making: ['showing', 'failed'],
   showing: ['used', 'making', 'idle'],
   used: ['idle'],
@@ -5272,15 +5556,44 @@ const Pair = machine('pair', {
   keeping: ['kept', 'recovery'],
   kept: ['idle'],
   removing: ['recovery'],
+  stop: ['idle', 'stopping'],
+  stopping: ['idle'],
 }, 'idle', { onMove: pairMoved });
 function pairMoved(to, from) {
-  clearTimeout(pairTimer);
-  if (to === 'idle' || to === 'making') { pairCode = null; pairError = ''; }
+  if (to === 'idle' || to === 'making') pairError = '';
+  if (to !== 'idle') pairNote = '';
   if (from === 'kept') recoveryCode = '';  // shown once
   if (to === 'idle' || to === 'keeping') recoveryNote = '';
-  if (to === 'showing') pollPair();
   renderPair();
 }
+// The link code made here, on <html data-pair-code>: none, being made,
+// waiting to be used (watched in the background, card or no card, and across
+// a reload, until it's used or runs out), used or gone. Making another
+// retires it, on the Worker too. A reply about a code we've moved on from is
+// dropped.
+const PairCode = machine('pairCode', {
+  none: ['making'],
+  making: ['waiting', 'none'],
+  waiting: ['used', 'gone', 'making'],
+  used: ['making'],
+  gone: ['making'],
+}, surveyApi && playerToken && linkCode ? 'waiting' : 'none', { onMove: pairCodeMoved });
+function pairCodeMoved(to) {
+  clearTimeout(codeTimer);
+  if (to === 'waiting') LS.set(K_LINK_CODE, JSON.stringify(linkCode));
+  else try { localStorage.removeItem(K_LINK_CODE); } catch (_) {}
+  if (to === 'making') linkCode = null;
+  if (to === 'waiting') pollCode();
+  if (to === 'used') {
+    startSync(1);
+    // Its card says so if it's open; otherwise a note does, however long ago it was put away.
+    if (Pair.is('showing')) Pair.go('used');
+    else toast(`<i></i><b>Linked</b><span>Your other device plays as ${myInitials() || 'you'} now</span>`, null, 5000);
+  }
+  renderPair();
+}
+if (!linkCode) try { localStorage.removeItem(K_LINK_CODE); } catch (_) {}
+if (PairCode.is('waiting')) pollCode();  // a code made before a reload, still to be used
 // ?link=<code>: read once, then taken off the address, like a guild's invite.
 function readLinkAsked() {
   if (!surveyApi) return '';
@@ -5302,7 +5615,7 @@ const cleanCode = v => v.toUpperCase().replace(/[^A-Z0-9]/g, '');
 const inFours = v => (v.match(/.{1,4}/g) || []).join('-');
 const linkCall = (path, body) => workerPost(`/v1/link${path}`, body);
 // The settings a link carries and syncing keeps in step.
-const mySettings = () => ({ initials: myInitials(), guild: myGuild && { code: myGuild.code, name: myGuild.name, tag: myGuild.tag }, muted: [...muted].slice(-MUTED_MAX), listed: listedOn, emotes: emotesOn });
+const mySettings = () => ({ initials: myInitials(), guild: myGuild && { code: myGuild.code, name: myGuild.name, tag: myGuild.tag }, muted: [...muted].slice(-MUTED_MAX), mutedAs: mutedAsSaved(), emotes: emotesOn });
 // The Worker's link and sync paths: JSON sent as text/plain, so no preflight.
 async function workerPost(path, body) {
   const ctl = new AbortController(), timer = setTimeout(() => ctl.abort(), 8000);
@@ -5316,34 +5629,39 @@ async function workerPost(path, body) {
   }
 }
 async function makeCode() {
-  if (!playerToken || !Pair.is('idle', 'showing', 'failed')) return;
+  if (!playerToken || !Pair.is('idle', 'showing', 'failed') || PairCode.is('making')) return;
   Pair.go('making');
-  const at = Pair.seq;
+  PairCode.go('making');
+  const at = PairCode.seq;
   const { status, data } = await linkCall('', { token: playerToken, carry: mySettings() });
-  if (Pair.seq !== at) return;
+  if (PairCode.seq !== at) return;
   if (status === 201 && LINK_CODE_RE.test(data.code)) {
-    pairCode = { code: data.code, until: Date.now() + LINK_MS, gone: false };
-    return Pair.go('showing');
+    linkCode = { code: data.code, until: Date.now() + LINK_MS };
+    PairCode.go('waiting');
+    if (Pair.is('making')) Pair.go('showing');
+    return;
   }
+  PairCode.go('none');
   pairError = status === 429 ? 'That’s a lot of codes for one network: try again in a while.' : 'Couldn’t make a code. Try again in a moment.';
-  Pair.go('failed');
+  if (Pair.is('making')) Pair.go('failed');
 }
-// While a code's shown, ask now and then whether it's been used, until it runs out.
-function pollPair() {
-  clearTimeout(pairTimer);
-  const code = pairCode, at = Pair.seq;
-  if (!Pair.is('showing') || !code || code.gone) return;
-  pairTimer = setTimeout(async () => {
-    if (Pair.seq !== at) return;
-    if (Date.now() >= code.until) { code.gone = true; return renderPair(); }
+// While a code waits, ask now and then whether it's been used, until it runs
+// out: with its card open or put away, but not while the page is hidden.
+function pollCode() {
+  clearTimeout(codeTimer);
+  const at = PairCode.seq;
+  if (!PairCode.is('waiting') || !linkCode) return;
+  codeTimer = setTimeout(async () => {
+    if (PairCode.seq !== at) return;
+    if (Date.now() >= linkCode.until) return PairCode.go('gone');
     if (!document.hidden) {
-      const { status, data } = await linkCall(`/${code.code}/status`, { token: playerToken });
-      if (Pair.seq !== at) return;
-      if (status === 200 && data.state === 'used') { startSync(1); return Pair.go('used'); }
-      if (status === 200 && data.state === 'gone') { code.gone = true; return renderPair(); }
+      const { status, data } = await linkCall(`/${linkCode.code}/status`, { token: playerToken });
+      if (PairCode.seq !== at) return;
+      if (status === 200 && data.state === 'used') return PairCode.go('used');
+      if (status === 200 && data.state === 'gone') return PairCode.go('gone');
     }
-    renderPair();
-    pollPair();
+    if (Pair.is('showing')) renderPair();  // the minutes left
+    pollCode();
   }, LINK_POLL_MS);
 }
 async function redeemCode(code) {
@@ -5383,11 +5701,13 @@ async function takeLink(token, c) {
     await guildCall(`/${mine.code}/leave`, { token: old });
   }
   LS.set(K_PLAYER, token);
+  try { localStorage.removeItem(K_LINK_CODE); } catch (_) {}  // a code made here was for the self it leaves
   if (initials) LS.set(K_INITIALS, JSON.stringify(initials));
   saveGuild(guild, true);
   const theirs = Array.isArray(c.muted) ? c.muted.filter(p => typeof p === 'string' && PID_RE.test(p)) : [];
-  LS.set(K_MUTED, JSON.stringify([...new Set([...muted, ...theirs])].slice(-MUTED_MAX)));
-  if (typeof c.listed === 'boolean') LS.set(K_LISTED, c.listed ? '1' : '0');
+  const both = [...new Set([...muted, ...theirs])].slice(-MUTED_MAX);
+  LS.set(K_MUTED, JSON.stringify(both));
+  LS.set(K_MUTED_AS, JSON.stringify(Object.fromEntries([...mutedAsOf(c.mutedAs), ...mutedAs].filter(([p]) => both.includes(p)))));
   if (typeof c.emotes === 'boolean') LS.set(K_EMOTES, c.emotes ? '1' : '0');
   // From now on the two keep in step, starting with everything here; these
   // settings, mutes from both, are the newest.
@@ -5399,6 +5719,7 @@ async function takeLink(token, c) {
 // self leaves its guild, since it won't be back.
 async function takeRecovered(token, made) {
   const old = playerToken;
+  try { localStorage.removeItem(K_LINK_CODE); } catch (_) {}  // a code made here was for the self it leaves
   if (token !== old) {
     if (myGuild) await guildCall(`/${myGuild.code}/leave`, { token: old });
     LS.set(K_PLAYER, token);
@@ -5455,8 +5776,8 @@ function keepRecovery(how) {
   navigator.clipboard.writeText(code).then(() => done('Copied.'), () => done(code));
 }
 async function sharePairLink() {
-  if (!pairCode) return;
-  const url = pairUrl(pairCode.code);
+  if (!linkCode) return;
+  const url = pairUrl(linkCode.code);
   const done = text => { const el = $('#pairSaid'); if (el) el.textContent = text; say(text); };
   try {
     if (navigator.share && matchMedia('(pointer: coarse)').matches) { await navigator.share({ title: 'Letterfield', text: 'Link a device to my surveyor', url }); return; }
@@ -5510,7 +5831,15 @@ function renderPair() {
   const busy = st === 'redeeming';
   let html = '';  // while a link's offer is over the map, it's the one card about linking
   if (offering) { /* nothing here */ }
-  else if (st === 'idle' && stopAsk && devicesSyncing()) html = `<div class="pair-box"><p>Stop syncing this device, or every device? Every device also deletes the copy kept for syncing, and your recovery code if you saved one. Each keeps its notes as they are.</p><div class="pair-acts"><button type="button" class="pill" data-p="stop-here">This device</button><button type="button" class="pill" data-p="stop-all">Every device</button><button type="button" class="pill" data-p="stop-no">Keep syncing</button></div></div>`;
+  else if (st === 'stop') {
+    // A choice between things to do, so rows, as the drawer's other choices are; then a way out.
+    const made = Number(LS.get(K_RECOVERY)) || 0;
+    html = '<p class="pair-ask">Stop syncing where? Each device keeps its notes as they are.</p>' +
+      '<div class="group"><button type="button" class="you-item" data-p="stop-here"><span>This device<small>The others keep syncing</small></span></button>' +
+      `<button type="button" class="you-item danger" data-p="stop-all"><span>Every device<small>Also deletes the copy kept for syncing${made ? ', and your recovery code' : ''}</small></span></button></div>` +
+      '<div class="pair-acts pair-keep"><button type="button" class="btn ghost" data-p="stop-no">Keep syncing</button></div>';
+  }
+  else if (st === 'stopping') html = '<p class="pair-ask" role="status">Stopping syncing on every device…</p>';
   else if (st === 'idle') {
     // Each thing to do, named for what it does. Whether this surveyor's notes are
     // backed up shows once, on the row that stops it (or, while it's off, by the
@@ -5519,22 +5848,22 @@ function renderPair() {
     html = `<div class="group"><button type="button" class="you-item" data-p="make"><span>Link another device<small>Play as the same surveyor on each</small></span>${CHEV}</button>` +
       `<button type="button" class="you-item" data-p="enter"><span>I have a code<small>From another device, or one you saved</small></span>${CHEV}</button>` +
       `<button type="button" class="you-item" data-p="recovery"><span>Recovery code<small>${made ? `Saved ${new Date(made).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' })}` : 'Not saved: one brings you back if this device is lost'}</small></span>${CHEV}</button>` +
-      `${on ? '<button type="button" class="you-item" data-p="stop"><span>Stop syncing<small>Your notes and settings are backed up</small></span></button>' : ''}</div><p class="pair-note" aria-live="polite"></p>`;
+      `${on ? '<button type="button" class="you-item danger" data-p="stop"><span>Stop syncing<small>Your notes and settings are backed up</small></span></button>' : ''}</div><p class="pair-note" aria-live="polite">${pairNote}</p>`;
   }
   else if (st === 'recovery' || st === 'keeping' || st === 'removing') {
     const made = Number(LS.get(K_RECOVERY)) || 0, busy = st !== 'recovery';
     html = `<div class="pair-box"><p class="eyebrow">Recovery code</p>${made
       ? `<p>You saved one on ${new Date(made).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' })}. A new one replaces it, and the old one stops working.</p>`
-      : '<p>A recovery code brings this surveyor back on any device, even if this one is lost or its storage cleared: your initials, guild and field notes. Saving one keeps a backup of your notes for it.</p>'}${recoveryNote ? `<p>${recoveryNote}</p>` : ''}${err}<div class="pair-acts"><button type="button" class="btn" data-p="keep"${busy ? ' disabled' : ''}>${st === 'keeping' ? 'Making…' : made ? 'Make a new one' : 'Make one'}</button>${made ? `<button type="button" class="pill" data-p="unkeep"${busy ? ' disabled' : ''}>${st === 'removing' ? 'Removing…' : 'Remove it'}</button>` : ''}<button type="button" class="pill" data-p="close"${busy ? ' disabled' : ''}>Close</button></div></div>`;
-  } else if (st === 'kept') html = `<div class="pair-box"><p class="eyebrow">Your recovery code</p><b class="pair-code pair-recovery" id="recoveryCode">${inFours(recoveryCode)}</b><p>Keep it somewhere safe, like a password manager: it won’t be shown again. To be this surveyor on any device, enter it there under <b>I have a code</b>.</p><p>Whoever has it can play as you. If it gets out, make a new one here, and this one stops working.</p><div class="pair-acts"><button type="button" class="pill" data-p="copy-recovery">Copy</button><button type="button" class="pill" data-p="file-recovery">Save as a file</button><button type="button" class="btn" data-p="close">Done</button></div><p class="pair-small" id="pairSaid" aria-live="polite"></p></div>`;
+      : '<p>A recovery code brings this surveyor back on any device, even if this one is lost or its storage cleared: your initials, guild and field notes. Saving one keeps a backup of your notes for it.</p>'}${recoveryNote ? `<p>${recoveryNote}</p>` : ''}${err}<div class="pair-acts"><button type="button" class="btn" data-p="keep"${busy ? ' disabled' : ''}>${st === 'keeping' ? 'Making…' : made ? 'Make a new one' : 'Make one'}</button>${made ? `<button type="button" class="btn danger" data-p="unkeep"${busy ? ' disabled' : ''}>${st === 'removing' ? 'Removing…' : 'Remove it'}</button>` : ''}<button type="button" class="btn ghost" data-p="close"${busy ? ' disabled' : ''}>Close</button></div></div>`;
+  } else if (st === 'kept') html = `<div class="pair-box"><p class="eyebrow">Your recovery code</p><b class="pair-code pair-recovery" id="recoveryCode">${inFours(recoveryCode)}</b><p>Keep it somewhere safe, like a password manager: it won’t be shown again. To be this surveyor on any device, enter it there under <b>I have a code</b>.</p><p>Whoever has it can play as you. If it gets out, make a new one here, and this one stops working.</p><div class="pair-acts"><button type="button" class="btn ghost" data-p="copy-recovery">Copy</button><button type="button" class="btn ghost" data-p="file-recovery">Save as a file</button><button type="button" class="btn" data-p="close">Done</button></div><p class="pair-small" id="pairSaid" aria-live="polite"></p></div>`;
   else if (st === 'making') html = `<div class="pair-box"><p class="eyebrow">Link another device</p><p>Making a code…</p></div>`;
-  else if (st === 'showing' && pairCode && pairCode.gone) html = `<div class="pair-box"><p class="eyebrow">Link another device</p><p>That code has run out.</p><div class="pair-acts"><button type="button" class="btn" data-p="make">New code</button><button type="button" class="pill" data-p="close">Close</button></div></div>`;
-  else if (st === 'showing' && pairCode) {
+  else if (st === 'showing' && PairCode.is('gone')) html = `<div class="pair-box"><p class="eyebrow">Link another device</p><p>That code has run out.</p><div class="pair-acts"><button type="button" class="btn" data-p="make">New code</button><button type="button" class="btn ghost" data-p="close">Close</button></div></div>`;
+  else if (st === 'showing' && linkCode) {
     const share = navigator.share && matchMedia('(pointer: coarse)').matches ? 'Share link' : 'Copy link';
-    html = `<div class="pair-box"><p class="eyebrow">Link another device</p><div class="pair-qr" id="pairQr"></div><p>Scan this with the other device’s camera, or open Letterfield there and choose <b>I have a code</b>:</p><b class="pair-code" id="pairCode">${showCode(pairCode.code)}</b><p class="pair-left" id="pairLeft"></p><p>Whoever uses it plays as you, so keep it to your own devices. It brings your initials, guild and mutes, and from then on your field notes keep in step on both.</p><div class="pair-acts"><button type="button" class="pill" data-p="share">${share}</button><button type="button" class="btn" data-p="close">Done</button></div><p class="pair-small" id="pairSaid" aria-live="polite"></p><p class="pair-small">On an iPhone, a Home Screen app keeps its own storage: type the code in there.</p></div>`;
+    html = `<div class="pair-box"><p class="eyebrow">Link another device</p><div class="pair-qr" id="pairQr"></div><p>Scan this with the other device’s camera, or open Letterfield there and choose <b>I have a code</b>:</p><b class="pair-code" id="pairCode">${showCode(linkCode.code)}</b><p class="pair-left" id="pairLeft"></p><p>Whoever uses it plays as you, so keep it to your own devices. It brings your initials, guild and mutes, and from then on your field notes keep in step on both.</p><div class="pair-acts"><button type="button" class="btn ghost" data-p="share">${share}</button><button type="button" class="btn" data-p="close">Done</button></div><p class="pair-small" id="pairSaid" aria-live="polite"></p><p class="pair-small">On an iPhone, a Home Screen app keeps its own storage: type the code in there.</p></div>`;
   } else if (st === 'used') html = `<div class="pair-box"><p><b>Linked.</b> Your other device plays as ${myInitials() || 'you'} now.</p><div class="pair-acts"><button type="button" class="btn" data-p="close">Done</button></div></div>`;
-  else if (st === 'entering' || st === 'redeeming') html = `<form class="pair-box pair-enter" id="pairEnter"><label for="pairInput">The code from your other device, under <b>Link another device</b> there, or your recovery code</label><input id="pairInput" maxlength="24" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="ABCD-EFGH"${busy ? ' disabled' : ''}><button type="submit" class="btn"${busy ? ' disabled' : ''}>${busy ? 'Linking…' : 'Link'}</button><button type="button" class="pill" data-p="close"${busy ? ' disabled' : ''}>Cancel</button>${err}<p class="pair-small">This device then plays as that surveyor, with their initials and guild, and field notes from both, kept in step.</p></form>`;
-  else if (st === 'failed') html = `<div class="pair-box">${err}<div class="pair-acts"><button type="button" class="pill" data-p="make">Try again</button><button type="button" class="pill" data-p="close">Close</button></div></div>`;
+  else if (st === 'entering' || st === 'redeeming') html = `<form class="pair-box pair-enter" id="pairEnter"><label for="pairInput">The code from your other device, under <b>Link another device</b> there, or your recovery code</label><input id="pairInput" maxlength="24" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="ABCD-EFGH"${busy ? ' disabled' : ''}><button type="submit" class="btn"${busy ? ' disabled' : ''}>${busy ? 'Linking…' : 'Link'}</button><button type="button" class="btn ghost" data-p="close"${busy ? ' disabled' : ''}>Cancel</button>${err}<p class="pair-small">This device then plays as that surveyor, with their initials and guild, and field notes from both, kept in step.</p></form>`;
+  else if (st === 'failed') html = `<div class="pair-box">${err}<div class="pair-acts"><button type="button" class="btn" data-p="make">Try again</button><button type="button" class="btn ghost" data-p="close">Close</button></div></div>`;
   else if (st === 'done') html = `<div class="pair-box"><p><b>Linked.</b> Loading as your surveyor…</p></div>`;
   // Against what it last drew, not its live HTML: the QR code, the minutes left and
   // any note are written into it after, so that never matches, and drawing it again
@@ -5549,9 +5878,9 @@ function renderPair() {
     if ($('#pairInput')) $('#pairInput').value = typed;
     if (k) { const el = pairCard.querySelector(`[data-p="${k}"]`) || (k === 'pairInput' && $('#pairInput')) || pairCard.querySelector('button, input'); if (el && !el.disabled) try { el.focus({ preventScroll: true }); } catch (_) {} }
   }
-  if (st === 'showing' && pairCode && !pairCode.gone) {
-    drawQr($('#pairQr'), pairUrl(pairCode.code));
-    const m = Math.max(1, Math.ceil((pairCode.until - Date.now()) / 60000));
+  if (st === 'showing' && PairCode.is('waiting') && linkCode) {
+    drawQr($('#pairQr'), pairUrl(linkCode.code));
+    const m = Math.max(1, Math.ceil((linkCode.until - Date.now()) / 60000));
     $('#pairLeft').textContent = `Good for ${m} more minute${m === 1 ? '' : 's'}, once`;
   }
   if (offering) {
@@ -5572,7 +5901,8 @@ function onPairClick(e) {
   const b = e.target.closest('button[data-p]');
   if (!b || b.disabled) return;
   const p = b.dataset.p;
-  if (p === 'make') makeCode();
+  if (p === 'make' && Pair.is('idle') && PairCode.is('waiting')) Pair.go('showing');  // the code still waiting, again
+  else if (p === 'make') makeCode();
   else if (p === 'enter' && Pair.is('idle')) { Pair.go('entering'); try { $('#pairInput').focus({ preventScroll: true }); } catch (_) {} }
   else if (p === 'share') sharePairLink();
   else if (p === 'close' && Pair.is('showing', 'used', 'entering', 'failed', 'recovery', 'kept')) Pair.go('idle');
@@ -5582,7 +5912,8 @@ function onPairClick(e) {
   else if (p === 'copy-recovery' || p === 'file-recovery') keepRecovery(p === 'file-recovery' ? 'file' : 'copy');
   else if (p === 'link' && Intro.is('link')) redeemCode(linkAsked);
   else if (p === 'not-now') leaveOffer();
-  else if (p === 'stop' || p === 'stop-no') { stopAsk = p === 'stop'; renderPair(); try { pairCard.querySelector('button').focus({ preventScroll: true }); } catch (_) {} }
+  else if (p === 'stop' && Pair.is('idle') && devicesSyncing()) { Pair.go('stop'); try { pairCard.querySelector('button').focus({ preventScroll: true }); } catch (_) {} }
+  else if (p === 'stop-no' && Pair.is('stop')) { Pair.go('idle'); try { pairCard.querySelector('[data-p="stop"]').focus({ preventScroll: true }); } catch (_) {} }
   else if (p === 'stop-here' || p === 'stop-all') stopSync(p === 'stop-all');
 }
 pairCard.addEventListener('click', onPairClick);
@@ -5604,7 +5935,7 @@ pairCard.addEventListener('submit', e => {
   redeemCode(code);
 });
 pairCard.addEventListener('keydown', e => {
-  if (e.key !== 'Escape' || !Pair.is('showing', 'used', 'entering', 'failed', 'recovery', 'kept')) return;
+  if (e.key !== 'Escape' || !Pair.is('showing', 'used', 'entering', 'failed', 'recovery', 'kept', 'stop')) return;
   e.stopPropagation();
   Pair.go('idle');
   try { pairCard.querySelector('button').focus({ preventScroll: true }); } catch (_) {}
@@ -5678,6 +6009,7 @@ if (surveyApi) {
   surveyEl.hidden = false;
   $('#notes').classList.add('has-survey');
   showSigning(false);
+  restoreOutbox();
   setInterval(syncSurvey, 2000);
   if (!camSaved && !startHash) spawnSomewhere();
 }
@@ -5686,7 +6018,7 @@ invalidate();
 if (redrawn) setTimeout(() => toast(`<i></i><b>The map has been redrawn</b><span>${NT} themes of about ${Math.round(THEMES.reduce((a, t) => a + t.words.length, 0) / NT / 10) * 10} words now, so a territory never repeats one · ${redrawn.kept ? `${redrawn.kept} of your ${redrawn.had} finds are still on it` : 'your old finds are not on it'}</span>`, null, 8000), 900);
 if (location.hash === '#debug') window.__lf = { cam, found, claims, links, chunk, wordEnd, collect, territoryProgress, remnants: () => [...remnants().set], novas: () => [...novasSeen.values()], territoryName: regionName, world: () => world, supernova, novaSound, audioOut, musicTracks: MUSIC_TRACKS, audio: () => ac, music: () => musicNow && { state: ac.state, track: musicNow.track().name, nodes: musicNow.track().nodes.size, level: musicNow.master.gain.value, master: musicNow.master, volume: musicVol, target: musicLevel(), swap: musicNow.swap }, nova: () => nova, novaWave: () => nova && novaLast && { cx: novaLast.cx, cy: novaLast.cy, R: novaLast.R || 0, amp: novaLast.amp, virtual: novaLast.virtual }, distantAt: v => { distantAt = v; },
   who: () => Who.state, surveyors: () => whoData, people: () => peopleOpen, peoplePage: () => PeoplePage.state, emoteMotion, guild: () => Membership.state, myGuild: () => myGuild, mates: () => [...mates.keys()], roster: () => roster,
-  pair: () => Pair.state, pairCode: () => pairCode && pairCode.code, recoveryCode: () => recoveryCode, sync: () => Sync.state, syncNow: () => { syncDue = 0; clearTimeout(syncTimer); return syncNow(); },
+  pair: () => Pair.state, pairCode: () => linkCode && linkCode.code, linkCodeState: () => PairCode.state, recoveryCode: () => recoveryCode, sync: () => Sync.state, syncNow: () => { syncDue = 0; clearTimeout(syncTimer); return syncNow(); },
   guildWords: () => [GUILD_FIRST.length, GUILD_SECOND.length, GUILD_THIRD.length], pops: () => pops.map(p => [p.pid, p.e]), pid: () => myPid, muted: () => [...muted], carets: () => [...ghosts.keys()],
   caretXY: id => { const gh = ghosts.get(id); return gh && { x: (Math.round(gh.x) - cam.x) * cam.cs + (W - dock) / 2, y: (Math.floor(gh.y) + .5 - cam.y) * cam.cs + H / 2 + mapTop }; },
   pass: () => Pass.state, intro: () => Intro.state, surveyStatus, linkStates: () => Object.fromEntries([...links].map(([k, l]) => [k, l.m.state])), outbox: () => [...outbox.values()].map(c => [c.e.w, c.m.state]), definitions: () => Object.fromEntries([...definitions].map(([k, d]) => [k, d.m.state])) };

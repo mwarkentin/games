@@ -5,11 +5,12 @@
 // other device redeems it for the token and a few settings, and is then the
 // same player. See "One player, several devices" in SURVEY.md.
 //
-//   POST /v1/link                   {token, carry} → 201 {code, expires}
+//   POST /v1/link                   {token, carry} → 201 {code, expires}; any older unused code of theirs stops working
 //   POST /v1/link/<code>/status     {token} → {state}: waiting, used or gone (gone to anyone who didn't make it)
 //   POST /v1/link/<code>            {} → {token, carry}, once; then 404
 //
-// carry: {initials, guild: {code, name, tag} | null, muted: [ids], listed, emotes}
+// carry: {initials, guild: {code, name, tag} | null, muted: [ids], mutedAs: {id: [initials, at]}, emotes}
+//   mutedAs: who each muted player was when muted, and when, for the game's Muted list
 //
 // A code is eight characters from the groups' alphabet (850 billion codes),
 // good for LINK_MS and for one use. Making codes and trying them are each
@@ -41,18 +42,30 @@ import { GUILD_CODE, GUILD_TAG, PID, TOKEN, playerId } from './survey-social.js'
 export const LINK_MS = 10 * 60000;        // a code lasts this long
 export const LINK_CODE = /^[A-HJKMNP-Z2-9]{8}$/;
 const MUTED_MAX = 200;
-const MAX_BODY = 8192;
+const MAX_BODY = 16384;  // a carry with MUTED_MAX mutes, and who they were, is about 10 KB
 const LINK_PATH = /^\/v1\/link(?:\/([^/]{1,16})(\/status)?)?$/;
 
-// The settings a link carries, checked and in a fixed shape, or null.
+// Who a muted player was when muted, and when: [initials ('' for none), ms].
+const goodMutedAs = (v) => Array.isArray(v) && v.length === 2 && (v[0] === '' || (typeof v[0] === 'string' && INITIALS.test(v[0])))
+  && Number.isInteger(v[1]) && v[1] >= 0 && v[1] <= 1e15;
+
+// The settings a link carries, checked and in a fixed shape, or null. An
+// older game's `listed` (from when surveyors could keep off the list) is
+// dropped, and mutedAs keeps only the players in muted.
 export function cleanCarry(c) {
   if (!c || typeof c !== 'object') return null;
-  const { initials = '', guild = null, muted = [], listed = true, emotes = true } = c;
+  const { initials = '', guild = null, muted = [], mutedAs = {}, emotes = true } = c;
   if (!(initials === '' || (typeof initials === 'string' && INITIALS.test(initials)))) return null;
   if (guild !== null && !(guild && typeof guild.code === 'string' && GUILD_CODE.test(guild.code) && goodName(guild.name) && typeof guild.tag === 'string' && GUILD_TAG.test(guild.tag))) return null;
   if (!Array.isArray(muted) || muted.length > MUTED_MAX || !muted.every((p) => typeof p === 'string' && PID.test(p))) return null;
-  if (typeof listed !== 'boolean' || typeof emotes !== 'boolean') return null;
-  return { initials, guild: guild && { code: guild.code, name: guild.name, tag: guild.tag }, muted, listed, emotes };
+  if (!mutedAs || typeof mutedAs !== 'object' || Array.isArray(mutedAs)) return null;
+  const as = Object.entries(mutedAs);
+  if (as.length > MUTED_MAX || !as.every(([p, v]) => PID.test(p) && goodMutedAs(v))) return null;
+  if (typeof emotes !== 'boolean') return null;
+  return {
+    initials, guild: guild && { code: guild.code, name: guild.name, tag: guild.tag }, muted,
+    mutedAs: Object.fromEntries(as.filter(([p]) => muted.includes(p)).map(([p, v]) => [p, [v[0], v[1]]])), emotes,
+  };
 }
 
 async function readBody(request) {
@@ -81,6 +94,8 @@ export function routeLinks(request, env, now = Date.now()) {
         if (!carry) throw new HttpError(400, 'carry is not something a link takes');
         await rateLimit(db, 'link', address, now);
         await db.prepare('DELETE FROM links WHERE expires < ?').bind(now).run();
+        // A new code retires any this player made before and nobody used, as a new recovery code does.
+        await db.prepare('DELETE FROM links WHERE token = ? AND used = 0').bind(body.token).run();
         for (let attempt = 0; attempt < 8; attempt++) {
           const code = [...crypto.getRandomValues(new Uint8Array(8))].map((b) => CODE_ALPHABET[b % CODE_ALPHABET.length]).join('');
           const made = await db.prepare('INSERT INTO links (code, token, carry, expires) VALUES (?, ?, ?, ?) ON CONFLICT (code) DO NOTHING RETURNING code')
@@ -128,14 +143,17 @@ const SYNC_PATH = /^\/v1\/player\/(sync|forget)$/;
 const playerStub = (env, pid) => env.PLAYERS.get(env.PLAYERS.idFromName(pid));
 const int = (v, max) => Number.isInteger(v) && Math.abs(v) < max;
 
-// A find as the game keeps it ({w, x, y, d, t, s, f?, n?}), checked for its
-// shape. The game checks it's on the map when it takes it in.
+// A find as the game keeps it ({w, x, y, d, t, s, f?, n?, b?}), checked for
+// its shape: b is who charted it first when it wasn't this player (initials,
+// or ? for someone unsigned). The game checks it's on the map when it takes
+// it in.
 export function cleanFind(o) {
   if (!o || typeof o !== 'object' || typeof o.w !== 'string' || !/^[A-Z]{3,12}$/.test(o.w)) return null;
   const { w, x, y, d, t, s } = o;
   if (!int(x, 1e9) || !int(y, 1e9) || !int(d, 8) || d < 0 || !Number.isFinite(t) || (s !== 0 && s !== 1)) return null;
   const f = o.f === 1 ? 1 : 0, n = f && int(o.n, 1e8) && o.n > 0 ? o.n : 0;
-  return { w, x, y, d, t: Math.round(t), s, ...(f ? { f } : {}), ...(n ? { n } : {}) };
+  const b = !f && typeof o.b === 'string' && (INITIALS.test(o.b) || o.b === '?') ? o.b : '';
+  return { w, x, y, d, t: Math.round(t), s, ...(f ? { f } : {}), ...(n ? { n } : {}), ...(b ? { b } : {}) };
 }
 export const findKey = (f) => `${f.w}@${f.x},${f.y},${f.d}`;
 
@@ -195,8 +213,10 @@ export class Player {
       if (!f) continue;
       const k = findKey(f), had = this.sql.exec('SELECT body FROM finds WHERE k = ?', k).toArray()[0];
       if (had) {
-        // Charted first only ever comes on.
-        if (f.f && !JSON.parse(had.body).f) { this.sql.exec('UPDATE finds SET body = ?, v = ? WHERE k = ?', JSON.stringify(f), v, k); wrote = true; }
+        // Charted first only ever comes on, and so does who charted it
+        // otherwise, until it's this player's.
+        const was = JSON.parse(had.body);
+        if ((f.f && !was.f) || (f.b && !was.b && !was.f)) { this.sql.exec('UPDATE finds SET body = ?, v = ? WHERE k = ?', JSON.stringify(f), v, k); wrote = true; }
         continue;
       }
       count ??= this.sql.exec('SELECT COUNT(*) AS n FROM finds').one().n;

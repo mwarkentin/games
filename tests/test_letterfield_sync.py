@@ -9,9 +9,11 @@ paths; the real Player is tested in worker/test/players.test.js.
 from __future__ import annotations
 
 import json
+import re
 
 from playwright.sync_api import Page, expect
 
+from fake_leaderboard import Held
 from fake_survey import FakeGuilds, FakeLinks, FakePlayers, FakeSurvey
 from test_letterfield_guilds import MINE
 from test_letterfield_guilds import start as start_guilds
@@ -67,7 +69,7 @@ def test_a_device_never_linked_keeps_everything_here(page: Page, site_url, error
     players = FakePlayers()
     start(page, site_url, players, synced=False)
     expect(page.locator("html")).to_have_attribute("data-sync", "off")
-    page.locator("#whoListed").evaluate("e => e.click()")
+    page.locator("#whoEmotes").evaluate("e => e.click()")
     page.wait_for_timeout(3000)
     assert players.calls == []
     # Your page is the one place that says so: no Stop syncing, and no recovery code saved.
@@ -88,7 +90,7 @@ def test_finds_and_settings_go_both_ways(page: Page, site_url, errors):
     eventually(page, lambda: len(players.sent()) >= 1)
     first = players.sent()[0]
     assert first["since"] == 0 and first["settingsAt"] == 1
-    assert first["settings"] == {"initials": "MLW", "guild": None, "muted": [], "listed": True, "emotes": True}
+    assert first["settings"] == {"initials": "MLW", "guild": None, "muted": [], "mutedAs": {}, "emotes": True}
     page.wait_for_function(f"window.__lf.found.size === {len(mine) + 1}")
     assert noted(page) == sorted([f["w"] for f in mine] + [theirs["w"]])
     assert page.evaluate(f"[...window.__lf.found.values()].find(e => e.w === '{theirs['w']}').f") == 1
@@ -98,19 +100,21 @@ def test_finds_and_settings_go_both_ways(page: Page, site_url, errors):
     assert saved["f"] == [] and saved["at"] == 2 and saved["epoch"] == players.players[PID]["epoch"]
 
     # A change here goes up soon after...
-    page.locator("#whoListed").evaluate("e => e.click()")
-    eventually(page, lambda: players.players[PID]["settings"]["listed"] is False, timeout_ms=8000)
+    page.locator("#whoEmotes").evaluate("e => e.click()")
+    eventually(page, lambda: players.players[PID]["settings"]["emotes"] is False, timeout_ms=8000)
     # ...and one there comes down: new initials, a mute and a guild.
     at = page.evaluate("Date.now()")  # just after our own change, so an echo of it would be later still
     players.add(
         PID,
-        settings={"initials": "ZED", "guild": MINE, "muted": [KIM[0]], "listed": False, "emotes": True},
+        settings={"initials": "ZED", "guild": MINE, "muted": [KIM[0]], "mutedAs": {KIM[0]: ["KIM", 9]}, "emotes": True},
         settings_at=at,
     )
     page.evaluate("window.__lf.syncNow()")
     expect(page.locator("#surveyMeName")).to_have_text("ZED")
     expect(page.locator("html")).to_have_attribute("data-guild", "in")
     assert page.evaluate("window.__lf.muted()") == [KIM[0]]
+    # Who they muted comes with it, for the Muted list here.
+    assert json.loads(page.evaluate("localStorage.getItem('letterfield.mutedAs.v1')")) == {KIM[0]: ["KIM", 9]}
     assert json.loads(page.evaluate("localStorage.getItem('games.initials')")) == "ZED"
     # Nothing it took in goes back up as a change of its own.
     page.wait_for_timeout(2500)
@@ -125,10 +129,20 @@ def test_stopping_here_or_everywhere(page: Page, site_url, errors):
     card = page.locator("#pairCard")
     # The row that stops it is the one place that says you're backed up.
     expect(page.locator("#pairHead")).to_have_text("Devices")
-    expect(card.get_by_role("button", name="Stop syncing")).to_contain_text("Your notes and settings are backed up")
-    card.get_by_role("button", name="Stop syncing").click()
-    expect(card).to_contain_text("Stop syncing this device, or every device?")
-    card.get_by_role("button", name="Keep syncing").click()
+    stop = card.get_by_role("button", name="Stop syncing")
+    expect(stop).to_contain_text("Your notes and settings are backed up")
+    expect(stop).to_have_class(re.compile(r"\bdanger\b"))  # red, as Leave guild is
+    stop.click()
+    # Where to stop is a choice between things to do, so it's rows, then a way out.
+    expect(card.locator(".pair-ask")).to_have_text("Stop syncing where? Each device keeps its notes as they are.")
+    expect(card.locator(".you-item")).to_have_text(
+        ["This deviceThe others keep syncing", "Every deviceAlso deletes the copy kept for syncing"]
+    )
+    expect(card.get_by_role("button", name="This device")).to_be_focused()
+    expect(card.get_by_role("button", name="Every device")).to_have_class(re.compile(r"\bdanger\b"))
+    expect(card.get_by_role("button", name="Keep syncing", exact=True)).to_have_class(re.compile(r"\bbtn ghost\b"))
+    card.get_by_role("button", name="Keep syncing", exact=True).click()
+    expect(stop).to_be_focused()
     card.get_by_role("button", name="Stop syncing").click()
     card.get_by_role("button", name="This device").click()
     expect(page.locator("html")).to_have_attribute("data-sync", "off")
@@ -148,6 +162,31 @@ def test_stopping_here_or_everywhere(page: Page, site_url, errors):
     )
     eventually(page, lambda: PID not in players.players)
     assert [b["token"] for b in players.sent("forget")] == [TOKEN]
+    assert errors == []
+
+
+def test_stopping_everywhere_waits_for_the_worker_and_answers_under_the_rows(page: Page, site_url, errors):
+    """Its answer used to go into whatever card was open by then: once, over the recovery code's heading."""
+    players = FakePlayers(started=[PID])
+    start(page, site_url, players)
+    held = Held(players, lambda r: r.url.endswith("/v1/player/forget"))
+    page.route(f"{SURVEY}/v1/player/**", held.handle)
+    open_you(page)
+    html, card = page.locator("html"), page.locator("#pairCard")
+    card.get_by_role("button", name="Stop syncing").click()
+    card.get_by_role("button", name="Every device").click()
+    held.wait_for(page)
+    # Nothing else opens while it waits, so its answer can't land in another card.
+    expect(card.get_by_role("button", name="Recovery code")).to_have_count(0)
+    expect(card).to_have_text("Stopping syncing on every device…")
+    expect(html).to_have_attribute("data-pair", "stopping")
+    held.release()
+    expect(html).to_have_attribute("data-pair", "idle")
+    expect(card.locator(".pair-note")).to_have_text(
+        "Syncing stopped on every device, and the copy kept for it is deleted, with any recovery code."
+    )
+    expect(card.get_by_role("button", name="Recovery code")).to_contain_text("Not saved")  # its row, whole
+    eventually(page, lambda: PID not in players.players)
     assert errors == []
 
 

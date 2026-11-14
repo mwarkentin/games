@@ -212,9 +212,14 @@ def test_your_page_links_to_the_guilds_own_page_in_the_survey_log(page: Page, si
     start(page, site_url, fake, guilds, guild=MINE)
     open_you(page)
     link = page.locator('#guildCard a[data-g="log"]')
-    expect(link).to_have_attribute("href", f"/letterfield-log?guild={lid}")
+    # With the guild's name as its word numbers, for a log that hasn't seen it chart a word.
+    expect(link).to_have_attribute("href", f"/letterfield-log?guild={lid}&name={'-'.join(map(str, NAME))}")
     expect(link).to_contain_text("Our words in the survey log")
-    expect(page.locator("#guildCard")).to_contain_text("While you’re off the list, they don’t.")
+    # Every member's words count: there's no keeping off the list now.
+    expect(page.locator("#guildCard")).to_contain_text(
+        "Words you chart while in a guild count for it in the survey log"
+    )
+    expect(page.locator("#guildCard")).not_to_contain_text("off the list")
     stored = json.loads(page.evaluate("localStorage.getItem('letterfield.guild.v1')"))
     assert stored == {**MINE, "lid": lid}
     assert errors == []
@@ -228,9 +233,16 @@ def test_leaving_takes_you_out_and_tells_every_sector(page: Page, site_url, erro
     eventually(page, lambda: len([m for m in fake.sent("me") if m.get("guild") == CODE]) == 4)
     card = page.locator("#guildCard")
     card.get_by_role("button", name="Leave").click()
+    expect(page.locator("html")).to_have_attribute("data-guild", "confirming")
     expect(card).to_contain_text("Leave the Cobalt Compass Society?")
+    # A yes or no: Leave in red, and Stay, which has the focus.
+    expect(card.get_by_role("button", name="Leave", exact=True)).to_have_class(re.compile(r"\bbtn danger\b"))
+    expect(card.get_by_role("button", name="Stay")).to_have_class(re.compile(r"\bbtn ghost\b"))
+    expect(card.get_by_role("button", name="Stay")).to_be_focused()
+    expect(page.locator(".who-head")).not_to_have_count(0)  # still in it while asked
     card.get_by_role("button", name="Stay").click()
     expect(page.locator("html")).to_have_attribute("data-guild", "in")
+    expect(card.get_by_role("button", name="Leave guild")).to_be_focused()
     card.get_by_role("button", name="Leave").click()
     card.get_by_role("button", name="Leave", exact=True).click()
     expect(page.locator("html")).to_have_attribute("data-guild", "out")
@@ -293,7 +305,7 @@ def test_invite_from_the_lists_heading_and_sign_first_for_an_invite(page: Page, 
     page.context.grant_permissions(["clipboard-read", "clipboard-write"])
     page.evaluate("Object.defineProperty(navigator, 'share', { value: undefined })")
     open_list(page)
-    invite_button = page.get_by_role("button", name="Invite a mate to the Cobalt Compass Society")
+    invite_button = page.get_by_role("button", name="Invite someone to the Cobalt Compass Society")
     invite_button.click()
     expect(invite_button).to_have_text("Link copied")
     expect(invite_button).to_have_text("+ Invite", timeout=6000)

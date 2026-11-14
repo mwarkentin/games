@@ -7,7 +7,7 @@ import { DatabaseSync } from 'node:sqlite';
 import { beforeEach, describe, test } from 'node:test';
 
 import worker from '../src/index.js';
-import { FINDS_MAX, KEEP_MS, LINK_CODE, LINK_MS, Player, RECOVERY_CODE, SYNC_GAP_MS, cleanCarry, recoveryKeys, routeLinks, routePlayers, routeRecovery } from '../src/players.js';
+import { FINDS_MAX, KEEP_MS, LINK_CODE, LINK_MS, Player, RECOVERY_CODE, SYNC_GAP_MS, cleanCarry, cleanFind, recoveryKeys, routeLinks, routePlayers, routeRecovery } from '../src/players.js';
 import { playerId } from '../src/survey-social.js';
 
 const ORIGIN = 'https://games.michaelwarkentin.com';
@@ -62,7 +62,7 @@ describe('linking a device', () => {
     }), env, now);
     return [res.status, await res.json()];
   };
-  const carry = { initials: 'MLW', guild: { code: 'KMN234', name: [11, 0, 0], tag: 'c0ffee42' }, muted: ['3f9a01c27be4'], listed: false, emotes: true };
+  const carry = { initials: 'MLW', guild: { code: 'KMN234', name: [11, 0, 0], tag: 'c0ffee42' }, muted: ['3f9a01c27be4'], mutedAs: { '3f9a01c27be4': ['KIM', NOW - 60000] }, emotes: true };
 
   test('hands the token and settings to whoever redeems the code, once', async () => {
     const [status, made] = await call('/v1/link', { token: token(1), carry });
@@ -77,6 +77,20 @@ describe('linking a device', () => {
     assert.equal(env.DB.raw.prepare('SELECT carry FROM links').get().carry, '');
     // And the player's devices keep in step from now on.
     assert.ok(env.PLAYERS.player(await playerId(token(1))).meta());
+  });
+
+  test('retires an older code nobody used when a new one is made', async () => {
+    const [, first] = await call('/v1/link', { token: token(1), carry });
+    const [, theirs] = await call('/v1/link', { token: token(2), carry });
+    const [, second] = await call('/v1/link', { token: token(1), carry });
+    assert.deepEqual(await call(`/v1/link/${first.code}/status`, { token: token(1) }), [200, { state: 'gone' }]);
+    assert.equal((await call(`/v1/link/${first.code}`, {}))[0], 404);
+    // The new one works, and someone else's code is left alone.
+    assert.deepEqual(await call(`/v1/link/${theirs.code}/status`, { token: token(2) }), [200, { state: 'waiting' }]);
+    assert.deepEqual(await call(`/v1/link/${second.code}`, {}), [200, { token: token(1), carry }]);
+    // One already used is kept, so its maker still hears it was used.
+    await call('/v1/link', { token: token(1), carry });
+    assert.deepEqual(await call(`/v1/link/${second.code}/status`, { token: token(1) }), [200, { state: 'used' }]);
   });
 
   test('says nothing about a code to anyone who did not make it', async () => {
@@ -98,10 +112,19 @@ describe('linking a device', () => {
 
   test('takes only a real token and settings it knows', async () => {
     assert.equal((await call('/v1/link', { token: 'nope', carry }))[0], 400);
-    for (const bad of [{ initials: 'mlw' }, { guild: { code: 'KMN234', name: ['x'], tag: 'c0ffee42' } }, { muted: ['nope'] }, { muted: Array(201).fill('3f9a01c27be4') }, { listed: 'yes' }]) {
-      assert.equal((await call('/v1/link', { token: token(1), carry: bad }))[0], 400, JSON.stringify(bad));
-    }
-    assert.deepEqual(cleanCarry({ initials: 'ABC', extra: 'dropped' }), { initials: 'ABC', guild: null, muted: [], listed: true, emotes: true });
+    const bads = [{ initials: 'mlw' }, { guild: { code: 'KMN234', name: ['x'], tag: 'c0ffee42' } }, { muted: ['nope'] }, { muted: Array(201).fill('3f9a01c27be4') }, { emotes: 'yes' },
+      { mutedAs: ['KIM'] }, { mutedAs: { nope: ['KIM', 1] } }, { mutedAs: { '3f9a01c27be4': ['kim', 1] } }, { mutedAs: { '3f9a01c27be4': ['KIM', -1] } }, { mutedAs: { '3f9a01c27be4': 'KIM' } }];
+    for (const bad of bads) assert.equal((await call('/v1/link', { token: token(1), carry: bad }))[0], 400, JSON.stringify(bad));
+    assert.deepEqual(cleanCarry({ initials: 'ABC', extra: 'dropped' }), { initials: 'ABC', guild: null, muted: [], mutedAs: {}, emotes: true });
+    // An older game's `listed`, from when surveyors could keep off the list, means nothing now; who
+    // someone muted was is kept only while they're muted.
+    const pids = ['3f9a01c27be4', '8d22e5a90f13'];
+    assert.deepEqual(cleanCarry({ muted: [pids[0]], mutedAs: { [pids[0]]: ['KIM', 5], [pids[1]]: ['', 6] }, listed: false }),
+      { initials: '', guild: null, muted: [pids[0]], mutedAs: { [pids[0]]: ['KIM', 5] }, emotes: true });
+    // The most a game sends, MUTED_MAX mutes and who each was, fits in a link.
+    const many = Array.from({ length: 200 }, (_, i) => (0x100000000000 + i).toString(16));
+    const full = { ...carry, muted: many, mutedAs: Object.fromEntries(many.map((p) => [p, ['KIM', NOW]])) };
+    assert.equal((await call('/v1/link', { token: token(1), carry: full }))[0], 201);
     assert.equal((await call('/v1/link', { token: token(1), carry }, { origin: 'https://evil.test' }))[0], 403);
     assert.equal((await call('/v1/link', undefined, { method: 'GET' }))[0], 405);
   });
@@ -152,7 +175,8 @@ describe('syncing linked devices', () => {
 
   test("carries one device's finds, supernovas and settings to another, and only what is new", async () => {
     await start(1);
-    const settings = { initials: 'MLW', guild: null, muted: [], listed: true, emotes: true };
+    // Mutes go with who each muted player was, for the other device's Muted list.
+    const settings = { initials: 'MLW', guild: null, muted: ['3f9a01c27be4'], mutedAs: { '3f9a01c27be4': ['KIM', 4] }, emotes: true };
     const [, a] = await sync(1, { epoch: '', since: 0, finds: [find('COMET', 1), find('ORBIT', 2)], novas: [nova(1)], settings, settingsAt: 5 });
     assert.deepEqual([a.finds, a.novas, a.at], [[], [], 1]);  // its own come back to nobody
     assert.match(a.epoch, /^[0-9a-f]{8}$/);
@@ -178,9 +202,25 @@ describe('syncing linked devices', () => {
     assert.deepEqual(d.finds, [find('ORBIT', 2, { f: 1 })]);
   });
 
+  test('keeps who charted a find first when it was someone else, until it is the player\'s own', async () => {
+    await start(1);
+    const [, a] = await sync(1, { finds: [find('COMET', 1), find('ORBIT', 2, { b: 'ZED' }), find('NEBULA', 3, { b: 'lowercase' })] });
+    // Another device learns ZED charted COMET; ORBIT keeps its ZED; NEBULA's bad initials are dropped.
+    await sync(1, { epoch: a.epoch, since: a.at, finds: [find('COMET', 1, { b: 'ZED' }), find('ORBIT', 2, { b: 'KIM' })] });
+    const [, b] = await sync(1, { since: 0 });
+    assert.deepEqual(b.finds.map((f) => [f.w, f.b]).sort(), [['COMET', 'ZED'], ['NEBULA', undefined], ['ORBIT', 'ZED']]);
+    // Charted first, on any device, wins: who else charted it goes.
+    await sync(1, { epoch: a.epoch, since: b.at, finds: [find('ORBIT', 2, { f: 1 })] });
+    const [, c] = await sync(1, { epoch: a.epoch, since: b.at });
+    assert.deepEqual(c.finds, [find('ORBIT', 2, { f: 1 })]);
+    // An unsigned surveyor is "?", and a find charted first carries no b at all.
+    assert.deepEqual(cleanFind(find('COMET', 1, { b: '?' })), find('COMET', 1, { b: '?' }));
+    assert.deepEqual(cleanFind(find('COMET', 1, { f: 1, b: 'ZED' })), find('COMET', 1, { f: 1 }));
+  });
+
   test('settings go with whichever device changed them last', async () => {
     await start(1);
-    const as = (initials) => ({ initials, guild: null, muted: [], listed: true, emotes: true });
+    const as = (initials) => ({ initials, guild: null, muted: [], mutedAs: {}, emotes: true });
     await sync(1, { settings: as('AAA'), settingsAt: 10 });
     await sync(1, { settings: as('BBB'), settingsAt: 9 });
     const [, b] = await sync(1, { settingsAt: 0 });

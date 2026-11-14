@@ -43,7 +43,7 @@ def start(
 
 def stored(page: Page) -> dict:
     return page.evaluate("""() => Object.fromEntries(['games.player', 'games.initials', 'letterfield.guild.v1',
-      'letterfield.muted.v1', 'letterfield.listed.v1', 'letterfield.emotes.v1'].map(k => [k, localStorage.getItem(k)]))""")
+      'letterfield.muted.v1', 'letterfield.mutedAs.v1', 'letterfield.emotes.v1'].map(k => [k, localStorage.getItem(k)]))""")
 
 
 def linked(page: Page) -> None:
@@ -55,6 +55,7 @@ def test_a_code_shows_as_a_qr_code_and_a_link_and_hears_when_its_used(page: Page
     links = FakeLinks()
     start(page, site_url, links, in_cobalt(), guild=MINE)
     page.evaluate(f"localStorage.setItem('letterfield.muted.v1', JSON.stringify(['{LOU[0]}']))")
+    page.evaluate(f"localStorage.setItem('letterfield.mutedAs.v1', JSON.stringify({{'{LOU[0]}': ['LOU', 5]}}))")
     page.reload()
     page.wait_for_function(f"window.__lf.pid() === '{PID}'")
     page.context.grant_permissions(["clipboard-read", "clipboard-write"])
@@ -68,7 +69,13 @@ def test_a_code_shows_as_a_qr_code_and_a_link_and_hears_when_its_used(page: Page
     # It carries who we are and what we've set, and nothing else.
     path, body = links.calls[0]
     assert (path, body["token"]) == ("", TOKEN)
-    assert body["carry"] == {"initials": "MLW", "guild": MINE, "muted": [LOU[0]], "listed": True, "emotes": True}
+    assert body["carry"] == {
+        "initials": "MLW",
+        "guild": MINE,
+        "muted": [LOU[0]],
+        "mutedAs": {LOU[0]: ["LOU", 5]},
+        "emotes": True,
+    }
     qr = card.locator(".pair-qr svg")
     expect(qr).to_be_visible()
     assert qr.bounding_box()["width"] >= 150
@@ -100,9 +107,11 @@ def test_a_code_that_runs_out_can_be_made_again(page: Page, site_url, errors):
     first = page.evaluate("window.__lf.pairCode()")
     links.expire(first)
     expect(card).to_contain_text("That code has run out.", timeout=10_000)
+    expect(page.locator("html")).to_have_attribute("data-pair-code", "gone")
     expect(card.locator(".pair-qr")).to_have_count(0)
     card.get_by_role("button", name="New code").click()
     expect(page.locator("html")).to_have_attribute("data-pair", "showing")
+    expect(page.locator("html")).to_have_attribute("data-pair-code", "waiting")
     expect(card.locator(".pair-code")).not_to_have_text(f"{first[:4]}-{first[4:]}")
     # Escape puts it away.
     card.get_by_role("button", name="Done").focus()
@@ -111,8 +120,42 @@ def test_a_code_that_runs_out_can_be_made_again(page: Page, site_url, errors):
     assert errors == []
 
 
+def test_done_leaves_the_code_watched_until_its_used_even_across_a_reload(page: Page, site_url, errors):
+    """Done used to stop asking about a code that still worked, so a device that used it later
+    linked and synced while this one never did, and never said so."""
+    links = FakeLinks()
+    start(page, site_url, links)
+    open_you(page)
+    html, card = page.locator("html"), page.locator("#pairCard")
+    card.get_by_role("button", name="Link another device").click()
+    expect(card.locator(".pair-code")).to_be_visible()
+    code = page.evaluate("window.__lf.pairCode()")
+    card.get_by_role("button", name="Done").click()
+    # The page is reloaded, and the other device uses the code much later.
+    page.reload()
+    page.wait_for_function(f"window.__lf && window.__lf.pid() === '{PID}'")
+    links.use(code)
+    expect(page.locator("#toast b")).to_have_text("Linked", timeout=10_000)
+    expect(page.locator("#toast span")).to_have_text("Your other device plays as MLW now")
+    expect(html).not_to_have_attribute("data-sync", "off")  # this device keeps in step too
+    expect(html).to_have_attribute("data-pair-code", "used")
+    assert page.evaluate("localStorage.getItem('letterfield.linkCode.v1')") is None
+
+    # A code still waiting, opened again, shows again, rather than being retired for a new one.
+    open_you(page)
+    card.get_by_role("button", name="Link another device").click()
+    expect(card.locator(".pair-code")).to_be_visible()
+    second = page.evaluate("window.__lf.pairCode()")
+    card.get_by_role("button", name="Done").click()
+    expect(html).to_have_attribute("data-pair-code", "waiting")
+    card.get_by_role("button", name="Link another device").click()
+    expect(card.locator(".pair-code")).to_have_text(f"{second[:4]}-{second[4:]}")
+    assert links.made == 2
+    assert errors == []
+
+
 def test_a_link_from_another_device_offers_first_then_becomes_that_surveyor(page: Page, site_url, errors):
-    carry = {"initials": "MLW", "guild": OTHER, "muted": [KIM[0]], "listed": False, "emotes": True}
+    carry = {"initials": "MLW", "guild": OTHER, "muted": [KIM[0]], "mutedAs": {KIM[0]: ["KIM", 7]}, "emotes": True}
     links = FakeLinks({"CDEFGHJK": {"token": THEIRS, "carry": carry}})
     start(page, site_url, links, query="&link=cdef-ghjk", initials="")
     offer = page.locator("#pairOffer")
@@ -127,7 +170,7 @@ def test_a_link_from_another_device_offers_first_then_becomes_that_surveyor(page
         "games.initials": '"MLW"',
         "letterfield.guild.v1": json.dumps(OTHER, separators=(",", ":")),
         "letterfield.muted.v1": json.dumps([KIM[0]], separators=(",", ":")),
-        "letterfield.listed.v1": "0",
+        "letterfield.mutedAs.v1": json.dumps({KIM[0]: ["KIM", 7]}, separators=(",", ":")),
         "letterfield.emotes.v1": "1",
     }
     expect(page.locator("#toast b")).to_have_text("Linked")

@@ -34,10 +34,10 @@
 // and how far it scales.
 //
 // Messages are JSON. From the game:
-//   {t: 'me', initials, token, hide, quiet, guild}
+//   {t: 'me', initials, token, quiet, guild}
 //                                   initials to credit claims to ('' for none); the game's
 //                                   secret token, whose hash names the player (survey-social.js);
-//                                   hide: leave me out of the surveyor list; quiet: no emotes;
+//                                   quiet: no emotes;
 //                                   guild: their guild's code, checked with it (survey-guild.js)
 //   {t: 'pos', x, y} / {t: 'pos', away: true}
 //                                   where the player is looking, if in this sector
@@ -607,7 +607,7 @@ export class Sector {
     const inserted = this.sql.exec(
       `INSERT INTO claims (key, w, x, y, d, s, initials, at, guild) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT (key) DO NOTHING RETURNING key`,
-      c.key, c.w, c.x, c.y, c.d, c.s, me.initials, at, (!me.hide && me.tag && me.lid) || '',
+      c.key, c.w, c.x, c.y, c.d, c.s, me.initials, at, (me.tag && me.lid) || '',
     ).toArray().length;
     if (!inserted) {
       const first = this.sql.exec('SELECT w, x, y, d, s, initials, at FROM claims WHERE key = ?', c.key).one();
@@ -783,12 +783,12 @@ export class Sector {
     this.left();
   }
 
-  // A socket closed. A player who was on the surveyor list (or their guild's)
-  // comes off it with a report straight away, rather than lingering for minutes.
+  // A socket closed. A player who was on the surveyor list comes off it with a
+  // report straight away, rather than lingering for minutes.
   gone(ws) {
     let me = this.people?.get(ws);
     if (!me) try { me = ws.deserializeAttachment(); } catch { /* nothing kept */ }
-    if (me?.pid && (!me.hide || me.tag) && me.x !== null && me.x !== undefined) this.reportDue = true;
+    if (me?.pid && me.x !== null && me.x !== undefined) this.reportDue = true;
     this.people?.delete(ws);
   }
 
