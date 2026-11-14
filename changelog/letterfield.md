@@ -1,3 +1,7 @@
+## 2026-11-14
+
+- On a phone, a long press on another surveyor's caret opens its menu again, instead of the phone selecting text or showing its copy bubble. The field notes, definitions and the Surveyors drawer can still be selected and copied.
+
 ## 2026-11-13
 
 - Guilds in the survey log. Each period's top lists have a Top guilds card, and a guild opens its own page: the words its members charted while in it, who charted most, where, and a card to share. “Our words in the survey log” on your page in the Surveyors drawer goes straight there. Words count for the guild you're in when you chart them; while you're off the surveyor list, they don't. A guild's name shows in the log, but never its invite link.
