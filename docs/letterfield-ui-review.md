@@ -19,7 +19,7 @@ Line numbers are as of commit 7bae950 and drift as the files change.
 | 4 | "Show me on the list" also stops guild credit | Remove the option: everyone online is listed | To build |
 | 5 | Four different counts of who's online | a: one count, in the badge and the list's line | To build |
 | 6 | Nothing on a phone's map says the survey is offline | b with d: the title says it; waiting claims kept in storage | To build |
-| 7 | Carets and circles only explain themselves to a mouse | b: two lines of copy; long press fixed on phones | Copy to build; long press in its own session and PR |
+| 7 | Carets and circles only explain themselves to a mouse | b: two lines of copy; long press fixed on phones | Copy to build; long press built in #102 |
 | 8 | Emotes are unlabelled icons on a phone | a: a label under each icon | To build |
 | 9 | The word bar's chips, count and switch | a with b: plain tags, an honest count, a real switch | To build |
 | 10 | "Charted first" on nearly every entry, and messy rows | a with b; cards under day headings, a time on each row, rows on one grid | To build |
@@ -29,7 +29,8 @@ Line numbers are as of commit 7bae950 and drift as the files change.
 | 14 | The tools menu hides its state; the volume floats | c: a mixer, a slider each for effects and music; zoom in one row | To build |
 | 15 | Buttons with the same job look different; risky ones look harmless | a: filled and outlined buttons, red to end or delete; Stop syncing as rows; white inputs | To build |
 | 16 | Small visual glitches | a: fix each in place | To build |
-| 17–29 | | Open | |
+| 17 | Small flow and copy fixes | 1a: a Muted list on your page; 2a: the link in a box; 3: a and b, "Survey log and timelapse ↗" and ↗ on links out | To build |
+| 18–29 | | Open | |
 
 ## The game
 
@@ -56,6 +57,9 @@ promise "Every word you circle".
 - **Also:** on the shared survey, leave supernovas to the survey; the
   personal "found every word" check would replay one after a reload.
 - **Decided: a.**
+- **Since then:** #103 (merged) gave "Already charted by ZED" an "Add to
+  notes" button, which adds the word as a find you didn't chart first. When
+  1 and 10 are built, those finds take the same "charted by ZED" mark.
 
 ### 2. "Done" on a link code can leave this device out of sync, silently
 
@@ -190,8 +194,9 @@ outlined (someone else's) versus filled (yours).
   instead of opening the caret's menu: the phone's own long press, which
   nothing on the page stops (no `user-select` or `-webkit-touch-callout`
   rules). In Chromium, with real touch events, the menu opens and nothing
-  is selected. The fix and a touch test are being done in a session and
-  pull request of their own, so the copy above can rely on them.
+  is selected. The fix and a touch test were done in a session and pull
+  request of their own, **merged as #102**, so the copy above can rely on
+  them.
 
 ### 8. Emotes are unlabelled icons on a phone
 
@@ -445,14 +450,43 @@ Options:
 
 ### 17. Small flow and copy fixes
 
-- Unmuting someone offline: a. a "Muted (3)" row on your page
-  (*recommended*); b. mutes expire.
-- The share fallback's wrong advice: a. show the link in a box
-  (*recommended*); b. put the link in the address bar.
-- The survey log link: a. "Survey log and timelapse →" (*recommended*); b.
-  an ↗ on rows that leave the game.
-- **Machines:** none.
-- **Decided:** open.
+1. **Unmuting someone offline.** Only the ⋯ beside someone in the list, or
+   their caret's menu, unmutes them, and both need them online; once gone,
+   they stay muted. After 4, muting is the only tool. The note under the
+   switches also says "on this device", though mutes follow you to linked
+   devices.
+   - a. A Muted row on your page, opening a list. *Recommended.*
+   - b. Mutes run out after a while.
+   - c. "Unmute everyone".
+2. **The share fallback's wrong advice.** When a computer refuses the copy,
+   the note says "Copy this page's address instead", but the page's address
+   isn't the find's (or supernova's) link.
+   - a. Show the link in a box. *Recommended.*
+   - b. Put the link in the address bar (only works for the game's own
+     links, not the share card address it uses now).
+3. **Links that leave the game.** "Survey log: every word charted, hour by
+   hour" undersells the log, leaves out the timelapse and wraps on a phone;
+   "Our words in the survey log" wears the chevron of rows that open inside
+   the drawer, though it goes to another page.
+   - a. "Survey log and timelapse". *Recommended,* with b.
+   - b. An arrow out (↗) on links that leave the game.
+- **Machines:** none; the Muted list opens and closes like a fold.
+- **Decided** (after mockups; muting checked as still in the game on
+  `main`):
+  1. **a.** A Muted row in "On the map" on your page, with the count and
+     "Their carets, emotes and notes stay hidden on your devices", replacing
+     the note. It opens a list: each muted surveyor's initials, when they
+     were muted and an Unmute pill. The game saves the initials when you
+     mute someone (it keeps only their id today) and sends them with the
+     mutes to linked devices, so the Worker's check of linked settings
+     (`worker/src/players.js`) takes them too; anyone muted before that, or
+     whose initials haven't reached this device, shows as "A surveyor".
+  2. **a.** The note says "Couldn't copy it" and shows the link in a box
+     that one tap selects whole, staying until you tap elsewhere; for finds
+     and supernovas alike.
+  3. **a and b.** "Survey log and timelapse ↗" at the foot of the survey
+     panel, and ↗ in place of the chevron on "Our words in the survey log":
+     an arrow out on every link that leaves the game.
 
 ## Survey log and timelapse
 
