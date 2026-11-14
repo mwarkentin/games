@@ -214,7 +214,11 @@ header p{margin:8px 0 0;color:var(--muted);max-width:40ch}
 .hour h3 span{font:400 11px/1 var(--f-mono);letter-spacing:0;color:var(--muted);display:flex;align-items:center;gap:8px}
 .hour h3 button{min-height:40px;border:1px solid var(--rule);background:var(--panel);border-radius:999px;padding:0 12px;font:500 10.5px/1 var(--f-mono);cursor:pointer;color:var(--ink)}
 .entries{list-style:none;margin:0;padding:4px 0}
-.entry{position:relative;display:grid;grid-template-columns:10px minmax(0,1fr) auto 40px;column-gap:12px;row-gap:5px;align-items:baseline;min-height:44px;padding:10px 8px;border-radius:6px}
+/* A word's row on the field notes' grid: a first line 40px tall, the book's
+   height, with the marker, word, time and book all centred on it; its place
+   and theme on the line under. */
+.entry{position:relative;display:grid;grid-template-columns:10px minmax(0,1fr) auto 40px;grid-template-rows:40px auto;column-gap:12px;row-gap:0;align-items:center;min-height:44px;padding:2px 4px 8px 8px;border-radius:6px}
+.entry > *{grid-row:1}
 .entry .head{display:flex;align-items:center;gap:6px;min-width:0}
 .bearing{flex:none;width:13px;height:13px;fill:none;stroke:var(--muted);stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round}
 .entry:hover{background:var(--hover)}
@@ -231,7 +235,7 @@ header p{margin:8px 0 0;color:var(--muted);max-width:40ch}
 .who{font:400 11px/1 var(--f-mono);color:var(--muted);white-space:nowrap;font-variant-numeric:tabular-nums}
 .who b{font-weight:500;color:var(--ink)}
 .you{display:inline-block;margin-left:6px;padding:3px 6px;border-radius:999px;background:var(--accent);color:var(--on-accent);font:500 9px/1 var(--f-mono);letter-spacing:.08em;text-transform:uppercase;vertical-align:1px}
-.entry .meta{grid-row:2}
+.entry > .meta{grid-row:2;align-self:start}
 .meta{grid-column:2 / 4;font:400 11px/1.4 var(--f-mono);color:var(--muted);font-variant-numeric:tabular-nums;overflow-wrap:anywhere}
 .meta b{font-weight:500;color:var(--ink)}
 .loading{color:var(--muted);font:400 12px/1 var(--f-mono);padding:12px 8px}
@@ -239,9 +243,7 @@ header p{margin:8px 0 0;color:var(--muted);max-width:40ch}
 .foot.feedback{margin-top:4px;padding-top:0;border-top:0}
 
 /* What a word means, under its row, from the book at its end. */
-/* Level with the word's line, as the field notes' book is; its 40px reaches
-   past the line without making the row taller. */
-.define{grid-column:4;grid-row:1;align-self:center;margin:-10px 0;position:relative;z-index:1;width:40px;height:40px;display:grid;place-items:center;border:0;border-radius:50%;background:transparent;color:var(--muted);cursor:pointer;padding:0}
+.define{grid-column:4;grid-row:1;position:relative;z-index:1;width:40px;height:40px;display:grid;place-items:center;border:0;border-radius:50%;background:transparent;color:var(--muted);cursor:pointer;padding:0}
 .define svg{width:17px;height:17px}
 .define:hover,.define[aria-expanded="true"]{background:var(--hover);color:var(--ink)}
 .def{margin:0 8px 8px 30px;padding:10px 12px;border-left:2px solid var(--rule);font-size:13px;line-height:1.45}

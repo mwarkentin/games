@@ -126,7 +126,7 @@ def test_without_the_worker_a_word_only_links_out(page: Page, site_url, errors):
     assert errors == []
 
 
-def test_the_book_is_level_with_its_word_and_scrolls_under_the_hours_heading(page: Page, site_url, errors):
+def test_the_book_is_on_its_words_line_and_scrolls_under_the_hours_heading(page: Page, site_url, errors):
     page.set_viewport_size({"width": 375, "height": 600})
     words = [
         "FORTY",
@@ -146,9 +146,11 @@ def test_the_book_is_level_with_its_word_and_scrolls_under_the_hours_heading(pag
     page.route(f"{DEFINE_API}/**", FakeDefinitions().handle)
     open_log(page, site_url, FakeSurveyLog(rows, PLACES, THEMES), query=f"&define={DEFINE_API}")
     expect(page.locator(".entry")).to_have_count(12)
+    # The marker, word, time and book share one line, the first of the row's grid.
     middles = page.evaluate("""[...document.querySelectorAll('.entry')].map(e => {
-      const w = e.querySelector('.word').getBoundingClientRect(), b = e.querySelector('.define').getBoundingClientRect();
-      return Math.abs((w.top + w.height / 2) - (b.top + b.height / 2));
+      const mid = s => { const r = e.querySelector(s).getBoundingClientRect(); return r.top + r.height / 2; };
+      const all = ['.dot', '.word', '.who', '.define'].map(mid);
+      return Math.max(...all) - Math.min(...all);
     })""")
     assert max(middles) <= 1, middles
     # Scrolled so rows pass under the hour's heading, which stays on top of their links and books.
