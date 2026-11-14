@@ -2,6 +2,7 @@
 
 - Circling a word another surveyor charted first now offers “Add to notes”, to keep it in your field notes all the same. It's still theirs: it doesn't count as charted first by you.
 - On a phone, a long press on another surveyor's caret opens its menu again, instead of the phone selecting text or showing its copy bubble. The field notes, definitions and the Surveyors drawer can still be selected and copied.
+- Each of your settings shows in one place now: on your page in the Surveyors drawer, beside the switch or button that changes it. Your row at the top of the list says what's on your page instead of repeating them, the foot of your field notes just offers feedback, and Stop syncing is where it says your notes and settings are backed up.
 
 ## 2026-11-13
 

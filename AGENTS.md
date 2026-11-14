@@ -452,10 +452,10 @@ kept up to date), and deletes it when the pull request closes.
 ## Games that started as claude.ai artifacts
 
 An artifact may call `window.claude` for shared storage or sign-in. That
-never exists on this site, so every such call must sit behind a feature
-check and fall back to `localStorage` (Letterfield's field notes already
-do). Shared high scores go through the leaderboard Worker instead (see
-below). When bringing a new artifact over:
+never exists on this site, and games here don't need to run as artifacts
+any more, so drop such calls when bringing one over and keep its state in
+`localStorage`. Shared high scores go through the leaderboard Worker
+instead (see below). When bringing a new artifact over:
 
 1. Read it with the Artifact tool, then move the `<title>`, `<link>` and
    first `<style>` tags the artifact service leaves at the top of `<body>`

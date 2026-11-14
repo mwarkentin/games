@@ -1422,7 +1422,7 @@ def test_field_notes_scroll_whole_on_a_phone_with_the_survey(page: Page, site_ur
     page.wait_for_timeout(100)
     m = page.evaluate(NOTES_LAYOUT_JS)
     assert m["last"]["bottom"] <= m["notes"]["bottom"], m
-    expect(page.locator("#sync")).to_be_in_viewport()
+    expect(page.locator("#notesFoot")).to_be_in_viewport()
     assert abs(m["filters"]["top"] - m["notes"]["top"]) <= 1, m
     expect(page.locator("#filters .filter").first).to_be_in_viewport()
 

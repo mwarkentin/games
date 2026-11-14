@@ -1123,7 +1123,7 @@ const S = {
 // high-score screen (Board) opens on top of the menu or the game-over card
 // without leaving them.
 const Screen = machine('screen', {
-  menu: ['play', 'paused'],   // paused: a game brought back by restore()
+  menu: ['play'],
   play: ['paused', 'message', 'clearing', 'over'],
   paused: ['play', 'menu'],
   message: ['play', 'over'],
@@ -2829,47 +2829,8 @@ function onResize() {
 if ('ResizeObserver' in window) new ResizeObserver(onResize).observe(els.stage);
 else window.addEventListener('resize', onResize);
 
-// ---------- keep a game going across page updates ----------
-function snapshot() {
-  const live = Screen.is('play', 'paused', 'message', 'clearing');
-  return {
-    v: 1, mode: S.mode, diff: S.diffPick,
-    game: live ? {
-      level: S.level, score: S.score, lives: Math.max(1, S.lives), spec: S.spec, nextSpec: S.nextSpec,
-      chomps: S.chomps, played: S.t - S.startT,
-      cols: S.cols, rows: S.rows, bestBefore: S.bestBefore || 0, levelWrong: S.levelWrong, levelChomps: S.levelChomps,
-      player: { c: S.player.c, r: S.player.r },
-      cells: S.cells.map(x => ({ text: x.text, value: x.value, split: x.split, steps: x.steps, plain: x.plain, pic: x.pic, ok: x.ok, why: x.why, eaten: x.eaten })),
-    } : null,
-  };
-}
-function restore(data) {
-  const g = data && data.v === 1 && data.game;
-  if (!g || !g.spec || !Array.isArray(g.cells) || g.cells.length !== g.cols * g.rows) return false;
-  try {
-    S.level = g.level; S.score = g.score; S.lives = g.lives; S.chomps = g.chomps || 0; S.startT = S.t - (g.played || 0);
-    S.bestBefore = g.bestBefore; S.levelWrong = g.levelWrong || 0; S.levelChomps = g.levelChomps || 0;
-    S.spec = g.spec; S.rule = ruleFrom(g.spec); S.cfg = levelConfig(S.level, S.diff);
-    S.cols = g.cols; S.rows = g.rows; S.cells = g.cells;
-    S.player.c = g.player.c; S.player.r = g.player.r; S.player.target = null; S.player.invUntil = 0;
-    clearCritters();
-    S.nextSpawnAt = S.t + S.cfg.firstSpawn;
-    buildCells();
-    layoutBoard();
-    renderAllCells(false);
-    placePlayer(true);
-    showRule(false);
-    renderHud();
-    if (!okLeft()) { S.level++; startLevel(g.nextSpec); }
-    Screen.go('paused');   // shows the pause card
-    return true;
-  } catch (err) {
-    return false;
-  }
-}
-function start(data) {
-  data = data || {};
-  const savedMode = data.mode || store.get('mode', 'multiples'), savedDiff = data.diff != null ? data.diff : store.get('diff', 1);
+function start() {
+  const savedMode = store.get('mode', 'multiples'), savedDiff = store.get('diff', 1);
   S.mode = MODES.includes(savedMode) ? savedMode : 'multiples';
   S.diffPick = [0, 1, 2].includes(+savedDiff) ? +savedDiff : 1;
   S.diff = diffFor(S.mode);
@@ -2880,7 +2841,7 @@ function start(data) {
   document.querySelectorAll('[data-sprite]').forEach(el => { el.innerHTML = svgFor(el.dataset.sprite); });
   S.playerEl = makeSprite('nib', 'player');
   S.playerEl.style.setProperty('--dur', '110ms');
-  if (!restore(data)) openMenu();
+  openMenu();
   layer();
   els.lbOpenMenu.hidden = els.howtoBoard.hidden = !Leaderboard.api;
   syncMenu();
@@ -2913,10 +2874,7 @@ if (location.hash === '#debug') {
     },
   };
 }
-const hot = window.claude && window.claude.hot;
-if (hot && typeof hot.snapshot === 'function') { try { hot.snapshot(snapshot); } catch (e) { /* older viewer */ } }
-if (hot && typeof hot.ready === 'function') hot.ready(start);
-else start((hot && hot.data) || {});
+start();
 })();
 </script>
 </body>
