@@ -20,6 +20,7 @@
 :root{
   --paper:#EBEEE7;
   --panel:#F7F8F4;
+  --field:#FFFFFF;
   --ink:#1B2428;
   --muted:#59656A;
   --rule:#C6CFC6;
@@ -50,13 +51,13 @@
 }
 @media (prefers-color-scheme: dark){
   :root:not([data-theme="light"]){
-    --paper:#0F171A; --panel:#162024; --ink:#E2E7DE; --muted:#93A19D; --rule:#2B3A3E;
+    --paper:#0F171A; --panel:#162024; --field:#0F171A; --ink:#E2E7DE; --muted:#93A19D; --rule:#2B3A3E;
     --accent:#97A9FF; --on-accent:#0C1330; --danger:#FF8D7C; --hover:rgba(226,231,222,.06);
     --shadow:0 14px 32px -14px rgba(0,0,0,.7); --mark-s:68%; --mark-l:68%; --mode:dark; color-scheme:dark;
   }
 }
 :root[data-theme="dark"]{
-  --paper:#0F171A; --panel:#162024; --ink:#E2E7DE; --muted:#93A19D; --rule:#2B3A3E;
+  --paper:#0F171A; --panel:#162024; --field:#0F171A; --ink:#E2E7DE; --muted:#93A19D; --rule:#2B3A3E;
   --accent:#97A9FF; --on-accent:#0C1330; --danger:#FF8D7C; --hover:rgba(226,231,222,.06);
   --shadow:0 14px 32px -14px rgba(0,0,0,.7); --mark-s:68%; --mark-l:68%; --mode:dark; color-scheme:dark;
 }
@@ -265,19 +266,32 @@ label.you-item{cursor:pointer}
 .filter{flex:none;display:flex;align-items:center;gap:6px;font:500 11px/1 var(--f-mono);padding:6px 8px;border:1px solid var(--rule);border-radius:999px;background:transparent;cursor:pointer;color:var(--muted)}
 .filter i{width:8px;height:8px;border-radius:50%;background:var(--c)}
 .filter[aria-pressed="true"]{border-color:var(--ink);color:var(--ink);background:var(--hover)}
-.finds{list-style:none;margin:0;padding:6px 8px 10px;overflow-y:auto;flex:1;min-height:0;overscroll-behavior:contain}
-.finds li{display:flex;align-items:center;gap:2px}
-.find{flex:1;min-width:0;display:grid;grid-template-columns:10px minmax(0,1fr) auto;column-gap:12px;row-gap:5px;align-items:baseline;padding:10px 10px;border-radius:6px;color:inherit;text-decoration:none}
+.finds{list-style:none;margin:0;padding:2px 10px 12px;overflow-y:auto;flex:1;min-height:0;overscroll-behavior:contain}
+/* Finds, newest first: a heading for each day, then a card for each visit to
+   a territory that day, its theme's colour down the side. Every row sits on
+   one grid, each part centred on the word's line: marker, word and bearing,
+   time, then the book and share buttons; a second line, when there's
+   anything to say, sits under the word without moving the first. */
+.finds > li.day{display:block;margin:18px 2px 0;padding:0 0 7px;border-bottom:1px solid var(--rule);font:800 17px/1 var(--f-display);letter-spacing:.06em;text-transform:uppercase;color:var(--ink)}
+.finds > li.day:first-child{margin-top:6px}
+.finds > li.run{display:block;margin:10px 0 0;border:1px solid var(--rule);border-left:4px solid var(--c);border-radius:10px;overflow:hidden}
+.run-head{display:flex;align-items:baseline;gap:10px;margin:0;padding:9px 12px 8px 34px;background:var(--hover);border-bottom:1px solid var(--rule);font:500 10px/1.2 var(--f-mono);letter-spacing:.12em;text-transform:uppercase;color:var(--muted);min-width:0}
+.run-head b{font-weight:600;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.run-head span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.run ol{list-style:none;margin:0;padding:0}
+.run li.row + li.row{border-top:1px solid var(--rule)}
+li.row{display:grid;grid-template-columns:minmax(0,1fr) 40px 40px;align-items:start;padding-right:2px}
+li.row > button{margin-top:2px}
+.find{min-width:0;display:grid;grid-template-columns:20px minmax(0,1fr) auto;column-gap:8px;row-gap:0;align-items:center;min-height:44px;padding:5px 4px 5px 6px;box-sizing:border-box;border-radius:6px;color:inherit;text-decoration:none}
 .find-share{flex:none;width:40px;height:40px;display:grid;place-items:center;border:0;border-radius:50%;background:transparent;color:var(--muted);cursor:pointer}
 .find-share svg{width:17px;height:17px}
 .find-share:hover{background:var(--hover);color:var(--ink)}
-.finds li{flex-wrap:wrap}
 .find-define{flex:none;width:40px;height:40px;display:grid;place-items:center;border:0;border-radius:50%;background:transparent;color:var(--muted);cursor:pointer}
 .find-define svg{width:17px;height:17px}
 .find-define:hover{background:var(--hover);color:var(--ink)}
 .find-define[aria-expanded="true"]{background:var(--hover);color:var(--ink)}
 /* A found word's meaning, opened under its entry (see Definitions). */
-.find-def{flex:1 0 100%;box-sizing:border-box;margin:0 0 8px;padding:10px 12px 11px 32px;font-size:14px;line-height:1.45;color:var(--ink)}
+.find-def{grid-column:1 / -1;box-sizing:border-box;margin:0 0 8px;padding:6px 12px 11px 34px;font-size:14px;line-height:1.45;color:var(--ink)}
 .def-sense{margin:0 0 6px;overflow-wrap:anywhere}
 .def-sense i{font:italic 400 12px/1 var(--f-mono);color:var(--muted);margin-right:6px}
 .def-note{margin:0 0 6px;color:var(--muted)}
@@ -291,14 +305,19 @@ label.you-item{cursor:pointer}
 .novas{flex:none;padding:10px 8px 4px;border-bottom:1px solid var(--rule)}
 .novas h3{margin:0 10px 2px}
 .novas ol{list-style:none;margin:0;padding:0;max-height:min(30vh, 260px);overflow-y:auto;overscroll-behavior:contain}
-.novas li{display:flex;align-items:center;gap:2px}
-.nova-star{width:12px;height:12px;margin:0 -1px;border-radius:50%;align-self:center;background:radial-gradient(circle, #fff 0 16%, hsl(var(--h,200) 90% 62%) 32%, hsl(var(--h,200) 80% 50% / .35) 56%, transparent 72%);box-shadow:0 0 0 1.5px hsl(var(--h,200) 60% 50% / .35)}
+.novas li.row > .find-share{grid-column:3}
+.nova-star{width:12px;height:12px;justify-self:center;border-radius:50%;align-self:center;background:radial-gradient(circle, #fff 0 16%, hsl(var(--h,200) 90% 62%) 32%, hsl(var(--h,200) 80% 50% / .35) 56%, transparent 72%);box-shadow:0 0 0 1.5px hsl(var(--h,200) 60% 50% / .35)}
 .nova-find .find-word{font-size:17px}
-.find-dot{width:10px;height:10px;border-radius:50%;background:var(--c);align-self:center}
+.find-dot{width:10px;height:10px;border-radius:50%;background:var(--c);justify-self:center}
 .find.stray .find-dot{background:transparent;border:2px dashed var(--c);width:10px;height:10px;box-sizing:border-box}
-.find-word{font:700 21px/1 var(--f-display);letter-spacing:.07em;min-width:0;overflow:hidden;text-overflow:ellipsis}
-.find-when{font:400 10.5px/1 var(--f-mono);color:var(--muted);white-space:nowrap}
-.find-meta{grid-column:2 / 4;font:400 11px/1.4 var(--f-mono);color:var(--muted);font-variant-numeric:tabular-nums}
+/* Charted first by you: a ring round the dot, which keeps its centre. */
+.find-dot.first{box-shadow:0 0 0 2.5px var(--panel),0 0 0 4px var(--c)}
+.find-word{display:flex;align-items:center;gap:7px;min-width:0;font:700 21px/1 var(--f-display);letter-spacing:.07em;padding-top:1px}
+.find-w{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+/* The bearing it reads in, drawn, so every direction is the same size. */
+.find-dir{flex:none;width:14px;height:14px;margin-top:-1px;color:var(--muted);fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
+.find-when{min-width:62px;text-align:right;font:400 10.5px/1 var(--f-mono);color:var(--muted);white-space:nowrap;font-variant-numeric:tabular-nums}
+.find-meta{grid-row:2;grid-column:2 / 4;margin:-3px 0 2px;font:400 11px/1.3 var(--f-mono);color:var(--muted)}
 .find-meta b{font-weight:500;color:var(--ink)}
 .finds-empty{display:block!important;padding:18px 10px;color:var(--muted);font-size:14px;max-width:36ch}
 .finds-empty strong{display:block;color:var(--ink);font:700 18px/1.1 var(--f-display);letter-spacing:.05em;text-transform:uppercase;margin-bottom:6px}
@@ -513,6 +532,9 @@ body.docked .toast{right:calc(var(--notes-w) + 16px);max-width:calc(100% - var(-
 .toast i{grid-row:span 2;width:10px;height:10px;border-radius:50%;background:var(--c)}
 .toast b{font:700 19px/1 var(--f-display);letter-spacing:.07em;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .toast span{font:400 11px/1.35 var(--f-mono);color:var(--muted);overflow-wrap:anywhere}
+/* A link to copy by hand, when the browser won't: one tap selects it all. */
+.toast.holds{width:min(400px, calc(100% - var(--gl) - var(--gr)))}
+.toast-link{grid-column:2;display:block;margin-top:6px;padding:8px 10px;border:1px solid var(--rule);border-radius:6px;background:var(--field);font:500 12px/1.35 var(--f-mono);color:var(--ink);overflow-wrap:anywhere;user-select:all;-webkit-user-select:all;pointer-events:auto}
 /* A find's toast offers to share it: the only part of a toast that takes a tap. */
 .toast.can-share{grid-template-columns:auto minmax(0,1fr) auto;padding-right:10px}
 .share{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--rule);border-radius:999px;background:transparent;color:var(--ink);font:500 11.5px/1 var(--f-mono);cursor:pointer;white-space:nowrap}
@@ -568,7 +590,7 @@ body.docked .nova{left:calc((100% - var(--notes-w)) / 2)}
   .swatch{width:9px;height:9px}
   .t-name{font-size:15.5px}
   .t-meta{font-size:9.5px}
-  .t-coord{display:none}  /* the grid reference is in each find's notes */
+  .t-coord{display:none}  /* no room for the grid reference on a phone */
   .notes-toggle,.tools-btn,.people-btn{padding:0;width:44px;height:46px;justify-content:center;gap:0}
   .notes-toggle .label{display:none}
   .notes-toggle .badge{position:absolute;top:-6px;right:-6px}
@@ -762,8 +784,6 @@ const RG = 4;           // chunks per territory side
 const RC = CH * RG;     // cells per territory side (48)
 const LETTER_MIN = 9, LETTER_FULL = 13, ZMIN = 2, ZMAX = 80;
 const DIRS = [[1,0],[1,1],[0,1],[-1,1],[-1,0],[-1,-1],[0,-1],[1,-1]];
-const DNAME = ['E','SE','S','SW','W','NW','N','NE'];
-const DARROW = ['→','↘','↓','↙','←','↖','↑','↗'];
 const DWEIGHT = [3,2,3,1,1,1,1,2], DW_TOTAL = 14;
 // A territory deals its 16 chunks' words from one shuffled deck of its theme:
 // each chunk gets the next DEAL cards and places 6 to 8 of them, so with at
@@ -774,7 +794,7 @@ const DEAL = 9;
 const STRAY_MIN = 6;
 const NOTES_W = 340;
 // Field notes, by map: each redraw starts a new key and carries over any finds still there.
-const K_FINDS = 'letterfield.finds.v4', K_FINDS_OLD = ['letterfield.finds.v3', 'letterfield.finds.v2', 'letterfield.finds.v1'], K_CAM = 'letterfield.cam.v1', K_COACH = 'letterfield.coach.v1', K_NOTES = 'letterfield.notes.v1', K_SOUND = 'letterfield.sound.v1', K_MUSIC = 'letterfield.music.v1', K_MUSIC_VOL = 'letterfield.musicvol.v1', K_LIST = 'letterfield.list.v1';
+const K_FINDS = 'letterfield.finds.v4', K_FINDS_OLD = ['letterfield.finds.v3', 'letterfield.finds.v2', 'letterfield.finds.v1'], K_CAM = 'letterfield.cam.v1', K_COACH = 'letterfield.coach.v1', K_NOTES = 'letterfield.notes.v1', K_SOUND = 'letterfield.sound.v1', K_MUSIC = 'letterfield.music.v1', K_MUSIC_VOL = 'letterfield.musicvol.v1', K_LIST = 'letterfield.list.v1', K_OUTBOX = 'letterfield.outbox.v1';
 const K_INITIALS = 'games.initials';  // shared with the other games' leaderboards
 const K_PASS = 'letterfield.surveyPass.v1';
 // The shared survey (see worker/SURVEY.md), on the leaderboard Worker. With
@@ -1228,9 +1248,22 @@ function sanitize(o) {
   if (s && w.length < STRAY_MIN) return null;
   const f = o.f ? 1 : 0;
   const n = f && Number.isInteger(o.n) && o.n > 0 && o.n < 1e8 ? o.n : 0;  // where a word charted first came in the world's count
+  const b = !f && goodBy(o.b) ? o.b : '';  // who charted it first, when it wasn't you (? for someone unsigned)
   const t = Number.isFinite(Number(o.t)) ? Number(o.t) : Date.now();
   const th = s ? strayTheme(w, fdiv(x, RC), fdiv(y, RC)) : regionTheme(fdiv(x, RC), fdiv(y, RC));
-  return { key, w, x, y, d, t, s, f, n, th, born: 0 };
+  return { key, w, x, y, d, t, s, f, n, b, th, born: 0 };
+}
+const goodBy = b => typeof b === 'string' && (/^[A-Z]{3}$/.test(b) || b === '?');
+// What another tab or device knows of a find, taken into ours: charted first
+// only ever comes on, and so does who charted it otherwise, until it's ours.
+function mergeFind(have, o) {
+  if (o.f && !have.f) {
+    have.f = 1; have.b = '';
+    if (Number.isInteger(o.n) && o.n > 0 && o.n < 1e8) have.n = o.n;
+    return true;
+  }
+  if (!have.f && !have.b && goodBy(o.b)) { have.b = o.b; return true; }
+  return false;
 }
 let redrawn = null;  // {kept, had} the first time a player from an older map comes back
 const readList = k => { try { const a = JSON.parse(LS.get(k) || '[]'); return Array.isArray(a) ? a : []; } catch (_) { return []; } };
@@ -1247,7 +1280,7 @@ function loadLocal() {
   redrawn = { kept: found.size, had: old.length };
   saveLocal();
 }
-const plain = e => ({ w: e.w, x: e.x, y: e.y, d: e.d, t: e.t, s: e.s, ...(e.f ? { f: 1 } : {}), ...(e.n ? { n: e.n } : {}) });
+const plain = e => ({ w: e.w, x: e.x, y: e.y, d: e.d, t: e.t, s: e.s, ...(e.f ? { f: 1 } : {}), ...(e.n ? { n: e.n } : {}), ...(e.b && !e.f ? { b: e.b } : {}) });
 // Every tab of the game in this browser shares one set of field notes. Each
 // save takes in what other tabs saved since, so it never writes over their
 // finds, and a save in another tab is taken in here as it happens. A word
@@ -1260,8 +1293,8 @@ function takeInStored() {
     const have = o && typeof o.w === 'string' ? found.get(keyOf(o.w, o.x, o.y, o.d)) : null;
     if (have) {
       stored.add(have.key);
-      if (o.f && !have.f) { have.f = 1; if (Number.isInteger(o.n) && o.n > 0 && o.n < 1e8) have.n = o.n; added = true; }
-      else if (have.f && !o.f) behind = true;
+      if (mergeFind(have, o)) added = true;
+      else if ((have.f && !o.f) || (have.b && !o.b && !o.f)) behind = true;
       continue;
     }
     const e = sanitize(o);
@@ -1633,7 +1666,7 @@ function onSurvey(l, m) {
     if (!c) return;
     if (!c.s && inSurveyArea(c.x, c.y)) worldExtra++;
     const out = outbox.get(c.key);
-    if (m.by === l.you && out && out.m.is('sent')) { out.m.go('answered'); firstToChart(c); }
+    if (m.by === l.you && out && out.m.is('sent')) { out.m.go('first'); firstToChart(c); }
     else {
       if (out) out.beaten = true;  // someone else charted it while ours was on its way
       if (!found.has(c.key)) news(c);
@@ -1658,7 +1691,7 @@ function onSurvey(l, m) {
   } else if (m.t === 'taken') {
     const c = addClaim(m.c, false), out = c && outbox.get(c.key);
     if (out && out.m.is('sent')) {
-      out.m.go('answered');
+      out.m.go('theirs');
       toast(`<i></i><b>${c.w}</b><span>Charted first by ${c.by || 'another surveyor'} · ${rel(c.at)}</span>`, THEMES[c.th].hue, 0, found.get(c.key));
     }
   } else if (m.t === 'error') {
@@ -1701,28 +1734,62 @@ function addClaim(r, live) {
 // Our own claims, a state machine each (el: null): queued (circled while its
 // sector wasn't live, or waiting its turn under the sector's limit), sent (out
 // on a live socket), unanswered (its socket closed before the answer came:
-// the sector is asked again when it's next joined) and answered, when it
-// leaves the outbox. A word circled while the survey is joining, reconnecting
-// or checking for a pass is claimed as soon as its sector is live.
+// the sector is asked again when it's next joined), and then how it ended,
+// when it leaves the outbox: first (ours), theirs (someone else charted it
+// first) or refused (the sector turned it down). However it ends, the word
+// stays in the notes; theirs marks it with who charted it (see chartedBy). A
+// word circled while the survey is joining, reconnecting or checking for a
+// pass is claimed as soon as its sector is live, and claims still out are
+// kept in storage, so a reload carries on with them (see saveOutbox).
 const CLAIM_MOVES = {
-  queued: ['sent', 'answered'],
-  sent: ['answered', 'unanswered', 'queued'],
-  unanswered: ['sent', 'answered'],
-  answered: [],
+  queued: ['sent', 'theirs'],
+  sent: ['first', 'theirs', 'refused', 'unanswered', 'queued'],
+  unanswered: ['sent', 'first', 'theirs'],
+  first: [], theirs: [], refused: [],
 };
+const CLAIM_ENDS = ['first', 'theirs', 'refused'];
 // A sector takes a burst of claims from a socket, then one every 1.5 s
 // (CLAIM_BURST and CLAIM_REFILL_MS in worker/src/survey.js). The game keeps a
 // little inside that, so time on the way can't push a claim over.
 const CLAIM_BURST = 4, CLAIM_REFILL_MS = 1600;
-function claimWord(e) {
+// `from` is queued for a word just circled; a claim read back from storage
+// starts queued, or unanswered if it may have reached its sector already.
+function claimWord(e, from = 'queued') {
   // A word someone else charted, added to the notes anyway, is theirs already.
   if (!surveyApi || outbox.has(e.key) || claims.has(e.key)) return;
-  const l = links.get(sectorKey(e.x, e.y));
+  const l = links.get(sectorKey(e.x, e.y)), restored = from !== 'queued';
   // `backlog`: it waited for its sector, rather than going as it was circled.
-  const c = { e, l: null, backlog: !(l && l.m.is('live')), initials: '', known: false, beaten: false };
-  c.m = machine('claim', CLAIM_MOVES, 'queued', { el: null, onMove: to => { if (to === 'answered') outbox.delete(e.key); } });
+  const c = { e, l: null, backlog: restored || !(l && l.m.is('live')), initials: restored ? myInitials() : '', known: false, beaten: false };
+  c.m = machine('claim', CLAIM_MOVES, from, { el: null, onMove: to => {
+    if (CLAIM_ENDS.includes(to)) outbox.delete(e.key);
+    if (to === 'theirs') chartedBy(e.key);
+    saveOutbox();
+  } });
   outbox.set(e.key, c);
-  if (l) flushClaims(l);
+  saveOutbox();
+  if (l && !restored) flushClaims(l);
+}
+// Claims still out, kept in storage so a reload doesn't lose them, as [w, x,
+// y, d, 1 if it may have reached its sector]: read back once the survey
+// starts (restoreOutbox), each claim as one that waited.
+function saveOutbox() {
+  LS.set(K_OUTBOX, JSON.stringify([...outbox.values()].map(c => [c.e.w, c.e.x, c.e.y, c.e.d, c.m.is('sent', 'unanswered') ? 1 : 0])));
+}
+function restoreOutbox() {
+  for (const o of readList(K_OUTBOX)) {
+    if (!Array.isArray(o)) continue;
+    const e = found.get(keyOf(o[0], o[1], o[2], o[3]));
+    if (e && !e.f && !e.b) claimWord(e, o[4] ? 'unanswered' : 'queued');
+  }
+  saveOutbox();
+}
+// A word of ours that someone else charted first stays in the notes, marked
+// with who did ("charted by ZED"): the credit is theirs.
+function chartedBy(key) {
+  const e = found.get(key), got = claims.get(key);
+  if (!e || e.f || e.b) return;
+  e.b = got && got.by ? got.by : '?';
+  saveLocal(); syncLater('f', e.key); renderNotes();
 }
 // Sends l's sector the claims waiting for it, oldest first, as fast as the
 // sector takes them, and comes back for the rest when it will.
@@ -1734,7 +1801,7 @@ function flushClaims(l) {
   l.refilled = now;
   for (const c of outbox.values()) {
     if (!c.m.is('queued', 'unanswered') || sectorKey(c.e.x, c.e.y) !== l.k) continue;
-    if (c.backlog && claims.has(c.e.key)) { c.m.go('answered'); continue; }  // someone charted it while it waited
+    if (c.backlog && claims.has(c.e.key)) { c.m.go('theirs'); continue; }  // someone charted it while it waited
     if (l.tokens < 1) { l.flush = setTimeout(() => flushClaims(l), (1 - l.tokens) * CLAIM_REFILL_MS); return; }
     l.tokens -= 1;
     Object.assign(c, { l, initials: myInitials(), known: claims.has(c.e.key) });
@@ -1752,8 +1819,8 @@ function settleClaims(l) {
     if (!c.m.is('unanswered') || sectorKey(c.e.x, c.e.y) !== l.k) continue;
     const got = claims.get(c.e.key);
     if (!got) { c.backlog = true; continue; }  // it never arrived: it goes again
-    c.m.go('answered');
-    if (c.initials && got.by === c.initials && !c.known && !c.beaten) firstToChart(got);
+    if (c.initials && got.by === c.initials && !c.known && !c.beaten) { c.m.go('first'); firstToChart(got); }
+    else c.m.go('theirs');
   }
   flushClaims(l);
 }
@@ -1768,7 +1835,7 @@ function claimRefused(l, c, error) {
     l.tokens = 1 - 60000 / CLAIM_REFILL_MS;  // this sector's claims wait a minute
     return flushClaims(l);
   }
-  c.m.go('answered');
+  c.m.go('refused');
   const why = { 'slow down': 'Too quick to chart', 'daily limit': 'Today’s charting limit reached' }[error];
   const e = why && !c.backlog ? found.get(c.e.key) : null;
   if (e) toast(`<i></i><b>${e.w}</b><span>${why} · kept in your notes</span>`, THEMES[e.th].hue, 0, e);
@@ -2196,7 +2263,7 @@ async function shareNova(n) {
     await navigator.clipboard.writeText(`${text} ${url}`);
     toast(`<i></i><b>Copied</b><span>${regionName(n.rx, n.ry)}, ready to paste</span>`, hue);
   } catch (_) {
-    toast(`<i></i><b>Couldn’t share</b><span>Copy this page’s address instead</span>`, hue);
+    copyFailed(`${regionName(n.rx, n.ry)}’s supernova`, url, hue);
   }
 }
 const novaAction = n => ({ label: `Share ${regionName(n.rx, n.ry)}’s supernova`, share: () => shareNova(n) });
@@ -2206,14 +2273,17 @@ function novaToast(n, line = 'Supernova · kept in your field notes') {
 }
 // The field notes' list of them, newest first; each flies to its last word.
 const novasSec = $('#novasSec'), novaListEl = $('#novaList');
+const clockFmt = new Intl.DateTimeFormat(undefined, { hour: 'numeric', minute: '2-digit' });
+// When a supernova went off: its time today, its day before.
+const novaWhen = t => (new Date(t).toDateString() === new Date().toDateString() ? clockFmt.format(t) : new Date(t).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }));
 function renderNovas() {
   const list = [...novasSeen.values()].sort((a, b) => b.t - a.t);
   novasSec.hidden = !list.length;
   $('#novasHead').textContent = list.length === 1 ? 'Supernova' : `Supernovas · ${list.length}`;
   novaListEl.innerHTML = list.map(n => {
     const k = n.rx + ',' + n.ry, place = regionName(n.rx, n.ry), who = n.solo ? 'all found by you' : n.mine ? 'the last by you' : n.by ? `the last by ${n.by}` : 'every word charted';
-    return `<li><a class="find mark nova-find" href="#${hashOf(n)}" data-nova="${k}" style="--h:${THEMES[regionTheme(n.rx, n.ry)].hue}">` +
-      `<span class="nova-star" aria-hidden="true"></span><span class="find-word">${place}</span><span class="find-when">${rel(n.t)}</span>` +
+    return `<li class="row"><a class="find mark nova-find" href="#${hashOf(n)}" data-nova="${k}" style="--h:${THEMES[regionTheme(n.rx, n.ry)].hue}">` +
+      `<span class="nova-star" aria-hidden="true"></span><span class="find-word"><span class="find-w">${place}</span></span><span class="find-when">${novaWhen(n.t)}</span>` +
       `<span class="find-meta">Went supernova · <b>${n.w}</b>, ${who}</span></a>` +
       `<button type="button" class="find-share" data-nova="${k}" aria-label="Share ${place}’s supernova" title="Share ${place}’s supernova">${SHARE_ICON}</button></li>`;
   }).join('');
@@ -3434,14 +3504,17 @@ function collect(w, x, y, d, stray, keep = false) {
     pulse = { x, y, d, w, t0: performance.now() }; invalidate();
     return;
   }
-  const e = sanitize({ w, x, y, d, t: Date.now(), s: stray ? 1 : 0 });
+  const e = sanitize({ w, x, y, d, t: Date.now(), s: stray ? 1 : 0, b: theirs ? theirs.by || '?' : '' });
   e.born = performance.now();
   found.set(key, e);
   saveLocal(); syncLater('f', e.key); claimWord(e);
   const rx = fdiv(x, RC), ry = fdiv(y, RC);
-  say(`${w} · ${stray ? 'Stray ' + THEMES[e.th].name.toLowerCase() + ' word' : THEMES[e.th].name} · ${regionName(rx, ry)}`);
+  say(`${w} · ${stray ? 'Bonus ' + THEMES[e.th].name.toLowerCase() + ' word' : THEMES[e.th].name} · ${regionName(rx, ry)}`);
   gatherFind(e);
-  if (!stray && !keep) {  // someone else's word, added to the notes, sets off nothing: it went off when it was charted
+  // Alone, finding a territory's last word sets it off. On the shared survey
+  // the survey says when one goes (goneSupernova): your own count of its words
+  // would set it off again, after a reload, for one charted long ago.
+  if (!stray && !surveyApi) {
     const total = territoryTotal(rx, ry);
     if (territoryFound(rx, ry) === total) {
       const seen = sawNova({ rx, ry, t: e.t, w, x, y, d, by: '', mine: true, solo: !surveyApi });
@@ -3818,6 +3891,7 @@ let toastTimer = 0, toastMs = 0;
 // A find just made has no note (see gatherFind).
 function toast(html, hue, ms = 2400, find = null) {
   toastEl.innerHTML = html;
+  toastEl.classList.remove('holds');
   if (hue != null) toastEl.style.setProperty('--h', hue);
   toastEl.classList.toggle('can-share', !!find);
   if (find) {
@@ -3884,7 +3958,12 @@ function gatherFind(e) {
   const mx = (x0 + x1) / 2, my = (y0 + y1) / 2;
   const range = document.createRange();
   range.selectNodeContents(to);
+  // Before a first find there's no badge to fly to: it's measured where it
+  // will show, and comes in as the bead lands.
+  const away = to === notesBadge && to.hidden;
+  if (away) { to.style.visibility = 'hidden'; to.hidden = false; }
   const b = to === notesBadge ? to.getBoundingClientRect() : range.getBoundingClientRect();
+  if (away) { to.hidden = true; to.style.visibility = ''; }
   const onMap = mx >= 0 && mx <= W - dock && my >= mapTop && my <= mapTop + H;
   if (RM || document.hidden || !b.width || !onMap || !document.body.animate) return land();
 
@@ -3958,7 +4037,7 @@ const shareUrl = e => shareBase
   : location.origin + location.pathname + location.search + '#' + hashOf(e);
 function shareText(e) {
   const place = regionName(fdiv(e.x, RC), fdiv(e.y, RC));
-  const word = e.s ? `${e.w}, a stray ${THEMES[e.th].name.toLowerCase()} word,` : e.w;
+  const word = e.s ? `${e.w}, a bonus ${THEMES[e.th].name.toLowerCase()} word,` : e.w;
   const lead = `I ${Date.now() - e.t < SHARE_JUST_MS ? 'just ' : ''}found ${word} in ${place} in Letterfield`;
   if (e.f && e.n) return `${lead}, before anyone else. That was word ${e.n.toLocaleString()} of ${(world ? world.total : SURVEY_WORDS).toLocaleString()} on the shared map.`;
   if (e.f) return `${lead}, before anyone else.`;
@@ -3974,8 +4053,20 @@ async function shareFind(e) {
     await navigator.clipboard.writeText(`${text} ${url}`);
     toast(`<i></i><b>Copied</b><span>${e.w}, ready to paste</span>`, THEMES[e.th].hue);
   } catch (_) {
-    toast(`<i></i><b>Couldn’t share</b><span>Copy this page’s address instead</span>`, THEMES[e.th].hue);
+    copyFailed(`${e.w}’s link`, url, THEMES[e.th].hue);
   }
+}
+// When the browser won't copy, the link shows in a box that one tap selects
+// whole, and the note stays until a tap anywhere else.
+function copyFailed(what, url, hue) {
+  toast(`<i></i><b>Couldn’t copy it</b><span>Here’s ${what} to copy</span><code class="toast-link">${escHtml(url)}</code>`, hue, 10 * 60000);
+  toastEl.classList.add('holds');
+  const away = ev => {
+    if (toastEl.contains(ev.target)) return;
+    document.removeEventListener('pointerdown', away, true);
+    if (toastEl.classList.contains('holds')) hideToast();
+  };
+  document.addEventListener('pointerdown', away, true);
 }
 
 /* ---------- Definitions ---------- */
@@ -4084,6 +4175,7 @@ function showCount(all = [...found.values()]) {
   const done = unlanded.size ? all.filter(e => !unlanded.has(e.key)) : all;
   const longest = done.reduce((m, e) => (!m || e.w.length > m.w.length ? e : m), null);
   notesBadge.textContent = $('#tWords').textContent = done.length;
+  notesBadge.hidden = !done.length;
   $('#tTerr').textContent = new Set(done.map(e => fdiv(e.x, RC) + ',' + fdiv(e.y, RC))).size;
   $('#tLong').textContent = longest ? longest.w : '—';
 }
@@ -4104,17 +4196,53 @@ function renderNotes() {
       used.map(i => `<button type="button" class="filter mark" data-f="${i}" style="--h:${THEMES[i].hue}" aria-pressed="${filter === i}"><i></i>${THEMES[i].name} ${counts[i]}</button>`).join('')
     : '';
   const rows = filter === null ? all : all.filter(e => e.th === filter);
-  findsEl.innerHTML = all.length
-    ? rows.map(e => {
-        const rx = fdiv(e.x, RC), ry = fdiv(e.y, RC);
-        return `<li><a class="find mark${e.s ? ' stray' : ''}" href="#${hashOf(e)}" data-key="${e.key}" style="--h:${THEMES[e.th].hue}">` +
-          `<span class="find-dot" aria-hidden="true"></span><span class="find-word">${e.w}</span><span class="find-when">${rel(e.t)}</span>` +
-          `<span class="find-meta"><b>${regionName(rx, ry)}</b> · ${fmtCoord(e.x, e.y)} · ${DARROW[e.d]} ${DNAME[e.d]}${e.s ? ' · stray' : ''}${e.f ? ' · charted first' : ''}</span></a>` +
-          `<button type="button" class="find-define" data-key="${e.key}" aria-expanded="${defOpen === e.key}"${defOpen === e.key ? ` aria-controls="def-${e.key}"` : ''} aria-label="What ${e.w} means" title="What ${e.w} means">${BOOK_ICON}</button>` +
-          `<button type="button" class="find-share" data-key="${e.key}" aria-label="Share ${e.w}" title="Share ${e.w}">${SHARE_ICON}</button>` +
-          (defOpen === e.key ? defPanel(e) : '') + '</li>';
-      }).join('')
-    : '<li class="finds-empty"><strong>No words yet</strong>Circle a word on the map and it lands here with its territory, grid reference and the bearing it reads in. Tap an entry later to fly straight back to it.</li>';
+  if (!all.length) {
+    findsEl.innerHTML = '<li class="finds-empty"><strong>No words yet</strong>Circle a word on the map and it lands here with its territory and the bearing it reads in. Tap an entry later to fly straight back to it.</li>';
+    return;
+  }
+  // A heading for each day, then a card for each visit to a territory that
+  // day: coming back to one later starts a new card, so the order stays time's.
+  let html = '', day = '', place = '', open = false;
+  const now = new Date();
+  for (const e of rows) {
+    const d = dayLabel(e.t, now), rx = fdiv(e.x, RC), ry = fdiv(e.y, RC), k = rx + ',' + ry;
+    if (d !== day || k !== place) {
+      if (open) html += '</ol></li>';
+      if (d !== day) { html += `<li class="day">${d}</li>`; day = d; }
+      const th = THEMES[regionTheme(rx, ry)];
+      html += `<li class="run mark" style="--h:${th.hue}"><p class="run-head"><b>${regionName(rx, ry)}</b><span>${th.name}</span></p><ol>`;
+      open = true; place = k;
+    }
+    html += findRow(e);
+  }
+  findsEl.innerHTML = html + (open ? '</ol></li>' : '');
+}
+const DIR_WORDS = ['east', 'south-east', 'south', 'south-west', 'west', 'north-west', 'north', 'north-east'];
+const bearing = d => `<svg class="find-dir" viewBox="0 0 16 16" style="transform:rotate(${d * 45}deg)" aria-hidden="true"><path d="M2.5 8h10M9 4.5 12.5 8 9 11.5"/></svg>`;
+function dayLabel(t, now = new Date()) {
+  const d = new Date(t), y = new Date(now);
+  y.setDate(now.getDate() - 1);
+  if (d.toDateString() === now.toDateString()) return 'Today';
+  if (d.toDateString() === y.toDateString()) return 'Yesterday';
+  return d.toLocaleDateString(undefined, { weekday: 'long', month: 'short', day: 'numeric', ...(d.getFullYear() !== now.getFullYear() ? { year: 'numeric' } : {}) });
+}
+// A find's second line, if it has anything to say: that it's a bonus word (a
+// real word the territory doesn't hide), and who charted it, when it wasn't
+// you. Charted first by you is the ring round its dot.
+function findNote(e) {
+  const bonus = e.s ? `bonus ${THEMES[e.th].name.toLowerCase()} word` : '';
+  const by = e.b ? `charted by ${e.b === '?' ? 'another surveyor' : e.b}` : '';
+  return [bonus, by].filter(Boolean).join(' · ');
+}
+function findRow(e) {
+  const note = findNote(e), place = regionName(fdiv(e.x, RC), fdiv(e.y, RC));
+  const label = `${e.w}, ${place}, reads ${DIR_WORDS[e.d]}${e.f ? ', charted first' : ''}${note ? ', ' + note : ''}. Fly there`;
+  return `<li class="row"><a class="find mark${e.s ? ' stray' : ''}" href="#${hashOf(e)}" data-key="${e.key}" style="--h:${THEMES[e.th].hue}" aria-label="${label}">` +
+    `<span class="find-dot${e.f ? ' first' : ''}" aria-hidden="true"></span><span class="find-word"><span class="find-w">${e.w}</span>${bearing(e.d)}</span>` +
+    `<span class="find-when">${clockFmt.format(e.t)}</span>${note ? `<span class="find-meta">${note}</span>` : ''}</a>` +
+    `<button type="button" class="find-define" data-key="${e.key}" aria-expanded="${defOpen === e.key}"${defOpen === e.key ? ` aria-controls="def-${e.key}"` : ''} aria-label="What ${e.w} means" title="What ${e.w} means">${BOOK_ICON}</button>` +
+    `<button type="button" class="find-share" data-key="${e.key}" aria-label="Share ${e.w}" title="Share ${e.w}">${SHARE_ICON}</button>` +
+    (defOpen === e.key ? defPanel(e) : '') + '</li>';
 }
 filtersEl.addEventListener('click', e => {
   const b = e.target.closest('.filter'); if (!b) return;
@@ -5174,7 +5302,7 @@ function takeSynced(data, st) {
   for (const o of Array.isArray(data.finds) ? data.finds : []) {
     const have = o && typeof o.w === 'string' ? found.get(keyOf(o.w, o.x, o.y, o.d)) : null;
     if (have) {
-      if (o.f && !have.f) { have.f = 1; if (Number.isInteger(o.n) && o.n > 0 && o.n < 1e8) have.n = o.n; added = true; }
+      if (mergeFind(have, o)) added = true;
       continue;
     }
     const e = sanitize(o);
@@ -5678,6 +5806,7 @@ if (surveyApi) {
   surveyEl.hidden = false;
   $('#notes').classList.add('has-survey');
   showSigning(false);
+  restoreOutbox();
   setInterval(syncSurvey, 2000);
   if (!camSaved && !startHash) spawnSomewhere();
 }

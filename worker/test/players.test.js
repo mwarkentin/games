@@ -7,7 +7,7 @@ import { DatabaseSync } from 'node:sqlite';
 import { beforeEach, describe, test } from 'node:test';
 
 import worker from '../src/index.js';
-import { FINDS_MAX, KEEP_MS, LINK_CODE, LINK_MS, Player, RECOVERY_CODE, SYNC_GAP_MS, cleanCarry, recoveryKeys, routeLinks, routePlayers, routeRecovery } from '../src/players.js';
+import { FINDS_MAX, KEEP_MS, LINK_CODE, LINK_MS, Player, RECOVERY_CODE, SYNC_GAP_MS, cleanCarry, cleanFind, recoveryKeys, routeLinks, routePlayers, routeRecovery } from '../src/players.js';
 import { playerId } from '../src/survey-social.js';
 
 const ORIGIN = 'https://games.michaelwarkentin.com';
@@ -176,6 +176,22 @@ describe('syncing linked devices', () => {
     await sync(1, { epoch: a.epoch, since: c.at, finds: [find('ORBIT', 2, { f: 1 })] });
     const [, d] = await sync(1, { epoch: a.epoch, since: c.at });
     assert.deepEqual(d.finds, [find('ORBIT', 2, { f: 1 })]);
+  });
+
+  test('keeps who charted a find first when it was someone else, until it is the player\'s own', async () => {
+    await start(1);
+    const [, a] = await sync(1, { finds: [find('COMET', 1), find('ORBIT', 2, { b: 'ZED' }), find('NEBULA', 3, { b: 'lowercase' })] });
+    // Another device learns ZED charted COMET; ORBIT keeps its ZED; NEBULA's bad initials are dropped.
+    await sync(1, { epoch: a.epoch, since: a.at, finds: [find('COMET', 1, { b: 'ZED' }), find('ORBIT', 2, { b: 'KIM' })] });
+    const [, b] = await sync(1, { since: 0 });
+    assert.deepEqual(b.finds.map((f) => [f.w, f.b]).sort(), [['COMET', 'ZED'], ['NEBULA', undefined], ['ORBIT', 'ZED']]);
+    // Charted first, on any device, wins: who else charted it goes.
+    await sync(1, { epoch: a.epoch, since: b.at, finds: [find('ORBIT', 2, { f: 1 })] });
+    const [, c] = await sync(1, { epoch: a.epoch, since: b.at });
+    assert.deepEqual(c.finds, [find('ORBIT', 2, { f: 1 })]);
+    // An unsigned surveyor is "?", and a find charted first carries no b at all.
+    assert.deepEqual(cleanFind(find('COMET', 1, { b: '?' })), find('COMET', 1, { b: '?' }));
+    assert.deepEqual(cleanFind(find('COMET', 1, { f: 1, b: 'ZED' })), find('COMET', 1, { f: 1 }));
   });
 
   test('settings go with whichever device changed them last', async () => {

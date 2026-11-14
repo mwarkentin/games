@@ -182,7 +182,7 @@ The machines each page keeps:
 | `letterfield.html` | `intro` (the card over the map at the start) | link, sign, coach, exploring |
 | | `pass` (the survey's Turnstile pass) | off, none, loading, checking, asking, sending, good, failed |
 | | `link` (each sector's socket; `el: null`, see `__lf.linkStates()`) | connecting, open, live, backoff, closed |
-| | `claim` (each claim of ours; `el: null`, see `__lf.outbox()`) | queued, sent, unanswered, answered |
+| | `claim` (each claim of ours; `el: null`, see `__lf.outbox()`) | queued, sent, unanswered, first, theirs, refused |
 | | `define` (each found word's meaning; `el: null`, see `__lf.definitions()`) | loading, ready, none, failed |
 | | `who` (the list of surveyors) | closed, loading, ready, refreshing, failed |
 | | `peoplePage` (the Surveyors drawer's page) | list, you |

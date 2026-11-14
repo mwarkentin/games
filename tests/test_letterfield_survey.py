@@ -173,7 +173,7 @@ def test_shared_map_shows_other_surveyors_and_their_words(page: Page, site_url, 
     expect(page.locator("#surveyText")).to_contain_text("2 of")
     expect(page.locator("#surveyText")).to_contain_text("1 word charted first by you")
     open_notes(page)
-    expect(page.locator("#finds .find-meta").first).to_contain_text("charted first")
+    expect(page.locator("#finds .find-dot.first")).to_have_count(1)  # a ring says charted first
 
     # Circling a word someone already charted finds nothing new: it's theirs.
     circle(page, words[0])
@@ -216,7 +216,67 @@ def test_second_to_a_word_hears_who_was_first(page: Page, site_url, errors):
     expect(page.locator("#survey")).to_have_attribute("data-state", "live")
     circle(page, word)
     expect(page.locator("#toast")).to_contain_text("Charted first by SIS")
-    assert page.evaluate("window.__lf.found.values().next().value.f") == 0
+    assert page.evaluate("(e => [e.f, e.b])(window.__lf.found.values().next().value)") == [0, "SIS"]
+    # It stays in the notes, marked as SIS's, after a reload too.
+    page.reload()
+    open_notes(page)
+    expect(page.locator("#finds .find-meta")).to_have_text("charted by SIS")
+    assert errors == []
+
+
+# However a claim of ours ends, the word stays in the notes: ours (first), someone
+# else's ("charted by ZED"), or turned down, unmarked. These are the other ways.
+def test_a_word_found_while_joining_and_charted_meanwhile_is_marked_theirs(page: Page, site_url, errors):
+    word = known_words(page, site_url)[0]
+    fake = FakeSurvey(hold=lambda url: True)
+    open_game(page, site_url, fake)
+    eventually(page, lambda: len(fake.held) == 4)
+    circle(page, word)
+    fake.claims = [[*word, 0, "KIM", NOW_MS]]  # KIM charts it before the sector lets us in
+    fake.hold = None
+    fake.welcome()
+    expect(page.locator("#survey")).to_have_attribute("data-state", "live")
+    eventually(page, lambda: page.evaluate("[...window.__lf.found.values()][0].b") == "KIM")
+    assert fake.sent("claim") == []  # it was KIM's before ours could go
+    assert page.evaluate("window.__lf.outbox()") == []
+    open_notes(page)
+    expect(page.locator("#finds .find-meta")).to_have_text("charted by KIM")
+    assert errors == []
+
+
+def test_a_claim_lost_on_the_way_that_someone_else_charted_is_marked_theirs(page: Page, site_url, errors):
+    word = known_words(page, site_url)[0]
+    page.add_init_script("localStorage.setItem('games.initials', JSON.stringify('MLW'))")
+    fake = FakeSurvey(lose="claim")
+    open_game(page, site_url, fake)
+    expect(page.locator("#survey")).to_have_attribute("data-state", "live")
+    circle(page, word)
+    eventually(page, lambda: len(fake.sent("claim")) == 1)
+    fake.claims.append([*word, 0, "KIM", NOW_MS])  # KIM's reached the sector instead
+    page.evaluate(HIDE, True)  # switching apps closes every socket
+    page.evaluate(HIDE, False)
+    eventually(page, lambda: page.evaluate("[...window.__lf.found.values()][0].b") == "KIM")
+    assert page.evaluate("[...window.__lf.found.values()][0].f") == 0
+    assert len(fake.sent("claim")) == 1  # not sent again: the sector has it, as KIM's
+    assert page.evaluate("window.__lf.outbox()") == []
+    assert errors == []
+
+
+def test_a_claim_still_waiting_survives_a_reload(page: Page, site_url, errors):
+    word = known_words(page, site_url)[0]
+    fake = FakeSurvey(hold=lambda url: True)  # this visit, the survey never lets us in
+    open_game(page, site_url, fake)
+    eventually(page, lambda: len(fake.held) == 4)
+    circle(page, word)
+    assert page.evaluate("window.__lf.outbox()") == [[word[0], "queued"]]
+    fake.hold = None
+    page.reload()
+    # Back, with the survey live: the word circled last time is claimed now, and it's ours.
+    expect(page.locator("#survey")).to_have_attribute("data-state", "live")
+    eventually(page, lambda: len(fake.sent("claim")) == 1)
+    assert fake.sent("claim")[0]["w"] == word[0]
+    eventually(page, lambda: page.evaluate("[...window.__lf.found.values()][0].f") == 1)
+    assert page.evaluate("window.__lf.outbox()") == []
     assert errors == []
 
 
@@ -256,8 +316,8 @@ def test_a_word_someone_charted_can_go_in_the_field_notes(page: Page, site_url, 
     page.wait_for_timeout(300)
     assert fake.sent("claim") == []
     open_notes(page)
-    expect(page.locator("#finds .find-meta")).to_have_count(1)
-    expect(page.locator("#finds .find-meta")).not_to_contain_text("charted first")
+    expect(page.locator("#finds .find-meta")).to_have_text("charted by MRW")
+    expect(page.locator("#finds .find-dot.first")).to_have_count(0)
     # Circled again, it's already in the notes.
     circle(page, words[0])
     expect(toast).to_contain_text("Already in your notes")
@@ -1361,7 +1421,7 @@ NOTES_LAYOUT_JS = """() => {
     squashed: [...notes.children].filter(el => !el.hidden && el.id !== 'finds' && el.scrollHeight > el.clientHeight + 1).map(el => el.id || el.className),
     chip: box(filters.querySelector('.filter')).height,
     first: box(lis[0]).toJSON(), last: box(lis[lis.length - 1]).toJSON(),
-    notes: box(notes).toJSON(), n: lis.length,
+    notes: box(notes).toJSON(), n: document.querySelectorAll('#finds li.row').length,
   };
 }"""
 

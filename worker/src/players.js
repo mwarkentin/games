@@ -128,14 +128,17 @@ const SYNC_PATH = /^\/v1\/player\/(sync|forget)$/;
 const playerStub = (env, pid) => env.PLAYERS.get(env.PLAYERS.idFromName(pid));
 const int = (v, max) => Number.isInteger(v) && Math.abs(v) < max;
 
-// A find as the game keeps it ({w, x, y, d, t, s, f?, n?}), checked for its
-// shape. The game checks it's on the map when it takes it in.
+// A find as the game keeps it ({w, x, y, d, t, s, f?, n?, b?}), checked for
+// its shape: b is who charted it first when it wasn't this player (initials,
+// or ? for someone unsigned). The game checks it's on the map when it takes
+// it in.
 export function cleanFind(o) {
   if (!o || typeof o !== 'object' || typeof o.w !== 'string' || !/^[A-Z]{3,12}$/.test(o.w)) return null;
   const { w, x, y, d, t, s } = o;
   if (!int(x, 1e9) || !int(y, 1e9) || !int(d, 8) || d < 0 || !Number.isFinite(t) || (s !== 0 && s !== 1)) return null;
   const f = o.f === 1 ? 1 : 0, n = f && int(o.n, 1e8) && o.n > 0 ? o.n : 0;
-  return { w, x, y, d, t: Math.round(t), s, ...(f ? { f } : {}), ...(n ? { n } : {}) };
+  const b = !f && typeof o.b === 'string' && (INITIALS.test(o.b) || o.b === '?') ? o.b : '';
+  return { w, x, y, d, t: Math.round(t), s, ...(f ? { f } : {}), ...(n ? { n } : {}), ...(b ? { b } : {}) };
 }
 export const findKey = (f) => `${f.w}@${f.x},${f.y},${f.d}`;
 
@@ -195,8 +198,10 @@ export class Player {
       if (!f) continue;
       const k = findKey(f), had = this.sql.exec('SELECT body FROM finds WHERE k = ?', k).toArray()[0];
       if (had) {
-        // Charted first only ever comes on.
-        if (f.f && !JSON.parse(had.body).f) { this.sql.exec('UPDATE finds SET body = ?, v = ? WHERE k = ?', JSON.stringify(f), v, k); wrote = true; }
+        // Charted first only ever comes on, and so does who charted it
+        // otherwise, until it's this player's.
+        const was = JSON.parse(had.body);
+        if ((f.f && !was.f) || (f.b && !was.b && !was.f)) { this.sql.exec('UPDATE finds SET body = ?, v = ? WHERE k = ?', JSON.stringify(f), v, k); wrote = true; }
         continue;
       }
       count ??= this.sql.exec('SELECT COUNT(*) AS n FROM finds').one().n;

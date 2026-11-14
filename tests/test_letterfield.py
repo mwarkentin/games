@@ -566,6 +566,33 @@ def test_without_a_share_sheet_a_find_is_copied(page: Page, site_url, errors):
     assert errors == []
 
 
+def test_when_the_browser_wont_copy_a_find_its_link_shows_to_copy_by_hand(page: Page, site_url, errors):
+    without_worker(page, site_url, "letterfield")
+    page.add_init_script("""
+      Object.defineProperty(Navigator.prototype, 'share', { value: undefined, configurable: true });
+      Object.defineProperty(navigator, 'clipboard', { value: { writeText: () => Promise.reject(new Error('denied')) } });
+    """)
+    page.set_viewport_size({"width": 1280, "height": 900})
+    page.goto(f"{site_url}/letterfield#debug")
+    page.click("#coachOk")
+    page.wait_for_function("window.__lf")
+    w, x, y, d = page.evaluate("(() => { const o = window.__lf.chunk(0, 0).words[0]; return [o.w, o.x, o.y, o.d]; })()")
+    page.evaluate("([w, x, y, d]) => window.__lf.collect(w, x, y, d, false)", [w, x, y, d])
+    share_from_notes(page, w)
+    toast = page.locator("#toast")
+    # Not "copy this page's address", which isn't the find's: the link itself, to copy by hand.
+    expect(toast).to_contain_text(f"Couldn’t copy itHere’s {w}’s link to copy")
+    expect(toast.locator(".toast-link")).to_have_text(f"{site_url}/letterfield#f-{w.lower()}-{x}-{y}-{d}")
+    # It stays while it's being copied, and goes with a tap anywhere else.
+    page.wait_for_timeout(3000)
+    expect(toast).to_have_class(re.compile(r"\bshow\b"))
+    toast.locator(".toast-link").click()
+    expect(toast).to_have_class(re.compile(r"\bshow\b"))
+    page.mouse.click(300, 600)
+    expect(toast).not_to_have_class(re.compile(r"\bshow\b"))
+    assert errors == []
+
+
 def test_every_tab_keeps_the_field_notes_found_in_the_others(page: Page, site_url, errors):
     without_worker(page, site_url, "letterfield")
     page.goto(f"{site_url}/letterfield#debug")
