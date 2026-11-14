@@ -592,6 +592,22 @@ def test_a_name_is_needed(page: Page, site_url, errors):
     assert errors == []
 
 
+def test_a_rude_name_is_turned_away_before_a_room_is_made(page: Page, site_url, errors):
+    fake = FakeWarRoom(exists=False)
+    open_war(page, site_url, fake)
+    page.fill("#nameInput", "Sh1t Head")
+    page.click("#newRoomBtn")
+    expect(page.locator("#friendsErr")).to_have_text("Pick a different name, please.")
+    expect(page.locator("#nameInput")).to_be_focused()
+    expect(page.locator("#lobby")).to_be_hidden()
+    assert fake.rooms == set() and fake.received == []
+
+    page.fill("#nameInput", "Cassandra")
+    page.click("#newRoomBtn")
+    expect(page.locator("#lobby")).to_be_visible()
+    assert errors == []
+
+
 def test_an_unknown_code_says_so(page: Page, site_url):
     open_war(page, site_url, FakeWarRoom())
     page.fill("#nameInput", "Dana")

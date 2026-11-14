@@ -10,7 +10,7 @@ import { DatabaseSync } from 'node:sqlite';
 import { afterEach, beforeEach, describe, mock, test } from 'node:test';
 
 import {
-  EXPIRE_MS, MAX_SOCKETS, WAR, WarRoom, cleanDeck, cleanName, handleWar, warDeal, warDueAt, warNewGame, warRank, warResolve,
+  EXPIRE_MS, MAX_SOCKETS, WAR, WarRoom, cleanDeck, cleanName, handleWar, nameIsKind, warDeal, warDueAt, warNewGame, warRank, warResolve,
   warFlop, warGather, warShort, warSlam, warStandings, warUpCard,
 } from '../src/war.js';
 // The room's state machine, as a namespace so the rest still runs against a
@@ -392,6 +392,32 @@ test('war.html runs the same core as the Worker', () => {
   assert.equal(core(page), core(worker), 'the War core in war.html and worker/src/war.js must match word for word');
 });
 
+test('war.html checks names the same way as the Worker', () => {
+  const check = (text) => {
+    const match = text.match(/\/\/ ---- BEGIN NAME CHECK ----\n([\s\S]*?)\/\/ ---- END NAME CHECK ----/);
+    assert.ok(match, 'name check markers are missing');
+    return match[1];
+  };
+  const page = readFileSync(new URL('../../war.html', import.meta.url), 'utf8');
+  const worker = readFileSync(new URL('../src/war.js', import.meta.url), 'utf8');
+  assert.equal(check(page), check(worker), 'the name check in war.html and worker/src/war.js must match word for word');
+});
+
+test('rude names are turned away, however they are spelled', () => {
+  for (const name of [
+    'Fuck', 'FUUUCK', 'f u c k', 'MotherFucker', 'sh1thead', 'Sh!t', 'B1tch', 'b!tch', 'Ass', 'A S S', 'a55',
+    'Big Dick', 'Dumbass', 'p0rn', 'Porn', 'Hell', 'Merde', 'Putain', 'Nazi Joe', 'Fück',
+  ]) assert.equal(nameIsKind(name), false, name);
+});
+
+test('ordinary names that hide a rude word get through', () => {
+  for (const name of [
+    'Dana', 'Zoë!', 'Grandpa', 'Cassandra', 'Dickens', 'Hancock', 'Mr. Peacock', 'Yamashita', 'Matsushita',
+    'Pornchai', 'Fukuda', 'Monique', 'Hello', 'Shell', 'Michelle', 'Essex', 'Cummings', 'Nigeria', 'Ho Chi',
+    'Assunta', 'Scott & Bo', 'Swanky', 'Titus', 'Analise',
+  ]) assert.equal(nameIsKind(name), true, name);
+});
+
 test('names are tidied and checked', () => {
   assert.equal(cleanName('  Dana   B  '), 'Dana B');
   assert.equal(cleanName('Zoë!'), 'Zoë!');
@@ -499,6 +525,14 @@ describe('rooms', () => {
     assert.equal(dana.last('state').players.length, 2, 'everyone hears about newcomers');
     assert.ok(!JSON.stringify(state).includes('token-'), 'tokens stay private');
     assert.deepEqual(room.info(), { code: 'K7QP', phase: 'lobby', players: 2, full: false });
+  });
+
+  test('a rude name is refused, with no seat', async () => {
+    const ws = new FakeSocket();
+    room.connect(ws);
+    await say(room, ws, { t: 'hello', name: 'Fuuuck', avatar: 0, token: token('rude') });
+    assert.equal(ws.last('error').error, 'Pick a different name, please.');
+    assert.equal(room.room.players.length, 0);
   });
 
   test('a bad name is refused', async () => {

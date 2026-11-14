@@ -526,6 +526,13 @@ Object that holds the game and every player's WebSocket (`worker/src/war.js`).
   the page. The rules sit between `BEGIN WAR CORE` and `END WAR CORE`
   markers, word for word the same in `war.html` and `worker/src/war.js`, and
   `worker/test/war.test.js` checks they match, so change both.
+- Players' names go through a word filter, `nameIsKind()`, between `BEGIN
+  NAME CHECK` and `END NAME CHECK` markers, kept the same way. The page
+  checks a name before it asks for a room, and the room refuses one that
+  fails. Words that turn up inside ordinary names (ass in Cassandra, shit in
+  Yamashita) count only on their own, so add a word to `NAME_ANYWHERE` only
+  if no name hides it, and add an ordinary name that does to the test of
+  names that get through.
 - A slam says which card it turns over, so cards show face up as they're
   played. A game can be slow, with no clock: the room waits for everyone
   connected, and the host can flip over the cards of anyone holding it up.

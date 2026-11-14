@@ -1,3 +1,8 @@
+## 2026-11-14
+
+- Names with rude words in them are turned away when you start or join a
+  room, so everyone at the table sees a name that's fine for any age.
+
 ## 2026-11-11
 
 - Winning a war ends with SPOILS OF WAR!: the whole pot bursts out into a
