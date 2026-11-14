@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<meta name="description" content="Watch Letterfield's shared map being charted, word by word and supernova by supernova, replayed from the survey's log, and save it as a video.">
+<meta name="description" content="Watch Letterfield's universe being charted, word by word and supernova by supernova, in a timelapse of the survey's log, and save it as a video.">
 <meta name="theme-color" media="(prefers-color-scheme: light)" content="#EBEEE7">
 <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#0F171A">
 <meta name="apple-mobile-web-app-title" content="Timelapse">
@@ -14,7 +14,7 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Big+Shoulders+Display:wght@700;800&family=Martian+Mono:wght@400;500&family=Schibsted+Grotesk:wght@400;500;600&display=swap">
 <style>
-/* The survey's history replayed on a map: the canvas fills the screen, the
+/* The survey's history as a timelapse on a map: the canvas fills the screen, the
    date and counts sit at the top, the controls at the bottom. Letterfield's
    colours and type, as in the survey log. */
 :root{
@@ -126,7 +126,7 @@ dialog p{margin:6px 0 0;font:400 12px/1.5 var(--f-mono);color:var(--muted)}
 </style>
 </head>
 <body>
-<canvas id="map" aria-label="The shared map, charted word by word. Tap a territory to see it in the log."></canvas>
+<canvas id="map" aria-label="The universe, charted word by word. Tap a territory to see it in the log."></canvas>
 
 <div class="top" id="top">
   <div class="row">
@@ -285,7 +285,7 @@ function machine(name, moves, state, { el = document.documentElement, onMove } =
 }
 // ---- END STATE MACHINE ----
 
-/* ---------- The log, as the replay reads it ---------- */
+/* ---------- The log, as the timelapse reads it ---------- */
 async function getJSON(path) {
   const ctl = new AbortController(), timer = setTimeout(() => ctl.abort(), 15000);
   try {
@@ -852,7 +852,7 @@ function openChip(rx, ry, n, nova) {
 }
 function closeChip() { chipAsk++; $('#chip').hidden = true; }
 // The guild being followed, in its colour, with the way back to everyone's
-// replay and to its own page in the log.
+// timelapse and to its own page in the log.
 function showFollow() {
   const survey = new URLSearchParams(location.search).get('survey'), q = survey ? `survey=${encodeURIComponent(survey)}` : '';
   if (!follow) return;
