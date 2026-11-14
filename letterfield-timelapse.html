@@ -821,8 +821,11 @@ function openChip(rx, ry, n, nova) {
   const chip = $('#chip'), ask = ++chipAsk;
   chip.style.setProperty('--h', TC[themeOf(rx, ry)].hue);
   chip.style.top = `${Math.round(view.y / dpr + 8)}px`;
-  $('#chipName').textContent = idx.themes[themeOf(rx, ry)][0];
-  $('#chipNote').textContent = `${n.toLocaleString()} hidden word${n === 1 ? '' : 's'} charted by then${nova ? ' · gone supernova' : ''}`;
+  // Until the log names it (and if it never does), the territory is named by its theme.
+  const theme = idx.themes[themeOf(rx, ry)][0];
+  $('#chipName').textContent = `${/^[aeiou]/i.test(theme) ? 'An' : 'A'} ${theme} territory`;
+  const at = timeAt(pos), when = (new Date(at).getFullYear() === new Date().getFullYear() ? shortFmt : dateYearFmt).format(at);
+  $('#chipNote').textContent = `${n.toLocaleString()} hidden word${n === 1 ? '' : 's'} charted by ${when}${nova ? ' · gone supernova' : ''}`;
   const q = new URLSearchParams({ territory: `${rx},${ry}` });
   const survey = new URLSearchParams(location.search).get('survey');
   if (survey) q.set('survey', survey);
