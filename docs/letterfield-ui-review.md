@@ -37,7 +37,8 @@ Line numbers are as of commit 7bae950 and drift as the files change.
 | 22 | A new guild's page says "No such guild" | a plus c: named, "hasn't charted a word yet"; its Timelapse link waits for a first word | To build |
 | 23 | Moving between the game, log and timelapse loses your place | a: a link back to the page you came from steps back in history | To build |
 | 24 | Numbers nobody explains | a with c: the third tile fits the view; the UTC note under the Top lists heading | To build |
-| 25–29 | | Open | |
+| 25 | One idea, many names, across the three pages | a: a glossary in AGENTS.md; "members" for a guild's people, "the universe" for the shared world | To build |
+| 26–29 | | Open | |
 
 ## The game
 
@@ -675,7 +676,8 @@ count whole days in UTC, which only the first card says.
 - **Decided: a with c** (after a mockup):
   - On a day, week, month or year the third tile is "Hidden words · 72 ·
     plus 7 bonus words", which explains the first tile's count; on All
-    time it's "Shared world · 0.09% charted · 1,030 of its hidden words",
+    time it's "Universe · 0.09% charted · 1,030 of its hidden words" (25's
+    name for the shared world),
     leading with the share where it means something. The bonus words are
     counted from the log's own data, with the rare word beyond the shared
     map counted in the same line.
@@ -685,11 +687,42 @@ count whole days in UTC, which only the first card says.
 
 ### 25. One idea, many names, across the three pages
 
+"The shared survey" and "the survey"; "the shared world", "the shared map"
+and "World"; "surveyor" and now and then "player"; a guild's "mates" in the
+game and "members" in its counts and the log; "field notes", "your notes"
+and "finds"; "hidden words" and plain "words"; "stray"; "timelapse" and
+"replay".
+
 - **a. One term per idea, in AGENTS.md's Letterfield section.**
-  *Recommended.*
+  *Recommended:* agents write most of the game's text, and AGENTS.md is what
+  every one of them reads first.
 - **b. Fix the worst now.**
 - **Machines:** none.
-- **Decided:** open.
+- **Decided: a.** A short glossary in AGENTS.md's Letterfield section, one
+  name per idea and the words to avoid, and the three pages' text brought
+  in line as each group is built:
+  - **the shared survey** for playing together ("the survey" once that's
+    clear); **surveyor** for someone playing it, never "player".
+  - **the universe** for the area charted together (the owner's name,
+    replacing "the shared world", "the shared map" and "World"): "Universe
+    map" for the world map in the notes, "Universe: 48,211 of 1,119,752
+    charted" in the survey panel, "Universe · 0.09% charted" for 24's All
+    time tile, "word 1,234 of 1,119,752 in the universe" in a shared find.
+    It suits the supernovas, and astronomers chart and survey the sky too.
+    The map goes on past the universe's edge, where the survey doesn't
+    reach, but at 4,800 cells a side nobody gets there; if someone does,
+    the game can say they've left it.
+  - **members** for a guild's people, never "mates": "Invite a mate"
+    becomes "Invite someone", and "mates first on the list" becomes
+    "members first on the list".
+  - **field notes** for your list, and a **find** for a word in it.
+  - **hidden words** for a territory's words, and **bonus words** for ones
+    found by chance (13, 24).
+  - **timelapse**, never "replay"; **territory** (never "region"),
+    **theme**; **charted**, **charted first** and "charted by ZED" on the
+    survey, **found** alone; **initials**, which **sign** your words.
+  - The names this review settled: Map centre, Last find, crowded, So far,
+    Top lists, and the guild words.
 
 ### 26. The timelapse's territory card uses the theme as its name
 
