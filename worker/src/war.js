@@ -11,6 +11,7 @@
 // below).
 
 import { CODE, CODE_ALPHABET, HttpError, corsHeaders, hashIp, json, rateLimit } from './leaderboard.js';
+import { nameIsKind } from './names.js';
 
 // ---- BEGIN WAR CORE ----
 // The rules of War and the pacing of a game, shared word for word by war.html
@@ -319,6 +320,7 @@ function warStandings(game) {
   };
 }
 // ---- END WAR CORE ----
+
 
 export {
   WAR, warBotNames, warDeal, warDueAt, warFlop, warGather, warHeld, warNewGame, warShort, warOpenStage, warRank, warResolve,
@@ -776,6 +778,7 @@ export class WarRoom {
     const avatar = Number.isInteger(message.avatar) && message.avatar >= 0 && message.avatar < WAR.AVATARS ? message.avatar : 0;
     const deck = cleanDeck(message.deck);
     if (!name) return this.send(ws, { t: 'error', error: 'Pick a name of up to 16 letters or numbers.' });
+    if (!nameIsKind(name)) return this.send(ws, { t: 'error', error: 'Pick a different name, please.' });
     if (typeof message.token !== 'string' || !TOKEN.test(message.token)) return this.send(ws, { t: 'error', error: 'Bad token.' });
     let player = room.players.find((p) => p.token === message.token);
     if (player && this.is('lobby', 'over')) Object.assign(player, { name, avatar });

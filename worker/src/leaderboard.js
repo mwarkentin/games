@@ -14,6 +14,8 @@
 // origins in ALLOWED_ORIGINS get a response the browser will read, and only
 // they may write.
 
+import { nameIsKind } from './names.js';
+
 const TOP = 10;            // scores returned per view
 const RANK_LIMIT = 1000;   // ranks past this are reported as null, to cap rows read
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -309,6 +311,7 @@ async function createGroup(request, env, now) {
   const body = await readBody(request);
   const name = typeof body?.name === 'string' ? body.name.trim().replace(/\s+/g, ' ') : '';
   if (!GROUP_NAME.test(name)) throw new HttpError(400, 'name must be 1-24 letters, numbers or spaces');
+  if (!nameIsKind(name)) throw new HttpError(400, 'pick a different name, please');
   const db = env.DB;
   await rateLimit(db, 'group', await hashIp(request, env.IP_SALT), now);
   for (let attempt = 0; attempt < 8; attempt++) {
