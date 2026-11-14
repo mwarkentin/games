@@ -66,13 +66,7 @@ body{
   padding-left:max(16px, env(safe-area-inset-left, 0px));
   padding-right:max(16px, env(safe-area-inset-right, 0px));
   -webkit-tap-highlight-color:transparent;overscroll-behavior:none;
-  /* A long press on the map is the game's (a caret's menu), never the
-     phone's: nothing on the game's surface selects as text or opens the
-     callout, which on an iPhone took over the press before the menu could
-     open. The drawers' text and links, and anything typed, still do. */
-  -webkit-user-select:none;user-select:none;-webkit-touch-callout:none;
 }
-.notes,.people,input,textarea{-webkit-user-select:text;user-select:text;-webkit-touch-callout:default}
 button{font:inherit;color:inherit}
 button:focus-visible,a:focus-visible,#map:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 .mark{--c:hsl(var(--h,200) var(--mark-s) var(--mark-l))}

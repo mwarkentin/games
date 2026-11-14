@@ -19,7 +19,7 @@ Line numbers are as of commit 7bae950 and drift as the files change.
 | 4 | "Show me on the list" also stops guild credit | Remove the option: everyone online is listed | To build |
 | 5 | Four different counts of who's online | a: one count, in the badge and the list's line | To build |
 | 6 | Nothing on a phone's map says the survey is offline | b with d: the title says it; waiting claims kept in storage | To build |
-| 7 | Carets and circles only explain themselves to a mouse | b: two lines of copy; long press fixed on phones | Copy to build; long press built in #101 |
+| 7 | Carets and circles only explain themselves to a mouse | b: two lines of copy; long press fixed on phones | Copy to build; long press in its own session and PR |
 | 8–29 | | Open | |
 
 ## The game
@@ -178,9 +178,11 @@ outlined (someone else's) versus filled (yours).
   surveyors. Outlined words are already charted.", and the Surveyors list's
   foot says how to long-press (or right-click) a surveyor on the map.
 - **Found on the owner's phone:** a long press on the map selected text
-  instead of opening the caret's menu. Nothing on the game's surface now
-  selects as text or opens the phone's callout (the drawers still do), and
-  a test long-presses a caret with real touch events. Built in #101.
+  instead of opening the caret's menu: the phone's own long press, which
+  nothing on the page stops (no `user-select` or `-webkit-touch-callout`
+  rules). In Chromium, with real touch events, the menu opens and nothing
+  is selected. The fix and a touch test are being done in a session and
+  pull request of their own, so the copy above can rely on them.
 
 ### 8. Emotes are unlabelled icons on a phone
 
