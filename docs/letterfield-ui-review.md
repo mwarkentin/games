@@ -16,7 +16,8 @@ Line numbers are as of commit 7bae950 and drift as the files change.
 | 1 | A word someone else charted is kept in your notes, or not, by timing | a: keep them all, marked "charted by ZED" | To build |
 | 2 | "Done" on a link code can leave this device out of sync | a: keep checking in the background | To build |
 | 3 | Sync told three ways, and falsely after a recovery code | Each setting shown once, beside its control; Claude code removed | Built in #101 |
-| 4–29 | | Open | |
+| 4 | "Show me on the list" also stops guild credit | Remove the option: everyone online is listed | To build |
+| 5–29 | | Open | |
 
 ## The game
 
@@ -94,21 +95,41 @@ the cost is said once, in the guild card further up.
 - **c. Ask once** when someone in a guild turns it off. A single yes/no,
   allowed as a boolean.
 - **Machines:** none.
-- **Decided:** open.
+- **Decided: remove the option entirely.** Letterfield is an MMO: everyone
+  online is on the surveyor list, and every member's words count for their
+  guild. Muting (⋯ beside a name, or a caret's menu) still hides a player's
+  caret, emotes and come-online notes on all your devices, and "Take
+  emotes" still turns emotes off for everyone.
+- **Scope:** the game (the switch, `listedOn`, `hide` in the `me` message,
+  `listed` in synced and linked settings, the guild card's "While you're
+  off the list" clause); the Worker (`hide` and `FLAG_HIDDEN` in
+  `survey-social.js`, hidden players' emote limits, and the guild credit
+  rule in `survey.js`, with their tests); the log's "Members who keep off
+  the surveyor list aren't counted"; SURVEY.md's "Off the list" sections;
+  the changelog. Suggested: a one-time note for players who had it off,
+  since they chose to hide. Makes issue 17's missing unmute for someone
+  offline matter more, since mute is now the only tool.
 
 ### 5. Four different counts of who's online
 
-The badge shows the Atlas's count (everyone but you, off the list too) until
-the list loads, then the list's (which leaves them out), and switches back
-two minutes later; the panel says "N nearby" and "N online"; the world map
-adds them up by sector.
+The Surveyors button's badge, the survey panel ("2 other surveyors nearby ·
+9 online"), the world map ("9 surveyors in 3 sectors") and the list's own
+line ("5 other surveyors in the shared world") all count people, in three
+phrasings, one with an internal word. The list left out players off the
+list, so the badge jumped when it loaded; with issue 4 they agree, apart
+from the Atlas's total trailing by a minute or so. "Nearby" counts only the
+parts of the map the game is connected to.
 
-- **a. One number everywhere** ("8 online"), and the list says "5 of 8 here,
-  the rest are off the list". *Recommended.* Removes the badge's hidden
-  switch between sources.
-- **b. The badge always uses the list's count**, refreshed in the
-  background. Machine: a `quiet` state in `who`.
-- **c. Name each count:** "8 online · 2 near you · 5 on the list".
+- **a. One count, in the fewest places.** *Recommended.* The badge, and the
+  list's line while it's open ("8 other surveyors online, nearest first").
+  The panel's people line and the world map's note go; the list already
+  says how near each person is. Issue 3's rule, applied to the world.
+- **b. Keep every place, one wording and one source:** "8 online"
+  everywhere, "nearby" relabelled or dropped.
+- **c. Keep "near you" as a second number on purpose.**
+- **Machines:** none. (The earlier option of always showing the list's count
+  on the badge, with a background refresh and a `quiet` state in `who`,
+  gains nothing once nobody is hidden.)
 - **Decided:** open.
 
 ### 6. On a phone, nothing on the map says the survey is offline
