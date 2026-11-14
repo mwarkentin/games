@@ -587,10 +587,12 @@ Each report's surveyors carry their guild's tag, and the report lists the
 guilds of everyone in the sector. The Atlas keeps who's online in each guild,
 replaced sector by sector as reports come in, and answers each report with
 the online members of the guilds that sector asked about. The sector passes
-`{t: 'guild', tag, on}` to its members whenever that changes. Idle time is
+`{t: 'guild', tag, on}` to its members whenever that changes, each member as
+`[id, initials, rx, ry, idle, flags]` with the list's flags, so a member who
+takes no emotes shows as one under the guild's heading too. Idle time is
 coarse in it (active, under a minute, then whole minutes), so it changes when
-someone arrives, moves territory, leaves or idles another minute, not with
-every report. It costs no requests of its own.
+someone arrives, moves territory, leaves, idles another minute or turns emotes
+on or off, not with every report. It costs no requests of its own.
 
 - **How soon:** within a report of the member's sector and of yours: 10 s
   while they're busy, up to about a minute when they're still.

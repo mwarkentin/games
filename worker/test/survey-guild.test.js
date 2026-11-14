@@ -99,11 +99,11 @@ function world({ db = null, log = null } = {}) {
     return [res.status, await res.json()];
   };
   const make = async (n = 1, initials = 'ONE', name = [0, 1, 2]) => (await call('/v1/survey/guilds', { token: token(n), initials, name }))[1];
-  async function player(sx, sy, { id, initials = 'ABC', guild = null, hide = false, x, y } = {}) {
+  async function player(sx, sy, { id, initials = 'ABC', guild = null, hide = false, quiet = false, x, y } = {}) {
     const sector = sectorAt(`${sx},${sy}`), ws = fakeSocket();
     sector.join(ws, sx, sy);
     const p = { ws, sector, say: (m) => sector.webSocketMessage(ws, JSON.stringify(m)), pid: await playerId(token(id)) };
-    await p.say({ t: 'me', initials, token: token(id), hide, ...(guild ? { guild } : {}) });
+    await p.say({ t: 'me', initials, token: token(id), hide, ...(quiet ? { quiet } : {}), ...(guild ? { guild } : {}) });
     await settle();
     if (x !== undefined) await p.say({ t: 'pos', x, y });
     return p;
@@ -279,6 +279,21 @@ describe('membership in sectors', () => {
     assert.ok(listedNow.includes(one.pid) && !listedNow.includes(two.pid), JSON.stringify(listedNow));
   });
 
+  test('tells members which of their guild take no emotes, and when that changes', async () => {
+    const one = await w.player(0, 0, { id: 1, initials: 'ONE', guild: g.code, x: 5, y: 5 });
+    const two = await w.player(3, 3, { id: 2, initials: 'TWO', guild: g.code, quiet: true, x: 3 * SECTOR + 50, y: 3 * SECTOR + 2 });
+    await w.tick(two);
+    await w.tick(one, REFRESH_MS);
+    const flags = () => Object.fromEntries(one.ws.last('guild').on.map((e) => [e[1], e[5]]));
+    assert.deepEqual(flags(), { ONE: 0, TWO: FLAG_QUIET });
+    // Taking emotes again changes the frame, so it goes out again.
+    await two.say({ t: 'me', initials: 'TWO', token: token(2), guild: g.code });
+    await settle();
+    await w.tick(two, REFRESH_MS);
+    await w.tick(one, REFRESH_MS);
+    assert.deepEqual(flags(), { ONE: 0, TWO: 0 });
+  });
+
   test("a member hears emotes from anyone, from anywhere, even asking to hide as older games could", async () => {
     const two = await w.player(3, 3, { id: 2, initials: 'TWO', guild: g.code, hide: true, x: 3 * SECTOR + 50, y: 3 * SECTOR + 2 });
     const mate = await w.player(0, 0, { id: 1, initials: 'ONE', guild: g.code, x: 5, y: 5 });
@@ -296,7 +311,7 @@ test("the Atlas's index of who's online forgets sectors that stop reporting", ()
   noteMates(atlas, '0,0', [['aaaaaaaaaaaa', 'ONE', 1, 1, 0, 0, 'deadbeef'], ['bbbbbbbbbbbb', 'TWO', 2, 2, 0, FLAG_QUIET, 'deadbeef']], NOW);
   noteMates(atlas, '1,0', [['cccccccccccc', 'SIX', 4, 1, 3, 0, 'deadbeef']], NOW + 1000);
   assert.deepEqual(matesFor(atlas, ['deadbeef', 'feedface'], NOW + 2000, ONLINE_MS), {
-    deadbeef: [['aaaaaaaaaaaa', 'ONE', 1, 1, 0], ['bbbbbbbbbbbb', 'TWO', 2, 2, 0], ['cccccccccccc', 'SIX', 4, 1, 0]],
+    deadbeef: [['aaaaaaaaaaaa', 'ONE', 1, 1, 0, 0], ['bbbbbbbbbbbb', 'TWO', 2, 2, 0, FLAG_QUIET], ['cccccccccccc', 'SIX', 4, 1, 0, 0]],
     feedface: [],
   });
   noteMates(atlas, '0,0', [], NOW + 3000);  // its members left

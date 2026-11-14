@@ -127,6 +127,10 @@ body.docked .bar{right:var(--notes-w)}
 .list-mode button{padding:7px 10px 6px;border:0;border-radius:999px;background:none;cursor:pointer;white-space:nowrap;color:var(--muted)}
 .list-mode button:hover{color:var(--ink)}
 .list-mode button[aria-pressed="true"]{background:var(--ink);color:var(--panel)}
+/* Each side looks 23px tall but takes taps over 40px: the space around it in
+   the bar, never the map above or the words beside or below. */
+.list-mode button{position:relative}
+.list-mode button::after{content:'';position:absolute;left:0;right:0;top:-7px;bottom:-10px}
 /* One row that scrolls sideways only: overflow-x alone would make y auto too.
    The 4px above and below, taken back by the margin, keep focus rings unclipped.
    It's never shorter than a chip (12px of text, 13px of padding and a 1px
@@ -640,7 +644,7 @@ body.docked .nova{left:calc((100% - var(--notes-w)) / 2)}
   /* The bar's list takes two rows, its head over its chips, which scroll from
      one edge of the screen to the other. */
   .bar{padding-left:0;padding-right:0;padding-top:9px;padding-bottom:calc(env(safe-area-inset-bottom, 0px) + 9px)}
-  .legend{flex-direction:column;align-items:stretch;gap:8px}
+  .legend{flex-direction:column;align-items:stretch;gap:12px}  /* room under the switch for its taps */
   .legend-head{padding:0 var(--gr) 0 calc(var(--gl) - 2px)}
   .chips{flex:none;padding:4px var(--gr) 4px var(--gl)}
   .notes,.people{top:auto;left:0;width:100%;height:min(80%, 680px);border-left:0;border-top:1px solid var(--rule);border-radius:14px 14px 0 0;transform:translateY(100%);padding-left:env(safe-area-inset-left, 0px)}
@@ -5090,7 +5094,7 @@ let myGuild = (() => {
   try { const g = JSON.parse(LS.get(K_GUILD) || 'null'); return g && GUILD_CODE_RE.test(g.code) && goodName(g.name) && /^[0-9a-f]{8}$/.test(g.tag) ? g : null; } catch (_) { return null; }
 })();
 let draftName = randomName(), guildError = '', invite = null, guildHeard = false;
-let mates = new Map();      // id → {pid, ini, rx, ry, idle, at}: who of our guild is online, as our sectors last said
+let mates = new Map();      // id → {pid, ini, rx, ry, idle, quiet, at}: who of our guild is online, as our sectors last said
 let roster = [], rosterAt = 0;  // [{pid, ini, seen}]: every member, from the guild itself, fetched with the list
 const ROSTER_MS = 60000;    // as the list refreshes, the roster comes again at most this often
 const noted = new Map();    // id → when we last said they came online
@@ -5243,15 +5247,17 @@ async function fetchRoster() {
     Membership.go('out');
   }
 }
-// Who of our guild is online, from a sector ({t: 'guild', tag, on}); anyone
-// who wasn't before gets a note, at most once in NOTE_AGAIN_MS each. The first
-// word after we arrive just says who's already here.
+// Who of our guild is online, from a sector ({t: 'guild', tag, on}, each
+// [id, initials, rx, ry, idle, flags] with the list's flags, so a member who
+// takes no emotes shows as one); anyone who wasn't before gets a note, at most
+// once in NOTE_AGAIN_MS each. The first word after we arrive just says who's
+// already here.
 function onGuild(m) {
   if (!myGuild || m.tag !== myGuild.tag || !Array.isArray(m.on)) return;
   const now = Date.now(), next = new Map();
   for (const e of m.on) {
     if (!Array.isArray(e) || typeof e[0] !== 'string' || !PID_RE.test(e[0]) || ![e[2], e[3], e[4]].every(Number.isInteger)) continue;
-    next.set(e[0], { pid: e[0], ini: typeof e[1] === 'string' && /^[A-Z]{3}$/.test(e[1]) ? e[1] : '', rx: e[2], ry: e[3], idle: e[4], at: now });
+    next.set(e[0], { pid: e[0], ini: typeof e[1] === 'string' && /^[A-Z]{3}$/.test(e[1]) ? e[1] : '', rx: e[2], ry: e[3], idle: e[4], quiet: !!(e[5] & 1), at: now });
   }
   const arrived = guildHeard ? [...next.values()].filter(s => !mates.has(s.pid) && s.pid !== myPid && !muted.has(s.pid) && now - (noted.get(s.pid) || 0) > NOTE_AGAIN_MS) : [];
   mates = next;

@@ -57,7 +57,8 @@
 //   {t: 'emote', from, ini, e, r}   an emote for this player from player `from`, in territory r
 //   {t: 'emoted', to, e, ok|error}  what became of an emote this player sent
 //   {t: 'guild', tag, on}           which of this player's guild are online, and where
-//                                   ([id, initials, rx, ry, idle]), from the Atlas, as it changes
+//                                   ([id, initials, rx, ry, idle, flags], flags as the list's),
+//                                   from the Atlas, as it changes
 //   {t: 'world', charted, total, players}   the whole world's totals, as they change
 //   {t: 'nova', n: [rx, ry, at, w, x, y, d, initials], ago}
 //                                   a territory in another sector has gone supernova, `ago` ms before:

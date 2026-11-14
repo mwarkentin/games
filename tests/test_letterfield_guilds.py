@@ -16,7 +16,7 @@ from playwright.sync_api import Page, expect
 
 from fake_survey import NOW_MS, FakeGuilds, FakeSurvey, player_id
 from test_letterfield_survey import SURVEY, eventually, open_game, open_people, open_you
-from test_letterfield_surveyors import KIM, LOU, PID, TOKEN, ZED, open_list, wait_landed
+from test_letterfield_surveyors import KIM, LOU, PID, SAM, TOKEN, ZED, open_list, wait_landed
 
 CODE, TAG, NAME = "KMN234", "c0ffee42", [11, 0, 0]  # the Cobalt Compass Society
 SHOWN = re.compile(r"\bshow\b")
@@ -208,6 +208,28 @@ def test_mates_come_first_with_when_the_rest_were_seen_and_a_note_when_one_comes
     toast.get_by_role("button", name="Fly to ZED").click()
     wait_landed(page, 1.5 * 48, 0.5 * 48)
 
+    assert errors == []
+
+
+def test_a_member_who_takes_no_emotes_shows_as_one(page: Page, site_url, errors):
+    # SAM, in our guild, takes no emotes: the list says so (its last field), and so do our sectors.
+    guilds = in_cobalt([SAM[0], "SAM", NOW_MS])
+    fake = FakeSurvey(surveyors=[LOU, SAM])
+    start(page, site_url, fake, guilds, guild=MINE)
+    open_list(page)
+    fake.guild("0,0", TAG, [[SAM[0], "SAM", -2, 3, 360, 1]])
+    page.wait_for_function(f"window.__lf.mates().includes('{SAM[0]}')")
+    expect(page.locator(".who-ini")).to_have_text(["SAM", "LOU"])
+    # Under the guild's heading, as anywhere else on the list, they can't be sent one.
+    expect(page.locator(".who-meta").first).to_have_text("3 territories away · idle 6m · no emotes")
+    expect(page.get_by_role("button", name="Wave to SAM")).to_be_disabled()
+    page.get_by_role("button", name="More for SAM").click()
+    expect(page.locator(".who-emotes .emote").first).to_be_disabled()
+    expect(page.locator(".who-said:not(:empty)")).to_have_text("SAM isn’t taking emotes.")
+    # Once they take emotes again, our sectors say so.
+    fake.guild("0,0", TAG, [[SAM[0], "SAM", -2, 3, 360, 0]])
+    expect(page.get_by_role("button", name="Wave to SAM")).to_be_enabled()
+    expect(page.locator(".who-meta").first).to_have_text("3 territories away · idle 6m")
     assert errors == []
 
 
