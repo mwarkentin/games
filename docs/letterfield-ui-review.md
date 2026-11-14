@@ -39,7 +39,8 @@ Line numbers are as of commit 7bae950 and drift as the files change.
 | 24 | Numbers nobody explains | a with c: the third tile fits the view; the UTC note under the Top lists heading | To build |
 | 25 | One idea, many names, across the three pages | a: a glossary in AGENTS.md; "members" for a guild's people, "the universe" for the shared world | To build |
 | 26 | The timelapse's territory card uses the theme as its name | a: "A Festivals territory" until the name comes, and the replay's date for "by then" | To build |
-| 27–29 | | Open | |
+| 27 | Timelapse status is faint or wrong | a with b: disabled pills, singular labels, the guild named; "Waiting for Nov 13…" over the map | To build |
+| 28–29 | | Open | |
 
 ## The game
 
@@ -742,13 +743,26 @@ line mixes two moments: "12 hidden words charted by then · 34 of 113 now".
 
 ### 27. Timelapse status is faint or wrong
 
+While loading, the Play button greys out but the speed pills and "Save
+video" look ready and do nothing; the counters say "1 supernovas"; following
+a guild, the third counter reads "111 their words", and a video saved then
+shows the guild's colour without its name; and when the replay catches up
+with days still loading, the map stops under a Pause button with only a
+small "Loading…" under the bar.
+
 - **a. A disabled style for pills, singular labels, the guild in the
-  video.** *Recommended.*
+  video.** *Recommended,* with b.
 - **b. "Waiting for Nov 13…" over the map**, in the existing `tl` handling
   of `waiting`, keeping Pause.
 - **c. End at the last word, drive the video's bar, time out.** The existing
-  `rec`.
-- **Decided:** open.
+  `rec`. On a second look the recording already stops at the last word and
+  pauses while the tab is hidden; no stall was found.
+- **Decided: a with b.** The pills look disabled while they are; labels
+  are singular for one ("1 supernova", "1 territory"); "their words"
+  becomes "by the guild"; a video saved while following a guild names it
+  in its frames, in its colour; and while `tl` is `waiting`, "Waiting for
+  Nov 13…" shows over the map, with Pause kept since it carries on by
+  itself. No new machine.
 
 ### 28. Cramped at 375px, with small tap targets
 
