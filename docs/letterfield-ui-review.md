@@ -33,7 +33,8 @@ Line numbers are as of commit 7bae950 and drift as the files change.
 | 18 | Sharing the Supernovas page gives out a dead link | b: a Supernovas card in the share Worker | To build |
 | 19 | "Live" on views that don't update | No badge: "So far" on any period still running; the hour still updates quietly | To build |
 | 20 | On a phone, the words come last | a with c: words straight after the chart, its supernova note under it | To build |
-| 21–29 | | Open | |
+| 21 | The hour view uses a day's controls; the log's header | A new header: a way back, a tab bar for what's listed, periods as tabs, the card's title as navigator | To build; ‹ before the first word still open |
+| 22–29 | | Open | |
 
 ## The game
 
@@ -567,7 +568,36 @@ and one paragraph at the foot explains seven things.
 - **b. Disable ‹ at the log's first day.** Machine: a new `span` (asking,
   known, failed), since the first day isn't known until the log answers.
 - **c. Collapse months before the log.** The same `span`.
-- **Decided:** open.
+- **Decided: a, within a new header for the log**, which the owner asked
+  for while deciding 20 (three options mocked; the second chosen, then
+  refined). Today the header stacks the title, three links of different
+  kinds (Supernovas, a list in the log; Timelapse, another page; the way
+  back, last), three rows of controls and the date twice, with the first
+  numbers 468px down on a phone. The new one, on every width:
+  - **"← Letterfield"** above the title, the way back; the eyebrow
+    "Letterfield · the shared survey" goes.
+  - **"Survey log"** with **"▶ Timelapse"** beside it, the one link to
+    another page, and a one-line intro: "Every word charted first. Tap a
+    word to fly to it, or a name to see all of theirs."
+  - **A tab bar across the full width for what's listed:** Everyone and
+    Mine share one pill (two thirds), and "✦ Supernovas" has its own after
+    a gap, set apart as a different kind of list. On Supernovas, Everyone
+    and Mine show unselected, and the Supernovas card goes: its
+    explanation becomes the period card's caption ("Every territory gone
+    supernova since the first word, on Oct 22, 2026").
+  - **The period as plain tabs on a rule** (Day, Week, Month, Year, All
+    time), so the two rows don't read as twins: the pills choose what,
+    the tabs when.
+  - **No date row:** the period card's title is the navigator, "‹ TODAY ›",
+    with the full date and "Pick a day" (week, month, year) under it, which
+    opens the date picker; All time has no arrows. An hour shows "‹ 3:00 PM
+    – 4:00 PM ›" with "Friday, November 13 · ↑ The whole day", which is a.
+    A surveyor's, theme's, territory's or guild's page keeps its card,
+    without the intro, then the periods and the navigator.
+  - On a phone, the first numbers come 336px down instead of 468px.
+  - **Machines:** none new; the tabs show what the address already says
+    (Mine, `?supernovas`), and nothing waiting moves them.
+- **Still open:** b and c, the ‹ that goes back before the first word.
 
 ### 22. A new guild's page says "No such guild"
 
