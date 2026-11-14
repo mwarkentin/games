@@ -245,6 +245,9 @@ def test_a_word_someone_charted_can_go_in_the_field_notes(page: Page, site_url, 
     circle(page, words[0])
     toast = page.locator("#toast")
     expect(toast).to_contain_text(f"{words[0][0]}Already charted by MRW")
+    # The note stays two seconds longer than one offering to share, to be read and then tapped.
+    page.wait_for_timeout(7000)
+    expect(toast).to_have_class(re.compile(r"\bshow\b"))
     toast.get_by_role("button", name=f"Add {words[0][0]} to your field notes").click()
     expect(toast).not_to_have_class(re.compile(r"\bshow\b"))
     expect(page.locator("#notesBadge")).to_have_text("1", timeout=LANDS)
