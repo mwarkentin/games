@@ -41,7 +41,7 @@ Line numbers are as of commit 7bae950 and drift as the files change.
 | 26 | The timelapse's territory card uses the theme as its name | a: "A Festivals territory" until the name comes, and the replay's date for "by then" | To build |
 | 27 | Timelapse status is faint or wrong | a with b: disabled pills, singular labels, the guild named; "Waiting for Nov 13…" over the map | To build |
 | 28 | Cramped at 375px, with small tap targets | a with b: "3–4 PM", names that wrap, rows on 10's grid, 40px buttons; a first tap on a bar shows its value | To build |
-| 29 | | Open | |
+| 29 | Shared links show a half-drawn page | a: draw what the address says first, with placeholders holding the space of what loads | To build |
 
 ## The game
 
@@ -791,13 +791,101 @@ theme together, as the notes did before 10; top-list names are cut short
 
 ### 29. Shared links show a half-drawn page
 
+A shared link to a guild's page shows, until the log answers, no period
+selected, a blank date, "…" as the card's title and no guild card; then it
+all arrives at once.
+
 - **a. Draw the title and tabs first**, while `log` is loading.
   *Recommended.*
 - **b. Use the log's start date until the answer arrives.** Needs 21's
-  `span`.
-- **Decided:** open.
+  `span`. On a second look All time already does ("Since the log began on
+  Nov 6" until it knows), and 21's b with d covers the first word's edge.
+- **Decided: a**, with placeholders (the owner's addition). Everything the
+  address says is drawn at once: the period tab, the navigator's title and
+  date, and the view's card with what's known (a surveyor's initials, a
+  theme's name and colour, a territory, a guild's name from the link, as
+  22 has the game send it and the share card's page can pass on; "A guild"
+  until known). Whatever waits on the log (the tiles, the chart, the top
+  lists, the words) has a placeholder ahead of time the size of what will
+  fill it, so nothing jumps as it loads in: still blocks under reduced
+  motion, a gentle pulse otherwise. No new machine: `log`'s `loading`
+  covers the wait. The rule is worth a line in AGENTS.md's rules for every
+  page that loads something.
 
 ## Groups
 
-Once every issue is decided, the changes are grouped here into pull
-requests, each one a coherent change with its own tests.
+Every issue is decided. The changes are grouped into pull requests, each a
+coherent change with its own tests and changelog lines, numbered in the
+order they should land. `letterfield.html` is one big file, so the game's
+groups go one at a time (2 to 7), as do the log's (8 to 10); the timelapse
+(11) can go alongside either, and 12, which touches all three pages, goes
+last. A group that changes the Worker deploys it before the site.
+
+| # | Group | Issues | Where |
+|---|---|---|---|
+| 1 | The glossary | 25 | AGENTS.md |
+| 2 | Every find kept, the field notes rebuilt | 1, 6d, 10, 16 (badge), 17.2 | game |
+| 3 | The title box and the survey panel | 5, 6b, 11, 13 ("crowded"), 16 (tablet) | game |
+| 4 | Map controls | 7 (first-visit card), 9, 12, 14, 16 (hover card) | game |
+| 5 | The Surveyors drawer's look and guilds | 7 (list foot), 8, 13 (guild words), 15, 16 (headings) | game, Worker |
+| 6 | Everyone listed, and a way back from a mute | 4, 17.1 | game, Worker, log |
+| 7 | Linking devices | 2, 15 (`pair`'s `stop` and `stopping`) | game, Worker |
+| 8 | The log's header and loading | 19, 21, 22, 29 | log, game, share Worker |
+| 9 | The log's body | 13 ("bonus word"), 20, 24, 28 | log |
+| 10 | A Supernovas share card | 18 | share Worker, log |
+| 11 | The timelapse | 26, 27 | timelapse |
+| 12 | Between the pages | 17.3, 23 | game, log, timelapse |
+
+1. **The glossary.** 25's names in AGENTS.md's Letterfield section, first,
+   so every later group's text follows it; its copy pass happens in each
+   group as it touches text, with 12 sweeping what's left. Also the rule
+   from 29: anything a page loads gets a placeholder its own size.
+2. **Every find kept, the field notes rebuilt.** `claim`'s `answered`
+   split into `first`, `theirs` and `refused`, with every way a claim ends
+   leading to one outcome (1), and claims still waiting kept in storage and
+   restored on load (6d), both in the same machine; the notes' rows on one
+   grid under day headings, with rings, "charted by ZED" (#103's added
+   finds included), times and drawn bearings (10); no badge at 0 (16); the
+   share fallback's link box (17.2).
+3. **The title box and the survey panel.** The title saying "joining…",
+   "offline" or "crowded" from the sector's state (6b, 13), "3/113" without
+   "charted" and no LF on a phone (11), the tablet title stepping aside for
+   the notes (16); one count of who's online, the panel's people line and
+   the world map's note gone (5), and the panel's "Universe" names (25).
+4. **Map controls.** The tools menu in three groups with the effects and
+   music mixer (14), Map centre and Last find (12), the word bar's tags,
+   count and switch (9), the hover card on the map's side (16) and the
+   first-visit card's two lines (7).
+5. **The Surveyors drawer's look and guilds.** Filled, outlined and red
+   buttons, white inputs and the Stop syncing rows (15), with `guild`'s
+   `confirming`; card headings at 10px (16); emote labels (8); the list
+   foot's long-press line (7); "members" in its text (25); the guild words
+   without "Survey" (13), in the game and the Worker.
+6. **Everyone listed, and a way back from a mute.** The list switch gone,
+   with `hide`, `FLAG_HIDDEN` and the guild credit rule in the Worker, the
+   log's "off the surveyor list" line and SURVEY.md (4); the Muted list on
+   your page, with initials saved and carried to linked devices through
+   the Worker's check (17.1).
+7. **Linking devices.** `pairCode`, so a code is watched until it's used or
+   runs out, with the Worker retiring an older code (2); `pair`'s `stop` and
+   `stopping`, fixing the reply that wrote into the wrong card, with a test
+   that holds it back (15).
+8. **The log's header and loading.** The new header, its tabs, the periods
+   as tabs and the card's title as navigator, `span` and the ‹ that stops at
+   the first word (21); no Live badge (19); everything the address says
+   drawn first, with placeholders (29); a new guild's page named, with its
+   Timelapse link waiting for a first word, the game's link and the share
+   card's page carrying the name (22).
+9. **The log's body.** Words first on a phone, the supernova note under the
+   chart and the Top lists heading (20); the third tile fitted to the view
+   and the UTC note under that heading (24); short hour headings, names that
+   wrap, rows on 10's grid, 40px buttons and a first tap that shows a bar's
+   value (28); "bonus word" in the rows (13).
+10. **A Supernovas share card.** Its address, card and page in the share
+    Worker, and `viewPath()` to match (18).
+11. **The timelapse.** The territory card's placeholder and date (26);
+    disabled pills, singular labels, the guild named in a video and
+    "Waiting for Nov 13…" (27).
+12. **Between the pages.** A link back to the page you came from steps back
+    in history (23); "Survey log and timelapse ↗" and an arrow on every link
+    out (17.3); and the glossary's sweep of whatever text is left.
