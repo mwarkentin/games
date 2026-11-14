@@ -307,3 +307,37 @@ describe('a territory gone supernova moments ago', () => {
     assert.equal(regionName(0, 1), 'Sodden Wold');
   });
 });
+
+describe('a guild\'s page', () => {
+  test('sends people to the guild\'s page in the log with its name, so it\'s named at once', async () => {
+    const env = {
+      SITE_URL: SITE,
+      LOG: { fetch: async () => Response.json({ words: 1, world: 1, name: 'Cobalt Compass Society', hue: 220, hours: [], entries: [['BIRCH', 7, 9, 0, 0, 'ZED', AT, 11]], themes: {} }) },
+    };
+    const html = await (await get('/v/guild/c0ba17c0ba/all', env)).text();
+    assert.match(html, /<meta http-equiv="refresh" content="0;url=https:\/\/games\.test\/letterfield-log\?guild=c0ba17c0ba&amp;name=11-0-0">/);
+  });
+});
+
+describe('the Supernovas page', () => {
+  test('carries a card of the period\'s supernovas and the page\'s line, and sends people to the tab', async () => {
+    const asked = [];
+    const env = {
+      SITE_URL: SITE,
+      LOG: {
+        fetch: async (r) => {
+          asked.push(new URL(r.url).pathname);
+          return Response.json({ count: 1, hours: [], novas: [[1, 0, AT, 'OAK', 70, 10, 2, 'ZED', AT - 1_800_000, 2, 2, 'AMY', 1, 0]], places: { '1,0': 'Monet Reach' }, themes: { 0: ['Old Masters', 56] } });
+        },
+      },
+    };
+    const html = await (await get('/v/novas/all', env)).text();
+    assert.deepEqual(asked.slice(-1).map((p) => p.split('/').slice(0, 5).join('/')), ['/v1/survey/log/novas']);
+    assert.equal(meta(html, 'og:title'), 'Supernovas · Letterfield survey log');
+    assert.equal(meta(html, 'og:description'), '1 territory went supernova in Letterfield’s shared survey so far, every hidden word charted. Latest: Monet Reach.');
+    assert.match(meta(html, 'og:image'), /^https:\/\/share\.test\/v\/novas\/all\.png\?s=1\.[a-z0-9]+$/);
+    assert.match(html, /<meta http-equiv="refresh" content="0;url=https:\/\/games\.test\/letterfield-log\?supernovas">/);
+    await get('/v/novas/all.png', env);
+    assert.ok(renders.at(-1).includes('>SUPERNOVAS<') && renders.at(-1).includes('>OAK<'));
+  });
+});

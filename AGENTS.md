@@ -186,6 +186,7 @@ The machines each page keeps:
 | | `pair` (linking another device, and the recovery code) | idle, making, showing, used, entering, redeeming, done, failed, recovery, keeping, kept, removing |
 | | `sync` (keeping linked devices in step) | off, idle, syncing, failed |
 | `letterfield-log.html` | `log` (what the page shows) | loading, ready, refreshing, stale, failed |
+| | `span` (where the log starts, which ‹ stops at) | asking, known, failed |
 | `letterfield-timelapse.html` | `tl` (the replay) | loading, empty, failed, paused, playing, waiting |
 | | `rec` (saving a video) | off, preparing, recording, done, failed |
 | `war.html` | `screen` | menu, lobby, table, ending, over |
@@ -371,13 +372,16 @@ behind it, and `share/README.md` how it works.
   While it's empty, Share hands out the game's own fragment link.
   `?share=<url>` overrides it for tests. A dark page hands out `/f/d/…`, so
   the card follows the sharer's theme.
-- The survey log's views (a surveyor's, theme's, guild's or territory's page) have
-  cards too, at `/v/…`: `letterfield-log.html` has a `SHARE_URL` of its own,
+- The survey log's views (a surveyor's, theme's, guild's or territory's page, and
+  the Supernovas tab) have cards too, at `/v/…`: `letterfield-log.html` has a `SHARE_URL` of its own,
   and while it's empty Share links to the page and attaches the page's own
   picture. Their numbers come from the leaderboard Worker's log answers,
   through a service binding (`LOG` in `share/wrangler.toml`), and their
   addresses pin the period by its first day and its UTC hours, so the page's
-  `viewPath()` and `share/src/view.js` must agree.
+  `viewPath()` and `share/src/view.js` must agree. The Supernovas card
+  (`/v/novas/…`) counts the period's supernovas from `/v1/survey/log/novas/…`
+  and shows the latest ones' last words; a guild's card page passes the
+  guild's name on to the log (`?name=`), so the page names it at once.
 - The Worker checks the word is on the map with `worker/src/`'s own code,
   asks the word's sector who charted it and the Atlas how much of the shared
   map is charted (internal paths on the leaderboard Worker's Durable

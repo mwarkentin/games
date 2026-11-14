@@ -1,4 +1,4 @@
-// Survey log views as cards: a surveyor's, a theme's, a guild's or a territory's page of
+// Survey log views as cards: a surveyor's, a theme's, a guild's or a territory's page, or the Supernovas tab, of
 // letterfield-log.html, drawn as that page's own share picture
 // (shareImage() there) from the log's own answers.
 //
@@ -7,6 +7,7 @@
 //   /v/guild/<lid>/<period>/<when>/<from>-<to>           one guild's period, by its log id
 //   /v/surveyor/<initials>/all, /v/theme/<th>/all, /v/guild/<lid>/all   all time
 //   /v/territory/<rx>,<ry>                               a territory, all time
+//   /v/novas/<period>/<when>/<from>-<to>, /v/novas/all   the supernovas of a period, or all time
 //   /v/d/…  the dark card; ….png the card itself
 //
 // A period is pinned to where it starts in the sharer's own time zone: <when>
@@ -16,6 +17,7 @@
 // its link on Friday, wherever it's opened.
 
 import { THEMES, regionName, regionTheme } from '../../worker/src/letterfield-world.js';
+import { GUILD_FIRST, GUILD_SECOND, GUILD_THIRD } from '../../worker/src/survey-guild.js';
 import { H, PALETTES, W, fit, measure, text } from './card.js';
 import { novaSvg } from './nova.js';
 
@@ -25,6 +27,8 @@ const SLICE_MAX_HOURS = 24 * 3660;  // the most the log's view of one covers (SL
 export const VIEW_PATH = /^\/v\/(d\/)?(surveyor|theme|guild)\/([A-Z]{3}|\d{1,3}|[0-9a-f]{10})\/(?:(all)|(hour|day|week|month|year)\/(\d{4})-(\d{2})-(\d{2})(?:T(\d{2}))?\/(\d{1,8})-(\d{1,8}))(\.png)?$/;
 const KEYS = { surveyor: /^[A-Z]{3}$/, theme: /^\d{1,3}$/, guild: /^[0-9a-f]{10}$/ };
 export const TERRITORY_PATH = /^\/v\/(d\/)?territory\/(-?\d{1,8}),(-?\d{1,8})(\.png)?$/;
+// The Supernovas tab has no key: just its period, pinned as the others' are.
+export const NOVAS_PATH = /^\/v\/(d\/)?novas\/(?:(all)|(hour|day|week|month|year)\/(\d{4})-(\d{2})-(\d{2})(?:T(\d{2}))?\/(\d{1,8})-(\d{1,8}))(\.png)?$/;
 
 const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
 const DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
@@ -60,20 +64,28 @@ function wall(period, y, m, d, h) {
 export function parseView(pathname, now = Date.now()) {
   const t = TERRITORY_PATH.exec(pathname);
   if (t) return { kind: 'territory', rx: Number(t[2]), ry: Number(t[3]), dark: !!t[1], png: !!t[4], period: 'all' };
+  const n = NOVAS_PATH.exec(pathname);
+  if (n) return pinned({ kind: 'novas', dark: !!n[1], png: !!n[10] }, n.slice(2, 10), now);
   const m = VIEW_PATH.exec(pathname);
   if (!m) return null;
   if (!KEYS[m[2]].test(m[3])) return null;
   const view = { kind: m[2], key: m[2] === 'theme' ? Number(m[3]) : m[3] };
   if (view.kind === 'theme' && !(view.key < THEMES.length)) return null;
   Object.assign(view, { dark: !!m[1], png: !!m[12] });
-  if (m[4]) return { ...view, period: 'all' };
-  const period = m[5], [y, mo, d] = [Number(m[6]), Number(m[7]), Number(m[8])], h = m[9] === undefined ? null : Number(m[9]);
+  return pinned(view, m.slice(4, 12), now);
+}
+
+// A view's period from its address's parts: all, or the period, its first
+// day (and hour) and the UTC hours it covers.
+function pinned(view, [all, period, ys, ms, ds, hs, fs, ts], now) {
+  if (all) return { ...view, period: 'all' };
+  const [y, mo, d] = [Number(ys), Number(ms), Number(ds)], h = hs === undefined ? null : Number(hs);
   if ((period === 'hour') !== (h !== null) || (h !== null && h > 23)) return null;
   const [start, end] = wall(period, y, mo, d, h ?? 0);
   const date = new Date(start);
   if (date.getUTCFullYear() !== y || date.getUTCMonth() !== mo - 1 || date.getUTCDate() !== d) return null;
   if ((period === 'week' && date.getUTCDay() !== 1) || (period === 'month' && d !== 1) || (period === 'year' && (mo !== 1 || d !== 1))) return null;
-  const from = Number(m[10]), to = Number(m[11]);
+  const from = Number(fs), to = Number(ts);
   // Where the period starts, in UTC hours, for any offset from UTC-12 to UTC+14.
   if (from * HOUR < start - 15 * HOUR || from * HOUR > start + 13 * HOUR) return null;
   if (Math.abs((to - from) - (end - start) / HOUR) > 2 || !(from < to) || to - from > SLICE_MAX_HOURS) return null;
@@ -81,27 +93,41 @@ export function parseView(pathname, now = Date.now()) {
   return { ...view, period, y, mo, d, h, start, end, from, to };
 }
 
+// A guild's name as its three word numbers, as the log's address carries it
+// (?name=<a>-<b>-<c>), or null for a name that isn't three of the lists' words.
+export function guildNumbers(name) {
+  const words = typeof name === 'string' ? name.split(' ') : [];
+  if (words.length !== 3) return null;
+  const n = [GUILD_FIRST.map((w) => w[0]), GUILD_SECOND, GUILD_THIRD].map((list, i) => list.indexOf(words[i]));
+  return n.every((i) => i >= 0) ? n : null;
+}
+
 // The view's own page in the log, with its date pinned, as the page's Share
-// gives it (urlFor({ pin: true }) in letterfield-log.html).
-export function pagePath(v) {
+// gives it (urlFor({ pin: true }) in letterfield-log.html). A guild's carries
+// its name, when the card knows it, so the page names it before the log answers.
+export function pagePath(v, name = null) {
   const q = new URLSearchParams();
   if (v.kind === 'territory') q.set('territory', `${v.rx},${v.ry}`);
+  else if (v.kind === 'novas') q.set('supernovas', '');
   else q.set(v.kind, String(v.key));
+  const n = v.kind === 'guild' ? guildNumbers(name) : null;
+  if (n) q.set('name', n.join('-'));
   if (v.period !== 'all') {
     q.set('period', v.period);
     q.set('day', `${v.y}-${pad(v.mo)}-${pad(v.d)}`);
     if (v.period === 'hour') q.set('hour', String(v.h));
   }
-  return `/letterfield-log?${q.toString().replace(/%2C/g, ',')}`;
+  return `/letterfield-log?${q.toString().replace(/%2C/g, ',').replace(/(^|&)supernovas=(&|$)/, '$1supernovas$2')}`;
 }
 
 // The log's paths for the view: the span first, for all time's start.
 export function logPaths(v, span, now = Date.now()) {
   if (v.kind === 'territory') return `/v1/survey/log/territory/${v.rx}/${v.ry}`;
-  if (v.period !== 'all') return `/v1/survey/log/${v.kind}/${v.key}/${v.from}/${v.to}`;
+  const base = v.kind === 'novas' ? '/v1/survey/log/novas' : `/v1/survey/log/${v.kind}/${v.key}`;
+  if (v.period !== 'all') return `${base}/${v.from}/${v.to}`;
   const first = Number.isInteger(span?.first) ? Math.min(span.first, LOG_BEGAN_HOUR) : LOG_BEGAN_HOUR;
   const to = Math.floor(now / HOUR) + 1;
-  return `/v1/survey/log/${v.kind}/${v.key}/${Math.max(first, to - SLICE_MAX_HOURS)}/${to}`;
+  return `${base}/${Math.max(first, to - SLICE_MAX_HOURS)}/${to}`;
 }
 
 // The view's name, and its theme's hue where it has one, known without asking.
@@ -109,6 +135,7 @@ export function logPaths(v, span, now = Date.now()) {
 export function nameOf(v) {
   if (v.kind === 'surveyor') return { name: v.key };
   if (v.kind === 'guild') return { name: 'A guild' };
+  if (v.kind === 'novas') return { name: 'Supernovas' };
   if (v.kind === 'theme') return { name: THEMES[v.key].name, hue: THEMES[v.key].hue };
   const th = regionTheme(v.rx, v.ry);
   return { name: regionName(v.rx, v.ry), hue: THEMES[th].hue };
@@ -131,6 +158,7 @@ export function whenOf(v, now = Date.now()) {
 // What a card shows of the log's answer: three numbers, the latest words, a
 // line for the page's description, and a token that changes when they do.
 export function summarize(v, a, now = Date.now()) {
+  if (v.kind === 'novas') return summarizeNovas(v, a, now);
   const { name, hue } = v.kind === 'guild' && typeof a?.name === 'string' ? { name: a.name, hue: Number.isFinite(a.hue) ? a.hue : undefined } : nameOf(v);
   const when = whenOf(v, now);
   const entries = Array.isArray(a?.entries) ? a.entries.filter((e) => Array.isArray(e) && typeof e[0] === 'string') : [];
@@ -175,6 +203,27 @@ export function summarize(v, a, now = Date.now()) {
   return { name, hue, nova: !!nova, novaOf, when: when.shown, stats, words, line, token: `${count}.${latest.toString(36)}${nova ? 'n' : ''}` };
 }
 
+// The Supernovas tab's card, as the page's own picture shows it (renderNovas()
+// in letterfield-log.html): how many, the latest and the quickest, and the
+// latest supernovas' last words, each in its territory theme's colour. The
+// log's answer is { count, novas: [[rx, ry, at, w, x, y, d, initials, first,
+// words, surveyors, top, topN, th], ...] newest first, places, themes }.
+function summarizeNovas(v, a, now) {
+  const when = whenOf(v, now);
+  const novas = (Array.isArray(a?.novas) ? a.novas : []).filter((n) => Array.isArray(n) && typeof n[3] === 'string' && [0, 1, 2, 8, 13].every((i) => Number.isInteger(n[i])));
+  const places = a?.places && typeof a.places === 'object' ? a.places : {};
+  const themes = a?.themes && typeof a.themes === 'object' ? a.themes : {};
+  const place = (n) => (typeof places[`${n[0]},${n[1]}`] === 'string' ? places[`${n[0]},${n[1]}`] : regionName(n[0], n[1]));
+  const count = Number.isInteger(a?.count) ? a.count : novas.length;
+  const latest = novas[0], quick = novas.reduce((q, n) => (!q || n[2] - n[8] < q[2] - q[8] ? n : q), null);
+  const stats = [['Supernovas', num(count)], ['Latest', latest ? place(latest) : '—'], ['Quickest', quick ? took(quick[2] - quick[8]) : '—']];
+  const line = count
+    ? `${plural(count, 'territory', 'territories')} went supernova in Letterfield’s shared survey ${when.said}, every hidden word charted.${latest ? ` Latest: ${place(latest)}.` : ''}`
+    : `No territories went supernova in Letterfield’s shared survey ${when.said}.`;
+  const words = novas.slice(0, 12).map((n) => ({ w: n[3], hue: themes[n[13]]?.[1] }));
+  return { name: 'Supernovas', hue: undefined, nova: false, novaOf: null, when: when.shown, stats, words, line, token: `${count}.${(latest?.[2] ?? 0).toString(36)}` };
+}
+
 // The card, 1200×630: shareImage() in letterfield-log.html, as SVG.
 export function viewSvg(v, s, { dark = false, host = 'games.michaelwarkentin.com' } = {}) {
   // A supernova has a card of its own (nova.js).
@@ -186,7 +235,7 @@ export function viewSvg(v, s, { dark = false, host = 'games.michaelwarkentin.com
     ? `<circle cx="${x}" cy="${y}" r="${r - 1.5}" fill="none" stroke="${mark(hue)}" stroke-width="3" stroke-dasharray="4 3"/>`
     : `<circle cx="${x}" cy="${y}" r="${r}" fill="${mark(hue)}"/>`);
   out.push(`<rect width="${W}" height="${H}" fill="${C.paper}"/><rect width="${W}" height="10" fill="${C.accent}"/>`);
-  const kind = { surveyor: 'SURVEYOR', theme: 'THEME', guild: 'GUILD', territory: 'TERRITORY' }[v.kind];
+  const kind = { surveyor: 'SURVEYOR', theme: 'THEME', guild: 'GUILD', territory: 'TERRITORY', novas: 'SUPERNOVAS' }[v.kind];
   const head = `LETTERFIELD · SURVEY LOG · ${kind}`;
   out.push(text(head, X, 84, 'mono5', 20, C.muted, 0.14));
   // The site's address on the right, where it fits beside the heading.
@@ -208,7 +257,8 @@ export function viewSvg(v, s, { dark = false, host = 'games.michaelwarkentin.com
     out.push(text(value, x, 458, 'display', fit(value, 'display', 64, 30, col - 24, 0.04), C.ink, 0.04));
   });
 
-  out.push(text(s.words.length ? 'LATEST' : 'NOTHING CHARTED IN THIS PERIOD', X, 520, 'mono5', 18, C.muted, 0.14));
+  const none = v.kind === 'novas' ? 'NONE IN THIS PERIOD' : 'NOTHING CHARTED IN THIS PERIOD';
+  out.push(text(s.words.length ? 'LATEST' : none, X, 520, 'mono5', 18, C.muted, 0.14));
   let x = X;
   for (const { w, hue, stray } of s.words) {
     const width = 26 + measure(w, 'display', 38, 0.07);
