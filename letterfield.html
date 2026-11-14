@@ -117,11 +117,13 @@ body.docked .bar{right:var(--notes-w)}
 .legend-head{flex:none;display:flex;justify-content:space-between;align-items:baseline;gap:12px}
 .legend-count{font:400 11px/1 var(--f-mono);color:var(--muted);font-variant-numeric:tabular-nums;white-space:nowrap;min-width:5ch}
 .legend-count:empty::before{content:'\200b'} /* a line of text even when empty, so the bar keeps its height */
-/* Which words the list names: those in view, or those left in the territory. */
-.list-mode{display:flex;gap:2px;margin:-9px 0 -9px -7px}
-.list-mode button{padding:9px 7px;border:0;background:none;cursor:pointer;text-underline-offset:4px;white-space:nowrap}
+.legend-head{align-items:center}
+/* Which words the list names, those in view or those left in the territory: a
+   two-way switch, as the survey log's are. */
+.list-mode{display:flex;border:1px solid var(--rule);border-radius:999px;padding:2px;background:var(--panel);margin:-5px 0}
+.list-mode button{padding:7px 10px 6px;border:0;border-radius:999px;background:none;cursor:pointer;white-space:nowrap;color:var(--muted)}
 .list-mode button:hover{color:var(--ink)}
-.list-mode button[aria-pressed="true"]{color:var(--ink);text-decoration:underline;text-decoration-thickness:1.5px}
+.list-mode button[aria-pressed="true"]{background:var(--ink);color:var(--panel)}
 /* One row that scrolls sideways only: overflow-x alone would make y auto too.
    The 4px above and below, taken back by the margin, keep focus rings unclipped.
    It's never shorter than a chip (12px of text, 13px of padding and a 1px
@@ -133,8 +135,10 @@ body.docked .bar{right:var(--notes-w)}
 .chip{font:500 12px/1 var(--f-mono);letter-spacing:.07em;padding:7px 8px 6px;border:1px solid var(--rule);border-radius:5px;background:var(--panel);cursor:pointer;white-space:nowrap}
 .chip:hover{border-color:var(--ink)}
 .chip.found{color:var(--muted);text-decoration:line-through;text-decoration-thickness:2px;text-decoration-color:var(--c);border-style:dashed;cursor:default}
-span.chip{cursor:default}
-span.chip:hover{border-color:var(--rule)}
+/* A word you can't tap (on the shared survey, or in the territory's list) is
+   a plain word, not a button: no border, so only what's tappable looks it. */
+span.chip{cursor:default;border-color:transparent;background:transparent;padding-left:4px;padding-right:4px}
+span.chip:hover{border-color:transparent}
 .legend-note{font:400 12px/1.4 var(--f-ui);color:var(--muted);padding:2px 0;white-space:nowrap}
 
 /* Corner: the tools, surveyors and field notes buttons, top right (beside the
@@ -157,9 +161,10 @@ body.docked .corner .people-btn{border-radius:0 8px 8px 0;border-right:1px solid
 .people-btn[aria-expanded="true"]{background:var(--ink);border-color:var(--ink);color:var(--panel)}
 .people-btn .badge{position:absolute;top:-6px;right:-6px;z-index:1}  /* over the notes button beside it, which comes after it */
 .people-btn[aria-expanded="true"] .badge{box-shadow:0 0 0 2px var(--panel)}
-/* Tools: zoom, home, sound and music drop down from their button as a stack,
-   and go again on a second tap, Escape or a tap on the map. Closed, the stack
-   takes no taps or focus (inert) and covers nothing. */
+/* Tools drop down from their button as a stack, in three groups (zoom, the
+   places to fly to, and a mixer for sound effects and music), and go again on
+   a second tap, Escape or a tap on the map. Closed, the stack takes no taps or
+   focus (inert) and covers nothing. */
 .tools{position:relative}
 .tools-btn{flex:none;width:40px;height:40px;border:1px solid var(--rule);border-radius:8px;background:var(--panel);box-shadow:var(--shadow);display:grid;place-items:center;cursor:pointer;transition:background-color var(--t-fast) var(--ease-out), color var(--t-fast) var(--ease-out), border-color var(--t-fast) var(--ease-out)}
 .tools-btn svg circle{transition:transform var(--t-slow) var(--ease-pop)}
@@ -168,7 +173,7 @@ body.docked .corner .people-btn{border-radius:0 8px 8px 0;border-right:1px solid
 @media (hover: hover){.tools-btn:hover{background:var(--hover)}}  /* a tap leaves no grey behind on a phone */
 .tools-btn[aria-expanded="true"]{background:var(--ink);border-color:var(--ink);color:var(--panel)}
 .tools-btn svg{width:20px;height:20px}
-.tool-stack{position:absolute;right:0;top:calc(100% + 8px);display:flex;flex-direction:column;padding:4px;min-width:176px;box-sizing:border-box;
+.tool-stack{position:absolute;right:0;top:calc(100% + 8px);display:flex;flex-direction:column;padding:4px;width:248px;max-width:calc(100vw - var(--gl) - var(--gr));box-sizing:border-box;
   transform-origin:calc(100% - 20px) -28px;opacity:0;transform:translateY(-8px) scale(.9);visibility:hidden;pointer-events:none;
   transition:opacity var(--t-mid) var(--ease-in), transform var(--t-mid) var(--ease-in), visibility 0s linear var(--t-mid)}
 .tools.open .tool-stack{opacity:1;transform:none;visibility:visible;pointer-events:auto;transition:opacity var(--t-fast) var(--ease-out), transform var(--t-slow) var(--ease-pop), visibility 0s}
@@ -182,18 +187,26 @@ body.docked .corner .people-btn{border-radius:0 8px 8px 0;border-right:1px solid
 .tool-stack svg{width:18px;height:18px;flex:none}
 .tool-stack kbd{font:500 10.5px/1 var(--f-mono);color:var(--muted);border:1px solid var(--rule);border-radius:4px;padding:3px 5px 2px;min-width:9px;text-align:center}
 @media (hover: none) and (pointer: coarse){.tool-stack kbd{display:none}}
-/* Music volume: a slider under the music button, always there (0 is off),
-   lined up with the buttons' labels and as tall as they are to touch. */
-.tool-vol{display:flex;align-items:center;gap:8px;height:44px;padding:0 10px 0 40px;cursor:pointer}
-.tool-vol input{flex:1;min-width:0;height:44px;margin:0;background:transparent;font-size:16px;cursor:pointer;-webkit-appearance:none;appearance:none;--v:75%}
-.tool-vol input:focus{outline:none}
-.tool-vol input::-webkit-slider-runnable-track{height:4px;border-radius:2px;background:linear-gradient(to right, var(--accent) var(--v), var(--rule) var(--v))}
-.tool-vol input::-moz-range-track{height:4px;border-radius:2px;background:linear-gradient(to right, var(--accent) var(--v), var(--rule) var(--v))}
-.tool-vol input::-webkit-slider-thumb{-webkit-appearance:none;appearance:none;width:20px;height:20px;margin-top:-8px;border:0;border-radius:50%;background:var(--ink);box-shadow:0 0 0 3px var(--panel)}
-.tool-vol input::-moz-range-thumb{width:20px;height:20px;border:0;border-radius:50%;background:var(--ink);box-shadow:0 0 0 3px var(--panel)}
-.tool-vol input:focus-visible::-webkit-slider-thumb{outline:2px solid var(--accent);outline-offset:2px}
-.tool-vol input:focus-visible::-moz-range-thumb{outline:2px solid var(--accent);outline-offset:2px}
-.tool-vol output{font:500 10.5px/1 var(--f-mono);color:var(--muted);min-width:3ch;text-align:right}
+/* Zoom: one row, − and + side by side, as on any map. */
+.tool-zoom{display:flex;align-items:center;gap:11px;height:44px;padding:0 4px 0 11px;font:500 13.5px/1 var(--f-ui)}
+.tool-zoom > span{flex:1}
+.tool-step{display:flex;border:1px solid var(--rule);border-radius:8px;overflow:hidden}
+.tool-stack .tool-step button{width:40px;height:40px;padding:0;gap:0;justify-content:center;border-radius:0}
+.tool-step button + button{border-left:1px solid var(--rule)}
+.tool-stack .tool-step svg{width:16px;height:16px}
+/* The mixer: a row each for sound effects and music, its icon a switch (a line
+   through it while it's off) and its slider how loud, 0 being off. */
+.tool-mix{display:grid;grid-template-columns:40px 50px minmax(0,1fr);align-items:center;column-gap:4px;height:44px;padding:0 14px 0 1px;font:500 13.5px/1 var(--f-ui);color:var(--ink)}
+.tool-stack .tool-mix button{width:40px;height:40px;padding:0;gap:0;justify-content:center}
+.tool-mix label{cursor:pointer}
+.tool-mix input{min-width:0;height:44px;margin:0;background:transparent;font-size:16px;cursor:pointer;-webkit-appearance:none;appearance:none;--v:75%}
+.tool-mix input:focus{outline:none}
+.tool-mix input::-webkit-slider-runnable-track{height:4px;border-radius:2px;background:linear-gradient(to right, var(--accent) var(--v), var(--rule) var(--v))}
+.tool-mix input::-moz-range-track{height:4px;border-radius:2px;background:linear-gradient(to right, var(--accent) var(--v), var(--rule) var(--v))}
+.tool-mix input::-webkit-slider-thumb{-webkit-appearance:none;appearance:none;width:20px;height:20px;margin-top:-8px;border:0;border-radius:50%;background:var(--ink);box-shadow:0 0 0 3px var(--panel)}
+.tool-mix input::-moz-range-thumb{width:20px;height:20px;border:0;border-radius:50%;background:var(--ink);box-shadow:0 0 0 3px var(--panel)}
+.tool-mix input:focus-visible::-webkit-slider-thumb{outline:2px solid var(--accent);outline-offset:2px}
+.tool-mix input:focus-visible::-moz-range-thumb{outline:2px solid var(--accent);outline-offset:2px}
 
 /* Notes toggle */
 .notes-toggle{position:relative;display:flex;align-items:center;gap:8px;min-height:40px;box-sizing:border-box;padding:10px 12px;cursor:pointer;font:600 13px/1 var(--f-ui)}
@@ -631,22 +644,22 @@ body.settling, body.settling *{transition:none!important}
 
   <div class="corner">
     <div class="tools" id="tools">
-      <button type="button" class="tools-btn" id="toolsBtn" aria-expanded="false" aria-controls="toolStack" aria-label="Tools" title="Tools: zoom, home, sound and music"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M4 7h9M17 7h3M4 17h3M11 17h9"/><circle cx="15" cy="7" r="2.2"/><circle cx="9" cy="17" r="2.2"/></svg></button>
+      <button type="button" class="tools-btn" id="toolsBtn" aria-expanded="false" aria-controls="toolStack" aria-label="Tools" title="Tools: zoom, places, sound effects and music"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M4 7h9M17 7h3M4 17h3M11 17h9"/><circle cx="15" cy="7" r="2.2"/><circle cx="9" cy="17" r="2.2"/></svg></button>
       <div class="tool-stack card" id="toolStack" role="group" aria-label="Tools" inert>
-        <button type="button" style="--i:0" id="zoomIn" aria-label="Zoom in" aria-keyshortcuts="+" title="Zoom in (+)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg><span aria-hidden="true">Zoom in</span><kbd aria-hidden="true">+</kbd></button>
-        <button type="button" style="--i:1" id="zoomOut" aria-label="Zoom out" aria-keyshortcuts="-" title="Zoom out (−)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M5 12h14"/></svg><span aria-hidden="true">Zoom out</span><kbd aria-hidden="true">−</kbd></button>
-        <button type="button" style="--i:2" id="home" aria-label="Return to the origin" aria-keyshortcuts="H" title="Return to the origin (H)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="6.5"/><circle cx="12" cy="12" r="1.6" fill="currentColor"/><path d="M12 2v4M12 18v4M2 12h4M18 12h4"/></svg><span aria-hidden="true">Origin</span><kbd aria-hidden="true">H</kbd></button>
-        <hr style="--i:3">
-        <button type="button" style="--i:4" id="sound" aria-pressed="true" aria-label="Sound" aria-keyshortcuts="M" title="Sound (M)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 9.5h3.5L12 6v12l-4.5-3.5H4z"/><path class="on" d="M15.5 9.2a4 4 0 0 1 0 5.6M18.2 6.6a7.6 7.6 0 0 1 0 10.8"/><path class="off" d="M16 9.5l5 5M21 9.5l-5 5"/></svg><span aria-hidden="true">Sound</span><kbd aria-hidden="true">M</kbd></button>
-        <button type="button" style="--i:5" id="music" aria-pressed="false" aria-label="Music" aria-keyshortcuts="B" title="Music (B)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 17.5V6l10-2v11.5"/><circle cx="6.5" cy="17.5" r="2.5"/><circle cx="16.5" cy="15.5" r="2.5"/><path class="off" d="M3.5 3.5l17 17"/></svg><span aria-hidden="true">Music</span><kbd aria-hidden="true">B</kbd></button>
-        <label style="--i:6" class="tool-vol" id="musicVolRow" title="Music volume ([ and ])"><span class="vh">Music volume</span><input type="range" id="musicVol" min="0" max="100" step="5" value="0" aria-keyshortcuts="[ ]"><output id="musicVolOut" for="musicVol" aria-hidden="true">0</output></label>
+        <div class="tool-zoom" style="--i:0"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6"/><path d="M15 15l5 5"/></svg><span aria-hidden="true">Zoom</span><div class="tool-step"><button type="button" id="zoomOut" aria-label="Zoom out" aria-keyshortcuts="-" title="Zoom out (−)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M5 12h14"/></svg></button><button type="button" id="zoomIn" aria-label="Zoom in" aria-keyshortcuts="+" title="Zoom in (+)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></button></div></div>
+        <hr style="--i:1">
+        <button type="button" style="--i:2" id="home" aria-label="Map centre" aria-keyshortcuts="H" title="Map centre (H)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="6.5"/><circle cx="12" cy="12" r="1.6" fill="currentColor"/><path d="M12 2v4M12 18v4M2 12h4M18 12h4"/></svg><span aria-hidden="true">Map centre</span><kbd aria-hidden="true">H</kbd></button>
+        <button type="button" style="--i:3" id="lastFind" aria-label="Last find" aria-keyshortcuts="L" title="Last find (L)" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 21s-6.2-5.9-6.2-11a6.2 6.2 0 0 1 12.4 0c0 5.1-6.2 11-6.2 11z"/><circle cx="12" cy="10" r="2.1"/></svg><span aria-hidden="true">Last find</span><kbd aria-hidden="true">L</kbd></button>
+        <hr style="--i:4">
+        <div class="tool-mix" style="--i:5"><button type="button" id="sound" aria-pressed="true" aria-label="Sound effects" aria-keyshortcuts="M" title="Sound effects (M)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 9.5h3.5L12 6v12l-4.5-3.5H4z"/><path class="on" d="M15.5 9.2a4 4 0 0 1 0 5.6M18.2 6.6a7.6 7.6 0 0 1 0 10.8"/><path class="off" d="M16 9.5l5 5M21 9.5l-5 5"/></svg></button><label for="soundVol" aria-hidden="true">Effects</label><input type="range" id="soundVol" min="0" max="100" step="5" value="100" aria-label="Sound effects volume" title="Sound effects volume"></div>
+        <div class="tool-mix" style="--i:6"><button type="button" id="music" aria-pressed="false" aria-label="Music" aria-keyshortcuts="B" title="Music (B)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 17.5V6l10-2v11.5"/><circle cx="6.5" cy="17.5" r="2.5"/><circle cx="16.5" cy="15.5" r="2.5"/><path class="off" d="M3.5 3.5l17 17"/></svg></button><label for="musicVol" aria-hidden="true">Music</label><input type="range" id="musicVol" min="0" max="100" step="5" value="0" aria-keyshortcuts="[ ]" aria-label="Music volume" title="Music volume ([ and ])"></div>
       </div>
     </div>
     <button type="button" class="people-btn" id="peopleBtn" aria-expanded="false" aria-controls="people" aria-keyshortcuts="P" aria-label="Surveyors" title="Surveyors (P)" hidden>
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="8.2" r="3.7"/><path d="M4.8 20.2a7.2 7.2 0 0 1 14.4 0"/></svg>
       <span class="badge" id="peopleBadge" aria-hidden="true" hidden>0</span>
     </button>
-    <button class="notes-toggle card" id="notesToggle" aria-expanded="false" aria-controls="notes">
+    <button class="notes-toggle card" id="notesToggle" aria-expanded="false" aria-controls="notes" aria-keyshortcuts="N" title="Field notes (N)">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 4h11a3 3 0 0 1 3 3v13H8a3 3 0 0 1-3-3V4z"/><path d="M5 17a3 3 0 0 1 3-3h11"/><path d="M9 8h6"/></svg>
       <span class="label">Field notes</span>
       <span class="badge" id="notesBadge">0</span>
@@ -658,7 +671,7 @@ body.settling, body.settling *{transition:none!important}
   <section class="legend" aria-label="Words hidden in view">
     <div class="legend-head">
       <div class="list-mode" role="group" aria-label="Words to list">
-        <button type="button" class="eyebrow" id="listView" aria-pressed="true" title="Words hidden in view">Hidden in view</button>
+        <button type="button" class="eyebrow" id="listView" aria-pressed="true" title="Words hidden in view">In view</button>
         <button type="button" class="eyebrow" id="listWhole" aria-pressed="false" title="Words still to find in this territory">Territory</button>
       </div>
       <span class="legend-count" id="legendCount"></span>
@@ -708,7 +721,7 @@ body.settling, body.settling *{transition:none!important}
 <div class="coach card pair-offer" id="pairOffer" role="dialog" aria-labelledby="pairOfferHead" hidden></div>
 
 <form class="coach card signup" id="signup" hidden>
-  <label for="signupInitials"><span id="signupHow"><strong>Every territory hides its own words</strong>, in all eight directions: tap a word's first letter, then its last, to circle it. Everyone charts this map together, so pick initials to sign the ones you find first.</span><span id="signupOnly" hidden><strong>Pick your initials to start.</strong> Everyone charts this map together, and every word you find first is signed with them.</span></label>
+  <label for="signupInitials"><span id="signupHow"><strong>Every territory hides its own words</strong>, in all eight directions: tap a word's first letter, then its last, to circle it. Everyone charts this map together, so pick initials to sign the ones you find first. Coloured bars are other surveyors. Outlined words are already charted.</span><span id="signupOnly" hidden><strong>Pick your initials to start.</strong> Everyone charts this map together, and every word you find first is signed with them.</span></label>
   <div class="coach-row"><input id="signupInitials" maxlength="3" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="ABC" aria-describedby="signupHint"><button type="submit" class="btn">Start surveying</button></div>
   <kbd id="signupKbd">Shift-drag also circles</kbd>
   <p class="survey-hint" id="signupHint" aria-live="polite"></p>
@@ -791,7 +804,7 @@ const DEAL = 9;
 const STRAY_MIN = 6;
 const NOTES_W = 340;
 // Field notes, by map: each redraw starts a new key and carries over any finds still there.
-const K_FINDS = 'letterfield.finds.v4', K_FINDS_OLD = ['letterfield.finds.v3', 'letterfield.finds.v2', 'letterfield.finds.v1'], K_CAM = 'letterfield.cam.v1', K_COACH = 'letterfield.coach.v1', K_NOTES = 'letterfield.notes.v1', K_SOUND = 'letterfield.sound.v1', K_MUSIC = 'letterfield.music.v1', K_MUSIC_VOL = 'letterfield.musicvol.v1', K_LIST = 'letterfield.list.v1', K_OUTBOX = 'letterfield.outbox.v1';
+const K_FINDS = 'letterfield.finds.v4', K_FINDS_OLD = ['letterfield.finds.v3', 'letterfield.finds.v2', 'letterfield.finds.v1'], K_CAM = 'letterfield.cam.v1', K_COACH = 'letterfield.coach.v1', K_NOTES = 'letterfield.notes.v1', K_SOUND = 'letterfield.sound.v1', K_SOUND_VOL = 'letterfield.soundvol.v1', K_MUSIC = 'letterfield.music.v1', K_MUSIC_VOL = 'letterfield.musicvol.v1', K_LIST = 'letterfield.list.v1', K_OUTBOX = 'letterfield.outbox.v1';
 const K_INITIALS = 'games.initials';  // shared with the other games' leaderboards
 const K_PASS = 'letterfield.surveyPass.v1';
 // The shared survey (see worker/SURVEY.md), on the leaderboard Worker. With
@@ -2540,7 +2553,11 @@ function drawRemnants(vx0, vy0, vx1, vy1, cs, SX, SY) {
 // A supernova makes a sound, and there's music to explore by. Nothing starts
 // before the first tap or key. The speaker button (or M) turns the sound off,
 // the note button (or B) turns the music on: it starts off.
-let soundOn = LS.get(K_SOUND) !== '0', musicOn = LS.get(K_MUSIC) === '1', gestured = false, ac = null, acOut = null;
+let soundOn = LS.get(K_SOUND) !== '0', musicOn = LS.get(K_MUSIC) === '1', gestured = false, ac = null, acOut = null, fxOut = null;
+// How loud sound effects are, 5 to 100 (100, where they always played, to
+// start); 0 on the slider is off, which keeps this for next time.
+let soundVol = (v => (Number.isInteger(v) && v >= 5 && v <= 100 ? v : 100))(Number(LS.get(K_SOUND_VOL)));
+const fxLevel = () => (soundVol / 100) ** 2;
 const novaBuses = new Set();
 // The audio context, made on first use and shared by sound and music.
 function audioCtx() {
@@ -2554,6 +2571,10 @@ function audioCtx() {
     if (!AC) return null;
     try { ac = new AC(); } catch (_) { return null; }
     acOut = audioOut(ac);
+    // Sound effects go through a gain of their own, the mixer's Effects slider.
+    fxOut = ac.createGain();
+    fxOut.gain.value = fxLevel();
+    fxOut.connect(acOut);
   }
   wakeCtx();
   return ac;
@@ -2598,20 +2619,41 @@ document.addEventListener('visibilitychange', () => {
 function playNova(far, pan = null) {
   const a = startAudio();
   if (!a) return;
-  const bus = pan === null ? novaSound(a, acOut, a.currentTime + .03, far) : distantSound(a, acOut, a.currentTime + .03, pan);
+  const bus = pan === null ? novaSound(a, fxOut, a.currentTime + .03, far) : distantSound(a, fxOut, a.currentTime + .03, pan);
   novaBuses.add(bus);
   setTimeout(() => novaBuses.delete(bus), NOVA_END + 2000);
 }
-const soundBtn = $('#sound');
+// The mixer's Effects row: its icon switches sound effects off and back on at
+// their level, and its slider sets the level, 0 switching them off and
+// anything else on.
+const soundBtn = $('#sound'), soundVolEl = $('#soundVol');
+function showSoundVol() {
+  const v = soundOn ? soundVol : 0;
+  soundVolEl.value = String(v);
+  soundVolEl.style.setProperty('--v', v + '%');
+  soundVolEl.setAttribute('aria-valuetext', v ? `Sound effects volume ${v}%` : 'Sound effects off');
+}
 function setSound(on) {
   soundOn = on;
   LS.set(K_SOUND, on ? '1' : '0');
   soundBtn.setAttribute('aria-pressed', String(on));
-  if (on) startAudio();
+  showSoundVol();
+  if (on) { startAudio(); if (fxOut) fxOut.gain.value = fxLevel(); }
   else { for (const b of novaBuses) b.gain.value = 0; novaBuses.clear(); }
 }
+function setSoundVol(v) {
+  v = Math.max(0, Math.min(100, Math.round(v)));
+  if (!v) { if (soundOn) setSound(false); else showSoundVol(); return; }
+  soundVol = v;
+  LS.set(K_SOUND_VOL, String(v));
+  if (!soundOn) { setSound(true); return; }
+  showSoundVol();
+  if (fxOut) fxOut.gain.setTargetAtTime(fxLevel(), ac.currentTime, .03);
+}
 soundBtn.setAttribute('aria-pressed', String(soundOn));
+showSoundVol();
 soundBtn.addEventListener('click', () => setSound(!soundOn));
+soundVolEl.addEventListener('input', () => { gestured = true; setSoundVol(+soundVolEl.value); });
 
 /* ---------- Music ---------- */
 // Three pieces, made as they play, so none loops or has a seam: Drift, slow
@@ -2957,13 +2999,12 @@ function startMusic() {
   musicNow = playMusic(a);
   if (document.hidden) musicNow.hush();
 }
-const musicBtn = $('#music'), musicVolEl = $('#musicVol'), musicVolOut = $('#musicVolOut');
+const musicBtn = $('#music'), musicVolEl = $('#musicVol');
 function showMusicVol() {
   const v = musicOn ? musicVol : 0;
   musicVolEl.value = String(v);
   musicVolEl.style.setProperty('--v', v + '%');
   musicVolEl.setAttribute('aria-valuetext', v ? `Music volume ${v}%` : 'Music off');
-  musicVolOut.textContent = String(v);
 }
 // A move of the slider, or [ and ]: 0 switches the music off, anything else
 // switches it on at that level.
@@ -3657,7 +3698,8 @@ function peekAt(px, py) {
   peekEl.style.setProperty('--h', hue);
   peekEl.hidden = false;
   const r = peekEl.getBoundingClientRect();
-  const left = px + 14 + r.width > W - 8 ? px - 14 - r.width : px + 14, top = py + 16 + r.height > H - 8 ? py - 12 - r.height : py + 16;
+  // Its side is chosen from the map's width, which stops at the docked notes.
+  const left = px + 14 + r.width > W - dock - 8 ? px - 14 - r.width : px + 14, top = py + 16 + r.height > H - 8 ? py - 12 - r.height : py + 16;
   peekEl.style.transform = `translate(${Math.round(left)}px, ${Math.round(top + mapTop)}px)`;
 }
 canvas.addEventListener('pointermove', e => {
@@ -3696,7 +3738,7 @@ window.addEventListener('keydown', e => {
     return;
   }
   if (inNotes || e.metaKey || e.ctrlKey || e.altKey) return;
-  if (e.target === musicVolEl && /^(Arrow|Page|Home$|End$)/.test(e.key)) return;  // the slider's own keys
+  if ((e.target === musicVolEl || e.target === soundVolEl) && /^(Arrow|Page|Home$|End$)/.test(e.key)) return;  // a slider's own keys
   const step = 180 / cam.cs, OX = cam.x, OY = cam.y;
   const k = e.key.length === 1 ? e.key.toLowerCase() : e.key;
   switch (k) {
@@ -3712,6 +3754,7 @@ window.addEventListener('keydown', e => {
     case 'b': setMusic(!musicOn); break;
     case '[': case ']': setMusicVol((musicOn ? musicVol : 0) + (k === ']' ? 10 : -10)); break;
     case 'h': goHome(); break;
+    case 'l': goLastFind(); break;
     default: return;
   }
   e.preventDefault();
@@ -3872,8 +3915,9 @@ function updateLegend() {
     }
   }
   items.sort((a, b) => a.dist - b.dist);
-  legendCount.textContent = items.length ? `${items.length} left` : '';
   const shown = items.slice(0, 14).sort((a, b) => (a.w.w < b.w.w ? -1 : a.w.w > b.w.w ? 1 : 0));
+  // "14 of 21" when the list names only the nearest; "9 left" when it names them all.
+  legendCount.textContent = !items.length ? '' : items.length > shown.length ? `${shown.length} of ${items.length}` : `${items.length} left`;
   const sig = shown.map(i => i.w.key).join('|') + (shown.length ? '' : ' ' + !!gone);
   if (sig === legendSig) return;
   legendSig = sig;
@@ -4186,6 +4230,7 @@ function showCount(all = [...found.values()]) {
   const longest = done.reduce((m, e) => (!m || e.w.length > m.w.length ? e : m), null);
   notesBadge.textContent = $('#tWords').textContent = done.length;
   notesBadge.hidden = !done.length;
+  $('#lastFind').hidden = !all.length;
   $('#tTerr').textContent = new Set(done.map(e => fdiv(e.x, RC) + ',' + fdiv(e.y, RC))).size;
   $('#tLong').textContent = longest ? longest.w : '—';
 }
@@ -4291,6 +4336,15 @@ $('#zoomOut').addEventListener('click', () => flyTo(cam.x, cam.y, cam.cs / 1.6, 
 const defaultCs = () => (W < 700 ? 32 : 38);
 function goHome() { flyTo(6, 6, defaultCs()); }
 $('#home').addEventListener('click', goHome);
+// Last find flies to your newest find and pulses it, as tapping it in the
+// notes does. It joins the tools with your first find.
+const lastFindBtn = $('#lastFind');
+function goLastFind() {
+  let last = null;
+  for (const e of found.values()) if (!last || e.t > last.t) last = e;
+  if (last) goToEntry(last);
+}
+lastFindBtn.addEventListener('click', goLastFind);
 
 // The tools button opens its stack and a second tap shuts it, as do Escape and
 // a tap on the map. It always starts shut. A single boolean, so no machine:

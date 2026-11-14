@@ -981,6 +981,29 @@ def test_hovering_names_surveyors_and_who_charted_a_word(page: Page, site_url, e
     assert errors == []
 
 
+def test_a_hover_card_beside_the_docked_notes_opens_on_the_map_side(page: Page, site_url, errors):
+    open_game(page, site_url, FakeSurvey(presence=[["kid1", "KID", 9.5, 7.0]]))
+    expect(page.locator("#survey")).to_have_attribute("data-state", "live")
+    assert page.evaluate("document.body.classList.contains('docked')")
+    # The caret 150px from the map's right edge, where the notes start: room
+    # for the card in the window, but not on the map.
+    page.evaluate("""() => {
+      const lf = window.__lf;
+      lf.cam.x = 10 - ((innerWidth - 340) / 2 - 150) / lf.cam.cs;
+      lf.cam.y = 7.5;
+      dispatchEvent(new Event('resize'));
+    }""")
+    x, y = page.evaluate(SCREEN_OF, [10, 7.5])
+    assert 1280 - 340 - 170 < x < 1280 - 340 - 130
+    page.mouse.move(x, y)
+    peek = page.locator("#peek")
+    expect(peek).to_have_text("KIDsurveying here · right-click for emotes")
+    box = peek.bounding_box()
+    assert box["x"] + box["width"] <= x, "it opens to the pointer's left"
+    assert box["x"] + box["width"] <= 1280 - 340, "clear of the docked notes"
+    assert errors == []
+
+
 def test_word_list_gives_no_hints_on_the_shared_survey(page: Page, site_url, errors):
     open_game(page, site_url, FakeSurvey())
     expect(page.locator("#survey")).to_be_visible()

@@ -253,38 +253,83 @@ HIDE_TAB = """hidden => {
 LEVEL_IS = "v => window.__lf.music() && Math.abs(window.__lf.music().level - v) < 1e-3"
 
 
-def test_music_volume_slider_is_always_under_the_music_button(page: Page, site_url, errors):
+def test_the_tools_are_three_groups_and_a_mixer(page: Page, site_url, errors):
     page.add_init_script(COUNT_AUDIO)
     page.set_viewport_size({"width": 375, "height": 740})
     page.goto(f"{site_url}/letterfield#debug")
     page.wait_for_function("window.__lf")
     open_tools_quietly(page)
-    slider, music = page.get_by_role("slider", name="Music volume"), page.locator("#music")
-    # There with the music off, at 0, so the stack keeps its size.
-    expect(slider).to_be_visible()
-    expect(slider).to_have_value("0")
+    stack = page.locator("#toolStack")
+    music, slider = page.locator("#music"), page.get_by_role("slider", name="Music volume")
+    sound, effects = page.locator("#sound"), page.get_by_role("slider", name="Sound effects volume")
+    # Zoom in one row, the places, then a row each for sound effects and music:
+    # an icon that switches it, its name and a slider for how loud.
+    expect(page.locator(".tool-zoom")).to_contain_text("Zoom")
+    expect(page.locator("#home")).to_have_accessible_name("Map centre")
+    expect(page.locator("#lastFind")).to_be_hidden()  # until there's a find to fly back to
+    expect(page.locator(".tool-mix")).to_have_text(["Effects", "Music"])
+    expect(effects).to_have_value("100")
+    expect(slider).to_have_value("0")  # the music's off, so its slider's at 0
     expect(slider).to_have_attribute("aria-valuetext", "Music off")
     page.wait_for_timeout(300)  # done popping up
-    stack = page.locator("#toolStack").bounding_box()
-    assert page.locator("#toolStack #musicVol").count() == 1
-    box, btn = page.locator("#musicVolRow").bounding_box(), music.bounding_box()
-    assert abs(box["y"] - btn["y"] - btn["height"]) < 1, "right under the music button"
-    assert box["height"] >= 44 and slider.bounding_box()["height"] >= 40
-    assert stack["x"] >= 0 and stack["x"] + stack["width"] <= 375
+    box = stack.bounding_box()
+    for row in page.locator(".tool-mix").all():
+        assert row.bounding_box()["height"] >= 44
+    assert slider.bounding_box()["height"] >= 40 and effects.bounding_box()["height"] >= 40
+    assert box["x"] >= 0 and box["x"] + box["width"] <= 375
     assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
 
-    # The button switches the music on at the level it always had.
+    # Music's icon switches it on at the level it always had, and off; the stack keeps its size.
     music.click()
     expect(slider).to_have_value("75")
     expect(slider).to_have_attribute("aria-valuetext", "Music volume 75%")
     page.wait_for_function(LEVEL_IS, arg=.45, timeout=8000)
-    same = lambda b: all(abs(b[k] - stack[k]) < 1 for k in stack)
-    assert same(page.locator("#toolStack").bounding_box()), "the stack keeps its size"
-    # And off again: the slider drops to 0, and the stack still keeps its size.
+    same = lambda b: all(abs(b[k] - box[k]) < 1 for k in box)
+    assert same(stack.bounding_box()), "the stack keeps its size"
     music.click()
     expect(slider).to_have_value("0")
     assert page.evaluate("window.__lf.music()") is None
-    assert same(page.locator("#toolStack").bounding_box())
+
+    # Sound effects work the same way: 0 is off, and the icon brings them back where they were.
+    effects.fill("40")
+    expect(effects).to_have_attribute("aria-valuetext", "Sound effects volume 40%")
+    assert page.evaluate("localStorage.getItem('letterfield.soundvol.v1')") == "40"
+    effects.fill("0")
+    expect(sound).to_have_attribute("aria-pressed", "false")
+    expect(effects).to_have_attribute("aria-valuetext", "Sound effects off")
+    sound.click()
+    expect(sound).to_have_attribute("aria-pressed", "true")
+    expect(effects).to_have_value("40")
+    page.reload()
+    page.wait_for_function("window.__lf")
+    expect(page.locator("#soundVol")).to_have_value("40")
+    assert errors == []
+
+
+def test_last_find_joins_the_tools_and_flies_to_your_newest_find(page: Page, site_url, errors):
+    without_worker(page, site_url, "letterfield")
+    page.set_viewport_size({"width": 1280, "height": 900})
+    page.goto(f"{site_url}/letterfield#debug")
+    page.click("#coachOk")
+    expect(page.locator("#notesToggle")).to_have_attribute("title", "Field notes (N)")
+    page.click("#toolsBtn")
+    expect(page.locator("#lastFind")).to_be_hidden()
+    words = page.evaluate("window.__lf.chunk(0, 0).words.slice(0, 2).map(o => [o.w, o.x, o.y, o.d])")
+    for w in words:
+        page.evaluate("([w, x, y, d]) => window.__lf.collect(w, x, y, d, false)", w)
+    last = page.locator("#lastFind")
+    expect(last).to_be_visible()
+    expect(last).to_have_attribute("title", "Last find (L)")
+    # Far away, it flies back to the newest find, as its row in the notes would.
+    page.evaluate("() => { window.__lf.cam.x = 900; window.__lf.cam.y = -700; dispatchEvent(new Event('resize')); }")
+    last.click()
+    w, x, y, d = words[1]
+    page.wait_for_function(f"Math.abs(window.__lf.cam.x - {x}) < 12 && Math.abs(window.__lf.cam.y - {y}) < 12", timeout=8000)
+    # And L does the same from the keyboard.
+    page.evaluate("() => { window.__lf.cam.x = -500; window.__lf.cam.y = 400; dispatchEvent(new Event('resize')); }")
+    page.locator("#map").focus()
+    page.keyboard.press("l")
+    page.wait_for_function(f"Math.abs(window.__lf.cam.x - {x}) < 12 && Math.abs(window.__lf.cam.y - {y}) < 12", timeout=8000)
     assert errors == []
 
 
@@ -976,6 +1021,34 @@ def test_the_word_list_can_name_every_word_left_in_the_territory(page: Page, sit
     assert errors == []
 
 
+def test_the_word_bar_counts_what_it_names_and_only_buttons_look_tappable(page: Page, site_url, errors):
+    without_worker(page, site_url, "letterfield")  # alone, so in view the words are buttons
+    page.set_viewport_size({"width": 1280, "height": 900})
+    page.goto(f"{site_url}/letterfield#debug")
+    page.wait_for_function("window.__lf")
+    page.click("#coachOk")
+    view, whole = page.locator("#listView"), page.locator("#listWhole")
+    expect(view).to_have_text("In view")
+    expect(whole).to_have_text("Territory")
+    count, chips = page.locator("#legendCount"), page.locator("#legendList .chip")
+    # Zoomed out, more words are in view than the bar names: it says how many of them it shows.
+    page.evaluate("() => { window.__lf.cam.cs = 14; dispatchEvent(new Event('resize')); }")
+    expect(count).to_have_text(re.compile(r"^14 of \d+$"))
+    assert int(count.inner_text().split()[-1]) > 14
+    expect(chips).to_have_count(14)
+    # Zoomed in, it names them all, and says how many are left.
+    page.evaluate("() => { window.__lf.cam.cs = 48; dispatchEvent(new Event('resize')); }")
+    expect(count).to_have_text(re.compile(r"^\d+ left$"))
+    expect(chips).to_have_count(int(count.inner_text().split()[0]))
+    # Words to tap have a border; the territory's list, which can't be tapped, is plain words.
+    border = "el => getComputedStyle(el).borderTopColor"
+    assert page.locator("#legendList button.chip").first.evaluate(border) != "rgba(0, 0, 0, 0)"
+    whole.click()
+    expect(page.locator("#legendList span.chip").first).to_be_visible()
+    assert page.locator("#legendList span.chip").first.evaluate(border) == "rgba(0, 0, 0, 0)"
+    assert errors == []
+
+
 @pytest.mark.parametrize("size", [(375, 740), (1280, 900)], ids=["phone", "desktop"])
 def test_the_title_box_always_shows_how_many_words_are_found(page: Page, site_url, errors, size):
     without_worker(page, site_url, "letterfield")
@@ -1106,7 +1179,7 @@ def test_the_tools_drop_down_from_their_button_and_go_again(page: Page, site_url
     button.click()
     expect(button).to_have_attribute("aria-expanded", "true")
     expect(stack).to_be_visible()
-    expect(page.locator("#zoomIn")).to_be_focused()
+    expect(page.locator("#zoomOut")).to_be_focused()  # the zoom row's first button
     page.wait_for_timeout(300)  # done popping up
     box, tools = stack.bounding_box(), button.bounding_box()
     assert box["y"] >= tools["y"] + tools["height"] and box["y"] + box["height"] <= bar["y"], "it drops from its button, clear of the word list"
