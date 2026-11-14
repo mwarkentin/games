@@ -33,7 +33,7 @@ Line numbers are as of commit 7bae950 and drift as the files change.
 | 18 | Sharing the Supernovas page gives out a dead link | b: a Supernovas card in the share Worker | To build |
 | 19 | "Live" on views that don't update | No badge: "So far" on any period still running; the hour still updates quietly | To build |
 | 20 | On a phone, the words come last | a with c: words straight after the chart, its supernova note under it | To build |
-| 21 | The hour view uses a day's controls; the log's header | A new header: a way back, a tab bar for what's listed, periods as tabs, the card's title as navigator | To build; ‹ before the first word still open |
+| 21 | The hour view uses a day's controls; the log's header | A new header (a way back, tabs for what's listed, periods as tabs, the card's title as navigator); b with d: ‹ stops at the first word | To build |
 | 22–29 | | Open | |
 
 ## The game
@@ -597,7 +597,17 @@ and one paragraph at the foot explains seven things.
   - On a phone, the first numbers come 336px down instead of 468px.
   - **Machines:** none new; the tabs show what the address already says
     (Mine, `?supernovas`), and nothing waiting moves them.
-- **Still open:** b and c, the ‹ that goes back before the first word.
+- **And b with d**, for the ‹ that went back before the first word (into
+  "Nobody charted a word this day", period after period): ‹ stops at the
+  period holding the first word, as › stops at the present. The first
+  word's day is only known once the log answers (it can come before the
+  day the log began, since sectors sent older words when they first woke),
+  so a new `span` machine (asking, known, failed) keeps ‹ working until
+  it's known, and if the answer fails. An empty period before the first
+  word, reached by a link, says "The survey log starts on Oct 22, 2026"
+  with a link to that day, once the answer is in. The year chart keeps its
+  twelve months (c not taken). `span` joins the machines table in
+  AGENTS.md.
 
 ### 22. A new guild's page says "No such guild"
 
