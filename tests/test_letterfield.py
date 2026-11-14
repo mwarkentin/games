@@ -1021,6 +1021,43 @@ def test_the_word_list_can_name_every_word_left_in_the_territory(page: Page, sit
     assert errors == []
 
 
+# Where each part of each row in the field notes sits, up and down: the
+# middle of its marker, word, time, book and share button.
+ROW_MIDDLES = """() => [...document.querySelectorAll('#finds li.row, #novaList li.row')].map(li => {
+  const mid = sel => { const el = li.querySelector(sel); if (!el) return null; const r = el.getBoundingClientRect(); return r.top + r.height / 2; };
+  return { w: li.querySelector('.find-w').textContent, second: !!li.querySelector('.find-meta'),
+    at: ['.find-dot, .nova-star', '.find-w', '.find-when', '.find-define', '.find-share'].map(mid).filter(v => v !== null) };
+})"""
+
+
+@pytest.mark.parametrize("size", [(375, 740), (1280, 900)], ids=["phone", "desktop"])
+def test_every_part_of_a_find_sits_on_its_words_line(page: Page, site_url, errors, size):
+    """A second line under a word ("charted by ZED") made its row taller, and the book and share
+    buttons, centred on the whole row, sat below the word's line."""
+    without_worker(page, site_url, "letterfield")
+    page.set_viewport_size({"width": size[0], "height": size[1]})
+    page.goto(f"{site_url}/letterfield#debug")
+    page.wait_for_function("window.__lf")
+    page.evaluate("""() => {
+      const [a, b] = window.__lf.chunk(0, 0).words, t = Date.now();
+      localStorage.setItem('letterfield.finds.v4', JSON.stringify([
+        { w: a.w, x: a.x, y: a.y, d: a.d, t: t - 60000 },
+        { w: b.w, x: b.x, y: b.y, d: b.d, t, b: 'ZED' }]));
+      localStorage.setItem('letterfield.coach.v1', '1');
+    }""")
+    page.reload()
+    page.wait_for_function("window.__lf && window.__lf.found.size === 2")
+    if page.locator("#notesToggle").get_attribute("aria-expanded") != "true":
+        page.click("#notesToggle")
+    expect(page.locator("#finds .find-meta")).to_have_text("charted by ZED")
+    page.locator("#notes").evaluate("e => Promise.all(e.getAnimations({ subtree: true }).map(a => a.finished))")
+    rows = page.evaluate(ROW_MIDDLES)
+    assert [r["second"] for r in rows] == [True, False], rows
+    for r in rows:
+        assert len(r["at"]) == 5 and max(r["at"]) - min(r["at"]) <= 1, r
+    assert errors == []
+
+
 def test_the_word_bar_counts_what_it_names_and_only_buttons_look_tappable(page: Page, site_url, errors):
     without_worker(page, site_url, "letterfield")  # alone, so in view the words are buttons
     page.set_viewport_size({"width": 1280, "height": 900})
