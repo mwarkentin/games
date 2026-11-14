@@ -18,7 +18,8 @@ Line numbers are as of commit 7bae950 and drift as the files change.
 | 3 | Sync told three ways, and falsely after a recovery code | Each setting shown once, beside its control; Claude code removed | Built in #101 |
 | 4 | "Show me on the list" also stops guild credit | Remove the option: everyone online is listed | To build |
 | 5 | Four different counts of who's online | a: one count, in the badge and the list's line | To build |
-| 6–29 | | Open | |
+| 6 | Nothing on a phone's map says the survey is offline | b with d: the title says it; waiting claims kept in storage | To build |
+| 7–29 | | Open | |
 
 ## The game
 
@@ -159,7 +160,7 @@ checks the sector you're in, the panel any sector, so they can disagree.
   reads the existing `link` and `pass` machines. d: the `claim` machines
   restored from storage on load, with a test (find a word offline, reload,
   come online, expect the claim) that fails today.
-- **Decided:** open.
+- **Decided: b with d.**
 
 ### 7. Carets and circles only explain themselves to a mouse
 
