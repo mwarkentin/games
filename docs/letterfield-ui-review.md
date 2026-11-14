@@ -34,7 +34,8 @@ Line numbers are as of commit 7bae950 and drift as the files change.
 | 19 | "Live" on views that don't update | No badge: "So far" on any period still running; the hour still updates quietly | To build |
 | 20 | On a phone, the words come last | a with c: words straight after the chart, its supernova note under it | To build |
 | 21 | The hour view uses a day's controls; the log's header | A new header (a way back, tabs for what's listed, periods as tabs, the card's title as navigator); b with d: ‹ stops at the first word | To build |
-| 22–29 | | Open | |
+| 22 | A new guild's page says "No such guild" | a plus c: named, "hasn't charted a word yet"; its Timelapse link waits for a first word | To build |
+| 23–29 | | Open | |
 
 ## The game
 
@@ -611,12 +612,25 @@ and one paragraph at the foot explains seven things.
 
 ### 22. A new guild's page says "No such guild"
 
+"Our words in the survey log" shows from the moment a guild is started, but
+the log only learns a guild's name from its members' words, so until one is
+charted the page says "No such guild". The timelapse, following such a
+guild, quietly plays everyone's words.
+
 - **a. "Nothing charted yet", with the name passed in the link.**
-  *Recommended.*
+  *Recommended,* with c's part on the guild's page.
 - **b. The timelapse says "No words from this guild yet".** Machine: a new
   `follow` (off, asking, on, unknown, failed).
-- **c. Hide the game's link until the guild has words.**
-- **Decided:** open.
+- **c. Hide the game's link until the guild has words** (in the game, a new
+  question to the log on every visit to your page; on the guild's log page,
+  which knows, only its Timelapse link).
+- **Decided: a plus c's part on the guild's page.** The game's link carries
+  the guild's name as its three word numbers (checked in range by the log,
+  so a doctored link can only show a name made of guild words), and the
+  page says "The Cobalt Compass Society hasn't charted a word yet. Its
+  members' words show here as they chart them." On that page the header's
+  Timelapse link waits for the guild's first word. The game's own link
+  stays, since it now lands on a page that names the guild. No new machine.
 
 ### 23. Moving between the game, log and timelapse loses your place
 
