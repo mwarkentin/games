@@ -637,10 +637,13 @@ def test_world_map_shows_where_people_are_and_flies_there(page: Page, site_url, 
     expect(page.locator("#surveyMap summary")).to_have_text("Universe map")
     expect(page.locator("#worldNote")).to_have_text("")  # who's online is the Surveyors button's to say
     expect(page.locator("#surveyText")).to_contain_text("Universe: 177 of 1,119,752 charted")
-    # Darker where charted: the territory at the origin is drawn stronger than an untouched one.
+    # Darker where charted: the territory at the origin is drawn stronger than an untouched one,
+    # once the map is drawn (a pixel the paper's colour, never left clear).
     shade = """([tx, ty]) => { const c = document.getElementById('worldMap'), g = c.getContext('2d');
       const cell = c.width / 100, [r, gr, b] = g.getImageData((tx + 48.5) * cell, (ty + 48.5) * cell, 1, 1).data;
       return r + gr + b; }"""
+    page.wait_for_function("""() => { const c = document.getElementById('worldMap');
+      return c.width > 0 && c.getContext('2d').getImageData(1, 1, 1, 1).data[3] === 255; }""")
     assert page.evaluate(shade, [0, 0]) < page.evaluate(shade, [10, 10])
 
     # Tapping the map flies to that territory.

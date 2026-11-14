@@ -2057,6 +2057,7 @@ function drawWorld() {
 async function refreshWorld() {
   clearTimeout(worldTimer); worldTimer = 0;
   if (!surveyApi || !surveyMapEl.open || !notesOpen || surveyPaused) return;
+  drawWorld();  // what's known already (a new player's start asked for it), at once, then the latest
   if (await fetchWorld()) { drawWorld(); renderSurvey(); }
   else worldNote.textContent = 'Couldn’t load the world map.';
   if (surveyMapEl.open) worldTimer = setTimeout(refreshWorld, 20000);
