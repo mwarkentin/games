@@ -1944,8 +1944,8 @@ function viewPath() {
   const t = document.documentElement.dataset.theme;
   const dark = (t ? t === 'dark' : matchMedia('(prefers-color-scheme: dark)').matches) ? 'd/' : '';
   if (f.kind === 'territory') return `/v/${dark}territory/${f.rx},${f.ry}`;
-  if (f.kind === 'novas') return null;  // no card of its own yet: the log's own link
-  const base = `/v/${dark}${f.kind}/${f.key}`, { period: p, start: s } = state;
+  // Supernovas have no key: their card is the period's.
+  const base = f.kind === 'novas' ? `/v/${dark}novas` : `/v/${dark}${f.kind}/${f.key}`, { period: p, start: s } = state;
   if (p === 'all') return `${base}/all`;
   const hour = p === 'hour' ? 'T' + String(new Date(s).getHours()).padStart(2, '0') : '';
   return `${base}/${p}/${isoDay(s)}${hour}/${fdiv(s, HOUR)}-${fdiv(endOf(p, s) - 1, HOUR) + 1}`;

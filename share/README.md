@@ -94,8 +94,8 @@ and `worker_domains.tf` there), in this order:
 
 ## Survey log views
 
-A surveyor's, theme's, guild's or territory's page of `letterfield-log.html` has a
-Share button too. With `SHARE_URL` set in that page, Share hands out this
+A surveyor's, theme's, guild's or territory's page of `letterfield-log.html`,
+and its Supernovas tab, have a Share button too. With `SHARE_URL` set in that page, Share hands out this
 Worker's `/v/` address for the view instead of the page's own, and attaches
 no picture of its own, since the link's card is one (`src/view.js`):
 
@@ -105,6 +105,7 @@ GET /v/theme/<th>/<period>/<when>/<from>-<to>            a theme's
 GET /v/guild/<lid>/<period>/<when>/<from>-<to>           a guild's, by its log id (never its code or tag)
 GET /v/surveyor/<initials>/all, /v/theme/<th>/all        all time (and /v/guild/<lid>/all)
 GET /v/territory/<rx>,<ry>                               a territory (all time), a supernova once it's gone off
+GET /v/novas/<period>/<when>/<from>-<to>, /v/novas/all   the Supernovas tab: a period's supernovas, or all time's
 GET /v/d/…, ….png                                        dark; the card itself
 ```
 
@@ -125,6 +126,13 @@ GET /v/d/…, ….png                                        dark; the card itse
 - **What it shows** is the page's own share picture, `shareImage()` in
   `letterfield-log.html`: whose view, the period by its dates, three
   numbers, and the latest words with their themes' dots.
+- **Supernovas** are counted from `/v1/survey/log/novas/<from>/<to>`: how
+  many, the latest and the quickest, and the latest supernovas' last words
+  in their themes' colours, with the page's own line as the description.
+  The page sends people on to `/letterfield-log?supernovas` for that period.
+- **A guild's page** sends people to the guild's page in the log with its
+  name as `?name=<a>-<b>-<c>` (its three word numbers), so the page names it
+  before the log answers.
 - **A supernova** has a card of its own (`src/nova.js`): a territory whose
   every hidden word is charted, drawn as the game's supernova just after
   the burst, in the territory theme's hue. A white-hot core with a cross of

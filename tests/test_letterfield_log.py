@@ -1083,3 +1083,33 @@ def test_rows_and_buttons_are_big_enough_for_a_finger_and_names_wrap(page: Page,
     assert name.evaluate("e => e.scrollWidth <= e.clientWidth + 1")
     assert page.evaluate("document.documentElement.scrollWidth") <= 375
     assert errors == []
+
+
+def test_supernovas_share_the_share_workers_card_of_the_period(page: Page, site_url, errors):
+    fake = FakeSurveyLog([ACORN, BIRCH, OAK], PLACES, THEMES, totals=NOVA_TOTALS)
+    page.add_init_script(SHARE_SHEET)
+    open_log(page, site_url, fake, query="&share=https://share.test/&supernovas#debug")
+    expect(page.locator(".nova")).to_have_count(1)
+    page.wait_for_function("window.__log.share()?.run === window.__log.state.run")
+    page.click("#shareNovas")
+    page.wait_for_function("window.__shared")
+    shared = page.evaluate("window.__shared")
+    assert shared["url"] == "https://share.test/v/novas/all"
+    assert shared["text"] == (
+        "1 territory went supernova in Letterfield’s shared survey so far, every hidden word charted. Latest: Monet Reach."
+    )
+    assert shared["files"] == []
+    # This week, on a dark page: pinned by its Monday and the UTC hours asked for, as the others are.
+    page.evaluate("window.__shared = null")
+    page.emulate_media(color_scheme="dark")
+    page.locator("#periods [data-p=week]").click()
+    expect(page.locator(".nova")).to_have_count(1)
+    page.wait_for_function("window.__log.share()?.run === window.__log.state.run")
+    page.click("#shareNovas")
+    page.wait_for_function("window.__shared")
+    week = NOW_MS // HOUR_MS - 4 * 24 - 15
+    assert f"/novas/{week}/{week + 7 * 24}" in fake.requests
+    assert (
+        page.evaluate("window.__shared.url") == f"https://share.test/v/d/novas/week/2026-11-02/{week}-{week + 7 * 24}"
+    )
+    assert errors == []

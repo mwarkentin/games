@@ -268,3 +268,40 @@ describe('a view\'s page and card', () => {
     assert.equal((await get('/v/nobody', { SITE_URL: SITE })).status, 404);
   });
 });
+
+describe('the Supernovas card', () => {
+  const NOVA = (rx, ry, at, w, first, th) => [rx, ry, at, w, 5, 7, 0, 'ZED', first, 112, 3, 'ZED', 60, th];
+  const AT = Date.UTC(2026, 10, 11, 15);
+  const ANSWER = {
+    count: 2,
+    hours: [[Math.floor(AT / 3_600_000), 2]],
+    novas: [NOVA(1, 0, AT, 'OAK', AT - 30 * 60_000, 0), NOVA(0, 0, AT - 3_600_000, 'ACORN', AT - 3 * 86_400_000, 11)],
+    places: { '1,0': 'Monet Reach', '0,0': 'Acorn Hollow' },
+    themes: { 0: ['Old Masters', 56], 11: ['Forest', 40] },
+  };
+
+  test('has an address of its own, pinned like the others, and sends people to the Supernovas tab', () => {
+    const v = parseView(`/v/novas/${WEEK}`, NOW);
+    assert.deepEqual([v.kind, v.period, v.from, v.to], ['novas', 'week', WEEK_FROM, WEEK_FROM + 168]);
+    assert.equal(parseView('/v/d/novas/all.png', NOW).png, true);
+    assert.equal(parseView('/v/d/novas/all', NOW).dark, true);
+    assert.equal(pagePath(v), '/letterfield-log?supernovas&period=week&day=2026-11-09');
+    assert.equal(pagePath(parseView('/v/novas/all', NOW)), '/letterfield-log?supernovas');
+    assert.equal(logPaths(v, null, NOW), `/v1/survey/log/novas/${WEEK_FROM}/${WEEK_FROM + 168}`);
+    assert.equal(logPaths(parseView('/v/novas/all', NOW), { first: LOG_BEGAN_HOUR - 24 }, NOW), `/v1/survey/log/novas/${LOG_BEGAN_HOUR - 24}/${Math.floor(NOW / 3_600_000) + 1}`);
+    for (const path of ['/v/novas/undefined/all', '/v/novas/week/2026-11-10/1-2', '/v/novas']) assert.equal(parseView(path, NOW), null, path);
+  });
+
+  test('counts them, names the latest and the quickest, and shows their last words in their themes\' colours', () => {
+    const v = parseView(`/v/novas/${WEEK}`, NOW);
+    const s = summarize(v, ANSWER, NOW);
+    assert.equal(s.name, 'Supernovas');
+    assert.deepEqual(s.stats, [['Supernovas', '2'], ['Latest', 'Monet Reach'], ['Quickest', '30 minutes']]);
+    assert.deepEqual(s.words, [{ w: 'OAK', hue: 56 }, { w: 'ACORN', hue: 40 }]);
+    assert.equal(s.line, '2 territories went supernova in Letterfield’s shared survey in the week of 9 Nov 2026, every hidden word charted. Latest: Monet Reach.');
+    assert.equal(summarize(v, { count: 0, novas: [], hours: [] }, NOW).line, 'No territories went supernova in Letterfield’s shared survey in the week of 9 Nov 2026.');
+    const svg = viewSvg(v, s);
+    assert.ok(svg.includes('>LETTERFIELD · SURVEY LOG · SUPERNOVAS<') && svg.includes('>SUPERNOVAS<') && svg.includes('>OAK<'));
+    assert.ok(viewSvg(v, summarize(v, { count: 0, novas: [] }, NOW)).includes('>NONE IN THIS PERIOD<'));
+  });
+});
