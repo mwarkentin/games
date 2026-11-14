@@ -11,6 +11,7 @@ from __future__ import annotations
 import hashlib
 import re
 
+import pytest
 from playwright.sync_api import Page, expect
 
 from fake_survey import FakeSurvey
@@ -261,6 +262,36 @@ def test_a_caret_has_a_menu_of_emotes(page: Page, site_url, errors):
     expect(menu).to_be_hidden()
     expect(page.locator("#map")).to_be_focused()
     page.mouse.click(at["x"] - 150, at["y"] + 120, button="right")
+    expect(menu).to_be_hidden()
+    assert errors == []
+
+
+def long_press(page: Page, x: float, y: float, ms: int = 800) -> None:
+    """Holds a finger at (x, y) for `ms`: real touch events, as a phone sends them."""
+    cdp = page.context.new_cdp_session(page)
+    cdp.send("Input.dispatchTouchEvent", {"type": "touchStart", "touchPoints": [{"x": x, "y": y}]})
+    page.wait_for_timeout(ms)
+    cdp.send("Input.dispatchTouchEvent", {"type": "touchEnd", "touchPoints": []})
+
+
+@pytest.mark.browser_context_args(has_touch=True, is_mobile=True)
+def test_a_long_press_on_a_caret_opens_its_menu_and_selects_nothing(page: Page, site_url, errors):
+    fake = FakeSurvey(presence=[KIM_CARET])
+    start(page, site_url, fake, viewport={"width": 375, "height": 740})
+    page.wait_for_function(f"window.__lf.carets().includes('{KIM[0]}')")
+    menu = page.locator("#caretMenu")
+    at = page.evaluate(f"window.__lf.caretXY('{KIM[0]}')")
+    long_press(page, at["x"], at["y"])
+    expect(menu).to_be_visible()
+    expect(menu.locator("#caretWho")).to_have_text("KIM")
+    assert page.evaluate("getSelection().toString()") == ""
+    # On an iPhone the press used to select text or open the callout instead, which
+    # takes the touch away before the menu opens. No iPhone browser runs here, so check
+    # what stops it: nothing on the game's surface selects, while the drawers still do.
+    assert page.evaluate("getComputedStyle(document.body).userSelect") == "none"
+    assert page.evaluate("getComputedStyle(document.getElementById('notes')).userSelect") == "text"
+    # A touch anywhere else puts it away, and a long press away from any caret opens nothing.
+    long_press(page, at["x"] - 120, at["y"] + 90)
     expect(menu).to_be_hidden()
     assert errors == []
 

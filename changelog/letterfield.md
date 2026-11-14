@@ -1,6 +1,7 @@
 ## 2026-11-14
 
 - Each of your settings shows in one place now: on your page in the Surveyors drawer, beside the switch or button that changes it. Your row at the top of the list says what's on your page instead of repeating them, the foot of your field notes just offers feedback, and Stop syncing is where it says your notes and settings are backed up.
+- On a phone, a long press on another surveyor on the map opens their emotes and mute again, instead of selecting text.
 
 ## 2026-11-13
 

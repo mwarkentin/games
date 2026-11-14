@@ -19,7 +19,8 @@ Line numbers are as of commit 7bae950 and drift as the files change.
 | 4 | "Show me on the list" also stops guild credit | Remove the option: everyone online is listed | To build |
 | 5 | Four different counts of who's online | a: one count, in the badge and the list's line | To build |
 | 6 | Nothing on a phone's map says the survey is offline | b with d: the title says it; waiting claims kept in storage | To build |
-| 7–29 | | Open | |
+| 7 | Carets and circles only explain themselves to a mouse | b: two lines of copy; long press fixed on phones | Copy to build; long press built in #101 |
+| 8–29 | | Open | |
 
 ## The game
 
@@ -173,7 +174,13 @@ outlined (someone else's) versus filled (yours).
 - **b. One line on the intro card.** *Recommended.* Circling an outlined
   word already says who charted it; what's missing is what the marks mean.
 - **c. Initials beside carets when zoomed in.** Text on the map, crowding.
-- **Decided:** open.
+- **Decided: b.** The first-visit card says "Coloured bars are other
+  surveyors. Outlined words are already charted.", and the Surveyors list's
+  foot says how to long-press (or right-click) a surveyor on the map.
+- **Found on the owner's phone:** a long press on the map selected text
+  instead of opening the caret's menu. Nothing on the game's surface now
+  selects as text or opens the phone's callout (the drawers still do), and
+  a test long-presses a caret with real touch events. Built in #101.
 
 ### 8. Emotes are unlabelled icons on a phone
 
