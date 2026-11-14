@@ -92,8 +92,13 @@ button:focus-visible,a:focus-visible,#map:focus-visible{outline:2px solid var(--
 .cartouche{position:fixed;top:var(--top);left:var(--gl);display:flex;align-items:stretch;max-width:calc(100% - 276px);outline:1px solid var(--rule);outline-offset:-5px;padding:3px}
 .brand{padding:9px 14px 8px 12px;border-right:1px solid var(--rule);display:flex;flex-direction:column;justify-content:center;gap:5px}
 .brand h1{margin:0;font:800 27px/.85 var(--f-display);letter-spacing:.05em;text-transform:uppercase}
-.brand-short{display:none}
 .brand small{font:400 9px/1 var(--f-mono);letter-spacing:.16em;text-transform:uppercase;color:var(--muted)}
+/* On a tablet the notes open over the map: the title steps out of their way,
+   leaving the territory the room before them. */
+@media (min-width:700px){
+  body.notes-open:not(.docked) .brand{position:absolute;width:1px;height:1px;padding:0;border:0;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
+  body.notes-open:not(.docked) .cartouche{max-width:calc(100% - var(--notes-w) - 40px)}
+}
 .territory{padding:8px 14px 8px 12px;display:grid;grid-template-columns:auto minmax(0,1fr);column-gap:10px;row-gap:3px;align-items:center;min-width:0}
 .swatch{grid-row:1 / span 2;width:12px;height:12px;border-radius:50%;background:var(--c);box-shadow:0 0 0 3px color-mix(in srgb, var(--c) 22%, transparent)}
 .t-name{font:700 20px/1 var(--f-display);letter-spacing:.05em;text-transform:uppercase;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -326,10 +331,6 @@ li.row > button{margin-top:2px}
 @keyframes blink{to{opacity:.25}}
 .survey{margin:12px 18px 0;padding:10px 12px 11px;border:1px solid var(--rule);border-radius:7px}
 .survey-head{display:flex;align-items:center;gap:8px;margin-bottom:7px}
-.survey-dot{width:7px;height:7px;border-radius:50%;background:var(--muted);flex:none}
-.survey[data-state="live"] .survey-dot{background:hsl(150 var(--mark-s) var(--mark-l))}
-.survey[data-state="offline"] .survey-dot{background:var(--danger)}
-.survey[data-state="connecting"] .survey-dot{animation:blink 1s infinite alternate}
 .survey-text{margin:0;font:400 11.5px/1.5 var(--f-mono);color:var(--muted);white-space:pre-line}
 .survey-sign{display:flex;align-items:center;gap:8px;margin-top:10px}
 .survey-sign label{flex:1;min-width:0;font-size:13px}
@@ -580,12 +581,9 @@ body.docked .nova{left:calc((100% - var(--notes-w)) / 2)}
   .topbar .cartouche{position:static;flex:1;min-width:0;max-width:none;padding:2px;outline-offset:-4px;box-shadow:none}
   .topbar .corner{position:static;z-index:auto}
   .topbar .tools-btn,.topbar .notes-toggle,.topbar .people-btn{box-shadow:none}
-  /* The title is LF, so the territory has the room. */
-  .brand{padding:7px 9px 6px 9px}
-  .brand h1{font-size:21px;letter-spacing:.04em}
-  .brand-full{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
-  .brand-short{display:inline}
-  .brand small{display:none}
+  /* No title on a phone, so the territory has the room: the tab and the Home
+     Screen icon say what this is, and a screen reader still hears it. */
+  .brand{position:absolute;width:1px;height:1px;padding:0;border:0;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
   .territory{padding:6px 8px 6px 8px;column-gap:7px;row-gap:2px}
   .swatch{width:9px;height:9px}
   .t-name{font-size:15.5px}
@@ -607,7 +605,6 @@ body.docked .nova{left:calc((100% - var(--notes-w)) / 2)}
   .notes,.people,.toast,.bar,.tool-stack,.tool-stack > *,.tools-btn,.tools-btn svg circle{transition:none!important}
   .find-def[data-define="loading"] .def-note{animation:none}
   .nova.show b{animation:none}
-  .survey-dot{animation:none!important}
   #music[aria-pressed="true"] svg{animation:none}
 }
 /* Until the page has laid itself out, nothing slides: the notes, the bar and
@@ -622,7 +619,7 @@ body.settling, body.settling *{transition:none!important}
 <div class="topbar" id="topbar">
   <header class="cartouche card">
     <div class="brand">
-      <h1><span class="brand-full">Letterfield</span><span class="brand-short" aria-hidden="true">LF</span></h1>
+      <h1>Letterfield</h1>
       <small id="brandSub">Endless word search</small>
     </div>
     <div class="territory mark" id="territory">
@@ -684,11 +681,11 @@ body.settling, body.settling *{transition:none!important}
     <div><dt>Longest</dt><dd id="tLong">—</dd></div>
   </dl>
   <section class="survey" id="survey" data-state="connecting" aria-label="Shared survey" hidden>
-    <div class="survey-head"><span class="survey-dot" aria-hidden="true"></span><span class="eyebrow">Shared survey</span></div>
+    <div class="survey-head"><span class="eyebrow">Shared survey</span></div>
     <p class="survey-text" id="surveyText"></p>
     <details class="survey-map" id="surveyMap">
-      <summary>World map</summary>
-      <canvas id="worldMap" width="200" height="200" aria-label="Map of the shared world: charted territories are darker, dots are players. Tap to fly there."></canvas>
+      <summary>Universe map</summary>
+      <canvas id="worldMap" width="200" height="200" aria-label="Map of the universe: charted territories are darker, dots are surveyors. Tap to fly there."></canvas>
       <p class="survey-map-note" id="worldNote"></p>
     </details>
     <a class="survey-log" href="/letterfield-log">Survey log: every word charted, hour by hour</a>
@@ -727,7 +724,7 @@ body.settling, body.settling *{transition:none!important}
     <div class="people-body">
       <button type="button" class="you-row" id="youRow"><span class="you-av" id="youRowAv" aria-hidden="true"></span><span class="you-text"><b id="youRowName"></b><span id="youRowLine"></span></span><svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg></button>
       <p class="who-status" id="whoStatus" aria-live="polite"></p>
-      <ol class="who-list" id="whoList" aria-label="Surveyors in the shared world, nearest first"></ol>
+      <ol class="who-list" id="whoList" aria-label="Surveyors online, nearest first"></ol>
       <button type="button" class="who-more" id="whoMore" hidden>Show more</button>
       <p class="who-foot">Tap a name to fly there. More emotes and mute are under ⋯.</p>
     </div>
@@ -1913,6 +1910,14 @@ function goneSupernova(rx, ry, o) {
 const nearView = (rx, ry) => Math.max(Math.abs(rx - fdiv(Math.floor(cam.x), RC)), Math.abs(ry - fdiv(Math.floor(cam.y), RC))) <= 3;
 // Where the shared survey stands, worked out afresh from the links and the
 // pass every time, so the panel's dot and its words always agree.
+// What the title says while the sector you're in isn't live: joining…, offline
+// or crowded (too many surveyors to take more), or nothing when it's live.
+function hereStatus(cx, cy) {
+  const home = links.get(sectorKey(cx, cy));
+  if (home && home.m.is('live')) return '';
+  const s = surveyStatus();
+  return s === 'full-world' || s === 'full-sector' ? 'crowded' : s === 'offline' || s === 'alone' ? 'offline' : 'joining…';
+}
 function surveyStatus() {
   let live = false, failed = false;
   for (const l of links.values()) {
@@ -1945,16 +1950,13 @@ function renderSurvey() {
   surveyEl.dataset.state = status === 'live' ? 'live' : SURVEY_STATUS[status][0];
   // The live count ticks up with claims seen nearby between the Atlas's totals, and never runs backwards.
   if (world) worldShown = Math.min(world.total, Math.max(worldShown, world.charted + worldExtra));
-  if (world && W >= 700) $('#brandSub').textContent = `${worldShown.toLocaleString()} of ${world.total.toLocaleString()} charted`;
+  // Live, the panel keeps to what nothing else says: the universe's count and
+  // yours. The title says how this territory is going, and the Surveyors
+  // button who's online. Otherwise it says what's wrong.
   if (status !== 'live') { surveyText.textContent = SURVEY_STATUS[status][1]; return; }
-  let others = 0, firsts = 0;
-  for (const l of links.values()) if (l.m.is('live')) others += Math.max(0, l.n - (l.counted ? 1 : 0));
+  let firsts = 0;
   for (const e of found.values()) if (e.f) firsts++;
-  const cx = Math.floor(cam.x), cy = Math.floor(cam.y), rx = fdiv(cx, RC), ry = fdiv(cy, RC), here = links.get(sectorKey(cx, cy));
-  const [done, total] = here && here.m.is('live') ? territoryProgress(rx, ry) : [0, 0];
-  surveyText.textContent = `Live · ${others} other surveyor${others === 1 ? '' : 's'} nearby\n` +
-    (world ? `World: ${worldShown.toLocaleString()} of ${world.total.toLocaleString()} charted · ${world.players.toLocaleString()} online\n` : '') +
-    (total ? `${regionName(rx, ry)}: ${done} of ${total} charted\n` : '') +
+  surveyText.textContent = (world ? `Universe: ${worldShown.toLocaleString()} of ${world.total.toLocaleString()} charted\n` : '') +
     `${firsts} word${firsts === 1 ? '' : 's'} charted first by you`;
 }
 
@@ -2018,8 +2020,7 @@ function drawWorld() {
     g.strokeStyle = C.paper; g.lineWidth = px / 60; g.stroke();
     g.strokeStyle = C.danger; g.lineWidth = px / 150; g.stroke();
   }
-  const online = worldMap.sectors.reduce((a, q) => a + q[2], 0);
-  worldNote.textContent = `${online.toLocaleString()} surveyor${online === 1 ? '' : 's'} in ${worldMap.sectors.length} sector${worldMap.sectors.length === 1 ? '' : 's'}`;
+  worldNote.textContent = '';  // the Surveyors button counts who's online
 }
 async function refreshWorld() {
   clearTimeout(worldTimer); worldTimer = 0;
@@ -3737,14 +3738,23 @@ function updateHud() {
     if (notesOpen) drawWorld();  // moves "you are here" on the world map
   }
   tCoord.textContent = fmtCoord(cx, cy);
-  if (surveyApi) {
+  // How much of the territory is charted (or found, alone), on a phone just
+  // "3/113" to leave the theme room; while the survey isn't live here, what
+  // it's doing instead (see hereStatus).
+  const short = innerWidth < 700;
+  tCharted.hidden = false;
+  if (surveyApi && inSurveyArea(cx, cy)) {
     syncSurvey();
-    const l = links.get(sectorKey(cx, cy)), [done, total] = l && l.m.is('live') ? territoryProgress(rx, ry) : [0, 0];
-    tCharted.hidden = !total;
-    if (total) tCharted.textContent = ` · ${done}/${total} charted`;
+    const status = hereStatus(cx, cy);
+    if (status) tCharted.textContent = ` · ${status}`;
+    else {
+      const [done, total] = territoryProgress(rx, ry);
+      tCharted.innerHTML = short ? `<span aria-hidden="true"> · ${done}/${total}</span><span class="vh">, ${done} of ${total} words charted</span>` : ` · ${done}/${total} charted`;
+    }
   } else {
-    tCharted.hidden = false;
-    tCharted.textContent = ` · ${territoryFound(rx, ry)}/${territoryTotal(rx, ry)} found`;
+    if (surveyApi) syncSurvey();
+    const done = territoryFound(rx, ry), total = territoryTotal(rx, ry);
+    tCharted.innerHTML = short ? `<span aria-hidden="true"> · ${done}/${total}</span><span class="vh">, ${done} of ${total} words found</span>` : ` · ${done}/${total} found`;
   }
   updateLegend();
 }
@@ -4039,7 +4049,7 @@ function shareText(e) {
   const place = regionName(fdiv(e.x, RC), fdiv(e.y, RC));
   const word = e.s ? `${e.w}, a bonus ${THEMES[e.th].name.toLowerCase()} word,` : e.w;
   const lead = `I ${Date.now() - e.t < SHARE_JUST_MS ? 'just ' : ''}found ${word} in ${place} in Letterfield`;
-  if (e.f && e.n) return `${lead}, before anyone else. That was word ${e.n.toLocaleString()} of ${(world ? world.total : SURVEY_WORDS).toLocaleString()} on the shared map.`;
+  if (e.f && e.n) return `${lead}, before anyone else. That was word ${e.n.toLocaleString()} of ${(world ? world.total : SURVEY_WORDS).toLocaleString()} in the universe.`;
   if (e.f) return `${lead}, before anyone else.`;
   const nth = [...found.values()].filter(o => o.t <= e.t).length;
   return `${lead}. That’s word ${nth.toLocaleString()} in my field notes.`;
@@ -4641,7 +4651,7 @@ function renderWho() {
   let status;
   if (!whoData) status = st === 'failed' ? 'Couldn’t load the list. Trying again shortly.' : 'Looking for surveyors…';
   else {
-    status = whoData.n ? `${whoData.n.toLocaleString()} other surveyor${whoData.n === 1 ? '' : 's'} in the shared world, nearest first` : 'Nobody else is in the shared world right now.';
+    status = whoData.n ? `${whoData.n.toLocaleString()} other surveyor${whoData.n === 1 ? '' : 's'} online, nearest first` : 'Nobody else is surveying right now.';
     if (st === 'failed') status += ' · couldn’t refresh';
   }
   whoStatus.textContent = status;

@@ -75,7 +75,7 @@ def test_the_list_names_everyone_nearest_first_and_flies_to_them(page: Page, sit
         ]
     )
     expect(page.locator(".who-where").nth(3)).to_have_text(name_of(page, 7, -4))
-    expect(page.locator("#whoStatus")).to_have_text("5 other surveyors in the shared world, nearest first")
+    expect(page.locator("#whoStatus")).to_have_text("5 other surveyors online, nearest first")
     assert fake.list_asks[-1] == {"r": "0,0", "page": "0", "me": PID}  # asked from where we are, leaving us out
 
     # A row flies there: straight to the caret when one of our sectors shows it...
@@ -233,7 +233,7 @@ def test_the_list_and_emote_switches_tell_every_sector_and_are_remembered(page: 
 def test_presence_by_player_id_never_shows_us_to_ourselves(page: Page, site_url, errors):
     fake = FakeSurvey(presence=[[PID, "MLW", 6.0, 6.0], KIM_CARET])
     start(page, site_url, fake)
-    expect(page.locator("#surveyText")).to_contain_text("Live · 1 other surveyor nearby")
+    expect(page.locator("#survey")).to_have_attribute("data-state", "live")
     page.wait_for_function(f"window.__lf.carets().includes('{KIM[0]}')")
     assert page.evaluate("window.__lf.carets()") == [KIM[0]]
     assert errors == []
@@ -369,9 +369,8 @@ def test_the_surveyors_have_a_button_and_drawer_of_their_own(page: Page, site_ur
     expect(button).to_be_visible()
     # Nothing about surveyors is in the field notes now.
     assert page.locator("#notes #whoList, #notes #guildCard, #notes #surveyMe, #notes #pairCard").count() == 0
-    # On a phone the title is LF, and still Letterfield to a screen reader.
-    expect(page.locator(".brand-short")).to_have_text("LF")
-    expect(page.locator(".brand-short")).to_be_visible()
+    # On a phone there's no title, to leave the territory the room; it's still Letterfield to a screen reader.
+    assert page.evaluate("document.querySelector('.brand').getBoundingClientRect().width") <= 1
     expect(page.get_by_role("heading", level=1)).to_have_accessible_name("Letterfield")
     # P opens it, with the list; its count comes from the list.
     page.locator("#map").focus()

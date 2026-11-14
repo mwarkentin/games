@@ -982,7 +982,16 @@ def test_the_title_box_always_shows_how_many_words_are_found(page: Page, site_ur
     page.set_viewport_size({"width": size[0], "height": size[1]})
     page.goto(f"{site_url}/letterfield")
     page.click("#coachOk")
-    expect(page.locator("#tCharted")).to_have_text(re.compile(r"^ · 0/\d+ found$"))
+    count = page.locator("#tCharted")
+    if size[0] >= 700:
+        expect(count).to_have_text(re.compile(r"^ · 0/\d+ found$"))
+    else:
+        # On a phone just "0/113", leaving the theme room; a screen reader hears what it counts.
+        expect(count.locator("[aria-hidden=true]")).to_have_text(re.compile(r"^ · 0/\d+$"))
+        expect(count.locator(".vh")).to_have_text(re.compile(r"^, 0 of \d+ words found$"))
+        # No title on a phone, so the territory has the bar's room; a screen reader still hears it.
+        assert page.evaluate("document.querySelector('.brand').getBoundingClientRect().width") <= 1
+        expect(page.get_by_role("heading", name="Letterfield")).to_be_attached()
     # Even beside a long theme name, the count shows whole: the name gives way.
     page.evaluate("document.getElementById('tTheme').textContent = 'Pioneers of Science'")
     fits = page.evaluate("""() => {
@@ -993,6 +1002,24 @@ def test_the_title_box_always_shows_how_many_words_are_found(page: Page, site_ur
     assert fits
     # On a phone the grid reference makes room for it; a computer has room for both.
     expect(page.locator("#tCoord")).to_be_visible() if size[0] >= 700 else expect(page.locator("#tCoord")).to_be_hidden()
+    assert errors == []
+
+
+def test_on_a_tablet_the_title_makes_way_for_the_open_notes(page: Page, site_url, errors):
+    without_worker(page, site_url, "letterfield")
+    page.set_viewport_size({"width": 820, "height": 1180})
+    page.goto(f"{site_url}/letterfield#debug")
+    page.click("#coachOk")
+    expect(page.locator(".brand")).to_be_visible()  # with the notes shut, the title shows
+    page.click("#notesToggle")
+    page.locator("#notes").evaluate("e => Promise.all(e.getAnimations().map(a => a.finished))")
+    # Open over the map, the notes would cover the end of the title box: the
+    # Letterfield block steps aside, and the territory ends before the notes.
+    m = page.evaluate("""(() => {
+      const box = s => document.querySelector(s).getBoundingClientRect();
+      return { title: box('.cartouche').right, notes: box('#notes').left, brand: box('.brand').width };
+    })()""")
+    assert m["brand"] <= 1 and m["title"] <= m["notes"], m
     assert errors == []
 
 

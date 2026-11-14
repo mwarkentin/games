@@ -152,10 +152,9 @@ def test_shared_map_shows_other_surveyors_and_their_words(page: Page, site_url, 
     )
     open_game(page, site_url, fake)
     expect(page.locator("#survey")).to_be_visible()
-    expect(page.locator("#surveyText")).to_have_text(re.compile(
-        r"^Live · 2 other surveyors nearby\nWorld: 0 of 1,119,752 charted · 0 online\n"
-        r"\w[\w ]+: 1 of \d+ charted\n0 words charted first by you$"
-    ))
+    # The panel keeps to what nothing else says: the universe's count and yours.
+    # The title has this territory's, and the Surveyors button who's online.
+    expect(page.locator("#surveyText")).to_have_text("Universe: 0 of 1,119,752 charted\n0 words charted first by you")
     assert sorted(fake.sectors) == ["-1,-1", "-1,0", "0,-1", "0,0"]
     expect(page.locator("#tCharted")).to_have_text(re.compile(r"^ · 1/\d+ charted$"))
     eventually(page, lambda: len(fake.sent("me")) == 4 and fake.sent("pos"))
@@ -170,7 +169,6 @@ def test_shared_map_shows_other_surveyors_and_their_words(page: Page, site_url, 
     expect(page.locator("#tCharted")).to_have_text(re.compile(r"^ · 2/\d+ charted$"))
     w, x, y, d = words[1]
     assert fake.sent("claim") == [{"t": "claim", "w": w, "x": x, "y": y, "d": d, "sector": "0,0"}]
-    expect(page.locator("#surveyText")).to_contain_text("2 of")
     expect(page.locator("#surveyText")).to_contain_text("1 word charted first by you")
     open_notes(page)
     expect(page.locator("#finds .find-dot.first")).to_have_count(1)  # a ring says charted first
@@ -192,12 +190,12 @@ def test_a_word_charted_first_shares_where_it_came_in_the_worlds_count(page: Pag
       Object.defineProperty(navigator, 'share', { value: data => { window.__shared.push(data); return Promise.resolve(); }, configurable: true });
     """)
     open_game(page, site_url, fake)
-    expect(page.locator("#brandSub")).to_have_text("412,883 of 1,119,752 charted")
+    expect(page.locator("#surveyText")).to_contain_text("Universe: 412,883 of 1,119,752 charted")
     circle(page, word)
     expect(page.locator("#findSay")).to_contain_text("First to chart it")
     open_notes(page)
     page.locator("#finds").get_by_role("button", name=f"Share {word[0]}").click()
-    pattern = rf"I just found {word[0]} in [A-Z][a-z]+ [A-Z][a-z]+ in Letterfield, before anyone else\. That was word 412,884 of 1,119,752 on the shared map\."
+    pattern = rf"I just found {word[0]} in [A-Z][a-z]+ [A-Z][a-z]+ in Letterfield, before anyone else\. That was word 412,884 of 1,119,752 in the universe\."
     assert re.fullmatch(pattern, page.evaluate("window.__shared[0].text"))
     # The link goes to the share Worker, whose page carries a picture of the word.
     assert page.evaluate("window.__shared[0].url") == f"https://share.michaelwarkentin.com/f/f-{word[0].lower()}-{word[1]}-{word[2]}-{word[3]}"
@@ -567,7 +565,21 @@ def test_unreachable_survey_says_so_and_the_game_carries_on(page: Page, site_url
     expect(page.locator("#survey")).to_have_attribute("data-state", "offline")
     circle(page, hidden_words(page)[0])
     expect(page.locator("#notesBadge")).to_have_text("1", timeout=LANDS)
-    expect(page.locator("#tCharted")).to_be_hidden()
+    # The title says so too, where the territory's count would be.
+    expect(page.locator("#tCharted")).to_have_text(" · offline")
+
+
+def test_the_title_says_the_survey_is_joining_until_its_live(page: Page, site_url, errors):
+    fake = FakeSurvey(hold=lambda url: True)
+    open_game(page, site_url, fake, viewport={"width": 375, "height": 740})
+    eventually(page, lambda: fake.held)
+    expect(page.locator("#tCharted")).to_have_text(" · joining…")
+    fake.hold = None
+    fake.welcome()
+    # Live, it's this territory's count: on a phone just "0/113", leaving the theme room.
+    expect(page.locator("#tCharted [aria-hidden=true]")).to_have_text(re.compile(r"^ · 0/\d+$"))
+    expect(page.locator("#tCharted .vh")).to_have_text(re.compile(r"^, 0 of \d+ words charted$"))
+    assert errors == []
 
 
 def test_hidden_tab_leaves_the_survey(page: Page, site_url, errors):
@@ -608,10 +620,11 @@ def test_world_counter_ticks_up_as_words_are_charted(page: Page, site_url, error
     words = known_words(page, site_url)
     fake = FakeSurvey(totals={"charted": 412_883, "total": AREA_WORDS, "players": 3_201})
     open_game(page, site_url, fake)
-    expect(page.locator("#surveyText")).to_contain_text("World: 412,883 of 1,119,752 charted · 3,201 online")
-    expect(page.locator("#brandSub")).to_have_text("412,883 of 1,119,752 charted")
+    expect(page.locator("#surveyText")).to_contain_text("Universe: 412,883 of 1,119,752 charted")
     circle(page, words[3])
-    expect(page.locator("#brandSub")).to_have_text("412,884 of 1,119,752 charted")
+    expect(page.locator("#surveyText")).to_contain_text("Universe: 412,884 of 1,119,752 charted")
+    # The line under the title says what the game is; the panel keeps the count.
+    expect(page.locator("#brandSub")).to_have_text("Endless word search")
     assert errors == []
 
 
@@ -621,8 +634,9 @@ def test_world_map_shows_where_people_are_and_flies_there(page: Page, site_url, 
     open_game(page, site_url, fake)
     open_notes(page)
     page.click("#surveyMap summary")
-    expect(page.locator("#worldNote")).to_have_text("57 surveyors in 2 sectors")
-    expect(page.locator("#surveyText")).to_contain_text("World: 177 of 1,119,752 charted · 57 online")
+    expect(page.locator("#surveyMap summary")).to_have_text("Universe map")
+    expect(page.locator("#worldNote")).to_have_text("")  # who's online is the Surveyors button's to say
+    expect(page.locator("#surveyText")).to_contain_text("Universe: 177 of 1,119,752 charted")
     # Darker where charted: the territory at the origin is drawn stronger than an untouched one.
     shade = """([tx, ty]) => { const c = document.getElementById('worldMap'), g = c.getContext('2d');
       const cell = c.width / 100, [r, gr, b] = g.getImageData((tx + 48.5) * cell, (ty + 48.5) * cell, 1, 1).data;
@@ -657,6 +671,7 @@ def test_full_sector_says_so(page: Page, site_url, errors):
     fake = FakeSurvey(full="sector")
     open_game(page, site_url, fake)
     expect(page.locator("#surveyText")).to_have_text("This part of the map is full right now. Your finds still save in this browser.")
+    expect(page.locator("#tCharted")).to_have_text(" · crowded")  # where the count would be: too many surveyors here
     circle(page, hidden_words(page)[0])
     expect(page.locator("#notesBadge")).to_have_text("1", timeout=LANDS)
     page.wait_for_timeout(1500)
@@ -943,7 +958,7 @@ def test_hovering_names_surveyors_and_who_charted_a_word(page: Page, site_url, e
         presence=[["kid1", "KID", 9.5, 7.0], ["odd", "<b>", 3.4, 9.2]],
     )
     open_game(page, site_url, fake)
-    expect(page.locator("#surveyText")).to_contain_text("2 other surveyors nearby")
+    expect(page.locator("#survey")).to_have_attribute("data-state", "live")
     peek = page.locator("#peek")
     expect(peek).to_be_hidden()
 
@@ -984,7 +999,7 @@ def test_the_game_joins_the_survey_on_the_worker_by_default(page: Page, site_url
     page.set_viewport_size({"width": 1280, "height": 900})
     page.goto(f"{site_url}/letterfield#debug")
     expect(page.locator("#survey")).to_be_visible()
-    expect(page.locator("#surveyText")).to_contain_text("Live")
+    expect(page.locator("#survey")).to_have_attribute("data-state", "live")
     page.wait_for_function("[...window.__lf.links.values()].some(l => l.you)")
     assert errors == []
 
