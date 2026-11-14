@@ -38,7 +38,8 @@ Line numbers are as of commit 7bae950 and drift as the files change.
 | 23 | Moving between the game, log and timelapse loses your place | a: a link back to the page you came from steps back in history | To build |
 | 24 | Numbers nobody explains | a with c: the third tile fits the view; the UTC note under the Top lists heading | To build |
 | 25 | One idea, many names, across the three pages | a: a glossary in AGENTS.md; "members" for a guild's people, "the universe" for the shared world | To build |
-| 26–29 | | Open | |
+| 26 | The timelapse's territory card uses the theme as its name | a: "A Festivals territory" until the name comes, and the replay's date for "by then" | To build |
+| 27–29 | | Open | |
 
 ## The game
 
@@ -726,11 +727,18 @@ and "finds"; "hidden words" and plain "words"; "stray"; "timelapse" and
 
 ### 26. The timelapse's territory card uses the theme as its name
 
+Until the log answers with the territory's name, the card shows its theme in
+the name's place ("FESTIVALS"), and keeps it there if the answer fails. Its
+line mixes two moments: "12 hidden words charted by then · 34 of 113 now".
+
 - **a. "A Festivals territory" until the name arrives.** *Recommended.*
 - **b. Two lines, "By Nov 5" and "Now".** Machine: a `chip` machine, since
   loading and failure would read differently.
-- **c. Send names with the replay.**
-- **Decided:** open.
+- **c. Send names with the replay** (names come from the world generator,
+  which the timelapse doesn't have, so the Worker would send them).
+- **Decided: a**, with the replay's date in place of "by then": "12 hidden
+  words charted by Nov 5 · 34 of 113 now". No machine; the card already
+  keeps only the newest answer by counting its requests.
 
 ### 27. Timelapse status is faint or wrong
 
