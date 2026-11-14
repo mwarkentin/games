@@ -86,7 +86,8 @@ header p{margin:8px 0 0;color:var(--muted);max-width:40ch}
 .summary .caption .sep{padding:0 .4em}
 .summary .note{margin:6px 0 0;text-align:center;color:var(--muted);font:400 12px/1.5 var(--f-ui)}
 .link{border:0;background:transparent;padding:10px 2px;margin:-10px 0;font:inherit;color:var(--accent);cursor:pointer;text-decoration:underline;text-underline-offset:3px}
-.pick{position:relative;display:inline-block}
+.pick{position:relative;display:inline-block;padding:10px 2px;margin:-10px 0;vertical-align:baseline}
+.pick .link{padding:0;margin:0}
 /* The date picker sits over "Pick a day", so a tap on a phone opens it. */
 .pick input{position:absolute;inset:0;width:100%;height:100%;opacity:0;border:0;padding:0;font-size:16px;cursor:pointer}
 .share-row{display:flex;justify-content:center;margin-top:10px}
@@ -101,9 +102,10 @@ header p{margin:8px 0 0;color:var(--muted);max-width:40ch}
    pulse otherwise. */
 .ph{color:transparent!important;background:color-mix(in srgb, var(--rule) 50%, var(--panel));border-radius:4px}
 .tile .ph{width:70%}
-/* A tile's label and note take two lines on a phone, one on a computer. */
-.ph-tile{min-height:80px}
-@media (min-width:640px){.ph-tile{min-height:62px}}
+/* Tiles hold one height, placeholders and numbers alike, so nothing moves as
+   they come: on a phone a label or note can take two lines, on a computer one. */
+.tiles .tile{min-height:99px}
+@media (min-width:640px){.tiles .tile{min-height:78px}}
 .tile b.ph{width:45%}
 .ph-plot{height:96px;border-radius:4px 4px 0 0}
 .ph-card{min-height:13rem}
@@ -142,7 +144,7 @@ header p{margin:8px 0 0;color:var(--muted);max-width:40ch}
 
 /* The year: twelve small month calendars, one cell a day, darker for more. */
 .year{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px 10px;margin-top:14px}
-.mcal button.mname{border:0;background:transparent;padding:0 0 4px;font:500 11px/1 var(--f-mono);color:var(--ink);cursor:pointer;text-transform:uppercase;letter-spacing:.06em}
+.mcal button.mname{display:block;border:0;background:transparent;padding:0 0 4px;font:500 11px/1 var(--f-mono);color:var(--ink);cursor:pointer;text-transform:uppercase;letter-spacing:.06em}
 .mcal button.mname:disabled{color:var(--muted);cursor:default}
 .cells{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:2px}
 .cell{aspect-ratio:1;border:0;padding:0;border-radius:2px;background:color-mix(in srgb, var(--rule) 55%, var(--panel));cursor:default;min-width:0}
@@ -334,7 +336,7 @@ header p{margin:8px 0 0;color:var(--muted);max-width:40ch}
     <a class="jump" id="jump" href="#tops" hidden>Top lists ↓</a>
   </section>
   <!-- Kept here, out of sight, while the caption, which is redrawn, has no place for them. -->
-  <div hidden id="spare"><span class="pick" id="pick"><button type="button" class="link" id="pickBtn" tabindex="-1" aria-hidden="true">Pick a day</button><input type="date" id="dayInput" aria-label="Pick a day"></span>
+  <div hidden id="spare"><span class="pick" id="pick"><button type="button" class="link" id="pickBtn" tabindex="-1" aria-hidden="true">Pick&nbsp;a&nbsp;day</button><input type="date" id="dayInput" aria-label="Pick a day"></span>
   <button type="button" class="link" id="up">↑ The whole day</button></div>
 
   <!-- The words come first on a phone, and the top lists after them; on a
@@ -492,8 +494,11 @@ function machine(name, moves, state, { el = document.documentElement, onMove } =
 // The first word's hour is only known once the log answers, so ‹, which
 // stops at the period holding it (as › stops at the present), keeps working
 // until then, and if the answer fails.
-let logFirst = LOG_BEGAN, firstWord = LOG_BEGAN, spanAsked = null;
+let logFirst = LOG_BEGAN, firstWord = LOG_BEGAN, anyWord = false, spanAsked = null;
 const allStart = () => { const d = new Date(logFirst); return new Date(d.getFullYear(), d.getMonth(), 1).getTime(); };
+// Where the log starts, as everything that says so says it: the first word's
+// day once the log has said, as "Before the log" links to it.
+const logSince = () => (Span.is('known') && anyWord ? `the first word, on ${fullDate.format(firstWord)}` : `the log began on ${utcDate.format(LOG_BEGAN)}`);
 // Whether the log is known to start after a period ends.
 const beforeFirst = end => Span.is('known') && end <= firstWord;
 function askSpan() {
@@ -502,7 +507,7 @@ function askSpan() {
     if (Span.is('failed')) Span.go('asking');
     spanAsked = cachedJSON('/v1/survey/log/span', false).then(span => {
       if (!span || typeof span !== 'object') throw new Error('bad span');
-      if (Number.isInteger(span.first)) { logFirst = Math.min(LOG_BEGAN, span.first * HOUR); firstWord = span.first * HOUR; }
+      if (Number.isInteger(span.first)) { logFirst = Math.min(LOG_BEGAN, span.first * HOUR); firstWord = span.first * HOUR; anyWord = true; }
       Span.go('known');
     }).catch(() => { spanAsked = null; if (Span.is('asking')) Span.go('failed'); });
   }
@@ -1390,7 +1395,7 @@ function titles(p, s, e) {
   }
   if (p === 'month') return [monthFmt.format(s), ''];
   if (p === 'year') return [String(new Date(s).getFullYear()), ''];
-  return ['All time', `Since ${logFirst < LOG_BEGAN ? 'the first word, on' : 'the log began on'} ${utcDate.format(logFirst)}`];
+  return ['All time', `Since ${logSince()}`];
 }
 
 // Names seen so far, so a view of one can say whose it is before its own
@@ -1489,15 +1494,17 @@ function chrome() {
   $('#prev').setAttribute('aria-label', `${period === 'all' ? '' : 'The ' + period} before`);
   $('#next').setAttribute('aria-label', `${period === 'all' ? '' : 'The ' + period} after`);
   dayInput.value = isoDay(start);
-  const [title, caption] = titles(period, start, end);
+  const [title, caption] = focus?.kind === 'territory' ? ['Charted so far', ''] : titles(period, start, end);
   $('#sumTitle').textContent = title;
   $('#sumTitle').className = '';
   // Under the title: when it is, "So far" while it's still running (the
   // running hour reloads quietly, other periods once they end), and a way to
   // another day.
   const parts = [];
+  // A territory's caption (since its first word) holds its line until it comes.
+  if (focus?.kind === 'territory') parts.push('\u00a0');
   if (caption && !(novas && period === 'all')) parts.push(caption);  // Supernovas' note says when they start
-  if (period !== 'all' && end > now) parts.push('So far');
+  if (period !== 'all' && end > now) parts.push('So\u00a0far');
   $('#spare').append($('#up'), $('#pick'));
   if (period === 'hour') parts.push($('#up'));
   else if (period !== 'all') parts.push($('#pick'));
@@ -1507,7 +1514,7 @@ function chrome() {
   const note = $('#sumNote');
   note.hidden = !novas;
   if (novas) note.textContent = `Every territory gone supernova ${period === 'all'
-    ? `since ${logFirst < LOG_BEGAN ? 'the first word, on' : 'the log began on'} ${utcDate.format(logFirst)}`
+    ? `since ${logSince()}`
     : whenSaid(period, start, end)}.`;
   liveUntil = end > now && period !== 'all' ? end : 0;
   return end;
@@ -1611,7 +1618,7 @@ function placeholders() {
     const wrap = el('div', 'chart');
     wrap.append(el('div', 'ymax', '\u00a0'), block('div', 'ph-plot'), el('div', 'ticks', '\u00a0'));
     chartEl.replaceChildren(wrap);
-    if (p === 'all' && f?.kind !== 'novas') {
+    if (p === 'all' && !f) {  // only everyone's and mine draw the universe filling in
       const progress = el('div', 'chart');
       progress.append(el('div', 'ymax', '\u00a0'), block('div', 'meter'), block('div', 'ph-plot'));
       chartEl.append(progress);
@@ -1995,7 +2002,7 @@ async function renderTerritory(run, f, firsts) {
     ]);
   } else {
     $('#sumTitle').textContent = 'Charted so far';
-    $('#sumText').replaceChildren(entries.length ? `Since ${fullDate.format(entries.at(-1)[6])}` : '');
+    $('#sumText').replaceChildren(entries.length ? `Since ${fullDate.format(entries.at(-1)[6])}` : '\u00a0');
     tiles([
       ['Hidden words charted', `${t.charted.toLocaleString()} of ${t.total.toLocaleString()}`, `${share(t.charted)} of the territory`],
       ['Surveyors', people.size.toLocaleString(), 'by their initials'],

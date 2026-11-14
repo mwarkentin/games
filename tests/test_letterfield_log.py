@@ -77,7 +77,9 @@ def test_shows_the_days_words_hour_by_hour_newest_first(page: Page, site_url, er
 
     expect(page.locator("#sumTitle")).to_have_text("Today")
     # No badge: a period still running says "So far", with a way to another day.
-    expect(page.locator("#sumText")).to_have_text(re.compile(r"Friday, November 6, 2026\s*·\s*So far\s*·\s*Pick a day"))
+    expect(page.locator("#sumText")).to_have_text(
+        re.compile(r"Friday, November 6, 2026\s*·\s*So\sfar\s*·\s*Pick\sa\sday")
+    )
     expect(tile(page, 0)).to_contain_text("Words charted2")
     # A tie goes to the earlier hour.
     expect(tile(page, 1)).to_contain_text("Busiest hour2–3 PM1 word")
@@ -126,12 +128,12 @@ def test_an_hour_opens_minute_by_minute_and_the_running_one_says_so_far(page: Pa
     expect(tile(page, 1)).to_contain_text("Busiest minute2:10 PM1 word")
     expect(page.locator(".entry")).to_have_count(1)
     expect(page.locator(".entry")).to_contain_text("ACORN")
-    expect(page.locator("#sumText")).not_to_contain_text("So far")
+    expect(page.locator("#sumText")).not_to_contain_text(re.compile(r"So\sfar"))
     assert "period=hour" in page.url and "hour=14" in page.url
     # The next hour is the one still running.
     page.click("#next")
     expect(page.locator("#sumTitle")).to_have_text("3:00 PM – 4:00 PM")
-    expect(page.locator("#sumText")).to_contain_text("So far")
+    expect(page.locator("#sumText")).to_contain_text(re.compile(r"So\sfar"))
     expect(page.locator(".entry")).to_contain_text("MONET")
     expect(page.locator("#next")).to_be_disabled()
     page.click("#up")
@@ -147,7 +149,7 @@ def test_a_week_shows_its_days_and_who_and_where_charted_most(page: Page, site_u
     fake = FakeSurveyLog([ACORN, MONET, ZEUS], PLACES, THEMES)
     open_log(page, site_url, fake, query="&period=week")
     expect(page.locator("#sumTitle")).to_have_text("This week")
-    expect(page.locator("#sumText")).to_have_text(re.compile(r"^Nov 2 – Nov 8, 2026\s*·\s*So far\s*·\s*Pick a day$"))
+    expect(page.locator("#sumText")).to_have_text(re.compile(r"^Nov 2 – Nov 8, 2026\s*·\s*So\sfar\s*·\s*Pick\sa\sday$"))
     expect(tile(page, 0)).to_contain_text("Words charted3")
     expect(tile(page, 1)).to_contain_text("Busiest dayFri, Nov 62 words")
     expect(tile(page, 2)).to_have_text("Hidden words2plus 1 bonus word")
@@ -238,7 +240,8 @@ def test_all_time_draws_the_world_filling_in_month_by_month(page: Page, site_url
     expect(marks.nth(0)).to_have_attribute("aria-label", "By the end of November 2026: 4 · <0.01%")
     expect(marks.nth(2)).to_have_attribute("aria-label", "By the end of January 2027: 10 · <0.01%")
     expect(page.locator("#chart .ticks span").first).to_have_text("Nov ’26")
-    expect(page.locator("#sumText")).to_have_text("Since the log began on Nov 6, 2026")
+    # Where the log starts is said one way everywhere: the first word's day.
+    expect(page.locator("#sumText")).to_have_text("Since the first word, on Nov 11, 2026")
     # Eight themes, then the rest folded into one row with no bar of its own.
     themes_card = page.locator(".card", has_text="Themes")
     expect(themes_card.locator(".rank li")).to_have_count(9)
@@ -249,7 +252,7 @@ def test_all_time_draws_the_world_filling_in_month_by_month(page: Page, site_url
 
 def test_all_time_starts_with_the_first_word_logged(page: Page, site_url, errors):
     # Words a sector held from before the log began, sent when it woke.
-    early = [["ACORN", 5, 7, 0, 0, "OLD", int(datetime(2026, 9, 20, tzinfo=UTC).timestamp() * 1000), 11]]
+    early = [["ACORN", 5, 7, 0, 0, "OLD", int(datetime(2026, 9, 20, 12, tzinfo=UTC).timestamp() * 1000), 11]]
     fake = FakeSurveyLog(early + [ACORN, MONET], PLACES, THEMES)
     open_log(page, site_url, fake, query="&period=all")
     expect(page.locator("#sumText")).to_have_text("Since the first word, on Sep 20, 2026")
@@ -521,7 +524,7 @@ def test_a_live_hour_that_fails_to_refresh_keeps_its_words_and_tries_again(page:
     fake = FakeSurveyLog([ACORN, MONET, ZEUS], PLACES, THEMES)
     open_log(page, site_url, fake, query="&period=hour", running=True)
     expect(page.locator(".entry")).to_have_count(1)  # MONET, at 3:05
-    expect(page.locator("#sumText")).to_contain_text("So far")
+    expect(page.locator("#sumText")).to_contain_text(re.compile(r"So\sfar"))
     fake.fail = True
     asked = len(fake.requests)
     page.clock.fast_forward(21_000)  # the hour reloads every 20 s
@@ -545,11 +548,11 @@ def test_a_day_that_ends_on_screen_stops_saying_so_far(page: Page, site_url, err
     fake = FakeSurveyLog([ACORN, MONET, ZEUS], PLACES, THEMES)
     open_log(page, site_url, fake, now_ms=late, running=True)
     expect(page.locator("#sumTitle")).to_have_text("Today")
-    expect(page.locator("#sumText")).to_contain_text("So far")
+    expect(page.locator("#sumText")).to_contain_text(re.compile(r"So\sfar"))
     expect(page.locator("#next")).to_be_disabled()
     page.clock.fast_forward(60_000)  # midnight passes
     expect(page.locator("#sumTitle")).to_have_text("Yesterday")
-    expect(page.locator("#sumText")).not_to_contain_text("So far")
+    expect(page.locator("#sumText")).not_to_contain_text(re.compile(r"So\sfar"))
     expect(page.locator("#next")).to_be_enabled()
     assert "day=2026-11-06" in page.url
     expect(page.locator("html")).to_have_attribute("data-log", "ready")
@@ -559,12 +562,12 @@ def test_a_day_that_ends_on_screen_stops_saying_so_far(page: Page, site_url, err
 def test_an_hour_that_ended_while_the_page_was_hidden_stops_saying_so_far(page: Page, site_url, errors):
     fake = FakeSurveyLog([ACORN, MONET, ZEUS], PLACES, THEMES)
     open_log(page, site_url, fake, query="&period=hour", now_ms=NOW_MS + 29 * MINUTE, running=True)  # 3:59 PM
-    expect(page.locator("#sumText")).to_contain_text("So far")
+    expect(page.locator("#sumText")).to_contain_text(re.compile(r"So\sfar"))
     expect(page.locator("#next")).to_be_disabled()
     page.evaluate(HIDE, True)
     page.clock.fast_forward("05:00")
     page.evaluate(HIDE, False)  # back at 4:04
-    expect(page.locator("#sumText")).not_to_contain_text("So far")
+    expect(page.locator("#sumText")).not_to_contain_text(re.compile(r"So\sfar"))
     expect(page.locator("#next")).to_be_enabled()
     expect(page.locator("#sumTitle")).to_have_text("3:00 PM – 4:00 PM")
     assert errors == []
@@ -939,13 +942,13 @@ def test_back_keeps_working_if_the_log_cannot_say_where_it_starts(page: Page, si
 def test_pick_a_day_moves_the_period_on_screen_to_that_day(page: Page, site_url, errors):
     fake = FakeSurveyLog([ACORN, MONET, ZEUS], PLACES, THEMES)
     open_log(page, site_url, fake, query="&period=week")
-    expect(page.locator("#sumText").get_by_text("Pick a day")).to_be_visible()
+    expect(page.locator("#sumText")).to_contain_text(re.compile(r"Pick\sa\sday"))
     page.locator("#dayInput").fill("2026-10-28")  # a Wednesday
     expect(page.locator("#sumTitle")).to_have_text("Last week")
     assert "period=week" in page.url and "day=2026-10-26" in page.url
     # An hour has the way up to its day instead, and all time neither.
     page.locator("#periods [data-p=all]").click()
-    expect(page.locator("#sumText")).not_to_contain_text("Pick a day")
+    expect(page.locator("#sumText")).not_to_contain_text(re.compile(r"Pick\sa\sday"))
     expect(page.locator("#prev")).to_be_hidden()
     assert errors == []
 
@@ -977,7 +980,7 @@ def test_a_shared_link_draws_what_its_address_says_before_the_log_answers(page: 
     expect(page.locator("html")).to_have_attribute("data-log", "ready")
     expect(page.locator(".ph")).to_have_count(0)
     # The tiles and chart came in where their placeholders were, the same size.
-    assert abs(page.locator("#tiles").evaluate("e => e.getBoundingClientRect().height") - tiles_h) <= 8
+    assert abs(page.locator("#tiles").evaluate("e => e.getBoundingClientRect().height") - tiles_h) <= 1
     assert abs(page.locator("#chart .plot").evaluate("e => e.getBoundingClientRect().height") - chart_h) <= 1
     assert errors == []
 
@@ -1112,4 +1115,44 @@ def test_supernovas_share_the_share_workers_card_of_the_period(page: Page, site_
     assert (
         page.evaluate("window.__shared.url") == f"https://share.test/v/d/novas/week/2026-11-02/{week}-{week + 7 * 24}"
     )
+    assert errors == []
+
+
+HEIGHTS = (
+    "[...document.querySelectorAll('#tiles, #chart, #sumText')].map(e => Math.round(e.getBoundingClientRect().height))"
+)
+
+
+def test_someones_all_time_a_year_and_a_territory_keep_their_places_as_they_load(page: Page, site_url, errors):
+    page.set_viewport_size({"width": 375, "height": 740})
+    for query, title in [("&surveyor=ZED", "All time"), ("&period=year", "2026"), ("&territory=0,0", "Charted so far")]:
+        fake = FakeSurveyLog([ACORN, MONET, ZEUS], PLACES, THEMES)
+        held = Held(fake, lambda r: True)
+        page.unroute_all()
+        page.clock.set_fixed_time(NOW_MS / 1000)
+        fake.now_ms = NOW_MS
+        page.route(f"{SURVEY}/v1/survey/log/**", held.handle)
+        page.goto(f"{site_url}/letterfield-log?survey={SURVEY}{query}")
+        held.wait_for(page)
+        # The title says what's coming, and the tiles, chart and caption hold the space it needs.
+        expect(page.locator("#sumTitle")).to_have_text(title)
+        before = page.evaluate(HEIGHTS)
+        held.release()
+        expect(page.locator("html")).to_have_attribute("data-log", "ready")
+        expect(page.locator(".ph")).to_have_count(0)
+        expect(page.locator("#sumTitle")).to_have_text(title)
+        assert page.evaluate(HEIGHTS) == before, query
+    assert errors == []
+
+
+def test_all_of_pick_a_day_opens_the_date_picker(page: Page, site_url, errors):
+    page.set_viewport_size({"width": 375, "height": 740})
+    open_log(page, site_url, FakeSurveyLog([ACORN, MONET, ZEUS], PLACES, THEMES))
+    expect(page.locator("#sumText .pick")).to_be_visible()
+    box = page.locator("#sumText .pick").bounding_box()
+    hit = page.locator("#dayInput").bounding_box()
+    # The date input is the whole box, a finger's height, not a strip through its middle.
+    assert hit["height"] >= 38 and abs(hit["height"] - box["height"]) < 1 and abs(hit["y"] - box["y"]) < 1
+    # And "So far" stays on one line.
+    assert page.evaluate("[...document.querySelectorAll('#sumText')].every(e => !/So\\s*\\n/.test(e.innerText))")
     assert errors == []
