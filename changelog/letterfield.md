@@ -1,6 +1,7 @@
 ## 2026-11-14
 
 - Circling a word another surveyor charted first now offers “Add to notes”, to keep it in your field notes all the same. It's still theirs: it doesn't count as charted first by you.
+- On a phone, a long press on another surveyor's caret opens its menu again, instead of the phone selecting text or showing its copy bubble. The field notes, definitions and the Surveyors drawer can still be selected and copied.
 
 ## 2026-11-13
 
