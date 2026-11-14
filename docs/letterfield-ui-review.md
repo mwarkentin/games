@@ -24,7 +24,8 @@ Line numbers are as of commit 7bae950 and drift as the files change.
 | 9 | The word bar's chips, count and switch | a with b: plain tags, an honest count, a real switch | To build |
 | 10 | "Charted first" on nearly every entry, and messy rows | a with b; cards under day headings, a time on each row, rows on one grid | To build |
 | 11 | The theme cut to "Fe…" on a phone | b: "3/113" without "charted", and no LF mark on phones | To build |
-| 12–29 | | Open | |
+| 12 | "Origin" means nothing to most players | b and c: Map centre, and Last find once you have a find | To build |
+| 13–29 | | Open | |
 
 ## The game
 
@@ -283,12 +284,23 @@ count, "112/113").
 
 ### 12. "Origin" means nothing to most players
 
-- **a. "Back to start"**, flying to where this device first started.
-  *Recommended.*
-- **b. Label it with its grid reference.**
-- **c. "My last find".**
+It flies to the middle of Menorah Hollow, where the grid references count
+from. On the shared survey that's rarely where anyone started (new players
+start in the busiest crowd with room, or where a shared link pointed), and
+it's the oldest, most charted part of the map.
+
+- **a. "Back to start"**, flying to where this device first started, saved
+  on the first visit.
+- **b. "Map centre":** the same place, named for what it is.
+- **c. "Last find":** your newest find. *Recommended:* after flinging the
+  map, following a surveyor or opening an old find, it's where you were
+  hunting, and always somewhere you've been.
 - **Machines:** none.
-- **Decided:** open.
+- **Decided: b and c** (after mockups). "Map centre" (crosshair, H) is
+  always there; "Last find" (a pin, L) joins it, underneath, once you have a
+  find, rather than greyed out before one. It flies to your newest find and
+  pulses it, as tapping it in the notes does. The rest of the menu's shape
+  is taken up with 14.
 
 ### 13. Internal words show through
 
