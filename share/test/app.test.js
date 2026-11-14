@@ -307,3 +307,14 @@ describe('a territory gone supernova moments ago', () => {
     assert.equal(regionName(0, 1), 'Sodden Wold');
   });
 });
+
+describe('a guild\'s page', () => {
+  test('sends people to the guild\'s page in the log with its name, so it\'s named at once', async () => {
+    const env = {
+      SITE_URL: SITE,
+      LOG: { fetch: async () => Response.json({ words: 1, world: 1, name: 'Cobalt Compass Society', hue: 220, hours: [], entries: [['BIRCH', 7, 9, 0, 0, 'ZED', AT, 11]], themes: {} }) },
+    };
+    const html = await (await get('/v/guild/c0ba17c0ba/all', env)).text();
+    assert.match(html, /<meta http-equiv="refresh" content="0;url=https:\/\/games\.test\/letterfield-log\?guild=c0ba17c0ba&amp;name=11-0-0">/);
+  });
+});

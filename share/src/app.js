@@ -293,7 +293,7 @@ async function viewPage(request, env, ctx, v) {
   const description = s ? s.line : 'Every word charted in Letterfield’s shared survey: what, where, by whom and when.';
   const image = s ? `${url.origin}/v/${v.dark ? 'd/' : ''}${viewSlug(v)}.png?s=${encodeURIComponent(s.token)}` : `${site(env)}/previews/letterfield.jpg`;
   const alt = s ? `${name}'s page of Letterfield's survey log` : 'Letterfield';
-  return htmlPage({ title, description, image, alt, png: !!s, self: url.origin + url.pathname, target: `${site(env)}${pagePath(v)}`, linkText: `Open ${name} in Letterfield's survey log` }, cache, key, ctx);
+  return htmlPage({ title, description, image, alt, png: !!s, self: url.origin + url.pathname, target: `${site(env)}${pagePath(v, s?.name)}`, linkText: `Open ${name} in Letterfield's survey log` }, cache, key, ctx);
 }
 
 async function viewImage(request, env, ctx, render, v) {

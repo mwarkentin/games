@@ -186,6 +186,7 @@ The machines each page keeps:
 | | `pair` (linking another device, and the recovery code) | idle, making, showing, used, entering, redeeming, done, failed, recovery, keeping, kept, removing |
 | | `sync` (keeping linked devices in step) | off, idle, syncing, failed |
 | `letterfield-log.html` | `log` (what the page shows) | loading, ready, refreshing, stale, failed |
+| | `span` (where the log starts, which ‹ stops at) | asking, known, failed |
 | `letterfield-timelapse.html` | `tl` (the replay) | loading, empty, failed, paused, playing, waiting |
 | | `rec` (saving a video) | off, preparing, recording, done, failed |
 | `war.html` | `screen` | menu, lobby, table, ending, over |

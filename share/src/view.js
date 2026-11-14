@@ -16,6 +16,7 @@
 // its link on Friday, wherever it's opened.
 
 import { THEMES, regionName, regionTheme } from '../../worker/src/letterfield-world.js';
+import { GUILD_FIRST, GUILD_SECOND, GUILD_THIRD } from '../../worker/src/survey-guild.js';
 import { H, PALETTES, W, fit, measure, text } from './card.js';
 import { novaSvg } from './nova.js';
 
@@ -81,12 +82,24 @@ export function parseView(pathname, now = Date.now()) {
   return { ...view, period, y, mo, d, h, start, end, from, to };
 }
 
+// A guild's name as its three word numbers, as the log's address carries it
+// (?name=<a>-<b>-<c>), or null for a name that isn't three of the lists' words.
+export function guildNumbers(name) {
+  const words = typeof name === 'string' ? name.split(' ') : [];
+  if (words.length !== 3) return null;
+  const n = [GUILD_FIRST.map((w) => w[0]), GUILD_SECOND, GUILD_THIRD].map((list, i) => list.indexOf(words[i]));
+  return n.every((i) => i >= 0) ? n : null;
+}
+
 // The view's own page in the log, with its date pinned, as the page's Share
-// gives it (urlFor({ pin: true }) in letterfield-log.html).
-export function pagePath(v) {
+// gives it (urlFor({ pin: true }) in letterfield-log.html). A guild's carries
+// its name, when the card knows it, so the page names it before the log answers.
+export function pagePath(v, name = null) {
   const q = new URLSearchParams();
   if (v.kind === 'territory') q.set('territory', `${v.rx},${v.ry}`);
   else q.set(v.kind, String(v.key));
+  const n = v.kind === 'guild' ? guildNumbers(name) : null;
+  if (n) q.set('name', n.join('-'));
   if (v.period !== 'all') {
     q.set('period', v.period);
     q.set('day', `${v.y}-${pad(v.mo)}-${pad(v.d)}`);

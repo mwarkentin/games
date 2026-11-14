@@ -65,6 +65,9 @@ describe('a guild\'s card', () => {
     assert.deepEqual([v.kind, v.key, v.period], ['guild', 'c0ba17c0ba', 'week']);
     assert.equal(parseView('/v/d/guild/c0ba17c0ba/all.png', NOW).png, true);
     assert.equal(pagePath(v), '/letterfield-log?guild=c0ba17c0ba&period=week&day=2026-11-09');
+    // With its name, from the log's answer, as its three word numbers, so the page names it at once.
+    assert.equal(pagePath(v, 'Cobalt Compass Society'), '/letterfield-log?guild=c0ba17c0ba&name=11-0-0&period=week&day=2026-11-09');
+    assert.equal(pagePath(v, 'Cobalt Compass Nonsense'), '/letterfield-log?guild=c0ba17c0ba&period=week&day=2026-11-09');
     assert.equal(logPaths(v, null, NOW), `/v1/survey/log/guild/c0ba17c0ba/${WEEK_FROM}/${WEEK_FROM + 168}`);
     const s = summarize(v, GUILD, NOW);
     assert.deepEqual([s.name, s.hue], ['Cobalt Compass Society', 220]);

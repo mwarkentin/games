@@ -7,6 +7,9 @@ in it. See test_letterfield_log.py for the clock and the fake.
 
 from __future__ import annotations
 
+import re
+from pathlib import Path
+
 from playwright.sync_api import Page, expect
 
 from fake_survey_log import FakeSurveyLog
@@ -24,6 +27,7 @@ from test_letterfield_log import (
     open_log,
 )
 
+ROOT = Path(__file__).resolve().parent.parent
 COBALT, AMBER = "c0ba17c0ba", "a3be7a3be7"
 GUILDS = {COBALT: ["Cobalt Compass Society", 220], AMBER: ["Amber Lantern Circle", 38]}
 # Words counted for a guild carry its log id as a ninth item (the fake's way; the real log keeps it in a column).
@@ -101,8 +105,52 @@ def test_a_guild_says_when_it_charted_nothing_and_when_the_log_has_never_heard_o
     expect(page.locator(".entry .word")).to_have_text(["OAK"])
     open_log(page, site_url, fake, query="&guild=ffffffffff")
     expect(page.locator("#focusName")).to_have_text("A guild")
-    expect(page.locator(".status strong")).to_have_text("No such guild")
+    expect(page.locator(".status")).to_contain_text("This guild hasn’t charted a word yet.")
     # Anything but a log id is no guild at all: a guild's code or caret tag opens everyone's log.
     open_log(page, site_url, fake, query="&guild=ABCDEF")
     expect(page.locator("#focus")).to_be_hidden()
     assert errors == []
+
+
+def test_a_new_guilds_page_is_named_from_its_address(page: Page, site_url, errors):
+    # The game's link carries the guild's name as its three word numbers: Cobalt (11) Compass (0) Society (0).
+    fake = FakeSurveyLog([ACORN], PLACES, THEMES, guilds={})
+    open_log(page, site_url, fake, query=f"&guild={COBALT}&name=11-0-0")
+    expect(page.locator("#focusName")).to_have_text("Cobalt Compass Society")
+    expect(page.locator(".status")).to_contain_text(
+        "The Cobalt Compass Society hasn’t charted a word yet. Its members’ words show here as they chart them."
+    )
+    # Its timelapse would have nothing to play, so the link waits for a first word.
+    expect(page.locator("#timelapseLink")).to_be_hidden()
+    assert errors == []
+
+
+def test_a_guilds_page_has_its_timelapse_and_its_name_in_its_address_once_it_has_words(page: Page, site_url, errors):
+    fake = FakeSurveyLog([ACORN, BIRCH], PLACES, THEMES, guilds=GUILDS)
+    open_log(page, site_url, fake, query=f"&guild={COBALT}")
+    expect(page.locator(".entry .word")).to_have_text(["BIRCH"])
+    expect(page.locator("#timelapseLink")).to_be_visible()
+    expect(page.locator("#timelapseLink")).to_have_attribute("href", re.compile(f"guild={COBALT}"))
+    # Kept in the address, for whoever it's shared with.
+    assert "name=11-0-0" in page.url
+    assert errors == []
+
+
+def test_a_name_out_of_range_names_nothing(page: Page, site_url, errors):
+    fake = FakeSurveyLog([ACORN], PLACES, THEMES, guilds={})
+    open_log(page, site_url, fake, query=f"&guild={COBALT}&name=16-0-0")
+    expect(page.locator("#focusName")).to_have_text("A guild")
+    expect(page.locator(".status")).to_contain_text("This guild hasn’t charted a word yet.")
+    assert "name=" not in page.url
+    assert errors == []
+
+
+def test_the_logs_guild_words_are_the_games():
+    def lists(path: str) -> dict[str, str]:
+        text = (ROOT / path).read_text()
+        return {
+            k: re.search(rf"^const {k} = (\[.*?\]);$", text, re.M | re.S)[1]
+            for k in ("GUILD_FIRST", "GUILD_SECOND", "GUILD_THIRD")
+        }
+
+    assert lists("letterfield-log.html") == lists("letterfield.html")
