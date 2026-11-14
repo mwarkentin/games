@@ -106,9 +106,9 @@ the cost is said once, in the guild card further up.
   `survey-social.js`, hidden players' emote limits, and the guild credit
   rule in `survey.js`, with their tests); the log's "Members who keep off
   the surveyor list aren't counted"; SURVEY.md's "Off the list" sections;
-  the changelog. Suggested: a one-time note for players who had it off,
-  since they chose to hide. Makes issue 17's missing unmute for someone
-  offline matter more, since mute is now the only tool.
+  the changelog. No note for players who had it off (only two players so
+  far). Makes issue 17's missing unmute for someone offline matter more,
+  since mute is now the only tool.
 
 ### 5. Four different counts of who's online
 
