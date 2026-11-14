@@ -213,7 +213,7 @@ def test_second_to_a_word_hears_who_was_first(page: Page, site_url, errors):
     open_game(page, site_url, fake)
     expect(page.locator("#survey")).to_have_attribute("data-state", "live")
     circle(page, word)
-    expect(page.locator("#toast")).to_contain_text("Charted first by SIS")
+    expect(page.locator("#toast")).to_contain_text("Charted by SIS")
     assert page.evaluate("(e => [e.f, e.b])(window.__lf.found.values().next().value)") == [0, "SIS"]
     # It stays in the notes, marked as SIS's, after a reload too.
     page.reload()
@@ -275,6 +275,30 @@ def test_a_claim_still_waiting_survives_a_reload(page: Page, site_url, errors):
     assert fake.sent("claim")[0]["w"] == word[0]
     eventually(page, lambda: page.evaluate("[...window.__lf.found.values()][0].f") == 1)
     assert page.evaluate("window.__lf.outbox()") == []
+    assert errors == []
+
+
+def test_claims_waiting_in_two_tabs_are_both_kept(page: Page, site_url, errors):
+    """Each tab wrote its whole list of waiting claims, so the last to write dropped the other's
+    for good: that word stayed in the notes, never claimed."""
+    words = known_words(page, site_url)
+    fake = FakeSurvey(hold=lambda url: True)  # neither tab gets in
+    open_game(page, site_url, fake)
+    other = page.context.new_page()
+    open_game(other, site_url, fake)
+    eventually(page, lambda: len(fake.held) == 8)
+    circle(page, words[0])
+    # A moment later, as a person would be, the other tab, which sees that write, circles another.
+    other.wait_for_function("w => (localStorage.getItem('letterfield.outbox.v1') || '').includes(w)", arg=words[0][0])
+    circle(other, words[1])
+    # Read where it was last written: another tab sees a write a moment later.
+    stored = {o[0] for o in json.loads(other.evaluate("localStorage.getItem('letterfield.outbox.v1')"))}
+    assert stored == {words[0][0], words[1][0]}, stored
+    # The first tab comes back with the survey live, and claims both.
+    other.close()
+    fake.hold = None
+    page.reload()
+    eventually(page, lambda: {m["w"] for m in fake.sent("claim")} == {words[0][0], words[1][0]})
     assert errors == []
 
 
@@ -628,6 +652,29 @@ def test_world_counter_ticks_up_as_words_are_charted(page: Page, site_url, error
     assert errors == []
 
 
+def test_the_universe_map_holds_its_place_until_the_universe_comes(page: Page, site_url, errors):
+    """On a returning visit nothing has asked for the universe yet, and the map opened as an empty
+    square until it came."""
+    fake = FakeSurvey(world=world_map(charted={(0, 0): 60}, players=3))
+    open_game(page, site_url, fake)
+    # Back another time, where the camera was left: nothing asks for the universe until the map opens.
+    page.evaluate("localStorage.setItem('letterfield.cam.v1', JSON.stringify({ x: 6, y: 6, cs: 38 }))")
+    held = []
+    page.route(f"{SURVEY}/v1/survey/world", lambda route: held.append(route))
+    page.reload()
+    page.wait_for_function("window.__lf")
+    open_notes(page)
+    page.click("#surveyMap summary")
+    eventually(page, lambda: held)
+    canvas = page.locator("#worldMap")
+    expect(canvas).to_have_class(re.compile(r"\bwaiting\b"))
+    assert canvas.evaluate("e => getComputedStyle(e).animationName") == "blink"
+    for route in held:
+        route.fulfill(json=fake.world, headers={"Access-Control-Allow-Origin": "*"})
+    expect(canvas).not_to_have_class(re.compile(r"\bwaiting\b"))
+    assert errors == []
+
+
 def test_world_map_shows_where_people_are_and_flies_there(page: Page, site_url, errors):
     fake = FakeSurvey(world=world_map(charted={(0, 0): 60, (1, 0): 112, (-20, 30): 5},
                                       sectors=[[0, 0, 12], [-5, 7, 45]], players=57))
@@ -679,6 +726,15 @@ def test_full_sector_says_so(page: Page, site_url, errors):
     expect(page.locator("#notesBadge")).to_have_text("1", timeout=LANDS)
     page.wait_for_timeout(1500)
     assert len(fake.sectors) == 4  # and it doesn't keep knocking
+    assert errors == []
+
+
+def test_a_full_sector_says_crowded_even_with_its_neighbours_live(page: Page, site_url, errors):
+    """The title went by whether any sector was live, so a full one beside live ones said "joining…"."""
+    fake = FakeSurvey(full={"0,0": "sector"})  # the one under the camera; its neighbours let us in
+    open_game(page, site_url, fake)
+    page.wait_for_function("Object.values(window.__lf.linkStates()).includes('live')")
+    expect(page.locator("#tCharted")).to_have_text(" · crowded")
     assert errors == []
 
 
@@ -976,7 +1032,7 @@ def test_hovering_names_surveyors_and_who_charted_a_word(page: Page, site_url, e
     dirs = [[1, 0], [1, 1], [0, 1], [-1, 1], [-1, 0], [-1, -1], [0, -1], [1, -1]]
     mid = len(w) // 2
     page.mouse.move(*page.evaluate(SCREEN_OF, [x + dirs[d][0] * mid + .5, y + dirs[d][1] * mid + .5]))
-    expect(peek).to_contain_text(f"{w}Charted first by MRW")
+    expect(peek).to_contain_text(f"{w}Charted by MRW")
 
     # Panning hides it.
     page.mouse.wheel(0, 120)

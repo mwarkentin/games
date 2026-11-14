@@ -563,11 +563,15 @@ export class Sector {
       if (initials !== me.initials || social) { me.initials = initials; this.save(ws, me); this.schedulePresence(false); }
     } else if (msg.t === 'pos') {
       const ok = [msg.x, msg.y].every((v) => Number.isFinite(v) && Math.abs(v) < LIMIT);
-      const away = msg.away || !ok;
+      const away = msg.away || !ok, had = me.x !== null && me.x !== undefined;
       if (away) { me.x = null; me.y = null; }
       else { me.x = Math.round(msg.x * 10) / 10; me.y = Math.round(msg.y * 10) / 10; }
       me.moved = this.now();
-      if (away || me.moved - me.saved >= SAVE_POS_MS) this.save(ws, me);
+      // Saved at most every SAVE_POS_MS while moving, but at once when it first
+      // becomes known: a sector that sleeps before the next save would wake not
+      // knowing where someone sitting still is, and leave them off the list and
+      // the map until they moved.
+      if (away || !had || me.moved - me.saved >= SAVE_POS_MS) this.save(ws, me);
       this.schedulePresence(away);
     } else if (msg.t === 'claim') {
       await this.claim(ws, me, msg);

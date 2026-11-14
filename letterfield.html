@@ -95,10 +95,12 @@ button:focus-visible,a:focus-visible,#map:focus-visible{outline:2px solid var(--
 .brand h1{margin:0;font:800 27px/.85 var(--f-display);letter-spacing:.05em;text-transform:uppercase}
 .brand small{font:400 9px/1 var(--f-mono);letter-spacing:.16em;text-transform:uppercase;color:var(--muted)}
 /* On a tablet the notes open over the map: the title steps out of their way,
-   leaving the territory the room before them. */
+   leaving the territory the room before them, with its theme and count (the
+   grid reference goes, as on a phone). */
 @media (min-width:700px){
   body.notes-open:not(.docked) .brand{position:absolute;width:1px;height:1px;padding:0;border:0;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
   body.notes-open:not(.docked) .cartouche{max-width:calc(100% - var(--notes-w) - 40px)}
+  body.notes-open:not(.docked) .t-coord{display:none}
 }
 .territory{padding:8px 14px 8px 12px;display:grid;grid-template-columns:auto minmax(0,1fr);column-gap:10px;row-gap:3px;align-items:center;min-width:0}
 .swatch{grid-row:1 / span 2;width:12px;height:12px;border-radius:50%;background:var(--c);box-shadow:0 0 0 3px color-mix(in srgb, var(--c) 22%, transparent)}
@@ -213,6 +215,8 @@ body.docked .corner .people-btn{border-radius:0 8px 8px 0;border-right:1px solid
 .notes-toggle{position:relative;display:flex;align-items:center;gap:8px;min-height:40px;box-sizing:border-box;padding:10px 12px;cursor:pointer;font:600 13px/1 var(--f-ui)}
 .notes-toggle svg{width:17px;height:17px}
 .badge{font:500 11px/1 var(--f-mono);background:var(--ink);color:var(--panel);border-radius:999px;padding:4px 7px 3px;font-variant-numeric:tabular-nums}
+/* No count before a first find, but its place kept, so the first one doesn't push the buttons beside it. */
+.badge.none{visibility:hidden}
 body.docked .notes-toggle{display:none}
 
 /* Field notes drawer, and the surveyors' beside it */
@@ -339,7 +343,7 @@ li.row > button{margin-top:2px}
 /* Supernovas you were here for, above your finds: a star each, its share. */
 .novas{flex:none;padding:10px 8px 4px;border-bottom:1px solid var(--rule)}
 .novas h3{margin:0 10px 2px}
-.novas ol{list-style:none;margin:0;padding:0;max-height:min(30vh, 260px);overflow-y:auto;overscroll-behavior:contain}
+.novas ol{list-style:none;margin:0 3px 0 6px;padding:0;max-height:min(30vh, 260px);overflow-y:auto;overscroll-behavior:contain}
 .novas li.row > .find-share{grid-column:3}
 .nova-star{width:12px;height:12px;justify-self:center;border-radius:50%;align-self:center;background:radial-gradient(circle, #fff 0 16%, hsl(var(--h,200) 90% 62%) 32%, hsl(var(--h,200) 80% 50% / .35) 56%, transparent 72%);box-shadow:0 0 0 1.5px hsl(var(--h,200) 60% 50% / .35)}
 .nova-find .find-word{font-size:17px}
@@ -379,6 +383,9 @@ li.row > button{margin-top:2px}
 .survey-map{margin-top:9px}
 .survey-map summary{cursor:pointer;font:500 10px/1 var(--f-mono);letter-spacing:.14em;text-transform:uppercase;color:var(--muted);padding:4px 0}
 .survey-map canvas{display:block;width:min(100%, 220px);aspect-ratio:1;margin:8px auto 0;border:1px solid var(--rule);border-radius:4px;cursor:crosshair;touch-action:manipulation}
+/* Until the universe has come, a placeholder the map's size: a gentle pulse, or still under reduced motion. */
+.survey-map canvas.waiting{background:var(--hover);animation:blink 1.1s ease-in-out infinite alternate}
+@media (prefers-reduced-motion: reduce){.survey-map canvas.waiting{animation:none}}
 .survey-map-note{margin:6px 0 0;text-align:center;font:400 10.5px/1.4 var(--f-mono);color:var(--muted)}
 .survey-map-note:empty{display:none}
 .survey-log{display:block;margin-top:6px;padding:4px 0;font:500 10px/1.3 var(--f-mono);letter-spacing:.14em;text-transform:uppercase;color:var(--muted)}
@@ -688,7 +695,7 @@ body.settling, body.settling *{transition:none!important}
     <button class="notes-toggle card" id="notesToggle" aria-expanded="false" aria-controls="notes" aria-keyshortcuts="N" title="Field notes (N)">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 4h11a3 3 0 0 1 3 3v13H8a3 3 0 0 1-3-3V4z"/><path d="M5 17a3 3 0 0 1 3-3h11"/><path d="M9 8h6"/></svg>
       <span class="label">Field notes</span>
-      <span class="badge" id="notesBadge">0</span>
+      <span class="badge none" id="notesBadge">0</span>
     </button>
   </div>
 </div>
@@ -1728,7 +1735,7 @@ function onSurvey(l, m) {
     const c = addClaim(m.c, false), out = c && outbox.get(c.key);
     if (out && out.m.is('sent')) {
       out.m.go('theirs');
-      toast(`<i></i><b>${c.w}</b><span>Charted first by ${c.by || 'another surveyor'} · ${rel(c.at)}</span>`, THEMES[c.th].hue, 0, found.get(c.key));
+      toast(`<i></i><b>${c.w}</b><span>Charted by ${c.by || 'another surveyor'} · ${rel(c.at)}</span>`, THEMES[c.th].hue, 0, found.get(c.key));
     }
   } else if (m.t === 'error') {
     const out = outbox.get(m.key);
@@ -1797,7 +1804,7 @@ function claimWord(e, from = 'queued') {
   // `backlog`: it waited for its sector, rather than going as it was circled.
   const c = { e, l: null, backlog: restored || !(l && l.m.is('live')), initials: restored ? myInitials() : '', known: false, beaten: false };
   c.m = machine('claim', CLAIM_MOVES, from, { el: null, onMove: to => {
-    if (CLAIM_ENDS.includes(to)) outbox.delete(e.key);
+    if (CLAIM_ENDS.includes(to)) { outbox.delete(e.key); outboxEnded.add(e.key); }
     if (to === 'theirs') chartedBy(e.key);
     saveOutbox();
   } });
@@ -1807,9 +1814,19 @@ function claimWord(e, from = 'queued') {
 }
 // Claims still out, kept in storage so a reload doesn't lose them, as [w, x,
 // y, d, 1 if it may have reached its sector]: read back once the survey
-// starts (restoreOutbox), each claim as one that waited.
+// starts (restoreOutbox), each claim as one that waited. Another tab's stay
+// too, unless this tab has seen them end: every tab writes the whole list, so
+// the last to write would otherwise drop the others' for good.
+const outboxEnded = new Set(), OUTBOX_MAX = 300;
 function saveOutbox() {
-  LS.set(K_OUTBOX, JSON.stringify([...outbox.values()].map(c => [c.e.w, c.e.x, c.e.y, c.e.d, c.m.is('sent', 'unanswered') ? 1 : 0])));
+  const list = new Map();
+  for (const o of readList(K_OUTBOX)) {
+    if (!Array.isArray(o) || o.length !== 5 || typeof o[0] !== 'string') continue;
+    const k = keyOf(o[0], o[1], o[2], o[3]), e = found.get(k);
+    if (!outboxEnded.has(k) && !(e && (e.f || e.b))) list.set(k, o);
+  }
+  for (const c of outbox.values()) list.set(c.e.key, [c.e.w, c.e.x, c.e.y, c.e.d, c.m.is('sent', 'unanswered') ? 1 : 0]);
+  LS.set(K_OUTBOX, JSON.stringify([...list.values()].slice(-OUTBOX_MAX)));
 }
 function restoreOutbox() {
   for (const o of readList(K_OUTBOX)) {
@@ -1954,6 +1971,7 @@ const nearView = (rx, ry) => Math.max(Math.abs(rx - fdiv(Math.floor(cam.x), RC))
 function hereStatus(cx, cy) {
   const home = links.get(sectorKey(cx, cy));
   if (home && home.m.is('live')) return '';
+  if (home && home.full) return 'crowded';  // this part of the map is full, whatever its neighbours are doing
   const s = surveyStatus();
   return s === 'full-world' || s === 'full-sector' ? 'crowded' : s === 'offline' || s === 'alone' ? 'offline' : 'joining…';
 }
@@ -2019,6 +2037,7 @@ async function fetchWorld(timeoutMs = 4000) {
 }
 const worldCanvas = $('#worldMap'), worldNote = $('#worldNote'), surveyMapEl = $('#surveyMap');
 function drawWorld() {
+  worldCanvas.classList.toggle('waiting', !worldMap);
   if (!worldMap || !surveyMapEl.open) return;
   const px = Math.round((worldCanvas.clientWidth || 200) * Math.min(window.devicePixelRatio || 1, 2));
   if (worldCanvas.width !== px) { worldCanvas.width = px; worldCanvas.height = px; }
@@ -2066,7 +2085,7 @@ async function refreshWorld() {
   if (!surveyApi || !surveyMapEl.open || !notesOpen || surveyPaused) return;
   drawWorld();  // what's known already (a new player's start asked for it), at once, then the latest
   if (await fetchWorld()) { drawWorld(); renderSurvey(); }
-  else worldNote.textContent = 'Couldn’t load the world map.';
+  else { worldNote.textContent = 'Couldn’t load the Universe map.'; worldCanvas.classList.remove('waiting'); }
   if (surveyMapEl.open) worldTimer = setTimeout(refreshWorld, 20000);
 }
 // New players start where the Atlas suggests: in the middle of the biggest
@@ -3230,22 +3249,27 @@ function draw(now) {
   for (const e of found.values()) {
     const [ex, ey] = wordEnd(e);
     if (Math.max(e.x, ex) + 1 < vx0 || Math.min(e.x, ex) > vx1 || Math.max(e.y, ey) + 1 < vy0 || Math.min(e.y, ey) > vy1) continue;
-    const tc = TC[e.th];
+    // A find another surveyor charted first is drawn as theirs, an outline,
+    // so filled always means charted first by you.
+    const tc = TC[e.th], theirs = !!e.b && !e.f;
+    if (theirs) ctx.globalAlpha = .6;
     if (cs < 3) {
       ctx.fillStyle = tc.stroke;
-      ctx.beginPath(); ctx.arc(SX((e.x + ex) / 2 + .5), SY((e.y + ey) / 2 + .5), 2.6, 0, Math.PI * 2); ctx.fill();
+      ctx.beginPath(); ctx.arc(SX((e.x + ex) / 2 + .5), SY((e.y + ey) / 2 + .5), theirs ? 1.8 : 2.6, 0, Math.PI * 2); ctx.fill();
+      ctx.globalAlpha = 1;
       continue;
     }
     let p = 1;
     if (e.born) { p = Math.max(0, (now - e.born) / 340); if (p >= 1 || RM) { e.born = 0; p = 1; } else { anim = true; p = 1 - Math.pow(1 - p, 3); } }
     const x0 = SX(e.x + .5), y0 = SY(e.y + .5), x1 = SX(ex + .5), y1 = SY(ey + .5);
     capsule(x0, y0, x0 + (x1 - x0) * p, y0 + (y1 - y0) * p, r);
-    ctx.fillStyle = tc.fill; ctx.fill();
-    ctx.lineWidth = clamp(cs * .06, 1, 2.4);
+    if (!theirs) { ctx.fillStyle = tc.fill; ctx.fill(); }
+    ctx.lineWidth = theirs ? clamp(cs * .05, 1, 2) : clamp(cs * .06, 1, 2.4);
     ctx.strokeStyle = tc.stroke;
     if (e.s) ctx.setLineDash([Math.max(2, cs * .16), Math.max(2, cs * .1)]);
     ctx.stroke();
     ctx.setLineDash([]);
+    ctx.globalAlpha = 1;
   }
 
   // Words other surveyors charted: an outline only, so your own finds stand out
@@ -3715,7 +3739,7 @@ function peekAt(px, py) {
       const [dx, dy] = DIRS[c.d], n = dx ? (x - c.x) * dx : (y - c.y) * dy;
       if (n < 0 || n >= c.w.length || c.x + dx * n !== x || c.y + dy * n !== y) continue;
       const e = found.get(c.key), who = e && e.f ? 'you' : c.by || 'another surveyor';
-      html = `<i></i><b>${c.w}</b><span>Charted first by ${who} · ${rel(c.at)}</span>`;
+      html = `<i></i><b>${c.w}</b><span>Charted by ${who} · ${rel(c.at)}</span>`;
       hue = THEMES[c.th].hue;
       break;
     }
@@ -4039,12 +4063,9 @@ function gatherFind(e) {
   const mx = (x0 + x1) / 2, my = (y0 + y1) / 2;
   const range = document.createRange();
   range.selectNodeContents(to);
-  // Before a first find there's no badge to fly to: it's measured where it
-  // will show, and comes in as the bead lands.
-  const away = to === notesBadge && to.hidden;
-  if (away) { to.style.visibility = 'hidden'; to.hidden = false; }
+  // Before a first find the badge is there but unseen: the bead flies to
+  // where it will show, and it comes in as the bead lands.
   const b = to === notesBadge ? to.getBoundingClientRect() : range.getBoundingClientRect();
-  if (away) { to.hidden = true; to.style.visibility = ''; }
   const onMap = mx >= 0 && mx <= W - dock && my >= mapTop && my <= mapTop + H;
   if (RM || document.hidden || !b.width || !onMap || !document.body.animate) return land();
 
@@ -4256,7 +4277,7 @@ function showCount(all = [...found.values()]) {
   const done = unlanded.size ? all.filter(e => !unlanded.has(e.key)) : all;
   const longest = done.reduce((m, e) => (!m || e.w.length > m.w.length ? e : m), null);
   notesBadge.textContent = $('#tWords').textContent = done.length;
-  notesBadge.hidden = !done.length;
+  notesBadge.classList.toggle('none', !done.length);
   $('#lastFind').hidden = !all.length;
   $('#tTerr').textContent = new Set(done.map(e => fdiv(e.x, RC) + ',' + fdiv(e.y, RC))).size;
   $('#tLong').textContent = longest ? longest.w : '—';

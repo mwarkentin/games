@@ -1039,10 +1039,11 @@ def test_every_part_of_a_find_sits_on_its_words_line(page: Page, site_url, error
     page.goto(f"{site_url}/letterfield#debug")
     page.wait_for_function("window.__lf")
     page.evaluate("""() => {
-      const [a, b] = window.__lf.chunk(0, 0).words, t = Date.now();
+      const [a, b, c] = window.__lf.chunk(0, 0).words, t = Date.now();
       localStorage.setItem('letterfield.finds.v4', JSON.stringify([
         { w: a.w, x: a.x, y: a.y, d: a.d, t: t - 60000 },
         { w: b.w, x: b.x, y: b.y, d: b.d, t, b: 'ZED' }]));
+      localStorage.setItem('letterfield.novas.v1', JSON.stringify([{ rx: 0, ry: 0, t: t - 3600000, w: c.w, x: c.x, y: c.y, d: c.d, by: 'ZED' }]));
       localStorage.setItem('letterfield.coach.v1', '1');
     }""")
     page.reload()
@@ -1052,9 +1053,74 @@ def test_every_part_of_a_find_sits_on_its_words_line(page: Page, site_url, error
     expect(page.locator("#finds .find-meta")).to_have_text("charted by ZED")
     page.locator("#notes").evaluate("e => Promise.all(e.getAnimations({ subtree: true }).map(a => a.finished))")
     rows = page.evaluate(ROW_MIDDLES)
-    assert [r["second"] for r in rows] == [True, False], rows
+    assert [r["second"] for r in rows] == [True, True, False], rows  # the supernova, then the finds
     for r in rows:
-        assert len(r["at"]) == 5 and max(r["at"]) - min(r["at"]) <= 1, r
+        assert 4 <= len(r["at"]) <= 5 and max(r["at"]) - min(r["at"]) <= 1, r
+    # And the supernova's star, place, time and share button stand in the finds' columns.
+    cols = page.evaluate("""() => {
+      const at = (row, sel) => { const r = row.querySelector(sel).getBoundingClientRect(); return [r.left + r.width / 2, r.left, r.right]; };
+      const nova = document.querySelector('#novaList li.row'), find = document.querySelector('#finds li.row');
+      return [[at(nova, '.nova-star')[0], at(find, '.find-dot')[0]], [at(nova, '.find-w')[1], at(find, '.find-w')[1]],
+        [at(nova, '.find-when')[2], at(find, '.find-when')[2]], [at(nova, '.find-share')[0], at(find, '.find-share')[0]]];
+    }""")
+    for nova, find in cols:
+        assert abs(nova - find) <= 1, cols
+    assert errors == []
+
+
+# Inside and just outside the end of a word's circle, past its last letter.
+END_CAP = """async ([x, y, d, w]) => {
+  const lf = window.__lf, [ex, ey] = lf.wordEnd({ x, y, d, w });
+  lf.cam.cs = 40; lf.cam.x = ex + .5; lf.cam.y = ey + .5; dispatchEvent(new Event('resize'));
+  await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
+  const c = document.getElementById('map'), g = c.getContext('2d'), k = c.width / c.clientWidth;
+  const px = dx => [...g.getImageData(Math.round((c.clientWidth / 2 + dx) * k), Math.round(c.clientHeight / 2 * k), 1, 1).data.slice(0, 3)];
+  return [px(.33 * 40), px(.62 * 40)];
+}"""
+
+
+def test_a_find_someone_else_charted_is_drawn_as_their_outline(page: Page, site_url, errors):
+    """Filled means charted first by you: a word you keep that another surveyor charted first is
+    drawn as theirs, an outline (decision 1a), rather than filled like your own."""
+    without_worker(page, site_url, "letterfield")
+    page.set_viewport_size({"width": 375, "height": 740})
+    page.goto(f"{site_url}/letterfield#debug")
+    page.wait_for_function("window.__lf")
+    mine, theirs = page.evaluate("""() => {
+      const ws = [];
+      for (let cy = 0; cy < 4 && ws.length < 2; cy++) for (let cx = 0; cx < 4 && ws.length < 2; cx++)
+        for (const o of window.__lf.chunk(cx, cy).words) if (o.d === 0 && o.x % 48 < 40 && ws.length < 2) ws.push([o.x, o.y, o.d, o.w]);
+      const t = Date.now();
+      localStorage.setItem('letterfield.finds.v4', JSON.stringify([
+        { w: ws[0][3], x: ws[0][0], y: ws[0][1], d: 0, t: t - 1000 },
+        { w: ws[1][3], x: ws[1][0], y: ws[1][1], d: 0, t, b: 'ZED' }]));
+      localStorage.setItem('letterfield.coach.v1', '1');
+      return ws;
+    }""")
+    page.reload()
+    page.wait_for_function("window.__lf && window.__lf.found.size === 2")
+    differs = lambda a, b: sum(abs(p - q) for p, q in zip(a, b, strict=True))
+    inside, outside = page.evaluate(END_CAP, mine)
+    assert differs(inside, outside) > 12, ("your own find is filled", inside, outside)
+    inside, outside = page.evaluate(END_CAP, theirs)
+    assert differs(inside, outside) <= 6, ("theirs is an outline", inside, outside)
+    assert errors == []
+
+
+def test_the_first_find_doesnt_push_the_buttons_beside_the_notes(page: Page, site_url, errors):
+    """With the notes shut on a tablet or computer, the count sits inside the notes button: the
+    first find used to bring it in, widening the button and pushing the tools along."""
+    without_worker(page, site_url, "letterfield")
+    page.set_viewport_size({"width": 800, "height": 1100})
+    page.goto(f"{site_url}/letterfield#debug")
+    page.click("#coachOk")
+    badge, tools = page.locator("#notesBadge"), page.locator("#toolsBtn")
+    expect(badge).to_be_hidden()  # no count before a first find
+    before = tools.bounding_box()
+    page.evaluate("(([w, x, y, d]) => window.__lf.collect(w, x, y, d, false))(window.__lf.chunk(0, 0).words.map(o => [o.w, o.x, o.y, o.d])[0])")
+    expect(badge).to_have_text("1", timeout=LANDS)
+    expect(badge).to_be_visible()
+    assert abs(tools.bounding_box()["x"] - before["x"]) < .5
     assert errors == []
 
 
@@ -1115,21 +1181,29 @@ def test_the_title_box_always_shows_how_many_words_are_found(page: Page, site_ur
     assert errors == []
 
 
-def test_on_a_tablet_the_title_makes_way_for_the_open_notes(page: Page, site_url, errors):
+@pytest.mark.parametrize("width", [700, 820])
+def test_on_a_tablet_the_title_makes_way_for_the_open_notes(page: Page, site_url, errors, width):
     without_worker(page, site_url, "letterfield")
-    page.set_viewport_size({"width": 820, "height": 1180})
+    page.set_viewport_size({"width": width, "height": 1180})
     page.goto(f"{site_url}/letterfield#debug")
     page.click("#coachOk")
     expect(page.locator(".brand")).to_be_visible()  # with the notes shut, the title shows
+    # Far out, where the grid reference is long ("99991W · 99990S") and would crowd the theme.
+    page.evaluate("() => { window.__lf.cam.x = -99990.5; window.__lf.cam.y = 99990.5; dispatchEvent(new Event('resize')); }")
+    expect(page.locator("#tCoord")).to_have_text("99991W · 99990S")
     page.click("#notesToggle")
     page.locator("#notes").evaluate("e => Promise.all(e.getAnimations().map(a => a.finished))")
     # Open over the map, the notes would cover the end of the title box: the
     # Letterfield block steps aside, and the territory ends before the notes.
     m = page.evaluate("""(() => {
-      const box = s => document.querySelector(s).getBoundingClientRect();
-      return { title: box('.cartouche').right, notes: box('#notes').left, brand: box('.brand').width };
+      const box = s => document.querySelector(s).getBoundingClientRect(), theme = document.getElementById('tTheme');
+      return { title: box('.cartouche').right, notes: box('#notes').left, brand: box('.brand').width,
+        cut: theme.scrollWidth > theme.clientWidth + 1 };
     })()""")
     assert m["brand"] <= 1 and m["title"] <= m["notes"], m
+    # The whole theme shows, even at 700px: the grid reference makes way, as on a phone.
+    assert not m["cut"], m
+    expect(page.locator(".t-coord")).to_be_hidden()
     assert errors == []
 
 
