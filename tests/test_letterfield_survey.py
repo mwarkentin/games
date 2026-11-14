@@ -1147,6 +1147,7 @@ def test_turnstile_box_keeps_clear_of_the_game_and_goes_once_passed(page: Page, 
         assert not page.evaluate(OVERLAP, ["#surveyCheck", other]), f"the box covers {other}"
     page.click("#toolsBtn")
     expect(page.locator("#toolsBtn")).to_have_attribute("aria-expanded", "true")
+    page.locator("#toolStack").evaluate("e => Promise.all(e.getAnimations({ subtree: true }).map(a => a.finished))")
     for other in ["#bar", "#toolStack", ".cartouche", "#notesToggle"]:
         assert not page.evaluate(OVERLAP, ["#surveyCheck", other]), f"the box covers {other} with the tools open"
     page.click("#toolsBtn")

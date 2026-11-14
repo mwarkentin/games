@@ -858,7 +858,7 @@ def test_the_word_list_names_only_words_half_in_sight(page: Page, site_url, erro
         assert not seen, (sel, got)
         seen, got = listed(key, sx, hidden2, cs)
         assert seen, (sel, got)
-    page.wait_for_timeout(400)  # done dropping down
+    page.locator("#toolStack").evaluate("e => Promise.all(e.getAnimations({ subtree: true }).map(a => a.finished))")  # done dropping down
     box = page.locator("#toolStack").bounding_box()
     seen, got = listed(down, box["x"] + box["width"] / 2, box["y"] + box["height"] - 2.5 * cs, cs)
     assert seen, ("#toolStack", got)
@@ -1180,7 +1180,7 @@ def test_the_tools_drop_down_from_their_button_and_go_again(page: Page, site_url
     expect(button).to_have_attribute("aria-expanded", "true")
     expect(stack).to_be_visible()
     expect(page.locator("#zoomOut")).to_be_focused()  # the zoom row's first button
-    page.wait_for_timeout(300)  # done popping up
+    stack.evaluate("e => Promise.all(e.getAnimations({ subtree: true }).map(a => a.finished))")  # done popping up
     box, tools = stack.bounding_box(), button.bounding_box()
     assert box["y"] >= tools["y"] + tools["height"] and box["y"] + box["height"] <= bar["y"], "it drops from its button, clear of the word list"
     assert abs(box["x"] + box["width"] - tools["x"] - tools["width"]) < 1
