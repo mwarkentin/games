@@ -314,6 +314,58 @@ def test_a_caret_has_a_menu_of_emotes(page: Page, site_url, errors):
     assert errors == []
 
 
+PRESSED = """() => ['#toolsBtn', '#peopleBtn', '#notesToggle'].filter(s => document.querySelector(s).getAttribute('aria-expanded') === 'true')"""
+SETTLED_BG = "e => Promise.all(e.getAnimations().map(a => a.finished)).then(() => getComputedStyle(e).backgroundColor)"
+
+
+@pytest.mark.parametrize("size", [(375, 740), (1280, 900)], ids=["phone", "desktop"])
+def test_the_corner_opens_one_panel_at_a_time(page: Page, site_url, errors, size):
+    """Tools, Surveyors and field notes could be open together, each button pressed; the notes
+    button never showed pressed at all."""
+    start(page, site_url, FakeSurvey(surveyors=[KIM]), viewport={"width": size[0], "height": size[1]})
+    html, desk = page.locator("html"), size[0] >= 1100
+    # A computer opens with the notes docked; on a phone, open them.
+    if not desk:
+        page.click("#notesToggle")
+    expect(page.locator("body")).to_have_class(re.compile(r"\bnotes-open\b"))
+    map_width = page.locator("#map").bounding_box()["width"]
+
+    page.click("#peopleBtn")  # in the notes' place
+    expect(page.locator("#people")).to_be_visible()
+    assert page.evaluate(PRESSED) == ["#peopleBtn"]
+    expect(page.locator("body")).not_to_have_class(re.compile(r"\bnotes-open\b"))
+    if desk:  # docked in the same slot: the map doesn't move
+        expect(page.locator("body")).to_have_class(re.compile(r"\bdocked\b"))
+        assert page.locator("#map").bounding_box()["width"] == map_width
+
+    page.click("#toolsBtn")
+    expect(page.locator("#toolStack")).to_be_visible()
+    assert page.evaluate(PRESSED) == ["#toolsBtn"]
+    expect(page.locator("#people")).to_be_hidden()
+    expect(html).to_have_attribute("data-panel", "tools")
+    expect(page.locator("body")).not_to_have_class(re.compile(r"\bdocked\b"))
+    tools_bg = page.locator("#toolsBtn").evaluate(SETTLED_BG)
+
+    # The keys too: N for the notes, P for the Surveyors, each putting away what was open.
+    page.locator("#map").focus()
+    page.keyboard.press("n")
+    expect(html).to_have_attribute("data-panel", "notes")
+    assert page.evaluate(PRESSED) == ["#notesToggle"]
+    expect(page.locator("#toolStack")).to_be_hidden()
+    # Open, the notes button shows pressed as the others do, docked or not.
+    expect(page.locator("#notesToggle")).to_be_visible()
+    assert page.locator("#notesToggle").evaluate(SETTLED_BG) == tools_bg
+    page.locator("#map").focus()
+    page.keyboard.press("p")
+    expect(html).to_have_attribute("data-panel", "people")
+    assert page.evaluate(PRESSED) == ["#peopleBtn"]
+    # And shut, nothing is.
+    page.click("#peopleBtn")
+    expect(html).to_have_attribute("data-panel", "none")
+    assert page.evaluate(PRESSED) == []
+    assert errors == []
+
+
 def test_a_caret_menu_knows_who_takes_no_emotes_and_a_refusal_always_shows(page: Page, site_url, errors):
     """A caret's menu offered emotes to someone who takes none, and closed before the refusal came,
     which then went to a row in the closed list, or only to a screen reader, as "They isn't"."""

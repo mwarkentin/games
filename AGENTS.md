@@ -180,6 +180,7 @@ The machines each page keeps:
 | | `save` (the game-over card's offer) | none, checking, ineligible, offered, saving, saved |
 | | `board` (the leaderboard screen) | closed, open |
 | `letterfield.html` | `intro` (the card over the map at the start) | link, sign, coach, exploring |
+| | `panel` (what's open from the corner, one at a time) | none, tools, people, notes |
 | | `pass` (the survey's Turnstile pass) | off, none, loading, checking, asking, sending, good, failed |
 | | `link` (each sector's socket; `el: null`, see `__lf.linkStates()`) | connecting, open, live, backoff, closed |
 | | `claim` (each claim of ours; `el: null`, see `__lf.outbox()`) | queued, sent, unanswered, first, theirs, refused |

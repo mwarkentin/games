@@ -151,10 +151,7 @@ span.chip:hover{border-color:transparent}
 body.docked .corner{right:calc(var(--notes-w) + 16px)}
 /* The buttons are one card, split by rules, so they take little of the top row. */
 .corner .tools-btn{border-radius:8px 0 0 8px;border-right:0}
-body.docked .corner .tools-btn{border-radius:8px;border-right:1px solid var(--rule)}
-body.docked .corner:has(.people-btn:not([hidden])) .tools-btn{border-radius:8px 0 0 8px;border-right:0}
 .corner .people-btn{border-radius:0;border-right:0}
-body.docked .corner .people-btn{border-radius:0 8px 8px 0;border-right:1px solid var(--rule)}
 .corner .notes-toggle{border-radius:0 8px 8px 0}
 /* Surveyors: who else is charting the map, your guild, and you, in a drawer of their own (see Surveyors). */
 .people-btn{position:relative;flex:none;width:40px;height:40px;border:1px solid var(--rule);background:var(--panel);color:var(--ink);box-shadow:var(--shadow);display:grid;place-items:center;cursor:pointer;transition:background-color var(--t-fast) var(--ease-out), color var(--t-fast) var(--ease-out), border-color var(--t-fast) var(--ease-out)}
@@ -214,18 +211,20 @@ body.docked .corner .people-btn{border-radius:0 8px 8px 0;border-right:1px solid
 /* Notes toggle */
 .notes-toggle{position:relative;display:flex;align-items:center;gap:8px;min-height:40px;box-sizing:border-box;padding:10px 12px;cursor:pointer;font:600 13px/1 var(--f-ui)}
 .notes-toggle svg{width:17px;height:17px}
+/* Open, it's pressed, like the tools and Surveyors buttons: one of the three at a time. */
+.notes-toggle[aria-expanded="true"]{background:var(--ink);border-color:var(--ink);color:var(--panel)}
+.notes-toggle[aria-expanded="true"] .badge{background:var(--panel);color:var(--ink);box-shadow:0 0 0 1px var(--ink)}
 .badge{font:500 11px/1 var(--f-mono);background:var(--ink);color:var(--panel);border-radius:999px;padding:4px 7px 3px;font-variant-numeric:tabular-nums}
 /* No count before a first find, but its place kept, so the first one doesn't push the buttons beside it. */
 .badge.none{visibility:hidden}
-body.docked .notes-toggle{display:none}
 
 /* Field notes drawer, and the surveyors' beside it */
 .notes,.people{position:fixed;top:0;right:0;bottom:0;z-index:30;width:var(--notes-w);max-width:100%;background:var(--panel);border-left:1px solid var(--rule);display:flex;flex-direction:column;
   padding-top:env(safe-area-inset-top, 0px);padding-bottom:env(safe-area-inset-bottom, 0px);padding-right:env(safe-area-inset-right, 0px);
   transform:translateX(100%);visibility:hidden;transition:transform var(--t-slow) var(--ease-out), visibility 0s linear var(--t-slow);box-shadow:var(--shadow)}
 body.notes-open .notes,body.people-open .people{transform:none;visibility:visible;transition:transform var(--t-slow) var(--ease-out), visibility 0s}
-body.docked .notes{box-shadow:none}
-/* Over the notes, docked or not, and the whole drawer scrolls. */
+body.docked .notes,body.docked .people{box-shadow:none}
+/* In the notes' place (docked there on a computer), and the whole drawer scrolls. */
 .people{z-index:31;overflow-y:auto;overscroll-behavior:contain}
 .people > *{flex-shrink:0}
 .people-body{padding:0 18px 22px}
@@ -4252,22 +4251,48 @@ function toggleDefinition(key) {
 
 /* ---------- Field notes ---------- */
 const notesToggle = $('#notesToggle'), notesBadge = $('#notesBadge'), findsEl = $('#finds'), filtersEl = $('#filters');
-let notesOpen = false, filter = null;
-function applyDock() {
-  const nd = notesOpen && W >= 1100 ? NOTES_W : 0;
-  if (nd !== dock) { cam.x -= (nd - dock) / (2 * cam.cs); dock = nd; }
+let filter = null;
+// What's open from the corner, on <html data-panel>: nothing, the tools'
+// stack, the Surveyors drawer or the field notes. One at a time: opening one
+// puts away whichever was open, and only its button shows pressed. On a
+// computer the two drawers dock at the right in one slot, so moving between
+// them leaves the map where it is. notesOpen, peopleOpen and toolsOpen say
+// which, for everything that asks; only panelMoved sets them.
+let notesOpen = false, peopleOpen = false, toolsOpen = false;
+const Panel = machine('panel', {
+  none: ['tools', 'people', 'notes'],
+  tools: ['none', 'people', 'notes'],
+  people: ['none', 'tools', 'notes'],
+  notes: ['none', 'tools', 'people'],
+}, 'none', { onMove: panelMoved });
+function panelMoved(to, from, { focus = false, refocus = false, start = false } = {}) {
+  notesOpen = to === 'notes'; peopleOpen = to === 'people'; toolsOpen = to === 'tools';
+  document.body.classList.toggle('notes-open', notesOpen);
+  document.body.classList.toggle('people-open', peopleOpen);
+  notesToggle.setAttribute('aria-expanded', String(notesOpen));
+  peopleBtn.setAttribute('aria-expanded', String(peopleOpen));
+  toolsEl.classList.toggle('open', toolsOpen);
+  toolsBtn.setAttribute('aria-expanded', String(toolsOpen));
+  toolStack.inert = !toolsOpen;  // shut, it takes no taps or focus
+  applyDock(start);
+  if (from === 'people') { listScroll = 0; if (PeoplePage.is('you')) PeoplePage.go('list'); }  // it opens on the list again
+  if (notesOpen) { renderNotes(); refreshWorld(); }
+  // Opened from its button, focus moves into the stack; shut from in there, it comes back to the button.
+  if (toolsOpen && focus) try { toolStack.querySelector('button').focus({ preventScroll: true }); } catch (_) {}
+  if (from === 'tools' && (refocus || toolStack.contains(document.activeElement))) try { toolsBtn.focus({ preventScroll: true }); } catch (_) {}
+  syncWho(); renderWho();
+  scheduleHud(); invalidate();
+}
+function applyDock(start = false) {
+  const nd = (notesOpen || peopleOpen) && W >= 1100 ? NOTES_W : 0;
+  if (nd !== dock && !start) cam.x -= (nd - dock) / (2 * cam.cs);  // the map stays put as it narrows or widens
+  dock = nd;
   document.body.classList.toggle('docked', nd > 0);
 }
 function setNotes(open, remember = true) {
-  if (open && peopleOpen && W < 1100) setPeople(false);  // one sheet at a time, unless the notes dock under the surveyors
-  notesOpen = open;
-  document.body.classList.toggle('notes-open', open);
-  notesToggle.setAttribute('aria-expanded', String(open));
-  if (remember) LS.set(K_NOTES, open ? '1' : '0');
-  applyDock();
-  if (open) { renderNotes(); refreshWorld(); }
-  syncWho();
-  scheduleHud(); invalidate();
+  if (open === notesOpen) return;
+  Panel.go(open ? 'notes' : 'none');
+  if (remember) LS.set(K_NOTES, open ? '1' : '0');  // whether a computer opens with them docked
 }
 // The count of finds, on the notes button, and the tally atop the notes. A
 // find counts once its circle has flown into the notes (see gatherFind):
@@ -4395,19 +4420,14 @@ function goLastFind() {
 lastFindBtn.addEventListener('click', goLastFind);
 
 // The tools button opens its stack and a second tap shuts it, as do Escape and
-// a tap on the map. It always starts shut. A single boolean, so no machine:
-// nothing waits on it. Opening moves focus into the
-// stack, and shutting it from there brings focus back to the button. The
-// keyboard shortcuts never need it open.
+// a tap on the map. It always starts shut, and it's one of the corner's
+// panels (see Panel): opening it puts away the notes or the Surveyors drawer.
+// Opening moves focus into the stack, and shutting it from there brings focus
+// back to the button. The keyboard shortcuts never need it open.
 const barEl = $('#bar'), toolsEl = $('#tools'), toolsBtn = $('#toolsBtn'), toolStack = $('#toolStack');
-let toolsOpen = false;
 function setTools(open, { focus = false, refocus = false } = {}) {
-  toolsOpen = open;
-  toolsEl.classList.toggle('open', open);
-  toolsBtn.setAttribute('aria-expanded', String(open));
-  toolStack.inert = !open;
-  if (open && focus) try { toolStack.querySelector('button').focus({ preventScroll: true }); } catch (_) {}
-  if (!open && (refocus || toolStack.contains(document.activeElement))) try { toolsBtn.focus({ preventScroll: true }); } catch (_) {}
+  if (open === toolsOpen) return;
+  Panel.go(open ? 'tools' : 'none', { focus, refocus });
 }
 toolsBtn.addEventListener('click', () => setTools(!toolsOpen, { focus: true }));
 
@@ -4629,13 +4649,14 @@ function caretOnScreen(pid) {
 }
 
 // The surveyors' drawer: a button of its own beside the field notes, with a
-// count of who else is online, opens it over the notes (a sheet on a phone).
+// count of who else is online, opens it in the notes' place (a sheet on a
+// phone, docked on a computer); see Panel.
 // It has two pages. The list: you at the top, then your guild's mates and
 // everyone else. And you, from that first row: your initials, your guild,
 // the two switches and your devices.
 const peopleBtn = $('#peopleBtn'), peopleBadge = $('#peopleBadge'), peopleEl = $('#people');
 const peopleListEl = $('#peopleList'), peopleYouEl = $('#peopleYou'), youRow = $('#youRow'), youBack = $('#youBack');
-let peopleOpen = false, listScroll = 0;
+let listScroll = 0;
 // Which page shows, on <html data-people-page>. Each move shows its page and
 // hides the other, keeps the list's place, and puts focus on the page come
 // to (its first control, the row that opened it, or what the move was for).
@@ -4651,14 +4672,8 @@ function peoplePageMoved(to, from, focusEl) {
 }
 function setPeople(open) {
   if (!surveyApi) open = false;
-  if (open && notesOpen && !dock) setNotes(false, false);  // one sheet at a time
-  peopleOpen = open;
-  document.body.classList.toggle('people-open', open);
-  peopleBtn.setAttribute('aria-expanded', String(open));
-  if (!open && PeoplePage.is('you')) PeoplePage.go('list');  // it opens on the list again
-  if (!open) listScroll = 0;
-  syncWho();
-  renderWho();
+  if (open === peopleOpen) return;
+  Panel.go(open ? 'people' : 'none');  // one of the corner's panels: opening it puts away the others
 }
 // Opens your page, for whatever needs it (signing first, say), with focus on that.
 function openYou(focusEl) {
@@ -6024,11 +6039,8 @@ try {
   else cam.cs = defaultCs();
 } catch (_) { cam.cs = defaultCs(); }
 loadLocal();
-notesOpen = W >= 1100 && LS.get(K_NOTES) !== '0';
-document.body.classList.toggle('notes-open', notesOpen);
-notesToggle.setAttribute('aria-expanded', String(notesOpen));
-dock = notesOpen && W >= 1100 ? NOTES_W : 0;
-document.body.classList.toggle('docked', dock > 0);
+// A computer opens with the notes docked, in place from the start.
+if (W >= 1100 && LS.get(K_NOTES) !== '0') Panel.go('notes', { start: true });
 resize();
 // resize() has measured the page, so its styles are settled where they open;
 // from here a change slides.
