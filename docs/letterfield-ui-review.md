@@ -40,7 +40,8 @@ Line numbers are as of commit 7bae950 and drift as the files change.
 | 25 | One idea, many names, across the three pages | a: a glossary in AGENTS.md; "members" for a guild's people, "the universe" for the shared world | To build |
 | 26 | The timelapse's territory card uses the theme as its name | a: "A Festivals territory" until the name comes, and the replay's date for "by then" | To build |
 | 27 | Timelapse status is faint or wrong | a with b: disabled pills, singular labels, the guild named; "Waiting for Nov 13…" over the map | To build |
-| 28–29 | | Open | |
+| 28 | Cramped at 375px, with small tap targets | a with b: "3–4 PM", names that wrap, rows on 10's grid, 40px buttons; a first tap on a bar shows its value | To build |
+| 29 | | Open | |
 
 ## The game
 
@@ -766,11 +767,27 @@ small "Loading…" under the bar.
 
 ### 28. Cramped at 375px, with small tap targets
 
-- **a. "3–4 PM", and rank labels that wrap.** *Recommended*, with b's 44px
-  minimum for buttons.
+Hour headings ("3:00 PM – 4:00 PM") wrap, with a 24px "Minute by minute"
+button; each word row's second line runs place, grid reference, bearing and
+theme together, as the notes did before 10; top-list names are cut short
+("Emerald Theodol…"); and a day's 24 bars share about 300px, each about
+12px to tap, opening its hour with no number shown first.
+
+- **a. "3–4 PM", and rank labels that wrap.** *Recommended*, with b.
 - **b. A 44px minimum; a first tap on a cell shows its value.**
 - **Machines:** none.
-- **Decided:** open.
+- **Decided: a with b** (after a mockup):
+  - Hour headings read "3–4 PM" ("11 AM – 12 PM" across noon), on one
+    line; top-list names wrap rather than cut.
+  - Word rows take 10's grid: marker, word with its drawn bearing, time
+    and initials, and a second line of place and theme ("bonus circuitry
+    word" for a bonus word); the grid reference goes, as in the notes.
+  - Buttons are at least 40px tall, like the game's (15), and rows at
+    least 44px.
+  - A first tap on a chart bar, or a calendar's day, shows its value ("11
+    AM – 12 PM · 13 words · Tap again to open") and a second opens it; on
+    a computer, hovering shows it and a click opens at once. At most one
+    is picked at a time, so no machine.
 
 ### 29. Shared links show a half-drawn page
 
