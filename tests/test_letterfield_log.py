@@ -263,30 +263,35 @@ def test_all_time_starts_with_the_first_word_logged(page: Page, site_url, errors
 
 
 def test_mine_is_the_words_this_browser_charted_first(page: Page, site_url, errors):
+    fern = ["FERN", 10, 20, 0, 0, "", NOW_MS - 25 * MINUTE, 11]  # 3:05 PM, a hidden word, unsigned
     finds = [
         # Charted first here, a few seconds before the server's time for it.
-        {"w": "MONET", "x": 60, "y": 3, "d": 2, "t": MONET[6] - 3000, "s": 1, "f": 1},
+        {"w": "FERN", "x": 10, "y": 20, "d": 0, "t": fern[6] - 3000, "s": 0, "f": 1},
+        # A bonus word charted first here: bonus words aren't in the log, so it isn't counted.
+        {"w": "MONET", "x": 60, "y": 3, "d": 2, "t": MONET[6], "s": 1, "f": 1},
         # Found here after ZED charted it: in the notes, but not charted first.
         {"w": "ACORN", "x": 5, "y": 7, "d": 0, "t": ACORN[6] + 9 * MINUTE, "s": 0, "f": 0},
         # Charted first here yesterday.
         {"w": "ZEUS", "x": -40, "y": 100, "d": 6, "t": ZEUS[6], "s": 0, "f": 1},
     ]
-    fake = FakeSurveyLog([ACORN, MONET, ZEUS], PLACES, THEMES)
+    fake = FakeSurveyLog([ACORN, fern, ZEUS], PLACES, THEMES)
     open_log(page, site_url, fake, finds=finds)
 
     # Everyone's log marks yours.
     expect(page.locator(".entry")).to_have_count(2)
-    expect(page.locator(".entry", has_text="MONET").locator(".you")).to_have_text("you")
-    expect(page.locator(".entry", has_text="ACORN").locator(".you")).to_have_count(0)
+    expect(entry(page, "FERN").locator(".you")).to_have_text("you")
+    expect(entry(page, "ACORN").locator(".you")).to_have_count(0)
 
     page.click("#viewMine")
     expect(page.locator(".entry")).to_have_count(1)
-    expect(page.locator(".entry")).to_contain_text("MONET")
+    expect(page.locator(".entry")).to_contain_text("FERN")
     expect(tile(page, 0)).to_contain_text("Charted first by you1")
+    # Nothing says the bonus word is missing from the log: it was never going to be there.
+    expect(page.locator("#sumText")).not_to_contain_text("aren’t in the log")
     assert "view=mine" in page.url
     # Only the hours within 10 minutes of a find (in case this device's clock
-    # was off) were read: MONET's, and the one it's 5 minutes into.
-    hour = MONET[6] // 3_600_000
+    # was off) were read: FERN's, and the one it's 5 minutes into.
+    hour = fern[6] // 3_600_000
     assert sorted(r for r in fake.requests if "/hour/" in r) == [f"/hour/{hour - 1}", f"/hour/{hour}"]
 
     # Longer periods count this browser's finds, without asking the server.

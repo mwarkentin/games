@@ -583,7 +583,8 @@ function myFirsts() {
   const out = new Map();
   if (!Array.isArray(list)) return out;
   for (const o of list) {
-    if (!o || !o.f || typeof o.w !== 'string' || !/^[A-Z]{3,12}$/.test(o.w)) continue;
+    // Bonus words aren't in the log (sectors keep them), so they aren't counted here either.
+    if (!o || !o.f || o.s || typeof o.w !== 'string' || !/^[A-Z]{3,12}$/.test(o.w)) continue;
     const x = Number(o.x), y = Number(o.y), d = Number(o.d), t = Number(o.t);
     if (![x, y, d, t].every(Number.isFinite) || !Number.isInteger(x) || !Number.isInteger(y) || d < 0 || d > 7) continue;
     out.set(keyOf(o.w, x, y, d), { w: o.w, x, y, d, t, s: o.s ? 1 : 0 });
@@ -595,8 +596,9 @@ const minePoints = firsts => [...firsts.values()].map(f => [f.t, 1, !f.s && inWo
 // Browsers keep settled answers for a day. Bumping this makes them forget
 // the ones they have: 2 dropped months a Worker Preview's test history had
 // put in Cloudflare's cache for production (see "Caching" in SURVEY.md), and
-// 3 the days of an older map, whose log a new one empties.
-const CACHE_VERSION = 3;
+// 3 the days of an older map, whose log a new one empties, and 4 the bonus
+// words that left the log (worker/migrations-log/0009).
+const CACHE_VERSION = 4;
 async function getJSON(path) {
   const ctl = new AbortController(), timer = setTimeout(() => ctl.abort(), 10000);
   try {
@@ -1667,8 +1669,9 @@ function busiest(p, buckets) {
   return b ? [bucketLabel(p, b), plural(b.n, 'word')] : ['—', ''];
 }
 // The third tile fits the view: a period's hidden words, which the words
-// charted less its bonus words make (and the rare word charted beyond the
-// universe's edge, counted with them); all time's share of the universe.
+// charted less any bonus words make (the log keeps none now, but an answer
+// cached from before can hold some, and the rare word charted beyond the
+// universe's edge is counted with them); all time's share of the universe.
 function summaryTiles(p, buckets, mine, label = 'Words charted') {
   const total = buckets.reduce((a, b) => a + b.n, 0), world = buckets.reduce((a, b) => a + b.world, 0);
   const [when, much] = busiest(p, buckets), bonus = total - world;

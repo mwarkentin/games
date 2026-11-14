@@ -713,9 +713,12 @@ export class Sector {
     if (!rows.length && !novas.length) return false;
     // The names of the guilds these claims count for, which D1 keeps once each.
     // A sector only ever sees a few guilds, so all their names are read.
-    const lids = new Set(rows.map((r) => r.guild).filter(Boolean));
+    // Bonus words (s = 1, spelled by chance) stay here and in the game's field
+    // notes, but aren't kept in the public log; the mark still moves past them.
+    const shown = rows.filter((r) => !r.s);
+    const lids = new Set(shown.map((r) => r.guild).filter(Boolean));
     const guilds = lids.size ? this.sql.exec('SELECT lid, a, b, c FROM guild_names').toArray().filter((g) => lids.has(g.lid)) : [];
-    await writeLog(this.env.LOG_DB, rows, novas, guilds);
+    await writeLog(this.env.LOG_DB, shown, novas, guilds);
     if (rows.length) this.sql.exec('INSERT INTO logged (id, at) VALUES (0, ?) ON CONFLICT (id) DO UPDATE SET at = excluded.at', upTo);
     for (const n of novas) this.sql.exec('UPDATE novas SET logged = 1 WHERE rx = ? AND ry = ?', n.rx, n.ry);
     return rows.length === LOG_BATCH;

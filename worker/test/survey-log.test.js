@@ -10,7 +10,7 @@ import { DatabaseSync } from 'node:sqlite';
 import { afterEach, beforeEach, describe, mock, test } from 'node:test';
 
 import worker from '../src/index.js';
-import { MAP_VERSION, RC, THEMES, VOCAB, chunk, fdiv, keyOf, regionName, regionTheme, territoryTotal } from '../src/letterfield-world.js';
+import { CH, DIRS, MAP_VERSION, RC, STRAY_MIN, THEMES, VOCAB, chunk, fdiv, keyOf, letterAt, regionName, regionTheme, territoryTotal } from '../src/letterfield-world.js';
 import {
   DAY_MS, HOURS_SQL, HOUR_AFTER_SQL, HOUR_MS, HOUR_SQL, LIVE_CACHE_S, LOG_BATCH, LOG_MS, LOG_PAGE, LOG_RETRY_MAX_MS, SETTLED_MS,
   FIRST_SQL, LAST_SQL, SLICES, SLICE_MAX_HOURS, SLICE_PAGE, SLICE_SLOW_CACHE_S, SPAN_CACHE_S, SURVEYORS_SQL, TERRITORIES_SQL,
@@ -203,6 +203,21 @@ describe('the log\'s counts', () => {
     assert.deepEqual(hours(), [{ hour: HOUR, n: 4, world: 2 }]);
     assert.deepEqual(counts('survey_log_surveyors'), [{ day: DAY, initials: 'AMY', n: 1 }, { day: DAY, initials: 'ZED', n: 3 }]);
     assert.deepEqual(counts('survey_log_territories'), [{ day: DAY, rx: 0, ry: 0, n: 2 }, { day: DAY, rx: 62, ry: 0, n: 1 }]);
+  });
+
+  test('take bonus words already logged out of the log and its counts', async () => {
+    const BONUS = '0009_survey_log_no_bonus_words.sql';
+    const before = readdirSync(MIGRATIONS).sort().indexOf(BONUS);
+    assert.ok(before > 0, `no ${BONUS}`);
+    db = fakeD1(before);
+    const guild = 'c0ba17c0ba';
+    await writeLog(db, [at(0, 0, NOW), { ...at(5, 5, NOW + 1, { s: 1, initials: 'AMY' }), guild }, { ...at(1, 1, NOW + 2), guild }]);
+    assert.deepEqual(hours(), [{ hour: HOUR, n: 3, world: 2 }]);
+    db.raw.exec(migrations()[before]);
+    assert.deepEqual(db.rows().map((r) => r.s), [0, 0]);
+    assert.deepEqual(hours(), [{ hour: HOUR, n: 2, world: 2 }]);
+    assert.deepEqual(counts('survey_log_surveyors').filter((r) => r.n), [{ day: DAY, initials: 'ZED', n: 2 }]);
+    assert.deepEqual(db.raw.prepare('SELECT guild, n FROM survey_log_guild_days').all().map((r) => ({ ...r })), [{ guild, n: 1 }]);
   });
 
   test('give a UTC month hour by hour, leaving out hours with none', async () => {
@@ -635,6 +650,25 @@ function fakeSocket() {
   };
 }
 
+// A bonus word near the origin: one the letters spell by chance, of STRAY_MIN
+// letters or more, that isn't a hidden word (findStray in survey.test.js),
+// other than `not`.
+function findStray(min = STRAY_MIN, max = 12, not = null) {
+  for (let y = 0; y < 96; y++) {
+    for (let x = 0; x < 96; x++) {
+      for (let d = 0; d < 8; d++) {
+        let s = '';
+        for (let i = 0; i < max; i++) {
+          s += String.fromCharCode(65 + letterAt(x + DIRS[d][0] * i, y + DIRS[d][1] * i));
+          if (s.length >= min && VOCAB.has(s) && !(not && not.w === s && not.x === x && not.y === y && not.d === d)
+            && !chunk(Math.floor(x / CH), Math.floor(y / CH)).words.some((p) => p.key === keyOf(s, x, y, d))) return { w: s, x, y, d };
+        }
+      }
+    }
+  }
+  return null;
+}
+
 describe('Sector copying claims to the log', () => {
   let state, env, sector, clock, logged;
   beforeEach(() => {
@@ -675,6 +709,24 @@ describe('Sector copying claims to the log', () => {
     await fire();
     assert.equal(env.LOG_DB.rows().length, 3);
     assert.equal(env.LOG_DB.batches, 2);  // each claim went once
+  });
+
+  test('leaves bonus words out of the log, and moves on past them', async () => {
+    const ws = join();
+    const bonus = findStray();
+    assert.ok(bonus, 'no bonus word near the origin');
+    await claim(ws, 0);
+    clock += 2000;
+    await sector.webSocketMessage(ws, JSON.stringify({ t: 'claim', ...bonus }));
+    await fire();
+    assert.deepEqual(env.LOG_DB.rows().map((r) => r.w), [word(0).w]);
+    // A bonus word alone sends nothing, and isn't sent again with the next word.
+    clock += 2000;
+    await sector.webSocketMessage(ws, JSON.stringify({ t: 'claim', ...findStray(STRAY_MIN, 12, bonus) }));
+    if (state.alarm !== null) await fire();
+    await claim(ws, 1);
+    await fire();
+    assert.deepEqual(env.LOG_DB.rows().map((r) => r.w), [word(0).w, word(1).w]);
   });
 
   test('keeps to LOG_MS when the next claim reaches a sector woken from hibernation', async () => {
