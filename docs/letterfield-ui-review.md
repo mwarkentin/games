@@ -25,7 +25,7 @@ Line numbers are as of commit 7bae950 and drift as the files change.
 | 10 | "Charted first" on nearly every entry, and messy rows | a with b; cards under day headings, a time on each row, rows on one grid | To build |
 | 11 | The theme cut to "Fe…" on a phone | b: "3/113" without "charted", and no LF mark on phones | To build |
 | 12 | "Origin" means nothing to most players | b and c: Map centre, and Last find once you have a find | To build |
-| 13 | | Open | |
+| 13 | Internal words show through | a: fix the words; 16 random guild words, without "Survey" | To build |
 | 14 | The tools menu hides its state; the volume floats | c: a mixer, a slider each for effects and music; zoom in one row | To build |
 | 15–29 | | Open | |
 
@@ -306,13 +306,34 @@ it's the oldest, most charted part of the map.
 
 ### 13. Internal words show through
 
-"9 surveyors in 3 sectors"; guild names ending in "Survey".
+"9 surveyors in 3 sectors" (gone with 5a); one guild name in eight ending in
+"Survey", which reads like another survey beside "the shared survey" and
+the survey log; "stray" on a find, which nothing explains (the changelog
+says "words found by chance"); and 6b's "Festivals · full", which in the
+count's place reads as every word charted.
 
-- **a. Fix the words**, and swap the guild word "Survey" in both copies of
-  the list (`letterfield.html`, `worker/src/survey-guild.js`). *Recommended.*
-- **b. An "About the survey" fold.**
+- **a. Fix the words.** *Recommended:* a word or two each, and the text
+  then says what it means where it's read.
+- **b. An "About the survey" fold** in the notes, explaining the words.
 - **Machines:** none.
-- **Decided:** open.
+- **Decided: a**, with more guild words:
+  - **Guild names:** "Survey" leaves the third list. Its place (word 6)
+    goes to "Lodge", so existing "… Survey" guilds become "… Lodge"
+    everywhere at once (a name is kept as each word's number), and eight
+    more words join the end, so the third list has 16 like the other two:
+    League, Order, Corps, Bureau, Institute, Academy, Alliance, Caravan.
+    Names are still drawn at random from the three lists, in both copies
+    (`letterfield.html` and `worker/src/survey-guild.js`, kept the same by
+    a test). None is longer than "Fellowship", which the guild tests use as
+    the longest.
+  - **"stray" becomes "found by chance"** under a find in the notes (10's
+    second line), in what screen readers hear ("Festivals word found by
+    chance") and in a shared find's text.
+  - **6b's "full" becomes "crowded"** in the title. The panel's sentence,
+    "This part of the map is full right now", stays.
+- **When building:** deploy the Worker before the site, or a new guild drawn
+  with one of the new words is refused until it does; a page left open from
+  before shows such a guild as unknown until it reloads.
 
 ### 14. The tools menu hides its state; the shortcuts are uneven
 
