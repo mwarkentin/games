@@ -1769,7 +1769,8 @@ const CLAIM_MOVES = {
 // little inside that, so time on the way can't push a claim over.
 const CLAIM_BURST = 4, CLAIM_REFILL_MS = 1600;
 function claimWord(e) {
-  if (!surveyApi || outbox.has(e.key)) return;
+  // A word someone else charted, added to the notes anyway, is theirs already.
+  if (!surveyApi || outbox.has(e.key) || claims.has(e.key)) return;
   const l = links.get(sectorKey(e.x, e.y));
   // `backlog`: it waited for its sector, rather than going as it was circled.
   const c = { e, l: null, backlog: !(l && l.m.is('live')), initials: '', known: false, beaten: false };
@@ -2449,9 +2450,9 @@ function novaOver(nv) {
 // of the sectors joined, a neighbouring sector's news of its supernova, or
 // further afield by the world map's counts), or once
 // your own notes hold every one. That last counts playing alone: the
-// supernova went off for you, so it stays. With the survey on you can't find
-// a word someone else charted, so it's only a territory you charted wholly
-// yourself. Worked out again only when the claims, the finds or the world
+// supernova went off for you, so it stays. With the survey on, a word someone
+// else charted is in your notes only if you added it, once it was charted, so
+// your notes holding every one means the survey has charted them all. Worked out again only when the claims, the finds or the world
 // map change; drawn without animation, so reduced motion changes nothing.
 let remMemo = { sig: '', map: null, set: new Set(), list: [] };
 const novasHeard = new Set();  // 'rx,ry' of territories a neighbouring sector said went supernova
@@ -3468,7 +3469,8 @@ function tryCollect(a, b) {
   miss(a, b);
 }
 function miss(a, b) { fail = { a, b, t0: performance.now() }; invalidate(); }
-function collect(w, x, y, d, stray) {
+// `keep`: the player chose to add a word someone else charted to their notes.
+function collect(w, x, y, d, stray, keep = false) {
   const key = keyOf(w, x, y, d);
   const have = found.get(key);
   if (have) {
@@ -3477,10 +3479,12 @@ function collect(w, x, y, d, stray) {
     return;
   }
   // On the shared survey a word someone has already charted is theirs: it
-  // shows circled on the map, and circling it again finds nothing new.
+  // shows circled on the map, and circling it finds nothing new, though the
+  // note offers to add it to the field notes all the same.
   const theirs = claims.get(key);
-  if (theirs) {
-    toast(`<i></i><b>${w}</b><span>Already charted by ${theirs.by || 'another surveyor'}</span>`, THEMES[theirs.th].hue);
+  if (theirs && !keep) {
+    toast(`<i></i><b>${w}</b><span>Already charted by ${theirs.by || 'another surveyor'}</span>`, THEMES[theirs.th].hue, ADD_TOAST_MS,
+      { label: `Add ${w} to your field notes`, text: 'Add to notes', icon: NOTES_ICON, share: () => { hideToast(); collect(w, x, y, d, stray, true); } });
     pulse = { x, y, d, w, t0: performance.now() }; invalidate();
     return;
   }
@@ -3491,7 +3495,7 @@ function collect(w, x, y, d, stray) {
   const rx = fdiv(x, RC), ry = fdiv(y, RC);
   say(`${w} · ${stray ? 'Stray ' + THEMES[e.th].name.toLowerCase() + ' word' : THEMES[e.th].name} · ${regionName(rx, ry)}`);
   gatherFind(e);
-  if (!stray) {
+  if (!stray && !keep) {  // someone else's word, added to the notes, sets off nothing: it went off when it was charted
     const total = territoryTotal(rx, ry);
     if (territoryFound(rx, ry) === total) {
       const seen = sawNova({ rx, ry, t: e.t, w, x, y, d, by: '', mine: true, solo: !surveyApi });
@@ -3993,6 +3997,8 @@ toastEl.addEventListener('focusout', () => setTimeout(releaseToast));
 // A word you charted first says where it came in the shared world's count,
 // as the survey had it at that moment.
 const SHARE_TOAST_MS = 6000;
+const ADD_TOAST_MS = SHARE_TOAST_MS + 2000;  // a note offering to add someone else's word: it's read before it's tapped
+const NOTES_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 4h11a3 3 0 0 1 3 3v13H8a3 3 0 0 1-3-3V4z"/><path d="M5 17a3 3 0 0 1 3-3h11"/><path d="M9 8h6"/></svg>';
 const SHARE_JUST_MS = 10 * 60000;  // within this long of finding it, "I just found"
 const SHARE_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 15V3M7.5 7.5 12 3l4.5 4.5"/><path d="M8 11H6a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-6a2 2 0 0 0-2-2h-2"/></svg>';
 // A dark page shares a dark card (/f/d/…): the card follows the sharer's theme.
