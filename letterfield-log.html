@@ -365,7 +365,7 @@ const PERIODS = ['hour', 'day', 'week', 'month', 'year', 'all'];
 const GUILD_FIRST = [['Crimson', 350], ['Coral', 8], ['Copper', 22], ['Amber', 38], ['Golden', 50], ['Lime', 85], ['Fern', 115], ['Emerald', 145],
   ['Jade', 165], ['Teal', 182], ['Azure', 200], ['Cobalt', 220], ['Indigo', 245], ['Violet', 270], ['Plum', 295], ['Rose', 325]];
 const GUILD_SECOND = ['Compass', 'Sextant', 'Lantern', 'Quill', 'Atlas', 'Meridian', 'Beacon', 'Theodolite', 'Chart', 'Lodestar', 'Spyglass', 'Waypoint', 'Ledger', 'Inkwell', 'Horizon', 'Contour'];
-const GUILD_THIRD = ['Society', 'Guild', 'Company', 'Circle', 'Club', 'Expedition', 'Survey', 'Fellowship'];
+const GUILD_THIRD = ['Society', 'Guild', 'Company', 'Circle', 'Club', 'Expedition', 'Lodge', 'Fellowship', 'League', 'Order', 'Corps', 'Bureau', 'Institute', 'Academy', 'Alliance', 'Caravan'];
 const GUILD_LISTS = [GUILD_FIRST.map(w => w[0]), GUILD_SECOND, GUILD_THIRD];
 // Three word numbers, each in range, as the Worker's goodName checks them.
 const goodName = n => Array.isArray(n) && n.length === 3 && n.every((v, i) => Number.isInteger(v) && v >= 0 && v < GUILD_LISTS[i].length);
