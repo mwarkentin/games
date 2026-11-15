@@ -14,11 +14,12 @@ utilities; games live here so they get their own origin and their own rules.
   it joins that game's home-screen app, so it needs no icon or manifest of
   its own and its path must start with the game's (see `app_of` in
   `scripts/common.py`). `letterfield-timelapse.html`, the survey replayed on
-  a map, is another. The three link to each other with links marked
-  `data-back`, which step back in the tab's history when they lead to the
-  page it came from, so its view and scroll come back: a helper between
-  `BEGIN BACK LINKS` and `END BACK LINKS` markers, the same in each, which
-  `tests/test_letterfield_back_links.py` checks.
+  a map, is another. The log's way back to the map, "← Letterfield", steps
+  back in the tab's history when the tab came from the map, so the map comes
+  back as it was (`data-back`, and the helper beside it in the log), and the
+  map keeps its place whenever an entry of its is come back to; links into
+  the log open it at its start. `tests/test_letterfield_back_links.py`
+  checks both.
 - `README.md`: the game list. The build turns it into `index.html`.
 - `changelog/`: each game's changelog for players, `<game>.md`, which the
   build turns into `/changelog/<game>` (see Changelogs).

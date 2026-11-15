@@ -35,7 +35,7 @@ Line numbers are as of commit 7bae950 and drift as the files change.
 | 20 | On a phone, the words come last | a with c: words straight after the chart, its supernova note under it | Built in #106 |
 | 21 | The hour view uses a day's controls; the log's header | A new header (a way back, tabs for what's listed, periods as tabs, the card's title as navigator); b with d: ‹ stops at the first word | Built in #106 |
 | 22 | A new guild's page says "No such guild" | a plus c: named, "hasn't charted a word yet"; its Timelapse link waits for a first word | Built in #106, with the name from #105 |
-| 23 | Moving between the game, log and timelapse loses your place | a: a link back to the page you came from steps back in history | Built in #109 |
+| 23 | Moving between the game, log and timelapse loses your place | a: a link back to the page you came from steps back in history | Built in #109, for the way back to the map; links into the log open it at its start (the owner's call on the preview) |
 | 24 | Numbers nobody explains | a with c: the third tile fits the view; the UTC note under the Top lists heading | Built in #106 |
 | 25 | One idea, many names, across the three pages | a: a glossary in AGENTS.md; "members" for a guild's people, "the universe" for the shared world | Glossary in #105; each page in #105, #106 and #104; the rest in #109 |
 | 26 | The timelapse's territory card uses the theme as its name | a: "A Festivals territory" until the name comes, and the replay's date for "by then" | Built in #104 |

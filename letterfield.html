@@ -732,7 +732,7 @@ body.settling, body.settling *{transition:none!important}
       <canvas id="worldMap" width="200" height="200" aria-label="Map of the universe: charted territories are darker, dots are surveyors. Tap to fly there."></canvas>
       <p class="survey-map-note" id="worldNote"></p>
     </details>
-    <a class="survey-log" href="/letterfield-log" data-back="page">Survey log and timelapse <span aria-hidden="true">↗</span></a>
+    <a class="survey-log" href="/letterfield-log">Survey log and timelapse <span aria-hidden="true">↗</span></a>
   </section>
   <section class="novas" id="novasSec" aria-labelledby="novasHead" hidden>
     <h3 class="eyebrow" id="novasHead">Supernovas</h3>
@@ -816,74 +816,6 @@ body.settling, body.settling *{transition:none!important}
 <script>
 (() => {
 'use strict';
-// ---- BEGIN BACK LINKS ----
-// The game, the survey log and the timelapse link to each other. A link
-// marked data-back, to the page this tab was on before this one, steps back
-// to it instead of opening it afresh, so you come back to the view you left,
-// scrolled where it was, in a Home Screen app with no Back button too:
-// data-back="page" for any view of that page, data-back="view" for the same
-// view (its address, but for the period and a guild's name). Every history
-// entry keeps in its state the address of the last entry of another of the
-// three pages before this page's own (lfPrev) and how many steps back that
-// is (lfBack): from the referrer when a page opens, a step further with each
-// entry the page makes of its own (pushState, a fragment link), and kept by
-// a reload, Back and Forward. Anything else is a normal link.
-(() => {
-  const PAGES = ['/letterfield', '/letterfield-log', '/letterfield-timelapse'], LOOSE = ['period', 'day', 'hour', 'name'];
-  const KEY = 'letterfield.left.v1';  // this tab's page as it left, for one opening the same page afresh
-  const path = u => u.pathname.replace(/\.html$/, '');
-  const at = u => path(u) + u.search;
-  let prev = null, back = 0;
-  const push = history.pushState.bind(history), replace = history.replaceState.bind(history);
-  const tagged = s => ({ ...(s && typeof s === 'object' ? s : {}), lfPrev: prev, lfBack: back });
-  const keep = () => { try { sessionStorage.setItem(KEY, JSON.stringify({ at: at(location), prev, back })); } catch (_) {} };
-  const tag = () => { try { replace(tagged(history.state), ''); } catch (_) {} keep(); };
-  // An entry tagged before says where it stands.
-  function known() {
-    const s = history.state;
-    if (!s || typeof s !== 'object' || !('lfBack' in s)) return false;
-    prev = typeof s.lfPrev === 'string' ? s.lfPrev : null;
-    back = prev && Number.isInteger(s.lfBack) && s.lfBack > 0 ? s.lfBack : 0;
-    if (!back) prev = null;
-    keep();
-    return true;
-  }
-  if (!known()) {
-    let ref = null;
-    try { ref = new URL(document.referrer); } catch (_) {}
-    // A tab's first entry has nothing before it, whoever opened it.
-    if (history.length > 1 && ref && ref.origin === location.origin && PAGES.includes(path(ref))) {
-      if (path(ref) !== path(location)) { prev = at(ref); back = 1; }
-      else {
-        // This page again, opened afresh: where it came from, a step further.
-        let left = null;
-        try { left = JSON.parse(sessionStorage.getItem(KEY)); } catch (_) {}
-        if (left && left.at === at(ref) && typeof left.prev === 'string' && Number.isInteger(left.back) && left.back > 0) { prev = left.prev; back = left.back + 1; }
-      }
-    }
-    tag();
-  }
-  history.pushState = (s, title, url) => { if (prev) back += 1; push(tagged(s), title, url); keep(); };
-  history.replaceState = (s, title, url) => { replace(tagged(s), title, url); keep(); };
-  // A fragment link's entry comes untagged: a step further.
-  const moved = () => { if (!known()) { if (prev) back += 1; tag(); } };
-  addEventListener('popstate', moved);
-  addEventListener('hashchange', moved);
-  addEventListener('pageshow', e => { if (e.persisted) known(); });
-  addEventListener('pagehide', keep);
-  const view = u => [...u.searchParams].filter(([k]) => !LOOSE.includes(k)).map(p => p.join('=')).sort().join('&');
-  document.addEventListener('click', e => {
-    const a = e.target instanceof Element && e.target.closest('a[data-back]');
-    if (!a || !prev || e.defaultPrevented || e.button || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || (a.target && a.target !== '_self')) return;
-    let to, from;
-    try { to = new URL(a.href); from = new URL(prev, location.origin); } catch (_) { return; }
-    if (to.origin !== location.origin || path(to) !== path(from)) return;
-    if (a.dataset.back === 'view' && view(to) !== view(from)) return;
-    e.preventDefault();
-    history.go(-back);
-  });
-})();
-// ---- END BACK LINKS ----
 const $ = s => document.querySelector(s);
 
 /* ---------- World constants ---------- */
@@ -4463,7 +4395,15 @@ findsEl.addEventListener('click', e => {
   const h = '#' + hashOf(en);
   try { if (location.hash !== h) { hashSuppress = h; location.hash = h; } } catch (_) {}
 });
+// Each entry of the map's in the tab's history, its first and every find's,
+// says it's been seen, so a find in its address doesn't fly there again when
+// it's come back to.
+function markSeen() {
+  if (history.state?.lfSeen) return;
+  try { history.replaceState({ ...(history.state && typeof history.state === 'object' ? history.state : {}), lfSeen: 1 }, ''); } catch (_) {}
+}
 window.addEventListener('hashchange', () => {
+  markSeen();
   if (location.hash === hashSuppress) { hashSuppress = ''; return; }
   const p = parseHash(location.hash);
   if (p) goToEntry(p);
@@ -5383,7 +5323,7 @@ function renderGuild() {
       (st === 'confirming'
         ? `<div class="you-pad"><p>Leave the ${guildName(myGuild.name)}? You’d need a new invite to come back.</p><div class="guild-acts"><button type="button" class="btn danger" data-g="leave-yes">Leave</button><button type="button" class="btn ghost" data-g="leave-no">Stay</button></div></div>`
         : `<button type="button" class="you-item" data-g="invite"><span>Invite someone<small>A link to send them</small></span>${CHEV}</button>` +
-          (LID_RE.test(myGuild.lid || '') ? `<a class="you-item" data-g="log" data-back="view" href="/letterfield-log?guild=${myGuild.lid}&name=${myGuild.name.join('-')}"><span>Our words in the survey log<small>The guild’s own page, which anyone can open</small></span>${OUT}</a>` : '') +
+          (LID_RE.test(myGuild.lid || '') ? `<a class="you-item" data-g="log" href="/letterfield-log?guild=${myGuild.lid}&name=${myGuild.name.join('-')}"><span>Our words in the survey log<small>The guild’s own page, which anyone can open</small></span>${OUT}</a>` : '') +
           `<button type="button" class="you-item danger" data-g="leave"${st === 'leaving' ? ' disabled' : ''}><span>${st === 'leaving' ? 'Leaving…' : 'Leave guild'}</span></button>` +
           `<p class="guild-small">Words you chart while in a guild count for it in the survey log, under its name.</p>`);
   } else if (st === 'invited' || st === 'joining') html = '<p class="you-pad">Looking at an invite to a guild…</p>';
@@ -6117,7 +6057,12 @@ resize();
 // from here a change slides.
 requestAnimationFrame(() => document.body.classList.remove('settling'));
 renderNotes();
-const startHash = parseHash(location.hash);
+// A find in the address flies there when the map is opened with it, but not
+// when this entry is come back to (a reload, Back, or the survey log's way
+// back to the map), which stays where you left it, as saved: the entry says
+// it's been seen (see markSeen).
+const startHash = history.state?.lfSeen ? null : parseHash(location.hash);
+markSeen();
 if (startHash) {
   const [ex, ey] = wordEnd(startHash);
   flyTo((startHash.x + ex) / 2 + .5, (startHash.y + ey) / 2 + .5, 40, { instant: true, then: now => { pulse = { ...startHash, t0: now }; } });

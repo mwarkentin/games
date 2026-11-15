@@ -289,10 +289,10 @@ header p{margin:8px 0 0;color:var(--muted);max-width:40ch}
 <body>
 <main>
   <header>
-    <a class="home" href="/letterfield" data-back="page">← Letterfield</a>
+    <a class="home" href="/letterfield" data-back>← Letterfield</a>
     <div class="titlerow">
       <h1>Survey log</h1>
-      <a class="pill" href="/letterfield-timelapse" id="timelapseLink" data-back="view">▶ Timelapse</a>
+      <a class="pill" href="/letterfield-timelapse" id="timelapseLink">▶ Timelapse</a>
     </div>
     <p id="intro">Every word charted first. Tap a word to fly to it, or a name to see all of theirs.</p>
   </header>
@@ -361,21 +361,18 @@ header p{margin:8px 0 0;color:var(--muted);max-width:40ch}
 <div class="tip" id="tip" role="tooltip" hidden></div>
 <script>
 'use strict';
-// ---- BEGIN BACK LINKS ----
-// The game, the survey log and the timelapse link to each other. A link
-// marked data-back, to the page this tab was on before this one, steps back
-// to it instead of opening it afresh, so you come back to the view you left,
-// scrolled where it was, in a Home Screen app with no Back button too:
-// data-back="page" for any view of that page, data-back="view" for the same
-// view (its address, but for the period and a guild's name). Every history
-// entry keeps in its state the address of the last entry of another of the
-// three pages before this page's own (lfPrev) and how many steps back that
-// is (lfBack): from the referrer when a page opens, a step further with each
-// entry the page makes of its own (pushState, a fragment link), and kept by
-// a reload, Back and Forward. Anything else is a normal link.
+// "← Letterfield" goes back to the map: when the tab came here from the map,
+// it steps back to it in the tab's history instead of opening it afresh, so
+// the map comes back as you left it, in a Home Screen app with no Back button
+// too. Every history entry keeps in its state the address of the last entry
+// of another page before the log's own (lfPrev) and how many steps back that
+// is (lfBack): from the referrer when the log opens, a step further with each
+// entry it makes of its own (a view, a fragment link), and kept by a reload,
+// Back and Forward. A link marked data-back steps back when it leads to that
+// page; anything else is a normal link.
 (() => {
-  const PAGES = ['/letterfield', '/letterfield-log', '/letterfield-timelapse'], LOOSE = ['period', 'day', 'hour', 'name'];
-  const KEY = 'letterfield.left.v1';  // this tab's page as it left, for one opening the same page afresh
+  const PAGES = ['/letterfield', '/letterfield-log', '/letterfield-timelapse'];
+  const KEY = 'letterfield.left.v1';  // the log as it left, for a log opening afresh from it
   const path = u => u.pathname.replace(/\.html$/, '');
   const at = u => path(u) + u.search;
   let prev = null, back = 0;
@@ -400,7 +397,7 @@ header p{margin:8px 0 0;color:var(--muted);max-width:40ch}
     if (history.length > 1 && ref && ref.origin === location.origin && PAGES.includes(path(ref))) {
       if (path(ref) !== path(location)) { prev = at(ref); back = 1; }
       else {
-        // This page again, opened afresh: where it came from, a step further.
+        // The log again, opened afresh: where it came from, a step further.
         let left = null;
         try { left = JSON.parse(sessionStorage.getItem(KEY)); } catch (_) {}
         if (left && left.at === at(ref) && typeof left.prev === 'string' && Number.isInteger(left.back) && left.back > 0) { prev = left.prev; back = left.back + 1; }
@@ -416,19 +413,16 @@ header p{margin:8px 0 0;color:var(--muted);max-width:40ch}
   addEventListener('hashchange', moved);
   addEventListener('pageshow', e => { if (e.persisted) known(); });
   addEventListener('pagehide', keep);
-  const view = u => [...u.searchParams].filter(([k]) => !LOOSE.includes(k)).map(p => p.join('=')).sort().join('&');
   document.addEventListener('click', e => {
     const a = e.target instanceof Element && e.target.closest('a[data-back]');
     if (!a || !prev || e.defaultPrevented || e.button || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || (a.target && a.target !== '_self')) return;
     let to, from;
     try { to = new URL(a.href); from = new URL(prev, location.origin); } catch (_) { return; }
     if (to.origin !== location.origin || path(to) !== path(from)) return;
-    if (a.dataset.back === 'view' && view(to) !== view(from)) return;
     e.preventDefault();
     history.go(-back);
   });
 })();
-// ---- END BACK LINKS ----
 // The survey's server (worker/src/survey-log.js). ?survey=<url> overrides it
 // for testing, as in letterfield.html.
 const SURVEY_URL = 'https://api.games.michaelwarkentin.com';
@@ -1388,57 +1382,7 @@ const Log = machine('log', {
   refreshing: ['ready', 'stale', 'loading'],
   stale: ['refreshing', 'loading'],
   failed: ['loading'],
-}, 'loading', { onMove: to => { if (to === 'ready') scrollBack(); } });
-// A view come back to (Back, a step back from another page, see BACK LINKS,
-// or a reload) is scrolled where it was once its words are drawn, which the
-// browser can't do while they're still on their way, and does a little off
-// when it tries. Each entry keeps its scroll, saved a moment after the page
-// stops scrolling and as anything is tapped.
-let backTo = Number.isFinite(history.state?.lfScroll) ? history.state.lfScroll : null, scrollSaving = 0;
-try { history.scrollRestoration = 'manual'; } catch (_) {}
-function keepScroll() {
-  clearTimeout(scrollSaving);
-  try { history.replaceState({ ...history.state, lfScroll: scrollY }, ''); } catch (_) {}
-}
-addEventListener('scroll', () => { clearTimeout(scrollSaving); scrollSaving = setTimeout(keepScroll, 250); }, { passive: true });
-document.addEventListener('click', keepScroll, true);
-addEventListener('pagehide', keepScroll);
-function scrollBack() {
-  if (backTo === null) return;
-  const y = backTo;
-  backTo = null;
-  jumpTo(y);
-  // The words may still be in a stand-in font, and the browser keeps what's on
-  // screen in place as the page's own fonts arrive, a little away from y: so
-  // once they're in, back to y, unless you've scrolled since.
-  if (!document.fonts || document.fonts.status === 'loaded') return;
-  const yours = ['wheel', 'touchmove', 'keydown', 'pointerdown'];
-  let moved = false;
-  const mine = () => { moved = true; };
-  for (const t of yours) addEventListener(t, mine, { passive: true });
-  document.fonts.ready.then(() => {
-    for (const t of yours) removeEventListener(t, mine);
-    if (!moved) jumpTo(y);
-  });
-}
-// Straight to y, not a glide there, whatever scroll-behavior says (read back
-// first, so the scroll sees it).
-function jumpTo(y) {
-  const html = document.documentElement, was = html.style.scrollBehavior;
-  html.style.scrollBehavior = 'auto';
-  void getComputedStyle(html).scrollBehavior;
-  scrollTo(0, y);
-  html.style.scrollBehavior = was;
-}
-// A page brought back whole from the browser's back-forward cache isn't drawn
-// again, and Safari, with its own restoration off, shows it at the top: so its
-// entry's scroll is put back here, and again a frame later if Safari moved it.
-addEventListener('pageshow', e => {
-  if (!e.persisted || !Number.isFinite(history.state?.lfScroll)) return;
-  const y = history.state.lfScroll;
-  jumpTo(y);
-  requestAnimationFrame(() => { if (Math.abs(scrollY - y) > 1) jumpTo(y); });
-});
+}, 'loading');
 // Where the log starts, on <html data-span>: asking the log for its first
 // word, known, or failed (asked again on the next view). Until it's known,
 // ‹ goes back without stopping.
@@ -1503,7 +1447,7 @@ document.addEventListener('click', e => {
   e.preventDefault();
   go(a.getAttribute('href'));
 });
-addEventListener('popstate', () => { backTo = Number.isFinite(history.state?.lfScroll) ? history.state.lfScroll : 0; readUrl(); render(); });
+addEventListener('popstate', () => { readUrl(); render(); });
 // Opens a period at a moment: today's when the period holds now, else its start.
 function open(period, t) {
   state.period = period;

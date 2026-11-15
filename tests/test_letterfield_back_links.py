@@ -1,37 +1,21 @@
-"""Letterfield's game, survey log and timelapse: a link back steps back in history.
+"""Letterfield's survey log: its way back to the map steps back in history.
 
-A link marked data-back, to the page this tab was on before this one, steps
-back to it instead of opening it afresh, so the view and scroll you left come
-back, in a Home Screen app with no Back button too. Each page keeps the same
-helper between BEGIN BACK LINKS and END BACK LINKS markers.
+"← Letterfield" in the survey log, when the tab came to the log from the map,
+steps back to the map instead of opening it afresh, so the map comes back as
+it was, in a Home Screen app with no Back button too; the map keeps its place
+when it's come back to, whatever find its address holds. Links into the log
+are plain links: the log opens at its start.
 """
 
 from __future__ import annotations
 
 import re
-import textwrap
 
 from playwright.sync_api import Page, expect
-from playwright.sync_api import TimeoutError as PlaywrightTimeout
 
-from common import ROOT
-from fake_leaderboard import Held
+from fake_leaderboard import without_worker
 from fake_survey_log import SURVEY, FakeSurveyLog
 from test_letterfield_log import ACORN, MINUTE, MONET, NOW_MS, PLACES, THEMES, ZEUS, entry, open_log
-
-BLOCK = re.compile(r"^[ \t]*// ---- BEGIN BACK LINKS ----\n.*?^[ \t]*// ---- END BACK LINKS ----\n", re.M | re.S)
-PAGES = ["letterfield.html", "letterfield-log.html"]
-
-
-def test_every_page_keeps_the_same_helper():
-    copies = {}
-    for filename in PAGES:
-        found = BLOCK.findall((ROOT / filename).read_text("utf-8"))
-        assert len(found) == 1, f"{filename} has {len(found)} copies of the back links helper"
-        copies[filename] = textwrap.dedent(found[0])
-    first, *others = copies.items()
-    for filename, text in others:
-        assert text == first[1], f"{filename}'s back links helper differs from {first[0]}'s: change every copy"
 
 
 def to_the_log(page: Page) -> None:
@@ -52,7 +36,7 @@ def test_the_log_steps_back_to_the_map_it_came_from(page: Page, site_url, errors
     page.goto(f"{site_url}/letterfield#debug")
     page.wait_for_function("window.__lf")
     game, n = at(page)
-    # The map's link to the log is a normal one: the map was this tab's first page.
+    # The map's link to the log is a normal one.
     to_the_log(page)
     page.wait_for_url("**/letterfield-log**")
     expect(page.locator(".home")).to_have_text("← Letterfield")
@@ -64,50 +48,65 @@ def test_the_log_steps_back_to_the_map_it_came_from(page: Page, site_url, errors
     assert errors == []
 
 
-# ZED's week of words, more than the log's placeholders hold the place of.
-MANY = [
-    [f"QU{chr(65 + i // 26)}{chr(65 + i % 26)}T", 5 + i % 40, 7, 0, 0, "ZED", NOW_MS - (i + 1) * 97 * MINUTE, 11]
-    for i in range(40)
-]
+# The map has stopped away from `at`, and saved where it is: its title's coordinate is the saved place's.
+SAVED_AWAY = """at => {
+  const shown = document.getElementById('tCoord').textContent, c = JSON.parse(localStorage.getItem('letterfield.cam.v1') || 'null');
+  if (!c || shown === at) return false;
+  const x = Math.floor(c.x), y = Math.floor(c.y);
+  return shown === `${Math.abs(x)}${x < 0 ? 'W' : 'E'} · ${Math.abs(y)}${y < 0 ? 'N' : 'S'}`;
+}"""
 
 
-def test_the_map_steps_back_to_the_logs_view_where_it_was(page: Page, site_url, errors):
-    page.set_viewport_size({"width": 375, "height": 740})
-    fake = FakeSurveyLog([*MANY, MONET, ZEUS], PLACES, THEMES)
-    held = Held(fake, lambda r: True)
-    held.holding = False
-    open_log(page, site_url, fake, "&surveyor=ZED&period=week")
-    page.unroute(f"{SURVEY}/v1/survey/log/**")
-    page.route(f"{SURVEY}/v1/survey/log/**", held.handle)
-    acorn = entry(page, MANY[30][0])
-    expect(acorn).to_be_visible()
-    acorn.evaluate("e => e.scrollIntoView({ block: 'center', behavior: 'instant' })")
-    page.wait_for_function("scrollY > 100")
-    view, n = at(page)
-    scrolled = page.evaluate("scrollY")
-    try:  # kept with the entry once it settles (without that, the check of the scroll below fails)
-        page.wait_for_function("history.state?.lfScroll === scrollY", timeout=2000)
-    except PlaywrightTimeout:
-        pass
-    # To the word on the map, as a normal link...
-    acorn.locator("a.fly").evaluate("a => a.click()")
-    page.wait_for_url(re.compile(r"/letterfield#f-"))
-    assert at(page)[1] == n + 1
-    # ...and the map's "Survey log and timelapse" is a step back, to that view. The log, slow to
-    # answer this time, is scrolled where it was once its words come.
-    held.holding = True
-    page.locator("#survey a.survey-log").evaluate("a => a.click()")
-    page.wait_for_url(re.compile(r"/letterfield-log"))
-    assert at(page) == (view, n + 1)
-    expect(page.locator("#sumTitle")).to_have_text("This week")
-    held.wait_for(page)
-    held.release()
-    expect(entry(page, MANY[30][0])).to_be_visible()
-    page.wait_for_function(f"Math.abs(scrollY - {scrolled}) < 2", timeout=5000)
+def test_the_map_keeps_its_place_when_it_comes_back(page: Page, site_url, errors):
+    page.set_viewport_size({"width": 1280, "height": 900})
+    # A real word on the map, as the log would list it.
+    without_worker(page, site_url, "letterfield")
+    page.goto(f"{site_url}/letterfield#debug")
+    page.wait_for_function("window.__lf")
+    w = page.evaluate("window.__lf.chunk(0, 0).words[0]")
+    word = [w["w"].upper(), w["x"], w["y"], w["d"], 0, "ZED", NOW_MS - 80 * MINUTE, 11]
+    page.unroute_all()
+    open_log(page, site_url, FakeSurveyLog([word, MONET, ZEUS], PLACES, THEMES))
+    # To it on the map, whose address then holds it...
+    entry(page, word[0]).locator("a.fly").click()
+    page.wait_for_url(re.compile(rf"/letterfield#f-{w['w'].lower()}-"))
+    coord = page.locator("#tCoord")
+    page.wait_for_function(SAVED_AWAY, arg="")
+    at_word = coord.inner_text()
+    # ...and away from it, as the map saves where you are.
+    page.locator("#map").focus()
+    for _ in range(3):
+        page.keyboard.press("ArrowRight")
+    page.wait_for_function(SAVED_AWAY, arg=at_word)
+    moved = coord.inner_text()
+    # To the log and back by its way back to the map, which comes back as you left it, not at the word.
+    to_the_log(page)
+    page.wait_for_url("**/letterfield-log**")
+    page.click(".home")
+    page.wait_for_url(re.compile(rf"/letterfield#f-{w['w'].lower()}-"))
+    page.wait_for_function(SAVED_AWAY, arg="")
+    expect(coord).to_have_text(moved)
     assert errors == []
 
 
-def test_moving_about_one_page_is_counted_on_the_way_back(page: Page, site_url, errors):
+def test_the_maps_link_to_the_log_opens_it_at_its_start(page: Page, site_url, errors):
+    page.set_viewport_size({"width": 375, "height": 740})
+    fake = FakeSurveyLog([ACORN, MONET, ZEUS], PLACES, THEMES)
+    open_log(page, site_url, fake, "&surveyor=ZED&period=week")
+    expect(page.locator("#sumTitle")).to_have_text("This week")
+    entry(page, "ACORN").locator("a.fly").evaluate("a => a.click()")
+    page.wait_for_url(re.compile(r"/letterfield#f-acorn-"))
+    n = at(page)[1]
+    to_the_log(page)
+    page.wait_for_url("**/letterfield-log**")
+    # Not back to ZED's week: the log as it opens, today's, at the top, in an entry of its own.
+    expect(page.locator("#sumTitle")).to_have_text("Today")
+    assert at(page)[1] == n + 1
+    assert page.evaluate("scrollY") == 0
+    assert errors == []
+
+
+def test_moving_about_the_log_is_counted_on_the_way_back(page: Page, site_url, errors):
     page.set_viewport_size({"width": 1280, "height": 900})
     page.clock.set_fixed_time(NOW_MS / 1000)  # the day of the fake log's words
     fake = FakeSurveyLog([ACORN, MONET, ZEUS], PLACES, THEMES)
@@ -145,74 +144,4 @@ def test_a_tabs_first_page_has_nothing_to_step_back_to(page: Page, site_url, err
     tab.click(".home")
     tab.wait_for_url("**/letterfield")
     assert at(tab)[1] == 2
-    assert errors == []
-
-
-def test_a_log_brought_back_whole_from_the_cache_is_scrolled_where_it_was(page: Page, site_url, errors):
-    # Safari keeps the page whole for a step back but, with its own restoration off, shows it at the top.
-    page.set_viewport_size({"width": 375, "height": 740})
-    open_log(page, site_url, FakeSurveyLog([*MANY, MONET, ZEUS], PLACES, THEMES), "&surveyor=ZED&period=week")
-    word = entry(page, MANY[30][0])
-    expect(word).to_be_visible()
-    word.evaluate("e => e.scrollIntoView({ block: 'center', behavior: 'instant' })")
-    page.wait_for_function("scrollY > 100 && history.state?.lfScroll === scrollY")
-    scrolled = page.evaluate("scrollY")
-    at_top = page.evaluate("""() => {
-      const html = document.documentElement;
-      html.style.scrollBehavior = 'auto';
-      void getComputedStyle(html).scrollBehavior;
-      scrollTo(0, 0);
-      html.style.scrollBehavior = '';
-      const y = scrollY;
-      dispatchEvent(new PageTransitionEvent('pageshow', { persisted: true }));
-      return y;
-    }""")
-    assert at_top == 0
-    page.wait_for_function(f"Math.abs(scrollY - {scrolled}) < 2", timeout=5000)
-    assert errors == []
-
-
-class HeldFonts:
-    """Holds back the page's web fonts (fonts.gstatic.com) while `holding`, to let them in later."""
-
-    def __init__(self):
-        self.routes, self.holding = [], False
-
-    def handle(self, route) -> None:
-        if self.holding:
-            self.routes.append(route)
-        else:
-            route.continue_()
-
-    def release(self) -> None:
-        self.holding = False
-        while self.routes:
-            self.routes.pop(0).continue_()
-
-
-def test_the_log_is_scrolled_where_it_was_after_its_fonts_come(page: Page, site_url, errors):
-    # Back from the map, the log draws its words before its fonts arrive; when they do, the browser
-    # keeps what's on screen in place, which is a little away from where you were.
-    page.set_viewport_size({"width": 390, "height": 760})
-    fonts = HeldFonts()
-    page.route("https://fonts.gstatic.com/**", fonts.handle)  # routed, so never from the browser's cache
-    open_log(page, site_url, FakeSurveyLog([*MANY, MONET, ZEUS], PLACES, THEMES), "&surveyor=ZED&period=week")
-    word = entry(page, MANY[30][0])
-    expect(word).to_be_visible()
-    page.evaluate("document.fonts.ready")
-    word.evaluate("e => e.scrollIntoView({ block: 'center', behavior: 'instant' })")
-    page.wait_for_function("scrollY > 100 && history.state?.lfScroll === scrollY")
-    scrolled = page.evaluate("scrollY")
-    word.locator("a.fly").evaluate("a => a.click()")
-    page.wait_for_url(re.compile(r"/letterfield#f-"))
-    fonts.holding = True
-    page.locator("#survey a.survey-log").evaluate("a => a.click()")
-    page.wait_for_url(
-        re.compile(r"/letterfield-log"), wait_until="domcontentloaded"
-    )  # it can't load whole without them
-    expect(page.locator("html")).to_have_attribute("data-log", "ready")
-    assert fonts.routes, "the log's fonts came from somewhere else"
-    fonts.release()
-    page.evaluate("document.fonts.ready")
-    page.wait_for_function(f"Math.abs(scrollY - {scrolled}) < 2", timeout=5000)
     assert errors == []
