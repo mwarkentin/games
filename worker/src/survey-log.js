@@ -135,8 +135,9 @@ export const TIMELAPSE_CACHE_S = 60;    // seconds the replay's index is cached 
 export const FOREVER_S = 31536000;      // a settled day of the replay never changes: a year
 // Raised when a settled day's replay must change after all (a word taken out
 // for moderation, or the answer's shape): it's part of every cache key, and
-// the page's CACHE_VERSION goes up with it for browsers' copies.
-export const TIMELAPSE_VERSION = 1;
+// the page's CACHE_VERSION goes up with it for browsers' copies. 2: bonus
+// words left the log (migrations-log/0009).
+export const TIMELAPSE_VERSION = 2;
 const CURSOR = /^(\d{1,15})~([A-Z]{3,12}~-?\d{1,10}~-?\d{1,10}~[0-7])$/;
 const NOVA_CURSOR = /^(\d{1,15})~(-?\d{1,8})~(-?\d{1,8})$/;
 

@@ -7,6 +7,9 @@ in it. See test_letterfield_log.py for the clock and the fake.
 
 from __future__ import annotations
 
+import re
+from pathlib import Path
+
 from playwright.sync_api import Page, expect
 
 from fake_survey_log import FakeSurveyLog
@@ -24,6 +27,7 @@ from test_letterfield_log import (
     open_log,
 )
 
+ROOT = Path(__file__).resolve().parent.parent
 COBALT, AMBER = "c0ba17c0ba", "a3be7a3be7"
 GUILDS = {COBALT: ["Cobalt Compass Society", 220], AMBER: ["Amber Lantern Circle", 38]}
 # Words counted for a guild carry its log id as a ninth item (the fake's way; the real log keeps it in a column).
@@ -48,7 +52,9 @@ def test_top_guilds_open_a_guilds_own_view_with_an_address_to_share(page: Page, 
 
     expect(page.locator("#focusKind")).to_have_text("Guild")
     expect(page.locator("#focusName")).to_have_text("Cobalt Compass Society")
-    expect(page.locator("#focusNote")).to_contain_text("Members who keep off the surveyor list aren’t counted")
+    # Every member's words count: there's no surveyor list to keep off any more.
+    expect(page.locator("#focusNote")).to_have_text("Every word its members charted while in it.")
+    expect(page.locator(".foot").first).not_to_contain_text("surveyor list")
     expect(page).to_have_title("Cobalt Compass Society · Letterfield survey log")
     assert f"guild={COBALT}" in page.url and "period=week" in page.url
     week = NOW_MS // HOUR_MS - 4 * 24 - 15  # Monday, midnight in Toronto, in UTC hours
@@ -66,7 +72,7 @@ def test_top_guilds_open_a_guilds_own_view_with_an_address_to_share(page: Page, 
     assert page.evaluate("window.__copied") == (
         "The Cobalt Compass Society charted 3 words first in Letterfield’s shared survey this week, most in Acorn Hollow."
         " Latest: BIRCH, FERN, OAK."
-        f"\nhttps://share.michaelwarkentin.com/v/guild/{COBALT}/week/2026-11-02/{week}-{week + 7 * 24}"
+        f"\nhttps://share.michaelwarkentin.com/v/guild/{COBALT}/week/2026-11-02/{week}-{week + 7 * 24}?name=11-0-0"
     )
     # A member's initials open their own view, as anywhere in the log.
     page.locator(".card", has_text="Members who charted most").get_by_role("link", name="ZED").click()
@@ -101,8 +107,67 @@ def test_a_guild_says_when_it_charted_nothing_and_when_the_log_has_never_heard_o
     expect(page.locator(".entry .word")).to_have_text(["OAK"])
     open_log(page, site_url, fake, query="&guild=ffffffffff")
     expect(page.locator("#focusName")).to_have_text("A guild")
-    expect(page.locator(".status strong")).to_have_text("No such guild")
+    expect(page.locator(".status")).to_contain_text("This guild hasn’t charted a word yet.")
     # Anything but a log id is no guild at all: a guild's code or caret tag opens everyone's log.
     open_log(page, site_url, fake, query="&guild=ABCDEF")
     expect(page.locator("#focus")).to_be_hidden()
     assert errors == []
+
+
+def test_a_new_guilds_page_is_named_from_its_address(page: Page, site_url, errors):
+    # The game's link carries the guild's name as its three word numbers: Cobalt (11) Compass (0) Society (0).
+    fake = FakeSurveyLog([ACORN], PLACES, THEMES, guilds={})
+    open_log(page, site_url, fake, query=f"&guild={COBALT}&name=11-0-0")
+    expect(page.locator("#focusName")).to_have_text("Cobalt Compass Society")
+    expect(page.locator(".status")).to_contain_text(
+        "The Cobalt Compass Society hasn’t charted a word yet. Its members’ words show here as they chart them."
+    )
+    # Its timelapse would have nothing to play, so the link waits for a first word.
+    expect(page.locator("#timelapseLink")).to_be_hidden()
+    assert errors == []
+
+
+def test_a_new_guild_shares_its_name_with_its_card(page: Page, site_url, errors):
+    # The share Worker can't learn a guild's name from the log until it has a word, so the link carries it.
+    fake = FakeSurveyLog([ACORN], PLACES, THEMES, guilds={})
+    page.add_init_script(NO_SHARE_SHEET)
+    open_log(page, site_url, fake, query=f"&guild={COBALT}&name=11-0-0#debug")
+    expect(page.locator(".status")).to_contain_text("The Cobalt Compass Society hasn’t charted a word yet.")
+    page.wait_for_function("window.__log.share()?.run === window.__log.state.run")
+    page.click("#share")
+    expect(page.locator("#share")).to_have_text("Copied")
+    assert page.evaluate("window.__copied").endswith(
+        f"\nhttps://share.michaelwarkentin.com/v/guild/{COBALT}/all?name=11-0-0"
+    )
+    assert errors == []
+
+
+def test_a_guilds_page_has_its_timelapse_and_its_name_in_its_address_once_it_has_words(page: Page, site_url, errors):
+    fake = FakeSurveyLog([ACORN, BIRCH], PLACES, THEMES, guilds=GUILDS)
+    open_log(page, site_url, fake, query=f"&guild={COBALT}")
+    expect(page.locator(".entry .word")).to_have_text(["BIRCH"])
+    expect(page.locator("#timelapseLink")).to_be_visible()
+    expect(page.locator("#timelapseLink")).to_have_attribute("href", re.compile(f"guild={COBALT}"))
+    # Kept in the address, for whoever it's shared with.
+    assert "name=11-0-0" in page.url
+    assert errors == []
+
+
+def test_a_name_out_of_range_names_nothing(page: Page, site_url, errors):
+    fake = FakeSurveyLog([ACORN], PLACES, THEMES, guilds={})
+    open_log(page, site_url, fake, query=f"&guild={COBALT}&name=16-0-0")
+    expect(page.locator("#focusName")).to_have_text("A guild")
+    expect(page.locator(".status")).to_contain_text("This guild hasn’t charted a word yet.")
+    assert "name=" not in page.url
+    assert errors == []
+
+
+def test_the_logs_guild_words_are_the_games():
+    def lists(path: str) -> dict[str, str]:
+        text = (ROOT / path).read_text()
+        return {
+            k: re.search(rf"^const {k} = (\[.*?\]);$", text, re.M | re.S)[1]
+            for k in ("GUILD_FIRST", "GUILD_SECOND", "GUILD_THIRD")
+        }
+
+    assert lists("letterfield-log.html") == lists("letterfield.html")

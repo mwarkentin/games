@@ -192,6 +192,8 @@ The machines each page keeps:
 | | `pairCode` (a link code made here, watched until used) | none, making, waiting, used, gone |
 | | `sync` (keeping linked devices in step) | off, idle, syncing, failed |
 | `letterfield-log.html` | `log` (what the page shows) | loading, ready, refreshing, stale, failed |
+| | `span` (where the log starts, which ‹ stops at) | asking, known, failed |
+| | `define` (each word's meaning; `el: null`, see `__log.definitions()`) | loading, ready, none, failed |
 | `letterfield-timelapse.html` | `tl` (the replay) | loading, empty, failed, paused, playing, waiting |
 | | `rec` (saving a video) | off, preparing, recording, done, failed |
 | `war.html` | `screen` | menu, lobby, table, ending, over |
@@ -377,13 +379,17 @@ behind it, and `share/README.md` how it works.
   While it's empty, Share hands out the game's own fragment link.
   `?share=<url>` overrides it for tests. A dark page hands out `/f/d/…`, so
   the card follows the sharer's theme.
-- The survey log's views (a surveyor's, theme's, guild's or territory's page) have
-  cards too, at `/v/…`: `letterfield-log.html` has a `SHARE_URL` of its own,
+- The survey log's views (a surveyor's, theme's, guild's or territory's page, and
+  the Supernovas tab) have cards too, at `/v/…`: `letterfield-log.html` has a `SHARE_URL` of its own,
   and while it's empty Share links to the page and attaches the page's own
   picture. Their numbers come from the leaderboard Worker's log answers,
   through a service binding (`LOG` in `share/wrangler.toml`), and their
   addresses pin the period by its first day and its UTC hours, so the page's
-  `viewPath()` and `share/src/view.js` must agree.
+  `viewPath()` and `share/src/view.js` must agree. The Supernovas card
+  (`/v/novas/…`) counts the period's supernovas from `/v1/survey/log/novas/…`
+  and shows the latest ones' last words. A guild's name rides along as
+  `?name=<a>-<b>-<c>` on its `/v/` address and on the link to its page, so a
+  guild with no words yet, which the log has no name for, is still named.
 - The Worker checks the word is on the map with `worker/src/`'s own code,
   asks the word's sector who charted it and the Atlas how much of the shared
   map is charted (internal paths on the leaderboard Worker's Durable
@@ -607,12 +613,17 @@ page loads nothing from a new host.
 - A `DEFINE_URL` constant holds the Worker's URL; `?define=<url>`
   overrides it. While it's empty, an entry only links out to Wiktionary and
   Wikipedia searches.
-- Only found words: the page asks only from a find's entry, and nothing on
-  the map, the toast or the legend shows a meaning.
+- Only words already found or charted: the game asks only from a find's
+  entry, and the survey log (`letterfield-log.html`, with a `DEFINE_URL` of
+  its own) only from a word's row, since every word there is charted and its
+  meaning gives nothing away. Nothing on the map, the toast or the legend
+  shows a meaning.
 - Show the source's link and CC BY-SA 4.0 beside the text, and put the
   Worker's text in the page as text, never HTML.
-- Game tests fake it with `page.route` and `tests/fake_definitions.py`; the
-  real Worker's stand-in answers it too.
+- Game tests fake it with `page.route` and `tests/fake_definitions.py`
+  (`tests/test_letterfield_definitions.py`, and
+  `tests/test_letterfield_log_definitions.py` for the log); the real
+  Worker's stand-in answers it too.
 
 ## Letterfield's words
 
