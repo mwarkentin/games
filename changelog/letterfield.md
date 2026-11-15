@@ -2,6 +2,25 @@
 
 - A word circled too soon after others is no longer left out of the shared survey: it goes a minute later, so its territory can still go supernova. Finds of yours that missed the survey before go the next time you're in their part of the map.
 - When everything left in a territory is in your notes but not yet charted, the word list says so, rather than that every word is charted.
+- If you left music on, pressing B as your first key now starts it, as tapping its button does, instead of switching it off before you hear it.
+- On a tablet, the Surveyors drawer no longer covers the end of the title, as the field notes already didn't.
+- On a phone, a note no longer covers the offer to link this device or a guild invite: it shows just below the card.
+- When an invite asks you to switch guilds, each guild's member count lines up under its name.
+- An emote sent from a surveyor's caret that can't go yet now says why, instead of nothing happening.
+- Removing a recovery code, or entering a code, after a try that failed no longer keeps showing the old “Couldn’t reach the survey” message.
+- Stopping syncing on every device while the survey can't be reached leaves syncing on, so Stop syncing is still there to try again.
+- Leaving or joining a guild always shows on your caret, even after your part of the map has been quiet for a while, and switching guilds shows the new one straight away rather than up to 15 minutes later.
+- In the survey log, the Supernovas tab's highlight sits inside its outline, like the other tabs'.
+- While the hour so far refreshes, its top lists stay on screen when a refresh can't load them.
+- In a year's calendar, the busiest day is always the darkest, even when it's the only day with words or ties with another.
+- A guild's page keeps room for all three of its top lists while they load, so nothing jumps when they arrive.
+- On iPhones with iOS 16, a guild's ▶ Timelapse link plays that guild's words again, not everyone's.
+- The Hidden words count no longer adds “plus N bonus words”: the log doesn't keep bonus words any more.
+- In the timelapse, after you save or cancel a video, a territory you tap counts its hidden words up to the timelapse's date again.
+- Keys no longer play or move the timelapse behind the note saying a video couldn't be recorded.
+- A video whose recording begins while you're on another tab waits for you to come back, instead of opening on a frozen frame.
+- The text under a shared bonus word's card calls it a bonus word, as the card does.
+- A shared link to a guild's page in the survey log opens with the guild named, even when the log is slow to answer.
 
 ## 2026-11-14
 
