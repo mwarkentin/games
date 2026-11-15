@@ -118,7 +118,7 @@ def test_without_the_worker_a_word_only_links_out(page: Page, site_url, errors):
     open_with(page, site_url, fake, define="")
     book(page, "ACORN").click()
     links = page.locator(".def-links")
-    expect(links).to_have_text("Look it up onWiktionaryWikipedia")
+    expect(links).to_have_text("Look it up onWiktionary ↗Wikipedia ↗")  # each with an arrow out
     expect(links.get_by_role("link", name="Wikipedia")).to_have_attribute(
         "href", "https://en.wikipedia.org/w/index.php?search=acorn%20Forest"
     )
