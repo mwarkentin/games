@@ -52,15 +52,15 @@ describe('parseFind', () => {
 
 describe('progress', () => {
   const total = 1_119_752;
-  test('says how much of the shared map is charted, rounded down', () => {
-    assert.equal(progress({ charted: 0, total }), '0.0% of the shared map charted');
-    assert.equal(progress({ charted: 500, total }), 'Under 0.1% of the shared map charted');
-    assert.equal(progress({ charted: 4480, total }), '0.4% of the shared map charted');
-    assert.equal(progress({ charted: 11_197, total }), '0.9% of the shared map charted');
-    assert.equal(progress({ charted: 11_198, total }), '1% of the shared map charted');
-    assert.equal(progress({ charted: 33_900, total }), '3% of the shared map charted');
-    assert.equal(progress({ charted: total - 1, total }), '99% of the shared map charted');
-    assert.equal(progress({ charted: total, total }), 'Every word on the shared map charted');
+  test('says how much of the universe is charted, rounded down', () => {
+    assert.equal(progress({ charted: 0, total }), '0.0% of the universe charted');
+    assert.equal(progress({ charted: 500, total }), 'Under 0.1% of the universe charted');
+    assert.equal(progress({ charted: 4480, total }), '0.4% of the universe charted');
+    assert.equal(progress({ charted: 11_197, total }), '0.9% of the universe charted');
+    assert.equal(progress({ charted: 11_198, total }), '1% of the universe charted');
+    assert.equal(progress({ charted: 33_900, total }), '3% of the universe charted');
+    assert.equal(progress({ charted: total - 1, total }), '99% of the universe charted');
+    assert.equal(progress({ charted: total, total }), 'Every word in the universe charted');
   });
 
   test('says nothing without totals', () => {
@@ -90,7 +90,13 @@ describe('findSvg', () => {
     const unknown = texts(findSvg(e, {}));
     assert.ok(unknown.includes('FIND IT ON THE MAP'));
     assert.ok(!unknown.some((s) => s.includes('CHARTED')));
-    assert.ok(texts(findSvg(e, { claim: null, progressText: '3% of the shared map charted' })).includes('3% of the shared map charted'));
+    assert.ok(texts(findSvg(e, { claim: null, progressText: '3% of the universe charted' })).includes('3% of the universe charted'));
+  });
+
+  test('calls a word turned up by chance a bonus word, in its theme', () => {
+    const t = texts(findSvg({ ...e, s: 1 }, {}));
+    assert.ok(t.some((s) => /^A bonus [a-z ]+ word$/.test(s)), JSON.stringify(t));
+    assert.ok(!t.some((s) => /stray/i.test(s)));
   });
 
   test('escapes what it writes', () => {
@@ -100,7 +106,7 @@ describe('findSvg', () => {
   test('keeps every line of the panel inside it', () => {
     // The longest word, territory and theme names have to fit the panel.
     assert.ok(measure('CHARTED FIRST', 'display', 44, 0.05) < 386);
-    assert.ok(measure('Every word on the shared map charted', 'mono4', fit('Every word on the shared map charted', 'mono4', 18, 12, 386), 0) <= 386);
+    assert.ok(measure('Every word in the universe charted', 'mono4', fit('Every word in the universe charted', 'mono4', 18, 12, 386), 0) <= 386);
     assert.ok(measure('INTERPLANETARY', 'display', fit('INTERPLANETARY', 'display', 120, 40, 386, 0.04), 0.04) <= 386);
   });
 

@@ -64,15 +64,20 @@ export function parseFind(slug) {
   return { ...claim, rx, ry, th: claim.s ? strayTheme(claim.w, rx, ry) : regionTheme(rx, ry) };
 }
 
-// How much of the shared map is charted, as the card says it: one decimal
+// Raised when what the cards say changes, so the cards already drawn and
+// kept for good (at the edge and in R2, by the state they show) are drawn
+// afresh: it ends every card's state. 2: the universe, and bonus words.
+export const CARD_WORDS = 2;
+
+// How much of the universe is charted, as the card says it: one decimal
 // under 1%, whole percents rounded down after that, so it never says 100%
 // until it's true.
 export function progress(totals) {
   if (!totals || !(totals.total > 0) || !(totals.charted >= 0)) return null;
-  if (totals.charted >= totals.total) return 'Every word on the shared map charted';
+  if (totals.charted >= totals.total) return 'Every word in the universe charted';
   const pct = (totals.charted / totals.total) * 100;
   const shown = pct >= 1 ? `${Math.min(99, Math.floor(pct))}%` : pct >= 0.1 || totals.charted === 0 ? `${(Math.floor(pct * 10) / 10).toFixed(1)}%` : 'Under 0.1%';
-  return `${shown} of the shared map charted`;
+  return `${shown} of the universe charted`;
 }
 
 // claim: undefined when it couldn't be asked, null when nobody has charted
@@ -128,7 +133,7 @@ export function findSvg(e, { claim, progressText = null, dark = false, host = 'g
   out.push(text('LETTERFIELD', X, 84, 'mono5', 20, C.muted, 0.14));
   out.push(text(e.w, X, 216, 'display', fit(e.w, 'display', 120, 40, R - X, 0.04), C.ink, 0.04));
   out.push(`<circle cx="${X + 9}" cy="262" r="9" fill="${col.stroke}"/>`);
-  const kind = `${e.s ? 'A stray ' + theme.name.toLowerCase() : theme.name} word`;
+  const kind = `${e.s ? 'A bonus ' + theme.name.toLowerCase() : theme.name} word`;
   out.push(text(kind, X + 30, 271, 'ui5', fit(kind, 'ui5', 26, 16, R - X - 30), C.muted));
   const place = regionName(e.rx, e.ry);
   out.push(text(place, X, 330, 'ui6', fit(place, 'ui6', 34, 18, R - X), C.ink));
@@ -141,7 +146,7 @@ export function findSvg(e, { claim, progressText = null, dark = false, host = 'g
   out.push(text(` ${DNAME[e.d]}`, ax + measure(DARROW[e.d], 'ui5', 18), 366, 'mono4', 18, C.muted));
   out.push(`<rect x="${X}" y="410" width="${R - X}" height="2" fill="${C.rule}"/>`);
 
-  // Whether it's charted, and how far along the shared map is.
+  // Whether it's charted, and how far along the universe is.
   if (claim) {
     out.push(text('CHARTED FIRST', X, 470, 'display', 44, C.accent, 0.05));
     out.push(text(claim.initials ? `by ${claim.initials} · ${day(claim.at)}` : day(claim.at), X, 506, 'mono4', 18, C.muted));

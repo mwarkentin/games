@@ -392,7 +392,6 @@ li.row > button{margin-top:2px}
 .survey-map-note{margin:6px 0 0;text-align:center;font:400 10.5px/1.4 var(--f-mono);color:var(--muted)}
 .survey-map-note:empty{display:none}
 .survey-log{display:block;margin-top:6px;padding:4px 0;font:500 10px/1.3 var(--f-mono);letter-spacing:.14em;text-transform:uppercase;color:var(--muted)}
-.survey-log::after{content:" →"}
 /* Surveyors: everyone else in the shared world, nearest first, each a row that
    flies you to their territory, with emotes to send them (see Surveyors). */
 .who-status{margin:8px 0 4px;font:400 11px/1.45 var(--f-mono);color:var(--muted);white-space:pre-line}
@@ -737,7 +736,7 @@ body.settling, body.settling *{transition:none!important}
       <canvas id="worldMap" width="200" height="200" aria-label="Map of the universe: charted territories are darker, dots are surveyors. Tap to fly there."></canvas>
       <p class="survey-map-note" id="worldNote"></p>
     </details>
-    <a class="survey-log" href="/letterfield-log">Survey log: every word charted, hour by hour</a>
+    <a class="survey-log" href="/letterfield-log">Survey log and timelapse <span aria-hidden="true">↗</span></a>
   </section>
   <section class="novas" id="novasSec" aria-labelledby="novasHead" hidden>
     <h3 class="eyebrow" id="novasHead">Supernovas</h3>
@@ -1999,8 +1998,8 @@ const SURVEY_STATUS = {
   paused: ['connecting', 'Paused while this tab is hidden.'],
   checking: ['connecting', 'Checking this is a person, not a bot…'],
   alone: ['offline', 'Couldn’t check this is a person, so you’re surveying alone for now. Your finds still save in this browser.'],
-  'full-world': ['offline', 'The survey is full right now. Your finds still save in this browser.'],
-  'full-sector': ['offline', 'This part of the map is full right now. Your finds still save in this browser.'],
+  'full-world': ['offline', 'The survey is crowded right now. Your finds still save in this browser.'],
+  'full-sector': ['offline', 'This part of the map is crowded right now. Your finds still save in this browser.'],
   offline: ['offline', 'Survey offline. Your finds still save in this browser.'],
   joining: ['connecting', 'Joining the survey…'],
 };
@@ -4217,15 +4216,17 @@ function define(e, retry = false) {
   return d;
 }
 // The panel under an open entry.
+// An arrow out, on every link that leaves the game for another site.
+const AWAY = ' <span aria-hidden="true">↗</span>';
 function defPanel(e) {
   const d = define(e), st = d.m.state, theme = THEMES[e.th].name;
-  const search = `<a href="https://en.wiktionary.org/wiki/Special:Search?search=${encodeURIComponent(e.w.toLowerCase())}" target="_blank" rel="noopener">Wiktionary</a>` +
-    `<a href="https://en.wikipedia.org/w/index.php?search=${encodeURIComponent(e.w.toLowerCase() + ' ' + theme)}" target="_blank" rel="noopener">Wikipedia</a>`;
+  const search = `<a href="https://en.wiktionary.org/wiki/Special:Search?search=${encodeURIComponent(e.w.toLowerCase())}" target="_blank" rel="noopener">Wiktionary${AWAY}</a>` +
+    `<a href="https://en.wikipedia.org/w/index.php?search=${encodeURIComponent(e.w.toLowerCase() + ' ' + theme)}" target="_blank" rel="noopener">Wikipedia${AWAY}</a>`;
   let html;
   if (st === 'ready') {
     html = d.senses.map(s => `<p class="def-sense">${s.pos ? `<i>${escHtml(s.pos)}</i>` : ''}${escHtml(s.text)}</p>`).join('') +
-      `<p class="def-links">${d.url ? `<a href="${escHtml(d.url)}" target="_blank" rel="noopener">From ${d.source === 'wikipedia' ? 'Wikipedia' : 'Wiktionary'}</a>` : ''}` +
-      `<a href="https://creativecommons.org/licenses/by-sa/4.0/" target="_blank" rel="noopener license">CC BY-SA 4.0</a></p>`;
+      `<p class="def-links">${d.url ? `<a href="${escHtml(d.url)}" target="_blank" rel="noopener">From ${d.source === 'wikipedia' ? 'Wikipedia' : 'Wiktionary'}${AWAY}</a>` : ''}` +
+      `<a href="https://creativecommons.org/licenses/by-sa/4.0/" target="_blank" rel="noopener license">CC BY-SA 4.0${AWAY}</a></p>`;
   } else if (st === 'loading') {
     html = '<p class="def-note">Looking it up…</p>';
   } else if (st === 'none') {
@@ -4398,7 +4399,15 @@ findsEl.addEventListener('click', e => {
   const h = '#' + hashOf(en);
   try { if (location.hash !== h) { hashSuppress = h; location.hash = h; } } catch (_) {}
 });
+// Each entry of the map's in the tab's history, its first and every find's,
+// says it's been seen, so a find in its address doesn't fly there again when
+// it's come back to.
+function markSeen() {
+  if (history.state?.lfSeen) return;
+  try { history.replaceState({ ...(history.state && typeof history.state === 'object' ? history.state : {}), lfSeen: 1 }, ''); } catch (_) {}
+}
 window.addEventListener('hashchange', () => {
+  markSeen();
   if (location.hash === hashSuppress) { hashSuppress = ''; return; }
   const p = parseHash(location.hash);
   if (p) goToEntry(p);
@@ -5304,6 +5313,8 @@ function whoFind(pid) {
 
 const guildCard = $('#guildCard'), guildInvite = $('#guildInvite');
 const CHEV = '<svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg>';
+// An arrow out, in the chevron's place, on a row that goes to another page.
+const OUT = '<svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 17L17 7"/><path d="M9 7h8v8"/></svg>';
 function renderGuild() {
   if (!surveyApi) return;
   const st = Membership.state, err = guildError ? `<p class="guild-err" role="alert">${guildError}</p>` : '';
@@ -5318,7 +5329,7 @@ function renderGuild() {
       (st === 'confirming'
         ? `<div class="you-pad"><p>Leave the ${guildName(myGuild.name)}? You’d need a new invite to come back.</p><div class="guild-acts"><button type="button" class="btn danger" data-g="leave-yes">Leave</button><button type="button" class="btn ghost" data-g="leave-no">Stay</button></div></div>`
         : `<button type="button" class="you-item" data-g="invite"><span>Invite someone<small>A link to send them</small></span>${CHEV}</button>` +
-          (LID_RE.test(myGuild.lid || '') ? `<a class="you-item" data-g="log" href="/letterfield-log?guild=${myGuild.lid}&name=${myGuild.name.join('-')}"><span>Our words in the survey log<small>The guild’s own page, which anyone can open</small></span>${CHEV}</a>` : '') +
+          (LID_RE.test(myGuild.lid || '') ? `<a class="you-item" data-g="log" href="/letterfield-log?guild=${myGuild.lid}&name=${myGuild.name.join('-')}"><span>Our words in the survey log<small>The guild’s own page, which anyone can open</small></span>${OUT}</a>` : '') +
           `<button type="button" class="you-item danger" data-g="leave"${st === 'leaving' ? ' disabled' : ''}><span>${st === 'leaving' ? 'Leaving…' : 'Leave guild'}</span></button>` +
           `<p class="guild-small">Words you chart while in a guild count for it in the survey log, under its name.</p>`);
   } else if (st === 'invited' || st === 'joining') html = '<p class="you-pad">Looking at an invite to a guild…</p>';
@@ -6052,7 +6063,12 @@ resize();
 // from here a change slides.
 requestAnimationFrame(() => document.body.classList.remove('settling'));
 renderNotes();
-const startHash = parseHash(location.hash);
+// A find in the address flies there when the map is opened with it, but not
+// when this entry is come back to (a reload, Back, or the survey log's way
+// back to the map), which stays where you left it, as saved: the entry says
+// it's been seen (see markSeen).
+const startHash = history.state?.lfSeen ? null : parseHash(location.hash);
+markSeen();
 if (startHash) {
   const [ex, ey] = wordEnd(startHash);
   flyTo((startHash.x + ex) / 2 + .5, (startHash.y + ey) / 2 + .5, 40, { instant: true, then: now => { pulse = { ...startHash, t0: now }; } });

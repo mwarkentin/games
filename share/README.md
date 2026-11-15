@@ -47,10 +47,12 @@ Worker Previews, which have no survey bindings.
 
 ## Caching and limits
 
-The page names the card with its state, `/f/<slug>.png?s=cZED.20766.0.4`
-(charted by ZED on that UTC day, at 0.4%), so a new state is a new image
-URL and an old unfurl keeps its old card. The page is kept at the edge for a
-minute.
+The page names the card with its state, `/f/<slug>.png?s=cZED.20766.0.4.w2`
+(charted by ZED on that UTC day, at 0.4%, in the cards' words as of
+`CARD_WORDS` 2), so a new state is a new image URL and an old unfurl keeps
+its old card. The page is kept at the edge for a minute. Raise `CARD_WORDS`
+in `src/card.js` when what the cards say changes, so the cards kept for good
+are drawn again in the new words.
 
 - **Edge cache:** every card, by its URL. Cards asked for with the state
   they show are kept for a year; one asked for with an old or made-up state
@@ -155,7 +157,7 @@ GET /v/d/…, ….png                                        dark; the card itse
   internal path like `/claim`, with the same time limit and only inside the
   shared world) and uses its answer.
 - **Caching:** the card's URL carries a token of its count and latest word,
-  `?s=5.<time>`, so it changes with every new word, and a card asked for
+  `?s=5.<time>.w2` (with `CARD_WORDS`), so it changes with every new word, and a card asked for
   with the state it shows is kept for good at the edge. Views aren't kept in
   R2. New cards share the render limit with finds'.
 

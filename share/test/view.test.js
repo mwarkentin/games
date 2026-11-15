@@ -120,10 +120,10 @@ describe('what a card says', () => {
 
   test('a surveyor\'s numbers, latest words and line, as the page shares them', () => {
     const s = summarize(parseView(`/v/surveyor/ZED/${WEEK}`, NOW), SLICE, NOW);
-    assert.deepEqual(s.stats, [['Words charted first', '3'], ['In the shared world', '2'], ['Top territory', 'Acorn Hollow']]);
+    assert.deepEqual(s.stats, [['Words charted first', '3'], ['In the universe', '2'], ['Top territory', 'Acorn Hollow']]);
     assert.deepEqual(s.words.map((w) => [w.w, w.hue, w.stray]), [['BIRCH', 40, false], ['MONET', 56, true], ['ACORN', 40, false]]);
     assert.equal(s.line, 'ZED charted 3 words first in Letterfield’s shared survey in the week of 9 Nov 2026, most in Acorn Hollow.');
-    assert.equal(s.token, `3.${(NOW - HOUR).toString(36)}`);
+    assert.equal(s.token, `3.${(NOW - HOUR).toString(36)}.w2`);
     const none = summarize(parseView(`/v/surveyor/ZED/${WEEK}`, NOW), { ...SLICE, words: 0, world: 0, entries: [], topTerritories: [] }, NOW);
     assert.equal(none.line, 'No words signed ZED in Letterfield’s shared survey in the week of 9 Nov 2026.');
   });
@@ -148,7 +148,7 @@ describe('what a card says', () => {
     assert.equal(s.nova, true);
     assert.deepEqual(s.stats, [['Went supernova', '10 Nov 2026'], ['First word to last', '5 hours'], ['Most charted by', 'ZED']]);
     assert.equal(s.line, `${regionName(0, 0)} went supernova in Letterfield’s shared survey on 10 Nov 2026: all 112 hidden words charted by 4 surveyors in 5 hours, the last, BIRCH, by ABC.`);
-    assert.match(s.token, /n$/);
+    assert.match(s.token, /n\.w2$/);
     assert.deepEqual(s.novaOf, { at, w: 'BIRCH', initials: 'ABC', first: at - 5 * HOUR, words: 112, surveyors: 4, top: 'ZED', topN: 60 });
     // Its own card: the burst, then who, when and how.
     const svg = viewSvg(v, s);
@@ -221,7 +221,7 @@ describe('a view\'s page and card', () => {
     assert.equal(meta(html, 'og:title'), 'ZED · Letterfield survey log');
     assert.equal(meta(html, 'og:description'), 'ZED charted 3 words first in Letterfield’s shared survey in the week of 9 Nov 2026, most in Acorn Hollow.');
     assert.equal(meta(html, 'og:url'), `${SHARE}/v/surveyor/ZED/${WEEK}`);
-    assert.equal(meta(html, 'og:image'), `${SHARE}/v/surveyor/ZED/${WEEK}.png?s=3.${(NOW - HOUR).toString(36)}`);
+    assert.equal(meta(html, 'og:image'), `${SHARE}/v/surveyor/ZED/${WEEK}.png?s=3.${(NOW - HOUR).toString(36)}.w2`);
     const target = `${SITE}/letterfield-log?surveyor=ZED&period=week&day=2026-11-09`;
     assert.ok(html.includes(`<meta http-equiv="refresh" content="0;url=${target.replaceAll('&', '&amp;')}">`));
     assert.ok(html.includes(`location.replace(${JSON.stringify(target)})`));
@@ -237,7 +237,7 @@ describe('a view\'s page and card', () => {
 
   test('the card is drawn from the log, kept for good when asked for with the state it shows', async () => {
     const log = fakeLog({ '/v1/survey/log/territory/0/0': { charted: 2, total: 112, entries: [entry('BIRCH', NOW)], themes: { 11: ['Forest', 40] } } });
-    const token = `2.${NOW.toString(36)}`;
+    const token = `2.${NOW.toString(36)}.w2`;
     const current = await get(`/v/territory/0,0.png?s=${token}`, { SITE_URL: SITE, ...log });
     assert.equal(current.headers.get('Content-Type'), 'image/png');
     assert.match(current.headers.get('Cache-Control'), /max-age=31536000/);

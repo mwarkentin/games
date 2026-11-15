@@ -720,7 +720,7 @@ def test_new_players_start_where_the_atlas_suggests(page: Page, site_url, errors
 def test_full_sector_says_so(page: Page, site_url, errors):
     fake = FakeSurvey(full="sector")
     open_game(page, site_url, fake)
-    expect(page.locator("#surveyText")).to_have_text("This part of the map is full right now. Your finds still save in this browser.")
+    expect(page.locator("#surveyText")).to_have_text("This part of the map is crowded right now. Your finds still save in this browser.")
     expect(page.locator("#tCharted")).to_have_text(" · crowded")  # where the count would be: too many surveyors here
     circle(page, hidden_words(page)[0])
     expect(page.locator("#notesBadge")).to_have_text("1", timeout=LANDS)
@@ -741,7 +741,7 @@ def test_a_full_sector_says_crowded_even_with_its_neighbours_live(page: Page, si
 def test_full_survey_says_so(page: Page, site_url, errors):
     fake = FakeSurvey(full="world")
     open_game(page, site_url, fake)
-    expect(page.locator("#surveyText")).to_have_text("The survey is full right now. Your finds still save in this browser.")
+    expect(page.locator("#surveyText")).to_have_text("The survey is crowded right now. Your finds still save in this browser.")
     expect(page.locator("#survey")).to_have_attribute("data-state", "offline")
     assert errors == []
 

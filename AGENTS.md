@@ -14,7 +14,12 @@ utilities; games live here so they get their own origin and their own rules.
   it joins that game's home-screen app, so it needs no icon or manifest of
   its own and its path must start with the game's (see `app_of` in
   `scripts/common.py`). `letterfield-timelapse.html`, the survey replayed on
-  a map, is another.
+  a map, is another. The log's way back to the map, "← Letterfield", steps
+  back in the tab's history when the tab came from the map, so the map comes
+  back as it was (`data-back`, and the helper beside it in the log), and the
+  map keeps its place whenever an entry of its is come back to; links into
+  the log open it at its start. `tests/test_letterfield_back_links.py`
+  checks both.
 - `README.md`: the game list. The build turns it into `index.html`.
 - `changelog/`: each game's changelog for players, `<game>.md`, which the
   build turns into `/changelog/<game>` (see Changelogs).
@@ -395,6 +400,8 @@ behind it, and `share/README.md` how it works.
   map is charted (internal paths on the leaderboard Worker's Durable
   Objects), and draws the card with `@resvg/resvg-wasm`. Its colours are
   `letterfield.html`'s; `share/test/card.test.js` checks they still match.
+  Cards are kept for good by the state they show, so when what they say
+  changes, raise `CARD_WORDS` in `share/src/card.js` and they're drawn again.
 - A pull request that changes `share/` gets a Worker Preview of it (see
   Previews), and `scripts/point_preview.py` points `SHARE_URL` at that,
   whose pages send people to the site preview. Other previews blank

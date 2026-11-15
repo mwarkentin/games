@@ -76,6 +76,8 @@ def test_a_found_words_meaning_opens_under_its_entry(page: Page, site_url, fake,
         "href", f"https://en.wiktionary.org/wiki/{word['w'].lower()}#English"
     )
     expect(p.get_by_role("link", name="CC BY-SA 4.0")).to_be_visible()
+    # Links that leave the game wear an arrow out, which screen readers skip.
+    expect(p.locator(".def-links a")).to_have_text(["From Wiktionary ↗", "CC BY-SA 4.0 ↗"])
     assert fake.asked == [f"{word['w']}/{word['th']}"]
     assert page.evaluate("() => window.__lf.definitions()") == {f"{word['w']}/{word['th']}": "ready"}
 
