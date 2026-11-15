@@ -69,7 +69,7 @@ def test_a_recovery_code_is_shown_once_and_keeps_a_backup(page: Page, site_url, 
 def test_the_devices_cards_buttons_follow_one_rule(page: Page, site_url, errors, scheme):
     page.emulate_media(color_scheme=scheme)
     links = FakeLinks()
-    start(page, site_url, links, recovery=FakeRecovery(links.players))
+    start(page, site_url, links)
     open_you(page)
     card = page.locator("#pairCard")
     card.get_by_role("button", name="Recovery code").click()
@@ -133,7 +133,7 @@ def test_entering_a_recovery_code_brings_the_surveyor_back(page: Page, site_url,
 def test_the_code_fits_a_phone_on_one_line(page: Page, site_url, errors):
     for width in (375, 320):
         links = FakeLinks()
-        start(page, site_url, links, recovery=FakeRecovery(links.players), viewport={"width": width, "height": 740})
+        start(page, site_url, links, viewport={"width": width, "height": 740})
         open_you(page)
         card = page.locator("#pairCard")
         card.get_by_role("button", name="Recovery code").click()

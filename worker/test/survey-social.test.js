@@ -7,7 +7,6 @@ import { DatabaseSync } from 'node:sqlite';
 import { afterEach, beforeEach, describe, mock, test } from 'node:test';
 
 import worker from '../src/index.js';
-import { corsHeaders, json } from '../src/leaderboard.js';
 import { AREA, AREA_WORDS, Atlas, MAX_PLAYERS, ONLINE_MS, REPORT_MS, SECTOR, Sector, routeSurvey } from '../src/survey.js';
 import {
   EMOTE_BURST, EMOTE_REFILL_MS, EMOTES, FLAG_QUIET, INBOX_MAX, LIST_MS, LIST_PAGE, LIST_PAGES, PAIR_MAX, PAIR_MS, REFRESH_MS,
@@ -314,7 +313,7 @@ describe('GET /v1/survey/surveyors', () => {
       },
     };
   });
-  const get = (query, init = {}) => routeSurveyors(new Request(`https://survey.test/v1/survey/surveyors${query}`, { headers: { Origin: ORIGIN }, ...init }), env, corsHeaders, json);
+  const get = (query, init = {}) => routeSurveyors(new Request(`https://survey.test/v1/survey/surveyors${query}`, { headers: { Origin: ORIGIN }, ...init }), env);
 
   test("answers nearest first from the Atlas's snapshot, cached for a few seconds", async () => {
     const res = await get('?r=13,13');
@@ -329,8 +328,8 @@ describe('GET /v1/survey/surveyors', () => {
   test('refuses questions it cannot answer, and leaves other paths alone', async () => {
     for (const q of ['', '?r=1', '?r=a,b', `?r=0,0&page=${LIST_PAGES}`, '?r=0,0&page=-1', '?r=0,0&me=nope']) assert.equal((await get(q)).status, 400, q);
     assert.equal((await get('?r=0,0', { method: 'POST' })).status, 405);
-    assert.equal(routeSurveyors(new Request('https://survey.test/v1/survey/world'), env, corsHeaders, json), null);
-    assert.equal(routeSurveyors(new Request('https://survey.test/v1/survey/surveyors?r=0,0'), {}, corsHeaders, json), null);
+    assert.equal(routeSurveyors(new Request('https://survey.test/v1/survey/world'), env), null);
+    assert.equal(routeSurveyors(new Request('https://survey.test/v1/survey/surveyors?r=0,0'), {}), null);
   });
 
   test('is what the Worker does with the path', async () => {

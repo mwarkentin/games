@@ -9,6 +9,7 @@
 //     → 200 {"pass", "expires"}
 //     → 400 {"error"} for a missing or malformed token
 //     → 403 {"error", "codes"} when Turnstile says no, or for another origin
+//     → 404 {"error"} while TURNSTILE_SECRET isn't set
 //     → 429 when one address asks too often
 //     → 503 when Turnstile can't be reached
 //
@@ -21,6 +22,8 @@
 // only from the address it was issued to, so one solved challenge can't be
 // shared across a pool of proxies; a player whose address changes is asked
 // again, invisibly for almost everyone.
+
+import { json, underLimit } from './leaderboard.js';
 
 export const SITEVERIFY = 'https://challenges.cloudflare.com/turnstile/v0/siteverify';
 export const PASS_PATH = '/v1/survey/pass';
@@ -91,9 +94,9 @@ export async function verifyToken(env, token, ip, fetcher = fetch) {
   return { ok: true };
 }
 
-// POST /v1/survey/pass. `address` is the player's hashed address, `json` the
-// leaderboard's JSON responder, `cors` the request's CORS headers.
-export async function handlePass(request, env, address, cors, json, fetcher = fetch) {
+// POST /v1/survey/pass. `address` is the player's hashed address, `cors` the
+// request's CORS headers.
+export async function handlePass(request, env, address, cors, fetcher = fetch) {
   if (!cors['Access-Control-Allow-Origin']) return json({ error: 'origin not allowed' }, 403, cors);
   if (!env.TURNSTILE_SECRET) return json({ error: 'passes are off' }, 404, cors);
   let token = null;
@@ -101,9 +104,7 @@ export async function handlePass(request, env, address, cors, json, fetcher = fe
   if (typeof token !== 'string' || !token || token.length > MAX_TOKEN) return json({ error: 'expected {"token"}' }, 400, cors);
   // Siteverify costs nothing, but each ask is a Worker request: one address
   // gets as many as it may open sockets.
-  if (env.SURVEY_JOINS) {
-    try { if ((await env.SURVEY_JOINS.limit({ key: `pass:${address}` })).success === false) return json({ error: 'slow down' }, 429, cors); } catch { /* let it through */ }
-  }
+  if (!(await underLimit(env.SURVEY_JOINS, `pass:${address}`))) return json({ error: 'slow down' }, 429, cors);
   const verdict = await verifyToken(env, token, request.headers.get('CF-Connecting-IP'), fetcher);
   if (!verdict.ok) return json({ error: verdict.status === 503 ? 'turnstile unreachable' : 'not verified', codes: verdict.codes }, verdict.status, cors);
   return json(await issuePass(env.TURNSTILE_SECRET, address), 200, cors);

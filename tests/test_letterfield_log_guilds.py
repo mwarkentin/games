@@ -8,10 +8,10 @@ in it. See test_letterfield_log.py for the clock and the fake.
 from __future__ import annotations
 
 import re
-from pathlib import Path
 
 from playwright.sync_api import Page, expect
 
+from common import ROOT
 from fake_survey_log import FakeSurveyLog
 from test_letterfield_log import (
     ACORN,
@@ -27,7 +27,6 @@ from test_letterfield_log import (
     open_log,
 )
 
-ROOT = Path(__file__).resolve().parent.parent
 COBALT, AMBER = "c0ba17c0ba", "a3be7a3be7"
 GUILDS = {COBALT: ["Cobalt Compass Society", 220], AMBER: ["Amber Lantern Circle", 38]}
 # Words counted for a guild carry its log id as a ninth item (the fake's way; the real log keeps it in a column).

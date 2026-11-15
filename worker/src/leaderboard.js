@@ -37,6 +37,11 @@ const LIMITS = {
 const PUBLIC = '*';
 // No 0/O or 1/I/L, so a code read aloud or off a screen can't be mistyped.
 export const CODE_ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
+// A random code of `length` characters from CODE_ALPHABET.
+export const randomCode = (length) => [...crypto.getRandomValues(new Uint8Array(length))].map((b) => CODE_ALPHABET[b % CODE_ALPHABET.length]).join('');
+// Bytes (an ArrayBuffer or a typed array) as hex, and `length` random bytes as hex.
+export const hex = (bytes) => [...new Uint8Array(bytes)].map((b) => b.toString(16).padStart(2, '0')).join('');
+export const randomHex = (length) => hex(crypto.getRandomValues(new Uint8Array(length)));
 export const CODE = /^[A-HJKMNP-Z2-9]{4}$/;
 const GROUP_NAME = /^[\p{L}\p{N}][\p{L}\p{N} '&.,!-]{0,23}$/u;
 export const INITIALS = /^[A-Z]{3}$/;
@@ -48,8 +53,11 @@ export const BLOCKED_INITIALS = new Set([
   'ASS', 'CUM', 'DIC', 'DIK', 'FAG', 'FCK', 'FUC', 'FUK', 'KKK', 'NIG', 'SEX', 'SHT', 'TIT', 'WTF', 'XXX',
   'CNT', 'COC', 'COK', 'DIX', 'FAP', 'FGT', 'FKU', 'FUQ', 'JAP', 'JIZ', 'KYS', 'NGA', 'NGR', 'PNS', 'TWT', 'VAG', 'WOP',
 ]);
+// Initials, or '' for someone unsigned; and initials anyone may show.
+export const initialsOrNone = (v) => v === '' || (typeof v === 'string' && INITIALS.test(v));
+export const allowedInitials = (v) => typeof v === 'string' && INITIALS.test(v) && !BLOCKED_INITIALS.has(v);
 
-const isInt = (value, min, max) => Number.isInteger(value) && value >= min && value <= max;
+export const isInt = (value, min, max) => Number.isInteger(value) && value >= min && value <= max;
 
 // Each game lists the values of its two filters, difficulty and mode, and a
 // plausibility check for a finished game. A determined cheater can still fake
@@ -144,14 +152,36 @@ export function json(body, status, headers) {
   });
 }
 
-async function readBody(request) {
-  const text = await request.text();
-  if (text.length > MAX_BODY_BYTES) throw new HttpError(413, 'body too large');
+// Answers through `answer`, sending an HttpError it throws back as {error}.
+// OPTIONS gets the CORS preflight.
+export async function answered(request, cors, answer) {
   try {
-    return JSON.parse(text);
-  } catch {
-    throw new HttpError(400, 'body must be JSON');
+    if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers: cors });
+    return await answer();
+  } catch (error) {
+    if (error instanceof HttpError) return json({ error: error.message }, error.status, cors);
+    throw error;
   }
+}
+
+// Only POSTs, and only from allowed origins.
+export function mustPost(request, cors) {
+  if (request.method !== 'POST') throw new HttpError(405, 'method not allowed');
+  if (!cors['Access-Control-Allow-Origin']) throw new HttpError(403, 'origin not allowed');
+}
+
+// Cloudflare's cache, where there is one.
+export function edgeCache() {
+  try { return globalThis.caches?.default ?? null; } catch { return null; }
+}
+
+// A JSON body of at most `max` characters. `empty`, if given, is what an
+// empty body reads as; otherwise an empty body isn't JSON.
+export async function readBody(request, max = MAX_BODY_BYTES, empty = undefined) {
+  const text = await request.text();
+  if (text.length > max) throw new HttpError(413, 'body too large');
+  if (!text && empty !== undefined) return empty;
+  try { return JSON.parse(text); } catch { throw new HttpError(400, 'body must be JSON'); }
 }
 
 export function hashIp(request, salt) {
@@ -161,7 +191,7 @@ export function hashIp(request, salt) {
 // A salted SHA-256 of an address, so no IP address is ever stored as it is.
 export async function hashAddress(address, salt) {
   const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(`${salt || ''}:${address}`));
-  return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, '0')).join('');
+  return hex(digest);
 }
 
 export async function rateLimit(db, kind, ipHash, now) {
@@ -173,6 +203,13 @@ export async function rateLimit(db, kind, ipHash, now) {
     .first('n');
   if (recent >= max) throw new HttpError(429, 'too many requests, try again in a few minutes');
   await db.prepare('INSERT INTO submissions (kind, ip_hash, created_at) VALUES (?, ?, ?)').bind(kind, ipHash, now).run();
+}
+
+// Whether a rate limiter binding (wrangler.toml) lets `key` go ahead. Without
+// the binding or a key, or if it fails, yes: the other limits still hold.
+export async function underLimit(limiter, key) {
+  if (!limiter || !key) return true;
+  try { return (await limiter.limit({ key })).success !== false; } catch { return true; }
 }
 
 // Returns an error message for a bad score, or null when it's valid.
@@ -315,8 +352,7 @@ async function createGroup(request, env, now) {
   const db = env.DB;
   await rateLimit(db, 'group', await hashIp(request, env.IP_SALT), now);
   for (let attempt = 0; attempt < 8; attempt++) {
-    const bytes = crypto.getRandomValues(new Uint8Array(4));
-    const code = [...bytes].map((b) => CODE_ALPHABET[b % CODE_ALPHABET.length]).join('');
+    const code = randomCode(4);
     const created = await db
       .prepare('INSERT INTO groups (code, name, created_at) VALUES (?, ?, ?) ON CONFLICT (code) DO NOTHING RETURNING code')
       .bind(code, name, now)

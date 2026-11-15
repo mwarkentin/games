@@ -11,6 +11,7 @@ from __future__ import annotations
 from playwright.sync_api import Page, expect
 
 from fake_definitions import DEFINE_API, FakeDefinitions
+from fake_leaderboard import Held
 from fake_survey_log import FakeSurveyLog
 from test_letterfield_log import ACORN, MONET, PLACES, THEMES, ZEUS, open_log
 
@@ -75,19 +76,18 @@ def test_a_word_with_no_meaning_and_one_that_failed_then_comes(page: Page, site_
     expect(page.locator(".def")).to_have_attribute("data-define", "failed")
     # Wikimedia is back: Try again looks it up.
     fake.answers["MONET"] = [{"pos": "noun", "text": "A painter."}]
-    fake.holding = True
+    held = Held(fake, lambda r: True)
+    page.route(f"{DEFINE_API}/**", held.handle)
     page.get_by_role("button", name="Try again").click()
     expect(page.locator(".def-note")).to_have_text("Looking it up…")
-    fake.holding = False
-    for route in fake.held:
-        fake.reply(route)
+    held.release()
     expect(page.locator(".def-sense")).to_have_text("nounA painter.")
     assert page.evaluate("window.__log.definitions()") == {"ACORN/11": "none", "MONET/0": "ready"}
 
 
 def test_the_workers_text_goes_in_as_text_and_only_wikimedia_links(page: Page, site_url, errors):
     fake = FakeDefinitions()
-    original = fake.reply
+    original = fake.handle
 
     def reply(route):
         # A link to anywhere else is dropped.
@@ -102,7 +102,7 @@ def test_the_workers_text_goes_in_as_text_and_only_wikimedia_links(page: Page, s
         else:
             original(route)
 
-    fake.reply = reply
+    fake.handle = reply
     open_with(page, site_url, fake)
     book(page, "ACORN").click()
     sense = page.locator(".def-sense")

@@ -184,11 +184,14 @@ joins with and without a pass for each combination of secret and switch,
 including the `X-Survey-Unpassed` mark (set by the Worker, never passed on
 from the player). `worker/test/survey.test.js` checks that sectors count
 joins without a pass in their reports, keeping the count if a report fails,
-and that the Atlas adds them up per UTC day. `tests/test_letterfield_survey.py` answers
-`api.js` with a fake `turnstile` object given the invisible always-passes
-test site key (`1x00000000000000000000BB`). Its other tests serve the game
-with `TURNSTILE_SITE_KEY` blanked (`without_turnstile`), and one checks that
-the game uses the key it's published with when `?turnstile=` isn't given.
+and that the Atlas adds them up per UTC day. Every test context answers
+`api.js` with a fake `turnstile` object (`FAKE_TURNSTILE` in
+`tests/fake_survey.py`, served by `stand_in_for_worker`), and
+`tests/test_letterfield_survey.py` gives it the invisible always-passes test
+site key (`1x00000000000000000000BB`). Its other tests serve the game with
+`TURNSTILE_SITE_KEY` blanked (`blank_constants` in `tests/fake_leaderboard.py`),
+and one checks that the game uses the key it's published with when
+`?turnstile=` isn't given.
 They check that:
 - one check covers every sector, and a reload or roaming doesn't ask again;
 - the box shows only when the widget wants a tap;

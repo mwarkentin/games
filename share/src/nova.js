@@ -32,8 +32,8 @@ const SKIES = {
   dark: { top: '#060A14', bottom: '#020308', edge: '#000000', ink: '#EEF1F6', muted: '#97A2B8', rule: 'rgba(214,224,255,0.18)' },
 };
 
-// s: summarize()'s answer for a territory with a supernova, whose novaOf has
-// { at, w, initials, first, words, surveyors, top, topN, th }; v: the view.
+// s: summarize()'s answer for a territory gone supernova, whose novaOf has
+// { w, initials, words }; v: the view.
 export function novaSvg(v, s, { dark = false, host = 'games.michaelwarkentin.com' } = {}) {
   const K = dark ? SKIES.dark : SKIES.light, n = s.novaOf, hue = s.hue ?? 200;
   const glow = (l, a = 1, sat = 95) => `hsla(${hue},${sat}%,${l}%,${a})`;
@@ -43,7 +43,6 @@ export function novaSvg(v, s, { dark = false, host = 'games.michaelwarkentin.com
   out.push('<defs>'
     + `<linearGradient id="sky" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${K.top}"/><stop offset="1" stop-color="${K.bottom}"/></linearGradient>`
     + `<radialGradient id="core" cx="${CX}" cy="${CY}" r="84" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#FFFFFF"/><stop offset="0.24" stop-color="#FFFFFF" stop-opacity="0.95"/><stop offset="0.5" stop-color="${glow(86, 0.7, 100)}"/><stop offset="0.78" stop-color="${glow(72, 0.28)}"/><stop offset="1" stop-color="${glow(66, 0)}"/></radialGradient>`
-    // Behind the words, the sky darkens, so they read whatever is going on.
     // Diffraction spikes: a star's cross of light.
     + `<linearGradient id="spikeH" x1="0" x2="1"><stop offset="0" stop-color="#FFFFFF" stop-opacity="0"/><stop offset="0.5" stop-color="#FFFFFF" stop-opacity="0.9"/><stop offset="1" stop-color="#FFFFFF" stop-opacity="0"/></linearGradient>`
     + `<linearGradient id="spikeV" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#FFFFFF" stop-opacity="0"/><stop offset="0.5" stop-color="#FFFFFF" stop-opacity="0.85"/><stop offset="1" stop-color="#FFFFFF" stop-opacity="0"/></linearGradient>`
@@ -116,9 +115,8 @@ export function novaSvg(v, s, { dark = false, host = 'games.michaelwarkentin.com
   }
   out.push(sparks);
 
-  // The core, white-hot, with its cross of light.
-  // The core: a soft, white-hot middle inside steps of the hue's light (a
-  // gradient as wide would cost the PNG tens of kilobytes).
+  // The core, white-hot, with its cross of light: a soft middle inside steps
+  // of the hue's light (a gradient as wide would cost the PNG tens of kilobytes).
   for (const [rad, l, a] of [[124, 60, 0.12], [98, 66, 0.16]]) {
     out.push(`<circle cx="${CX}" cy="${CY}" r="${rad}" fill="${glow(l, a, 100)}"/>`);
   }

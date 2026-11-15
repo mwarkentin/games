@@ -21,24 +21,16 @@ class FakeDefinitions:
 
     An answer is a list of senses ({"pos", "text"}; [] for none) or a bare
     status number, like 503 for Wikimedia being busy. `asked` lists every
-    word asked for, as "WORD/th". With `holding`, requests wait in `held`
-    until answer() or release() (see Held in fake_leaderboard.py).
+    word asked for, as "WORD/th". To hold answers back, route Held(fake, ...)
+    from fake_leaderboard.py instead.
     """
 
     def __init__(self, senses=None, answers=None):
         self.senses = senses if senses is not None else [{"pos": "noun", "text": "A thing you found."}]
         self.answers = dict(answers or {})
         self.asked: list[str] = []
-        self.holding = False
-        self.held: list[Route] = []
 
     def handle(self, route: Route) -> None:
-        if self.holding:
-            self.held.append(route)
-            return
-        self.reply(route)
-
-    def reply(self, route: Route) -> None:
         m = PATH.search(route.request.url)
         headers = {"Access-Control-Allow-Origin": "*", "Content-Type": "application/json"}
         if not m:
@@ -58,7 +50,3 @@ class FakeDefinitions:
             "url": f"https://en.wiktionary.org/wiki/{word.lower()}#English" if answer else None,
         }
         route.fulfill(status=200, headers=headers, body=json.dumps(body))
-
-    def answer(self, index: int = 0) -> None:
-        """Answer one held request, the oldest unless `index` says otherwise."""
-        self.reply(self.held.pop(index))

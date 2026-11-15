@@ -229,7 +229,7 @@ describe('asking the survey', () => {
     const { env } = fakeEnv();
     await get(`/f/${SLUG}.png`, { ...env, SECTORS: broken, ATLAS: broken });
     assert.ok(renders[0].includes('FIND IT ON THE MAP'));
-    assert.ok(!renders[0].includes('shared map charted'));
+    assert.ok(!renders[0].includes('universe charted'));
   });
 
   test('works with no survey bindings at all, as a Worker Preview does', async () => {

@@ -38,9 +38,9 @@ through its Durable Objects (see "The share Worker" in
   be 30 s behind, and apps fetch a preview the moment Share is tapped). Only
   sectors in the shared world are asked, so a card never wakes one nobody has
   played in.
-- **the shared map:** "0.4% of the shared map charted", from the Atlas: one
-  decimal under 1%, whole percents rounded down after that, "Every word on
-  the shared map charted" at the end.
+- **the universe:** "0.4% of the universe charted", from the Atlas: one
+  decimal under 1%, whole percents rounded down after that, "Every word in
+  the universe charted" at the end.
 
 Either line is left off if the survey doesn't answer within 1.5 s, and on
 Worker Previews, which have no survey bindings.

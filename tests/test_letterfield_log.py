@@ -15,13 +15,12 @@ from urllib.parse import parse_qs, urlsplit
 
 from playwright.sync_api import Page, expect
 
-from fake_leaderboard import Held
-from fake_survey_log import SURVEY, FakeSurveyLog
+from fake_leaderboard import Held, blank_constants
+from fake_survey_log import DAY_MS, HOUR_MS, SURVEY, FakeSurveyLog
+from test_letterfield_survey import HIDE, eventually
 
 NOW_MS = int(datetime(2026, 11, 6, 20, 30, tzinfo=UTC).timestamp() * 1000)  # 3:30 PM in Toronto
 MINUTE = 60_000
-HOUR_MS = 3_600_000
-DAY_MS = 86_400_000
 PLACES = {"0,0": "Acorn Hollow", "1,0": "Monet Reach", "-1,2": "Zeus Point"}
 THEMES = {11: ["Forest", 40], 0: ["Old Masters", 56], 17: ["Olympus", 25]}
 
@@ -44,12 +43,7 @@ def open_log(
     (for what happens as time passes: page.clock.fast_forward moves it on). With
     share=False, SHARE_URL is blanked, as on a preview without a share Worker."""
     if not share:
-
-        def blank(route):
-            response = route.fetch()
-            route.fulfill(response=response, body=re.sub(r"\b(const SHARE_URL = )'[^']*'", r"\1''", response.text()))
-
-        page.route(lambda url: urlsplit(url).path == "/letterfield-log", blank)
+        blank_constants(page, "letterfield-log", "SHARE_URL")
     if running:
         page.clock.install(time=now_ms / 1000)
     else:
@@ -500,29 +494,6 @@ def test_letterfield_links_to_the_log_from_its_survey_panel(page: Page, site_url
 
 # ---------- What the page shows as time passes (<html data-log>) ----------
 
-HIDE = """hidden => {
-  Object.defineProperty(document, 'hidden', { configurable: true, get: () => hidden });
-  document.dispatchEvent(new Event('visibilitychange'));
-}"""
-
-
-def wait_for_request(page: Page, fake: FakeSurveyLog, path: str, timeout_ms: int = 5000) -> None:
-    """Waits until the fake has been asked for `path`: the page asks for some things only after others."""
-    for _ in range(timeout_ms // 50):
-        if path in fake.requests:
-            return
-        page.wait_for_timeout(50)
-    assert path in fake.requests
-
-
-def wait_for_requests(page: Page, fake: FakeSurveyLog, count: int, timeout_ms: int = 5000) -> None:
-    """Waits until the fake has been asked `count` things: its handler runs between Playwright calls."""
-    for _ in range(timeout_ms // 50):
-        if len(fake.requests) >= count:
-            return
-        page.wait_for_timeout(50)
-    assert len(fake.requests) >= count
-
 
 def test_a_live_hour_that_fails_to_refresh_keeps_its_words_and_tries_again(page: Page, site_url):
     # Skips the errors fixture: the browser logs the 503s.
@@ -533,7 +504,7 @@ def test_a_live_hour_that_fails_to_refresh_keeps_its_words_and_tries_again(page:
     fake.fail = True
     asked = len(fake.requests)
     page.clock.fast_forward(21_000)  # the hour reloads every 20 s
-    wait_for_requests(page, fake, asked + 1)
+    eventually(page, lambda: len(fake.requests) >= asked + 1)
     page.wait_for_timeout(500)  # for the page to take the failure in
     # Its words stay on screen, rather than "Can't reach the log".
     expect(page.locator(".entry")).to_have_count(1)
@@ -664,7 +635,7 @@ def test_a_day_and_an_hour_have_top_lists_of_their_own(page: Page, site_url, err
     # Today in Toronto, counted by the hour: not the whole UTC day, which
     # began at 7 PM yesterday here and holds OAK.
     hour = NOW_MS // HOUR_MS
-    wait_for_request(page, fake, f"/top/hours/{hour - 15}/{hour + 1}")
+    eventually(page, lambda: f"/top/hours/{hour - 15}/{hour + 1}" in fake.requests)
     cards = page.locator(".card")
     surveyors = cards.filter(has_text="Top surveyors")
     expect(surveyors.locator(".rank .lbl")).to_have_text(["ZED", "ABC"])
@@ -676,7 +647,7 @@ def test_a_day_and_an_hour_have_top_lists_of_their_own(page: Page, site_url, err
     # Minute by minute, the hour's own.
     page.locator(".hour h3", has_text="2–3 PM").get_by_role("button", name="Minute by minute").click()
     expect(page.locator("#sumTitle")).to_contain_text("2:00")
-    wait_for_request(page, fake, f"/top/hours/{hour - 1}/{hour}")
+    eventually(page, lambda: f"/top/hours/{hour - 1}/{hour}" in fake.requests)
     expect(surveyors.locator(".rank .lbl")).to_have_text(["ZED", "ABC"])
     expect(surveyors.locator(".num")).to_have_text(["2", "1"])
     # Each opens that surveyor's own view of the same hour.

@@ -21,7 +21,7 @@
 // Both sites' text is CC BY-SA 4.0: each answer names its source and links
 // to the page, which the game shows beside it.
 
-import { corsHeaders, hashIp, json } from './leaderboard.js';
+import { corsHeaders, edgeCache, hashIp, json, underLimit } from './leaderboard.js';
 import { MAP_VERSION, THEMES } from './letterfield-world.js';
 
 export const DEFINE_PATH = /^\/v1\/define\/([A-Z]{2,15})\/(\d{1,3})$/;
@@ -158,21 +158,13 @@ async function store(db, word, context, body, now) {
 export async function lookUp(env, word, theme, { now = Date.now(), fetcher = fetch, request = null } = {}) {
   const kept = await stored(env.DB, word, theme, now);
   if (kept) return kept;
-  if (request && env.DEFINE_LOOKUPS) {
-    let ok = true;
-    try { ok = (await env.DEFINE_LOOKUPS.limit({ key: `define:${await hashIp(request, env.IP_SALT)}` })).success !== false; } catch { /* let it through */ }
-    if (!ok) return 'limited';
-  }
+  if (request && env.DEFINE_LOOKUPS && !(await underLimit(env.DEFINE_LOOKUPS, `define:${await hashIp(request, env.IP_SALT)}`))) return 'limited';
   const wikt = await fromWiktionary(word, env, fetcher);
   if (wikt) { await store(env.DB, word, '', wikt, now); return wikt; }
   const wiki = await fromWikipedia(word, theme, env, fetcher);
   if (wiki) { await store(env.DB, word, theme, wiki, now); return wiki; }
   await store(env.DB, word, `?${theme}`, { senses: [] }, now);
   return { senses: [], source: null, title: null, url: null };
-}
-
-function edgeCache() {
-  try { return globalThis.caches?.default ?? null; } catch { return null; }
 }
 
 // Answers /v1/define/..., or returns null for any other path.

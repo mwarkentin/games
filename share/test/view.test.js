@@ -145,11 +145,11 @@ describe('what a card says', () => {
     const at = NOW - 2 * HOUR, nova = [0, 0, at, 'BIRCH', 1, 2, 0, 'ABC', at - 5 * HOUR, 112, 4, 'ZED', 60, regionTheme(0, 0)];
     const v = parseView('/v/territory/0,0', NOW);
     const s = summarize(v, { charted: 112, total: 112, nova, entries: [entry('BIRCH', at, 'ABC')], themes: {} }, NOW);
-    assert.equal(s.nova, true);
+    assert.ok(s.novaOf);
     assert.deepEqual(s.stats, [['Went supernova', '10 Nov 2026'], ['First word to last', '5 hours'], ['Most charted by', 'ZED']]);
     assert.equal(s.line, `${regionName(0, 0)} went supernova in Letterfield’s shared survey on 10 Nov 2026: all 112 hidden words charted by 4 surveyors in 5 hours, the last, BIRCH, by ABC.`);
     assert.match(s.token, /n\.w2$/);
-    assert.deepEqual(s.novaOf, { at, w: 'BIRCH', initials: 'ABC', first: at - 5 * HOUR, words: 112, surveyors: 4, top: 'ZED', topN: 60 });
+    assert.deepEqual(s.novaOf, { w: 'BIRCH', initials: 'ABC', words: 112 });
     // Its own card: the burst, then who, when and how.
     const svg = viewSvg(v, s);
     for (const part of [`>LETTERFIELD · SUPERNOVA · ${THEMES[regionTheme(0, 0)].name.toUpperCase()}<`, `>${regionName(0, 0).toUpperCase()}<`, '>Every one of its 112 hidden words charted<',

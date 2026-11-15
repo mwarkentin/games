@@ -20,12 +20,12 @@
 
 import { THEMES, regionName, regionTheme } from '../../worker/src/letterfield-world.js';
 import { GUILD_FIRST, GUILD_SECOND, GUILD_THIRD, goodName, guildHue, guildName } from '../../worker/src/survey-guild.js';
+import { SLICE_MAX_HOURS } from '../../worker/src/survey-log.js';
 import { CARD_WORDS, H, PALETTES, W, fit, measure, text } from './card.js';
 import { novaSvg } from './nova.js';
 
 const HOUR = 3_600_000;
 export const LOG_BEGAN_HOUR = Date.UTC(2026, 10, 6) / HOUR;  // where all time starts, until the log's span says earlier
-const SLICE_MAX_HOURS = 24 * 3660;  // the most the log's view of one covers (SLICE_MAX_HOURS in survey-log.js)
 export const VIEW_PATH = /^\/v\/(d\/)?(surveyor|theme|guild)\/([A-Z]{3}|\d{1,3}|[0-9a-f]{10})\/(?:(all)|(hour|day|week|month|year)\/(\d{4})-(\d{2})-(\d{2})(?:T(\d{2}))?\/(\d{1,8})-(\d{1,8}))(\.png)?$/;
 const KEYS = { surveyor: /^[A-Z]{3}$/, theme: /^\d{1,3}$/, guild: /^[0-9a-f]{10}$/ };
 export const TERRITORY_PATH = /^\/v\/(d\/)?territory\/(-?\d{1,8}),(-?\d{1,8})(\.png)?$/;
@@ -60,9 +60,6 @@ function wall(period, y, m, d, h) {
   return [start, end];
 }
 
-// The view an address names, or null for one that doesn't name a real one:
-// a date that isn't one, a week that doesn't start on a Monday, or hours that
-// can't be that period in any time zone (UTC-12 to UTC+14).
 // A guild's name from its address, ?name=<a>-<b>-<c>, as the log page's own
 // address carries it: three word numbers, each in its list's range, or null.
 export function namedFrom(search) {
@@ -71,6 +68,9 @@ export function namedFrom(search) {
   return goodName(n) ? n : null;
 }
 
+// The view an address names, or null for one that doesn't name a real one:
+// a date that isn't one, a week that doesn't start on a Monday, or hours that
+// can't be that period in any time zone (UTC-12 to UTC+14).
 export function parseView(pathname, now = Date.now(), search = '') {
   const t = TERRITORY_PATH.exec(pathname);
   if (t) return { kind: 'territory', rx: Number(t[2]), ry: Number(t[3]), dark: !!t[1], png: !!t[4], period: 'all' };
@@ -99,7 +99,7 @@ function pinned(view, [all, period, ys, ms, ds, hs, fs, ts], now) {
   const from = Number(fs), to = Number(ts);
   // Where the period starts, in UTC hours, for any offset from UTC-12 to UTC+14.
   if (from * HOUR < start - 15 * HOUR || from * HOUR > start + 13 * HOUR) return null;
-  if (Math.abs((to - from) - (end - start) / HOUR) > 2 || !(from < to) || to - from > SLICE_MAX_HOURS) return null;
+  if (Math.abs((to - from) - (end - start) / HOUR) > 2 || !(from < to)) return null;
   if (from > Math.floor(now / HOUR)) return null;
   return { ...view, period, y, mo, d, h, start, end, from, to };
 }
@@ -178,6 +178,7 @@ export function summarize(v, a, now = Date.now()) {
   const words = entries.slice(0, 12).map((e) => ({ w: e[0], hue: themes[e[7]]?.[1], stray: !!e[4] }));
   const latest = entries[0]?.[6] ?? 0;
   const top = Array.isArray(a?.topTerritories?.[0]) ? a.topTerritories[0][2] : null;
+  const who = Array.isArray(a?.topSurveyors?.[0]) ? a.topSurveyors[0][0] : null;
   let stats, line, count;
   // A territory gone supernova (its nova: [rx, ry, at, w, x, y, d, initials,
   // first, words, surveyors, top, topN, th]) says so, and how it went.
@@ -200,19 +201,17 @@ export function summarize(v, a, now = Date.now()) {
       : `No words signed ${name} in Letterfield’s shared survey ${when.said}.`;
   } else if (v.kind === 'guild') {
     count = a.words;
-    const who = Array.isArray(a?.topSurveyors?.[0]) ? a.topSurveyors[0][0] : null;
     stats = [['Words charted first', num(a.words)], ['Top member', who || '—'], ['Top territory', top || '—']];
     line = a.words
       ? `The ${name} charted ${plural(a.words, 'word')} first in Letterfield’s shared survey ${when.said}${top ? `, most in ${top}` : ''}.`
       : `The ${name} charted no words in Letterfield’s shared survey ${when.said}.`;
   } else {
     count = a.words;
-    const who = Array.isArray(a?.topSurveyors?.[0]) ? a.topSurveyors[0][0] : null;
     stats = [['Hidden words charted', num(a.words)], ['Top surveyor', who || '—'], ['Top territory', top || '—']];
     line = `${plural(a.words, 'hidden word')} charted in Letterfield’s ${name} territories ${when.said}.`;
   }
-  const novaOf = nova && { at: nova[2], w: String(nova[3]), initials: String(nova[7] ?? ''), first: nova[8], words: nova[9], surveyors: nova[10], top: String(nova[11] ?? ''), topN: nova[12] };
-  return { name, hue, nova: !!nova, novaOf, when: when.shown, stats, words, line, token: `${count}.${latest.toString(36)}${nova ? 'n' : ''}.w${CARD_WORDS}` };
+  const novaOf = nova && { w: String(nova[3]), initials: String(nova[7] ?? ''), words: nova[9] };
+  return { name, hue, novaOf, when: when.shown, stats, words, line, token: `${count}.${latest.toString(36)}${nova ? 'n' : ''}.w${CARD_WORDS}` };
 }
 
 // The Supernovas tab's card, as the page's own picture shows it (renderNovas()
@@ -233,7 +232,7 @@ function summarizeNovas(v, a, now) {
     ? `${plural(count, 'territory', 'territories')} went supernova in Letterfield’s shared survey ${when.said}, every hidden word charted.${latest ? ` Latest: ${place(latest)}.` : ''}`
     : `No territories went supernova in Letterfield’s shared survey ${when.said}.`;
   const words = novas.slice(0, 12).map((n) => ({ w: n[3], hue: themes[n[13]]?.[1] }));
-  return { name: 'Supernovas', hue: undefined, nova: false, novaOf: null, when: when.shown, stats, words, line, token: `${count}.${(latest?.[2] ?? 0).toString(36)}.w${CARD_WORDS}` };
+  return { name: 'Supernovas', when: when.shown, stats, words, line, token: `${count}.${(latest?.[2] ?? 0).toString(36)}.w${CARD_WORDS}` };
 }
 
 // The card, 1200×630: shareImage() in letterfield-log.html, as SVG.
