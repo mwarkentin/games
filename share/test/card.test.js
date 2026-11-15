@@ -93,6 +93,12 @@ describe('findSvg', () => {
     assert.ok(texts(findSvg(e, { claim: null, progressText: '3% of the universe charted' })).includes('3% of the universe charted'));
   });
 
+  test('calls a word turned up by chance a bonus word, in its theme', () => {
+    const t = texts(findSvg({ ...e, s: 1 }, {}));
+    assert.ok(t.some((s) => /^A bonus [a-z ]+ word$/.test(s)), JSON.stringify(t));
+    assert.ok(!t.some((s) => /stray/i.test(s)));
+  });
+
   test('escapes what it writes', () => {
     assert.ok(!findSvg(e, { claim: { initials: '<&>', at: 0 } }).includes('<&>'));
   });
