@@ -58,6 +58,9 @@ def test_circling_a_word_adds_it_to_field_notes(page: Page, site_url, errors):
 
 def test_finds_from_an_older_map_carry_over_if_still_there(page: Page, site_url, errors):
     page.set_viewport_size({"width": 375, "height": 740})
+    # Played alone: on the shared survey a find it doesn't have goes to it as a
+    # claim, and is charted afresh (see test_letterfield_survey.py).
+    without_worker(page, site_url, "letterfield")
     page.goto(f"{site_url}/letterfield#debug")
     page.wait_for_function("window.__lf")
     # One hidden word on today's map, and the same word somewhere it isn't. The
