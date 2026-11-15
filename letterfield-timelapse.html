@@ -19,7 +19,7 @@
    colours and type, as in the survey log. */
 :root{
   --paper:#EBEEE7; --panel:#F7F8F4; --ink:#1B2428; --muted:#59656A; --rule:#C6CFC6;
-  --accent:#2A43C2; --on-accent:#FFFFFF; --hover:rgba(27,36,40,.055);
+  --accent:#2A43C2; --hover:rgba(27,36,40,.055);
   --mark-s:58%; --mark-l:38%; --mode:light;
   --f-display:"Big Shoulders Display","Arial Narrow",Impact,sans-serif;
   --f-mono:"Martian Mono",ui-monospace,"SF Mono",Menlo,Consolas,monospace;
@@ -29,13 +29,13 @@
 @media (prefers-color-scheme: dark){
   :root:not([data-theme="light"]){
     --paper:#0F171A; --panel:#162024; --ink:#E2E7DE; --muted:#93A19D; --rule:#2B3A3E;
-    --accent:#97A9FF; --on-accent:#0C1330; --hover:rgba(226,231,222,.06);
+    --accent:#97A9FF; --hover:rgba(226,231,222,.06);
     --mark-s:68%; --mark-l:68%; --mode:dark; color-scheme:dark;
   }
 }
 :root[data-theme="dark"]{
   --paper:#0F171A; --panel:#162024; --ink:#E2E7DE; --muted:#93A19D; --rule:#2B3A3E;
-  --accent:#97A9FF; --on-accent:#0C1330; --hover:rgba(226,231,222,.06);
+  --accent:#97A9FF; --hover:rgba(226,231,222,.06);
   --mark-s:68%; --mark-l:68%; --mode:dark; color-scheme:dark;
 }
 *{box-sizing:border-box}
@@ -54,7 +54,7 @@ button:focus-visible,a:focus-visible,input:focus-visible{outline:2px solid var(-
   padding:calc(env(safe-area-inset-top,0px) + 12px) max(16px, env(safe-area-inset-right,0px)) 18px max(16px, env(safe-area-inset-left,0px));
   background:linear-gradient(var(--paper) 55%, color-mix(in srgb, var(--paper) 0%, transparent))}
 .top .row{display:flex;justify-content:space-between;align-items:flex-start;gap:10px}
-.top a,.top button{pointer-events:auto}
+.top a{pointer-events:auto}
 .back{font:500 12px/1 var(--f-mono);text-decoration:none;padding:10px 12px;border:1px solid var(--rule);border-radius:999px;color:var(--ink);background:var(--panel);white-space:nowrap}
 .back:hover{background:var(--hover)}
 .when{margin:10px 0 0;font:800 34px/.95 var(--f-display);letter-spacing:.04em;text-transform:uppercase;font-variant-numeric:tabular-nums}
@@ -63,7 +63,7 @@ button:focus-visible,a:focus-visible,input:focus-visible{outline:2px solid var(-
 .counts b{display:block;font:700 22px/1 var(--f-display);letter-spacing:.04em;color:var(--ink);font-variant-numeric:tabular-nums}
 /* Following a guild: its words in its colour, and a way to stop. */
 .counts .theirs b{color:hsl(var(--gh,220) var(--mark-s) var(--mark-l))}
-.follow{display:inline-flex;align-items:center;gap:8px;margin-top:10px;min-height:36px;box-sizing:border-box;padding:6px 12px;border:1px solid hsl(var(--gh,220) var(--mark-s) var(--mark-l));border-radius:999px;background:var(--panel);color:var(--ink);font:500 12px/1.2 var(--f-ui);text-decoration:none;max-width:100%}
+.follow{display:inline-flex;align-items:center;gap:8px;margin-top:10px;min-height:36px;padding:6px 12px;border:1px solid hsl(var(--gh,220) var(--mark-s) var(--mark-l));border-radius:999px;background:var(--panel);color:var(--ink);font:500 12px/1.2 var(--f-ui);text-decoration:none;max-width:100%}
 .follow i{flex:none;width:9px;height:9px;border-radius:50%;background:hsl(var(--gh,220) var(--mark-s) var(--mark-l))}
 .follow span{color:var(--muted);font:500 12px/1 var(--f-mono)}
 
@@ -86,8 +86,6 @@ button:focus-visible,a:focus-visible,input:focus-visible{outline:2px solid var(-
 .seg button[aria-pressed="true"]{background:var(--ink);color:var(--paper)}
 /* Disabled while the log loads, like the Play button. */
 .seg button:disabled,.pill:disabled{opacity:.4;cursor:default}
-.pill:disabled:hover{background:var(--paper)}
-.pill.main:disabled:hover{background:var(--ink)}
 .pill{display:inline-flex;align-items:center;gap:6px;height:36px;padding:0 13px;border:1px solid var(--rule);border-radius:999px;background:var(--paper);color:var(--ink);font:500 12px/1 var(--f-mono);text-decoration:none;cursor:pointer;white-space:nowrap}
 .pill:hover{background:var(--hover)}
 .pill.main{background:var(--ink);color:var(--paper);border-color:var(--ink)}
@@ -186,7 +184,7 @@ dialog p{margin:6px 0 0;font:400 12px/1.5 var(--f-mono);color:var(--muted)}
 <dialog id="rec" aria-labelledby="recTitle">
   <h2 id="recTitle">Saving a video</h2>
   <p id="recText"></p>
-  <div class="screen" id="recScreen"><canvas id="recCanvas" width="1080" height="1080"></canvas><video id="recVideo" controls playsinline muted loop hidden></video></div>
+  <div class="screen"><canvas id="recCanvas" width="1080" height="1080"></canvas><video id="recVideo" controls playsinline muted loop hidden></video></div>
   <div class="bar"><i id="recBar"></i></div>
   <div class="acts">
     <button type="button" class="pill" id="recCancel">Cancel</button>
@@ -224,14 +222,11 @@ const K_SPEED = 'letterfield.timelapse.speed';
 const FAINT = 0.22;            // how strongly everyone else's words show while following a guild
 
 const $ = s => document.querySelector(s);
-const api = (() => {
-  let url = SURVEY_URL;
-  try { const q = new URLSearchParams(location.search).get('survey'); if (q && /^(https?|wss?):\/\//.test(q)) url = q; } catch (_) {}
-  return url.replace(/\/+$/, '').replace(/^ws/, 'http');
-})();
+const query = new URLSearchParams(location.search), surveyParam = query.get('survey');
+const api = (surveyParam && /^(https?|wss?):\/\//.test(surveyParam) ? surveyParam : SURVEY_URL).replace(/\/+$/, '').replace(/^ws/, 'http');
 // ?guild=<log id> follows a guild: its words bright in its colour, everyone
 // else's faint. The log knows a guild by this id, never its code or tag.
-const followLid = (() => { try { const g = new URLSearchParams(location.search).get('guild'); return /^[0-9a-f]{10}$/.test(g || '') ? g : null; } catch (_) { return null; } })();
+const followLid = /^[0-9a-f]{10}$/.test(query.get('guild') || '') ? query.get('guild') : null;
 let follow = null;        // {name, hue, days: Set of UTC days with its words}, once the log has said
 const LS = {
   get(k) { try { return localStorage.getItem(k); } catch (_) { return null; } },
@@ -299,7 +294,7 @@ async function getJSON(path) {
 // play time by whether anything was charted in it, so a quiet night goes by
 // in a blink. Play position p runs from 0 to P.
 let idx = null;           // the index: {hours, novas, bounds, themes, layout}
-let H0 = 0, NH = 0, cum = null, wt = null, P = 1, T0 = 0, T1 = 1, hourWords = null;
+let H0 = 0, NH = 0, cum = null, wt = null, P = 1, hourWords = null;
 function timeline(index) {
   const hours = index.hours;
   H0 = hours[0][0]; NH = hours.at(-1)[0] - H0 + 1;
@@ -308,7 +303,7 @@ function timeline(index) {
   kfEvery = Math.max(1, Math.ceil(hours.reduce((a, h) => a + h[1], 0) / 1500));
   cum = new Float64Array(NH + 1);
   for (let i = 0; i < NH; i++) cum[i + 1] = cum[i] + wt[i];
-  P = cum[NH]; T0 = H0 * HOUR; T1 = (H0 + NH) * HOUR;
+  P = cum[NH];
 }
 function timeAt(p) {
   p = clamp(p, 0, P);
@@ -337,8 +332,8 @@ function hexRGB(hex) {
 }
 function readColors() {
   const st = getComputedStyle(document.documentElement), g = n => st.getPropertyValue(n).trim();
-  C = { paper: g('--paper'), ink: g('--ink'), muted: g('--muted'), panel: g('--panel'), accent: g('--accent'), dark: g('--mode') === 'dark',
-    ms: g('--mark-s') || '58%', ml: g('--mark-l') || '38%' };
+  C = { paper: g('--paper'), ink: g('--ink'), muted: g('--muted'), accent: g('--accent'), dark: g('--mode') === 'dark',
+    ms: g('--mark-s'), ml: g('--mark-l') };
   C.paperRGB = hexRGB(C.paper);
   // The followed guild's colour, from the first word of its name, as on its carets in the game.
   if (follow) {
@@ -371,7 +366,8 @@ function readColors() {
 const W = [];             // [at, x, y, d, len, th, s, g], oldest first; g is 1 for the followed guild's
 const GW = [0];           // how many of the followed guild's words come before each index into W
 const NV = [];            // supernovas: [at, rx, ry, th], oldest first
-const dayStart = [];      // index into W where each loaded day starts, with its day
+const dayStart = [];      // index into W where each loaded day starts
+const dayEnd = i => i + 1 < dayStart.length ? dayStart[i + 1] : W.length;
 let days = [], nextDay = 0, taken = 0, loadedUntil = 0, failures = 0;
 const got = new Map();    // day -> its words and supernovas, until it's taken in order
 
@@ -390,15 +386,15 @@ function join(a, b) {
   if (a === b) return a;
   if (a.n < b.n) [a, b] = [b, a];
   b.up = a; clusters.delete(b);
-  a.n += b.n; a.last = Math.max(a.last, b.last);
+  a.n += b.n;
   a.x0 = Math.min(a.x0, b.x0); a.y0 = Math.min(a.y0, b.y0); a.x1 = Math.max(a.x1, b.x1); a.y1 = Math.max(a.y1, b.y1);
   return a;
 }
-function cluster(x, y, at) {
+function cluster(x, y) {
   const rx = fdiv(x, RC), ry = fdiv(y, RC), k = rx + ',' + ry;
   let t = terr.get(k);
   if (!t) {
-    t = { rx, ry, n: 0, last: at, x0: rx, y0: ry, x1: rx, y1: ry };
+    t = { rx, ry, n: 0, x0: rx, y0: ry, x1: rx, y1: ry };
     t.up = t; terr.set(k, t); clusters.add(t);
     const bx = fdiv(rx, LINK), by = fdiv(ry, LINK);
     for (let i = -1; i <= 1; i++) for (let j = -1; j <= 1; j++) {
@@ -410,8 +406,7 @@ function cluster(x, y, at) {
     if (!buckets.has(bk)) buckets.set(bk, []);
     buckets.get(bk).push(t);
   }
-  const r = root(t);
-  r.n++; r.last = at;
+  root(t).n++;
 }
 // The main cluster is the one charting started in until another clearly
 // outgrows it, so a couple of words far off early on (2 to 1 is "most")
@@ -463,12 +458,12 @@ function take() {
   while (taken < days.length && got.has(days[taken])) {
     const day = days[taken], { words, novas, theirs } = got.get(day), base = day * DAY;
     got.delete(day);
-    dayStart.push([W.length, day]);
+    dayStart.push(W.length);
     words.forEach((w, i) => {
       const [t, x, y, d, len] = w, mine = theirs.has(`${t},${x},${y},${d}`) ? 1 : 0;
       W.push([base + t, x, y, d, len, w[5], w[6], mine]);
       GW.push(GW.at(-1) + mine);
-      cluster(x, y, base + t);
+      cluster(x, y);
       if (W.length === 1 || W.length % kfEvery === 0 || i === words.length - 1) keyframe();
     });
     for (const n of novas) NV.push([base + n[0], n[1], n[2], n[3]]);
@@ -477,14 +472,13 @@ function take() {
   }
   if (taken && TL.is('loading', 'failed')) startPlayback();
   if (TL.is('waiting') && timeAt(pos) < loadedUntil) TL.go('playing');
-  if (taken === days.length) everythingLoaded();
+  if (taken === days.length) loadedYes();
   showLoaded();
   pump();
   dirty = true;
 }
-let allLoaded = null, loadedYes = null;
-allLoaded = new Promise(r => { loadedYes = r; });
-function everythingLoaded() { loadedYes(); }
+let loadedYes;  // resolves allLoaded once every day is taken
+const allLoaded = new Promise(r => { loadedYes = r; });
 // The first index into W (or NV) after time t.
 function upto(list, t) {
   let lo = 0, hi = list.length;
@@ -496,7 +490,7 @@ function upto(list, t) {
 let pos = 0;              // play position, 0..P
 let speed = Number(LS.get(K_SPEED)) || 1;
 if (![0.5, 1, 2, 4].includes(speed)) speed = 1;
-const rate = (s = speed) => P / (PLAY_S / s);  // play units a second
+const rate = () => P / (PLAY_S / speed);  // play units a second
 const TL = machine('tl', {
   loading: ['paused', 'playing', 'empty', 'failed'],
   failed: ['loading', 'paused', 'playing'],
@@ -510,10 +504,7 @@ function showTL(to) {
   $('#play').setAttribute('aria-label', playing ? 'Pause' : 'Play');
   $('#playIcon').innerHTML = playing ? '<path d="M5 3h4v14H5zM11 3h4v14h-4z"/>' : '<path d="M5 3l12 7-12 7z"/>';
   const ready = !['loading', 'failed', 'empty'].includes(to);
-  $('#play').disabled = !ready;
-  $('#scrub').disabled = !ready;
-  $('#save').disabled = !ready;
-  for (const b of document.querySelectorAll('#speeds button')) b.disabled = !ready;
+  for (const b of document.querySelectorAll('#play, #scrub, #save, #speeds button')) b.disabled = !ready;
   const st = $('#status');
   st.hidden = ready && to !== 'waiting';
   $('#retry').hidden = to !== 'failed';
@@ -538,12 +529,14 @@ function togglePlay() {
     TL.go('playing');
   }
 }
-function seek(p, snapNow = true) {
+function seek(p) {
   ended = null;
   pos = clamp(p, 0, P);
-  if (snapNow) snap = true;
-  if (TL.is('waiting') && timeAt(pos) < loadedUntil) TL.go('playing');
-  else if (TL.is('waiting')) showWaiting();
+  snap = true;
+  if (TL.is('waiting')) {
+    if (timeAt(pos) < loadedUntil) TL.go('playing');
+    else showWaiting();
+  }
   dirty = true;
 }
 // The day the timelapse has caught up with and waits for, over the map.
@@ -601,12 +594,9 @@ function rng(seed) {
 // Each day's words as one path per theme, made once, in cells.
 const dayPaths = new Map();
 function pathsOf(i) {
-  if (dayPaths.has(i)) return dayPaths.get(i);
-  const from = dayStart[i][0], to = i + 1 < dayStart.length ? dayStart[i + 1][0] : W.length;
   // A day is taken whole, so its paths never change.
-  const paths = wordPaths(from, to);
-  dayPaths.set(i, paths);
-  return paths;
+  if (!dayPaths.has(i)) dayPaths.set(i, wordPaths(dayStart[i], dayEnd(i)));
+  return dayPaths.get(i);
 }
 // The followed guild's words go in a path of their own, under 'guild'.
 function wordPaths(from, to) {
@@ -628,7 +618,7 @@ function draw(g, view, cam, p, opts) {
   g.setTransform(1, 0, 0, 1, 0, 0);
   g.globalAlpha = 1; g.globalCompositeOperation = 'source-over';
   g.fillStyle = C.paper; g.fillRect(0, 0, CW, CH);
-  if (!idx || !TC.length) return { t, n, nNova };
+  if (!TC.length) return { t, n, nNova };
   // Territories: one pixel each on a small canvas, scaled up.
   const rx0 = Math.floor(-ox / s / RC), ry0 = Math.floor(-oy / s / RC), rx1 = Math.floor((CW - ox) / s / RC), ry1 = Math.floor((CH - oy) / s / RC);
   const tw = rx1 - rx0 + 1, th = ry1 - ry0 + 1, novaSet = new Set();
@@ -677,8 +667,8 @@ function draw(g, view, cam, p, opts) {
     g.lineCap = 'round'; g.lineWidth = width; g.globalAlpha = follow ? alpha * FAINT : alpha;
     const stroke = paths => { for (const [q, path] of paths) { if (q === 'guild') theirs.push(path); else { g.strokeStyle = TC[q].stroke; g.stroke(path); } } };
     let i = 0;
-    for (; i < dayStart.length && (i + 1 < dayStart.length ? dayStart[i + 1][0] : W.length) <= n; i++) stroke(pathsOf(i));
-    if (i < dayStart.length && dayStart[i][0] < n) stroke(wordPaths(dayStart[i][0], n));
+    for (; i < dayStart.length && dayEnd(i) <= n; i++) stroke(pathsOf(i));
+    if (i < dayStart.length && dayStart[i] < n) stroke(wordPaths(dayStart[i], n));
     if (follow && theirs.length) {
       g.globalAlpha = 1; g.lineWidth = width * 1.7; g.strokeStyle = follow.stroke;
       for (const path of theirs) g.stroke(path);
@@ -687,7 +677,7 @@ function draw(g, view, cam, p, opts) {
   }
   // Glows and flares run on their own clock, `fx`, which goes on past the end
   // so a supernova among the last words plays out rather than freezing.
-  const r = opts.rate, live = !RM && r > 0, fx = opts.fx ?? p;
+  const r = opts.rate, live = !RM && r > 0, fx = opts.fx;
   // Words just charted glow, and fade.
   if (live) {
     const from = fx - GLOW_S * r > P ? n : upto(W, timeAt(fx - GLOW_S * r));
@@ -782,7 +772,7 @@ function showNumbers({ t, n, nNova }) {
   if (words !== shown.n) { shown.n = words; $('#nWords').textContent = words.toLocaleString(); $('#lWords').textContent = words === 1 ? 'word' : 'words'; }
   if (nNova !== shown.nNova) { shown.nNova = nNova; $('#nNovas').textContent = nNova.toLocaleString(); $('#lNovas').textContent = nNova === 1 ? 'supernova' : 'supernovas'; }
   if (counts.size !== shown.places) { shown.places = counts.size; $('#nPlaces').textContent = counts.size.toLocaleString(); $('#lPlaces').textContent = counts.size === 1 ? 'territory' : 'territories'; }
-  if (follow && GW[Math.min(n, GW.length - 1)] !== shown.theirs) { shown.theirs = GW[Math.min(n, GW.length - 1)]; $('#nGuild').textContent = shown.theirs.toLocaleString(); }
+  if (follow && GW[n] !== shown.theirs) { shown.theirs = GW[n]; $('#nGuild').textContent = shown.theirs.toLocaleString(); }
   if (!scrubbing) $('#scrub').value = String(Math.round(1000 * pos / P));
   $('#scrub').setAttribute('aria-valuetext', `${dateYearFmt.format(t)}, ${timeFmt.format(t)}`);
 }
@@ -840,8 +830,7 @@ function openChip(rx, ry, n, nova) {
   const at = timeAt(pos), when = (new Date(at).getFullYear() === new Date().getFullYear() ? shortFmt : dateYearFmt).format(at);
   $('#chipNote').textContent = `${n.toLocaleString()} hidden word${n === 1 ? '' : 's'} charted by ${when}${nova ? ' · gone supernova' : ''}`;
   const q = new URLSearchParams({ territory: `${rx},${ry}` });
-  const survey = new URLSearchParams(location.search).get('survey');
-  if (survey) q.set('survey', survey);
+  if (surveyParam) q.set('survey', surveyParam);
   $('#chipLink').href = `/letterfield-log?${q.toString().replace('%2C', ',')}`;
   chip.hidden = false;
   getJSON(`/v1/survey/log/territory/${rx}/${ry}`).then(t => {
@@ -854,8 +843,8 @@ function closeChip() { chipAsk++; $('#chip').hidden = true; }
 // The guild being followed, in its colour, with the way back to everyone's
 // timelapse and to its own page in the log.
 function showFollow() {
-  const survey = new URLSearchParams(location.search).get('survey'), q = survey ? `survey=${encodeURIComponent(survey)}` : '';
   if (!follow) return;
+  const q = surveyParam ? `survey=${encodeURIComponent(surveyParam)}` : '';
   document.documentElement.style.setProperty('--gh', follow.hue);
   $('#followName').textContent = `Following the ${follow.name}`;
   $('#follow').setAttribute('aria-label', `Stop following the ${follow.name}`);
@@ -864,13 +853,9 @@ function showFollow() {
   $('#guildCount').hidden = false;
   $('#placesCount').hidden = true;
   $('#toLog').href = `/letterfield-log?guild=${followLid}${q ? '&' + q : ''}`;
-  resize();
 }
 $('#chipClose').addEventListener('click', closeChip);
-{
-  const survey = new URLSearchParams(location.search).get('survey');
-  if (survey) $('#toLog').href = `/letterfield-log?survey=${encodeURIComponent(survey)}`;
-}
+if (surveyParam) $('#toLog').href = `/letterfield-log?survey=${encodeURIComponent(surveyParam)}`;
 
 /* ---------- Saving a video ---------- */
 // The whole history, recorded in the browser from a square canvas of its
@@ -948,7 +933,7 @@ function recFrame(now) {
   const [hold0, hold1] = VIDEO_HOLD, total = hold0 + videoSeconds + hold1;
   const fx = P * Math.max(0, (recClock - hold0) / videoSeconds), p = Math.min(P, fx);
   const S = VIDEO_PX, top = S * (follow ? .235 : .19), bottom = S * .07;
-  const r = draw(recG, { x: S * .04, y: top, w: S * .92, h: S - top - bottom }, recCam, p, { dt, jump: !recCam.ok, rate: P / videoSeconds, fx });
+  const r = draw(recG, { x: S * .04, y: top, w: S * .92, h: S - top - bottom }, recCam, p, { dt, rate: P / videoSeconds, fx });
   hud(recG, r, p);
   $('#recBar').style.width = `${(100 * Math.min(1, recClock / total)).toFixed(1)}%`;
   if (recClock >= total && recorder.state === 'recording') recorder.stop();
@@ -1031,8 +1016,8 @@ async function start() {
   readColors();
   timeline(index);
   days = [...new Set(index.hours.map(([h]) => fdiv(h * HOUR, DAY)))];
-  $('#startDay').textContent = shortFmt.format(T0);
-  $('#endDay').textContent = shortFmt.format(T1 - 1);
+  $('#startDay').textContent = shortFmt.format(H0 * HOUR);
+  $('#endDay').textContent = shortFmt.format((H0 + NH) * HOUR - 1);
   resize();
   pump();
 }
