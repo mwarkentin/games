@@ -52,7 +52,9 @@ def test_top_guilds_open_a_guilds_own_view_with_an_address_to_share(page: Page, 
 
     expect(page.locator("#focusKind")).to_have_text("Guild")
     expect(page.locator("#focusName")).to_have_text("Cobalt Compass Society")
-    expect(page.locator("#focusNote")).to_contain_text("Members who keep off the surveyor list aren’t counted")
+    # Every member's words count: there's no surveyor list to keep off any more.
+    expect(page.locator("#focusNote")).to_have_text("Every word its members charted while in it.")
+    expect(page.locator(".foot").first).not_to_contain_text("surveyor list")
     expect(page).to_have_title("Cobalt Compass Society · Letterfield survey log")
     assert f"guild={COBALT}" in page.url and "period=week" in page.url
     week = NOW_MS // HOUR_MS - 4 * 24 - 15  # Monday, midnight in Toronto, in UTC hours

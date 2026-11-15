@@ -355,7 +355,7 @@ header p{margin:8px 0 0;color:var(--muted);max-width:40ch}
     </section>
   </div>
 
-  <p class="foot">Times are yours, in <span id="zone"></span>. Initials are whatever each surveyor typed in, so they aren’t unique. “Mine” lists the words this browser charted first, from Letterfield’s field notes; nothing about you is sent to find them. A surveyor’s, guild’s, territory’s or theme’s own view has an address of its own to share. A guild counts the words its members chart while in it, except those of members off the surveyor list. A territory goes supernova once every one of its hidden words is charted.</p>
+  <p class="foot">Times are yours, in <span id="zone"></span>. Initials are whatever each surveyor typed in, so they aren’t unique. “Mine” lists the words this browser charted first, from Letterfield’s field notes; nothing about you is sent to find them. A surveyor’s, guild’s, territory’s or theme’s own view has an address of its own to share. A guild counts the words its members chart while in it. A territory goes supernova once every one of its hidden words is charted.</p>
   <p class="foot feedback">Found a bug or have an idea? <a href="https://github.com/mwarkentin/games/issues/new/choose" target="_blank" rel="noopener" data-feedback>Send feedback</a></p>
 </main>
 <div class="tip" id="tip" role="tooltip" hidden></div>
@@ -1442,7 +1442,7 @@ function focusBar() {
     kind = 'Guild';
     label = g ? g[0] : 'A guild';
     hue = g?.[1];
-    note = ['Every word its members charted while in it. Members who keep off the surveyor list aren’t counted.'];
+    note = ['Every word its members charted while in it.'];
   } else {
     const [name, th] = known.places[`${f.rx},${f.ry}`] || [];
     const t = th !== undefined ? known.themes[th] : null;
