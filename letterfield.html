@@ -117,19 +117,17 @@ button:focus-visible,a:focus-visible,#map:focus-visible{outline:2px solid var(--
   padding:8px var(--gr) calc(env(safe-area-inset-bottom, 0px) + 8px) var(--gl);transition:right var(--t-slow) var(--ease-out)}
 body.docked .bar{right:var(--notes-w)}
 .legend{flex:1;min-width:0;display:flex;align-items:center;gap:18px}
-.legend-head{flex:none;display:flex;justify-content:space-between;align-items:baseline;gap:12px}
+.legend-head{flex:none;display:flex;justify-content:space-between;align-items:center;gap:12px}
 .legend-count{font:400 11px/1 var(--f-mono);color:var(--muted);font-variant-numeric:tabular-nums;white-space:nowrap;min-width:5ch}
 .legend-count:empty::before{content:'\200b'} /* a line of text even when empty, so the bar keeps its height */
-.legend-head{align-items:center}
 /* Which words the list names, those in view or those left in the territory: a
    two-way switch, as the survey log's are. */
 .list-mode{display:flex;border:1px solid var(--rule);border-radius:999px;padding:2px;background:var(--panel);margin:-5px 0}
-.list-mode button{padding:7px 10px 6px;border:0;border-radius:999px;background:none;cursor:pointer;white-space:nowrap;color:var(--muted)}
+.list-mode button{position:relative;padding:7px 10px 6px;border:0;border-radius:999px;background:none;cursor:pointer;white-space:nowrap;color:var(--muted)}
 .list-mode button:hover{color:var(--ink)}
 .list-mode button[aria-pressed="true"]{background:var(--ink);color:var(--panel)}
 /* Each side looks 23px tall but takes taps over 40px: the space around it in
    the bar, never the map above or the words beside or below. */
-.list-mode button{position:relative}
 .list-mode button::after{content:'';position:absolute;left:0;right:0;top:-7px;bottom:-10px}
 /* One row that scrolls sideways only: overflow-x alone would make y auto too.
    The 4px above and below, taken back by the margin, keep focus rings unclipped.
@@ -140,16 +138,14 @@ body.docked .bar{right:var(--notes-w)}
 .chips::-webkit-scrollbar{display:none}
 .chips > li{display:flex;flex:none} /* so a span chip's padding counts, as a button's does */
 .chip{font:500 12px/1 var(--f-mono);letter-spacing:.07em;padding:7px 8px 6px;border:1px solid var(--rule);border-radius:5px;background:var(--panel);cursor:pointer;white-space:nowrap}
-.chip:hover{border-color:var(--ink)}
-.chip.found{color:var(--muted);text-decoration:line-through;text-decoration-thickness:2px;text-decoration-color:var(--c);border-style:dashed;cursor:default}
+button.chip:hover{border-color:var(--ink)}
 /* A word you can't tap (on the shared survey, or in the territory's list) is
    a plain word, not a button: no border, so only what's tappable looks it. */
 span.chip{cursor:default;border-color:transparent;background:transparent;padding-left:4px;padding-right:4px}
-span.chip:hover{border-color:transparent}
 .legend-note{font:400 12px/1.4 var(--f-ui);color:var(--muted);padding:2px 0;white-space:nowrap}
 
-/* Corner: the tools, surveyors and field notes buttons, top right (beside the
-   docked notes, which then stand in for their button). Above the cards at the
+/* Corner: the tools, surveyors and field notes buttons, top right (beside a
+   docked drawer, whose button then shows pressed). Above the cards at the
    top of the map, so the stack can drop over them, and under the drawers. */
 .corner{position:fixed;top:var(--top);right:var(--gr);z-index:20;display:flex;align-items:stretch;transition:right var(--t-slow) var(--ease-out)}
 body.docked .corner{right:calc(var(--notes-w) + 16px)}
@@ -158,11 +154,7 @@ body.docked .corner{right:calc(var(--notes-w) + 16px)}
 .corner .people-btn{border-radius:0;border-right:0}
 .corner .notes-toggle{border-radius:0 8px 8px 0}
 /* Surveyors: who else is charting the map, your guild, and you, in a drawer of their own (see Surveyors). */
-.people-btn{position:relative;flex:none;width:40px;height:40px;border:1px solid var(--rule);background:var(--panel);color:var(--ink);box-shadow:var(--shadow);display:grid;place-items:center;cursor:pointer;transition:background-color var(--t-fast) var(--ease-out), color var(--t-fast) var(--ease-out), border-color var(--t-fast) var(--ease-out)}
-.people-btn[hidden]{display:none}
-.people-btn svg{width:20px;height:20px}
-@media (hover: hover){.people-btn:hover{background:var(--hover)}}
-.people-btn[aria-expanded="true"]{background:var(--ink);border-color:var(--ink);color:var(--panel)}
+.people-btn{position:relative}
 .people-btn .badge{position:absolute;top:-6px;right:-6px;z-index:1}  /* over the notes button beside it, which comes after it */
 .people-btn[aria-expanded="true"] .badge{box-shadow:0 0 0 2px var(--panel)}
 /* Tools drop down from their button as a stack, in three groups (zoom, the
@@ -170,13 +162,14 @@ body.docked .corner{right:calc(var(--notes-w) + 16px)}
    a second tap, Escape or a tap on the map. Closed, the stack takes no taps or
    focus (inert) and covers nothing. */
 .tools{position:relative}
-.tools-btn{flex:none;width:40px;height:40px;border:1px solid var(--rule);border-radius:8px;background:var(--panel);box-shadow:var(--shadow);display:grid;place-items:center;cursor:pointer;transition:background-color var(--t-fast) var(--ease-out), color var(--t-fast) var(--ease-out), border-color var(--t-fast) var(--ease-out)}
+.tools-btn,.people-btn{flex:none;width:40px;height:40px;border:1px solid var(--rule);background:var(--panel);box-shadow:var(--shadow);display:grid;place-items:center;cursor:pointer;transition:background-color var(--t-fast) var(--ease-out), color var(--t-fast) var(--ease-out), border-color var(--t-fast) var(--ease-out)}
 .tools-btn svg circle{transition:transform var(--t-slow) var(--ease-pop)}
 .tools-btn[aria-expanded="true"] svg circle:first-of-type{transform:translateX(-5px)}
 .tools-btn[aria-expanded="true"] svg circle:last-of-type{transform:translateX(5px)}
-@media (hover: hover){.tools-btn:hover{background:var(--hover)}}  /* a tap leaves no grey behind on a phone */
-.tools-btn[aria-expanded="true"]{background:var(--ink);border-color:var(--ink);color:var(--panel)}
-.tools-btn svg{width:20px;height:20px}
+@media (hover: hover){.tools-btn:hover,.people-btn:hover{background:var(--hover)}}  /* a tap leaves no grey behind on a phone */
+/* Open, each of the corner's buttons is pressed: one of the three at a time. */
+.tools-btn[aria-expanded="true"],.people-btn[aria-expanded="true"],.notes-toggle[aria-expanded="true"]{background:var(--ink);border-color:var(--ink);color:var(--panel)}
+.tools-btn svg,.people-btn svg{width:20px;height:20px}
 .tool-stack{position:absolute;right:0;top:calc(100% + 8px);display:flex;flex-direction:column;padding:4px;width:248px;max-width:calc(100vw - var(--gl) - var(--gr));box-sizing:border-box;
   transform-origin:calc(100% - 20px) -28px;opacity:0;transform:translateY(-8px) scale(.9);visibility:hidden;pointer-events:none;
   transition:opacity var(--t-mid) var(--ease-in), transform var(--t-mid) var(--ease-in), visibility 0s linear var(--t-mid)}
@@ -215,8 +208,6 @@ body.docked .corner{right:calc(var(--notes-w) + 16px)}
 /* Notes toggle */
 .notes-toggle{position:relative;display:flex;align-items:center;gap:8px;min-height:40px;box-sizing:border-box;padding:10px 12px;cursor:pointer;font:600 13px/1 var(--f-ui)}
 .notes-toggle svg{width:17px;height:17px}
-/* Open, it's pressed, like the tools and Surveyors buttons: one of the three at a time. */
-.notes-toggle[aria-expanded="true"]{background:var(--ink);border-color:var(--ink);color:var(--panel)}
 .notes-toggle[aria-expanded="true"] .badge{background:var(--panel);color:var(--ink);box-shadow:0 0 0 1px var(--ink)}
 .badge{font:500 11px/1 var(--f-mono);background:var(--ink);color:var(--panel);border-radius:999px;padding:4px 7px 3px;font-variant-numeric:tabular-nums}
 /* No count before a first find, but its place kept, so the first one doesn't push the buttons beside it. */
@@ -233,9 +224,8 @@ body.docked .notes,body.docked .people{box-shadow:none}
 .people > *{flex-shrink:0}
 .people-body{padding:0 18px 22px}
 .people-page{display:flex;flex-direction:column}
-.people-page[hidden]{display:none}
 .people-page > *{flex-shrink:0}
-/* The list's first row is you: it opens your page, where your initials, guild, switches and devices live. */
+/* The list's first row is you: it opens your page, where your initials, guild, emotes and mutes, and devices live. */
 .you-row{display:flex;align-items:center;gap:12px;width:100%;min-height:62px;margin:0 0 4px;padding:9px 12px;border:1px solid var(--rule);border-radius:12px;background:var(--hover);text-align:left;cursor:pointer}
 @media (hover: hover){.you-row:hover{border-color:var(--ink)}}
 .you-av{flex:none;width:42px;height:42px;box-sizing:border-box;border-radius:50%;border:2px solid hsl(var(--g, 230) var(--mark-s) var(--mark-l));display:grid;place-items:center;font:800 15px/1 var(--f-display);letter-spacing:.06em;color:var(--ink)}
@@ -256,7 +246,6 @@ body.docked .notes,body.docked .people{box-shadow:none}
 .muted-row:first-child{border-top:0}
 .muted-ini{flex:none;font:700 16px/1 var(--f-display);letter-spacing:.1em;color:var(--ink)}
 .muted-when{flex:1;min-width:0;font:400 11px/1.3 var(--f-mono);color:var(--muted)}
-.muted-row .pill{flex:none;min-height:40px}
 .muted-none{margin:0;padding:11px 14px 12px;font-size:12.5px;line-height:1.45;color:var(--muted)}
 .who-foot{margin:14px 0 0;padding-top:12px;border-top:1px solid var(--rule);font-size:12.5px;line-height:1.45;color:var(--muted)}
 /* Your page: back to the list, who you are, then grouped rows (iOS-settings-like): guild, the map, devices. */
@@ -264,7 +253,6 @@ body.docked .notes,body.docked .people{box-shadow:none}
 .you-back{display:inline-flex;align-items:center;gap:4px;min-height:44px;padding:0 10px 0 0;margin-left:-4px;border:0;background:none;color:var(--accent);font:600 14px/1 var(--f-ui);cursor:pointer}
 .you-back svg{width:18px;height:18px}
 .you-eb{margin:18px 0 6px 4px;font:500 10px/1.2 var(--f-mono);letter-spacing:.14em;text-transform:uppercase;color:var(--muted)}
-.you-eb[hidden]{display:none}
 .group{border:1px solid var(--rule);border-radius:12px;background:var(--hover);overflow:hidden}
 .you-item{display:flex;align-items:center;gap:12px;width:100%;min-height:50px;box-sizing:border-box;padding:10px 14px;border:0;border-top:1px solid var(--rule);background:none;color:var(--ink);font:500 14.5px/1.3 var(--f-ui);text-align:left}
 .you-item:first-child{border-top:0}
@@ -278,7 +266,6 @@ button.you-item:disabled{opacity:.55;cursor:default}
 label.you-item{cursor:pointer}
 .you-pad{padding:11px 14px 12px;border-top:1px solid var(--rule)}
 .you-pad:first-child{border-top:0}
-.you-note{margin:7px 4px 0;font-size:12px;line-height:1.4;color:var(--muted)}
 /* A switch: still a checkbox, drawn as a track and knob. */
 .sw{appearance:none;-webkit-appearance:none;flex:none;width:46px;height:28px;margin:0;border-radius:14px;background:var(--rule);position:relative;cursor:pointer;transition:background var(--t-fast)}
 .sw::after{content:"";position:absolute;top:4px;left:4px;width:20px;height:20px;border-radius:50%;background:var(--panel);box-shadow:0 1px 2px rgba(0,0,0,.25);transition:left var(--t-fast) var(--ease-out)}
@@ -325,13 +312,9 @@ li.row > button{margin-top:2px}
    padding), so its middle stays level with the book and share buttons beside
    the row however many lines it has. */
 .find{min-width:0;display:grid;grid-template-columns:20px minmax(0,1fr) auto;grid-template-rows:34px auto;column-gap:8px;row-gap:0;align-items:center;min-height:44px;padding:5px 4px 5px 6px;box-sizing:border-box;border-radius:6px;color:inherit;text-decoration:none}
-.find-share{flex:none;width:40px;height:40px;display:grid;place-items:center;border:0;border-radius:50%;background:transparent;color:var(--muted);cursor:pointer}
-.find-share svg{width:17px;height:17px}
-.find-share:hover{background:var(--hover);color:var(--ink)}
-.find-define{flex:none;width:40px;height:40px;display:grid;place-items:center;border:0;border-radius:50%;background:transparent;color:var(--muted);cursor:pointer}
-.find-define svg{width:17px;height:17px}
-.find-define:hover{background:var(--hover);color:var(--ink)}
-.find-define[aria-expanded="true"]{background:var(--hover);color:var(--ink)}
+.find-share,.find-define{flex:none;width:40px;height:40px;display:grid;place-items:center;border:0;border-radius:50%;background:transparent;color:var(--muted);cursor:pointer}
+.find-share svg,.find-define svg{width:17px;height:17px}
+.find-share:hover,.find-define:hover,.find-define[aria-expanded="true"]{background:var(--hover);color:var(--ink)}
 /* A found word's meaning, opened under its entry (see Definitions). */
 .find-def{grid-column:1 / -1;box-sizing:border-box;margin:0 0 8px;padding:6px 12px 11px 34px;font-size:14px;line-height:1.45;color:var(--ink)}
 .def-sense{margin:0 0 6px;overflow-wrap:anywhere}
@@ -351,7 +334,7 @@ li.row > button{margin-top:2px}
 .nova-star{width:12px;height:12px;justify-self:center;border-radius:50%;align-self:center;background:radial-gradient(circle, #fff 0 16%, hsl(var(--h,200) 90% 62%) 32%, hsl(var(--h,200) 80% 50% / .35) 56%, transparent 72%);box-shadow:0 0 0 1.5px hsl(var(--h,200) 60% 50% / .35)}
 .nova-find .find-word{font-size:17px}
 .find-dot{width:10px;height:10px;border-radius:50%;background:var(--c);justify-self:center}
-.find.stray .find-dot{background:transparent;border:2px dashed var(--c);width:10px;height:10px;box-sizing:border-box}
+.find.stray .find-dot{background:transparent;border:2px dashed var(--c);box-sizing:border-box}
 /* Charted first by you: a ring round the dot, which keeps its centre. */
 .find-dot.first{box-shadow:0 0 0 2.5px var(--panel),0 0 0 4px var(--c)}
 .find-word{display:flex;align-items:center;gap:7px;min-width:0;font:700 21px/1 var(--f-display);letter-spacing:.07em;padding-top:1px}
@@ -361,27 +344,24 @@ li.row > button{margin-top:2px}
 .find-when{min-width:62px;text-align:right;font:400 10.5px/1 var(--f-mono);color:var(--muted);white-space:nowrap;font-variant-numeric:tabular-nums}
 .find-meta{grid-row:2;grid-column:2 / 4;margin:-8px 0 2px;font:400 11px/1.3 var(--f-mono);color:var(--muted)}
 .find-meta b{font-weight:500;color:var(--ink)}
-.finds-empty{display:block!important;padding:18px 10px;color:var(--muted);font-size:14px;max-width:36ch}
+.finds-empty{display:block;padding:18px 10px;color:var(--muted);font-size:14px;max-width:36ch}
 .finds-empty strong{display:block;color:var(--ink);font:700 18px/1.1 var(--f-display);letter-spacing:.05em;text-transform:uppercase;margin-bottom:6px}
 .notes-foot{margin:0;padding:12px 18px 14px;border-top:1px solid var(--rule);font:400 11px/1.3 var(--f-mono);color:var(--muted)}
 .notes-foot .feedback{color:inherit}
 @keyframes blink{to{opacity:.25}}
 .survey{margin:12px 18px 0;padding:10px 12px 11px;border:1px solid var(--rule);border-radius:7px}
-.survey-head{display:flex;align-items:center;gap:8px;margin-bottom:7px}
+.survey-head{margin:0 0 7px}
 .survey-text{margin:0;font:400 11.5px/1.5 var(--f-mono);color:var(--muted);white-space:pre-line}
 .survey-sign{display:flex;align-items:center;gap:8px;margin-top:10px}
 .survey-sign label{flex:1;min-width:0;font-size:13px}
 .survey-sign input,.signup input{width:74px;flex:none;box-sizing:border-box;font:500 16px/1 var(--f-mono);letter-spacing:.18em;text-transform:uppercase;height:40px;padding:0 6px 0 9px;border:1px solid var(--rule);border-radius:6px;background:var(--field);color:var(--ink)}
-.survey-sign input:focus-visible,.signup input:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+.survey-sign input:focus-visible,.signup input:focus-visible,.pair-enter input:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
 .survey-sign .btn{flex:none}
-.survey-sign[hidden]{display:none}
 /* Once signed, the panel just says who you are, with a pencil to change it. */
 .survey-me{display:flex;align-items:center;gap:14px;margin-top:4px}
-.survey-me[hidden]{display:none}
 .survey-me-text{flex:1;min-width:0;display:flex;flex-direction:column;gap:4px}
 .survey-me b{font:800 26px/1 var(--f-display);letter-spacing:.1em}
 .survey-me-sub{font-size:12.5px;line-height:1.3;color:var(--muted)}
-.survey-me .pill{flex:none;min-height:40px}
 .survey-hint{margin:7px 0 0;font-size:12px;color:var(--muted)}
 .survey-map{margin-top:9px}
 .survey-map summary{cursor:pointer;font:500 10px/1 var(--f-mono);letter-spacing:.14em;text-transform:uppercase;color:var(--muted);padding:4px 0}
@@ -428,42 +408,34 @@ html[data-who="loading"] .who-status{animation:blink 1s infinite alternate}
 .who-said{margin:7px 0 0;font:400 11px/1.4 var(--f-mono);color:var(--muted)}
 .who-said:empty{display:none}
 .who-mute,.who-more,.pill{font:500 11px/1 var(--f-mono);padding:8px 11px;border:1px solid var(--rule);border-radius:999px;background:transparent;color:var(--ink);cursor:pointer}
+.pill{flex:none;min-height:40px}
 .pill:disabled{opacity:.5;cursor:default}
-/* Guilds: the card for yours at the top of the list, and a mark for mates (see Guilds). */
-.guild{margin:8px 0 4px;padding:9px 10px 10px;border:1px solid var(--rule);border-radius:7px}
-.guild.group{margin:0;padding:0;border-radius:12px}
+/* Guilds: yours as rows on your page, and a mark for members on the list (see Guilds). */
 .guild.group .guild-name{margin:0}
-.guild.group .guild-meta{margin:4px 0 0 18px}
 .guild.group > .guild-small,.guild.group > .guild-err{margin:0;padding:10px 14px;border-top:1px solid var(--rule)}
 .guild.group .you-pad p:last-child{margin-bottom:0}
 .guild-row{display:block}
 .guild p{margin:0 0 8px;font-size:12.5px;line-height:1.45;color:var(--muted)}
-.guild .guild-small{margin:8px 0 0;font-size:11.5px}
+.guild .guild-small{font-size:11.5px}
 .guild .guild-small:empty{display:none}
 .guild-name{display:flex;align-items:center;gap:8px;margin:0 0 6px;font:700 17px/1.1 var(--f-display);letter-spacing:.06em;text-transform:uppercase;color:var(--ink)}
 .guild-name i,.guild-dot{flex:none;width:10px;height:10px;border-radius:50%;background:hsl(var(--gh) var(--mark-s) var(--mark-l));box-shadow:0 0 0 3px hsl(var(--gh) var(--mark-s) var(--mark-l) / .22)}
-.guild .guild-meta{margin:-2px 0 8px 18px;font:400 10.5px/1.3 var(--f-mono)}
+.guild .guild-meta{margin:4px 0 0 18px;font:400 10.5px/1.3 var(--f-mono)}
 .guild-err{color:var(--danger)!important}
 .guild-acts{display:flex;flex-wrap:wrap;align-items:center;gap:6px}
-.toast i.guild-dot{width:10px;height:10px;border-radius:50%;background:hsl(var(--gh) var(--mark-s) var(--mark-l))}
-.who-head{display:flex;align-items:center;gap:7px;margin:10px 6px 2px;font:500 10px/1.2 var(--f-mono);letter-spacing:.12em;text-transform:uppercase;color:var(--muted)}
+.toast i.guild-dot{background:hsl(var(--gh) var(--mark-s) var(--mark-l))}
+/* The list's rows space their parts 2px apart; a heading's dot and name want room. */
+.who-list li.who-head{gap:7px;margin:10px 6px 2px;font:500 10px/1.2 var(--f-mono);letter-spacing:.12em;text-transform:uppercase;color:var(--muted)}
 .who-row.away .who{cursor:default}
 .who-row.away .who:hover{background:transparent}
 .who-row.away .who-av{background:var(--rule);color:var(--ink)}
 .who-row.away .who-where{color:var(--muted)}
 .who-av .guild-dot{position:absolute;right:-2px;bottom:-2px;width:11px;height:11px;box-shadow:0 0 0 2px var(--panel)}
-.who-head .guild-dot{width:8px;height:8px;box-shadow:none}
-.who-guild{margin:12px 6px 2px 9px;gap:10px;font:700 15px/1.1 var(--f-display);letter-spacing:.08em;color:var(--ink)}
-/* The list's rows space their parts 2px apart; a heading's dot and name want room. */
-.who-list li.who-head{gap:7px}
-.who-list li.who-guild{gap:10px}
-.who-guild .guild-dot{width:10px;height:10px;box-shadow:0 0 0 3px hsl(var(--gh) var(--mark-s) var(--mark-l) / .22)}
+.who-list li.who-guild{margin:12px 6px 2px 9px;gap:10px;font:700 15px/1.1 var(--f-display);letter-spacing:.08em;color:var(--ink)}
 .who-head-name{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .who-head-n{flex:none;font:400 10.5px/1 var(--f-mono);letter-spacing:.02em;text-transform:none;color:var(--muted)}
 .who-invite{flex:none;min-height:40px;margin:-10px -4px -10px 0;padding:0 8px;border:0;background:none;color:var(--accent);font:600 13px/1 var(--f-ui);letter-spacing:0;text-transform:none;cursor:pointer}
-.guild-invite p{margin:0 0 10px;font-size:13.5px;line-height:1.5}
-.guild-invite .eyebrow{margin-bottom:8px}
-.guild-invite .coach-row{justify-content:flex-end}
+.guild-invite .coach-row,.pair-offer .coach-row{justify-content:flex-end}
 /* Switching guilds from an invite: the one you're in above the one you'd join, and a warning. */
 .guild-swap{margin:0 0 10px;padding:10px 12px;border:1px solid var(--rule);border-radius:8px}
 .guild-invite .guild-swap p{margin:0}
@@ -474,21 +446,16 @@ html[data-who="loading"] .who-status{animation:blink 1s infinite alternate}
 .guild-invite .guild-warn{display:flex;gap:9px;align-items:flex-start;padding:9px 11px;border:1px solid var(--danger);border-radius:8px;font-size:13px;line-height:1.45}
 .guild-warn svg{flex:none;width:18px;height:18px;margin-top:1px;color:var(--danger)}
 /* Linking devices: a code that carries this surveyor to another device, or one to type in (see Linking devices). */
-.pair{margin-top:10px;container-type:inline-size}
-#pairHead + .pair{margin-top:0}
+.pair{container-type:inline-size}
 .pair:empty{display:none}
 .pair p{margin:0 0 8px;font-size:12.5px;line-height:1.45;color:var(--muted)}
 .pair p b{color:var(--ink)}
 .pair-note{margin:7px 4px 0!important;font-size:12px!important}
 .pair-note:empty{display:none}
-.pair-state{margin:0 0 10px}
-.pair-state b{display:block;font-weight:600;font-size:14px;color:var(--ink)}
-.pair-state span{display:block;margin-top:2px;font-size:12.5px;line-height:1.45;color:var(--muted)}
 .pair-acts{display:flex;flex-wrap:wrap;align-items:center;gap:6px}
 .pair p.pair-ask{margin:0 4px 8px;font-size:13.5px;color:var(--ink)}
 .pair-keep{margin-top:10px}
 .pair-box{padding:9px 10px 10px;border:1px solid var(--rule);border-radius:7px}
-.pair-box .eyebrow{margin:0 0 8px}
 .pair-qr{width:176px;aspect-ratio:1;margin:2px auto 10px;padding:8px;box-sizing:border-box;background:#fff;border-radius:6px}
 .pair-qr:empty{display:none}
 .pair-qr svg{display:block;width:100%;height:100%}
@@ -499,16 +466,12 @@ html[data-who="loading"] .who-status{animation:blink 1s infinite alternate}
 .pair-enter{display:flex;flex-wrap:wrap;align-items:center;gap:8px}
 .pair-enter label{flex:1 0 100%;font-size:13px}
 .pair-enter input{width:auto;flex:1 0 100%;max-width:19em;box-sizing:border-box;font:500 16px/1 var(--f-mono);letter-spacing:.12em;text-transform:uppercase;height:40px;padding:0 9px;border:1px solid var(--rule);border-radius:6px;background:var(--field);color:var(--ink)}
-.pair-enter input:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
 .pair-enter > p{flex:1 0 100%;margin:0}
 /* A recovery code is 24 characters, and wide ones in Martian Mono: sized to the card's width so it always fits on one line. */
 .pair-recovery{font-size:13px;font-size:min(17px, 4.8cqw);letter-spacing:.04em;white-space:nowrap}
 .pair-err{color:var(--danger)!important}
-.pair-offer p{margin:0 0 10px;font-size:13.5px;line-height:1.5}
-.pair-offer .eyebrow{margin-bottom:8px}
-.pair-offer .coach-row{justify-content:flex-end}
-/* A card's heading is an eyebrow, 10px, whatever size the card's paragraphs are. */
-.card p.eyebrow,.pair p.eyebrow,.guild p.eyebrow{font-size:10px;line-height:1;color:var(--muted)}
+/* A card's heading is an eyebrow, 10px with 8px under it, whatever size the card's paragraphs are. */
+.card p.eyebrow,.pair p.eyebrow{margin:0 0 8px;font-size:10px;line-height:1;color:var(--muted)}
 .who-mute{margin-top:8px}
 .who-more{display:block;margin:6px auto 0}
 .toast i.emo{width:24px;height:24px;border-radius:0;background:none;color:var(--c)}
@@ -518,7 +481,6 @@ html[data-who="loading"] .who-status{animation:blink 1s infinite alternate}
 .caret-who{display:flex;align-items:baseline;gap:8px;margin:0 0 8px 2px}
 .caret-who b{font:700 18px/1 var(--f-display);letter-spacing:.1em}
 .caret-who span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font:400 11px/1.2 var(--f-mono);color:var(--muted)}
-.caret-menu .who-mute{margin-top:8px}
 .toast i.emo svg{display:block;width:24px;height:24px}
 @media (prefers-reduced-motion: reduce){html[data-who="loading"] .who-status{animation:none}}
 /* Only the list of finds may shrink: everything else keeps its own height. A section
@@ -532,10 +494,10 @@ html[data-who="loading"] .who-status{animation:blink 1s infinite alternate}
 .notes.has-survey .filters{position:sticky;top:0;z-index:1;background:var(--panel);margin-top:6px;padding-top:6px;box-shadow:0 1px 0 var(--rule)}
 .survey-hint:empty{display:none}
 /* Turnstile's check (see worker/TURNSTILE.md): empty and out of the way unless it needs a tap.
-   When it does, it's a small panel just above the bottom bar (and the tools' stack, if
-   it's open over the same side; placeCheck() measures them), so it covers neither them nor the sign-up card
-   at the top, and it waits for that card to go (see below). It stays a moment after to show
-   it passed, then goes. While it isn't showing, taps go through it to the map. */
+   When it does, it's a small panel just above the bottom bar (placeCheck() measures it), so it
+   covers neither the bar nor the sign-up card at the top, and it waits for that card to go
+   (see below). It stays a moment after to show it passed, then goes. While it isn't showing,
+   taps go through it to the map. */
 .survey-check{position:fixed;left:var(--gl);bottom:calc(var(--bottom) + 140px);z-index:40;max-width:calc(100% - var(--gl) - var(--gr));box-sizing:border-box}
 .survey-check:not(.shown){pointer-events:none}
 .survey-check p{display:none;margin:0 0 8px;font-size:13px;color:var(--ink)}
@@ -552,7 +514,6 @@ html[data-who="loading"] .who-status{animation:blink 1s infinite alternate}
 .signup .coach-row{justify-content:flex-start}
 .signup .btn{white-space:nowrap}
 .signup kbd{display:block;margin-top:10px}
-.signup kbd[hidden]{display:none}
 /* The keyboard hint is for keyboards: a phone's card stays short enough to clear its keyboard. */
 @media (hover: none) and (pointer: coarse){.signup kbd{display:none}}
 /* Turnstile's box waits for the card asking for initials to go, so a first visit asks one thing at a time. */
@@ -589,7 +550,6 @@ body.docked .toast{right:calc(var(--notes-w) + 16px);max-width:calc(100% - var(-
 .share{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--rule);border-radius:999px;background:transparent;color:var(--ink);font:500 11.5px/1 var(--f-mono);cursor:pointer;white-space:nowrap}
 .share svg{width:15px;height:15px;flex:none}
 .share:hover{background:var(--hover)}
-.share:focus-visible,.find-share:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 .toast .share{grid-row:1 / span 2;grid-column:3;margin-left:6px;padding:0 12px;height:36px;pointer-events:auto}
 .toast:not(.show) .share{visibility:hidden}
 .gather{position:fixed;left:0;top:0;z-index:60;pointer-events:none}
@@ -603,16 +563,13 @@ body.docked .nova{left:calc((100% - var(--notes-w)) / 2)}
 .nova b{display:block;font:800 clamp(38px, 10.5vw, 128px)/.9 var(--f-display);letter-spacing:.14em;margin-right:-.14em;text-transform:uppercase;color:var(--ink);text-shadow:0 0 14px var(--c),0 0 42px var(--c),0 0 96px var(--c)}
 .nova span{display:block;margin-top:14px;font:500 12px/1.4 var(--f-mono);letter-spacing:.12em;text-transform:uppercase;color:var(--ink);text-shadow:0 0 4px var(--paper),0 0 10px var(--paper),0 0 18px var(--paper)}
 .nova.show{animation:nova 4.6s ease-out forwards}
-.nova.show b{animation:nova-word 4.6s cubic-bezier(.16,.9,.3,1) forwards}
 /* The burst and its shockwave say it, so the words are only for screen
    readers, and for reduced motion, which has no shockwave to watch. */
 @media (prefers-reduced-motion: no-preference){
   .nova{width:1px;height:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
 }
 @keyframes nova{0%{opacity:0}5%{opacity:1}80%{opacity:1}100%{opacity:0}}
-@keyframes nova-word{0%{transform:scale(.35);letter-spacing:.7em;filter:blur(8px)}14%{transform:scale(1.07);filter:blur(0)}30%{transform:scale(1)}100%{transform:scale(1.05);letter-spacing:.18em}}
-#sound[aria-pressed="false"] .on,#sound[aria-pressed="true"] .off{display:none}
-#music[aria-pressed="false"] .on,#music[aria-pressed="true"] .off{display:none}
+#sound[aria-pressed="false"] .on,#sound[aria-pressed="true"] .off,#music[aria-pressed="true"] .off{display:none}
 #music[aria-pressed="true"] svg{animation:drift 7s ease-in-out infinite}
 @keyframes drift{0%,100%{opacity:1}50%{opacity:.55}}
 /* Hover card: who's behind a caret, or who charted a word */
@@ -625,7 +582,6 @@ body.docked .nova{left:calc((100% - var(--notes-w)) / 2)}
      bottom one: the title takes what the buttons leave, flat on the bar. */
   .topbar{display:flex;align-items:stretch;gap:8px;position:fixed;top:0;left:0;right:0;z-index:20;background:var(--panel);border-bottom:1px solid var(--rule);
     box-shadow:0 8px 22px -16px rgba(0,0,0,.4);padding:calc(env(safe-area-inset-top, 0px) + 10px) var(--gr) 8px var(--gl)}
-  .topbar .notes-toggle .badge,.topbar .people-btn .badge{top:-5px;right:-5px}
   .topbar .cartouche{position:static;flex:1;min-width:0;max-width:none;padding:2px;outline-offset:-4px;box-shadow:none}
   .topbar .corner{position:static;z-index:auto}
   .topbar .tools-btn,.topbar .notes-toggle,.topbar .people-btn{box-shadow:none}
@@ -639,7 +595,7 @@ body.docked .nova{left:calc((100% - var(--notes-w)) / 2)}
   .t-coord{display:none}  /* no room for the grid reference on a phone */
   .notes-toggle,.tools-btn,.people-btn{padding:0;width:44px;height:46px;justify-content:center;gap:0}
   .notes-toggle .label{display:none}
-  .notes-toggle .badge{position:absolute;top:-6px;right:-6px}
+  .notes-toggle .badge,.people-btn .badge{position:absolute;top:-5px;right:-5px}
   /* The bar's list takes two rows, its head over its chips, which scroll from
      one edge of the screen to the other. */
   .bar{padding-left:0;padding-right:0;padding-top:9px;padding-bottom:calc(env(safe-area-inset-bottom, 0px) + 9px)}
@@ -652,7 +608,6 @@ body.docked .nova{left:calc((100% - var(--notes-w)) / 2)}
 @media (prefers-reduced-motion: reduce){
   .notes,.people,.toast,.bar,.tool-stack,.tool-stack > *,.tools-btn,.tools-btn svg circle{transition:none!important}
   .find-def[data-define="loading"] .def-note{animation:none}
-  .nova.show b{animation:none}
   #music[aria-pressed="true"] svg{animation:none}
 }
 /* Until the page has laid itself out, nothing slides: the notes, the bar and
@@ -729,7 +684,7 @@ body.settling, body.settling *{transition:none!important}
     <div><dt>Longest</dt><dd id="tLong">—</dd></div>
   </dl>
   <section class="survey" id="survey" data-state="connecting" aria-label="Shared survey" hidden>
-    <div class="survey-head"><span class="eyebrow">Shared survey</span></div>
+    <p class="eyebrow survey-head">Shared survey</p>
     <p class="survey-text" id="surveyText"></p>
     <details class="survey-map" id="surveyMap">
       <summary>Universe map</summary>
@@ -821,6 +776,8 @@ body.settling, body.settling *{transition:none!important}
 (() => {
 'use strict';
 const $ = s => document.querySelector(s);
+// Focus without scrolling the page; nothing, when there's nothing to focus.
+const focusQuiet = el => { if (el) try { el.focus({ preventScroll: true }); } catch (_) {} };
 
 /* ---------- World constants ---------- */
 const SEED = 0x1E77E2;
@@ -860,6 +817,12 @@ const TURNSTILE_SITE_KEY = '0x4AAAAAAF26seIK58606ilv';  // public: the widget mw
 // host. With DEFINE_URL empty, field notes only link out to those sites.
 // ?define=<url> overrides it for testing.
 const DEFINE_URL = 'https://api.games.michaelwarkentin.com';
+// One of the constants above, or for tests and previews the page's ?name= in
+// its place, when ok matches it.
+function fromQuery(name, fallback, ok) {
+  try { const q = new URLSearchParams(location.search).get(name); if (q !== null && ok.test(q)) return q; } catch (_) {}
+  return fallback;
+}
 const SECTOR = RC * 4;  // cells per survey sector side: 4×4 territories, one server room each
 const SECTOR_LINKS = 4; // sectors joined at once, nearest the middle of the view first
 const SURVEY_AREA = 12; // the world charted together: sectors -12 to 12 each way, 100×100 territories
@@ -1217,6 +1180,7 @@ function onMap(w, x, y, d) {
 const fmtCoord = (x, y) => `${Math.abs(x)}${x < 0 ? 'W' : 'E'} · ${Math.abs(y)}${y < 0 ? 'N' : 'S'}`;
 const hashNum = v => v < 0 ? 'm' + (-v) : String(v);
 const hashOf = e => `f-${e.w.toLowerCase()}-${hashNum(e.x)}-${hashNum(e.y)}-${e.d}`;
+const gameLink = e => location.origin + location.pathname + location.search + '#' + hashOf(e);  // the game, flying to e
 function parseHash(h) {
   const m = /^#?f-([a-z]{3,12})-(m?\d{1,9})-(m?\d{1,9})-([0-7])$/.exec(h || '');
   if (!m) return null;
@@ -1278,6 +1242,7 @@ function machine(name, moves, state, { el = document.documentElement, onMove } =
 const LS = {
   get(k) { try { return localStorage.getItem(k); } catch (_) { return null; } },
   set(k, v) { try { localStorage.setItem(k, v); } catch (_) {} },
+  remove(k) { try { localStorage.removeItem(k); } catch (_) {} },
 };
 const found = new Map();
 function sanitize(o) {
@@ -1298,7 +1263,9 @@ function sanitize(o) {
   const th = s ? strayTheme(w, fdiv(x, RC), fdiv(y, RC)) : regionTheme(fdiv(x, RC), fdiv(y, RC));
   return { key, w, x, y, d, t, s, f, n, b, th, born: 0 };
 }
-const goodBy = b => typeof b === 'string' && (/^[A-Z]{3}$/.test(b) || b === '?');
+// Three-letter initials, or '' for anything else.
+const initialsOf = v => typeof v === 'string' && /^[A-Z]{3}$/.test(v) ? v : '';
+const goodBy = b => b === '?' || !!initialsOf(b);
 // What another tab or device knows of a find, taken into ours: charted first
 // only ever comes on, and so does who charted it otherwise, until it's ours.
 function mergeFind(have, o) {
@@ -1328,13 +1295,14 @@ function loadLocal() {
 const plain = e => ({ w: e.w, x: e.x, y: e.y, d: e.d, t: e.t, s: e.s, ...(e.f ? { f: 1 } : {}), ...(e.n ? { n: e.n } : {}), ...(e.b && !e.f ? { b: e.b } : {}) });
 // Every tab of the game in this browser shares one set of field notes. Each
 // save takes in what other tabs saved since, so it never writes over their
-// finds, and a save in another tab is taken in here as it happens. A word
-// charted first in either tab stays charted first. Returns whether anything
-// came in, and whether this tab holds finds the stored notes lack.
-function takeInStored() {
+// finds, and a save in another tab is taken in here as it happens; so are
+// finds from linked devices (takeSynced). A word charted first anywhere stays
+// charted first. Returns whether anything came in, and whether this tab holds
+// finds `list` lacks.
+function takeIn(list) {
   let added = false, behind = false;
   const stored = new Set();
-  for (const o of readList(K_FINDS)) {
+  for (const o of list) {
     const have = o && typeof o.w === 'string' ? found.get(keyOf(o.w, o.x, o.y, o.d)) : null;
     if (have) {
       stored.add(have.key);
@@ -1349,12 +1317,12 @@ function takeInStored() {
   return { added, behind: behind || stored.size < found.size };
 }
 function saveLocal() {
-  takeInStored();
+  takeIn(readList(K_FINDS));
   LS.set(K_FINDS, JSON.stringify([...found.values()].map(plain)));
 }
 window.addEventListener('storage', e => {
   if (e.key !== K_FINDS) return;
-  const { added, behind } = takeInStored();
+  const { added, behind } = takeIn(readList(K_FINDS));
   // The other tab saved before it had heard of one of ours: put it back.
   if (behind) saveLocal();
   if (added) { renderNotes(); scheduleHud(); invalidate(); }
@@ -1365,12 +1333,8 @@ window.addEventListener('storage', e => {
 // to whoever circles it first, and other surveyors show up as they wander. The
 // map is split into sectors; the game joins the few in view, one WebSocket
 // each, and tells only the sector under the middle of the view where it is.
-const surveyApi = (() => {
-  let url = SURVEY_URL;
-  try { const q = new URLSearchParams(location.search).get('survey'); if (q && /^(https?|wss?):\/\//.test(q)) url = q; } catch (_) {}
-  return url.replace(/\/+$/, '').replace(/^http/, 'ws');
-})();
-const claims = new Map();   // key → entry like a find, plus by (initials) and at: every word anyone has charted
+const surveyApi = fromQuery('survey', SURVEY_URL, /^(https?|wss?):\/\//).replace(/\/+$/, '').replace(/^http/, 'ws');
+const claims = new Map();   // key → entry like a find, plus by (initials) and ex, ey (where the word ends): every word anyone has charted
 const links = new Map();    // 'sx,sy' → one sector's connection (see openLink)
 const outbox = new Map();   // key → one of our own claims on its way to its sector (see claimWord)
 const ghosts = new Map();   // surveyor id → where their caret is drawn, easing toward their position
@@ -1386,7 +1350,7 @@ const sectorKey = (x, y) => fdiv(x, SECTOR) + ',' + fdiv(y, SECTOR);
 const myInitials = () => {
   let v = LS.get(K_INITIALS) || '';
   try { v = JSON.parse(v); } catch (_) {}
-  return typeof v === 'string' && /^[A-Z]{3}$/.test(v) ? v : '';
+  return initialsOf(v);
 };
 const tell = (l, m) => { if (l && l.ws && l.m.is('open', 'live')) try { l.ws.send(JSON.stringify(m)); } catch (_) {} };
 const anyLive = () => [...links.values()].some(l => l.m.is('live'));
@@ -1399,12 +1363,7 @@ const surveySign = $('#surveySign'), surveyMe = $('#surveyMe'), surveyEdit = $('
 // load or says no, the game joins without a pass, which the Worker takes
 // until passes are required (TURNSTILE_REQUIRED). Once a sector has said
 // `unverified`, it doesn't: the game carries on alone and asks again later.
-const siteKey = (() => {
-  if (!surveyApi) return '';
-  let k = TURNSTILE_SITE_KEY;
-  try { const q = new URLSearchParams(location.search).get('turnstile'); if (q && /^[\w-]{10,80}$/.test(q)) k = q; } catch (_) {}
-  return k;
-})();
+const siteKey = surveyApi ? fromQuery('turnstile', TURNSTILE_SITE_KEY, /^[\w-]{10,80}$/) : '';
 // A pass lasts an hour from when the Worker issues it (PASS_MS in
 // worker/src/survey-pass.js). The game counts that hour from when the pass
 // arrives, on this device's clock: the time the Worker gives is on its own
@@ -1447,13 +1406,8 @@ function passMoved(to) {
 // Sits the box 8px above the bottom bar, wherever it is at this size.
 function placeCheck() {
   if (!surveyCheck.classList.contains('shown')) return;
-  const left = surveyCheck.getBoundingClientRect().left, right = left + Math.max(surveyCheck.offsetWidth, 326);
-  let top = innerHeight;
-  for (const el of document.querySelectorAll('.bar')) {
-    const r = el.getBoundingClientRect();
-    if (r.width && r.left < right && r.right > left) top = Math.min(top, r.top);
-  }
-  surveyCheck.style.bottom = top < innerHeight ? `${Math.round(innerHeight - top + 8)}px` : '';
+  const r = $('.bar').getBoundingClientRect();
+  surveyCheck.style.bottom = r.width && r.top < innerHeight ? `${Math.round(innerHeight - r.top + 8)}px` : '';
 }
 addEventListener('resize', placeCheck);
 if (window.ResizeObserver) new ResizeObserver(placeCheck).observe($('.bar'));
@@ -1482,13 +1436,7 @@ function loadTurnstile() {
 // numbered (passTry), so a callback or a reply from an earlier one does nothing.
 function ensurePass() {
   if (passGood()) return;
-  if (Pass.is('good')) {
-    // It ran out. One that ran out as soon as it came is no use: wait before asking again, so nothing can loop.
-    const quick = pass.got && Date.now() - pass.got < 60000;
-    pass = null;
-    if (quick) return passFailed(passTry, true);
-    Pass.go('none');
-  }
+  if (Pass.is('good')) { pass = null; Pass.go('none'); }  // it ran out: get another
   if (Pass.is('failed') && Date.now() < passRetryAt) return;
   if (!Pass.is('none', 'failed')) return;
   const t = ++passTry;
@@ -1544,7 +1492,7 @@ async function sendToken(token, t) {
 }
 // A try that didn't get a pass (blocked, offline, refused, or no tap): alone
 // for now, or joining without one while passes aren't required, and asked
-// again in a minute or a few. `quick` is a pass that was no good on arrival.
+// again in a minute or a few. `quick` is a pass refused as soon as it came (see passRefused).
 function passFailed(t, quick = false) {
   if (t !== passTry || !(quick ? Pass.is('good') : Pass.is('loading', 'checking', 'asking', 'sending'))) return;
   passFails++;
@@ -1562,7 +1510,7 @@ function passRefused(used) {
   if (!used || !pass || used !== pass.pass || !Pass.is('good')) return;
   const fresh = pass.got && Date.now() - pass.got < 15000;
   pass = null;
-  try { localStorage.removeItem(K_PASS); } catch (_) {}
+  LS.remove(K_PASS);
   if (fresh) passFailed(passTry, true);
   else Pass.go('none');
 }
@@ -1589,7 +1537,7 @@ function syncSurvey() {
   for (const [k, l] of links) {
     if (keep.has(k)) continue;
     if (!l.unwanted) l.unwanted = now;
-    if (surveyPaused || now - l.unwanted > 4000) closeLink(k);
+    if (surveyPaused || now - l.unwanted > 4000) l.m.go('closed');
   }
   sendPos();
   renderSurvey();
@@ -1609,7 +1557,7 @@ const LINK_MOVES = {
 function openLink(sx, sy) {
   const k = sx + ',' + sy;
   if (links.has(k) || !mayJoin()) return;  // syncSurvey opens it once there's a pass
-  const l = { k, sx, sy, ws: null, pass: '', you: null, n: 0, counted: false, here: [], tries: 0, timer: 0, unwanted: 0, full: false, tokens: 0, refilled: 0, flush: 0 };
+  const l = { k, sx, sy, ws: null, pass: '', you: null, here: [], tries: 0, timer: 0, unwanted: 0, full: false, tokens: 0, refilled: 0, flush: 0 };
   l.m = machine('link', LINK_MOVES, 'connecting', { el: null, onMove: (to, from) => linkMoved(l, to, from) });
   links.set(k, l);
   connect(l);
@@ -1617,10 +1565,7 @@ function openLink(sx, sy) {
 function connect(l) {
   l.pass = siteKey && passGood() ? pass.pass : '';
   let ws;
-  try { ws = new WebSocket(`${surveyApi}/v1/survey/${l.sx}/${l.sy}` + (l.pass ? '?pass=' + encodeURIComponent(l.pass) : '')); } catch (_) {
-    l.tries++;
-    return l.m.go('backoff');
-  }
+  try { ws = new WebSocket(`${surveyApi}/v1/survey/${l.sx}/${l.sy}` + (l.pass ? '?pass=' + encodeURIComponent(l.pass) : '')); } catch (_) { return l.m.go('backoff'); }
   l.ws = ws;
   ws.onopen = () => {
     if (l.ws !== ws) return;
@@ -1639,7 +1584,6 @@ function connect(l) {
     if (l.ws !== ws) return;
     if (ev.code === 4001) return turnedAway(l);  // no good pass: get one, then syncSurvey joins again
     if (ev.code === 4000 && !l.full) l.full = 'sector';
-    l.tries++;
     l.m.go('backoff');
   };
 }
@@ -1651,13 +1595,14 @@ function linkMoved(l, to, from) {
     const ws = l.ws;
     l.ws = null;
     if (ws) try { ws.close(); } catch (_) {}
-    Object.assign(l, { you: null, n: 0, counted: false, here: [] });
+    Object.assign(l, { you: null, here: [] });
     if (posSent && posSent.l === l) posSent = null;
     clearTimeout(l.flush); l.flush = 0;
     // Claims still out on it are asked about again when the sector is next joined.
     for (const c of outbox.values()) if (c.l === l && c.m.is('sent')) c.m.go('unanswered');
   }
   if (to === 'backoff') {
+    l.tries++;  // one more failure since it was last live
     // A full sector is asked again in a minute or so; anything else backs off from a second.
     const wait = l.full ? 45000 : Math.min(30000, 1000 * 2 ** (l.tries - 1)) * (.5 + Math.random());
     l.timer = setTimeout(() => {
@@ -1673,10 +1618,6 @@ function linkMoved(l, to, from) {
   }
   renderSurvey(); scheduleHud(); invalidate();
   if (to === 'connecting') connect(l);
-}
-function closeLink(k) {
-  const l = links.get(k);
-  if (l) l.m.go('closed');
 }
 // A sector turned l away for want of a good pass (the Worker closes it with code 4001).
 function turnedAway(l) {
@@ -1737,7 +1678,7 @@ function onSurvey(l, m) {
     const c = addClaim(m.c, false), out = c && outbox.get(c.key);
     if (out && out.m.is('sent')) {
       out.m.go('theirs');
-      toast(`<i></i><b>${c.w}</b><span>Charted by ${c.by || 'another surveyor'} · ${rel(c.at)}</span>`, THEMES[c.th].hue, 0, found.get(c.key));
+      toast(`<i></i><b>${c.w}</b><span>Charted by ${c.by || 'another surveyor'} · ${rel(c.t)}</span>`, THEMES[c.th].hue, 0, found.get(c.key));
     }
   } else if (m.t === 'error') {
     const out = outbox.get(m.key);
@@ -1750,18 +1691,15 @@ function onSurvey(l, m) {
     return turnedAway(l);
   } else if (m.t === 'full') {
     l.full = m.world ? 'world' : 'sector';
-    l.tries++;
     return l.m.go('backoff');
   } else if (m.t === 'presence' && Array.isArray(m.p)) {
     const p = m.p.filter(q => Array.isArray(q) && typeof q[0] === 'string' && Number.isFinite(q[2]) && Number.isFinite(q[3]));
-    l.n = m.n | 0;
     // A player is named by their own id (see Surveyors) once they've sent one, or else their socket's; ours is either.
     const self = q => q[0] === l.you || (myPid && q[0] === myPid), ids = new Set();
-    l.counted = p.some(self);
     l.here = p.filter(q => !self(q) && !ids.has(q[0]) && ids.add(q[0]));
     seekSurveyor();
   } else if (m.t === 'emote' || m.t === 'emoted' || m.t === 'guild') {
-    return m.t === 'guild' ? onGuild(m) : onSocial(l, m);
+    return m.t === 'guild' ? onGuild(m) : onSocial(m);
   } else return;
   renderSurvey(); scheduleHud(); invalidate();
 }
@@ -1769,8 +1707,7 @@ function addClaim(r, live) {
   if (!Array.isArray(r)) return null;
   const e = sanitize({ w: r[0], x: r[1], y: r[2], d: r[3], s: r[4], t: r[6] });
   if (!e) return null;
-  e.by = typeof r[5] === 'string' && /^[A-Z]{3}$/.test(r[5]) ? r[5] : '';
-  e.at = e.t;
+  e.by = initialsOf(r[5]);
   [e.ex, e.ey] = wordEnd(e);
   if (live && !found.has(e.key)) e.born = performance.now();
   claims.set(e.key, e);
@@ -1910,8 +1847,8 @@ function firstToChart(c) {
 }
 // Someone else charted a word in view: say so now and then, never over another note.
 function news(c) {
-  const now = Date.now(), [ex, ey] = wordEnd(c), hw = (W - dock) / 2 / cam.cs, hh = H / 2 / cam.cs;
-  const inView = Math.max(c.x, ex) + 1 > cam.x - hw && Math.min(c.x, ex) < cam.x + hw && Math.max(c.y, ey) + 1 > cam.y - hh && Math.min(c.y, ey) < cam.y + hh;
+  const now = Date.now(), hw = (W - dock) / 2 / cam.cs, hh = H / 2 / cam.cs;
+  const inView = Math.max(c.x, c.ex) + 1 > cam.x - hw && Math.min(c.x, c.ex) < cam.x + hw && Math.max(c.y, c.ey) + 1 > cam.y - hh && Math.min(c.y, c.ey) < cam.y + hh;
   if (!inView || now - lastNews < 8000 || toastEl.classList.contains('show')) return;
   lastNews = now;
   toast(`<i></i><b>${c.w}</b><span>Just charted by ${c.by || 'another surveyor'}</span>`, THEMES[c.th].hue);
@@ -1966,8 +1903,6 @@ function goneSupernova(rx, ry, o) {
 // Within a few territories of the middle of the view: NOVA_REACH in
 // worker/src/survey.js, which tells the neighbouring sectors this far off.
 const nearView = (rx, ry) => Math.max(Math.abs(rx - fdiv(Math.floor(cam.x), RC)), Math.abs(ry - fdiv(Math.floor(cam.y), RC))) <= 3;
-// Where the shared survey stands, worked out afresh from the links and the
-// pass every time, so the panel's dot and its words always agree.
 // What the title says while the sector you're in isn't live: joining…, offline
 // or crowded (too many surveyors to take more), or nothing when it's live.
 function hereStatus(cx, cy) {
@@ -1975,8 +1910,10 @@ function hereStatus(cx, cy) {
   if (home && home.m.is('live')) return '';
   if (home && home.full) return 'crowded';  // this part of the map is full, whatever its neighbours are doing
   const s = surveyStatus();
-  return s === 'full-world' || s === 'full-sector' ? 'crowded' : s === 'offline' || s === 'alone' ? 'offline' : 'joining…';
+  return s === 'offline' || s === 'alone' ? 'offline' : 'joining…';
 }
+// Where the shared survey stands, worked out afresh from the links and the
+// pass every time, so #survey's data-state and its words always agree.
 function surveyStatus() {
   let live = false, failed = false;
   for (const l of links.values()) {
@@ -1986,14 +1923,14 @@ function surveyStatus() {
   if (live) return 'live';
   if (surveyPaused) return 'paused';
   if (spawning) return 'joining';
-  if (!passGood() && Pass.is('loading', 'checking', 'asking', 'sending')) return 'checking';
+  if (Pass.is('loading', 'checking', 'asking', 'sending')) return 'checking';
   if (!mayJoin() && passFails) return 'alone';
   const home = links.get(sectorKey(Math.floor(cam.x), Math.floor(cam.y)));
   if (home && home.full === 'world') return 'full-world';
   if (home && home.full) return 'full-sector';
   return failed ? 'offline' : 'joining';
 }
-// Each status's dot (#survey's data-state, which the CSS colours) and words; live has its own.
+// Each status's data-state on #survey (tests read it) and its words; live has its own.
 const SURVEY_STATUS = {
   paused: ['connecting', 'Paused while this tab is hidden.'],
   checking: ['connecting', 'Checking this is a person, not a bot…'],
@@ -2084,7 +2021,7 @@ function drawWorld() {
 }
 async function refreshWorld() {
   clearTimeout(worldTimer); worldTimer = 0;
-  if (!surveyApi || !surveyMapEl.open || !notesOpen || surveyPaused) return;
+  if (!surveyApi || !surveyMapEl.open || !Panel.is('notes') || surveyPaused) return;
   drawWorld();  // what's known already (a new player's start asked for it), at once, then the latest
   if (await fetchWorld()) { drawWorld(); renderSurvey(); }
   else { worldNote.textContent = 'Couldn’t load the Universe map.'; worldCanvas.classList.remove('waiting'); }
@@ -2126,7 +2063,7 @@ const rgba = (hex, a) => { const c = hexRGB(hex); return `rgba(${c[0]},${c[1]},$
 function readColors() {
   const st = getComputedStyle(document.documentElement);
   const g = n => st.getPropertyValue(n).trim();
-  C = { paper: g('--paper'), ink: g('--ink'), muted: g('--muted'), rule: g('--rule'), accent: g('--accent'), danger: g('--danger'), dark: g('--mode') === 'dark' };
+  C = { paper: g('--paper'), panel: g('--panel'), ink: g('--ink'), rule: g('--rule'), accent: g('--accent'), danger: g('--danger'), dark: g('--mode') === 'dark' };
   C.selFill = rgba(C.accent, C.dark ? .2 : .14);
   C.failFill = rgba(C.danger, .14);
   const ms = g('--mark-s') || '58%', ml = g('--mark-l') || '38%';
@@ -2146,13 +2083,12 @@ function readColors() {
     glow: a => `hsla(${t.hue}, 95%, ${C.dark ? 70 : 60}%, ${a})`,
   }));
   farRemRGB = THEMES.map(t => { const c = hslRGB(t.hue, .5, deepL); return [0, 1, 2].map(i => Math.round(pr[i] * (1 - ra) + c[i] * ra)); });
-  atlas.key = '';
   invalidate();
 }
 const tintAlpha = cs => { const base = C.dark ? .075 : .09, far = C.dark ? .15 : .2; return base + (far - base) * clamp((14 - cs) / 11, 0, 1); };
 
 /* Glyph atlas: 26 letters rendered once per zoom level, then blitted per cell */
-const atlas = { c: document.createElement('canvas'), S: 0, key: '' };
+const atlas = { c: document.createElement('canvas'), key: '' };
 let fontEpoch = 0;
 const glyphPx = S => Math.max(5, S * 0.42);  // a letter's font size in a tile of S device pixels
 // The box each drawn letter's ink fills, from its tile's centre, as a share
@@ -2177,7 +2113,7 @@ function glyphBoxes() {
 function ensureAtlas(S) {
   const key = S + '|' + C.ink + '|' + fontEpoch;
   if (atlas.key === key) return;
-  atlas.key = key; atlas.S = S;
+  atlas.key = key;
   const c = atlas.c; c.width = S * 26; c.height = S;
   const g = c.getContext('2d');
   g.clearRect(0, 0, c.width, c.height);
@@ -2279,7 +2215,7 @@ const K_NOVAS = 'letterfield.novas.v1', NOVAS_MAX = 200;
 const novasSeen = new Map();  // 'rx,ry' → its record
 function cleanNova(o) {
   if (!o || typeof o.w !== 'string' || !/^[A-Z]{3,12}$/.test(o.w)) return null;
-  const n = { rx: o.rx, ry: o.ry, t: o.t, w: o.w, x: o.x, y: o.y, d: o.d, by: typeof o.by === 'string' && /^[A-Z]{3}$/.test(o.by) ? o.by : '', mine: !!o.mine, solo: !!o.solo };
+  const n = { rx: o.rx, ry: o.ry, t: o.t, w: o.w, x: o.x, y: o.y, d: o.d, by: initialsOf(o.by), mine: !!o.mine, solo: !!o.solo };
   return [n.rx, n.ry, n.t, n.x, n.y, n.d].every(Number.isInteger) && n.d >= 0 && n.d <= 7 ? n : null;
 }
 function loadNovas() {
@@ -2299,10 +2235,10 @@ function sawNova(o, synced = false) {
   if (list.length < novasSeen.size) { novasSeen.clear(); for (const v of list) novasSeen.set(v.rx + ',' + v.ry, v); }
   LS.set(K_NOVAS, JSON.stringify(list));
   if (!synced) syncLater('n', k);
-  if (notesOpen) renderNotes();
+  if (Panel.is('notes')) renderNotes();
   return n;
 }
-window.addEventListener('storage', e => { if (e.key === K_NOVAS) { loadNovas(); if (notesOpen) renderNotes(); } });
+window.addEventListener('storage', e => { if (e.key === K_NOVAS) { loadNovas(); if (Panel.is('notes')) renderNotes(); } });
 // A supernova as a sentence, with a link: on the shared survey, the share
 // Worker's card of it (a dark page shares the dark one); alone, the game
 // flying to its last word.
@@ -2313,25 +2249,17 @@ function novaShareText(n) {
   return `${place} ${just}went supernova in Letterfield’s shared survey: every hidden word charted, the last, ${n.w}${n.by ? `, by ${n.by}` : ''}.`;
 }
 function novaShareUrl(n) {
-  if (n.solo) return location.origin + location.pathname + location.search + '#' + hashOf(n);
+  if (n.solo) return gameLink(n);
   return shareBase ? `${shareBase}/v/${C.dark ? 'd/' : ''}territory/${n.rx},${n.ry}` : `${location.origin}/letterfield-log?territory=${n.rx},${n.ry}`;
 }
-async function shareNova(n) {
-  const text = novaShareText(n), url = novaShareUrl(n), hue = THEMES[regionTheme(n.rx, n.ry)].hue;
-  if (navigator.share) {
-    try { await navigator.share({ title: 'Letterfield', text, url }); return; } catch (err) { if (err && err.name === 'AbortError') return; }
-  }
-  try {
-    await navigator.clipboard.writeText(`${text} ${url}`);
-    toast(`<i></i><b>Copied</b><span>${regionName(n.rx, n.ry)}, ready to paste</span>`, hue);
-  } catch (_) {
-    copyFailed(`${regionName(n.rx, n.ry)}’s supernova`, url, hue);
-  }
+function shareNova(n) {
+  const place = regionName(n.rx, n.ry);
+  return shareOut(novaShareText(n), novaShareUrl(n), THEMES[regionTheme(n.rx, n.ry)].hue, place, `${place}’s supernova`);
 }
-const novaAction = n => ({ label: `Share ${regionName(n.rx, n.ry)}’s supernova`, share: () => shareNova(n) });
 // The note a supernova leaves: where, that it's in your notes, and Share.
 function novaToast(n, line = 'Supernova · kept in your field notes') {
-  toast(`<i></i><b>${regionName(n.rx, n.ry)}</b><span>${line}</span>`, THEMES[regionTheme(n.rx, n.ry)].hue, SHARE_TOAST_MS, novaAction(n));
+  const place = regionName(n.rx, n.ry);
+  toast(`<i></i><b>${place}</b><span>${line}</span>`, THEMES[regionTheme(n.rx, n.ry)].hue, SHARE_TOAST_MS, { label: `Share ${place}’s supernova`, share: () => shareNova(n) });
 }
 // The field notes' list of them, newest first; each flies to its last word.
 const novasSec = $('#novasSec'), novaListEl = $('#novaList');
@@ -2634,7 +2562,6 @@ function audioCtx() {
 function wakeCtx() {
   if (ac && ac.state !== 'running' && ac.state !== 'closed' && !document.hidden) ac.resume().catch(() => {});
 }
-function startAudio() { return soundOn ? audioCtx() : null; }
 // Gain, then a compressor and a limiter, so a blast never clips.
 function audioOut(a) {
   const g = a.createGain(), comp = a.createDynamicsCompressor(), lim = a.createDynamicsCompressor();
@@ -2665,7 +2592,7 @@ document.addEventListener('visibilitychange', () => {
 });
 // `pan`, for one from afar: the side it's on, for its distant rumble.
 function playNova(far, pan = null) {
-  const a = startAudio();
+  const a = soundOn && audioCtx();
   if (!a) return;
   const bus = pan === null ? novaSound(a, fxOut, a.currentTime + .03, far) : distantSound(a, fxOut, a.currentTime + .03, pan);
   novaBuses.add(bus);
@@ -2675,18 +2602,19 @@ function playNova(far, pan = null) {
 // their level, and its slider sets the level, 0 switching them off and
 // anything else on.
 const soundBtn = $('#sound'), soundVolEl = $('#soundVol');
-function showSoundVol() {
-  const v = soundOn ? soundVol : 0;
-  soundVolEl.value = String(v);
-  soundVolEl.style.setProperty('--v', v + '%');
-  soundVolEl.setAttribute('aria-valuetext', v ? `Sound effects volume ${v}%` : 'Sound effects off');
+// A mixer slider at v, 0 being off.
+function showVol(el, v, what) {
+  el.value = String(v);
+  el.style.setProperty('--v', v + '%');
+  el.setAttribute('aria-valuetext', v ? `${what} volume ${v}%` : `${what} off`);
 }
+function showSoundVol() { showVol(soundVolEl, soundOn ? soundVol : 0, 'Sound effects'); }
 function setSound(on) {
   soundOn = on;
   LS.set(K_SOUND, on ? '1' : '0');
   soundBtn.setAttribute('aria-pressed', String(on));
   showSoundVol();
-  if (on) { startAudio(); if (fxOut) fxOut.gain.value = fxLevel(); }
+  if (on) { audioCtx(); if (fxOut) fxOut.gain.value = fxLevel(); }
   else { for (const b of novaBuses) b.gain.value = 0; novaBuses.clear(); }
 }
 function setSoundVol(v) {
@@ -2717,7 +2645,7 @@ soundVolEl.addEventListener('input', () => { gestured = true; setSoundVol(+sound
 // button switches it back on at the last level it had. musicVol is that
 // level, never 0.
 const MUSIC_MAX = .8, MUSIC_VOL = 75, TRACK_TIME = 240;
-let musicVol = (v => Number.isInteger(v) && v > 0 && v <= 100 ? v : MUSIC_VOL)(Number(LS.get(K_MUSIC_VOL) ?? MUSIC_VOL));
+let musicVol = (v => Number.isInteger(v) && v > 0 && v <= 100 ? v : MUSIC_VOL)(Number(LS.get(K_MUSIC_VOL)));
 const musicLevel = () => MUSIC_MAX * (musicVol / 100) ** 2;
 const hz = m => 440 * Math.pow(2, (m - 69) / 12);
 let musicNow = null;
@@ -2913,25 +2841,22 @@ function pulseWave(a, duty, harmonics, soften) {
   for (let n = 1; n <= harmonics; n++) re[n] = Math.sin(Math.PI * n * duty) / n * Math.exp(-n / soften);
   return a.createPeriodicWave(re, im);
 }
-const hallBufs = new WeakMap();
-function hallOf(a) {  // a long, airy tail that darkens as it fades
-  let b = hallBufs.get(a);
-  if (!b) {
-    const n = Math.floor(a.sampleRate * CHIMES_HALL), pre = Math.floor(a.sampleRate * .02), swell = a.sampleRate * .09;
-    b = a.createBuffer(2, n, a.sampleRate);
-    for (let ch = 0; ch < 2; ch++) {
-      const d = b.getChannelData(ch);
-      let y = 0;
-      for (let i = pre; i < n; i++) {
-        const t = (i - pre) / (n - pre), k = .85 - .7 * t;
-        y += k * (Math.random() * 2 - 1 - y);
-        d[i] = y * Math.min(1, (i - pre) / swell) * Math.exp(-6.9 * t) / Math.sqrt(k);
-      }
+// A buffer made once for each audio context, the first time it's asked for.
+const perContext = make => { const bufs = new WeakMap(); return a => { let b = bufs.get(a); if (!b) bufs.set(a, b = make(a)); return b; }; };
+const hallOf = perContext(a => {  // a long, airy tail that darkens as it fades
+  const n = Math.floor(a.sampleRate * CHIMES_HALL), pre = Math.floor(a.sampleRate * .02), swell = a.sampleRate * .09;
+  const b = a.createBuffer(2, n, a.sampleRate);
+  for (let ch = 0; ch < 2; ch++) {
+    const d = b.getChannelData(ch);
+    let y = 0;
+    for (let i = pre; i < n; i++) {
+      const t = (i - pre) / (n - pre), k = .85 - .7 * t;
+      y += k * (Math.random() * 2 - 1 - y);
+      d[i] = y * Math.min(1, (i - pre) / swell) * Math.exp(-6.9 * t) / Math.sqrt(k);
     }
-    hallBufs.set(a, b);
   }
   return b;
-}
+});
 function chimesTrack(a, out) {
   const T = trackBase(a, out, [.99, 1.32, .3, 1800]), { keep, bus, send } = T;
   const hall = a.createConvolver();
@@ -3004,7 +2929,7 @@ const MUSIC_TRACKS = [driftTrack, orbitTrack, chimesTrack];
 function playMusic(a) {
   const master = a.createGain(); master.gain.value = 0; master.connect(acOut);
   let n = Math.floor(Math.random() * MUSIC_TRACKS.length), track = MUSIC_TRACKS[n](a, master);
-  let timer = 0, ended = false, swapAt = a.currentTime + TRACK_TIME;
+  let timer = 0, swapAt = a.currentTime + TRACK_TIME;
   track.bus.gain.value = 1;
   function swap() {
     const old = track;
@@ -3018,23 +2943,20 @@ function playMusic(a) {
     track.play(a.currentTime + 3);
   }
   function run() { clearInterval(timer); tick(); timer = setInterval(tick, 1000); }
-  let hushed = false;
   run();
   glide(master.gain, musicLevel(), 4, a);
   return {
     track: () => track, master, swap,
-    hush() { hushed = true; clearInterval(timer); glide(master.gain, 0, .5, a); },
+    hush() { clearInterval(timer); glide(master.gain, 0, .5, a); },
     wake() {
-      if (ended) return;
-      hushed = false;
       track.resync(a.currentTime);
       run(); glide(master.gain, musicLevel(), 2.5, a);
     },
     // A move of the slider: a quick glide, short enough to follow a drag and
-    // long enough not to click. While hushed, wake() picks the level up.
-    level() { if (!ended && !hushed) glide(master.gain, musicLevel(), .04, a); },
+    // long enough not to click. While the tab is hidden, wake() picks the level up.
+    level() { if (!document.hidden) glide(master.gain, musicLevel(), .04, a); },
     end() {  // switched off: gone in half a second
-      ended = true; clearInterval(timer);
+      clearInterval(timer);
       glide(master.gain, 0, .5, a);
       const t = track;
       setTimeout(() => { t.stop(); master.disconnect(); }, 800);
@@ -3048,12 +2970,7 @@ function startMusic() {
   if (document.hidden) musicNow.hush();
 }
 const musicBtn = $('#music'), musicVolEl = $('#musicVol');
-function showMusicVol() {
-  const v = musicOn ? musicVol : 0;
-  musicVolEl.value = String(v);
-  musicVolEl.style.setProperty('--v', v + '%');
-  musicVolEl.setAttribute('aria-valuetext', v ? `Music volume ${v}%` : 'Music off');
-}
+function showMusicVol() { showVol(musicVolEl, musicOn ? musicVol : 0, 'Music'); }
 // A move of the slider, or [ and ]: 0 switches the music off, anything else
 // switches it on at that level.
 function setMusicVol(v) {
@@ -3080,27 +2997,16 @@ showMusicVol();
 // own button then starts it, rather than switching it off unheard.
 musicBtn.addEventListener('click', () => { gestured = true; if (musicOn && !musicNow) startMusic(); else setMusic(!musicOn); });
 
-const noiseBufs = new WeakMap(), roomBufs = new WeakMap();
-function noiseOf(a) {
-  let b = noiseBufs.get(a);
-  if (!b) {
-    b = a.createBuffer(1, a.sampleRate * 2, a.sampleRate);
-    const d = b.getChannelData(0);
-    for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
-    noiseBufs.set(a, b);
-  }
+const noiseOf = perContext(a => {
+  const b = a.createBuffer(1, a.sampleRate * 2, a.sampleRate), d = b.getChannelData(0);
+  for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
   return b;
-}
-function roomOf(a) {  // a long, dark reverb tail
-  let b = roomBufs.get(a);
-  if (!b) {
-    const n = Math.floor(a.sampleRate * 3.8);
-    b = a.createBuffer(2, n, a.sampleRate);
-    for (let ch = 0; ch < 2; ch++) { const d = b.getChannelData(ch); for (let i = 0; i < n; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / n, 3.2); }
-    roomBufs.set(a, b);
-  }
+});
+const roomOf = perContext(a => {  // a long, dark reverb tail
+  const n = Math.floor(a.sampleRate * 3.8), b = a.createBuffer(2, n, a.sampleRate);
+  for (let ch = 0; ch < 2; ch++) { const d = b.getChannelData(ch); for (let i = 0; i < n; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / n, 3.2); }
   return b;
-}
+});
 // The sound of a star going: a rising charge, a held breath, the blast and its
 // long rumble, and a shimmer as the shockwave passes. Works in any audio
 // context, offline ones too; far (0 to 1) makes it quieter and duller.
@@ -3246,20 +3152,19 @@ function draw(now) {
   if (rpx >= 28) drawRemnants(vx0, vy0, vx1, vy1, cs, SX, SY);
   if (nv) novaUnder(nv, cs, SX, SY);
 
-  // Circled words
+  // Circled words: your finds, then the words other surveyors charted, an
+  // outline only, so your own stand out. A find someone else charted first is
+  // drawn as theirs, so filled always means charted first by you.
   const r = Math.max(1.6, cs * .40);
-  for (const e of found.values()) {
-    const [ex, ey] = wordEnd(e);
-    if (Math.max(e.x, ex) + 1 < vx0 || Math.min(e.x, ex) > vx1 || Math.max(e.y, ey) + 1 < vy0 || Math.min(e.y, ey) > vy1) continue;
-    // A find another surveyor charted first is drawn as theirs, an outline,
-    // so filled always means charted first by you.
-    const tc = TC[e.th], theirs = !!e.b && !e.f;
+  const circled = (e, ex, ey, theirs) => {
+    if (Math.max(e.x, ex) + 1 < vx0 || Math.min(e.x, ex) > vx1 || Math.max(e.y, ey) + 1 < vy0 || Math.min(e.y, ey) > vy1) return;
+    const tc = TC[e.th];
     if (theirs) ctx.globalAlpha = .6;
     if (cs < 3) {
       ctx.fillStyle = tc.stroke;
       ctx.beginPath(); ctx.arc(SX((e.x + ex) / 2 + .5), SY((e.y + ey) / 2 + .5), theirs ? 1.8 : 2.6, 0, Math.PI * 2); ctx.fill();
       ctx.globalAlpha = 1;
-      continue;
+      return;
     }
     let p = 1;
     if (e.born) { p = Math.max(0, (now - e.born) / 340); if (p >= 1 || RM) { e.born = 0; p = 1; } else { anim = true; p = 1 - Math.pow(1 - p, 3); } }
@@ -3272,32 +3177,9 @@ function draw(now) {
     ctx.stroke();
     ctx.setLineDash([]);
     ctx.globalAlpha = 1;
-  }
-
-  // Words other surveyors charted: an outline only, so your own finds stand out
-  for (const c of claims.values()) {
-    if (found.has(c.key)) continue;
-    const ex = c.ex, ey = c.ey;
-    if (Math.max(c.x, ex) + 1 < vx0 || Math.min(c.x, ex) > vx1 || Math.max(c.y, ey) + 1 < vy0 || Math.min(c.y, ey) > vy1) continue;
-    const tc = TC[c.th];
-    ctx.globalAlpha = .6;
-    if (cs < 3) {
-      ctx.fillStyle = tc.stroke;
-      ctx.beginPath(); ctx.arc(SX((c.x + ex) / 2 + .5), SY((c.y + ey) / 2 + .5), 1.8, 0, Math.PI * 2); ctx.fill();
-      ctx.globalAlpha = 1;
-      continue;
-    }
-    let p = 1;
-    if (c.born) { p = Math.max(0, (now - c.born) / 340); if (p >= 1 || RM) { c.born = 0; p = 1; } else { anim = true; p = 1 - Math.pow(1 - p, 3); } }
-    const x0 = SX(c.x + .5), y0 = SY(c.y + .5), x1 = SX(ex + .5), y1 = SY(ey + .5);
-    capsule(x0, y0, x0 + (x1 - x0) * p, y0 + (y1 - y0) * p, r);
-    ctx.lineWidth = clamp(cs * .05, 1, 2);
-    ctx.strokeStyle = tc.stroke;
-    if (c.s) ctx.setLineDash([Math.max(2, cs * .16), Math.max(2, cs * .1)]);
-    ctx.stroke();
-    ctx.setLineDash([]);
-    ctx.globalAlpha = 1;
-  }
+  };
+  for (const e of found.values()) { const [ex, ey] = wordEnd(e); circled(e, ex, ey, !!e.b && !e.f); }
+  for (const c of claims.values()) if (!found.has(c.key)) circled(c, c.ex, c.ey, true);
 
   // Failed attempt wobble
   if (fail) {
@@ -3362,13 +3244,8 @@ function draw(now) {
     if (seen.has(id)) continue;   // one caret a player, on two linked devices in two sectors too
     seen.add(id);
     let gh = ghosts.get(id);
-    if (!gh) {
-      let hue = 0;
-      for (let i = 0; i < id.length; i++) hue = (hue * 31 + id.charCodeAt(i)) % 360;
-      gh = { x: gx, y: gy, t: now, hue, tx: gx, ty: gy, moved: now };
-      ghosts.set(id, gh);
-    }
-    gh.ini = /^[A-Z]{3}$/.test(ini) ? ini : '';  // it goes into the hover card's HTML
+    if (!gh) { gh = { x: gx, y: gy, t: now, hue: hueOf(id), tx: gx, ty: gy, moved: now }; ghosts.set(id, gh); }
+    gh.ini = initialsOf(ini);  // it goes into the hover card's HTML
     if (gx !== gh.tx || gy !== gh.ty) { gh.tx = gx; gh.ty = gy; gh.moved = now; }
     const k = RM || Math.hypot(gx - gh.x, gy - gh.y) > 80 ? 1 : 1 - Math.exp(-(now - gh.t) / 180);
     gh.x += (gx - gh.x) * k; gh.y += (gy - gh.y) * k; gh.t = now;
@@ -3546,11 +3423,10 @@ function camChanged() {
 }
 function screenToWorld(px, py) { return { x: cam.x + (px - (W - dock) / 2) / cam.cs, y: cam.y + (py - H / 2) / cam.cs }; }
 function cellAtScreen(px, py) { const w = screenToWorld(px, py); return { x: Math.floor(w.x), y: Math.floor(w.y), wx: w.x, wy: w.y }; }
-function goToEntry(e) {
+function goToEntry(e, { cs = cam.cs >= 26 && cam.cs <= 60 ? cam.cs : 40, instant = false } = {}) {
   const [ex, ey] = wordEnd(e);
-  const cs = cam.cs >= 26 && cam.cs <= 60 ? cam.cs : 40;
   pulse = null;
-  flyTo((e.x + ex) / 2 + .5, (e.y + ey) / 2 + .5, cs, { then: now => { pulse = { x: e.x, y: e.y, d: e.d, w: e.w, t0: now }; invalidate(); } });
+  flyTo((e.x + ex) / 2 + .5, (e.y + ey) / 2 + .5, cs, { instant, then: now => { pulse = { x: e.x, y: e.y, d: e.d, w: e.w, t0: now }; invalidate(); } });
 }
 
 /* ---------- Finding words ---------- */
@@ -3612,7 +3488,7 @@ function collect(w, x, y, d, stray, keep = false) {
   if (!stray && !surveyApi) {
     const total = territoryTotal(rx, ry);
     if (territoryFound(rx, ry) === total) {
-      const seen = sawNova({ rx, ry, t: e.t, w, x, y, d, by: '', mine: true, solo: !surveyApi });
+      const seen = sawNova({ rx, ry, t: e.t, w, x, y, d, mine: true, solo: true });
       supernova(rx, ry, { mine: true, text: `${regionName(rx, ry)} · all ${total} hidden words found`, seen });
     }
   }
@@ -3701,7 +3577,7 @@ function endPointer(e, cancelled) {
   canvas.classList.remove('grabbing');
   if (cancelled) { if (g.type === 'seldrag') { sel.anchor = null; sel.end = null; } invalidate(); return; }
   if (g.type === 'press') {
-    if (toolsOpen) setTools(false);  // a tap on the map puts the tools away, and does nothing else
+    if (Panel.is('tools')) setTools(false);  // a tap on the map puts the tools away, and does nothing else
     else onTap(cellAtScreen(e.clientX, mapY(e)));
   }
   else if (g.type === 'seldrag') {
@@ -3741,7 +3617,7 @@ function peekAt(px, py) {
       const [dx, dy] = DIRS[c.d], n = dx ? (x - c.x) * dx : (y - c.y) * dy;
       if (n < 0 || n >= c.w.length || c.x + dx * n !== x || c.y + dy * n !== y) continue;
       const e = found.get(c.key), who = e && e.f ? 'you' : c.by || 'another surveyor';
-      html = `<i></i><b>${c.w}</b><span>Charted by ${who} · ${rel(c.at)}</span>`;
+      html = `<i></i><b>${c.w}</b><span>Charted by ${who} · ${rel(c.t)}</span>`;
       hue = THEMES[c.th].hue;
       break;
     }
@@ -3784,10 +3660,10 @@ window.addEventListener('keydown', e => {
       if (gest && gest.type === 'seldrag') gest = null;  // a drag that was circling stops here, button still down or not
       invalidate(); return;
     }
-    if (peopleOpen && PeoplePage.is('you')) PeoplePage.go('list');  // back to the list first
-    else if (peopleOpen) closePeople();
-    else if (notesOpen && !dock) { setNotes(false); notesToggle.focus(); }
-    else if (toolsOpen) setTools(false, { refocus: true });
+    if (Panel.is('people') && PeoplePage.is('you')) PeoplePage.go('list');  // back to the list first
+    else if (Panel.is('people')) closePeople();
+    else if (Panel.is('notes') && !dock) { setNotes(false); notesToggle.focus(); }
+    else if (Panel.is('tools')) setTools(false, { refocus: true });
     return;
   }
   if (inNotes || e.metaKey || e.ctrlKey || e.altKey) return;
@@ -3801,8 +3677,8 @@ window.addEventListener('keydown', e => {
     case 'ArrowDown': case 's': flyTo(OX, OY + step, cam.cs, { min: 160, max: 200 }); break;
     case '+': case '=': flyTo(cam.x, cam.y, cam.cs * 1.5, { min: 220, max: 320 }); break;
     case '-': case '_': flyTo(cam.x, cam.y, cam.cs / 1.5, { min: 220, max: 320 }); break;
-    case 'n': setNotes(!notesOpen); break;
-    case 'p': if (surveyApi) setPeople(!peopleOpen); break;
+    case 'n': setNotes(!Panel.is('notes')); break;
+    case 'p': setPeople(!Panel.is('people')); break;
     case 'm': setSound(!soundOn); break;
     case 'b': setMusic(!musicOn); break;
     case '[': case ']': setMusicVol((musicOn ? musicVol : 0) + (k === ']' ? 10 : -10)); break;
@@ -3831,26 +3707,22 @@ function updateHud() {
     tName.textContent = regionName(rx, ry);
     tTheme.textContent = THEMES[t].name;
     territory.style.setProperty('--h', THEMES[t].hue);
-    if (notesOpen) drawWorld();  // moves "you are here" on the world map
+    if (Panel.is('notes')) drawWorld();  // moves "you are here" on the world map
   }
   tCoord.textContent = fmtCoord(cx, cy);
   // How much of the territory is charted (or found, alone), on a phone just
   // "3/113" to leave the theme room; while the survey isn't live here, what
   // it's doing instead (see hereStatus).
-  const short = innerWidth < 700;
+  const tally = (done, total, verb) => innerWidth < 700
+    ? `<span aria-hidden="true"> · ${done}/${total}</span><span class="vh">, ${done} of ${total} words ${verb}</span>`
+    : ` · ${done}/${total} ${verb}`;
   tCharted.hidden = false;
-  if (surveyApi && inSurveyArea(cx, cy)) {
-    syncSurvey();
+  syncSurvey();  // does nothing without the survey
+  if (!surveyApi || !inSurveyArea(cx, cy)) tCharted.innerHTML = tally(territoryFound(rx, ry), territoryTotal(rx, ry), 'found');
+  else {
     const status = hereStatus(cx, cy);
     if (status) tCharted.textContent = ` · ${status}`;
-    else {
-      const [done, total] = territoryProgress(rx, ry);
-      tCharted.innerHTML = short ? `<span aria-hidden="true"> · ${done}/${total}</span><span class="vh">, ${done} of ${total} words charted</span>` : ` · ${done}/${total} charted`;
-    }
-  } else {
-    if (surveyApi) syncSurvey();
-    const done = territoryFound(rx, ry), total = territoryTotal(rx, ry);
-    tCharted.innerHTML = short ? `<span aria-hidden="true"> · ${done}/${total}</span><span class="vh">, ${done} of ${total} words found</span>` : ` · ${done}/${total} found`;
+    else tCharted.innerHTML = tally(...territoryProgress(rx, ry), 'charted');
   }
   updateLegend();
 }
@@ -3872,7 +3744,7 @@ function coverRects() {
   if (covers) return covers;
   covers = [];
   for (const el of coverEls) {
-    if (el.id === 'notes' && (!notesOpen || dock)) continue;  // shut, or beside the map rather than over it
+    if (el.id === 'notes' && (!Panel.is('notes') || dock)) continue;  // shut, or beside the map rather than over it
     const r = el.getBoundingClientRect();
     if (r.width > 0 && r.height > 0) covers.push({ l: r.left, r: r.right, t: r.top - mapTop, b: r.bottom - mapTop });
   }
@@ -3888,7 +3760,7 @@ function glyphBoxesAt(cs) {
   const f = glyphPx(Math.max(4, Math.round(cs * dpr))) / dpr;
   return glyphBoxes().map(b => b.map(v => v * f));
 }
-function wordSeen(w, cs, OX, rects, boxes = glyphBoxesAt(cs)) {
+function wordSeen(w, cs, OX, rects, boxes) {
   const [dx, dy] = DIRS[w.d], right = W - dock, len = w.w.length, need = Math.ceil(len * SEEN_SHARE);
   let seen = 0;
   letters: for (let i = 0; i < len; i++) {
@@ -3912,7 +3784,6 @@ const legendEl = $('.legend'), listBtns = { view: $('#listView'), whole: $('#lis
 let listWhole = LS.get(K_LIST) === 'whole';
 function showListMode() {
   for (const [k, b] of Object.entries(listBtns)) b.setAttribute('aria-pressed', String(listWhole === (k === 'whole')));
-  legendEl.classList.toggle('whole', listWhole);
   legendEl.setAttribute('aria-label', listWhole ? 'Words left to find in this territory' : 'Words hidden in view');
 }
 for (const [k, b] of Object.entries(listBtns)) b.addEventListener('click', () => {
@@ -3984,7 +3855,7 @@ function updateLegend() {
 legendList.addEventListener('click', e => {
   if (!hints) return;
   const b = e.target.closest('.chip');
-  if (!b || b.classList.contains('found')) return;
+  if (!b) return;
   const w = legendWords.get(b.dataset.key);
   if (w) { hint = { x: w.x, y: w.y, t0: performance.now() }; invalidate(); }
 });
@@ -4019,7 +3890,7 @@ function toast(html, hue, ms = 2400, find = null) {
   // it's put away.
   const nb = $('.corner').getBoundingClientRect();
   toastEl.style.top = nb.height ? `${Math.round(Math.max(nb.bottom, mapTop) + 10)}px` : '';
-  for (const el of [$('.cartouche'), $('#coach'), $('#signup'), toolsOpen && toolStack]) {
+  for (const el of [$('.cartouche'), $('#coach'), $('#signup'), Panel.is('tools') && toolStack]) {
     const r = !el || el.hidden ? null : el.getBoundingClientRect();
     const l = toastEl.offsetLeft, t = toastEl.offsetTop, b = t + toastEl.offsetHeight;
     if (r && r.width && r.left < l + toastEl.offsetWidth && l < r.right && r.top < b + 8 && t < r.bottom) toastEl.style.top = `${Math.round(r.bottom + 8)}px`;
@@ -4048,7 +3919,7 @@ function say(text) {
 // not reach.
 const GATHER_LIFT = 320, GATHER_DRAW = 440, GATHER_FLY = 580, GATHER_BEAD = 12;
 function gatherFind(e) {
-  const key = e.key, to = notesOpen ? $('#tWords') : notesBadge;
+  const key = e.key, to = Panel.is('notes') ? $('#tWords') : notesBadge;
   unlanded.add(key);
   let done = false;
   const land = () => {
@@ -4131,14 +4002,10 @@ const NOTES_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" s
 const SHARE_JUST_MS = 10 * 60000;  // within this long of finding it, "I just found"
 const SHARE_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 15V3M7.5 7.5 12 3l4.5 4.5"/><path d="M8 11H6a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-6a2 2 0 0 0-2-2h-2"/></svg>';
 // A dark page shares a dark card (/f/d/…): the card follows the sharer's theme.
-const shareBase = (() => {
-  let url = SHARE_URL;
-  try { const q = new URLSearchParams(location.search).get('share'); if (q && /^https?:\/\//.test(q)) url = q; } catch (_) {}
-  return url.replace(/\/+$/, '');
-})();
+const shareBase = fromQuery('share', SHARE_URL, /^https?:\/\//).replace(/\/+$/, '');
 const shareUrl = e => shareBase
   ? `${shareBase}/f/${C.dark ? 'd/' : ''}${hashOf(e)}`
-  : location.origin + location.pathname + location.search + '#' + hashOf(e);
+  : gameLink(e);
 function shareText(e) {
   const place = regionName(fdiv(e.x, RC), fdiv(e.y, RC));
   const word = e.s ? `${e.w}, a bonus ${THEMES[e.th].name.toLowerCase()} word,` : e.w;
@@ -4148,18 +4015,21 @@ function shareText(e) {
   const nth = [...found.values()].filter(o => o.t <= e.t).length;
   return `${lead}. That’s word ${nth.toLocaleString()} in my field notes.`;
 }
-async function shareFind(e) {
-  const text = shareText(e), url = shareUrl(e);
+// Through the share sheet, or copied where there isn't one or it fails. The
+// note then says name is ready to paste; if the browser won't copy either, it
+// offers what to copy by hand.
+async function shareOut(text, url, hue, name, what) {
   if (navigator.share) {
     try { await navigator.share({ title: 'Letterfield', text, url }); return; } catch (err) { if (err && err.name === 'AbortError') return; }
   }
   try {
     await navigator.clipboard.writeText(`${text} ${url}`);
-    toast(`<i></i><b>Copied</b><span>${e.w}, ready to paste</span>`, THEMES[e.th].hue);
+    toast(`<i></i><b>Copied</b><span>${name}, ready to paste</span>`, hue);
   } catch (_) {
-    copyFailed(`${e.w}’s link`, url, THEMES[e.th].hue);
+    copyFailed(what, url, hue);
   }
 }
+function shareFind(e) { return shareOut(shareText(e), shareUrl(e), THEMES[e.th].hue, e.w, `${e.w}’s link`); }
 // When the browser won't copy, the link shows in a box that one tap selects
 // whole, and the note stays until a tap anywhere else.
 function copyFailed(what, url, hue) {
@@ -4183,11 +4053,7 @@ function copyFailed(what, url, hue) {
 // Wikimedia was busy), which can be tried again. The answer is kept for the
 // page's life; the browser and the Worker keep it far longer.
 const BOOK_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 6.5C10.3 5.2 7.9 4.5 4 4.5v13c3.9 0 6.3.7 8 2 1.7-1.3 4.1-2 8-2v-13c-3.9 0-6.3.7-8 2z"/><path d="M12 6.5v13"/></svg>';
-const defineApi = (() => {
-  let url = DEFINE_URL;
-  try { const q = new URLSearchParams(location.search).get('define'); if (q !== null && (q === '' || /^https?:\/\//.test(q))) url = q; } catch (_) {}
-  return url.replace(/\/+$/, '');
-})();
+const defineApi = fromQuery('define', DEFINE_URL, /^$|^https?:\/\//).replace(/\/+$/, '');  // ?define= on its own blanks it
 const definitions = new Map();  // 'WORD/th' → { m: its machine, senses, source, url }
 let defOpen = null;             // the key of the find whose meaning is open
 const DEFINE_MOVES = { loading: ['ready', 'none', 'failed'], ready: [], none: [], failed: ['loading'] };
@@ -4249,7 +4115,7 @@ function toggleDefinition(key) {
   defOpen = defOpen === key ? null : key;
   renderNotes();
   const b = findsEl.querySelector(`.find-define[data-key="${CSS.escape(key)}"]`);
-  if (b) try { b.focus({ preventScroll: true }); } catch (_) {}
+  focusQuiet(b);
   const el = defOpen && document.getElementById('def-' + key);
   if (el && el.scrollIntoView) el.scrollIntoView({ block: 'nearest', behavior: RM ? 'auto' : 'smooth' });
 }
@@ -4261,9 +4127,7 @@ let filter = null;
 // stack, the Surveyors drawer or the field notes. One at a time: opening one
 // puts away whichever was open, and only its button shows pressed. On a
 // computer the two drawers dock at the right in one slot, so moving between
-// them leaves the map where it is. notesOpen, peopleOpen and toolsOpen say
-// which, for everything that asks; only panelMoved sets them.
-let notesOpen = false, peopleOpen = false, toolsOpen = false;
+// them leaves the map where it is.
 const Panel = machine('panel', {
   none: ['tools', 'people', 'notes'],
   tools: ['none', 'people', 'notes'],
@@ -4271,7 +4135,7 @@ const Panel = machine('panel', {
   notes: ['none', 'tools', 'people'],
 }, 'none', { onMove: panelMoved });
 function panelMoved(to, from, { focus = false, refocus = false, start = false } = {}) {
-  notesOpen = to === 'notes'; peopleOpen = to === 'people'; toolsOpen = to === 'tools';
+  const notesOpen = to === 'notes', peopleOpen = to === 'people', toolsOpen = to === 'tools';
   document.body.classList.toggle('notes-open', notesOpen);
   document.body.classList.toggle('people-open', peopleOpen);
   notesToggle.setAttribute('aria-expanded', String(notesOpen));
@@ -4283,19 +4147,19 @@ function panelMoved(to, from, { focus = false, refocus = false, start = false } 
   if (from === 'people') { listScroll = 0; if (PeoplePage.is('you')) PeoplePage.go('list'); }  // it opens on the list again
   if (notesOpen) { renderNotes(); refreshWorld(); }
   // Opened from its button, focus moves into the stack; shut from in there, it comes back to the button.
-  if (toolsOpen && focus) try { toolStack.querySelector('button').focus({ preventScroll: true }); } catch (_) {}
-  if (from === 'tools' && (refocus || toolStack.contains(document.activeElement))) try { toolsBtn.focus({ preventScroll: true }); } catch (_) {}
+  if (toolsOpen && focus) focusQuiet(toolStack.querySelector('button'));
+  if (from === 'tools' && (refocus || toolStack.contains(document.activeElement))) focusQuiet(toolsBtn);
   syncWho(); renderWho();
   scheduleHud(); invalidate();
 }
 function applyDock(start = false) {
-  const nd = (notesOpen || peopleOpen) && W >= 1100 ? NOTES_W : 0;
+  const nd = Panel.is('notes', 'people') && W >= 1100 ? NOTES_W : 0;
   if (nd !== dock && !start) cam.x -= (nd - dock) / (2 * cam.cs);  // the map stays put as it narrows or widens
   dock = nd;
   document.body.classList.toggle('docked', nd > 0);
 }
 function setNotes(open, remember = true) {
-  if (open === notesOpen) return;
+  if (open === Panel.is('notes')) return;
   Panel.go(open ? 'notes' : 'none');
   if (remember) LS.set(K_NOTES, open ? '1' : '0');  // whether a computer opens with them docked
 }
@@ -4352,7 +4216,7 @@ function renderNotes() {
 }
 const DIR_WORDS = ['east', 'south-east', 'south', 'south-west', 'west', 'north-west', 'north', 'north-east'];
 const bearing = d => `<svg class="find-dir" viewBox="0 0 16 16" style="transform:rotate(${d * 45}deg)" aria-hidden="true"><path d="M2.5 8h10M9 4.5 12.5 8 9 11.5"/></svg>`;
-function dayLabel(t, now = new Date()) {
+function dayLabel(t, now) {
   const d = new Date(t), y = new Date(now);
   y.setDate(now.getDate() - 1);
   if (d.toDateString() === now.toDateString()) return 'Today';
@@ -4412,9 +4276,9 @@ window.addEventListener('hashchange', () => {
   const p = parseHash(location.hash);
   if (p) goToEntry(p);
 });
-notesToggle.addEventListener('click', () => setNotes(!notesOpen));
+notesToggle.addEventListener('click', () => setNotes(!Panel.is('notes')));
 $('#notesClose').addEventListener('click', () => setNotes(false));
-setInterval(() => { if (notesOpen) renderNotes(); }, 60000);
+setInterval(() => { if (Panel.is('notes')) renderNotes(); }, 60000);
 
 /* ---------- Controls ---------- */
 $('#zoomIn').addEventListener('click', () => flyTo(cam.x, cam.y, cam.cs * 1.6, { min: 240, max: 360 }));
@@ -4439,10 +4303,10 @@ lastFindBtn.addEventListener('click', goLastFind);
 // back to the button. The keyboard shortcuts never need it open.
 const barEl = $('#bar'), toolsEl = $('#tools'), toolsBtn = $('#toolsBtn'), toolStack = $('#toolStack');
 function setTools(open, { focus = false, refocus = false } = {}) {
-  if (open === toolsOpen) return;
+  if (open === Panel.is('tools')) return;
   Panel.go(open ? 'tools' : 'none', { focus, refocus });
 }
-toolsBtn.addEventListener('click', () => setTools(!toolsOpen, { focus: true }));
+toolsBtn.addEventListener('click', () => setTools(!Panel.is('tools'), { focus: true }));
 
 // On the shared survey, words are signed, so a player picks initials before
 // circling one (Intro's sign state): the card asks at the start, and a tap on
@@ -4451,29 +4315,32 @@ toolsBtn.addEventListener('click', () => setTools(!toolsOpen, { focus: true }));
 const signup = $('#signup'), signupInput = $('#signupInitials'), signupHint = $('#signupHint');
 function askSign() {
   signupHint.textContent = 'Initials first, then circle away.';
-  try { signupInput.focus({ preventScroll: true }); } catch (_) {}
+  focusQuiet(signupInput);
+}
+// New initials: kept, and the cards that ask for them put away.
+function takeInitials(v, refocus = false) {
+  LS.set(K_INITIALS, JSON.stringify(v));
+  surveyInput.value = signupInput.value = v;
+  showSigning(false, refocus);
+  if (Intro.is('sign')) Intro.go('exploring');
 }
 function signAs(v, hint) {
-  if (!/^[A-Z]{3}$/.test(v)) {
+  if (!initialsOf(v)) {
     hint.textContent = 'Use three letters, A to Z.';
-    if (hint === signupHint) try { signupInput.focus({ preventScroll: true }); } catch (_) {}
+    if (hint === signupHint) focusQuiet(signupInput);
     return false;
   }
-  LS.set(K_INITIALS, JSON.stringify(v));
+  takeInitials(v, hint === surveyHint);
   settingsChanged();
   tellMe();
-  surveyInput.value = signupInput.value = v;
-  surveyHint.textContent = '';
-  showSigning(false, hint === surveyHint);
-  if (Intro.is('sign')) Intro.go('exploring');
   return true;
 }
 for (const input of [surveyInput, signupInput]) input.addEventListener('input', () => {
   const v = input.value.toUpperCase().replace(/[^A-Z]/g, '').slice(0, 3);
   if (v !== input.value) input.value = v;
 });
-// The survey panel shows your initials with a pencil, and the form only while
-// you change them, or until you have some.
+// Your page in the Surveyors drawer shows your initials with a Change button,
+// and the form only while you change them, or until you have some.
 function showSigning(editing, refocus) {
   const v = myInitials(), edit = editing || !v;
   $('#surveyMeName').textContent = v;
@@ -4497,6 +4364,21 @@ worldCanvas.addEventListener('click', e => {
   if (!dock) setNotes(false, false);
   flyTo((tx + .5) * RC, (ty + .5) * RC, Math.max(cam.cs, 30));
 });
+
+// A parameter of the address, read once and then taken off it, so a reload
+// doesn't ask again and a code doesn't linger. Where the address can't be
+// changed (replaceState throws), the value read still comes back.
+function takeParam(name) {
+  let v = null;
+  try {
+    const u = new URL(location.href);
+    v = u.searchParams.get(name);
+    if (v !== null) { u.searchParams.delete(name); history.replaceState(history.state, '', u.pathname + u.search + u.hash); }
+  } catch (_) {}
+  return v || '';
+}
+// A link code (see Linking devices), and a code as typed, cut to capitals and digits.
+const LINK_CODE_RE = /^[A-HJKMNP-Z2-9]{8}$/, cleanCode = v => v.toUpperCase().replace(/[^A-Z0-9]/g, '');
 
 const coach = $('#coach');
 // What a visit starts with, one card at most: on the shared survey, an offer
@@ -4534,11 +4416,15 @@ $('#coachOk').addEventListener('click', () => { if (Intro.is('coach')) Intro.go(
 // emotes" in worker/SURVEY.md). The game keeps a random token, sends it to
 // every sector it joins, and the sectors name the player by its hash, the same
 // everywhere: in presence, the list and emotes. Nobody else ever sees the
-// token, so nobody can send as someone else. The list is a fold of the survey
-// panel, like the world map: the Worker's answer, nearest first, fetched while
-// it's open and on screen. Emotes are a few fixed drawings, never text.
-const K_PLAYER = 'games.player', K_MUTED = 'letterfield.muted.v1', K_MUTED_AS = 'letterfield.mutedAs.v1', K_EMOTES = 'letterfield.emotes.v1';
+// token, so nobody can send as someone else. The list, in the surveyors'
+// drawer, is the Worker's answer, nearest first, fetched while the drawer's
+// open and the tab is showing. Emotes are a few fixed drawings, never text.
+const K_PLAYER = 'games.player', TOKEN_RE = /^[0-9a-f]{32}$/, K_MUTED = 'letterfield.muted.v1', K_MUTED_AS = 'letterfield.mutedAs.v1', K_EMOTES = 'letterfield.emotes.v1';
 const PID_RE = /^[0-9a-f]{12}$/, MUTED_MAX = 200, LIST_PAGES = 25;
+// A surveyor as the Worker sends one, [id, initials, rx, ry, idle, flags], in
+// the list or in a guild's word from a sector (where an older Worker left off
+// the flags), or null.
+const surveyorOf = (e, at) => (Array.isArray(e) && typeof e[0] === 'string' && PID_RE.test(e[0]) && [e[2], e[3], e[4]].every(Number.isInteger) ? { pid: e[0], ini: initialsOf(e[1]), rx: e[2], ry: e[3], idle: e[4], quiet: !!(e[5] & 1), at } : null);
 const WHO_REFRESH_MS = 20000, WHO_RETRY_MS = 20000, POP_MS = 2600, HERE_MS = 30000;
 // The emotes, in the Worker's order (EMOTES in worker/src/survey-social.js):
 // a name for buttons, what a note says the sender did, and one path on a
@@ -4592,7 +4478,11 @@ function emoteMotion(id, ms) {
   document.head.append(style);
 })();
 const emoteSvg = e => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="${e.d}"/></svg>`;
-const FLY_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 11.2 20 4l-7.2 16-2.2-6.6z"/></svg>';
+const FLY_ICON = emoteSvg({ d: 'M4 11.2 20 4l-7.2 16-2.2-6.6z' });
+// A note's way to a surveyor it's about.
+const flyThere = (who, s) => ({ label: `Fly to ${who}`, text: 'Fly there', icon: FLY_ICON, share: () => { hideToast(); flyToSurveyor(s); } });
+// An emote's button, in a list row (with its surveyor's id, for the list's clicks and focus) or a caret's menu.
+const emoteBtn = (e, who, off, pid = '') => `<button type="button" class="emote"${pid ? ` data-pid="${pid}" data-k="${pid}:${e.id}"` : ''} data-e="${e.id}" aria-label="${e.name} to ${who}" title="${e.name}"${off ? ' disabled' : ''}>${emoteSvg(e)}<span aria-hidden="true">${e.name}</span></button>`;
 
 // The player's token: made once, kept on this device. Its hash (myPid) is
 // what everyone else calls us, worked out here as the sectors do, so the
@@ -4600,7 +4490,7 @@ const FLY_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" str
 const playerToken = (() => {
   if (!surveyApi) return '';
   let t = LS.get(K_PLAYER) || '';
-  if (!/^[0-9a-f]{32}$/.test(t)) {
+  if (!TOKEN_RE.test(t)) {
     try { t = [...crypto.getRandomValues(new Uint8Array(16))].map(b => b.toString(16).padStart(2, '0')).join(''); } catch (_) { return ''; }
     LS.set(K_PLAYER, t);
   }
@@ -4611,8 +4501,8 @@ if (playerToken && window.crypto && crypto.subtle) {
   crypto.subtle.digest('SHA-256', new TextEncoder().encode('games-player:' + playerToken))
     .then(h => {
       myPid = [...new Uint8Array(h).slice(0, 6)].map(b => b.toString(16).padStart(2, '0')).join('');
-      // Presence that came before we knew our own id: we were in it.
-      for (const l of links.values()) if (l.here.some(q => q[0] === myPid)) { l.here = l.here.filter(q => q[0] !== myPid); l.counted = true; }
+      // Presence that came before we knew our own id: take ourselves out of it.
+      for (const l of links.values()) l.here = l.here.filter(q => q[0] !== myPid);
       renderSurvey(); invalidate(); renderYouRow();
     }, () => {});
 }
@@ -4620,19 +4510,18 @@ if (playerToken && window.crypto && crypto.subtle) {
 // linked ones, see Syncing linked devices). Everyone online is on the list:
 // a switch to keep off it went, so its old key goes too.
 let emotesOn = LS.get(K_EMOTES) !== '0';
-try { localStorage.removeItem('letterfield.listed.v1'); } catch (_) {}
+LS.remove('letterfield.listed.v1');
 const muted = new Set(readList(K_MUTED).filter(p => typeof p === 'string' && PID_RE.test(p)).slice(-MUTED_MAX));
 // Who each muted surveyor was when muted, and when: id → [initials, ms], for
 // the Muted list. Kept since the list came: anyone muted before, or whose
 // details haven't reached this device, is "A surveyor" there.
-const goodMutedAs = v => Array.isArray(v) && v.length === 2 && (v[0] === '' || /^[A-Z]{3}$/.test(v[0])) && Number.isInteger(v[1]) && v[1] >= 0 && v[1] <= 1e15;
+const goodMutedAs = v => Array.isArray(v) && v.length === 2 && (v[0] === '' || !!initialsOf(v[0])) && Number.isInteger(v[1]) && v[1] >= 0 && v[1] <= 1e15;
 const mutedAsOf = o => (o && typeof o === 'object' && !Array.isArray(o) ? Object.entries(o).filter(([p, v]) => PID_RE.test(p) && goodMutedAs(v)) : []);
 const mutedAs = new Map((() => { try { return mutedAsOf(JSON.parse(LS.get(K_MUTED_AS) || '{}')); } catch (_) { return []; } })().filter(([p]) => muted.has(p)));
-const mutedAsSaved = () => Object.fromEntries([...mutedAs].filter(([p]) => muted.has(p)));
 function saveMuted() {
   for (const p of mutedAs.keys()) if (!muted.has(p)) mutedAs.delete(p);
   LS.set(K_MUTED, JSON.stringify([...muted]));
-  LS.set(K_MUTED_AS, JSON.stringify(mutedAsSaved()));
+  LS.set(K_MUTED_AS, JSON.stringify(Object.fromEntries(mutedAs)));
 }
 // What every sector is told about us when it's joined, and again when any of it changes.
 function meMessage() {
@@ -4666,7 +4555,7 @@ function caretOnScreen(pid) {
 // phone, docked on a computer); see Panel.
 // It has two pages. The list: you at the top, then your guild's mates and
 // everyone else. And you, from that first row: your initials, your guild,
-// the two switches and your devices.
+// the emotes switch and mutes, and your devices.
 const peopleBtn = $('#peopleBtn'), peopleBadge = $('#peopleBadge'), peopleEl = $('#people');
 const peopleListEl = $('#peopleList'), peopleYouEl = $('#peopleYou'), youRow = $('#youRow'), youBack = $('#youBack');
 let listScroll = 0;
@@ -4678,20 +4567,20 @@ function peoplePageMoved(to, from, focusEl) {
   if (to === 'you') listScroll = peopleEl.scrollTop;
   peopleListEl.hidden = to !== 'list';
   peopleYouEl.hidden = to !== 'you';
-  peopleEl.scrollTop = to === 'list' && peopleOpen ? listScroll : 0;
-  if (!peopleOpen) return;
+  peopleEl.scrollTop = to === 'list' && Panel.is('people') ? listScroll : 0;
+  if (!Panel.is('people')) return;
   const el = focusEl || (to === 'you' ? youBack : youRow);
   try { el.focus({ preventScroll: !focusEl }); } catch (_) {}
 }
 function setPeople(open) {
   if (!surveyApi) open = false;
-  if (open === peopleOpen) return;
+  if (open === Panel.is('people')) return;
   Panel.go(open ? 'people' : 'none');  // one of the corner's panels: opening it puts away the others
 }
 // Opens your page, for whatever needs it (signing first, say), with focus on that.
 function openYou(focusEl) {
   if (!surveyApi) return;
-  if (!peopleOpen) setPeople(true);
+  if (!Panel.is('people')) setPeople(true);
   if (PeoplePage.is('list')) PeoplePage.go('you', focusEl);
   else if (focusEl) try { focusEl.focus(); } catch (_) {}
 }
@@ -4703,7 +4592,7 @@ function askInitials(why) {
 }
 function closePeople() { setPeople(false); peopleBtn.focus(); }
 peopleBtn.hidden = !surveyApi;
-peopleBtn.addEventListener('click', () => setPeople(!peopleOpen));
+peopleBtn.addEventListener('click', () => setPeople(!Panel.is('people')));
 $('#peopleClose').addEventListener('click', closePeople);
 $('#youClose').addEventListener('click', closePeople);
 youRow.addEventListener('click', () => { if (PeoplePage.is('list')) PeoplePage.go('you'); });
@@ -4719,7 +4608,7 @@ function renderYouRow() {
   const name = ini ? `${ini} <small>(you)</small>` : 'You';
   if ($('#youRowName').innerHTML !== name) $('#youRowName').innerHTML = name;
   $('#youRowLine').textContent = line;
-  youRow.setAttribute('aria-label', ini ? `You, ${ini}: your initials, guild, switches and devices` : `You: ${line}`);
+  youRow.setAttribute('aria-label', ini ? `You, ${ini}: your initials, guild, emotes and devices` : `You: ${line}`);
 }
 
 // The list, shown on <html data-who>: closed (the drawer shut or the
@@ -4749,7 +4638,7 @@ function whoMoved(to) {
   if (to === 'ready' && myGuild) renderGuild();  // its count of mates online takes in the list (see Guilds)
 }
 function syncWho() {
-  const want = !!surveyApi && peopleOpen && !surveyPaused;
+  const want = !!surveyApi && Panel.is('people') && !surveyPaused;
   if (want && Who.is('closed')) Who.go('loading');
   else if (!want && !Who.is('closed')) Who.go('closed');
 }
@@ -4764,9 +4653,10 @@ async function fetchWho() {
     if (!got.every(a => a && Number.isInteger(a.n) && Array.isArray(a.who))) throw new Error('bad list');
     const seen = new Set(), who = [], now = Date.now();
     for (const a of got) for (const e of a.who) {
-      if (!Array.isArray(e) || typeof e[0] !== 'string' || !PID_RE.test(e[0]) || seen.has(e[0]) || e[0] === myPid || ![e[2], e[3], e[4], e[5]].every(Number.isInteger)) continue;
-      seen.add(e[0]);
-      who.push({ pid: e[0], ini: typeof e[1] === 'string' && /^[A-Z]{3}$/.test(e[1]) ? e[1] : '', rx: e[2], ry: e[3], idle: e[4], quiet: !!(e[5] & 1), at: now });
+      const s = surveyorOf(e, now);
+      if (!s || !Number.isInteger(e[5]) || seen.has(s.pid) || s.pid === myPid) continue;
+      seen.add(s.pid);
+      who.push(s);
     }
     whoData = { n: got[0].n, more: !!got[got.length - 1].more, who, at: now };
     Who.go('ready');
@@ -4784,13 +4674,13 @@ function sortedWho() {
 function renderWho() {
   if (!surveyApi) return;
   // The button's count: everyone else online in the shared world. The list's
-  // own count while it's recent (it comes every few seconds while open); the
+  // own count while it's recent (it comes every WHO_REFRESH_MS while open); the
   // world's total otherwise, which trails the Atlas's reports by a minute or so.
   const others = whoData && Date.now() - whoData.at < 120000 ? whoData.n : world ? Math.max(0, world.players - 1) : 0;
   if (peopleBadge.textContent !== String(others)) peopleBadge.textContent = others;
   peopleBadge.hidden = !others;
   peopleBtn.setAttribute('aria-label', others ? `Surveyors, ${others.toLocaleString()} online` : 'Surveyors');
-  if (!peopleOpen) return;
+  if (!Panel.is('people')) return;
   renderYouRow();
   const st = Who.state;
   let status;
@@ -4804,7 +4694,7 @@ function renderWho() {
   // Rows are drawn afresh; whatever had focus gets it back.
   const f = document.activeElement, k = f && whoList.contains(f) ? f.dataset.k : '';
   whoList.innerHTML = whoListHtml();  // mates first, when we're in a guild (see Guilds)
-  if (k) { const el = whoList.querySelector(`[data-k="${k}"]`); if (el) try { el.focus({ preventScroll: true }); } catch (_) {} }
+  if (k) focusQuiet(whoList.querySelector(`[data-k="${k}"]`));
 }
 // A row: their initials and where they are, which flies there; a wave, the
 // emote sent most; and ⋯ for the rest and mute. What became of the last emote
@@ -4825,7 +4715,7 @@ function whoRow(s, mate = false) {
 }
 function whoPanel(s, who, m) {
   return `<div class="who-emotes" id="emo-${s.pid}" role="group" aria-label="Emotes for ${who}">` +
-    (m ? '' : `<div class="emote-row">${EMOTES.filter(e => e.id !== 'wave').map(e => `<button type="button" class="emote" data-pid="${s.pid}" data-e="${e.id}" data-k="${s.pid}:${e.id}" aria-label="${e.name} to ${who}" title="${e.name}"${s.quiet ? ' disabled' : ''}>${emoteSvg(e)}<span aria-hidden="true">${e.name}</span></button>`).join('')}</div>`) +
+    (m ? '' : `<div class="emote-row">${EMOTES.filter(e => e.id !== 'wave').map(e => emoteBtn(e, who, s.quiet, s.pid)).join('')}</div>`) +
     `<button type="button" class="who-mute" data-pid="${s.pid}" data-k="${s.pid}:mute">${m ? 'Unmute' : 'Mute'} ${who}</button></div>`;
 }
 whoList.addEventListener('click', e => {
@@ -4873,7 +4763,6 @@ function setMuted(s, on) {
   while (muted.size > MUTED_MAX) muted.delete(muted.values().next().value);
   saveMuted();
   settingsChanged();
-  pops = pops.filter(p => p.pid !== s.pid);
   renderWho(); renderMuted(); invalidate();
   say(`${on ? 'Muted' : 'Unmuted'} ${s.ini || 'that surveyor'}`);
 }
@@ -4882,6 +4771,7 @@ function setMuted(s, on) {
 // when, and an Unmute pill. It opens and shuts like a fold: a single boolean.
 const mutedRow = $('#mutedRow'), mutedListEl = $('#mutedList');
 let mutedOpen = false;
+const mutedIni = pid => (mutedAs.get(pid) || [''])[0] || (whoFind(pid) || {}).ini || '';  // as muted, or as listed now
 function renderMuted() {
   $('#mutedCount').textContent = muted.size ? String(muted.size) : 'None';
   mutedRow.setAttribute('aria-expanded', String(mutedOpen));
@@ -4889,10 +4779,7 @@ function renderMuted() {
   if (!mutedOpen) return;
   const thisYear = new Date().getFullYear();
   const when = at => (at ? `Muted ${new Date(at).toLocaleDateString(undefined, { day: 'numeric', month: 'short', ...(new Date(at).getFullYear() === thisYear ? {} : { year: 'numeric' }) })}` : '');
-  const rows = [...muted].map(pid => {
-    const [ini, at] = mutedAs.get(pid) || ['', 0], now = whoFind(pid);
-    return { pid, ini: ini || (now && now.ini) || '', at };
-  }).sort((a, b) => b.at - a.at);
+  const rows = [...muted].map(pid => ({ pid, ini: mutedIni(pid), at: (mutedAs.get(pid) || ['', 0])[1] })).sort((a, b) => b.at - a.at);
   const html = rows.length
     ? `<ul>${rows.map(r => `<li class="muted-row"><b class="muted-ini">${r.ini || 'A surveyor'}</b><span class="muted-when">${when(r.at)}</span><button type="button" class="pill" data-unmute="${r.pid}" aria-label="Unmute ${r.ini || 'this surveyor'}">Unmute</button></li>`).join('')}</ul>`
     : '<p class="muted-none">Nobody’s muted. To mute someone, open ⋯ beside their name on the list, or long-press their caret on the map.</p>';
@@ -4904,11 +4791,10 @@ mutedListEl.addEventListener('click', e => {
   if (!b) return;
   const pid = b.dataset.unmute, row = b.closest('li'), next = row && (row.nextElementSibling || row.previousElementSibling);
   const to = next && next.querySelector('button') ? next.querySelector('button').dataset.unmute : '';
-  const [ini] = mutedAs.get(pid) || [''];
-  setMuted({ pid, ini: ini || (whoFind(pid) || {}).ini || '' }, false);
+  setMuted({ pid, ini: mutedIni(pid) }, false);
   // Focus goes to the next one down (or up), or back to the row once nobody's left.
   const el = (to && mutedListEl.querySelector(`[data-unmute="${to}"]`)) || mutedRow;
-  try { el.focus({ preventScroll: true }); } catch (_) {}
+  focusQuiet(el);
 });
 renderMuted();
 // Sends an emote from the sector under the middle of the view, which knows
@@ -4926,13 +4812,13 @@ function said(pid, text, loud = false) {
   whoSaid.clear();  // only the last one: an older one under another row goes
   whoSaid.set(pid, text);
   for (const p of whoList.querySelectorAll('.who-said')) if (p.id !== `said-${pid}`) p.textContent = '';
-  const el = whoList.querySelector(`#said-${pid}`) || (caretFor === pid && caretMenu.querySelector('.who-said'));
+  const el = whoList.querySelector(`#said-${pid}`) || (caretFor && caretFor.pid === pid && caretMenu.querySelector('.who-said'));
   const shown = el && el.getClientRects().length;  // a row in a closed drawer shows nothing
   if (el) el.textContent = text;
   if (!shown) { say(text); if (loud) toast(`<i></i><b class="wraps">${text}</b>`, null, 4000); }
 }
 // What a sector says about emotes: what became of ours, or one for us.
-function onSocial(l, m) {
+function onSocial(m) {
   if (m.t === 'emoted') {
     if (typeof m.to !== 'string' || !PID_RE.test(m.to)) return;
     const em = EMOTE_BY[m.e], s = whoFind(m.to), gh = ghosts.get(m.to), who = (s && s.ini) || (gh && gh.ini) || 'they';
@@ -4947,13 +4833,13 @@ function onSocial(l, m) {
   }
   const em = EMOTE_BY[m.e];
   if (!em || typeof m.from !== 'string' || !PID_RE.test(m.from) || !emotesOn || muted.has(m.from)) return;
-  const ini = typeof m.ini === 'string' && /^[A-Z]{3}$/.test(m.ini) ? m.ini : '', who = ini || 'A surveyor';
+  const ini = initialsOf(m.ini), who = ini || 'A surveyor';
   const r = Array.isArray(m.r) && m.r.length === 2 && m.r.every(v => Number.isInteger(v) && Math.abs(v) < 1e8) ? m.r : null;
   // In view, it pops from their caret; otherwise a note says who and where, with a way there.
   if (caretOnScreen(m.from)) { pop(m.from, m.e); say(`${who} ${em.did}`); return; }
   const where = r ? `${regionName(r[0], r[1])} · ${away(r[0], r[1])}` : 'Somewhere on the map';
   toast(`<i class="emo" data-e="${em.id}">${emoteSvg(em)}</i><b class="wraps">${who} ${em.did}</b><span>${where}</span>`, r ? THEMES[regionTheme(r[0], r[1])].hue : null, 4000,
-    r ? { label: `Fly to ${who}`, text: 'Fly there', icon: FLY_ICON, share: () => { hideToast(); flyToSurveyor({ pid: m.from, rx: r[0], ry: r[1] }); } } : null);
+    r ? flyThere(who, { pid: m.from, rx: r[0], ry: r[1] }) : null);
 }
 
 // An emote popping from a caret: a bubble that springs up, drifts and fades.
@@ -4963,12 +4849,10 @@ function pop(pid, e) {
   invalidate();
 }
 const popPaths = {};
-let popFill = { of: null, panel: '' };
 const springUp = x => { if (x >= 1) return 1; const c = 1.70158, u = x - 1; return 1 + (c + 1) * u * u * u + c * u * u; };
 function drawPops(now, cs, SX, SY) {
   pops = pops.filter(p => now - p.t0 < POP_MS && !muted.has(p.pid));
   if (!pops.length) return false;
-  if (popFill.of !== C) popFill = { of: C, panel: getComputedStyle(document.documentElement).getPropertyValue('--panel').trim() || C.paper };
   for (const p of pops) {
     const gh = ghosts.get(p.pid), em = EMOTE_BY[p.e];
     if (!gh || !em) continue;
@@ -4982,7 +4866,7 @@ function drawPops(now, cs, SX, SY) {
     ctx.moveTo(-4, -r * .45); ctx.lineTo(0, 0); ctx.lineTo(4, -r * .45);  // a tail down to the caret
     ctx.arc(0, -r - 2, r, Math.PI * .62, Math.PI * .38);
     ctx.closePath();
-    ctx.fillStyle = popFill.panel; ctx.fill();
+    ctx.fillStyle = C.panel || C.paper; ctx.fill();
     ctx.lineWidth = 1.5; ctx.strokeStyle = `hsl(${gh.hue}, ${C.ms}, ${C.ml})`; ctx.stroke();
     const sc = r * 1.25 / 24, [turn, rise, mx, my] = emoteMotion(p.e, now - p.t0 - 150), [ox, oy] = EMOTE_MOVES[p.e].o;
     ctx.translate(-12 * sc, -r - 2 - 12 * sc);
@@ -5000,7 +4884,7 @@ function drawPops(now, cs, SX, SY) {
 // tap elsewhere or an emote sent puts it away. A single open-or-not, so no
 // machine: nothing waits on it.
 const caretMenu = $('#caretMenu');
-let caretFor = '', pressTimer = 0;
+let caretFor = null, pressTimer = 0;  // caretFor: the surveyor whose menu is open
 // The surveyor whose caret is under (px, py) on the map, as the hover card finds them.
 function caretAt(px, py) {
   const w = screenToWorld(px, py), cs = cam.cs;
@@ -5015,27 +4899,26 @@ function caretAt(px, py) {
 }
 function openCaretMenu(s, px, py) {
   hidePeek();
-  caretFor = s.pid;
+  caretFor = s;
   const who = s.ini || 'A surveyor', m = muted.has(s.pid), listed = whoFind(s.pid), quiet = !m && !!(listed && listed.quiet);
   caretMenu.innerHTML = `<p class="caret-who"><b id="caretWho">${s.ini || '···'}</b><span>${regionName(s.rx, s.ry)}</span></p>` +
-    `<div class="emote-row">${EMOTES.map(e => `<button type="button" class="emote" data-e="${e.id}" aria-label="${e.name} to ${who}" title="${e.name}"${m || quiet ? ' disabled' : ''}>${emoteSvg(e)}<span aria-hidden="true">${e.name}</span></button>`).join('')}</div>` +
+    `<div class="emote-row">${EMOTES.map(e => emoteBtn(e, who, m || quiet)).join('')}</div>` +
     `<p class="who-said" aria-live="polite">${quiet ? `${who} isn’t taking emotes.` : ''}</p><button type="button" class="who-mute">${m ? 'Unmute' : 'Mute'} ${who}</button>`;
   caretMenu.hidden = false;
-  caretMenu._s = s;
   const r = caretMenu.getBoundingClientRect(), y = py + mapTop;
   const left = clamp(px - r.width / 2, 16, window.innerWidth - r.width - 16), top = y - r.height - 24 > mapTop + 8 ? y - r.height - 24 : Math.min(y + 24, window.innerHeight - r.height - 16);
   caretMenu.style.transform = `translate(${Math.round(left)}px, ${Math.round(top)}px)`;
   const first = caretMenu.querySelector('.emote:not(:disabled)') || caretMenu.querySelector('.who-mute');
-  try { first.focus({ preventScroll: true }); } catch (_) {}
+  focusQuiet(first);
 }
 function closeCaretMenu(refocus) {
   if (caretMenu.hidden) return;
   caretMenu.hidden = true;
-  caretFor = '';
-  if (refocus) try { canvas.focus({ preventScroll: true }); } catch (_) {}
+  caretFor = null;
+  if (refocus) focusQuiet(canvas);
 }
 caretMenu.addEventListener('click', e => {
-  const b = e.target.closest('button'), s = caretMenu._s;
+  const b = e.target.closest('button'), s = caretFor;
   if (!b || !s) return;
   if (b.classList.contains('emote')) { sendEmote(s, b.dataset.e); closeCaretMenu(true); }
   else if (b.classList.contains('who-mute')) { setMuted(s, !muted.has(s.pid)); closeCaretMenu(true); }
@@ -5054,13 +4937,11 @@ canvas.addEventListener('pointerdown', e => {
   if (!s) return;
   const x0 = e.clientX, y0 = mapY(e);
   pressTimer = setTimeout(() => {
-    if (pointers.size !== 1 || !gest || gest.type !== 'press') return;
+    if (pointers.size !== 1 || !gest || gest.type !== 'press') return;  // let go, moved into a pan, or a second finger came meanwhile
     gest = null;  // so letting go doesn't tap the letter underneath
     openCaretMenu(s, x0, y0);
   }, 520);
 });
-for (const type of ['pointerup', 'pointercancel']) canvas.addEventListener(type, () => clearTimeout(pressTimer));
-canvas.addEventListener('pointermove', e => { if (gest && gest.type !== 'press') clearTimeout(pressTimer); else if (pressTimer && e.pointerType !== 'mouse' && gest && Math.hypot(e.clientX - gest.x0, mapY(e) - gest.y0) > 9) clearTimeout(pressTimer); });
 
 // An idle game says it's still here now and then, so its sector keeps
 // listing it; and the list keeps up with where we are.
@@ -5095,12 +4976,19 @@ const K_GUILD = 'letterfield.guild.v1', GUILD_CODE_RE = /^[A-HJKMNP-Z2-9]{6}$/, 
 const goodName = n => Array.isArray(n) && n.length === 3 && [GUILD_FIRST, GUILD_SECOND, GUILD_THIRD].every((list, i) => Number.isInteger(n[i]) && n[i] >= 0 && n[i] < list.length);
 const guildName = n => `${GUILD_FIRST[n[0]][0]} ${GUILD_SECOND[n[1]]} ${GUILD_THIRD[n[2]]}`;
 const guildHue = n => GUILD_FIRST[n[0]][1];
+// A note about a guild: its dot, a title and a line, and maybe a way there.
+const guildToast = (n, title, line, act) => toast(`<i class="guild-dot" style="--gh:${guildHue(n)}"></i><b class="wraps">${title}</b><span>${line}</span>`, null, 4000, act);
 const randomName = () => [GUILD_FIRST, GUILD_SECOND, GUILD_THIRD].map(list => Math.floor(Math.random() * list.length));
+const goodGuild = d => d && GUILD_CODE_RE.test(d.code) && goodName(d.name) && /^[0-9a-f]{8}$/.test(d.tag);
+const LID_RE = /^[0-9a-f]{10}$/;
+// A guild as we keep it, from the Worker's answer: its log id only if it has one.
+const guildOf = d => ({ code: d.code, name: d.name, tag: d.tag, ...(LID_RE.test(d.lid) ? { lid: d.lid } : {}) });
+const bareGuild = g => ({ code: g.code, name: g.name, tag: g.tag });  // as linked devices share it: no log id
 // The guild we're in, kept on this device: {code, name, tag, lid}. lid, its
 // id in the survey log, comes with the roster, so a guild saved before the
 // log knew guilds has none until the list next opens.
 let myGuild = (() => {
-  try { const g = JSON.parse(LS.get(K_GUILD) || 'null'); return g && GUILD_CODE_RE.test(g.code) && goodName(g.name) && /^[0-9a-f]{8}$/.test(g.tag) ? g : null; } catch (_) { return null; }
+  try { const g = JSON.parse(LS.get(K_GUILD) || 'null'); return goodGuild(g) ? g : null; } catch (_) { return null; }
 })();
 let draftName = randomName(), guildError = '', invite = null, guildHeard = false;
 let mates = new Map();      // id → {pid, ini, rx, ry, idle, quiet, at}: who of our guild is online, as our sectors last said
@@ -5131,29 +5019,14 @@ function guildMoved(to, from) {
 }
 function saveGuild(g, synced = false) {
   myGuild = g;
-  if (g) LS.set(K_GUILD, JSON.stringify(g)); else try { localStorage.removeItem(K_GUILD); } catch (_) {}
+  if (g) LS.set(K_GUILD, JSON.stringify(g)); else LS.remove(K_GUILD);
   if (!synced) settingsChanged();  // one from a linked device isn't sent back (see Syncing linked devices)
 }
-// The Worker's guild paths: JSON sent as text/plain, so no preflight, as the leaderboards do.
-async function guildCall(path, body) {
-  const ctl = new AbortController(), timer = setTimeout(() => ctl.abort(), 8000);
-  try {
-    const res = await fetch(`${surveyHttp}/v1/survey/guilds${path}`, body === undefined ? { signal: ctl.signal } : { method: 'POST', headers: { 'Content-Type': 'text/plain' }, body: JSON.stringify(body), signal: ctl.signal });
-    const data = await res.json().catch(() => ({}));
-    return { status: res.status, data };
-  } catch (_) {
-    return { status: 0, data: {} };
-  } finally {
-    clearTimeout(timer);
-  }
-}
-const goodGuild = d => d && GUILD_CODE_RE.test(d.code) && goodName(d.name) && /^[0-9a-f]{8}$/.test(d.tag);
-const LID_RE = /^[0-9a-f]{10}$/;
-// A guild as we keep it, from the Worker's answer: its log id only if it has one.
-const guildOf = d => ({ code: d.code, name: d.name, tag: d.tag, ...(LID_RE.test(d.lid) ? { lid: d.lid } : {}) });
+// The Worker's guild paths (see workerCall).
+function guildCall(path, body) { return workerCall(`/v1/survey/guilds${path}`, body); }
 function takeRoster(members) {
   roster = (Array.isArray(members) ? members : []).filter(m => Array.isArray(m) && typeof m[0] === 'string' && PID_RE.test(m[0]) && Number.isFinite(m[2]))
-    .map(m => ({ pid: m[0], ini: typeof m[1] === 'string' && /^[A-Z]{3}$/.test(m[1]) ? m[1] : '', seen: m[2] }));
+    .map(m => ({ pid: m[0], ini: initialsOf(m[1]), seen: m[2] }));
 }
 async function startGuild() {
   if (!Membership.is('naming')) return;
@@ -5195,7 +5068,7 @@ async function joinInvite() {
     saveGuild(guildOf(data));
     takeRoster(data.members);
     invite = null;
-    toast(`<i class="guild-dot" style="--gh:${guildHue(data.name)}"></i><b class="wraps">${guildName(data.name)}</b><span>${left && left.code !== data.code ? `You’re in, and out of the ${guildName(left.name)}` : 'You’re in: its members come first under Surveyors'}</span>`, null, 4000);
+    guildToast(data.name, guildName(data.name), left && left.code !== data.code ? `You’re in, and out of the ${guildName(left.name)}` : 'You’re in: its members come first under Surveyors');
     return Membership.go('in');
   }
   invite.error = status === 409 ? 'That guild is full.' : status === 429 ? 'Too many guilds joined from this network: try again later.' : 'Couldn’t join. Try again in a moment.';
@@ -5252,7 +5125,7 @@ async function fetchRoster() {
   else if (status === 404 && Membership.is('in', 'confirming')) {
     // The guild doesn't have us any more (it ended, or we left from another device).
     saveGuild(null); roster = [];
-    toast(`<i class="guild-dot" style="--gh:${guildHue(g.name)}"></i><b class="wraps">${guildName(g.name)}</b><span>You’re not in this guild any more</span>`, null, 4000);
+    guildToast(g.name, guildName(g.name), 'You’re not in this guild any more');
     Membership.go('out');
   }
 }
@@ -5264,18 +5137,14 @@ async function fetchRoster() {
 function onGuild(m) {
   if (!myGuild || m.tag !== myGuild.tag || !Array.isArray(m.on)) return;
   const now = Date.now(), next = new Map();
-  for (const e of m.on) {
-    if (!Array.isArray(e) || typeof e[0] !== 'string' || !PID_RE.test(e[0]) || ![e[2], e[3], e[4]].every(Number.isInteger)) continue;
-    next.set(e[0], { pid: e[0], ini: typeof e[1] === 'string' && /^[A-Z]{3}$/.test(e[1]) ? e[1] : '', rx: e[2], ry: e[3], idle: e[4], quiet: !!(e[5] & 1), at: now });
-  }
+  for (const e of m.on) { const s = surveyorOf(e, now); if (s) next.set(s.pid, s); }
   const arrived = guildHeard ? [...next.values()].filter(s => !mates.has(s.pid) && s.pid !== myPid && !muted.has(s.pid) && now - (noted.get(s.pid) || 0) > NOTE_AGAIN_MS) : [];
   mates = next;
   guildHeard = true;
   if (arrived.length) {
     for (const s of arrived) noted.set(s.pid, now);
     const s = arrived[0], who = s.ini || 'A member', more = arrived.length - 1;
-    toast(`<i class="guild-dot" style="--gh:${guildHue(myGuild.name)}"></i><b class="wraps">${who}${more ? ` and ${more} more` : ''} came online</b><span>${regionName(s.rx, s.ry)} · ${away(s.rx, s.ry)}</span>`, null, 4000,
-      { label: `Fly to ${who}`, text: 'Fly there', icon: FLY_ICON, share: () => { hideToast(); flyToSurveyor(s); } });
+    guildToast(myGuild.name, `${who}${more ? ` and ${more} more` : ''} came online`, `${regionName(s.rx, s.ry)} · ${away(s.rx, s.ry)}`, flyThere(who, s));
   }
   renderGuild(); renderWho(); invalidate();
 }
@@ -5302,7 +5171,7 @@ function whoListHtml() {
   const mark = `<i class="guild-dot" style="--gh:${guildHue(myGuild.name)}" aria-hidden="true"></i>`, name = guildName(myGuild.name);
   const inv = Membership.is('in', 'confirming') ? `<button type="button" class="who-invite" data-g="invite" data-k="guild:invite" aria-label="Invite someone to the ${name}">${Date.now() - invitedAt < INVITED_MS ? 'Link copied' : '+ Invite'}</button>` : '';
   return `<li class="who-head who-guild">${mark}<span class="who-head-name">${name}</span><span class="who-head-n">${online.length} online</span>${inv}</li>` +
-    online.map(s => whoRow({ quiet: false, ...s }, true)).join('') +
+    online.map(s => whoRow(s, true)).join('') +
     offline.map(m => `<li class="who-row away"><div class="who" style="--g:${hueOf(m.pid)}"><span class="who-av" aria-hidden="true"><b class="who-ini">${m.ini || '···'}</b></span><span class="who-where"><span>Offline</span></span><span class="who-meta">last seen ${seenText(m.seen)}</span></div></li>`).join('') +
     (rest.length ? `<li class="who-head"><span>Everyone else</span></li>${rest.map(s => whoRow(s)).join('')}` : '');
 }
@@ -5340,7 +5209,7 @@ function renderGuild() {
     const k = { leave: 'leave-no', 'leave-no': 'leave' }[was] || was;  // asked whether to leave, Stay has the focus, not Leave
     guildCard.dataset.drawn = html;
     guildCard.innerHTML = html;
-    if (k) { const el = guildCard.querySelector(`[data-g="${k}"]`) || guildCard.querySelector('button'); if (el) try { el.focus({ preventScroll: true }); } catch (_) {} }
+    if (k) focusQuiet(guildCard.querySelector(`[data-g="${k}"]`) || guildCard.querySelector('button'));
   }
   // An invite is its own card over the map, once the card asking for initials has gone.
   const asking = Membership.is('invited', 'joining') && invite && Intro.is('exploring');
@@ -5378,14 +5247,9 @@ function onGuildClick(e) {
 guildCard.addEventListener('click', onGuildClick);
 guildInvite.addEventListener('click', onGuildClick);
 guildInvite.addEventListener('keydown', e => { if (e.key === 'Escape') { e.stopPropagation(); dismissInvite(); } });
-// An invite link: read once, then taken off the address, so a reload doesn't ask again and the code doesn't linger.
+// An invite link (?guild=<code>), read once (see takeParam).
 if (surveyApi) {
-  let code = '';
-  try {
-    const u = new URL(location.href);
-    code = (u.searchParams.get('guild') || '').toUpperCase();
-    if (u.searchParams.has('guild')) { u.searchParams.delete('guild'); history.replaceState(history.state, '', u.pathname + u.search + u.hash); }
-  } catch (_) {}
+  const code = takeParam('guild').toUpperCase();
   if (GUILD_CODE_RE.test(code) && !(myGuild && myGuild.code === code)) lookUpInvite(code);
   renderGuild();
 }
@@ -5393,12 +5257,12 @@ if (surveyApi) {
 /* ---------- Syncing linked devices ---------- */
 // Linked devices keep their field notes, supernovas seen and settings in
 // step through the Worker (see "Syncing linked devices" in worker/SURVEY.md).
-// Only linking turns it on, so a device that's never been linked keeps all of
-// it here. Each sync sends what changed here since the last (the keys of
-// finds and supernovas waiting in `f` and `n`, and the settings with when
-// they last changed) and takes in what changed elsewhere since the version
-// it last heard (`at`, in the Worker's `epoch`). Finds merge as they do
-// between tabs: each is kept once, and charted first only ever comes on.
+// Only linking or a recovery code turns it on, so a device that's done neither
+// keeps all of it here. Each sync sends what changed here since the last (the
+// keys of finds and supernovas waiting in `f` and `n`, and the settings with
+// when they last changed) and takes in what changed elsewhere since the
+// version it last heard (`at`, in the Worker's `epoch`). Finds merge as they
+// do between tabs: each is kept once, and charted first only ever comes on.
 // Settings go with whichever device changed them last.
 const K_SYNC = 'letterfield.sync.v1', SYNC_EVERY_MS = 60000, SYNC_SOON_MS = 5000, SYNC_GAP_MS = 2100, SYNC_BATCH = 2000;
 function readSync() {
@@ -5410,19 +5274,20 @@ function readSync() {
 }
 function writeSync(st) {
   if (st) LS.set(K_SYNC, JSON.stringify(st));
-  else try { localStorage.removeItem(K_SYNC); } catch (_) {}
+  else LS.remove(K_SYNC);
 }
+// Starting over: everything here goes at the next sync.
+const syncFromHere = settingsAt => ({ on: true, epoch: '', at: 0, f: [...found.keys()], n: [...novasSeen.keys()], settingsAt });
 let syncTimer = 0, syncDue = 0;
-// Syncing, on <html data-sync>: off (never linked, or stopped), idle between
-// syncs, syncing, or failed (it tries again later). A reply that comes back
-// after it was stopped is dropped.
+// Syncing, on <html data-sync>: off (never linked and no recovery code, or
+// stopped), idle between syncs, syncing, or failed (it tries again later). A
+// reply that comes back after it was stopped is dropped.
 const Sync = machine('sync', {
   off: ['idle'],
   idle: ['syncing', 'off'],
   syncing: ['idle', 'failed', 'off'],
   failed: ['syncing', 'off'],
 }, surveyApi && playerToken && readSync() ? 'idle' : 'off', { onMove: syncMoved });
-function devicesSyncing() { return !Sync.is('off'); }
 function syncMoved(to, from) {
   if (to === 'off') { clearTimeout(syncTimer); syncDue = 0; }
   if (to === 'off' && Pair.is('stop')) Pair.go('idle');  // stopped elsewhere: nothing left to ask
@@ -5437,9 +5302,9 @@ function syncSoon(ms) {
   syncDue = due;
   syncTimer = setTimeout(() => { syncDue = 0; syncNow(); }, ms);
 }
-function startSync(settingsAt) {
+function startSync() {
   if (!surveyApi || !playerToken) return;
-  writeSync({ on: true, epoch: '', at: 0, f: [...found.keys()], n: [...novasSeen.keys()], settingsAt: (readSync() || {}).settingsAt || settingsAt });
+  writeSync(syncFromHere((readSync() || {}).settingsAt || 1));
   if (Sync.is('off')) Sync.go('idle');
   syncSoon(SYNC_GAP_MS);
 }
@@ -5464,7 +5329,7 @@ async function syncNow() {
   const sentF = st.f.slice(0, SYNC_BATCH), sentN = st.n.slice(0, SYNC_BATCH);
   Sync.go('syncing');
   const at = Sync.seq;
-  const { status, data } = await workerPost('/v1/player/sync', {
+  const { status, data } = await workerCall('/v1/player/sync', {
     token: playerToken, epoch: st.epoch, since: st.at,
     finds: sentF.map(k => found.get(k)).filter(Boolean).map(plain),
     novas: sentN.map(k => novasSeen.get(k)).filter(Boolean),
@@ -5473,7 +5338,7 @@ async function syncNow() {
   if (Sync.seq !== at) return;
   if (status === 200 && data.off) {
     writeSync(null);
-    try { localStorage.removeItem(K_RECOVERY); } catch (_) {}  // stopped on every device: the recovery code went with it
+    LS.remove(K_RECOVERY);  // stopped on every device: the recovery code went with it
     toast('<i></i><b>Syncing has stopped</b><span>Your field notes stay in this browser. Link a device again to sync.</span>', null, 5000);
     return Sync.go('off');
   }
@@ -5496,17 +5361,7 @@ async function syncNow() {
 }
 // What came from linked devices, taken in as a save from another tab is.
 function takeSynced(data, st) {
-  let added = false;
-  for (const o of Array.isArray(data.finds) ? data.finds : []) {
-    const have = o && typeof o.w === 'string' ? found.get(keyOf(o.w, o.x, o.y, o.d)) : null;
-    if (have) {
-      if (mergeFind(have, o)) added = true;
-      continue;
-    }
-    const e = sanitize(o);
-    if (e) { found.set(e.key, e); added = true; }
-  }
-  if (added) { saveLocal(); renderNotes(); scheduleHud(); invalidate(); }
+  if (takeIn(Array.isArray(data.finds) ? data.finds : []).added) { saveLocal(); renderNotes(); scheduleHud(); invalidate(); }
   for (const o of Array.isArray(data.novas) ? data.novas : []) { const n = cleanNova(o); if (n) sawNova(n, true); }
   if (data.settings && Number.isFinite(data.settingsAt) && data.settingsAt > st.settingsAt) {
     applySettings(data.settings);
@@ -5514,24 +5369,18 @@ function takeSynced(data, st) {
   }
 }
 function applySettings(c) {
-  if (typeof c.initials === 'string' && /^[A-Z]{3}$/.test(c.initials) && c.initials !== myInitials()) {
-    LS.set(K_INITIALS, JSON.stringify(c.initials));
-    surveyInput.value = signupInput.value = c.initials;
-    showSigning(false);
-    if (Intro.is('sign')) Intro.go('exploring');
-  }
+  if (initialsOf(c.initials) && c.initials !== myInitials()) takeInitials(c.initials);
   if (Array.isArray(c.muted)) {
     muted.clear();
     for (const p of c.muted.slice(-MUTED_MAX)) if (typeof p === 'string' && PID_RE.test(p)) muted.add(p);
     for (const [p, v] of mutedAsOf(c.mutedAs)) if (muted.has(p)) mutedAs.set(p, v);  // what we knew stays for any it doesn't name
     saveMuted();
-    pops = pops.filter(p => !muted.has(p.pid));
     renderMuted();
   }
   if (typeof c.emotes === 'boolean') { emotesOn = emotesEl.checked = c.emotes; LS.set(K_EMOTES, emotesOn ? '1' : '0'); if (!emotesOn) pops = []; }
   tellMe(); renderWho(); invalidate();
   // The guild, if this device isn't in the middle of changing it itself.
-  const g = goodGuild(c.guild) ? { code: c.guild.code, name: c.guild.name, tag: c.guild.tag } : null;
+  const g = goodGuild(c.guild) ? bareGuild(c.guild) : null;
   if ((g && g.code) === (myGuild && myGuild.code) || !Membership.is('in', 'confirming', 'out')) return;
   saveGuild(g, true);
   roster = []; rosterAt = 0;
@@ -5547,12 +5396,12 @@ function applySettings(c) {
 // into whatever card is open by then.
 async function stopSync(everywhere) {
   if (!Pair.is('stop')) return;
-  if (everywhere) { Pair.go('stopping'); try { $('#pairStopping').focus({ preventScroll: true }); } catch (_) {} }
+  if (everywhere) { Pair.go('stopping'); focusQuiet($('#pairStopping')); }
   const at = Pair.seq;
   writeSync(null);
   if (!Sync.is('off')) Sync.go('off');
-  const { status } = everywhere ? await workerPost('/v1/player/forget', { token: playerToken }) : { status: 200 };
-  if (everywhere && status === 200) try { localStorage.removeItem(K_RECOVERY); } catch (_) {}  // the Worker took the code too
+  const { status } = everywhere ? await workerCall('/v1/player/forget', { token: playerToken }) : { status: 200 };
+  if (everywhere && status === 200) LS.remove(K_RECOVERY);  // the Worker took the code too
   const said = status !== 200 ? 'Couldn’t reach the survey, so your other devices still sync. Try again in a moment.' : everywhere ? 'Syncing stopped on every device, and the copy kept for it is deleted, with any recovery code.' : 'Syncing stopped on this device.';
   say(said);
   if (everywhere && (Pair.seq !== at || !Pair.is('stopping'))) return;
@@ -5560,7 +5409,7 @@ async function stopSync(everywhere) {
   const had = pairCard.contains(document.activeElement) || document.activeElement === document.body;
   if (Pair.is('stopping', 'stop')) Pair.go('idle'); else renderPair();
   // The answer has the focus, unless the player has moved on to something else.
-  if (had) try { pairCard.querySelector('.pair-note').focus({ preventScroll: true }); } catch (_) {}
+  if (had) focusQuiet(pairCard.querySelector('.pair-note'));
 }
 document.addEventListener('visibilitychange', () => { if (!document.hidden) syncSoon(500); });
 // Another tab turned it on or off.
@@ -5579,10 +5428,10 @@ if (Sync.is('idle')) syncSoon(1000);
 // eight characters. The other device redeems it, from the link (?link=<code>,
 // offered as the visit starts; see Intro) or by typing it in, for this
 // device's token and a few settings, and reloads as the same surveyor: the
-// same initials and guild, with mutes from both. Finds stay on the device
-// that found them. Whoever has the code becomes you, so it's only ever shown
-// here, never sent anywhere but the Worker.
-const LINK_CODE_RE = /^[A-HJKMNP-Z2-9]{8}$/, TOKEN_RE = /^[0-9a-f]{32}$/, LINK_MS = 10 * 60000, LINK_POLL_MS = 5000, K_LINKED = 'letterfield.linked', K_LINK_CODE = 'letterfield.linkCode.v1';
+// same initials and guild, with mutes from both. From then on their field notes
+// keep in step (see Syncing linked devices). Whoever has the code becomes you,
+// so it's only ever shown here, never sent anywhere but the Worker.
+const LINK_MS = 10 * 60000, LINK_POLL_MS = 5000, K_LINKED = 'letterfield.linked', K_LINK_CODE = 'letterfield.linkCode.v1';
 // A recovery code: twenty characters, kept by the player, that bring this
 // surveyor back on any device with no other to hand ("A recovery code" in
 // worker/SURVEY.md). Saving one keeps a backup of the notes, as linking does.
@@ -5647,27 +5496,25 @@ const PairCode = machine('pairCode', {
 function pairCodeMoved(to) {
   clearTimeout(codeTimer);
   if (to === 'waiting') LS.set(K_LINK_CODE, JSON.stringify(linkCode));
-  else try { localStorage.removeItem(K_LINK_CODE); } catch (_) {}
+  else LS.remove(K_LINK_CODE);
   if (to === 'making') linkCode = null;
   if (to === 'waiting') pollCode();
   if (to === 'used') {
-    startSync(1);
+    startSync();
     // Its card says so if it's open; otherwise a note does, however long ago it was put away.
     if (Pair.is('showing')) Pair.go('used');
     else toast(`<i></i><b>Linked</b><span>Your other device plays as ${myInitials() || 'you'} now</span>`, null, 5000);
   }
   renderPair();
 }
-if (!linkCode) try { localStorage.removeItem(K_LINK_CODE); } catch (_) {}
+if (!linkCode) LS.remove(K_LINK_CODE);
 if (PairCode.is('waiting')) pollCode();  // a code made before a reload, still to be used
-// ?link=<code>: read once, then taken off the address, like a guild's invite.
+// ?link=<code>, read once like a guild's invite (see takeParam); a code that
+// couldn't be taken off the address is still offered.
 function readLinkAsked() {
   if (!surveyApi) return '';
-  try {
-    const u = new URL(location.href), code = (u.searchParams.get('link') || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
-    if (u.searchParams.has('link')) { u.searchParams.delete('link'); history.replaceState(history.state, '', u.pathname + u.search + u.hash); }
-    return /^[A-HJKMNP-Z2-9]{8}$/.test(code) ? code : '';
-  } catch (_) { return ''; }
+  const code = cleanCode(takeParam('link'));
+  return LINK_CODE_RE.test(code) ? code : '';
 }
 // The address a code opens on the other device; a test's or preview's ?survey= goes along.
 function pairUrl(code) {
@@ -5676,17 +5523,16 @@ function pairUrl(code) {
   u.searchParams.set('link', code);
   return u.href;
 }
-const showCode = code => `${code.slice(0, 4)}-${code.slice(4)}`;
-const cleanCode = v => v.toUpperCase().replace(/[^A-Z0-9]/g, '');
 const inFours = v => (v.match(/.{1,4}/g) || []).join('-');
-const linkCall = (path, body) => workerPost(`/v1/link${path}`, body);
+const linkCall = (path, body) => workerCall(`/v1/link${path}`, body);
 // The settings a link carries and syncing keeps in step.
-const mySettings = () => ({ initials: myInitials(), guild: myGuild && { code: myGuild.code, name: myGuild.name, tag: myGuild.tag }, muted: [...muted].slice(-MUTED_MAX), mutedAs: mutedAsSaved(), emotes: emotesOn });
-// The Worker's link and sync paths: JSON sent as text/plain, so no preflight.
-async function workerPost(path, body) {
+const mySettings = () => ({ initials: myInitials(), guild: myGuild && bareGuild(myGuild), muted: [...muted].slice(-MUTED_MAX), mutedAs: Object.fromEntries(mutedAs), emotes: emotesOn });
+// The Worker's guild, link, recovery and player paths: JSON sent as
+// text/plain, so no preflight, as the leaderboards do; with no body, a GET.
+async function workerCall(path, body) {
   const ctl = new AbortController(), timer = setTimeout(() => ctl.abort(), 8000);
   try {
-    const res = await fetch(`${surveyHttp}${path}`, { method: 'POST', headers: { 'Content-Type': 'text/plain' }, body: JSON.stringify(body), signal: ctl.signal });
+    const res = await fetch(`${surveyHttp}${path}`, body === undefined ? { signal: ctl.signal } : { method: 'POST', headers: { 'Content-Type': 'text/plain' }, body: JSON.stringify(body), signal: ctl.signal });
     return { status: res.status, data: await res.json().catch(() => ({})) };
   } catch (_) {
     return { status: 0, data: {} };
@@ -5735,9 +5581,10 @@ async function redeemCode(code) {
   if (!(recovering || LINK_CODE_RE.test(code)) || !Pair.is('idle', 'entering', 'failed')) return;
   Pair.go('redeeming');
   const at = Pair.seq;
-  const { status, data } = recovering ? await workerPost('/v1/recovery/use', { code }) : await linkCall(`/${code}`, {});
+  const { status, data } = recovering ? await workerCall('/v1/recovery/use', { code }) : await linkCall(`/${code}`, {});
   if (Pair.seq !== at) return;
   if (status === 200 && TOKEN_RE.test(data.token)) {
+    LS.remove(K_LINK_CODE);  // a code made here was for the self it leaves
     if (recovering) await takeRecovered(data.token, data.made); else await takeLink(data.token, data.carry || {});
     Pair.go('done');
     try { sessionStorage.setItem(K_LINKED, recovering ? 'recovered' : 'linked'); } catch (_) {}
@@ -5750,15 +5597,15 @@ async function redeemCode(code) {
     : status === 429 ? 'Too many tries from this network: wait a while, then try again.' : 'Couldn’t reach the survey. Try again in a moment.';
   if (Intro.is('link')) return Pair.go('failed');
   Pair.go('entering');
-  try { $('#pairInput').focus({ preventScroll: true }); } catch (_) {}
+  focusQuiet($('#pairInput'));
 }
 // Become the surveyor the code came from. Their guild wins; if they're in
 // none, this device's comes along. Either way this device's old self leaves
 // its guild, since it won't be back.
 async function takeLink(token, c) {
   const old = playerToken, mine = myGuild;
-  const initials = typeof c.initials === 'string' && /^[A-Z]{3}$/.test(c.initials) ? c.initials : myInitials();
-  let guild = goodGuild(c.guild) ? { code: c.guild.code, name: c.guild.name, tag: c.guild.tag } : null;
+  const initials = initialsOf(c.initials) || myInitials();
+  let guild = goodGuild(c.guild) ? bareGuild(c.guild) : null;
   if (mine && token !== old) {
     if (!guild && initials) {
       const { status, data } = await guildCall(`/${mine.code}/join`, { token, initials });
@@ -5767,7 +5614,6 @@ async function takeLink(token, c) {
     await guildCall(`/${mine.code}/leave`, { token: old });
   }
   LS.set(K_PLAYER, token);
-  try { localStorage.removeItem(K_LINK_CODE); } catch (_) {}  // a code made here was for the self it leaves
   if (initials) LS.set(K_INITIALS, JSON.stringify(initials));
   saveGuild(guild, true);
   const theirs = Array.isArray(c.muted) ? c.muted.filter(p => typeof p === 'string' && PID_RE.test(p)) : [];
@@ -5777,7 +5623,7 @@ async function takeLink(token, c) {
   if (typeof c.emotes === 'boolean') LS.set(K_EMOTES, c.emotes ? '1' : '0');
   // From now on the two keep in step, starting with everything here; these
   // settings, mutes from both, are the newest.
-  writeSync({ on: true, epoch: '', at: 0, f: [...found.keys()], n: [...novasSeen.keys()], settingsAt: Date.now() });
+  writeSync(syncFromHere(Date.now()));
 }
 // Be the surveyor a recovery code names again. What they had (initials,
 // guild, mutes, notes) comes back with the first sync, so this device's own
@@ -5785,25 +5631,24 @@ async function takeLink(token, c) {
 // self leaves its guild, since it won't be back.
 async function takeRecovered(token, made) {
   const old = playerToken;
-  try { localStorage.removeItem(K_LINK_CODE); } catch (_) {}  // a code made here was for the self it leaves
   if (token !== old) {
     if (myGuild) await guildCall(`/${myGuild.code}/leave`, { token: old });
     LS.set(K_PLAYER, token);
     saveGuild(null, true);
   }
   if (Number.isFinite(made)) LS.set(K_RECOVERY, String(made));
-  writeSync({ on: true, epoch: '', at: 0, f: [...found.keys()], n: [...novasSeen.keys()], settingsAt: 0 });
+  writeSync(syncFromHere(0));
 }
 async function makeRecovery() {
   if (!playerToken || !Pair.is('recovery')) return;
   Pair.go('keeping');
   const at = Pair.seq;
-  const { status, data } = await workerPost('/v1/recovery', { token: playerToken });
+  const { status, data } = await workerCall('/v1/recovery', { token: playerToken });
   if (Pair.seq !== at) return;
   if (status === 201 && RECOVERY_RE.test(data.code)) {
     recoveryCode = data.code;
     LS.set(K_RECOVERY, String(data.made));
-    startSync(1);  // the code brings back a backup: keep one, from now on
+    startSync();  // the code brings back a backup: keep one, from now on
     Pair.go('kept');
     return focusPair('copy-recovery');
   }
@@ -5812,24 +5657,23 @@ async function makeRecovery() {
   focusPair('keep');
 }
 // Focus one of the card's buttons: the one pressed was disabled while it waited, so focus left the card.
-function focusPair(p) {
-  const el = pairCard.querySelector(`[data-p="${p}"]`) || pairCard.querySelector('button');
-  if (el) try { el.focus({ preventScroll: true }); } catch (_) {}
-}
+function focusPair(p) { focusQuiet(pairCard.querySelector(`[data-p="${p}"]`) || pairCard.querySelector('button')); }
+// A word under the code's card (Copy, Save as a file, Copy link), said aloud too.
+function pairSaid(text) { const el = $('#pairSaid'); if (el) el.textContent = text; say(text); }
 async function removeRecovery() {
   if (!playerToken || !Pair.is('recovery')) return;
   Pair.go('removing');
   const at = Pair.seq;
-  const { status } = await workerPost('/v1/recovery/remove', { token: playerToken });
+  const { status } = await workerCall('/v1/recovery/remove', { token: playerToken });
   if (Pair.seq !== at) return;
-  if (status === 200) { try { localStorage.removeItem(K_RECOVERY); } catch (_) {} recoveryNote = 'Removed: that code works no more.'; }
+  if (status === 200) { LS.remove(K_RECOVERY); recoveryNote = 'Removed: that code works no more.'; }
   else pairError = 'Couldn’t reach the survey. Try again in a moment.';
   Pair.go('recovery');
   focusPair('keep');
 }
 function keepRecovery(how) {
   if (!recoveryCode) return;
-  const code = inFours(recoveryCode), done = text => { const el = $('#pairSaid'); if (el) el.textContent = text; say(text); };
+  const code = inFours(recoveryCode);
   if (how === 'file') {
     const text = `Letterfield recovery code\n\n${code}\n\nTo be this surveyor again on any device, open Letterfield there and enter it under I have a code: in Surveyors, tap yourself at the top.\nWhoever has it can play as you, so keep it safe. Made ${new Date().toDateString()}.\n`;
     const a = document.createElement('a');
@@ -5837,19 +5681,18 @@ function keepRecovery(how) {
     a.download = 'letterfield-recovery-code.txt';
     a.click();
     setTimeout(() => URL.revokeObjectURL(a.href), 1000);
-    return done('Saved as a file.');
+    return pairSaid('Saved as a file.');
   }
-  navigator.clipboard.writeText(code).then(() => done('Copied.'), () => done(code));
+  navigator.clipboard.writeText(code).then(() => pairSaid('Copied.'), () => pairSaid(code));
 }
 async function sharePairLink() {
   if (!linkCode) return;
   const url = pairUrl(linkCode.code);
-  const done = text => { const el = $('#pairSaid'); if (el) el.textContent = text; say(text); };
   try {
     if (navigator.share && matchMedia('(pointer: coarse)').matches) { await navigator.share({ title: 'Letterfield', text: 'Link a device to my surveyor', url }); return; }
   } catch (e) { if (e && e.name === 'AbortError') return; }
-  try { await navigator.clipboard.writeText(url); done('Link copied. Open it on your other device in the next ten minutes.'); }
-  catch (_) { done(url); }
+  try { await navigator.clipboard.writeText(url); pairSaid('Link copied. Open it on your other device in the next ten minutes.'); }
+  catch (_) { pairSaid(url); }
 }
 
 // The code as a QR code, with War's library, loaded the first time one's
@@ -5893,6 +5736,7 @@ const pairHead = $('#pairHead');
 function renderPair() {
   if (!surveyApi || !playerToken) return;
   const st = Pair.state, offering = Intro.is('link');
+  const made = Number(LS.get(K_RECOVERY)) || 0, madeOn = made ? new Date(made).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' }) : '';
   const err = pairError ? `<p class="pair-err" role="alert">${pairError}</p>` : '';
   const busy = st === 'redeeming';
   let html = '';  // while a link's offer is over the map, it's the one card about linking
@@ -5910,23 +5754,23 @@ function renderPair() {
     // Each thing to do, named for what it does. Whether this surveyor's notes are
     // backed up shows once, on the row that stops it (or, while it's off, by the
     // recovery code's "Not saved").
-    const on = devicesSyncing(), made = Number(LS.get(K_RECOVERY)) || 0;
+    const on = !Sync.is('off');
     html = `<div class="group"><button type="button" class="you-item" data-p="make"><span>Link another device<small>Play as the same surveyor on each</small></span>${CHEV}</button>` +
       `<button type="button" class="you-item" data-p="enter"><span>I have a code<small>From another device, or one you saved</small></span>${CHEV}</button>` +
-      `<button type="button" class="you-item" data-p="recovery"><span>Recovery code<small>${made ? `Saved ${new Date(made).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' })}` : 'Not saved: one brings you back if this device is lost'}</small></span>${CHEV}</button>` +
+      `<button type="button" class="you-item" data-p="recovery"><span>Recovery code<small>${made ? `Saved ${madeOn}` : 'Not saved: one brings you back if this device is lost'}</small></span>${CHEV}</button>` +
       `${on ? '<button type="button" class="you-item danger" data-p="stop"><span>Stop syncing<small>Your notes and settings are backed up</small></span></button>' : ''}</div><p class="pair-note" aria-live="polite" tabindex="-1">${pairNote}</p>`;
   }
   else if (st === 'recovery' || st === 'keeping' || st === 'removing') {
-    const made = Number(LS.get(K_RECOVERY)) || 0, busy = st !== 'recovery';
+    const busy = st !== 'recovery';
     html = `<div class="pair-box"><p class="eyebrow">Recovery code</p>${made
-      ? `<p>You saved one on ${new Date(made).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' })}. A new one replaces it, and the old one stops working.</p>`
+      ? `<p>You saved one on ${madeOn}. A new one replaces it, and the old one stops working.</p>`
       : '<p>A recovery code brings this surveyor back on any device, even if this one is lost or its storage cleared: your initials, guild and field notes. Saving one keeps a backup of your notes for it.</p>'}${recoveryNote ? `<p>${recoveryNote}</p>` : ''}${err}<div class="pair-acts"><button type="button" class="btn" data-p="keep"${busy ? ' disabled' : ''}>${st === 'keeping' ? 'Making…' : made ? 'Make a new one' : 'Make one'}</button>${made ? `<button type="button" class="btn danger" data-p="unkeep"${busy ? ' disabled' : ''}>${st === 'removing' ? 'Removing…' : 'Remove it'}</button>` : ''}<button type="button" class="btn ghost" data-p="close"${busy ? ' disabled' : ''}>Close</button></div></div>`;
   } else if (st === 'kept') html = `<div class="pair-box"><p class="eyebrow">Your recovery code</p><b class="pair-code pair-recovery" id="recoveryCode">${inFours(recoveryCode)}</b><p>Keep it somewhere safe, like a password manager: it won’t be shown again. To be this surveyor on any device, enter it there under <b>I have a code</b>.</p><p>Whoever has it can play as you. If it gets out, make a new one here, and this one stops working.</p><div class="pair-acts"><button type="button" class="btn ghost" data-p="copy-recovery">Copy</button><button type="button" class="btn ghost" data-p="file-recovery">Save as a file</button><button type="button" class="btn" data-p="close">Done</button></div><p class="pair-small" id="pairSaid" aria-live="polite"></p></div>`;
   else if (st === 'making') html = `<div class="pair-box"><p class="eyebrow">Link another device</p><p>Making a code…</p></div>`;
   else if (st === 'showing' && PairCode.is('gone')) html = `<div class="pair-box"><p class="eyebrow">Link another device</p><p>${linkCode && Date.now() < linkCode.until - 5000 ? 'A newer code replaced it.' : 'That code has run out.'}</p><div class="pair-acts"><button type="button" class="btn" data-p="make">New code</button><button type="button" class="btn ghost" data-p="close">Close</button></div></div>`;
   else if (st === 'showing' && linkCode) {
     const share = navigator.share && matchMedia('(pointer: coarse)').matches ? 'Share link' : 'Copy link';
-    html = `<div class="pair-box"><p class="eyebrow">Link another device</p><div class="pair-qr" id="pairQr"></div><p>Scan this with the other device’s camera, or open Letterfield there and choose <b>I have a code</b>:</p><b class="pair-code" id="pairCode">${showCode(linkCode.code)}</b><p class="pair-left" id="pairLeft"></p><p>Whoever uses it plays as you, so keep it to your own devices. It brings your initials, guild and mutes, and from then on your field notes keep in step on both.</p><div class="pair-acts"><button type="button" class="btn ghost" data-p="share">${share}</button><button type="button" class="btn" data-p="close">Done</button></div><p class="pair-small" id="pairSaid" aria-live="polite"></p><p class="pair-small">On an iPhone, a Home Screen app keeps its own storage: type the code in there.</p></div>`;
+    html = `<div class="pair-box"><p class="eyebrow">Link another device</p><div class="pair-qr" id="pairQr"></div><p>Scan this with the other device’s camera, or open Letterfield there and choose <b>I have a code</b>:</p><b class="pair-code" id="pairCode">${inFours(linkCode.code)}</b><p class="pair-left" id="pairLeft"></p><p>Whoever uses it plays as you, so keep it to your own devices. It brings your initials, guild and mutes, and from then on your field notes keep in step on both.</p><div class="pair-acts"><button type="button" class="btn ghost" data-p="share">${share}</button><button type="button" class="btn" data-p="close">Done</button></div><p class="pair-small" id="pairSaid" aria-live="polite"></p><p class="pair-small">On an iPhone, a Home Screen app keeps its own storage: type the code in there.</p></div>`;
   } else if (st === 'used') html = `<div class="pair-box"><p><b>Linked.</b> Your other device plays as ${myInitials() || 'you'} now.</p><div class="pair-acts"><button type="button" class="btn" data-p="close">Done</button></div></div>`;
   else if (st === 'entering' || st === 'redeeming') html = `<form class="pair-box pair-enter" id="pairEnter"><label for="pairInput">The code from your other device, under <b>Link another device</b> there, or your recovery code</label><input id="pairInput" maxlength="24" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="ABCD-EFGH"${busy ? ' disabled' : ''}><button type="submit" class="btn"${busy ? ' disabled' : ''}>${busy ? 'Linking…' : 'Link'}</button><button type="button" class="btn ghost" data-p="close"${busy ? ' disabled' : ''}>Cancel</button>${err}<p class="pair-small">This device then plays as that surveyor, with their initials and guild, and field notes from both, kept in step.</p></form>`;
   else if (st === 'failed') html = `<div class="pair-box">${err}<div class="pair-acts"><button type="button" class="btn" data-p="make">Try again</button><button type="button" class="btn ghost" data-p="close">Close</button></div></div>`;
@@ -5942,7 +5786,7 @@ function renderPair() {
     pairCard.dataset.drawn = html;
     pairCard.innerHTML = html;
     if ($('#pairInput')) $('#pairInput').value = typed;
-    if (k) { const el = pairCard.querySelector(`[data-p="${k}"]`) || (k === 'pairInput' && $('#pairInput')) || pairCard.querySelector('button, input'); if (el && !el.disabled) try { el.focus({ preventScroll: true }); } catch (_) {} }
+    if (k) { const el = pairCard.querySelector(`[data-p="${k}"]`) || (k === 'pairInput' && $('#pairInput')) || pairCard.querySelector('button, input'); if (el && !el.disabled) focusQuiet(el); }
   }
   if (st === 'showing' && PairCode.is('waiting') && linkCode) {
     drawQr($('#pairQr'), pairUrl(linkCode.code));
@@ -5969,7 +5813,7 @@ function onPairClick(e) {
   const p = b.dataset.p;
   if (p === 'make' && Pair.is('idle') && PairCode.is('waiting')) Pair.go('showing');  // the code still waiting, again
   else if (p === 'make') makeCode();
-  else if (p === 'enter' && Pair.is('idle')) { Pair.go('entering'); try { $('#pairInput').focus({ preventScroll: true }); } catch (_) {} }
+  else if (p === 'enter' && Pair.is('idle')) { Pair.go('entering'); focusQuiet($('#pairInput')); }
   else if (p === 'share') sharePairLink();
   else if (p === 'close' && Pair.is('showing', 'used', 'entering', 'failed', 'recovery', 'kept')) Pair.go('idle');
   else if (p === 'recovery' && Pair.is('idle')) Pair.go('recovery');
@@ -5978,8 +5822,8 @@ function onPairClick(e) {
   else if (p === 'copy-recovery' || p === 'file-recovery') keepRecovery(p === 'file-recovery' ? 'file' : 'copy');
   else if (p === 'link' && Intro.is('link')) redeemCode(linkAsked);
   else if (p === 'not-now') leaveOffer();
-  else if (p === 'stop' && Pair.is('idle') && devicesSyncing()) { Pair.go('stop'); try { pairCard.querySelector('button').focus({ preventScroll: true }); } catch (_) {} }
-  else if (p === 'stop-no' && Pair.is('stop')) { Pair.go('idle'); try { pairCard.querySelector('[data-p="stop"]').focus({ preventScroll: true }); } catch (_) {} }
+  else if (p === 'stop' && Pair.is('idle') && !Sync.is('off')) { Pair.go('stop'); focusQuiet(pairCard.querySelector('button')); }
+  else if (p === 'stop-no' && Pair.is('stop')) { Pair.go('idle'); focusQuiet(pairCard.querySelector('[data-p="stop"]')); }
   else if (p === 'stop-here' || p === 'stop-all') stopSync(p === 'stop-all');
 }
 pairCard.addEventListener('click', onPairClick);
@@ -5995,7 +5839,7 @@ pairCard.addEventListener('submit', e => {
   if (!LINK_CODE_RE.test(code) && !RECOVERY_RE.test(code)) {
     pairError = 'A code is eight letters and digits, like ABCD-EFGH, or twenty for a recovery code.';
     renderPair();
-    try { $('#pairInput').focus({ preventScroll: true }); } catch (_) {}
+    focusQuiet($('#pairInput'));
     return;
   }
   redeemCode(code);
@@ -6005,7 +5849,7 @@ pairCard.addEventListener('keydown', e => {
   if (e.key !== 'Escape' || !Pair.is('showing', 'used', 'entering', 'failed', 'recovery', 'kept', 'stop')) return;
   e.stopPropagation();
   Pair.go('idle');
-  try { pairCard.querySelector('button').focus({ preventScroll: true }); } catch (_) {}
+  focusQuiet(pairCard.querySelector('button'));
 });
 pairOffer.addEventListener('keydown', e => { if (e.key === 'Escape') { e.stopPropagation(); leaveOffer(); } });
 // Just linked: say so once, after the reload.
@@ -6040,7 +5884,7 @@ if (window.ResizeObserver) {
 }
 matchMedia('(prefers-color-scheme: dark)').addEventListener('change', readColors);
 new MutationObserver(readColors).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme', 'class'] });
-function bumpFonts() { fontEpoch++; atlas.key = ''; invalidate(); }
+function bumpFonts() { fontEpoch++; invalidate(); }
 if (document.fonts) {
   document.fonts.addEventListener && document.fonts.addEventListener('loadingdone', bumpFonts);
   const loadFaces = () => Promise.all([document.fonts.load(`500 20px ${GRID_FONT}`), document.fonts.load(`800 20px ${DISPLAY_FONT}`)]).then(bumpFonts, () => {});
@@ -6069,10 +5913,7 @@ renderNotes();
 // it's been seen (see markSeen).
 const startHash = history.state?.lfSeen ? null : parseHash(location.hash);
 markSeen();
-if (startHash) {
-  const [ex, ey] = wordEnd(startHash);
-  flyTo((startHash.x + ex) / 2 + .5, (startHash.y + ey) / 2 + .5, 40, { instant: true, then: now => { pulse = { ...startHash, t0: now }; } });
-}
+if (startHash) goToEntry(startHash, { cs: 40, instant: true });
 showIntro(Intro.state);
 if (surveyApi) {
   surveyEl.hidden = false;
@@ -6086,7 +5927,7 @@ updateHud();
 invalidate();
 if (redrawn) setTimeout(() => toast(`<i></i><b>The map has been redrawn</b><span>${NT} themes of about ${Math.round(THEMES.reduce((a, t) => a + t.words.length, 0) / NT / 10) * 10} words now, so a territory never repeats one · ${redrawn.kept ? `${redrawn.kept} of your ${redrawn.had} finds are still on it` : 'your old finds are not on it'}</span>`, null, 8000), 900);
 if (location.hash === '#debug') window.__lf = { cam, found, claims, links, chunk, wordEnd, collect, territoryProgress, remnants: () => [...remnants().set], novas: () => [...novasSeen.values()], territoryName: regionName, world: () => world, supernova, novaSound, audioOut, musicTracks: MUSIC_TRACKS, audio: () => ac, music: () => musicNow && { state: ac.state, track: musicNow.track().name, nodes: musicNow.track().nodes.size, level: musicNow.master.gain.value, master: musicNow.master, volume: musicVol, target: musicLevel(), swap: musicNow.swap }, nova: () => nova, novaWave: () => nova && novaLast && { cx: novaLast.cx, cy: novaLast.cy, R: novaLast.R || 0, amp: novaLast.amp, virtual: novaLast.virtual }, distantAt: v => { distantAt = v; },
-  who: () => Who.state, surveyors: () => whoData, people: () => peopleOpen, peoplePage: () => PeoplePage.state, emoteMotion, guild: () => Membership.state, myGuild: () => myGuild, mates: () => [...mates.keys()], roster: () => roster,
+  who: () => Who.state, surveyors: () => whoData, panel: () => Panel.state, peoplePage: () => PeoplePage.state, emoteMotion, guild: () => Membership.state, myGuild: () => myGuild, mates: () => [...mates.keys()], roster: () => roster,
   pair: () => Pair.state, pairCode: () => linkCode && linkCode.code, linkCodeState: () => PairCode.state, recoveryCode: () => recoveryCode, sync: () => Sync.state, syncNow: () => { syncDue = 0; clearTimeout(syncTimer); return syncNow(); },
   guildWords: () => [GUILD_FIRST.length, GUILD_SECOND.length, GUILD_THIRD.length], pops: () => pops.map(p => [p.pid, p.e]), pid: () => myPid, muted: () => [...muted], carets: () => [...ghosts.keys()],
   caretXY: id => { const gh = ghosts.get(id); return gh && { x: (Math.round(gh.x) - cam.x) * cam.cs + (W - dock) / 2, y: (Math.floor(gh.y) + .5 - cam.y) * cam.cs + H / 2 + mapTop }; },
