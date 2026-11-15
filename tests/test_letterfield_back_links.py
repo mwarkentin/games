@@ -48,17 +48,25 @@ def test_the_log_steps_back_to_the_map_it_came_from(page: Page, site_url, errors
     assert errors == []
 
 
-# The map has stopped away from `at`, and saved where it is: its title's coordinate is the saved place's.
-SAVED_AWAY = """at => {
-  const shown = document.getElementById('tCoord').textContent, c = JSON.parse(localStorage.getItem('letterfield.cam.v1') || 'null');
-  if (!c || shown === at) return false;
-  const x = Math.floor(c.x), y = Math.floor(c.y);
-  return shown === `${Math.abs(x)}${x < 0 ? 'W' : 'E'} · ${Math.abs(y)}${y < 0 ? 'N' : 'S'}`;
+# The map has stopped away from `at` and saved where it is anew (not the save `before`): its title's
+# coordinate is the saved place's, to the cell, give or take the saved place's rounding. Answers that
+# place as the title shows it, and the save itself.
+SETTLED = """([at, before]) => {
+  const raw = localStorage.getItem('letterfield.cam.v1'), shown = document.getElementById('tCoord').textContent;
+  const m = /^(\\d+)([EW]) · (\\d+)([NS])$/.exec(shown);
+  if (!raw || raw === before || !m || shown === at) return false;
+  const c = JSON.parse(raw), x = Math.floor(c.x), y = Math.floor(c.y);
+  const sx = (m[2] === 'W' ? -1 : 1) * m[1], sy = (m[4] === 'N' ? -1 : 1) * m[3];
+  if (Math.abs(x - sx) > 1 || Math.abs(y - sy) > 1) return false;
+  return [`${Math.abs(x)}${x < 0 ? 'W' : 'E'} · ${Math.abs(y)}${y < 0 ? 'N' : 'S'}`, raw];
 }"""
 
 
 def test_the_map_keeps_its_place_when_it_comes_back(page: Page, site_url, errors):
     page.set_viewport_size({"width": 1280, "height": 900})
+    # Signed and past the first-visit card, so no card takes the keys.
+    page.add_init_script("""if (location.protocol.startsWith('http')) {
+      localStorage.setItem('games.initials', JSON.stringify('MLW')); localStorage.setItem('letterfield.coach.v1', '1'); }""")
     # A real word on the map, as the log would list it.
     without_worker(page, site_url, "letterfield")
     page.goto(f"{site_url}/letterfield#debug")
@@ -68,24 +76,21 @@ def test_the_map_keeps_its_place_when_it_comes_back(page: Page, site_url, errors
     page.unroute_all()
     open_log(page, site_url, FakeSurveyLog([word, MONET, ZEUS], PLACES, THEMES))
     # To it on the map, whose address then holds it...
+    before = page.evaluate("localStorage.getItem('letterfield.cam.v1')")
     entry(page, word[0]).locator("a.fly").click()
     page.wait_for_url(re.compile(rf"/letterfield#f-{w['w'].lower()}-"))
-    coord = page.locator("#tCoord")
-    page.wait_for_function(SAVED_AWAY, arg="")
-    at_word = coord.inner_text()
+    at_word, there = page.wait_for_function(SETTLED, arg=["", before]).json_value()
     # ...and away from it, as the map saves where you are.
-    page.locator("#map").focus()
     for _ in range(3):
-        page.keyboard.press("ArrowRight")
-    page.wait_for_function(SAVED_AWAY, arg=at_word)
-    moved = coord.inner_text()
-    # To the log and back by its way back to the map, which comes back as you left it, not at the word.
+        page.locator("#map").press("ArrowRight")
+    saved, _ = page.wait_for_function(SETTLED, arg=[at_word, there]).json_value()
+    # To the log and back by its way back to the map, which comes back where it saved you, not at the word.
     to_the_log(page)
     page.wait_for_url("**/letterfield-log**")
     page.click(".home")
     page.wait_for_url(re.compile(rf"/letterfield#f-{w['w'].lower()}-"))
-    page.wait_for_function(SAVED_AWAY, arg="")
-    expect(coord).to_have_text(moved)
+    expect(page.locator("#tCoord")).to_have_text(saved)
+    assert saved != at_word
     assert errors == []
 
 
