@@ -677,6 +677,28 @@ def test_music_left_on_starts_with_the_first_tap_on_its_button(page: Page, site_
     assert errors == []
 
 
+@pytest.mark.parametrize("focused", [None, "#music"], ids=["page", "button"])
+def test_music_left_on_starts_with_b_as_the_first_key(page: Page, site_url, errors, focused):
+    """B is the music button's key, but as the first key it started music left on and switched
+    it straight off again, unheard, where a tap on the button starts it."""
+    page.add_init_script(COUNT_AUDIO + "localStorage.setItem('letterfield.music.v1', '1');")
+    page.goto(f"{site_url}/letterfield#debug")
+    page.wait_for_function("window.__lf")
+    if focused:
+        open_tools_quietly(page)
+        page.evaluate("s => document.querySelector(s).focus()", focused)  # no tap, which would start it
+    music = page.locator("#music")
+    assert page.evaluate("window.__lf.music()") is None  # on, but waiting for a tap or key
+    page.keyboard.press("b")
+    page.wait_for_function("window.__lf.music() !== null", timeout=3000)
+    expect(music).to_have_attribute("aria-pressed", "true")
+    assert page.evaluate("localStorage.getItem('letterfield.music.v1')") == "1"
+    page.keyboard.press("b")  # and the next B switches it off
+    expect(music).to_have_attribute("aria-pressed", "false")
+    assert page.evaluate("window.__lf.music()") is None
+    assert errors == []
+
+
 # How the word list's row of chips sits in its box.
 CHIPS_JS = """() => {
   const ul = document.getElementById('legendList'), cs = getComputedStyle(ul);

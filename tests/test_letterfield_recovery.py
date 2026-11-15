@@ -12,11 +12,11 @@ import json
 import re
 
 import pytest
-from playwright.sync_api import Page, expect
+from playwright.sync_api import Page, Route, expect
 
-from fake_survey import FakeLinks, FakePlayers, FakeRecovery, player_id
+from fake_survey import FakeLinks, FakePlayers, FakeRecovery, player_id, reply
 from test_letterfield_linking import OTHER, THEIR_PID, THEIRS, start
-from test_letterfield_survey import open_you
+from test_letterfield_survey import SURVEY, open_you
 from test_letterfield_surveyors import KIM, TOKEN
 from test_letterfield_sync import noted, words
 
@@ -63,6 +63,36 @@ def test_a_recovery_code_is_shown_once_and_keeps_a_backup(page: Page, site_url, 
     page.keyboard.press("Escape")
     expect(page.locator("html")).to_have_attribute("data-pair", "idle")
     assert errors == []
+
+
+def test_a_retry_that_works_leaves_no_old_error(page: Page, site_url, errors):
+    """A failure's words were cleared only on the way back to idle or to making a link code, so a
+    removal that failed and then worked said both that it was removed and that the survey was down."""
+    links = FakeLinks()
+    recovery = FakeRecovery(links.players)
+    start(page, site_url, links, recovery=recovery)
+    tries = []
+
+    def remove(route: Route) -> None:
+        tries.append(route.request.url)
+        if len(tries) == 1:
+            return reply(route, {"error": "down"}, 503)
+        recovery.handle(route)
+
+    page.route(f"{SURVEY}/v1/recovery/remove", remove)
+    open_you(page)
+    card = page.locator("#pairCard")
+    card.get_by_role("button", name="Recovery code").click()
+    card.get_by_role("button", name="Make one").click()
+    card.get_by_role("button", name="Done").click()
+    card.get_by_role("button", name="Recovery code").click()
+    card.get_by_role("button", name="Remove it").click()
+    expect(card.locator(".pair-err")).to_contain_text("Couldn’t reach the survey")
+    card.get_by_role("button", name="Remove it").click()
+    expect(card).to_contain_text("Removed: that code works no more.")
+    expect(card.locator(".pair-err")).to_have_count(0)
+    assert len(tries) == 2 and recovery.codes == {}
+    assert errors == [] or all("503" in e for e in errors)
 
 
 @pytest.mark.parametrize("scheme", ["light", "dark"])

@@ -365,6 +365,21 @@ def test_the_corner_opens_one_panel_at_a_time(page: Page, site_url, errors, size
     assert errors == []
 
 
+@pytest.mark.parametrize("width", [700, 768])
+def test_on_a_tablet_the_title_makes_way_for_the_surveyors(page: Page, site_url, errors, width):
+    """On a tablet the Surveyors drawer opens over the map in the notes' place, and covered the
+    end of the title box (the territory's grid reference and count), which the notes never do."""
+    start(page, site_url, FakeSurvey(surveyors=[KIM]), viewport={"width": width, "height": 1024})
+    expect(page.locator(".brand")).to_be_visible()  # with the drawer shut, the title shows
+    page.click("#peopleBtn")
+    page.locator("#people").evaluate("e => Promise.all(e.getAnimations().map(a => a.finished))")
+    m = page.evaluate("""() => { const box = s => document.querySelector(s).getBoundingClientRect();
+      return { title: box('.cartouche').right, people: box('#people').left, brand: box('.brand').width }; }""")
+    assert m["brand"] <= 1 and m["title"] <= m["people"], m
+    expect(page.locator(".t-coord")).to_be_hidden()
+    assert errors == []
+
+
 def test_a_caret_menu_knows_who_takes_no_emotes_and_a_refusal_always_shows(page: Page, site_url, errors):
     """A caret's menu offered emotes to someone who takes none, and closed before the refusal came,
     which then went to a row in the closed list, or only to a screen reader, as "They isn't"."""
@@ -388,6 +403,25 @@ def test_a_caret_menu_knows_who_takes_no_emotes_and_a_refusal_always_shows(page:
     menu.get_by_role("button", name="Thanks to KIM").click()
     expect(menu).to_be_hidden()
     expect(page.locator("#toast b")).to_have_text("KIM isn’t taking emotes.")
+    assert errors == []
+
+
+def test_an_emote_from_a_caret_menu_that_cant_go_says_why(page: Page, site_url, errors):
+    """With the middle of the view over a crowded sector and a caret shown from a live one beside it,
+    an emote from the caret's menu wrote why it couldn't go into the menu, which then shut at once."""
+    fake = FakeSurvey(presence=[KIM_CARET], full={"-1,0": "sector"})
+    start(page, site_url, fake)
+    page.wait_for_function(f"window.__lf.carets().includes('{KIM[0]}')")
+    page.evaluate("window.__lf.cam.x = -0.5")  # the middle of the view steps over into the crowded sector
+    assert page.evaluate("window.__lf.linkStates()")["-1,0"] != "live"
+    menu = page.locator("#caretMenu")
+    at = page.evaluate(f"window.__lf.caretXY('{KIM[0]}')")
+    page.mouse.click(at["x"], at["y"], button="right")
+    menu.get_by_role("button", name="Wave to KIM").click()
+    expect(menu).to_be_hidden()
+    expect(page.locator("#toast")).to_have_class(SHOWN)
+    expect(page.locator("#toast b")).to_have_text("Join the survey to send emotes.")
+    assert fake.sent("emote") == []
     assert errors == []
 
 

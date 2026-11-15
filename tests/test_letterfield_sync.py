@@ -14,7 +14,7 @@ import re
 from playwright.sync_api import Page, expect
 
 from fake_leaderboard import Held
-from fake_survey import FakeGuilds, FakeLinks, FakePlayers, FakeSurvey
+from fake_survey import FakeGuilds, FakeLinks, FakePlayers, FakeSurvey, reply
 from test_letterfield_guilds import MINE
 from test_letterfield_guilds import start as start_guilds
 from test_letterfield_survey import SURVEY, eventually, known_words, open_you
@@ -195,6 +195,27 @@ def test_stopping_everywhere_waits_for_the_worker_and_answers_under_the_rows(pag
     expect(card.get_by_role("button", name="Recovery code")).to_contain_text("Not saved")  # its row, whole
     eventually(page, lambda: PID not in players.players)
     assert errors == []
+
+
+def test_stopping_everywhere_without_the_worker_keeps_syncing(page: Page, site_url, errors):
+    """This device stopped before the Worker answered, so when it couldn't be reached the note said
+    to try again, with the Stop syncing row already gone and nothing left to try again with."""
+    players = FakePlayers(started=[PID])
+    start(page, site_url, players)
+    page.route(f"{SURVEY}/v1/player/forget", lambda r: reply(r, {"error": "down"}, 503))
+    open_you(page)
+    html, card = page.locator("html"), page.locator("#pairCard")
+    card.get_by_role("button", name="Stop syncing").click()
+    card.get_by_role("button", name="Every device").click()
+    note = card.locator(".pair-note")
+    expect(note).to_contain_text("Couldn’t reach the survey")
+    expect(html).to_have_attribute("data-pair", "idle")
+    expect(card.get_by_role("button", name="Stop syncing")).to_be_visible()  # to try again with
+    expect(html).not_to_have_attribute("data-sync", "off")
+    expect(note).to_have_text("Couldn’t reach the survey, so syncing hasn’t stopped. Try again in a moment.")
+    assert page.evaluate("localStorage.getItem('letterfield.sync.v1')") is not None
+    assert PID in players.players
+    assert errors == [] or all("503" in e for e in errors)
 
 
 def test_stopped_elsewhere_stops_here_too(page: Page, site_url, errors):
