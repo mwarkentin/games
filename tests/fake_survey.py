@@ -50,6 +50,14 @@ def world_map(charted=None, sectors=(), spawn=None, players=0):
             "territories": base64.b64encode(bytes(data)).decode(), "sectors": list(sectors), "spawn": spawn}
 
 
+ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ23456789"  # the game's codes: no 0, 1, I, L or O
+
+
+def reply(route: Route, data: dict, status: int = 200) -> None:
+    """Answers `route` with `data` as JSON, as the Worker does, to any origin."""
+    route.fulfill(status=status, json=data, headers={"Access-Control-Allow-Origin": "*"})
+
+
 class FakeSurvey:
     """Answers each sector's WebSocket the way worker/src/survey.js does."""
 
@@ -146,28 +154,26 @@ class FakeSurvey:
 
         ws.on_message(on_message)
 
-    def nova(self, sector: str, rx: int, ry: int, word: list, initials: str = "", at: int = NOW_MS, ago: int = 0) -> None:
+    def nova(self, sector: str, rx: int, ry: int, word: list, initials: str = "", ago: int = 0) -> None:
         """Sends sector `sector`'s players another sector's supernova, as the sector passes it on (a
         neighbour's at once, any other's from the Atlas): territory (rx, ry) went supernova when
         `word` ([w, x, y, d]) was charted, `ago` milliseconds before."""
-        self.sockets[sector].send(json.dumps({"t": "nova", "n": [rx, ry, at, *word, initials], "ago": ago}))
+        self.sockets[sector].send(json.dumps({"t": "nova", "n": [rx, ry, NOW_MS, *word, initials], "ago": ago}))
 
     def handle_world(self, route: Route) -> None:
-        route.fulfill(json=self.world, headers={"Access-Control-Allow-Origin": "*"})
+        reply(route, self.world)
 
     def handle_list(self, route: Route) -> None:
         """GET /v1/survey/surveyors, as worker/src/survey-social.js answers it, in the order given."""
         size = 40  # LIST_PAGE
         query = {k: v[0] for k, v in parse_qs(urlparse(route.request.url).query).items()}
         self.list_asks.append(query)
-        cors = {"Access-Control-Allow-Origin": "*"}
         if self.list_status != 200:
-            route.fulfill(status=self.list_status, json={"error": "atlas down"}, headers=cors)
-            return
+            return reply(route, {"error": "atlas down"}, self.list_status)
         page = int(query.get("page", 0))
         who = [e for e in self.surveyors if e[0] != query.get("me")]
-        route.fulfill(json={"n": len(who), "page": page, "size": size, "more": len(who) > (page + 1) * size,
-                            "who": who[page * size:(page + 1) * size]}, headers=cors)
+        reply(route, {"n": len(who), "page": page, "size": size, "more": len(who) > (page + 1) * size,
+                      "who": who[page * size:(page + 1) * size]})
 
     def guild(self, sector: str, tag: str, on: list) -> None:
         """Tells the game on sector `sector`'s socket who of guild `tag` is online: [[id, initials, rx, ry, idle, flags], ...].
@@ -214,7 +220,6 @@ FAKE_TURNSTILE = """
       (window.__tsRemoved = window.__tsRemoved || []).push(id);
       document.querySelector(`.fake-turnstile[data-widget="${id}"]`)?.remove();
     },
-    reset() {},
   };
   const onload = new URL(document.currentScript.src).searchParams.get('onload');
   window[onload]();
@@ -232,13 +237,11 @@ class FakePassDesk:
 
     def handle(self, route: Route) -> None:
         self.tokens.append(json.loads(route.request.post_data)["token"])
-        cors = {"Access-Control-Allow-Origin": "*"}
         if self.status != 200:
-            route.fulfill(status=self.status, json={"error": "not verified", "codes": []}, headers=cors)
-            return
+            return reply(route, {"error": "not verified", "codes": []}, self.status)
         pass_ = f"{NOW_MS + 3_600_000 + len(self.issued)}.pass{len(self.issued)}"
         self.issued.append(pass_)
-        route.fulfill(json={"pass": pass_, "expires": int(time.time() * 1000) + 3_600_000}, headers=cors)
+        reply(route, {"pass": pass_, "expires": int(time.time() * 1000) + 3_600_000})
 
 
 def player_id(token: str) -> str:
@@ -251,9 +254,8 @@ class FakeGuilds:
     code to {"name": [a, b, c], "tag": "8 hex", "members": [[id, initials, seen], ...]}, with
     "lid" (10 hex, the guild's id in the survey log) if it has one."""
 
-    def __init__(self, guilds=None, status=None):
+    def __init__(self, guilds=None):
         self.guilds = {code: {**g, "members": [list(m) for m in g["members"]]} for code, g in (guilds or {}).items()}
-        self.status = status          # answer everything with this status instead, as a Worker in trouble would
         self.calls: list[tuple] = []  # (method, path, body) of every request
         self.made = 0
 
@@ -262,50 +264,40 @@ class FakeGuilds:
         path = urlparse(request.url).path.removeprefix("/v1/survey/guilds")
         body = json.loads(request.post_data) if request.method == "POST" and request.post_data else None
         self.calls.append((request.method, path, body))
-        cors = {"Access-Control-Allow-Origin": "*"}
-
-        def reply(status: int, data: dict) -> None:
-            route.fulfill(status=status, json=data, headers=cors)
-
-        if self.status:
-            return reply(self.status, {"error": "guild error"})
         pid = player_id(body["token"]) if body and "token" in body else None
         if path == "" and request.method == "POST":
             self.made += 1
-            code = f"GDN{'ABCDEFGHJKMNPQRSTUVWXYZ23456789'[self.made]}22"  # the game's alphabet: no 0, 1, I, L or O
+            code = f"GDN{ALPHABET[self.made]}22"
             tag = f"{0xC0DE0000 + self.made:08x}"
             lid = f"{0xC0DE000000 + self.made:010x}"
             self.guilds[code] = {"name": body["name"], "tag": tag, "lid": lid, "members": [[pid, body["initials"], NOW_MS]]}
-            return reply(201, {"code": code, **self.guilds[code]})
+            return reply(route, {"code": code, **self.guilds[code]}, 201)
         parts = path.strip("/").split("/")
         g = self.guilds.get(parts[0])
         if not g:
-            return reply(200, {"ok": True}) if parts[1:] == ["leave"] else reply(404, {"error": "unknown guild"})
+            return reply(route, {"ok": True}) if parts[1:] == ["leave"] else reply(route, {"error": "unknown guild"}, 404)
         if len(parts) == 1:
-            return reply(200, {"name": g["name"], "size": len(g["members"])})
+            return reply(route, {"name": g["name"], "size": len(g["members"])})
         member = next((m for m in g["members"] if m[0] == pid), None)
         if parts[1] == "join":
             if not member:
                 g["members"].insert(0, [pid, body["initials"], NOW_MS])
-            return reply(200, {"code": parts[0], **g})
+            return reply(route, {"code": parts[0], **g})
         if parts[1] == "leave":
             g["members"] = [m for m in g["members"] if m[0] != pid]
-            return reply(200, {"ok": True})
+            return reply(route, {"ok": True})
         if not member:
-            return reply(404, {"error": "not a member"})
-        return reply(200, {"code": parts[0], **g})
+            return reply(route, {"error": "not a member"}, 404)
+        return reply(route, {"code": parts[0], **g})
 
 
 class FakeLinks:
     """The paths for linking another device, as worker/src/players.js answers them. `codes`
     maps a code to {"token": 32 hex, "carry": {...}}: codes made elsewhere, for the game to redeem."""
 
-    ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ23456789"
-
-    def __init__(self, codes=None, status=None, players: FakePlayers | None = None):
+    def __init__(self, codes=None, players: FakePlayers | None = None):
         self.codes = {code: {"state": "waiting", **link} for code, link in (codes or {}).items()}
         self.players = players if players is not None else FakePlayers()  # redeeming a code starts syncing, as the Worker does
-        self.status = status          # answer everything with this status instead, as a Worker in trouble would
         self.calls: list[tuple] = []  # (path, body) of every request
         self.made = 0
 
@@ -322,30 +314,23 @@ class FakeLinks:
         path = urlparse(request.url).path.removeprefix("/v1/link")
         body = json.loads(request.post_data) if request.post_data else {}
         self.calls.append((path, body))
-
-        def reply(status: int, data: dict) -> None:
-            route.fulfill(status=status, json=data, headers={"Access-Control-Allow-Origin": "*"})
-
-        if self.status:
-            return reply(self.status, {"error": "link error"})
         if path == "":
             # A new code retires any older one of theirs nobody used, as the Worker does.
             for link in self.codes.values():
                 if link["token"] == body["token"] and link["state"] == "waiting":
                     link["state"] = "gone"
             self.made += 1
-            code = "CDEFGHJ" + self.ALPHABET[self.made]
+            code = "CDEFGHJ" + ALPHABET[self.made]
             self.codes[code] = {"token": body["token"], "carry": body["carry"], "state": "waiting"}
-            return reply(201, {"code": code, "expires": NOW_MS + 600_000})
+            return reply(route, {"code": code, "expires": NOW_MS + 600_000}, 201)
         parts = path.strip("/").split("/")
         link = self.codes.get(parts[0].upper())
         if parts[1:] == ["status"]:
-            return reply(200, {"state": link["state"] if link and link["token"] == body.get("token") else "gone"})
+            return reply(route, {"state": link["state"] if link and link["token"] == body.get("token") else "gone"})
         if not link or link["state"] != "waiting":
-            return reply(404, {"error": "no such code, or it has run out"})
-        link["state"] = "used"
-        self.players.start(player_id(link["token"]))
-        return reply(200, {"token": link["token"], "carry": link["carry"]})
+            return reply(route, {"error": "no such code, or it has run out"}, 404)
+        self.use(parts[0].upper())
+        return reply(route, {"token": link["token"], "carry": link["carry"]})
 
 
 class FakePlayers:
@@ -384,16 +369,12 @@ class FakePlayers:
         body = json.loads(request.post_data or "{}")
         self.calls.append((path, body))
         pid = player_id(body["token"])
-
-        def reply(data: dict) -> None:
-            route.fulfill(status=200, json=data, headers={"Access-Control-Allow-Origin": "*"})
-
         if path == "forget":
             self.players.pop(pid, None)
-            return reply({"off": True})
+            return reply(route, {"off": True})
         p = self.players.get(pid)
         if not p:
-            return reply({"off": True})
+            return reply(route, {"off": True})
         since = body.get("since", 0) if body.get("epoch") == p["epoch"] and body.get("since", 0) <= p["v"] else 0
         v, wrote = p["v"] + 1, False
         for f in body.get("finds", []):
@@ -417,7 +398,7 @@ class FakePlayers:
         out = {"epoch": p["epoch"], "at": p["v"], "finds": rows("finds"), "novas": rows("novas")}
         if p["settings"] and p["settings_at"] > theirs:
             out |= {"settings": p["settings"], "settingsAt": p["settings_at"]}
-        reply(out)
+        reply(route, out)
 
 
 class FakeRecovery:
@@ -427,29 +408,23 @@ class FakeRecovery:
     def __init__(self, players: FakePlayers, codes=None):
         self.players = players
         self.codes = dict(codes or {})
-        self.calls: list[tuple] = []  # (path, body) of every request
         self.made = 0
 
     def handle(self, route: Route) -> None:
         request = route.request
         path = urlparse(request.url).path.removeprefix("/v1/recovery")
         body = json.loads(request.post_data or "{}")
-        self.calls.append((path, body))
-
-        def reply(status: int, data: dict) -> None:
-            route.fulfill(status=status, json=data, headers={"Access-Control-Allow-Origin": "*"})
-
         if path == "/use":
             token = self.codes.get(re.sub("[^A-Z0-9]", "", str(body.get("code", "")).upper()))
             if not token:
-                return reply(404, {"error": "no such code"})
+                return reply(route, {"error": "no such code"}, 404)
             self.players.start(player_id(token))
-            return reply(200, {"token": token, "made": NOW_MS})
+            return reply(route, {"token": token, "made": NOW_MS})
         self.codes = {c: t for c, t in self.codes.items() if t != body["token"]}  # one code a player
         if path == "/remove":
-            return reply(200, {"ok": True})
+            return reply(route, {"ok": True})
         self.made += 1
-        code = "KMNPQRSTUVWXYZ23456" + FakeLinks.ALPHABET[self.made]
+        code = "KMNPQRSTUVWXYZ23456" + ALPHABET[self.made]
         self.codes[code] = body["token"]
         self.players.start(player_id(body["token"]))
-        return reply(201, {"code": code, "made": NOW_MS})
+        return reply(route, {"code": code, "made": NOW_MS}, 201)

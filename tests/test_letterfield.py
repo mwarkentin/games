@@ -4,6 +4,8 @@ import pytest
 from playwright.sync_api import Page, expect
 
 from fake_leaderboard import without_worker
+from test_letterfield_log import NO_SHARE_SHEET
+from test_letterfield_survey import HIDE, LANDS, SHARE_SHEET_INIT, TERRITORY_WORDS, open_notes
 
 # Screen positions of a legend word's first and last letters, for a word whose
 # ends are both on open map rather than under a panel. Mirrors the game's
@@ -14,7 +16,7 @@ FIND_WORD_JS = """() => {
   const dock = document.body.classList.contains('docked') ? 340 : 0;
   const dirs = [[1,0],[1,1],[0,1],[-1,1],[-1,0],[-1,-1],[0,-1],[1,-1]];
   const screen = (x, y) => [(x + .5 - start) * cs + (innerWidth - dock) / 2, (y + .5 - start) * cs + (m => m.getBoundingClientRect().top + m.clientHeight / 2)(document.getElementById('map'))];
-  for (const chip of document.querySelectorAll('#legendList .chip:not(.found)')) {
+  for (const chip of document.querySelectorAll('#legendList .chip')) {
     const [word, x, y, d] = chip.dataset.key.split('~');
     const n = word.length - 1, [dx, dy] = dirs[+d];
     const ends = [screen(+x, +y), screen(+x + dx * n, +y + dy * n)];
@@ -23,15 +25,10 @@ FIND_WORD_JS = """() => {
   return null;
 }"""
 
-# A find's circle flies into the field notes, and the count ticks up as it
-# lands: this long, at most, after the find.
-LANDS = 10_000
-
 
 def share_from_notes(page: Page, word: str) -> None:
     """Shares a find from the field notes, where every find can be shared."""
-    if page.locator("#notesToggle").get_attribute("aria-expanded") != "true":
-        page.click("#notesToggle")
+    open_notes(page)
     page.locator("#finds").get_by_role("button", name=f"Share {word}").click()
 
 
@@ -104,11 +101,6 @@ const Real = window.AudioContext;
 window.AudioContext = class extends Real { constructor(...a) { super(...a); window.__audio++; } };
 localStorage.setItem('letterfield.coach.v1', '1');
 """
-TERRITORY_WORDS = """() => {
-  const out = [];
-  for (let cy = 0; cy < 4; cy++) for (let cx = 0; cx < 4; cx++) for (const o of window.__lf.chunk(cx, cy).words) out.push([o.w, o.x, o.y, o.d]);
-  return out;
-}"""
 COLLECT = "words => { for (const [w, x, y, d] of words) window.__lf.collect(w, x, y, d, false); }"
 
 
@@ -136,8 +128,7 @@ def test_finding_every_word_in_a_territory_goes_supernova(page: Page, site_url, 
     expect(page.locator("#toast")).to_contain_text("Supernova · kept in your field notes")
     expect(page.locator("#toast .share")).to_be_visible()
     # Your field notes keep it: alone, it was all yours.
-    if page.locator("#notes").is_hidden():
-        page.click("#notesToggle")
+    open_notes(page)
     expect(page.locator("#novaList .find-meta")).to_have_text(f"Went supernova · {words[0][0]}, all found by you")
     record = page.evaluate("JSON.parse(localStorage.getItem('letterfield.novas.v1'))")
     assert [(n["rx"], n["ry"], n["w"], n["solo"], n["mine"]) for n in record] == [(0, 0, words[0][0], True, True)]
@@ -235,21 +226,13 @@ def test_music_fades_out_while_the_tab_is_hidden(page: Page, site_url, errors):
     page.wait_for_function("window.__lf")
     page.keyboard.press("Shift")
     page.wait_for_function("window.__lf.music() && window.__lf.music().level > .1")
-    hide = """hidden => {
-      Object.defineProperty(document, 'hidden', { configurable: true, get: () => hidden });
-      document.dispatchEvent(new Event('visibilitychange'));
-    }"""
-    page.evaluate(hide, True)
+    page.evaluate(HIDE, True)
     page.wait_for_function("window.__lf.music().state === 'suspended'")
-    page.evaluate(hide, False)
+    page.evaluate(HIDE, False)
     page.wait_for_function("window.__lf.music().state === 'running' && window.__lf.music().level > .1")
     assert errors == []
 
 
-HIDE_TAB = """hidden => {
-  Object.defineProperty(document, 'hidden', { configurable: true, get: () => hidden });
-  document.dispatchEvent(new Event('visibilitychange'));
-}"""
 LEVEL_IS = "v => window.__lf.music() && Math.abs(window.__lf.music().level - v) < 1e-3"
 
 
@@ -416,10 +399,10 @@ def test_music_volume_changes_the_gain_on_a_curve_and_is_kept(page: Page, site_u
 
     # And comes back to it after the tab is hidden and shown, even if it
     # moved while the music was hushed.
-    page.evaluate(HIDE_TAB, True)
+    page.evaluate(HIDE, True)
     page.wait_for_function("window.__lf.music().state === 'suspended'")
     page.evaluate("v => { const s = document.getElementById('musicVol'); s.value = v; s.dispatchEvent(new Event('input')); }", "60")
-    page.evaluate(HIDE_TAB, False)
+    page.evaluate(HIDE, False)
     page.wait_for_function(LEVEL_IS, arg=.8 * .36, timeout=6000)
     assert errors == []
 
@@ -441,9 +424,9 @@ def music_back_after_hiding(page: Page) -> None:
     """Plays the music, hides the tab, and shows it again with the browser refusing to resume."""
     page.wait_for_function("window.__lf.music() && window.__lf.music().level > .1")
     page.evaluate(LIKE_IOS)
-    page.evaluate(HIDE_TAB, True)
+    page.evaluate(HIDE, True)
     page.wait_for_function("window.__lf.music().state === 'interrupted'")
-    page.evaluate(HIDE_TAB, False)
+    page.evaluate(HIDE, False)
     page.wait_for_timeout(500)
     assert page.evaluate("window.__lf.music().state") == "interrupted", "the browser refused, as iOS does"
     page.evaluate("window.__refuse = false")  # a tap may resume it
@@ -529,16 +512,9 @@ def test_chimes_starts_and_stops_cleanly(page: Page, site_url, errors):
     assert errors == []
 
 
-# A share sheet that keeps what it's given, for checking what a find shares.
-SHARE_SHEET = """
-  window.__shared = [];
-  Object.defineProperty(navigator, 'share', { value: data => { window.__shared.push(data); return Promise.resolve(); }, configurable: true });
-"""
-
-
 def test_a_find_shares_what_it_is_where_and_a_link_to_it(page: Page, site_url, errors):
     without_worker(page, site_url, "letterfield")
-    page.add_init_script(SHARE_SHEET)
+    page.add_init_script(SHARE_SHEET_INIT)
     page.set_viewport_size({"width": 375, "height": 740})
     page.goto(f"{site_url}/letterfield#debug")
     page.click("#coachOk")
@@ -568,7 +544,7 @@ def test_with_a_share_worker_a_find_links_to_its_card_in_the_sharers_theme(page:
     # ?share= stands in for SHARE_URL: the share Worker (share/), whose page
     # carries a picture of the word as its link preview.
     without_worker(page, site_url, "letterfield")
-    page.add_init_script(SHARE_SHEET)
+    page.add_init_script(SHARE_SHEET_INIT)
     page.goto(f"{site_url}/letterfield?share=https://share.test/#debug")
     page.click("#coachOk")
     page.wait_for_function("window.__lf")
@@ -584,8 +560,7 @@ def test_with_a_share_worker_a_find_links_to_its_card_in_the_sharers_theme(page:
     page.wait_for_function("window.__lf")
     expect(page.locator("html")).to_have_attribute("data-intro", "exploring")
     # The find is still in the field notes, which stay open from before.
-    if page.locator("#notesToggle").get_attribute("aria-expanded") != "true":
-        page.click("#notesToggle")
+    open_notes(page)
     page.locator("#finds").get_by_role("button", name=f"Share {w}").click()
     assert page.evaluate("window.__shared")[0]["url"] == f"https://share.test/f/d/{slug}"
     assert errors == []
@@ -593,10 +568,7 @@ def test_with_a_share_worker_a_find_links_to_its_card_in_the_sharers_theme(page:
 
 def test_without_a_share_sheet_a_find_is_copied(page: Page, site_url, errors):
     without_worker(page, site_url, "letterfield")
-    page.add_init_script("""
-      Object.defineProperty(Navigator.prototype, 'share', { value: undefined, configurable: true });
-      Object.defineProperty(navigator, 'clipboard', { value: { writeText: t => { window.__copied = t; return Promise.resolve(); } } });
-    """)
+    page.add_init_script(NO_SHARE_SHEET)
     page.set_viewport_size({"width": 1280, "height": 900})
     page.goto(f"{site_url}/letterfield#debug")
     page.click("#coachOk")
@@ -718,7 +690,7 @@ def chips_scroll_only_sideways(page: Page) -> None:
     assert m["n"] > 0
     assert m["oy"] not in ("auto", "scroll"), m
     assert m["sh"] <= m["ch"], m
-    # Every chip, struck through or not, sits inside the row's height.
+    # Every chip sits inside the row's height.
     assert m["wrap"] == "nowrap" and m["ox"] == "auto", m
 
 
@@ -728,11 +700,11 @@ def test_the_word_list_never_scrolls_up_and_down(page: Page, site_url, errors):
     page.goto(f"{site_url}/letterfield")
     page.click("#coachOk")
     expect(page.locator("#legendList .chip").first).to_be_visible()
-    # Fill the list with long words, some found, to push it as far as it goes.
+    # Fill the list with long words, to push it as far as it goes.
     fill = """() => {
       const ul = document.getElementById('legendList');
       ul.innerHTML = Array.from({length: 14}, (_, i) =>
-        `<li><button type="button" class="chip mark${i % 3 ? '' : ' found'}">${'QUARTERMASTER'.slice(0, 6 + i % 8)}</button></li>`).join('');
+        `<li><button type="button" class="chip mark">${'QUARTERMASTER'.slice(0, 6 + i % 8)}</button></li>`).join('');
     }"""
     page.evaluate(fill)
     chips_scroll_only_sideways(page)
@@ -743,7 +715,7 @@ def test_the_word_list_never_scrolls_up_and_down(page: Page, site_url, errors):
     assert page.evaluate("document.getElementById('legendList').scrollTop") == 0
 
     # A keyboard's focus ring still shows in full on the chip it's on.
-    chip = page.locator("#legendList .chip:not(.found)").first
+    chip = page.locator("#legendList .chip").first
     chip.focus()
     page.keyboard.press("Shift+Tab")
     page.keyboard.press("Tab")
@@ -1048,8 +1020,7 @@ def test_every_part_of_a_find_sits_on_its_words_line(page: Page, site_url, error
     }""")
     page.reload()
     page.wait_for_function("window.__lf && window.__lf.found.size === 2")
-    if page.locator("#notesToggle").get_attribute("aria-expanded") != "true":
-        page.click("#notesToggle")
+    open_notes(page)
     expect(page.locator("#finds .find-meta")).to_have_text("charted by ZED")
     page.locator("#notes").evaluate("e => Promise.all(e.getAnimations({ subtree: true }).map(a => a.finished))")
     rows = page.evaluate(ROW_MIDDLES)

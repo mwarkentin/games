@@ -1,6 +1,6 @@
 """Letterfield's surveyor list and emotes, against the survey's fakes.
 
-The list is a fold of the survey panel, fetched from GET /v1/survey/surveyors
+The list, in the surveyors' drawer, is fetched from GET /v1/survey/surveyors
 (tests/fake_survey.py answers it); emotes go out and come back on the sector
 sockets. The real Worker's side is tested in worker/test/survey-social.test.js.
 The game starts at cell (6, 6), territory (0, 0) of sector (0, 0).
@@ -8,18 +8,17 @@ The game starts at cell (6, 6), territory (0, 0) of sector (0, 0).
 
 from __future__ import annotations
 
-import hashlib
 import json
 import re
 
 import pytest
 from playwright.sync_api import Page, expect
 
-from fake_survey import FakeSurvey
+from fake_survey import FakeSurvey, player_id
 from test_letterfield_survey import eventually, open_game, open_people, open_you
 
 TOKEN = "0" * 31 + "1"  # this browser's player token, as the game would make one
-PID = hashlib.sha256(f"games-player:{TOKEN}".encode()).hexdigest()[:12]  # and the id the sectors give it
+PID = player_id(TOKEN)  # and the id the sectors give it
 
 # Everyone the list names: [id, initials, rx, ry, seconds idle, flags]. The
 # fake hands them out in this order; the game puts the nearest first.

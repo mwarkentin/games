@@ -12,7 +12,8 @@ import pytest
 from playwright.sync_api import Page, expect
 
 from fake_definitions import DEFINE_API, FakeDefinitions
-from fake_leaderboard import without_worker
+from fake_leaderboard import Held, without_worker
+from test_letterfield_survey import open_notes
 
 
 def find_words(page: Page, count: int = 1) -> list[dict]:
@@ -40,14 +41,6 @@ def open_game(
     page.set_viewport_size({"width": width, "height": height})
     page.goto(f"{site_url}/letterfield{query}#debug")
     page.wait_for_function("window.__lf")
-    page.evaluate("() => localStorage.setItem('letterfield.coach.v1', '1')")
-
-
-def open_notes(page: Page) -> None:
-    """Open the field notes, unless they're already open (docked on a wide screen)."""
-    if page.locator("#notesToggle").get_attribute("aria-expanded") != "true":
-        page.click("#notesToggle")
-    expect(page.locator("body")).to_have_class(re.compile(r"\bnotes-open\b"))
 
 
 def book(page: Page, key: str):
@@ -147,7 +140,8 @@ def test_a_late_answer_lands_on_its_own_word(page: Page, site_url, fake, errors)
     fake.answers[first["w"]] = [{"pos": "noun", "text": "The first word."}]
     fake.answers[second["w"]] = [{"pos": "noun", "text": "The second word."}]
     open_notes(page)
-    fake.holding = True
+    held = Held(fake, lambda r: True)
+    page.route(f"{DEFINE_API}/**", held.handle)  # routed after the fixture's, so it comes first
     book(page, first["key"]).click()
     expect(panel(page, first["key"])).to_have_attribute("data-define", "loading")
     page.wait_for_function("() => true")
@@ -155,15 +149,15 @@ def test_a_late_answer_lands_on_its_own_word(page: Page, site_url, fake, errors)
     book(page, second["key"]).click()
     expect(panel(page, first["key"])).to_have_count(0)
     expect(panel(page, second["key"])).to_have_attribute("data-define", "loading")
-    assert len(fake.held) == 2
-    fake.answer(0)  # the first word's answer, late
+    assert len(held.routes) == 2
+    held.answer(0)  # the first word's answer, late
     page.wait_for_function("() => window.__lf.definitions()[Object.keys(window.__lf.definitions())[0]] === 'ready'")
     expect(panel(page, second["key"])).to_have_attribute("data-define", "loading")
     expect(page.locator(".find-def")).to_have_count(1)
-    fake.answer(0)
+    held.answer(0)
     expect(panel(page, second["key"])).to_contain_text("The second word.")
     # And the first word's answer was kept for when it's opened again.
-    fake.holding = False
+    held.release()
     book(page, first["key"]).click()
     expect(panel(page, first["key"])).to_contain_text("The first word.")
     assert len(fake.asked) == 2

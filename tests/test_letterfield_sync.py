@@ -17,7 +17,7 @@ from fake_leaderboard import Held
 from fake_survey import FakeGuilds, FakeLinks, FakePlayers, FakeSurvey
 from test_letterfield_guilds import MINE
 from test_letterfield_guilds import start as start_guilds
-from test_letterfield_survey import SURVEY, eventually, open_you
+from test_letterfield_survey import SURVEY, eventually, known_words, open_you
 from test_letterfield_surveyors import KIM, PID, TOKEN
 
 ON = {"on": True, "epoch": "", "at": 0, "f": [], "n": [], "settingsAt": 1}  # synced, nothing heard yet
@@ -53,11 +53,9 @@ def start(
 
 def words(page: Page, site_url: str, n: int) -> list[dict]:
     """`n` finds hidden near the origin, as the field notes keep them."""
-    page.goto(f"{site_url}/letterfield#debug")
-    hidden = page.evaluate("window.__lf.chunk(0, 0).words.map(o => [o.w, o.x, o.y, o.d])")
     return [
         {"w": w, "x": x, "y": y, "d": d, "t": 1_700_000_000_000 + i, "s": 0}
-        for i, (w, x, y, d) in enumerate(hidden[:n])
+        for i, (w, x, y, d) in enumerate(known_words(page, site_url)[:n])
     ]
 
 
@@ -81,7 +79,7 @@ def test_a_device_never_linked_keeps_everything_here(page: Page, site_url, error
 
 
 def test_finds_and_settings_go_both_ways(page: Page, site_url, errors):
-    mine, theirs = words(page, site_url, 3)[:2], words(page, site_url, 3)[2]
+    *mine, theirs = words(page, site_url, 3)
     players = FakePlayers(started=[PID])
     # The other device sent a find already, charted first.
     players.add(PID, finds=[{**theirs, "f": 1, "n": 77}])

@@ -14,17 +14,15 @@ from datetime import UTC, datetime
 from playwright.sync_api import Page, expect
 
 from fake_leaderboard import Held
-from fake_survey_log import SURVEY, FakeSurveyLog
+from fake_survey_log import DAY_MS, HOUR_MS, LAT_B, SURVEY, THEME_COUNT, FakeSurveyLog
 
 NOW_MS = int(datetime(2026, 11, 6, 20, 30, tzinfo=UTC).timestamp() * 1000)  # 3:30 PM in Toronto
-HOUR_MS = 3_600_000
-DAY_MS = 86_400_000
 DAY = NOW_MS // DAY_MS
 PLACES = {"0,0": "Acorn Hollow", "1,0": "Monet Reach"}
 
 
 def theme(x: int, y: int) -> int:
-    return (x // 48 + 15 * (y // 48)) % 225
+    return (x // 48 + LAT_B * (y // 48)) % THEME_COUNT
 
 
 def history():

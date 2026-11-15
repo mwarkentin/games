@@ -12,35 +12,19 @@ from __future__ import annotations
 import json
 import re
 import time
-from pathlib import Path
-from urllib.parse import urlparse
 
 import pytest
 from playwright.sync_api import Page, Route, expect
 
-from fake_leaderboard import without_worker
-from fake_survey import AREA_WORDS, DUMMY_TOKEN, FAKE_TURNSTILE, NOW_MS, TURNSTILE_JS, FakePassDesk, FakeSurvey, world_map
+from common import ROOT
+from fake_leaderboard import blank_constants, without_worker
+from fake_survey import AREA_WORDS, DUMMY_TOKEN, NOW_MS, TURNSTILE_JS, FakePassDesk, FakeSurvey, world_map
 
 SURVEY = "https://survey.test"
 
-# A find's note shows a while, then folds into the field notes, and the count
-# ticks up as it lands: this long, at most, after the find.
+# A find's circle flies into the field notes, and the count ticks up as it
+# lands: this long, at most, after the find.
 LANDS = 10_000
-
-
-def without_turnstile(page: Page) -> None:
-    """Serve the game with TURNSTILE_SITE_KEY blanked, so the survey joins without Cloudflare's check.
-
-    The real key would load challenges.cloudflare.com, which tests never reach. The
-    Turnstile tests below turn it back on with ?turnstile= and a fake widget.
-    """
-
-    def handle(route: Route) -> None:
-        response = route.fetch()
-        body = re.sub(r"\b(TURNSTILE_SITE_KEY = )'[^']*'", r"\1''", response.text())
-        route.fulfill(response=response, body=body)
-
-    page.route(lambda url: urlparse(url).path == "/letterfield", handle)
 
 
 def open_game(page: Page, site_url: str, fake: FakeSurvey | None, query: str = "", own_site_key: bool = False,
@@ -48,9 +32,12 @@ def open_game(page: Page, site_url: str, fake: FakeSurvey | None, query: str = "
     """Opens the game, against `fake` if given. Its own Turnstile site key is blanked
     unless `own_site_key` is set or `query` brings one (?turnstile=)."""
     page.set_viewport_size(viewport or {"width": 1280, "height": 900})
-    if not own_site_key and "turnstile=" not in query:
-        without_turnstile(page)
     if fake:
+        # TURNSTILE_SITE_KEY blanked, so the survey joins without Cloudflare's check: the real
+        # key would load challenges.cloudflare.com, which tests never reach. The Turnstile tests
+        # below turn it back on with ?turnstile= and a fake widget.
+        if not own_site_key and "turnstile=" not in query:
+            blank_constants(page, "letterfield", "TURNSTILE_SITE_KEY")
         page.route_web_socket(re.compile(r"^wss://survey\.test/"), fake.handle)
         page.route(f"{SURVEY}/v1/survey/world", fake.handle_world)
         page.route(f"{SURVEY}/v1/survey/surveyors*", fake.handle_list)
@@ -63,8 +50,10 @@ def open_game(page: Page, site_url: str, fake: FakeSurvey | None, query: str = "
 
 
 def open_notes(page: Page) -> None:
-    if page.locator("#notes").is_hidden():
+    """Opens the field notes, unless they're already open (docked on a wide screen)."""
+    if page.locator("html").get_attribute("data-panel") != "notes":
         page.click("#notesToggle")
+    expect(page.locator("html")).to_have_attribute("data-panel", "notes")
 
 
 def open_people(page: Page) -> None:
@@ -75,22 +64,31 @@ def open_people(page: Page) -> None:
 
 
 def open_you(page: Page) -> None:
-    """Opens the surveyors' drawer on your page: your initials, guild, switches and devices."""
+    """Opens the surveyors' drawer on your page: your initials, guild, emotes and mutes, and devices."""
     open_people(page)
     if page.locator("#peopleYou").is_hidden():
         page.click("#youRow")
     expect(page.locator("#peopleYou")).to_be_visible()
 
 
+# The words hidden in the chunk at the origin, and in territory (0, 0), as [w, x, y, d].
+HIDDEN_WORDS = "window.__lf.chunk(0, 0).words.map(o => [o.w, o.x, o.y, o.d])"
+TERRITORY_WORDS = """() => {
+  const out = [];
+  for (let cy = 0; cy < 4; cy++) for (let cx = 0; cx < 4; cx++) for (const o of window.__lf.chunk(cx, cy).words) out.push([o.w, o.x, o.y, o.d]);
+  return out;
+}"""
+
+
 def hidden_words(page: Page) -> list[list]:
     """The words hidden in the chunk at the origin, as [w, x, y, d]."""
-    return page.evaluate("window.__lf.chunk(0, 0).words.map(o => [o.w, o.x, o.y, o.d])")
+    return page.evaluate(HIDDEN_WORDS)
 
 
-def known_words(page: Page, site_url: str) -> list[list]:
-    """hidden_words, read before the test opens the game for real."""
+def known_words(page: Page, site_url: str, js: str = HIDDEN_WORDS) -> list[list]:
+    """The words `js` reads (hidden_words by default), read before the test opens the game for real."""
     page.goto(f"{site_url}/letterfield#debug")
-    words = hidden_words(page)
+    words = page.evaluate(js)
     page.evaluate("localStorage.clear()")
     page.goto("about:blank")
     return words
@@ -107,6 +105,18 @@ def eventually(page: Page, check, timeout_ms: int = 5000) -> None:
             return
         page.wait_for_timeout(50)
     assert check()
+
+
+# Fakes a tab hidden (true) or shown again (false).
+HIDE = """hidden => {
+  Object.defineProperty(document, 'hidden', { configurable: true, get: () => hidden });
+  document.dispatchEvent(new Event('visibilitychange'));
+}"""
+# A share sheet that keeps what it's given, in window.__shared.
+SHARE_SHEET_INIT = """
+  window.__shared = [];
+  Object.defineProperty(navigator, 'share', { value: data => { window.__shared.push(data); return Promise.resolve(); }, configurable: true });
+"""
 
 
 def test_without_a_survey_url_the_game_plays_alone(page: Page, site_url, errors):
@@ -185,10 +195,7 @@ def test_shared_map_shows_other_surveyors_and_their_words(page: Page, site_url, 
 def test_a_word_charted_first_shares_where_it_came_in_the_worlds_count(page: Page, site_url, errors):
     word = known_words(page, site_url)[3]
     fake = FakeSurvey(totals={"charted": 412_883, "total": AREA_WORDS, "players": 3_201})
-    page.add_init_script("""
-      window.__shared = [];
-      Object.defineProperty(navigator, 'share', { value: data => { window.__shared.push(data); return Promise.resolve(); }, configurable: true });
-    """)
+    page.add_init_script(SHARE_SHEET_INIT)
     open_game(page, site_url, fake)
     expect(page.locator("#surveyText")).to_contain_text("Universe: 412,883 of 1,119,752 charted")
     circle(page, word)
@@ -534,7 +541,7 @@ def test_a_player_with_initials_from_another_game_only_sees_how_to_play(page: Pa
     # games.initials is shared with the other games' leaderboards.
     page.add_init_script("localStorage.setItem('games.initials', JSON.stringify('LBD'))")
     page.set_viewport_size({"width": 1280, "height": 900})
-    without_turnstile(page)
+    blank_constants(page, "letterfield", "TURNSTILE_SITE_KEY")
     fake = FakeSurvey()
     page.route_web_socket(re.compile(r"^wss://survey\.test/"), fake.handle)
     page.route(f"{SURVEY}/v1/survey/world", fake.handle_world)
@@ -610,16 +617,10 @@ def test_hidden_tab_leaves_the_survey(page: Page, site_url, errors):
     fake = FakeSurvey()
     open_game(page, site_url, fake)
     expect(page.locator("#survey")).to_have_attribute("data-state", "live")
-    page.evaluate("""() => {
-      Object.defineProperty(document, 'hidden', { configurable: true, get: () => true });
-      document.dispatchEvent(new Event('visibilitychange'));
-    }""")
+    page.evaluate(HIDE, True)
     expect(page.locator("#surveyText")).to_have_text("Paused while this tab is hidden.")
     assert page.evaluate("window.__lf.links.size") == 0
-    page.evaluate("""() => {
-      Object.defineProperty(document, 'hidden', { configurable: true, get: () => false });
-      document.dispatchEvent(new Event('visibilitychange'));
-    }""")
+    page.evaluate(HIDE, False)
     expect(page.locator("#survey")).to_have_attribute("data-state", "live")
     assert len(fake.sectors) == 8  # all four sectors, joined twice
     assert errors == []
@@ -748,15 +749,7 @@ def test_full_survey_says_so(page: Page, site_url, errors):
 
 def territory_words(page: Page, site_url: str) -> list[list]:
     """Every word hidden in territory (0, 0), read before the test opens the game for real."""
-    page.goto(f"{site_url}/letterfield#debug")
-    words = page.evaluate("""() => {
-      const out = [];
-      for (let cy = 0; cy < 4; cy++) for (let cx = 0; cx < 4; cx++) for (const o of window.__lf.chunk(cx, cy).words) out.push([o.w, o.x, o.y, o.d]);
-      return out;
-    }""")
-    page.evaluate("localStorage.clear()")
-    page.goto("about:blank")
-    return words
+    return known_words(page, site_url, TERRITORY_WORDS)
 
 
 def test_charting_the_last_word_in_a_territory_sets_it_off(page: Page, site_url, errors):
@@ -805,12 +798,6 @@ def test_a_supernova_shows_rather_than_says_unless_motion_is_reduced(page: Page,
         assert box["width"] <= 1 and box["height"] <= 1
     expect(page.locator("#toast")).to_contain_text("Supernova · kept in your field notes", timeout=8000)
     assert errors == []
-
-
-SHARE_SHEET_INIT = """
-  window.__shared = [];
-  Object.defineProperty(navigator, 'share', { value: data => { window.__shared.push(data); return Promise.resolve(); }, configurable: true });
-"""
 
 
 def test_a_supernova_you_saw_is_kept_in_your_notes_and_shares_its_card(page: Page, site_url, errors):
@@ -1108,7 +1095,7 @@ TAPS_REACH = """sel => [...document.querySelectorAll(sel)].map(el => {
 def with_turnstile(page: Page, mode: str = "pass", desk: FakePassDesk | None = None) -> FakePassDesk:
     desk = desk or FakePassDesk()
     page.add_init_script(f"window.__tsMode = {json.dumps(mode)}")
-    page.route(TURNSTILE_JS, lambda route: route.fulfill(content_type="application/javascript", body=FAKE_TURNSTILE))
+    # The widget's script is the fake every test context serves (stand_in_for_worker in fake_leaderboard.py).
     page.route(f"{SURVEY}/v1/survey/pass", desk.handle)
     return desk
 
@@ -1126,7 +1113,7 @@ def test_turnstile_stays_off_without_a_site_key(page: Page, site_url, errors):
 
 def test_the_game_runs_turnstile_with_its_own_site_key(page: Page, site_url, errors):
     # Without ?turnstile=, the game uses the key it was published with.
-    key = re.search(r"const TURNSTILE_SITE_KEY = '([^']*)'", (Path(__file__).parent.parent / "letterfield.html").read_text("utf-8"))[1]
+    key = re.search(r"const TURNSTILE_SITE_KEY = '([^']*)'", (ROOT / "letterfield.html").read_text("utf-8"))[1]
     assert re.fullmatch(r"0x[\w-]{10,}", key), "letterfield.html should carry the widget's public site key"
     desk = with_turnstile(page)
     fake = FakeSurvey()
@@ -1339,11 +1326,6 @@ def test_blocked_turnstile_leaves_you_surveying_alone_once_passes_are_required(p
 # claims (queued, sent, unanswered, answered) and the pass (on <html data-pass>)
 # are state machines in the page; window.__lf reports them.
 
-HIDE = """hidden => {
-  Object.defineProperty(document, 'hidden', { configurable: true, get: () => hidden });
-  document.dispatchEvent(new Event('visibilitychange'));
-}"""
-
 
 def test_words_circled_while_joining_are_claimed_once_the_sector_is_live(page: Page, site_url, errors):
     words = known_words(page, site_url)[:6]
@@ -1403,7 +1385,7 @@ def test_a_claim_lost_on_the_way_is_sent_again_when_the_sector_is_rejoined(page:
 
 def test_the_panel_says_its_joining_while_it_looks_for_where_to_start(page: Page, site_url, errors):
     page.set_viewport_size({"width": 1280, "height": 900})
-    without_turnstile(page)
+    blank_constants(page, "letterfield", "TURNSTILE_SITE_KEY")
     fake = FakeSurvey()
     asked: list[Route] = []
     page.route_web_socket(re.compile(r"^wss://survey\.test/"), fake.handle)
@@ -1608,17 +1590,8 @@ def test_a_note_never_covers_the_box_for_your_initials(page: Page, site_url, err
     assert errors == []
 
 
-TERRITORY_WORDS = """() => {
-  const out = [];
-  for (let cy = 0; cy < 4; cy++) for (let cx = 0; cx < 4; cx++) for (const o of window.__lf.chunk(cx, cy).words) out.push([o.w, o.x, o.y, o.d]);
-  return out;
-}"""
-
-
 def test_a_territory_charted_in_full_is_a_remnant(page: Page, site_url, errors):
-    page.goto(f"{site_url}/letterfield#debug")
-    words = page.evaluate(TERRITORY_WORDS)
-    page.goto("about:blank")
+    words = territory_words(page, site_url)
     # All but one charted: not yet.
     fake = FakeSurvey(claims=[[w, x, y, d, 0, "ZED", NOW_MS - 1000 + i] for i, (w, x, y, d) in enumerate(words[1:])])
     open_game(page, site_url, fake)

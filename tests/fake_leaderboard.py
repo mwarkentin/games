@@ -196,12 +196,20 @@ def stand_in_for_worker(context: BrowserContext) -> FakeLeaderboard:
     return fake
 
 
-def without_worker(page: Page, site_url: str, game: str) -> None:
-    """Serve `game` with LEADERBOARD_URL, ROOMS_URL, SURVEY_URL, SHARE_URL and DEFINE_URL blanked, as it runs with no Worker set up."""
+def blank_constants(page: Page, game: str, *names: str) -> None:
+    """Serve /`game` with each constant in `names` set to an empty string.
+
+    Only the last route registered for a page answers it, so blank every
+    constant a test needs in one call."""
+    pattern = re.compile(rf"\b((?:{'|'.join(names)}) = )'[^']*'")
 
     def handle(route: Route) -> None:
         response = route.fetch()
-        body = re.sub(r"\b((?:LEADERBOARD|ROOMS|SURVEY|SHARE|DEFINE)_URL = )'[^']*'", r"\1''", response.text())
-        route.fulfill(response=response, body=body)
+        route.fulfill(response=response, body=pattern.sub(r"\1''", response.text()))
 
     page.route(lambda url: urlparse(url).path == f"/{game}", handle)
+
+
+def without_worker(page: Page, site_url: str, game: str) -> None:
+    """Serve `game` with LEADERBOARD_URL, ROOMS_URL, SURVEY_URL, SHARE_URL and DEFINE_URL blanked, as it runs with no Worker set up."""
+    blank_constants(page, game, "LEADERBOARD_URL", "ROOMS_URL", "SURVEY_URL", "SHARE_URL", "DEFINE_URL")
