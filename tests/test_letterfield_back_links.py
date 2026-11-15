@@ -146,3 +146,27 @@ def test_a_tabs_first_page_has_nothing_to_step_back_to(page: Page, site_url, err
     tab.wait_for_url("**/letterfield")
     assert at(tab)[1] == 2
     assert errors == []
+
+
+def test_a_log_brought_back_whole_from_the_cache_is_scrolled_where_it_was(page: Page, site_url, errors):
+    # Safari keeps the page whole for a step back but, with its own restoration off, shows it at the top.
+    page.set_viewport_size({"width": 375, "height": 740})
+    open_log(page, site_url, FakeSurveyLog([*MANY, MONET, ZEUS], PLACES, THEMES), "&surveyor=ZED&period=week")
+    word = entry(page, MANY[30][0])
+    expect(word).to_be_visible()
+    word.evaluate("e => e.scrollIntoView({ block: 'center', behavior: 'instant' })")
+    page.wait_for_function("scrollY > 100 && history.state?.lfScroll === scrollY")
+    scrolled = page.evaluate("scrollY")
+    at_top = page.evaluate("""() => {
+      const html = document.documentElement;
+      html.style.scrollBehavior = 'auto';
+      void getComputedStyle(html).scrollBehavior;
+      scrollTo(0, 0);
+      html.style.scrollBehavior = '';
+      const y = scrollY;
+      dispatchEvent(new PageTransitionEvent('pageshow', { persisted: true }));
+      return y;
+    }""")
+    assert at_top == 0
+    page.wait_for_function(f"Math.abs(scrollY - {scrolled}) < 2", timeout=5000)
+    assert errors == []

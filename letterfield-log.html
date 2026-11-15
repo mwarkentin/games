@@ -1407,8 +1407,26 @@ function scrollBack() {
   if (backTo === null) return;
   const y = backTo;
   backTo = null;
-  scrollTo({ top: y, behavior: 'instant' });  // where it was, not a glide there
+  jumpTo(y);
 }
+// Straight to y, not a glide there, whatever scroll-behavior says (read back
+// first, so the scroll sees it).
+function jumpTo(y) {
+  const html = document.documentElement, was = html.style.scrollBehavior;
+  html.style.scrollBehavior = 'auto';
+  void getComputedStyle(html).scrollBehavior;
+  scrollTo(0, y);
+  html.style.scrollBehavior = was;
+}
+// A page brought back whole from the browser's back-forward cache isn't drawn
+// again, and Safari, with its own restoration off, shows it at the top: so its
+// entry's scroll is put back here, and again a frame later if Safari moved it.
+addEventListener('pageshow', e => {
+  if (!e.persisted || !Number.isFinite(history.state?.lfScroll)) return;
+  const y = history.state.lfScroll;
+  jumpTo(y);
+  requestAnimationFrame(() => { if (Math.abs(scrollY - y) > 1) jumpTo(y); });
+});
 // Where the log starts, on <html data-span>: asking the log for its first
 // word, known, or failed (asked again on the next view). Until it's known,
 // ‹ goes back without stopping.
