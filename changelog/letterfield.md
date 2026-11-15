@@ -40,6 +40,11 @@
 - The timelapse's speed and Save video buttons look disabled while the survey log loads, and its counts say “1 word”, “1 supernova” and “1 territory”.
 - Following a guild in the timelapse, its count reads “by the guild”, and a video you save names the guild in its colour.
 - When the timelapse catches up with days still loading, it says which day it's waiting for over the map, and carries on by itself once that day arrives.
+- Under your guild's name on the Surveyors list, a member who takes no emotes says so, as everyone else on the list does.
+- The In view / Territory switch on the word bar is easier to tap.
+- The survey log's “← Letterfield” takes you back to the map where you left it, in a Home Screen app too, and the map keeps its place when you come back to it, even if its address names a find.
+- The survey log link in your field notes is now “Survey log and timelapse ↗”, and every link that leaves the game wears an arrow out.
+- The survey panel says “crowded” when there's no room for you, as the title does, and share cards talk about the universe and bonus words, as the game does.
 - Circling a word another surveyor charted first now offers “Add to notes”, to keep it in your field notes all the same. It's still theirs: it doesn't count as charted first by you.
 - On a phone, a long press on another surveyor's caret opens its menu again, instead of the phone selecting text or showing its copy bubble. The field notes, definitions and the Surveyors drawer can still be selected and copied.
 - Each of your settings shows in one place now: on your page in the Surveyors drawer, beside the switch or button that changes it. Your row at the top of the list says what's on your page instead of repeating them, the foot of your field notes just offers feedback, and Stop syncing is where it says your notes and settings are backed up.
