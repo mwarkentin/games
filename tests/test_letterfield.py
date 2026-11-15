@@ -1153,6 +1153,36 @@ def test_the_word_bar_counts_what_it_names_and_only_buttons_look_tappable(page: 
 
 
 @pytest.mark.parametrize("size", [(375, 740), (1280, 900)], ids=["phone", "desktop"])
+def test_the_word_bars_switch_takes_taps_40px_tall_inside_the_bar(page: Page, site_url, errors, size):
+    without_worker(page, site_url, "letterfield")
+    page.set_viewport_size({"width": size[0], "height": size[1]})
+    page.goto(f"{site_url}/letterfield#debug")
+    page.wait_for_function("window.__lf")
+    page.click("#coachOk")
+    expect(page.locator("#legendList .chip").first).to_be_visible()
+    page.locator("#bar").evaluate("e => Promise.all(e.getAnimations({ subtree: true }).map(a => a.finished))")
+    view, whole = page.locator("#listView"), page.locator("#listWhole")
+    # A tap a few pixels above or below either side, still in the bar, takes it.
+    for side, other, dy in [(whole, view, -6), (view, whole, 9), (whole, view, 9), (view, whole, -6)]:
+        box = side.bounding_box()
+        y = box["y"] - 0.5 + dy if dy < 0 else box["y"] + box["height"] + dy - 0.5
+        page.mouse.click(box["x"] + box["width"] / 2, y)
+        expect(side).to_have_attribute("aria-pressed", "true")
+        expect(other).to_have_attribute("aria-pressed", "false")
+    # Where each side takes taps: 40px of the bar, clear of the map above and the words.
+    for side in (view, whole):
+        hit = side.evaluate("""btn => {
+          const b = btn.getBoundingClientRect(), x = (b.left + b.right) / 2, ys = [];
+          for (let y = b.top - 30; y <= b.bottom + 30; y += 0.5) if (document.elementFromPoint(x, y) === btn) ys.push(y);
+          const bar = document.getElementById('bar').getBoundingClientRect(), chip = document.querySelector('#legendList .chip').getBoundingClientRect();
+          return { top: ys[0], bottom: ys.at(-1), bar: bar.top, chip: chip.left > b.right ? Infinity : chip.top };
+        }""")
+        assert hit["bottom"] - hit["top"] >= 39.5, hit
+        assert hit["top"] >= hit["bar"] and hit["bottom"] < hit["chip"], hit
+    assert errors == []
+
+
+@pytest.mark.parametrize("size", [(375, 740), (1280, 900)], ids=["phone", "desktop"])
 def test_the_title_box_always_shows_how_many_words_are_found(page: Page, site_url, errors, size):
     without_worker(page, site_url, "letterfield")
     page.set_viewport_size({"width": size[0], "height": size[1]})

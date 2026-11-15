@@ -170,7 +170,9 @@ class FakeSurvey:
                             "who": who[page * size:(page + 1) * size]}, headers=cors)
 
     def guild(self, sector: str, tag: str, on: list) -> None:
-        """Tells the game on sector `sector`'s socket who of guild `tag` is online: [[id, initials, rx, ry, idle], ...]."""
+        """Tells the game on sector `sector`'s socket who of guild `tag` is online: [[id, initials, rx, ry, idle, flags], ...].
+
+        The flags are the list's (1: takes no emotes), and may be left off, as an older Worker did."""
         self.sockets[sector].send(json.dumps({"t": "guild", "tag": tag, "on": on}))
 
     def emote(self, sector: str, sender: str, initials: str, e: str, r: list | None = None) -> None:
