@@ -220,6 +220,19 @@ describe('the log\'s counts', () => {
     assert.deepEqual(db.raw.prepare('SELECT guild, n FROM survey_log_guild_days').all().map((r) => ({ ...r })), [{ guild, n: 1 }]);
   });
 
+  test('take out bonus words copied after 0009 ran, before the deploy that stopped them', async () => {
+    const AGAIN = '0010_survey_log_no_bonus_words_again.sql';
+    const before = readdirSync(MIGRATIONS).sort().indexOf(AGAIN);
+    assert.ok(before > 0, `no ${AGAIN}`);
+    db = fakeD1(before);
+    await writeLog(db, [at(0, 0, NOW), at(5, 5, NOW + 1, { s: 1, initials: 'AMY' })]);
+    assert.deepEqual(hours(), [{ hour: HOUR, n: 2, world: 1 }]);
+    db.raw.exec(migrations()[before]);
+    assert.deepEqual(db.rows().map((r) => r.s), [0]);
+    assert.deepEqual(hours(), [{ hour: HOUR, n: 1, world: 1 }]);
+    assert.deepEqual(counts('survey_log_surveyors').filter((r) => r.n), [{ day: DAY, initials: 'ZED', n: 1 }]);
+  });
+
   test('give a UTC month hour by hour, leaving out hours with none', async () => {
     const month = (2026 - 1970) * 12 + 10;  // November 2026
     const [from, to] = monthHours(month);

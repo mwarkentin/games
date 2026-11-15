@@ -285,7 +285,10 @@ keep their leaderboards hidden. After that:
    then deploys with `IP_SALT` as a Worker secret. Wrangler makes the
    Durable Object classes (War's rooms, and the survey's sectors and Atlas)
    from the `[[migrations]]` in `wrangler.toml`, and the survey's
-   per-address rate limiters from its `[[ratelimits]]`. The Worker answers at
+   per-address rate limiters from its `[[ratelimits]]`. Since migrations go first, a migration that
+   deletes rows the running code still writes has to ship in a deploy after
+   the one that stops writing them (`migrations-log/0010` cleans up after
+   `0009`, which didn't). The Worker answers at
    `https://api.games.michaelwarkentin.com` (below) and at
    `https://games-leaderboard.mwarkentin.workers.dev`.
 2. **The games already point at it:** `LEADERBOARD_URL` in
