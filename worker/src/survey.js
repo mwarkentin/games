@@ -364,8 +364,9 @@ export class Sector {
     this.sql.exec('CREATE INDEX IF NOT EXISTS claims_by_time ON claims (at, key)');
     this.sql.exec('CREATE TABLE IF NOT EXISTS logged (id INTEGER PRIMARY KEY CHECK (id = 0), at INTEGER NOT NULL)');
     // Each claim's guild, as the log knows it: the log id of the guild its
-    // charter was in, '' for none or for a charter off the surveyor list. The
-    // guilds' names go to the log with their claims (noteGuild, flushLog).
+    // charter was in, or '' for none (and, from when surveyors could keep off
+    // the list, for one who did). The guilds' names go to the log with their
+    // claims (noteGuild, flushLog).
     try { this.sql.exec('SELECT guild FROM claims LIMIT 0'); } catch { this.sql.exec("ALTER TABLE claims ADD COLUMN guild TEXT NOT NULL DEFAULT ''"); }
     this.sql.exec('CREATE TABLE IF NOT EXISTS guild_names (lid TEXT PRIMARY KEY, a INTEGER NOT NULL, b INTEGER NOT NULL, c INTEGER NOT NULL) WITHOUT ROWID');
     // Supernovas: the sector's territories whose every hidden word is

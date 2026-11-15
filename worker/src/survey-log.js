@@ -71,9 +71,10 @@
 // reading an hour reads only that hour's rows.
 //
 // A guild is known in the log by its log id (survey-guild.js), never its
-// tag or code, and counts the words its members charted while in it, except
-// a member's off the surveyor list, which the sector logs with no guild. Its
-// name comes with its first words (survey_log_guilds).
+// tag or code, and counts the words its members charted while in it (but for
+// words from when surveyors could keep off the list, by one who did, which
+// were logged with no guild). Its name comes with its first words
+// (survey_log_guilds).
 //
 // The longer views read counts, not the log: triggers in D1 keep words per
 // hour, per day per set of initials and per day per territory as rows go in
