@@ -25,19 +25,19 @@ Line numbers are as of commit 7bae950 and drift as the files change.
 | 10 | "Charted first" on nearly every entry, and messy rows | a with b; cards under day headings, a time on each row, rows on one grid | Built in #105 |
 | 11 | The theme cut to "Fe…" on a phone | b: "3/113" without "charted", and no LF mark on phones | Built in #105 |
 | 12 | "Origin" means nothing to most players | b and c: Map centre, and Last find once you have a find | Built in #105 |
-| 13 | Internal words show through | a: fix the words ("bonus word" for "stray"); 16 random guild words, without "Survey" | Built in #105 and #106; share cards in D |
+| 13 | Internal words show through | a: fix the words ("bonus word" for "stray"); 16 random guild words, without "Survey" | Built in #105 and #106; share cards in #109 |
 | 14 | The tools menu hides its state; the volume floats | c: a mixer, a slider each for effects and music; zoom in one row | Built in #105 |
 | 15 | Buttons with the same job look different; risky ones look harmless | a: filled and outlined buttons, red to end or delete; Stop syncing as rows; white inputs | Built in #105 |
 | 16 | Small visual glitches | a: fix each in place | Built in #105 |
-| 17 | Small flow and copy fixes | 1a: a Muted list on your page; 2a: the link in a box; 3: a and b, "Survey log and timelapse ↗" and ↗ on links out | 1 and 2 built in #105; 3 in D |
+| 17 | Small flow and copy fixes | 1a: a Muted list on your page; 2a: the link in a box; 3: a and b, "Survey log and timelapse ↗" and ↗ on links out | 1 and 2 built in #105; 3 in #109 |
 | 18 | Sharing the Supernovas page gives out a dead link | b: a Supernovas card in the share Worker | Built in #106 |
 | 19 | "Live" on views that don't update | No badge: "So far" on any period still running; the hour still updates quietly | Built in #106 |
 | 20 | On a phone, the words come last | a with c: words straight after the chart, its supernova note under it | Built in #106 |
 | 21 | The hour view uses a day's controls; the log's header | A new header (a way back, tabs for what's listed, periods as tabs, the card's title as navigator); b with d: ‹ stops at the first word | Built in #106 |
 | 22 | A new guild's page says "No such guild" | a plus c: named, "hasn't charted a word yet"; its Timelapse link waits for a first word | Built in #106, with the name from #105 |
-| 23 | Moving between the game, log and timelapse loses your place | a: a link back to the page you came from steps back in history | Built in D |
+| 23 | Moving between the game, log and timelapse loses your place | a: a link back to the page you came from steps back in history | Built in #109 |
 | 24 | Numbers nobody explains | a with c: the third tile fits the view; the UTC note under the Top lists heading | Built in #106 |
-| 25 | One idea, many names, across the three pages | a: a glossary in AGENTS.md; "members" for a guild's people, "the universe" for the shared world | Glossary in #105; each page in #105, #106 and #104; the rest in D |
+| 25 | One idea, many names, across the three pages | a: a glossary in AGENTS.md; "members" for a guild's people, "the universe" for the shared world | Glossary in #105; each page in #105, #106 and #104; the rest in #109 |
 | 26 | The timelapse's territory card uses the theme as its name | a: "A Festivals territory" until the name comes, and the replay's date for "by then" | Built in #104 |
 | 27 | Timelapse status is faint or wrong | a with b: disabled pills, singular labels, the guild named; "Waiting for Nov 13…" over the map | Built in #104 |
 | 28 | Cramped at 375px, with small tap targets | a with b: "3–4 PM", names that wrap, rows on 10's grid, 40px buttons; a first tap on a bar shows its value | Built in #106 |
