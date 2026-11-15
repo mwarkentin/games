@@ -1,5 +1,41 @@
 ## 2026-11-14
 
+- Every word you circle stays in your field notes. One another surveyor charted first, while you were offline, in a race or before you added it, says “charted by ZED” under it and is drawn on the map as theirs, an outline; your own firsts wear a ring.
+- Words you circle while offline still go to the survey once you're back, even after a reload, and from every tab you had open.
+- The field notes are easier to read: a heading for each day, a card for each visit to a territory, and each word's time and bearing on one line, lined up row to row.
+- A real word turned up by chance is now called a bonus word.
+- The notes button shows no count until your first find.
+- If your browser won't copy a link you share, the link shows in a box to copy by hand.
+- On the shared survey, the title says when your part of the map is joining, offline or crowded, in place of its count.
+- On a phone the title is just the territory, its theme and a count like “3/113”: the LF is gone, so the theme's name nearly always fits.
+- On a tablet, field notes opened over the map no longer cover the end of the title, which shows the whole theme and count.
+- The survey panel in your field notes keeps to how much of the universe is charted and how many words you charted first. Who's online is counted once, on the Surveyors button, and the world map is now the Universe map, drawn as soon as you open it.
+- The tools are in three groups: zoom, with − and + side by side; Map centre (H), which was Origin; and a mixer with a slider each for sound effects and music. Slide one to 0 to turn it off, or tap its icon. The field notes button's tooltip names its key, N.
+- Last find (L) joins the tools once you've found a word, and flies back to your newest find.
+- Only one of the tools, the Surveyors drawer and the field notes is open at a time, and the field notes button shows when they're open, as the others do. On a computer the Surveyors drawer opens in the notes' place.
+- The word list's switch between In view and Territory looks like a switch, words you can't tap no longer look like buttons, and its count says “14 of 21” when it can only name the nearest.
+- On a computer, a surveyor's hover card near your field notes opens over the map instead of under the notes.
+- The first-visit card says what the coloured bars and outlined words on the map are.
+- Buttons in the Surveyors drawer follow one rule: filled for a card's main choice, outlined for the rest, and red for one that ends or deletes something, like Leave or Every device, all easy to tap. Text boxes are white in the light theme, so they look like somewhere to type.
+- Stop syncing asks where to stop, This device or Every device, and its row is red, like Leave guild. Stopping on every device says it's stopping, then that it's done.
+- Emotes have their names under them, and Nice is now Thumbs up. The notes they leave say what's happening: “KIM waves”. A surveyor's caret menu says when they aren't taking emotes.
+- The foot of the Surveyors list says you can long-press someone's caret on the map, or right-click it, for emotes.
+- Guild names no longer end in “Survey”, which read like another survey: those guilds are now “… Lodge”, and a new guild's name can end in eight more words, from League to Caravan.
+- Everyone surveying is on the surveyor list: the “Show me on the list” switch is gone, and every member's words count for their guild. Someone who joins and stays put shows on the list and the map straight away.
+- A Muted row on your page in the Surveyors drawer lists everyone you've muted, with when, so you can unmute them even once they've gone. Mutes, and who they were, follow you to your linked devices.
+- After you show a code to link another device, Done no longer stops this one noticing when it's used: even after a reload, a note says Linked and this device keeps in step too. Link another device shows the same code again while it's still good, and a new code stops an older one working.
+- A device brought back with a recovery code says when the code was saved, and one whose syncing was stopped from another device no longer says it still has one.
+- The survey log has a new header: a way back to the map, tabs for everyone's words, yours or the supernovas, and the periods as tabs. The day, week or hour is the card's title, with arrows either side and a date picker under it.
+- Going back in the survey log stops at the day of the first word charted, instead of running into empty days.
+- “Live” is gone from the survey log. A day, week or month still running says “So far”.
+- A new guild's page in the survey log, from “Our words in the survey log” on your page, shows its name and says it hasn't charted a word yet, instead of “No such guild”.
+- A link to the survey log draws its page straight away, with grey blocks holding the place of the numbers and words until they arrive.
+- On a phone, the survey log shows the words right after the chart, with the top lists after them. The supernova note sits under the chart.
+- The survey log's third number now says how many hidden words were charted. All time shows how much of the universe is charted.
+- The survey log fits a phone better: shorter hour headings, names that wrap, word rows laid out like the field notes, and bigger buttons. Tap a bar once to see its number and again to open it.
+- Sharing the survey log's Supernovas gives a link with a card of its own.
+- Tap the book beside a word in the survey log to see what it means, as in your field notes.
+- Bonus words stay in your field notes but are no longer listed in the public survey log.
 - Circling a word another surveyor charted first now offers “Add to notes”, to keep it in your field notes all the same. It's still theirs: it doesn't count as charted first by you.
 - On a phone, a long press on another surveyor's caret opens its menu again, instead of the phone selecting text or showing its copy bubble. The field notes, definitions and the Surveyors drawer can still be selected and copied.
 - Each of your settings shows in one place now: on your page in the Surveyors drawer, beside the switch or button that changes it. Your row at the top of the list says what's on your page instead of repeating them, the foot of your field notes just offers feedback, and Stop syncing is where it says your notes and settings are backed up.
