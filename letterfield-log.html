@@ -289,10 +289,10 @@ header p{margin:8px 0 0;color:var(--muted);max-width:40ch}
 <body>
 <main>
   <header>
-    <a class="home" href="/letterfield">← Letterfield</a>
+    <a class="home" href="/letterfield" data-back="page">← Letterfield</a>
     <div class="titlerow">
       <h1>Survey log</h1>
-      <a class="pill" href="/letterfield-timelapse" id="timelapseLink">▶ Timelapse</a>
+      <a class="pill" href="/letterfield-timelapse" id="timelapseLink" data-back="view">▶ Timelapse</a>
     </div>
     <p id="intro">Every word charted first. Tap a word to fly to it, or a name to see all of theirs.</p>
   </header>
@@ -361,6 +361,74 @@ header p{margin:8px 0 0;color:var(--muted);max-width:40ch}
 <div class="tip" id="tip" role="tooltip" hidden></div>
 <script>
 'use strict';
+// ---- BEGIN BACK LINKS ----
+// The game, the survey log and the timelapse link to each other. A link
+// marked data-back, to the page this tab was on before this one, steps back
+// to it instead of opening it afresh, so you come back to the view you left,
+// scrolled where it was, in a Home Screen app with no Back button too:
+// data-back="page" for any view of that page, data-back="view" for the same
+// view (its address, but for the period and a guild's name). Every history
+// entry keeps in its state the address of the last entry of another of the
+// three pages before this page's own (lfPrev) and how many steps back that
+// is (lfBack): from the referrer when a page opens, a step further with each
+// entry the page makes of its own (pushState, a fragment link), and kept by
+// a reload, Back and Forward. Anything else is a normal link.
+(() => {
+  const PAGES = ['/letterfield', '/letterfield-log', '/letterfield-timelapse'], LOOSE = ['period', 'day', 'hour', 'name'];
+  const KEY = 'letterfield.left.v1';  // this tab's page as it left, for one opening the same page afresh
+  const path = u => u.pathname.replace(/\.html$/, '');
+  const at = u => path(u) + u.search;
+  let prev = null, back = 0;
+  const push = history.pushState.bind(history), replace = history.replaceState.bind(history);
+  const tagged = s => ({ ...(s && typeof s === 'object' ? s : {}), lfPrev: prev, lfBack: back });
+  const keep = () => { try { sessionStorage.setItem(KEY, JSON.stringify({ at: at(location), prev, back })); } catch (_) {} };
+  const tag = () => { try { replace(tagged(history.state), ''); } catch (_) {} keep(); };
+  // An entry tagged before says where it stands.
+  function known() {
+    const s = history.state;
+    if (!s || typeof s !== 'object' || !('lfBack' in s)) return false;
+    prev = typeof s.lfPrev === 'string' ? s.lfPrev : null;
+    back = prev && Number.isInteger(s.lfBack) && s.lfBack > 0 ? s.lfBack : 0;
+    if (!back) prev = null;
+    keep();
+    return true;
+  }
+  if (!known()) {
+    let ref = null;
+    try { ref = new URL(document.referrer); } catch (_) {}
+    // A tab's first entry has nothing before it, whoever opened it.
+    if (history.length > 1 && ref && ref.origin === location.origin && PAGES.includes(path(ref))) {
+      if (path(ref) !== path(location)) { prev = at(ref); back = 1; }
+      else {
+        // This page again, opened afresh: where it came from, a step further.
+        let left = null;
+        try { left = JSON.parse(sessionStorage.getItem(KEY)); } catch (_) {}
+        if (left && left.at === at(ref) && typeof left.prev === 'string' && Number.isInteger(left.back) && left.back > 0) { prev = left.prev; back = left.back + 1; }
+      }
+    }
+    tag();
+  }
+  history.pushState = (s, title, url) => { if (prev) back += 1; push(tagged(s), title, url); keep(); };
+  history.replaceState = (s, title, url) => { replace(tagged(s), title, url); keep(); };
+  // A fragment link's entry comes untagged: a step further.
+  const moved = () => { if (!known()) { if (prev) back += 1; tag(); } };
+  addEventListener('popstate', moved);
+  addEventListener('hashchange', moved);
+  addEventListener('pageshow', e => { if (e.persisted) known(); });
+  addEventListener('pagehide', keep);
+  const view = u => [...u.searchParams].filter(([k]) => !LOOSE.includes(k)).map(p => p.join('=')).sort().join('&');
+  document.addEventListener('click', e => {
+    const a = e.target instanceof Element && e.target.closest('a[data-back]');
+    if (!a || !prev || e.defaultPrevented || e.button || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || (a.target && a.target !== '_self')) return;
+    let to, from;
+    try { to = new URL(a.href); from = new URL(prev, location.origin); } catch (_) { return; }
+    if (to.origin !== location.origin || path(to) !== path(from)) return;
+    if (a.dataset.back === 'view' && view(to) !== view(from)) return;
+    e.preventDefault();
+    history.go(-back);
+  });
+})();
+// ---- END BACK LINKS ----
 // The survey's server (worker/src/survey-log.js). ?survey=<url> overrides it
 // for testing, as in letterfield.html.
 const SURVEY_URL = 'https://api.games.michaelwarkentin.com';
@@ -971,7 +1039,14 @@ function defPanel({ w, th, theme }) {
   const d = define(w, th), st = d.m.state, box = el('div', 'def');
   box.dataset.define = st;
   box.setAttribute('aria-live', 'polite');
-  const link = (text, href, rel = 'noopener') => { const a = el('a', '', text); a.href = href; a.target = '_blank'; a.rel = rel; return a; };
+  // Out to another site, with an arrow out, as on every link that leaves.
+  const link = (text, href, rel = 'noopener') => {
+    const a = el('a', '', text + ' '), out = el('span', '', '↗');
+    out.setAttribute('aria-hidden', 'true');
+    a.append(out);
+    a.href = href; a.target = '_blank'; a.rel = rel;
+    return a;
+  };
   const search = () => [
     link('Wiktionary', `https://en.wiktionary.org/wiki/Special:Search?search=${encodeURIComponent(w.toLowerCase())}`),
     link('Wikipedia', `https://en.wikipedia.org/w/index.php?search=${encodeURIComponent(w.toLowerCase() + (theme ? ' ' + theme : ''))}`),
@@ -1313,7 +1388,27 @@ const Log = machine('log', {
   refreshing: ['ready', 'stale', 'loading'],
   stale: ['refreshing', 'loading'],
   failed: ['loading'],
-}, 'loading');
+}, 'loading', { onMove: to => { if (to === 'ready') scrollBack(); } });
+// A view come back to (Back, a step back from another page, see BACK LINKS,
+// or a reload) is scrolled where it was once its words are drawn, which the
+// browser can't do while they're still on their way, and does a little off
+// when it tries. Each entry keeps its scroll, saved a moment after the page
+// stops scrolling and as anything is tapped.
+let backTo = Number.isFinite(history.state?.lfScroll) ? history.state.lfScroll : null, scrollSaving = 0;
+try { history.scrollRestoration = 'manual'; } catch (_) {}
+function keepScroll() {
+  clearTimeout(scrollSaving);
+  try { history.replaceState({ ...history.state, lfScroll: scrollY }, ''); } catch (_) {}
+}
+addEventListener('scroll', () => { clearTimeout(scrollSaving); scrollSaving = setTimeout(keepScroll, 250); }, { passive: true });
+document.addEventListener('click', keepScroll, true);
+addEventListener('pagehide', keepScroll);
+function scrollBack() {
+  if (backTo === null) return;
+  const y = backTo;
+  backTo = null;
+  scrollTo({ top: y, behavior: 'instant' });  // where it was, not a glide there
+}
 // Where the log starts, on <html data-span>: asking the log for its first
 // word, known, or failed (asked again on the next view). Until it's known,
 // ‹ goes back without stopping.
@@ -1378,7 +1473,7 @@ document.addEventListener('click', e => {
   e.preventDefault();
   go(a.getAttribute('href'));
 });
-addEventListener('popstate', () => { readUrl(); render(); });
+addEventListener('popstate', () => { backTo = Number.isFinite(history.state?.lfScroll) ? history.state.lfScroll : 0; readUrl(); render(); });
 // Opens a period at a moment: today's when the period holds now, else its start.
 function open(period, t) {
   state.period = period;
@@ -1939,7 +2034,7 @@ function shareSlice(run, f, p, start, end, { total, world, places, surveyors, wo
   if (f.kind === 'surveyor') {
     return offerShare(run, {
       kind: 'Surveyor', name: f.key, when: whenShown(p, start, end), words,
-      stats: [['Words charted first', total.toLocaleString()], ['In the shared world', world.toLocaleString()], ['Top territory', top || '—']],
+      stats: [['Words charted first', total.toLocaleString()], ['In the universe', world.toLocaleString()], ['Top territory', top || '—']],
       text: total
         ? `${f.key} charted ${plural(total, 'word')} first in Letterfield’s shared survey ${said}${top ? `, most in ${top}` : ''}.${latestSaid(words)}`
         : `No words signed ${f.key} in Letterfield’s shared survey ${said}.`,

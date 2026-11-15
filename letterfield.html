@@ -388,7 +388,6 @@ li.row > button{margin-top:2px}
 .survey-map-note{margin:6px 0 0;text-align:center;font:400 10.5px/1.4 var(--f-mono);color:var(--muted)}
 .survey-map-note:empty{display:none}
 .survey-log{display:block;margin-top:6px;padding:4px 0;font:500 10px/1.3 var(--f-mono);letter-spacing:.14em;text-transform:uppercase;color:var(--muted)}
-.survey-log::after{content:" →"}
 /* Surveyors: everyone else in the shared world, nearest first, each a row that
    flies you to their territory, with emotes to send them (see Surveyors). */
 .who-status{margin:8px 0 4px;font:400 11px/1.45 var(--f-mono);color:var(--muted);white-space:pre-line}
@@ -733,7 +732,7 @@ body.settling, body.settling *{transition:none!important}
       <canvas id="worldMap" width="200" height="200" aria-label="Map of the universe: charted territories are darker, dots are surveyors. Tap to fly there."></canvas>
       <p class="survey-map-note" id="worldNote"></p>
     </details>
-    <a class="survey-log" href="/letterfield-log">Survey log: every word charted, hour by hour</a>
+    <a class="survey-log" href="/letterfield-log" data-back="page">Survey log and timelapse <span aria-hidden="true">↗</span></a>
   </section>
   <section class="novas" id="novasSec" aria-labelledby="novasHead" hidden>
     <h3 class="eyebrow" id="novasHead">Supernovas</h3>
@@ -817,6 +816,74 @@ body.settling, body.settling *{transition:none!important}
 <script>
 (() => {
 'use strict';
+// ---- BEGIN BACK LINKS ----
+// The game, the survey log and the timelapse link to each other. A link
+// marked data-back, to the page this tab was on before this one, steps back
+// to it instead of opening it afresh, so you come back to the view you left,
+// scrolled where it was, in a Home Screen app with no Back button too:
+// data-back="page" for any view of that page, data-back="view" for the same
+// view (its address, but for the period and a guild's name). Every history
+// entry keeps in its state the address of the last entry of another of the
+// three pages before this page's own (lfPrev) and how many steps back that
+// is (lfBack): from the referrer when a page opens, a step further with each
+// entry the page makes of its own (pushState, a fragment link), and kept by
+// a reload, Back and Forward. Anything else is a normal link.
+(() => {
+  const PAGES = ['/letterfield', '/letterfield-log', '/letterfield-timelapse'], LOOSE = ['period', 'day', 'hour', 'name'];
+  const KEY = 'letterfield.left.v1';  // this tab's page as it left, for one opening the same page afresh
+  const path = u => u.pathname.replace(/\.html$/, '');
+  const at = u => path(u) + u.search;
+  let prev = null, back = 0;
+  const push = history.pushState.bind(history), replace = history.replaceState.bind(history);
+  const tagged = s => ({ ...(s && typeof s === 'object' ? s : {}), lfPrev: prev, lfBack: back });
+  const keep = () => { try { sessionStorage.setItem(KEY, JSON.stringify({ at: at(location), prev, back })); } catch (_) {} };
+  const tag = () => { try { replace(tagged(history.state), ''); } catch (_) {} keep(); };
+  // An entry tagged before says where it stands.
+  function known() {
+    const s = history.state;
+    if (!s || typeof s !== 'object' || !('lfBack' in s)) return false;
+    prev = typeof s.lfPrev === 'string' ? s.lfPrev : null;
+    back = prev && Number.isInteger(s.lfBack) && s.lfBack > 0 ? s.lfBack : 0;
+    if (!back) prev = null;
+    keep();
+    return true;
+  }
+  if (!known()) {
+    let ref = null;
+    try { ref = new URL(document.referrer); } catch (_) {}
+    // A tab's first entry has nothing before it, whoever opened it.
+    if (history.length > 1 && ref && ref.origin === location.origin && PAGES.includes(path(ref))) {
+      if (path(ref) !== path(location)) { prev = at(ref); back = 1; }
+      else {
+        // This page again, opened afresh: where it came from, a step further.
+        let left = null;
+        try { left = JSON.parse(sessionStorage.getItem(KEY)); } catch (_) {}
+        if (left && left.at === at(ref) && typeof left.prev === 'string' && Number.isInteger(left.back) && left.back > 0) { prev = left.prev; back = left.back + 1; }
+      }
+    }
+    tag();
+  }
+  history.pushState = (s, title, url) => { if (prev) back += 1; push(tagged(s), title, url); keep(); };
+  history.replaceState = (s, title, url) => { replace(tagged(s), title, url); keep(); };
+  // A fragment link's entry comes untagged: a step further.
+  const moved = () => { if (!known()) { if (prev) back += 1; tag(); } };
+  addEventListener('popstate', moved);
+  addEventListener('hashchange', moved);
+  addEventListener('pageshow', e => { if (e.persisted) known(); });
+  addEventListener('pagehide', keep);
+  const view = u => [...u.searchParams].filter(([k]) => !LOOSE.includes(k)).map(p => p.join('=')).sort().join('&');
+  document.addEventListener('click', e => {
+    const a = e.target instanceof Element && e.target.closest('a[data-back]');
+    if (!a || !prev || e.defaultPrevented || e.button || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || (a.target && a.target !== '_self')) return;
+    let to, from;
+    try { to = new URL(a.href); from = new URL(prev, location.origin); } catch (_) { return; }
+    if (to.origin !== location.origin || path(to) !== path(from)) return;
+    if (a.dataset.back === 'view' && view(to) !== view(from)) return;
+    e.preventDefault();
+    history.go(-back);
+  });
+})();
+// ---- END BACK LINKS ----
 const $ = s => document.querySelector(s);
 
 /* ---------- World constants ---------- */
@@ -1995,8 +2062,8 @@ const SURVEY_STATUS = {
   paused: ['connecting', 'Paused while this tab is hidden.'],
   checking: ['connecting', 'Checking this is a person, not a bot…'],
   alone: ['offline', 'Couldn’t check this is a person, so you’re surveying alone for now. Your finds still save in this browser.'],
-  'full-world': ['offline', 'The survey is full right now. Your finds still save in this browser.'],
-  'full-sector': ['offline', 'This part of the map is full right now. Your finds still save in this browser.'],
+  'full-world': ['offline', 'The survey is crowded right now. Your finds still save in this browser.'],
+  'full-sector': ['offline', 'This part of the map is crowded right now. Your finds still save in this browser.'],
   offline: ['offline', 'Survey offline. Your finds still save in this browser.'],
   joining: ['connecting', 'Joining the survey…'],
 };
@@ -4213,15 +4280,17 @@ function define(e, retry = false) {
   return d;
 }
 // The panel under an open entry.
+// An arrow out, on every link that leaves the game for another site.
+const AWAY = ' <span aria-hidden="true">↗</span>';
 function defPanel(e) {
   const d = define(e), st = d.m.state, theme = THEMES[e.th].name;
-  const search = `<a href="https://en.wiktionary.org/wiki/Special:Search?search=${encodeURIComponent(e.w.toLowerCase())}" target="_blank" rel="noopener">Wiktionary</a>` +
-    `<a href="https://en.wikipedia.org/w/index.php?search=${encodeURIComponent(e.w.toLowerCase() + ' ' + theme)}" target="_blank" rel="noopener">Wikipedia</a>`;
+  const search = `<a href="https://en.wiktionary.org/wiki/Special:Search?search=${encodeURIComponent(e.w.toLowerCase())}" target="_blank" rel="noopener">Wiktionary${AWAY}</a>` +
+    `<a href="https://en.wikipedia.org/w/index.php?search=${encodeURIComponent(e.w.toLowerCase() + ' ' + theme)}" target="_blank" rel="noopener">Wikipedia${AWAY}</a>`;
   let html;
   if (st === 'ready') {
     html = d.senses.map(s => `<p class="def-sense">${s.pos ? `<i>${escHtml(s.pos)}</i>` : ''}${escHtml(s.text)}</p>`).join('') +
-      `<p class="def-links">${d.url ? `<a href="${escHtml(d.url)}" target="_blank" rel="noopener">From ${d.source === 'wikipedia' ? 'Wikipedia' : 'Wiktionary'}</a>` : ''}` +
-      `<a href="https://creativecommons.org/licenses/by-sa/4.0/" target="_blank" rel="noopener license">CC BY-SA 4.0</a></p>`;
+      `<p class="def-links">${d.url ? `<a href="${escHtml(d.url)}" target="_blank" rel="noopener">From ${d.source === 'wikipedia' ? 'Wikipedia' : 'Wiktionary'}${AWAY}</a>` : ''}` +
+      `<a href="https://creativecommons.org/licenses/by-sa/4.0/" target="_blank" rel="noopener license">CC BY-SA 4.0${AWAY}</a></p>`;
   } else if (st === 'loading') {
     html = '<p class="def-note">Looking it up…</p>';
   } else if (st === 'none') {
@@ -5298,6 +5367,8 @@ function whoFind(pid) {
 
 const guildCard = $('#guildCard'), guildInvite = $('#guildInvite');
 const CHEV = '<svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg>';
+// An arrow out, in the chevron's place, on a row that goes to another page.
+const OUT = '<svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 17L17 7"/><path d="M9 7h8v8"/></svg>';
 function renderGuild() {
   if (!surveyApi) return;
   const st = Membership.state, err = guildError ? `<p class="guild-err" role="alert">${guildError}</p>` : '';
@@ -5312,7 +5383,7 @@ function renderGuild() {
       (st === 'confirming'
         ? `<div class="you-pad"><p>Leave the ${guildName(myGuild.name)}? You’d need a new invite to come back.</p><div class="guild-acts"><button type="button" class="btn danger" data-g="leave-yes">Leave</button><button type="button" class="btn ghost" data-g="leave-no">Stay</button></div></div>`
         : `<button type="button" class="you-item" data-g="invite"><span>Invite someone<small>A link to send them</small></span>${CHEV}</button>` +
-          (LID_RE.test(myGuild.lid || '') ? `<a class="you-item" data-g="log" href="/letterfield-log?guild=${myGuild.lid}&name=${myGuild.name.join('-')}"><span>Our words in the survey log<small>The guild’s own page, which anyone can open</small></span>${CHEV}</a>` : '') +
+          (LID_RE.test(myGuild.lid || '') ? `<a class="you-item" data-g="log" data-back="view" href="/letterfield-log?guild=${myGuild.lid}&name=${myGuild.name.join('-')}"><span>Our words in the survey log<small>The guild’s own page, which anyone can open</small></span>${OUT}</a>` : '') +
           `<button type="button" class="you-item danger" data-g="leave"${st === 'leaving' ? ' disabled' : ''}><span>${st === 'leaving' ? 'Leaving…' : 'Leave guild'}</span></button>` +
           `<p class="guild-small">Words you chart while in a guild count for it in the survey log, under its name.</p>`);
   } else if (st === 'invited' || st === 'joining') html = '<p class="you-pad">Looking at an invite to a guild…</p>';

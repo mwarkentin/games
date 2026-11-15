@@ -20,7 +20,7 @@
 
 import { THEMES, regionName, regionTheme } from '../../worker/src/letterfield-world.js';
 import { GUILD_FIRST, GUILD_SECOND, GUILD_THIRD, goodName, guildHue, guildName } from '../../worker/src/survey-guild.js';
-import { H, PALETTES, W, fit, measure, text } from './card.js';
+import { CARD_WORDS, H, PALETTES, W, fit, measure, text } from './card.js';
 import { novaSvg } from './nova.js';
 
 const HOUR = 3_600_000;
@@ -194,7 +194,7 @@ export function summarize(v, a, now = Date.now()) {
     line = `${name}, in Letterfield’s shared survey: ${num(a.charted)} of its ${plural(a.total, 'hidden word')} charted so far${people ? `, by ${plural(people, 'surveyor')}` : ''}.`;
   } else if (v.kind === 'surveyor') {
     count = a.words;
-    stats = [['Words charted first', num(a.words)], ['In the shared world', num(a.world)], ['Top territory', top || '—']];
+    stats = [['Words charted first', num(a.words)], ['In the universe', num(a.world)], ['Top territory', top || '—']];
     line = a.words
       ? `${name} charted ${plural(a.words, 'word')} first in Letterfield’s shared survey ${when.said}${top ? `, most in ${top}` : ''}.`
       : `No words signed ${name} in Letterfield’s shared survey ${when.said}.`;
@@ -212,7 +212,7 @@ export function summarize(v, a, now = Date.now()) {
     line = `${plural(a.words, 'hidden word')} charted in Letterfield’s ${name} territories ${when.said}.`;
   }
   const novaOf = nova && { at: nova[2], w: String(nova[3]), initials: String(nova[7] ?? ''), first: nova[8], words: nova[9], surveyors: nova[10], top: String(nova[11] ?? ''), topN: nova[12] };
-  return { name, hue, nova: !!nova, novaOf, when: when.shown, stats, words, line, token: `${count}.${latest.toString(36)}${nova ? 'n' : ''}` };
+  return { name, hue, nova: !!nova, novaOf, when: when.shown, stats, words, line, token: `${count}.${latest.toString(36)}${nova ? 'n' : ''}.w${CARD_WORDS}` };
 }
 
 // The Supernovas tab's card, as the page's own picture shows it (renderNovas()
@@ -233,7 +233,7 @@ function summarizeNovas(v, a, now) {
     ? `${plural(count, 'territory', 'territories')} went supernova in Letterfield’s shared survey ${when.said}, every hidden word charted.${latest ? ` Latest: ${place(latest)}.` : ''}`
     : `No territories went supernova in Letterfield’s shared survey ${when.said}.`;
   const words = novas.slice(0, 12).map((n) => ({ w: n[3], hue: themes[n[13]]?.[1] }));
-  return { name: 'Supernovas', hue: undefined, nova: false, novaOf: null, when: when.shown, stats, words, line, token: `${count}.${(latest?.[2] ?? 0).toString(36)}` };
+  return { name: 'Supernovas', hue: undefined, nova: false, novaOf: null, when: when.shown, stats, words, line, token: `${count}.${(latest?.[2] ?? 0).toString(36)}.w${CARD_WORDS}` };
 }
 
 // The card, 1200×630: shareImage() in letterfield-log.html, as SVG.

@@ -19,7 +19,7 @@
 import { hashAddress } from '../../worker/src/leaderboard.js';
 import { MAP_VERSION, RC, THEMES, keyOf, regionName } from '../../worker/src/letterfield-world.js';
 import { AREA, SECTOR, CLAIM_PATH, NOVA_PATH, TOTALS_PATH } from '../../worker/src/survey.js';
-import { day, findSvg, parseFind, progress } from './card.js';
+import { CARD_WORDS, day, findSvg, parseFind, progress } from './card.js';
 import { logPaths, nameOf, pagePath, parseView, summarize, viewSvg } from './view.js';
 
 export const DEFAULT_SITE = 'https://games.michaelwarkentin.com';
@@ -128,7 +128,7 @@ export async function stateOf(env, e) {
 export function stateToken({ claim, progressText }) {
   const who = claim ? `c${claim.initials}.${Math.floor(claim.at / 86_400_000)}` : claim === null ? 'o' : 'u';
   const pct = progressText ? progressText.split(' ')[0].replace('%', '').toLowerCase() : 'x';
-  return `${who}.${pct}`;
+  return `${who}.${pct}.w${CARD_WORDS}`;
 }
 
 // ---------- The page ----------

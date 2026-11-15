@@ -21,8 +21,8 @@ const size = (png) => { const v = new DataView(png.buffer, png.byteOffset); retu
 
 describe('rendering', () => {
   const cases = [
-    ['charted, light', PLACED, { claim: { initials: 'ZED', at: Date.UTC(2026, 10, 9) }, progressText: '0.4% of the shared map charted' }],
-    ['not yet charted, dark', PLACED, { claim: null, progressText: '3% of the shared map charted', dark: true }],
+    ['charted, light', PLACED, { claim: { initials: 'ZED', at: Date.UTC(2026, 10, 9) }, progressText: '0.4% of the universe charted' }],
+    ['not yet charted, dark', PLACED, { claim: null, progressText: '3% of the universe charted', dark: true }],
     ['far out, nothing known', FAR, {}],
   ];
   for (const [name, word, state] of cases) {
