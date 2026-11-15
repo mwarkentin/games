@@ -1799,12 +1799,13 @@ const CLAIM_ENDS = ['first', 'theirs', 'refused'];
 const CLAIM_BURST = 4, CLAIM_REFILL_MS = 1600;
 // `from` is queued for a word just circled; a claim read back from storage
 // starts queued, or unanswered if it may have reached its sector already.
-function claimWord(e, from = 'queued') {
+// `waited`: it's an old find of ours, not one just circled.
+function claimWord(e, from = 'queued', waited = from !== 'queued') {
   // A word someone else charted, added to the notes anyway, is theirs already.
   if (!surveyApi || outbox.has(e.key) || claims.has(e.key)) return;
-  const l = links.get(sectorKey(e.x, e.y)), restored = from !== 'queued';
+  const l = links.get(sectorKey(e.x, e.y));
   // `backlog`: it waited for its sector, rather than going as it was circled.
-  const c = { e, l: null, backlog: restored || !(l && l.m.is('live')), initials: restored ? myInitials() : '', known: false, beaten: false };
+  const c = { e, l: null, backlog: waited || !(l && l.m.is('live')), initials: waited ? myInitials() : '', known: false, beaten: false };
   c.m = machine('claim', CLAIM_MOVES, from, { el: null, onMove: to => {
     if (CLAIM_ENDS.includes(to)) { outbox.delete(e.key); outboxEnded.add(e.key); }
     if (to === 'theirs') chartedBy(e.key);
@@ -1812,7 +1813,7 @@ function claimWord(e, from = 'queued') {
   } });
   outbox.set(e.key, c);
   saveOutbox();
-  if (l && !restored) flushClaims(l);
+  if (l && !waited) flushClaims(l);
 }
 // Claims still out, kept in storage so a reload doesn't lose them, as [w, x,
 // y, d, 1 if it may have reached its sector]: read back once the survey
@@ -1834,9 +1835,30 @@ function restoreOutbox() {
   for (const o of readList(K_OUTBOX)) {
     if (!Array.isArray(o)) continue;
     const e = found.get(keyOf(o[0], o[1], o[2], o[3]));
-    if (e && !e.f && !e.b) claimWord(e, o[4] ? 'unanswered' : 'queued');
+    if (e && !e.f && !e.b) claimWord(e, o[4] ? 'unanswered' : 'queued', true);
   }
   saveOutbox();
+}
+// Finds of ours in l's sector that the survey doesn't have and that aren't on
+// their way: one turned away as too quick before such claims waited, or lost
+// with a reload before waiting claims were kept. Left alone, such a find keeps
+// its territory from going supernova, and the word list, which leaves out what
+// you've found, gives no way to tell. So each goes as a claim that waited,
+// once the sector is joined and its claims are known; another tab's waiting
+// claims are its own to send. Each goes at most once a visit, and not on a
+// day the survey has said we've charted all we may: turned away, it would
+// only be turned away again. A bonus word too short to count, kept from an
+// older map, never goes.
+let limitDay = -1;
+const utcDay = () => Math.floor(Date.now() / 86400000);
+function claimUnsent(l) {
+  if (limitDay === utcDay()) return;
+  const elsewhere = new Set(readList(K_OUTBOX).filter(o => Array.isArray(o) && o.length === 5).map(o => keyOf(o[0], o[1], o[2], o[3])));
+  for (const e of found.values()) {
+    if (e.f || e.b || sectorKey(e.x, e.y) !== l.k || (e.s && e.w.length < STRAY_MIN)) continue;
+    if (claims.has(e.key) || outbox.has(e.key) || outboxEnded.has(e.key) || elsewhere.has(e.key)) continue;
+    claimWord(e, 'queued', true);
+  }
 }
 // A word of ours that someone else charted first stays in the notes, marked
 // with who did ("charted by ZED"): the credit is theirs.
@@ -1877,23 +1899,28 @@ function settleClaims(l) {
     if (c.initials && got.by === c.initials && !c.known && !c.beaten) { c.m.go('first'); firstToChart(got); }
     else c.m.go('theirs');
   }
+  claimUnsent(l);
   flushClaims(l);
 }
 // A claim the sector turned down: too quick, or past the day's limit, from
-// this tab or from everyone on the same network. The word stays in your
-// notes, it just isn't signed. A claim that waited for its sector waits again,
-// quietly, when it's too quick (the network's limit counts over a minute),
-// and isn't announced when the day's limit is reached.
+// this tab or from everyone on the same network. Too quick, it waits a
+// minute, quietly, and goes again (the network's limit counts over a minute,
+// and every word counts, bonus words too, so a quick run of finds reaches it
+// easily): dropped, it would leave the word in your notes but never charted,
+// and its territory unable to go supernova. Past the day's limit the word
+// stays in your notes, unsigned for now, and goes when its sector is next
+// joined on another day (claimUnsent); only one just circled says so.
 function claimRefused(l, c, error) {
-  if (error === 'slow down' && c.backlog) {
+  if (error === 'slow down') {
+    c.backlog = true;  // it waits now: if someone charts it meanwhile, it's theirs, quietly
     c.m.go('queued');
     l.tokens = 1 - 60000 / CLAIM_REFILL_MS;  // this sector's claims wait a minute
     return flushClaims(l);
   }
+  if (error === 'daily limit') limitDay = utcDay();
   c.m.go('refused');
-  const why = { 'slow down': 'Too quick to chart', 'daily limit': 'Today’s charting limit reached' }[error];
-  const e = why && !c.backlog ? found.get(c.e.key) : null;
-  if (e) toast(`<i></i><b>${e.w}</b><span>${why} · kept in your notes</span>`, THEMES[e.th].hue, 0, e);
+  const e = error === 'daily limit' && !c.backlog ? found.get(c.e.key) : null;
+  if (e) toast(`<i></i><b>${e.w}</b><span>Today’s charting limit reached · kept in your notes</span>`, THEMES[e.th].hue, 0, e);
 }
 function firstToChart(c) {
   const e = found.get(c.key);
@@ -3936,14 +3963,17 @@ function listTerritory() {
   for (let cy = ry * RG; cy < ry * RG + RG; cy++) for (let cx = rx * RG; cx < rx * RG + RG; cx++)
     for (const w of chunk(cx, cy).words) if (!taken(w.key)) left.push(w);
   left.sort((a, b) => (a.w < b.w ? -1 : a.w > b.w ? 1 : a.key < b.key ? -1 : 1));
-  const sig = `whole ${rx},${ry} ` + left.map(w => w.key).join('|');
+  // Nothing left to find isn't always every word charted: a find of yours can
+  // still be on its way to the survey, and the title's count waits for it.
+  const unsent = left.length || !surveyApi ? 0 : hereStatus(Math.floor(cam.x), Math.floor(cam.y)) ? -1 : territoryTotal(rx, ry) - territoryProgress(rx, ry)[0];
+  const sig = `whole ${rx},${ry} ${unsent} ` + left.map(w => w.key).join('|');
   if (sig === legendSig) return;
   legendSig = sig;
   legendWords = new Map();
   legendCount.textContent = `${left.length} left`;
   legendList.innerHTML = left.length
     ? left.map(w => `<li><span class="chip mark" style="--h:${THEMES[w.th].hue}">${w.w}</span></li>`).join('')
-    : `<li class="legend-note">Every word here is ${doneWord}.</li>`;
+    : `<li class="legend-note">${!unsent ? `Every word here is ${doneWord}.` : unsent < 0 ? 'Every word here is in your notes.' : `Every word here is in your notes, ${unsent === 1 ? 'one still on its way' : `${unsent} still on their way`} to the survey.`}</li>`;
 }
 function updateLegend() {
   const cs = cam.cs;

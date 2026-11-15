@@ -347,29 +347,76 @@ def test_a_word_someone_charted_can_go_in_the_field_notes(page: Page, site_url, 
     assert errors == []
 
 
-def test_claiming_too_fast_says_so_and_keeps_the_word(page: Page, site_url, errors):
+def test_a_claim_turned_away_as_too_quick_waits_and_goes_again(page: Page, site_url, errors):
+    """A word circled too soon after others (the network's limit is six a minute, bonus words
+    included) was dropped: it stayed in the notes, never charted, so its territory could never
+    go supernova, while the word list, which leaves out your finds, said nothing was left."""
     words = known_words(page, site_url)
     fake = FakeSurvey(refuse="slow down")
     open_game(page, site_url, fake)
     expect(page.locator("#survey")).to_have_attribute("data-state", "live")
     circle(page, words[0])
-    expect(page.locator("#toast")).to_contain_text("Too quick to chart · kept in your notes")
-    assert page.evaluate("window.__lf.found.size") == 1
+    eventually(page, lambda: len(fake.sent("claim")) == 1)
+    # It waits, quietly, rather than ending there.
+    eventually(page, lambda: page.evaluate("window.__lf.outbox()") == [[words[0][0], "queued"]])
+    expect(page.locator("#toast")).not_to_contain_text("Too quick")
     assert page.evaluate("window.__lf.found.values().next().value.f") == 0
-    # Play carries on: the next word is found and claimed as usual.
-    circle(page, words[1])
+    # Once the survey takes claims again (here, the next time the sector's joined), it goes, and it's ours.
+    fake.refuse = None
+    page.evaluate(HIDE, True)
+    page.evaluate(HIDE, False)
     eventually(page, lambda: len(fake.sent("claim")) == 2)
-    expect(page.locator("#survey")).to_have_attribute("data-state", "live")
+    assert fake.sent("claim")[1]["w"] == words[0][0]
+    eventually(page, lambda: page.evaluate("window.__lf.found.values().next().value.f") == 1)
+    assert page.evaluate("window.__lf.outbox()") == []
     assert errors == []
 
 
 def test_past_the_daily_limit_says_so_and_keeps_the_word(page: Page, site_url, errors):
     words = known_words(page, site_url)
-    open_game(page, site_url, FakeSurvey(refuse="daily limit"))
+    fake = FakeSurvey(refuse="daily limit")
+    open_game(page, site_url, fake)
     expect(page.locator("#survey")).to_have_attribute("data-state", "live")
     circle(page, words[0])
     expect(page.locator("#toast")).to_contain_text("Today’s charting limit reached · kept in your notes")
     assert page.evaluate("window.__lf.found.size") == 1
+    # Rejoining the sector the same day doesn't send it again, only to be turned away.
+    page.evaluate(HIDE, True)
+    page.evaluate(HIDE, False)
+    expect(page.locator("#survey")).to_have_attribute("data-state", "live")
+    page.wait_for_timeout(500)
+    assert len(fake.sent("claim")) == 1
+    assert errors == []
+
+
+def test_a_find_the_survey_never_got_is_claimed_and_can_set_its_territory_off(page: Page, site_url, errors):
+    """A find in the notes that never reached the survey (turned away as too quick, or lost
+    with a reload before waiting claims were kept) left its territory one short for good: the
+    title said 110/111 charted while the word list said 0 left, and nothing would set it off."""
+    words = territory_words(page, site_url)
+    last = words[0]
+    page.add_init_script(f"""
+      localStorage.setItem('games.initials', JSON.stringify('MLW'));
+      if (!localStorage.getItem('letterfield.finds.v4'))
+        localStorage.setItem('letterfield.finds.v4', JSON.stringify([{json.dumps({"w": last[0], "x": last[1], "y": last[2], "d": last[3], "t": NOW_MS - 86_400_000, "s": 0})}]));
+    """)
+    fake = FakeSurvey(claims=[[*w, 0, "MRW", NOW_MS - 60_000] for w in words[1:]], lose="claim")
+    open_game(page, site_url, fake)
+    # Its sector joined, the find goes as a claim of its own; here its answer never comes.
+    eventually(page, lambda: [m["w"] for m in fake.sent("claim")] == [last[0]])
+    expect(page.locator("#tCharted")).to_have_text(f" · {len(words) - 1}/{len(words)} charted")
+    page.click("#listWhole")
+    expect(page.locator("#legendCount")).to_have_text("0 left")
+    expect(page.locator("#legendList .legend-note")).to_have_text("Every word here is in your notes, one still on its way to the survey.")
+    # Next time it goes through: the territory is charted, the last by you.
+    fake.lose = None
+    page.evaluate(HIDE, True)
+    page.evaluate(HIDE, False)
+    expect(page.locator("#nova")).to_be_visible(timeout=6000)
+    expect(page.locator("#novaText")).to_contain_text("every hidden word charted, the last by you")
+    expect(page.locator("#tCharted")).to_have_text(f" · {len(words)}/{len(words)} charted")
+    expect(page.locator("#legendList .legend-note")).to_have_text("Every word here is charted.")
+    assert page.evaluate(f"window.__lf.found.get('{'~'.join(map(str, last))}').f") == 1
     assert errors == []
 
 

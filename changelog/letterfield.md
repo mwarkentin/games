@@ -1,3 +1,8 @@
+## 2026-11-15
+
+- A word circled too soon after others is no longer left out of the shared survey: it goes a minute later, so its territory can still go supernova. Finds of yours that missed the survey before go the next time you're in their part of the map.
+- When everything left in a territory is in your notes but not yet charted, the word list says so, rather than that every word is charted.
+
 ## 2026-11-14
 
 - Every word you circle stays in your field notes. One another surveyor charted first, while you were offline, in a race or before you added it, says “charted by ZED” under it and is drawn on the map as theirs, an outline; your own firsts wear a ring.
