@@ -36,6 +36,10 @@
 - Sharing the survey log's Supernovas gives a link with a card of its own.
 - Tap the book beside a word in the survey log to see what it means, as in your field notes.
 - Bonus words stay in your field notes but are no longer listed in the public survey log.
+- The timelapse's territory card says “A Festivals territory” until it knows the territory's name, and dates its count (“charted by Nov 5”) instead of “by then”.
+- The timelapse's speed and Save video buttons look disabled while the survey log loads, and its counts say “1 word”, “1 supernova” and “1 territory”.
+- Following a guild in the timelapse, its count reads “by the guild”, and a video you save names the guild in its colour.
+- When the timelapse catches up with days still loading, it says which day it's waiting for over the map, and carries on by itself once that day arrives.
 - Circling a word another surveyor charted first now offers “Add to notes”, to keep it in your field notes all the same. It's still theirs: it doesn't count as charted first by you.
 - On a phone, a long press on another surveyor's caret opens its menu again, instead of the phone selecting text or showing its copy bubble. The field notes, definitions and the Surveyors drawer can still be selected and copied.
 - Each of your settings shows in one place now: on your page in the Surveyors drawer, beside the switch or button that changes it. Your row at the top of the list says what's on your page instead of repeating them, the foot of your field notes just offers feedback, and Stop syncing is where it says your notes and settings are backed up.
