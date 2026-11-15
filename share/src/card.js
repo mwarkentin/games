@@ -23,7 +23,7 @@ const DNAME = ['E', 'SE', 'S', 'SW', 'W', 'NW', 'N', 'NE'];
 const DARROW = ['→', '↘', '↓', '↙', '←', '↖', '↑', '↗'];
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 const fmtCoord = (x, y) => `${Math.abs(x)}${x < 0 ? 'W' : 'E'} · ${Math.abs(y)}${y < 0 ? 'N' : 'S'}`;
-const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
+export const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
 const DATE = new Intl.DateTimeFormat('en-GB', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' });
 export const day = (ms) => DATE.format(new Date(ms));
 

@@ -104,14 +104,13 @@ describe('verifyToken', () => {
 });
 
 describe('POST /v1/survey/pass', () => {
-  const json = (body, status, headers) => Response.json(body, { status, headers });
   const cors = { 'Access-Control-Allow-Origin': ORIGIN };
   const post = (body) => new Request(`https://survey.test${PASS_PATH}`, { method: 'POST', headers: { 'Content-Type': 'text/plain', 'CF-Connecting-IP': IP }, body });
   const env = { TURNSTILE_SECRET: SECRET };
 
   test('turns a token into a pass for the player\'s address', async () => {
     const fake = fakeSiteverify(passes());
-    const res = await handlePass(post(JSON.stringify({ token: TOKEN })), env, 'aaaa', cors, json, fake.fetcher);
+    const res = await handlePass(post(JSON.stringify({ token: TOKEN })), env, 'aaaa', cors, fake.fetcher);
     assert.equal(res.status, 200);
     const { pass, expires } = await res.json();
     assert.ok(expires > Date.now());
@@ -121,18 +120,18 @@ describe('POST /v1/survey/pass', () => {
   test('refuses bad requests without asking Turnstile', async () => {
     const fake = fakeSiteverify(passes());
     for (const body of ['', 'nope', '{}', JSON.stringify({ token: 7 }), JSON.stringify({ token: 'x'.repeat(2049) })]) {
-      assert.equal((await handlePass(post(body), env, 'aaaa', cors, json, fake.fetcher)).status, 400, body.slice(0, 20));
+      assert.equal((await handlePass(post(body), env, 'aaaa', cors, fake.fetcher)).status, 400, body.slice(0, 20));
     }
-    assert.equal((await handlePass(post(JSON.stringify({ token: TOKEN })), env, 'aaaa', {}, json, fake.fetcher)).status, 403);
-    assert.equal((await handlePass(post(JSON.stringify({ token: TOKEN })), {}, 'aaaa', cors, json, fake.fetcher)).status, 404);
+    assert.equal((await handlePass(post(JSON.stringify({ token: TOKEN })), env, 'aaaa', {}, fake.fetcher)).status, 403);
+    assert.equal((await handlePass(post(JSON.stringify({ token: TOKEN })), {}, 'aaaa', cors, fake.fetcher)).status, 404);
     assert.equal(fake.calls.length, 0);
   });
 
   test('says why when Turnstile refuses or can\'t be reached', async () => {
-    const refused = await handlePass(post(JSON.stringify({ token: TOKEN })), env, 'aaaa', cors, json, fakeSiteverify({ success: false, 'error-codes': ['invalid-input-response'] }).fetcher);
+    const refused = await handlePass(post(JSON.stringify({ token: TOKEN })), env, 'aaaa', cors, fakeSiteverify({ success: false, 'error-codes': ['invalid-input-response'] }).fetcher);
     assert.equal(refused.status, 403);
     assert.deepEqual(await refused.json(), { error: 'not verified', codes: ['invalid-input-response'] });
-    const down = await handlePass(post(JSON.stringify({ token: TOKEN })), env, 'aaaa', cors, json, fakeSiteverify(new Error('down')).fetcher);
+    const down = await handlePass(post(JSON.stringify({ token: TOKEN })), env, 'aaaa', cors, fakeSiteverify(new Error('down')).fetcher);
     assert.equal(down.status, 503);
   });
 
@@ -140,8 +139,8 @@ describe('POST /v1/survey/pass', () => {
     let n = 0;
     const limited = { ...env, SURVEY_JOINS: { limit: async ({ key }) => { assert.equal(key, 'pass:aaaa'); return { success: ++n <= 1 }; } } };
     const fake = fakeSiteverify(passes());
-    assert.equal((await handlePass(post(JSON.stringify({ token: TOKEN })), limited, 'aaaa', cors, json, fake.fetcher)).status, 200);
-    assert.equal((await handlePass(post(JSON.stringify({ token: TOKEN })), limited, 'aaaa', cors, json, fake.fetcher)).status, 429);
+    assert.equal((await handlePass(post(JSON.stringify({ token: TOKEN })), limited, 'aaaa', cors, fake.fetcher)).status, 200);
+    assert.equal((await handlePass(post(JSON.stringify({ token: TOKEN })), limited, 'aaaa', cors, fake.fetcher)).status, 429);
     assert.equal(fake.calls.length, 1);
   });
 });

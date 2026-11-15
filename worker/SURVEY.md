@@ -337,13 +337,13 @@ everything about you is one tap away:
   form to sign, until you have some), then grouped rows. Guild: its name and
   numbers, Invite a mate, Leave guild; or Start a guild, which lives only
   here, since the list is for people rather than an offer most will pass
-  over every time. On the map: the two switches. Devices: Link another
+  over every time. On the map: Take emotes, and Muted. Devices: Link another
   device, I have a code, Recovery code (saved or not), and Stop syncing
   once syncing, which says your notes and settings are backed up. Each
   opens its own steps in place.
 
   Each setting of yours shows once, beside the control that changes it:
-  the switches show how you show, the recovery code whether it's saved,
+  the switch shows whether you take emotes, the recovery code whether it's saved,
   and Stop syncing that you're backed up. Nothing else repeats them (not
   your row in the list, nor the foot of the field notes, which only offers
   feedback).
@@ -375,14 +375,14 @@ Screen app counts as a device of its own, since it keeps its own storage.
 
 Each sector already tells the Atlas its numbers every ≤ `REPORT_MS` while it's
 busy. Its report now also lists its surveyors: `[id, initials, rx, ry, idle,
-flags]` for each player whose view is centred in it, has an id and hasn't
-asked to be hidden. The Atlas builds a snapshot of everyone at most every
-`LIST_MS` (10 s), each Worker instance fetches it at most that often, and works
-out pages itself. `GET /v1/survey/surveyors?r=<rx>,<ry>&page=<n>&me=<id>`
-answers with the nearest 40 to territory (rx, ry), leaving the asker out, and
-says how many there are; a page further on gives the next 40, up to the
-nearest 1,000. Browsers keep an answer for 10 s, and the game asks every 20 s
-while the fold is open, the notes are open and the tab is on screen.
+flags]` for each player whose view is centred in it and has an id. The Atlas
+builds a snapshot of everyone at most every `LIST_MS` (10 s), each Worker
+instance fetches it at most that often, and works out pages itself.
+`GET /v1/survey/surveyors?r=<rx>,<ry>&page=<n>&me=<id>` answers with the
+nearest 40 to territory (rx, ry), leaving the asker out, and says how many
+there are; a page further on gives the next 40, up to the nearest 1,000.
+Browsers keep an answer for 10 s, and the game asks every 20 s while the fold
+is open, the notes are open and the tab is on screen.
 
 - **Staying listed while still.** A sector only reports while messages come
   in, and an idle player sends none, so the Atlas would forget them after
@@ -738,9 +738,10 @@ player's own devices reach it:
                             → {epoch, at, finds, novas, settings?, settingsAt?} | {off: true}
     POST /v1/player/forget  {token} → {off: true}
 
-- **Only a link starts one.** Redeeming a code starts the player's Player;
-  until then a sync answers `off` and stores nothing. So a player who never
-  linked a device keeps everything in their browser, as before, and making
+- **Only a link or a recovery code starts one.** Redeeming a link code or
+  saving a recovery code starts the player's Player; until then a sync
+  answers `off` and stores nothing. So a player who never linked a device or
+  saved a code keeps everything in their browser, as before, and making
   Players costs as much as making codes, which is limited per address.
 - **A sync carries what's new.** Every row has the version it last changed
   in. A device sends what changed on it since its last sync (the finds and

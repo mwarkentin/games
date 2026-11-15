@@ -92,16 +92,16 @@
 // And under its map (MAP_VERSION): a new map empties the log, and the days
 // cached from the old one would otherwise outlive it.
 
-import { corsHeaders, json } from './leaderboard.js';
+import { corsHeaders, edgeCache, json } from './leaderboard.js';
 import { MAP_VERSION, RC, THEMES, fdiv, regionName, regionTheme, strayTheme, territoryTotal } from './letterfield-world.js';
 import { GUILD_LOG_ID, goodName, guildHue, guildName } from './survey-guild.js';
 
 export const LOG_MS = 30000;            // a sector copies new claims to D1 at most this often
 export const LOG_BATCH = 240;           // claims copied at once; more go a second later
-export const LOG_ROWS_PER_INSERT = 11;  // D1 takes 100 bound values per statement, and a row has 9
 export const LOG_RETRY_MAX_MS = 600000; // a sector whose writes fail tries again at most this far apart
 export const LOG_PAGE = 500;            // entries per page of an hour
 export const SETTLED_MS = 3600000;      // an hour or day that ended this long ago is cached for a day
+export const SETTLED_CACHE_S = 86400;   // seconds a settled answer is cached for
 export const LIVE_CACHE_S = 15;         // seconds the hour or day still running is cached for
 export const MEMO_MAX = 300;            // answers each Worker instance keeps
 export const HOUR_MS = 3600000;
@@ -116,9 +116,9 @@ export const LOG_SURVEYOR_PATH = /^\/v1\/survey\/log\/surveyor\/([A-Z]{3})\/(\d{
 export const LOG_THEME_PATH = /^\/v1\/survey\/log\/theme\/(\d{1,3})\/(\d{1,8})\/(\d{1,8})$/;
 export const LOG_GUILD_PATH = /^\/v1\/survey\/log\/guild\/([0-9a-f]{10})\/(\d{1,8})\/(\d{1,8})$/;
 export const LOG_TERRITORY_PATH = /^\/v1\/survey\/log\/territory\/(-?\d{1,8})\/(-?\d{1,8})$/;
-export const SLICE_PAGE = 100;          // words in a page of a surveyor's or theme's
-export const SLICE_MAX_HOURS = 24 * 3660;  // the longest range a surveyor's or theme's view covers
-export const SLICE_SLOW_CACHE_S = 120;  // seconds a running view of one over more than 2 days is cached for
+export const SLICE_PAGE = 100;          // words in a page of a surveyor's, theme's or guild's view
+export const SLICE_MAX_HOURS = 24 * 3660;  // the longest range a surveyor's, theme's or guild's view, or the supernova list, covers
+export const SLICE_SLOW_CACHE_S = 120;  // seconds a running one of those over more than 2 days is cached for
 export const TERRITORY_MAX = 1000;      // words a territory's view lists (a territory hides about 110)
 export const LOG_NOVAS_PATH = /^\/v1\/survey\/log\/novas\/(\d{1,8})\/(\d{1,8})$/;
 export const NOVA_PAGE = 100;           // supernovas in a page of the list
@@ -144,34 +144,29 @@ const NOVA_CURSOR = /^(\d{1,15})~(-?\d{1,8})~(-?\d{1,8})$/;
 
 // Copies claims, as a sector stores them, to D1 in one batch, which D1 runs
 // as one transaction: all of them or none. Supernovas the sector has seen go
-// in the same batch (a row binds 13 values, so 7 to a statement), and so do
-// the names of the guilds the claims count for ({lid, a, b, c}), which D1
-// keeps once each.
+// in the same batch, and so do the names of the guilds the claims count for
+// ({lid, a, b, c}), which D1 keeps once each.
 export async function writeLog(db, rows, novas = [], guilds = []) {
-  const statements = [];
   const names = guilds.filter((g) => GUILD_LOG_ID.test(g.lid) && goodName([g.a, g.b, g.c]));
-  for (let i = 0; i < names.length; i += 25) {
-    const part = names.slice(i, i + 25);
-    statements.push(
-      db.prepare(`INSERT OR IGNORE INTO survey_log_guilds (guild, a, b, c) VALUES ${part.map(() => '(?, ?, ?, ?)').join(', ')}`)
-        .bind(...part.flatMap((g) => [g.lid, g.a, g.b, g.c])),
-    );
-  }
-  for (let i = 0; i < novas.length; i += 7) {
-    const part = novas.slice(i, i + 7);
-    statements.push(
-      db.prepare(`INSERT OR IGNORE INTO survey_log_novas (rx, ry, at, w, x, y, d, initials, first, words, surveyors, top, top_n) VALUES ${part.map(() => '(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)').join(', ')}`)
-        .bind(...part.flatMap((n) => [n.rx, n.ry, n.at, n.w, n.x, n.y, n.d, n.initials, n.first, n.words, n.surveyors, n.top, n.top_n])),
-    );
-  }
-  for (let i = 0; i < rows.length; i += LOG_ROWS_PER_INSERT) {
-    const part = rows.slice(i, i + LOG_ROWS_PER_INSERT);
-    statements.push(
-      db.prepare(`INSERT OR IGNORE INTO survey_log (at, key, w, x, y, d, s, initials, guild) VALUES ${part.map(() => '(?, ?, ?, ?, ?, ?, ?, ?, ?)').join(', ')}`)
-        .bind(...part.flatMap((r) => [r.at, r.key, r.w, r.x, r.y, r.d, r.s, r.initials, GUILD_LOG_ID.test(r.guild ?? '') ? r.guild : ''])),
-    );
-  }
+  const statements = [
+    ...inserts(db, 'survey_log_guilds', 'guild, a, b, c', names, (g) => [g.lid, g.a, g.b, g.c]),
+    ...inserts(db, 'survey_log_novas', NOVA_COLUMNS, novas, (n) => NOVA_COLUMNS.split(', ').map((c) => n[c])),
+    ...inserts(db, 'survey_log', 'at, key, w, x, y, d, s, initials, guild', rows,
+      (r) => [r.at, r.key, r.w, r.x, r.y, r.d, r.s, r.initials, GUILD_LOG_ID.test(r.guild ?? '') ? r.guild : '']),
+  ];
   if (statements.length) await db.batch(statements);
+}
+
+// INSERT OR IGNORE statements for `items`, each with as many rows as fit in
+// the 100 values D1 binds to a statement.
+function inserts(db, table, columns, items, values) {
+  const cols = columns.split(', '), per = Math.floor(100 / cols.length), row = `(${cols.map(() => '?').join(', ')})`;
+  const statements = [];
+  for (let i = 0; i < items.length; i += per) {
+    const part = items.slice(i, i + per);
+    statements.push(db.prepare(`INSERT OR IGNORE INTO ${table} (${columns}) VALUES ${part.map(() => row).join(', ')}`).bind(...part.flatMap(values)));
+  }
+  return statements;
 }
 
 export const HOUR_SQL = `SELECT at, key, w, x, y, d, s, initials FROM survey_log
@@ -180,7 +175,7 @@ export const HOUR_AFTER_SQL = `SELECT at, key, w, x, y, d, s, initials FROM surv
   WHERE at >= ? AND at < ? AND (at, key) > (?, ?) ORDER BY at, key LIMIT ?`;
 export const HOURS_SQL = `SELECT hour, n, world FROM survey_log_hours
   WHERE hour >= ? AND hour < ? AND n > 0 ORDER BY hour`;
-// Ways into the log other than by time (migrations-log/0003_survey_log_lookups.sql).
+// Ways into the log other than by time (migrations-log/0003_survey_log_lookups.sql, and 0007 for guilds).
 // Each names its index, so a plan can't drift onto a scan of the whole log.
 export const SLICES = {
   surveyor: { index: 'survey_log_by_initials', where: "initials = ? AND initials <> ''" },
@@ -211,7 +206,7 @@ export const NOVAS_SQL = `SELECT ${NOVA_COLUMNS} FROM survey_log_novas INDEXED B
 export const NOVAS_BEFORE_SQL = `SELECT ${NOVA_COLUMNS} FROM survey_log_novas INDEXED BY survey_log_novas_by_time
   WHERE at >= ? AND at < ? AND (at, rx, ry) < (?, ?, ?) ORDER BY at DESC, rx DESC, ry DESC LIMIT ?`;
 export const NOVA_HOURS_SQL = `SELECT at / ${HOUR_MS} AS hour, COUNT(*) AS n FROM survey_log_novas INDEXED BY survey_log_novas_by_time
-  WHERE at >= ? AND at < ? GROUP BY at / ${HOUR_MS}`;
+  WHERE at >= ? AND at < ? GROUP BY at / ${HOUR_MS} ORDER BY at / ${HOUR_MS}`;
 export const NOVA_SQL = `SELECT ${NOVA_COLUMNS} FROM survey_log_novas WHERE rx = ? AND ry = ?`;
 
 export const FIRST_SQL = 'SELECT hour FROM survey_log_hours WHERE n > 0 ORDER BY hour LIMIT 1';
@@ -239,11 +234,8 @@ export const HOURS_GUILDS_SQL = `SELECT t.guild, t.n, g.a, g.b, g.c FROM (SELECT
 // and the supernovas, never the log itself: a row per hour with words, per
 // territory per day, and per supernova, over a range of days. A day reads
 // that day's rows, in time order.
-export const TIMELAPSE_HOURS_SQL = 'SELECT hour, n FROM survey_log_hours WHERE hour >= ? AND hour < ? AND n > 0 ORDER BY hour';
 export const TIMELAPSE_BOUNDS_SQL = `SELECT MIN(rx) AS rx0, MIN(ry) AS ry0, MAX(rx) AS rx1, MAX(ry) AS ry1
   FROM survey_log_territories WHERE day >= ? AND day < ? AND n > 0`;
-export const TIMELAPSE_NOVA_HOURS_SQL = `SELECT at / ${HOUR_MS} AS hour, COUNT(*) AS n FROM survey_log_novas INDEXED BY survey_log_novas_by_time
-  WHERE at >= ? AND at < ? GROUP BY at / ${HOUR_MS} ORDER BY at / ${HOUR_MS}`;
 export const TIMELAPSE_DAY_SQL = `SELECT at, key, w, x, y, d, s FROM survey_log
   WHERE at >= ? AND at < ? ORDER BY at, key LIMIT ?`;
 export const TIMELAPSE_DAY_AFTER_SQL = `SELECT at, key, w, x, y, d, s FROM survey_log
@@ -255,14 +247,22 @@ export const TIMELAPSE_NOVAS_SQL = `SELECT at, rx, ry FROM survey_log_novas INDE
 export const LAYOUT = [regionTheme(0, 1), THEMES.length];
 const FAR = 1e7;  // days: past any the log will hold
 
+// Trims a read of up to n + 1 rows to n, and gives the cursor for the page
+// after, or null when there's none.
+function pageEnd(rows, n, cursor = (r) => `${r.at}~${r.key}`) {
+  if (rows.length <= n) return null;
+  rows.length = n;
+  return cursor(rows.at(-1));
+}
+
 // The index over UTC days from..to-1: hours with words, supernovas by hour,
 // and the territories with hidden words charted (a stray far out can fall
 // outside them).
 export async function readTimelapsePart(db, from, to) {
   const [hours, bounds, novas] = await Promise.all([
-    db.prepare(TIMELAPSE_HOURS_SQL).bind(from * 24, to * 24).all(),
+    db.prepare(HOURS_SQL).bind(from * 24, to * 24).all(),
     db.prepare(TIMELAPSE_BOUNDS_SQL).bind(from, to).first(),
-    db.prepare(TIMELAPSE_NOVA_HOURS_SQL).bind(from * DAY_MS, to * DAY_MS).all(),
+    db.prepare(NOVA_HOURS_SQL).bind(from * DAY_MS, to * DAY_MS).all(),
   ]);
   return {
     hours: hours.results.map((r) => [r.hour, r.n]),
@@ -307,10 +307,8 @@ export async function readTimelapseGuildDay(db, lid, day, after = null) {
   const from = day * DAY_MS, to = from + DAY_MS;
   const rows = (await (after ? db.prepare(TIMELAPSE_GUILD_DAY_AFTER_SQL).bind(lid, from, to, after.at, after.key, TIMELAPSE_PAGE + 1)
     : db.prepare(TIMELAPSE_GUILD_DAY_SQL).bind(lid, from, to, TIMELAPSE_PAGE + 1)).all()).results;
-  const more = rows.length > TIMELAPSE_PAGE;
-  if (more) rows.length = TIMELAPSE_PAGE;
-  const last = rows.at(-1);
-  return { day, words: rows.map((r) => [r.at - from, r.x, r.y, r.d]), next: more ? `${last.at}~${last.key}` : null };
+  const next = pageEnd(rows, TIMELAPSE_PAGE);
+  return { day, words: rows.map((r) => [r.at - from, r.x, r.y, r.d]), next };
 }
 
 // One UTC day of the log, as little as drawing it takes: when (ms into the
@@ -324,9 +322,7 @@ export async function readTimelapseDay(db, day, after = null) {
       : db.prepare(TIMELAPSE_DAY_SQL).bind(from, to, TIMELAPSE_PAGE + 1)).all(),
     after ? null : db.prepare(TIMELAPSE_NOVAS_SQL).bind(from, to).all(),
   ]);
-  const list = rows.results, more = list.length > TIMELAPSE_PAGE;
-  if (more) list.length = TIMELAPSE_PAGE;
-  const last = list.at(-1);
+  const list = rows.results, next = pageEnd(list, TIMELAPSE_PAGE);
   return {
     day,
     words: list.map((r) => {
@@ -334,7 +330,7 @@ export async function readTimelapseDay(db, day, after = null) {
       return [r.at - from, r.x, r.y, r.d, r.w.length, r.s ? strayTheme(r.w, rx, ry) : regionTheme(rx, ry), r.s];
     }),
     novas: novas ? novas.results.map((r) => [r.at - from, r.rx, r.ry, regionTheme(r.rx, r.ry)]) : [],
-    next: more ? `${last.at}~${last.key}` : null,
+    next,
   };
 }
 
@@ -345,12 +341,9 @@ export async function readHour(db, hour, after = null) {
     ? db.prepare(HOUR_AFTER_SQL).bind(from, to, after.at, after.key, LOG_PAGE + 1)
     : db.prepare(HOUR_SQL).bind(from, to, LOG_PAGE + 1);
   const rows = (await statement.all()).results;
-  const more = rows.length > LOG_PAGE;
-  if (more) rows.length = LOG_PAGE;
+  const next = pageEnd(rows, LOG_PAGE);
   const places = {}, themes = {};
-  const entries = rows.map((r) => entryOf(r, places, themes));
-  const last = rows.at(-1);
-  return { hour, entries, places, themes, next: more ? `${last.at}~${last.key}` : null };
+  return { hour, entries: rows.map((r) => entryOf(r, places, themes)), places, themes, next };
 }
 
 // A row of the log as the page shows it, naming its place and theme once in
@@ -365,6 +358,15 @@ function entryOf(r, places, themes) {
 
 const ranked = (rows) => rows.sort((a, b) => b.n - a.n || a.ry - b.ry || a.rx - b.rx);
 const territoryRow = (r) => [r.rx, r.ry, regionName(r.rx, r.ry), regionTheme(r.rx, r.ry), r.n];
+// Words in each theme, from territories' counts, most first: [[th, name, hue, n], ...].
+function themeRows(territories) {
+  const byTheme = new Map();
+  for (const r of territories) {
+    const th = regionTheme(r.rx, r.ry);
+    byTheme.set(th, (byTheme.get(th) ?? 0) + r.n);
+  }
+  return [...byTheme].sort((a, b) => b[1] - a[1] || a[0] - b[0]).map(([th, n]) => [th, THEMES[th].name, THEMES[th].hue, n]);
+}
 
 // One surveyor's words, one theme's hidden words or one guild's words, over
 // UTC hours from..to: how many in each hour, where (and for a surveyor or a
@@ -381,16 +383,9 @@ export async function readSlice(db, kind, key, fromHour, toHour, before = null) 
     kind === 'guild' ? db.prepare(GUILD_NAME_SQL).bind(key).first() : null,
   ]);
   const name = guild ? named(guild) : null;
-  const list = rows.results, more = list.length > SLICE_PAGE;
-  if (more) list.length = SLICE_PAGE;
+  const list = rows.results, next = pageEnd(list, SLICE_PAGE);
   const placeNames = {}, themeNames = {};
   const entries = list.map((r) => entryOf(r, placeNames, themeNames));
-  const byTheme = new Map();
-  for (const r of places.results) {
-    const th = regionTheme(r.rx, r.ry);
-    byTheme.set(th, (byTheme.get(th) ?? 0) + r.n);
-  }
-  const last = list.at(-1);
   return {
     kind, key, from: fromHour, to: toHour,
     ...(kind === 'theme' ? { name: THEMES[key].name, hue: THEMES[key].hue } : {}),
@@ -399,9 +394,9 @@ export async function readSlice(db, kind, key, fromHour, toHour, before = null) 
     world: hours.results.reduce((a, r) => a + r.world, 0),
     hours: hours.results.sort((a, b) => a.hour - b.hour).map((r) => [r.hour, r.n, r.world]),
     topTerritories: ranked(places.results).slice(0, TOP_N).map(territoryRow),
-    ...(kind !== 'theme' ? { topThemes: [...byTheme].sort((a, b) => b[1] - a[1] || a[0] - b[0]).map(([th, n]) => [th, THEMES[th].name, THEMES[th].hue, n]) } : {}),
+    ...(kind !== 'theme' ? { topThemes: themeRows(places.results) } : {}),
     ...(people ? { topSurveyors: people.results.map((r) => [r.initials, r.n]) } : {}),
-    entries, places: placeNames, themes: themeNames, next: more ? `${last.at}~${last.key}` : null,
+    entries, places: placeNames, themes: themeNames, next,
   };
 }
 
@@ -445,15 +440,13 @@ export async function readNovas(db, fromHour, toHour, before = null) {
     (before ? db.prepare(NOVAS_BEFORE_SQL).bind(...range, before.at, before.rx, before.ry, NOVA_PAGE + 1)
       : db.prepare(NOVAS_SQL).bind(...range, NOVA_PAGE + 1)).all(),
   ]);
-  const list = rows.results, more = list.length > NOVA_PAGE;
-  if (more) list.length = NOVA_PAGE;
-  const places = {}, themes = {}, last = list.at(-1);
+  const list = rows.results, next = pageEnd(list, NOVA_PAGE, (r) => `${r.at}~${r.rx}~${r.ry}`);
+  const places = {}, themes = {};
   return {
     from: fromHour, to: toHour,
     count: hours.results.reduce((a, r) => a + r.n, 0),
-    hours: hours.results.sort((a, b) => a.hour - b.hour).map((r) => [r.hour, r.n]),
-    novas: list.map((r) => novaOf(r, places, themes)), places, themes,
-    next: more ? `${last.at}~${last.rx}~${last.ry}` : null,
+    hours: hours.results.map((r) => [r.hour, r.n]),
+    novas: list.map((r) => novaOf(r, places, themes)), places, themes, next,
   };
 }
 
@@ -504,18 +497,11 @@ export async function readTopHours(db, from, to) {
   ])), hours: true };
 }
 function tops(from, to, [surveyors, territories, guilds]) {
-  const byTheme = new Map();
-  let hidden = 0;
-  for (const r of territories.results) {
-    const th = regionTheme(r.rx, r.ry);
-    byTheme.set(th, (byTheme.get(th) ?? 0) + r.n);
-    hidden += r.n;
-  }
   return {
-    from, to, hidden,
+    from, to, hidden: territories.results.reduce((a, r) => a + r.n, 0),
     surveyors: surveyors.results.map((r) => [r.initials, r.n]),
     territories: ranked(territories.results).slice(0, TOP_N).map(territoryRow),
-    themes: [...byTheme].sort((a, b) => b[1] - a[1] || a[0] - b[0]).map(([th, n]) => [th, THEMES[th].name, THEMES[th].hue, n]),
+    themes: themeRows(territories.results),
     guilds: guilds.results.flatMap((r) => { const n = named(r); return n ? [[r.guild, n[0], n[1], r.n]] : []; }),
   };
 }
@@ -523,11 +509,6 @@ function tops(from, to, [surveyors, territories, guilds]) {
 // Answers kept by this Worker instance: host/path → {body, until}.
 const memo = new Map();
 export const forgetLog = () => memo.clear();  // for tests
-
-// Cloudflare's cache.
-function edgeCache() {
-  try { return globalThis.caches?.default ?? null; } catch { return null; }
-}
 
 // Answers the log's paths, or returns null for any other path.
 export function routeLog(request, env, now = Date.now()) {
@@ -544,7 +525,15 @@ export function routeLog(request, env, now = Date.now()) {
   if (request.method !== 'GET') return json({ error: 'method not allowed' }, 405, cors);
   // Every answer is kept under this Worker's own host and map (see the top of this file).
   const answer = (key, maxAge, read, immutable = false) => keep(`${url.host}/m${MAP_VERSION}/${key}`, maxAge, read, cors, now, immutable);
-  let ends, read, key, live = LIVE_CACHE_S;
+  // An answer about time that ends at `ends` (ms): cached for a day once that's SETTLED_MS ago, for `live` seconds until then.
+  const timed = (key, ends, read, live = LIVE_CACHE_S) => answer(key, now >= ends + SETTLED_MS ? SETTLED_CACHE_S : live, read);
+  // The page asked for by ?<name>=: {cursor, query} (null and '' for the first page), or null for a bad cursor.
+  const pageOf = (name, pattern = CURSOR, parse = (m) => ({ at: Number(m[1]), key: m[2] })) => {
+    const value = url.searchParams.get(name);
+    if (value === null) return { cursor: null, query: '' };
+    const m = value.match(pattern);
+    return m ? { cursor: parse(m), query: `?${name}=${value}` } : null;
+  };
   if (span) return answer('span', SPAN_CACHE_S, () => readSpan(env.LOG_DB));
   if (timelapse) {
     // Days that ended SETTLED_MS ago don't change: their part of the index is kept for good, under that day.
@@ -553,35 +542,15 @@ export function routeLog(request, env, now = Date.now()) {
     return answer(`timelapse/v${TIMELAPSE_VERSION}`, TIMELAPSE_CACHE_S, () => readTimelapse(env.LOG_DB, cut, settled));
   }
   if (follow) return answer(`timelapse/v${TIMELAPSE_VERSION}/guild/${follow[1]}`, TIMELAPSE_CACHE_S, () => readTimelapseGuild(env.LOG_DB, follow[1]));
-  if (followDay) {
-    const lid = followDay[1], d = Number(followDay[2]);
+  if (timelapseDay || followDay) {
+    const lid = followDay?.[1], d = Number((followDay ?? timelapseDay).at(-1));
     if (d > fdiv(now, DAY_MS)) return json({ error: 'that day has not started' }, 400, cors);
-    const after = url.searchParams.get('after');
-    let cursor = null;
-    if (after !== null) {
-      const m = after.match(CURSOR);
-      if (!m) return json({ error: 'bad cursor' }, 400, cors);
-      cursor = { at: Number(m[1]), key: m[2] };
-    }
-    // A guild's settled day never changes either.
+    const page = pageOf('after');
+    if (!page) return json({ error: 'bad cursor' }, 400, cors);
+    // A day that ended a while ago never changes, so it's kept for good (a guild's too): see TIMELAPSE_VERSION.
     const settled = now >= (d + 1) * DAY_MS + SETTLED_MS;
-    return answer(`timelapse/v${TIMELAPSE_VERSION}/guild/${lid}/${d}${cursor ? `?after=${after}` : ''}`, settled ? FOREVER_S : LIVE_CACHE_S,
-      () => readTimelapseGuildDay(env.LOG_DB, lid, d, cursor), settled);
-  }
-  if (timelapseDay) {
-    const d = Number(timelapseDay[1]);
-    if (d > fdiv(now, DAY_MS)) return json({ error: 'that day has not started' }, 400, cors);
-    const after = url.searchParams.get('after');
-    let cursor = null;
-    if (after !== null) {
-      const m = after.match(CURSOR);
-      if (!m) return json({ error: 'bad cursor' }, 400, cors);
-      cursor = { at: Number(m[1]), key: m[2] };
-    }
-    // A day that ended a while ago never changes, so it's kept for good: see TIMELAPSE_VERSION.
-    const settled = now >= (d + 1) * DAY_MS + SETTLED_MS;
-    return answer(`timelapse/v${TIMELAPSE_VERSION}/${d}${cursor ? `?after=${after}` : ''}`, settled ? FOREVER_S : LIVE_CACHE_S,
-      () => readTimelapseDay(env.LOG_DB, d, cursor), settled);
+    return answer(`timelapse/v${TIMELAPSE_VERSION}/${lid ? `guild/${lid}/` : ''}${d}${page.query}`, settled ? FOREVER_S : LIVE_CACHE_S,
+      () => (lid ? readTimelapseGuildDay(env.LOG_DB, lid, d, page.cursor) : readTimelapseDay(env.LOG_DB, d, page.cursor)), settled);
   }
   if (territory) {
     const rx = Number(territory[1]), ry = Number(territory[2]);
@@ -591,78 +560,49 @@ export function routeLog(request, env, now = Date.now()) {
     const from = Number(novas[1]), to = Number(novas[2]);
     if (!(from < to) || to - from > SLICE_MAX_HOURS) return json({ error: 'bad range of hours' }, 400, cors);
     if (from > fdiv(now, HOUR_MS)) return json({ error: 'that hour has not started' }, 400, cors);
-    const before = url.searchParams.get('before');
-    let cursor = null;
-    if (before !== null) {
-      const m = before.match(NOVA_CURSOR);
-      if (!m) return json({ error: 'bad cursor' }, 400, cors);
-      cursor = { at: Number(m[1]), rx: Number(m[2]), ry: Number(m[3]) };
-    }
-    const settled = now >= to * HOUR_MS + SETTLED_MS;
-    return answer(`novas/${from}/${to}${cursor ? `?before=${before}` : ''}`, settled ? 86400 : to - from > 48 ? SLICE_SLOW_CACHE_S : LIVE_CACHE_S,
-      () => readNovas(env.LOG_DB, from, to, cursor));
+    const page = pageOf('before', NOVA_CURSOR, (m) => ({ at: Number(m[1]), rx: Number(m[2]), ry: Number(m[3]) }));
+    if (!page) return json({ error: 'bad cursor' }, 400, cors);
+    return timed(`novas/${from}/${to}${page.query}`, to * HOUR_MS, () => readNovas(env.LOG_DB, from, to, page.cursor),
+      to - from > 48 ? SLICE_SLOW_CACHE_S : LIVE_CACHE_S);
   }
   if (surveyor || theme || guild) {
     const [, key, a, b] = surveyor ?? theme ?? guild, from = Number(a), to = Number(b);
     if (theme && !(Number(key) < THEMES.length)) return json({ error: 'no such theme' }, 400, cors);
     if (!(from < to) || to - from > SLICE_MAX_HOURS) return json({ error: 'bad range of hours' }, 400, cors);
     if (from > fdiv(now, HOUR_MS)) return json({ error: 'that hour has not started' }, 400, cors);
-    const after = url.searchParams.get('before');
-    let cursor = null;
-    if (after !== null) {
-      const m = after.match(CURSOR);
-      if (!m) return json({ error: 'bad cursor' }, 400, cors);
-      cursor = { at: Number(m[1]), key: m[2] };
-    }
+    const page = pageOf('before');
+    if (!page) return json({ error: 'bad cursor' }, 400, cors);
     const kind = surveyor ? 'surveyor' : guild ? 'guild' : 'theme', k = theme ? Number(key) : key;
-    const settled = now >= to * HOUR_MS + SETTLED_MS;
-    const live = to - from > 48 ? SLICE_SLOW_CACHE_S : LIVE_CACHE_S;
-    return answer(`${kind}/${k}/${from}/${to}${cursor ? `?before=${after}` : ''}`, settled ? 86400 : live,
-      () => readSlice(env.LOG_DB, kind, k, from, to, cursor));
+    return timed(`${kind}/${k}/${from}/${to}${page.query}`, to * HOUR_MS, () => readSlice(env.LOG_DB, kind, k, from, to, page.cursor),
+      to - from > 48 ? SLICE_SLOW_CACHE_S : LIVE_CACHE_S);
   }
   if (month) {
     const m = Number(month[1]), [from, to] = monthHours(m);
     if (from > fdiv(now, HOUR_MS)) return json({ error: 'that month has not started' }, 400, cors);
-    ends = to * HOUR_MS;
-    read = () => readMonth(env.LOG_DB, m);
-    key = `month/${m}`;
-  } else if (topHours) {
+    return timed(`month/${m}`, to * HOUR_MS, () => readMonth(env.LOG_DB, m));
+  }
+  if (topHours) {
     const from = Number(topHours[1]), to = Number(topHours[2]);
     if (!(from < to) || to - from > TOP_HOURS_MAX) return json({ error: 'bad range of hours' }, 400, cors);
     if (from > fdiv(now, HOUR_MS)) return json({ error: 'that hour has not started' }, 400, cors);
-    ends = to * HOUR_MS;
-    read = () => readTopHours(env.LOG_DB, from, to);
-    key = `top/hours/${from}/${to}`;
-  } else if (top) {
+    return timed(`top/hours/${from}/${to}`, to * HOUR_MS, () => readTopHours(env.LOG_DB, from, to));
+  }
+  if (top) {
     const from = Number(top[1]), to = Number(top[2]);
     if (!(from < to) || to - from > TOP_MAX_DAYS) return json({ error: 'bad range of days' }, 400, cors);
     if (from > fdiv(now, DAY_MS)) return json({ error: 'that day has not started' }, 400, cors);
-    ends = to * DAY_MS;
-    read = () => readTop(env.LOG_DB, from, to);
-    key = `top/${from}/${to}`;
-    if (to - from > 2) live = TOP_SLOW_CACHE_S;
-  } else if (day) {
+    return timed(`top/${from}/${to}`, to * DAY_MS, () => readTop(env.LOG_DB, from, to), to - from > 2 ? TOP_SLOW_CACHE_S : LIVE_CACHE_S);
+  }
+  if (day) {
     const d = Number(day[1]);
     if (d > fdiv(now, DAY_MS)) return json({ error: 'that day has not started' }, 400, cors);
-    ends = (d + 1) * DAY_MS;
-    read = () => readDay(env.LOG_DB, d);
-    key = `day/${d}`;
-  } else {
-    const h = Number(hour[1]);
-    if (h > fdiv(now, HOUR_MS)) return json({ error: 'that hour has not started' }, 400, cors);
-    const after = url.searchParams.get('after');
-    let cursor = null;
-    if (after !== null) {
-      const m = after.match(CURSOR);
-      if (!m) return json({ error: 'bad cursor' }, 400, cors);
-      cursor = { at: Number(m[1]), key: m[2] };
-    }
-    ends = (h + 1) * HOUR_MS;
-    read = () => readHour(env.LOG_DB, h, cursor);
-    key = `hour/${h}${cursor ? `?after=${after}` : ''}`;
+    return timed(`day/${d}`, (d + 1) * DAY_MS, () => readDay(env.LOG_DB, d));
   }
-  const settled = now >= ends + SETTLED_MS;
-  return answer(key, settled ? 86400 : live, read);
+  const h = Number(hour[1]);
+  if (h > fdiv(now, HOUR_MS)) return json({ error: 'that hour has not started' }, 400, cors);
+  const page = pageOf('after');
+  if (!page) return json({ error: 'bad cursor' }, 400, cors);
+  return timed(`hour/${h}${page.query}`, (h + 1) * HOUR_MS, () => readHour(env.LOG_DB, h, page.cursor));
 }
 
 // An answer from this instance's memory, Cloudflare's cache or `read`, kept

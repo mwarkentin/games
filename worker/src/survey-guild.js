@@ -25,13 +25,15 @@
 //
 // Sectors check membership here (POST /check, internal) when a player's game
 // names its guild, and again every GUILD_RECHECK_MS while they play, which is
-// also how a member's "last seen" stays current. The answer gives the tag, the
-// log id and the name, which the sector logs with each claim the member makes. The Atlas keeps who's online
-// in each guild from the reports sectors already send it (noteMates,
-// matesFor), and sectors pass that on to members as {t: 'guild', tag, on}.
+// also how a member's "last seen" stays current. The answer gives the tag; the
+// log id, which the sector logs with each claim the member makes; and the
+// name, which it keeps once for the log (Sector.noteGuild). The Atlas keeps
+// who's online in each guild from the reports sectors already send it
+// (noteMates, matesFor), and sectors pass that on to members as
+// {t: 'guild', tag, on}.
 
-import { BLOCKED_INITIALS, CODE_ALPHABET, HttpError, INITIALS, corsHeaders, hashIp, json, rateLimit } from './leaderboard.js';
-import { FLAG_QUIET, GUILD_CODE, GUILD_LOG_ID, GUILD_TAG, PID, TOKEN, playerId } from './survey-social.js';
+import { HttpError, INITIALS, allowedInitials, answered, corsHeaders, hashIp, isInt, json, mustPost, randomCode, randomHex, rateLimit, readBody } from './leaderboard.js';
+import { FLAG_QUIET, GUILD_CODE, GUILD_LOG_ID, GUILD_TAG, PID, playerId, tokenIn } from './survey-social.js';
 
 export { GUILD_CODE, GUILD_LOG_ID, GUILD_TAG };
 export const GUILD_MAX = 50;                 // members a guild holds
@@ -55,17 +57,9 @@ const GUILDS_PATH = '/v1/survey/guilds';
 const GUILD_PATH = /^\/v1\/survey\/guilds\/([^/]{1,16})(?:\/(join|leave|roster))?$/;
 const MAX_BODY = 1024;
 
-const randomHex = (bytes) => [...crypto.getRandomValues(new Uint8Array(bytes))].map((b) => b.toString(16).padStart(2, '0')).join('');
-const isInt = (v, min, max) => Number.isInteger(v) && v >= min && v <= max;
 const guildOf = (env, code) => env.GUILDS.get(env.GUILDS.idFromName(code));
 const ask = (env, code, path, body) => guildOf(env, code).fetch(`https://guild${path}`, body === undefined ? undefined : { method: 'POST', body: JSON.stringify(body) });
 export const goodName = (n) => Array.isArray(n) && n.length === 3 && n.every((v, i) => isInt(v, 0, GUILD_WORDS[i] - 1));
-
-async function readBody(request) {
-  const text = await request.text();
-  if (text.length > MAX_BODY) throw new HttpError(413, 'body too large');
-  try { return JSON.parse(text); } catch { throw new HttpError(400, 'body must be JSON'); }
-}
 
 // What a guild's object answered, passed on, or its error as the Worker's.
 async function answer(res) {
@@ -81,37 +75,29 @@ export function routeGuilds(request, env, now = Date.now()) {
   const one = url.pathname.match(GUILD_PATH);
   if ((url.pathname !== GUILDS_PATH && !one) || !env.GUILDS) return null;
   const cors = corsHeaders(request, env);
-  return (async () => {
-    try {
-      if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers: cors });
-      if (one && !GUILD_CODE.test(one[1])) throw new HttpError(404, 'unknown guild');
-      if (one && !one[2] && request.method === 'GET') return json(await answer(await ask(env, one[1], '/info')), 200, cors);
-      if (request.method !== 'POST') throw new HttpError(405, 'method not allowed');
-      if (!cors['Access-Control-Allow-Origin']) throw new HttpError(403, 'origin not allowed');
-      const body = await readBody(request);
-      if (typeof body?.token !== 'string' || !TOKEN.test(body.token)) throw new HttpError(400, 'token must be 32 hex digits');
-      const pid = await playerId(body.token);
-      const initials = typeof body.initials === 'string' && INITIALS.test(body.initials) && !BLOCKED_INITIALS.has(body.initials) ? body.initials : null;
-      const action = one ? one[2] : 'create';
-      if ((action === 'create' || action === 'join') && !initials) throw new HttpError(400, 'pick initials first');
-      if (action === 'create') {
-        if (!goodName(body.name)) throw new HttpError(400, 'name must be three words from the lists');
-        if (env.DB) await rateLimit(env.DB, 'guild', await hashIp(request, env.IP_SALT), now);
-        for (let attempt = 0; attempt < 8; attempt++) {
-          const code = [...crypto.getRandomValues(new Uint8Array(6))].map((b) => CODE_ALPHABET[b % CODE_ALPHABET.length]).join('');
-          const res = await ask(env, code, '/create', { pid, initials, name: body.name });
-          if (res.status !== 409) return json({ code, ...(await answer(res)) }, 201, cors);
-        }
-        throw new HttpError(503, 'could not pick a free guild code, try again');
+  return answered(request, cors, async () => {
+    if (one && !GUILD_CODE.test(one[1])) throw new HttpError(404, 'unknown guild');
+    if (one && !one[2] && request.method === 'GET') return json(await answer(await ask(env, one[1], '/info')), 200, cors);
+    mustPost(request, cors);
+    const body = await readBody(request, MAX_BODY);
+    const pid = await playerId(tokenIn(body));
+    const initials = allowedInitials(body.initials) ? body.initials : null;
+    const action = one ? one[2] : 'create';
+    if ((action === 'create' || action === 'join') && !initials) throw new HttpError(400, 'pick initials first');
+    if (action === 'create') {
+      if (!goodName(body.name)) throw new HttpError(400, 'name must be three words from the lists');
+      if (env.DB) await rateLimit(env.DB, 'guild', await hashIp(request, env.IP_SALT), now);
+      for (let attempt = 0; attempt < 8; attempt++) {
+        const code = randomCode(6);
+        const res = await ask(env, code, '/create', { pid, initials, name: body.name });
+        if (res.status !== 409) return json({ code, ...(await answer(res)) }, 201, cors);
       }
-      if (action === 'join' && env.DB) await rateLimit(env.DB, 'guildJoin', await hashIp(request, env.IP_SALT), now);
-      const res = await ask(env, one[1], `/${action}`, { pid, initials });
-      return json(action === 'leave' ? await answer(res) : { code: one[1], ...(await answer(res)) }, 200, cors);
-    } catch (error) {
-      if (error instanceof HttpError) return json({ error: error.message }, error.status, cors);
-      throw error;
+      throw new HttpError(503, 'could not pick a free guild code, try again');
     }
-  })();
+    if (action === 'join' && env.DB) await rateLimit(env.DB, 'guildJoin', await hashIp(request, env.IP_SALT), now);
+    const res = await ask(env, one[1], `/${action}`, { pid, initials });
+    return json(action === 'leave' ? await answer(res) : { code: one[1], ...(await answer(res)) }, 200, cors);
+  });
 }
 
 // One guild. Its tables are made only when it's created, so a code someone
@@ -119,8 +105,6 @@ export function routeGuilds(request, env, now = Date.now()) {
 // leaves, which frees the code.
 export class Guild {
   constructor(ctx, env) {
-    this.ctx = ctx;
-    this.env = env;
     this.sql = ctx.storage.sql;
     this.now = () => Date.now();
   }
@@ -168,7 +152,6 @@ export class Guild {
       this.sql.exec('CREATE TABLE IF NOT EXISTS guild (id INTEGER PRIMARY KEY CHECK (id = 0), a INTEGER NOT NULL, b INTEGER NOT NULL, c INTEGER NOT NULL, tag TEXT NOT NULL, created INTEGER NOT NULL, lid TEXT)');
       this.sql.exec('CREATE TABLE IF NOT EXISTS members (pid TEXT PRIMARY KEY, initials TEXT NOT NULL, joined INTEGER NOT NULL, seen INTEGER NOT NULL) WITHOUT ROWID');
       this.sql.exec('INSERT INTO guild (id, a, b, c, tag, created, lid) VALUES (0, ?, ?, ?, ?, ?, ?)', ...body.name, randomHex(4), now, randomHex(5));
-      this.lidReady = true;
       this.sql.exec('INSERT INTO members (pid, initials, joined, seen) VALUES (?, ?, ?, ?)', pid, initials, now, now);
       return reply(this.whole(this.meta()), 201);
     }
@@ -178,7 +161,6 @@ export class Guild {
         if (!this.sql.exec('SELECT COUNT(*) AS n FROM members').one().n) {
           this.sql.exec('DROP TABLE members');
           this.sql.exec('DROP TABLE guild');
-          this.lidReady = false;
         }
       }
       return reply({ ok: true });

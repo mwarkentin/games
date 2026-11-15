@@ -19,11 +19,10 @@
 //
 // Where the list comes from. Each sector already reports to the Atlas every
 // ≤ REPORT_MS while busy; the report also lists its surveyors, by territory,
-// never the cell they're on, and leaves out anyone who asked to be hidden.
-// The Atlas builds one snapshot of everyone at most every LIST_MS, each
-// Worker instance fetches it at most that often, and works out each page
-// itself, so a crowd reading the list costs the Atlas one request per instance
-// per LIST_MS.
+// never the cell they're on. The Atlas builds one snapshot of everyone at
+// most every LIST_MS, each Worker instance fetches it at most that often, and
+// works out each page itself, so a crowd reading the list costs the Atlas one
+// request per instance per LIST_MS.
 //
 // Emotes go from the sender's sector (the one under the middle of their view,
 // which knows where they are) to the recipient's: there and then if that's the
@@ -32,7 +31,7 @@
 // every emote its players get, from anywhere, so it holds the limits that
 // protect them: a few a minute from one sender, and a cap from everyone.
 
-import { INITIALS } from './leaderboard.js';
+import { HttpError, corsHeaders, hex, initialsOrNone, isInt, json, underLimit } from './leaderboard.js';
 import { RC, fdiv } from './letterfield-world.js';
 
 export const PID = /^[0-9a-f]{12}$/;     // a player, as everyone else knows them
@@ -58,15 +57,34 @@ export const PAIR_MAX = 3;               // emotes one player can send another
 export const PAIR_MS = 60000;            //   in this long
 export const INBOX_MAX = 6;              // emotes one player can be sent by everyone
 export const INBOX_MS = 10000;           //   in this long
-const TERR = 4;                          // territories per sector side
-const isInt = (v, min, max) => Number.isInteger(v) && v >= min && v <= max;
-const send = (ws, message) => { try { ws.send(JSON.stringify(message)); } catch { /* closing */ } };
+export const TERR = 4;                   // territories per sector side (survey.js's SECTOR is RC * TERR)
+export const send = (ws, message) => { try { ws.send(JSON.stringify(message)); } catch { /* closing */ } };
+export const atlas = (env) => env.ATLAS.get(env.ATLAS.idFromName('atlas'));
+
+// The Atlas's answer to `path`, asked at most once per `ms` by each Worker
+// instance and shared; a failed ask isn't kept.
+export function fromAtlas(cache, env, path, ms, read) {
+  const now = Date.now();
+  let cached = cache.get(env.ATLAS);
+  if (!cached || now - cached.at > ms) {
+    cached = { at: now, answer: atlas(env).fetch(`https://atlas${path}`).then((r) => (r.ok ? read(r) : Promise.reject(new Error(`atlas ${r.status}`)))) };
+    cache.set(env.ATLAS, cached);
+    cached.answer.catch(() => { if (cache.get(env.ATLAS) === cached) cache.delete(env.ATLAS); });
+  }
+  return cached.answer;
+}
 
 // A player's id from their token: 48 bits of its SHA-256, plenty to tell
 // apart everyone who ever plays, and no use for finding the token.
 export async function playerId(token) {
   const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(`games-player:${token}`));
-  return [...new Uint8Array(digest).slice(0, 6)].map((b) => b.toString(16).padStart(2, '0')).join('');
+  return hex(digest).slice(0, 12);
+}
+
+// The token a request's body names its player by, or a 400.
+export function tokenIn(body) {
+  if (typeof body?.token !== 'string' || !TOKEN.test(body.token)) throw new HttpError(400, 'token must be 32 hex digits');
+  return body.token;
 }
 
 // What a `me` message says besides initials: the player's token, whether
@@ -112,7 +130,7 @@ export function listed(people, sx, sy, now) {
 export function goodWho(who, sx, sy, max) {
   if (who === undefined) return true;
   return Array.isArray(who) && who.length <= max && who.every((e) => Array.isArray(e) && (e.length === 6 || (e.length === 7 && typeof e[6] === 'string' && GUILD_TAG.test(e[6])))
-    && typeof e[0] === 'string' && PID.test(e[0]) && (e[1] === '' || (typeof e[1] === 'string' && INITIALS.test(e[1])))
+    && typeof e[0] === 'string' && PID.test(e[0]) && initialsOrNone(e[1])
     && Number.isInteger(e[2]) && Number.isInteger(e[3]) && fdiv(e[2], TERR) === sx && fdiv(e[3], TERR) === sy
     && isInt(e[4], 0, IDLE_MAX) && isInt(e[5], 0, 255));
 }
@@ -145,8 +163,8 @@ export function snapshot(rows, now, online) {
 // away (the larger of the two distances, as the game's nearView counts), then
 // straight-line distance, then the most recently active. Sectors are visited
 // nearest first, and only as far as the page needs.
-export function nearest(snap, rx, ry, page, me = null, size = LIST_PAGE) {
-  const need = (page + 1) * size;
+export function nearest(snap, rx, ry, page, me = null) {
+  const need = (page + 1) * LIST_PAGE;
   const gap = (r, s) => Math.max(0, s * TERR - r, r - (s * TERR + TERR - 1));
   const order = snap.sectors.map(([sx, sy, who]) => ({ d: Math.max(gap(rx, sx), gap(ry, sy)), who })).sort((a, b) => a.d - b.d);
   const rank = (e) => ({ e, d: Math.max(Math.abs(e[2] - rx), Math.abs(e[3] - ry)), h: Math.hypot(e[2] - rx, e[3] - ry) });
@@ -162,13 +180,13 @@ export function nearest(snap, rx, ry, page, me = null, size = LIST_PAGE) {
     for (const e of s.who) if (e[0] !== me) near.push(rank(e));
   }
   near.sort(before);
-  return { n, page, size, more: n > need, who: near.slice(page * size, need).map((x) => x.e) };
+  return { n, page, size: LIST_PAGE, more: n > need, who: near.slice(page * LIST_PAGE, need).map((x) => x.e) };
 }
 
 // GET /v1/survey/surveyors, or null for any other path. Each Worker instance
 // asks the Atlas for its snapshot at most once per LIST_MS and shares it.
 const listCache = new WeakMap();
-export function routeSurveyors(request, env, corsHeaders, json) {
+export function routeSurveyors(request, env) {
   const url = new URL(request.url);
   if (url.pathname !== LIST_PATH || !env.ATLAS) return null;
   const cors = corsHeaders(request, env);
@@ -177,15 +195,7 @@ export function routeSurveyors(request, env, corsHeaders, json) {
   const page = Number(url.searchParams.get('page') ?? 0), me = url.searchParams.get('me');
   if (!r || !isInt(page, 0, LIST_PAGES - 1) || (me !== null && !PID.test(me))) return json({ error: 'bad request' }, 400, cors);
   return (async () => {
-    const now = Date.now();
-    let cached = listCache.get(env.ATLAS);
-    if (!cached || now - cached.at > LIST_MS) {
-      const atlas = env.ATLAS.get(env.ATLAS.idFromName('atlas'));
-      cached = { at: now, snap: atlas.fetch(`https://atlas${ATLAS_LIST_PATH}`).then((res) => (res.ok ? res.json() : Promise.reject(new Error(`atlas ${res.status}`)))) };
-      listCache.set(env.ATLAS, cached);
-      cached.snap.catch(() => { if (listCache.get(env.ATLAS) === cached) listCache.delete(env.ATLAS); });
-    }
-    const body = nearest(await cached.snap, Number(r[1]), Number(r[2]), page, me);
+    const body = nearest(await fromAtlas(listCache, env, ATLAS_LIST_PATH, LIST_MS, (res) => res.json()), Number(r[1]), Number(r[2]), page, me);
     return json(body, 200, { ...cors, 'Cache-Control': `public, max-age=${LIST_MS / 1000}` });
   })();
 }
@@ -208,7 +218,7 @@ export async function sendEmote(sector, ws, me, msg) {
   if (me.emotes < 1) return answer('slow down');
   me.emotes -= 1;
   // Every emote from the address counts, from any socket in any sector.
-  if (!(await sector.allowed('SURVEY_EMOTES', me.address))) return answer('slow down');
+  if (!(await underLimit(sector.env.SURVEY_EMOTES, me.address))) return answer('slow down');
   const [sx, sy] = sector.coords();
   // Where the sender is, by territory, for the recipient's "fly there".
   const r = me.x === null || me.x === undefined ? null : [fdiv(Math.floor(me.x), RC), fdiv(Math.floor(me.y), RC)];
@@ -231,7 +241,7 @@ async function forward(env, [sx, sy], card) {
 }
 
 const goodCard = (c) => c && typeof c.from === 'string' && PID.test(c.from) && typeof c.to === 'string' && PID.test(c.to) && c.from !== c.to
-  && EMOTES.includes(c.e) && (c.ini === '' || (typeof c.ini === 'string' && INITIALS.test(c.ini)))
+  && EMOTES.includes(c.e) && initialsOrNone(c.ini)
   && (c.r === null || (Array.isArray(c.r) && c.r.length === 2 && c.r.every((v) => isInt(v, -1e8, 1e8))));
 
 // POST EMOTE_PATH: an emote another sector passes on, for a player here.

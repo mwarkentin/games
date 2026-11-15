@@ -2,7 +2,7 @@
 // games.michaelwarkentin.com, a Cloudflare Worker backed by a D1 (SQLite)
 // database and Durable Objects: one per War room, and one per sector of
 // Letterfield's map plus an Atlas. The logic lives in leaderboard.js, war.js,
-// survey.js, survey-log.js, survey-social.js (who's surveying,
+// survey.js, survey-pass.js (Turnstile passes), survey-log.js, survey-social.js (who's surveying,
 // and their emotes), survey-guild.js (guilds), players.js (one player on several
 // devices) and define.js (what Letterfield's words mean);
 // this module only exports the Worker and the Durable Object classes, because
@@ -27,7 +27,7 @@ export default {
   async fetch(request, env) {
     try {
       if (new URL(request.url).pathname.startsWith('/v1/war/')) return await handleWar(request, env);
-      const survey = routeSurvey(request, env) ?? routeSurveyors(request, env, corsHeaders, json) ?? routeGuilds(request, env) ?? routeLinks(request, env) ?? routePlayers(request, env) ?? routeRecovery(request, env) ?? routeLog(request, env) ?? routeDefine(request, env);
+      const survey = routeSurvey(request, env) ?? routeSurveyors(request, env) ?? routeGuilds(request, env) ?? routeLinks(request, env) ?? routePlayers(request, env) ?? routeRecovery(request, env) ?? routeLog(request, env) ?? routeDefine(request, env);
       return await (survey ?? handle(request, env));
     } catch (error) {
       console.error(error);

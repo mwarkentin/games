@@ -82,14 +82,14 @@
 // add each address's charted words to their reports, and the Atlas answers
 // with the addresses past DAILY_CLAIMS today, which every sector then refuses.
 
-import { BLOCKED_INITIALS, INITIALS, corsHeaders, hashAddress, json } from './leaderboard.js';
+import { allowedInitials, corsHeaders, hashAddress, initialsOrNone, isInt, underLimit } from './leaderboard.js';
 import { PASS_PATH, checkPass, handlePass } from './survey-pass.js';
 import { CH, DIRS, MAP_VERSION, RC, STRAY_MIN, VOCAB, chunk, fdiv, keyOf, letterAt, regionTheme, territoryTotal } from './letterfield-world.js';
-import { LOG_BATCH, LOG_MS, LOG_RETRY_MAX_MS, writeLog } from './survey-log.js';
+import { DAY_MS, HOUR_MS, LOG_BATCH, LOG_MS, LOG_RETRY_MAX_MS, writeLog } from './survey-log.js';
 import { GUILD_RECHECK_MS, GUILD_TAG, GUILD_TAGS_MAX, checkGuild, matesFor, noteMates, passMates } from './survey-guild.js';
-import { ATLAS_LIST_PATH, EMOTE_PATH, LIST_MS, REFRESH_MS, goodWho, listed, sendEmote, snapshot, takeEmote, takeMe } from './survey-social.js';
+import { ATLAS_LIST_PATH, EMOTE_PATH, LIST_MS, REFRESH_MS, TERR, atlas, fromAtlas, goodWho, listed, send, sendEmote, snapshot, takeEmote, takeMe } from './survey-social.js';
 
-export const SECTOR = RC * 4;         // cells per sector side
+export const SECTOR = RC * TERR;      // cells per sector side
 export const MAX_PLAYERS = 750;       // sockets one sector accepts (bench/load.js: one sector saturates between 750 and 1,000)
 export const PRESENCE_MS = 1000;      // how often positions go out
 export const BATCH_MS = 200;          // claims go out together at most this often
@@ -115,10 +115,7 @@ export const RELAY_MS = ONLINE_MS;    // the Atlas keeps the shared world's supe
 export const RELAY_MAX = 64;          // and at most this many
 export const NOVA_REPORT_MS = 1000;   // a sector with a supernova to report reports this soon after its last report
 export const NOVA_REACH = 3;          // territories: a supernova this close to the middle of a player's view plays for them, as the game's nearView
-const DAY_MS = 86400000;
-const HOUR_MS = 3600000;
 const HASH = /^[0-9a-f]{64}$/;
-const TERR = SECTOR / RC;             // territories per sector side
 const MAX_MESSAGE = 256;
 const LIMIT = 1e9;                    // the game's map runs to ±1e9 cells
 export const SECTOR_PATH = /^\/v1\/survey\/(-?\d{1,7})\/(-?\d{1,7})$/;
@@ -134,10 +131,8 @@ export const NEAR_PATH = '/near';
 export const TOTALS_PATH = '/totals';
 export const WORLD_PATH = '/v1/survey/world';
 
-const send = (ws, message) => { try { ws.send(JSON.stringify(message)); } catch { /* closing */ } };
 const broadcast = (ctx, frame) => { for (const ws of ctx.getWebSockets()) { try { ws.send(frame); } catch { /* closing */ } } };
 const row = (r) => [r.w, r.x, r.y, r.d, r.s, r.initials, r.at];
-const isInt = (v, min, max) => Number.isInteger(v) && v >= min && v <= max;
 // The daily cap: DAILY_CLAIMS, unless SURVEY_DAILY_CLAIMS (a var in
 // wrangler.toml) says otherwise, as Worker Previews' does so tests can chart
 // more in a day.
@@ -146,7 +141,6 @@ export function dailyClaims(env) {
   return Number.isInteger(n) && n >= 1 && n <= 1e6 ? n : DAILY_CLAIMS;
 }
 export const inArea = (sx, sy) => Math.abs(sx) <= AREA && Math.abs(sy) <= AREA;
-const atlas = (env) => env.ATLAS.get(env.ATLAS.idFromName('atlas'));
 
 // Whether a Durable Object's storage was last used with an older map
 // (MAP_VERSION), recording this one if so. Storage from before maps had
@@ -198,21 +192,17 @@ export function novaNeighbours(rx, ry) {
 export function checkNovaWord(n) {
   if (!Array.isArray(n) || n.length !== 8) return false;
   const [rx, ry, at, w, x, y, d, initials] = n;
-  if (![rx, ry].every((v) => isInt(v, -LIMIT, LIMIT)) || !isInt(at, 0, 1e14) || !(initials === '' || (typeof initials === 'string' && INITIALS.test(initials)))) return false;
+  if (![rx, ry].every((v) => isInt(v, -LIMIT, LIMIT)) || !isInt(at, 0, 1e14) || !initialsOrNone(initials)) return false;
   const c = checkClaim({ w, x, y, d }, fdiv(x, SECTOR), fdiv(y, SECTOR));
   return !c.error && !c.s && fdiv(x, RC) === rx && fdiv(y, RC) === ry;
 }
 
 // Whether a neighbour's supernova, as NEAR_PATH carries it, is one sector
-// (sx, sy) should pass on: a hidden word, really there, in a territory of
-// another sector within NOVA_REACH of this one. Only sectors can reach the
+// (sx, sy) should pass on: a hidden word, really there, in a territory whose
+// sector would tell this one (novaNeighbours). Only sectors can reach the
 // path, but this keeps a bad frame from going out to every player here.
 export function checkNova(n, sx, sy) {
-  if (!checkNovaWord(n)) return false;
-  const [rx, ry] = n;
-  if (fdiv(rx, TERR) === sx && fdiv(ry, TERR) === sy) return false;
-  const gap = (r, s) => Math.max(0, s * TERR - r, r - (s * TERR + TERR - 1));
-  return Math.max(gap(rx, sx), gap(ry, sy)) <= NOVA_REACH;
+  return checkNovaWord(n) && novaNeighbours(n[0], n[1]).some(([nx, ny]) => nx === sx && ny === sy);
 }
 
 // Answers the survey's paths, or returns null for any other path: a sector's
@@ -232,7 +222,7 @@ export function routeSurvey(request, env) {
   const text = (body, status) => new Response(body, { status, headers: { ...cors, 'Content-Type': 'text/plain' } });
   if (passing) {
     if (request.method !== 'POST') return text('method not allowed', 405);
-    return addressHash(request, env).then((address) => handlePass(request, env, address, cors, json));
+    return addressHash(request, env).then((address) => handlePass(request, env, address, cors));
   }
   if (request.method !== 'GET') return text('method not allowed', 405);
   if (world) return worldMap(env, cors);
@@ -293,14 +283,7 @@ export function addressOf(ip) {
 // VIEW_MS and shares the answer, so players checking the map can't swamp it.
 const worldCache = new WeakMap();
 async function worldMap(env, cors) {
-  const now = Date.now();
-  let cached = worldCache.get(env.ATLAS);
-  if (!cached || now - cached.at > VIEW_MS) {
-    cached = { at: now, body: atlas(env).fetch('https://atlas/world').then((r) => (r.ok ? r.text() : Promise.reject(new Error(`atlas ${r.status}`)))) };
-    worldCache.set(env.ATLAS, cached);
-    cached.body.catch(() => { if (worldCache.get(env.ATLAS) === cached) worldCache.delete(env.ATLAS); });
-  }
-  return new Response(await cached.body, {
+  return new Response(await fromAtlas(worldCache, env, '/world', VIEW_MS, (r) => r.text()), {
     headers: { ...cors, 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': `public, max-age=${VIEW_MS / 1000}` },
   });
 }
@@ -359,8 +342,7 @@ export class Sector {
       key TEXT PRIMARY KEY, w TEXT NOT NULL, x INTEGER NOT NULL, y INTEGER NOT NULL, d INTEGER NOT NULL,
       s INTEGER NOT NULL, initials TEXT NOT NULL, at INTEGER NOT NULL) WITHOUT ROWID`);
     // The survey's log (survey-log.js): claims are copied to D1 in the order
-    // they were made, and `logged` holds the last one D1 has. A sector from
-    // before the log starts with none logged, so it sends its old claims too.
+    // they were made, and `logged` holds the last one D1 has.
     this.sql.exec('CREATE INDEX IF NOT EXISTS claims_by_time ON claims (at, key)');
     this.sql.exec('CREATE TABLE IF NOT EXISTS logged (id INTEGER PRIMARY KEY CHECK (id = 0), at INTEGER NOT NULL)');
     // Each claim's guild, as the log knows it: the log id of the guild its
@@ -405,13 +387,11 @@ export class Sector {
     const [client, server] = Object.values(new WebSocketPair());
     const address = request.headers.get(ADDRESS_HEADER) || null;
     if (request.headers.get(UNPASSED_HEADER) === '1') { this.unpassed++; this.reportDue = true; }
+    const full = () => this.ctx.getWebSockets().length >= MAX_PLAYERS || (address && this.fromAddress(address) >= ADDRESS_SOCKETS);
     if (this.world && this.world.players >= MAX_ONLINE) this.turnAway(server, true);
-    else if (this.ctx.getWebSockets().length >= MAX_PLAYERS) this.turnAway(server, false);
-    else if (address && this.fromAddress(address) >= ADDRESS_SOCKETS) this.turnAway(server, false);
-    else if (!(await this.allowed('SURVEY_JOINS', address))) this.turnAway(server, false);
     // The limiter answers from outside this object, so others may have joined
-    // while it did: the counts are checked again.
-    else if (this.ctx.getWebSockets().length >= MAX_PLAYERS || (address && this.fromAddress(address) >= ADDRESS_SOCKETS)) this.turnAway(server, false);
+    // while it did: the counts are checked again after it.
+    else if (full() || !(await underLimit(this.env.SURVEY_JOINS, address)) || full()) this.turnAway(server, false);
     else this.join(server, Number(m[1]), Number(m[2]), address);
     return new Response(null, { status: 101, webSocket: client });
   }
@@ -460,7 +440,7 @@ export class Sector {
   // they've had it already (it's this sector's own, or a neighbour's).
   relay(world) {
     if (!isInt(world?.novaSeq, 0, 1e14)) return;
-    const [sx, sy] = this.coords() ?? [];
+    const [sx, sy] = this.coords();
     for (const n of Array.isArray(world.novas) ? world.novas : []) {
       if (!Array.isArray(n) || n.length !== 8 || !isInt(n[0], -LIMIT, LIMIT) || !isInt(n[1], -LIMIT, LIMIT) || !isInt(n[2], 0, 1e14)) continue;
       if (this.novasSent.has(`${n[0]},${n[1]}`) || (fdiv(n[0], TERR) === sx && fdiv(n[1], TERR) === sy)) continue;
@@ -489,15 +469,6 @@ export class Sector {
     let n = 0;
     for (const p of this.everyone().values()) if (p.address === address) n++;
     return n;
-  }
-
-  // Asks one of the per-address rate limiters (wrangler.toml) whether to go
-  // ahead. Without the binding, or if it fails, the answer is yes: the limits
-  // per socket and per sector still hold.
-  async allowed(binding, address) {
-    const limiter = this.env[binding];
-    if (!limiter || !address) return true;
-    try { return (await limiter.limit({ key: address })).success !== false; } catch { return true; }
   }
 
   // A full sector (or survey) still answers, so the game can say why it isn't joining.
@@ -558,8 +529,8 @@ export class Sector {
     const me = this.person(ws);
     if (!me || !msg) return;
     if (msg.t === 'me') {
-      const initials = typeof msg.initials === 'string' && INITIALS.test(msg.initials) && !BLOCKED_INITIALS.has(msg.initials) ? msg.initials : '';
-      // Who the player is, and whether they're listed or take emotes: for the surveyor list.
+      const initials = allowedInitials(msg.initials) ? msg.initials : '';
+      // Who the player is, whether they take emotes, and their guild: for the surveyor list and guild checks.
       const social = await takeMe(me, msg);
       if (social) this.reportDue = true;
       if (initials !== me.initials || social) { me.initials = initials; this.save(ws, me); this.schedulePresence(false); }
@@ -598,7 +569,7 @@ export class Sector {
     this.save(ws, me);
     // Every claim from the address counts, wherever it's made, so more
     // sockets in more sectors don't let a script claim any faster.
-    if (!(await this.allowed('SURVEY_CLAIMS', me.address))) return send(ws, { t: 'error', key, error: 'slow down' });
+    if (!(await underLimit(this.env.SURVEY_CLAIMS, me.address))) return send(ws, { t: 'error', key, error: 'slow down' });
     if (me.address && this.env.ATLAS && inArea(...this.coords()) && this.heardDay !== Math.floor(now / DAY_MS)
       && (this.asking || now - this.askedAt >= REPORT_MS)) await this.ask();
     if (me.address && this.overToday().has(me.address)) return send(ws, { t: 'error', key, error: 'daily limit' });
@@ -771,7 +742,6 @@ export class Sector {
   // supernovas were recorded at all. Looked for once per waking, from the
   // charted counts the sector keeps anyway.
   findNovas() {
-    if (!this.coords()) return;
     const counts = this.chartedCounts();
     if (!counts.some((n) => n > 0)) return;
     const hidden = this.hiddenCounts(), [sx, sy] = this.coords();
@@ -815,7 +785,7 @@ export class Sector {
 
   // Claims, positions or a report that came due since the last message.
   catchUp() {
-    if (this.batch.length) this.sendBatch();
+    this.sendBatch();
     if (this.presenceDue && this.now() - this.presenceAt >= PRESENCE_MS) this.sendPresence();
     // At least every REFRESH_MS while anything comes in, changed or not, so the
     // Atlas keeps counting and listing players who sit still (their game says
@@ -919,7 +889,8 @@ export class Sector {
     return this.counts;
   }
 
-  // What the Atlas said about addresses past the cap, in answer to a report or an ask.
+  // What the Atlas said in answer to a report or an ask: who is past the cap,
+  // the shared world's supernovas (relay) and guild members online (passMates).
   heard(world) {
     this.overToday();  // in case the day turned while the report was out
     if (Array.isArray(world?.over) && world.day === this.overDay) {
@@ -928,6 +899,7 @@ export class Sector {
     }
     if (world?.day === this.overDay) this.heardDay = this.overDay;
     this.relay(world);
+    passMates(this, world?.guilds);
   }
 
   // Asks the Atlas who is past today's cap: a report without the words
@@ -942,17 +914,22 @@ export class Sector {
   async askAtlas() {
     this.askedAt = this.now();
     try {
-      const [sx, sy] = this.coords();
-      this.overToday();
-      const res = await atlas(this.env).fetch('https://atlas/report', {
-        method: 'POST',
-        body: JSON.stringify({
-          sx, sy, players: this.here().length, charted: this.chartedCounts(), hot: this.crowd() ?? this.hot,
-          by: [], day: this.overDay, overAt: this.overAt, novaSeq: this.heardNovaSeq(), ...this.listing(),
-        }),
-      });
-      if (res.ok) { const world = await res.json(); this.heard(world); passMates(this, world.guilds); }
+      const res = await this.toAtlas({ by: [] });
+      if (res.ok) this.heard(await res.json());
     } catch { /* claims go ahead */ }
+  }
+
+  // A report to the Atlas: the sector's numbers, with what this one carries (`extra`).
+  toAtlas(extra) {
+    const [sx, sy] = this.coords();
+    this.overToday();
+    return atlas(this.env).fetch('https://atlas/report', {
+      method: 'POST',
+      body: JSON.stringify({
+        sx, sy, players: this.here().length, charted: this.chartedCounts(), hot: this.crowd() ?? this.hot,
+        day: this.overDay, overAt: this.overAt, novaSeq: this.heardNovaSeq(), ...this.listing(), ...extra,
+      }),
+    });
   }
 
   // Sectors in the shared world tell the Atlas their numbers at most every
@@ -972,7 +949,6 @@ export class Sector {
   }
 
   async report() {
-    const [sx, sy] = this.coords();
     this.reportedAt = this.now();
     this.reportDue = false;
     this.reporting = true;
@@ -982,17 +958,9 @@ export class Sector {
     this.chartedBy = new Map();
     this.unpassed = 0;
     this.novasOwed = [];
-    this.overToday();
     let world;
     try {
-      const res = await atlas(this.env).fetch('https://atlas/report', {
-        method: 'POST',
-        body: JSON.stringify({
-          sx, sy, players: this.here().length, charted: this.chartedCounts(), hot: this.crowd() ?? this.hot,
-          by: [...by], day: this.overDay, overAt: this.overAt, ...(unpassed ? { unpassed } : {}), ...this.listing(),
-          novaSeq: this.heardNovaSeq(), ...(novas.length ? { novas } : {}),
-        }),
-      });
+      const res = await this.toAtlas({ by: [...by], ...(unpassed ? { unpassed } : {}), ...(novas.length ? { novas } : {}) });
       if (!res.ok) throw new Error(`atlas ${res.status}`);
       world = await res.json();
     } catch {
@@ -1004,7 +972,6 @@ export class Sector {
       this.reporting = false;
     }
     this.heard(world);
-    passMates(this, world?.guilds);
     if (this.novasOwed.length) this.maybeReport();  // one that came while this report was out
     if (!isInt(world?.charted, 0, AREA_WORDS) || !isInt(world?.players, 0, 1e9)) return;
     if (this.world && world.charted === this.world.charted && world.players === this.world.players) return;

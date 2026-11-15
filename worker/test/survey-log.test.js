@@ -17,10 +17,10 @@ import {
   TOP_MAX_DAYS, TOP_N, TOP_SLOW_CACHE_S, forgetLog, monthHours, readDay, readHour, readMonth, readSlice, readSpan, readTerritory,
   readTop, readTopHours, routeLog, sliceSql, writeLog, HOURS_SURVEYORS_SQL, HOURS_TERRITORIES_SQL, TOP_HOURS_MAX,
   NOVAS_SQL, NOVAS_BEFORE_SQL, NOVA_HOURS_SQL, NOVA_PAGE, NOVA_SQL, readNovas,
-  GUILDS_SQL, GUILD_NAME_SQL, HOURS_GUILDS_SQL, LOG_ROWS_PER_INSERT,
+  GUILDS_SQL, GUILD_NAME_SQL, HOURS_GUILDS_SQL,
   TIMELAPSE_GUILD_DAYS_SQL, TIMELAPSE_GUILD_DAY_SQL, TIMELAPSE_GUILD_DAY_AFTER_SQL,
-  FOREVER_S, LAYOUT, TIMELAPSE_BOUNDS_SQL, TIMELAPSE_CACHE_S, TIMELAPSE_DAY_AFTER_SQL, TIMELAPSE_DAY_SQL, TIMELAPSE_HOURS_SQL,
-  TIMELAPSE_NOVAS_SQL, TIMELAPSE_NOVA_HOURS_SQL, TIMELAPSE_PAGE, TIMELAPSE_VERSION, readTimelapse, readTimelapseDay, readTimelapseGuildDay,
+  FOREVER_S, LAYOUT, TIMELAPSE_BOUNDS_SQL, TIMELAPSE_CACHE_S, TIMELAPSE_DAY_AFTER_SQL, TIMELAPSE_DAY_SQL,
+  TIMELAPSE_NOVAS_SQL, TIMELAPSE_PAGE, TIMELAPSE_VERSION, readTimelapse, readTimelapseDay, readTimelapseGuildDay,
 } from '../src/survey-log.js';
 import { AREA, Atlas, NEAR_PATH, NOVA_REACH, NOVA_REPORT_MS, RELAY_MS, REPORT_MS, SECTOR, Sector, checkNova, novaNeighbours } from '../src/survey.js';
 
@@ -75,7 +75,7 @@ describe('writeLog', () => {
     const rows = Array.from({ length: 30 }, (_, i) => stored(i % 6, Math.floor(i / 6), 0, NOW + i));
     await writeLog(db, rows);
     assert.equal(db.rows().length, 30);
-    // 12 rows a statement, since a row binds 8 values and D1 allows 100.
+    // 11 rows a statement, since a row binds 9 values and D1 allows 100.
     assert.equal(db.log.length, 3);
     assert.ok(db.log.every((q) => q.params.length <= 100));
     await writeLog(db, rows.slice(0, 5));
@@ -413,8 +413,6 @@ describe('guilds in the log', () => {
     assert.deepEqual(db.raw.prepare('SELECT day, guild, n FROM survey_log_guild_days').all().map((r) => ({ ...r })), [{ day: DAY, guild: COBALT, n: 2 }]);
     db.raw.exec(`DELETE FROM survey_log WHERE at = ${NOW}`);
     assert.equal(db.raw.prepare('SELECT n FROM survey_log_guild_days').get().n, 1);
-    // A row binds 9 values now, and D1 takes 100 a statement.
-    assert.ok(LOG_ROWS_PER_INSERT * 9 <= 100);
   });
 
   test('give one guild\'s words, with its name, colour, members and themes', async () => {
@@ -1538,11 +1536,11 @@ describe('the timelapse', () => {
     assert.match(novas, /SEARCH survey_log_novas USING COVERING INDEX survey_log_novas_by_time \(at>\? AND at<\?\)/, novas);
     assert.doesNotMatch(novas, /TEMP B-TREE/, novas);
     // The index reads the count tables and the supernovas over a range of days, never the log.
-    const hours = plan(db, TIMELAPSE_HOURS_SQL, 1, 2);
+    const hours = plan(db, HOURS_SQL, 1, 2);
     assert.match(hours, /SEARCH survey_log_hours USING PRIMARY KEY \(hour>\? AND hour<\?\)/, hours);
     const bounds = plan(db, TIMELAPSE_BOUNDS_SQL, 1, 2);
     assert.match(bounds, /SEARCH survey_log_territories USING PRIMARY KEY \(day>\? AND day<\?\)/, bounds);
-    const novaHours = plan(db, TIMELAPSE_NOVA_HOURS_SQL, 1, 2);
+    const novaHours = plan(db, NOVA_HOURS_SQL, 1, 2);
     assert.match(novaHours, /SEARCH survey_log_novas USING COVERING INDEX survey_log_novas_by_time \(at>\? AND at<\?\)/, novaHours);
     for (const p of [hours, bounds, novaHours]) assert.doesNotMatch(p, /SCAN/, p);
   });
