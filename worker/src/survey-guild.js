@@ -31,7 +31,7 @@
 // matesFor), and sectors pass that on to members as {t: 'guild', tag, on}.
 
 import { BLOCKED_INITIALS, CODE_ALPHABET, HttpError, INITIALS, corsHeaders, hashIp, json, rateLimit } from './leaderboard.js';
-import { GUILD_CODE, GUILD_LOG_ID, GUILD_TAG, PID, TOKEN, playerId } from './survey-social.js';
+import { FLAG_QUIET, GUILD_CODE, GUILD_LOG_ID, GUILD_TAG, PID, TOKEN, playerId } from './survey-social.js';
 
 export { GUILD_CODE, GUILD_LOG_ID, GUILD_TAG };
 export const GUILD_MAX = 50;                 // members a guild holds
@@ -283,8 +283,10 @@ export function noteMates(atlas, key, who, now) {
 // minute, not with every report.
 export const idleShown = (s) => (s < 20 ? 0 : s < 60 ? 20 : Math.floor(s / 60) * 60);
 
-// Who's online in each of these guilds: [[id, initials, rx, ry, idle], ...],
-// from reports in the last `online` ms, with idle counted to now.
+// Who's online in each of these guilds: [[id, initials, rx, ry, idle, flags], ...],
+// from reports in the last `online` ms, with idle counted to now. The flags are
+// the public list's FLAG_QUIET, so the game shows a member who takes no emotes
+// as it shows anyone else (an older game reads only the first five).
 export function matesFor(atlas, tags, now, online) {
   const out = {};
   for (const tag of tags ?? []) {
@@ -293,7 +295,7 @@ export function matesFor(atlas, tags, now, online) {
     if (!m) continue;
     for (const [pid, { e, at }] of m) {
       if (now - at >= online) { m.delete(pid); continue; }
-      out[tag].push([e[0], e[1], e[2], e[3], idleShown(e[4] + Math.round((now - at) / 1000))]);
+      out[tag].push([e[0], e[1], e[2], e[3], idleShown(e[4] + Math.round((now - at) / 1000)), e[5] & FLAG_QUIET]);
     }
   }
   return out;
