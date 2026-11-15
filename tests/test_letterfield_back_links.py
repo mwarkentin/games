@@ -170,3 +170,49 @@ def test_a_log_brought_back_whole_from_the_cache_is_scrolled_where_it_was(page: 
     assert at_top == 0
     page.wait_for_function(f"Math.abs(scrollY - {scrolled}) < 2", timeout=5000)
     assert errors == []
+
+
+class HeldFonts:
+    """Holds back the page's web fonts (fonts.gstatic.com) while `holding`, to let them in later."""
+
+    def __init__(self):
+        self.routes, self.holding = [], False
+
+    def handle(self, route) -> None:
+        if self.holding:
+            self.routes.append(route)
+        else:
+            route.continue_()
+
+    def release(self) -> None:
+        self.holding = False
+        while self.routes:
+            self.routes.pop(0).continue_()
+
+
+def test_the_log_is_scrolled_where_it_was_after_its_fonts_come(page: Page, site_url, errors):
+    # Back from the map, the log draws its words before its fonts arrive; when they do, the browser
+    # keeps what's on screen in place, which is a little away from where you were.
+    page.set_viewport_size({"width": 390, "height": 760})
+    fonts = HeldFonts()
+    page.route("https://fonts.gstatic.com/**", fonts.handle)  # routed, so never from the browser's cache
+    open_log(page, site_url, FakeSurveyLog([*MANY, MONET, ZEUS], PLACES, THEMES), "&surveyor=ZED&period=week")
+    word = entry(page, MANY[30][0])
+    expect(word).to_be_visible()
+    page.evaluate("document.fonts.ready")
+    word.evaluate("e => e.scrollIntoView({ block: 'center', behavior: 'instant' })")
+    page.wait_for_function("scrollY > 100 && history.state?.lfScroll === scrollY")
+    scrolled = page.evaluate("scrollY")
+    word.locator("a.fly").evaluate("a => a.click()")
+    page.wait_for_url(re.compile(r"/letterfield#f-"))
+    fonts.holding = True
+    page.locator("#survey a.survey-log").evaluate("a => a.click()")
+    page.wait_for_url(
+        re.compile(r"/letterfield-log"), wait_until="domcontentloaded"
+    )  # it can't load whole without them
+    expect(page.locator("html")).to_have_attribute("data-log", "ready")
+    assert fonts.routes, "the log's fonts came from somewhere else"
+    fonts.release()
+    page.evaluate("document.fonts.ready")
+    page.wait_for_function(f"Math.abs(scrollY - {scrolled}) < 2", timeout=5000)
+    assert errors == []

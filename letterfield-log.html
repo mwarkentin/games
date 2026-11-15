@@ -1408,6 +1408,18 @@ function scrollBack() {
   const y = backTo;
   backTo = null;
   jumpTo(y);
+  // The words may still be in a stand-in font, and the browser keeps what's on
+  // screen in place as the page's own fonts arrive, a little away from y: so
+  // once they're in, back to y, unless you've scrolled since.
+  if (!document.fonts || document.fonts.status === 'loaded') return;
+  const yours = ['wheel', 'touchmove', 'keydown', 'pointerdown'];
+  let moved = false;
+  const mine = () => { moved = true; };
+  for (const t of yours) addEventListener(t, mine, { passive: true });
+  document.fonts.ready.then(() => {
+    for (const t of yours) removeEventListener(t, mine);
+    if (!moved) jumpTo(y);
+  });
 }
 // Straight to y, not a glide there, whatever scroll-behavior says (read back
 // first, so the scroll sees it).
