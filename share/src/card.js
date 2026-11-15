@@ -24,8 +24,11 @@ const DARROW = ['→', '↘', '↓', '↙', '←', '↖', '↑', '↗'];
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 const fmtCoord = (x, y) => `${Math.abs(x)}${x < 0 ? 'W' : 'E'} · ${Math.abs(y)}${y < 0 ? 'N' : 'S'}`;
 export const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
-const DATE = new Intl.DateTimeFormat('en-GB', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' });
-export const day = (ms) => DATE.format(new Date(ms));
+export const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+// A day as every card names it, 9 Nov 2026, from a time kept as UTC: written
+// out here rather than by Intl, whose short months vary with the runtime's
+// ICU (en-GB's September is "Sept").
+export const day = (t, year = true) => { const d = new Date(t); return `${d.getUTCDate()} ${MONTHS[d.getUTCMonth()].slice(0, 3)}${year ? ` ${d.getUTCFullYear()}` : ''}`; };
 
 const FONTS = {
   display: ['Big Shoulders Display', 800, 'BigShouldersDisplay-800'],

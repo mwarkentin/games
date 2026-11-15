@@ -191,23 +191,26 @@ export class Guild {
 // when it first does and every GUILD_RECHECK_MS after: the guild's tag goes on
 // the socket (and so on their caret and in reports), or comes off it. A check
 // that fails leaves things as they were and tries again on a later message.
+// The check that's out is kept in memory (sector.guildChecks), never on `me`,
+// which is the socket's attachment: a sector that sleeps and wakes would
+// otherwise read back a check that will never come back, and never check again.
 export async function checkGuild(sector, ws, me) {
-  if (!sector.env.GUILDS || !me.guild || !me.pid || me.checking) return;
+  if (!sector.env.GUILDS || !me.guild || !me.pid || sector.guildChecks.has(ws)) return;
   const code = me.guild;
-  me.checking = true;
+  sector.guildChecks.add(ws);
   let tag = me.tag ?? null, lid = me.lid ?? null, name = null;
   try {
     const res = await ask(sector.env, code, '/check', { pid: me.pid, initials: me.initials || null });
     if (res.ok) ({ tag, lid = null, name = null } = await res.json());
     else if (res.status === 404) tag = lid = null;
     else return;
-    me.guildAt = sector.now();
   } catch {
     return;
   } finally {
-    me.checking = false;
+    sector.guildChecks.delete(ws);
   }
   if (me.guild !== code) return;  // the game named another guild while we asked
+  me.guildAt = sector.now();  // only now, so a guild named while we asked is checked on the next message
   if (typeof tag === 'string' && !GUILD_TAG.test(tag)) tag = null;
   // The log id goes with the member's claims, and the guild's name to the log
   // with them (Sector.noteGuild), unless the tag came off.

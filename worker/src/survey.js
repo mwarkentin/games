@@ -316,6 +316,7 @@ export class Sector {
     this.hidden = null;      // hidden words each of those territories has, from the map, worked out when first needed
     this.world = null;       // the last totals the Atlas sent back
     this.people = null;      // socket → its attachment, read from the sockets on first use after waking
+    this.guildChecks = new WeakSet();  // sockets whose guild check is out (checkGuild): kept in memory, never in an attachment
     this.chartedBy = new Map();  // address → words it charted here since the last report
     this.unpassed = 0;           // joins without a Turnstile pass since the last report (a bot signal)
     this.overDay = -1;       // the UTC day `over` is for
@@ -552,7 +553,7 @@ export class Sector {
       await sendEmote(this, ws, me, msg);
     }
     // The guild the game names is checked when it's new, and now and then while they play.
-    if (me.guild && me.pid && !me.checking && this.now() - (me.guildAt ?? 0) >= GUILD_RECHECK_MS) {
+    if (me.guild && me.pid && !this.guildChecks.has(ws) && this.now() - (me.guildAt ?? 0) >= GUILD_RECHECK_MS) {
       const checked = checkGuild(this, ws, me);
       this.ctx.waitUntil?.(checked);
     }

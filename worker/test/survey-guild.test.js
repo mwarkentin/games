@@ -247,6 +247,37 @@ describe('membership in sectors', () => {
     assert.equal(seenTwo(), first + GUILD_RECHECK_MS);
   });
 
+  test('still checks a member after the sector wakes, though their socket was saved while a check was out', async () => {
+    const one = await w.player(0, 0, { id: 1, initials: 'ONE', guild: g.code, x: 5, y: 5 });
+    assert.equal(one.sector.everyone().get(one.ws).tag, g.tag);
+    // A recheck goes out, and a move saves the socket before it comes back.
+    w.clock.now += GUILD_RECHECK_MS;
+    const here = one.say({ t: 'here' });
+    const moved = one.say({ t: 'pos', x: 6, y: 5 });
+    await here;
+    await moved;
+    await settle();
+    one.sector.people = null;  // it sleeps, and wakes reading the attachments
+    await w.call(`/v1/survey/guilds/${g.code}/leave`, { token: token(1) });
+    await w.tick(one, GUILD_RECHECK_MS);
+    assert.equal(one.sector.everyone().get(one.ws).tag, null);
+  });
+
+  test('checks a guild the game names while the last one is being checked, without waiting for the next recheck', async () => {
+    const other = await w.make(1, 'ONE', [1, 1, 1]);
+    const one = await w.player(0, 0, { id: 1, initials: 'ONE', guild: g.code, x: 5, y: 5 });
+    assert.equal(one.sector.everyone().get(one.ws).tag, g.tag);
+    // A recheck of the first guild goes out, and the game names the other before it comes back.
+    w.clock.now += GUILD_RECHECK_MS;
+    const here = one.say({ t: 'here' });
+    const named = one.say({ t: 'me', initials: 'ONE', token: token(1), guild: other.code });
+    await here;
+    await named;
+    await settle();
+    await w.tick(one, 60_000);
+    assert.equal(one.sector.everyone().get(one.ws).tag, other.tag);
+  });
+
   test('tells members which of their guild are online and where, as it changes, and nobody else', async () => {
     const one = await w.player(0, 0, { id: 1, initials: 'ONE', guild: g.code, x: 5, y: 5 });
     const outsider = await w.player(0, 0, { id: 7, initials: 'OUT', x: 7, y: 7 });

@@ -21,7 +21,7 @@
 import { THEMES, regionName, regionTheme } from '../../worker/src/letterfield-world.js';
 import { GUILD_FIRST, GUILD_SECOND, GUILD_THIRD, goodName, guildHue, guildName } from '../../worker/src/survey-guild.js';
 import { SLICE_MAX_HOURS } from '../../worker/src/survey-log.js';
-import { CARD_WORDS, H, PALETTES, W, fit, measure, text } from './card.js';
+import { CARD_WORDS, H, MONTHS, PALETTES, W, day, fit, measure, text } from './card.js';
 import { novaSvg } from './nova.js';
 
 const HOUR = 3_600_000;
@@ -32,15 +32,12 @@ export const TERRITORY_PATH = /^\/v\/(d\/)?territory\/(-?\d{1,8}),(-?\d{1,8})(\.
 // The Supernovas tab has no key: just its period, pinned as the others' are.
 export const NOVAS_PATH = /^\/v\/(d\/)?novas\/(?:(all)|(hour|day|week|month|year)\/(\d{4})-(\d{2})-(\d{2})(?:T(\d{2}))?\/(\d{1,8})-(\d{1,8}))(\.png)?$/;
 
-const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
 const DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 const pad = (n) => String(n).padStart(2, '0');
 const num = (n) => n.toLocaleString('en-US');
 const plural = (n, one, many = `${one}s`) => `${num(n)} ${n === 1 ? one : many}`;
 // Dates as the card names them, from wall-clock times kept as UTC.
 const longDay = (t) => { const d = new Date(t); return `${DAYS[d.getUTCDay()]} ${d.getUTCDate()} ${MONTHS[d.getUTCMonth()]} ${d.getUTCFullYear()}`; };
-const shortDay = (t, year = true) => { const d = new Date(t); return `${d.getUTCDate()} ${MONTHS[d.getUTCMonth()].slice(0, 3)}${year ? ` ${d.getUTCFullYear()}` : ''}`; };
-export const today = (now) => shortDay(now);
 // How long a supernova took, first word to last, as the log page says it (took() there).
 export function took(ms) {
   const min = Math.max(1, Math.round(ms / 60000));
@@ -115,13 +112,14 @@ export function guildNumbers(name) {
 
 // The view's own page in the log, with its date pinned, as the page's Share
 // gives it (urlFor({ pin: true }) in letterfield-log.html). A guild's carries
-// its name, when the card knows it, so the page names it before the log answers.
+// its name, the log's or else its own address's, so the page names it before
+// the log answers.
 export function pagePath(v, name = null) {
   const q = new URLSearchParams();
   if (v.kind === 'territory') q.set('territory', `${v.rx},${v.ry}`);
   else if (v.kind === 'novas') q.set('supernovas', '');
   else q.set(v.kind, String(v.key));
-  const n = v.kind === 'guild' ? guildNumbers(name) : null;
+  const n = v.kind === 'guild' ? guildNumbers(name) ?? v.named : null;
   if (n) q.set('name', n.join('-'));
   if (v.period !== 'all') {
     q.set('period', v.period);
@@ -155,14 +153,14 @@ export function nameOf(v) {
 
 // When, as the card says it (dates, never "this week"), and as its line does.
 export function whenOf(v, now = Date.now()) {
-  if (v.period === 'all') return { shown: `All time, to ${today(now)}`, said: 'so far' };
+  if (v.period === 'all') return { shown: `All time, to ${day(now)}`, said: 'so far' };
   const { start, end } = v, d = new Date(start);
   if (v.period === 'hour') {
     const span = `${pad(d.getUTCHours())}:00 – ${pad(new Date(end).getUTCHours())}:00`;
     return { shown: `${span} · ${longDay(start)}`, said: `from ${span} on ${longDay(start)}` };
   }
   if (v.period === 'day') return { shown: longDay(start), said: `on ${longDay(start)}` };
-  if (v.period === 'week') return { shown: `${shortDay(start, false)} – ${shortDay(end - HOUR)}`, said: `in the week of ${shortDay(start)}` };
+  if (v.period === 'week') return { shown: `${day(start, false)} – ${day(end - HOUR)}`, said: `in the week of ${day(start)}` };
   if (v.period === 'month') return { shown: `${MONTHS[d.getUTCMonth()]} ${d.getUTCFullYear()}`, said: `in ${MONTHS[d.getUTCMonth()]} ${d.getUTCFullYear()}` };
   return { shown: String(d.getUTCFullYear()), said: `in ${d.getUTCFullYear()}` };
 }
@@ -186,12 +184,12 @@ export function summarize(v, a, now = Date.now()) {
   if (nova) {
     const [, , at, w, , , , initials, first, words, surveyors, top] = nova;
     count = a.charted;
-    stats = [['Went supernova', shortDay(at)], ['First word to last', took(at - first)], ['Most charted by', /^[A-Z]{3}$/.test(top) ? top : '—']];
-    line = `${name} went supernova in Letterfield’s shared survey on ${shortDay(at)}: all ${plural(words, 'hidden word')} charted${surveyors ? ` by ${plural(surveyors, 'surveyor')}` : ''} in ${took(at - first)}, the last, ${w}${/^[A-Z]{3}$/.test(initials) ? `, by ${initials}` : ''}.`;
+    stats = [['Went supernova', day(at)], ['First word to last', took(at - first)], ['Most charted by', /^[A-Z]{3}$/.test(top) ? top : '—']];
+    line = `${name} went supernova in Letterfield’s shared survey on ${day(at)}: all ${plural(words, 'hidden word')} charted${surveyors ? ` by ${plural(surveyors, 'surveyor')}` : ''} in ${took(at - first)}, the last, ${w}${/^[A-Z]{3}$/.test(initials) ? `, by ${initials}` : ''}.`;
   } else if (v.kind === 'territory') {
     count = a.charted;
     const people = new Set(entries.map((e) => e[5]).filter((i) => /^[A-Z]{3}$/.test(i))).size;
-    stats = [['Hidden words charted', `${num(a.charted)} of ${num(a.total)}`], ['Surveyors', num(people)], ['Latest', entries.length ? shortDay(latest) : '—']];
+    stats = [['Hidden words charted', `${num(a.charted)} of ${num(a.total)}`], ['Surveyors', num(people)], ['Latest', entries.length ? day(latest) : '—']];
     line = `${name}, in Letterfield’s shared survey: ${num(a.charted)} of its ${plural(a.total, 'hidden word')} charted so far${people ? `, by ${plural(people, 'surveyor')}` : ''}.`;
   } else if (v.kind === 'surveyor') {
     count = a.words;

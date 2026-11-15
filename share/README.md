@@ -134,8 +134,9 @@ GET /v/d/…, ….png                                        dark; the card itse
   in their themes' colours, with the page's own line as the description.
   The page sends people on to `/letterfield-log?supernovas` for that period.
 - **A guild's page** sends people to the guild's page in the log with its
-  name as `?name=<a>-<b>-<c>` (its three word numbers), so the page names it
-  before the log answers. The log page's Share adds the same `?name=` to a
+  name as `?name=<a>-<b>-<c>` (its three word numbers), the log's or, when
+  the log has none or doesn't answer, its own address's, so the page names
+  it before the log answers. The log page's Share adds the same `?name=` to a
   guild's `/v/` address, and the card uses it, checked against the word
   lists, while the log has no word (so no name) from the guild.
 - **A supernova** has a card of its own (`src/nova.js`): a territory whose
