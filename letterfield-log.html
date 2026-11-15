@@ -267,7 +267,7 @@ header p{margin:8px 0 0;color:var(--muted);max-width:40ch}
 .nova .what small{display:block;margin-top:3px;font:500 10px/1.2 var(--f-mono);letter-spacing:.12em;color:var(--muted)}
 .nova .when{font:400 11px/1.3 var(--f-mono);color:var(--muted);text-align:right;white-space:nowrap;font-variant-numeric:tabular-nums}
 .nova a.to{display:inline-block}
-.novas{list-style:none;margin:0;padding:4px 0}
+ol.novas{list-style:none;margin:0;padding:4px 0}
 .strip{display:grid;grid-template-columns:14px minmax(0,1fr) auto;align-items:center;gap:6px 8px;margin:12px 0 0;padding:10px 12px;border-radius:8px;
   background:linear-gradient(100deg, hsl(var(--h,200) 55% 50% / .14), var(--panel) 75%);border:1px solid hsl(var(--h,200) 45% 50% / .3);font-size:13px}
 .strip b{font-weight:600}
@@ -1154,14 +1154,14 @@ function columnChart(p, buckets, { what = 'word', stars = null } = {}) {
 // The year as twelve month calendars, a cell a day, darker for more words:
 // one hue in four steps, by rank among the year's days with words, so one
 // huge day doesn't leave every other day the palest step. The busiest day is
-// always the darkest.
+// always the darkest, even when it's the only one or others tie with it.
 function yearCalendar(year, buckets) {
   const wrap = el('div');
   const grid = el('div', 'year');
   const top = Math.max(1, ...buckets.map(b => b.n)), now = Date.now();
   const busy = buckets.map(b => b.n).filter(n => n > 0).sort((a, b) => a - b);
   const below = n => { let lo = 0, hi = busy.length; while (lo < hi) { const mid = (lo + hi) >> 1; if (busy[mid] < n) lo = mid + 1; else hi = mid; } return lo; };
-  const level = n => !n ? '' : ' l' + (1 + Math.min(3, Math.floor(4 * below(n) / Math.max(1, busy.length - 1))));
+  const level = n => !n ? '' : n >= busy.at(-1) ? ' l4' : ' l' + (1 + Math.min(3, Math.floor(4 * below(n) / Math.max(1, busy.length - 1))));
   for (let m = 0; m < 12; m++) {
     const first = new Date(year, m, 1).getTime();
     const cal = el('div', 'mcal');
@@ -1537,7 +1537,9 @@ function chrome() {
     const survey = new URLSearchParams(location.search).get('survey'), q = new URLSearchParams();
     if (focus?.kind === 'guild') q.set('guild', focus.key);
     if (survey) q.set('survey', survey);
-    $('#timelapseLink').href = '/letterfield-timelapse' + (q.size ? '?' + q : '');
+    // Not q.size, which Safari only has from 17.
+    const s = String(q);
+    $('#timelapseLink').href = '/letterfield-timelapse' + (s ? '?' + s : '');
     $('#timelapseLink').hidden = focus?.kind === 'guild' && !known.guilds[focus.key];
   }
   $('#periods').hidden = focus?.kind === 'territory';
@@ -1676,7 +1678,8 @@ function placeholders() {
       chartEl.append(progress);
     }
   }
-  const cards = mine || f?.kind === 'novas' ? 0 : f?.kind === 'territory' ? 1 : f ? 2 : 3;
+  // As many as the view draws: a guild's three, a surveyor's or theme's two.
+  const cards = mine || f?.kind === 'novas' ? 0 : f?.kind === 'territory' ? 1 : f && f.kind !== 'guild' ? 2 : 3;
   cardsEl.replaceChildren(...Array.from({ length: cards }, () => {
     const c = el('section', 'card ph-card');
     c.append(block('h3'), ...[0, 1, 2, 3].map(() => block('p', 'note')));
@@ -1711,19 +1714,18 @@ function busiest(p, buckets) {
   const b = buckets.reduce((a, c) => (c.n > (a ? a.n : 0) ? c : a), null);
   return b ? [bucketLabel(p, b), plural(b.n, 'word')] : ['—', ''];
 }
-// The third tile fits the view: a period's hidden words, which the words
-// charted less any bonus words make (the log keeps none now, but an answer
-// cached from before can hold some, and the rare word charted beyond the
-// universe's edge is counted with them); all time's share of the universe.
+// The third tile fits the view: a period's hidden words in the universe (the
+// rare word charted beyond its edge counts only under Words charted); all
+// time's share of the universe.
 function summaryTiles(p, buckets, mine, label = 'Words charted') {
   const total = buckets.reduce((a, b) => a + b.n, 0), world = buckets.reduce((a, b) => a + b.world, 0);
-  const [when, much] = busiest(p, buckets), bonus = total - world;
+  const [when, much] = busiest(p, buckets);
   tiles([
     [mine ? 'Charted first by you' : label, total.toLocaleString(), ''],
     [`Busiest ${UNIT[p]}`, when, much],
     p === 'all'
       ? ['Universe', `${pct(world)} charted`, `${world.toLocaleString()} of its hidden words`]
-      : ['Hidden words', world.toLocaleString(), bonus > 0 ? `plus ${plural(bonus, 'bonus word')}` : ''],
+      : ['Hidden words', world.toLocaleString(), ''],
   ]);
   return total;
 }
@@ -1863,12 +1865,14 @@ function utcNote(text) { $('#utc').hidden = !text; $('#utc').textContent = text 
 let topsRun = 0;  // the run whose top lists are on their way, so its placeholders stay for them
 async function loadTops(run, start, end, byHour = false) {
   topsRun = run;
+  // Read now: the view is ready, no longer refreshing, by the time an answer comes.
+  const quiet = Log.is('refreshing');
   const unit = byHour ? HOUR : DAY, upTo = Math.min(end, Date.now() + 1);
   const from = fdiv(start, unit), to = fdiv(upTo - 1, unit) + 1;
   let top;
   try { top = await cachedJSON(`/v1/survey/log/top/${byHour ? 'hours/' : ''}${from}/${to}`, isLive(to * unit)); } catch (_) {
     // A refresh that can't load them keeps the ones on screen.
-    if (run === state.run && !Log.is('refreshing', 'stale')) cardsEl.replaceChildren(el('p', 'loading', 'Couldn’t load who charted most.'));
+    if (run === state.run && !quiet) cardsEl.replaceChildren(el('p', 'loading', 'Couldn’t load who charted most.'));
     return;
   }
   if (run !== state.run || !top || !Array.isArray(top.surveyors)) return;

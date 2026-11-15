@@ -8,11 +8,13 @@ in it. See test_letterfield_log.py for the clock and the fake.
 from __future__ import annotations
 
 import re
+from urllib.parse import quote
 
 from playwright.sync_api import Page, expect
 
 from common import ROOT
-from fake_survey_log import FakeSurveyLog
+from fake_leaderboard import Held
+from fake_survey_log import SURVEY, FakeSurveyLog
 from test_letterfield_log import (
     ACORN,
     DAY_MS,
@@ -149,6 +151,36 @@ def test_a_guilds_page_has_its_timelapse_and_its_name_in_its_address_once_it_has
     expect(page.locator("#timelapseLink")).to_have_attribute("href", re.compile(f"guild={COBALT}"))
     # Kept in the address, for whoever it's shared with.
     assert "name=11-0-0" in page.url
+    assert errors == []
+
+
+def test_a_guilds_timelapse_link_keeps_the_guild_in_browsers_before_safari_17(page: Page, site_url, errors):
+    # Safari 16 (an iPhone 8 or X, which can't take 17) has no URLSearchParams size.
+    page.add_init_script("delete URLSearchParams.prototype.size")
+    fake = FakeSurveyLog([ACORN, BIRCH], PLACES, THEMES, guilds=GUILDS)
+    open_log(page, site_url, fake, query=f"&guild={COBALT}")
+    expect(page.locator(".entry .word")).to_have_text(["BIRCH"])
+    expect(page.locator("#timelapseLink")).to_have_attribute(
+        "href", f"/letterfield-timelapse?guild={COBALT}&survey={quote(SURVEY, safe='')}"
+    )
+    assert errors == []
+
+
+def test_a_guilds_view_holds_a_place_for_each_of_its_three_top_lists(page: Page, site_url, errors):
+    page.set_viewport_size({"width": 375, "height": 740})
+    fake = FakeSurveyLog([ACORN, BIRCH, FERN], PLACES, THEMES, guilds=GUILDS)
+    held = Held(fake, lambda r: True)
+    page.clock.set_fixed_time(NOW_MS / 1000)
+    fake.now_ms = NOW_MS
+    page.route(f"{SURVEY}/v1/survey/log/**", held.handle)
+    page.goto(f"{site_url}/letterfield-log?survey={SURVEY}&guild={COBALT}&period=week")
+    held.wait_for(page)
+    expect(page.locator("html")).to_have_attribute("data-log", "loading")
+    expect(page.locator("#cards .ph-card")).to_have_count(3)
+    held.release()
+    expect(page.locator("html")).to_have_attribute("data-log", "ready")
+    expect(page.locator("#cards .ph-card")).to_have_count(0)
+    expect(page.locator(".card h3")).to_have_text(["Members who charted most", "Top territories", "Themes"])
     assert errors == []
 
 

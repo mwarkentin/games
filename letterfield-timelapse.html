@@ -791,14 +791,14 @@ $('#speeds').addEventListener('click', e => {
 showSpeed();
 $('#retry').addEventListener('click', () => { if (TL.is('failed')) { TL.go('loading'); if (!idx) start(); } });
 addEventListener('keydown', e => {
-  if (e.metaKey || e.ctrlKey || e.altKey || REC.is('preparing', 'recording', 'done')) return;
+  // While a video's dialog is open, whatever it says, keys are its own.
+  if (e.metaKey || e.ctrlKey || e.altKey || !REC.is('off')) return;
   if (e.key === 'Escape') { closeChip(); return; }
-  const inField = e.target.closest && e.target.closest('input, button, a, dialog');
-  if (TL.is('loading', 'failed', 'empty')) return;
-  if (e.key === ' ' && !inField) { e.preventDefault(); togglePlay(); }
-  else if (!inField && (e.key === 'ArrowRight' || e.key === 'ArrowLeft')) { e.preventDefault(); seek(pos + (e.key === 'ArrowRight' ? 1 : -1) * P / 50); }
-  else if (!inField && e.key === 'Home') seek(0);
-  else if (!inField && e.key === 'End') seek(P);
+  if ((e.target.closest && e.target.closest('input, button, a, dialog')) || TL.is('loading', 'failed', 'empty')) return;
+  if (e.key === ' ') { e.preventDefault(); togglePlay(); }
+  else if (e.key === 'ArrowRight' || e.key === 'ArrowLeft') { e.preventDefault(); seek(pos + (e.key === 'ArrowRight' ? 1 : -1) * P / 50); }
+  else if (e.key === 'Home') seek(0);
+  else if (e.key === 'End') seek(P);
 });
 // The timelapse runs on a clock, so it stops when the tab is hidden.
 document.addEventListener('visibilitychange', () => {
@@ -886,7 +886,8 @@ function showRec(to) {
   if (to === 'recording') $('#recText').textContent = `Recording ${VIDEO_PX}×${VIDEO_PX}, the whole survey in ${videoSeconds} seconds. Keep this tab open.`;
   if (to === 'done') { $('#recTitle').textContent = 'Your video'; $('#recText').textContent = `${(recBlob.size / 1e6).toFixed(1)} MB, ${recType.startsWith('video/mp4') ? 'MP4' : 'WebM'}.`; }
   if (to === 'failed') $('#recText').textContent = 'This browser couldn’t record the video.';
-  if (to === 'off') { if (dlg.open) dlg.close(); }
+  // A video counts on the same tally as the screen and leaves it at its own position, so the screen draws again to put it back.
+  if (to === 'off') { if (dlg.open) dlg.close(); dirty = true; }
   else if (!dlg.open) dlg.showModal();
 }
 const recName = () => `letterfield-timelapse-${new Date().toISOString().slice(0, 10)}.${recType.startsWith('video/mp4') ? 'mp4' : 'webm'}`;
@@ -922,6 +923,9 @@ function startRecording() {
   REC.go('recording');
   recorder.start(500);
   recFrame(performance.now());
+  // The log can finish loading while the player is on another tab. The video then waits on its first frame
+  // for them to come back, as it does when they leave mid-recording, rather than recording a frozen frame.
+  if (document.hidden) recPause();
 }
 const recCam = { x: 0, y: 0, s: 1, ok: false };
 function recFrame(now) {
@@ -1031,6 +1035,7 @@ start();
 window.__tl = {
   get state() { return TL.state; },
   get rec() { return REC.state; },
+  get recorderState() { return recorder ? recorder.state : null; },
   get pos() { return pos; },
   get P() { return P; },
   get time() { return idx ? timeAt(pos) : null; },
