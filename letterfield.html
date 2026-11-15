@@ -4013,15 +4013,26 @@ function gatherFind(e) {
   g.animate(path, { duration: GATHER_FLY, delay: flyAt, easing: 'cubic-bezier(.45,.05,.35,1)', fill: 'both' }).finished.then(finish, finish);
   setTimeout(() => { if (!done) finish(); }, flyAt + GATHER_FLY + 600);
 }
+// A note waits while a mouse is over it or the keyboard is in it, and goes
+// soon after either leaves. A tap only holds it while the finger is down:
+// phones keep :hover on whatever was tapped last, and focus the button
+// tapped, so judged by those, a note whose Share was tapped never went.
+// A note that holds (see copyFailed) goes only with a tap elsewhere.
+let toastMouse = false;
+const keyboardIn = () => {
+  const a = document.activeElement;
+  if (!a || !toastEl.contains(a)) return false;
+  try { return a.matches(':focus-visible'); } catch (_) { return true; }
+};
 const holdToast = () => clearTimeout(toastTimer);
 const releaseToast = () => {
-  if (!toastEl.classList.contains('show') || toastEl.contains(document.activeElement) || toastEl.matches(':hover')) return;
+  if (!toastEl.classList.contains('show') || toastEl.classList.contains('holds') || toastMouse || keyboardIn()) return;
   clearTimeout(toastTimer);
   toastTimer = setTimeout(hideToast, Math.min(toastMs, 2000));
 };
-toastEl.addEventListener('pointerenter', holdToast);
-toastEl.addEventListener('pointerleave', releaseToast);
-toastEl.addEventListener('focusin', holdToast);
+toastEl.addEventListener('pointerenter', e => { toastMouse = e.pointerType === 'mouse'; holdToast(); });
+toastEl.addEventListener('pointerleave', () => { toastMouse = false; releaseToast(); });
+toastEl.addEventListener('focusin', () => { if (keyboardIn()) holdToast(); });
 toastEl.addEventListener('focusout', () => setTimeout(releaseToast));
 
 /* ---------- Sharing a find ---------- */

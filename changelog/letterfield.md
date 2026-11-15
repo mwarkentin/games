@@ -1,5 +1,6 @@
 ## 2026-11-15
 
+- A note you tapped Share on, like a supernova's, now goes away a couple of seconds later instead of staying on the map.
 - A word circled too soon after others is no longer left out of the shared survey: it goes a minute later, so its territory can still go supernova. Finds of yours that missed the survey before go the next time you're in their part of the map.
 - When everything left in a territory is in your notes but not yet charted, the word list says so, rather than that every word is charted.
 - If you left music on, pressing B as your first key now starts it, as tapping its button does, instead of switching it off before you hear it.

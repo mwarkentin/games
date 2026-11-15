@@ -1438,3 +1438,44 @@ def test_with_reduced_motion_a_find_counts_at_once(page: Page, site_url, errors)
     expect(page.locator("#notesBadge")).to_have_text("1", timeout=500)
     assert page.locator(".gather").count() == 0
     assert errors == []
+
+
+
+def note_with_share(page: Page, site_url: str, size: dict):
+    """Opens the game and circles a find twice: the second time, a note with Share."""
+    without_worker(page, site_url, "letterfield")
+    page.add_init_script(SHARE_SHEET_INIT)
+    page.set_viewport_size(size)
+    page.goto(f"{site_url}/letterfield#debug")
+    page.click("#coachOk")
+    page.wait_for_function("window.__lf")
+    words = page.evaluate("window.__lf.chunk(0, 0).words.slice(0, 1).map(o => [o.w, o.x, o.y, o.d])")
+    page.evaluate(COLLECT, words)
+    page.evaluate(COLLECT, words)
+    toast = page.locator("#toast")
+    expect(toast).to_contain_text(f"{words[0][0]}Already in your notes")
+    return toast
+
+
+@pytest.mark.browser_context_args(has_touch=True, is_mobile=True)
+def test_a_note_whose_share_button_was_tapped_still_goes(page: Page, site_url, errors):
+    # A phone focuses the button tapped and keeps :hover on it, so a note that
+    # waited for those to leave stayed for good once its Share was tapped.
+    toast = note_with_share(page, site_url, {"width": 375, "height": 740})
+    toast.locator(".share").tap()
+    page.wait_for_function("window.__shared.length === 1")
+    # Its own six seconds were cleared by the tap; it goes two after it.
+    expect(toast).not_to_have_class(re.compile(r"\bshow\b"), timeout=4000)
+    assert errors == []
+
+
+def test_a_note_waits_while_the_mouse_is_on_it(page: Page, site_url, errors):
+    toast = note_with_share(page, site_url, {"width": 1280, "height": 900})
+    toast.locator(".share").click()
+    page.wait_for_function("window.__shared.length === 1")
+    page.wait_for_timeout(7000)  # past its six seconds, held by the mouse
+    expect(toast).to_have_class(re.compile(r"\bshow\b"))
+    # Clicked, its button has focus, but not the keyboard's: moving off lets it go.
+    page.mouse.move(300, 600)
+    expect(toast).not_to_have_class(re.compile(r"\bshow\b"), timeout=4000)
+    assert errors == []
