@@ -404,11 +404,97 @@ def test_a_video_can_be_cancelled_while_it_records(page: Page, site_url, errors)
     assert errors == []
 
 
+def test_a_territory_tapped_after_a_video_counts_by_the_timelapses_date(page: Page, site_url, errors):
+    page.set_viewport_size({"width": 375, "height": 740})
+    fake = fake_log()
+    open_timelapse(page, site_url, fake)
+    html = page.locator("html")
+    page.wait_for_function("__tl.loaded.days === 3")
+    page.locator("#play").click()
+    # The morning of Nov 5, after the territory's first eleven words.
+    page.evaluate(
+        f"(() => {{ for (let f = 0; f <= 1; f += 0.001) {{ __tl.seek(f); if (__tl.time >= {WORDS[10][6]}) return; }} }})()"
+    )
+    page.wait_for_timeout(100)
+    # A video plays the whole survey on a canvas of its own, to its last word.
+    page.evaluate("__tl.videoSeconds = 1")
+    page.locator("#save").click()
+    expect(html).to_have_attribute("data-rec", "done", timeout=15000)
+    page.locator("#recCancel").click()
+    expect(html).to_have_attribute("data-rec", "off")
+    page.evaluate("new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)))")
+    # Back on the screen, it counts what was charted by the timelapse's date, not the video's.
+    assert page.evaluate("__tl.shown.places") == 2
+    expect(page.locator("#nPlaces")).to_have_text("2")
+    tap_territory_0_0(page)
+    expect(page.locator("#chipNote")).to_have_text(re.compile(r"^11 hidden words charted by Nov 5"))
+    # As in test_saves_a_video_of_the_whole_survey: the preview's blob: read is the browser's.
+    assert [e for e in errors if not re.match(r"^Failed: blob:.*ERR_ABORTED", e)] == []
+    errors.clear()
+
+
+def test_a_video_started_while_the_tab_is_away_waits_for_it(page: Page, site_url, errors):
+    fake = fake_log()
+    held = Held(fake, lambda r: r.url.split("?")[0].endswith(f"/timelapse/{DAY}"))
+    open_timelapse(page, site_url, fake, held.handle)
+    html = page.locator("html")
+    held.wait_for(page)
+    expect(html).to_have_attribute("data-tl", "playing")
+    # Saved while a day is still loading, and the player goes to another tab.
+    page.locator("#save").click()
+    expect(html).to_have_attribute("data-rec", "preparing")
+    hide = (
+        "h => { Object.defineProperty(document, 'hidden', { configurable: true, get: () => h });"
+        " document.dispatchEvent(new Event('visibilitychange')); }"
+    )
+    page.evaluate(hide, True)
+    held.release()
+    expect(html).to_have_attribute("data-rec", "recording")
+    # Headless Chromium still runs frames for a tab that says it's hidden, so a video
+    # that didn't wait would move on. It waits on its first frame instead.
+    page.wait_for_timeout(500)
+    progress = "parseFloat(document.querySelector('#recBar').style.width)"
+    assert page.evaluate(progress) == 0
+    assert page.evaluate("__tl.recorderState") == "paused"
+    # Back on the tab, it carries on.
+    page.evaluate(hide, False)
+    page.wait_for_function(f"{progress} > 0")
+    page.keyboard.press("Escape")
+    expect(html).to_have_attribute("data-rec", "off")
+    assert errors == []
+
+
 def test_hides_save_video_where_the_browser_cant_record(page: Page, site_url, errors):
     page.add_init_script("delete window.MediaRecorder")
     open_timelapse(page, site_url, fake_log())
     expect(page.locator("html")).to_have_attribute("data-tl", "playing")
     expect(page.locator("#save")).to_be_hidden()
+    assert errors == []
+
+
+def test_keys_stay_off_the_timelapse_while_a_failed_video_says_so(page: Page, site_url, errors):
+    # A browser that has MediaRecorder but can't record with it.
+    page.add_init_script(
+        "const R = window.MediaRecorder; window.MediaRecorder = function () { throw new Error('no'); };"
+        " window.MediaRecorder.isTypeSupported = t => R.isTypeSupported(t);"
+    )
+    open_timelapse(page, site_url, fake_log())
+    html = page.locator("html")
+    page.wait_for_function("__tl.loaded.days === 3")
+    page.locator("#save").click()
+    expect(html).to_have_attribute("data-rec", "failed")
+    expect(page.locator("#recText")).to_have_text("This browser couldn’t record the video.")
+    # With focus nowhere in particular, as after a tap that lands on no control,
+    # keys still don't play or move the timelapse behind the dialog.
+    pos = page.evaluate("__tl.pos")
+    page.evaluate("document.activeElement.blur()")
+    page.keyboard.press("Space")
+    page.keyboard.press("End")
+    page.wait_for_timeout(200)
+    assert page.evaluate("[__tl.state, __tl.pos]") == ["paused", pos]
+    # Escape still closes it.
+    page.keyboard.press("Escape")
+    expect(html).to_have_attribute("data-rec", "off")
     assert errors == []
 
 

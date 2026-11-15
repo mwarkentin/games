@@ -3,8 +3,9 @@
 import assert from 'node:assert/strict';
 import { afterEach, beforeEach, describe, mock, test } from 'node:test';
 
-import { keyOf, regionName, regionTheme } from '../../worker/src/letterfield-world.js';
+import { DIRS, keyOf, letterAt, regionName, regionTheme } from '../../worker/src/letterfield-world.js';
 import { ASK_MS, PAGE_MS, claimOf, forgetTotals, handle, novaOf, stateToken, totalsOf } from '../src/app.js';
+import { parseFind } from '../src/card.js';
 import { FAR, PLACED, slugOf } from './card.test.js';
 
 const SHARE = 'https://share.test';
@@ -97,6 +98,24 @@ describe('the page', () => {
     const html = await response.text();
     assert.equal(meta(html, 'og:image'), `${SITE}/previews/letterfield.jpg`);
     assert.ok(html.includes(`location.replace(${JSON.stringify(`${SITE}/letterfield`)})`));
+  });
+
+  test('calls a word turned up by chance a bonus word, as the card does', async () => {
+    // The first bonus word that starts on the top row, read in any direction.
+    let slug = null;
+    for (let x = 0; x < 400 && !slug; x++) for (let d = 0; d < 8 && !slug; d++) {
+      let w = '';
+      for (let i = 0; i < 12 && !slug; i++) {
+        w += String.fromCharCode(65 + letterAt(x + DIRS[d][0] * i, DIRS[d][1] * i));
+        if (parseFind(`f-${w.toLowerCase()}-${x}-0-${d}`)?.s) slug = `f-${w.toLowerCase()}-${x}-0-${d}`;
+      }
+    }
+    assert.ok(slug);
+    const html = await (await get(`/f/${slug}`, fakeEnv().env)).text();
+    for (const name of ['og:description', 'description']) {
+      assert.match(meta(html, name), /^A bonus [a-z ]+ word in /);
+      assert.doesNotMatch(meta(html, name), /stray/i);
+    }
   });
 
   test('is kept at the edge for a minute', async () => {
@@ -309,6 +328,15 @@ describe('a territory gone supernova moments ago', () => {
 });
 
 describe('a guild\'s page', () => {
+  test('passes on the name from its address when the log doesn\'t answer, as on a Worker Preview', async () => {
+    const down = { fetch: async () => new Response('down', { status: 500 }) };
+    for (const env of [{ SITE_URL: SITE }, { SITE_URL: SITE, LOG: down }]) {
+      const html = await (await get('/v/guild/c0ba17c0ba/all?name=11-0-0', env)).text();
+      assert.equal(meta(html, 'og:title'), 'Cobalt Compass Society · Letterfield survey log');
+      assert.match(html, /<meta http-equiv="refresh" content="0;url=https:\/\/games\.test\/letterfield-log\?guild=c0ba17c0ba&amp;name=11-0-0">/);
+    }
+  });
+
   test('sends people to the guild\'s page in the log with its name, so it\'s named at once', async () => {
     const env = {
       SITE_URL: SITE,

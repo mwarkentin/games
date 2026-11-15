@@ -803,7 +803,8 @@ Bonus words (strays, words the letters spell by chance) aren't kept in the
 log. Their sectors still claim them, so "charted first" and the game's field
 notes work as before, but `flushLog()` leaves them out when it copies claims
 to D1 and moves its mark past them. `migrations-log/0009` took out the ones
-copied before, and the delete triggers took them out of the counts. What
+copied before, and `0010` the few copied while 0009 ran ahead of that deploy;
+the delete triggers took them out of the counts. What
 follows about strays in the log describes rows from before then, which the
 code still reads safely.
 

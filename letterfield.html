@@ -94,13 +94,13 @@ button:focus-visible,a:focus-visible,#map:focus-visible{outline:2px solid var(--
 .brand{padding:9px 14px 8px 12px;border-right:1px solid var(--rule);display:flex;flex-direction:column;justify-content:center;gap:5px}
 .brand h1{margin:0;font:800 27px/.85 var(--f-display);letter-spacing:.05em;text-transform:uppercase}
 .brand small{font:400 9px/1 var(--f-mono);letter-spacing:.16em;text-transform:uppercase;color:var(--muted)}
-/* On a tablet the notes open over the map: the title steps out of their way,
-   leaving the territory the room before them, with its theme and count (the
-   grid reference goes, as on a phone). */
+/* On a tablet a drawer (the notes or the Surveyors) opens over the map: the
+   title steps out of its way, leaving the territory the room before it, with
+   its theme and count (the grid reference goes, as on a phone). */
 @media (min-width:700px){
-  body.notes-open:not(.docked) .brand{position:absolute;width:1px;height:1px;padding:0;border:0;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
-  body.notes-open:not(.docked) .cartouche{max-width:calc(100% - var(--notes-w) - 40px)}
-  body.notes-open:not(.docked) .t-coord{display:none}
+  body:is(.notes-open,.people-open):not(.docked) .brand{position:absolute;width:1px;height:1px;padding:0;border:0;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
+  body:is(.notes-open,.people-open):not(.docked) .cartouche{max-width:calc(100% - var(--notes-w) - 40px)}
+  body:is(.notes-open,.people-open):not(.docked) .t-coord{display:none}
 }
 .territory{padding:8px 14px 8px 12px;display:grid;grid-template-columns:auto minmax(0,1fr);column-gap:10px;row-gap:3px;align-items:center;min-width:0}
 .swatch{grid-row:1 / span 2;width:12px;height:12px;border-radius:50%;background:var(--c);box-shadow:0 0 0 3px color-mix(in srgb, var(--c) 22%, transparent)}
@@ -440,7 +440,7 @@ html[data-who="loading"] .who-status{animation:blink 1s infinite alternate}
 .guild-swap{margin:0 0 10px;padding:10px 12px;border:1px solid var(--rule);border-radius:8px}
 .guild-invite .guild-swap p{margin:0}
 .guild-swap .guild-name{margin:3px 0 0}
-.guild-swap .guild-meta{margin:2px 0 0 18px}
+.guild-invite .guild-swap .guild-meta{margin:2px 0 0 18px}
 .guild-swap-label{font:500 10px/1.2 var(--f-mono);letter-spacing:.12em;text-transform:uppercase;color:var(--muted)}
 .guild-invite .guild-swap .guild-swap-to{margin-top:10px;padding-top:10px;border-top:1px solid var(--rule)}
 .guild-invite .guild-warn{display:flex;gap:9px;align-items:flex-start;padding:9px 11px;border:1px solid var(--danger);border-radius:8px;font-size:13px;line-height:1.45}
@@ -2602,6 +2602,7 @@ function onGesture(e) {
   gestured = true;
   if (soundOn || musicOn) wakeCtx();
   if (e.target && e.target.closest && e.target.closest('#sound, #music')) return;  // the buttons decide
+  if (e.type === 'keydown' && (e.key === 'b' || e.key === 'B') && !e.metaKey && !e.ctrlKey && !e.altKey) return;  // and so does B, the music's key
   audioCtx();
   if (musicOn && !musicNow) startMusic();
 }
@@ -3020,9 +3021,11 @@ function setMusic(on) {
 }
 musicBtn.setAttribute('aria-pressed', String(musicOn));
 showMusicVol();
-// Music left on from last time waits, silent, for the first tap: a tap on its
-// own button then starts it, rather than switching it off unheard.
-musicBtn.addEventListener('click', () => { gestured = true; if (musicOn && !musicNow) startMusic(); else setMusic(!musicOn); });
+// Music left on from last time waits, silent, for the first tap or key: a tap
+// on its own button, or its key B, then starts it, rather than switching it
+// off unheard.
+function toggleMusic() { gestured = true; if (musicOn && !musicNow) startMusic(); else setMusic(!musicOn); }
+musicBtn.addEventListener('click', toggleMusic);
 
 const noiseOf = perContext(a => {
   const b = a.createBuffer(1, a.sampleRate * 2, a.sampleRate), d = b.getChannelData(0);
@@ -3707,7 +3710,7 @@ window.addEventListener('keydown', e => {
     case 'n': setNotes(!Panel.is('notes')); break;
     case 'p': setPeople(!Panel.is('people')); break;
     case 'm': setSound(!soundOn); break;
-    case 'b': setMusic(!musicOn); break;
+    case 'b': toggleMusic(); break;
     case '[': case ']': setMusicVol((musicOn ? musicVol : 0) + (k === ']' ? 10 : -10)); break;
     case 'h': goHome(); break;
     case 'l': goLastFind(); break;
@@ -3915,12 +3918,12 @@ function toast(html, hue, ms = 2400, find = null) {
   }
   // A note sits just under the buttons at the top right (beside the docked
   // notes), and never covers the title, the card at the top of the map (the
-  // intro, or the box for your initials) or the open tools: it moves down
-  // below them instead. Measured without its transform, which shrinks it while
-  // it's put away.
+  // intro, the box for your initials, the offer to link this device or a
+  // guild invite) or the open tools: it moves down below them instead.
+  // Measured without its transform, which shrinks it while it's put away.
   const nb = $('.corner').getBoundingClientRect();
   toastEl.style.top = nb.height ? `${Math.round(Math.max(nb.bottom, mapTop) + 10)}px` : '';
-  for (const el of [$('.cartouche'), $('#coach'), $('#signup'), Panel.is('tools') && toolStack]) {
+  for (const el of [$('.cartouche'), ...document.querySelectorAll('.coach'), Panel.is('tools') && toolStack]) {
     const r = !el || el.hidden ? null : el.getBoundingClientRect();
     const l = toastEl.offsetLeft, t = toastEl.offsetTop, b = t + toastEl.offsetHeight;
     if (r && r.width && r.left < l + toastEl.offsetWidth && l < r.right && r.top < b + 8 && t < r.bottom) toastEl.style.top = `${Math.round(r.bottom + 8)}px`;
@@ -4834,7 +4837,7 @@ function sendEmote(s, id) {
   const em = EMOTE_BY[id], home = links.get(sectorKey(Math.floor(cam.x), Math.floor(cam.y)));
   if (!em) return;
   if (!myInitials()) { closeCaretMenu(false); return askInitials('Sign your initials to send emotes.'); }
-  if (!home || !home.m.is('live')) return said(s.pid, 'Join the survey to send emotes.');
+  if (!home || !home.m.is('live')) return said(s.pid, 'Join the survey to send emotes.', true);
   const c = caretOf(s.pid);
   tell(home, { t: 'emote', to: s.pid, e: id, s: c ? [c.l.sx, c.l.sy] : [fdiv(s.rx, TERR_PER_SECTOR), fdiv(s.ry, TERR_PER_SECTOR)] });
 }
@@ -4950,7 +4953,7 @@ function closeCaretMenu(refocus) {
 caretMenu.addEventListener('click', e => {
   const b = e.target.closest('button'), s = caretFor;
   if (!b || !s) return;
-  if (b.classList.contains('emote')) { sendEmote(s, b.dataset.e); closeCaretMenu(true); }
+  if (b.classList.contains('emote')) { closeCaretMenu(true); sendEmote(s, b.dataset.e); }  // shut first, so what it says shows
   else if (b.classList.contains('who-mute')) { setMuted(s, !muted.has(s.pid)); closeCaretMenu(true); }
 });
 caretMenu.addEventListener('keydown', e => { if (e.key === 'Escape') { e.stopPropagation(); closeCaretMenu(true); } });
@@ -5098,8 +5101,8 @@ async function joinInvite() {
     saveGuild(guildOf(data));
     takeRoster(data.members);
     invite = null;
-    guildToast(data.name, guildName(data.name), left && left.code !== data.code ? `You’re in, and out of the ${guildName(left.name)}` : 'You’re in: its members come first under Surveyors');
-    return Membership.go('in');
+    Membership.go('in');  // the invite's card goes first, so the note takes the top
+    return guildToast(data.name, guildName(data.name), left && left.code !== data.code ? `You’re in, and out of the ${guildName(left.name)}` : 'You’re in: its members come first under Surveyors');
   }
   invite.error = status === 409 ? 'That guild is full.' : status === 429 ? 'Too many guilds joined from this network: try again later.' : 'Couldn’t join. Try again in a moment.';
   Membership.go('invited');
@@ -5422,17 +5425,20 @@ function applySettings(c) {
   }
 }
 // Stopping here is at once; everywhere waits for the Worker (pair's
-// `stopping`), and its answer goes under the rows once they're back, never
-// into whatever card is open by then.
+// `stopping`), syncing on until it says it's done, so a failure leaves the
+// Stop syncing row to try again from. Its answer goes under the rows once
+// they're back, never into whatever card is open by then.
 async function stopSync(everywhere) {
   if (!Pair.is('stop')) return;
   if (everywhere) { Pair.go('stopping'); focusQuiet($('#pairStopping')); }
   const at = Pair.seq;
-  writeSync(null);
-  if (!Sync.is('off')) Sync.go('off');
   const { status } = everywhere ? await workerCall('/v1/player/forget', { token: playerToken }) : { status: 200 };
-  if (everywhere && status === 200) LS.remove(K_RECOVERY);  // the Worker took the code too
-  const said = status !== 200 ? 'Couldn’t reach the survey, so your other devices still sync. Try again in a moment.' : everywhere ? 'Syncing stopped on every device, and the copy kept for it is deleted, with any recovery code.' : 'Syncing stopped on this device.';
+  if (status === 200) {
+    writeSync(null);
+    if (!Sync.is('off')) Sync.go('off');  // a sync answered while we waited may have stopped it already
+    if (everywhere) LS.remove(K_RECOVERY);  // the Worker took the code too
+  }
+  const said = status !== 200 ? 'Couldn’t reach the survey, so syncing hasn’t stopped. Try again in a moment.' : everywhere ? 'Syncing stopped on every device, and the copy kept for it is deleted, with any recovery code.' : 'Syncing stopped on this device.';
   say(said);
   if (everywhere && (Pair.seq !== at || !Pair.is('stopping'))) return;
   pairNote = said;
@@ -5505,7 +5511,9 @@ const Pair = machine('pair', {
   stopping: ['idle'],
 }, 'idle', { onMove: pairMoved });
 function pairMoved(to, from) {
-  if (to === 'idle' || to === 'making') pairError = '';
+  // Put away, or trying again: the last failure's words go. Each failure says
+  // its own after its request, on the way back to the card it came from.
+  if (['idle', 'making', 'keeping', 'removing', 'redeeming'].includes(to)) pairError = '';
   if (to !== 'idle') pairNote = '';
   if (from === 'kept') recoveryCode = '';  // shown once
   if (to === 'idle' || to === 'keeping') recoveryNote = '';

@@ -15,7 +15,7 @@ import time
 from playwright.sync_api import Page, expect
 
 from fake_survey import NOW_MS, FakeGuilds, FakeSurvey, player_id
-from test_letterfield_survey import SURVEY, eventually, open_game, open_people, open_you
+from test_letterfield_survey import OVERLAP, SURVEY, circle, eventually, known_words, open_game, open_people, open_you
 from test_letterfield_surveyors import KIM, LOU, PID, SAM, TOKEN, ZED, open_list, wait_landed
 
 CODE, TAG, NAME = "KMN234", "c0ffee42", [11, 0, 0]  # the Cobalt Compass Society
@@ -118,6 +118,41 @@ def test_an_invite_link_asks_once_initials_are_in_then_joins(page: Page, site_ur
     assert errors == []
 
 
+def test_a_note_never_covers_a_guild_invite(page: Page, site_url, errors):
+    """A note moved down below the title and the cards at the top of the map, but not below a
+    guild invite, which sits in their place: on a phone it landed on top of it."""
+    words = known_words(page, site_url)
+    guilds = FakeGuilds({CODE: {"name": NAME, "tag": TAG, "members": [[KIM[0], "KIM", NOW_MS]]}})
+    fake = FakeSurvey(claims=[[*words[0], 0, "MRW", NOW_MS - 60_000]])
+    start(page, site_url, fake, guilds, query=f"&guild={CODE}", viewport={"width": 375, "height": 740})
+    invite = page.locator("#guildInvite")
+    expect(invite.locator(".guild-name")).to_have_text("Cobalt Compass Society")
+    circle(page, words[0])  # charted by someone else, so a note says so
+    toast = page.locator("#toast")
+    expect(toast).to_have_class(SHOWN)
+    toast.evaluate("e => Promise.all(e.getAnimations().map(a => a.finished))")  # its slide in
+    assert not page.evaluate(OVERLAP, ["#toast", "#guildInvite"]), (toast.bounding_box(), invite.bounding_box())
+    assert errors == []
+
+
+def test_the_note_for_joining_takes_the_top_once_the_invite_has_gone(page: Page, site_url, errors):
+    """Joining said so while the invite was still on screen, so on a phone the note stepped down
+    below a card that went a moment later, and floated halfway down the map."""
+    guilds = FakeGuilds({CODE: {"name": NAME, "tag": TAG, "members": [[KIM[0], "KIM", NOW_MS]]}})
+    start(page, site_url, FakeSurvey(), guilds, query=f"&guild={CODE}", viewport={"width": 375, "height": 740})
+    invite = page.locator("#guildInvite")
+    expect(invite.locator(".guild-name")).to_have_text("Cobalt Compass Society")
+    invite.evaluate("e => Promise.all(e.getAnimations({ subtree: true }).map(a => a.finished))")
+    was = invite.bounding_box()
+    invite.get_by_role("button", name="Join").click()
+    toast = page.locator("#toast")
+    expect(toast).to_have_class(SHOWN)
+    expect(invite).to_be_hidden()
+    toast.evaluate("e => Promise.all(e.getAnimations().map(a => a.finished))")  # its slide in
+    assert toast.bounding_box()["y"] < was["y"] + was["height"], (toast.bounding_box(), was)
+    assert errors == []
+
+
 def test_an_invite_can_wait_or_be_no_good(page: Page, site_url, errors):
     guilds = FakeGuilds({CODE: {"name": NAME, "tag": TAG, "members": [[KIM[0], "KIM", NOW_MS]]}})
     start(page, site_url, FakeSurvey(), guilds, query=f"&guild={CODE}")
@@ -164,6 +199,34 @@ def test_an_invite_while_in_another_guild_warns_before_switching(page: Page, sit
     expect(page.locator("#toast span")).to_have_text("You’re in, and out of the Cobalt Compass Society")
     eventually(page, lambda: any(path == f"/{CODE}/leave" for _, path, _ in guilds.calls))
     assert json.loads(page.evaluate("localStorage.getItem('letterfield.guild.v1')"))["code"] == other
+    assert errors == []
+
+
+def test_the_switch_card_lines_each_count_up_under_its_guilds_name(page: Page, site_url, errors):
+    """The member counts in the "Switch guilds?" card sat flush left under each guild's dot,
+    not under its name as on your page: the card's rule for its lines outranked their indent."""
+    other = "QRT567"
+    guilds = in_cobalt([KIM[0], "KIM", NOW_MS])
+    guilds.guilds[other] = {"name": [8, 7, 7], "tag": "0ddba11a", "members": [[ZED[0], "ZED", NOW_MS]]}
+    start(
+        page,
+        site_url,
+        FakeSurvey(),
+        guilds,
+        query=f"&guild={other}",
+        guild=MINE,
+        viewport={"width": 375, "height": 740},
+    )
+    invite = page.locator("#guildInvite")
+    expect(invite.locator(".eyebrow")).to_have_text("Switch guilds?")
+    expect(invite.locator(".guild-meta")).to_have_text(["2 members", "1 member so far"])
+    invite.evaluate("e => Promise.all(e.getAnimations({ subtree: true }).map(a => a.finished))")
+    lines = invite.evaluate("""e => [...e.querySelectorAll('.guild-meta')].map(m => ({
+      meta: m.getBoundingClientRect().left, name: m.previousElementSibling.querySelector('span').getBoundingClientRect().left }))""")
+    assert all(abs(m["meta"] - m["name"]) <= 1 for m in lines), lines
+    box = invite.bounding_box()
+    assert box["x"] >= 0 and box["x"] + box["width"] <= 375, box
+    assert page.evaluate("document.scrollingElement.scrollWidth") <= 375
     assert errors == []
 
 

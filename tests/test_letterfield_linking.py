@@ -12,12 +12,13 @@ from __future__ import annotations
 import json
 import re
 
+import pytest
 from playwright.sync_api import Page, expect
 
-from fake_survey import FakeGuilds, FakeLinks, FakeRecovery, FakeSurvey, player_id
+from fake_survey import NOW_MS, FakeGuilds, FakeLinks, FakeRecovery, FakeSurvey, player_id
 from test_letterfield_guilds import CODE, MINE, NAME, TAG, in_cobalt
 from test_letterfield_guilds import start as start_guilds
-from test_letterfield_survey import SURVEY, eventually, open_you
+from test_letterfield_survey import OVERLAP, SURVEY, circle, eventually, known_words, open_you
 from test_letterfield_surveyors import KIM, LOU, PID, TOKEN
 
 THEIRS = "f" * 32  # the other device's token
@@ -31,14 +32,15 @@ def start(
     links: FakeLinks,
     guilds: FakeGuilds | None = None,
     recovery: FakeRecovery | None = None,
+    survey: FakeSurvey | None = None,
     **kw,
 ) -> None:
-    """Opens the game on the survey with our token, `links` answering the link paths, its
-    `players` keeping linked devices in step, and `recovery` (or none) the recovery codes'."""
+    """Opens the game on `survey` (an empty one by default) with our token, `links` answering the
+    link paths, its `players` keeping linked devices in step, and `recovery` (or none) the recovery codes'."""
     page.route(f"{SURVEY}/v1/link**", links.handle)
     page.route(f"{SURVEY}/v1/player/**", links.players.handle)
     page.route(f"{SURVEY}/v1/recovery**", (recovery or FakeRecovery(links.players)).handle)
-    start_guilds(page, site_url, FakeSurvey(), guilds or FakeGuilds(), **kw)
+    start_guilds(page, site_url, survey or FakeSurvey(), guilds or FakeGuilds(), **kw)
 
 
 def stored(page: Page) -> dict:
@@ -183,6 +185,25 @@ def test_a_link_from_another_device_offers_first_then_becomes_that_surveyor(page
     expect(page.locator("#toast span")).to_have_text("This device plays as MLW now, as your other one does")
     expect(page.locator("html")).to_have_attribute("data-intro", "exploring")  # signed, by the link
     expect(page.locator("html")).to_have_attribute("data-guild", "in")
+    assert errors == []
+
+
+@pytest.mark.parametrize("size", [(375, 740), (1280, 900)], ids=["phone", "desktop"])
+def test_a_note_never_covers_the_offer_to_link(page: Page, site_url, errors, size):
+    """A note moved down below the title, the intro and the box for your initials, but not below the
+    offer to link this device, which sits in their place: on a phone it landed on top of it."""
+    words = known_words(page, site_url)
+    links = FakeLinks({"CDEFGHJK": {"token": THEIRS, "carry": {}}})
+    survey = FakeSurvey(claims=[[*words[0], 0, "MRW", NOW_MS - 60_000]])
+    viewport = {"width": size[0], "height": size[1]}
+    start(page, site_url, links, survey=survey, query="&link=CDEFGHJK", initials="", viewport=viewport)
+    offer = page.locator("#pairOffer")
+    expect(offer).to_be_visible()
+    circle(page, words[0])  # charted by someone else, so a note says so
+    toast = page.locator("#toast")
+    expect(toast).to_have_class(re.compile(r"\bshow\b"))
+    toast.evaluate("e => Promise.all(e.getAnimations().map(a => a.finished))")  # its slide in
+    assert not page.evaluate(OVERLAP, ["#toast", "#pairOffer"]), (toast.bounding_box(), offer.bounding_box())
     assert errors == []
 
 

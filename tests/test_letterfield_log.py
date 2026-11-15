@@ -77,8 +77,8 @@ def test_shows_the_days_words_hour_by_hour_newest_first(page: Page, site_url, er
     expect(tile(page, 0)).to_contain_text("Words charted2")
     # A tie goes to the earlier hour.
     expect(tile(page, 1)).to_contain_text("Busiest hour2–3 PM1 word")
-    # ACORN is a hidden word in the universe; MONET is a bonus word.
-    expect(tile(page, 2)).to_have_text("Hidden words1plus 1 bonus word")
+    # ACORN is a hidden word in the universe; MONET, a bonus word, isn't one.
+    expect(tile(page, 2)).to_have_text("Hidden words1")
     expect(page.locator("#chart .bar")).to_have_count(24)
     expect(page.locator("#chart .bar.some")).to_have_count(2)
     hours = page.locator(".hour h3")
@@ -106,6 +106,17 @@ def test_shows_the_days_words_hour_by_hour_newest_first(page: Page, site_url, er
     expect(page.locator(".entry").get_by_role("img", name="bearing N")).to_be_visible()
     assert "day=2026-11-05" in page.url
     assert page.evaluate("document.documentElement.scrollWidth") <= 375
+    assert errors == []
+
+
+def test_a_word_charted_beyond_the_universe_isnt_called_a_bonus_word(page: Page, site_url, errors):
+    # A hidden word just past the universe's east edge: charted, but not one of the universe's.
+    far = ["FAR", 13 * 192 + 5, 7, 0, 0, "ZED", NOW_MS - 50 * MINUTE, 11]  # 2:40 PM
+    fake = FakeSurveyLog([ACORN, far], PLACES, THEMES)
+    open_log(page, site_url, fake)
+    expect(tile(page, 0)).to_contain_text("Words charted2")
+    expect(tile(page, 2)).to_have_text("Hidden words1")
+    expect(page.locator("#tiles")).not_to_contain_text("bonus")
     assert errors == []
 
 
@@ -146,7 +157,7 @@ def test_a_week_shows_its_days_and_who_and_where_charted_most(page: Page, site_u
     expect(page.locator("#sumText")).to_have_text(re.compile(r"^Nov 2 – Nov 8, 2026\s*·\s*So\sfar\s*·\s*Pick\sa\sday$"))
     expect(tile(page, 0)).to_contain_text("Words charted3")
     expect(tile(page, 1)).to_contain_text("Busiest dayFri, Nov 62 words")
-    expect(tile(page, 2)).to_have_text("Hidden words2plus 1 bonus word")
+    expect(tile(page, 2)).to_have_text("Hidden words2")
     expect(page.locator("#chart .ticks span")).to_have_text(["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"])
     # Days to come can't be opened; days so far are listed newest first.
     expect(page.locator("#chart .bar.go")).to_have_count(5)
@@ -195,6 +206,20 @@ def test_a_month_and_a_year(page: Page, site_url, errors):
     page.get_by_role("button", name="Thu, Nov 5: 1 word").click()
     expect(page.locator("#sumTitle")).to_have_text("Yesterday")
     expect(page.get_by_role("tab", name="Day")).to_have_attribute("aria-selected", "true")
+    assert errors == []
+
+
+def test_a_years_busiest_days_are_the_darkest_even_alone_or_tied(page: Page, site_url, errors):
+    # Two days tied for the year's busiest, with a word each.
+    fake = FakeSurveyLog([ACORN, ZEUS], PLACES, THEMES)
+    open_log(page, site_url, fake, query="&period=year")
+    expect(page.get_by_role("button", name="Thu, Nov 5: 1 word")).to_have_class("cell l4 go")
+    expect(page.get_by_role("button", name="Fri, Nov 6: 1 word")).to_have_class("cell l4 go")
+    # ZED charted on just one day of the year, so it's ZED's busiest.
+    page.goto(f"{site_url}/letterfield-log?survey={SURVEY}&surveyor=ZED&period=year")
+    expect(page.locator("#focusName")).to_have_text("ZED")
+    expect(page.get_by_role("button", name="Fri, Nov 6: 1 word")).to_have_class("cell l4 go")
+    expect(page.get_by_role("button", name="Thu, Nov 5: 0 words")).to_have_class("cell go")
     assert errors == []
 
 
@@ -676,6 +701,37 @@ def test_an_hour_still_running_keeps_its_top_lists_while_it_refreshes(page: Page
     assert errors == []
 
 
+def test_an_hour_still_running_keeps_its_top_lists_when_a_refresh_cant_load_them(page: Page, site_url, errors):
+    fake = FakeSurveyLog([MONET, ["ELM", 3, 3, 0, 0, "ZED", NOW_MS - 10 * MINUTE, 11]], PLACES, THEMES)
+    open_log(page, site_url, fake, query="&period=hour", running=True)
+    surveyors = page.locator(".card").filter(has_text="Top surveyors")
+    expect(surveyors.locator(".rank .lbl")).to_have_text(["ZED"])
+    seen = []
+    page.expose_function("__lost", lambda n: seen.append(n))
+    page.evaluate("""() => new MutationObserver(() => window.__lost(document.querySelectorAll('#cards .loading').length))
+      .observe(document.querySelector('#cards'), { childList: true })""")
+
+    # The next reload gets the hour's words, but not its top lists.
+    def failed(route):
+        headers = {"Access-Control-Allow-Origin": "*", "Content-Type": "application/json"}
+        route.fulfill(status=503, headers=headers, body='{"error":"server error"}')
+
+    page.route(f"{SURVEY}/v1/survey/log/top/hours/**", failed)
+    with page.expect_response(lambda r: "/top/hours/" in r.url and r.status == 503):
+        page.clock.fast_forward(21_000)  # the hour reloads every 20 s
+    page.wait_for_timeout(500)  # for the page to take the failure in
+    expect(page.locator("html")).to_have_attribute("data-log", "ready")
+    expect(surveyors.locator(".rank .lbl")).to_have_text(["ZED"])
+    # And the one after, which gets them, brings who charted since.
+    page.unroute(f"{SURVEY}/v1/survey/log/top/hours/**", failed)
+    fake.entries.append(["ASH", 4, 4, 0, 0, "AMY", NOW_MS - 5 * MINUTE, 11])
+    page.clock.fast_forward(21_000)
+    expect(surveyors.locator(".rank .lbl")).to_have_text(["AMY", "ZED"])
+    # They stayed on screen throughout, never swapped for "Couldn't load".
+    assert all(n == 0 for n in seen), seen
+    assert [e for e in errors if "status of 503" not in e] == []  # the browser logs the 503 itself
+
+
 def test_with_a_share_worker_a_view_links_to_its_card_with_no_picture_of_its_own(page: Page, site_url, errors):
     # ?share= stands in for SHARE_URL: the share Worker's /v/ addresses, whose
     # pages carry a card of the view as their link preview.
@@ -1061,6 +1117,23 @@ def test_rows_and_buttons_are_big_enough_for_a_finger_and_names_wrap(page: Page,
     expect(name).to_have_text("Emerald Theodolite Fellowship Hollow")
     assert name.evaluate("e => e.scrollWidth <= e.clientWidth + 1")
     assert page.evaluate("document.documentElement.scrollWidth") <= 375
+    assert errors == []
+
+
+def test_the_supernovas_tab_sits_inside_its_border_as_everyone_does(page: Page, site_url, errors):
+    page.set_viewport_size({"width": 375, "height": 740})
+    fake = FakeSurveyLog([ACORN, MONET, ZEUS], PLACES, THEMES)
+    open_log(page, site_url, fake, query="&supernovas")
+    expect(page.locator("#novasTab")).to_have_attribute("aria-current", "page")
+    # How far each pill sits inside its border: left, right, top and bottom.
+    insets = page.evaluate("""() => [['#whose', '#viewAll'], ['#lists .novas', '#novasTab']].map(([o, i]) => {
+      const a = document.querySelector(o).getBoundingClientRect(), b = document.querySelector(i).getBoundingClientRect();
+      return [b.left - a.left, a.right - b.right, b.top - a.top, a.bottom - b.bottom].map(Math.round);
+    })""")
+    everyone, novas = insets
+    # Everyone's right side is Mine's, so its left says how far in a pill sits.
+    assert novas == [everyone[0], everyone[0], everyone[2], everyone[3]], insets
+    assert everyone[0] > 1, insets  # more than its border, so its fill never runs into it
     assert errors == []
 
 

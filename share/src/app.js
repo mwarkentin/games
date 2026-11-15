@@ -156,7 +156,7 @@ async function page(env, e, slug, dark, url) {
     });
   }
   const state = await stateOf(env, e);
-  const description = `${e.s ? 'A stray' : 'A'} ${THEMES[e.th].name.toLowerCase()} word in ${regionName(e.rx, e.ry)}, on Letterfield's map. `
+  const description = `${e.s ? 'A bonus' : 'A'} ${THEMES[e.th].name.toLowerCase()} word in ${regionName(e.rx, e.ry)}, on Letterfield's map. `
     + (state.claim ? `Charted first${state.claim.initials ? ` by ${state.claim.initials}` : ''} on ${day(state.claim.at)}.`
       : state.claim === null ? 'Not yet charted.' : 'Find it on the map.');
   return htmlPage({

@@ -6,6 +6,7 @@ import { describe, test } from 'node:test';
 
 import { chunk, keyOf } from '../../worker/src/letterfield-world.js';
 import { PALETTES, findSvg, fit, measure, parseFind, progress } from '../src/card.js';
+import { parseView, summarize } from '../src/view.js';
 
 const n = (v) => (v < 0 ? `m${-v}` : String(v));
 export const slugOf = (p) => `f-${p.w.toLowerCase()}-${n(p.x)}-${n(p.y)}-${p.d}`;
@@ -91,6 +92,16 @@ describe('findSvg', () => {
     assert.ok(unknown.includes('FIND IT ON THE MAP'));
     assert.ok(!unknown.some((s) => s.includes('CHARTED')));
     assert.ok(texts(findSvg(e, { claim: null, progressText: '3% of the universe charted' })).includes('3% of the universe charted'));
+  });
+
+  test('names the day it was charted as the log\'s cards name a day, in every month', () => {
+    for (let m = 0; m < 12; m++) {
+      const at = Date.UTC(2026, m, 9, 15);
+      const latest = summarize(parseView('/v/territory/0,0', at), { charted: 1, total: 112, entries: [['BIRCH', 5, 7, 0, 0, 'ZED', at, 11]], themes: {} }, at).stats[2][1];
+      assert.ok(texts(findSvg(e, { claim: { initials: 'ZED', at } })).includes(`by ZED · ${latest}`), latest);
+    }
+    // In the same words wherever it's drawn, not as the runtime's own dates have it ("Sept").
+    assert.ok(texts(findSvg(e, { claim: { initials: 'ZED', at: Date.UTC(2026, 8, 9) } })).includes('by ZED · 9 Sep 2026'));
   });
 
   test('calls a word turned up by chance a bonus word, in its theme', () => {
