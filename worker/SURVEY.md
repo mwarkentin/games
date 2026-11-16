@@ -520,9 +520,11 @@ shows a blank as "···".
 A guild is a few surveyors who want to find each other. Its members come
 first on the surveyor list (those online with where they are, the rest with
 when they were last seen), a note says when one comes online, and their
-carets wear the guild's colour. One guild at a time, joined only from an
-invite link. The code is `src/survey-guild.js`, hooks in `survey.js` and
-`survey-social.js`, and the Guilds section of `letterfield.html`.
+carets wear the guild's colour. A surveyor can be in up to five at once
+(`GUILDS_MAX`), each joined only from an invite link, and give each a label
+of their own that only their devices see. The code is `src/survey-guild.js`,
+hooks in `survey.js` and `survey-social.js`, and the Guilds section of
+`letterfield.html`.
 
 ### Why these guilds
 
@@ -549,12 +551,54 @@ invite link. The code is `src/survey-guild.js`, hooks in `survey.js` and
   colour is the first word's.
 - **The code is the key.** Six characters from the groups' alphabet (887
   million codes), passed in an invite link (`?guild=<code>`), which the game
-  reads once and takes off the address. A player can be in one guild at a
-  time, so an invite while they're in another asks "Switch guilds?": both
-  guilds by name, a warning that joining takes them out of theirs (and ends
-  it if they're its only member), and Stay or Leave and join. Everyone else only ever sees the
+  reads once and takes off the address. Everyone else only ever sees the
   guild's **tag**, a random id that says which carets share a guild and
   nothing more.
+
+### Several guilds
+
+A surveyor can be in up to five guilds at once: a family's, a workplace's, a
+club's. Each guild is its own object with its own roster and knows nothing of
+its members' other guilds, so the cap is the game's and the sectors', not
+the guilds'.
+
+| | (a) one active guild | (b) up to five, all live (chosen) |
+| --- | --- | --- |
+| what | the game keeps a list, and sends sectors only the one picked as active | the game sends sectors every code; each guild is checked and tagged |
+| for | no change to sectors or the log | every guild gets its notes, its online list, a current "last seen" and its members' words |
+| against | the others get no note when a member comes online, no words in the log, and a "last seen" frozen at when they were last active; and you have to remember to switch | more checks (see Cost) and a table in the log |
+
+- **Why five.** Enough for the groups in a life (family, work, a club or
+  two), few enough that a list heading each and the at-the-cap prompt fit a
+  phone, and that checks stay a small multiple of one guild's. It's
+  `GUILDS_MAX` in `survey-social.js`, and the game's own copy beside it.
+- **Joining.** An invite simply joins, and the guild goes at the end of the
+  player's list, which is their order everywhere. At the cap, the invite
+  asks which guild to leave, naming all five (with the player's labels and
+  each one's size), warns that going back needs a new invite (and that a
+  guild ends if they're its only member), and joins before it leaves.
+- **Your own labels.** "Work", "Family": a label of the player's own for
+  each guild, up to 24 characters, typed on their page. It's the only free
+  text in guilds, and nobody else ever sees it: it lives on the device and
+  goes with the player's synced settings, so their linked devices have it
+  too (`labels` in a link's carry, cleaned by `cleanLabel` in
+  `src/players.js`). The game shows it wherever it names a guild briefly: a
+  heading on the list, with the guild's name small under it; the hover card;
+  the came-online note; the timelapse's Follow chips.
+- **On the map.** A caret's dot (or ring, zoomed out) splits into equal parts
+  in the colours of every guild the viewer shares with its owner, in the
+  viewer's order, and the hover card names them all.
+- **On the list.** A heading per guild, in the player's order, each with its
+  label or name, how many are online, **+ Invite**, and a fold that tucks its
+  rows away on this device. A member of two of the player's guilds is listed
+  under both, so each heading's count is true and folding one hides nobody;
+  their rows' keys and ids say which heading's they are.
+- **Coming online.** One note per member, whatever the number of guilds
+  shared: someone already online in any of the player's guilds gets none,
+  and the ten-minute wait between notes is per member, not per guild.
+- **Leaving one elsewhere.** A guild left on another device stops answering
+  the sector's checks, which takes its tag off the socket at the next one;
+  the game drops it when its roster says the same, and keeps the others.
 
 ```
 POST /v1/survey/guilds                 {token, initials, name: [a, b, c]} → 201 {code, name, tag, lid, members}
@@ -571,23 +615,35 @@ who isn't a member gets the same answer as a guild that doesn't exist.
 
 ### Membership in the sectors
 
-- **Checked by the guild.** The game sends its guild's code in its `me`
-  message. The sector asks the guild (`POST /check`, internal) whether the
-  player is a member, and only then puts the guild's tag on their socket, so
-  knowing a code isn't enough to wear a guild's colour. It asks again every
-  15 minutes while they play, which takes the tag off anyone who has left and
-  keeps their "last seen" current (written at most every 10 minutes).
-- **On the map.** Presence gives each player's tag; the game draws a dot in
-  the guild's colour on top of a mate's caret (a ring when zoomed out), and
-  their hover card names the guild. Other guilds' tags mean nothing to it.
+- **Checked by each guild.** The game sends its guilds' codes, in its order,
+  in its `me` message (`guilds`; an older game's single `guild` counts as a
+  list of one). The sector takes the first five, refusing any past the cap,
+  and asks each guild (`POST /check`, internal) whether the player is a
+  member, and only then puts that guild's tag on their socket, so knowing a
+  code isn't enough to wear a guild's colour. It asks each again every 15
+  minutes while they play, on its own clock, which takes a tag off anyone
+  who has left that guild and keeps their "last seen" current (written at
+  most every 10 minutes). A socket keeps `guilds: [{code, tag, lid, at}]` in
+  its attachment; one saved by an older version, with a single guild, reads
+  back as a list of one. The checks that are out are kept in memory, per
+  code.
+- **On the map.** Presence gives each player's tags (one as a string, as an
+  older game reads it, several as a list); the game marks a mate's caret
+  with every guild it shares with them (see "Several guilds"). Other
+  guilds' tags mean nothing to it.
+- **In the log.** A claim counts for every guild that confirmed its charter:
+  the sector keeps their log ids, space-separated, in the claim's `guild`
+  column, and the log keeps the first in the word's row and the others
+  beside it (see "Guilds" under "The log").
 
 ### Who's online rides on the reports
 
-Each report's surveyors carry their guild's tag, and the report lists the
-guilds of everyone in the sector. The Atlas keeps who's online in each guild,
+Each report's surveyors carry their guilds' tags, as a list, and the report lists the
+guilds of everyone in the sector (up to `GUILD_TAGS_MAX`, 100). The Atlas keeps who's online in each guild,
 replaced sector by sector as reports come in, and answers each report with
-the online members of the guilds that sector asked about. The sector passes
-`{t: 'guild', tag, on}` to its members whenever that changes, each member as
+the online members of the guilds that sector asked about; a member of
+several is online in each. The sector passes
+`{t: 'guild', tag, on}` to each guild's members whenever that changes, one frame a guild, each member as
 `[id, initials, rx, ry, idle, flags]` with the list's flags, so a member who
 takes no emotes shows as one under the guild's heading too. Idle time is
 coarse in it (active, under a minute, then whole minutes), so it changes when
@@ -596,9 +652,11 @@ on or off, not with every report. It costs no requests of its own.
 
 - **How soon:** within a report of the member's sector and of yours: 10 s
   while they're busy, up to about a minute when they're still.
-- **In the game:** the first word after you arrive just says who's here;
-  anyone new after that gets a note ("ZED came online", with **Fly there**),
-  at most once in 10 minutes each.
+- **In the game:** each guild's first word after you arrive just says who's
+  here; anyone new after that gets a note ("ZED came online", with **Fly
+  there**, and the guild's label or name when you're in several), at most
+  once in 10 minutes each, and only if they weren't online in any of your
+  guilds already.
 - **Outside the shared world** sectors don't report, so a member out there
   shows as offline, with when they were last seen.
 
@@ -607,14 +665,21 @@ on or off, not with every report. It costs no requests of its own.
 - **The guild's object** is asked when a member makes, joins or leaves a
   guild, opens a socket while in one (about 10 an hour while roaming) and
   every 15 minutes while they play; and for the roster when the list opens,
-  then at most once a minute while it's open.
-- **Rows written:** "last seen" at most every 10 minutes per member playing.
+  then at most once a minute while it's open. A surveyor in several guilds
+  costs that once per guild: checks and roster reads scale with guilds per
+  player.
+- **Rows written:** "last seen" at most every 10 minutes per member playing,
+  per guild.
 - **At 10,000 online with 3,000 in guilds:** about 42,000 checks an hour
-  (~$0.15 a day) and a few thousand roster reads (pennies). At 1,000 online,
-  a few cents a day. The online word rides on reports and frames that were
-  free already.
-- **Limits:** 50 members a guild; 5 new guilds and 20 joins an hour per
-  address, counted in D1 like new groups.
+  (~$0.15 a day) with one guild each; about 63,000 (~$0.23 a day) if they
+  average one and a half; 210,000 (~$0.75 a day) if every one of them were
+  in five. Roster reads are a few thousand an hour per guild a player is in
+  (pennies). At 1,000 online, a few cents a day. The online word rides on
+  reports and frames that were free already, a frame a guild.
+- **Limits:** 50 members a guild; five guilds a surveyor; 5 new guilds and
+  20 joins an hour per address, counted in D1 like new groups. These stay as
+  they were: starting or joining the guilds of a life is a handful a day, and
+  linking a device joins at most four at once.
 
 ### Left for later
 
@@ -625,8 +690,13 @@ on or off, not with every report. It costs no requests of its own.
   once guilds are in use.
 - **Running a guild.** There's no founder or removing a member: anyone can
   mute anyone, or leave and start another.
-- **One guild at a time** is the game's rule; the Worker doesn't know a
-  player's other guilds, so two devices could join two.
+- **The cap across devices.** Five is the game's rule and the sectors'; no
+  guild knows a player's others, so two devices joining at once could make
+  six. Linking and syncing settle on the list the game keeps (the newest),
+  and a sector only ever tags five.
+- **Reordering guilds.** The player's order is the order they joined in. It
+  decides a caret's split and the list's headings; changing it could come
+  with a way to drag headings.
 
 ## One player, several devices
 
@@ -660,12 +730,15 @@ on the site can name the same player later.
    "Syncing linked devices").
 
 What a link carries, checked by `cleanCarry` in `worker/src/players.js`:
-the initials, the guild (code, name and tag), the mutes, with who each
+the initials, the guilds (code, name and tag of each, up to five, with the
+first as `guild` too for an older game), the player's labels for them, the mutes, with who each
 muted surveyor was and when (for the Muted list on your page), and the
-switch under Surveyors for taking emotes. Mutes from both devices are kept. Their guild wins; if they're in none and this device is
-in one, the linked surveyor joins this device's guild instead, so linking in
-either direction doesn't lose one. Either way the device's old self leaves
-its guild, since it won't be back. Field notes come from both devices from
+switch under Surveyors for taking emotes, and the player's labels for their
+guilds. Mutes from both devices are kept. Guilds are merged, up to five:
+theirs first, then this device's, which the linked surveyor joins (labels
+from both, theirs where both have one), so linking in either direction loses
+none that fit. Either way the device's old self leaves its guilds, since it
+won't be back. Field notes come from both devices from
 then on, through syncing; sound and music stay each device's own.
 
 ### Why a code, and how it's kept safe
@@ -696,7 +769,7 @@ which nothing else here has.
 
 Linking needs a device that's already you. With none left (one phone,
 lost; every browser cleared), the token is gone, and with it the surveyor:
-their id, their guild and any synced notes. A recovery code is a long code
+their id, their guilds and any synced notes. A recovery code is a long code
 the player saves once and enters on any device, under **I have a code**, to be
 that surveyor again.
 
@@ -719,8 +792,11 @@ that surveyor again.
   marks it saved, which exempts it from the 180-day clear-out while the
   code lasts. Using the code on a new device turns syncing on there with
   this device's settings older than the backup's, so the first sync brings
-  back the initials, guild, mutes and notes; that device's own notes join
-  them, and its old self leaves its guild.
+  back the initials, guilds and labels, mutes and notes; that device's own
+  notes join them, and its guilds too: joined again as the recovered
+  surveyor, kept aside until the backup's list arrives, then added to it up
+  to five (any that don't fit are left), and the merged list goes back as the
+  newest settings. Its old self leaves them.
 - **Guessing it** is hopeless at 99 bits, and tries count against the same
   per-address limit as link codes' (`linkTry`). Making codes has a limit of
   its own (`recovery`, 5 an hour).
@@ -752,8 +828,10 @@ player's own devices reach it:
   from the old one starts over and sends all it has.
 - **Merging can't lose anything.** Finds are keyed by word and place, as
   between tabs: each is kept once, and "charted first" only ever comes on.
-  Supernovas are kept once each. Settings (initials, guild, mutes and the
-  emotes switch) go with whichever device changed them last, by its clock.
+  Supernovas are kept once each. Settings (initials, guilds and their
+  labels, mutes and the emotes switch) go with whichever device changed them
+  last, by its clock; a guild left on one device is dropped by the next sync
+  on the others, and by its sectors at their next check.
 - **When.** On opening the game, a few seconds after a find, a couple after
   a settings change, when the tab comes back into view, and every minute
   while it's open, so two devices open at once catch up within a minute. A
@@ -1068,7 +1146,8 @@ A guild's words have a view of their own, and each period's top lists a
 **Top guilds** card after the top surveyors, once anyone has charted in a
 guild in it. A guild's page in the game (your page in the Surveyors drawer)
 links to its view, "Our words in the survey log". The code is
-`migrations-log/0007_survey_log_guilds.sql`, the guild parts of
+`migrations-log/0007_survey_log_guilds.sql` (and `0011` for a word's other
+guilds), the guild parts of
 `src/survey-log.js` and `src/survey-guild.js`, and `noteGuild` and
 `flushLog` in `src/survey.js`.
 
@@ -1090,7 +1169,8 @@ before, the first time it's asked; the game learns it with the roster.
 **Who counts.** A sector knows at claim time whether the player is in a
 guild (their tag, which the guild confirmed), its log id and name (from the
 same check, `POST /check`, which now answers `{tag, lid, name}`), and every
-member's words count for their guild. (While surveyors could keep off the
+member's words count for every guild that confirmed them: a surveyor in
+several charts for each. (While surveyors could keep off the
 surveyor list, a member off it logged no guild, since the log shows every
 word with its initials and time; that went with the list's switch.) Words
 keep the guild they were charted in: leaving a guild
@@ -1114,9 +1194,27 @@ written once per guild per sector). A view is a slice like a surveyor's,
 through its index; top guilds over days read the daily counts, and over
 hours the log's own rows in time order, as top surveyors do.
 
+**A word in several guilds** (`migrations-log/0011_survey_log_extra_guilds.sql`).
+Its row keeps the first, in the surveyor's own order, as before, and
+`survey_log_extra_guilds (guild, at, key)` holds each of the others, with
+triggers that count them into the same daily counts and take them out with
+the word. So a word in one guild, or none, costs nothing new; the top guilds
+over days are unchanged; and a Worker from before this, or one rolled back to
+it, reads the log as it did (it just doesn't see the others). A guild's view
+and its timelapse read its words from both, each through its own index and
+in time order, merged without a sort; top guilds over hours add the second
+table's rows by time. The pages' answers keep their shape.
+
+| | (a) a guild per row, the rest beside it (chosen) | (b) every guild in a table of its own |
+| --- | --- | --- |
+| what | `survey_log.guild` keeps the first; a second table the others | all of a word's guilds in one table; the column goes unused |
+| for | nothing changes for a word in one guild; the deploy's gap (migration before code) and a rollback lose nothing | one place to read a guild's words |
+| against | a guild's words are read from two places | copies every guild word, and drops the counting triggers, so words logged between the migration and the new code, or after a rollback, go uncounted |
+
 **Cost.** A word in a guild writes two more D1 rows (the index and the
 day's count), so up to nine; a word in none, nothing more, since the column
-is on the row already written. A guild's name is one row, once. At a busy
+is on the row already written. Each further guild it counts for writes three
+more (its row beside the word, that row's index, and its day's count). A guild's name is one row, once. At a busy
 day's 30,000 words with a third in guilds, that's 20,000 more rows written,
 next to the 50 million included a month. Reading a guild's view costs what a
 surveyor's does; top guilds add a few hundred rows of daily counts to a long

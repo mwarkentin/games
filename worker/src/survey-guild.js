@@ -23,19 +23,23 @@
 // carets wearing its tag. A guild made before the log knew guilds gets one
 // the first time it's asked.
 //
+// A surveyor can be in up to GUILDS_MAX guilds at once. That's the game's
+// rule and the sectors': each guild knows only its own roster, and nothing
+// here knows a player's other guilds.
+//
 // Sectors check membership here (POST /check, internal) when a player's game
-// names its guild, and again every GUILD_RECHECK_MS while they play, which is
-// also how a member's "last seen" stays current. The answer gives the tag; the
+// names a guild, and again every GUILD_RECHECK_MS for each while they play,
+// which is also how a member's "last seen" stays current. The answer gives the tag; the
 // log id, which the sector logs with each claim the member makes; and the
 // name, which it keeps once for the log (Sector.noteGuild). The Atlas keeps
 // who's online in each guild from the reports sectors already send it
 // (noteMates, matesFor), and sectors pass that on to members as
-// {t: 'guild', tag, on}.
+// {t: 'guild', tag, on}, one frame per guild.
 
 import { HttpError, INITIALS, allowedInitials, answered, corsHeaders, hashIp, isInt, json, mustPost, randomCode, randomHex, rateLimit, readBody } from './leaderboard.js';
-import { FLAG_QUIET, GUILD_CODE, GUILD_LOG_ID, GUILD_TAG, PID, playerId, tokenIn } from './survey-social.js';
+import { FLAG_QUIET, GUILD_CODE, GUILD_LOG_ID, GUILD_TAG, GUILDS_MAX, PID, playerId, tagsOf, tokenIn, upgradeGuilds } from './survey-social.js';
 
-export { GUILD_CODE, GUILD_LOG_ID, GUILD_TAG };
+export { GUILD_CODE, GUILD_LOG_ID, GUILD_TAG, GUILDS_MAX };
 export const GUILD_MAX = 50;                 // members a guild holds
 // The words of guilds' names, with the first word's hue, as the game's lists
 // (GUILD_FIRST, GUILD_SECOND, GUILD_THIRD in letterfield.html; a test checks
@@ -187,41 +191,51 @@ export class Guild {
   }
 }
 
-// A sector checking that one of its players is in the guild their game names,
-// when it first does and every GUILD_RECHECK_MS after: the guild's tag goes on
-// the socket (and so on their caret and in reports), or comes off it. A check
-// that fails leaves things as they were and tries again on a later message.
-// The check that's out is kept in memory (sector.guildChecks), never on `me`,
-// which is the socket's attachment: a sector that sleeps and wakes would
-// otherwise read back a check that will never come back, and never check again.
-export async function checkGuild(sector, ws, me) {
-  if (!sector.env.GUILDS || !me.guild || !me.pid || sector.guildChecks.has(ws)) return;
-  const code = me.guild;
-  sector.guildChecks.add(ws);
-  let tag = me.tag ?? null, lid = me.lid ?? null, name = null;
+// A sector checking that one of its players is in each guild their game
+// names, when it first does and every GUILD_RECHECK_MS after, each guild on
+// its own clock: a guild that says yes puts its tag on the socket (and so on
+// their caret and in reports), and one that says no takes it off, as when
+// they left it on another device. A check that fails leaves that guild as it
+// was and tries again on a later message. The checks that are out are kept in
+// memory (sector.guildChecks, socket → codes), never on `me`, which is the
+// socket's attachment: a sector that sleeps and wakes would otherwise read
+// back a check that will never come back, and never check again.
+export function checkGuilds(sector, ws, me) {
+  if (!sector.env.GUILDS || !me.pid) return [];
+  const out = sector.guildChecks.get(ws), now = sector.now();
+  return upgradeGuilds(me).filter((g) => !out?.has(g.code) && now - (g.at ?? 0) >= GUILD_RECHECK_MS).map((g) => checkGuild(sector, ws, me, g.code));
+}
+
+async function checkGuild(sector, ws, me, code) {
+  if (!sector.guildChecks.has(ws)) sector.guildChecks.set(ws, new Set());
+  const out = sector.guildChecks.get(ws);
+  out.add(code);
+  let tag, lid = null, name = null;
   try {
     const res = await ask(sector.env, code, '/check', { pid: me.pid, initials: me.initials || null });
     if (res.ok) ({ tag, lid = null, name = null } = await res.json());
-    else if (res.status === 404) tag = lid = null;
+    else if (res.status === 404) tag = null;
     else return;
   } catch {
     return;
   } finally {
-    sector.guildChecks.delete(ws);
+    out.delete(code);
+    if (!out.size && sector.guildChecks.get(ws) === out) sector.guildChecks.delete(ws);
   }
-  if (me.guild !== code) return;  // the game named another guild while we asked
-  me.guildAt = sector.now();  // only now, so a guild named while we asked is checked on the next message
-  if (typeof tag === 'string' && !GUILD_TAG.test(tag)) tag = null;
+  const g = me.guilds?.find((x) => x.code === code);
+  if (!g) return;  // the game stopped naming it while we asked
+  g.at = sector.now();  // only now, so a guild named afresh while we asked is checked on the next message
+  if (typeof tag !== 'string' || !GUILD_TAG.test(tag)) tag = null;
   // The log id goes with the member's claims, and the guild's name to the log
   // with them (Sector.noteGuild), unless the tag came off.
   if (!tag || typeof lid !== 'string' || !GUILD_LOG_ID.test(lid)) lid = null;
   if (lid && goodName(name)) sector.noteGuild?.(lid, name);
   else lid = null;
-  const lidChanged = lid !== (me.lid ?? null);
-  me.lid = lid;
-  if (tag === (me.tag ?? null)) { if (lidChanged) sector.save(ws, me); return; }
-  me.tag = tag;
+  const tagChanged = tag !== (g.tag ?? null);
+  g.tag = tag;
+  g.lid = lid;
   sector.save(ws, me);
+  if (!tagChanged) return;
   sector.reportDue = true;
   sector.schedulePresence(false);
   const known = tag && sector.guildSent?.get(tag);
@@ -238,7 +252,7 @@ export function passMates(sector, guilds) {
     const frame = JSON.stringify({ t: 'guild', tag, on });
     if (sector.guildSent.get(tag) === frame) continue;
     sector.guildSent.set(tag, frame);
-    for (const [ws, p] of sector.everyone()) if (p.tag === tag) try { ws.send(frame); } catch { /* closing */ }
+    for (const [ws, p] of sector.everyone()) if (tagsOf(p).includes(tag)) try { ws.send(frame); } catch { /* closing */ }
   }
 }
 
@@ -254,10 +268,12 @@ export function noteMates(atlas, key, who, now) {
   }
   const named = [];
   for (const e of who ?? []) {
-    if (!e[6]) continue;
-    if (!atlas.mates.has(e[6])) atlas.mates.set(e[6], new Map());
-    atlas.mates.get(e[6]).set(e[0], { e, key, at: now });
-    named.push([e[6], e[0]]);
+    // A surveyor in several guilds is online in each; an older sector sent one tag rather than a list.
+    for (const tag of typeof e[6] === 'string' ? [e[6]] : e[6] ?? []) {
+      if (!atlas.mates.has(tag)) atlas.mates.set(tag, new Map());
+      atlas.mates.get(tag).set(e[0], { e, key, at: now });
+      named.push([tag, e[0]]);
+    }
   }
   atlas.matesOf.set(key, named);
 }

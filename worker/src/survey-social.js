@@ -39,6 +39,7 @@ export const TOKEN = /^[0-9a-f]{32}$/;   // the secret the game keeps, which onl
 export const GUILD_CODE = /^[A-HJKMNP-Z2-9]{6}$/;  // a guild's secret code: groups' alphabet, two letters longer (survey-guild.js)
 export const GUILD_TAG = /^[0-9a-f]{8}$/;          // a guild as anyone can see it: a random id
 export const GUILD_LOG_ID = /^[0-9a-f]{10}$/;      // a guild in the survey log: another random id, never its tag
+export const GUILDS_MAX = 5;                       // guilds a surveyor can be in at once ("Guilds" in SURVEY.md)
 // The emotes, in the order the game shows them. Fixed drawings, never text:
 // see "The emotes" in SURVEY.md for why each is here and what was left out.
 export const EMOTES = ['wave', 'thanks', 'nice', 'clap', 'great', 'here', 'what'];
@@ -88,16 +89,22 @@ export function tokenIn(body) {
 }
 
 // What a `me` message says besides initials: the player's token, whether
-// they take emotes (quiet) and their guild's code, which the sector checks with the guild (checkGuild in
-// survey-guild.js) before the guild's tag goes on their socket. The flags
-// count straight away; the id once its hash is worked out. Returns (a promise
-// of) whether anything changed. A socket keeps the first id it's given.
+// they take emotes (quiet) and their guilds' codes, in the game's order, which
+// the sector checks with each guild (checkGuilds in survey-guild.js) before
+// that guild's tag goes on their socket. No more than GUILDS_MAX are taken:
+// any past the cap are refused. An older game's `guild`, one code, counts as
+// a list of one. The flags count straight away; the id once its hash is worked
+// out. Returns (a promise of) whether anything changed. A socket keeps the
+// first id it's given.
 export function takeMe(me, msg) {
   const quiet = msg.quiet === true;  // an older game's `hide` asks for nothing now: everyone online is listed
-  const guild = typeof msg.guild === 'string' && GUILD_CODE.test(msg.guild) ? msg.guild : null;
-  let changed = quiet !== !!me.quiet || guild !== (me.guild ?? null);
+  const named = Array.isArray(msg.guilds) ? msg.guilds : typeof msg.guild === 'string' ? [msg.guild] : [];
+  const codes = [...new Set(named.filter((c) => typeof c === 'string' && GUILD_CODE.test(c)))].slice(0, GUILDS_MAX);
+  const had = upgradeGuilds(me);
+  let changed = quiet !== !!me.quiet || codes.join() !== had.map((g) => g.code).join();
   me.quiet = quiet;
-  if (guild !== (me.guild ?? null)) { me.guild = guild; me.tag = null; me.lid = null; me.guildAt = 0; }
+  // A guild the game still names keeps what its check found; a new one starts unchecked.
+  if (changed) me.guilds = codes.map((code) => had.find((g) => g.code === code) ?? { code, tag: null, lid: null, at: 0 });
   if (me.pid || typeof msg.token !== 'string' || !TOKEN.test(msg.token)) return changed;
   return playerId(msg.token).then((pid) => {
     if (!me.pid) { me.pid = pid; changed = true; }
@@ -105,10 +112,28 @@ export function takeMe(me, msg) {
   });
 }
 
+// A socket's guilds, as a sector keeps them in its attachment: [{code, tag,
+// lid, at}] in the game's order, where tag and lid stay null until the guild
+// says the player is a member, and `at` is when it last answered. One saved
+// by an older version ({guild, tag, lid, guildAt}) comes back as a list of one.
+export function upgradeGuilds(me) {
+  if (!me.guilds && typeof me.guild === 'string') {
+    me.guilds = [{ code: me.guild, tag: me.tag ?? null, lid: me.lid ?? null, at: me.guildAt ?? 0 }];
+    delete me.guild; delete me.tag; delete me.lid; delete me.guildAt;
+  }
+  me.guilds ??= [];
+  return me.guilds;
+}
+
+// The tags of the guilds that have said a socket's player is a member, in the game's order.
+export const tagsOf = (me) => (me.guilds ?? []).flatMap((g) => (g.tag ? [g.tag] : []));
+// The log ids a claim counts for: those same guilds', in the survey log.
+export const lidsOf = (me) => (me.guilds ?? []).flatMap((g) => (g.tag && g.lid ? [g.lid] : []));
+
 // The sector's surveyors for its report: everyone placed here who has an id,
 // once each (a player with two tabs open is one), by territory, most recently
-// moved first: [pid, initials, rx, ry, idle, flags], and the guild's tag for
-// a member.
+// moved first: [pid, initials, rx, ry, idle, flags], and the tags of their
+// guilds for a member of any.
 export function listed(people, sx, sy, now) {
   const by = new Map();
   for (const p of people) {
@@ -122,14 +147,18 @@ export function listed(people, sx, sy, now) {
   return [...by.values()].sort((a, b) => b.moved - a.moved).map((p) => [
     p.pid, p.initials, fdiv(Math.floor(p.x), RC), fdiv(Math.floor(p.y), RC),
     Math.min(IDLE_MAX, Math.max(0, Math.round((now - p.moved) / 1000))), p.quiet ? FLAG_QUIET : 0,
-    ...(p.tag ? [p.tag] : []),
+    ...(tagsOf(p).length ? [tagsOf(p)] : []),
   ]);
 }
+
+// A surveyor's guild tags in a report: a list of up to GUILDS_MAX, or the one an older sector sent.
+const goodTags = (t) => (typeof t === 'string' && GUILD_TAG.test(t))
+  || (Array.isArray(t) && t.length >= 1 && t.length <= GUILDS_MAX && t.every((v) => typeof v === 'string' && GUILD_TAG.test(v)));
 
 // Whether a report's surveyors can be listed: each a player in the reporting sector.
 export function goodWho(who, sx, sy, max) {
   if (who === undefined) return true;
-  return Array.isArray(who) && who.length <= max && who.every((e) => Array.isArray(e) && (e.length === 6 || (e.length === 7 && typeof e[6] === 'string' && GUILD_TAG.test(e[6])))
+  return Array.isArray(who) && who.length <= max && who.every((e) => Array.isArray(e) && (e.length === 6 || (e.length === 7 && goodTags(e[6])))
     && typeof e[0] === 'string' && PID.test(e[0]) && initialsOrNone(e[1])
     && Number.isInteger(e[2]) && Number.isInteger(e[3]) && fdiv(e[2], TERR) === sx && fdiv(e[3], TERR) === sy
     && isInt(e[4], 0, IDLE_MAX) && isInt(e[5], 0, 255));

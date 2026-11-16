@@ -16,7 +16,7 @@ import pytest
 from playwright.sync_api import Page, expect
 
 from fake_survey import NOW_MS, FakeGuilds, FakeLinks, FakeRecovery, FakeSurvey, player_id
-from test_letterfield_guilds import CODE, MINE, NAME, TAG, in_cobalt
+from test_letterfield_guilds import CODE, FIVE, MINE, NAME, TAG, in_cobalt
 from test_letterfield_guilds import start as start_guilds
 from test_letterfield_survey import OVERLAP, SURVEY, circle, eventually, known_words, open_you
 from test_letterfield_surveyors import KIM, LOU, PID, TOKEN
@@ -73,7 +73,9 @@ def test_a_code_shows_as_a_qr_code_and_a_link_and_hears_when_its_used(page: Page
     assert (path, body["token"]) == ("", TOKEN)
     assert body["carry"] == {
         "initials": "MLW",
-        "guild": MINE,
+        "guilds": [MINE],
+        "guild": MINE,  # the first, for an older game on the other device
+        "labels": {},
         "muted": [LOU[0]],
         "mutedAs": {LOU[0]: ["LOU", 5]},
         "emotes": True,
@@ -223,19 +225,52 @@ def test_not_now_goes_on_to_the_initials_card_and_a_spent_link_says_so(page: Pag
     assert errors == [] or all("404" in e for e in errors)
 
 
-def test_this_devices_guild_comes_along_when_theirs_is_none(page: Page, site_url, errors):
-    links = FakeLinks({"CDEFGHJK": {"token": THEIRS, "carry": {"initials": "MLW", "guild": None}}})
+def test_this_devices_guilds_join_theirs_with_labels_from_both(page: Page, site_url, errors):
+    carry = {
+        "initials": "MLW",
+        "guilds": [OTHER],
+        "guild": OTHER,
+        "labels": {OTHER["code"]: "Climbing", CODE: "Not this"},
+    }
+    links = FakeLinks({"CDEFGHJK": {"token": THEIRS, "carry": carry}})
     guilds = in_cobalt()
-    start(page, site_url, links, guilds, query="&link=CDEFGHJK", guild=MINE)
+    guilds.guilds[OTHER["code"]] = {"name": OTHER["name"], "tag": OTHER["tag"], "members": [[THEIR_PID, "MLW", NOW_MS]]}
+    start(page, site_url, links, guilds, query="&link=CDEFGHJK", mine=[MINE], labels={CODE: "Family"})
     offer = page.locator("#pairOffer")
-    expect(offer).to_contain_text("If they’re in a guild, this device leaves the Cobalt Compass Society.")
+    expect(offer).to_contain_text("The Cobalt Compass Society comes along too, up to 5 guilds in all.")
     offer.get_by_role("button", name="Link", exact=True).click()
     linked(page)
-    assert json.loads(stored(page)["letterfield.guild.v1"]) == MINE
+    # Theirs first, then this device's, joined as that surveyor; this device's old self leaves.
+    assert [g["code"] for g in json.loads(page.evaluate("localStorage.getItem('letterfield.guilds.v1')"))] == [
+        OTHER["code"],
+        CODE,
+    ]
     joins = [(p, b["token"]) for _, p, b in guilds.calls if p.endswith(("/join", "/leave"))]
     assert joins == [(f"/{CODE}/join", THEIRS), (f"/{CODE}/leave", TOKEN)]
     assert [m[0] for m in guilds.guilds[CODE]["members"]] == [THEIR_PID]
     assert (NAME, TAG) == (guilds.guilds[CODE]["name"], guilds.guilds[CODE]["tag"])
+    # A label they had wins; one only this device had stays.
+    assert json.loads(page.evaluate("localStorage.getItem('letterfield.guild-labels.v1')")) == {
+        OTHER["code"]: "Climbing",
+        CODE: "Not this",
+    }
+    assert errors == []
+
+
+def test_linking_to_a_surveyor_in_five_guilds_leaves_this_devices_one_out(page: Page, site_url, errors):
+    theirs = [g for g in FIVE if g["code"] != CODE] + [OTHER]
+    links = FakeLinks({"CDEFGHJK": {"token": THEIRS, "carry": {"initials": "MLW", "guilds": theirs}}})
+    guilds = in_cobalt()
+    start(page, site_url, links, guilds, query="&link=CDEFGHJK", mine=[MINE])
+    page.locator("#pairOffer").get_by_role("button", name="Link", exact=True).click()
+    linked(page)
+    assert [g["code"] for g in json.loads(page.evaluate("localStorage.getItem('letterfield.guilds.v1')"))] == [
+        g["code"] for g in theirs
+    ]
+    # No room for this device's: its old self still leaves, so nothing joins.
+    assert [(p, b["token"]) for _, p, b in guilds.calls if p.endswith(("/join", "/leave"))] == [
+        (f"/{CODE}/leave", TOKEN)
+    ]
     assert errors == []
 
 

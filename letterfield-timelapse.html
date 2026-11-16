@@ -66,6 +66,11 @@ button:focus-visible,a:focus-visible,input:focus-visible{outline:2px solid var(-
 .follow{display:inline-flex;align-items:center;gap:8px;margin-top:10px;min-height:36px;padding:6px 12px;border:1px solid hsl(var(--gh,220) var(--mark-s) var(--mark-l));border-radius:999px;background:var(--panel);color:var(--ink);font:500 12px/1.2 var(--f-ui);text-decoration:none;max-width:100%}
 .follow i{flex:none;width:9px;height:9px;border-radius:50%;background:hsl(var(--gh,220) var(--mark-s) var(--mark-l))}
 .follow span{color:var(--muted);font:500 12px/1 var(--f-mono)}
+/* Your own guilds, from Letterfield on this device: each a way to follow it. */
+.yours{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin-top:10px;font:500 10px/1 var(--f-mono);letter-spacing:.12em;text-transform:uppercase;color:var(--muted)}
+.yours a{display:inline-flex;align-items:center;gap:6px;min-height:34px;box-sizing:border-box;padding:4px 11px;border:1px solid var(--rule);border-radius:999px;background:var(--panel);color:var(--ink);font:500 12px/1.2 var(--f-ui);letter-spacing:0;text-transform:none;text-decoration:none;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.yours a:hover{background:var(--hover)}
+.yours a i{flex:none;width:8px;height:8px;border-radius:50%;background:hsl(var(--gh) var(--mark-s) var(--mark-l))}
 
 /* The bottom: play, scrub, speed, save. */
 .panel{position:fixed;left:0;right:0;bottom:0;z-index:2;
@@ -141,6 +146,7 @@ dialog p{margin:6px 0 0;font:400 12px/1.5 var(--f-mono);color:var(--muted)}
     <div class="theirs" id="guildCount" hidden><b id="nGuild">0</b>by the guild</div>
   </div>
   <a class="follow" id="follow" hidden href="/letterfield-timelapse"><i aria-hidden="true"></i><b id="followName"></b><span aria-hidden="true">×</span></a>
+  <nav class="yours" id="yours" hidden aria-label="Follow one of your guilds"></nav>
 </div>
 
 <div class="status" id="status" hidden role="status">
@@ -228,6 +234,14 @@ const api = (surveyParam && /^(https?|wss?):\/\//.test(surveyParam) ? surveyPara
 // else's faint. The log knows a guild by this id, never its code or tag.
 const followLid = /^[0-9a-f]{10}$/.test(query.get('guild') || '') ? query.get('guild') : null;
 let follow = null;        // {name, hue, days: Set of UTC days with its words}, once the log has said
+// The words of guilds' names, with the first word's hue: a copy of the game's
+// lists (GUILD_FIRST, GUILD_SECOND, GUILD_THIRD in letterfield.html, which
+// tests/test_letterfield_log_guilds.py checks this matches), to name your own
+// guilds before anything loads.
+const GUILD_FIRST = [['Crimson', 350], ['Coral', 8], ['Copper', 22], ['Amber', 38], ['Golden', 50], ['Lime', 85], ['Fern', 115], ['Emerald', 145],
+  ['Jade', 165], ['Teal', 182], ['Azure', 200], ['Cobalt', 220], ['Indigo', 245], ['Violet', 270], ['Plum', 295], ['Rose', 325]];
+const GUILD_SECOND = ['Compass', 'Sextant', 'Lantern', 'Quill', 'Atlas', 'Meridian', 'Beacon', 'Theodolite', 'Chart', 'Lodestar', 'Spyglass', 'Waypoint', 'Ledger', 'Inkwell', 'Horizon', 'Contour'];
+const GUILD_THIRD = ['Society', 'Guild', 'Company', 'Circle', 'Club', 'Expedition', 'Lodge', 'Fellowship', 'League', 'Order', 'Corps', 'Bureau', 'Institute', 'Academy', 'Alliance', 'Caravan'];
 const LS = {
   get(k) { try { return localStorage.getItem(k); } catch (_) { return null; } },
   set(k, v) { try { localStorage.setItem(k, v); } catch (_) {} },
@@ -854,6 +868,33 @@ function showFollow() {
   $('#placesCount').hidden = true;
   $('#toLog').href = `/letterfield-log?guild=${followLid}${q ? '&' + q : ''}`;
 }
+// Your own guilds, kept by Letterfield on this device (the same site), each a
+// way to follow it, by your label for it or its name. Only those whose page in
+// the log the game has learnt, and none while following one already.
+function showYours() {
+  if (followLid) return;
+  let list = [], labels = {};
+  try { list = JSON.parse(LS.get('letterfield.guilds.v1') || '[]'); labels = JSON.parse(LS.get('letterfield.guild-labels.v1') || '{}') || {}; } catch (_) { return; }
+  const lists = [GUILD_FIRST, GUILD_SECOND, GUILD_THIRD];
+  const named = n => Array.isArray(n) && n.length === 3 && n.every((v, i) => Number.isInteger(v) && v >= 0 && v < lists[i].length);
+  const mine = (Array.isArray(list) ? list : []).filter(g => g && /^[0-9a-f]{10}$/.test(g.lid || '') && named(g.name));
+  if (!mine.length) return;
+  const q = surveyParam ? `&survey=${encodeURIComponent(surveyParam)}` : '';
+  const nav = $('#yours');
+  nav.textContent = 'Follow';
+  for (const g of mine) {
+    const a = document.createElement('a'), name = `${GUILD_FIRST[g.name[0]][0]} ${GUILD_SECOND[g.name[1]]} ${GUILD_THIRD[g.name[2]]}`;
+    const label = typeof labels[g.code] === 'string' ? labels[g.code].trim().slice(0, 40) : '';
+    a.href = `/letterfield-timelapse?guild=${g.lid}${q}`;
+    a.style.setProperty('--gh', GUILD_FIRST[g.name[0]][1]);
+    a.setAttribute('aria-label', `Follow the ${name}`);
+    a.append(document.createElement('i'), label || name);
+    a.title = name;
+    nav.append(a);
+  }
+  nav.hidden = false;
+}
+showYours();
 $('#chipClose').addEventListener('click', closeChip);
 if (surveyParam) $('#toLog').href = `/letterfield-log?survey=${encodeURIComponent(surveyParam)}`;
 

@@ -1,3 +1,12 @@
+## 2026-11-16
+
+- You can be in up to five guilds at once, say one for family and one for work. An invite simply joins, and with five already it asks which one to leave, naming them all.
+- Give each guild a label of your own, like “Work”, on your page in the Surveyors drawer. Only you see it, on your linked devices too, and it heads that guild on the surveyor list.
+- Each guild has its own heading on the surveyor list, which folds away. Someone in two of your guilds is under both, their caret's dot shows both colours, and you hear they came online once.
+- Words you chart count for every guild you're in, on each guild's page in the survey log, in its top guilds and in its timelapse.
+- The timelapse offers to follow any of your guilds.
+- Linking a device or using a recovery code keeps the guilds from both, up to five, instead of one side's.
+
 ## 2026-11-15
 
 - A note you tapped Share on, like a supernova's, now goes away a couple of seconds later instead of staying on the map.

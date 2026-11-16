@@ -202,3 +202,4 @@ def test_the_logs_guild_words_are_the_games():
         }
 
     assert lists("letterfield-log.html") == lists("letterfield.html")
+    assert lists("letterfield-timelapse.html") == lists("letterfield.html")

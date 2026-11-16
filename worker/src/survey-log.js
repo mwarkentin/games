@@ -73,8 +73,11 @@
 // A guild is known in the log by its log id (survey-guild.js), never its
 // tag or code, and counts the words its members charted while in it (but for
 // words from when surveyors could keep off the list, by one who did, which
-// were logged with no guild). Its name comes with its first words
-// (survey_log_guilds).
+// were logged with no guild). A surveyor in several guilds charts for each:
+// the word's row keeps the first, in their own order, and the others go in
+// survey_log_extra_guilds (migrations-log/0011), so each guild's page, its
+// place in the top guilds and its timelapse count the word. Its name comes
+// with its first words (survey_log_guilds).
 //
 // The longer views read counts, not the log: triggers in D1 keep words per
 // hour, per day per set of initials and per day per territory as rows go in
@@ -94,7 +97,7 @@
 
 import { corsHeaders, edgeCache, json } from './leaderboard.js';
 import { MAP_VERSION, RC, THEMES, fdiv, regionName, regionTheme, strayTheme, territoryTotal } from './letterfield-world.js';
-import { GUILD_LOG_ID, goodName, guildHue, guildName } from './survey-guild.js';
+import { GUILD_LOG_ID, GUILDS_MAX, goodName, guildHue, guildName } from './survey-guild.js';
 
 export const LOG_MS = 30000;            // a sector copies new claims to D1 at most this often
 export const LOG_BATCH = 240;           // claims copied at once; more go a second later
@@ -143,16 +146,21 @@ const CURSOR = /^(\d{1,15})~([A-Z]{3,12}~-?\d{1,10}~-?\d{1,10}~[0-7])$/;
 const NOVA_CURSOR = /^(\d{1,15})~(-?\d{1,8})~(-?\d{1,8})$/;
 
 // Copies claims, as a sector stores them, to D1 in one batch, which D1 runs
-// as one transaction: all of them or none. Supernovas the sector has seen go
-// in the same batch, and so do the names of the guilds the claims count for
+// as one transaction: all of them or none. A claim's guild is the log ids of
+// every guild its charter was in, space-separated: the first goes in its row,
+// the others in survey_log_extra_guilds. Supernovas the sector has seen go in
+// the same batch, and so do the names of the guilds the claims count for
 // ({lid, a, b, c}), which D1 keeps once each.
 export async function writeLog(db, rows, novas = [], guilds = []) {
   const names = guilds.filter((g) => GUILD_LOG_ID.test(g.lid) && goodName([g.a, g.b, g.c]));
+  const lidsOf = (r) => [...new Set(String(r.guild ?? '').split(' ').filter((l) => GUILD_LOG_ID.test(l)))].slice(0, GUILDS_MAX);
+  const extra = rows.flatMap((r) => lidsOf(r).slice(1).map((lid) => [lid, r.at, r.key]));
   const statements = [
     ...inserts(db, 'survey_log_guilds', 'guild, a, b, c', names, (g) => [g.lid, g.a, g.b, g.c]),
     ...inserts(db, 'survey_log_novas', NOVA_COLUMNS, novas, (n) => NOVA_COLUMNS.split(', ').map((c) => n[c])),
     ...inserts(db, 'survey_log', 'at, key, w, x, y, d, s, initials, guild', rows,
-      (r) => [r.at, r.key, r.w, r.x, r.y, r.d, r.s, r.initials, GUILD_LOG_ID.test(r.guild ?? '') ? r.guild : '']),
+      (r) => [r.at, r.key, r.w, r.x, r.y, r.d, r.s, r.initials, lidsOf(r)[0] ?? '']),
+    ...inserts(db, 'survey_log_extra_guilds', 'guild, at, key', extra, (e) => e),
   ];
   if (statements.length) await db.batch(statements);
 }
@@ -175,7 +183,8 @@ export const HOUR_AFTER_SQL = `SELECT at, key, w, x, y, d, s, initials FROM surv
   WHERE at >= ? AND at < ? AND (at, key) > (?, ?) ORDER BY at, key LIMIT ?`;
 export const HOURS_SQL = `SELECT hour, n, world FROM survey_log_hours
   WHERE hour >= ? AND hour < ? AND n > 0 ORDER BY hour`;
-// Ways into the log other than by time (migrations-log/0003_survey_log_lookups.sql, and 0007 for guilds).
+// Ways into the log other than by time (migrations-log/0003_survey_log_lookups.sql, and 0007 for guilds,
+// whose words sliceSql also reads from 0011's table of a word's other guilds).
 // Each names its index, so a plan can't drift onto a scan of the whole log.
 export const SLICES = {
   surveyor: { index: 'survey_log_by_initials', where: "initials = ? AND initials <> ''" },
@@ -188,7 +197,29 @@ export const GUILD_NAME_SQL = 'SELECT a, b, c FROM survey_log_guilds WHERE guild
 const named = (r) => (goodName([r.a, r.b, r.c]) ? [guildName([r.a, r.b, r.c]), guildHue([r.a, r.b, r.c])] : null);
 // Hidden words in the shared world: sectors -12 to 12 (AREA in survey.js), 4 territories a side.
 const WORLD = `(s = 0 AND x >= ${-12 * 4 * RC} AND x < ${13 * 4 * RC} AND y >= ${-12 * 4 * RC} AND y < ${13 * 4 * RC})`;
+// A guild's words over a range of time: those whose first guild it is,
+// through its own index, and those it's another guild of
+// (survey_log_extra_guilds, migrations-log/0011), each side in time order so
+// the two merge without a sort. Parameters by number: ?1 the guild's log id,
+// ?2 and ?3 the range, then `more` (`after` takes ?4 and ?5).
+const guildWords = (cols, more = '', moreExtra = more) => `SELECT ${cols.join(', ')} FROM survey_log INDEXED BY survey_log_by_guild
+  WHERE guild = ?1 AND guild <> '' AND at >= ?2 AND at < ?3${more}
+  UNION ALL SELECT e.at, e.key, ${cols.slice(2).map((c) => `l.${c}`).join(', ')} FROM survey_log_extra_guilds AS e CROSS JOIN survey_log AS l
+  ON l.at = e.at AND l.key = e.key WHERE e.guild = ?1 AND e.at >= ?2 AND e.at < ?3${moreExtra}`;
+const GUILD_COLS = ['at', 'key', 'w', 'x', 'y', 'd', 's', 'initials', 'rx', 'ry'];
+function guildSliceSql(after) {
+  const from = `FROM (${guildWords(GUILD_COLS)})`;
+  return {
+    hours: `SELECT at / ${HOUR_MS} AS hour, COUNT(*) AS n, SUM(${WORLD}) AS world ${from} GROUP BY at / ${HOUR_MS}`,
+    places: `SELECT rx, ry, COUNT(*) AS n ${from} WHERE s = 0 GROUP BY rx, ry`,
+    people: `SELECT initials, COUNT(*) AS n ${from} WHERE initials <> '' GROUP BY initials ORDER BY COUNT(*) DESC, initials LIMIT ${TOP_N}`,
+    entries: after
+      ? `${guildWords(GUILD_COLS.slice(0, 8), ' AND (at, key) < (?4, ?5)', ' AND (e.at, e.key) < (?4, ?5)')} ORDER BY 1 DESC, 2 DESC LIMIT ?6`
+      : `${guildWords(GUILD_COLS.slice(0, 8))} ORDER BY 1 DESC, 2 DESC LIMIT ?4`,
+  };
+}
 export const sliceSql = (kind, after = false) => {
+  if (kind === 'guild') return guildSliceSql(after);
   const { index, where } = SLICES[kind];
   const from = `FROM survey_log INDEXED BY ${index} WHERE ${where} AND at >= ? AND at < ?`;
   return {
@@ -226,8 +257,11 @@ export const HOURS_TERRITORIES_SQL = `SELECT rx, ry, COUNT(*) AS n FROM survey_l
 export const GUILDS_SQL = `SELECT t.guild, t.n, g.a, g.b, g.c FROM (SELECT guild, SUM(n) AS n FROM survey_log_guild_days
   WHERE day >= ? AND day < ? GROUP BY guild HAVING SUM(n) > 0) AS t JOIN survey_log_guilds AS g ON g.guild = t.guild
   ORDER BY t.n DESC, t.guild LIMIT ${TOP_N}`;
-export const HOURS_GUILDS_SQL = `SELECT t.guild, t.n, g.a, g.b, g.c FROM (SELECT guild, COUNT(*) AS n FROM survey_log
-  WHERE at >= ? AND at < ? AND guild <> '' GROUP BY guild) AS t JOIN survey_log_guilds AS g ON g.guild = t.guild
+// Over hours, a word's other guilds count too (survey_log_extra_guilds).
+export const HOURS_GUILDS_SQL = `SELECT t.guild, t.n, g.a, g.b, g.c FROM (SELECT guild, SUM(n) AS n FROM (
+    SELECT guild, COUNT(*) AS n FROM survey_log WHERE at >= ?1 AND at < ?2 AND guild <> '' GROUP BY guild
+    UNION ALL SELECT guild, COUNT(*) AS n FROM survey_log_extra_guilds INDEXED BY survey_log_extra_guilds_by_word
+    WHERE at >= ?1 AND at < ?2 GROUP BY guild) GROUP BY guild) AS t JOIN survey_log_guilds AS g ON g.guild = t.guild
   ORDER BY t.n DESC, t.guild LIMIT ${TOP_N}`;
 
 // The replay (letterfield-timelapse.html). Its index reads the count tables
@@ -292,9 +326,9 @@ export async function readTimelapse(db, cut = FAR, settled = (read) => read()) {
 // their own index, as where each starts and when: the page picks them out of
 // the day's words, which it has already.
 export const TIMELAPSE_GUILD_DAYS_SQL = 'SELECT day, n FROM survey_log_guild_days WHERE guild = ? AND n > 0 ORDER BY day';
-const GUILD_DAY = `SELECT at, key, x, y, d FROM survey_log INDEXED BY survey_log_by_guild WHERE guild = ? AND guild <> '' AND at >= ? AND at < ?`;
-export const TIMELAPSE_GUILD_DAY_SQL = `${GUILD_DAY} ORDER BY at, key LIMIT ?`;
-export const TIMELAPSE_GUILD_DAY_AFTER_SQL = `${GUILD_DAY} AND (at, key) > (?, ?) ORDER BY at, key LIMIT ?`;
+const DAY_COLS = ['at', 'key', 'x', 'y', 'd'];
+export const TIMELAPSE_GUILD_DAY_SQL = `${guildWords(DAY_COLS)} ORDER BY 1, 2 LIMIT ?4`;
+export const TIMELAPSE_GUILD_DAY_AFTER_SQL = `${guildWords(DAY_COLS, ' AND (at, key) > (?4, ?5)', ' AND (e.at, e.key) > (?4, ?5)')} ORDER BY 1, 2 LIMIT ?6`;
 export async function readTimelapseGuild(db, lid) {
   const [days, guild] = await Promise.all([
     db.prepare(TIMELAPSE_GUILD_DAYS_SQL).bind(lid).all(),

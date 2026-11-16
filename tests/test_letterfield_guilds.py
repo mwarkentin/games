@@ -1,9 +1,10 @@
 """Letterfield's guilds, against the survey's fakes.
 
 A guild is started from the Surveyors fold or joined from an invite link
-(?guild=<code>); tests/fake_survey.py's FakeGuilds answers the Worker's guild
-paths, and FakeSurvey.guild() says which mates are online. The real Guild
-object is tested in worker/test/survey-guild.test.js.
+(?guild=<code>), up to five at once; tests/fake_survey.py's FakeGuilds
+answers the Worker's guild paths, and FakeSurvey.guild() says which members
+of a guild are online. The real Guild object, and sectors checking several
+guilds, are tested in worker/test/survey-guild.test.js.
 """
 
 from __future__ import annotations
@@ -31,17 +32,24 @@ def start(
     initials: str = "MLW",
     guild: dict | None = None,
     viewport: dict | None = None,
+    mine: list | None = None,
+    labels: dict | None = None,
 ) -> None:
-    """Opens the game on the survey with our token, signed as `initials` (none if empty), in `guild` if given."""
+    """Opens the game on the survey with our token, signed as `initials` (none if empty). `mine` is
+    the list of guilds we're in, as the game keeps it; `guild` one guild kept as it was when there
+    was one at a time; `labels` our labels for them."""
     page.route(f"{SURVEY}/v1/survey/guilds**", guilds.handle)
     open_game(page, site_url, fake, viewport=viewport)
     page.evaluate(
-        """([t, ini, g]) => {
+        """([t, ini, g, list, labels]) => {
       localStorage.setItem('letterfield.coach.v1', '1'); localStorage.setItem('games.player', t); localStorage.removeItem('letterfield.cam.v1');
       if (ini) localStorage.setItem('games.initials', JSON.stringify(ini)); else localStorage.removeItem('games.initials');
-      if (g) localStorage.setItem('letterfield.guild.v1', JSON.stringify(g)); else localStorage.removeItem('letterfield.guild.v1');
+      for (const k of ['letterfield.guild.v1', 'letterfield.guilds.v1', 'letterfield.guild-labels.v1', 'letterfield.guild-folded.v1']) localStorage.removeItem(k);
+      if (g) localStorage.setItem('letterfield.guild.v1', JSON.stringify(g));
+      if (list) localStorage.setItem('letterfield.guilds.v1', JSON.stringify(list));
+      if (labels) localStorage.setItem('letterfield.guild-labels.v1', JSON.stringify(labels));
     }""",
-        [TOKEN, initials, guild],
+        [TOKEN, initials, guild, mine, labels],
     )
     fake.received.clear()
     page.goto("about:blank")  # the same address again would only jump to its #debug, not load afresh
@@ -56,6 +64,23 @@ def in_cobalt(*members) -> FakeGuilds:
 
 
 MINE = {"code": CODE, "name": NAME, "tag": TAG}
+CODE2, TAG2, NAME2 = "QRT567", "0ddba11a", [3, 2, 11]  # the Amber Lantern Bureau
+WORK = {"code": CODE2, "name": NAME2, "tag": TAG2}
+
+
+def stored(page: Page, key: str = "letterfield.guilds.v1"):
+    return json.loads(page.evaluate(f"localStorage.getItem('{key}')") or "null")
+
+
+def in_both(*members, family=(), work=()) -> FakeGuilds:
+    """Two guilds with us in both: the Cobalt Compass Society (with `family`) and the Amber Lantern Bureau (with `work`);
+    `members` are in both."""
+    return FakeGuilds(
+        {
+            CODE: {"name": NAME, "tag": TAG, "members": [[PID, "MLW", NOW_MS], *members, *family]},
+            CODE2: {"name": NAME2, "tag": TAG2, "members": [[PID, "MLW", NOW_MS], *members, *work]},
+        }
+    )
 
 
 def test_starting_a_guild_names_it_from_the_lists_and_puts_you_in_it(page: Page, site_url, errors):
@@ -82,13 +107,13 @@ def test_starting_a_guild_names_it_from_the_lists_and_puts_you_in_it(page: Page,
     assert (method, body["token"], body["initials"]) == ("POST", TOKEN, "MLW")
     words = page.evaluate("window.__lf.guildWords()")
     assert all(0 <= n < size for n, size in zip(body["name"], words, strict=True))
-    saved = json.loads(page.evaluate("localStorage.getItem('letterfield.guild.v1')"))
+    [saved] = stored(page)
     assert saved["code"] in guilds.guilds and saved["tag"] == guilds.guilds[saved["code"]]["tag"]
     # Every sector is told, so it can check and put the guild on our caret.
     eventually(
         page,
         lambda: (
-            {m["sector"] for m in fake.sent("me") if m.get("guild") == saved["code"]}
+            {m["sector"] for m in fake.sent("me") if m.get("guilds") == [saved["code"]]}
             == {"-1,-1", "-1,0", "0,-1", "0,0"}
         ),
     )
@@ -114,7 +139,25 @@ def test_an_invite_link_asks_once_initials_are_in_then_joins(page: Page, site_ur
     expect(page.locator("#toast b")).to_have_text("Cobalt Compass Society")
     expect(page.locator("#toast span")).to_have_text("You’re in: its members come first under Surveyors")
     assert any(path == f"/{CODE}/join" for _, path, _ in guilds.calls)
-    assert json.loads(page.evaluate("localStorage.getItem('letterfield.guild.v1')")) == MINE
+    assert stored(page) == [MINE]
+    assert errors == []
+
+
+def test_a_guild_kept_from_one_at_a_time_carries_over_and_every_sector_hears_the_list(page: Page, site_url, errors):
+    guilds = in_cobalt([KIM[0], "KIM", NOW_MS])
+    fake = FakeSurvey()
+    start(page, site_url, fake, guilds, guild=MINE)  # kept as it was, under the old key
+    expect(page.locator("html")).to_have_attribute("data-guild", "in")
+    assert stored(page) == [MINE]
+    eventually(
+        page,
+        lambda: {m["sector"] for m in fake.sent("me") if m.get("guilds") == [CODE]} == {"-1,-1", "-1,0", "0,-1", "0,0"},
+    )
+    # The first goes as `guild` too, which a Worker from before lists reads.
+    assert all(m.get("guild") == CODE for m in fake.sent("me") if "guilds" in m)
+    open_you(page)
+    expect(page.locator("#guildCard .guild-name")).to_have_text("Cobalt Compass Society")
+    expect(page.get_by_role("button", name="Start another guild")).to_contain_text("You’re in 1 of 5")
     assert errors == []
 
 
@@ -170,63 +213,121 @@ def test_an_invite_can_wait_or_be_no_good(page: Page, site_url, errors):
     assert errors == [] or all("404" in e for e in errors)
 
 
-def test_an_invite_while_in_another_guild_warns_before_switching(page: Page, site_url, errors):
-    other, other_name = "QRT567", [3, 1, 2]
-    guilds = in_cobalt()  # just us in it
-    guilds.guilds[other] = {"name": other_name, "tag": "0ddba11a", "members": [[KIM[0], "KIM", NOW_MS]]}
-    start(page, site_url, FakeSurvey(), guilds, query=f"&guild={other}", guild=MINE)
+def test_an_invite_while_in_a_guild_joins_a_second_and_keeps_the_first(page: Page, site_url, errors):
+    guilds = in_cobalt()
+    guilds.guilds[CODE2] = {"name": NAME2, "tag": TAG2, "members": [[KIM[0], "KIM", NOW_MS]]}
+    fake = FakeSurvey()
+    start(page, site_url, fake, guilds, query=f"&guild={CODE2}", mine=[MINE])
     invite = page.locator("#guildInvite")
-    expect(invite).to_be_visible()
-    # Both guilds by name, the one you're in first, and a warning that says what joining costs.
-    expect(invite.locator(".eyebrow")).to_have_text("Switch guilds?")
-    expect(invite.locator(".guild-name").first).to_have_text("Cobalt Compass Society")
-    theirs = invite.locator("#guildInviteName").text_content()
-    expect(invite.locator(".guild-warn")).to_contain_text(
-        f"Joining the {theirs} takes you out of the Cobalt Compass Society, and you’d need a new invite to go back."
+    expect(invite.locator(".eyebrow")).to_have_text("Invited to a guild")
+    expect(invite.locator("#guildInviteName")).to_have_text("Amber Lantern Bureau")
+    expect(invite).to_contain_text(
+        "1 member so far. You’ll be in 2 guilds: the Cobalt Compass Society stays as it is, and each finds its own members on the map."
     )
-    expect(invite.locator(".guild-warn")).to_contain_text("You’re its only member, so it ends when you leave.")
-    expect(invite).to_contain_text("1 member so far")
-    invite.get_by_role("button", name="Stay").click()
-    expect(invite).to_be_hidden()
+    expect(invite.locator(".guild-warn")).to_have_count(0)
+    invite.get_by_role("button", name="Join").click()
     expect(page.locator("html")).to_have_attribute("data-guild", "in")
-    assert json.loads(page.evaluate("localStorage.getItem('letterfield.guild.v1')")) == MINE
-    assert all(path != f"/{other}/join" for _, path, _ in guilds.calls)
-
-    page.goto("about:blank")
-    page.goto(f"{site_url}/letterfield?survey={SURVEY}&guild={other}#debug")
-    invite.get_by_role("button", name="Leave and join").click()
-    expect(page.locator("html")).to_have_attribute("data-guild", "in")
-    expect(page.locator("#toast span")).to_have_text("You’re in, and out of the Cobalt Compass Society")
-    eventually(page, lambda: any(path == f"/{CODE}/leave" for _, path, _ in guilds.calls))
-    assert json.loads(page.evaluate("localStorage.getItem('letterfield.guild.v1')"))["code"] == other
+    expect(page.locator("#toast span")).to_have_text(
+        "You’re in: its members get a heading of their own under Surveyors"
+    )
+    assert stored(page) == [MINE, WORK]
+    assert all(not path.endswith("/leave") for _, path, _ in guilds.calls)
+    # Every sector hears both, in our order.
+    eventually(
+        page,
+        lambda: (
+            {m["sector"] for m in fake.sent("me") if m.get("guilds") == [CODE, CODE2]}
+            == {"-1,-1", "-1,0", "0,-1", "0,0"}
+        ),
+    )
+    open_you(page)
+    expect(page.locator("#guildCard .guild-name")).to_have_text(["Cobalt Compass Society", "Amber Lantern Bureau"])
+    expect(page.get_by_role("button", name="Start another guild")).to_contain_text("You’re in 2 of 5")
     assert errors == []
 
 
-def test_the_switch_card_lines_each_count_up_under_its_guilds_name(page: Page, site_url, errors):
-    """The member counts in the "Switch guilds?" card sat flush left under each guild's dot,
-    not under its name as on your page: the card's rule for its lines outranked their indent."""
-    other = "QRT567"
-    guilds = in_cobalt([KIM[0], "KIM", NOW_MS])
-    guilds.guilds[other] = {"name": [8, 7, 7], "tag": "0ddba11a", "members": [[ZED[0], "ZED", NOW_MS]]}
+FIVE = [
+    {"code": CODE, "name": NAME, "tag": TAG},
+    {"code": CODE2, "name": NAME2, "tag": TAG2},
+    {"code": "BCD234", "name": [0, 3, 3], "tag": "0a0a0a0a"},
+    {"code": "BCD235", "name": [8, 11, 4], "tag": "0b0b0b0b"},
+    {"code": "BCD236", "name": [13, 14, 5], "tag": "0c0c0c0c"},
+]
+
+
+def five_guilds() -> FakeGuilds:
+    g = FakeGuilds({x["code"]: {"name": x["name"], "tag": x["tag"], "members": [[PID, "MLW", NOW_MS]]} for x in FIVE})
+    g.guilds[CODE2]["members"].append([KIM[0], "KIM", NOW_MS])
+    g.guilds["PQR789"] = {
+        "name": [15, 6, 4],
+        "tag": "0d0d0d0d",
+        "members": [[ZED[0], "ZED", NOW_MS]],
+    }  # the Rose Beacon Club
+    return g
+
+
+def test_at_five_guilds_an_invite_asks_which_to_leave_naming_them(page: Page, site_url, errors):
+    guilds = five_guilds()
     start(
         page,
         site_url,
         FakeSurvey(),
         guilds,
-        query=f"&guild={other}",
-        guild=MINE,
-        viewport={"width": 375, "height": 740},
+        query="&guild=PQR789",
+        mine=FIVE,
+        labels={CODE: "Family", CODE2: "Work"},
+        viewport={"width": 375, "height": 900},
     )
     invite = page.locator("#guildInvite")
-    expect(invite.locator(".eyebrow")).to_have_text("Switch guilds?")
-    expect(invite.locator(".guild-meta")).to_have_text(["2 members", "1 member so far"])
-    invite.evaluate("e => Promise.all(e.getAnimations({ subtree: true }).map(a => a.finished))")
-    lines = invite.evaluate("""e => [...e.querySelectorAll('.guild-meta')].map(m => ({
-      meta: m.getBoundingClientRect().left, name: m.previousElementSibling.querySelector('span').getBoundingClientRect().left }))""")
-    assert all(abs(m["meta"] - m["name"]) <= 1 for m in lines), lines
+    expect(invite.locator(".eyebrow")).to_have_text("Choose a guild to leave")
+    expect(invite.locator("#guildInviteName")).to_have_text("Rose Beacon Club")
+    expect(invite).to_contain_text("You’re in 5 guilds, the most at once. Leave one to join this one:")
+    # Each of ours by name, with our label for it and how many members it has.
+    options = invite.locator(".guild-opt")
+    expect(options.locator(".guild-name")).to_have_text(
+        [
+            "Cobalt Compass Society",
+            "Amber Lantern Bureau",
+            "Crimson Quill Circle",
+            "Jade Waypoint Club",
+            "Violet Horizon Expedition",
+        ]
+    )
+    expect(options.nth(0).locator(".guild-chip")).to_have_text("Family")
+    expect(options.nth(1)).to_contain_text("2 members")
+    join = invite.get_by_role("button", name="Leave and join")
+    expect(join).to_be_disabled()
+    # Choosing one says what leaving it costs; the only member's guild would end.
+    invite.get_by_role("radio", name="Jade Waypoint Club").check()
+    expect(invite.locator(".guild-warn")).to_have_text(
+        "You’d need a new invite to go back to the Jade Waypoint Club. You’re its only member, so it ends when you leave."
+    )
+    expect(invite.get_by_role("radio", name="Jade Waypoint Club")).to_be_focused()
+    invite.get_by_role("radio", name="Amber Lantern Bureau").check()
+    expect(invite.locator(".guild-warn")).to_have_text(
+        "You’d need a new invite to go back to the Amber Lantern Bureau."
+    )
     box = invite.bounding_box()
     assert box["x"] >= 0 and box["x"] + box["width"] <= 375, box
     assert page.evaluate("document.scrollingElement.scrollWidth") <= 375
+    join.click()
+    expect(page.locator("html")).to_have_attribute("data-guild", "in")
+    expect(page.locator("#toast span")).to_have_text("You’re in, and out of the Amber Lantern Bureau")
+    eventually(page, lambda: any(path == f"/{CODE2}/leave" for _, path, _ in guilds.calls))
+    assert [g["code"] for g in stored(page)] == [CODE, "BCD234", "BCD235", "BCD236", "PQR789"]
+    # The label for the guild we left goes with it.
+    assert stored(page, "letterfield.guild-labels.v1") == {CODE: "Family"}
+    assert errors == []
+
+
+def test_at_five_guilds_starting_another_waits_for_one_to_go(page: Page, site_url, errors):
+    start(page, site_url, FakeSurvey(), five_guilds(), mine=FIVE)
+    open_you(page)
+    expect(page.locator("#guildCard .guild-name")).to_have_count(5)
+    expect(page.locator("#guildCard")).to_contain_text(
+        "You’re in 5 guilds, the most at once. To join another, leave one."
+    )
+    expect(page.get_by_role("button", name="Start another guild")).to_have_count(0)
     assert errors == []
 
 
@@ -312,8 +413,7 @@ def test_your_page_links_to_the_guilds_own_page_in_the_survey_log(page: Page, si
         "Words you chart while in a guild count for it in the survey log"
     )
     expect(page.locator("#guildCard")).not_to_contain_text("off the list")
-    stored = json.loads(page.evaluate("localStorage.getItem('letterfield.guild.v1')"))
-    assert stored == {**MINE, "lid": lid}
+    assert stored(page) == [{**MINE, "lid": lid}]
     assert errors == []
 
 
@@ -322,7 +422,7 @@ def test_leaving_takes_you_out_and_tells_every_sector(page: Page, site_url, erro
     fake = FakeSurvey(surveyors=[KIM])
     start(page, site_url, fake, guilds, guild=MINE)
     open_you(page)
-    eventually(page, lambda: len([m for m in fake.sent("me") if m.get("guild") == CODE]) == 4)
+    eventually(page, lambda: len([m for m in fake.sent("me") if m.get("guilds") == [CODE]]) == 4)
     card = page.locator("#guildCard")
     card.get_by_role("button", name="Leave").click()
     expect(page.locator("html")).to_have_attribute("data-guild", "confirming")
@@ -339,9 +439,9 @@ def test_leaving_takes_you_out_and_tells_every_sector(page: Page, site_url, erro
     card.get_by_role("button", name="Leave", exact=True).click()
     expect(page.locator("html")).to_have_attribute("data-guild", "out")
     assert any(path == f"/{CODE}/leave" for _, path, _ in guilds.calls)
-    assert page.evaluate("localStorage.getItem('letterfield.guild.v1')") is None
+    assert stored(page) == [] and stored(page, "letterfield.guild.v1") is None
     expect(page.locator(".who-head")).to_have_count(0)
-    eventually(page, lambda: all("guild" not in m for m in list({m["sector"]: m for m in fake.sent("me")}.values())))
+    eventually(page, lambda: all("guilds" not in m for m in list({m["sector"]: m for m in fake.sent("me")}.values())))
     assert errors == []
 
 
@@ -350,7 +450,7 @@ def test_a_guild_that_no_longer_has_you_lets_you_go(page: Page, site_url, errors
     open_people(page)
     expect(page.locator("html")).to_have_attribute("data-guild", "out")
     expect(page.locator("#toast span")).to_have_text("You’re not in this guild any more")
-    assert page.evaluate("localStorage.getItem('letterfield.guild.v1')") is None
+    assert page.evaluate("localStorage.getItem('letterfield.guild.v1')") is None and stored(page) == []
     assert errors == [] or all("404" in e for e in errors)
 
 
@@ -408,7 +508,7 @@ def test_invite_from_the_lists_heading_and_sign_first_for_an_invite(page: Page, 
     page.goto(f"{site_url}/letterfield?survey={SURVEY}&guild=PQR789#debug")
     invite = page.locator("#guildInvite")
     expect(invite.locator("#guildInviteName")).to_have_text("Jade Theodolite Fellowship")
-    expect(invite.locator(".eyebrow")).to_have_text("Switch guilds?")  # we're in the Cobalt Compass Society
+    expect(invite).to_contain_text("You’ll be in 2 guilds")  # we're in the Cobalt Compass Society
     page.evaluate("localStorage.removeItem('games.initials')")
     invite.get_by_role("button", name="Join").click()
     expect(page.locator("#people")).to_be_visible()
@@ -423,3 +523,159 @@ def test_invite_from_the_lists_heading_and_sign_first_for_an_invite(page: Page, 
     expect(page.locator("html")).to_have_attribute("data-guild", "in")
     assert any(path == "/PQR789/join" for _, path, _ in guilds.calls)
     assert errors == []
+
+
+BEA = ["e7f1a2b3c4d5", "BEA", 3, -2, 120, 0]
+
+
+def test_each_guild_has_a_heading_with_a_mate_in_both_under_each_and_folds_away(page: Page, site_url, errors):
+    guilds = in_both([LOU[0], "LOU", NOW_MS], family=[[KIM[0], "KIM", NOW_MS]], work=[[ZED[0], "ZED", NOW_MS]])
+    start(page, site_url, FakeSurvey(surveyors=[KIM, ZED, LOU, BEA]), guilds, mine=[MINE, WORK])
+    open_list(page)
+    heads = page.locator(".who-guild")
+    expect(heads.locator(".who-head-name")).to_have_text(["Cobalt Compass Society", "Amber Lantern Bureau"])
+    expect(heads.locator(".who-head-n")).to_have_text(["2 online", "2 online"])
+    # LOU is in both, so under both; BEA, in neither, under everyone else.
+    expect(page.locator(".who-ini")).to_have_text(["KIM", "LOU", "ZED", "LOU", "BEA"])
+    expect(page.locator(".who-head").last).to_have_text("Everyone else")
+    expect(page.get_by_role("button", name="Invite someone to the Amber Lantern Bureau")).to_be_visible()
+    # Each heading's dot on its own members.
+    hues = page.locator(".who-row .who-av .guild-dot").evaluate_all(
+        "ds => ds.map(d => d.style.getPropertyValue('--gh'))"
+    )
+    assert hues == ["220", "220", "38", "38"], hues
+    # Opening LOU's emotes under one heading opens them there only.
+    page.get_by_role("button", name="More for LOU").nth(1).click()
+    expect(page.locator(".who-emotes")).to_have_count(1)
+    expect(page.locator(f'.who-row[data-sec="{CODE2}:"] .who-emotes')).to_have_count(1)
+    expect(page.get_by_role("button", name="More for LOU").nth(1)).to_have_attribute("aria-expanded", "true")
+    page.keyboard.press("Escape")
+    expect(page.locator(".who-emotes")).to_have_count(0)
+    expect(page.get_by_role("button", name="More for LOU").nth(1)).to_be_focused()
+    # A heading folds away its rows, keeps its count, and stays folded on this device.
+    fold = page.get_by_role("button", name="Fold away the Amber Lantern Bureau")
+    fold.click()
+    expect(page.locator(".who-ini")).to_have_text(["KIM", "LOU", "BEA"])
+    expect(heads.locator(".who-head-n")).to_have_text(["2 online", "2 online"])
+    expect(page.get_by_role("button", name="Show the Amber Lantern Bureau")).to_have_attribute("aria-expanded", "false")
+    assert stored(page, "letterfield.guild-folded.v1") == [CODE2]
+    page.get_by_role("button", name="Show the Amber Lantern Bureau").click()
+    expect(page.locator(".who-ini")).to_have_text(["KIM", "LOU", "ZED", "LOU", "BEA"])
+    assert errors == []
+
+
+def test_a_mates_caret_splits_between_the_guilds_you_share_and_its_card_names_them(page: Page, site_url, errors):
+    guilds = in_both([LOU[0], "LOU", NOW_MS], family=[[KIM[0], "KIM", NOW_MS]], work=[[ZED[0], "ZED", NOW_MS]])
+    presence = [
+        [LOU[0], "LOU", 9.5, 7.0, [TAG, TAG2]],
+        [ZED[0], "ZED", 15.5, 3.0, [TAG2, "feedface"]],
+        [KIM[0], "KIM", 4.5, 11.0, TAG],
+    ]
+    start(
+        page,
+        site_url,
+        FakeSurvey(surveyors=[KIM, ZED, LOU], presence=presence),
+        guilds,
+        mine=[MINE, WORK],
+        labels={CODE: "Family", CODE2: "Work"},
+    )
+    for pid in (LOU[0], ZED[0], KIM[0]):
+        page.wait_for_function(f"window.__lf.carets().includes('{pid}')")
+    page.wait_for_timeout(300)
+    cards = {}
+    for pid, ini in ((LOU[0], "LOU"), (ZED[0], "ZED"), (KIM[0], "KIM")):
+        at = page.evaluate(f"window.__lf.caretXY('{pid}')")
+        page.mouse.move(at["x"], at["y"])
+        expect(page.locator("#peek b")).to_have_text(ini)
+        cards[ini] = page.locator("#peek span").text_content()
+    # Labels name them, in our order; another guild's tag means nothing here; an older sector's single tag still counts.
+    assert cards["LOU"].startswith("Family · Work · surveying here"), cards
+    assert cards["ZED"].startswith("Work · surveying here"), cards
+    assert cards["KIM"].startswith("Family · surveying here"), cards
+    # LOU's dot: our first guild's colour on the right half, the second's on the left.
+    page.mouse.move(5, 400)
+    rgb = page.evaluate(
+        """pid => { const c = document.querySelector('canvas'), r = c.getBoundingClientRect(), dpr = c.width / r.width;
+      const at = window.__lf.caretXY(pid), cs = window.__lf.cam.cs, h = cs * .66, rad = Math.min(4, Math.max(2.5, cs * .09));
+      const y = at.y - h / 2 - rad - 1, px = (x) => Array.from(c.getContext('2d').getImageData(Math.round((x - r.left) * dpr), Math.round((y - r.top) * dpr), 1, 1).data.slice(0, 3));
+      return [px(at.x + rad * .55), px(at.x - rad * .55)]; }""",
+        LOU[0],
+    )
+    (rr, rg, rb), (lr, lg, lb) = rgb
+    assert rb > rr and lr > lb, rgb  # cobalt (blue) on the right, amber on the left
+    assert errors == []
+
+
+def test_a_mate_coming_online_in_two_shared_guilds_gets_one_note(page: Page, site_url, errors):
+    guilds = in_both([LOU[0], "LOU", NOW_MS], family=[[KIM[0], "KIM", NOW_MS]], work=[[ZED[0], "ZED", NOW_MS]])
+    fake = FakeSurvey(surveyors=[KIM, ZED, LOU])
+    start(page, site_url, fake, guilds, mine=[MINE, WORK], labels={CODE2: "Work"})
+    page.evaluate("""() => { window.__notes = [];
+      new MutationObserver(recs => { for (const r of recs) for (const n of r.addedNodes) {
+        const bs = n.nodeName === 'B' ? [n] : n.querySelectorAll ? [...n.querySelectorAll('b')] : [];
+        for (const b of bs) if (/came online/.test(b.textContent)) window.__notes.push([b.textContent, b.parentElement.querySelector('span')?.textContent]);
+      } }).observe(document.getElementById('toast'), { subtree: true, childList: true }); }""")
+    # Each guild's first word just says who's here.
+    fake.guild("0,0", TAG, [[KIM[0], "KIM", 0, 0, 0]])
+    fake.guild("0,0", TAG2, [])
+    page.wait_for_function(f"window.__lf.mates().includes('{KIM[0]}')")
+    # LOU arrives, and both guilds say so: one note.
+    fake.guild("0,0", TAG, [[KIM[0], "KIM", 0, 0, 0], [LOU[0], "LOU", 1, 0, 0]])
+    page.wait_for_function(f"window.__lf.matesOf('{TAG}').includes('{LOU[0]}')")
+    fake.guild("0,0", TAG2, [[LOU[0], "LOU", 1, 0, 0]])
+    page.wait_for_function(f"window.__lf.matesOf('{TAG2}').includes('{LOU[0]}')")
+    # ZED, in Work only, gets a note of their own, which names the guild by our label.
+    fake.guild("0,0", TAG2, [[LOU[0], "LOU", 1, 0, 0], [ZED[0], "ZED", 1, 0, 0]])
+    page.wait_for_function(f"window.__lf.matesOf('{TAG2}').includes('{ZED[0]}')")
+    notes = page.evaluate("window.__notes")
+    assert [n[0] for n in notes] == ["LOU came online", "ZED came online"], notes
+    assert notes[0][1].startswith("Cobalt Compass Society · ") and notes[1][1].startswith("Work · "), notes
+    assert errors == []
+
+
+def test_a_label_of_your_own_names_a_guild_on_the_list_and_stays_as_text(page: Page, site_url, errors):
+    guilds = in_both(work=[[ZED[0], "ZED", NOW_MS]])
+    start(
+        page, site_url, FakeSurvey(surveyors=[ZED]), guilds, mine=[MINE, WORK], viewport={"width": 375, "height": 900}
+    )
+    open_you(page)
+    field = page.get_by_role("textbox", name="Your label for the Amber Lantern Bureau")
+    assert field.evaluate("e => parseFloat(getComputedStyle(e).fontSize)") >= 16
+    field.fill("  Work   friends  ")
+    field.press("Enter")
+    expect(field).to_have_value("Work friends")
+    assert stored(page, "letterfield.guild-labels.v1") == {CODE2: "Work friends"}
+    # It leads that guild's heading, with the guild's name under it.
+    page.locator("#youBack").click()
+    head = page.locator(f'.who-guild[data-code="{CODE2}"] .who-head-name')
+    expect(head).to_have_text("Work friendsAmber Lantern Bureau")
+    expect(head.locator("small")).to_have_text("Amber Lantern Bureau")
+    # Whatever is typed stays text, and a label is at most 24 characters.
+    open_you(page)
+    field.fill("<b>Bold</b> & <i>more</i> and then some")
+    field.press("Tab")
+    expect(field).to_have_value("<b>Bold</b> & <i>more</i")
+    page.locator("#youBack").click()
+    expect(head).to_have_text("<b>Bold</b> & <i>more</iAmber Lantern Bureau")
+    expect(head.locator("b, i")).to_have_count(0)
+    # Emptied, it's gone, and the name leads again.
+    open_you(page)
+    field.fill("")
+    field.press("Enter")
+    assert stored(page, "letterfield.guild-labels.v1") == {}
+    assert page.evaluate("document.scrollingElement.scrollWidth") <= 375
+    assert errors == []
+
+
+def test_a_guild_that_let_you_go_elsewhere_goes_and_the_others_stay(page: Page, site_url, errors):
+    guilds = in_both()
+    del guilds.guilds[CODE]  # left on another device, which was its last member
+    start(page, site_url, FakeSurvey(), guilds, mine=[MINE, WORK], labels={CODE: "Family", CODE2: "Work"})
+    open_people(page)
+    expect(page.locator("#toast span")).to_have_text("You’re not in this guild any more")
+    expect(page.locator("#toast b")).to_have_text("Cobalt Compass Society")
+    expect(page.locator("html")).to_have_attribute("data-guild", "in")
+    assert stored(page) == [WORK]
+    assert stored(page, "letterfield.guild-labels.v1") == {CODE2: "Work"}
+    expect(page.locator(".who-guild .who-head-name")).to_have_text(["WorkAmber Lantern Bureau"])
+    assert errors == [] or all("404" in e for e in errors)
