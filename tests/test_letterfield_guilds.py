@@ -320,6 +320,35 @@ def test_at_five_guilds_an_invite_asks_which_to_leave_naming_them(page: Page, si
     assert errors == []
 
 
+def test_at_five_guilds_the_card_asking_which_to_leave_scrolls_on_a_short_phone(page: Page, site_url, errors):
+    start(
+        page,
+        site_url,
+        FakeSurvey(),
+        five_guilds(),
+        query="&guild=PQR789",
+        mine=FIVE,
+        labels={x["code"]: f"Label {i}" for i, x in enumerate(FIVE)},
+        viewport={"width": 375, "height": 667},
+    )
+    invite = page.locator("#guildInvite")
+    invite.get_by_role("radio", name="Violet Horizon Expedition").check()
+    expect(invite.locator(".guild-warn")).to_contain_text("it ends when you leave")
+    # Five guilds, each with a label, and the warning: taller than the phone, so the card stops
+    # short of the screen's foot and scrolls, rather than leaving its buttons off the bottom.
+    box = invite.bounding_box()
+    assert box["y"] + box["height"] <= 667, box
+    assert invite.evaluate("e => e.scrollHeight > e.clientHeight")
+    join = invite.get_by_role("button", name="Leave and join")
+    page.mouse.move(box["x"] + box["width"] / 2, box["y"] + box["height"] / 2)
+    page.mouse.wheel(0, 2000)  # the card scrolls, not the map under it
+    page.wait_for_function("document.querySelector('#guildInvite').scrollTop > 0")
+    expect(join).to_be_in_viewport()
+    join.click()
+    expect(page.locator("html")).to_have_attribute("data-guild", "in")
+    assert errors == []
+
+
 def test_at_five_guilds_starting_another_waits_for_one_to_go(page: Page, site_url, errors):
     start(page, site_url, FakeSurvey(), five_guilds(), mine=FIVE)
     open_you(page)

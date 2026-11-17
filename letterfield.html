@@ -529,7 +529,8 @@ html[data-who="loading"] .who-status{animation:blink 1s infinite alternate}
 .survey-check.asking p{display:block}
 
 /* Coach + toast */
-.coach{position:fixed;top:calc(var(--top) + 76px);left:var(--gl);width:330px;max-width:calc(100% - 32px);padding:14px 14px 12px}
+.coach{--coach-top:calc(var(--top) + 76px);position:fixed;top:var(--coach-top);left:var(--gl);width:330px;max-width:calc(100% - 32px);padding:14px 14px 12px;
+  max-height:calc(100vh - var(--coach-top) - var(--bottom) - 28px);max-height:calc(100dvh - var(--coach-top) - var(--bottom) - 28px);overflow-y:auto;overscroll-behavior:contain}  /* a tall card (five guilds to choose from) scrolls rather than running off a phone; 28px: its padding and border */
 .coach p{margin:0 0 10px;font-size:13.5px;line-height:1.5}
 .coach strong{font-weight:600}
 .coach-row{display:flex;justify-content:space-between;align-items:center;gap:10px}
@@ -627,7 +628,7 @@ body.docked .nova{left:calc((100% - var(--notes-w)) / 2)}
   .legend-head{padding:0 var(--gr) 0 calc(var(--gl) - 2px)}
   .chips{flex:none;padding:4px var(--gr) 4px var(--gl)}
   .notes,.people{top:auto;left:0;width:100%;height:min(80%, 680px);border-left:0;border-top:1px solid var(--rule);border-radius:14px 14px 0 0;transform:translateY(100%);padding-left:env(safe-area-inset-left, 0px)}
-  .coach{top:calc(var(--top) + 68px);right:var(--gr);width:auto}
+  .coach{--coach-top:calc(var(--top) + 68px);right:var(--gr);width:auto}
 }
 @media (prefers-reduced-motion: reduce){
   .notes,.people,.toast,.bar,.tool-stack,.tool-stack > *,.tools-btn,.tools-btn svg circle{transition:none!important}
