@@ -1,4 +1,4 @@
-## 2026-11-16
+## 2026-11-17
 
 - You can be in up to five guilds at once, say one for family and one for work. An invite simply joins, and with five already it asks which one to leave, naming them all.
 - Give each guild a label of your own, like “Work”, on your page in the Surveyors drawer. Only you see it, on your linked devices too, and it heads that guild on the surveyor list.
