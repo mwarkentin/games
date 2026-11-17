@@ -15,7 +15,7 @@ from playwright.sync_api import Page, expect
 
 from fake_leaderboard import Held
 from fake_survey import FakeGuilds, FakeLinks, FakePlayers, FakeSurvey, reply
-from test_letterfield_guilds import MINE
+from test_letterfield_guilds import CODE2, MINE, WORK
 from test_letterfield_guilds import start as start_guilds
 from test_letterfield_survey import SURVEY, eventually, known_words, open_you
 from test_letterfield_surveyors import KIM, PID, TOKEN
@@ -88,7 +88,15 @@ def test_finds_and_settings_go_both_ways(page: Page, site_url, errors):
     eventually(page, lambda: len(players.sent()) >= 1)
     first = players.sent()[0]
     assert first["since"] == 0 and first["settingsAt"] == 1
-    assert first["settings"] == {"initials": "MLW", "guild": None, "muted": [], "mutedAs": {}, "emotes": True}
+    assert first["settings"] == {
+        "initials": "MLW",
+        "guilds": [],
+        "guild": None,
+        "labels": {},
+        "muted": [],
+        "mutedAs": {},
+        "emotes": True,
+    }
     page.wait_for_function(f"window.__lf.found.size === {len(mine) + 1}")
     assert noted(page) == sorted([f["w"] for f in mine] + [theirs["w"]])
     assert page.evaluate(f"[...window.__lf.found.values()].find(e => e.w === '{theirs['w']}').f") == 1
@@ -100,16 +108,26 @@ def test_finds_and_settings_go_both_ways(page: Page, site_url, errors):
     # A change here goes up soon after...
     page.locator("#whoEmotes").evaluate("e => e.click()")
     eventually(page, lambda: players.players[PID]["settings"]["emotes"] is False, timeout_ms=8000)
-    # ...and one there comes down: new initials, a mute and a guild.
+    # ...and one there comes down: new initials, a mute, and two guilds with a label of ours for one.
     at = page.evaluate("Date.now()")  # just after our own change, so an echo of it would be later still
     players.add(
         PID,
-        settings={"initials": "ZED", "guild": MINE, "muted": [KIM[0]], "mutedAs": {KIM[0]: ["KIM", 9]}, "emotes": True},
+        settings={
+            "initials": "ZED",
+            "guilds": [MINE, WORK],
+            "guild": MINE,
+            "labels": {CODE2: "Work"},
+            "muted": [KIM[0]],
+            "mutedAs": {KIM[0]: ["KIM", 9]},
+            "emotes": True,
+        },
         settings_at=at,
     )
     page.evaluate("window.__lf.syncNow()")
     expect(page.locator("#surveyMeName")).to_have_text("ZED")
     expect(page.locator("html")).to_have_attribute("data-guild", "in")
+    assert json.loads(page.evaluate("localStorage.getItem('letterfield.guilds.v1')")) == [MINE, WORK]
+    assert page.evaluate("window.__lf.labels()") == {CODE2: "Work"}
     assert page.evaluate("window.__lf.muted()") == [KIM[0]]
     # Who they muted comes with it, for the Muted list here.
     assert json.loads(page.evaluate("localStorage.getItem('letterfield.mutedAs.v1')")) == {KIM[0]: ["KIM", 9]}

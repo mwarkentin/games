@@ -7,7 +7,7 @@ import { DatabaseSync } from 'node:sqlite';
 import { beforeEach, describe, test } from 'node:test';
 
 import worker from '../src/index.js';
-import { FINDS_MAX, KEEP_MS, LINK_CODE, LINK_MS, Player, RECOVERY_CODE, SYNC_GAP_MS, cleanCarry, cleanFind, recoveryKeys, routeLinks, routePlayers, routeRecovery } from '../src/players.js';
+import { FINDS_MAX, KEEP_MS, LINK_CODE, LINK_MS, Player, RECOVERY_CODE, SYNC_GAP_MS, LABEL_MAX, cleanCarry, cleanFind, cleanLabel, recoveryKeys, routeLinks, routePlayers, routeRecovery } from '../src/players.js';
 import { playerId } from '../src/survey-social.js';
 
 const ORIGIN = 'https://games.michaelwarkentin.com';
@@ -62,7 +62,11 @@ describe('linking a device', () => {
     }), env, now);
     return [res.status, await res.json()];
   };
-  const carry = { initials: 'MLW', guild: { code: 'KMN234', name: [11, 0, 0], tag: 'c0ffee42' }, muted: ['3f9a01c27be4'], mutedAs: { '3f9a01c27be4': ['KIM', NOW - 60000] }, emotes: true };
+  const COBALT = { code: 'KMN234', name: [11, 0, 0], tag: 'c0ffee42' }, AMBER = { code: 'QRT567', name: [3, 2, 11], tag: '0ddba11a' };
+  const carry = {
+    initials: 'MLW', guilds: [COBALT, AMBER], guild: COBALT, labels: { KMN234: 'Family', QRT567: 'Work' },
+    muted: ['3f9a01c27be4'], mutedAs: { '3f9a01c27be4': ['KIM', NOW - 60000] }, emotes: true,
+  };
 
   test('hands the token and settings to whoever redeems the code, once', async () => {
     const [status, made] = await call('/v1/link', { token: token(1), carry });
@@ -110,17 +114,35 @@ describe('linking a device', () => {
     assert.equal(env.DB.raw.prepare('SELECT COUNT(*) AS n FROM links').get().n, 1);
   });
 
+  test("carries a list of guilds, an older game's one guild as a list of one, and the player's labels for them", async () => {
+    // An older game sends one guild, and reads the first of a list as `guild`.
+    assert.deepEqual(cleanCarry({ guild: COBALT }), { initials: '', guilds: [COBALT], guild: COBALT, labels: {}, muted: [], mutedAs: {}, emotes: true });
+    assert.deepEqual(cleanCarry({ guilds: [AMBER, COBALT] }).guild, AMBER);
+    // Up to five, each once; a sixth is too many.
+    const five = Array.from({ length: 5 }, (_, i) => ({ code: `KMN23${i + 2}`, name: [i, 0, 0], tag: `c0ffee4${i}` }));
+    assert.equal(cleanCarry({ guilds: five }).guilds.length, 5);
+    assert.equal(cleanCarry({ guilds: [...five, AMBER] }), null);
+    assert.deepEqual(cleanCarry({ guilds: [COBALT, COBALT] }).guilds, [COBALT]);
+    // Labels: only for guilds on the list, tidied, at most LABEL_MAX characters; an empty one is none.
+    const labels = { KMN234: '  Fam\u0000ily\n  & friends ', QRT567: '', ABCDEF: 'Not mine', QRT568: 'x' };
+    assert.deepEqual(cleanCarry({ guilds: [COBALT, AMBER], labels }).labels, { KMN234: 'Family & friends' });
+    assert.equal(cleanLabel('🧭'.repeat(30)), '🧭'.repeat(LABEL_MAX));
+    assert.equal(cleanLabel(42), '');
+    for (const bad of [{ labels: ['Work'] }, { labels: Object.fromEntries(Array.from({ length: 21 }, (_, i) => [`K${i}`, 'x'])) }, { guilds: COBALT }])
+      assert.equal(cleanCarry(bad), null, JSON.stringify(bad));
+  });
+
   test('takes only a real token and settings it knows', async () => {
     assert.equal((await call('/v1/link', { token: 'nope', carry }))[0], 400);
     const bads = [{ initials: 'mlw' }, { guild: { code: 'KMN234', name: ['x'], tag: 'c0ffee42' } }, { muted: ['nope'] }, { muted: Array(201).fill('3f9a01c27be4') }, { emotes: 'yes' },
       { mutedAs: ['KIM'] }, { mutedAs: { nope: ['KIM', 1] } }, { mutedAs: { '3f9a01c27be4': ['kim', 1] } }, { mutedAs: { '3f9a01c27be4': ['KIM', -1] } }, { mutedAs: { '3f9a01c27be4': 'KIM' } }];
     for (const bad of bads) assert.equal((await call('/v1/link', { token: token(1), carry: bad }))[0], 400, JSON.stringify(bad));
-    assert.deepEqual(cleanCarry({ initials: 'ABC', extra: 'dropped' }), { initials: 'ABC', guild: null, muted: [], mutedAs: {}, emotes: true });
+    assert.deepEqual(cleanCarry({ initials: 'ABC', extra: 'dropped' }), { initials: 'ABC', guilds: [], guild: null, labels: {}, muted: [], mutedAs: {}, emotes: true });
     // An older game's `listed`, from when surveyors could keep off the list, means nothing now; who
     // someone muted was is kept only while they're muted.
     const pids = ['3f9a01c27be4', '8d22e5a90f13'];
     assert.deepEqual(cleanCarry({ muted: [pids[0]], mutedAs: { [pids[0]]: ['KIM', 5], [pids[1]]: ['', 6] }, listed: false }),
-      { initials: '', guild: null, muted: [pids[0]], mutedAs: { [pids[0]]: ['KIM', 5] }, emotes: true });
+      { initials: '', guilds: [], guild: null, labels: {}, muted: [pids[0]], mutedAs: { [pids[0]]: ['KIM', 5] }, emotes: true });
     // The most a game sends, MUTED_MAX mutes and who each was, fits in a link.
     const many = Array.from({ length: 200 }, (_, i) => (0x100000000000 + i).toString(16));
     const full = { ...carry, muted: many, mutedAs: Object.fromEntries(many.map((p) => [p, ['KIM', NOW]])) };
@@ -176,7 +198,7 @@ describe('syncing linked devices', () => {
   test("carries one device's finds, supernovas and settings to another, and only what is new", async () => {
     await start(1);
     // Mutes go with who each muted player was, for the other device's Muted list.
-    const settings = { initials: 'MLW', guild: null, muted: ['3f9a01c27be4'], mutedAs: { '3f9a01c27be4': ['KIM', 4] }, emotes: true };
+    const settings = { initials: 'MLW', guilds: [], guild: null, labels: {}, muted: ['3f9a01c27be4'], mutedAs: { '3f9a01c27be4': ['KIM', 4] }, emotes: true };
     const [, a] = await sync(1, { epoch: '', since: 0, finds: [find('COMET', 1), find('ORBIT', 2)], novas: [nova(1)], settings, settingsAt: 5 });
     assert.deepEqual([a.finds, a.novas, a.at], [[], [], 1]);  // its own come back to nobody
     assert.match(a.epoch, /^[0-9a-f]{8}$/);
@@ -220,7 +242,7 @@ describe('syncing linked devices', () => {
 
   test('settings go with whichever device changed them last', async () => {
     await start(1);
-    const as = (initials) => ({ initials, guild: null, muted: [], mutedAs: {}, emotes: true });
+    const as = (initials) => ({ initials, guilds: [], guild: null, labels: {}, muted: [], mutedAs: {}, emotes: true });
     await sync(1, { settings: as('AAA'), settingsAt: 10 });
     await sync(1, { settings: as('BBB'), settingsAt: 9 });
     const [, b] = await sync(1, { settingsAt: 0 });

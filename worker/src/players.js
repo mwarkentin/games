@@ -9,7 +9,10 @@
 //   POST /v1/link/<code>/status     {token} → {state}: waiting, used or gone (gone to anyone who didn't make it)
 //   POST /v1/link/<code>            {} → {token, carry}, once; then 404
 //
-// carry: {initials, guild: {code, name, tag} | null, muted: [ids], mutedAs: {id: [initials, at]}, emotes}
+// carry: {initials, guilds: [{code, name, tag}], labels: {code: text}, muted: [ids], mutedAs: {id: [initials, at]}, emotes}
+//   guilds: up to GUILDS_MAX, in the player's order (an older game's single `guild` is a list of one,
+//     and the answer names the first as `guild` too, for an older game to read)
+//   labels: the player's own names for their guilds ("Work"), seen only on their own devices
 //   mutedAs: who each muted player was when muted, and when, for the game's Muted list
 //
 // A code is eight characters from the groups' alphabet (850 billion codes),
@@ -37,11 +40,12 @@
 
 import { HttpError, INITIALS, answered, corsHeaders, hashIp, hex, initialsOrNone, json, mustPost, randomCode, randomHex, rateLimit, readBody } from './leaderboard.js';
 import { goodName } from './survey-guild.js';
-import { GUILD_CODE, GUILD_TAG, PID, playerId, tokenIn } from './survey-social.js';
+import { GUILD_CODE, GUILD_TAG, GUILDS_MAX, PID, playerId, tokenIn } from './survey-social.js';
 
 export const LINK_MS = 10 * 60000;        // a code lasts this long
 export const LINK_CODE = /^[A-HJKMNP-Z2-9]{8}$/;
 const MUTED_MAX = 200;
+export const LABEL_MAX = 24;              // characters in a guild's private label
 const MAX_BODY = 16384;  // a carry with MUTED_MAX mutes, and who they were, is about 10 KB
 const LINK_PATH = /^\/v1\/link(?:\/([^/]{1,16})(\/status)?)?$/;
 
@@ -49,21 +53,37 @@ const LINK_PATH = /^\/v1\/link(?:\/([^/]{1,16})(\/status)?)?$/;
 const goodMutedAs = (v) => Array.isArray(v) && v.length === 2 && initialsOrNone(v[0])
   && Number.isInteger(v[1]) && v[1] >= 0 && v[1] <= 1e15;
 
+const goodGuild = (g) => !!g && typeof g.code === 'string' && GUILD_CODE.test(g.code) && goodName(g.name) && typeof g.tag === 'string' && GUILD_TAG.test(g.tag);
+const isMap = (v) => !!v && typeof v === 'object' && !Array.isArray(v);
+
+// A guild's private label as the player typed it, tidied: control characters
+// out, spaces run together, at most LABEL_MAX characters. Empty means none.
+export function cleanLabel(v) {
+  if (typeof v !== 'string') return '';
+  // biome-ignore lint/suspicious/noControlCharactersInRegex: taking control characters out is the point
+  return [...v.replace(/[\u0000-\u001f\u007f-\u009f\u200b-\u200f\u2028-\u202e\u2066-\u2069\ufeff]/g, '').replace(/\s+/g, ' ').trim()].slice(0, LABEL_MAX).join('').trim();
+}
+
 // The settings a link carries, checked and in a fixed shape, or null. An
 // older game's `listed` (from when surveyors could keep off the list) is
-// dropped, and mutedAs keeps only the players in muted.
+// dropped, mutedAs keeps only the players in muted, and labels only the
+// guilds in guilds.
 export function cleanCarry(c) {
   if (!c || typeof c !== 'object') return null;
-  const { initials = '', guild = null, muted = [], mutedAs = {}, emotes = true } = c;
+  const { initials = '', guild = null, labels = {}, muted = [], mutedAs = {}, emotes = true } = c;
+  const guilds = c.guilds ?? (guild === null ? [] : [guild]);
   if (!initialsOrNone(initials)) return null;
-  if (guild !== null && !(guild && typeof guild.code === 'string' && GUILD_CODE.test(guild.code) && goodName(guild.name) && typeof guild.tag === 'string' && GUILD_TAG.test(guild.tag))) return null;
+  if (!Array.isArray(guilds) || guilds.length > GUILDS_MAX || !guilds.every(goodGuild)) return null;
+  if (!isMap(labels) || Object.keys(labels).length > 4 * GUILDS_MAX) return null;
   if (!Array.isArray(muted) || muted.length > MUTED_MAX || !muted.every((p) => typeof p === 'string' && PID.test(p))) return null;
-  if (!mutedAs || typeof mutedAs !== 'object' || Array.isArray(mutedAs)) return null;
+  if (!isMap(mutedAs)) return null;
   const as = Object.entries(mutedAs);
   if (as.length > MUTED_MAX || !as.every(([p, v]) => PID.test(p) && goodMutedAs(v))) return null;
   if (typeof emotes !== 'boolean') return null;
+  const kept = [...new Map(guilds.map((g) => [g.code, { code: g.code, name: [...g.name], tag: g.tag }])).values()];
+  const named = Object.fromEntries(kept.flatMap((g) => { const l = cleanLabel(labels[g.code]); return l ? [[g.code, l]] : []; }));
   return {
-    initials, guild: guild && { code: guild.code, name: guild.name, tag: guild.tag }, muted,
+    initials, guilds: kept, guild: kept[0] ?? null, labels: named, muted,
     mutedAs: Object.fromEntries(as.filter(([p]) => muted.includes(p)).map(([p, v]) => [p, [v[0], v[1]]])), emotes,
   };
 }

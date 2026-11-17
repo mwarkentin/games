@@ -639,3 +639,26 @@ def test_a_guilds_page_in_the_log_replays_its_words(page: Page, site_url, errors
     page.locator("#timelapseLink").click()
     expect(page.locator("#follow")).to_be_visible()
     assert errors == []
+
+
+def test_offers_to_follow_each_of_your_guilds_by_your_label(page: Page, site_url, errors):
+    page.set_viewport_size({"width": 375, "height": 740})
+    page.add_init_script(f"""localStorage.setItem('letterfield.guilds.v1', JSON.stringify([
+      {{code: 'KMN234', name: [11, 0, 0], tag: 'c0ffee42', lid: '{COBALT}'}},
+      {{code: 'QRT567', name: [3, 2, 11], tag: '0ddba11a', lid: 'a3be7a3be7'}},
+      {{code: 'BCD234', name: [0, 3, 3], tag: '0a0a0a0a'}}]));
+      localStorage.setItem('letterfield.guild-labels.v1', JSON.stringify({{QRT567: '<b>Work</b>'}}));""")
+    fake = FakeSurveyLog(WORDS, PLACES, {theme(2, 3): ["Forest", 40]}, totals={"0,0": 12}, guilds=GUILDS)
+    open_timelapse(page, site_url, fake)
+    yours = page.locator("#yours")
+    # Each guild whose page the game knows, by our label or its name, as text; one it doesn't know yet isn't there.
+    expect(yours.locator("a")).to_have_text(["Cobalt Compass Society", "<b>Work</b>"])
+    expect(yours.locator("b")).to_have_count(0)
+    expect(yours.get_by_role("link", name="Follow the Amber Lantern Bureau")).to_have_attribute(
+        "href", f"/letterfield-timelapse?guild=a3be7a3be7&survey={SURVEY.replace(':', '%3A').replace('/', '%2F')}"
+    )
+    assert page.evaluate("document.scrollingElement.scrollWidth") <= 375
+    yours.get_by_role("link", name="Follow the Cobalt Compass Society").click()
+    expect(page.locator("#follow")).to_be_visible()
+    expect(yours).to_be_hidden()
+    assert errors == []

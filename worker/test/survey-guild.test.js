@@ -15,7 +15,7 @@ import {
   GUILD_CODE, GUILD_FIRST, GUILD_LOG_ID, GUILD_MAX, GUILD_RECHECK_MS, GUILD_SECOND, GUILD_THIRD, GUILD_WORDS, Guild, SEEN_MS,
   idleShown, matesFor, noteMates, passMates,
 } from '../src/survey-guild.js';
-import { FLAG_QUIET, REFRESH_MS, playerId, snapshot } from '../src/survey-social.js';
+import { FLAG_QUIET, GUILDS_MAX, REFRESH_MS, playerId, snapshot, tagsOf, takeMe } from '../src/survey-social.js';
 
 const ORIGIN = 'https://games.michaelwarkentin.com';
 const NOW = Date.UTC(2026, 10, 13, 12);
@@ -99,11 +99,14 @@ function world({ db = null, log = null } = {}) {
     return [res.status, await res.json()];
   };
   const make = async (n = 1, initials = 'ONE', name = [0, 1, 2]) => (await call('/v1/survey/guilds', { token: token(n), initials, name }))[1];
-  async function player(sx, sy, { id, initials = 'ABC', guild = null, hide = false, quiet = false, x, y } = {}) {
+  async function player(sx, sy, { id, initials = 'ABC', guild = null, guilds = null, hide = false, quiet = false, x, y } = {}) {
     const sector = sectorAt(`${sx},${sy}`), ws = fakeSocket();
     sector.join(ws, sx, sy);
-    const p = { ws, sector, say: (m) => sector.webSocketMessage(ws, JSON.stringify(m)), pid: await playerId(token(id)) };
-    await p.say({ t: 'me', initials, token: token(id), hide, ...(quiet ? { quiet } : {}), ...(guild ? { guild } : {}) });
+    const p = {
+      ws, sector, say: (m) => sector.webSocketMessage(ws, JSON.stringify(m)), pid: await playerId(token(id)),
+      tags: () => tagsOf(sector.everyone().get(ws)),  // the guilds that have said they're a member, in the game's order
+    };
+    await p.say({ t: 'me', initials, token: token(id), hide, ...(quiet ? { quiet } : {}), ...(guild ? { guild } : {}), ...(guilds ? { guilds } : {}) });
     await settle();
     if (x !== undefined) await p.say({ t: 'pos', x, y });
     return p;
@@ -226,19 +229,19 @@ describe('membership in sectors', () => {
     await w.tick(watcher);
     const last = reports.at(-1);
     assert.deepEqual(last.tags, [g.tag]);
-    assert.deepEqual(last.who.find((e) => e[0] === one.pid).slice(5), [0, g.tag]);
+    assert.deepEqual(last.who.find((e) => e[0] === one.pid).slice(5), [0, [g.tag]]);
     assert.equal(last.who.find((e) => e[0] === pretender.pid).length, 6);
   });
 
   test("takes the tag off someone who has left, when it checks again, and keeps 'last seen' current", async () => {
     const one = await w.player(0, 0, { id: 1, initials: 'ONE', guild: g.code, x: 5, y: 5 });
     const seen = () => w.guildAt(g.code).sql.exec('SELECT seen FROM members WHERE pid = ?', one.pid).one().seen;
-    assert.equal(one.sector.everyone().get(one.ws).tag, g.tag);
+    assert.deepEqual(one.tags(), [g.tag]);
     await w.tick(one, SEEN_MS);
     assert.equal(seen(), NOW);  // not checked again yet
     await w.call(`/v1/survey/guilds/${g.code}/leave`, { token: token(1) });
     await w.tick(one, GUILD_RECHECK_MS - SEEN_MS);
-    assert.equal(one.sector.everyone().get(one.ws).tag, null);
+    assert.deepEqual(one.tags(), []);
     // A member still in it is seen again at each check.
     const two = await w.player(0, 0, { id: 2, initials: 'TWO', guild: g.code, x: 6, y: 6 });
     const seenTwo = () => w.guildAt(g.code).sql.exec('SELECT seen FROM members WHERE pid = ?', two.pid).one().seen;
@@ -249,7 +252,7 @@ describe('membership in sectors', () => {
 
   test('still checks a member after the sector wakes, though their socket was saved while a check was out', async () => {
     const one = await w.player(0, 0, { id: 1, initials: 'ONE', guild: g.code, x: 5, y: 5 });
-    assert.equal(one.sector.everyone().get(one.ws).tag, g.tag);
+    assert.deepEqual(one.tags(), [g.tag]);
     // A recheck goes out, and a move saves the socket before it comes back.
     w.clock.now += GUILD_RECHECK_MS;
     const here = one.say({ t: 'here' });
@@ -260,13 +263,13 @@ describe('membership in sectors', () => {
     one.sector.people = null;  // it sleeps, and wakes reading the attachments
     await w.call(`/v1/survey/guilds/${g.code}/leave`, { token: token(1) });
     await w.tick(one, GUILD_RECHECK_MS);
-    assert.equal(one.sector.everyone().get(one.ws).tag, null);
+    assert.deepEqual(one.tags(), []);
   });
 
   test('checks a guild the game names while the last one is being checked, without waiting for the next recheck', async () => {
     const other = await w.make(1, 'ONE', [1, 1, 1]);
     const one = await w.player(0, 0, { id: 1, initials: 'ONE', guild: g.code, x: 5, y: 5 });
-    assert.equal(one.sector.everyone().get(one.ws).tag, g.tag);
+    assert.deepEqual(one.tags(), [g.tag]);
     // A recheck of the first guild goes out, and the game names the other before it comes back.
     w.clock.now += GUILD_RECHECK_MS;
     const here = one.say({ t: 'here' });
@@ -275,7 +278,74 @@ describe('membership in sectors', () => {
     await named;
     await settle();
     await w.tick(one, 60_000);
-    assert.equal(one.sector.everyone().get(one.ws).tag, other.tag);
+    assert.deepEqual(one.tags(), [other.tag]);
+  });
+
+  test("puts every guild that says they're a member on their socket, in the game's order", async () => {
+    const other = await w.make(2, 'TWO', [3, 2, 11]);
+    const stranger = await w.make(9, 'NIN', [5, 5, 5]);  // a guild they aren't in
+    const one = await w.player(0, 0, { id: 2, initials: 'TWO', guilds: [other.code, stranger.code, g.code], x: 5, y: 5 });
+    const watcher = await w.player(0, 0, { id: 8, initials: 'WAT' });
+    assert.deepEqual(one.tags(), [other.tag, g.tag]);
+    await w.tick(watcher);
+    // Presence gives one tag as a string, as an older game reads it, and several as a list.
+    assert.deepEqual(watcher.ws.last('presence').p.find((e) => e[0] === one.pid).slice(4), [[other.tag, g.tag]]);
+    await w.tick(watcher);
+    const last = reports.at(-1);
+    assert.deepEqual(last.who.find((e) => e[0] === one.pid)[6], [other.tag, g.tag]);
+    assert.deepEqual(new Set(last.tags), new Set([other.tag, g.tag]));
+    // A guild the game stops naming comes off at once, and the others keep their tags unasked.
+    const asked = [];
+    const fetch = w.env.GUILDS.get;
+    w.env.GUILDS.get = (n) => { asked.push(n); return fetch(n); };
+    await one.say({ t: 'me', initials: 'TWO', token: token(2), guilds: [g.code] });
+    await settle();
+    assert.deepEqual([one.tags(), asked], [[g.tag], []]);
+  });
+
+  test('takes no more than five guilds from a game, and checks only those', async () => {
+    const made = [];
+    for (let i = 0; i < GUILDS_MAX + 2; i++) made.push(await w.make(1, 'ONE', [i, 0, 0]));
+    const asked = new Set();
+    const fetch = w.env.GUILDS.get;
+    w.env.GUILDS.get = (n) => { asked.add(n); return fetch(n); };
+    const one = await w.player(0, 0, { id: 1, initials: 'ONE', guilds: [...made.map((m) => m.code), 'nope', made[0].code], x: 5, y: 5 });
+    assert.equal(GUILDS_MAX, 5);
+    assert.deepEqual(one.tags(), made.slice(0, GUILDS_MAX).map((m) => m.tag));
+    assert.deepEqual([...asked].sort(), made.slice(0, GUILDS_MAX).map((m) => m.code).sort());
+    // And takeMe itself: a list past the cap is cut at it, duplicates and bad codes dropped.
+    const me = {};
+    takeMe(me, { guilds: [made[1].code, made[1].code, 'abc', ...made.map((m) => m.code)] });
+    assert.deepEqual(me.guilds.map((x) => x.code), [made[1].code, made[0].code, ...made.slice(2, 5).map((m) => m.code)]);
+  });
+
+  test('drops a guild left on another device at its next check, and keeps the others', async () => {
+    const other = await w.make(1, 'ONE', [3, 2, 11]);
+    const one = await w.player(0, 0, { id: 1, initials: 'ONE', guilds: [g.code, other.code], x: 5, y: 5 });
+    assert.deepEqual(one.tags(), [g.tag, other.tag]);
+    // Another device of theirs leaves one; this game still names both.
+    await w.call(`/v1/survey/guilds/${g.code}/leave`, { token: token(1) });
+    await w.tick(one, GUILD_RECHECK_MS);
+    assert.deepEqual(one.tags(), [other.tag]);
+    // Their words count only for the one they're still in, and a guild named again is checked again.
+    assert.deepEqual(one.sector.everyone().get(one.ws).guilds.map((x) => [x.code, x.tag]), [[g.code, null], [other.code, other.tag]]);
+    await w.call(`/v1/survey/guilds/${g.code}/join`, { token: token(1), initials: 'ONE' });
+    await w.tick(one, GUILD_RECHECK_MS);
+    assert.deepEqual(one.tags(), [g.tag, other.tag]);
+  });
+
+  test('reads back a socket saved by an older version, with one guild, as a list of one', async () => {
+    const one = await w.player(0, 0, { id: 1, initials: 'ONE', x: 5, y: 5 });
+    const old = one.sector.everyone().get(one.ws);
+    delete old.guilds;
+    Object.assign(old, { guild: g.code, tag: g.tag, lid: g.lid, guildAt: w.clock.now });
+    one.ws.serializeAttachment(old);
+    one.sector.people = null;  // it sleeps, and wakes reading the attachment
+    await one.say({ t: 'here' });
+    await settle();
+    assert.deepEqual(one.tags(), [g.tag]);
+    const me = one.sector.everyone().get(one.ws);
+    assert.deepEqual([me.guilds.map((x) => x.code), 'guild' in me, 'tag' in me], [[g.code], false, false]);
   });
 
   test('tells members which of their guild are online and where, as it changes, and nobody else', async () => {
@@ -308,6 +378,28 @@ describe('membership in sectors', () => {
     // Members are on the public list like everyone else, until they go.
     const listedNow = snapshot(w.atlas.load().values(), w.clock.now, ONLINE_MS).sectors.flatMap((s) => s[2]).map((e) => e[0]);
     assert.ok(listedNow.includes(one.pid) && !listedNow.includes(two.pid), JSON.stringify(listedNow));
+  });
+
+  test('tells a member of several guilds who is online in each, and members of each about them', async () => {
+    const other = await w.make(3, 'TRI', [3, 2, 11]);
+    await w.call(`/v1/survey/guilds/${other.code}/join`, { token: token(1), initials: 'ONE' });
+    const one = await w.player(0, 0, { id: 1, initials: 'ONE', guilds: [g.code, other.code], x: 5, y: 5 });
+    const two = await w.player(3, 3, { id: 2, initials: 'TWO', guild: g.code, x: 3 * SECTOR + 50, y: 3 * SECTOR + 2 });
+    const tri = await w.player(-2, 1, { id: 3, initials: 'TRI', guild: other.code, x: -2 * SECTOR + 9, y: SECTOR + 9 });
+    await w.tick(two);
+    await w.tick(tri);
+    await w.tick(one, REFRESH_MS);
+    await w.tick(two, REFRESH_MS);
+    await w.tick(tri, REFRESH_MS);
+    const on = (p, tag) => p.ws.all('guild').filter((f) => f.tag === tag).at(-1)?.on.map((e) => e[1]).sort();
+    // ONE hears each guild apart; each of the others hears ONE in theirs, and nothing of the other guild.
+    assert.deepEqual(on(one, g.tag), ['ONE', 'TWO']);
+    assert.deepEqual(on(one, other.tag), ['ONE', 'TRI']);
+    assert.deepEqual([on(two, g.tag), on(two, other.tag)], [['ONE', 'TWO'], undefined]);
+    assert.deepEqual([on(tri, other.tag), on(tri, g.tag)], [['ONE', 'TRI'], undefined]);
+    // The Atlas keeps ONE under both guilds, from the one report that names them.
+    assert.deepEqual(Object.fromEntries(Object.entries(matesFor(w.atlas, [g.tag, other.tag], w.clock.now, ONLINE_MS)).map(([t, l]) => [t, l.map((e) => e[1]).sort()])),
+      { [g.tag]: ['ONE', 'TWO'], [other.tag]: ['ONE', 'TRI'] });
   });
 
   test('tells members which of their guild take no emotes, and when that changes', async () => {
@@ -401,6 +493,23 @@ describe("members' words in the survey log", () => {
     assert.deepEqual(log.raw.prepare('SELECT guild, a, b, c FROM survey_log_guilds').all().map((r) => ({ ...r })), [{ guild: g.lid, a: 11, b: 0, c: 0 }]);
     const everything = JSON.stringify(log.raw.prepare('SELECT * FROM survey_log').all());
     assert.ok(!everything.includes(g.code) && !everything.includes(g.tag));
+  });
+
+  test('count for every guild a member is in: the first in their row, the others beside it', async () => {
+    const other = await w.make(1, 'ONE', [3, 2, 11]);
+    const third = await w.make(1, 'ONE', [8, 7, 7]);
+    const one = await w.player(0, 0, { id: 1, initials: 'ONE', guilds: [other.code, g.code, third.code], x: 5, y: 5 });
+    const two = await w.player(0, 0, { id: 2, initials: 'TWO', guild: g.code, x: 6, y: 6 });
+    await claim(one, 0);
+    await claim(two, 1);
+    await one.sector.alarm();
+    assert.deepEqual(logged(), [[word(0).w, 'ONE', other.lid], [word(1).w, 'TWO', g.lid]]);
+    const extra = log.raw.prepare('SELECT guild FROM survey_log_extra_guilds ORDER BY guild').all().map((r) => r.guild);
+    assert.deepEqual(extra, [g.lid, third.lid].sort());
+    // Each guild counts it, and every guild's name went to the log.
+    const days = Object.fromEntries(log.raw.prepare('SELECT guild, n FROM survey_log_guild_days').all().map((r) => [r.guild, r.n]));
+    assert.deepEqual(days, { [other.lid]: 1, [g.lid]: 2, [third.lid]: 1 });
+    assert.equal(log.raw.prepare('SELECT COUNT(*) AS n FROM survey_log_guilds').get().n, 3);
   });
 
   test('stop counting for a guild once its member has left it', async () => {

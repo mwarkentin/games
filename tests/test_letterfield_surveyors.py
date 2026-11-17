@@ -566,7 +566,7 @@ def test_your_page_opens_from_the_first_row_and_goes_back(page: Page, site_url, 
     # The list is just people, you first: what's yours waits on your page. Your
     # row names what's there, never how it's set, which shows only on your page.
     expect(you).to_contain_text("MLW (you)")
-    expect(you).to_contain_text("Initials, guild and devices")
+    expect(you).to_contain_text("Initials, guilds and devices")
     for mine in ("#surveyMe", "#guildCard", "#pairCard", "#mutedRow", "#whoEmotes"):
         expect(page.locator(mine)).to_be_hidden()
     you.click()
@@ -581,7 +581,7 @@ def test_your_page_opens_from_the_first_row_and_goes_back(page: Page, site_url, 
     expect(html).to_have_attribute("data-people-page", "list")
     expect(you).to_be_focused()
     expect(you).not_to_contain_text("emotes")
-    expect(you).to_contain_text("Initials, guild and devices")
+    expect(you).to_contain_text("Initials, guilds and devices")
     # Escape goes back to the list first, then puts the drawer away.
     you.click()
     page.keyboard.press("Escape")

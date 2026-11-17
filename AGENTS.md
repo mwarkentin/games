@@ -192,7 +192,7 @@ The machines each page keeps:
 | | `define` (each found word's meaning; `el: null`, see `__lf.definitions()`) | loading, ready, none, failed |
 | | `who` (the list of surveyors) | closed, loading, ready, refreshing, failed |
 | | `peoplePage` (the Surveyors drawer's page) | list, you |
-| | `guild` (the guild you're in) | out, naming, making, invited, joining, in, confirming, leaving |
+| | `guild` (your guilds, up to five) | out, naming, making, invited, joining, in, confirming, leaving |
 | | `pair` (linking another device, and the recovery code) | idle, making, showing, used, entering, redeeming, done, failed, recovery, keeping, kept, removing, stop, stopping |
 | | `pairCode` (a link code made here, watched until used) | none, making, waiting, used, gone |
 | | `sync` (keeping linked devices in step) | off, idle, syncing, failed |
@@ -586,8 +586,10 @@ per sector of the map, plus an Atlas for the world's totals
   `worker/src/survey-guild.js`, a Durable Object per guild ("Guilds").
   Players are named by a hash of a random token the game keeps
   (`games.player`, shared by every game like `games.initials`), never their address; emotes are a fixed set of
-  drawings, guild names are words from fixed lists, and nothing anywhere is
-  free text. Guild invite links are `?guild=<code>`.
+  drawings, guild names are words from fixed lists, and nothing anyone else
+  sees is free text (a player's own labels for their guilds sync between
+  their devices, and nobody else ever sees them). A surveyor can be in up to
+  five guilds. Guild invite links are `?guild=<code>`.
 - Another device becomes the same player with a one-time code
   (`worker/src/players.js`, "One player, several devices" in
   `worker/SURVEY.md`), shown as a QR code, a `?link=<code>` link and eight

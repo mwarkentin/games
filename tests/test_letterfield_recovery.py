@@ -14,7 +14,9 @@ import re
 import pytest
 from playwright.sync_api import Page, Route, expect
 
-from fake_survey import FakeLinks, FakePlayers, FakeRecovery, player_id, reply
+from fake_survey import NOW_MS, FakeLinks, FakePlayers, FakeRecovery, player_id, reply
+from test_letterfield_guilds import CODE as COBALT
+from test_letterfield_guilds import MINE, in_cobalt
 from test_letterfield_linking import OTHER, THEIR_PID, THEIRS, start
 from test_letterfield_survey import SURVEY, open_you
 from test_letterfield_surveyors import KIM, TOKEN
@@ -157,6 +159,48 @@ def test_entering_a_recovery_code_brings_the_surveyor_back(page: Page, site_url,
     assert noted(page) == [theirs[0]["w"]]
     assert json.loads(page.evaluate("localStorage.getItem('letterfield.sync.v1')"))["on"] is True
     assert page.evaluate("localStorage.getItem('letterfield.recovery.v1')") is not None
+    assert errors == [] or all("404" in e for e in errors)
+
+
+def test_a_device_brought_back_keeps_its_guilds_beside_the_backups(page: Page, site_url, errors):
+    players = FakePlayers(started=[THEIR_PID])
+    settings = {
+        "initials": "ZED",
+        "guilds": [OTHER],
+        "guild": OTHER,
+        "labels": {OTHER["code"]: "Climbing"},
+        "muted": [],
+        "mutedAs": {},
+        "emotes": True,
+    }
+    players.add(THEIR_PID, settings=settings, settings_at=5)
+    links = FakeLinks(players=players)
+    recovery = FakeRecovery(players, {CODE: THEIRS})
+    guilds = in_cobalt()
+    guilds.guilds[OTHER["code"]] = {"name": OTHER["name"], "tag": OTHER["tag"], "members": [[THEIR_PID, "ZED", NOW_MS]]}
+    start(page, site_url, links, guilds, recovery=recovery, initials="QQQ", mine=[MINE], labels={COBALT: "Family"})
+    open_you(page)
+    page.locator("#pairCard").get_by_role("button", name="I have a code").click()
+    page.locator("#pairInput").fill(CODE.lower())
+    page.keyboard.press("Enter")
+    page.wait_for_function(f"window.__lf && window.__lf.pid() === '{THEIR_PID}'", timeout=10_000)
+    # This device's guild is joined as the surveyor it's become, and its old self leaves...
+    assert [(p, b["token"]) for _, p, b in guilds.calls if p.endswith(("/join", "/leave"))] == [
+        (f"/{COBALT}/join", THEIRS),
+        (f"/{COBALT}/leave", TOKEN),
+    ]
+    # ...and once the backup's settings come, it goes beside theirs, and the whole list goes back up.
+    expect(page.locator("#surveyMeName")).to_have_text("ZED", timeout=8000)
+    page.wait_for_function(
+        f"JSON.parse(localStorage.getItem('letterfield.guilds.v1')).map(g => g.code).join() === '{OTHER['code']},{COBALT}'"
+    )
+    assert page.evaluate("localStorage.getItem('letterfield.guild-merge.v1')") is None
+    page.wait_for_function("window.__lf.sync() === 'idle'")
+    page.evaluate("window.__lf.syncNow()")
+    page.wait_for_function("window.__lf.sync() === 'idle'")
+    assert [g["code"] for g in players.players[THEIR_PID]["settings"]["guilds"]] == [OTHER["code"], COBALT]
+    # The backup's labels, and this device's for the guild it brought.
+    assert players.players[THEIR_PID]["settings"]["labels"] == {OTHER["code"]: "Climbing", COBALT: "Family"}
     assert errors == [] or all("404" in e for e in errors)
 
 

@@ -20,7 +20,7 @@ import {
   GUILDS_SQL, GUILD_NAME_SQL, HOURS_GUILDS_SQL,
   TIMELAPSE_GUILD_DAYS_SQL, TIMELAPSE_GUILD_DAY_SQL, TIMELAPSE_GUILD_DAY_AFTER_SQL,
   FOREVER_S, LAYOUT, TIMELAPSE_BOUNDS_SQL, TIMELAPSE_CACHE_S, TIMELAPSE_DAY_AFTER_SQL, TIMELAPSE_DAY_SQL,
-  TIMELAPSE_NOVAS_SQL, TIMELAPSE_PAGE, TIMELAPSE_VERSION, readTimelapse, readTimelapseDay, readTimelapseGuildDay,
+  TIMELAPSE_NOVAS_SQL, TIMELAPSE_PAGE, TIMELAPSE_VERSION, readTimelapse, readTimelapseDay, readTimelapseGuild, readTimelapseGuildDay,
 } from '../src/survey-log.js';
 import { AREA, Atlas, NEAR_PATH, NOVA_REACH, NOVA_REPORT_MS, RELAY_MS, REPORT_MS, SECTOR, Sector, checkNova, novaNeighbours } from '../src/survey.js';
 
@@ -462,6 +462,47 @@ describe('guilds in the log', () => {
     const p = plan(db, HOURS_GUILDS_SQL, 1, 2);
     assert.match(p, /SEARCH survey_log USING PRIMARY KEY \(at>\? AND at<\?\)/);
     assert.doesNotMatch(p, /survey_log_by_guild/);
+  });
+
+  test("count a word for every guild its charter was in, on each guild's page, top lists and timelapse", async () => {
+    const FERN = 'fe4fe4fe4f';
+    const guilds = [...named, { lid: FERN, a: 6, b: 0, c: 7 }];
+    await writeLog(db, [
+      at(1, 1, NOW, { guild: `${COBALT} ${AMBER}` }), at(2, 2, NOW + 1, { guild: `${AMBER} ${COBALT} ${FERN}`, initials: 'AMY' }),
+      at(3, 3, NOW + 2, { guild: AMBER }), at(4, 4, NOW + 3, { guild: `${COBALT} not-an-id ${COBALT}` }),
+    ], [], guilds);
+    // The first guild in the row, as before; the others beside it, each once.
+    assert.deepEqual(db.raw.prepare('SELECT guild FROM survey_log ORDER BY at').all().map((r) => r.guild), [COBALT, AMBER, AMBER, COBALT]);
+    assert.deepEqual(db.raw.prepare('SELECT guild, at FROM survey_log_extra_guilds ORDER BY at, guild').all().map((r) => [r.guild, r.at - NOW]),
+      [[AMBER, 0], [COBALT, 1], [FERN, 1]]);
+    // A word sent again adds nothing anywhere.
+    await writeLog(db, [at(2, 2, NOW + 1, { guild: `${AMBER} ${COBALT} ${FERN}`, initials: 'AMY' })], [], guilds);
+    const cobalt = await readSlice(db, 'guild', COBALT, HOUR, HOUR + 1);
+    assert.equal(cobalt.words, 3);
+    assert.deepEqual(cobalt.topSurveyors, [['ZED', 2], ['AMY', 1]]);
+    assert.deepEqual(cobalt.entries.map((e) => [e[1], e[2]]), [[4, 4], [2, 2], [1, 1]]);
+    // Paging goes across both: the newest page, then the next.
+    const page = await readSlice(db, 'guild', COBALT, HOUR, HOUR + 1, { at: NOW + 3, key: keyOf('ACORN', 4, 4, 0) });
+    assert.deepEqual(page.entries.map((e) => e[1]), [2, 1]);
+    assert.equal((await readSlice(db, 'guild', FERN, HOUR, HOUR + 1)).words, 1);
+    const top = (await readTop(db, DAY, DAY + 1)).guilds.map((r) => [r[0], r[3]]);
+    assert.deepEqual(top, [[AMBER, 3], [COBALT, 3], [FERN, 1]]);
+    assert.deepEqual((await readTopHours(db, HOUR, HOUR + 1)).guilds.map((r) => [r[0], r[3]]), top);
+    assert.deepEqual((await readTimelapseGuildDay(db, COBALT, DAY)).words.map((w) => w[1]), [1, 2, 4]);
+    assert.deepEqual((await readTimelapseGuild(db, FERN)).days, [[DAY, 1]]);
+    // A word that leaves the log takes its other guilds, and their counts, along.
+    db.raw.exec(`DELETE FROM survey_log WHERE at = ${NOW + 1}`);
+    assert.equal(db.raw.prepare('SELECT COUNT(*) AS n FROM survey_log_extra_guilds').get().n, 1);
+    assert.deepEqual((await readTop(db, DAY, DAY + 1)).guilds.map((r) => [r[0], r[3]]), [[AMBER, 2], [COBALT, 2]]);
+    // Each side of a guild's words reads through its own index, in time order, so they merge without a sort.
+    const sql = sliceSql('guild'), after = sliceSql('guild', true).entries;
+    for (const [q, args] of [[sql.entries, [COBALT, 1, 2, 10]], [after, [COBALT, 1, 2, 1, 'A', 10]], [TIMELAPSE_GUILD_DAY_SQL, [COBALT, 1, 2, 10]]]) {
+      const p = plan(db, q, ...args);
+      assert.match(p, /SEARCH survey_log USING (COVERING )?INDEX survey_log_by_guild/, p);
+      assert.match(p, /SEARCH e USING PRIMARY KEY \(guild=\? AND at>\? AND at<\?\)/, p);
+      assert.doesNotMatch(p, /TEMP B-TREE/, p);
+    }
+    assert.match(plan(db, HOURS_GUILDS_SQL, 1, 2), /survey_log_extra_guilds USING COVERING INDEX survey_log_extra_guilds_by_word \(at>\? AND at<\?\)/);
   });
 
   test('are answered by their log id, cached as a surveyor is', async () => {

@@ -34,11 +34,12 @@
 // and how far it scales.
 //
 // Messages are JSON. From the game:
-//   {t: 'me', initials, token, quiet, guild}
+//   {t: 'me', initials, token, quiet, guilds}
 //                                   initials to credit claims to ('' for none); the game's
 //                                   secret token, whose hash names the player (survey-social.js);
 //                                   quiet: no emotes;
-//                                   guild: their guild's code, checked with it (survey-guild.js)
+//                                   guilds: the codes of their guilds, up to GUILDS_MAX, each checked
+//                                   with its guild (survey-guild.js); an older game sends one `guild`
 //   {t: 'pos', x, y} / {t: 'pos', away: true}
 //                                   where the player is looking, if in this sector
 //   {t: 'claim', w, x, y, d}        a word the player just circled
@@ -52,11 +53,12 @@
 //   {t: 'error', key, error}        to a claimer, for a word that isn't there, 'slow down'
 //                                   when the socket or its address claims too fast, or
 //                                   'daily limit' once its address has charted DAILY_CLAIMS today
-//   {t: 'presence', n, p}           players here ([id, initials, x, y, guild tag?]), about once a
-//                                   second; the id is the player's (from their token) once they've sent one
+//   {t: 'presence', n, p}           players here ([id, initials, x, y, tags?]), about once a second;
+//                                   the id is the player's (from their token) once they've sent one;
+//                                   tags are their guilds' (one as a string, several as a list)
 //   {t: 'emote', from, ini, e, r}   an emote for this player from player `from`, in territory r
 //   {t: 'emoted', to, e, ok|error}  what became of an emote this player sent
-//   {t: 'guild', tag, on}           which of this player's guild are online, and where
+//   {t: 'guild', tag, on}           which members of one of this player's guilds are online, and where
 //                                   ([id, initials, rx, ry, idle, flags], flags as the list's),
 //                                   from the Atlas, as it changes
 //   {t: 'world', charted, total, players}   the whole world's totals, as they change
@@ -86,8 +88,8 @@ import { allowedInitials, corsHeaders, hashAddress, initialsOrNone, isInt, under
 import { PASS_PATH, checkPass, handlePass } from './survey-pass.js';
 import { CH, DIRS, MAP_VERSION, RC, STRAY_MIN, VOCAB, chunk, fdiv, keyOf, letterAt, regionTheme, territoryTotal } from './letterfield-world.js';
 import { DAY_MS, HOUR_MS, LOG_BATCH, LOG_MS, LOG_RETRY_MAX_MS, writeLog } from './survey-log.js';
-import { GUILD_RECHECK_MS, GUILD_TAG, GUILD_TAGS_MAX, checkGuild, matesFor, noteMates, passMates } from './survey-guild.js';
-import { ATLAS_LIST_PATH, EMOTE_PATH, LIST_MS, REFRESH_MS, TERR, atlas, fromAtlas, goodWho, listed, send, sendEmote, snapshot, takeEmote, takeMe } from './survey-social.js';
+import { GUILD_TAG, GUILD_TAGS_MAX, checkGuilds, matesFor, noteMates, passMates } from './survey-guild.js';
+import { ATLAS_LIST_PATH, EMOTE_PATH, LIST_MS, REFRESH_MS, TERR, atlas, fromAtlas, goodWho, lidsOf, listed, send, sendEmote, snapshot, tagsOf, takeEmote, takeMe } from './survey-social.js';
 
 export const SECTOR = RC * TERR;      // cells per sector side
 export const MAX_PLAYERS = 750;       // sockets one sector accepts (bench/load.js: one sector saturates between 750 and 1,000)
@@ -316,7 +318,7 @@ export class Sector {
     this.hidden = null;      // hidden words each of those territories has, from the map, worked out when first needed
     this.world = null;       // the last totals the Atlas sent back
     this.people = null;      // socket → its attachment, read from the sockets on first use after waking
-    this.guildChecks = new WeakSet();  // sockets whose guild check is out (checkGuild): kept in memory, never in an attachment
+    this.guildChecks = new WeakMap();  // socket → codes of its guilds whose check is out (checkGuilds): kept in memory, never in an attachment
     this.chartedBy = new Map();  // address → words it charted here since the last report
     this.unpassed = 0;           // joins without a Turnstile pass since the last report (a bot signal)
     this.overDay = -1;       // the UTC day `over` is for
@@ -346,10 +348,10 @@ export class Sector {
     // they were made, and `logged` holds the last one D1 has.
     this.sql.exec('CREATE INDEX IF NOT EXISTS claims_by_time ON claims (at, key)');
     this.sql.exec('CREATE TABLE IF NOT EXISTS logged (id INTEGER PRIMARY KEY CHECK (id = 0), at INTEGER NOT NULL)');
-    // Each claim's guild, as the log knows it: the log id of the guild its
-    // charter was in, or '' for none (and, from when surveyors could keep off
-    // the list, for one who did). The guilds' names go to the log with their
-    // claims (noteGuild, flushLog).
+    // Each claim's guilds, as the log knows them: the log ids of the guilds its
+    // charter was in, space-separated, or '' for none (and, from when surveyors
+    // could keep off the list, for one who did). The guilds' names go to the
+    // log with their claims (noteGuild, flushLog).
     try { this.sql.exec('SELECT guild FROM claims LIMIT 0'); } catch { this.sql.exec("ALTER TABLE claims ADD COLUMN guild TEXT NOT NULL DEFAULT ''"); }
     this.sql.exec('CREATE TABLE IF NOT EXISTS guild_names (lid TEXT PRIMARY KEY, a INTEGER NOT NULL, b INTEGER NOT NULL, c INTEGER NOT NULL) WITHOUT ROWID');
     // Supernovas: the sector's territories whose every hidden word is
@@ -531,7 +533,7 @@ export class Sector {
     if (!me || !msg) return;
     if (msg.t === 'me') {
       const initials = allowedInitials(msg.initials) ? msg.initials : '';
-      // Who the player is, whether they take emotes, and their guild: for the surveyor list and guild checks.
+      // Who the player is, whether they take emotes, and their guilds: for the surveyor list and guild checks.
       const social = await takeMe(me, msg);
       if (social) this.reportDue = true;
       if (initials !== me.initials || social) { me.initials = initials; this.save(ws, me); this.schedulePresence(false); }
@@ -552,11 +554,8 @@ export class Sector {
     } else if (msg.t === 'emote') {
       await sendEmote(this, ws, me, msg);
     }
-    // The guild the game names is checked when it's new, and now and then while they play.
-    if (me.guild && me.pid && !this.guildChecks.has(ws) && this.now() - (me.guildAt ?? 0) >= GUILD_RECHECK_MS) {
-      const checked = checkGuild(this, ws, me);
-      this.ctx.waitUntil?.(checked);
-    }
+    // Each guild the game names is checked when it's new, and now and then while they play.
+    for (const checked of checkGuilds(this, ws, me)) this.ctx.waitUntil?.(checked);
     this.catchUp();
   }
 
@@ -585,7 +584,7 @@ export class Sector {
     const inserted = this.sql.exec(
       `INSERT INTO claims (key, w, x, y, d, s, initials, at, guild) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT (key) DO NOTHING RETURNING key`,
-      c.key, c.w, c.x, c.y, c.d, c.s, me.initials, at, (me.tag && me.lid) || '',
+      c.key, c.w, c.x, c.y, c.d, c.s, me.initials, at, lidsOf(me).join(' '),
     ).toArray().length;
     if (!inserted) {
       const first = this.sql.exec('SELECT w, x, y, d, s, initials, at FROM claims WHERE key = ?', c.key).one();
@@ -632,7 +631,7 @@ export class Sector {
     return this.sql.exec('SELECT key, w, x, y, d, s, initials, at, guild FROM claims WHERE at >= ? ORDER BY at, key LIMIT ?', this.logMark(), limit).toArray();
   }
 
-  // A guild's name, from its own answer to a member's check (checkGuild), kept
+  // A guild's name, from its own answer to a member's check (checkGuilds), kept
   // for the log: names never change, so each is written here once.
   noteGuild(lid, [a, b, c]) {
     this.sql.exec('INSERT INTO guild_names (lid, a, b, c) VALUES (?, ?, ?, ?) ON CONFLICT (lid) DO NOTHING', lid, a, b, c);
@@ -690,7 +689,7 @@ export class Sector {
     // Bonus words (s = 1, spelled by chance) stay here and in the game's field
     // notes, but aren't kept in the public log; the mark still moves past them.
     const shown = rows.filter((r) => !r.s);
-    const lids = new Set(shown.map((r) => r.guild).filter(Boolean));
+    const lids = new Set(shown.flatMap((r) => r.guild.split(' ')).filter(Boolean));
     const guilds = lids.size ? this.sql.exec('SELECT lid, a, b, c FROM guild_names').toArray().filter((g) => lids.has(g.lid)) : [];
     await writeLog(this.env.LOG_DB, shown, novas, guilds);
     if (rows.length) this.sql.exec('INSERT INTO logged (id, at) VALUES (0, ?) ON CONFLICT (id) DO UPDATE SET at = excluded.at', upTo);
@@ -840,7 +839,9 @@ export class Sector {
     this.presenceDue = false;
     // One caret a player: a player on two linked devices here shows where they last moved.
     const seen = new Set(), here = this.here().sort((a, b) => b.moved - a.moved).filter((p) => { const id = p.pid || p.id; return !seen.has(id) && seen.add(id); });
-    broadcast(this.ctx, JSON.stringify({ t: 'presence', n: here.length, p: here.slice(0, PRESENCE_MAX).map((p) => [p.pid || p.id, p.initials, p.x, p.y, ...(p.tag ? [p.tag] : [])]) }));
+    // A member's guild tags: one as a string, as an older game reads it, several as a list.
+    const tags = (p) => { const t = tagsOf(p); return t.length ? [t.length === 1 ? t[0] : t] : []; };
+    broadcast(this.ctx, JSON.stringify({ t: 'presence', n: here.length, p: here.slice(0, PRESENCE_MAX).map((p) => [p.pid || p.id, p.initials, p.x, p.y, ...tags(p)]) }));
     this.maybeReport();
   }
 
@@ -858,7 +859,7 @@ export class Sector {
   listing() {
     const [sx, sy] = this.coords();
     const who = listed(this.everyone().values(), sx, sy, this.now());
-    const tags = [...new Set([...this.everyone().values()].map((p) => p.tag).filter(Boolean))].slice(0, GUILD_TAGS_MAX);
+    const tags = [...new Set([...this.everyone().values()].flatMap(tagsOf))].slice(0, GUILD_TAGS_MAX);
     return { ...(who.length ? { who } : {}), ...(tags.length ? { tags } : {}) };
   }
 
