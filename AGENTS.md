@@ -196,6 +196,7 @@ The machines each page keeps:
 | | `pair` (linking another device, and the recovery code) | idle, making, showing, used, entering, redeeming, done, failed, recovery, keeping, kept, removing, stop, stopping |
 | | `pairCode` (a link code made here, watched until used) | none, making, waiting, used, gone |
 | | `sync` (keeping linked devices in step) | off, idle, syncing, failed |
+| | `notesPage` (the field notes drawer's page) | finds, marks |
 | `letterfield-log.html` | `log` (what the page shows) | loading, ready, refreshing, stale, failed |
 | | `span` (where the log starts, which ‹ stops at) | asking, known, failed |
 | | `define` (each word's meaning; `el: null`, see `__log.definitions()`) | loading, ready, none, failed |
@@ -633,6 +634,17 @@ page loads nothing from a new host.
   (`tests/test_letterfield_definitions.py`, and
   `tests/test_letterfield_log_definitions.py` for the log); the real
   Worker's stand-in answers it too.
+
+## Letterfield's achievements
+
+Achievements, their badges and days surveyed are worked out from the field
+notes and supernovas seen, then latched in `letterfield.marks.v1`
+(`worker/ACHIEVEMENTS.md` has the catalog and the design). Their page is in
+the notes drawer (`notesPage`), and their note is a kind of its own,
+`achievement`, which `letterfield.quiet.v1` can quieten. Every test's
+browser starts with that kind quietened (`QUIET_ACHIEVEMENTS` in
+`tests/conftest.py`), so a test's first find brings no note it isn't
+about; `tests/test_letterfield_achievements.py` turns it back on.
 
 ## Letterfield's words
 

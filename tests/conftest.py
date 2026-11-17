@@ -83,10 +83,23 @@ def browser_context_args(browser_context_args):
     }
 
 
+# Letterfield's achievement notes start quietened, so a test's first find doesn't bring a note
+# it isn't about (a "First Mark" over the note it's watching). tests/test_letterfield_achievements.py
+# turns them back on. Set only when nothing is stored, so a test's own choice is kept.
+QUIET_ACHIEVEMENTS = """
+try {
+  if (location.protocol.startsWith('http') && localStorage.getItem('letterfield.quiet.v1') === null)
+    localStorage.setItem('letterfield.quiet.v1', '["achievement"]');
+} catch (_) {}
+"""
+
+
 @pytest.fixture
 def context(context):
-    """pytest-playwright's context, with the real Worker faked (see fake_leaderboard.py)."""
+    """pytest-playwright's context, with the real Worker faked (see fake_leaderboard.py) and
+    Letterfield's achievement notes quietened (see QUIET_ACHIEVEMENTS)."""
     stand_in_for_worker(context)
+    context.add_init_script(QUIET_ACHIEVEMENTS)
     return context
 
 

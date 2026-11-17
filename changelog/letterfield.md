@@ -1,5 +1,8 @@
 ## 2026-11-17
 
+- Achievements: 39 to earn, from your first word to the edge of the universe, each with a badge of its own. They're in your field notes, under the tally, with how far along you are on each.
+- Days surveyed: a day counts once you find three words, and a streak keeps going through one rest day in any seven. Your longest is kept for good, and nothing nags you to come back.
+- Coming back with notes from before? Everything they've already earned arrives at once, in one note. A short chime and a note mark each new one, and both can be switched off on the Achievements page.
 - You can be in up to five guilds at once, say one for family and one for work. An invite simply joins, and with five already it asks which one to leave, naming them all.
 - Give each guild a label of your own, like “Work”, on your page in the Surveyors drawer. Only you see it, on your linked devices too, and it heads that guild on the surveyor list.
 - Each guild has its own heading on the surveyor list, which folds away. Someone in two of your guilds is under both, their caret's dot shows both colours, and you hear they came online once.
