@@ -221,7 +221,7 @@ function achievementsCore(world) {
     const counted = [...perDay].filter(([d, v]) => v.n >= STREAK_MIN && d <= today).map(([d]) => d).sort((a, b) => a - b);
     const runs = runsOf(counted, today, [7, 28]);
     Object.assign(T, { best: runs.best, current: runs.run.length, run: runs.run, days: counted.length, counted: new Set(counted),
-      first0: counted.length ? counted[0] : null, span: counted.length ? counted[counted.length - 1] - counted[0] : 0, today: perDay.has(today) ? perDay.get(today).n : 0 });
+      first0: counted.length ? counted[0] : null, span: counted.length ? counted[counted.length - 1] - counted[0] : 0, today: perDay.has(today) ? perDay.get(today).n : 0, perDay });
     // A day's achievement is dated by the find that made the day that earned it count.
     const byDay = (id, d) => { if (d !== undefined) { const by = perDay.get(d).by; reached[id] = { at: by.t, by }; } };
     byDay('seven-days', runs.at[7]);

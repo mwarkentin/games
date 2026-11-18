@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import datetime as dt
 import json
+import re
 from zoneinfo import ZoneInfo
 
 import pytest
@@ -214,7 +215,7 @@ def test_days_surveyed_and_the_streak(page: Page, site_url, errors, name):
     expect(card.locator(".days-top b")).to_have_text([str(days), str(running), str(longest)])
     strip = card.locator(".days-strip li")
     expect(strip).to_have_count(14)
-    expect(strip.last).to_have_class("open today" if today < 3 else "on today")
+    expect(strip.last).to_have_class("on today" if today >= 3 else "open part today" if today else "open today")
     rests = [d for d in range(-13, 0) if d not in plan and d > min(plan)]
     if name == "a missed day is a rest day":
         expect(card.locator(".days-strip li.rest")).to_have_count(1)
@@ -222,6 +223,135 @@ def test_days_surveyed_and_the_streak(page: Page, site_url, errors, name):
     if name == "two missed days in a row end it":
         expect(card.locator(".days-strip li.miss")).to_have_count(len(rests))
     expect(card.locator(".days-today")).to_have_text("Today counts." if today >= 3 else f"Today: {today} of 3 words.")
+    assert errors == []
+
+
+def test_todays_dot_fills_a_slice_for_each_word_until_the_day_counts(page: Page, site_url, errors):
+    words = known_words(page, site_url, WORDS_JS)
+    open_alone(page, site_url, [find(words[0], NOW - dt.timedelta(hours=1))], now=NOW)
+    open_page(page)
+    today = page.locator("#daysCard .days-strip li.today")
+    expect(today).to_have_attribute("class", "open part today")
+    expect(today).to_have_attribute("style", "--p:0.333")
+    expect(today).to_have_attribute("title", re.compile(r": today, 1 of 3 words$"))
+    page.evaluate("([w, x, y, d]) => window.__lf.collect(w, x, y, d, false)", words[1])
+    expect(today).to_have_attribute("style", "--p:0.667")
+    expect(page.locator(".days-today")).to_have_text("Today: 2 of 3 words.")
+    page.evaluate("([w, x, y, d]) => window.__lf.collect(w, x, y, d, false)", words[2])
+    expect(today).to_have_attribute("class", "on today")
+    expect(page.locator(".days-today")).to_have_text("Today counts.")
+    assert errors == []
+
+
+def test_past_days_with_a_word_or_two_keep_their_slices(page: Page, site_url, errors):
+    words = known_words(page, site_url, WORDS_JS)
+    # One word the day before the first that counted, then two on a rest day in a run that goes on.
+    open_alone(page, site_url, on_days(words, {-6: 1, -5: 3, -4: 2, -3: 3, -2: 3, -1: 3}), now=NOW)
+    open_page(page)
+    days = page.locator("#daysCard .days-strip li")
+    expect(days).to_have_count(14)
+    first, rest, counted = days.nth(13 - 6), days.nth(13 - 4), days.nth(13 - 3)
+    expect(rest).to_have_attribute("class", "rest part")
+    expect(rest).to_have_attribute("style", "--p:0.667")
+    expect(rest).to_have_attribute("title", re.compile(r": a rest day, 2 of 3 words$"))
+    expect(first).to_have_attribute("class", "none part")
+    expect(first).to_have_attribute("style", "--p:0.333")
+    expect(first).to_have_attribute("title", re.compile(r": not counted, 1 of 3 words$"))
+    expect(counted).to_have_attribute("class", "on")
+    expect(counted).not_to_have_attribute("style", re.compile("."))
+    expect(days.nth(13 - 7)).to_have_attribute("class", "none")  # nothing found that day
+    assert errors == []
+
+
+COLLECT = "([w, x, y, d]) => window.__lf.collect(w, x, y, d, false)"
+SHARE_WAIT = 15_000  # a note with a button stays 6 s, and the next waits for it to go
+
+
+def test_a_day_that_counts_gets_one_quiet_note(page: Page, site_url, errors):
+    words = known_words(page, site_url, WORDS_JS)
+    # Two days counted, then two words today: the third makes three days running.
+    open_alone(page, site_url, on_days(words, {-2: 3, -1: 3, 0: 2}), now=NOW)
+    page.wait_for_timeout(1000)
+    before, sounds = notes(page), marks(page)["sounds"]
+    page.evaluate(COLLECT, words[8])
+    expect(page.locator("#toast b")).to_have_text("Today counts", timeout=LANDS)
+    expect(page.locator("#toast span").first).to_have_text("3 days running")
+    expect(page.locator("#toast i.day-ico")).to_have_count(1)
+    assert marks(page)["sounds"] == sounds  # no chime
+    # See opens the days.
+    page.locator("#toast").get_by_role("button", name="See your days surveyed").click()
+    expect(page.locator("html")).to_have_attribute("data-notes-page", "marks")
+    # Once a day: a fourth word brings no second note.
+    page.evaluate(COLLECT, words[9])
+    page.wait_for_timeout(2500)
+    assert notes(page)[len(before) :] == ["Today counts"]
+    assert errors == []
+
+
+def test_a_first_day_gets_its_note_after_first_marks(page: Page, site_url, errors):
+    # Three words at once on a first day earn First Mark too: its note, then the day's.
+    words = known_words(page, site_url, WORDS_JS)
+    open_alone(page, site_url, [], now=NOW)
+    page.wait_for_timeout(1000)
+    for w in words[:3]:
+        page.evaluate(COLLECT, w)
+    expect(page.locator("#toast b")).to_have_text("First Mark", timeout=LANDS)
+    expect(page.locator("#toast b")).to_have_text("Today counts", timeout=SHARE_WAIT)
+    expect(page.locator("#toast span").first).to_have_text("Your first day surveyed")
+    assert errors == []
+
+
+def test_a_day_after_a_break_says_how_many_days_surveyed(page: Page, site_url, errors):
+    words = known_words(page, site_url, WORDS_JS)
+    open_alone(page, site_url, on_days(words, {-5: 3, -4: 3, 0: 2}), now=NOW)
+    page.evaluate(COLLECT, words[8])
+    expect(page.locator("#toast b")).to_have_text("Today counts", timeout=LANDS)
+    expect(page.locator("#toast span").first).to_have_text("3 days surveyed")  # never what was lost
+    assert errors == []
+
+
+def test_a_day_after_a_rest_day_says_so(page: Page, site_url, errors):
+    words = known_words(page, site_url, WORDS_JS)
+    open_alone(page, site_url, on_days(words, {-3: 3, -2: 3, 0: 2}), now=NOW)
+    page.evaluate(COLLECT, words[8])
+    expect(page.locator("#toast b")).to_have_text("Today counts", timeout=LANDS)
+    expect(page.locator("#toast span").first).to_have_text("3 days running · yesterday was a rest day")
+    assert errors == []
+
+
+def test_a_day_that_earns_an_achievement_has_that_note_instead(page: Page, site_url, errors):
+    words = known_words(page, site_url, WORDS_JS)
+    # Six days counted, then the seventh's third word: Seven Days Running says it all.
+    plan = {-6: 3, -5: 3, -4: 3, -3: 3, -2: 3, -1: 3, 0: 2}
+    open_alone(
+        page,
+        site_url,
+        on_days(words, plan),
+        now=NOW,
+        store={"letterfield.marks.v1": json.dumps({"got": {"first-mark": [1, 1]}, "best": 6})},
+    )
+    page.wait_for_timeout(1500)
+    before = notes(page)
+    page.evaluate(COLLECT, words[sum(plan.values())])
+    expect(page.locator("#toast b")).to_have_text("Seven Days Running", timeout=LANDS)
+    page.wait_for_timeout(2500)
+    assert "Today counts" not in notes(page)[len(before) :]
+    assert errors == []
+
+
+def test_with_its_switch_off_a_day_that_counts_brings_no_note(page: Page, site_url, errors):
+    words = known_words(page, site_url, WORDS_JS)
+    open_alone(page, site_url, on_days(words, {-1: 3, 0: 2}), now=NOW)
+    open_page(page)
+    switch = page.get_by_role("switch", name="A note when a day counts")
+    expect(switch).to_be_checked()
+    switch.click()
+    assert page.evaluate("JSON.parse(localStorage.getItem('letterfield.quiet.v1'))") == ["day"]
+    expect(page.get_by_role("switch", name="Notes for new achievements")).to_be_checked()
+    page.evaluate(COLLECT, words[5])
+    page.wait_for_function("window.__lf.marks.streak().today === 3")
+    page.wait_for_timeout(2500)
+    assert "Today counts" not in notes(page)
     assert errors == []
 
 

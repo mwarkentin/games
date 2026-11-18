@@ -647,7 +647,8 @@ Achievements, their badges and days surveyed are worked out from the field
 notes and supernovas seen, then latched in `letterfield.marks.v1`
 (`worker/ACHIEVEMENTS.md` has the catalog and the design). Their page is in
 the notes drawer (`notesPage`), and their note is a kind of its own,
-`achievement`, which `letterfield.quiet.v1` can quieten.
+`achievement`, which `letterfield.quiet.v1` can quieten; a day that counts
+has a quieter note, `day`, which it can quieten apart.
 
 - The rules sit between `BEGIN ACHIEVEMENTS CORE` and `END ACHIEVEMENTS
   CORE` markers, word for word the same in `letterfield.html` and
@@ -667,9 +668,9 @@ the notes drawer (`notesPage`), and their note is a kind of its own,
   achievements go at the end of it.
 - Achievements, the longest streak, the badge shown and the card sync
   through the Player with the notes.
-- Every test's browser starts with achievement notes quietened
-  (`QUIET_ACHIEVEMENTS` in `tests/conftest.py`), so a test's first find
-  brings no note it isn't about, and answers the fake survey's
+- Every test's browser starts with achievement and day notes quietened
+  (`QUIET_ACHIEVEMENTS` in `tests/conftest.py`), so a test's first finds
+  bring no note they aren't about, and answers the fake survey's
   `/v1/survey/badges` with none; `tests/test_letterfield_achievements.py`
   turns notes back on, and fakes receipts, badges and cards with
   `FakeSurvey(sign=True)` and `FakeBadges(cards=True)`.
