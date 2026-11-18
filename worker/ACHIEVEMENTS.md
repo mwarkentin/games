@@ -275,6 +275,16 @@ hover card, and their card in their caret's menu (see "Profile cards").
 - **Never over another note.** The note waits while a find's bead is still
   flying, a supernova is going off, or another note is showing (up to about
   20 seconds, then it shows anyway). Hats Off waits for the emote's own note.
+- **A day that counts** has a quieter note of its own, `day`: when the third
+  word of the day is circled in this tab, "Today counts" with the strip's
+  filled dot and "3 days running" (or "your first day surveyed", or how many
+  days surveyed when a new run starts, never what was lost), adding
+  "yesterday was a rest day" when one kept it going, and See, which opens
+  the days. Once a day, with no chime, waiting as achievements' notes do,
+  and giving way to one: a third word that also earns Seven Days Running
+  has that note alone. Never a note when a streak ends or a day is still
+  open. "A note when a day counts" on the page quietens it, apart from
+  achievements' notes.
 
 ## Storage and sync
 

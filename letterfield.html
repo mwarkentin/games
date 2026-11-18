@@ -737,6 +737,7 @@ html[data-notes-page="marks"] .notes > :not(.marks-page){display:none!important}
 .pc-far{margin:2px 2px 10px;font:400 11px/1.4 var(--f-mono);color:var(--muted)}
 /* In a note, the badge stands in for its dot, and draws itself in unless motion is reduced. */
 .toast i.mk-ico{width:28px;height:28px;border-radius:0;background:none}
+.toast i.day-ico{background:var(--accent)}  /* a day that counts: the strip's filled dot */
 .toast i.mk-ico .mk{width:28px;height:28px}
 @media (prefers-reduced-motion: no-preference){
   .toast.show i.mk-ico .mk-disc{animation:mk-ring .8s var(--ease-out) both}
@@ -841,7 +842,7 @@ html[data-notes-page="marks"] .notes > :not(.marks-page){display:none!important}
       <p class="marks-sub" id="marksSub"></p>
       <section class="days" id="daysCard" aria-label="Days surveyed"></section>
       <div id="marksList"></div>
-      <div class="group marks-set"><label class="you-item"><span>Notes for new achievements<small>A note and a chime when you earn one. They’re always kept here.</small></span><input type="checkbox" class="sw" role="switch" id="marksNotes" checked></label></div>
+      <div class="group marks-set"><label class="you-item"><span>Notes for new achievements<small>A note and a chime when you earn one. They’re always kept here.</small></span><input type="checkbox" class="sw" role="switch" id="marksNotes" checked></label><label class="you-item"><span>A note when a day counts<small>When your third word of the day lands, quietly, with no chime.</small></span><input type="checkbox" class="sw" role="switch" id="dayNotes" checked></label></div>
     </div>
   </section>
   <p class="notes-foot" id="notesFoot">Found a bug or have an idea? <a class="feedback" href="https://github.com/mwarkentin/games/issues/new/choose" target="_blank" rel="noopener" data-feedback>Send feedback</a></p>
@@ -6714,6 +6715,12 @@ function marksCheck() {
   if (NotesPage.is('marks')) renderMarksPage();
   if (backfill && got.length) noteMarks(got, true);
   else if (live.length) noteMarks(live);
+  // Today's third word, circled here: a note of its own, once, unless an achievement's says more.
+  const today = dayNum(now), td = st.T.perDay.get(today), dayBy = td && td.n >= STREAK_MIN ? td.by : null;
+  if (!backfill && dayNoted !== today && dayBy && dayBy.e && madeHere.has(dayBy.e.key)) {
+    dayNoted = today;
+    if (!live.length || noteQuiet('achievement')) noteDay(st.T, today);
+  }
   if (got.length) askBadges();
   return got;
 }
@@ -6907,8 +6914,18 @@ function markOfHash(h) {
 }
 
 /* Saying so: a note of its own kind, after the find has landed and never
-   over a supernova or another note; more than two at once are one note. */
-let markQueue = [], markTimer = 0, markWaited = 0, markSounds = 0;
+   over a supernova or another note; more than two at once are one note. A
+   day that counts has a quieter note of its own (`day`), which gives way to
+   an achievement's. */
+let markQueue = [], markTimer = 0, markWaited = 0, markSounds = 0, dayNoted = null;
+function noteDay(T, today) {
+  if (noteQuiet('day')) return;
+  const line = T.current <= 1 ? (T.days <= 1 ? 'Your first day surveyed' : `${plural(T.days, 'day')} surveyed`)
+    : `${T.current} days running${T.counted.has(today - 1) ? '' : ' · yesterday was a rest day'}`;
+  markQueue.push({ ids: [], day: line });
+  markWaited = 0;
+  pumpMarks();
+}
 const MARK_WAIT_MS = 700, MARK_WAIT_MAX = 30;  // checks every 0.7 s, for up to about 20 s
 const MARK_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="10" r="6"/><path d="M8.6 15l-1.6 6 5-2.5 5 2.5-1.6-6"/></svg>';
 function noteMarks(ids, backfill = false) {
@@ -6924,8 +6941,15 @@ function pumpMarks() {
   if (busy && markWaited++ < MARK_WAIT_MAX) { markTimer = setTimeout(pumpMarks, MARK_WAIT_MS); return; }
   // Everything waiting goes in this note: one if it's one or two, a summary past that.
   const backfill = markQueue.some(q => q.backfill), ids = [...new Set(markQueue.flatMap(q => q.ids))].filter(id => MARK_BY[id]);
+  const day = markQueue.map(q => q.day).filter(Boolean).pop();
   markQueue = [];
-  if (!ids.length || noteQuiet('achievement')) return;
+  if (!ids.length || noteQuiet('achievement')) {
+    if (day && !noteQuiet('day')) {
+      toast(`<i class="day-ico"></i><b>Today counts</b><span>${day}</span>`, null, SHARE_TOAST_MS,
+        { label: 'See your days surveyed', text: 'See', icon: MARK_ICON, share: () => { hideToast(); openMarks(); } });
+    }
+    return;
+  }
   const first = MARK_BY[ids[0]], hue = MARK_GROUP[first.g].h;
   const see = { label: 'See your achievements', text: 'See', icon: MARK_ICON, share: () => { hideToast(); openMarks(ids.length === 1 ? ids[0] : null); } };
   if (ids.length > 2 || backfill) {
@@ -6966,7 +6990,7 @@ function playMark() {
 }
 
 /* Where they show: a row under the tally, and a page in the notes drawer. */
-const marksRow = $('#marksRow'), marksPage = $('#marksPage'), marksList = $('#marksList'), daysCard = $('#daysCard'), marksNotesEl = $('#marksNotes');
+const marksRow = $('#marksRow'), marksPage = $('#marksPage'), marksList = $('#marksList'), daysCard = $('#daysCard'), marksNotesEl = $('#marksNotes'), dayNotesEl = $('#dayNotes');
 const shortDate = t => new Date(t).toLocaleDateString(undefined, { month: 'short', day: 'numeric', ...(new Date(t).getFullYear() !== new Date().getFullYear() ? { year: 'numeric' } : {}) });
 const plural = (n, one, many = one + 's') => `${n.toLocaleString()} ${n === 1 ? one : many}`;
 function markProgress(a) {
@@ -7034,6 +7058,7 @@ function renderMarksPage() {
       `<ul class="mk-list">${list.map(markCard).join('')}</ul></section>`;
   }).join('');
   marksNotesEl.checked = !noteQuiet('achievement');
+  dayNotesEl.checked = !noteQuiet('day');
 }
 // The notes drawer's page, on <html data-notes-page>: the finds, or the
 // achievements. Leaving the achievements says they've been seen.
@@ -7070,9 +7095,10 @@ $('#marksBack').addEventListener('click', () => { if (NotesPage.is('marks')) Not
 $('#marksClose').addEventListener('click', () => setNotes(false));
 marksPage.addEventListener('keydown', e => { if (e.key === 'Escape' && NotesPage.is('marks')) { e.stopPropagation(); NotesPage.go('finds'); } });
 marksNotesEl.addEventListener('change', () => setQuiet('achievement', !marksNotesEl.checked));
+dayNotesEl.addEventListener('change', () => setQuiet('day', !dayNotesEl.checked));
 window.addEventListener('storage', e => {
   if (e.key === K_MARKS) { marks = mergeMarks({ got: {}, best: 0, fresh: [] }, readMarks()); renderMarksRow(); if (NotesPage.is('marks')) renderMarksPage(); }
-  if (e.key === K_QUIET && NotesPage.is('marks')) marksNotesEl.checked = !noteQuiet('achievement');
+  if (e.key === K_QUIET && NotesPage.is('marks')) { marksNotesEl.checked = !noteQuiet('achievement'); dayNotesEl.checked = !noteQuiet('day'); }
 });
 setInterval(marksTick, 1500);
 document.addEventListener('visibilitychange', () => { if (!document.hidden) marksTick(); });

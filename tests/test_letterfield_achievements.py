@@ -263,6 +263,75 @@ def test_past_days_with_a_word_or_two_keep_their_slices(page: Page, site_url, er
     assert errors == []
 
 
+COLLECT = "([w, x, y, d]) => window.__lf.collect(w, x, y, d, false)"
+
+
+def test_a_day_that_counts_gets_one_quiet_note(page: Page, site_url, errors):
+    words = known_words(page, site_url, WORDS_JS)
+    # Two days counted, then two words today: the third makes three days running.
+    open_alone(page, site_url, on_days(words, {-2: 3, -1: 3, 0: 2}), now=NOW)
+    page.wait_for_timeout(1000)
+    before, sounds = notes(page), marks(page)["sounds"]
+    page.evaluate(COLLECT, words[8])
+    expect(page.locator("#toast b")).to_have_text("Today counts", timeout=LANDS)
+    expect(page.locator("#toast span").first).to_have_text("3 days running")
+    expect(page.locator("#toast i.day-ico")).to_have_count(1)
+    assert marks(page)["sounds"] == sounds  # no chime
+    # See opens the days.
+    page.locator("#toast").get_by_role("button", name="See your days surveyed").click()
+    expect(page.locator("html")).to_have_attribute("data-notes-page", "marks")
+    # Once a day: a fourth word brings no second note.
+    page.evaluate(COLLECT, words[9])
+    page.wait_for_timeout(2500)
+    assert notes(page)[len(before) :] == ["Today counts"]
+    assert errors == []
+
+
+def test_a_day_after_a_rest_day_says_so(page: Page, site_url, errors):
+    words = known_words(page, site_url, WORDS_JS)
+    open_alone(page, site_url, on_days(words, {-3: 3, -2: 3, 0: 2}), now=NOW)
+    page.evaluate(COLLECT, words[8])
+    expect(page.locator("#toast b")).to_have_text("Today counts", timeout=LANDS)
+    expect(page.locator("#toast span").first).to_have_text("3 days running · yesterday was a rest day")
+    assert errors == []
+
+
+def test_a_day_that_earns_an_achievement_has_that_note_instead(page: Page, site_url, errors):
+    words = known_words(page, site_url, WORDS_JS)
+    # Six days counted, then the seventh's third word: Seven Days Running says it all.
+    plan = {-6: 3, -5: 3, -4: 3, -3: 3, -2: 3, -1: 3, 0: 2}
+    open_alone(
+        page,
+        site_url,
+        on_days(words, plan),
+        now=NOW,
+        store={"letterfield.marks.v1": json.dumps({"got": {"first-mark": [1, 1]}, "best": 6})},
+    )
+    page.wait_for_timeout(1500)
+    before = notes(page)
+    page.evaluate(COLLECT, words[sum(plan.values())])
+    expect(page.locator("#toast b")).to_have_text("Seven Days Running", timeout=LANDS)
+    page.wait_for_timeout(2500)
+    assert "Today counts" not in notes(page)[len(before) :]
+    assert errors == []
+
+
+def test_with_its_switch_off_a_day_that_counts_brings_no_note(page: Page, site_url, errors):
+    words = known_words(page, site_url, WORDS_JS)
+    open_alone(page, site_url, on_days(words, {-1: 3, 0: 2}), now=NOW)
+    open_page(page)
+    switch = page.get_by_role("switch", name="A note when a day counts")
+    expect(switch).to_be_checked()
+    switch.click()
+    assert page.evaluate("JSON.parse(localStorage.getItem('letterfield.quiet.v1'))") == ["day"]
+    expect(page.get_by_role("switch", name="Notes for new achievements")).to_be_checked()
+    page.evaluate(COLLECT, words[5])
+    page.wait_for_function("window.__lf.marks.streak().today === 3")
+    page.wait_for_timeout(2500)
+    assert "Today counts" not in notes(page)
+    assert errors == []
+
+
 def test_a_streak_of_a_week_earns_seven_days_and_counts_toward_a_lunar_month(page: Page, site_url, errors):
     words = known_words(page, site_url, WORDS_JS)
     open_alone(page, site_url, on_days(words, STREAKS["a rest day once a week"][0]), now=NOW)
