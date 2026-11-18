@@ -462,15 +462,52 @@ class FakeRecovery:
         return reply(route, {"code": code, "made": NOW_MS}, 201)
 
 
+# Letterfield's achievements in their catalog's order, which a card counts by
+# (CORE.cardMask in worker/src/achievements.js), and those others can't see.
+ACHIEVEMENTS = (
+    "first-mark field-book bound-volume great-atlas first-light trailblazer pathfinder cairn wanderer gazetteer"
+    " every-last-word five-sheets lions-share map-key full-legend lexicographer dawn-chorus seven-seas star-chart"
+    " passport happy-accident serendipity long-measure compass-rose mirror-image self-portrait over-the-horizon"
+    " edge-of-the-universe here-be-dragons witness starfield last-word seven-days lunar-month thirty-days full-circle"
+    " fellowship two-places hats-off"
+).split()
+UNSEEN = {"cairn", "witness", "starfield", "fellowship", "two-places", "hats-off"}
+CARD_SIG = "CardSigAbCdE"
+
+
+def base36(n: int) -> str:
+    out = ""
+    while True:
+        n, r = divmod(n, 36)
+        out = "0123456789abcdefghijklmnopqrstuvwxyz"[r] + out
+        if not n:
+            return out
+
+
+def card(ids, day: int = 0, signed: bool = False) -> str:
+    """A surveyor's card as presence shows it ("mask.day"), or as the Worker signs it."""
+    mask = sum(2**i for i, a in enumerate(ACHIEVEMENTS) if a in ids and a not in UNSEEN)
+    text = f"{base36(mask)}.{base36(day)}"
+    return f"{text}.{CARD_SIG}" if signed else text
+
+
+def card_ids(text: str) -> list[str]:
+    mask = int(text.split(".")[0], 36)
+    return [a for i, a in enumerate(ACHIEVEMENTS) if mask >> i & 1]
+
+
 class FakeBadges:
     """POST /v1/survey/badges, as worker/src/achievements.js answers it: the badges the Worker
-    signs for a player. It signs whatever's in `signs` that the game asked for (in `earned`) or
-    names in `proven`, with a stand-in signature, and keeps every request in `calls`. Every
-    test's browser answers the fake survey's address with an empty one (tests/conftest.py)."""
+    signs for a player, and their card. It signs whatever's in `signs` that the game asked for (in
+    `earned`) or names in `proven`, with a stand-in signature, and keeps every request in `calls`.
+    With `cards`, it sends a card too: those, the badges the game holds and those on the card it
+    sent, and the day of the `since` it sent. Every test's browser answers the fake survey's
+    address with an empty one (tests/conftest.py), which sends no card."""
 
-    def __init__(self, signs=(), proven=()):
+    def __init__(self, signs=(), proven=(), cards=False):
         self.signs = set(signs)
         self.proven = set(proven)
+        self.cards = cards
         self.calls: list[dict] = []
 
     @staticmethod
@@ -480,5 +517,12 @@ class FakeBadges:
     def handle(self, route: Route) -> None:
         body = json.loads(route.request.post_data or "{}")
         self.calls.append(body)
-        asked = (set(body.get("earned", [])) & self.signs) | self.proven
-        reply(route, {"badges": {b: self.sig(b) for b in sorted(asked)}})
+        asked = ((set(body.get("earned", [])) & self.signs) | self.proven) - UNSEEN
+        held = set(body.get("held", {})) | set(card_ids(body["card"]) if body.get("card") else [])
+        day = body["since"] // 86_400_000 if body.get("since") else 0
+        if body.get("card"):
+            had = int(body["card"].split(".")[1], 36)
+            day = min(day, had) if day and had else day or had
+        on = asked | held
+        signed = {b: self.sig(b) for b in sorted(asked)}
+        reply(route, {"badges": signed, **({"card": card(on, day, True)} if self.cards and (on or day) else {})})

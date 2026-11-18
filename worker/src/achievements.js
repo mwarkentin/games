@@ -7,15 +7,20 @@
 //   sector had it, whether they charted it first or set off a supernova with
 //   it, and a signature over that, the word, its place and their player id
 //   (signFind). The game keeps r with the find, and it syncs with it.
-// - POST /v1/survey/badges {token, z, finds, earned} → {badges: {id: sig}}:
-//   the badges the Worker will stand behind, each signed for this player
-//   (badgeSig). It works them out from the signed finds alone, with the same
-//   rules as the game (the core below), or, until TRUSTED_UNTIL, takes the
-//   game's word for any it has earned, so achievements from before signing
-//   still count. z is the surveyor's time zone (minutes behind UTC, as
-//   getTimezoneOffset), for their days.
+// - POST /v1/survey/badges {token, z, finds, earned, since, held, card} →
+//   {badges: {id: sig}, card}: the badges the Worker will stand behind, each
+//   signed for this player (badgeSig). It works them out from the signed
+//   finds alone, with the same rules as the game (the core below), or, until
+//   TRUSTED_UNTIL, takes the game's word for any it has earned, and for when
+//   it began (since), so achievements from before signing still count. z is
+//   the surveyor's time zone (minutes behind UTC, as getTimezoneOffset), for
+//   their days. held ({id: sig}) and card are what it already has signed,
+//   which stay so.
 // - The game sends its chosen badge in its `me` message ([id, sig]); the
-//   sector checks the signature (survey-social.js) and shows it in presence.
+//   sector checks the signature and shows it in presence.
+// - The same answer brings the surveyor's card (signCard): every badge the
+//   Worker stands behind for them, and the day they began surveying. The game
+//   sends it in `me` too, and others see it in their caret's menu.
 //
 // Signatures are HMAC-SHA256, cut to 72 bits, under keys made from IP_SALT
 // for each use, so there's no new secret to keep. Nothing here is stored:
@@ -35,6 +40,9 @@ const BADGES_PATH = '/v1/survey/badges';
 export const RECEIPT = /^([0-9a-z]{1,11})\.([fz]{0,2})\.([A-Za-z0-9_-]{12})$/;
 export const BADGE = /^[a-z0-9-]{1,32}$/;
 export const BADGE_SIG = /^[A-Za-z0-9_-]{12}$/;
+export const CARD = /^([0-9a-z]{1,11})\.([0-9a-z]{1,4})\.([A-Za-z0-9_-]{12})$/;
+const SINCE_MIN = Date.UTC(2025, 0, 1);    // before Letterfield
+const DAY_MS = 864e5;
 
 // ---- BEGIN ACHIEVEMENTS CORE ----
 // The same in letterfield.html and worker/src/achievements.js, word for word
@@ -105,6 +113,14 @@ function achievementsCore(world) {
     ['hats-off', 'company', 'shlu', null],
   ];
   const CHECK = new Map(CATALOG.map(([id, , , check]) => [id, check]));
+  // The ones signed finds can prove, so others may see them: all but l and u.
+  const SHOWABLE = new Set(CATALOG.filter(([, , flags]) => !/[lu]/.test(flags)).map(([id]) => id));
+  // A surveyor's card names the badges they can show by their places in
+  // CATALOG, as the bits of a number (see "Profile cards"). So a new
+  // achievement goes at the end of CATALOG, never between (the page groups
+  // them by their group), and there's room for 53.
+  const cardMask = (ids) => CATALOG.reduce((m, [id], i) => (SHOWABLE.has(id) && ids.has(id) ? m + 2 ** i : m), 0);
+  const cardIds = (mask) => CATALOG.filter(([id], i) => SHOWABLE.has(id) && Math.floor(mask / 2 ** i) % 2 === 1).map(([id]) => id);
 
   // Runs of counted days, forwards: a missed day is a rest day if no other was
   // missed in the six before it; otherwise the run starts again after the
@@ -212,7 +228,7 @@ function achievementsCore(world) {
     return { T, reached };
   }
 
-  return { CATALOG, CHECK, BIRDS, SEAS, SKIES, NATIONS, STREAK_MIN, runsOf, tally };
+  return { CATALOG, CHECK, SHOWABLE, BIRDS, SEAS, SKIES, NATIONS, STREAK_MIN, cardMask, cardIds, runsOf, tally };
 }
 // ---- END ACHIEVEMENTS CORE ----
 
@@ -251,11 +267,28 @@ export async function checkReceipt(env, pid, find) {
 }
 
 export const badgeSig = (env, pid, id) => mac(env, 'badge', `${pid}|${id}`);
-// The badge a game shows, if its signature is good for this player: its id, or null.
+// The badge a game shows, if its signature is good for this player and it's
+// one others may see: its id, or null.
 export async function checkBadge(env, pid, badge) {
   if (!Array.isArray(badge) || typeof badge[0] !== 'string' || !BADGE.test(badge[0]) || typeof badge[1] !== 'string' || !BADGE_SIG.test(badge[1])) return null;
-  if (!signing(env) || !CORE.CHECK.has(badge[0])) return null;
+  if (!signing(env) || !CORE.SHOWABLE.has(badge[0])) return null;
   return (await badgeSig(env, pid, badge[0])) === badge[1] ? badge[0] : null;
+}
+
+// A surveyor's card, for others to see in their caret's menu: the badges the
+// Worker stands behind for them (CORE.cardMask) and the day they began
+// surveying (UTC days since 1970, 0 if not known), each in base 36, then a
+// signature over both for this player: `5k8jq0.k5x.Ab3dE_gh1JkL`. Others see
+// the part before the signature.
+const cardSig = (env, pid, mask, day) => mac(env, 'card', `${pid}|${mask}|${day}`);
+export const signCard = async (env, pid, mask, day) => `${mask.toString(36)}.${day.toString(36)}.${await cardSig(env, pid, mask, day)}`;
+// What a card says, if its signature is good for this player: {mask, day, shown}, or null.
+export async function checkCard(env, pid, card) {
+  const m = typeof card === 'string' && CARD.exec(card);
+  if (!m || !signing(env)) return null;
+  const mask = parseInt(m[1], 36), day = parseInt(m[2], 36);
+  if (!Number.isSafeInteger(mask) || (await cardSig(env, pid, mask, day)) !== m[3]) return null;
+  return { mask, day, shown: `${mask.toString(36)}.${day.toString(36)}` };
 }
 
 /* ---------- Badges others see ---------- */
@@ -268,11 +301,14 @@ export { achievementsCore, CORE };
 // the sector signed it (when it had it, charted first or not), with its kind
 // (hidden or bonus word) and theme from the map, and a supernova for each
 // that set one off. Unproven ones (CATALOG's u) never come from here.
+// {ids, since}: since is when the sector had the earliest of them.
 export async function provenBadges(env, pid, finds, z, now) {
   const kept = new Map();
+  let since = Infinity;
   for (const f of finds.slice(0, BADGE_FINDS_MAX)) {
     const got = await checkReceipt(env, pid, f);
     if (!got) continue;
+    since = Math.min(since, got.at);
     const key = keyOf(f.w, f.x, f.y, f.d), had = kept.get(key);
     if (had && had.t <= got.at) continue;
     const rx = fdiv(f.x, RC), ry = fdiv(f.y, RC);
@@ -281,7 +317,7 @@ export async function provenBadges(env, pid, finds, z, now) {
   }
   const list = [...kept.values()], novas = list.filter((f) => f.z).map((f) => ({ t: f.t, mine: true, solo: false }));
   const { T } = achievementsCore({ THEMES, territoryTotal, RC, UNIVERSE_EDGE, dayOf: offsetDay(z) }).tally(list, novas, now);
-  return CORE.CATALOG.filter(([, , flags, check]) => !/[lu]/.test(flags) && check(T)[0] >= check(T)[1]).map(([id]) => id);
+  return { ids: CORE.CATALOG.filter(([id, , , check]) => CORE.SHOWABLE.has(id) && check(T)[0] >= check(T)[1]).map(([id]) => id), since };
 }
 
 export function routeBadges(request, env, now = Date.now()) {
@@ -294,13 +330,28 @@ export function routeBadges(request, env, now = Date.now()) {
     const pid = await playerId(tokenIn(body));
     const z = Number.isInteger(body.z) && Math.abs(body.z) <= 840 ? body.z : 0;
     const finds = Array.isArray(body.finds) ? body.finds : [];
-    const earned = Array.isArray(body.earned) ? body.earned.filter((id) => typeof id === 'string' && CORE.CHECK.has(id)) : [];
+    const earned = Array.isArray(body.earned) ? body.earned.filter((id) => typeof id === 'string' && CORE.SHOWABLE.has(id)) : [];
+    const held = body.held && typeof body.held === 'object' && !Array.isArray(body.held) ? Object.entries(body.held).slice(0, CORE.CATALOG.length) : [];
     if (finds.length > BADGE_FINDS_MAX) throw new HttpError(413, 'too many finds');
     await rateLimit(env.DB, 'badges', await hashIp(request, env.IP_SALT), now);
-    const ids = new Set(await provenBadges(env, pid, finds, z, now));
-    if (now < TRUSTED_UNTIL) for (const id of earned) ids.add(id);
+    const proven = await provenBadges(env, pid, finds, z, now);
+    const ids = new Set(proven.ids);
+    let since = proven.since;
+    // The game's word, for a while: what it earned, and when its first find was.
+    if (now < TRUSTED_UNTIL) {
+      for (const id of earned) ids.add(id);
+      if (Number.isFinite(body.since) && body.since >= SINCE_MIN && body.since <= now) since = Math.min(since, body.since);
+    }
+    // What's already signed for this player: badges it holds, and its last card.
+    for (const [id, sig] of held) if (await checkBadge(env, pid, [id, sig])) ids.add(id);
+    const was = await checkCard(env, pid, body.card);
+    if (was) {
+      for (const id of CORE.cardIds(was.mask)) ids.add(id);
+      if (was.day) since = Math.min(since, was.day * DAY_MS);
+    }
     const badges = {};
     for (const id of ids) badges[id] = await badgeSig(env, pid, id);
-    return json({ badges }, 200, cors);
+    const mask = CORE.cardMask(ids), day = Number.isFinite(since) ? Math.floor(since / DAY_MS) : 0;
+    return json({ badges, ...(mask || day ? { card: await signCard(env, pid, mask, day) } : {}) }, 200, cors);
   });
 }

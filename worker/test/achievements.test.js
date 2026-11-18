@@ -9,7 +9,7 @@ import { DatabaseSync } from 'node:sqlite';
 import { afterEach, beforeEach, describe, mock, test } from 'node:test';
 
 import worker from '../src/index.js';
-import { CORE, TRUSTED_UNTIL, UNIVERSE_EDGE, badgeSig, checkBadge, checkReceipt, routeBadges, signFind } from '../src/achievements.js';
+import { CORE, TRUSTED_UNTIL, UNIVERSE_EDGE, badgeSig, checkBadge, checkCard, checkReceipt, routeBadges, signCard, signFind } from '../src/achievements.js';
 import { chunk } from '../src/letterfield-world.js';
 import { AREA, Sector } from '../src/survey.js';
 import { playerId } from '../src/survey-social.js';
@@ -43,6 +43,23 @@ describe('the achievements core', () => {
     for (const i of [...CORE.BIRDS, ...CORE.SEAS, ...CORE.SKIES, ...CORE.NATIONS]) assert.ok(i >= 0);
     assert.equal(UNIVERSE_EDGE, AREA * 4);
     assert.equal(CORE.CATALOG.length, 39);
+  });
+
+  // A card names badges by their places in the catalog, so a card made today
+  // must mean the same once the catalog grows.
+  test('only grows at its end, and a card names every badge others may see', () => {
+    const FIRST = ['first-mark', 'field-book', 'bound-volume', 'great-atlas', 'first-light', 'trailblazer', 'pathfinder', 'cairn',
+      'wanderer', 'gazetteer', 'every-last-word', 'five-sheets', 'lions-share', 'map-key', 'full-legend', 'lexicographer',
+      'dawn-chorus', 'seven-seas', 'star-chart', 'passport', 'happy-accident', 'serendipity', 'long-measure', 'compass-rose',
+      'mirror-image', 'self-portrait', 'over-the-horizon', 'edge-of-the-universe', 'here-be-dragons', 'witness', 'starfield',
+      'last-word', 'seven-days', 'lunar-month', 'thirty-days', 'full-circle', 'fellowship', 'two-places', 'hats-off'];
+    assert.deepEqual(CORE.CATALOG.slice(0, FIRST.length).map(([id]) => id), FIRST);
+    const all = new Set(CORE.CATALOG.map(([id]) => id));
+    assert.deepEqual(CORE.cardIds(CORE.cardMask(all)), [...CORE.SHOWABLE]);
+    assert.equal(CORE.SHOWABLE.size, 33);  // not Cairn, Witness, Starfield or the company's three
+    assert.deepEqual(CORE.cardIds(CORE.cardMask(new Set(['hats-off', 'seven-seas', 'witness']))), ['seven-seas']);
+    assert.equal(CORE.cardMask(new Set()), 0);
+    assert.ok(Number.isSafeInteger(CORE.cardMask(all)));
   });
 });
 
@@ -147,6 +164,35 @@ describe('a sector', () => {
     assert.deepEqual(p.AMY.slice(4), [[], 'seven-seas']);
     assert.deepEqual(p.ZED.slice(4), []);
     assert.equal(await checkBadge(env, pid, ['no-such-badge', await badgeSig(env, pid, 'no-such-badge')]), null);
+    // One others can't see, like Hats Off, isn't shown even with a signature.
+    assert.equal(await checkBadge(env, pid, ['hats-off', await badgeSig(env, pid, 'hats-off')]), null);
+  });
+
+  test("shows a surveyor's card without its signature, if the Worker signed it for them", async () => {
+    const pid = await playerId(token(1)), mask = CORE.cardMask(new Set(['first-mark', 'seven-seas'])), day = 20400;
+    const card = await signCard(env, pid, mask, day);
+    const amy = await join(1, 'AMY', { card });
+    await say(amy, { t: 'pos', x: 10, y: 10 });
+    const zed = await join(2, 'ZED', { card });  // Amy's, not Zed's
+    await say(zed, { t: 'pos', x: 12, y: 10 });
+    const bea = await join(3, 'BEA', { card: await signCard(env, await playerId(token(3)), mask, day), badge: ['seven-seas', await badgeSig(env, await playerId(token(3)), 'seven-seas')] });
+    await say(bea, { t: 'pos', x: 14, y: 10 });
+    clock += 2000;
+    await say(amy, { t: 'here' });
+    await mock.timers.tick(2000);
+    const p = Object.fromEntries(amy.all('presence').at(-1).p.map((q) => [q[1], q]));
+    const shown = `${mask.toString(36)}.${day.toString(36)}`;
+    assert.deepEqual(p.AMY.slice(4), [[], '', shown]);
+    assert.deepEqual(p.BEA.slice(4), [[], 'seven-seas', shown]);
+    assert.deepEqual(p.ZED.slice(4), []);
+    // A new card from the same game takes the old one's place.
+    const next = await signCard(env, pid, CORE.cardMask(new Set(['first-mark', 'seven-seas', 'map-key'])), day);
+    await say(amy, { t: 'me', initials: 'AMY', token: token(1), card: next });
+    clock += 2000;
+    await say(amy, { t: 'here' });
+    await mock.timers.tick(2000);
+    const again = Object.fromEntries(amy.all('presence').at(-1).p.map((q) => [q[1], q]));
+    assert.equal(again.AMY[6], next.split('.').slice(0, 2).join('.'));
   });
 });
 
@@ -191,9 +237,40 @@ describe('POST /v1/survey/badges', () => {
   });
 
   test("takes the game's word for what it earned until TRUSTED_UNTIL, and after that only signed finds", async () => {
+    // Never for one others can't see, which signed finds could never prove.
     const earned = ['great-atlas', 'witness', 'hats-off', 'not-a-badge'];
-    assert.deepEqual(Object.keys((await ask({ earned }, BEFORE))[1].badges).sort(), ['great-atlas', 'hats-off', 'witness']);
+    assert.deepEqual(Object.keys((await ask({ earned }, BEFORE))[1].badges).sort(), ['great-atlas']);
     assert.deepEqual((await ask({ earned }, AFTER))[1].badges, {});
+  });
+
+  const cardOf = async (card) => (card ? checkCard(env, await playerId(token(1)), card) : null);
+  test("signs a card of every badge it stands behind, and the day the surveyor began", async () => {
+    const at = Date.UTC(2026, 11, 20, 10), finds = await signed(territoryWords(0, 0).slice(0, 12), at);
+    const [, { badges, card }] = await ask({ finds, earned: ['great-atlas'], since: Date.UTC(2026, 9, 4, 8) }, BEFORE);
+    const got = await cardOf(card);
+    assert.deepEqual(CORE.cardIds(got.mask), CORE.CATALOG.map(([id]) => id).filter((id) => badges[id]));
+    assert.ok(CORE.cardIds(got.mask).includes('great-atlas'));
+    assert.equal(got.day, Math.floor(Date.UTC(2026, 9, 4) / DAY));  // the game's word, while it's taken
+    // Afterwards, the day comes from the earliest signed find.
+    assert.equal((await cardOf((await ask({ finds, since: Date.UTC(2026, 9, 4) }))[1].card)).day, Math.floor(at / DAY));
+    // Someone else's card means nothing here; with nothing signed, there's no card.
+    const theirs = await signCard(env, await playerId(token(2)), CORE.cardMask(new Set(['great-atlas'])), 20000);
+    assert.equal((await ask({ card: theirs }))[1].card, undefined);
+    assert.equal(await checkCard(env, await playerId(token(1)), theirs), null);
+  });
+
+  test('keeps on a card what was signed before, once the game\'s word is no longer taken', async () => {
+    const pid = await playerId(token(1));
+    const [, before] = await ask({ earned: ['great-atlas', 'passport'], since: Date.UTC(2026, 9, 4) }, BEFORE);
+    // Its last card brings back both badges and the day it began; badges it holds count too.
+    const [, after] = await ask({ card: before.card, held: { 'seven-seas': await badgeSig(env, pid, 'seven-seas'), 'map-key': 'AAAAAAAAAAAA' } });
+    const got = await cardOf(after.card);
+    assert.deepEqual(CORE.cardIds(got.mask), ['great-atlas', 'seven-seas', 'passport']);
+    assert.equal(got.day, Math.floor(Date.UTC(2026, 9, 4) / DAY));
+    assert.deepEqual(Object.keys(after.badges).sort(), ['great-atlas', 'passport', 'seven-seas']);
+    // A card can't be changed without its signature going bad.
+    const forged = before.card.replace(/^[0-9a-z]+/, (CORE.cardMask(new Set(['great-atlas', 'passport', 'full-legend']))).toString(36));
+    assert.equal(await checkCard(env, pid, forged), null);
   });
 
   test("counts no find signed for someone else, unsigned, or tampered with", async () => {

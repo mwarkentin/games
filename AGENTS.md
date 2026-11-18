@@ -652,14 +652,19 @@ the notes drawer (`notesPage`), and their note is a kind of its own,
   answer is followed by a receipt, `{t: 'signed'}`), or, until
   `TRUSTED_UNTIL`, on the game's word for achievements from before signing.
   Keys come from `IP_SALT`.
-- Achievements, the longest streak and the badge shown sync through the
-  Player with the notes.
+- A surveyor's caret menu is their card: every badge signed for them and
+  when they began surveying, never a streak ("Profile cards"). The Worker
+  signs it with their badges, and their sector checks it and adds it to
+  presence. It names badges by their place in the core's catalog, so new
+  achievements go at the end of it.
+- Achievements, the longest streak, the badge shown and the card sync
+  through the Player with the notes.
 - Every test's browser starts with achievement notes quietened
   (`QUIET_ACHIEVEMENTS` in `tests/conftest.py`), so a test's first find
   brings no note it isn't about, and answers the fake survey's
   `/v1/survey/badges` with none; `tests/test_letterfield_achievements.py`
-  turns notes back on, and fakes receipts and badges with
-  `FakeSurvey(sign=True)` and `FakeBadges`.
+  turns notes back on, and fakes receipts, badges and cards with
+  `FakeSurvey(sign=True)` and `FakeBadges(cards=True)`.
 
 ## Letterfield's words
 

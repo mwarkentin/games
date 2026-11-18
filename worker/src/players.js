@@ -9,12 +9,13 @@
 //   POST /v1/link/<code>/status     {token} → {state}: waiting, used or gone (gone to anyone who didn't make it)
 //   POST /v1/link/<code>            {} → {token, carry}, once; then 404
 //
-// carry: {initials, guilds: [{code, name, tag}], labels: {code: text}, muted: [ids], mutedAs: {id: [initials, at]}, emotes, badge}
+// carry: {initials, guilds: [{code, name, tag}], labels: {code: text}, muted: [ids], mutedAs: {id: [initials, at]}, emotes, badge, card}
 //   guilds: up to GUILDS_MAX, in the player's order (an older game's single `guild` is a list of one,
 //     and the answer names the first as `guild` too, for an older game to read)
 //   labels: the player's own names for their guilds ("Work"), seen only on their own devices
 //   mutedAs: who each muted player was when muted, and when, for the game's Muted list
 //   badge: the badge the player shows others, [id, sig] (achievements.js), or null
+//   card: the player's card of badges and when they began, signed (achievements.js), or null
 //
 // A code is eight characters from the groups' alphabet (850 billion codes),
 // good for LINK_MS and for one use. Making codes and trying them are each
@@ -43,7 +44,7 @@
 //   POST /v1/recovery/use     {code} → {token, made}, or 404: made says when the code was, for the device it brings back
 //   POST /v1/recovery/remove  {token} → {ok}
 
-import { BADGE, BADGE_SIG, RECEIPT } from './achievements.js';
+import { BADGE, BADGE_SIG, CARD, RECEIPT } from './achievements.js';
 import { HttpError, INITIALS, answered, corsHeaders, hashIp, hex, initialsOrNone, json, mustPost, randomCode, randomHex, rateLimit, readBody } from './leaderboard.js';
 import { goodName } from './survey-guild.js';
 import { GUILD_CODE, GUILD_TAG, GUILDS_MAX, PID, playerId, tokenIn } from './survey-social.js';
@@ -77,7 +78,7 @@ export function cleanLabel(v) {
 // guilds in guilds.
 export function cleanCarry(c) {
   if (!c || typeof c !== 'object') return null;
-  const { initials = '', guild = null, labels = {}, muted = [], mutedAs = {}, emotes = true, badge = null } = c;
+  const { initials = '', guild = null, labels = {}, muted = [], mutedAs = {}, emotes = true, badge = null, card = null } = c;
   const guilds = c.guilds ?? (guild === null ? [] : [guild]);
   if (!initialsOrNone(initials)) return null;
   if (!Array.isArray(guilds) || guilds.length > GUILDS_MAX || !guilds.every(goodGuild)) return null;
@@ -93,6 +94,7 @@ export function cleanCarry(c) {
   return {
     initials, guilds: kept, guild: kept[0] ?? null, labels: named, muted,
     mutedAs: Object.fromEntries(as.filter(([p]) => muted.includes(p)).map(([p, v]) => [p, [v[0], v[1]]])), emotes, badge: shown,
+    card: typeof card === 'string' && CARD.test(card) ? card : null,
   };
 }
 

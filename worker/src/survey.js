@@ -43,8 +43,9 @@
 //   {t: 'pos', x, y} / {t: 'pos', away: true}
 //                                   where the player is looking, if in this sector
 //   {t: 'claim', w, x, y, d}        a word the player just circled
-//   ('me' may also carry badge: [id, sig], the badge they show, signed by the
-//   Worker for their player id; see achievements.js)
+//   ('me' may also carry badge: [id, sig], the badge they show, and card, their
+//   card of badges and when they began, each signed by the Worker for their
+//   player id; see achievements.js)
 //   {t: 'here'}                     still here: an idle game sends it now and then, so the
 //                                   sector keeps listing it (see REFRESH_MS)
 //   {t: 'emote', to, e, s}          emote e for player `to`, seen in sector s (survey-social.js)
@@ -57,10 +58,11 @@
 //   {t: 'error', key, error}        to a claimer, for a word that isn't there, 'slow down'
 //                                   when the socket or its address claims too fast, or
 //                                   'daily limit' once its address has charted DAILY_CLAIMS today
-//   {t: 'presence', n, p}           players here ([id, initials, x, y, tags?, badge?]), about once a second;
-//                                   the id is the player's (from their token) once they've sent one;
+//   {t: 'presence', n, p}           players here ([id, initials, x, y, tags?, badge?, card?]), about once a
+//                                   second; the id is the player's (from their token) once they've sent one;
 //                                   tags are their guilds' (one as a string, several as a list, an empty
-//                                   list for none when a badge follows); badge is the id of the one they show
+//                                   list for none when more follows); badge is the id of the one they show
+//                                   ('' for none when a card follows); card is theirs without its signature
 //   {t: 'emote', from, ini, e, r}   an emote for this player from player `from`, in territory r
 //   {t: 'emoted', to, e, ok|error}  what became of an emote this player sent
 //   {t: 'guild', tag, on}           which members of one of this player's guilds are online, and where
@@ -94,7 +96,7 @@ import { PASS_PATH, checkPass, handlePass } from './survey-pass.js';
 import { CH, DIRS, MAP_VERSION, RC, STRAY_MIN, VOCAB, chunk, fdiv, keyOf, letterAt, regionTheme, territoryTotal } from './letterfield-world.js';
 import { DAY_MS, HOUR_MS, LOG_BATCH, LOG_MS, LOG_RETRY_MAX_MS, writeLog } from './survey-log.js';
 import { GUILD_TAG, GUILD_TAGS_MAX, checkGuilds, matesFor, noteMates, passMates } from './survey-guild.js';
-import { checkBadge, signFind, signing } from './achievements.js';
+import { checkBadge, checkCard, signFind, signing } from './achievements.js';
 import { ATLAS_LIST_PATH, EMOTE_PATH, LIST_MS, REFRESH_MS, TERR, atlas, fromAtlas, goodWho, lidsOf, listed, send, sendEmote, snapshot, tagsOf, takeEmote, takeMe } from './survey-social.js';
 
 export const SECTOR = RC * TERR;      // cells per sector side
@@ -543,8 +545,11 @@ export class Sector {
       const social = await takeMe(me, msg);
       if (social) this.reportDue = true;
       // The badge they show, if the Worker signed it for them.
-      const badge = me.pid ? await checkBadge(this.env, me.pid, msg.badge) : null, shown = badge !== (me.badge ?? null);
-      if (shown) me.badge = badge;
+      const badge = me.pid ? await checkBadge(this.env, me.pid, msg.badge) : null;
+      // And their card, the same way: others see it without its signature.
+      const card = me.pid ? (await checkCard(this.env, me.pid, msg.card))?.shown ?? null : null;
+      const shown = badge !== (me.badge ?? null) || card !== (me.card ?? null);
+      if (shown) { me.badge = badge; me.card = card; }
       if (initials !== me.initials || social || shown) { me.initials = initials; this.save(ws, me); this.schedulePresence(false); }
     } else if (msg.t === 'pos') {
       const ok = [msg.x, msg.y].every((v) => Number.isFinite(v) && Math.abs(v) < LIMIT);
@@ -861,7 +866,11 @@ export class Sector {
     // One caret a player: a player on two linked devices here shows where they last moved.
     const seen = new Set(), here = this.here().sort((a, b) => b.moved - a.moved).filter((p) => { const id = p.pid || p.id; return !seen.has(id) && seen.add(id); });
     // A member's guild tags: one as a string, as an older game reads it, several as a list.
-    const tags = (p) => { const t = tagsOf(p), tag = t.length === 1 ? t[0] : t; return p.badge ? [tag, p.badge] : t.length ? [tag] : []; };
+    // Then the badge they show and their card, if they have them.
+    const tags = (p) => {
+      const t = tagsOf(p), tag = t.length === 1 ? t[0] : t;
+      return p.card ? [tag, p.badge || '', p.card] : p.badge ? [tag, p.badge] : t.length ? [tag] : [];
+    };
     broadcast(this.ctx, JSON.stringify({ t: 'presence', n: here.length, p: here.slice(0, PRESENCE_MAX).map((p) => [p.pid || p.id, p.initials, p.x, p.y, ...tags(p)]) }));
     this.maybeReport();
   }

@@ -97,6 +97,7 @@ def test_finds_and_settings_go_both_ways(page: Page, site_url, errors):
         "mutedAs": {},
         "emotes": True,
         "badge": None,  # the badge shown to others (see test_letterfield_achievements.py)
+        "card": None,  # their card of badges, which others see
     }
     page.wait_for_function(f"window.__lf.found.size === {len(mine) + 1}")
     assert noted(page) == sorted([f["w"] for f in mine] + [theirs["w"]])

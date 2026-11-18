@@ -710,6 +710,21 @@ html[data-notes-page="marks"] .notes > :not(.marks-page){display:none!important}
 .peek .peek-mk,.caret-who .peek-mk{flex:none;display:inline-flex;align-items:center;gap:5px;color:var(--ink);font:500 11px/1.2 var(--f-mono);overflow:visible}
 .peek .peek-mk .mk,.caret-who .peek-mk .mk{width:18px;height:18px}
 .caret-who .peek-mk{align-self:center}
+/* Their card, in their caret's menu: the badge they show, when they began, and every badge
+   the Worker stands behind for them. A badge tapped says what it is. */
+.caret-who i{flex:none;align-self:center;width:8px;height:8px;border-radius:50%;background:var(--c)}
+.pc-shown{display:flex;align-items:center;gap:10px;margin:2px 2px 8px}
+.pc-shown .mk-big{width:52px;height:52px}
+.pc-shown p{display:flex;flex-direction:column;gap:2px;min-width:0;margin:0}
+.pc-shown b{font:600 14px/1.15 var(--f-ui)}
+.pc-shown span{font-size:12px;line-height:1.3;color:var(--muted)}
+.pc-since{display:flex;justify-content:space-between;gap:8px;margin:0 2px 6px;font:400 11px/1.3 var(--f-mono);color:var(--muted)}
+.pc-marks{display:grid;grid-template-columns:repeat(auto-fill,minmax(28px,1fr));justify-items:center;gap:2px 0;margin:0 0 2px}
+.pc-mk{display:grid;place-items:center;width:28px;height:28px;padding:0;border:0;border-radius:50%;background:none;cursor:pointer}
+.pc-mk[aria-pressed="true"]{box-shadow:0 0 0 1.5px var(--ink)}
+.pc-say{min-height:15px;margin:2px 2px 8px;font:400 11px/1.35 var(--f-mono);color:var(--muted)}
+.pc-say b{color:var(--ink);font-weight:500}
+.pc-guilds{margin:0 2px 8px;font:400 11px/1.3 var(--f-mono);color:var(--muted)}
 /* In a note, the badge stands in for its dot, and draws itself in unless motion is reduced. */
 .toast i.mk-ico{width:28px;height:28px;border-radius:0;background:none}
 .toast i.mk-ico .mk{width:28px;height:28px}
@@ -3397,7 +3412,7 @@ function draw(now) {
   // view, like someone else's cursor (a dot when zoomed out), and never text on
   // the letters. It eases toward each new position; idle surveyors fade.
   const seen = new Set();
-  for (const l of links.values()) for (const [id, ini, gx, gy, tags, badge] of l.here) {
+  for (const l of links.values()) for (const [id, ini, gx, gy, tags, badge, card] of l.here) {
     if (muted.has(id)) continue;  // hidden on this device (see Surveyors)
     if (seen.has(id)) continue;   // one caret a player, on two linked devices in two sectors too
     seen.add(id);
@@ -3405,6 +3420,7 @@ function draw(now) {
     if (!gh) { gh = { x: gx, y: gy, t: now, hue: hueOf(id), tx: gx, ty: gy, moved: now }; ghosts.set(id, gh); }
     gh.ini = initialsOf(ini);  // it goes into the hover card's HTML
     gh.badge = typeof badge === 'string' && MARK_BY[badge] ? badge : '';  // the badge they show, which their sector checked
+    if (gh.cardText !== card) { gh.cardText = card; gh.card = readCard(card); }  // and their card, read once
     if (gx !== gh.tx || gy !== gh.ty) { gh.tx = gx; gh.ty = gy; gh.moved = now; }
     const k = RM || Math.hypot(gx - gh.x, gy - gh.y) > 80 ? 1 : 1 - Math.exp(-(now - gh.t) / 180);
     gh.x += (gx - gh.x) * k; gh.y += (gy - gh.y) * k; gh.t = now;
@@ -3769,7 +3785,7 @@ function peekAt(px, py) {
   }
   if (near) {
     const shared = (near.mates || []).filter(g => guildOfCode(g.code));
-    html = `<i></i><b>${near.ini || 'A surveyor'}</b>${badgeTag(near.badge)}<span>${shared.map(g => `${esc(shownName(g))} · `).join('')}${now - near.moved > IDLE_MS ? 'idle' : 'surveying here'} · right-click for emotes</span>`;
+    html = `<i></i><b>${near.ini || 'A surveyor'}</b>${badgeTag(near.badge)}<span>${shared.map(g => `${esc(shownName(g))} · `).join('')}${now - near.moved > IDLE_MS ? 'idle' : 'surveying here'} · right-click for more</span>`;
     hue = near.hue;
   } else {
     const x = Math.floor(w.x), y = Math.floor(w.y);
@@ -4701,8 +4717,8 @@ function saveMuted() {
 // What every sector is told about us when it's joined, and again when any of it changes. Our
 // guilds go as a list, and the first as `guild` too, which a Worker from before lists reads.
 function meMessage() {
-  const badge = shownBadge();
-  return { t: 'me', initials: myInitials(), ...(playerToken ? { token: playerToken } : {}), ...(emotesOn ? {} : { quiet: true }), ...(myGuilds.length ? { guilds: myGuilds.map(g => g.code), guild: myGuilds[0].code } : {}), ...(badge ? { badge } : {}) };
+  const badge = shownBadge(), card = myCard();
+  return { t: 'me', initials: myInitials(), ...(playerToken ? { token: playerToken } : {}), ...(emotesOn ? {} : { quiet: true }), ...(myGuilds.length ? { guilds: myGuilds.map(g => g.code), guild: myGuilds[0].code } : {}), ...(badge ? { badge } : {}), ...(card ? { card } : {}) };
 }
 const tellMe = () => { for (const l of links.values()) tell(l, meMessage()); };
 // A caret's colour, from its id, as the map draws it.
@@ -5099,13 +5115,15 @@ function caretAt(px, py) {
   }
   if (!near) return null;
   const c = caretOf(near), gh = ghosts.get(near);
-  return { pid: near, ini: gh.ini || '', badge: gh.badge || '', rx: fdiv(Math.floor(c.x), RC), ry: fdiv(Math.floor(c.y), RC) };
+  return { pid: near, ini: gh.ini || '', badge: gh.badge || '', card: gh.card || null, hue: gh.hue, mates: gh.mates || [], rx: fdiv(Math.floor(c.x), RC), ry: fdiv(Math.floor(c.y), RC) };
 }
 function openCaretMenu(s, px, py) {
   hidePeek();
   caretFor = s;
   const who = s.ini || 'A surveyor', m = muted.has(s.pid), listed = whoFind(s.pid), quiet = !m && !!(listed && listed.quiet);
-  caretMenu.innerHTML = `<p class="caret-who"><b id="caretWho">${s.ini || '···'}</b>${badgeTag(s.badge)}<span>${regionName(s.rx, s.ry)}</span></p>` +
+  caretMenu.style.setProperty('--c', `hsl(${s.hue}, ${C.ms}, ${C.ml})`);
+  caretMenu.innerHTML = (s.card ? `<p class="caret-who"><i></i><b id="caretWho">${s.ini || '···'}</b><span>${regionName(s.rx, s.ry)}</span></p>${cardHtml(s)}`
+    : `<p class="caret-who"><b id="caretWho">${s.ini || '···'}</b>${badgeTag(s.badge)}<span>${regionName(s.rx, s.ry)}</span></p>`) +
     `<div class="emote-row">${EMOTES.map(e => emoteBtn(e, who, m || quiet)).join('')}</div>` +
     `<p class="who-said" aria-live="polite">${quiet ? `${who} isn’t taking emotes.` : ''}</p><button type="button" class="who-mute">${m ? 'Unmute' : 'Mute'} ${who}</button>`;
   caretMenu.hidden = false;
@@ -5125,6 +5143,7 @@ caretMenu.addEventListener('click', e => {
   const b = e.target.closest('button'), s = caretFor;
   if (!b || !s) return;
   if (b.classList.contains('emote')) { closeCaretMenu(true); sendEmote(s, b.dataset.e); }  // shut first, so what it says shows
+  else if (b.classList.contains('pc-mk')) sayCardMark(b);
   else if (b.classList.contains('who-mute')) { setMuted(s, !muted.has(s.pid)); closeCaretMenu(true); }
 });
 caretMenu.addEventListener('keydown', e => { if (e.key === 'Escape') { e.stopPropagation(); closeCaretMenu(true); } });
@@ -5721,6 +5740,7 @@ function applySettings(c) {
   }
   if (typeof c.emotes === 'boolean') { emotesOn = emotesEl.checked = c.emotes; LS.set(K_EMOTES, emotesOn ? '1' : '0'); if (!emotesOn) pops = []; }
   if ('badge' in c) takeShownBadge(c.badge);
+  if ('card' in c) takeCard(c.card);
   tellMe(); renderWho(); invalidate();
   // Our labels for our guilds, then the guilds themselves, if this device
   // isn't in the middle of changing them itself. Each keeps the log id this
@@ -5901,7 +5921,7 @@ const linkCall = (path, body) => workerCall(`/v1/link${path}`, body);
 // Our guilds go as a list, with the first as `guild` too, for an older game on a linked device.
 const mySettings = () => ({
   initials: myInitials(), guilds: myGuilds.map(bareGuild), guild: myGuilds.length ? bareGuild(myGuilds[0]) : null, labels: Object.fromEntries(labels),
-  muted: [...muted].slice(-MUTED_MAX), mutedAs: Object.fromEntries(mutedAs), emotes: emotesOn, badge: shownBadge(),
+  muted: [...muted].slice(-MUTED_MAX), mutedAs: Object.fromEntries(mutedAs), emotes: emotesOn, badge: shownBadge(), card: myCard(),
 });
 // The Worker's guild, link, recovery and player paths: JSON sent as
 // text/plain, so no preflight, as the leaderboards do; with no body, a GET.
@@ -6350,6 +6370,14 @@ function achievementsCore(world) {
     ['hats-off', 'company', 'shlu', null],
   ];
   const CHECK = new Map(CATALOG.map(([id, , , check]) => [id, check]));
+  // The ones signed finds can prove, so others may see them: all but l and u.
+  const SHOWABLE = new Set(CATALOG.filter(([, , flags]) => !/[lu]/.test(flags)).map(([id]) => id));
+  // A surveyor's card names the badges they can show by their places in
+  // CATALOG, as the bits of a number (see "Profile cards"). So a new
+  // achievement goes at the end of CATALOG, never between (the page groups
+  // them by their group), and there's room for 53.
+  const cardMask = (ids) => CATALOG.reduce((m, [id], i) => (SHOWABLE.has(id) && ids.has(id) ? m + 2 ** i : m), 0);
+  const cardIds = (mask) => CATALOG.filter(([id], i) => SHOWABLE.has(id) && Math.floor(mask / 2 ** i) % 2 === 1).map(([id]) => id);
 
   // Runs of counted days, forwards: a missed day is a rest day if no other was
   // missed in the six before it; otherwise the run starts again after the
@@ -6457,7 +6485,7 @@ function achievementsCore(world) {
     return { T, reached };
   }
 
-  return { CATALOG, CHECK, BIRDS, SEAS, SKIES, NATIONS, STREAK_MIN, runsOf, tally };
+  return { CATALOG, CHECK, SHOWABLE, BIRDS, SEAS, SKIES, NATIONS, STREAK_MIN, cardMask, cardIds, runsOf, tally };
 }
 // ---- END ACHIEVEMENTS CORE ----
 // The rules, for this map and the surveyor's own days.
@@ -6718,11 +6746,11 @@ function takeSyncedMarks(list, best) {
    page: it goes in our `me` message, our sector checks the signature, and
    it shows on our caret's hover card and menu. */
 const K_BADGE = 'letterfield.badge.v1';
-// The badge we show, [id, sig], while it's still one of ours with that signature.
+// The badge we show, [id, sig], while it's still one of ours with that signature, and one others may see.
 function shownBadge() {
   try {
     const b = JSON.parse(LS.get(K_BADGE) || 'null');
-    if (Array.isArray(b) && MARK_BY[b[0]] && marks.got[b[0]] && marks.got[b[0]][2] === b[1]) return [b[0], b[1]];
+    if (Array.isArray(b) && MARK_BY[b[0]] && MARK_BY[b[0]].proof && marks.got[b[0]] && marks.got[b[0]][2] === b[1]) return [b[0], b[1]];
   } catch (_) {}
   return null;
 }
@@ -6741,19 +6769,80 @@ function takeShownBadge(b) {
 }
 // A badge as a hover card or caret menu shows it: its drawing and name.
 const badgeTag = id => (MARK_BY[id] ? `<span class="peek-mk">${badgeSvg(MARK_BY[id], 'got')}${MARK_BY[id].name}</span>` : '');
+
+/* A surveyor's card (see "Profile cards" in worker/ACHIEVEMENTS.md): every
+   badge the Worker stands behind for them, and the day they began, signed
+   for them. The Worker sends ours with our badges; it goes in our `me`
+   message, and syncs with our settings. Their sector checks it, and anyone
+   near them sees it in their caret's menu, without the signature. Nobody's
+   streak or days surveyed is on it. */
+const K_CARD = 'letterfield.card.v1';
+const CARD_RE = /^([0-9a-z]{1,11})\.([0-9a-z]{1,4})(\.[A-Za-z0-9_-]{12})?$/;
+// What a card says, {ids, day} (day 0 if not known), or null.
+function readCard(text) {
+  const m = typeof text === 'string' && CARD_RE.exec(text);
+  const mask = m ? parseInt(m[1], 36) : NaN;
+  return Number.isSafeInteger(mask) ? { ids: CORE.cardIds(mask), day: parseInt(m[2], 36) } : null;
+}
+// Ours, signed, or null.
+function myCard() {
+  const c = LS.get(K_CARD);
+  return c && CARD_RE.exec(c)?.[3] && readCard(c) ? c : null;
+}
+// A card from the Worker, which made it from ours, takes our card's place;
+// one from another of our devices only if it has every badge ours has and
+// begins no later. Says whether it did.
+function takeCard(c, fromWorker = false) {
+  const next = readCard(c), had = readCard(myCard());
+  if (!next || !CARD_RE.exec(c)[3] || c === myCard()) return false;
+  if (!fromWorker && had && (had.ids.some(id => !next.ids.includes(id)) || (had.day && (!next.day || next.day > had.day)))) return false;
+  LS.set(K_CARD, c);
+  return true;
+}
+const sinceText = day => new Date(day * 864e5).toLocaleDateString(undefined, { month: 'short', year: 'numeric', timeZone: 'UTC' });
+// A badge as someone else's card shows it: a secret we haven't found stays a question mark.
+const cardMarkHidden = a => a.secret && !marks.got[a.id];
+function cardHtml(s) {
+  const ids = s.card.ids.filter(id => MARK_BY[id]), shown = MARK_BY[s.badge];
+  const big = !shown ? '' : `<div class="pc-shown">${badgeSvg(shown, 'got', 1, true)}<p><b>${shown.name}</b><span>${cardMarkHidden(shown) ? 'A secret achievement.' : shown.desc}</span></p></div>`;
+  const line = [s.card.day ? `<span>Surveying since ${sinceText(s.card.day)}</span>` : '', ids.length ? `<span>${plural(ids.length, 'badge')}</span>` : ''].filter(Boolean).join('<span class="vh"> · </span>');
+  const grid = ids.map(id => {
+    const a = MARK_BY[id], hide = cardMarkHidden(a);
+    return `<button type="button" class="pc-mk" data-mk="${id}" aria-pressed="false" aria-label="${hide ? 'A secret achievement' : a.name}">${badgeSvg(hide ? { ...a, draw: 'secret' } : a, 'got')}</button>`;
+  }).join('');
+  const shared = (s.mates || []).filter(g => guildOfCode(g.code)).map(g => esc(shownName(g)));
+  return `${big}${line ? `<p class="pc-since">${line}</p>` : ''}${grid ? `<div class="pc-marks">${grid}</div><p class="pc-say" aria-live="polite"></p>` : ''}` +
+    (shared.length ? `<p class="pc-guilds">${shared.length === 1 ? 'In your guild' : 'In your guilds'} ${shared.join(' · ')}</p>` : '');
+}
+// A badge tapped on a card says what it is, until another is tapped.
+function sayCardMark(b) {
+  const a = MARK_BY[b.dataset.mk], say = caretMenu.querySelector('.pc-say');
+  if (!a || !say) return;
+  const on = b.getAttribute('aria-pressed') !== 'true';
+  for (const o of caretMenu.querySelectorAll('.pc-mk')) o.setAttribute('aria-pressed', String(on && o === b));
+  say.innerHTML = !on ? '' : cardMarkHidden(a) ? '<b>A secret achievement</b> · find it yourself to see which' : `<b>${a.name}</b> · ${a.desc}`;
+}
 // Asks the Worker to sign what it will for us, for achievements without a
 // signature: when one is earned, and once a visit. The answer is kept with
 // them, and synced, so a badge earned from older notes stays showable.
 let badgesAsked = '';
 async function askBadges() {
   if (!surveyApi || !playerToken) return;
-  const want = marksHere().filter(a => marks.got[a.id] && !marks.got[a.id][2]).map(a => a.id);
+  const want = marksHere().filter(a => a.proof && marks.got[a.id] && !marks.got[a.id][2]).map(a => a.id);
+  const held = Object.fromEntries(MARKS.filter(a => a.proof && marks.got[a.id] && marks.got[a.id][2]).map(a => [a.id, marks.got[a.id][2]]));
+  // Our card is due, once we've found something, if we have none or it's missing a badge we hold.
+  const card = myCard(), on = readCard(card), due = found.size > 0 && (!on || Object.keys(held).some(id => !on.ids.includes(id)));
   const finds = [...found.values()].filter(e => e.r).map(e => ({ w: e.w, x: e.x, y: e.y, d: e.d, r: e.r }));
-  const asking = `${want.join()}|${finds.length}`;
-  if (!want.length || asking === badgesAsked) return;
+  const asking = `${want.join()}|${finds.length}|${card}`;
+  if ((!want.length && !due) || asking === badgesAsked) return;
   badgesAsked = asking;
-  const { status, data } = await workerCall('/v1/survey/badges', { token: playerToken, z: new Date().getTimezoneOffset(), finds, earned: want });
+  let since = Infinity;
+  for (const e of found.values()) if (e.t < since) since = e.t;
+  const { status, data } = await workerCall('/v1/survey/badges', {
+    token: playerToken, z: new Date().getTimezoneOffset(), finds, earned: want, held, ...(card ? { card } : {}), ...(since < Infinity ? { since } : {}),
+  });
   if (status !== 200 || !data || typeof data.badges !== 'object' || !data.badges) { badgesAsked = ''; return; }
+  if (takeCard(data.card, true)) { tellMe(); settingsChanged(); }
   marks = mergeMarks(marks, readMarks());
   let changed = false;
   for (const [id, sig] of Object.entries(data.badges)) {
@@ -6881,7 +6970,7 @@ function markCard(a) {
     : hidden ? '' : st === 'prog' ? `${have.toLocaleString()} of ${need.toLocaleString()}${of ? ` · ${of}` : ''}` : a.survey && !surveyApi ? 'On the shared survey' : 'Not yet';
   const isNew = got && marks.fresh.includes(a.id), shown = (shownBadge() || [])[0] === a.id;
   const acts = !got ? '' : `<span class="mk-acts"><button type="button" class="pill" data-share="${a.id}" aria-label="Share ${a.name}">Share</button>` +
-    (surveyApi && got[2] ? `<button type="button" class="pill" data-show="${a.id}" aria-pressed="${shown}" aria-label="Show ${a.name} on your caret">${shown ? 'On your caret' : 'Show'}</button>` : '') + '</span>';
+    (surveyApi && a.proof && got[2] ? `<button type="button" class="pill" data-show="${a.id}" aria-pressed="${shown}" aria-label="Show ${a.name} on your caret">${shown ? 'On your caret' : 'Show'}</button>` : '') + '</span>';
   return `<li class="mk-card ${st}${shown ? ' shown' : ''}" id="mk-${a.id}">${isNew ? '<span class="mk-new">New</span>' : ''}${badgeSvg(a, st, have / need, true)}` +
     `<b>${name}</b><span class="mk-d">${desc}</span>${p ? `<span class="mk-p">${p}</span>` : ''}${acts}` +
     `<span class="vh">${got ? 'Earned.' : st === 'prog' ? `Under way: ${have} of ${need}.` : 'Not earned yet.'}${isNew ? ' New.' : ''}</span></li>`;
@@ -6947,7 +7036,7 @@ setTimeout(() => {
   askBadges();
   if (location.hash === '#debug' && window.__lf) {
     window.__lf.marks = {
-      catalog: () => MARKS.map(({ id, g, name, desc, survey = false, secret = false, latch = false }) => ({ id, g, name, desc, survey, secret, latch })),
+      catalog: () => MARKS.map(({ id, g, name, desc, survey = false, secret = false, latch = false, proof = false }) => ({ id, g, name, desc, survey, secret, latch, proof })),
       state: () => ({ got: { ...marks.got }, best: marks.best, fresh: [...marks.fresh], page: NotesPage.state, sounds: markSounds, quiet: noteQuiet('achievement'),
         progress: Object.fromEntries(marksHere().map(a => [a.id, markProgress(a).slice(0, 2)])) }),
       streak: () => { const T = marksState.T; return { days: T.days, current: T.current, best: Math.max(T.best, marks.best), today: T.today, counted: [...T.counted].sort((a, b) => a - b).map(d => dayDate(d).toDateString()) }; },
@@ -6958,6 +7047,8 @@ setTimeout(() => {
       reset: () => { LS.remove(K_MARKS); marks = { got: {}, best: 0, fresh: [] }; markQueue = []; marksSig = ''; renderMarksRow(); },
       badge: (id, st = 'got', frac = 0, big = false) => badgeSvg(MARK_BY[id], st, frac, big),
       draw: MARK_DRAW,
+      // Our card, and one offered as another of our devices would.
+      card: () => readCard(myCard()), takeCard: c => takeCard(c),
     };
   }
 });

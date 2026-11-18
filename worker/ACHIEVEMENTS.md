@@ -12,7 +12,9 @@ the same sectors.
   supernovas.
 - **Through the Player:** they sync between linked devices.
 - **Shown to others:** one chosen badge, signed by the Worker from finds the
-  sectors signed (see "Badges others see").
+  sectors signed (see "Badges others see"), and a card in each surveyor's
+  caret menu with every badge signed for them and when they began (see
+  "Profile cards").
 - **Shared code:** the rules are one block of code, word for word the same in
   the game and in `src/achievements.js`.
 
@@ -234,6 +236,9 @@ from today for the current one; both give the same answer for any day).
 Not on the Surveyors drawer: it's about other people, and it only exists on
 the shared survey, where solo play has achievements too.
 
+**On the map, for others:** the badge a surveyor shows, on their caret's
+hover card, and their card in their caret's menu (see "Profile cards").
+
 ## Earning one
 
 - **A note of its own kind,** `achievement`: the badge, its name, and
@@ -313,9 +318,11 @@ changed since the last version, and `best`, as finds go:
 - **Devices already syncing** when achievements arrived have nothing queued
   for them; their sync state reads as "everything" (`'*'`) until the first
   sync sends it all.
-- **The badge shown** goes with the other synced settings (`badge` in a
-  link's carry, cleaned by `cleanCarry`), and finds keep their receipts
-  (`r`, merged by `mergedFind`).
+- **The badge shown and the card** go with the other synced settings
+  (`badge` and `card` in a link's carry, cleaned by `cleanCarry`), and finds
+  keep their receipts (`r`, merged by `mergedFind`). A card that arrives by
+  sync takes the place of this device's only if it has every badge this one
+  has and begins no later, so an older one never wins.
 
 ## Cost
 
@@ -331,9 +338,14 @@ changed since the last version, and `best`, as finds go:
 - **Signing finds:** one HMAC per word circled on the survey (microseconds),
   one small message back, and about 25 bytes more in each find, on the
   device and in the Player. Nothing new is stored on the server.
-- **Badges:** one request when an achievement is earned and one a visit,
-  each checking the player's signed finds (1,000 signatures is a few
-  milliseconds), limited to 30 an hour per address. No storage.
+- **Badges:** one request when an achievement is earned, or when the
+  surveyor's card is missing a badge they hold, each checking the player's
+  signed finds (1,000 signatures is a few milliseconds), limited to 30 an
+  hour per address. No storage.
+- **Cards:** one HMAC in the sector when a surveyor joins it or their card
+  changes, and about 15 bytes more for each surveyor with one in each
+  presence message (once a second while anyone moves). No storage beyond the
+  socket's attachment, which already holds the badge.
 
 ## Badges others see
 
@@ -359,22 +371,24 @@ in D1, and a table of counts. Too much for a badge.
   Nothing is stored.
 - **The game keeps r with the find**, and it syncs with it (`cleanFind` and
   `mergedFind` in `src/players.js`).
-- **POST /v1/survey/badges** `{token, z, finds, earned}` → `{badges: {id:
-  sig}}` (`routeBadges` in `src/achievements.js`). The Worker checks each
-  find's receipt against the token's player id, works the badges out from
-  the signed finds alone with the game's own rules (the shared core), and
-  signs each badge for that player. A day is the surveyor's date by `z`, their
-  time zone, from the sector's times, so a streak shown can't be had by
-  changing the clock. The game asks when an achievement is earned and once a
-  visit, and keeps the signatures with its achievements, synced.
+- **POST /v1/survey/badges** `{token, z, finds, earned, since, held, card}`
+  → `{badges: {id: sig}, card}` (`routeBadges` in `src/achievements.js`).
+  The Worker checks each find's receipt against the token's player id, works
+  the badges out from the signed finds alone with the game's own rules (the
+  shared core), and signs each badge for that player. A day is the
+  surveyor's date by `z`, their time zone, from the sector's times, so a
+  streak shown can't be had by changing the clock. The game asks when an
+  achievement is earned or its card is due, and keeps the signatures with
+  its achievements, synced. `since`, `held` and `card` are for the card (see
+  "Profile cards").
 - **Shown:** the player picks one on the Achievements page. It goes in their
   `me` message, `badge: [id, sig]`. Their sector checks the signature
-  (`checkBadge`), one HMAC with no lookups, and puts the badge's id last in
+  (`checkBadge`), one HMAC with no lookups, and puts the badge's id in
   presence: `[id, initials, x, y, tags, badge]`. The game draws it on their
   caret's hover card and in their caret's menu (the long press on a phone),
   with its name. It's never listed or ranked.
 - **Keys** come from `IP_SALT`, one for each use (`letterfield-find:`,
-  `letterfield-badge:`), so there's no new secret. Without a salt (a local
+  `letterfield-badge:`, `letterfield-card:`), so there's no new secret. Without a salt (a local
   `wrangler dev` without one) nothing is signed and nothing believed.
 
 **What signed finds can show:** everything built from words circled on the
@@ -386,9 +400,64 @@ made alone, or before signing began, carry no receipt.
 
 **Achievements from before signing** count on the game's word: until
 `TRUSTED_UNTIL` in `src/achievements.js`, the Worker signs any badge the game
-says it has earned, so what surveyors earned before receipts existed can be
-shown. After that, only signed finds. Set it a couple of weeks after this
-ships; while only a few people play, that window is the whole risk.
+says it has earned (of those signed finds could prove: never a `u` or `l`),
+so what surveyors earned before receipts existed can be shown. After that,
+only signed finds. A signature, once made, is kept with the achievement and
+synced, so a badge signed in that window stays showable. Set it a couple of
+weeks after this ships; while only a few people play, that window is the
+whole risk.
+
+## Profile cards
+
+Long-press a surveyor's caret on a phone, or right-click it on a computer,
+and its menu is their card:
+
+- their initials, a dot of their caret's colour, and the territory they're
+  in;
+- the badge they show, big, with its name and what it's for;
+- "Surveying since Oct 2026", and how many badges;
+- every badge the Worker stands behind for them, small, in the catalog's
+  order. Tap one and a line under them says what it is. A secret one the
+  viewer hasn't found yet stays a question mark;
+- the guilds the viewer shares with them;
+- the emotes and Mute, as the menu always had.
+
+**Never on it:** their streak or days surveyed. Comparing streaks between
+people is what turns a calm streak into a chore (see "Lessons from other
+games"), and the log already says who charts the most. The share-only six
+never appear either, so everything on a card was proven or signed in the
+window.
+
+**For everyone, with no switch.** A surveyor's card shows to anyone whose
+map shows their caret, just as their initials and caret do.
+
+**How it's made, with nothing stored:**
+
+- The badges endpoint also answers with the surveyor's **card**: which badges
+  it signed for them, as the bits of a number over the catalog's order
+  (`cardMask` in the core), and the day they began (UTC days since 1970),
+  in base 36 and signed for their player id: `5k8jq0.k5x.Ab3dE_gh1JkL`
+  (`signCard` in `src/achievements.js`).
+- **Which badges:** those it signs now, those the game already holds
+  signatures for (`held`), and those on the card the game sends back
+  (`card`). So nothing signed is ever lost from a card.
+- **When they began:** the earliest of their signed finds, the card they
+  send back, and, until `TRUSTED_UNTIL`, the game's own earliest find
+  (`since`). So a surveyor who began before signing keeps their real start.
+- **The game** keeps it in `letterfield.card.v1`, sends it in its `me`
+  message, and asks for a new one when it has none, or when it holds a badge
+  the card doesn't have.
+- **The sector** checks it (`checkCard`, one HMAC) and adds the part before
+  the signature last in presence: `[id, initials, x, y, tags, badge, card]`,
+  with `''` for the badge when there's none to show.
+- **The catalog only grows at its end:** a card names badges by their place
+  in it. The page groups them by their group, so a new achievement can go
+  last whatever its group. `worker/test/achievements.test.js` checks the
+  first 39 keep their places; there's room for 53.
+
+**Limits:** a card only goes where presence goes, to surveyors in the same
+sector, so the Surveyors drawer's rows for people further away don't have
+one. Someone on a game from before cards gets the menu as it was.
 
 ## Site-wide later
 
@@ -418,7 +487,9 @@ other games ever want it.
   - `grant(id)` (earned now, with its note and chime), `grantAll()`
     (quietly), `reset()` (as if achievements were new, so the next check is
     a backfill) and `check()`, for screenshots and tests;
-  - `badge(id, state, fraction, big)`, a badge's markup.
+  - `badge(id, state, fraction, big)`, a badge's markup;
+  - `card()`, what our card says, and `takeCard(card)`, as a synced one
+    arrives.
 - To try badges on the survey locally, run `wrangler dev` with an `IP_SALT`
   (in `worker/.dev.vars`), and open the game with `?survey=`: circled words
   come back signed, and earned badges offer Show.
@@ -440,6 +511,11 @@ linked device earning quietly. Stage 2's add:
 - Show sending the badge to the sector;
 - achievements from before signing signed on the game's word;
 - someone's badge on their hover card and menu;
+- our card asked for, sent to the sector and not asked for again;
+- someone's card in their caret's menu, a secret badge kept a secret, and
+  the menu as it was for someone without a card;
+- a card synced from another device, taken only if it has everything ours
+  has;
 - achievements and the longest streak synced between linked devices;
 - sharing a badge.
 
@@ -454,9 +530,14 @@ a test isn't about, and answers the fake survey's badges with none.
 
 - that the core matches the game's, word for word;
 - receipts, and a sector signing what it answers (with the supernova flag);
-- a badge shown in presence only when signed for that player;
+- a badge shown in presence only when signed for that player, and never a
+  share-only one;
+- a card in presence only when signed for that player, and a new one taking
+  its place;
+- the catalog keeping its order, and cards naming every badge others may see;
 - the badges endpoint: proven, trusted until `TRUSTED_UNTIL`, nothing from
-  others' or tampered finds, days by the surveyor's dates, limits.
+  others' or tampered finds, days by the surveyor's dates, limits; its card,
+  with the day the surveyor began, and what was signed before kept on it.
 
-`worker/test/players.test.js` covers receipts, achievements and the badge in
-sync.
+`worker/test/players.test.js` covers receipts, achievements, the badge and
+the card in sync.

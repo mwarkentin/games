@@ -80,6 +80,7 @@ def test_a_code_shows_as_a_qr_code_and_a_link_and_hears_when_its_used(page: Page
         "mutedAs": {LOU[0]: ["LOU", 5]},
         "emotes": True,
         "badge": None,  # the badge shown to others (see test_letterfield_achievements.py)
+        "card": None,  # their card of badges, which others see
     }
     qr = card.locator(".pair-qr svg")
     expect(qr).to_be_visible()

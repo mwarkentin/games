@@ -17,7 +17,7 @@ from zoneinfo import ZoneInfo
 import pytest
 from playwright.sync_api import Page, expect
 
-from fake_survey import FakeBadges, FakePlayers, FakeSurvey
+from fake_survey import CARD_SIG, FakeBadges, FakePlayers, FakeSurvey, card
 from test_letterfield_survey import LANDS, SHARE_SHEET_INIT, SURVEY, circle, eventually, known_words, open_game
 from test_letterfield_surveyors import KIM, PID
 from test_letterfield_surveyors import start as start_survey
@@ -431,6 +431,99 @@ def test_someones_badge_shows_on_their_caret_hover_card_and_menu(page: Page, sit
     page.mouse.move(lou["x"], lou["y"])
     expect(peek).to_contain_text("LOU")
     expect(peek.locator(".peek-mk")).to_have_count(0)
+    assert errors == []
+
+
+def test_our_card_goes_to_the_sector_with_who_we_are(page: Page, site_url, errors):
+    words = known_words(page, site_url, WORDS_JS)
+    began = dt.datetime(2026, 10, 4, 9, 0, tzinfo=TORONTO)
+    finds = [find(w, began + dt.timedelta(hours=i)) for i, w in enumerate(words[:12])]
+    fake, badges = FakeSurvey(), FakeBadges(signs=["first-mark", "first-light"], cards=True)
+    on_survey(page, site_url, fake, badges, finds=finds, quiet=True)
+    page.wait_for_function("window.__lf.marks.card() && window.__lf.marks.card().ids.length === 2")
+    since = int(began.timestamp() * 1000)
+    ask = badges.calls[0]
+    assert ask["since"] == since and ask["held"] == {} and "card" not in ask  # when we began, on the game's word
+    mine = card({"first-mark", "first-light"}, since // 86_400_000, signed=True)
+    assert page.evaluate("localStorage.getItem('letterfield.card.v1')") == mine
+    eventually(page, lambda: any(m.get("card") == mine for m in fake.sent("me")))
+    # With everything we hold on it, the next visit doesn't ask again.
+    asked = len(badges.calls)
+    page.reload()
+    page.wait_for_function("window.__lf && window.__lf.marks && window.__lf.marks.card()")
+    page.wait_for_timeout(1500)
+    assert len(badges.calls) == asked
+    eventually(page, lambda: fake.sent("me")[-1].get("card") == mine)
+    assert errors == []
+
+
+def test_someones_card_shows_in_their_caret_menu(page: Page, site_url, errors):
+    day = dt.date(2026, 10, 4).toordinal() - dt.date(1970, 1, 1).toordinal()
+    theirs = card({"first-mark", "seven-seas", "here-be-dragons", "hats-off"}, day)
+    lou = "4b1d00000001"
+    fake = FakeSurvey(presence=[[KIM[0], "KIM", 9.5, 7.0, [], "seven-seas", theirs], [lou, "LOU", 11.5, 9.0, []]])
+    start_survey(page, site_url, fake)
+    page.wait_for_function(f"window.__lf.carets().includes('{KIM[0]}') && window.__lf.carets().includes('{lou}')")
+    at = page.evaluate(f"window.__lf.caretXY('{KIM[0]}')")
+    page.mouse.move(at["x"], at["y"])
+    expect(page.locator("#peek")).to_contain_text("right-click for more")
+    page.mouse.click(at["x"], at["y"], button="right")
+    menu = page.locator("#caretMenu")
+    expect(menu.locator("#caretWho")).to_have_text("KIM")
+    # The badge they show, big; when they began; and every badge others may see, as small ones.
+    expect(menu.locator(".pc-shown b")).to_have_text("Seven Seas")
+    expect(menu.locator(".pc-since")).to_have_text("Surveying since Oct 2026 · 3 badges")
+    shown = menu.locator(".pc-mk")
+    expect(shown).to_have_count(3)  # not Hats Off, which signed finds can't prove
+    assert [shown.nth(i).get_attribute("aria-label") for i in range(3)] == [
+        "First Mark",
+        "Seven Seas",
+        "A secret achievement",  # Here Be Dragons, which we haven't found
+    ]
+    # A badge tapped says what it is; tapped again, it's quiet.
+    shown.nth(1).click()
+    expect(menu.locator(".pc-say")).to_contain_text("Seven Seas · ")
+    expect(shown.nth(1)).to_have_attribute("aria-pressed", "true")
+    shown.nth(2).click()
+    expect(menu.locator(".pc-say")).to_have_text("A secret achievement · find it yourself to see which")
+    shown.nth(2).click()
+    expect(menu.locator(".pc-say")).to_have_text("")
+    expect(menu).not_to_contain_text("days")  # no streaks or days surveyed, ever
+    expect(menu.locator(".emote")).not_to_have_count(0)  # the emotes and Mute, as before
+    expect(menu.locator(".who-mute")).to_have_text("Mute KIM")
+    page.keyboard.press("Escape")
+    expect(menu).to_be_hidden()
+    # Someone without a card, from an older game, has the menu as it was.
+    at = page.evaluate(f"window.__lf.caretXY('{lou}')")
+    page.mouse.click(at["x"], at["y"], button="right")
+    expect(menu.locator("#caretWho")).to_have_text("LOU")
+    expect(menu.locator(".pc-since, .pc-mk, .pc-shown")).to_have_count(0)
+    assert errors == []
+
+
+def test_a_card_synced_from_another_device_is_taken_if_it_has_everything_ours_has(page: Page, site_url, errors):
+    players = FakePlayers(started=[PID])
+    theirs = card({"first-mark", "seven-seas"}, 20365, signed=True)
+    settings = {
+        "initials": "MLW",
+        "guilds": [],
+        "labels": {},
+        "muted": [],
+        "mutedAs": {},
+        "emotes": True,
+        "badge": None,
+    }
+    players.add(PID, settings={**settings, "card": theirs}, settings_at=10**12)
+    start_sync(page, site_url, players)
+    page.wait_for_function(f"localStorage.getItem('letterfield.card.v1') === '{theirs}'")
+    take = "c => window.__lf.marks.takeCard(c)"
+    # One from before, with less on it or a later start, isn't.
+    assert not page.evaluate(take, card({"first-mark"}, 20365, signed=True))
+    assert not page.evaluate(take, card({"first-mark", "seven-seas", "map-key"}, 20400, signed=True))
+    assert not page.evaluate(take, card({"first-mark", "seven-seas", "map-key"}, 20365))  # no signature
+    assert page.evaluate(take, card({"first-mark", "seven-seas", "map-key"}, 20300, signed=True))
+    assert page.evaluate("window.__lf.marks.card()") == {"ids": ["first-mark", "map-key", "seven-seas"], "day": 20300}
+    assert page.evaluate("localStorage.getItem('letterfield.card.v1')").endswith(CARD_SIG)
     assert errors == []
 
 
