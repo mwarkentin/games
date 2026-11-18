@@ -463,7 +463,7 @@ class FakeRecovery:
 
 
 # Letterfield's achievements in their catalog's order, which a card counts by
-# (CORE.cardMask in worker/src/achievements.js), and those others can't see.
+# (CORE.cardMask in worker/src/achievements.js).
 ACHIEVEMENTS = (
     "first-mark field-book bound-volume great-atlas first-light trailblazer pathfinder cairn wanderer gazetteer"
     " every-last-word five-sheets lions-share map-key full-legend lexicographer dawn-chorus seven-seas star-chart"
@@ -471,7 +471,6 @@ ACHIEVEMENTS = (
     " edge-of-the-universe here-be-dragons witness starfield last-word seven-days lunar-month thirty-days full-circle"
     " fellowship two-places hats-off"
 ).split()
-UNSEEN = {"cairn", "witness", "starfield", "fellowship", "two-places", "hats-off"}
 CARD_SIG = "CardSigAbCdE"
 
 
@@ -486,7 +485,7 @@ def base36(n: int) -> str:
 
 def card(ids, day: int = 0, signed: bool = False) -> str:
     """A surveyor's card as presence shows it ("mask.day"), or as the Worker signs it."""
-    mask = sum(2**i for i, a in enumerate(ACHIEVEMENTS) if a in ids and a not in UNSEEN)
+    mask = sum(2**i for i, a in enumerate(ACHIEVEMENTS) if a in ids)
     text = f"{base36(mask)}.{base36(day)}"
     return f"{text}.{CARD_SIG}" if signed else text
 
@@ -517,7 +516,7 @@ class FakeBadges:
     def handle(self, route: Route) -> None:
         body = json.loads(route.request.post_data or "{}")
         self.calls.append(body)
-        asked = ((set(body.get("earned", [])) & self.signs) | self.proven) - UNSEEN
+        asked = (set(body.get("earned", [])) & self.signs) | self.proven
         held = set(body.get("held", {})) | set(card_ids(body["card"]) if body.get("card") else [])
         day = body["since"] // 86_400_000 if body.get("since") else 0
         if body.get("card"):

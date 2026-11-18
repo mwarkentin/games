@@ -651,6 +651,8 @@ the notes drawer (`notesPage`), and their note is a kind of its own,
   menu. The Worker signs it only from finds the sectors signed (each claim's
   answer is followed by a receipt, `{t: 'signed'}`), or, until
   `TRUSTED_UNTIL`, on the game's word for achievements from before signing.
+  The few no find can prove (the catalog's `u` and `l`) it always signs on
+  the game's word.
   Keys come from `IP_SALT`.
 - A surveyor's caret menu is their card: every badge signed for them and
   when they began surveying, never a streak ("Profile cards"). The Worker

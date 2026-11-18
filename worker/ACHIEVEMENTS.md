@@ -395,14 +395,16 @@ in D1, and a table of counts. Too much for a badge.
 survey: notes, charting, territories, themes, words, far afield, Lion's Share,
 Last Word and days. Not Cairn (the universe's count is the game's), Witness
 and Starfield (being there isn't a claim), or the Company achievements;
-those are `u` in the core's catalog and can be shared but not shown. Finds
+those are `u` in the core's catalog. Since no find could ever prove them,
+the Worker takes the game's word for them, always: they're small things to
+fake, and leaving them off would leave out the friendliest badges. Finds
 made alone, or before signing began, carry no receipt.
 
 **Achievements from before signing** count on the game's word: until
 `TRUSTED_UNTIL` in `src/achievements.js`, the Worker signs any badge the game
-says it has earned (of those signed finds could prove: never a `u` or `l`),
-so what surveyors earned before receipts existed can be shown. After that,
-only signed finds. A signature, once made, is kept with the achievement and
+says it has earned, so what surveyors earned before receipts existed can be
+shown. After that, only signed finds, and the game's word for the `u` and
+`l` ones. A signature, once made, is kept with the achievement and
 synced, so a badge signed in that window stays showable. Set it a couple of
 weeks after this ships; while only a few people play, that window is the
 whole risk.
@@ -424,9 +426,7 @@ and its menu is their card:
 
 **Never on it:** their streak or days surveyed. Comparing streaks between
 people is what turns a calm streak into a chore (see "Lessons from other
-games"), and the log already says who charts the most. The share-only six
-never appear either, so everything on a card was proven or signed in the
-window.
+games"), and the log already says who charts the most.
 
 **For everyone, with no switch.** A surveyor's card shows to anyone whose
 map shows their caret, just as their initials and caret do.
@@ -532,12 +532,12 @@ a test isn't about, and answers the fake survey's badges with none.
 
 - that the core matches the game's, word for word;
 - receipts, and a sector signing what it answers (with the supernova flag);
-- a badge shown in presence only when signed for that player, and never a
-  share-only one;
+- a badge shown in presence only when signed for that player;
 - a card in presence only when signed for that player, and a new one taking
   its place;
-- the catalog keeping its order, and cards naming every badge others may see;
-- the badges endpoint: proven, trusted until `TRUSTED_UNTIL`, nothing from
+- the catalog keeping its order, and cards naming every badge;
+- the badges endpoint: proven, trusted until `TRUSTED_UNTIL` (and always
+  for those no find can prove), nothing from
   others' or tampered finds, days by the surveyor's dates, limits; its card,
   with the day the surveyor began, and what was signed before kept on it.
 

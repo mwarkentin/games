@@ -12,7 +12,9 @@
 //   signed for this player (badgeSig). It works them out from the signed
 //   finds alone, with the same rules as the game (the core below), or, until
 //   TRUSTED_UNTIL, takes the game's word for any it has earned, and for when
-//   it began (since), so achievements from before signing still count. z is
+//   it began (since), so achievements from before signing still count. The
+//   few no find can prove (CATALOG's l and u) it always takes on the game's
+//   word. z is
 //   the surveyor's time zone (minutes behind UTC, as getTimezoneOffset), for
 //   their days. held ({id: sig}) and card are what it already has signed,
 //   which stay so.
@@ -70,7 +72,8 @@ function achievementsCore(world) {
   const allOf = (ids) => (T) => pair(ids.filter((i) => T.themes.has(i)).length, ids.length);
   // [id, group, flags, check]. Flags: s, on the shared survey only; h, secret
   // until earned; l, latched when it happens, as nothing in the notes says;
-  // u, unproven: signed finds can't show it (see "Badges others see").
+  // u, unproven: signed finds can't prove it, so the game's word is taken
+  // for it (see "Badges others see").
   const CATALOG = [
     ['first-mark', 'notes', '', (T) => pair(T.finds, 1)],
     ['field-book', 'notes', '', (T) => pair(T.finds, 100)],
@@ -113,14 +116,14 @@ function achievementsCore(world) {
     ['hats-off', 'company', 'shlu', null],
   ];
   const CHECK = new Map(CATALOG.map(([id, , , check]) => [id, check]));
-  // The ones signed finds can prove, so others may see them: all but l and u.
-  const SHOWABLE = new Set(CATALOG.filter(([, , flags]) => !/[lu]/.test(flags)).map(([id]) => id));
-  // A surveyor's card names the badges they can show by their places in
-  // CATALOG, as the bits of a number (see "Profile cards"). So a new
-  // achievement goes at the end of CATALOG, never between (the page groups
-  // them by their group), and there's room for 53.
-  const cardMask = (ids) => CATALOG.reduce((m, [id], i) => (SHOWABLE.has(id) && ids.has(id) ? m + 2 ** i : m), 0);
-  const cardIds = (mask) => CATALOG.filter(([id], i) => SHOWABLE.has(id) && Math.floor(mask / 2 ** i) % 2 === 1).map(([id]) => id);
+  // The ones signed finds can prove: all but l and u.
+  const PROVABLE = new Set(CATALOG.filter(([, , flags]) => !/[lu]/.test(flags)).map(([id]) => id));
+  // A surveyor's card names their badges by their places in CATALOG, as the
+  // bits of a number (see "Profile cards"). So a new achievement goes at the
+  // end of CATALOG, never between (the page groups them by their group), and
+  // there's room for 53.
+  const cardMask = (ids) => CATALOG.reduce((m, [id], i) => (ids.has(id) ? m + 2 ** i : m), 0);
+  const cardIds = (mask) => CATALOG.filter((_, i) => Math.floor(mask / 2 ** i) % 2 === 1).map(([id]) => id);
 
   // Runs of counted days, forwards: a missed day is a rest day if no other was
   // missed in the six before it; otherwise the run starts again after the
@@ -228,7 +231,7 @@ function achievementsCore(world) {
     return { T, reached };
   }
 
-  return { CATALOG, CHECK, SHOWABLE, BIRDS, SEAS, SKIES, NATIONS, STREAK_MIN, cardMask, cardIds, runsOf, tally };
+  return { CATALOG, CHECK, PROVABLE, BIRDS, SEAS, SKIES, NATIONS, STREAK_MIN, cardMask, cardIds, runsOf, tally };
 }
 // ---- END ACHIEVEMENTS CORE ----
 
@@ -267,11 +270,10 @@ export async function checkReceipt(env, pid, find) {
 }
 
 export const badgeSig = (env, pid, id) => mac(env, 'badge', `${pid}|${id}`);
-// The badge a game shows, if its signature is good for this player and it's
-// one others may see: its id, or null.
+// The badge a game shows, if its signature is good for this player: its id, or null.
 export async function checkBadge(env, pid, badge) {
   if (!Array.isArray(badge) || typeof badge[0] !== 'string' || !BADGE.test(badge[0]) || typeof badge[1] !== 'string' || !BADGE_SIG.test(badge[1])) return null;
-  if (!signing(env) || !CORE.SHOWABLE.has(badge[0])) return null;
+  if (!signing(env) || !CORE.CHECK.has(badge[0])) return null;
   return (await badgeSig(env, pid, badge[0])) === badge[1] ? badge[0] : null;
 }
 
@@ -317,7 +319,7 @@ export async function provenBadges(env, pid, finds, z, now) {
   }
   const list = [...kept.values()], novas = list.filter((f) => f.z).map((f) => ({ t: f.t, mine: true, solo: false }));
   const { T } = achievementsCore({ THEMES, territoryTotal, RC, UNIVERSE_EDGE, dayOf: offsetDay(z) }).tally(list, novas, now);
-  return { ids: CORE.CATALOG.filter(([id, , , check]) => CORE.SHOWABLE.has(id) && check(T)[0] >= check(T)[1]).map(([id]) => id), since };
+  return { ids: CORE.CATALOG.filter(([id, , , check]) => CORE.PROVABLE.has(id) && check(T)[0] >= check(T)[1]).map(([id]) => id), since };
 }
 
 export function routeBadges(request, env, now = Date.now()) {
@@ -330,18 +332,17 @@ export function routeBadges(request, env, now = Date.now()) {
     const pid = await playerId(tokenIn(body));
     const z = Number.isInteger(body.z) && Math.abs(body.z) <= 840 ? body.z : 0;
     const finds = Array.isArray(body.finds) ? body.finds : [];
-    const earned = Array.isArray(body.earned) ? body.earned.filter((id) => typeof id === 'string' && CORE.SHOWABLE.has(id)) : [];
+    const earned = Array.isArray(body.earned) ? body.earned.filter((id) => typeof id === 'string' && CORE.CHECK.has(id)) : [];
     const held = body.held && typeof body.held === 'object' && !Array.isArray(body.held) ? Object.entries(body.held).slice(0, CORE.CATALOG.length) : [];
     if (finds.length > BADGE_FINDS_MAX) throw new HttpError(413, 'too many finds');
     await rateLimit(env.DB, 'badges', await hashIp(request, env.IP_SALT), now);
     const proven = await provenBadges(env, pid, finds, z, now);
     const ids = new Set(proven.ids);
     let since = proven.since;
-    // The game's word, for a while: what it earned, and when its first find was.
-    if (now < TRUSTED_UNTIL) {
-      for (const id of earned) ids.add(id);
-      if (Number.isFinite(body.since) && body.since >= SINCE_MIN && body.since <= now) since = Math.min(since, body.since);
-    }
+    // The game's word: always for those no find can prove, and for a while
+    // for the rest, and for when its first find was.
+    for (const id of earned) if (now < TRUSTED_UNTIL || !CORE.PROVABLE.has(id)) ids.add(id);
+    if (now < TRUSTED_UNTIL && Number.isFinite(body.since) && body.since >= SINCE_MIN && body.since <= now) since = Math.min(since, body.since);
     // What's already signed for this player: badges it holds, and its last card.
     for (const [id, sig] of held) if (await checkBadge(env, pid, [id, sig])) ids.add(id);
     const was = await checkCard(env, pid, body.card);

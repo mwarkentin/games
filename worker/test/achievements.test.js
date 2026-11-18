@@ -55,9 +55,9 @@ describe('the achievements core', () => {
       'last-word', 'seven-days', 'lunar-month', 'thirty-days', 'full-circle', 'fellowship', 'two-places', 'hats-off'];
     assert.deepEqual(CORE.CATALOG.slice(0, FIRST.length).map(([id]) => id), FIRST);
     const all = new Set(CORE.CATALOG.map(([id]) => id));
-    assert.deepEqual(CORE.cardIds(CORE.cardMask(all)), [...CORE.SHOWABLE]);
-    assert.equal(CORE.SHOWABLE.size, 33);  // not Cairn, Witness, Starfield or the company's three
-    assert.deepEqual(CORE.cardIds(CORE.cardMask(new Set(['hats-off', 'seven-seas', 'witness']))), ['seven-seas']);
+    assert.deepEqual(CORE.cardIds(CORE.cardMask(all)), [...all]);
+    assert.equal(CORE.PROVABLE.size, 33);  // not Cairn, Witness, Starfield or the company's three
+    assert.deepEqual(CORE.cardIds(CORE.cardMask(new Set(['hats-off', 'seven-seas', 'witness']))), ['seven-seas', 'witness', 'hats-off']);
     assert.equal(CORE.cardMask(new Set()), 0);
     assert.ok(Number.isSafeInteger(CORE.cardMask(all)));
   });
@@ -164,8 +164,8 @@ describe('a sector', () => {
     assert.deepEqual(p.AMY.slice(4), [[], 'seven-seas']);
     assert.deepEqual(p.ZED.slice(4), []);
     assert.equal(await checkBadge(env, pid, ['no-such-badge', await badgeSig(env, pid, 'no-such-badge')]), null);
-    // One others can't see, like Hats Off, isn't shown even with a signature.
-    assert.equal(await checkBadge(env, pid, ['hats-off', await badgeSig(env, pid, 'hats-off')]), null);
+    // One no find can prove, like Hats Off, is shown with a signature too.
+    assert.equal(await checkBadge(env, pid, ['hats-off', await badgeSig(env, pid, 'hats-off')]), 'hats-off');
   });
 
   test("shows a surveyor's card without its signature, if the Worker signed it for them", async () => {
@@ -237,10 +237,10 @@ describe('POST /v1/survey/badges', () => {
   });
 
   test("takes the game's word for what it earned until TRUSTED_UNTIL, and after that only signed finds", async () => {
-    // Never for one others can't see, which signed finds could never prove.
+    // Always, though, for those no find can prove.
     const earned = ['great-atlas', 'witness', 'hats-off', 'not-a-badge'];
-    assert.deepEqual(Object.keys((await ask({ earned }, BEFORE))[1].badges).sort(), ['great-atlas']);
-    assert.deepEqual((await ask({ earned }, AFTER))[1].badges, {});
+    assert.deepEqual(Object.keys((await ask({ earned }, BEFORE))[1].badges).sort(), ['great-atlas', 'hats-off', 'witness']);
+    assert.deepEqual(Object.keys((await ask({ earned }, AFTER))[1].badges).sort(), ['hats-off', 'witness']);
   });
 
   const cardOf = async (card) => (card ? checkCard(env, await playerId(token(1)), card) : null);

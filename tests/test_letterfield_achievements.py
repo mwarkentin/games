@@ -459,7 +459,7 @@ def test_our_card_goes_to_the_sector_with_who_we_are(page: Page, site_url, error
 
 def test_someones_card_shows_in_their_caret_menu(page: Page, site_url, errors):
     day = dt.date(2026, 10, 4).toordinal() - dt.date(1970, 1, 1).toordinal()
-    theirs = card({"first-mark", "seven-seas", "here-be-dragons", "hats-off"}, day)
+    theirs = card({"first-mark", "seven-seas", "here-be-dragons", "witness"}, day)
     lou = "4b1d00000001"
     fake = FakeSurvey(presence=[[KIM[0], "KIM", 9.5, 7.0, [], "seven-seas", theirs], [lou, "LOU", 11.5, 9.0, []]])
     start_survey(page, site_url, fake)
@@ -472,13 +472,14 @@ def test_someones_card_shows_in_their_caret_menu(page: Page, site_url, errors):
     expect(menu.locator("#caretWho")).to_have_text("KIM")
     # The badge they show, big; when they began; and every badge others may see, as small ones.
     expect(menu.locator(".pc-shown b")).to_have_text("Seven Seas")
-    expect(menu.locator(".pc-since")).to_have_text("Surveying since Oct 2026 · 3 badges")
+    expect(menu.locator(".pc-since")).to_have_text("Surveying since Oct 2026 · 4 badges")
     shown = menu.locator(".pc-mk")
-    expect(shown).to_have_count(3)  # not Hats Off, which signed finds can't prove
-    assert [shown.nth(i).get_attribute("aria-label") for i in range(3)] == [
+    expect(shown).to_have_count(4)
+    assert [shown.nth(i).get_attribute("aria-label") for i in range(4)] == [
         "First Mark",
         "Seven Seas",
         "A secret achievement",  # Here Be Dragons, which we haven't found
+        "Witness",  # no find proves it, so it's on the game's word
     ]
     # A badge tapped says what it is; tapped again, it's quiet.
     shown.nth(1).click()

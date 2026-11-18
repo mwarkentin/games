@@ -6327,7 +6327,8 @@ function achievementsCore(world) {
   const allOf = (ids) => (T) => pair(ids.filter((i) => T.themes.has(i)).length, ids.length);
   // [id, group, flags, check]. Flags: s, on the shared survey only; h, secret
   // until earned; l, latched when it happens, as nothing in the notes says;
-  // u, unproven: signed finds can't show it (see "Badges others see").
+  // u, unproven: signed finds can't prove it, so the game's word is taken
+  // for it (see "Badges others see").
   const CATALOG = [
     ['first-mark', 'notes', '', (T) => pair(T.finds, 1)],
     ['field-book', 'notes', '', (T) => pair(T.finds, 100)],
@@ -6370,14 +6371,14 @@ function achievementsCore(world) {
     ['hats-off', 'company', 'shlu', null],
   ];
   const CHECK = new Map(CATALOG.map(([id, , , check]) => [id, check]));
-  // The ones signed finds can prove, so others may see them: all but l and u.
-  const SHOWABLE = new Set(CATALOG.filter(([, , flags]) => !/[lu]/.test(flags)).map(([id]) => id));
-  // A surveyor's card names the badges they can show by their places in
-  // CATALOG, as the bits of a number (see "Profile cards"). So a new
-  // achievement goes at the end of CATALOG, never between (the page groups
-  // them by their group), and there's room for 53.
-  const cardMask = (ids) => CATALOG.reduce((m, [id], i) => (SHOWABLE.has(id) && ids.has(id) ? m + 2 ** i : m), 0);
-  const cardIds = (mask) => CATALOG.filter(([id], i) => SHOWABLE.has(id) && Math.floor(mask / 2 ** i) % 2 === 1).map(([id]) => id);
+  // The ones signed finds can prove: all but l and u.
+  const PROVABLE = new Set(CATALOG.filter(([, , flags]) => !/[lu]/.test(flags)).map(([id]) => id));
+  // A surveyor's card names their badges by their places in CATALOG, as the
+  // bits of a number (see "Profile cards"). So a new achievement goes at the
+  // end of CATALOG, never between (the page groups them by their group), and
+  // there's room for 53.
+  const cardMask = (ids) => CATALOG.reduce((m, [id], i) => (ids.has(id) ? m + 2 ** i : m), 0);
+  const cardIds = (mask) => CATALOG.filter((_, i) => Math.floor(mask / 2 ** i) % 2 === 1).map(([id]) => id);
 
   // Runs of counted days, forwards: a missed day is a rest day if no other was
   // missed in the six before it; otherwise the run starts again after the
@@ -6485,7 +6486,7 @@ function achievementsCore(world) {
     return { T, reached };
   }
 
-  return { CATALOG, CHECK, SHOWABLE, BIRDS, SEAS, SKIES, NATIONS, STREAK_MIN, cardMask, cardIds, runsOf, tally };
+  return { CATALOG, CHECK, PROVABLE, BIRDS, SEAS, SKIES, NATIONS, STREAK_MIN, cardMask, cardIds, runsOf, tally };
 }
 // ---- END ACHIEVEMENTS CORE ----
 // The rules, for this map and the surveyor's own days.
@@ -6582,7 +6583,8 @@ const MARK_TEXT = {
 // The catalog: the core's, with its words and drawing. `survey`: on the
 // shared survey only. `secret`: a question mark until earned. `latch`: not
 // in the notes, so kept when it happens (see markEvent). `proof`: signed
-// finds can show it, so it can be shown to others (see Badges others see).
+// finds can prove it; the Worker takes our word for the rest (see Badges
+// others see).
 const MARKS = CORE.CATALOG.map(([id, g, flags, p]) => ({
   id, g, p, survey: flags.includes('s'), secret: flags.includes('h'), latch: flags.includes('l'), proof: !/[lu]/.test(flags),
   draw: MARK_TEXT[id][0], name: MARK_TEXT[id][1], desc: MARK_TEXT[id][2],
@@ -6746,11 +6748,11 @@ function takeSyncedMarks(list, best) {
    page: it goes in our `me` message, our sector checks the signature, and
    it shows on our caret's hover card and menu. */
 const K_BADGE = 'letterfield.badge.v1';
-// The badge we show, [id, sig], while it's still one of ours with that signature, and one others may see.
+// The badge we show, [id, sig], while it's still one of ours with that signature.
 function shownBadge() {
   try {
     const b = JSON.parse(LS.get(K_BADGE) || 'null');
-    if (Array.isArray(b) && MARK_BY[b[0]] && MARK_BY[b[0]].proof && marks.got[b[0]] && marks.got[b[0]][2] === b[1]) return [b[0], b[1]];
+    if (Array.isArray(b) && MARK_BY[b[0]] && marks.got[b[0]] && marks.got[b[0]][2] === b[1]) return [b[0], b[1]];
   } catch (_) {}
   return null;
 }
@@ -6828,8 +6830,8 @@ function sayCardMark(b) {
 let badgesAsked = '';
 async function askBadges() {
   if (!surveyApi || !playerToken) return;
-  const want = marksHere().filter(a => a.proof && marks.got[a.id] && !marks.got[a.id][2]).map(a => a.id);
-  const held = Object.fromEntries(MARKS.filter(a => a.proof && marks.got[a.id] && marks.got[a.id][2]).map(a => [a.id, marks.got[a.id][2]]));
+  const want = marksHere().filter(a => marks.got[a.id] && !marks.got[a.id][2]).map(a => a.id);
+  const held = Object.fromEntries(MARKS.filter(a => marks.got[a.id] && marks.got[a.id][2]).map(a => [a.id, marks.got[a.id][2]]));
   // Our card is due, once we've found something, if we have none or it's missing a badge we hold.
   const card = myCard(), on = readCard(card), due = found.size > 0 && (!on || Object.keys(held).some(id => !on.ids.includes(id)));
   const finds = [...found.values()].filter(e => e.r).map(e => ({ w: e.w, x: e.x, y: e.y, d: e.d, r: e.r }));
@@ -6970,7 +6972,7 @@ function markCard(a) {
     : hidden ? '' : st === 'prog' ? `${have.toLocaleString()} of ${need.toLocaleString()}${of ? ` · ${of}` : ''}` : a.survey && !surveyApi ? 'On the shared survey' : 'Not yet';
   const isNew = got && marks.fresh.includes(a.id), shown = (shownBadge() || [])[0] === a.id;
   const acts = !got ? '' : `<span class="mk-acts"><button type="button" class="pill" data-share="${a.id}" aria-label="Share ${a.name}">Share</button>` +
-    (surveyApi && a.proof && got[2] ? `<button type="button" class="pill" data-show="${a.id}" aria-pressed="${shown}" aria-label="Show ${a.name} on your caret">${shown ? 'On your caret' : 'Show'}</button>` : '') + '</span>';
+    (surveyApi && got[2] ? `<button type="button" class="pill" data-show="${a.id}" aria-pressed="${shown}" aria-label="Show ${a.name} on your caret">${shown ? 'On your caret' : 'Show'}</button>` : '') + '</span>';
   return `<li class="mk-card ${st}${shown ? ' shown' : ''}" id="mk-${a.id}">${isNew ? '<span class="mk-new">New</span>' : ''}${badgeSvg(a, st, have / need, true)}` +
     `<b>${name}</b><span class="mk-d">${desc}</span>${p ? `<span class="mk-p">${p}</span>` : ''}${acts}` +
     `<span class="vh">${got ? 'Earned.' : st === 'prog' ? `Under way: ${have} of ${need}.` : 'Not earned yet.'}${isNew ? ' New.' : ''}</span></li>`;
