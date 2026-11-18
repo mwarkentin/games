@@ -223,8 +223,10 @@ from today for the current one; both give the same answer for any day).
   `<html data-notes-page>`), with "‹ Field notes" to go back:
   - **Days surveyed** first: the total, the current streak and the longest,
     a strip of the last fortnight (counted, rest day, missed, today), today's
-    progress, and the rule in one line. Today's dot fills a slice for each
-    word found, a third at a time, until the day counts and it's solid.
+    progress, and the rule in one line. A day's dot fills a slice for each
+    word found, a third at a time, until the day counts and it's solid: today
+    in the accent, a rest day in its ring, and a day that didn't count in
+    grey (the core's `perDay` has each day's finds).
   - **The badges,** by group, two to a row on a phone: each with its name,
     what to do, and when it was earned or how far along it is. Badges worked
     out from notes made before achievements existed say "From your notes".

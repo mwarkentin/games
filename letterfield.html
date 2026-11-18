@@ -687,10 +687,13 @@ html[data-notes-page="marks"] .notes > :not(.marks-page){display:none!important}
 .days-strip .on i{background:var(--accent)}
 .days-strip .rest i,.days-key i.rest{border:1.5px solid var(--accent);transform:scale(.8)}
 .days-strip .miss i{background:var(--rule);transform:scale(.45)}
-/* Today, still open, fills a slice for each word found, from the top round, until it counts,
-   its ring solid once it's begun. */
-.days-strip .open i{border:1.5px dashed var(--muted);background:conic-gradient(var(--accent) calc(var(--p, 0) * 1turn), transparent 0)}
+/* A day with words that didn't count fills a slice for each, from the top round: today, still
+   open, in the accent with its ring solid once it's begun; a rest day in its ring; a day missed
+   in grey, so it reads as begun but not counted. */
+.days-strip .open i{border:1.5px dashed var(--muted)}
+.days-strip .part i{background:conic-gradient(var(--accent) calc(var(--p, 0) * 1turn), transparent 0)}
 .days-strip .open.part i{border:1.5px solid var(--accent)}
+.days-strip .miss.part i,.days-strip .none.part i{border:1.5px solid var(--rule);background:conic-gradient(var(--muted) calc(var(--p, 0) * 1turn), transparent 0);transform:scale(.8)}
 .days-key{display:inline-block;vertical-align:-2px}
 .days-today{margin:12px 0 0;font-size:13px}
 .days-rule{margin:5px 0 0;font-size:12px;line-height:1.45;color:var(--muted)}
@@ -6483,7 +6486,7 @@ function achievementsCore(world) {
     const counted = [...perDay].filter(([d, v]) => v.n >= STREAK_MIN && d <= today).map(([d]) => d).sort((a, b) => a - b);
     const runs = runsOf(counted, today, [7, 28]);
     Object.assign(T, { best: runs.best, current: runs.run.length, run: runs.run, days: counted.length, counted: new Set(counted),
-      first0: counted.length ? counted[0] : null, span: counted.length ? counted[counted.length - 1] - counted[0] : 0, today: perDay.has(today) ? perDay.get(today).n : 0 });
+      first0: counted.length ? counted[0] : null, span: counted.length ? counted[counted.length - 1] - counted[0] : 0, today: perDay.has(today) ? perDay.get(today).n : 0, perDay });
     // A day's achievement is dated by the find that made the day that earned it count.
     const byDay = (id, d) => { if (d !== undefined) { const by = perDay.get(d).by; reached[id] = { at: by.t, by }; } };
     byDay('seven-days', runs.at[7]);
@@ -6992,9 +6995,11 @@ function renderDays() {
   for (let d = today - 13; d <= today; d++) {
     const on = T.counted.has(d);
     const kind = on ? 'on' : d === today ? 'open' : T.first0 === null || d < T.first0 ? 'none' : d > runFrom ? 'rest' : 'miss';
-    const what = { on: 'surveyed', open: `today, ${T.today} of ${STREAK_MIN} words`, none: 'before your first day', rest: 'a rest day', miss: 'missed' }[kind];
-    const part = kind === 'open' && T.today > 0;
-    strip += `<li class="${kind}${part ? ' part' : ''}${d === today ? ' today' : ''}"${part ? ` style="--p:${(T.today / STREAK_MIN).toFixed(3)}"` : ''} title="${dayDate(d).toLocaleDateString(undefined, { weekday: 'long', month: 'short', day: 'numeric' })}: ${what}"><i></i>${weekday.format(dayDate(d))}</li>`;
+    // Words found that day, short of counting: a slice of the dot for each, today or before.
+    const n = on ? 0 : (T.perDay.get(d) || { n: 0 }).n, part = n > 0;
+    const what = part ? `${kind === 'open' ? 'today' : kind === 'rest' ? 'a rest day' : 'not counted'}, ${n} of ${STREAK_MIN} words`
+      : { on: 'surveyed', open: 'today, still open', none: 'before your first day', rest: 'a rest day', miss: 'missed' }[kind];
+    strip += `<li class="${kind}${part ? ' part' : ''}${d === today ? ' today' : ''}"${part ? ` style="--p:${(n / STREAK_MIN).toFixed(3)}"` : ''} title="${dayDate(d).toLocaleDateString(undefined, { weekday: 'long', month: 'short', day: 'numeric' })}: ${what}"><i></i>${weekday.format(dayDate(d))}</li>`;
   }
   const todayLine = T.today >= STREAK_MIN ? 'Today counts.' : `Today: ${T.today} of ${STREAK_MIN} words.`;
   daysCard.innerHTML =

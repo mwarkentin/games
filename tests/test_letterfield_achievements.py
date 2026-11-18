@@ -215,7 +215,7 @@ def test_days_surveyed_and_the_streak(page: Page, site_url, errors, name):
     expect(card.locator(".days-top b")).to_have_text([str(days), str(running), str(longest)])
     strip = card.locator(".days-strip li")
     expect(strip).to_have_count(14)
-    expect(strip.last).to_have_class("open today" if today < 3 else "on today")
+    expect(strip.last).to_have_class("on today" if today >= 3 else "open part today" if today else "open today")
     rests = [d for d in range(-13, 0) if d not in plan and d > min(plan)]
     if name == "a missed day is a rest day":
         expect(card.locator(".days-strip li.rest")).to_have_count(1)
@@ -240,6 +240,26 @@ def test_todays_dot_fills_a_slice_for_each_word_until_the_day_counts(page: Page,
     page.evaluate("([w, x, y, d]) => window.__lf.collect(w, x, y, d, false)", words[2])
     expect(today).to_have_attribute("class", "on today")
     expect(page.locator(".days-today")).to_have_text("Today counts.")
+    assert errors == []
+
+
+def test_past_days_with_a_word_or_two_keep_their_slices(page: Page, site_url, errors):
+    words = known_words(page, site_url, WORDS_JS)
+    # One word the day before the first that counted, then two on a rest day in a run that goes on.
+    open_alone(page, site_url, on_days(words, {-6: 1, -5: 3, -4: 2, -3: 3, -2: 3, -1: 3}), now=NOW)
+    open_page(page)
+    days = page.locator("#daysCard .days-strip li")
+    expect(days).to_have_count(14)
+    first, rest, counted = days.nth(13 - 6), days.nth(13 - 4), days.nth(13 - 3)
+    expect(rest).to_have_attribute("class", "rest part")
+    expect(rest).to_have_attribute("style", "--p:0.667")
+    expect(rest).to_have_attribute("title", re.compile(r": a rest day, 2 of 3 words$"))
+    expect(first).to_have_attribute("class", "none part")
+    expect(first).to_have_attribute("style", "--p:0.333")
+    expect(first).to_have_attribute("title", re.compile(r": not counted, 1 of 3 words$"))
+    expect(counted).to_have_attribute("class", "on")
+    expect(counted).not_to_have_attribute("style", re.compile("."))
+    expect(days.nth(13 - 7)).to_have_attribute("class", "none")  # nothing found that day
     assert errors == []
 
 
