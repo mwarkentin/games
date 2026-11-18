@@ -1058,9 +1058,9 @@ def test_hovering_names_surveyors_and_who_charted_a_word(page: Page, site_url, e
     # The caret sits in the gap beside the cell in the middle of their view.
     page.mouse.move(*page.evaluate(SCREEN_OF, [10, 7.5]))
     expect(peek).to_be_visible()
-    expect(peek).to_have_text("KIDsurveying here · right-click for emotes")
+    expect(peek).to_have_text("KIDsurveying here · right-click for more")
     page.mouse.move(*page.evaluate(SCREEN_OF, [3, 9.5]))
-    expect(peek).to_have_text("A surveyorsurveying here · right-click for emotes")  # odd initials never reach the page
+    expect(peek).to_have_text("A surveyorsurveying here · right-click for more")  # odd initials never reach the page
 
     # A charted word names who got there first.
     dirs = [[1, 0], [1, 1], [0, 1], [-1, 1], [-1, 0], [-1, -1], [0, -1], [1, -1]]
@@ -1090,7 +1090,7 @@ def test_a_hover_card_beside_the_docked_notes_opens_on_the_map_side(page: Page, 
     assert 1280 - 340 - 170 < x < 1280 - 340 - 130
     page.mouse.move(x, y)
     peek = page.locator("#peek")
-    expect(peek).to_have_text("KIDsurveying here · right-click for emotes")
+    expect(peek).to_have_text("KIDsurveying here · right-click for more")
     box = peek.bounding_box()
     assert box["x"] + box["width"] <= x, "it opens to the pointer's left"
     assert box["x"] + box["width"] <= 1280 - 340, "clear of the docked notes"

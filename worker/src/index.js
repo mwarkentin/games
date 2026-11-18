@@ -14,6 +14,7 @@ import { corsHeaders, handle, json } from './leaderboard.js';
 import { routeSurvey } from './survey.js';
 import { routeLog } from './survey-log.js';
 import { routeLinks, routePlayers, routeRecovery } from './players.js';
+import { routeBadges } from './achievements.js';
 import { routeGuilds } from './survey-guild.js';
 import { routeSurveyors } from './survey-social.js';
 import { handleWar } from './war.js';
@@ -27,7 +28,7 @@ export default {
   async fetch(request, env) {
     try {
       if (new URL(request.url).pathname.startsWith('/v1/war/')) return await handleWar(request, env);
-      const survey = routeSurvey(request, env) ?? routeSurveyors(request, env) ?? routeGuilds(request, env) ?? routeLinks(request, env) ?? routePlayers(request, env) ?? routeRecovery(request, env) ?? routeLog(request, env) ?? routeDefine(request, env);
+      const survey = routeSurvey(request, env) ?? routeSurveyors(request, env) ?? routeGuilds(request, env) ?? routeLinks(request, env) ?? routePlayers(request, env) ?? routeRecovery(request, env) ?? routeBadges(request, env) ?? routeLog(request, env) ?? routeDefine(request, env);
       return await (survey ?? handle(request, env));
     } catch (error) {
       console.error(error);

@@ -196,6 +196,7 @@ The machines each page keeps:
 | | `pair` (linking another device, and the recovery code) | idle, making, showing, used, entering, redeeming, done, failed, recovery, keeping, kept, removing, stop, stopping |
 | | `pairCode` (a link code made here, watched until used) | none, making, waiting, used, gone |
 | | `sync` (keeping linked devices in step) | off, idle, syncing, failed |
+| | `notesPage` (the field notes drawer's page) | finds, marks |
 | `letterfield-log.html` | `log` (what the page shows) | loading, ready, refreshing, stale, failed |
 | | `span` (where the log starts, which ‹ stops at) | asking, known, failed |
 | | `define` (each word's meaning; `el: null`, see `__log.definitions()`) | loading, ready, none, failed |
@@ -384,6 +385,12 @@ behind it, and `share/README.md` how it works.
   While it's empty, Share hands out the game's own fragment link.
   `?share=<url>` overrides it for tests. A dark page hands out `/f/d/…`, so
   the card follows the sharer's theme.
+- A shared achievement links to `/a/<id>` (`/a/d/<id>` dark), a card of its
+  badge, which sends people on to `/letterfield#a-<id>`, the Achievements page
+  at that badge (see "Share cards" in `worker/ACHIEVEMENTS.md`). The badges'
+  drawings, names and groups sit between `BEGIN BADGE ART` and `END BADGE
+  ART` markers, word for word the same in `letterfield.html` and
+  `worker/src/achievements.js`, so change both.
 - The survey log's views (a surveyor's, theme's, guild's or territory's page, and
   the Supernovas tab) have cards too, at `/v/…`: `letterfield-log.html` has a `SHARE_URL` of its own,
   and while it's empty Share links to the page and attaches the page's own
@@ -633,6 +640,39 @@ page loads nothing from a new host.
   (`tests/test_letterfield_definitions.py`, and
   `tests/test_letterfield_log_definitions.py` for the log); the real
   Worker's stand-in answers it too.
+
+## Letterfield's achievements
+
+Achievements, their badges and days surveyed are worked out from the field
+notes and supernovas seen, then latched in `letterfield.marks.v1`
+(`worker/ACHIEVEMENTS.md` has the catalog and the design). Their page is in
+the notes drawer (`notesPage`), and their note is a kind of its own,
+`achievement`, which `letterfield.quiet.v1` can quieten.
+
+- The rules sit between `BEGIN ACHIEVEMENTS CORE` and `END ACHIEVEMENTS
+  CORE` markers, word for word the same in `letterfield.html` and
+  `worker/src/achievements.js`, and `worker/test/achievements.test.js`
+  checks they match, so change both.
+- A surveyor can show one badge to others, on their caret's hover card and
+  menu. The Worker signs it only from finds the sectors signed (each claim's
+  answer is followed by a receipt, `{t: 'signed'}`), or, until
+  `TRUSTED_UNTIL`, on the game's word for achievements from before signing.
+  The few no find can prove (the catalog's `u` and `l`) it always signs on
+  the game's word.
+  Keys come from `IP_SALT`.
+- A surveyor's caret menu is their card: every badge signed for them and
+  when they began surveying, never a streak ("Profile cards"). The Worker
+  signs it with their badges, and their sector checks it and adds it to
+  presence. It names badges by their place in the core's catalog, so new
+  achievements go at the end of it.
+- Achievements, the longest streak, the badge shown and the card sync
+  through the Player with the notes.
+- Every test's browser starts with achievement notes quietened
+  (`QUIET_ACHIEVEMENTS` in `tests/conftest.py`), so a test's first find
+  brings no note it isn't about, and answers the fake survey's
+  `/v1/survey/badges` with none; `tests/test_letterfield_achievements.py`
+  turns notes back on, and fakes receipts, badges and cards with
+  `FakeSurvey(sign=True)` and `FakeBadges(cards=True)`.
 
 ## Letterfield's words
 

@@ -8,6 +8,10 @@
 //   GET /v/…             the same for a view of the survey log: a surveyor's,
 //                        theme's, guild's or territory's page, or the
 //                        Supernovas tab (see view.js)
+//   GET /a/<id>, /a/<id>.png, /a/d/…
+//                        the same for an achievement, by its id: its badge,
+//                        name and what it asks for (see badge.js); it sends
+//                        people on to the game's page of achievements at it
 //
 // <slug> is the game's own fragment, f-<word>-<x>-<y>-<d>. Only words really
 // on the map are drawn. Everyone, bot or person, gets the same page: link
@@ -21,9 +25,12 @@ import { MAP_VERSION, RC, THEMES, keyOf, regionName } from '../../worker/src/let
 import { SECTOR, TOTALS_PATH, inArea } from '../../worker/src/survey.js';
 import { CARD_WORDS, day, esc, findSvg, parseFind, progress } from './card.js';
 import { logPaths, nameOf, pagePath, parseView, summarize, viewSvg } from './view.js';
+import { badgeSvg, parseBadge } from './badge.js';
+import { CORE } from '../../worker/src/achievements.js';
 
 export const DEFAULT_SITE = 'https://games.michaelwarkentin.com';
 export const PATH = /^\/f\/(d\/)?([a-z0-9-]{1,48}?)(\.png)?$/;
+export const BADGE_PATH = /^\/a\/(d\/)?([a-z0-9-]{1,32}?)(\.png)?$/;
 export const ASK_MS = 1500;          // how long a card waits for the survey before leaving its lines off
 export const TOTALS_MS = 60_000;     // how long one Worker instance keeps the shared map's totals
 export const PAGE_MS = 60_000;       // how long the page is kept at the edge
@@ -45,6 +52,15 @@ export async function handle(request, env, ctx, render) {
     // A page is kept by its own address: a guild's name, and nothing else, from the query.
     const q = v.named ? `name=${v.named.join('-')}` : '';
     return cached(url.origin + url.pathname + (q && `?${q}`), ctx, () => viewPage(env, v, url, q));
+  }
+  const b = BADGE_PATH.exec(url.pathname);
+  if (b) {
+    const dark = !!b[1], a = parseBadge(b[2]);
+    if (b[3]) {
+      if (!a) return new Response('not an achievement', { status: 404 });
+      return cached(request.url, ctx, () => badgeImage(request, env, ctx, render, a, dark));
+    }
+    return cached(url.origin + url.pathname, ctx, () => badgePage(env, a, dark, url));
   }
   const m = PATH.exec(url.pathname);
   if (!m) return new Response('not found', { status: 404 });
@@ -287,4 +303,49 @@ async function viewImage(request, env, render, v) {
   const png = await render(viewSvg(v, s, { dark: v.dark, host: new URL(site(env)).host }));
   // Asked for with the state it shows, it never changes: a new word is a new token.
   return card(png, new URL(request.url).searchParams.get('s') === s.token);
+}
+
+// ---------- Achievements ----------
+
+// A short name for exactly what a card draws, so its image URL changes when
+// its drawing, its words or the address on it do, and only then.
+export async function svgToken(svg) {
+  const hash = new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(svg)));
+  return [...hash.slice(0, 6)].map((n) => n.toString(16).padStart(2, '0')).join('');
+}
+
+async function badgePage(env, a, dark, url) {
+  const self = url.origin + url.pathname;
+  // Not an achievement (one gone from the catalog, or mistyped): the game's own card, and the game.
+  if (!a) {
+    return htmlPage({
+      title: 'Letterfield', description: 'A word search the size of a world, charted together.',
+      image: `${site(env)}/previews/letterfield.jpg`, alt: 'Letterfield', png: false,
+      self, target: `${site(env)}/letterfield`, linkText: 'Open Letterfield',
+    });
+  }
+  const token = await svgToken(badgeSvg(a, { dark, host: new URL(site(env)).host }));
+  return htmlPage({
+    title: `${a.name} · Letterfield`,
+    description: `${a.desc} One of ${CORE.CATALOG.length} achievements in Letterfield, a word search the size of a world.`,
+    image: `${url.origin}/a/${dark ? 'd/' : ''}${a.id}.png?s=${token}`,
+    alt: `The ${a.name} badge, an achievement in Letterfield`, png: true,
+    self, target: `${site(env)}/letterfield#a-${a.id}`, linkText: `See ${a.name} in Letterfield`,
+  });
+}
+
+async function badgeImage(request, env, ctx, render, a, dark) {
+  const svg = badgeSvg(a, { dark, host: new URL(site(env)).host }), token = await svgToken(svg);
+  const current = new URL(request.url).searchParams.get('s') === token;
+  // A card only changes with what it draws, which its token names, and
+  // there are two for each achievement, so each is drawn once and kept in R2.
+  const keep = current && env.CARDS, stored = `a/${dark ? 'dark' : 'light'}/${a.id}/${token}.png`;
+  if (keep) {
+    const object = await env.CARDS.get(stored).catch(() => null);
+    if (object) return card(await object.arrayBuffer(), true);
+  }
+  if (!(await allowed(request, env))) return standIn(env);
+  const png = await render(svg);
+  if (keep) ctx.waitUntil(env.CARDS.put(stored, png, { httpMetadata: { contentType: 'image/png' } }).catch((error) => console.error({ share: 'store failed', error: String(error) })));
+  return card(png, current);
 }

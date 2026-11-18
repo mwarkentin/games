@@ -15,6 +15,7 @@ import pytest
 
 from common import ROOT
 from fake_leaderboard import stand_in_for_worker
+from fake_survey import FakeBadges
 
 
 @pytest.fixture(scope="session")
@@ -83,10 +84,25 @@ def browser_context_args(browser_context_args):
     }
 
 
+# Letterfield's achievement notes start quietened, so a test's first find doesn't bring a note
+# it isn't about (a "First Mark" over the note it's watching). tests/test_letterfield_achievements.py
+# turns them back on. Set only when nothing is stored, so a test's own choice is kept.
+QUIET_ACHIEVEMENTS = """
+try {
+  if (location.protocol.startsWith('http') && localStorage.getItem('letterfield.quiet.v1') === null)
+    localStorage.setItem('letterfield.quiet.v1', '["achievement"]');
+} catch (_) {}
+"""
+
+
 @pytest.fixture
 def context(context):
-    """pytest-playwright's context, with the real Worker faked (see fake_leaderboard.py)."""
+    """pytest-playwright's context, with the real Worker faked (see fake_leaderboard.py),
+    Letterfield's achievement notes quietened (see QUIET_ACHIEVEMENTS) and its badges answered."""
     stand_in_for_worker(context)
+    context.add_init_script(QUIET_ACHIEVEMENTS)
+    # Letterfield asks the fake survey which badges it may show; a test that cares routes its own.
+    context.route("https://survey.test/v1/survey/badges", FakeBadges().handle)
     return context
 
 

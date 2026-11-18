@@ -6,6 +6,8 @@ import { createRequire } from 'node:module';
 import { describe, test } from 'node:test';
 
 import { Resvg, initWasm } from '@resvg/resvg-wasm';
+import { CORE } from '../../worker/src/achievements.js';
+import { badgeSvg, parseBadge } from '../src/badge.js';
 import { findSvg, parseFind } from '../src/card.js';
 import { parseView, summarize, viewSvg } from '../src/view.js';
 import { renderer } from '../src/render.js';
@@ -83,4 +85,14 @@ describe('rendering a supernova', () => {
       if (process.env.SHARE_CARD_OUT) (await import('node:fs')).writeFileSync(`${process.env.SHARE_CARD_OUT}/nova-${rx},${ry}-${dark ? 'dark' : 'light'}.png`, png);
     });
   }
+});
+
+describe('achievement cards', () => {
+  test('every badge draws a 1200×630 PNG small enough for WhatsApp, light and dark', async () => {
+    for (const [id] of CORE.CATALOG) for (const dark of [false, true]) {
+      const png = await render(badgeSvg(parseBadge(id), { dark }));
+      assert.deepEqual(size(png), [1200, 630], id);
+      assert.ok(png.length < 300_000, `${id}: ${png.length} bytes`);
+    }
+  });
 });

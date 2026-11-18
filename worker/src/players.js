@@ -9,11 +9,13 @@
 //   POST /v1/link/<code>/status     {token} → {state}: waiting, used or gone (gone to anyone who didn't make it)
 //   POST /v1/link/<code>            {} → {token, carry}, once; then 404
 //
-// carry: {initials, guilds: [{code, name, tag}], labels: {code: text}, muted: [ids], mutedAs: {id: [initials, at]}, emotes}
+// carry: {initials, guilds: [{code, name, tag}], labels: {code: text}, muted: [ids], mutedAs: {id: [initials, at]}, emotes, badge, card}
 //   guilds: up to GUILDS_MAX, in the player's order (an older game's single `guild` is a list of one,
 //     and the answer names the first as `guild` too, for an older game to read)
 //   labels: the player's own names for their guilds ("Work"), seen only on their own devices
 //   mutedAs: who each muted player was when muted, and when, for the game's Muted list
+//   badge: the badge the player shows others, [id, sig] (achievements.js), or null
+//   card: the player's card of badges and when they began, signed (achievements.js), or null
 //
 // A code is eight characters from the groups' alphabet (850 billion codes),
 // good for LINK_MS and for one use. Making codes and trying them are each
@@ -25,10 +27,14 @@
 // seen and the settings a link carries. Only a link starts one, so a player
 // who never linked a device keeps everything in their browser.
 //
-//   POST /v1/player/sync    {token, epoch, since, finds, novas, settings, settingsAt}
-//                           → {epoch, at, finds, novas, settings?, settingsAt?} | {off: true}
+//   POST /v1/player/sync    {token, epoch, since, finds, novas, marks, best, settings, settingsAt}
+//                           → {epoch, at, finds, novas, marks, best?, settings?, settingsAt?} | {off: true}
 //   POST /v1/player/forget  {token} → {off: true}: everything kept for syncing goes,
 //                           and the recovery code with it
+//
+// marks: achievements earned, [[id, at, from, sig?]] (from 1 if worked out from
+// notes older than achievements, sig a badge signature from achievements.js);
+// best: the longest streak. See "Storage and sync" in ACHIEVEMENTS.md.
 //
 // A recovery code brings a player back on any device, with no other device
 // to hand ("A recovery code" in SURVEY.md). Saving one also keeps their notes
@@ -38,6 +44,7 @@
 //   POST /v1/recovery/use     {code} → {token, made}, or 404: made says when the code was, for the device it brings back
 //   POST /v1/recovery/remove  {token} → {ok}
 
+import { BADGE, BADGE_SIG, CARD, RECEIPT } from './achievements.js';
 import { HttpError, INITIALS, answered, corsHeaders, hashIp, hex, initialsOrNone, json, mustPost, randomCode, randomHex, rateLimit, readBody } from './leaderboard.js';
 import { goodName } from './survey-guild.js';
 import { GUILD_CODE, GUILD_TAG, GUILDS_MAX, PID, playerId, tokenIn } from './survey-social.js';
@@ -53,6 +60,7 @@ const LINK_PATH = /^\/v1\/link(?:\/([^/]{1,16})(\/status)?)?$/;
 const goodMutedAs = (v) => Array.isArray(v) && v.length === 2 && initialsOrNone(v[0])
   && Number.isInteger(v[1]) && v[1] >= 0 && v[1] <= 1e15;
 
+const goodBadge = (b) => Array.isArray(b) && b.length === 2 && typeof b[0] === 'string' && BADGE.test(b[0]) && typeof b[1] === 'string' && BADGE_SIG.test(b[1]);
 const goodGuild = (g) => !!g && typeof g.code === 'string' && GUILD_CODE.test(g.code) && goodName(g.name) && typeof g.tag === 'string' && GUILD_TAG.test(g.tag);
 const isMap = (v) => !!v && typeof v === 'object' && !Array.isArray(v);
 
@@ -70,7 +78,7 @@ export function cleanLabel(v) {
 // guilds in guilds.
 export function cleanCarry(c) {
   if (!c || typeof c !== 'object') return null;
-  const { initials = '', guild = null, labels = {}, muted = [], mutedAs = {}, emotes = true } = c;
+  const { initials = '', guild = null, labels = {}, muted = [], mutedAs = {}, emotes = true, badge = null, card = null } = c;
   const guilds = c.guilds ?? (guild === null ? [] : [guild]);
   if (!initialsOrNone(initials)) return null;
   if (!Array.isArray(guilds) || guilds.length > GUILDS_MAX || !guilds.every(goodGuild)) return null;
@@ -80,11 +88,13 @@ export function cleanCarry(c) {
   const as = Object.entries(mutedAs);
   if (as.length > MUTED_MAX || !as.every(([p, v]) => PID.test(p) && goodMutedAs(v))) return null;
   if (typeof emotes !== 'boolean') return null;
+  const shown = goodBadge(badge) ? [badge[0], badge[1]] : null;
   const kept = [...new Map(guilds.map((g) => [g.code, { code: g.code, name: [...g.name], tag: g.tag }])).values()];
   const named = Object.fromEntries(kept.flatMap((g) => { const l = cleanLabel(labels[g.code]); return l ? [[g.code, l]] : []; }));
   return {
     initials, guilds: kept, guild: kept[0] ?? null, labels: named, muted,
-    mutedAs: Object.fromEntries(as.filter(([p]) => muted.includes(p)).map(([p, v]) => [p, [v[0], v[1]]])), emotes,
+    mutedAs: Object.fromEntries(as.filter(([p]) => muted.includes(p)).map(([p, v]) => [p, [v[0], v[1]]])), emotes, badge: shown,
+    card: typeof card === 'string' && CARD.test(card) ? card : null,
   };
 }
 
@@ -149,17 +159,44 @@ const SYNC_PATH = /^\/v1\/player\/(sync|forget)$/;
 const playerStub = (env, pid) => env.PLAYERS.get(env.PLAYERS.idFromName(pid));
 const int = (v, max) => Number.isInteger(v) && Math.abs(v) < max;
 
-// A find as the game keeps it ({w, x, y, d, t, s, f?, n?, b?}), checked for
+// A find as the game keeps it ({w, x, y, d, t, s, f?, n?, b?, r?}), checked for
 // its shape: b is who charted it first when it wasn't this player (initials,
-// or ? for someone unsigned). The game checks it's on the map when it takes
-// it in.
+// or ? for someone unsigned), r the sector's receipt for it (achievements.js).
+// The game checks it's on the map when it takes it in.
 export function cleanFind(o) {
   if (!o || typeof o !== 'object' || typeof o.w !== 'string' || !/^[A-Z]{3,12}$/.test(o.w)) return null;
   const { w, x, y, d, t, s } = o;
   if (!int(x, 1e9) || !int(y, 1e9) || !int(d, 8) || d < 0 || !Number.isFinite(t) || (s !== 0 && s !== 1)) return null;
   const f = o.f === 1 ? 1 : 0, n = f && int(o.n, 1e8) && o.n > 0 ? o.n : 0;
   const b = !f && typeof o.b === 'string' && (INITIALS.test(o.b) || o.b === '?') ? o.b : '';
-  return { w, x, y, d, t: Math.round(t), s, ...(f ? { f } : {}), ...(n ? { n } : {}), ...(b ? { b } : {}) };
+  const r = typeof o.r === 'string' && RECEIPT.test(o.r) ? o.r : '';
+  return { w, x, y, d, t: Math.round(t), s, ...(f ? { f } : {}), ...(n ? { n } : {}), ...(b ? { b } : {}), ...(r ? { r } : {}) };
+}
+// What two copies of a find know, together: charted first only ever comes on,
+// and so does who charted it otherwise, until it's this player's; a receipt,
+// once there, stays. Null when the second adds nothing.
+export function mergedFind(was, f) {
+  const out = { ...was };
+  let changed = false;
+  if (f.f && !was.f) { out.f = 1; delete out.b; if (f.n) out.n = f.n; changed = true; }
+  else if (f.b && !was.b && !was.f) { out.b = f.b; changed = true; }
+  if (f.r && !was.r) { out.r = f.r; changed = true; }
+  return changed ? out : null;
+}
+
+export const MARKS_MAX = 200;          // achievements kept for one player (the catalog has 39)
+// An achievement earned, as a sync carries it: [id, at, from, sig?], checked.
+export function cleanMark(m, now) {
+  if (!Array.isArray(m) || typeof m[0] !== 'string' || !BADGE.test(m[0]) || !Number.isInteger(m[1]) || m[1] <= 0 || m[1] > now + 86400000) return null;
+  const sig = typeof m[3] === 'string' && BADGE_SIG.test(m[3]) ? m[3] : '';
+  return [m[0], m[1], m[2] === 1 ? 1 : 0, ...(sig ? [sig] : [])];
+}
+// Two records of one achievement: the earlier time, "earned in play" (0) over
+// "from your notes" (1), and a signature once there is one. Null when the
+// second adds nothing.
+export function mergedMark(was, m) {
+  const out = [m[0], Math.min(was[1], m[1]), was[2] && m[2] ? 1 : 0, ...(was[3] || m[3] ? [was[3] || m[3]] : [])];
+  return out.join() === was.join() ? null : out;
 }
 export const findKey = (f) => `${f.w}@${f.x},${f.y},${f.d}`;
 
@@ -218,10 +255,8 @@ export class Player {
       if (!f) continue;
       const k = findKey(f), had = this.sql.exec('SELECT body FROM finds WHERE k = ?', k).toArray()[0];
       if (had) {
-        // Charted first only ever comes on, and so does who charted it
-        // otherwise, until it's this player's.
-        const was = JSON.parse(had.body);
-        if ((f.f && !was.f) || (f.b && !was.b && !was.f)) { this.sql.exec('UPDATE finds SET body = ?, v = ? WHERE k = ?', JSON.stringify(f), v, k); wrote = true; }
+        const merged = mergedFind(JSON.parse(had.body), f);
+        if (merged) { this.sql.exec('UPDATE finds SET body = ?, v = ? WHERE k = ?', JSON.stringify(merged), v, k); wrote = true; }
         continue;
       }
       count ??= this.sql.exec('SELECT COUNT(*) AS n FROM finds').one().n;
@@ -238,6 +273,32 @@ export class Player {
       if (novaCount >= NOVAS_MAX) break;
       if (this.sql.exec('INSERT INTO novas (k, body, v) VALUES (?, ?, ?) ON CONFLICT (k) DO NOTHING RETURNING k', `${n.rx},${n.ry}`, JSON.stringify(n), v).toArray().length) { novaCount++; wrote = true; }
     }
+    // Achievements: each kept once, merged; the longest streak only goes up (as the row '~best').
+    this.sql.exec('CREATE TABLE IF NOT EXISTS marks (id TEXT PRIMARY KEY, body TEXT NOT NULL, v INTEGER NOT NULL) WITHOUT ROWID');
+    const marks = Array.isArray(body.marks) ? body.marks.slice(0, MARKS_MAX) : [];
+    let markCount = null;
+    for (const o of marks) {
+      const mk = cleanMark(o, now);
+      if (!mk) continue;
+      const had = this.sql.exec('SELECT body FROM marks WHERE id = ?', mk[0]).toArray()[0];
+      if (had) {
+        const merged = mergedMark(JSON.parse(had.body), mk);
+        if (merged) { this.sql.exec('UPDATE marks SET body = ?, v = ? WHERE id = ?', JSON.stringify(merged), v, mk[0]); wrote = true; }
+        continue;
+      }
+      markCount ??= this.sql.exec("SELECT COUNT(*) AS n FROM marks WHERE id != '~best'").one().n;
+      if (markCount >= MARKS_MAX) continue;
+      this.sql.exec('INSERT INTO marks (id, body, v) VALUES (?, ?, ?)', mk[0], JSON.stringify(mk), v);
+      markCount++;
+      wrote = true;
+    }
+    if (Number.isInteger(body.best) && body.best > 0 && body.best < 1e5) {
+      const had = this.sql.exec("SELECT body FROM marks WHERE id = '~best'").toArray()[0];
+      if (!had || JSON.parse(had.body) < body.best) {
+        this.sql.exec("INSERT INTO marks (id, body, v) VALUES ('~best', ?, ?) ON CONFLICT (id) DO UPDATE SET body = excluded.body, v = excluded.v", JSON.stringify(body.best), v);
+        wrote = true;
+      }
+    }
     // Settings: whichever device changed them last.
     const settings = body.settings === undefined ? null : cleanCarry(body.settings);
     let settingsAt = m.settings_at, kept = m.settings;
@@ -248,8 +309,11 @@ export class Player {
     if (keep) await this.ctx.storage.setAlarm(now + KEEP_MS);
     const rows = (table) => this.sql.exec(`SELECT body FROM ${table} WHERE v > ? AND v != ? ORDER BY v`, since, v).toArray().map((r) => JSON.parse(r.body));
     const theirs = int(body.settingsAt, 1e15) ? body.settingsAt : 0;
+    const markRows = this.sql.exec('SELECT id, body FROM marks WHERE v > ? AND v != ? ORDER BY v', since, v).toArray();
+    const best = markRows.find((r) => r.id === '~best');
     return [{
       epoch: m.epoch, at, finds: rows('finds'), novas: rows('novas'),
+      marks: markRows.filter((r) => r.id !== '~best').map((r) => JSON.parse(r.body)), ...(best ? { best: JSON.parse(best.body) } : {}),
       ...(kept && settingsAt > theirs ? { settings: JSON.parse(kept), settingsAt } : {}),
     }, 200];
   }

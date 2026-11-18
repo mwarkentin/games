@@ -389,3 +389,59 @@ describe('a new guild\'s page', () => {
     assert.equal(meta(bad, 'og:title'), 'A guild · Letterfield survey log');
   });
 });
+
+describe('an achievement', () => {
+  test('has a page that carries its card and sends people on to it in the game', async () => {
+    const { env } = fakeEnv();
+    const response = await get('/a/seven-seas', env);
+    assert.equal(response.status, 200);
+    const html = await response.text();
+    assert.equal(meta(html, 'og:title'), 'Seven Seas · Letterfield');
+    assert.equal(meta(html, 'og:description'), 'Find words from all 7 themes of the sea. One of 39 achievements in Letterfield, a word search the size of a world.');
+    assert.equal(meta(html, 'og:url'), `${SHARE}/a/seven-seas`);
+    assert.match(meta(html, 'og:image'), new RegExp(`^${SHARE}/a/seven-seas\\.png\\?s=[0-9a-f]{12}$`));
+    assert.ok(html.includes(`location.replace(${JSON.stringify(`${SITE}/letterfield#a-seven-seas`)})`));
+    assert.equal(renders.length, 0);
+    // A dark share points at the dark card, whose token differs, and goes to the same place.
+    const dark = await (await get('/a/d/seven-seas', env)).text();
+    assert.match(meta(dark, 'og:image'), new RegExp(`^${SHARE}/a/d/seven-seas\\.png\\?s=[0-9a-f]{12}$`));
+    assert.notEqual(meta(dark, 'og:image').split('s=')[1], meta(html, 'og:image').split('s=')[1]);
+    assert.ok(dark.includes(`location.replace(${JSON.stringify(`${SITE}/letterfield#a-seven-seas`)})`));
+  });
+
+  test('one that isn\'t in the catalog gets the game\'s own card, and the game; its card isn\'t drawn', async () => {
+    const { env } = fakeEnv();
+    const html = await (await get('/a/no-such-badge', env)).text();
+    assert.equal(meta(html, 'og:image'), `${SITE}/previews/letterfield.jpg`);
+    assert.ok(html.includes(`location.replace(${JSON.stringify(`${SITE}/letterfield`)})`));
+    assert.equal((await get('/a/no-such-badge.png', env)).status, 404);
+    assert.equal((await get('/a/Seven-Seas', env)).status, 404);
+    assert.equal(renders.length, 0);
+  });
+
+  test('its card is drawn once for what it shows and kept for good in R2; asked for otherwise, it\'s kept briefly', async () => {
+    const { env, stored } = fakeEnv();
+    const image = meta(await (await get('/a/seven-seas', env)).text(), 'og:image').slice(SHARE.length);
+    const first = await get(image, env);
+    assert.equal(first.status, 200);
+    assert.equal(first.headers.get('Content-Type'), 'image/png');
+    assert.equal(first.headers.get('Cache-Control'), 'public, max-age=31536000, immutable');
+    assert.deepEqual([...stored.keys()], [`a/light/seven-seas/${image.split('s=')[1]}.png`]);
+    assert.ok(renders[0].includes('SEVEN SEAS') && renders[0].includes('>games.test<'));
+    await get(image, env);  // another data centre: R2 has it
+    assert.equal(renders.length, 1);
+    const old = await get('/a/seven-seas.png?s=000000000000', env);
+    assert.equal(old.headers.get('Cache-Control'), 'public, max-age=300');
+    assert.equal(stored.size, 1);
+    await get('/a/d/seven-seas.png', env);
+    assert.ok(renders.at(-1).includes('#0F171A'));
+  });
+
+  test('new cards share the render limit', async () => {
+    const { env } = fakeEnv({ limited: true });
+    const over = await get('/a/seven-seas.png', env);
+    assert.equal(over.status, 302);
+    assert.equal(over.headers.get('Location'), `${SITE}/previews/letterfield.jpg`);
+    assert.equal(renders.length, 0);
+  });
+});
