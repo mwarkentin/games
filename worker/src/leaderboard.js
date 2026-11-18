@@ -32,6 +32,7 @@ const LIMITS = {
   link: { max: 10, windowMs: HOUR },             // codes made to link another device (see players.js)
   linkTry: { max: 20, windowMs: HOUR },          // codes tried, right or wrong, recovery codes included
   recovery: { max: 5, windowMs: HOUR },          // recovery codes made
+  badges: { max: 30, windowMs: HOUR },           // Letterfield badges asked for (see achievements.js)
 };
 
 const PUBLIC = '*';

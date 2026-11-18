@@ -6239,8 +6239,6 @@ const K_MARKS = 'letterfield.marks.v1';
 // Kinds of note that are quietened: no note and no sound for them. Only
 // achievements have a switch yet; others can join the same list.
 const K_QUIET = 'letterfield.quiet.v1';
-const STREAK_MIN = 3;   // finds that make a day count
-const REST_GAP = 7;     // a missed day keeps a streak going if no other was missed in the six before it
 const MARK_GROUPS = [
   { id: 'notes', name: 'Field notes', h: 215 },
   { id: 'charting', name: 'Charting', h: 38 },
@@ -6253,13 +6251,195 @@ const MARK_GROUPS = [
   { id: 'company', name: 'Company', h: 245 },
 ];
 const MARK_GROUP = Object.fromEntries(MARK_GROUPS.map(g => [g.id, g]));
-// Themes that go together, by name; a name the map no longer has is a bug.
-const themeIds = names => names.map(n => { const i = THEMES.findIndex(t => t.name === n); if (i < 0) console.error(`achievements: no theme called ${n}`); return i; });
-const BIRDS = themeIds(['Garden Birds', 'Birds of Prey', 'Aviary', 'Waterbirds', 'Birdwatching']);
-const SEAS = themeIds(['Deep Sea', 'Coral Reef', 'Whale Watch', 'Rock Pool', 'Seaside', 'Harbour', 'Sailing']);
-const SKIES = themeIds(['Space', 'Solar System', 'Night Sky', 'Sci-Fi']);
-const NATIONS = themeIds(['India', 'Ireland', 'Mexico', 'France', 'Japan', 'Canada', 'Spain', 'Italy', 'Scotland']);
 const UNIVERSE_EDGE = SURVEY_AREA * 4;  // territories from the map centre to the universe's edge (it runs from −48 to 51)
+/* Days surveyed. A day is the player's own local date where they are now,
+   so daylight saving changes nothing, and travel at most moves a late-night
+   find a day. A day after today (a fast clock) waits until it comes. */
+const dayNum = t => { const d = new Date(t); return Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()) / 864e5; };
+const dayDate = n => { const d = new Date(n * 864e5); return new Date(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()); };
+// ---- BEGIN ACHIEVEMENTS CORE ----
+// The same in letterfield.html and worker/src/achievements.js, word for word
+// (worker/test/achievements.test.js checks): what each achievement asks for,
+// and one pass over a surveyor's finds and supernovas, in time order, that
+// says how far along each is. The game works its own notes out with it; the
+// Worker works out the signed finds a badge shown to others needs. `world`
+// gives the map: THEMES, territoryTotal(rx, ry), RC (cells a territory),
+// UNIVERSE_EDGE (territories to the universe's edge) and dayOf(t), the day
+// a time falls on where the surveyor is, as a whole number.
+function achievementsCore(world) {
+  const { THEMES, territoryTotal, RC, UNIVERSE_EDGE, dayOf } = world;
+  const NT = THEMES.length;
+  const STREAK_MIN = 3;  // finds that make a day count
+  const REST_GAP = 7;    // a missed day keeps a streak going if no other was missed in the six before it
+  const fdiv = (a, b) => Math.floor(a / b);
+  // Themes that go together, by name (-1 for a name the map no longer has).
+  const themeIds = (names) => names.map((n) => THEMES.findIndex((t) => t.name === n));
+  const BIRDS = themeIds(['Garden Birds', 'Birds of Prey', 'Aviary', 'Waterbirds', 'Birdwatching']);
+  const SEAS = themeIds(['Deep Sea', 'Coral Reef', 'Whale Watch', 'Rock Pool', 'Seaside', 'Harbour', 'Sailing']);
+  const SKIES = themeIds(['Space', 'Solar System', 'Night Sky', 'Sci-Fi']);
+  const NATIONS = themeIds(['India', 'Ireland', 'Mexico', 'France', 'Japan', 'Canada', 'Spain', 'Italy', 'Scotland']);
+  // How far along the tally T is: [have, need, what it's about ({rx, ry} or {th}) or null].
+  const pair = (have, need, of = null) => [Math.min(have, need), need, of];
+  const allOf = (ids) => (T) => pair(ids.filter((i) => T.themes.has(i)).length, ids.length);
+  // [id, group, flags, check]. Flags: s, on the shared survey only; h, secret
+  // until earned; l, latched when it happens, as nothing in the notes says;
+  // u, unproven: signed finds can't show it (see "Badges others see").
+  const CATALOG = [
+    ['first-mark', 'notes', '', (T) => pair(T.finds, 1)],
+    ['field-book', 'notes', '', (T) => pair(T.finds, 100)],
+    ['bound-volume', 'notes', '', (T) => pair(T.finds, 1000)],
+    ['great-atlas', 'notes', '', (T) => pair(T.finds, 5000)],
+    ['first-light', 'charting', 's', (T) => pair(T.first, 1)],
+    ['trailblazer', 'charting', 's', (T) => pair(T.first, 100)],
+    ['pathfinder', 'charting', 's', (T) => pair(T.first, 1000)],
+    ['cairn', 'charting', 'shu', (T) => pair(T.cairn, 1)],
+    ['wanderer', 'territories', '', (T) => pair(T.terr.size, 10)],
+    ['gazetteer', 'territories', '', (T) => pair(T.terr.size, 50)],
+    ['every-last-word', 'territories', '', (T) => (T.full ? pair(1, 1) : T.near ? pair(T.near.n, T.near.of, T.near) : pair(0, 1))],
+    ['five-sheets', 'territories', '', (T) => pair(T.full, 5)],
+    ['lions-share', 'territories', 's', (T) => (T.lion ? pair(1, 1) : T.lionNear ? pair(T.lionNear.n, T.lionNear.of, T.lionNear) : pair(0, 1))],
+    ['map-key', 'themes', '', (T) => pair(T.themes.size, 25)],
+    ['full-legend', 'themes', '', (T) => pair(T.themes.size, NT)],
+    ['lexicographer', 'themes', '', (T) => (T.lex ? pair(T.lex.n, THEMES[T.lex.th].words.length, T.lex) : pair(0, 1))],
+    ['dawn-chorus', 'themes', '', allOf(BIRDS)],
+    ['seven-seas', 'themes', '', allOf(SEAS)],
+    ['star-chart', 'themes', '', allOf(SKIES)],
+    ['passport', 'themes', '', allOf(NATIONS)],
+    ['happy-accident', 'words', '', (T) => pair(T.bonus, 1)],
+    ['serendipity', 'words', '', (T) => pair(T.bonus, 25)],
+    ['long-measure', 'words', '', (T) => pair(T.longest >= 10 ? 1 : 0, 1)],
+    ['compass-rose', 'words', '', (T) => pair(T.dirs.size, 8)],
+    ['mirror-image', 'words', 'h', (T) => pair(T.mirror, 1)],
+    ['self-portrait', 'words', 'h', (T) => pair(T.surveyor, 1)],
+    ['over-the-horizon', 'far', '', (T) => pair(T.far, 10)],
+    ['edge-of-the-universe', 'far', '', (T) => pair(T.far, UNIVERSE_EDGE)],
+    ['here-be-dragons', 'far', 'h', (T) => pair(T.far, 250)],
+    ['witness', 'novas', 'u', (T) => pair(T.novas, 1)],
+    ['starfield', 'novas', 'u', (T) => pair(T.novas, 10)],
+    ['last-word', 'novas', 's', (T) => pair(T.lastWord, 1)],
+    ['seven-days', 'days', '', (T) => pair(T.best, 7)],
+    ['lunar-month', 'days', '', (T) => pair(T.best, 28)],
+    ['thirty-days', 'days', '', (T) => pair(T.days, 30)],
+    ['full-circle', 'days', '', (T) => pair(T.span, 365)],
+    ['fellowship', 'company', 'slu', null],
+    ['two-places', 'company', 'slu', null],
+    ['hats-off', 'company', 'shlu', null],
+  ];
+  const CHECK = new Map(CATALOG.map(([id, , , check]) => [id, check]));
+
+  // Runs of counted days, forwards: a missed day is a rest day if no other was
+  // missed in the six before it; otherwise the run starts again after the
+  // earlier one. So any day's streak is the longest run back from it that holds
+  // at most one missed day in any seven. Today is never missed: it's open
+  // until it ends. `counted` is ascending; `reach` says when the run first
+  // reached each length asked about.
+  function runsOf(counted, today, reach = []) {
+    let run = [], prev = null, lastMiss = null, best = 0;
+    const at = {};
+    const miss = (m) => {
+      if (lastMiss !== null && m - lastMiss < REST_GAP) run = run.filter((x) => x > lastMiss);
+      lastMiss = m;
+    };
+    for (const d of counted) {
+      if (d > today) break;
+      if (prev !== null) for (let m = prev + 1; m < d; m++) miss(m);
+      run.push(d); prev = d;
+      if (run.length > best) best = run.length;
+      for (const k of reach) if (!(k in at) && run.length >= k) at[k] = d;
+    }
+    if (prev !== null) for (let m = prev + 1; m < today; m++) miss(m);
+    return { run, best, at };
+  }
+
+  const wordThemes = new Map();  // word → the themes whose lists have it
+  THEMES.forEach((t, i) => t.words.forEach((w) => { const l = wordThemes.get(w); if (l) l.push(i); else wordThemes.set(w, [i]); }));
+  const isPalindrome = (w) => w.length >= 3 && w === [...w].reverse().join('');
+
+  // The tally of finds ({w, x, y, d, t, s, f, n, th}: s a bonus word, f charted
+  // first, n where it came in the universe's count, th its theme) and
+  // supernovas seen ({t, mine, solo}), as of `now`. Given `want`, ids to date,
+  // it also says when each was first earned and by what (`reached`): checking
+  // after every find is most of the work, so it's done only when asked. Days
+  // are dated from the days themselves.
+  function tally(finds, novas, now, want = []) {
+    const T = { finds: 0, first: 0, cairn: 0, bonus: 0, longest: 0, mirror: 0, surveyor: 0, far: 0, dirs: new Set(), themes: new Set(),
+      terr: new Map(), full: 0, near: null, lion: 0, lionNear: null, lex: null, lexWords: new Map(), novas: 0, lastWord: 0, best: 0, days: 0, span: 0, current: 0, today: 0 };
+    const reached = {};  // id → {at, by}: when it was first earned, and the find or supernova (`by`, as {e} or {n}) that did it
+    let left = want.filter((id) => CHECK.get(id) && !['seven-days', 'lunar-month', 'thirty-days', 'full-circle'].includes(id));
+    const reach = (by) => {
+      left = left.filter((id) => {
+        const [have, need] = CHECK.get(id)(T);
+        if (have < need) return true;
+        reached[id] = { at: by.t, by };
+        return false;
+      });
+    };
+    const items = finds.map((e) => ({ e, t: e.t })).concat(novas.map((n) => ({ n, t: n.t })));
+    items.sort((a, b) => a.t - b.t);
+    const perDay = new Map(), today = dayOf(now);  // day → {n: finds, by: the find that made it count}
+    for (const it of items) {
+      if (it.n) {
+        T.novas++;
+        if (it.n.mine && !it.n.solo) T.lastWord = 1;
+        if (left.length) reach(it);
+        continue;
+      }
+      const e = it.e, rx = fdiv(e.x, RC), ry = fdiv(e.y, RC), k = `${rx},${ry}`;
+      T.finds++;
+      if (e.f) { T.first++; if (e.n && e.n % 1000 === 0) T.cairn = 1; }
+      if (e.s) T.bonus++;
+      if (e.w.length > T.longest) T.longest = e.w.length;
+      if (isPalindrome(e.w)) T.mirror = 1;
+      if (e.w === 'SURVEYOR') T.surveyor = 1;
+      T.far = Math.max(T.far, Math.abs(rx), Math.abs(ry));
+      T.dirs.add(e.d);
+      T.themes.add(e.th);
+      for (const th of wordThemes.get(e.w) || []) {
+        let s = T.lexWords.get(th);
+        if (!s) T.lexWords.set(th, s = new Set());
+        s.add(e.w);
+        if (!T.lex || s.size / THEMES[th].words.length > T.lex.n / THEMES[T.lex.th].words.length) T.lex = { th, n: s.size };
+      }
+      let tr = T.terr.get(k);
+      if (!tr) T.terr.set(k, tr = { hid: 0, first: 0, done: false, lion: false });
+      if (!e.s) {
+        const total = territoryTotal(rx, ry);
+        tr.hid++;
+        if (!tr.done && tr.hid >= total) { tr.done = true; T.full++; }
+        if (!tr.done && (!T.near || tr.hid / total > T.near.n / T.near.of)) T.near = { rx, ry, n: tr.hid, of: total };
+        if (e.f) {
+          tr.first++;
+          const most = Math.floor(total / 2) + 1;
+          if (!tr.lion && tr.first >= most) { tr.lion = true; T.lion = 1; }
+          if (!T.lion && (!T.lionNear || tr.first / most > T.lionNear.n / T.lionNear.of)) T.lionNear = { rx, ry, n: tr.first, of: most };
+        }
+      }
+      const dn = dayOf(e.t);
+      let day = perDay.get(dn);
+      if (!day) perDay.set(dn, day = { n: 0, by: null });
+      if (++day.n === STREAK_MIN) day.by = it;
+      if (left.length) reach(it);
+    }
+    const counted = [...perDay].filter(([d, v]) => v.n >= STREAK_MIN && d <= today).map(([d]) => d).sort((a, b) => a - b);
+    const runs = runsOf(counted, today, [7, 28]);
+    Object.assign(T, { best: runs.best, current: runs.run.length, run: runs.run, days: counted.length, counted: new Set(counted),
+      first0: counted.length ? counted[0] : null, span: counted.length ? counted[counted.length - 1] - counted[0] : 0, today: perDay.has(today) ? perDay.get(today).n : 0 });
+    // A day's achievement is dated by the find that made the day that earned it count.
+    const byDay = (id, d) => { if (d !== undefined) { const by = perDay.get(d).by; reached[id] = { at: by.t, by }; } };
+    byDay('seven-days', runs.at[7]);
+    byDay('lunar-month', runs.at[28]);
+    byDay('thirty-days', counted[29]);
+    byDay('full-circle', counted.find((d) => d - counted[0] >= 365));
+    return { T, reached };
+  }
+
+  return { CATALOG, CHECK, BIRDS, SEAS, SKIES, NATIONS, STREAK_MIN, runsOf, tally };
+}
+// ---- END ACHIEVEMENTS CORE ----
+// The rules, for this map and the surveyor's own days.
+const CORE = achievementsCore({ THEMES, territoryTotal, RC, UNIVERSE_EDGE, dayOf: dayNum });
+for (const i of [...CORE.BIRDS, ...CORE.SEAS, ...CORE.SKIES, ...CORE.NATIONS]) if (i < 0) console.error('achievements: a theme group names a theme the map no longer has');
+const STREAK_MIN = CORE.STREAK_MIN;
 // Each badge's drawing, on a 32 × 32 grid inside its ring, in the emotes'
 // line style: strokes, round caps, and `f` for the few filled dots.
 const star4 = (x, y, s) => `<path d="M${x} ${y - s}Q${x} ${y} ${x + s} ${y}Q${x} ${y} ${x} ${y + s}Q${x} ${y} ${x - s} ${y}Q${x} ${y} ${x} ${y - s}z"/>`;
@@ -6305,52 +6485,56 @@ const MARK_DRAW = {
   hat: '<path d="M7.5 21.6c4.4 1.7 12.6 1.7 17 0"/><path d="M11 21.2v-6.4c0-2.2 2.2-3.8 5-3.8s5 1.6 5 3.8v6.4"/><path d="M11 18.2h10"/>',
   secret: '<path d="M12.6 12.4a3.5 3.5 0 1 1 4.9 3.2c-.9.4-1.5 1.2-1.5 2.2v.8"/><circle class="f" cx="16" cy="22" r="1.3"/>',
 };
-// The catalog. Each says how far along the tally T is ([have, need], and the
-// place or theme it's about), worked out in marksReplay(). `survey`: on the
+// What each says to a surveyor: its drawing, its name and what to do.
+const MARK_TEXT = {
+  'first-mark': ['mark', 'First Mark', 'Circle your first word.'],
+  'field-book': ['book', 'Field Book', 'Keep 100 words in your field notes.'],
+  'bound-volume': ['shelf', 'Bound Volume', 'Keep 1,000 words in your field notes.'],
+  'great-atlas': ['atlas', 'Great Atlas', 'Keep 5,000 words in your field notes.'],
+  'first-light': ['first', 'First Light', 'Chart a word first on the shared survey.'],
+  'trailblazer': ['flag', 'Trailblazer', 'Chart 100 words first.'],
+  'pathfinder': ['trail', 'Pathfinder', 'Chart 1,000 words first.'],
+  'cairn': ['cairn', 'Cairn', 'Chart a word that came in at a round thousand in the universe’s count.'],
+  'wanderer': ['wander', 'Wanderer', 'Find words in 10 territories.'],
+  'gazetteer': ['grid', 'Gazetteer', 'Find words in 50 territories.'],
+  'every-last-word': ['sheet', 'Every Last Word', 'Find every hidden word in one territory.'],
+  'five-sheets': ['sheets', 'Five Full Sheets', 'Find every hidden word in five territories.'],
+  'lions-share': ['lion', 'Lion’s Share', 'Chart first more than half of one territory’s hidden words.'],
+  'map-key': ['key', 'Map Key', 'Find words from 25 themes.'],
+  'full-legend': ['legend', 'Full Legend', `Find a word from every one of the ${NT} themes.`],
+  'lexicographer': ['quill', 'Lexicographer', 'Find every word one theme has.'],
+  'dawn-chorus': ['birds', 'Dawn Chorus', `Find words from all ${CORE.BIRDS.length} bird themes.`],
+  'seven-seas': ['waves', 'Seven Seas', `Find words from all ${CORE.SEAS.length} themes of the sea.`],
+  'star-chart': ['stars', 'Star Chart', `Find words from all ${CORE.SKIES.length} themes of the sky.`],
+  'passport': ['passport', 'Passport', `Find words from all ${CORE.NATIONS.length} countries’ themes.`],
+  'happy-accident': ['bonus', 'Happy Accident', 'Find a bonus word, a real word the letters spell by chance.'],
+  'serendipity': ['bonuses', 'Serendipity', 'Find 25 bonus words.'],
+  'long-measure': ['ruler', 'Long Measure', 'Find a ten-letter word, the longest the map hides.'],
+  'compass-rose': ['rose', 'Compass Rose', 'Find words reading in all eight directions.'],
+  'mirror-image': ['mirror', 'Mirror Image', 'Find a word that reads the same both ways.'],
+  'self-portrait': ['theodolite', 'Self-Portrait', 'Find the word SURVEYOR.'],
+  'over-the-horizon': ['horizon', 'Over the Horizon', 'Find a word 10 territories from the map centre.'],
+  'edge-of-the-universe': ['edge', 'Edge of the Universe', `Find a word ${UNIVERSE_EDGE} territories out, where the universe ends.`],
+  'here-be-dragons': ['dragon', 'Here Be Dragons', 'Find a word 250 territories from the map centre.'],
+  'witness': ['burst', 'Witness', 'Be there when a territory goes supernova.'],
+  'starfield': ['sparkles', 'Starfield', 'Be there for ten supernovas.'],
+  'last-word': ['last', 'Last Word', 'Chart the last hidden word of a territory, and set it off.'],
+  'seven-days': ['week', 'Seven Days Running', 'Keep a streak going for seven days.'],
+  'lunar-month': ['moon', 'Lunar Month', 'Keep a streak going for 28 days.'],
+  'thirty-days': ['tally', 'Thirty Days Out', 'Survey on 30 different days.'],
+  'full-circle': ['orbit', 'Full Circle', 'Survey a year after your first find.'],
+  'fellowship': ['carets', 'Fellowship', 'Be in a guild.'],
+  'two-places': ['devices', 'Two Places at Once', 'Link another device, or save a recovery code.'],
+  'hats-off': ['hat', 'Hats Off', 'Have someone tip their hat to you.'],
+};
+// The catalog: the core's, with its words and drawing. `survey`: on the
 // shared survey only. `secret`: a question mark until earned. `latch`: not
-// in the notes, so kept when it happens (see markEvent).
-const pairOf = (have, need, of = '') => [Math.min(have, need), need, of];
-const MARKS = [
-  { id: 'first-mark', g: 'notes', draw: 'mark', name: 'First Mark', desc: 'Circle your first word.', p: T => pairOf(T.finds, 1) },
-  { id: 'field-book', g: 'notes', draw: 'book', name: 'Field Book', desc: 'Keep 100 words in your field notes.', p: T => pairOf(T.finds, 100) },
-  { id: 'bound-volume', g: 'notes', draw: 'shelf', name: 'Bound Volume', desc: 'Keep 1,000 words in your field notes.', p: T => pairOf(T.finds, 1000) },
-  { id: 'great-atlas', g: 'notes', draw: 'atlas', name: 'Great Atlas', desc: 'Keep 5,000 words in your field notes.', p: T => pairOf(T.finds, 5000) },
-  { id: 'first-light', g: 'charting', draw: 'first', survey: true, name: 'First Light', desc: 'Chart a word first on the shared survey.', p: T => pairOf(T.first, 1) },
-  { id: 'trailblazer', g: 'charting', draw: 'flag', survey: true, name: 'Trailblazer', desc: 'Chart 100 words first.', p: T => pairOf(T.first, 100) },
-  { id: 'pathfinder', g: 'charting', draw: 'trail', survey: true, name: 'Pathfinder', desc: 'Chart 1,000 words first.', p: T => pairOf(T.first, 1000) },
-  { id: 'cairn', g: 'charting', draw: 'cairn', survey: true, secret: true, name: 'Cairn', desc: 'Chart a word that came in at a round thousand in the universe’s count.', p: T => pairOf(T.cairn, 1) },
-  { id: 'wanderer', g: 'territories', draw: 'wander', name: 'Wanderer', desc: 'Find words in 10 territories.', p: T => pairOf(T.terr.size, 10) },
-  { id: 'gazetteer', g: 'territories', draw: 'grid', name: 'Gazetteer', desc: 'Find words in 50 territories.', p: T => pairOf(T.terr.size, 50) },
-  { id: 'every-last-word', g: 'territories', draw: 'sheet', name: 'Every Last Word', desc: 'Find every hidden word in one territory.', p: T => T.full ? pairOf(1, 1) : T.near ? pairOf(T.near.n, T.near.of, regionName(T.near.rx, T.near.ry)) : pairOf(0, 1) },
-  { id: 'five-sheets', g: 'territories', draw: 'sheets', name: 'Five Full Sheets', desc: 'Find every hidden word in five territories.', p: T => pairOf(T.full, 5) },
-  { id: 'lions-share', g: 'territories', draw: 'lion', survey: true, name: 'Lion’s Share', desc: 'Chart first more than half of one territory’s hidden words.', p: T => T.lion ? pairOf(1, 1) : T.lionNear ? pairOf(T.lionNear.n, T.lionNear.of, regionName(T.lionNear.rx, T.lionNear.ry)) : pairOf(0, 1) },
-  { id: 'map-key', g: 'themes', draw: 'key', name: 'Map Key', desc: 'Find words from 25 themes.', p: T => pairOf(T.themes.size, 25) },
-  { id: 'full-legend', g: 'themes', draw: 'legend', name: 'Full Legend', desc: `Find a word from every one of the ${NT} themes.`, p: T => pairOf(T.themes.size, NT) },
-  { id: 'lexicographer', g: 'themes', draw: 'quill', name: 'Lexicographer', desc: 'Find every word one theme has.', p: T => T.lex ? pairOf(T.lex.n, THEMES[T.lex.th].words.length, THEMES[T.lex.th].name) : pairOf(0, 1) },
-  { id: 'dawn-chorus', g: 'themes', draw: 'birds', name: 'Dawn Chorus', desc: `Find words from all ${BIRDS.length} bird themes.`, p: T => pairOf(BIRDS.filter(i => T.themes.has(i)).length, BIRDS.length) },
-  { id: 'seven-seas', g: 'themes', draw: 'waves', name: 'Seven Seas', desc: `Find words from all ${SEAS.length} themes of the sea.`, p: T => pairOf(SEAS.filter(i => T.themes.has(i)).length, SEAS.length) },
-  { id: 'star-chart', g: 'themes', draw: 'stars', name: 'Star Chart', desc: `Find words from all ${SKIES.length} themes of the sky.`, p: T => pairOf(SKIES.filter(i => T.themes.has(i)).length, SKIES.length) },
-  { id: 'passport', g: 'themes', draw: 'passport', name: 'Passport', desc: `Find words from all ${NATIONS.length} countries’ themes.`, p: T => pairOf(NATIONS.filter(i => T.themes.has(i)).length, NATIONS.length) },
-  { id: 'happy-accident', g: 'words', draw: 'bonus', name: 'Happy Accident', desc: 'Find a bonus word, a real word the letters spell by chance.', p: T => pairOf(T.bonus, 1) },
-  { id: 'serendipity', g: 'words', draw: 'bonuses', name: 'Serendipity', desc: 'Find 25 bonus words.', p: T => pairOf(T.bonus, 25) },
-  { id: 'long-measure', g: 'words', draw: 'ruler', name: 'Long Measure', desc: 'Find a ten-letter word, the longest the map hides.', p: T => pairOf(T.longest >= 10 ? 1 : 0, 1) },
-  { id: 'compass-rose', g: 'words', draw: 'rose', name: 'Compass Rose', desc: 'Find words reading in all eight directions.', p: T => pairOf(T.dirs.size, 8) },
-  { id: 'mirror-image', g: 'words', draw: 'mirror', secret: true, name: 'Mirror Image', desc: 'Find a word that reads the same both ways.', p: T => pairOf(T.mirror, 1) },
-  { id: 'self-portrait', g: 'words', draw: 'theodolite', secret: true, name: 'Self-Portrait', desc: 'Find the word SURVEYOR.', p: T => pairOf(T.surveyor, 1) },
-  { id: 'over-the-horizon', g: 'far', draw: 'horizon', name: 'Over the Horizon', desc: 'Find a word 10 territories from the map centre.', p: T => pairOf(T.far, 10) },
-  { id: 'edge-of-the-universe', g: 'far', draw: 'edge', name: 'Edge of the Universe', desc: `Find a word ${UNIVERSE_EDGE} territories out, where the universe ends.`, p: T => pairOf(T.far, UNIVERSE_EDGE) },
-  { id: 'here-be-dragons', g: 'far', draw: 'dragon', secret: true, name: 'Here Be Dragons', desc: 'Find a word 250 territories from the map centre.', p: T => pairOf(T.far, 250) },
-  { id: 'witness', g: 'novas', draw: 'burst', name: 'Witness', desc: 'Be there when a territory goes supernova.', p: T => pairOf(T.novas, 1) },
-  { id: 'starfield', g: 'novas', draw: 'sparkles', name: 'Starfield', desc: 'Be there for ten supernovas.', p: T => pairOf(T.novas, 10) },
-  { id: 'last-word', g: 'novas', draw: 'last', survey: true, name: 'Last Word', desc: 'Chart the last hidden word of a territory, and set it off.', p: T => pairOf(T.lastWord, 1) },
-  { id: 'seven-days', g: 'days', draw: 'week', name: 'Seven Days Running', desc: 'Keep a streak going for seven days.', p: T => pairOf(T.best, 7) },
-  { id: 'lunar-month', g: 'days', draw: 'moon', name: 'Lunar Month', desc: 'Keep a streak going for 28 days.', p: T => pairOf(T.best, 28) },
-  { id: 'thirty-days', g: 'days', draw: 'tally', name: 'Thirty Days Out', desc: 'Survey on 30 different days.', p: T => pairOf(T.days, 30) },
-  { id: 'full-circle', g: 'days', draw: 'orbit', name: 'Full Circle', desc: 'Survey a year after your first find.', p: T => pairOf(T.span, 365) },
-  { id: 'fellowship', g: 'company', draw: 'carets', survey: true, latch: true, name: 'Fellowship', desc: 'Be in a guild.' },
-  { id: 'two-places', g: 'company', draw: 'devices', survey: true, latch: true, name: 'Two Places at Once', desc: 'Link another device, or save a recovery code.' },
-  { id: 'hats-off', g: 'company', draw: 'hat', survey: true, latch: true, secret: true, name: 'Hats Off', desc: 'Have someone tip their hat to you.' },
-];
+// in the notes, so kept when it happens (see markEvent). `proof`: signed
+// finds can show it, so it can be shown to others (see Badges others see).
+const MARKS = CORE.CATALOG.map(([id, g, flags, p]) => ({
+  id, g, p, survey: flags.includes('s'), secret: flags.includes('h'), latch: flags.includes('l'), proof: !/[lu]/.test(flags),
+  draw: MARK_TEXT[id][0], name: MARK_TEXT[id][1], desc: MARK_TEXT[id][2],
+}));
 const MARK_BY = Object.fromEntries(MARKS.map(a => [a.id, a]));
 // Those this game can earn: the survey's only on the survey.
 const marksHere = () => MARKS.filter(a => surveyApi || !a.survey);
@@ -6407,120 +6591,8 @@ function setQuiet(kind, quiet) {
   LS.set(K_QUIET, JSON.stringify([...q]));
 }
 
-/* Days surveyed. A day is the player's own local date where they are now,
-   so daylight saving changes nothing, and travel at most moves a late-night
-   find a day. A day after today (a fast clock) waits until it comes. */
-const dayNum = t => { const d = new Date(t); return Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()) / 864e5; };
-const dayDate = n => { const d = new Date(n * 864e5); return new Date(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()); };
-// Runs of counted days, forwards: a missed day is a rest day if no other was
-// missed in the six before it; otherwise the run starts again after the
-// earlier one. So any day's streak is the longest run back from it that holds
-// at most one missed day in any seven. Today is never missed: it's open
-// until it ends. `counted` is ascending; `reach` says when the run first
-// reached each length asked about.
-function runsOf(counted, today, reach = []) {
-  let run = [], prev = null, lastMiss = null, best = 0;
-  const at = {};
-  const miss = m => {
-    if (lastMiss !== null && m - lastMiss < REST_GAP) run = run.filter(x => x > lastMiss);
-    lastMiss = m;
-  };
-  for (const d of counted) {
-    if (d > today) break;
-    if (prev !== null) for (let m = prev + 1; m < d; m++) miss(m);
-    run.push(d); prev = d;
-    if (run.length > best) best = run.length;
-    for (const k of reach) if (!(k in at) && run.length >= k) at[k] = d;
-  }
-  if (prev !== null) for (let m = prev + 1; m < today; m++) miss(m);
-  return { run, best, at };
-}
-
-/* Working them out: one pass over every find and supernova in time order,
-   for the tally T. Given `want`, the ids earned since the record, it also
-   says when each was first earned and by what: checking every achievement
-   after every find is most of the work, so it's done only when there's
-   something new to date. Days are dated from the days themselves. */
-let wordThemes = null;  // word → the themes whose lists have it
-function themesOfWord(w) {
-  if (!wordThemes) {
-    wordThemes = new Map();
-    THEMES.forEach((t, i) => t.words.forEach(x => { const l = wordThemes.get(x); if (l) l.push(i); else wordThemes.set(x, [i]); }));
-  }
-  return wordThemes.get(w) || [];
-}
-const isPalindrome = w => w.length >= 3 && w === [...w].reverse().join('');
-function marksReplay(now = Date.now(), want = []) {
-  const T = { finds: 0, first: 0, cairn: 0, bonus: 0, longest: 0, mirror: 0, surveyor: 0, far: 0, dirs: new Set(), themes: new Set(),
-    terr: new Map(), full: 0, near: null, lion: 0, lionNear: null, lex: null, lexWords: new Map(), novas: 0, lastWord: 0, best: 0, days: 0, span: 0, current: 0, today: 0 };
-  const reached = {};  // id → { at, by }: when it was first earned, and the find or supernova (`by`) that did it
-  let left = want.map(id => MARK_BY[id]).filter(a => a && !a.latch && a.g !== 'days');
-  const reach = by => {
-    left = left.filter(a => {
-      const [have, need] = a.p(T);
-      if (have < need) return true;
-      reached[a.id] = { at: by.t, by };
-      return false;
-    });
-  };
-  const items = [...found.values()].map(e => ({ e, t: e.t })).concat([...novasSeen.values()].map(n => ({ n, t: n.t })));
-  items.sort((a, b) => a.t - b.t);
-  const perDay = new Map(), today = dayNum(now);  // day → { n: finds, by: the find that made it count }
-  for (const it of items) {
-    if (it.n) {
-      T.novas++;
-      if (it.n.mine && !it.n.solo) T.lastWord = 1;
-      if (left.length) reach(it);
-      continue;
-    }
-    const e = it.e, rx = fdiv(e.x, RC), ry = fdiv(e.y, RC), k = rx + ',' + ry;
-    T.finds++;
-    if (e.f) { T.first++; if (e.n && e.n % 1000 === 0) T.cairn = 1; }
-    if (e.s) T.bonus++;
-    if (e.w.length > T.longest) T.longest = e.w.length;
-    if (isPalindrome(e.w)) T.mirror = 1;
-    if (e.w === 'SURVEYOR') T.surveyor = 1;
-    T.far = Math.max(T.far, Math.abs(rx), Math.abs(ry));
-    T.dirs.add(e.d);
-    T.themes.add(e.th);
-    for (const th of themesOfWord(e.w)) {
-      let s = T.lexWords.get(th);
-      if (!s) T.lexWords.set(th, s = new Set());
-      s.add(e.w);
-      if (!T.lex || s.size / THEMES[th].words.length > T.lex.n / THEMES[T.lex.th].words.length) T.lex = { th, n: s.size };
-    }
-    let tr = T.terr.get(k);
-    if (!tr) T.terr.set(k, tr = { hid: 0, first: 0, done: false, lion: false });
-    if (!e.s) {
-      const total = territoryTotal(rx, ry);
-      tr.hid++;
-      if (!tr.done && tr.hid >= total) { tr.done = true; T.full++; }
-      if (!tr.done && (!T.near || tr.hid / total > T.near.n / T.near.of)) T.near = { rx, ry, n: tr.hid, of: total };
-      if (e.f) {
-        tr.first++;
-        const most = Math.floor(total / 2) + 1;
-        if (!tr.lion && tr.first >= most) { tr.lion = true; T.lion = 1; }
-        if (!T.lion && (!T.lionNear || tr.first / most > T.lionNear.n / T.lionNear.of)) T.lionNear = { rx, ry, n: tr.first, of: most };
-      }
-    }
-    const dn = dayNum(e.t);
-    let day = perDay.get(dn);
-    if (!day) perDay.set(dn, day = { n: 0, by: null });
-    if (++day.n === STREAK_MIN) day.by = it;
-    if (left.length) reach(it);
-  }
-  const counted = [...perDay].filter(([d, v]) => v.n >= STREAK_MIN && d <= today).map(([d]) => d).sort((a, b) => a - b);
-  const runs = runsOf(counted, today, [7, 28]);
-  Object.assign(T, { best: runs.best, current: runs.run.length, run: runs.run, days: counted.length, counted: new Set(counted),
-    first0: counted.length ? counted[0] : null, span: counted.length ? counted[counted.length - 1] - counted[0] : 0, today: perDay.has(today) ? perDay.get(today).n : 0 });
-  // A day's achievement is dated by the find that made the day that earned it count.
-  const byDay = (id, d) => { if (d !== undefined) { const by = perDay.get(d).by; reached[id] = { at: by.t, by }; } };
-  byDay('seven-days', runs.at[7]);
-  byDay('lunar-month', runs.at[28]);
-  byDay('thirty-days', counted[29]);
-  byDay('full-circle', counted.find(d => d - counted[0] >= 365));
-  return { T, reached };
-}
+// Everything worked out from the notes, as of now (see the core's tally).
+const marksReplay = (now = Date.now(), want = []) => CORE.tally([...found.values()], [...novasSeen.values()], now, want);
 
 /* Checking: what's new since the record, and how to say so. */
 let marksState = null;  // the last replay's { T, reached }
@@ -6654,7 +6726,8 @@ const shortDate = t => new Date(t).toLocaleDateString(undefined, { month: 'short
 const plural = (n, one, many = one + 's') => `${n.toLocaleString()} ${n === 1 ? one : many}`;
 function markProgress(a) {
   if (a.latch || !marksState) return [0, 1, ''];
-  return a.p({ ...marksState.T, best: Math.max(marksState.T.best, marks.best) });
+  const [have, need, of] = a.p({ ...marksState.T, best: Math.max(marksState.T.best, marks.best) });
+  return [have, need, !of ? '' : of.th !== undefined ? THEMES[of.th].name : regionName(of.rx, of.ry)];
 }
 function renderMarksRow() {
   const here = marksHere(), earned = here.filter(a => marks.got[a.id]);
