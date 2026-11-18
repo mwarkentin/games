@@ -20,7 +20,7 @@ from playwright.sync_api import Page, expect
 from fake_leaderboard import without_worker
 from fake_survey import CARD_SIG, FakeBadges, FakePlayers, FakeSurvey, card
 from test_letterfield_survey import LANDS, SHARE_SHEET_INIT, SURVEY, circle, eventually, known_words, open_game
-from test_letterfield_surveyors import KIM, PID
+from test_letterfield_surveyors import KIM, KIM_CARET, LOU, PID, open_list
 from test_letterfield_surveyors import start as start_survey
 from test_letterfield_sync import start as start_sync
 from test_letterfield_sync import words as sync_words
@@ -500,6 +500,41 @@ def test_someones_card_shows_in_their_caret_menu(page: Page, site_url, errors):
     page.mouse.click(at["x"], at["y"], button="right")
     expect(menu.locator("#caretWho")).to_have_text("LOU")
     expect(menu.locator(".pc-since, .pc-mk, .pc-shown")).to_have_count(0)
+    assert errors == []
+
+
+def test_someones_card_shows_under_their_row_in_the_surveyors_list_while_theyre_near(page: Page, site_url, errors):
+    day = dt.date(2026, 10, 4).toordinal() - dt.date(1970, 1, 1).toordinal()
+    theirs = card({"first-mark", "seven-seas", "here-be-dragons"}, day)
+    fake = FakeSurvey(surveyors=[KIM, LOU], presence=[[*KIM_CARET, [], "seven-seas", theirs]])
+    start_survey(page, site_url, fake)
+    page.wait_for_function(f"window.__lf.carets().includes('{KIM[0]}')")
+    open_list(page)
+    expect(page.locator(".who-foot")).to_contain_text("Their badges, more emotes and mute are under ⋯")
+    page.get_by_role("button", name="More for KIM").click()
+    panel = page.get_by_role("group", name="KIM’s badges and emotes")
+    expect(panel.locator(".pc-shown b")).to_have_text("Seven Seas")
+    expect(panel.locator(".pc-since")).to_have_text("Surveying since Oct 2026 · 3 badges")
+    expect(panel.locator(".pc-mk")).to_have_count(3)
+    expect(panel.locator(".emote")).not_to_have_count(0)  # the emotes and Mute, as before
+    expect(panel.locator(".who-mute")).to_have_text("Mute KIM")
+    # A badge tapped says what it is, and stays said when the list is drawn again.
+    panel.get_by_role("button", name="Seven Seas").click()
+    expect(panel.locator(".pc-say")).to_contain_text("Seven Seas · Find words from all 7 themes of the sea.")
+    page.evaluate("window.__lf.renderWho()")
+    expect(page.get_by_role("group", name="KIM’s badges and emotes").locator(".pc-say")).to_contain_text(
+        "Seven Seas · "
+    )
+    expect(
+        page.get_by_role("group", name="KIM’s badges and emotes").get_by_role("button", name="Seven Seas")
+    ).to_be_focused()
+    # Someone whose caret isn't on our map: how to see theirs.
+    page.get_by_role("button", name="More for LOU").click()
+    lou = page.get_by_role("group", name="LOU’s badges and emotes")
+    expect(lou.locator(".pc-far")).to_have_text(
+        "LOU’s badges show here once they’re near you on the map: tap their name to fly there."
+    )
+    expect(lou.locator(".pc-card")).to_have_count(0)
     assert errors == []
 
 

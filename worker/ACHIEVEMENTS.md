@@ -456,11 +456,12 @@ map shows their caret, just as their initials and caret do.
   last whatever its group. `worker/test/achievements.test.js` checks the
   first 39 keep their places; there's room for 53.
 
-**Limits:** a card only goes where presence goes, to surveyors in the same
-sector, so the Surveyors drawer's rows for people further away don't have
-one. Tapping a row flies to that surveyor's caret, though, and their card is
-there once you land. Someone on a game from before cards gets the menu as
-it was.
+**In the Surveyors list too:** ⋯ beside someone's name opens the same
+card above their emotes and Mute, while their caret is on your map. A card
+only goes where presence goes, to surveyors in the same sector, so for
+someone further away it says their badges show once they're near you, and
+tapping their name flies to their caret, where it's there once you land.
+Someone on a game from before cards gets the menu as it was.
 
 ## Share cards
 
@@ -541,6 +542,8 @@ linked device earning quietly. Stage 2's add:
 - our card asked for, sent to the sector and not asked for again;
 - someone's card in their caret's menu, a secret badge kept a secret, and
   the menu as it was for someone without a card;
+- the same card under ⋯ in the Surveyors list while they're near, as tapped
+  when the list is drawn again, and how to see it for someone far off;
 - a card synced from another device, taken only if it has everything ours
   has;
 - achievements and the longest streak synced between linked devices;

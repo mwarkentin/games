@@ -718,13 +718,17 @@ html[data-notes-page="marks"] .notes > :not(.marks-page){display:none!important}
 .pc-shown p{display:flex;flex-direction:column;gap:2px;min-width:0;margin:0}
 .pc-shown b{font:600 14px/1.15 var(--f-ui)}
 .pc-shown span{font-size:12px;line-height:1.3;color:var(--muted)}
-.pc-since{display:flex;justify-content:space-between;gap:8px;margin:0 2px 6px;font:400 11px/1.3 var(--f-mono);color:var(--muted)}
+.pc-since{display:flex;flex-wrap:wrap;justify-content:space-between;gap:2px 8px;margin:0 2px 6px;font:400 11px/1.3 var(--f-mono);color:var(--muted)}
+.pc-since span{white-space:nowrap}
 .pc-marks{display:grid;grid-template-columns:repeat(auto-fill,minmax(28px,1fr));justify-items:center;gap:2px 0;margin:0 0 2px}
 .pc-mk{display:grid;place-items:center;width:28px;height:28px;padding:0;border:0;border-radius:50%;background:none;cursor:pointer}
 .pc-mk[aria-pressed="true"]{box-shadow:0 0 0 1.5px var(--ink)}
 .pc-say{min-height:15px;margin:2px 2px 8px;font:400 11px/1.35 var(--f-mono);color:var(--muted)}
 .pc-say b{color:var(--ink);font-weight:500}
 .pc-guilds{margin:0 2px 8px;font:400 11px/1.3 var(--f-mono);color:var(--muted)}
+/* In the Surveyors list, under ⋯: the same card while their caret is on our map, or a word on how to see it. */
+.who-emotes .pc-card{margin:2px 0 6px}
+.pc-far{margin:2px 2px 10px;font:400 11px/1.4 var(--f-mono);color:var(--muted)}
 /* In a note, the badge stands in for its dot, and draws itself in unless motion is reduced. */
 .toast i.mk-ico{width:28px;height:28px;border-radius:0;background:none}
 .toast i.mk-ico .mk{width:28px;height:28px}
@@ -864,7 +868,7 @@ html[data-notes-page="marks"] .notes > :not(.marks-page){display:none!important}
       <p class="who-status" id="whoStatus" aria-live="polite"></p>
       <ol class="who-list" id="whoList" aria-label="Surveyors online, nearest first"></ol>
       <button type="button" class="who-more" id="whoMore" hidden>Show more</button>
-      <p class="who-foot">Tap a name to fly there. More emotes and mute are under ⋯. On the map, long-press someone’s caret (or right-click it) for the same.</p>
+      <p class="who-foot">Tap a name to fly there. Their badges, more emotes and mute are under ⋯. On the map, long-press someone’s caret (or right-click it) for the same.</p>
     </div>
   </div>
   <section class="people-page" id="peopleYou" aria-labelledby="youTitle" hidden>
@@ -4908,12 +4912,16 @@ function whoRow(s, g = null) {
     `<button type="button" class="who mark" data-pid="${s.pid}" data-k="${sec}${s.pid}:fly" style="--h:${th.hue};--g:${hueOf(s.pid)}" aria-label="${who}, ${name}, ${meta}. Fly there">` +
     `<span class="who-av" aria-hidden="true"><b class="who-ini">${s.ini || '···'}</b>${g ? `<i class="guild-dot" style="--gh:${guildHue(g.name)}" title="In the ${guildName(g.name)}"></i>` : ''}</span><span class="who-where"><i aria-hidden="true"></i><span>${name}</span></span><span class="who-meta">${meta}</span></button>` +
     (m ? '' : `<button type="button" class="who-wave" data-pid="${s.pid}" data-e="wave" data-k="${sec}${s.pid}:wave" aria-label="Wave to ${who}"${s.quiet ? ' disabled' : ''}>${emoteSvg(EMOTE_BY.wave)}<span aria-hidden="true">Wave</span></button>`) +
-    `<button type="button" class="who-act" data-pid="${s.pid}" data-k="${sec}${s.pid}:act" aria-expanded="${open}"${open ? ` aria-controls="emo-${id}"` : ''} aria-label="More for ${who}" title="${m ? 'Unmute' : 'More emotes, and mute'}">${DOTS_SVG}</button>` +
+    `<button type="button" class="who-act" data-pid="${s.pid}" data-k="${sec}${s.pid}:act" aria-expanded="${open}"${open ? ` aria-controls="emo-${id}"` : ''} aria-label="More for ${who}" title="${m ? 'Unmute' : 'Badges, more emotes, and mute'}">${DOTS_SVG}</button>` +
     `<p class="who-said" id="said-${id}" aria-live="polite">${said}</p>` +
     (open ? whoPanel(s, who, m, sec, id) : '') + '</li>';
 }
 function whoPanel(s, who, m, sec = '', id = s.pid) {
-  return `<div class="who-emotes" id="emo-${id}" role="group" aria-label="Emotes for ${who}">` +
+  // Their card, from their caret's presence, while it's on our map; otherwise, how to see it.
+  const gh = !m && caretOf(s.pid) && ghosts.get(s.pid), card = gh && gh.card;
+  const theirs = m ? '' : card ? cardHtml({ pid: s.pid, card, badge: gh.badge, mates: [] }, sec + s.pid)
+    : `<p class="pc-far">${who}’s badges show here once they’re near you on the map: tap their name to fly there.</p>`;
+  return `<div class="who-emotes" id="emo-${id}" role="group" aria-label="${who}’s badges and emotes">${theirs}` +
     (m ? '' : `<div class="emote-row">${EMOTES.filter(e => e.id !== 'wave').map(e => emoteBtn(e, who, s.quiet, s.pid, sec + s.pid)).join('')}</div>`) +
     `<button type="button" class="who-mute" data-pid="${s.pid}" data-k="${sec}${s.pid}:mute">${m ? 'Unmute' : 'Mute'} ${who}</button></div>`;
 }
@@ -4922,6 +4930,8 @@ whoList.addEventListener('click', e => {
   if (inv) return shareInvite(inv.dataset.code);
   const fold = e.target.closest('[data-fold]');
   if (fold) return foldGuild(fold.dataset.fold);
+  const mk = e.target.closest('.pc-mk');
+  if (mk) return sayCardMark(mk);
   const b = e.target.closest('button'), s = b && whoFind(b.dataset.pid);
   if (!s) return;
   if (b.classList.contains('who')) flyToSurveyor(s);
@@ -5125,7 +5135,7 @@ function openCaretMenu(s, px, py) {
   caretFor = s;
   const who = s.ini || 'A surveyor', m = muted.has(s.pid), listed = whoFind(s.pid), quiet = !m && !!(listed && listed.quiet);
   caretMenu.style.setProperty('--c', `hsl(${s.hue}, ${C.ms}, ${C.ml})`);
-  caretMenu.innerHTML = (s.card ? `<p class="caret-who"><i></i><b id="caretWho">${s.ini || '···'}</b><span>${regionName(s.rx, s.ry)}</span></p>${cardHtml(s)}`
+  caretMenu.innerHTML = (s.card ? `<p class="caret-who"><i></i><b id="caretWho">${s.ini || '···'}</b><span>${regionName(s.rx, s.ry)}</span></p>${cardHtml(s, `menu:${s.pid}`)}`
     : `<p class="caret-who"><b id="caretWho">${s.ini || '···'}</b>${badgeTag(s.badge)}<span>${regionName(s.rx, s.ry)}</span></p>`) +
     `<div class="emote-row">${EMOTES.map(e => emoteBtn(e, who, m || quiet)).join('')}</div>` +
     `<p class="who-said" aria-live="polite">${quiet ? `${who} isn’t taking emotes.` : ''}</p><button type="button" class="who-mute">${m ? 'Unmute' : 'Mute'} ${who}</button>`;
@@ -6813,25 +6823,31 @@ function takeCard(c, fromWorker = false) {
 const sinceText = day => new Date(day * 864e5).toLocaleDateString(undefined, { month: 'short', year: 'numeric', timeZone: 'UTC' });
 // A badge as someone else's card shows it: a secret we haven't found stays a question mark.
 const cardMarkHidden = a => a.secret && !marks.got[a.id];
-function cardHtml(s) {
-  const ids = s.card.ids.filter(id => MARK_BY[id]), shown = MARK_BY[s.badge];
+// key names the card among others (each row of the Surveyors list has one),
+// so a badge tapped on it stays said when the list is drawn again.
+let cardSaid = { key: '', id: '' };
+const cardSay = a => cardMarkHidden(a) ? '<b>A secret achievement</b> · find it yourself to see which' : `<b>${a.name}</b> · ${a.desc}`;
+function cardHtml(s, key) {
+  const ids = s.card.ids.filter(id => MARK_BY[id]), shown = MARK_BY[s.badge], said = cardSaid.key === key && ids.includes(cardSaid.id) ? cardSaid.id : '';
   const big = !shown ? '' : `<div class="pc-shown">${badgeSvg(shown, 'got', 1, true)}<p><b>${shown.name}</b><span>${cardMarkHidden(shown) ? 'A secret achievement.' : shown.desc}</span></p></div>`;
   const line = [s.card.day ? `<span>Surveying since ${sinceText(s.card.day)}</span>` : '', ids.length ? `<span>${plural(ids.length, 'badge')}</span>` : ''].filter(Boolean).join('<span class="vh"> · </span>');
   const grid = ids.map(id => {
     const a = MARK_BY[id], hide = cardMarkHidden(a);
-    return `<button type="button" class="pc-mk" data-mk="${id}" aria-pressed="false" aria-label="${hide ? 'A secret achievement' : a.name}">${badgeSvg(hide ? { ...a, draw: 'secret' } : a, 'got')}</button>`;
+    return `<button type="button" class="pc-mk" data-mk="${id}" data-k="${key}:mk:${id}" aria-pressed="${said === id}" aria-label="${hide ? 'A secret achievement' : a.name}">${badgeSvg(hide ? { ...a, draw: 'secret' } : a, 'got')}</button>`;
   }).join('');
   const shared = (s.mates || []).filter(g => guildOfCode(g.code)).map(g => esc(shownName(g)));
-  return `${big}${line ? `<p class="pc-since">${line}</p>` : ''}${grid ? `<div class="pc-marks">${grid}</div><p class="pc-say" aria-live="polite"></p>` : ''}` +
-    (shared.length ? `<p class="pc-guilds">${shared.length === 1 ? 'In your guild' : 'In your guilds'} ${shared.join(' · ')}</p>` : '');
+  return `<div class="pc-card" data-card="${key}">${big}${line ? `<p class="pc-since">${line}</p>` : ''}` +
+    (grid ? `<div class="pc-marks">${grid}</div><p class="pc-say" aria-live="polite">${said ? cardSay(MARK_BY[said]) : ''}</p>` : '') +
+    (shared.length ? `<p class="pc-guilds">${shared.length === 1 ? 'In your guild' : 'In your guilds'} ${shared.join(' · ')}</p>` : '') + '</div>';
 }
 // A badge tapped on a card says what it is, until another is tapped.
 function sayCardMark(b) {
-  const a = MARK_BY[b.dataset.mk], say = caretMenu.querySelector('.pc-say');
+  const a = MARK_BY[b.dataset.mk], card = b.closest('.pc-card'), say = card && card.querySelector('.pc-say');
   if (!a || !say) return;
   const on = b.getAttribute('aria-pressed') !== 'true';
-  for (const o of caretMenu.querySelectorAll('.pc-mk')) o.setAttribute('aria-pressed', String(on && o === b));
-  say.innerHTML = !on ? '' : cardMarkHidden(a) ? '<b>A secret achievement</b> · find it yourself to see which' : `<b>${a.name}</b> · ${a.desc}`;
+  for (const o of card.querySelectorAll('.pc-mk')) o.setAttribute('aria-pressed', String(on && o === b));
+  say.innerHTML = on ? cardSay(a) : '';
+  cardSaid = on ? { key: card.dataset.card, id: a.id } : { key: '', id: '' };
 }
 // Asks the Worker to sign what it will for us, for achievements without a
 // signature: when one is earned, and once a visit. The answer is kept with
@@ -7148,7 +7164,7 @@ if (location.hash === '#debug') window.__lf = { cam, found, claims, links, chunk
   mates: () => [...new Set([...mates.values()].flatMap(m => [...m.keys()]))], matesOf: tag => [...(mates.get(tag) || new Map()).keys()],
   roster: code => rosterOf(guildOfCode(code) || myGuilds[0] || { code: '' }),
   pair: () => Pair.state, pairCode: () => linkCode && linkCode.code, linkCodeState: () => PairCode.state, recoveryCode: () => recoveryCode, sync: () => Sync.state, syncNow: () => { syncDue = 0; clearTimeout(syncTimer); return syncNow(); },
-  guildWords: () => [GUILD_FIRST.length, GUILD_SECOND.length, GUILD_THIRD.length], pops: () => pops.map(p => [p.pid, p.e]), pid: () => myPid, muted: () => [...muted], carets: () => [...ghosts.keys()],
+  guildWords: () => [GUILD_FIRST.length, GUILD_SECOND.length, GUILD_THIRD.length], pops: () => pops.map(p => [p.pid, p.e]), pid: () => myPid, muted: () => [...muted], carets: () => [...ghosts.keys()], renderWho,
   caretXY: id => { const gh = ghosts.get(id); return gh && { x: (Math.round(gh.x) - cam.x) * cam.cs + (W - dock) / 2, y: (Math.floor(gh.y) + .5 - cam.y) * cam.cs + H / 2 + mapTop }; },
   pass: () => Pass.state, intro: () => Intro.state, surveyStatus, linkStates: () => Object.fromEntries([...links].map(([k, l]) => [k, l.m.state])), outbox: () => [...outbox.values()].map(c => [c.e.w, c.m.state]), definitions: () => Object.fromEntries([...definitions].map(([k, d]) => [k, d.m.state])) };
 
