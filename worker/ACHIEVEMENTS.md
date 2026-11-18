@@ -457,7 +457,9 @@ map shows their caret, just as their initials and caret do.
 
 **Limits:** a card only goes where presence goes, to surveyors in the same
 sector, so the Surveyors drawer's rows for people further away don't have
-one. Someone on a game from before cards gets the menu as it was.
+one. Tapping a row flies to that surveyor's caret, though, and their card is
+there once you land. Someone on a game from before cards gets the menu as
+it was.
 
 ## Site-wide later
 
