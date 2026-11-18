@@ -687,7 +687,10 @@ html[data-notes-page="marks"] .notes > :not(.marks-page){display:none!important}
 .days-strip .on i{background:var(--accent)}
 .days-strip .rest i,.days-key i.rest{border:1.5px solid var(--accent);transform:scale(.8)}
 .days-strip .miss i{background:var(--rule);transform:scale(.45)}
-.days-strip .open i{border:1.5px dashed var(--muted)}
+/* Today, still open, fills a slice for each word found, from the top round, until it counts,
+   its ring solid once it's begun. */
+.days-strip .open i{border:1.5px dashed var(--muted);background:conic-gradient(var(--accent) calc(var(--p, 0) * 1turn), transparent 0)}
+.days-strip .open.part i{border:1.5px solid var(--accent)}
 .days-key{display:inline-block;vertical-align:-2px}
 .days-today{margin:12px 0 0;font-size:13px}
 .days-rule{margin:5px 0 0;font-size:12px;line-height:1.45;color:var(--muted)}
@@ -6989,8 +6992,9 @@ function renderDays() {
   for (let d = today - 13; d <= today; d++) {
     const on = T.counted.has(d);
     const kind = on ? 'on' : d === today ? 'open' : T.first0 === null || d < T.first0 ? 'none' : d > runFrom ? 'rest' : 'miss';
-    const what = { on: 'surveyed', open: 'today, still open', none: 'before your first day', rest: 'a rest day', miss: 'missed' }[kind];
-    strip += `<li class="${kind}${d === today ? ' today' : ''}" title="${dayDate(d).toLocaleDateString(undefined, { weekday: 'long', month: 'short', day: 'numeric' })}: ${what}"><i></i>${weekday.format(dayDate(d))}</li>`;
+    const what = { on: 'surveyed', open: `today, ${T.today} of ${STREAK_MIN} words`, none: 'before your first day', rest: 'a rest day', miss: 'missed' }[kind];
+    const part = kind === 'open' && T.today > 0;
+    strip += `<li class="${kind}${part ? ' part' : ''}${d === today ? ' today' : ''}"${part ? ` style="--p:${(T.today / STREAK_MIN).toFixed(3)}"` : ''} title="${dayDate(d).toLocaleDateString(undefined, { weekday: 'long', month: 'short', day: 'numeric' })}: ${what}"><i></i>${weekday.format(dayDate(d))}</li>`;
   }
   const todayLine = T.today >= STREAK_MIN ? 'Today counts.' : `Today: ${T.today} of ${STREAK_MIN} words.`;
   daysCard.innerHTML =

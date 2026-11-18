@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import datetime as dt
 import json
+import re
 from zoneinfo import ZoneInfo
 
 import pytest
@@ -222,6 +223,23 @@ def test_days_surveyed_and_the_streak(page: Page, site_url, errors, name):
     if name == "two missed days in a row end it":
         expect(card.locator(".days-strip li.miss")).to_have_count(len(rests))
     expect(card.locator(".days-today")).to_have_text("Today counts." if today >= 3 else f"Today: {today} of 3 words.")
+    assert errors == []
+
+
+def test_todays_dot_fills_a_slice_for_each_word_until_the_day_counts(page: Page, site_url, errors):
+    words = known_words(page, site_url, WORDS_JS)
+    open_alone(page, site_url, [find(words[0], NOW - dt.timedelta(hours=1))], now=NOW)
+    open_page(page)
+    today = page.locator("#daysCard .days-strip li.today")
+    expect(today).to_have_attribute("class", "open part today")
+    expect(today).to_have_attribute("style", "--p:0.333")
+    expect(today).to_have_attribute("title", re.compile(r": today, 1 of 3 words$"))
+    page.evaluate("([w, x, y, d]) => window.__lf.collect(w, x, y, d, false)", words[1])
+    expect(today).to_have_attribute("style", "--p:0.667")
+    expect(page.locator(".days-today")).to_have_text("Today: 2 of 3 words.")
+    page.evaluate("([w, x, y, d]) => window.__lf.collect(w, x, y, d, false)", words[2])
+    expect(today).to_have_attribute("class", "on today")
+    expect(page.locator(".days-today")).to_have_text("Today counts.")
     assert errors == []
 
 
