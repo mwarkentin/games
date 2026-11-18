@@ -6715,11 +6715,12 @@ function marksCheck() {
   if (NotesPage.is('marks')) renderMarksPage();
   if (backfill && got.length) noteMarks(got, true);
   else if (live.length) noteMarks(live);
-  // Today's third word, circled here: a note of its own, once, unless an achievement's says more.
+  // Today's third word, circled here: a note of its own, once, after any
+  // achievement's, unless one of the days' (Seven Days Running) says it already.
   const today = dayNum(now), td = st.T.perDay.get(today), dayBy = td && td.n >= STREAK_MIN ? td.by : null;
   if (!backfill && dayNoted !== today && dayBy && dayBy.e && madeHere.has(dayBy.e.key)) {
     dayNoted = today;
-    if (!live.length || noteQuiet('achievement')) noteDay(st.T, today);
+    if (!live.some(id => MARK_BY[id].g === 'days') || noteQuiet('achievement')) noteDay(st.T, today);
   }
   if (got.length) askBadges();
   return got;
@@ -6958,8 +6959,12 @@ function pumpMarks() {
     toast(`<i class="mk-ico">${badgeSvg(first, 'got')}</i><b>${ids.length === 1 ? first.name : `${ids.length} achievements`}</b><span>${line}</span>`, hue, SHARE_TOAST_MS, see);
   } else {
     toast(`<i class="mk-ico">${badgeSvg(first, 'got')}</i><b>${first.name}</b><span>Achievement · ${first.desc}</span>`, hue, SHARE_TOAST_MS, see);
-    if (ids.length > 1) { markQueue.push({ ids: ids.slice(1), backfill: false }); markWaited = 0; markTimer = setTimeout(pumpMarks, SHARE_TOAST_MS + 400); }
+    if (ids.length > 1) markQueue.push({ ids: ids.slice(1), backfill: false });
   }
+  // A day that counts has its own note after the achievements' (it only gives
+  // way to one of the days', which marksCheck doesn't queue it beside).
+  if (day) markQueue.push({ ids: [], day });
+  if (markQueue.length) { markWaited = 0; markTimer = setTimeout(pumpMarks, SHARE_TOAST_MS + 400); }
   playMark();
 }
 // Two soft bell tones a fifth apart, through the sound effects' bus and its

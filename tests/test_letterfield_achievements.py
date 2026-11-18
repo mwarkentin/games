@@ -264,6 +264,7 @@ def test_past_days_with_a_word_or_two_keep_their_slices(page: Page, site_url, er
 
 
 COLLECT = "([w, x, y, d]) => window.__lf.collect(w, x, y, d, false)"
+SHARE_WAIT = 15_000  # a note with a button stays 6 s, and the next waits for it to go
 
 
 def test_a_day_that_counts_gets_one_quiet_note(page: Page, site_url, errors):
@@ -284,6 +285,28 @@ def test_a_day_that_counts_gets_one_quiet_note(page: Page, site_url, errors):
     page.evaluate(COLLECT, words[9])
     page.wait_for_timeout(2500)
     assert notes(page)[len(before) :] == ["Today counts"]
+    assert errors == []
+
+
+def test_a_first_day_gets_its_note_after_first_marks(page: Page, site_url, errors):
+    # Three words at once on a first day earn First Mark too: its note, then the day's.
+    words = known_words(page, site_url, WORDS_JS)
+    open_alone(page, site_url, [], now=NOW)
+    page.wait_for_timeout(1000)
+    for w in words[:3]:
+        page.evaluate(COLLECT, w)
+    expect(page.locator("#toast b")).to_have_text("First Mark", timeout=LANDS)
+    expect(page.locator("#toast b")).to_have_text("Today counts", timeout=SHARE_WAIT)
+    expect(page.locator("#toast span").first).to_have_text("Your first day surveyed")
+    assert errors == []
+
+
+def test_a_day_after_a_break_says_how_many_days_surveyed(page: Page, site_url, errors):
+    words = known_words(page, site_url, WORDS_JS)
+    open_alone(page, site_url, on_days(words, {-5: 3, -4: 3, 0: 2}), now=NOW)
+    page.evaluate(COLLECT, words[8])
+    expect(page.locator("#toast b")).to_have_text("Today counts", timeout=LANDS)
+    expect(page.locator("#toast span").first).to_have_text("3 days surveyed")  # never what was lost
     assert errors == []
 
 

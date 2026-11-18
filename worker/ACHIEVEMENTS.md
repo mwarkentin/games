@@ -280,9 +280,9 @@ hover card, and their card in their caret's menu (see "Profile cards").
   filled dot and "3 days running" (or "your first day surveyed", or how many
   days surveyed when a new run starts, never what was lost), adding
   "yesterday was a rest day" when one kept it going, and See, which opens
-  the days. Once a day, with no chime, waiting as achievements' notes do,
-  and giving way to one: a third word that also earns Seven Days Running
-  has that note alone. Never a note when a streak ends or a day is still
+  the days. Once a day, with no chime, after any achievement's note, and
+  giving way only to one of the days': a third word that also earns Seven
+  Days Running has that note alone. Never a note when a streak ends or a day is still
   open. "A note when a day counts" on the page quietens it, apart from
   achievements' notes.
 
