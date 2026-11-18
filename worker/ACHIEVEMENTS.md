@@ -461,7 +461,9 @@ card above their emotes and Mute, while their caret is on your map. A card
 only goes where presence goes, to surveyors in the same sector, so for
 someone further away it says their badges show once they're near you, and
 tapping their name flies to their caret, where it's there once you land.
-Someone on a game from before cards gets the menu as it was.
+Someone near with no card (nothing signed yet) has "no badges to show yet".
+Someone on a game from before cards gets the caret menu as it was, and that
+line in the list.
 
 ## Share cards
 

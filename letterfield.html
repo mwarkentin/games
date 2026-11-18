@@ -4917,9 +4917,12 @@ function whoRow(s, g = null) {
     (open ? whoPanel(s, who, m, sec, id) : '') + '</li>';
 }
 function whoPanel(s, who, m, sec = '', id = s.pid) {
-  // Their card, from their caret's presence, while it's on our map; otherwise, how to see it.
+  // Their card, from their caret's presence, while it's on our map; one there
+  // with no card (nothing signed yet, or a game from before cards) has none
+  // to show; otherwise, how to see it.
   const gh = !m && caretOf(s.pid) && ghosts.get(s.pid), card = gh && gh.card;
   const theirs = m ? '' : card ? cardHtml({ pid: s.pid, card, badge: gh.badge, mates: [] }, sec + s.pid)
+    : gh ? `<p class="pc-far">${who} has no badges to show yet.</p>`
     : `<p class="pc-far">${who}’s badges show here once they’re near you on the map: tap their name to fly there.</p>`;
   return `<div class="who-emotes" id="emo-${id}" role="group" aria-label="${who}’s badges and emotes">${theirs}` +
     (m ? '' : `<div class="emote-row">${EMOTES.filter(e => e.id !== 'wave').map(e => emoteBtn(e, who, s.quiet, s.pid, sec + s.pid)).join('')}</div>`) +

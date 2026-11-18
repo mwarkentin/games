@@ -20,7 +20,7 @@ from playwright.sync_api import Page, expect
 from fake_leaderboard import without_worker
 from fake_survey import CARD_SIG, FakeBadges, FakePlayers, FakeSurvey, card
 from test_letterfield_survey import LANDS, SHARE_SHEET_INIT, SURVEY, circle, eventually, known_words, open_game
-from test_letterfield_surveyors import KIM, KIM_CARET, LOU, PID, open_list
+from test_letterfield_surveyors import KIM, KIM_CARET, LOU, PID, ZED, open_list
 from test_letterfield_surveyors import start as start_survey
 from test_letterfield_sync import start as start_sync
 from test_letterfield_sync import words as sync_words
@@ -506,9 +506,11 @@ def test_someones_card_shows_in_their_caret_menu(page: Page, site_url, errors):
 def test_someones_card_shows_under_their_row_in_the_surveyors_list_while_theyre_near(page: Page, site_url, errors):
     day = dt.date(2026, 10, 4).toordinal() - dt.date(1970, 1, 1).toordinal()
     theirs = card({"first-mark", "seven-seas", "here-be-dragons"}, day)
-    fake = FakeSurvey(surveyors=[KIM, LOU], presence=[[*KIM_CARET, [], "seven-seas", theirs]])
+    # KIM near with a card, ZED near on a game from before cards, LOU far off.
+    zed = [ZED[0], "ZED", 12.5, 9.0]
+    fake = FakeSurvey(surveyors=[KIM, ZED, LOU], presence=[[*KIM_CARET, [], "seven-seas", theirs], zed])
     start_survey(page, site_url, fake)
-    page.wait_for_function(f"window.__lf.carets().includes('{KIM[0]}')")
+    page.wait_for_function(f"window.__lf.carets().includes('{KIM[0]}') && window.__lf.carets().includes('{ZED[0]}')")
     open_list(page)
     expect(page.locator(".who-foot")).to_contain_text("Their badges, more emotes and mute are under ⋯")
     page.get_by_role("button", name="More for KIM").click()
@@ -535,6 +537,11 @@ def test_someones_card_shows_under_their_row_in_the_surveyors_list_while_theyre_
         "LOU’s badges show here once they’re near you on the map: tap their name to fly there."
     )
     expect(lou.locator(".pc-card")).to_have_count(0)
+    # Someone right here with no card, as from a game from before cards: nothing to show, not "fly there".
+    page.get_by_role("button", name="More for ZED").click()
+    expect(page.get_by_role("group", name="ZED’s badges and emotes").locator(".pc-far")).to_have_text(
+        "ZED has no badges to show yet."
+    )
     assert errors == []
 
 
