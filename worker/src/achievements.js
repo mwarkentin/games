@@ -299,6 +299,116 @@ const offsetDay = (z) => (t) => Math.floor((t - z * 60000) / 864e5);
 const CORE = achievementsCore({ THEMES, territoryTotal, RC, UNIVERSE_EDGE, dayOf: offsetDay(0) });
 export { achievementsCore, CORE };
 
+/* ---------- Badge art ---------- */
+
+// For the share Worker's achievement cards (share/src/badge.js).
+const NT = THEMES.length;
+// ---- BEGIN BADGE ART ----
+// The same in letterfield.html and worker/src/achievements.js, word for word
+// (worker/test/achievements.test.js checks), so the share Worker draws a
+// badge's card as the game draws the badge: the groups and their hues,
+// each badge's drawing, its name and what it asks for.
+const MARK_GROUPS = [
+  { id: 'notes', name: 'Field notes', h: 215 },
+  { id: 'charting', name: 'Charting', h: 38 },
+  { id: 'territories', name: 'Territories', h: 150 },
+  { id: 'themes', name: 'Themes', h: 275 },
+  { id: 'words', name: 'Words', h: 185 },
+  { id: 'far', name: 'Far afield', h: 18 },
+  { id: 'novas', name: 'Supernovas', h: 325 },
+  { id: 'days', name: 'Days', h: 50 },
+  { id: 'company', name: 'Company', h: 245 },
+];
+// Each badge's drawing, on a 32 × 32 grid inside its ring, in the emotes'
+// line style: strokes, round caps, and `f` for the few filled dots.
+const star4 = (x, y, s) => `<path d="M${x} ${y - s}Q${x} ${y} ${x + s} ${y}Q${x} ${y} ${x} ${y + s}Q${x} ${y} ${x - s} ${y}Q${x} ${y} ${x} ${y - s}z"/>`;
+const MARK_DRAW = {
+  mark: '<rect x="7.5" y="12.9" width="17" height="6.2" rx="3.1" transform="rotate(-32 16 16)"/>',
+  book: '<path d="M10 8h9.5a2.5 2.5 0 0 1 2.5 2.5V24H12.5A2.5 2.5 0 0 1 10 21.5z"/><path d="M10 21.5A2.5 2.5 0 0 1 12.5 19H22"/><path d="M13.5 12.5h5"/>',
+  shelf: '<path d="M8 10h4v14H8zM13 8h4v16h-4z"/><path d="M18.6 10.8l3.8-1 3 12.4-3.8 1z"/>',
+  atlas: '<path d="M16 10.5c-2.6-1.6-5.4-2.1-8.5-1.6v13.2c3.1-.5 5.9 0 8.5 1.6 2.6-1.6 5.4-2.1 8.5-1.6V8.9c-3.1-.5-5.9 0-8.5 1.6zM16 10.5v13.2"/><path d="M10 14.6c1.6-.4 2.9-.2 3.8.3M18.2 14.9c.9-.5 2.2-.7 3.8-.3"/>',
+  first: '<circle class="f" cx="16" cy="16" r="2.6"/><circle cx="16" cy="16" r="6.2"/><path d="M16 5.5v2.6M16 23.9v2.6M5.5 16h2.6M23.9 16h2.6"/>',
+  flag: '<path d="M11 25V7"/><path d="M11 8h11l-2.6 4 2.6 4H11"/>',
+  trail: '<path d="M8 24.5c3.5-.8 3.5-4.5 6.5-4.8s4.4-2.4 4-5.7" stroke-dasharray="1.4 2.6"/><path d="M18.5 14V6.5"/><path d="M18.5 7h6.2l-1.6 2.4 1.6 2.4h-6.2"/>',
+  cairn: '<ellipse cx="16" cy="22.6" rx="7.2" ry="2.6"/><ellipse cx="16" cy="17.1" rx="5.1" ry="2.3"/><ellipse cx="16" cy="12.3" rx="3.3" ry="2"/>',
+  wander: '<circle class="f" cx="9" cy="22.5" r="1.7"/><circle class="f" cx="23" cy="9.5" r="1.7"/><path d="M10.8 21.4c4.5-.8 1.6-6.4 5.8-6.4s3.8-3.6 5-4.3" stroke-dasharray="1.4 2.6"/>',
+  grid: '<path d="M8 8h16v16H8z"/><path d="M8 13.3h16M8 18.7h16M13.3 8v16M18.7 8v16"/>',
+  sheet: '<path d="M9 7.5h10.5l3.5 3.5v13.5H9z"/><path d="M19.5 7.5V11H23"/><path d="M12.5 17l2.5 2.5 5-5.5"/>',
+  sheets: '<path d="M12 6.5h9l3 3v11.5H12z"/><path d="M9 10v15.5h12"/><path d="M15 14.8l2 2 4-4.3"/>',
+  lion: '<circle cx="16" cy="16" r="8.5"/><path class="f" opacity=".45" d="M16 16V7.5a8.5 8.5 0 1 1-8.1 11.1z"/>',
+  key: '<circle cx="10.5" cy="16" r="3.8"/><path d="M14.3 16H25M21.5 16v3.6M24.6 16v2.8"/>',
+  legend: '<path d="M8 8.5h16v15H8z"/><path class="f" d="M10.8 11.6h3v3h-3zM10.8 17.4h3v3h-3z"/><path d="M16.5 13.1h5M16.5 18.9h5"/>',
+  quill: '<path d="M24 7.5c-7 .3-12.5 5.6-14 14.5 8.6-1.3 13.9-7.2 14-14.5z"/><path d="M10 22l-2.5 2.5M14 18l4.5-4.5"/>',
+  birds: '<path d="M6.5 18c2.7-2 6.3-1.8 9.5 1.6 3.2-3.4 6.8-3.6 9.5-1.6"/><path d="M15.5 10.5c1.2-.9 2.9-.8 4.2.8 1.3-1.6 3-1.7 4.2-.8"/>',
+  waves: '<path d="M6.5 11.5c1.6-1.6 3.2-1.6 4.8 0s3.2 1.6 4.8 0 3.2-1.6 4.8 0 3.2 1.6 4.8 0M6.5 16.5c1.6-1.6 3.2-1.6 4.8 0s3.2 1.6 4.8 0 3.2-1.6 4.8 0 3.2 1.6 4.8 0M6.5 21.5c1.6-1.6 3.2-1.6 4.8 0s3.2 1.6 4.8 0 3.2-1.6 4.8 0 3.2 1.6 4.8 0"/>',
+  stars: '<path d="M9 21.5l4-8.5 6 3 4-7M19 16l3.5 6"/><circle class="f" cx="9" cy="21.5" r="1.6"/><circle class="f" cx="13" cy="13" r="1.6"/><circle class="f" cx="19" cy="16" r="1.6"/><circle class="f" cx="23" cy="9" r="1.6"/><circle class="f" cx="22.5" cy="22" r="1.6"/>',
+  passport: '<rect x="10" y="7" width="12" height="18" rx="1.5"/><circle cx="16" cy="14" r="3.6"/><path d="M12.4 14h7.2M16 10.4c-1.6 2.2-1.6 5 0 7.2M13.2 21h5.6"/>',
+  bonus: '<rect x="7.5" y="12.9" width="17" height="6.2" rx="3.1" transform="rotate(-32 16 16)" stroke-dasharray="2.4 2.2"/>',
+  bonuses: '<rect x="7" y="13.2" width="18" height="5.6" rx="2.8" transform="rotate(-35 16 16)" stroke-dasharray="2.4 2.2"/><rect x="7" y="13.2" width="18" height="5.6" rx="2.8" transform="rotate(35 16 16)" stroke-dasharray="2.4 2.2"/>',
+  ruler: '<g transform="rotate(-35 16 16)"><rect x="5.5" y="12.8" width="21" height="6.4" rx="1"/><path d="M9 12.8v2.6M12.5 12.8v1.7M16 12.8v2.6M19.5 12.8v1.7M23 12.8v2.6"/></g>',
+  rose: '<path d="M16 5.5l2.1 8.4 8.4 2.1-8.4 2.1-2.1 8.4-2.1-8.4-8.4-2.1 8.4-2.1z"/><path d="M10 10l3 3M22 10l-3 3M10 22l3-3M22 22l-3-3"/>',
+  mirror: '<path d="M16 7v18" stroke-dasharray="1.6 2.2"/><path d="M12.5 11l-4.5 5 4.5 5M19.5 11l4.5 5-4.5 5"/>',
+  theodolite: '<rect x="11.5" y="7.5" width="9" height="6" rx="1.6"/><path d="M20.5 10.5h3.5M16 13.5v3M9.5 25.5l6.5-9 6.5 9M16 16.5v9"/>',
+  horizon: '<path d="M6.5 20.5h19M10.5 20.5a5.5 5.5 0 0 1 11 0M16 9v2.4M9.4 12l1.7 1.7M22.6 12l-1.7 1.7M10 24.5h12"/>',
+  edge: '<path d="M7.5 23.5a11 11 0 0 1 16-14.5"/><path d="M10.8 23.5a7.6 7.6 0 0 1 10-9.2"/><circle class="f" cx="13.8" cy="22.2" r="1.9"/><circle class="f" cx="24.4" cy="7.4" r="1.4"/>',
+  dragon: '<path d="M5.5 19.5c1.5-4 4.3-4 5.5 0s4 4 5.5 0 4-4 5.5 0c.3-2.6 1.6-4.6 3.6-5"/><path d="M6 24h20" stroke-dasharray="1.6 2.4"/>',
+  burst: '<circle class="f" cx="16" cy="16" r="2.8"/><path d="M16 6v4.2M16 21.8V26M6 16h4.2M21.8 16H26M8.9 8.9l3 3M23.1 8.9l-3 3M8.9 23.1l3-3M23.1 23.1l-3-3"/>',
+  sparkles: star4(12, 15, 5.5) + star4(21.5, 9.5, 3.4) + star4(20.5, 21.5, 4.2),
+  last: '<rect x="5" y="17" width="13" height="5.4" rx="2.7" transform="rotate(-35 11.5 19.7)"/><path d="M21.5 5.8v2.6M21.5 13.6v2.6M16.4 11h2.6M24 11h2.6M17.9 7.4l1.7 1.7M25.1 7.4l-1.7 1.7M25.1 14.6l-1.7-1.7"/><circle class="f" cx="21.5" cy="11" r="1.5"/>',
+  week: '<rect x="7.5" y="9" width="17" height="15" rx="2"/><path d="M7.5 13.5h17M12 7v4M20 7v4M12.5 18.6l2.4 2.4 4.6-4.6"/>',
+  moon: '<path d="M20.5 7.2a9.4 9.4 0 1 0 4.8 13.4 7.4 7.4 0 0 1-4.8-13.4z"/>',
+  tally: '<path d="M9.5 9.5v13M13 9.5v13M16.5 9.5v13M20 9.5v13M7.5 20l15-8"/>',
+  orbit: '<circle cx="16" cy="16" r="8.8"/><circle class="f" cx="16" cy="16" r="2.6"/><circle class="f" cx="22.2" cy="9.8" r="1.9"/>',
+  carets: '<path d="M10.5 11v10M16 8.5v15M21.5 11v10" stroke-width="2.8"/>',
+  devices: '<rect x="6.5" y="10" width="7" height="12.5" rx="1.4"/><path d="M16 11.5h9.5v8.5H16zM14.5 23h12.5"/>',
+  hat: '<path d="M7.5 21.6c4.4 1.7 12.6 1.7 17 0"/><path d="M11 21.2v-6.4c0-2.2 2.2-3.8 5-3.8s5 1.6 5 3.8v6.4"/><path d="M11 18.2h10"/>',
+  secret: '<path d="M12.6 12.4a3.5 3.5 0 1 1 4.9 3.2c-.9.4-1.5 1.2-1.5 2.2v.8"/><circle class="f" cx="16" cy="22" r="1.3"/>',
+};
+// What each says to a surveyor: its drawing, its name and what to do.
+const MARK_TEXT = {
+  'first-mark': ['mark', 'First Mark', 'Circle your first word.'],
+  'field-book': ['book', 'Field Book', 'Keep 100 words in your field notes.'],
+  'bound-volume': ['shelf', 'Bound Volume', 'Keep 1,000 words in your field notes.'],
+  'great-atlas': ['atlas', 'Great Atlas', 'Keep 5,000 words in your field notes.'],
+  'first-light': ['first', 'First Light', 'Chart a word first on the shared survey.'],
+  'trailblazer': ['flag', 'Trailblazer', 'Chart 100 words first.'],
+  'pathfinder': ['trail', 'Pathfinder', 'Chart 1,000 words first.'],
+  'cairn': ['cairn', 'Cairn', 'Chart a word that came in at a round thousand in the universe’s count.'],
+  'wanderer': ['wander', 'Wanderer', 'Find words in 10 territories.'],
+  'gazetteer': ['grid', 'Gazetteer', 'Find words in 50 territories.'],
+  'every-last-word': ['sheet', 'Every Last Word', 'Find every hidden word in one territory.'],
+  'five-sheets': ['sheets', 'Five Full Sheets', 'Find every hidden word in five territories.'],
+  'lions-share': ['lion', 'Lion’s Share', 'Chart first more than half of one territory’s hidden words.'],
+  'map-key': ['key', 'Map Key', 'Find words from 25 themes.'],
+  'full-legend': ['legend', 'Full Legend', `Find a word from every one of the ${NT} themes.`],
+  'lexicographer': ['quill', 'Lexicographer', 'Find every word one theme has.'],
+  'dawn-chorus': ['birds', 'Dawn Chorus', `Find words from all ${CORE.BIRDS.length} bird themes.`],
+  'seven-seas': ['waves', 'Seven Seas', `Find words from all ${CORE.SEAS.length} themes of the sea.`],
+  'star-chart': ['stars', 'Star Chart', `Find words from all ${CORE.SKIES.length} themes of the sky.`],
+  'passport': ['passport', 'Passport', `Find words from all ${CORE.NATIONS.length} countries’ themes.`],
+  'happy-accident': ['bonus', 'Happy Accident', 'Find a bonus word, a real word the letters spell by chance.'],
+  'serendipity': ['bonuses', 'Serendipity', 'Find 25 bonus words.'],
+  'long-measure': ['ruler', 'Long Measure', 'Find a ten-letter word, the longest the map hides.'],
+  'compass-rose': ['rose', 'Compass Rose', 'Find words reading in all eight directions.'],
+  'mirror-image': ['mirror', 'Mirror Image', 'Find a word that reads the same both ways.'],
+  'self-portrait': ['theodolite', 'Self-Portrait', 'Find the word SURVEYOR.'],
+  'over-the-horizon': ['horizon', 'Over the Horizon', 'Find a word 10 territories from the map centre.'],
+  'edge-of-the-universe': ['edge', 'Edge of the Universe', `Find a word ${UNIVERSE_EDGE} territories out, where the universe ends.`],
+  'here-be-dragons': ['dragon', 'Here Be Dragons', 'Find a word 250 territories from the map centre.'],
+  'witness': ['burst', 'Witness', 'Be there when a territory goes supernova.'],
+  'starfield': ['sparkles', 'Starfield', 'Be there for ten supernovas.'],
+  'last-word': ['last', 'Last Word', 'Chart the last hidden word of a territory, and set it off.'],
+  'seven-days': ['week', 'Seven Days Running', 'Keep a streak going for seven days.'],
+  'lunar-month': ['moon', 'Lunar Month', 'Keep a streak going for 28 days.'],
+  'thirty-days': ['tally', 'Thirty Days Out', 'Survey on 30 different days.'],
+  'full-circle': ['orbit', 'Full Circle', 'Survey a year after your first find.'],
+  'fellowship': ['carets', 'Fellowship', 'Be in a guild.'],
+  'two-places': ['devices', 'Two Places at Once', 'Link another device, or save a recovery code.'],
+  'hats-off': ['hat', 'Hats Off', 'Have someone tip their hat to you.'],
+};
+// ---- END BADGE ART ----
+export { MARK_DRAW, MARK_GROUPS, MARK_TEXT };
+
 // The badges signed finds show, worked out as the game does: each find as
 // the sector signed it (when it had it, charted first or not), with its kind
 // (hidden or bonus word) and theme from the map, and a supernova for each

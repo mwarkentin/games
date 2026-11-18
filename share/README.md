@@ -1,7 +1,8 @@
 # Share worker
 
-`games-share` draws link-preview cards for shared Letterfield finds, and for
-the survey log's views (see "Survey log views" below), at
+`games-share` draws link-preview cards for shared Letterfield finds, its
+achievements (see "Achievements" below), and the survey log's views (see
+"Survey log views" below), at
 `https://share.michaelwarkentin.com`. The research and the decisions behind it
 are in [docs/link-previews.md](../docs/link-previews.md).
 
@@ -93,6 +94,32 @@ and `worker_domains.tf` there), in this order:
 5. **Switch it on:** set `SHARE_URL` in `letterfield.html` to
    `https://share.michaelwarkentin.com`, and add a line to
    `changelog/letterfield.md` for that day.
+
+## Achievements
+
+A badge on the game's Achievements page has a Share button too. With
+`SHARE_URL` set, it hands out this Worker's page for the badge:
+
+```
+GET /a/<id>          a page whose og:image is the badge's card; it sends
+                     people on to /letterfield#a-<id>, the game's
+                     Achievements page at that badge
+GET /a/<id>.png      the card, 1200×630, about 75 KB
+GET /a/d/<id>…       the same, dark
+```
+
+`<id>` is the achievement's id in the catalog (`CORE.CATALOG` in
+`worker/src/achievements.js`). The card (`src/badge.js`) is the badge as
+the game draws it, from the `BADGE ART` block that `achievements.js` copies
+from `letterfield.html`, with its name, its group and what it asks for. It
+says nothing about who shared it, so nothing needs asking or checking: an
+id not in the catalog gets the game's own preview, and its `.png` a 404.
+
+The page names the card by a hash of its SVG, `/a/<id>.png?s=<hash>`, so it
+changes only when the drawing, the words or the address on it do; asked for
+with that hash, it's kept for good at the edge and in R2
+(`a/<light|dark>/<id>/<hash>.png`, two an achievement). New cards share the
+render limit.
 
 ## Survey log views
 

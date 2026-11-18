@@ -17,6 +17,7 @@ from zoneinfo import ZoneInfo
 import pytest
 from playwright.sync_api import Page, expect
 
+from fake_leaderboard import without_worker
 from fake_survey import CARD_SIG, FakeBadges, FakePlayers, FakeSurvey, card
 from test_letterfield_survey import LANDS, SHARE_SHEET_INIT, SURVEY, circle, eventually, known_words, open_game
 from test_letterfield_surveyors import KIM, PID
@@ -558,7 +559,63 @@ def test_an_earned_badge_can_be_shared(page: Page, site_url, errors):
     page.wait_for_function("window.__shared.length === 1")
     shared = page.evaluate("window.__shared[0]")
     assert shared["text"] == "I earned First Mark in Letterfield: circle your first word."
-    assert shared["url"].endswith("/letterfield")
+    # With no share Worker (as here), the link is the game at the badge.
+    assert shared["url"] == f"{site_url}/letterfield#a-first-mark"
     # Alone, there's no one to show a badge to.
     expect(page.locator("#mk-first-mark [data-show]")).to_have_count(0)
+    assert errors == []
+
+
+def test_with_a_share_worker_a_badge_links_to_its_card_in_the_sharers_theme(page: Page, site_url, errors):
+    # ?share= stands in for SHARE_URL: the share Worker (share/), whose page
+    # for the badge carries a card of it as its link preview.
+    word = known_words(page, site_url)[0]
+    page.add_init_script(SHARE_SHEET_INIT)
+    page.add_init_script(NOTES_JS)
+    without_worker(page, site_url, "letterfield")
+    page.goto(f"{site_url}/letterfield?share=https://share.test/#debug")
+    page.evaluate(
+        "f => { localStorage.setItem('letterfield.finds.v4', f); localStorage.setItem('letterfield.coach.v1', '1'); }",
+        json.dumps([find(word, NOW)]),
+    )
+    for scheme, path in (("light", "a/first-mark"), ("dark", "a/d/first-mark")):
+        page.emulate_media(color_scheme=scheme)
+        page.reload()
+        page.wait_for_function("window.__lf && window.__lf.marks && 'first-mark' in window.__lf.marks.state().got")
+        if not page.locator("#marksPage").is_visible():
+            open_page(page)
+        page.locator("#mk-first-mark").get_by_role("button", name="Share First Mark").click()
+        page.wait_for_function("window.__shared.length === 1")
+        assert page.evaluate("window.__shared[0].url") == f"https://share.test/{path}"
+    assert errors == []
+
+
+def test_a_shared_badge_opens_at_its_place_on_the_achievements_page(page: Page, site_url, errors):
+    without_worker(page, site_url, "letterfield")
+    page.goto(f"{site_url}/letterfield#a-seven-seas")
+    html = page.locator("html")
+    # A first visit's card comes first; the badge once it's gone.
+    expect(html).to_have_attribute("data-intro", "coach")
+    page.wait_for_timeout(300)
+    expect(html).to_have_attribute("data-notes-page", "finds")
+    page.click("#coachOk")
+    expect(html).to_have_attribute("data-notes-page", "marks")
+    expect(html).to_have_attribute("data-panel", "notes")
+    badge = page.locator("#mk-seven-seas")
+    expect(badge).to_be_in_viewport()
+    expect(badge).to_contain_text("Find words from all 7 themes of the sea.")
+    # Come back to (a reload), it stays as it was left rather than opening it again.
+    page.locator("#marksBack").click()
+    expect(html).to_have_attribute("data-notes-page", "finds")
+    page.reload()
+    page.wait_for_timeout(500)
+    expect(html).to_have_attribute("data-notes-page", "finds")
+    # A link opened in the tab already on the map opens it too; one to no achievement, nothing.
+    page.evaluate("location.hash = '#a-first-mark'")
+    expect(html).to_have_attribute("data-notes-page", "marks")
+    expect(page.locator("#mk-first-mark")).to_be_in_viewport()
+    page.locator("#marksBack").click()
+    page.evaluate("location.hash = '#a-no-such-badge'")
+    page.wait_for_timeout(300)
+    expect(html).to_have_attribute("data-notes-page", "finds")
     assert errors == []

@@ -9,7 +9,7 @@ import { DatabaseSync } from 'node:sqlite';
 import { afterEach, beforeEach, describe, mock, test } from 'node:test';
 
 import worker from '../src/index.js';
-import { CORE, TRUSTED_UNTIL, UNIVERSE_EDGE, badgeSig, checkBadge, checkCard, checkReceipt, routeBadges, signCard, signFind } from '../src/achievements.js';
+import { CORE, MARK_DRAW, MARK_GROUPS, MARK_TEXT, TRUSTED_UNTIL, UNIVERSE_EDGE, badgeSig, checkBadge, checkCard, checkReceipt, routeBadges, signCard, signFind } from '../src/achievements.js';
 import { chunk } from '../src/letterfield-world.js';
 import { AREA, Sector } from '../src/survey.js';
 import { playerId } from '../src/survey-social.js';
@@ -37,6 +37,21 @@ describe('the achievements core', () => {
     const game = readFileSync(new URL('../../letterfield.html', import.meta.url), 'utf8');
     const ours = readFileSync(new URL('../src/achievements.js', import.meta.url), 'utf8');
     assert.equal(block(ours), block(game));
+  });
+
+  test("draws and names its badges as letterfield.html does, word for word, every one", () => {
+    const art = (text) => {
+      const start = text.indexOf('// ---- BEGIN BADGE ART ----'), end = text.indexOf('// ---- END BADGE ART ----');
+      assert.ok(start >= 0 && end > start, 'lost its BADGE ART markers');
+      return text.slice(start, end);
+    };
+    const game = readFileSync(new URL('../../letterfield.html', import.meta.url), 'utf8');
+    const ours = readFileSync(new URL('../src/achievements.js', import.meta.url), 'utf8');
+    assert.equal(art(ours), art(game));
+    for (const [id, g] of CORE.CATALOG) {
+      assert.ok(MARK_TEXT[id] && MARK_DRAW[MARK_TEXT[id][0]], `${id} has words and a drawing`);
+      assert.ok(MARK_GROUPS.some((x) => x.id === g), `${id}'s group`);
+    }
   });
 
   test("names only themes the map has, and puts the universe's edge where the survey's is", () => {

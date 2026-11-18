@@ -4,7 +4,7 @@
 - Days surveyed: a day counts once you find three words, and a streak keeps going through one rest day in any seven. Your longest is kept for good, and nothing nags you to come back.
 - Coming back with notes from before? Everything they've already earned arrives at once, in one note. A short chime and a note mark each new one, and both can be switched off on the Achievements page.
 - Show one of your badges on your caret: other surveyors see it when they hover over your caret or long-press it. Badges you'd already earned can be shown too.
-- Share any badge you've earned, and your achievements and longest streak follow you to your linked devices.
+- Share any badge you've earned: its link shows a picture of the badge, and opens the game at it. Your achievements and longest streak follow you to your linked devices.
 - Long-press another surveyor's caret, or right-click it, to see their badges and when they started surveying. Tap a badge to see what it's for. Streaks stay private.
 
 ## 2026-11-17

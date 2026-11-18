@@ -229,9 +229,10 @@ from today for the current one; both give the same answer for any day).
     out from notes made before achievements existed say "From your notes".
   - **The switch** for unlock notes, and how many are secret.
   - **On each earned badge:** Share, which sends "I earned Seven Seas in
-    Letterfield: …" and the game's address through the phone's share sheet,
-    and, on the survey, **Show** for one the Worker has signed, which puts it
-    on your caret (pressed again, it comes off). The one shown is outlined.
+    Letterfield: …" through the phone's share sheet, with a link whose
+    preview is a card of the badge (see "Share cards"), and, on the survey,
+    **Show** for one the Worker has signed, which puts it on your caret
+    (pressed again, it comes off). The one shown is outlined.
 
 Not on the Surveyors drawer: it's about other people, and it only exists on
 the shared survey, where solo play has achievements too.
@@ -461,6 +462,30 @@ one. Tapping a row flies to that surveyor's caret, though, and their card is
 there once you land. Someone on a game from before cards gets the menu as
 it was.
 
+## Share cards
+
+A shared badge links to the share Worker's page for it,
+`share.michaelwarkentin.com/a/<id>` (`/a/d/<id>` from a dark page), whose
+link preview is a 1200×630 card (`share/src/badge.js`): the badge, earned,
+at 330px on a soft halo of its group's colour, then its name, its group (and
+"secret" for one of those), what it asks for, and "One of 39 achievements".
+Nothing on it is about who shared it, so it needs no checking: the share's
+own words say who earned it.
+
+- **Drawn as the game draws it:** the groups and their hues, each badge's
+  drawing, its name and what it asks for sit between `BEGIN BADGE ART` and
+  `END BADGE ART` markers, word for word the same in `letterfield.html` and
+  `src/achievements.js` (the test checks), which the share Worker imports.
+- **Cached by what it draws:** the page names the card with a hash of its
+  SVG, so a card changes only when its drawing, words or address do. With
+  two cards an achievement, each is drawn once and kept in R2
+  (`a/<theme>/<id>/<hash>.png`), and at the edge for good.
+- **Where it goes:** the page sends people on to
+  `/letterfield#a-<id>`, which opens the field notes at that badge's place
+  on the Achievements page, with how far along they are on it, once a first
+  visit's welcome card has gone. Without `SHARE_URL`, Share hands out that
+  address itself.
+
 ## Site-wide later
 
 Every game here shares one origin and the `games.player` token, so a site
@@ -519,7 +544,8 @@ linked device earning quietly. Stage 2's add:
 - a card synced from another device, taken only if it has everything ours
   has;
 - achievements and the longest streak synced between linked devices;
-- sharing a badge.
+- sharing a badge, its link to its card in the sharer's theme, and a
+  shared badge's link opening the Achievements page at it.
 
 They use `FakeSurvey(sign=True)`, `FakeBadges` and `FakePlayers` from
 `tests/fake_survey.py`.

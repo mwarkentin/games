@@ -4464,8 +4464,9 @@ function markSeen() {
 window.addEventListener('hashchange', () => {
   markSeen();
   if (location.hash === hashSuppress) { hashSuppress = ''; return; }
-  const p = parseHash(location.hash);
+  const p = parseHash(location.hash), mark = markOfHash(location.hash);
   if (p) goToEntry(p);
+  else if (mark) openMarks(mark);
 });
 notesToggle.addEventListener('click', () => setNotes(!Panel.is('notes')));
 $('#notesClose').addEventListener('click', () => setNotes(false));
@@ -4580,6 +4581,7 @@ const coach = $('#coach');
 // sign or coach card means it's been read. onMove shows the card for the state.
 const linkAsked = readLinkAsked();
 const introNext = () => surveyApi && !myInitials() ? 'sign' : LS.get(K_COACH) !== '1' ? 'coach' : 'exploring';
+let markWaiting = null;  // a shared achievement to open once this card has gone (see startMark)
 const Intro = machine('intro', {
   link: ['sign', 'coach', 'exploring'],
   sign: ['exploring'],
@@ -4599,6 +4601,7 @@ function showIntro(to, from) {
   if (from === 'sign' && document.activeElement === signupInput) signupInput.blur();
   if (from && from !== 'link') LS.set(K_COACH, '1');
   if (from) renderGuild();  // an invite waits for this card to go (see Guilds)
+  if (to === 'exploring' && markWaiting) { const id = markWaiting; markWaiting = null; openMarks(id); }  // and so does a shared achievement
 }
 $('#coachOk').addEventListener('click', () => { if (Intro.is('coach')) Intro.go('exploring'); });
 
@@ -6283,18 +6286,6 @@ const K_MARKS = 'letterfield.marks.v1';
 // Kinds of note that are quietened: no note and no sound for them. Only
 // achievements have a switch yet; others can join the same list.
 const K_QUIET = 'letterfield.quiet.v1';
-const MARK_GROUPS = [
-  { id: 'notes', name: 'Field notes', h: 215 },
-  { id: 'charting', name: 'Charting', h: 38 },
-  { id: 'territories', name: 'Territories', h: 150 },
-  { id: 'themes', name: 'Themes', h: 275 },
-  { id: 'words', name: 'Words', h: 185 },
-  { id: 'far', name: 'Far afield', h: 18 },
-  { id: 'novas', name: 'Supernovas', h: 325 },
-  { id: 'days', name: 'Days', h: 50 },
-  { id: 'company', name: 'Company', h: 245 },
-];
-const MARK_GROUP = Object.fromEntries(MARK_GROUPS.map(g => [g.id, g]));
 const UNIVERSE_EDGE = SURVEY_AREA * 4;  // territories from the map centre to the universe's edge (it runs from −48 to 51)
 /* Days surveyed. A day is the player's own local date where they are now,
    so daylight saving changes nothing, and travel at most moves a late-night
@@ -6493,6 +6484,22 @@ function achievementsCore(world) {
 const CORE = achievementsCore({ THEMES, territoryTotal, RC, UNIVERSE_EDGE, dayOf: dayNum });
 for (const i of [...CORE.BIRDS, ...CORE.SEAS, ...CORE.SKIES, ...CORE.NATIONS]) if (i < 0) console.error('achievements: a theme group names a theme the map no longer has');
 const STREAK_MIN = CORE.STREAK_MIN;
+// ---- BEGIN BADGE ART ----
+// The same in letterfield.html and worker/src/achievements.js, word for word
+// (worker/test/achievements.test.js checks), so the share Worker draws a
+// badge's card as the game draws the badge: the groups and their hues,
+// each badge's drawing, its name and what it asks for.
+const MARK_GROUPS = [
+  { id: 'notes', name: 'Field notes', h: 215 },
+  { id: 'charting', name: 'Charting', h: 38 },
+  { id: 'territories', name: 'Territories', h: 150 },
+  { id: 'themes', name: 'Themes', h: 275 },
+  { id: 'words', name: 'Words', h: 185 },
+  { id: 'far', name: 'Far afield', h: 18 },
+  { id: 'novas', name: 'Supernovas', h: 325 },
+  { id: 'days', name: 'Days', h: 50 },
+  { id: 'company', name: 'Company', h: 245 },
+];
 // Each badge's drawing, on a 32 × 32 grid inside its ring, in the emotes'
 // line style: strokes, round caps, and `f` for the few filled dots.
 const star4 = (x, y, s) => `<path d="M${x} ${y - s}Q${x} ${y} ${x + s} ${y}Q${x} ${y} ${x} ${y + s}Q${x} ${y} ${x - s} ${y}Q${x} ${y} ${x} ${y - s}z"/>`;
@@ -6580,6 +6587,8 @@ const MARK_TEXT = {
   'two-places': ['devices', 'Two Places at Once', 'Link another device, or save a recovery code.'],
   'hats-off': ['hat', 'Hats Off', 'Have someone tip their hat to you.'],
 };
+// ---- END BADGE ART ----
+const MARK_GROUP = Object.fromEntries(MARK_GROUPS.map(g => [g.id, g]));
 // The catalog: the core's, with its words and drawing. `survey`: on the
 // shared survey only. `secret`: a question mark until earned. `latch`: not
 // in the notes, so kept when it happens (see markEvent). `proof`: signed
@@ -6858,9 +6867,18 @@ async function askBadges() {
   if (NotesPage.is('marks')) renderMarksPage();
 }
 // Sharing one: a sentence and the game's address, through the phone's share sheet or copied.
+// With the share Worker, the link is its page for the badge, whose preview is
+// a card of it (/a/<id>, /a/d/<id> from a dark page); without, the game, at
+// the badge. Either way it opens on the badge's place on this page.
+const markLink = a => shareBase ? `${shareBase}/a/${C.dark ? 'd/' : ''}${a.id}` : `${location.origin}${location.pathname}${location.search}#a-${a.id}`;
 function shareMark(a) {
   const text = `I earned ${a.name} in Letterfield: ${a.desc.charAt(0).toLowerCase()}${a.desc.slice(1)}`;
-  return shareOut(text, `${location.origin}/letterfield`, MARK_GROUP[a.g].h, a.name, `${a.name}`);
+  return shareOut(text, markLink(a), MARK_GROUP[a.g].h, a.name, `${a.name}’s link`);
+}
+// The achievement a shared link names, #a-<id>, if it's one of ours.
+function markOfHash(h) {
+  const m = /^#a-([a-z0-9-]{1,32})$/.exec(h || '');
+  return m && Object.hasOwn(MARK_BY, m[1]) ? m[1] : null;
 }
 
 /* Saying so: a note of its own kind, after the find has landed and never
@@ -7106,8 +7124,13 @@ renderNotes();
 // back to the map), which stays where you left it, as saved: the entry says
 // it's been seen (see markSeen).
 const startHash = history.state?.lfSeen ? null : parseHash(location.hash);
+// A shared achievement opens the notes at it, once the first check has
+// worked out how far along this surveyor is (that's a timer, set earlier),
+// and once the card a first visit starts with has gone.
+const startMark = history.state?.lfSeen ? null : markOfHash(location.hash);
 markSeen();
 if (startHash) goToEntry(startHash, { cs: 40, instant: true });
+if (startMark) setTimeout(() => { if (Intro.is('exploring')) openMarks(startMark); else markWaiting = startMark; });
 showIntro(Intro.state);
 if (surveyApi) {
   surveyEl.hidden = false;

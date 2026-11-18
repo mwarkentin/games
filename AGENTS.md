@@ -385,6 +385,12 @@ behind it, and `share/README.md` how it works.
   While it's empty, Share hands out the game's own fragment link.
   `?share=<url>` overrides it for tests. A dark page hands out `/f/d/…`, so
   the card follows the sharer's theme.
+- A shared achievement links to `/a/<id>` (`/a/d/<id>` dark), a card of its
+  badge, which sends people on to `/letterfield#a-<id>`, the Achievements page
+  at that badge (see "Share cards" in `worker/ACHIEVEMENTS.md`). The badges'
+  drawings, names and groups sit between `BEGIN BADGE ART` and `END BADGE
+  ART` markers, word for word the same in `letterfield.html` and
+  `worker/src/achievements.js`, so change both.
 - The survey log's views (a surveyor's, theme's, guild's or territory's page, and
   the Supernovas tab) have cards too, at `/v/…`: `letterfield-log.html` has a `SHARE_URL` of its own,
   and while it's empty Share links to the page and attaches the page's own
