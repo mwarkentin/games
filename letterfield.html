@@ -702,6 +702,14 @@ html[data-notes-page="marks"] .notes > :not(.marks-page){display:none!important}
 .mk-card.got .mk-p{color:var(--ink)}
 .mk-new{position:absolute;top:8px;right:9px;font:500 9px/1 var(--f-mono);letter-spacing:.12em;text-transform:uppercase;color:var(--accent)}
 .marks-set{margin-top:22px}
+/* An earned badge can be shared, and on the survey shown on your caret: the one shown is outlined. */
+.mk-acts{display:flex;flex-wrap:wrap;justify-content:center;gap:6px;margin-top:8px}
+.mk-acts .pill[aria-pressed="true"]{background:var(--ink);border-color:var(--ink);color:var(--panel)}
+.mk-card.shown{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent)}
+/* Someone's badge, on their caret's hover card and menu. */
+.peek .peek-mk,.caret-who .peek-mk{flex:none;display:inline-flex;align-items:center;gap:5px;color:var(--ink);font:500 11px/1.2 var(--f-mono);overflow:visible}
+.peek .peek-mk .mk,.caret-who .peek-mk .mk{width:18px;height:18px}
+.caret-who .peek-mk{align-self:center}
 /* In a note, the badge stands in for its dot, and draws itself in unless motion is reduced. */
 .toast i.mk-ico{width:28px;height:28px;border-radius:0;background:none}
 .toast i.mk-ico .mk{width:28px;height:28px}
@@ -1371,23 +1379,27 @@ function sanitize(o) {
   const f = o.f ? 1 : 0;
   const n = f && Number.isInteger(o.n) && o.n > 0 && o.n < 1e8 ? o.n : 0;  // where a word charted first came in the world's count
   const b = !f && goodBy(o.b) ? o.b : '';  // who charted it first, when it wasn't you (? for someone unsigned)
+  const r = goodReceipt(o.r) ? o.r : '';  // the sector's receipt for it, which proves it for a badge others see
   const t = Number.isFinite(Number(o.t)) ? Number(o.t) : Date.now();
   const th = s ? strayTheme(w, fdiv(x, RC), fdiv(y, RC)) : regionTheme(fdiv(x, RC), fdiv(y, RC));
-  return { key, w, x, y, d, t, s, f, n, b, th, born: 0 };
+  return { key, w, x, y, d, t, s, f, n, b, r, th, born: 0 };
 }
+const goodReceipt = r => typeof r === 'string' && /^[0-9a-z]{1,11}\.[fz]{0,2}\.[A-Za-z0-9_-]{12}$/.test(r);
 // Three-letter initials, or '' for anything else.
 const initialsOf = v => typeof v === 'string' && /^[A-Z]{3}$/.test(v) ? v : '';
 const goodBy = b => b === '?' || !!initialsOf(b);
 // What another tab or device knows of a find, taken into ours: charted first
-// only ever comes on, and so does who charted it otherwise, until it's ours.
+// only ever comes on, and so does who charted it otherwise, until it's ours;
+// a receipt, once there, stays.
 function mergeFind(have, o) {
+  let changed = false;
   if (o.f && !have.f) {
     have.f = 1; have.b = '';
     if (Number.isInteger(o.n) && o.n > 0 && o.n < 1e8) have.n = o.n;
-    return true;
-  }
-  if (!have.f && !have.b && goodBy(o.b)) { have.b = o.b; return true; }
-  return false;
+    changed = true;
+  } else if (!have.f && !have.b && goodBy(o.b)) { have.b = o.b; changed = true; }
+  if (!have.r && goodReceipt(o.r)) { have.r = o.r; changed = true; }
+  return changed;
 }
 let redrawn = null;  // {kept, had} the first time a player from an older map comes back
 const readList = k => { try { const a = JSON.parse(LS.get(k) || '[]'); return Array.isArray(a) ? a : []; } catch (_) { return []; } };
@@ -1404,7 +1416,7 @@ function loadLocal() {
   redrawn = { kept: found.size, had: old.length };
   saveLocal();
 }
-const plain = e => ({ w: e.w, x: e.x, y: e.y, d: e.d, t: e.t, s: e.s, ...(e.f ? { f: 1 } : {}), ...(e.n ? { n: e.n } : {}), ...(e.b && !e.f ? { b: e.b } : {}) });
+const plain = e => ({ w: e.w, x: e.x, y: e.y, d: e.d, t: e.t, s: e.s, ...(e.f ? { f: 1 } : {}), ...(e.n ? { n: e.n } : {}), ...(e.b && !e.f ? { b: e.b } : {}), ...(e.r ? { r: e.r } : {}) });
 // Every tab of the game in this browser shares one set of field notes. Each
 // save takes in what other tabs saved since, so it never writes over their
 // finds, and a save in another tab is taken in here as it happens; so are
@@ -1419,7 +1431,7 @@ function takeIn(list) {
     if (have) {
       stored.add(have.key);
       if (mergeFind(have, o)) added = true;
-      else if ((have.f && !o.f) || (have.b && !o.b && !o.f)) behind = true;
+      else if ((have.f && !o.f) || (have.b && !o.b && !o.f) || (have.r && !o.r)) behind = true;
       continue;
     }
     const e = sanitize(o);
@@ -1786,6 +1798,11 @@ function onSurvey(l, m) {
     const home = links.get(sectorKey(x, y));
     if (home && home.m.is('live')) return;
     goneSupernova(rx, ry, { w, x, y, d, by: typeof by === 'string' ? by : '', mine: false, ago });
+  } else if (m.t === 'signed') {
+    // The receipt for a find of ours, which proves it later (see Achievements).
+    const e = typeof m.k === 'string' && found.get(m.k);
+    if (e && !e.r && goodReceipt(m.r)) { e.r = m.r; saveLocal(); syncLater('f', e.key); }
+    return;
   } else if (m.t === 'taken') {
     const c = addClaim(m.c, false), out = c && outbox.get(c.key);
     if (out && out.m.is('sent')) {
@@ -3380,13 +3397,14 @@ function draw(now) {
   // view, like someone else's cursor (a dot when zoomed out), and never text on
   // the letters. It eases toward each new position; idle surveyors fade.
   const seen = new Set();
-  for (const l of links.values()) for (const [id, ini, gx, gy, tags] of l.here) {
+  for (const l of links.values()) for (const [id, ini, gx, gy, tags, badge] of l.here) {
     if (muted.has(id)) continue;  // hidden on this device (see Surveyors)
     if (seen.has(id)) continue;   // one caret a player, on two linked devices in two sectors too
     seen.add(id);
     let gh = ghosts.get(id);
     if (!gh) { gh = { x: gx, y: gy, t: now, hue: hueOf(id), tx: gx, ty: gy, moved: now }; ghosts.set(id, gh); }
     gh.ini = initialsOf(ini);  // it goes into the hover card's HTML
+    gh.badge = typeof badge === 'string' && MARK_BY[badge] ? badge : '';  // the badge they show, which their sector checked
     if (gx !== gh.tx || gy !== gh.ty) { gh.tx = gx; gh.ty = gy; gh.moved = now; }
     const k = RM || Math.hypot(gx - gh.x, gy - gh.y) > 80 ? 1 : 1 - Math.exp(-(now - gh.t) / 180);
     gh.x += (gx - gh.x) * k; gh.y += (gy - gh.y) * k; gh.t = now;
@@ -3751,7 +3769,7 @@ function peekAt(px, py) {
   }
   if (near) {
     const shared = (near.mates || []).filter(g => guildOfCode(g.code));
-    html = `<i></i><b>${near.ini || 'A surveyor'}</b><span>${shared.map(g => `${esc(shownName(g))} · `).join('')}${now - near.moved > IDLE_MS ? 'idle' : 'surveying here'} · right-click for emotes</span>`;
+    html = `<i></i><b>${near.ini || 'A surveyor'}</b>${badgeTag(near.badge)}<span>${shared.map(g => `${esc(shownName(g))} · `).join('')}${now - near.moved > IDLE_MS ? 'idle' : 'surveying here'} · right-click for emotes</span>`;
     hue = near.hue;
   } else {
     const x = Math.floor(w.x), y = Math.floor(w.y);
@@ -4683,7 +4701,8 @@ function saveMuted() {
 // What every sector is told about us when it's joined, and again when any of it changes. Our
 // guilds go as a list, and the first as `guild` too, which a Worker from before lists reads.
 function meMessage() {
-  return { t: 'me', initials: myInitials(), ...(playerToken ? { token: playerToken } : {}), ...(emotesOn ? {} : { quiet: true }), ...(myGuilds.length ? { guilds: myGuilds.map(g => g.code), guild: myGuilds[0].code } : {}) };
+  const badge = shownBadge();
+  return { t: 'me', initials: myInitials(), ...(playerToken ? { token: playerToken } : {}), ...(emotesOn ? {} : { quiet: true }), ...(myGuilds.length ? { guilds: myGuilds.map(g => g.code), guild: myGuilds[0].code } : {}), ...(badge ? { badge } : {}) };
 }
 const tellMe = () => { for (const l of links.values()) tell(l, meMessage()); };
 // A caret's colour, from its id, as the map draws it.
@@ -5080,13 +5099,13 @@ function caretAt(px, py) {
   }
   if (!near) return null;
   const c = caretOf(near), gh = ghosts.get(near);
-  return { pid: near, ini: gh.ini || '', rx: fdiv(Math.floor(c.x), RC), ry: fdiv(Math.floor(c.y), RC) };
+  return { pid: near, ini: gh.ini || '', badge: gh.badge || '', rx: fdiv(Math.floor(c.x), RC), ry: fdiv(Math.floor(c.y), RC) };
 }
 function openCaretMenu(s, px, py) {
   hidePeek();
   caretFor = s;
   const who = s.ini || 'A surveyor', m = muted.has(s.pid), listed = whoFind(s.pid), quiet = !m && !!(listed && listed.quiet);
-  caretMenu.innerHTML = `<p class="caret-who"><b id="caretWho">${s.ini || '···'}</b><span>${regionName(s.rx, s.ry)}</span></p>` +
+  caretMenu.innerHTML = `<p class="caret-who"><b id="caretWho">${s.ini || '···'}</b>${badgeTag(s.badge)}<span>${regionName(s.rx, s.ry)}</span></p>` +
     `<div class="emote-row">${EMOTES.map(e => emoteBtn(e, who, m || quiet)).join('')}</div>` +
     `<p class="who-said" aria-live="polite">${quiet ? `${who} isn’t taking emotes.` : ''}</p><button type="button" class="who-mute">${m ? 'Unmute' : 'Mute'} ${who}</button>`;
   caretMenu.hidden = false;
@@ -5586,7 +5605,7 @@ const K_SYNC = 'letterfield.sync.v1', SYNC_EVERY_MS = 60000, SYNC_SOON_MS = 5000
 function readSync() {
   try {
     const o = JSON.parse(LS.get(K_SYNC) || 'null');
-    if (o && o.on) return { on: true, epoch: typeof o.epoch === 'string' ? o.epoch : '', at: Number.isInteger(o.at) ? o.at : 0, f: Array.isArray(o.f) ? o.f : [], n: Array.isArray(o.n) ? o.n : [], settingsAt: Number.isFinite(o.settingsAt) ? o.settingsAt : 0 };
+    if (o && o.on) return { on: true, epoch: typeof o.epoch === 'string' ? o.epoch : '', at: Number.isInteger(o.at) ? o.at : 0, f: Array.isArray(o.f) ? o.f : [], n: Array.isArray(o.n) ? o.n : [], m: Array.isArray(o.m) ? o.m : ['*'], settingsAt: Number.isFinite(o.settingsAt) ? o.settingsAt : 0 };
   } catch (_) {}
   return null;
 }
@@ -5595,7 +5614,7 @@ function writeSync(st) {
   else LS.remove(K_SYNC);
 }
 // Starting over: everything here goes at the next sync.
-const syncFromHere = settingsAt => ({ on: true, epoch: '', at: 0, f: [...found.keys()], n: [...novasSeen.keys()], settingsAt });
+const syncFromHere = settingsAt => ({ on: true, epoch: '', at: 0, f: [...found.keys()], n: [...novasSeen.keys()], m: Object.keys(marks.got), settingsAt });
 let syncTimer = 0, syncDue = 0;
 // Syncing, on <html data-sync>: off (never linked and no recovery code, or
 // stopped), idle between syncs, syncing, or failed (it tries again later). A
@@ -5626,7 +5645,7 @@ function startSync() {
   if (Sync.is('off')) Sync.go('idle');
   syncSoon(SYNC_GAP_MS);
 }
-// Something to send at the next sync: a find ('f') or a supernova ('n').
+// Something to send at the next sync: a find ('f'), a supernova ('n') or an achievement ('m').
 function syncLater(kind, key) {
   const st = readSync();
   if (!st || Sync.is('off')) return;
@@ -5644,13 +5663,15 @@ async function syncNow() {
   if (!Sync.is('idle', 'failed') || document.hidden) return;  // a hidden tab syncs when it shows again
   const st = readSync();
   if (!st) return Sync.go('off');
-  const sentF = st.f.slice(0, SYNC_BATCH), sentN = st.n.slice(0, SYNC_BATCH);
+  // Achievements waiting: '*' (from a device syncing since before there were any) means every one.
+  const sentF = st.f.slice(0, SYNC_BATCH), sentN = st.n.slice(0, SYNC_BATCH), sentM = st.m.includes('*') ? ['*', ...Object.keys(marks.got)] : st.m.slice(0, 200);
   Sync.go('syncing');
   const at = Sync.seq;
   const { status, data } = await workerCall('/v1/player/sync', {
     token: playerToken, epoch: st.epoch, since: st.at,
     finds: sentF.map(k => found.get(k)).filter(Boolean).map(plain),
     novas: sentN.map(k => novasSeen.get(k)).filter(Boolean),
+    marks: sentM.filter(id => marks.got[id]).slice(0, 200).map(id => [id, ...marks.got[id]]), ...(marks.best ? { best: marks.best } : {}),
     settings: mySettings(), settingsAt: st.settingsAt,
   });
   if (Sync.seq !== at) return;
@@ -5665,22 +5686,24 @@ async function syncNow() {
     return syncSoon(status === 429 ? SYNC_GAP_MS : 30000);
   }
   const now = readSync() || st;  // another tab may have added to it meanwhile
-  const sent = new Set([...sentF.map(k => 'f' + k), ...sentN.map(k => 'n' + k)]);
+  const sent = new Set([...sentF.map(k => 'f' + k), ...sentN.map(k => 'n' + k), ...sentM.map(k => 'm' + k)]);
   // The Worker started over (everything was forgotten, then linked again): send it all.
   const fresh = st.epoch && data.epoch !== st.epoch;
   now.f = fresh ? [...found.keys()] : now.f.filter(k => !sent.has('f' + k));
   now.n = fresh ? [...novasSeen.keys()] : now.n.filter(k => !sent.has('n' + k));
+  now.m = fresh ? Object.keys(marks.got) : (now.m || []).filter(k => !sent.has('m' + k));
   now.epoch = data.epoch;
   now.at = data.at;
   takeSynced(data, now);
   writeSync(now);
   Sync.go('idle');
-  syncSoon(now.f.length || now.n.length ? SYNC_GAP_MS : SYNC_EVERY_MS);
+  syncSoon(now.f.length || now.n.length || now.m.length ? SYNC_GAP_MS : SYNC_EVERY_MS);
 }
 // What came from linked devices, taken in as a save from another tab is.
 function takeSynced(data, st) {
   if (takeIn(Array.isArray(data.finds) ? data.finds : []).added) { saveLocal(); renderNotes(); scheduleHud(); invalidate(); }
   for (const o of Array.isArray(data.novas) ? data.novas : []) { const n = cleanNova(o); if (n) sawNova(n, true); }
+  takeSyncedMarks(data.marks, data.best);
   if (data.settings && Number.isFinite(data.settingsAt) && data.settingsAt > st.settingsAt) {
     applySettings(data.settings);
     st.settingsAt = data.settingsAt;
@@ -5697,6 +5720,7 @@ function applySettings(c) {
     renderMuted();
   }
   if (typeof c.emotes === 'boolean') { emotesOn = emotesEl.checked = c.emotes; LS.set(K_EMOTES, emotesOn ? '1' : '0'); if (!emotesOn) pops = []; }
+  if ('badge' in c) takeShownBadge(c.badge);
   tellMe(); renderWho(); invalidate();
   // Our labels for our guilds, then the guilds themselves, if this device
   // isn't in the middle of changing them itself. Each keeps the log id this
@@ -5877,7 +5901,7 @@ const linkCall = (path, body) => workerCall(`/v1/link${path}`, body);
 // Our guilds go as a list, with the first as `guild` too, for an older game on a linked device.
 const mySettings = () => ({
   initials: myInitials(), guilds: myGuilds.map(bareGuild), guild: myGuilds.length ? bareGuild(myGuilds[0]) : null, labels: Object.fromEntries(labels),
-  muted: [...muted].slice(-MUTED_MAX), mutedAs: Object.fromEntries(mutedAs), emotes: emotesOn,
+  muted: [...muted].slice(-MUTED_MAX), mutedAs: Object.fromEntries(mutedAs), emotes: emotesOn, badge: shownBadge(),
 });
 // The Worker's guild, link, recovery and player paths: JSON sent as
 // text/plain, so no preflight, as the leaderboards do; with no body, a GET.
@@ -6559,22 +6583,25 @@ function readMarks() {
     if (o && typeof o === 'object') {
       const got = {};
       for (const [id, v] of Object.entries(o.got && typeof o.got === 'object' ? o.got : {})) {
-        if (MARK_BY[id] && Array.isArray(v) && Number.isFinite(v[0])) got[id] = [v[0], v[1] ? 1 : 0];
+        if (MARK_BY[id] && Array.isArray(v) && Number.isFinite(v[0])) got[id] = [v[0], v[1] ? 1 : 0, ...(goodSig(v[2]) ? [v[2]] : [])];
       }
       return { got, best: Number.isInteger(o.best) && o.best > 0 ? o.best : 0, fresh: Array.isArray(o.fresh) ? o.fresh.filter(id => got[id]) : [] };
     }
   } catch (_) {}
   return null;
 }
+const goodSig = v => typeof v === 'string' && /^[A-Za-z0-9_-]{12}$/.test(v);  // a badge's signature, from the Worker
 let marks = readMarks() || { got: {}, best: 0, fresh: [] };
-// Two records merged: each achievement once, the earlier time, and "earned
-// in play" over "from your notes"; the longest streak only goes up.
+// Two records merged: each achievement once, the earlier time, "earned in
+// play" over "from your notes", and its badge's signature once either has
+// one; the longest streak only goes up. Each one: [at, from, sig?].
+const mergedMark = (had, [at, from, sig]) => {
+  const keep = had ? had[2] || sig : sig;
+  return [had ? Math.min(had[0], at) : at, had ? had[1] && from : from, ...(keep ? [keep] : [])];
+};
 function mergeMarks(into, o) {
   if (!o) return into;
-  for (const [id, [at, from]] of Object.entries(o.got)) {
-    const had = into.got[id];
-    into.got[id] = had ? [Math.min(had[0], at), had[1] && from] : [at, from];
-  }
+  for (const [id, v] of Object.entries(o.got)) into.got[id] = mergedMark(into.got[id], v);
   into.best = Math.max(into.best, o.best);
   into.fresh = [...new Set([...into.fresh, ...o.fresh])];
   return into;
@@ -6617,6 +6644,7 @@ function marksCheck() {
     else if (st.reached[a.id]) ({ at, by } = st.reached[a.id]);  // otherwise a latched streak whose finds have gone: now
     marks.got[a.id] = [at, backfill ? 1 : 0];
     got.push(a.id);
+    syncLater('m', a.id);
     // Earned in play, here: by a find circled in this tab, a supernova just seen, or a latch.
     if (!backfill && (a.latch || (by && by.e ? madeHere.has(by.e.key) : by && by.n && now - by.n.t < MARK_LIVE_MS))) live.push(a.id);
   }
@@ -6628,6 +6656,7 @@ function marksCheck() {
   if (NotesPage.is('marks')) renderMarksPage();
   if (backfill && got.length) noteMarks(got, true);
   else if (live.length) noteMarks(live);
+  if (got.length) askBadges();
   return got;
 }
 // Achievements that aren't in the notes: true while what they ask for holds.
@@ -6643,6 +6672,8 @@ function markEvent(id) {
   marks.got[id] = [Date.now(), 0];
   marks.fresh = [...new Set([...marks.fresh, id])];
   saveMarks();
+  syncLater('m', id);
+  askBadges();
   renderMarksRow();
   if (NotesPage.is('marks')) renderMarksPage();
   setTimeout(() => noteMarks([id]));  // after whatever note brought it (an emote's), which it then waits for
@@ -6659,6 +6690,86 @@ function marksTick(force = false) {
   if (sig === marksSig && !force) return;
   marksSig = sig;
   marksCheck();
+}
+
+/* From linked devices: their achievements, kept quietly (they were noted
+   where they were earned), and their longest streak. */
+function takeSyncedMarks(list, best) {
+  let changed = false;
+  for (const m of Array.isArray(list) ? list : []) {
+    if (!Array.isArray(m) || !MARK_BY[m[0]] || !Number.isFinite(m[1])) continue;
+    const had = marks.got[m[0]], next = mergedMark(had, [m[1], m[2] ? 1 : 0, goodSig(m[3]) ? m[3] : undefined]);
+    if (had && next.join() === had.join()) continue;
+    if (!had) marks.fresh = [...new Set([...marks.fresh, m[0]])];
+    marks.got[m[0]] = next;
+    changed = true;
+  }
+  if (Number.isInteger(best) && best > marks.best) { marks.best = best; changed = true; }
+  if (!changed) return;
+  saveMarks();
+  renderMarksRow();
+  if (NotesPage.is('marks')) renderMarksPage();
+}
+
+/* Badges others see (see "Badges others see" in worker/ACHIEVEMENTS.md).
+   The Worker signs a badge for us when our signed finds prove it (each find
+   circled on the survey comes back with a receipt), or, for a while after
+   signing began, when we say we've earned it. We show one, chosen on the
+   page: it goes in our `me` message, our sector checks the signature, and
+   it shows on our caret's hover card and menu. */
+const K_BADGE = 'letterfield.badge.v1';
+// The badge we show, [id, sig], while it's still one of ours with that signature.
+function shownBadge() {
+  try {
+    const b = JSON.parse(LS.get(K_BADGE) || 'null');
+    if (Array.isArray(b) && MARK_BY[b[0]] && marks.got[b[0]] && marks.got[b[0]][2] === b[1]) return [b[0], b[1]];
+  } catch (_) {}
+  return null;
+}
+function showBadge(id) {
+  const sig = id && marks.got[id] && marks.got[id][2];
+  if (sig) LS.set(K_BADGE, JSON.stringify([id, sig])); else LS.remove(K_BADGE);
+  tellMe(); settingsChanged();
+  if (NotesPage.is('marks')) renderMarksPage();
+}
+// One that came with synced settings, signed for us as our own are.
+function takeShownBadge(b) {
+  if (Array.isArray(b) && MARK_BY[b[0]] && goodSig(b[1])) {
+    if (marks.got[b[0]] && !marks.got[b[0]][2]) { marks.got[b[0]] = mergedMark(marks.got[b[0]], [marks.got[b[0]][0], marks.got[b[0]][1], b[1]]); saveMarks(); }
+    LS.set(K_BADGE, JSON.stringify([b[0], b[1]]));
+  } else LS.remove(K_BADGE);
+}
+// A badge as a hover card or caret menu shows it: its drawing and name.
+const badgeTag = id => (MARK_BY[id] ? `<span class="peek-mk">${badgeSvg(MARK_BY[id], 'got')}${MARK_BY[id].name}</span>` : '');
+// Asks the Worker to sign what it will for us, for achievements without a
+// signature: when one is earned, and once a visit. The answer is kept with
+// them, and synced, so a badge earned from older notes stays showable.
+let badgesAsked = '';
+async function askBadges() {
+  if (!surveyApi || !playerToken) return;
+  const want = marksHere().filter(a => marks.got[a.id] && !marks.got[a.id][2]).map(a => a.id);
+  const finds = [...found.values()].filter(e => e.r).map(e => ({ w: e.w, x: e.x, y: e.y, d: e.d, r: e.r }));
+  const asking = `${want.join()}|${finds.length}`;
+  if (!want.length || asking === badgesAsked) return;
+  badgesAsked = asking;
+  const { status, data } = await workerCall('/v1/survey/badges', { token: playerToken, z: new Date().getTimezoneOffset(), finds, earned: want });
+  if (status !== 200 || !data || typeof data.badges !== 'object' || !data.badges) { badgesAsked = ''; return; }
+  marks = mergeMarks(marks, readMarks());
+  let changed = false;
+  for (const [id, sig] of Object.entries(data.badges)) {
+    if (!marks.got[id] || marks.got[id][2] || !goodSig(sig)) continue;
+    marks.got[id] = [marks.got[id][0], marks.got[id][1], sig];
+    syncLater('m', id);
+    changed = true;
+  }
+  if (!changed) return;
+  LS.set(K_MARKS, JSON.stringify(marks));
+  if (NotesPage.is('marks')) renderMarksPage();
+}
+// Sharing one: a sentence and the game's address, through the phone's share sheet or copied.
+function shareMark(a) {
+  const text = `I earned ${a.name} in Letterfield: ${a.desc.charAt(0).toLowerCase()}${a.desc.slice(1)}`;
+  return shareOut(text, `${location.origin}/letterfield`, MARK_GROUP[a.g].h, a.name, `${a.name}`);
 }
 
 /* Saying so: a note of its own kind, after the find has landed and never
@@ -6768,9 +6879,11 @@ function markCard(a) {
   const name = hidden ? 'Secret' : a.name, desc = hidden ? 'Keep exploring: it shows itself when you find it.' : a.desc;
   const p = got ? `Earned ${shortDate(got[0])}${got[1] ? ' · from your notes' : ''}`
     : hidden ? '' : st === 'prog' ? `${have.toLocaleString()} of ${need.toLocaleString()}${of ? ` · ${of}` : ''}` : a.survey && !surveyApi ? 'On the shared survey' : 'Not yet';
-  const isNew = got && marks.fresh.includes(a.id);
-  return `<li class="mk-card ${st}" id="mk-${a.id}">${isNew ? '<span class="mk-new">New</span>' : ''}${badgeSvg(a, st, have / need, true)}` +
-    `<b>${name}</b><span class="mk-d">${desc}</span>${p ? `<span class="mk-p">${p}</span>` : ''}` +
+  const isNew = got && marks.fresh.includes(a.id), shown = (shownBadge() || [])[0] === a.id;
+  const acts = !got ? '' : `<span class="mk-acts"><button type="button" class="pill" data-share="${a.id}" aria-label="Share ${a.name}">Share</button>` +
+    (surveyApi && got[2] ? `<button type="button" class="pill" data-show="${a.id}" aria-pressed="${shown}" aria-label="Show ${a.name} on your caret">${shown ? 'On your caret' : 'Show'}</button>` : '') + '</span>';
+  return `<li class="mk-card ${st}${shown ? ' shown' : ''}" id="mk-${a.id}">${isNew ? '<span class="mk-new">New</span>' : ''}${badgeSvg(a, st, have / need, true)}` +
+    `<b>${name}</b><span class="mk-d">${desc}</span>${p ? `<span class="mk-p">${p}</span>` : ''}${acts}` +
     `<span class="vh">${got ? 'Earned.' : st === 'prog' ? `Under way: ${have} of ${need}.` : 'Not earned yet.'}${isNew ? ' New.' : ''}</span></li>`;
 }
 function renderMarksPage() {
@@ -6811,6 +6924,11 @@ function openMarks(focusId = null) {
   else notesPageMoved('marks', 'marks', focusId);
 }
 marksRow.addEventListener('click', () => openMarks());
+marksList.addEventListener('click', e => {
+  const share = e.target.closest('[data-share]'), show = e.target.closest('[data-show]');
+  if (share && MARK_BY[share.dataset.share]) shareMark(MARK_BY[share.dataset.share]);
+  if (show && MARK_BY[show.dataset.show]) showBadge(show.getAttribute('aria-pressed') === 'true' ? null : show.dataset.show);
+});
 $('#marksBack').addEventListener('click', () => { if (NotesPage.is('marks')) NotesPage.go('finds'); });
 $('#marksClose').addEventListener('click', () => setNotes(false));
 marksPage.addEventListener('keydown', e => { if (e.key === 'Escape' && NotesPage.is('marks')) { e.stopPropagation(); NotesPage.go('finds'); } });
@@ -6826,6 +6944,7 @@ renderMarksRow();
 // for a returning player, everything their notes have earned, in one note.
 setTimeout(() => {
   marksTick(true);
+  askBadges();
   if (location.hash === '#debug' && window.__lf) {
     window.__lf.marks = {
       catalog: () => MARKS.map(({ id, g, name, desc, survey = false, secret = false, latch = false }) => ({ id, g, name, desc, survey, secret, latch })),

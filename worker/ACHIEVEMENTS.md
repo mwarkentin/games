@@ -2,14 +2,19 @@
 
 Achievements, the badges that show them, and a daily streak, for
 Letterfield. They're kept beside the survey's design (`SURVEY.md`) because
-syncing them goes through the same Player, and a public badge would need the
-same sectors and log. Most of this is the game's, not the Worker's.
+they sync through the same Player, and a badge shown to others is signed by
+the same sectors.
 
-**Where it stands.** Stage 1 is a prototype in `letterfield.html` (its
-Achievements section), made entirely from the player's own field notes and
-supernovas. It needs no server change. Stage 2, which syncs what can't be
-worked out from the notes and gives the note a kind of its own among the
-notes, waits for a decision on public badges (see "Personal or public").
+**Where it stands.**
+
+- **In the game** (`letterfield.html`, its Achievements section):
+  everything is worked out from the surveyor's own field notes and
+  supernovas.
+- **Through the Player:** they sync between linked devices.
+- **Shown to others:** one chosen badge, signed by the Worker from finds the
+  sectors signed (see "Badges others see").
+- **Shared code:** the rules are one block of code, word for word the same in
+  the game and in `src/achievements.js`.
 
 ## What a player already has
 
@@ -180,8 +185,8 @@ time, so:
   a little differently. Each is right for where it is.
 - **Changing the clock** only fools yourself, so nothing fights it, as
   Animal Crossing doesn't. A day after today (a fast clock, or a find synced
-  from one) isn't counted until it comes. If streaks were ever shown to
-  others, they'd have to come from the server's clock instead.
+  from one) isn't counted until it comes. A streak badge shown to others is
+  worked out from the sectors' times instead (see "Badges others see").
 
 **Missed days are gentle:**
 
@@ -221,6 +226,10 @@ from today for the current one; both give the same answer for any day).
     what to do, and when it was earned or how far along it is. Badges worked
     out from notes made before achievements existed say "From your notes".
   - **The switch** for unlock notes, and how many are secret.
+  - **On each earned badge:** Share, which sends "I earned Seven Seas in
+    Letterfield: …" and the game's address through the phone's share sheet,
+    and, on the survey, **Show** for one the Worker has signed, which puts it
+    on your caret (pressed again, it comes off). The one shown is outlined.
 
 Not on the Surveyors drawer: it's about other people, and it only exists on
 the shared survey, where solo play has achievements too.
@@ -276,33 +285,37 @@ the shared survey, where solo play has achievements too.
 Tabs share it as they share finds: each save reads what's stored first and
 merges, and a save in another tab is taken in as it happens.
 
-**Linked devices, now:** without any change to the Worker, every
-achievement that comes from finds and supernovas, and the streak itself,
-already follows the player to their other devices, since the notes do.
-What doesn't travel yet: the latch (an achievement whose finds a redrawn map
-dropped), the three Company achievements, `best`, and when each was earned
-on the other device (each works it out again from the finds' times, so
-those agree too).
+A badge the Worker has signed keeps its signature as a third value,
+`[at, from, sig]`. The badge shown is `letterfield.badge.v1`, `[id, sig]`,
+and the quiet switch, `letterfield.quiet.v1`, stays on each device, as
+sound does.
 
-**Stage 2, through the Player:** a `marks` table beside finds and novas,
-`(id, at, from, v)`, and the sync carries `marks: [[id, at, from]]` changed
-since the last version, as finds do:
+**Linked devices.** Every achievement that comes from finds and supernovas,
+and the streak itself, would follow the player anyway, since the notes do.
+The Player adds what doesn't: the latch (an achievement whose finds a
+redrawn map dropped), the Company achievements, `best`, when each was first
+earned, and badges' signatures. It keeps a `marks` table beside finds and
+novas, `(id, body, v)`, and a sync carries `marks: [[id, at, from, sig?]]`
+changed since the last version, and `best`, as finds go:
 
 - **Merging can't lose anything.** An achievement is kept once; if two
-  devices disagree on when, the earlier wins, and "earned in play" wins over
-  "from your notes". `best` is a row of its own that only goes up. Nothing
-  is ever deleted except by "Stop syncing everywhere", which takes
-  everything.
-- **Checked for shape only:** an id is `[a-z0-9-]{1,32}`, a time is no later
-  than a day past the Worker's clock, at most 200 rows. The Worker doesn't
-  need the catalog: a made-up id earns nothing anyone else sees.
-- **Earned elsewhere comes quietly:** a sync that brings an achievement
-  this device hasn't got saves it with the other device's time, and plays
-  no note, since it was celebrated where it was earned. Marks are taken in
-  before the finds of the same answer, so working them out again doesn't
-  look new.
-- **The quiet setting** goes with the other synced settings (`quiet` in a
-  link's carry, cleaned by `cleanCarry`).
+  devices disagree on when, the earlier wins, "earned in play" wins over
+  "from your notes", and a signature, once there, stays. `best` is a row of
+  its own (`~best`) that only goes up. Nothing is ever deleted except by
+  "Stop syncing everywhere", which takes everything.
+- **Checked for shape only** (`cleanMark` in `src/players.js`): an id is
+  `[a-z0-9-]{1,32}`, a time is no later than a day past the Worker's clock,
+  at most 200 rows. The Player doesn't need the catalog: a made-up id earns
+  nothing anyone else sees, since showing one needs the Worker's signature.
+- **Earned elsewhere comes quietly:** an achievement that arrives by sync is
+  kept with the other device's time and marked new, with no note, since it
+  was noted where it was earned.
+- **Devices already syncing** when achievements arrived have nothing queued
+  for them; their sync state reads as "everything" (`'*'`) until the first
+  sync sends it all.
+- **The badge shown** goes with the other synced settings (`badge` in a
+  link's carry, cleaned by `cleanCarry`), and finds keep their receipts
+  (`r`, merged by `mergedFind`).
 
 ## Cost
 
@@ -312,50 +325,70 @@ since the last version, as finds do:
   1.5 s while the tab is on screen). At the 25,000-find cap it takes about
   16 ms on a laptop; dating what's newly earned is a second pass, only when
   something is. A few hundred finds take well under a millisecond.
-- **Stage 2:** at most 39 rows a player, written once each, plus `best` when
+- **Syncing:** at most 39 rows a player, written once each, plus `best` when
   it grows. Next to a find's row per word, unmeasurable. No new requests:
   marks ride the syncs that go anyway.
-- **A public, verified badge** (if chosen): see below.
+- **Signing finds:** one HMAC per word circled on the survey (microseconds),
+  one small message back, and about 25 bytes more in each find, on the
+  device and in the Player. Nothing new is stored on the server.
+- **Badges:** one request when an achievement is earned and one a visit,
+  each checking the player's signed finds (1,000 signatures is a few
+  milliseconds), limited to 30 an hour per address. No storage.
 
-## Personal or public
+## Badges others see
 
-A badge others can see on your caret's hover card, the surveyor list or the
-log only means something if it can't be faked, and today it can: all of
-this is in `localStorage`, which anyone can edit.
+A badge others can see means something only if it can't be faked, and
+everything in `localStorage` can be. The Player's copy of the notes is no
+better: it keeps what the devices sent, checked for shape alone.
 
-What the server could verify is narrow. It never sees a find of a word
-someone else charted, a bonus word's theme, or a day you surveyed without
-charting first. It sees only claims, and claims are tied to **initials, not
-players** (see "Mine" in `SURVEY.md`). To verify even the charting
-achievements (First Light, Trailblazer, Pathfinder, Cairn, Lion's Share,
-Last Word):
+**Why not a player id on every claim.** The sectors know who circles each
+word, but they keep claims under initials only (see "Mine" in `SURVEY.md`).
+Storing a player id with every claim, in sectors and the log, would let the
+server count each player's words. It would also make a lasting link between
+everything a surveyor has charted, held by us, a column in every sector and
+in D1, and a table of counts. Too much for a badge.
 
-- **Every claim would carry a player id** at claim time: a hash of the token
-  under a key of its own (not the public `playerId`, which presence shows,
-  so the log can't be joined to carets), in each sector's claims and the
-  log's rows, kept out of every public answer like hashed addresses.
-  - That's a column in every sector (a migration, about 12 bytes a claim,
-    some 15 MB for a universe charted) and in D1.
-  - It also needs a per-player count table, like the guilds' daily counts.
-- **The badge would be checked where it's shown:** the sector asks the log
-  (or keeps counts itself) before it puts a badge in presence, as it asks
-  guilds before it puts on their tag.
-- **Cost:** cents a month in rows and reads. The real cost is that it makes
-  a lasting link between everything a surveyor has charted, held by us. Today
-  changing your initials parts you from your old words in public; with this,
-  only we could join them, and a leak or a request for data could too.
+**Signed finds instead: the proof travels with the find.**
 
-**Recommendation:**
+- **A sector signs what it answers** (`receipt()` in `src/survey.js`). When a
+  surveyor with a player id circles a word, the sector checks it's on the map
+  as always, answers (charted first, or someone else's), and then sends them
+  alone `{t: 'signed', k, r}`. `r` is when the sector had it, `f` if they
+  charted it first, `z` if it set off a supernova, and an HMAC over those,
+  the word, its place and their player id: `mjb3x9k0.fz.Ab3dE_gh1JkL`.
+  Nothing is stored.
+- **The game keeps r with the find**, and it syncs with it (`cleanFind` and
+  `mergedFind` in `src/players.js`).
+- **POST /v1/survey/badges** `{token, z, finds, earned}` → `{badges: {id:
+  sig}}` (`routeBadges` in `src/achievements.js`). The Worker checks each
+  find's receipt against the token's player id, works the badges out from
+  the signed finds alone with the game's own rules (the shared core), and
+  signs each badge for that player. A day is the surveyor's date by `z`, their
+  time zone, from the sector's times, so a streak shown can't be had by
+  changing the clock. The game asks when an achievement is earned and once a
+  visit, and keeps the signatures with its achievements, synced.
+- **Shown:** the player picks one on the Achievements page. It goes in their
+  `me` message, `badge: [id, sig]`. Their sector checks the signature
+  (`checkBadge`), one HMAC with no lookups, and puts the badge's id last in
+  presence: `[id, initials, x, y, tags, badge]`. The game draws it on their
+  caret's hover card and in their caret's menu (the long press on a phone),
+  with its name. It's never listed or ranked.
+- **Keys** come from `IP_SALT`, one for each use (`letterfield-find:`,
+  `letterfield-badge:`), so there's no new secret. Without a salt (a local
+  `wrangler dev` without one) nothing is signed and nothing believed.
 
-- **Keep badges personal.** That's stage 2: sync, the note's kind, tests.
-  Nothing is sent, nothing needs trusting, nothing is worth faking.
-- **Don't show badges to others yet.** Most of the catalog can't be
-  verified at any price (finds, themes, days), and a mix of verified and
-  unverified badges would confuse more than it would add.
-- **If a public badge is wanted later,** show one, chosen by the player, from
-  the charting set only, on the hover card only (never ranked or listed),
-  after adding the per-claim player id above. That id would also let "Mine"
-  in the log come from the server, which is its other use.
+**What signed finds can show:** everything built from words circled on the
+survey: notes, charting, territories, themes, words, far afield, Lion's Share,
+Last Word and days. Not Cairn (the universe's count is the game's), Witness
+and Starfield (being there isn't a claim), or the Company achievements;
+those are `u` in the core's catalog and can be shared but not shown. Finds
+made alone, or before signing began, carry no receipt.
+
+**Achievements from before signing** count on the game's word: until
+`TRUSTED_UNTIL` in `src/achievements.js`, the Worker signs any badge the game
+says it has earned, so what surveyors earned before receipts existed can be
+shown. After that, only signed finds. Set it a couple of weeks after this
+ships; while only a few people play, that window is the whole risk.
 
 ## Site-wide later
 
@@ -386,6 +419,9 @@ other games ever want it.
     (quietly), `reset()` (as if achievements were new, so the next check is
     a backfill) and `check()`, for screenshots and tests;
   - `badge(id, state, fraction, big)`, a badge's markup.
+- To try badges on the survey locally, run `wrangler dev` with an `IP_SALT`
+  (in `worker/.dev.vars`), and open the game with `?survey=`: circled words
+  come back signed, and earned badges offer Show.
 - To try days surveyed, put finds with the times you want in
   `letterfield.finds.v4` and reload; the tests fix the clock with
   Playwright's `page.clock`.
@@ -398,6 +434,29 @@ as one note, the streak over local days (rest days, two missed, a day of two
 finds, a day ahead of the clock, the clocks going back), the longest latched
 after its finds go, quietened notes, sound off, reduced motion, the page in
 the notes, the survey's achievements and Hats Off, and a find synced from a
-linked device earning quietly. Every other test's browser starts with
-achievement notes quietened (`QUIET_ACHIEVEMENTS` in `tests/conftest.py`),
-so a first find brings no note a test isn't about.
+linked device earning quietly. Stage 2's add:
+
+- a find's receipt kept, and proving a badge to show;
+- Show sending the badge to the sector;
+- achievements from before signing signed on the game's word;
+- someone's badge on their hover card and menu;
+- achievements and the longest streak synced between linked devices;
+- sharing a badge.
+
+They use `FakeSurvey(sign=True)`, `FakeBadges` and `FakePlayers` from
+`tests/fake_survey.py`.
+
+Every other test's browser starts with achievement notes quietened
+(`QUIET_ACHIEVEMENTS` in `tests/conftest.py`), so a first find brings no note
+a test isn't about, and answers the fake survey's badges with none.
+
+`worker/test/achievements.test.js` covers the Worker's side:
+
+- that the core matches the game's, word for word;
+- receipts, and a sector signing what it answers (with the supernova flag);
+- a badge shown in presence only when signed for that player;
+- the badges endpoint: proven, trusted until `TRUSTED_UNTIL`, nothing from
+  others' or tampered finds, days by the surveyor's dates, limits.
+
+`worker/test/players.test.js` covers receipts, achievements and the badge in
+sync.

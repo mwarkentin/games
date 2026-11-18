@@ -15,6 +15,7 @@ import pytest
 
 from common import ROOT
 from fake_leaderboard import stand_in_for_worker
+from fake_survey import FakeBadges
 
 
 @pytest.fixture(scope="session")
@@ -96,10 +97,12 @@ try {
 
 @pytest.fixture
 def context(context):
-    """pytest-playwright's context, with the real Worker faked (see fake_leaderboard.py) and
-    Letterfield's achievement notes quietened (see QUIET_ACHIEVEMENTS)."""
+    """pytest-playwright's context, with the real Worker faked (see fake_leaderboard.py),
+    Letterfield's achievement notes quietened (see QUIET_ACHIEVEMENTS) and its badges answered."""
     stand_in_for_worker(context)
     context.add_init_script(QUIET_ACHIEVEMENTS)
+    # Letterfield asks the fake survey which badges it may show; a test that cares routes its own.
+    context.route("https://survey.test/v1/survey/badges", FakeBadges().handle)
     return context
 
 

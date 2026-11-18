@@ -17,8 +17,8 @@ from zoneinfo import ZoneInfo
 import pytest
 from playwright.sync_api import Page, expect
 
-from fake_survey import FakePlayers, FakeSurvey
-from test_letterfield_survey import LANDS, circle, known_words, open_game
+from fake_survey import FakeBadges, FakePlayers, FakeSurvey
+from test_letterfield_survey import LANDS, SHARE_SHEET_INIT, SURVEY, circle, eventually, known_words, open_game
 from test_letterfield_surveyors import KIM, PID
 from test_letterfield_surveyors import start as start_survey
 from test_letterfield_sync import start as start_sync
@@ -336,4 +336,135 @@ def test_a_find_from_a_linked_device_earns_it_quietly(page: Page, site_url, erro
     page.wait_for_timeout(2500)
     assert "First Mark" not in notes(page)  # it was celebrated on the device that found it
     expect(page.locator("#marksNew")).to_be_visible()
+    assert errors == []
+
+
+# ---------- Stage 2: signed finds, badges others see, syncing and sharing ----------
+
+
+def on_survey(page: Page, site_url: str, fake: FakeSurvey, badges: FakeBadges, finds=(), quiet=False) -> None:
+    """Opens the game on the survey, signed as MLW with our token, `finds` in the notes and `badges` answering."""
+    page.add_init_script(NOTES_JS)
+    page.route(f"{SURVEY}/v1/survey/badges", badges.handle)
+    start_survey(page, site_url, fake)
+    if finds or quiet:
+        page.evaluate(
+            "([f, q]) => { localStorage.setItem('letterfield.finds.v4', f); localStorage.removeItem('letterfield.marks.v1');"
+            " if (q) localStorage.setItem('letterfield.quiet.v1', '[\"achievement\"]'); }",
+            [json.dumps(list(finds)), quiet],
+        )
+        page.reload()
+    page.wait_for_function(f"window.__lf && window.__lf.marks && window.__lf.pid() === '{PID}'")
+
+
+def test_a_find_circled_on_the_survey_keeps_its_receipt_and_proves_a_badge_to_show(page: Page, site_url, errors):
+    word = known_words(page, site_url)[0]
+    fake, badges = FakeSurvey(sign=True), FakeBadges(proven=["first-mark", "first-light"])
+    on_survey(page, site_url, fake, badges)
+    circle(page, word)
+    page.wait_for_function("[...window.__lf.found.values()].some(e => e.r)")
+    stored = page.evaluate("JSON.parse(localStorage.getItem('letterfield.finds.v4'))")
+    assert stored[0]["r"].endswith(".f.SIGNEDSIGNED")
+    # Earning First Mark asks the Worker, with the signed find, which badges it will sign.
+    page.wait_for_function("(window.__lf.marks.state().got['first-mark'] || [])[2]", timeout=LANDS)
+    ask = badges.calls[-1]
+    assert ask["finds"] == [{"w": word[0], "x": word[1], "y": word[2], "d": word[3], "r": stored[0]["r"]}]
+    assert "first-mark" in ask["earned"] and ask["token"] and isinstance(ask["z"], int)
+
+    # Shown on our caret: the badge goes to the sector with who we are, and with our settings.
+    open_page(page)
+    card = page.locator("#mk-first-mark")
+    card.get_by_role("button", name="Show First Mark on your caret").click()
+    expect(card.get_by_role("button", name="Show First Mark on your caret")).to_have_attribute("aria-pressed", "true")
+    expect(card).to_have_class("mk-card got shown")
+    eventually(
+        page, lambda: any(m.get("badge") == ["first-mark", FakeBadges.sig("first-mark")] for m in fake.sent("me"))
+    )
+    assert page.evaluate("JSON.parse(localStorage.getItem('letterfield.badge.v1'))") == [
+        "first-mark",
+        FakeBadges.sig("first-mark"),
+    ]
+    # Pressed again, it's taken off.
+    card.get_by_role("button", name="Show First Mark on your caret").click()
+    eventually(page, lambda: "badge" not in fake.sent("me")[-1])
+    assert errors == []
+
+
+def test_achievements_from_before_signing_are_signed_on_the_games_word(page: Page, site_url, errors):
+    words = known_words(page, site_url, WORDS_JS)
+    long_ago = dt.datetime(2025, 3, 2, 12, 0, tzinfo=TORONTO)
+    finds = [find(w, long_ago + dt.timedelta(hours=i)) for i, w in enumerate(words[:120])]
+    badges = FakeBadges(signs=["first-mark"])  # what a Worker inside TRUSTED_UNTIL takes our word for
+    on_survey(page, site_url, FakeSurvey(), badges, finds=finds, quiet=True)
+    page.wait_for_function("(window.__lf.marks.state().got['first-mark'] || [])[2]")
+    earned = set(marks(page)["got"])
+    assert badges.calls[0]["finds"] == []  # nothing signed: these are from before
+    assert set(badges.calls[0]["earned"]) == earned and len(earned) > 1
+    open_page(page)
+    expect(page.locator("#mk-first-mark").get_by_role("button", name="Show First Mark on your caret")).to_be_visible()
+    # One the Worker wouldn't sign can be shared, but not shown.
+    other = next(
+        a for a in page.evaluate("window.__lf.marks.catalog()") if a["id"] in earned and a["id"] != "first-mark"
+    )
+    card = page.locator(f"#mk-{other['id']}")
+    expect(card.get_by_role("button", name=f"Share {other['name']}")).to_be_visible()
+    expect(card.locator("[data-show]")).to_have_count(0)
+    assert errors == []
+
+
+def test_someones_badge_shows_on_their_caret_hover_card_and_menu(page: Page, site_url, errors):
+    fake = FakeSurvey(
+        presence=[[KIM[0], "KIM", 9.5, 7.0, [], "seven-seas"], ["4b1d00000001", "LOU", 11.5, 9.0, [], "no-such-badge"]]
+    )
+    start_survey(page, site_url, fake)
+    page.wait_for_function(f"window.__lf.carets().includes('{KIM[0]}')")
+    at = page.evaluate(f"window.__lf.caretXY('{KIM[0]}')")
+    page.mouse.move(at["x"], at["y"])
+    peek = page.locator("#peek")
+    expect(peek).to_be_visible()
+    expect(peek.locator(".peek-mk")).to_have_text("Seven Seas")
+    page.mouse.click(at["x"], at["y"], button="right")
+    expect(page.locator("#caretMenu .caret-who .peek-mk")).to_have_text("Seven Seas")
+    page.keyboard.press("Escape")
+    # A badge the game doesn't know shows nothing.
+    lou = page.evaluate("window.__lf.caretXY('4b1d00000001')")
+    page.mouse.move(lou["x"], lou["y"])
+    expect(peek).to_contain_text("LOU")
+    expect(peek.locator(".peek-mk")).to_have_count(0)
+    assert errors == []
+
+
+def test_achievements_and_the_longest_streak_sync_between_linked_devices(page: Page, site_url, errors):
+    page.add_init_script(NOTES_JS)
+    mine = sync_words(page, site_url, 1)
+    players = FakePlayers(started=[PID])
+    earlier = int(dt.datetime(2026, 1, 3, 12, 0, tzinfo=TORONTO).timestamp() * 1000)
+    # The other device earned Seven Seas, and had it signed; its longest streak was 9 days.
+    players.add(PID, marks=[["seven-seas", earlier, 0, FakeBadges.sig("seven-seas")]], best=9)
+    start_sync(page, site_url, players, finds=mine)
+    page.wait_for_function("'seven-seas' in window.__lf.marks.state().got")
+    state = marks(page)
+    assert state["got"]["seven-seas"] == [earlier, 0, FakeBadges.sig("seven-seas")]
+    assert state["best"] == 9 and "seven-seas" in state["fresh"]
+    page.wait_for_timeout(2000)
+    assert "Seven Seas" not in notes(page)  # it was noted on the device that earned it
+    # Ours go up: First Mark, earned here from the notes.
+    eventually(
+        page, lambda: any(m[0] == "first-mark" for body in players.sent() for m in body.get("marks", [])), 10_000
+    )
+    assert errors == []
+
+
+def test_an_earned_badge_can_be_shared(page: Page, site_url, errors):
+    word = known_words(page, site_url)[0]
+    page.add_init_script(SHARE_SHEET_INIT)
+    open_alone(page, site_url, [find(word, NOW)])
+    open_page(page)
+    page.locator("#mk-first-mark").get_by_role("button", name="Share First Mark").click()
+    page.wait_for_function("window.__shared.length === 1")
+    shared = page.evaluate("window.__shared[0]")
+    assert shared["text"] == "I earned First Mark in Letterfield: circle your first word."
+    assert shared["url"].endswith("/letterfield")
+    # Alone, there's no one to show a badge to.
+    expect(page.locator("#mk-first-mark [data-show]")).to_have_count(0)
     assert errors == []

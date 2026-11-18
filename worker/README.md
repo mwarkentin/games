@@ -108,7 +108,8 @@ client's IP address included.
 Worker and the Durable Object classes: the runtime treats every
 export of the main module as an entry point, so constants exported for tests
 can't live there. `src/survey.js`, `src/survey-log.js` and `src/letterfield-world.js` are the
-survey, and `src/define.js` Letterfield's definitions.
+survey, `src/define.js` Letterfield's definitions, and `src/achievements.js`
+its achievements' signed finds and badges (see ACHIEVEMENTS.md).
 
 ## Letterfield's definitions
 

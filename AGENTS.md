@@ -641,10 +641,25 @@ Achievements, their badges and days surveyed are worked out from the field
 notes and supernovas seen, then latched in `letterfield.marks.v1`
 (`worker/ACHIEVEMENTS.md` has the catalog and the design). Their page is in
 the notes drawer (`notesPage`), and their note is a kind of its own,
-`achievement`, which `letterfield.quiet.v1` can quieten. Every test's
-browser starts with that kind quietened (`QUIET_ACHIEVEMENTS` in
-`tests/conftest.py`), so a test's first find brings no note it isn't
-about; `tests/test_letterfield_achievements.py` turns it back on.
+`achievement`, which `letterfield.quiet.v1` can quieten.
+
+- The rules sit between `BEGIN ACHIEVEMENTS CORE` and `END ACHIEVEMENTS
+  CORE` markers, word for word the same in `letterfield.html` and
+  `worker/src/achievements.js`, and `worker/test/achievements.test.js`
+  checks they match, so change both.
+- A surveyor can show one badge to others, on their caret's hover card and
+  menu. The Worker signs it only from finds the sectors signed (each claim's
+  answer is followed by a receipt, `{t: 'signed'}`), or, until
+  `TRUSTED_UNTIL`, on the game's word for achievements from before signing.
+  Keys come from `IP_SALT`.
+- Achievements, the longest streak and the badge shown sync through the
+  Player with the notes.
+- Every test's browser starts with achievement notes quietened
+  (`QUIET_ACHIEVEMENTS` in `tests/conftest.py`), so a test's first find
+  brings no note it isn't about, and answers the fake survey's
+  `/v1/survey/badges` with none; `tests/test_letterfield_achievements.py`
+  turns notes back on, and fakes receipts and badges with
+  `FakeSurvey(sign=True)` and `FakeBadges`.
 
 ## Letterfield's words
 

@@ -53,6 +53,15 @@ def world_map(charted=None, sectors=(), spawn=None, players=0):
 ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ23456789"  # the game's codes: no 0, 1, I, L or O
 
 
+def receipt(at: int, flags: str = "f") -> str:
+    """A find's receipt as a sector writes it (worker/src/achievements.js), with a stand-in signature."""
+    digits, n = "", at
+    while n:
+        n, d = divmod(n, 36)
+        digits = "0123456789abcdefghijklmnopqrstuvwxyz"[d] + digits
+    return f"{digits}.{flags}.SIGNEDSIGNED"
+
+
 def reply(route: Route, data: dict, status: int = 200) -> None:
     """Answers `route` with `data` as JSON, as the Worker does, to any origin."""
     route.fulfill(status=status, json=data, headers={"Access-Control-Allow-Origin": "*"})
@@ -62,7 +71,8 @@ class FakeSurvey:
     """Answers each sector's WebSocket the way worker/src/survey.js does."""
 
     def __init__(self, claims=(), presence=(), taken=(), world=None, totals=None, full=None, refuse=None, refuse_passes=(),
-                 require_pass=False, hold=None, lose=None, rate=False, surveyors=(), emote_error=None, list_status=200):
+                 require_pass=False, hold=None, lose=None, rate=False, surveyors=(), emote_error=None, list_status=200,
+                 sign=False):
         self.claims = list(claims)        # [w, x, y, d, s, initials, at] already charted in sector 0,0
         self.presence = list(presence)    # [id, initials, x, y] of other players in sector 0,0
         self.taken = {tuple(c[:4]): c for c in taken}  # words someone else charts first, just before us
@@ -79,6 +89,8 @@ class FakeSurvey:
         self.surveyors = list(surveyors)  # [pid, initials, rx, ry, idle, flags] everyone the list names, nearest first
         self.emote_error = emote_error    # why every emote the game sends is refused ('gone', 'slow down'...), or None
         self.list_status = list_status    # what GET /v1/survey/surveyors answers with
+        self.sign = sign                  # each answer to a claim is followed by its receipt ({t: 'signed'}), as a
+                                          # sector sends a player with a token; the signature is a stand-in
         self.list_asks: list[dict] = []   # the query of every request for the list
         self.held: list[WebSocketRoute] = []
         self.urls: list[str] = []         # the URL of every connection
@@ -145,14 +157,20 @@ class FakeSurvey:
                 ws.send(json.dumps({"t": "error", "key": word_key, "error": self.refuse}))
             elif word in self.taken:
                 ws.send(json.dumps({"t": "taken", "c": self.taken[word]}))
+                self.receipt(ws, word_key, "")
             elif self.lose == "answer":
                 self.claims.append([*word, 0, me["initials"], NOW_MS])
             elif self.lose == "claim":
                 pass
             else:
                 ws.send(json.dumps({"t": "claimed", "c": [*word, 0, "ZED", NOW_MS], "by": you}))
+                self.receipt(ws, word_key, "f")
 
         ws.on_message(on_message)
+
+    def receipt(self, ws: WebSocketRoute, word_key: str, flags: str) -> None:
+        if self.sign:
+            ws.send(json.dumps({"t": "signed", "k": word_key, "r": receipt(NOW_MS, flags)}))
 
     def nova(self, sector: str, rx: int, ry: int, word: list, initials: str = "", ago: int = 0) -> None:
         """Sends sector `sector`'s players another sector's supernova, as the sector passes it on (a
@@ -347,12 +365,17 @@ class FakePlayers:
     def start(self, pid: str) -> None:
         self.players.setdefault(
             pid,
-            {"v": 0, "epoch": f"e{len(self.players):07x}", "finds": {}, "novas": {}, "settings": None, "settings_at": 0},
+            {"v": 0, "epoch": f"e{len(self.players):07x}", "finds": {}, "novas": {}, "marks": {}, "best": (0, 0), "settings": None,
+             "settings_at": 0},
         )
 
-    def add(self, pid: str, finds=(), novas=(), settings=None, settings_at=0) -> None:
+    def add(self, pid: str, finds=(), novas=(), settings=None, settings_at=0, marks=(), best=0) -> None:
         p = self.players[pid]
         p["v"] += 1
+        for m in marks:
+            p["marks"][m[0]] = (list(m), p["v"])
+        if best:
+            p["best"] = (best, p["v"])
         for f in finds:
             p["finds"][f"{f['w']}@{f['x']},{f['y']},{f['d']}"] = (f, p["v"])
         for n in novas:
@@ -380,12 +403,19 @@ class FakePlayers:
         for f in body.get("finds", []):
             k = f"{f['w']}@{f['x']},{f['y']},{f['d']}"
             had = p["finds"].get(k)
-            if not had or (f.get("f") and not had[0].get("f")):
-                p["finds"][k], wrote = (f, v), True
+            if not had or (f.get("f") and not had[0].get("f")) or (f.get("r") and not had[0].get("r")):
+                p["finds"][k], wrote = ({**(had[0] if had else {}), **{a: b for a, b in f.items() if b}}, v), True
         for n in body.get("novas", []):
             k = f"{n['rx']},{n['ry']}"
             if k not in p["novas"]:
                 p["novas"][k], wrote = (n, v), True
+        for m in body.get("marks", []):
+            had = p["marks"].get(m[0])
+            merged = list(m) if not had else [m[0], min(had[0][1], m[1]), had[0][2] and m[2], *([had[0][3]] if len(had[0]) > 3 else m[3:4])]
+            if not had or merged != had[0]:
+                p["marks"][m[0]], wrote = (merged, v), True
+        if body.get("best", 0) > p["best"][0]:
+            p["best"], wrote = (body["best"], v), True
         theirs = body.get("settingsAt", 0)
         if body.get("settings") and theirs > p["settings_at"]:
             p["settings"], p["settings_at"] = body["settings"], theirs
@@ -395,7 +425,9 @@ class FakePlayers:
         def rows(table: str) -> list[dict]:
             return [b for b, at in sorted(p[table].values(), key=lambda r: r[1]) if since < at != v]
 
-        out = {"epoch": p["epoch"], "at": p["v"], "finds": rows("finds"), "novas": rows("novas")}
+        out = {"epoch": p["epoch"], "at": p["v"], "finds": rows("finds"), "novas": rows("novas"), "marks": rows("marks")}
+        if since < p["best"][1] != v:
+            out["best"] = p["best"][0]
         if p["settings"] and p["settings_at"] > theirs:
             out |= {"settings": p["settings"], "settingsAt": p["settings_at"]}
         reply(route, out)
@@ -428,3 +460,25 @@ class FakeRecovery:
         self.codes[code] = body["token"]
         self.players.start(player_id(body["token"]))
         return reply(route, {"code": code, "made": NOW_MS}, 201)
+
+
+class FakeBadges:
+    """POST /v1/survey/badges, as worker/src/achievements.js answers it: the badges the Worker
+    signs for a player. It signs whatever's in `signs` that the game asked for (in `earned`) or
+    names in `proven`, with a stand-in signature, and keeps every request in `calls`. Every
+    test's browser answers the fake survey's address with an empty one (tests/conftest.py)."""
+
+    def __init__(self, signs=(), proven=()):
+        self.signs = set(signs)
+        self.proven = set(proven)
+        self.calls: list[dict] = []
+
+    @staticmethod
+    def sig(badge_id: str) -> str:
+        return (badge_id.replace("-", "") + "x" * 12)[:12]
+
+    def handle(self, route: Route) -> None:
+        body = json.loads(route.request.post_data or "{}")
+        self.calls.append(body)
+        asked = (set(body.get("earned", [])) & self.signs) | self.proven
+        reply(route, {"badges": {b: self.sig(b) for b in sorted(asked)}})

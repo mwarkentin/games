@@ -367,7 +367,8 @@ game that sends no token (an older copy) keeps its socket's id, as before.
 The trade-off is a lasting pseudonym. It's what lets a mute outlast a visit,
 and it lets someone recognise "the same KIM" from day to day; it says nothing
 else about the player, and clearing the browser's storage makes a new one.
-Claims still aren't tied to it (see "Mine"). Each device has its own until
+Claims still aren't tied to it (see "Mine"), though each comes back to its
+player with a signed receipt ("Badges others see" in ACHIEVEMENTS.md). Each device has its own until
 it's linked to another (see "One player, several devices"); an iPhone's Home
 Screen app counts as a device of its own, since it keeps its own storage.
 
@@ -827,7 +828,9 @@ player's own devices reach it:
   forgotten and started again has a new epoch, so a device that last heard
   from the old one starts over and sends all it has.
 - **Merging can't lose anything.** Finds are keyed by word and place, as
-  between tabs: each is kept once, and "charted first" only ever comes on.
+  between tabs: each is kept once, "charted first" only ever comes on, and a
+  sector's receipt for it, once there, stays. Achievements and the longest
+  streak sync too (`marks` and `best`; "Storage and sync" in ACHIEVEMENTS.md).
   Supernovas are kept once each. Settings (initials, guilds and their
   labels, mutes and the emotes switch) go with whichever device changed them
   last, by its clock; a guild left on one device is dropped by the next sync
@@ -1486,7 +1489,10 @@ are yours. Two ways could:
   just like hashed addresses and socket ids.
 
 The token would be worth it only with a way to carry it to another device
-(a sync code, say). On an iPhone the Home Screen app keeps its own storage,
+(a sync code, say). That exists now, and so does a lighter proof: each claim
+comes back to its player with a receipt signed for their player id, kept in
+their own notes rather than the server's ("Badges others see" in
+ACHIEVEMENTS.md), which is how a badge shown to others is checked. On an iPhone the Home Screen app keeps its own storage,
 so the log is in Letterfield's app (see the build below) and opens there
 with the same finds.
 
