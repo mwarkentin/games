@@ -868,14 +868,14 @@ def test_a_supernova_you_saw_is_kept_in_your_notes_and_shares_its_card(page: Pag
     assert shared["url"] == "https://share.michaelwarkentin.com/v/territory/0,0"
     # It's in the field notes, and stays there after a reload.
     open_notes(page)
-    row = page.locator("#novaList li")
+    row = page.locator("#finds li.nova-row")
     expect(row).to_have_count(1)
-    expect(row.locator(".find-word")).to_have_text(place)
-    expect(row.locator(".find-meta")).to_have_text(f"Went supernova · {words[0][0]}, the last by SIS")
+    expect(page.locator("#finds li.run:has(li.nova-row) .run-head b")).to_have_text(place)
+    expect(row.locator(".find-meta")).to_have_text(f"{words[0][0]}, the last by SIS")
     page.reload()
     open_notes(page)
-    expect(page.locator("#novaList li")).to_have_count(1)
-    page.locator("#novaList .find-share").click()
+    expect(page.locator("#finds li.nova-row")).to_have_count(1)
+    page.locator("#finds .nova-row .find-share").click()
     page.wait_for_function("window.__shared.length === 1")  # a fresh page: its first share
     assert page.evaluate("window.__shared[0].url") == "https://share.michaelwarkentin.com/v/territory/0,0"
     assert errors == []
@@ -900,7 +900,7 @@ def test_a_supernova_far_away_passes_as_a_distant_wave_and_is_kept(page: Page, s
     page.wait_for_function("window.__shared.length === 1")
     assert page.evaluate("window.__shared[0].text").endswith(f"the last, {words[0][0]}.")
     open_notes(page)
-    expect(page.locator("#novaList .find-meta")).to_have_text(f"Went supernova · {words[0][0]}, every word charted")
+    expect(page.locator("#finds .nova-row .find-meta")).to_have_text(f"{words[0][0]}, every word charted")
     assert errors == []
 
 
@@ -938,8 +938,8 @@ def test_a_supernova_in_a_neighbouring_sector_sweeps_across_the_view(page: Page,
     # It's a remnant now, though this page holds none of that sector's claims, and in your notes.
     assert "4,0" in page.evaluate("window.__lf.remnants()")
     open_notes(page)
-    expect(page.locator("#novaList li")).to_have_count(1)
-    expect(page.locator("#novaList .find-meta")).to_have_text(f"Went supernova · {word[0]}, the last by SIS")
+    expect(page.locator("#finds li.nova-row")).to_have_count(1)
+    expect(page.locator("#finds .nova-row .find-meta")).to_have_text(f"{word[0]}, the last by SIS")
     assert errors == []
 
 
@@ -976,7 +976,7 @@ def test_supernovas_further_off_pass_at_most_one_a_minute_and_all_are_kept(page:
     fake.nova("0,0", -50, -30, news, "", ago=9000)
     page.wait_for_function("window.__lf.nova()?.rx === -50", timeout=3000)
     open_notes(page)
-    expect(page.locator("#novaList li")).to_have_count(4)
+    expect(page.locator("#finds li.nova-row")).to_have_count(4)
     assert errors == []
 
 
@@ -1033,7 +1033,7 @@ def test_the_claim_and_a_neighbours_news_of_it_play_it_once(page: Page, site_url
     assert len(page.evaluate("window.__notes")) == 1
     assert page.evaluate("window.__lf.nova()?.t0 ?? null") in (None, started)
     open_notes(page)
-    expect(page.locator("#novaList li")).to_have_count(1)
+    expect(page.locator("#finds li.nova-row")).to_have_count(1)
     assert errors == []
 
 

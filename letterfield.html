@@ -326,13 +326,31 @@ li.row > button{margin-top:2px}
 .def-links a:hover{color:var(--ink)}
 .def-retry{font:500 11px/1 var(--f-mono);padding:7px 10px;border:1px solid var(--rule);border-radius:999px;background:transparent;color:var(--ink);cursor:pointer}
 .find:hover{background:var(--hover)}
-/* Supernovas you were here for, above your finds: a star each, its share. */
-.novas{flex:none;padding:10px 8px 4px;border-bottom:1px solid var(--rule)}
-.novas h3{margin:0 10px 2px}
-.novas ol{list-style:none;margin:0 3px 0 6px;padding:0;max-height:min(30vh, 260px);overflow-y:auto;overscroll-behavior:contain}
-.novas li.row > .find-share{grid-column:3}
-.nova-star{width:12px;height:12px;justify-self:center;border-radius:50%;align-self:center;background:radial-gradient(circle, #fff 0 16%, hsl(var(--h,200) 90% 62%) 32%, hsl(var(--h,200) 80% 50% / .35) 56%, transparent 72%);box-shadow:0 0 0 1.5px hsl(var(--h,200) 60% 50% / .35)}
-.nova-find .find-word{font-size:17px}
+/* A supernova in the timeline, in the card of the visit it ended (or one of its own, seen from afar): a band
+   of its territory's deep shade, as its remnant is on the map, lit from its star, which stands where a find
+   has its dot. "Supernova" in the territory's colour where a find has its word, and under it the last word,
+   set as a find's, and who charted it, "you" in the territory's colour. It glows once as it arrives, unless
+   motion is reduced; otherwise it keeps still. */
+.nova-star{width:18px;height:18px;justify-self:center;align-self:center;overflow:visible;fill:var(--c);filter:drop-shadow(0 0 3px hsl(var(--h,200) 95% 60% / .6))}
+.nova-star circle{fill:#fff}
+li.row.nova-row{--nv-bg:hsl(var(--h) 60% 34% / .1);--nv-glow:hsl(var(--h) 95% 58% / .22);background:radial-gradient(ellipse 120px 52px at 20px 22px, var(--nv-glow), transparent),var(--nv-bg)}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]) li.row.nova-row{--nv-bg:hsl(var(--h) 50% 3% / .55);--nv-glow:hsl(var(--h) 95% 66% / .16)}}
+:root[data-theme="dark"] li.row.nova-row{--nv-bg:hsl(var(--h) 50% 3% / .55);--nv-glow:hsl(var(--h) 95% 66% / .16)}
+li.row.nova-row > .find-share{grid-column:3}
+.nova-find .find-w{color:var(--c);text-transform:uppercase}
+.nova-find .find-meta{margin:-4px 0 4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.nova-find .find-meta b.w{font:700 14px/0 var(--f-display);letter-spacing:.07em;color:var(--ink)}
+.nova-find .find-meta b.you{font-weight:600;color:var(--c)}
+.find.nova-find:hover{background:transparent}
+li.row.nova-row:has(> .find.nova-find:hover){box-shadow:inset 0 0 0 100vmax var(--hover)}
+@media (prefers-reduced-motion: no-preference){li.nova-row.fresh{animation:nova-in 1.6s var(--ease-out) both}}
+@keyframes nova-in{from{box-shadow:inset 0 0 0 100vmax hsl(var(--h) 95% 62% / .32)}to{box-shadow:inset 0 0 0 100vmax hsl(var(--h) 95% 62% / 0)}}
+/* The Supernovas pill, after All, with a star for its dot. */
+.filter .nova-star{width:12px;height:12px;margin:-2px -1px -2px -2px;fill:currentColor;filter:none}
+.filter .nova-star circle{fill:var(--panel)}
+/* More of a long list is drawn as it's scrolled near: until then, a block its size. */
+.finds > li.finds-more{display:block;height:180px;margin:10px 0 0;border-radius:10px;background:var(--hover)}
+@media (prefers-reduced-motion: no-preference){.finds > li.finds-more{animation:blink 1.1s ease-in-out infinite alternate}}
 .find-dot{width:10px;height:10px;border-radius:50%;background:var(--c);justify-self:center}
 .find.stray .find-dot{background:transparent;border:2px dashed var(--c);box-sizing:border-box}
 /* Charted first by you: a ring round the dot, which keeps its centre. */
@@ -826,11 +844,7 @@ html[data-notes-page="marks"] .notes > :not(.marks-page){display:none!important}
     </details>
     <a class="survey-log" href="/letterfield-log">Survey log and timelapse <span aria-hidden="true">↗</span></a>
   </section>
-  <section class="novas" id="novasSec" aria-labelledby="novasHead" hidden>
-    <h3 class="eyebrow" id="novasHead">Supernovas</h3>
-    <ol id="novaList"></ol>
-  </section>
-  <div class="filters" id="filters" role="group" aria-label="Filter by theme"></div>
+  <div class="filters" id="filters" role="group" aria-label="Filter the field notes"></div>
   <ol class="finds" id="finds"></ol>
   <section class="marks-page" id="marksPage" aria-labelledby="marksTitle" hidden>
     <div class="notes-head marks-head">
@@ -2395,6 +2409,7 @@ function novaBanner() {
 // charted it, whether that was you, and whether it was yours alone.
 const K_NOVAS = 'letterfield.novas.v1', NOVAS_MAX = 200;
 const novasSeen = new Map();  // 'rx,ry' → its record
+let novaFresh = '';            // the one that just arrived, which glows once in the notes
 function cleanNova(o) {
   if (!o || typeof o.w !== 'string' || !/^[A-Z]{3,12}$/.test(o.w)) return null;
   const n = { rx: o.rx, ry: o.ry, t: o.t, w: o.w, x: o.x, y: o.y, d: o.d, by: initialsOf(o.by), mine: !!o.mine, solo: !!o.solo };
@@ -2417,7 +2432,7 @@ function sawNova(o, synced = false) {
   if (list.length < novasSeen.size) { novasSeen.clear(); for (const v of list) novasSeen.set(v.rx + ',' + v.ry, v); }
   LS.set(K_NOVAS, JSON.stringify(list));
   if (!synced) syncLater('n', k);
-  if (Panel.is('notes')) renderNotes();
+  if (Panel.is('notes')) { novaFresh = k; renderNotesSoon(); }
   return n;
 }
 window.addEventListener('storage', e => { if (e.key === K_NOVAS) { loadNovas(); if (Panel.is('notes')) renderNotes(); } });
@@ -2443,32 +2458,9 @@ function novaToast(n, line = 'Supernova · kept in your field notes') {
   const place = regionName(n.rx, n.ry);
   toast(`<i></i><b>${place}</b><span>${line}</span>`, THEMES[regionTheme(n.rx, n.ry)].hue, SHARE_TOAST_MS, { label: `Share ${place}’s supernova`, share: () => shareNova(n) });
 }
-// The field notes' list of them, newest first; each flies to its last word.
-const novasSec = $('#novasSec'), novaListEl = $('#novaList');
+// The field notes keep each among your finds, by when it went off (see
+// renderNotes); a tap flies to its last word.
 const clockFmt = new Intl.DateTimeFormat(undefined, { hour: 'numeric', minute: '2-digit' });
-// When a supernova went off: its time today, its day before.
-const novaWhen = t => (new Date(t).toDateString() === new Date().toDateString() ? clockFmt.format(t) : new Date(t).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }));
-function renderNovas() {
-  const list = [...novasSeen.values()].sort((a, b) => b.t - a.t);
-  novasSec.hidden = !list.length;
-  $('#novasHead').textContent = list.length === 1 ? 'Supernova' : `Supernovas · ${list.length}`;
-  novaListEl.innerHTML = list.map(n => {
-    const k = n.rx + ',' + n.ry, place = regionName(n.rx, n.ry), who = n.solo ? 'all found by you' : n.mine ? 'the last by you' : n.by ? `the last by ${n.by}` : 'every word charted';
-    return `<li class="row"><a class="find mark nova-find" href="#${hashOf(n)}" data-nova="${k}" style="--h:${THEMES[regionTheme(n.rx, n.ry)].hue}">` +
-      `<span class="nova-star" aria-hidden="true"></span><span class="find-word"><span class="find-w">${place}</span></span><span class="find-when">${novaWhen(n.t)}</span>` +
-      `<span class="find-meta">Went supernova · <b>${n.w}</b>, ${who}</span></a>` +
-      `<button type="button" class="find-share" data-nova="${k}" aria-label="Share ${place}’s supernova" title="Share ${place}’s supernova">${SHARE_ICON}</button></li>`;
-  }).join('');
-}
-novaListEl.addEventListener('click', e => {
-  const b = e.target.closest('.find-share');
-  if (b) { const n = novasSeen.get(b.dataset.nova); if (n) shareNova(n); return; }
-  const a = e.target.closest('a.find'); if (!a) return;
-  e.preventDefault();
-  const n = novasSeen.get(a.dataset.nova); if (!n) return;
-  if (!dock) setNotes(false, false);
-  goToEntry(n);
-});
 // The supernova this frame, or null: charge runs 0 to 1, then after counts
 // seconds since the burst. Sizes are CSS pixels; the d-suffixed ones are for
 // the letters, which are drawn in device pixels.
@@ -4382,40 +4374,185 @@ function bump(el) {
   if (RM || !el || !el.animate) return;
   el.animate([{ transform: 'scale(1)' }, { transform: 'scale(1.45)', offset: .3 }, { transform: 'scale(1)' }], { duration: 420, easing: 'cubic-bezier(.34,1.4,.64,1)' });
 }
-function renderNotes() {
-  renderNovas();
+// The notes are one timeline, newest first: your finds and the supernovas
+// you were there for, merged by time (both lists come sorted, so they're
+// zipped together rather than sorted again). A heading for each day, then a
+// card for each visit to a territory that day: coming back to one later
+// starts a new card, so the order stays time's. A supernova takes its place
+// in the card of the visit it ended, when you were charting there, or has a
+// card of its own when it was seen from afar.
+//
+// The filters narrow it: a theme's pill to that theme's territories (their
+// supernovas too, part of their story, though its count, like All's, is of
+// words, so All always matches the Words tally), and the Supernovas pill to
+// supernovas alone, still under their days.
+//
+// Only the newest NOTES_PAGE entries are drawn at first, and more as the list
+// is scrolled near its end (moreNotes), always a whole card at a time, so a
+// long survey opens at once. The list is only drawn while the notes are open.
+const NOTES_PAGE = 240;
+const STAR_SVG = '<svg class="nova-star" viewBox="0 0 20 20" aria-hidden="true"><path d="M10 1 11.7 8.3 19 10 11.7 11.7 10 19 8.3 11.7 1 10 8.3 8.3Z"/><circle cx="10" cy="10" r="2.1"/></svg>';
+const notesEl = $('#notes');
+const MORE = '<li class="finds-more" aria-hidden="true"></li>';
+let notesLine = [], notesAt = 0, notesDay = '', notesShown = NOTES_PAGE, notesDrawn = '';
+const isNova = it => it.rx !== undefined;
+const placeOf = it => (isNova(it) ? it.rx + ',' + it.ry : fdiv(it.x, RC) + ',' + fdiv(it.y, RC));
+function merged(finds, novas) {
+  const out = new Array(finds.length + novas.length);
+  let i = 0, j = 0, k = 0;
+  // At the same moment the supernova goes above the word that set it off.
+  while (k < out.length) out[k++] = j < novas.length && (i >= finds.length || novas[j].t >= finds[i].t) ? novas[j++] : finds[i++];
+  return out;
+}
+// Where a page of the timeline that starts at `from` ends: past at least `n`
+// entries, at the end of a card.
+function pageEnd(line, from, n, now) {
+  let to = Math.min(line.length, from + n);
+  if (to <= from || to >= line.length) return to;
+  const last = line[to - 1], d = dayLabel(last.t, now), k = placeOf(last);
+  while (to < line.length && placeOf(line[to]) === k && dayLabel(line[to].t, now) === d) to++;
+  return to;
+}
+// The entries from..to as days and cards, carrying on from st ({ day, place,
+// open }), which it leaves where it stops.
+function timelineHtml(line, from, to, now, st) {
+  let html = '';
+  for (let i = from; i < to; i++) {
+    const it = line[i], d = dayLabel(it.t, now), k = placeOf(it), nv = isNova(it);
+    if (d !== st.day || k !== st.place) {
+      if (st.open) html += '</ol></li>';
+      if (d !== st.day) { html += `<li class="day">${d}</li>`; st.day = d; }
+      const [rx, ry] = nv ? [it.rx, it.ry] : [fdiv(it.x, RC), fdiv(it.y, RC)], th = THEMES[regionTheme(rx, ry)];
+      html += `<li class="run mark" style="--h:${th.hue}"><p class="run-head"><b>${regionName(rx, ry)}</b><span>${th.name}</span></p><ol>`;
+      st.open = true; st.place = k;
+    }
+    html += nv ? novaRow(it) : findRow(it);
+  }
+  return html;
+}
+// A supernova's row: its star where a find has its dot, "Supernova", when,
+// and under it the last word, set as a find's, and who charted it, with
+// "you" in the territory's colour.
+function novaWho(n) {
+  const w = `<b class="w">${n.w}</b>`;
+  return n.solo ? `${w}, <b class="you">all found by you</b>` : n.mine ? `${w}, <b class="you">the last by you</b>` : n.by ? `${w}, the last by <b>${n.by}</b>` : `${w}, every word charted`;
+}
+function novaLabel(n) {
+  const place = regionName(n.rx, n.ry);
+  if (n.solo) return `${place} went supernova when you found its last hidden word, ${n.w}; fly there`;
+  if (n.mine) return `${place} went supernova when you charted its last hidden word, ${n.w}; fly there`;
+  if (n.by) return `${place} went supernova when ${n.by} charted its last hidden word, ${n.w}; fly there`;
+  return `${place} went supernova when its last hidden word, ${n.w}, was charted; fly there`;
+}
+function novaRow(n) {
+  const k = n.rx + ',' + n.ry, place = regionName(n.rx, n.ry), hue = THEMES[regionTheme(n.rx, n.ry)].hue;
+  return `<li class="row nova-row${novaFresh === k ? ' fresh' : ''}" style="--h:${hue}"><a class="find mark nova-find" href="#${hashOf(n)}" data-nova="${k}" aria-label="${novaLabel(n)}">` +
+    `${STAR_SVG}<span class="find-word"><span class="find-w">Supernova</span></span>` +
+    `<span class="find-when">${clockFmt.format(n.t)}</span><span class="find-meta">${novaWho(n)}</span></a>` +
+    `<button type="button" class="find-share" data-nova="${k}" aria-label="Share ${place}’s supernova" title="Share ${place}’s supernova">${SHARE_ICON}</button></li>`;
+}
+// What scrolls the list: the whole drawer, with the survey panel, or else the list.
+const notesScroller = () => (notesEl.classList.contains('has-survey') ? notesEl : findsEl);
+// A selector for the entry or button el, to find it again once redrawn.
+function entrySel(el) {
+  const k = el.dataset.key !== undefined ? `[data-key="${CSS.escape(el.dataset.key)}"]` : el.dataset.nova !== undefined ? `[data-nova="${CSS.escape(el.dataset.nova)}"]` : '';
+  return k && el.classList[0] ? `${el.tagName.toLowerCase()}.${el.classList[0]}${k}` : '';
+}
+function renderNotes({ top = false } = {}) {
   const all = [...found.values()].sort((a, b) => b.t - a.t);
   showCount(all);
+  if (!Panel.is('notes')) return;
+  const novas = [...novasSeen.values()].sort((a, b) => b.t - a.t);
   const counts = new Array(NT).fill(0);
   for (const e of all) counts[e.th]++;
-  if (filter !== null && !counts[filter]) filter = null;
+  if (filter === 'nova' ? !novas.length : filter !== null && !counts[filter]) filter = null;
   const used = THEMES.map((t, i) => i).filter(i => counts[i]).sort((a, b) => counts[b] - counts[a]);
-  filtersEl.innerHTML = used.length > 1
+  // Whatever had focus, a pill or an entry, gets it back once they're drawn again.
+  const f = document.activeElement;
+  const pill = f && filtersEl.contains(f) ? f.dataset.f : null, inList = f && findsEl.contains(f) ? entrySel(f) : '';
+  const pills = used.length > 1 || novas.length
     ? `<button type="button" class="filter" data-f="" aria-pressed="${filter === null}">All ${all.length}</button>` +
+      (novas.length ? `<button type="button" class="filter nova-pill" data-f="nova" aria-pressed="${filter === 'nova'}">${STAR_SVG}Supernovas ${novas.length}</button>` : '') +
       used.map(i => `<button type="button" class="filter mark" data-f="${i}" style="--h:${THEMES[i].hue}" aria-pressed="${filter === i}"><i></i>${THEMES[i].name} ${counts[i]}</button>`).join('')
     : '';
-  const rows = filter === null ? all : all.filter(e => e.th === filter);
+  if (filtersEl.dataset.drawn !== pills) {
+    filtersEl.dataset.drawn = pills;
+    filtersEl.innerHTML = pills;
+    if (pill !== null) focusQuiet(filtersEl.querySelector(`[data-f="${pill}"]`) || filtersEl.querySelector('.filter'));
+  }
+  const finds = filter === 'nova' ? [] : filter === null ? all : all.filter(e => e.th === filter);
+  const shown = filter === null || filter === 'nova' ? novas : novas.filter(n => regionTheme(n.rx, n.ry) === filter);
+  notesLine = merged(finds, shown);
+  const now = new Date(), st = { day: '', place: '', open: false };
+  let html = '';
   if (!all.length) {
-    findsEl.innerHTML = '<li class="finds-empty"><strong>No words yet</strong>Circle a word on the map and it lands here with its territory and the bearing it reads in. Tap an entry later to fly straight back to it.</li>';
-    return;
+    html = novas.length && filter === 'nova' ? ''
+      : novas.length ? '<li class="finds-empty"><strong>No words yet</strong>Circle a word on the map and it lands here, among the supernovas you’ve seen, with its territory and the bearing it reads in.</li>'
+      : '<li class="finds-empty"><strong>No words yet</strong>Circle a word on the map and it lands here with its territory and the bearing it reads in. Tap an entry later to fly straight back to it.</li>';
   }
-  // A heading for each day, then a card for each visit to a territory that
-  // day: coming back to one later starts a new card, so the order stays time's.
-  let html = '', day = '', place = '', open = false;
-  const now = new Date();
-  for (const e of rows) {
-    const d = dayLabel(e.t, now), rx = fdiv(e.x, RC), ry = fdiv(e.y, RC), k = rx + ',' + ry;
-    if (d !== day || k !== place) {
-      if (open) html += '</ol></li>';
-      if (d !== day) { html += `<li class="day">${d}</li>`; day = d; }
-      const th = THEMES[regionTheme(rx, ry)];
-      html += `<li class="run mark" style="--h:${th.hue}"><p class="run-head"><b>${regionName(rx, ry)}</b><span>${th.name}</span></p><ol>`;
-      open = true; place = k;
+  if (top) notesShown = NOTES_PAGE;
+  notesAt = pageEnd(notesLine, 0, Math.max(NOTES_PAGE, notesShown), now);
+  html += timelineHtml(notesLine, 0, notesAt, now, st);
+  if (st.open === true) html += '</ol></li>';
+  notesDay = st.day;
+  if (notesAt < notesLine.length) html += MORE;
+  novaFresh = '';
+  if (html === notesDrawn) return;
+  // Kept in view: the first entry showing, where it was, once the list is
+  // scrolled into; at its top, something new should show at the top.
+  const sc = notesScroller(), viewTop = sc === notesEl ? Math.max(sc.getBoundingClientRect().top, filtersEl.getBoundingClientRect().bottom) : sc.getBoundingClientRect().top;
+  const into = sc === notesEl ? findsEl.getBoundingClientRect().top < viewTop - 1 : sc.scrollTop > 0;
+  let anchor = null;
+  if (!top && into) {
+    for (const a of findsEl.querySelectorAll('a.find')) {
+      const r = a.getBoundingClientRect();
+      if (r.bottom > viewTop + 4) { anchor = { sel: entrySel(a), y: r.top }; break; }
     }
-    html += findRow(e);
   }
-  findsEl.innerHTML = html + (open ? '</ol></li>' : '');
+  notesDrawn = html;
+  findsEl.innerHTML = html;
+  if (top && into) sc.scrollTop = sc === notesEl ? sc.scrollTop + findsEl.getBoundingClientRect().top - viewTop : 0;
+  else if (anchor) {
+    const a = anchor.sel && findsEl.querySelector(anchor.sel);
+    if (a) sc.scrollTop += a.getBoundingClientRect().top - anchor.y;
+  }
+  if (inList) focusQuiet(findsEl.querySelector(inList));
+  notesNear();
 }
+// Once a frame at most, for news that comes in bursts (a linked device's supernovas).
+let notesQueued = false;
+function renderNotesSoon() {
+  if (notesQueued) return;
+  notesQueued = true;
+  requestAnimationFrame(() => { notesQueued = false; renderNotes(); });
+}
+// More of the timeline, a page at a time, once its end is near the bottom.
+function moreNotes() {
+  if (notesAt >= notesLine.length || !Panel.is('notes')) return;
+  const now = new Date(), st = { day: notesDay, place: '', open: false }, to = pageEnd(notesLine, notesAt, NOTES_PAGE, now);
+  let html = timelineHtml(notesLine, notesAt, to, now, st);
+  if (st.open === true) html += '</ol></li>';
+  notesAt = to; notesShown = to; notesDay = st.day;
+  const more = findsEl.querySelector('.finds-more');
+  if (!more) return;
+  more.insertAdjacentHTML('beforebegin', html);
+  if (notesAt >= notesLine.length) more.remove();
+  notesDrawn = notesDrawn.slice(0, -MORE.length) + html + (notesAt < notesLine.length ? MORE : '');
+  notesNear();
+}
+let nearQueued = false;
+function notesNear() {
+  if (nearQueued) return;
+  nearQueued = true;
+  requestAnimationFrame(() => {
+    nearQueued = false;
+    const more = findsEl.querySelector('.finds-more');
+    if (!more || !Panel.is('notes')) return;
+    const r = more.getBoundingClientRect(), sc = notesScroller().getBoundingClientRect();
+    if (r.height && r.top < sc.bottom + 900) moreNotes();
+  });
+}
+for (const el of [notesEl, findsEl]) el.addEventListener('scroll', notesNear, { passive: true });
 const DIR_WORDS = ['east', 'south-east', 'south', 'south-west', 'west', 'north-west', 'north', 'north-east'];
 const bearing = d => `<svg class="find-dir" viewBox="0 0 16 16" style="transform:rotate(${d * 45}deg)" aria-hidden="true"><path d="M2.5 8h10M9 4.5 12.5 8 9 11.5"/></svg>`;
 function dayLabel(t, now) {
@@ -4445,11 +4582,23 @@ function findRow(e) {
 }
 filtersEl.addEventListener('click', e => {
   const b = e.target.closest('.filter'); if (!b) return;
-  filter = b.dataset.f === '' ? null : Number(b.dataset.f);
-  renderNotes();
+  const to = b.dataset.f === '' ? null : b.dataset.f === 'nova' ? 'nova' : Number(b.dataset.f);
+  if (to === filter) return;
+  filter = to;
+  renderNotes({ top: true });
 });
 let hashSuppress = '';
 findsEl.addEventListener('click', e => {
+  const sn = e.target.closest('.find-share[data-nova]');
+  if (sn) { const n = novasSeen.get(sn.dataset.nova); if (n) shareNova(n); return; }
+  const an = e.target.closest('a.find[data-nova]');
+  if (an) {
+    e.preventDefault();
+    const n = novasSeen.get(an.dataset.nova); if (!n) return;
+    if (!dock) setNotes(false, false);
+    goToEntry(n);
+    return;
+  }
   const d = e.target.closest('.find-define');
   if (d) { toggleDefinition(d.dataset.key); return; }
   const r = e.target.closest('.def-retry');
@@ -4481,7 +4630,7 @@ window.addEventListener('hashchange', () => {
 });
 notesToggle.addEventListener('click', () => setNotes(!Panel.is('notes')));
 $('#notesClose').addEventListener('click', () => setNotes(false));
-setInterval(() => { if (Panel.is('notes')) renderNotes(); }, 60000);
+setInterval(() => { if (Panel.is('notes')) renderNotes(); }, 60000);  // Today becomes Yesterday
 
 /* ---------- Controls ---------- */
 $('#zoomIn').addEventListener('click', () => flyTo(cam.x, cam.y, cam.cs * 1.6, { min: 240, max: 360 }));
