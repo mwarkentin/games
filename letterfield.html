@@ -7687,7 +7687,9 @@ function noteMarks(ids, backfill = false) {
 function pumpMarks() {
   clearTimeout(markTimer);
   if (!markQueue.length) return;
-  const busy = document.hidden || unlanded.size || toastEl.classList.contains('show') || (nova && performance.now() - nova.t0 < NOVA_END) || novaBuses.size;
+  // A hidden tab isn't waited out: the note stays queued until it's back.
+  if (document.hidden) return;
+  const busy = unlanded.size || toastEl.classList.contains('show') || (nova && performance.now() - nova.t0 < NOVA_END) || novaBuses.size;
   if (busy && markWaited++ < MARK_WAIT_MAX) { markTimer = setTimeout(pumpMarks, MARK_WAIT_MS); return; }
   // Everything waiting goes in this note: one if it's one or two, a summary past that.
   const backfill = markQueue.some(q => q.backfill), ids = [...new Set(markQueue.flatMap(q => q.ids))].filter(id => MARK_BY[id]);
@@ -7855,7 +7857,7 @@ window.addEventListener('storage', e => {
   if (e.key === K_QUIET && NotesPage.is('marks')) { marksNotesEl.checked = !noteQuiet('achievement'); dayNotesEl.checked = !noteQuiet('day'); }
 });
 setInterval(marksTick, 1500);
-document.addEventListener('visibilitychange', () => { if (!document.hidden) marksTick(); });
+document.addEventListener('visibilitychange', () => { if (!document.hidden) { marksTick(); pumpMarks(); } });
 renderMarksRow();
 // Once the page has booted (the finds are loaded then), the first check:
 // for a returning player, everything their notes have earned, in one note.

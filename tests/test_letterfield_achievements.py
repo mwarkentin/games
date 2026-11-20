@@ -857,3 +857,18 @@ def test_a_shared_badge_opens_at_its_place_on_the_achievements_page(page: Page, 
     page.wait_for_timeout(300)
     expect(html).to_have_attribute("data-notes-page", "finds")
     assert errors == []
+
+
+def test_a_note_due_while_the_tab_is_hidden_waits_until_its_back(page: Page, site_url, errors):
+    open_alone(page, site_url)
+    hide = "h => { Object.defineProperty(document, 'hidden', { configurable: true, get: () => h }); document.dispatchEvent(new Event('visibilitychange')); }"
+    page.evaluate(hide, True)
+    page.evaluate("window.__lf.marks.grant('first-mark')")
+    # Past the 20 seconds a busy screen is waited out, it still hasn't shown in the hidden tab.
+    page.wait_for_timeout(23_000)
+    assert notes(page) == []
+    assert marks(page)["sounds"] == 0
+    page.evaluate(hide, False)
+    expect(page.locator("#toast b")).to_have_text("First Mark")
+    assert notes(page) == ["First Mark"]
+    assert errors == []
