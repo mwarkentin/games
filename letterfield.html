@@ -4199,7 +4199,7 @@ function collect(w, x, y, d, stray, keep = false) {
 }
 function onTap(c) {
   if (cam.cs < LETTER_MIN) { flyTo(c.wx, c.wy, 30); return; }
-  if (Intro.is('sign')) { askSign(); return; }
+  if (mustSign()) { if (Intro.is('sign')) askSign(); return; }
   const a = sel.anchor;
   if (!a) { sel.anchor = { x: c.x, y: c.y }; sel.end = null; }
   else if (a.x === c.x && a.y === c.y) { sel.anchor = null; sel.end = null; }
@@ -4250,7 +4250,7 @@ canvas.addEventListener('pointermove', e => {
   if (gest.type === 'press') {
     if (Math.hypot(e.clientX - gest.x0, mapY(e) - gest.y0) < (e.pointerType === 'touch' ? 9 : 5)) return;
     if (gest.sd && cam.cs >= LETTER_MIN && Intro.is('sign')) askSign();  // and it pans instead
-    if (gest.sd && cam.cs >= LETTER_MIN && !Intro.is('sign')) { const c0 = cellAtScreen(gest.x0, gest.y0); gest.type = 'seldrag'; sel.anchor = { x: c0.x, y: c0.y }; }
+    if (gest.sd && cam.cs >= LETTER_MIN && !mustSign()) { const c0 = cellAtScreen(gest.x0, gest.y0); gest.type = 'seldrag'; sel.anchor = { x: c0.x, y: c0.y }; }
     else { gest.type = 'pan'; canvas.classList.add('grabbing'); }
   }
   if (gest.type === 'pan') {
@@ -5211,6 +5211,10 @@ $('#keysPeople').hidden = !surveyApi;
 // the map asks again until they do. For a new player the same card is the
 // how-to-play too, so signing is all a first visit asks.
 const signup = $('#signup'), signupInput = $('#signupInitials'), signupHint = $('#signupHint');
+// Circling waits for initials: while the sign card is up, and while the offer
+// to link this device comes before it (a word circled then would be charted
+// with nobody's initials, for good).
+const mustSign = () => Intro.is('sign') || (Intro.is('link') && !!surveyApi && !myInitials());
 function askSign() {
   signupHint.textContent = 'Initials first, then circle away.';
   focusQuiet(signupInput);
