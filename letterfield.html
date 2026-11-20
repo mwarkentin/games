@@ -670,7 +670,7 @@ body.docked .nova{left:calc((100% - var(--notes-w)) / 2)}
 }
 @keyframes nova{0%{opacity:0}5%{opacity:1}80%{opacity:1}100%{opacity:0}}
 #sound[aria-pressed="false"] .on,#sound[aria-pressed="true"] .off,#music[aria-pressed="true"] .off{display:none}
-#music[aria-pressed="true"] svg{animation:drift 7s ease-in-out infinite}
+html[data-music="playing"] #music svg{animation:drift 7s ease-in-out infinite}
 @keyframes drift{0%,100%{opacity:1}50%{opacity:.55}}
 /* Hover card: who's behind a caret, or who charted a word */
 .peek{position:fixed;left:0;top:0;pointer-events:none;display:flex;align-items:center;gap:7px;padding:6px 9px;font:500 11px/1.2 var(--f-mono);white-space:nowrap}
@@ -735,7 +735,7 @@ body.docked .nova{left:calc((100% - var(--notes-w)) / 2)}
   .notes,.people,.tools-panel{animation:none!important}
   .music-player .bars rect{animation:none!important;transform:none}
   .find-def[data-define="loading"] .def-note{animation:none}
-  #music[aria-pressed="true"] svg{animation:none}
+  html[data-music="playing"] #music svg{animation:none}
 }
 /* Until the page has laid itself out, nothing slides: the notes, the bar and
    the buttons beside them open where they belong rather than moving there. */
@@ -3604,6 +3604,7 @@ function startMusic() {
   const a = audioCtx();
   if (!a || musicNow) return;
   musicNow = playMusic(a, musicPiece);
+  LS.set(K_MUSIC_PIECE, String(musicPiece));  // heard now, so it's the one to start with next time
   Player.go('playing');
   if (document.hidden) musicNow.hush();
 }

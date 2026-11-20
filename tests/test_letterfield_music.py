@@ -248,14 +248,18 @@ def test_pausing_holds_the_music_until_played_again(page: Page, site_url, errors
     )
     html, play = page.locator("html"), page.locator("#musicPlay")
     expect(html).to_have_attribute("data-music", "waiting")  # on, till the first tap or key
+    assert page.evaluate("getComputedStyle(document.querySelector('#music svg')).animationName") == "none"
     page.keyboard.press("Shift")
     expect(html).to_have_attribute("data-music", "playing")
     page.wait_for_function("window.__lf.music().level > .1")
 
+    icon = "getComputedStyle(document.querySelector('#music svg')).animationName"
+    assert page.evaluate(icon) == "drift"  # the music's icon drifts while it plays
     play.click()
     expect(html).to_have_attribute("data-music", "paused")
     expect(play).to_have_accessible_name("Play music")
     expect(page.locator("#music")).to_have_attribute("aria-pressed", "true")  # paused, not switched off
+    assert page.evaluate(icon) == "none"  # and is still while it's paused
     page.wait_for_function("window.__lf.music().level < .01")
     # Paused, the tab hidden and shown again doesn't bring the music back, and
     # nor does moving its slider.
@@ -280,6 +284,21 @@ def test_pausing_holds_the_music_until_played_again(page: Page, site_url, errors
     page.keyboard.press("b")
     expect(html).to_have_attribute("data-music", "off")
     assert page.evaluate("window.__lf.music()") is None
+    assert errors == []
+
+
+def test_the_first_piece_heard_is_the_one_to_start_with_next_time(page: Page, site_url, errors):
+    open_player(page, site_url, "localStorage.setItem('letterfield.music.v1', '1');")
+    assert page.evaluate("localStorage.getItem('letterfield.musicpiece.v1')") is None  # one at random, not yet heard
+    page.keyboard.press("Shift")
+    expect(page.locator("html")).to_have_attribute("data-music", "playing")
+    heard = page.locator("#pieceName").text_content()
+    assert page.evaluate("localStorage.getItem('letterfield.musicpiece.v1')") == str(
+        page.evaluate("window.__lf.musicPiece()")
+    )
+    page.reload()
+    page.wait_for_function("window.__lf")
+    expect(page.locator("#pieceName")).to_have_text(heard)
     assert errors == []
 
 
