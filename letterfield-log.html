@@ -2202,9 +2202,9 @@ function offerShare(run, c) {
 }
 
 // The view on screen as the share Worker's address (share/src/view.js): its
-// period pinned by its first day here and the UTC hours it covers, which are
-// the hours this page asks the log for, so the card counts what the page did,
-// and a guild's name as ?name=.
+// period pinned by its first day here and the UTC hours it covers, the hours
+// this page counts, so the card counts what the page did, and a guild's name
+// as ?name=.
 // A dark page shares the dark card.
 function viewPath() {
   const f = state.focus;
@@ -2219,7 +2219,12 @@ function viewPath() {
   const n = f.kind === 'guild' ? guildNumbers(f) : null, name = n ? `?name=${n.join('-')}` : '';
   if (p === 'all') return `${base}/all${name}`;
   const hour = p === 'hour' ? 'T' + String(new Date(s).getHours()).padStart(2, '0') : '';
-  return `${base}/${p}/${isoDay(s)}${hour}/${fdiv(s, HOUR)}-${fdiv(endOf(p, s) - 1, HOUR) + 1}${name}`;
+  // Longer than an hour, the page counts the UTC hours that start in the
+  // period (tally()), which in a zone half an hour off UTC aren't all the
+  // hours it asks for: the card counts those. An hour is counted word by word,
+  // so its card has the hours it asks for.
+  const e = endOf(p, s), hours = p === 'hour' ? [fdiv(s, HOUR), fdiv(e - 1, HOUR) + 1] : [fdiv(s - 1, HOUR) + 1, fdiv(e - 1, HOUR) + 1];
+  return `${base}/${p}/${isoDay(s)}${hour}/${hours[0]}-${hours[1]}${name}`;
 }
 
 // The picture: the page's own colours and type, on a card the size link

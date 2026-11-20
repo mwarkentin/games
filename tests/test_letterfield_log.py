@@ -878,6 +878,27 @@ def test_with_a_share_worker_a_view_links_to_its_card_with_no_picture_of_its_own
     assert errors == []
 
 
+@pytest.mark.browser_context_args(timezone_id="Asia/Kolkata")
+def test_a_share_card_counts_the_hours_the_page_counts_half_an_hour_off_utc(page: Page, site_url, errors):
+    # In India Nov 5 runs from 18:30 UTC on Nov 4. The page counts the UTC hours that start in it,
+    # 19:00 on Nov 4 to 18:00 on Nov 5, and its card is pinned to the same hours, not the 25 it asks for.
+    start = int(datetime(2026, 11, 4, 18, 30, tzinfo=UTC).timestamp() * 1000)
+    early = ["BIRCH", 1, 0, 0, 0, "ZED", start - 10 * MINUTE, 11]  # Nov 4 in India, in the hour before
+    fern = ["FERN", 10, 20, 0, 0, "ZED", start + 6 * HOUR_MS, 11]
+    fake = FakeSurveyLog([early, fern], PLACES, THEMES)
+    page.add_init_script(SHARE_SHEET)
+    open_log(page, site_url, fake, query="&share=https://share.test/&surveyor=ZED&period=day&day=2026-11-05#debug")
+    expect(page.locator(".entry .word")).to_have_text(["FERN"])
+    expect(tile(page, 0)).to_contain_text("Words charted1")
+    page.wait_for_function("window.__log.share()?.run === window.__log.state.run")
+    page.click("#share")
+    page.wait_for_function("window.__shared")
+    h = start // HOUR_MS
+    assert f"/surveyor/ZED/{h}/{h + 25}" in fake.requests
+    assert page.evaluate("window.__shared.url") == f"https://share.test/v/surveyor/ZED/day/2026-11-05/{h + 1}-{h + 25}"
+    assert errors == []
+
+
 # Monet Reach (1,0) hides two words in these tests; OAK, its last, comes in at 3:10 PM.
 BIRCH = ["BIRCH", 50, 4, 0, 0, "AMY", NOW_MS - 50 * MINUTE, 0]  # 2:40 PM
 OAK = ["OAK", 70, 10, 2, 0, "ZED", NOW_MS - 20 * MINUTE, 0]  # 3:10 PM
