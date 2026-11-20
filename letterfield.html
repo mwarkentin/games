@@ -2027,13 +2027,14 @@ const CLAIM_ENDS = ['first', 'theirs', 'refused'];
 const CLAIM_BURST = 4, CLAIM_REFILL_MS = 1600;
 // `from` is queued for a word just circled; a claim read back from storage
 // starts queued, or unanswered if it may have reached its sector already.
-// `waited`: it's an old find of ours, not one just circled.
-function claimWord(e, from = 'queued', waited = from !== 'queued') {
+// `waited`: it's an old find of ours, not one just circled; `initials`, those
+// it went with, if it may have gone already.
+function claimWord(e, from = 'queued', waited = from !== 'queued', initials = myInitials()) {
   // A word someone else charted, added to the notes anyway, is theirs already.
   if (!surveyApi || outbox.has(e.key) || claims.has(e.key)) return;
   const l = links.get(sectorKey(e.x, e.y));
   // `backlog`: it waited for its sector, rather than going as it was circled.
-  const c = { e, l: null, backlog: waited || !(l && l.m.is('live')), initials: waited ? myInitials() : '', known: false, beaten: false };
+  const c = { e, l: null, backlog: waited || !(l && l.m.is('live')), initials: waited ? initials : '', known: false, beaten: false };
   c.m = machine('claim', CLAIM_MOVES, from, { el: null, onMove: to => {
     if (CLAIM_ENDS.includes(to)) { outbox.delete(e.key); outboxEnded.add(e.key); }
     if (to === 'theirs') chartedBy(e.key);
@@ -2044,7 +2045,8 @@ function claimWord(e, from = 'queued', waited = from !== 'queued') {
   if (l && !waited) flushClaims(l);
 }
 // Claims still out, kept in storage so a reload doesn't lose them, as [w, x,
-// y, d, 1 if it may have reached its sector]: read back once the survey
+// y, d, the initials it went with if it may have reached its sector (1 from
+// before they were kept, or with none), else 0]: read back once the survey
 // starts (restoreOutbox), each claim as one that waited. Another tab's stay
 // too, unless this tab has seen them end: every tab writes the whole list, so
 // the last to write would otherwise drop the others' for good.
@@ -2056,14 +2058,15 @@ function saveOutbox() {
     const k = keyOf(o[0], o[1], o[2], o[3]), e = found.get(k);
     if (!outboxEnded.has(k) && !(e && (e.f || e.b))) list.set(k, o);
   }
-  for (const c of outbox.values()) list.set(c.e.key, [c.e.w, c.e.x, c.e.y, c.e.d, c.m.is('sent', 'unanswered') ? 1 : 0]);
+  for (const c of outbox.values()) list.set(c.e.key, [c.e.w, c.e.x, c.e.y, c.e.d, c.m.is('sent', 'unanswered') ? c.initials || 1 : 0]);
   LS.set(K_OUTBOX, JSON.stringify([...list.values()].slice(-OUTBOX_MAX)));
 }
 function restoreOutbox() {
   for (const o of readList(K_OUTBOX)) {
     if (!Array.isArray(o)) continue;
     const e = found.get(keyOf(o[0], o[1], o[2], o[3]));
-    if (e && !e.f && !e.b) claimWord(e, o[4] ? 'unanswered' : 'queued', true);
+    // Settled by the initials it went with: these may have changed since (a link brings the other device's).
+    if (e && !e.f && !e.b) claimWord(e, o[4] ? 'unanswered' : 'queued', true, initialsOf(o[4]) || myInitials());
   }
   saveOutbox();
 }
