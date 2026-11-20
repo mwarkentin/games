@@ -9,7 +9,7 @@ from datetime import date, datetime, timedelta, timezone
 import pytest
 
 from build_changelog import ChangelogError, build_changelog, parse_changelog, read_changelog
-from common import CHANGELOGS, changelog_apps, own_apps
+from common import CHANGELOGS, ROOT, app_of, changelog_apps, own_apps
 
 GAME = {"slug": "foo", "filename": "foo.html", "title": "Foo & Bar", "url": "/foo"}
 
@@ -67,8 +67,8 @@ def test_site_has_a_changelog_for_every_game_and_links_to_them(site_dir):
     games = json.loads((site_dir / "games.json").read_text("utf-8"))
     colophon = (site_dir / "colophon.html").read_text("utf-8")
     for game in games:
-        # Letterfield's survey log and timelapse are part of Letterfield, and share its changelog.
-        app = "letterfield" if game["slug"] in ("letterfield-log", "letterfield-timelapse") else game["slug"]
+        # A page in a game's app, like Letterfield's survey log, shares that game's changelog.
+        app = app_of((ROOT / f"{game['slug']}.html").read_text("utf-8"), game["slug"])
         assert game["changelog"] == f"/changelog/{app}"
         assert f'<a class="source" href="/changelog/{app}">changelog</a>' in colophon
     for app in changelog_apps():

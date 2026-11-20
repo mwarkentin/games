@@ -220,6 +220,14 @@ def test_inject_social_uses_the_preview_or_falls_back_to_the_icon(tmp_path):
     assert extract_meta(without, "twitter:card") == "summary"
     assert f'<meta property="og:image" content="{BASE_URL}/icons/bar-512.png">' in without
 
+    # A page in foo's app shares foo's preview, unless it has one of its own.
+    shared = inject_social(page, "foo", "/foo-log", tmp_path)
+    assert f'<meta property="og:image" content="{BASE_URL}/previews/foo.jpg">' in shared
+    (tmp_path / PREVIEWS / "foo-log.jpg").write_bytes(b"")
+    own = inject_social(page, "foo", "/foo-log", tmp_path)
+    assert f'<meta property="og:image" content="{BASE_URL}/previews/foo-log.jpg">' in own
+    assert extract_meta(own, "twitter:card") == "summary_large_image"
+
 
 def test_inject_social_leaves_a_page_with_its_own_tags_alone():
     page = '<html><head><meta property="og:title" content="Mine"></head></html>'

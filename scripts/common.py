@@ -82,17 +82,21 @@ def inject_pwa(text: str, app: str) -> str:
 def inject_social(text: str, app: str, path: str, root: Path | None = None) -> str:
     """Add Open Graph and Twitter card tags, so a shared link shows a card.
 
-    Title and description come from the page's own <head>. The image is
-    previews/<app>.jpg as a large card if the app has one, or else its 512px
-    icon as a small one. Every URL is absolute, as link unfurlers need. A page
-    that already has og:title is left as it is.
+    Title and description come from the page's own <head>. The image is the
+    page's own previews/<page>.jpg as a large card if it has one, like a page
+    in another game's app, or else its app's, previews/<app>.jpg, or else the
+    app's 512px icon as a small one. Every URL is absolute, as link unfurlers
+    need. A page that already has og:title is left as it is.
     """
     if re.search(r"""property\s*=\s*["']og:title["']""", text, re.IGNORECASE):
         return text
     title = extract_title(text, app)
     description = extract_meta_description(text)
-    if ((root or ROOT) / PREVIEWS / f"{app}.jpg").exists():
-        image, (width, height), card = f"{BASE_URL}/{PREVIEWS}/{app}.jpg", PREVIEW_SIZE, "summary_large_image"
+    previews = (root or ROOT) / PREVIEWS
+    own = path.strip("/") or app
+    preview = next((name for name in (own, app) if (previews / f"{name}.jpg").exists()), None)
+    if preview:
+        image, (width, height), card = f"{BASE_URL}/{PREVIEWS}/{preview}.jpg", PREVIEW_SIZE, "summary_large_image"
     else:
         image, (width, height), card = f"{BASE_URL}/icons/{app}-512.png", (512, 512), "summary"
     tags = [

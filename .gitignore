@@ -1,5 +1,7 @@
 # Build output and intermediates (see build.sh)
 _site/
+# The soundtrack album and its fonts (see scripts/render_album.py)
+_album/
 gathered_links.json
 games.json
 
