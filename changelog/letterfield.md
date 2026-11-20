@@ -1,5 +1,6 @@
 ## 2026-11-20
 
+- Past the edge of the universe, the title now counts every word charted in the territory, as it does inside, rather than only the ones in your field notes, so it no longer says 110/111 when the territory goes supernova. Hover over it to see how many are in your notes.
 - Turned sideways on a phone, the title and buttons sit on a solid bar again, so the map's letters no longer show around and between them.
 - On a computer, the tools and Surveyors buttons stay solid under the pointer, so the map no longer shows through them.
 - The count of surveyors online on the Surveyors button no longer comes and goes: it never counts you (on any of your devices), and a moment's gap between updates doesn't hide it.
