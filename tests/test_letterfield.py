@@ -132,12 +132,12 @@ def test_finding_every_word_in_a_territory_goes_supernova(page: Page, site_url, 
     expect(page.locator("#toast .share")).to_be_visible()
     # Your field notes keep it: alone, it was all yours.
     open_notes(page)
-    expect(page.locator("#novaList .find-meta")).to_have_text(f"Went supernova · {words[0][0]}, all found by you")
+    expect(page.locator("#finds .nova-row .find-meta")).to_have_text(f"{words[0][0]} · all found by you")
     record = page.evaluate("JSON.parse(localStorage.getItem('letterfield.novas.v1'))")
     assert [(n["rx"], n["ry"], n["w"], n["solo"], n["mine"]) for n in record] == [(0, 0, words[0][0], True, True)]
     # Sharing it alone links to the game, flying to its last word.
     page.evaluate("""() => { window.__shared = []; Object.defineProperty(navigator, 'share', { value: d => { window.__shared.push(d); return Promise.resolve(); }, configurable: true }); }""")
-    page.locator("#novaList .find-share").click()
+    page.locator("#finds .nova-row .find-share").click()
     page.wait_for_function("window.__shared.length === 1")
     shared = page.evaluate("window.__shared[0]")
     assert shared["text"].startswith("I found every hidden word in ") and shared["text"].endswith("in Letterfield, and it just went supernova.")
@@ -1020,10 +1020,12 @@ def test_the_word_list_can_name_every_word_left_in_the_territory(page: Page, sit
 
 # Where each part of each row in the field notes sits, up and down: the
 # middle of its marker, word, time, book and share button.
-ROW_MIDDLES = """() => [...document.querySelectorAll('#finds li.row, #novaList li.row')].map(li => {
+# A supernova's star is centred on both its lines instead (star), as is the row (both).
+ROW_MIDDLES = """() => [...document.querySelectorAll('#finds li.row')].map(li => {
   const mid = sel => { const el = li.querySelector(sel); if (!el) return null; const r = el.getBoundingClientRect(); return r.top + r.height / 2; };
   return { w: li.querySelector('.find-w').textContent, second: !!li.querySelector('.find-meta'),
-    at: ['.find-dot, .nova-star', '.find-w', '.find-when', '.find-define', '.find-share'].map(mid).filter(v => v !== null) };
+    at: ['.find-dot', '.find-w', '.find-when', '.find-define', '.find-share'].map(mid).filter(v => v !== null),
+    star: mid('.nova-star'), both: mid('a.find') };
 })"""
 
 
@@ -1046,16 +1048,18 @@ def test_every_part_of_a_find_sits_on_its_words_line(page: Page, site_url, error
     page.reload()
     page.wait_for_function("window.__lf && window.__lf.found.size === 2")
     open_notes(page)
-    expect(page.locator("#finds .find-meta")).to_have_text("charted by ZED")
+    expect(page.locator("#finds li.row:not(.nova-row) .find-meta")).to_have_text("charted by ZED")
     page.locator("#notes").evaluate("e => Promise.all(e.getAnimations({ subtree: true }).map(a => a.finished))")
     rows = page.evaluate(ROW_MIDDLES)
-    assert [r["second"] for r in rows] == [True, True, False], rows  # the supernova, then the finds
+    assert [r["second"] for r in rows] == [True, False, True], rows  # the finds, then the supernova an hour before
     for r in rows:
-        assert 4 <= len(r["at"]) <= 5 and max(r["at"]) - min(r["at"]) <= 1, r
+        assert 3 <= len(r["at"]) <= 5 and max(r["at"]) - min(r["at"]) <= 1, r
+        if r["star"] is not None:
+            assert abs(r["star"] - r["both"]) <= 1, r
     # And the supernova's star, place, time and share button stand in the finds' columns.
     cols = page.evaluate("""() => {
       const at = (row, sel) => { const r = row.querySelector(sel).getBoundingClientRect(); return [r.left + r.width / 2, r.left, r.right]; };
-      const nova = document.querySelector('#novaList li.row'), find = document.querySelector('#finds li.row');
+      const nova = document.querySelector('#finds li.nova-row'), find = document.querySelector('#finds li.row:not(.nova-row)');
       return [[at(nova, '.nova-star')[0], at(find, '.find-dot')[0]], [at(nova, '.find-w')[1], at(find, '.find-w')[1]],
         [at(nova, '.find-when')[2], at(find, '.find-when')[2]], [at(nova, '.find-share')[0], at(find, '.find-share')[0]]];
     }""")
