@@ -1568,7 +1568,9 @@ thousand rows, at most every 10 minutes per instance. If that ever shows in
 the bill, the next step is a monthly level of the same counts. A surveyor's
 or theme's view reads its rows in the range three times: all time for
 someone with 10,000 words is about 30,000 rows, at most every 2 minutes per
-instance while it's running.
+instance while it's running. Its later pages (`?before=`) read only their
+own 100 entries, and take the totals and top lists from the first page, as
+it's kept.
 
 **The timelapse** reads each word's row once per day it's kept. A full
 replay, cold, reads every word plus the index's count rows (one per hour

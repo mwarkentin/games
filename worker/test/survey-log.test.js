@@ -648,6 +648,28 @@ describe('routeLog', () => {
     assert.equal((await get(`/v1/survey/log/top/hours/${HOUR - TOP_HOURS_MAX - 1}/${HOUR}`)).status, 400);
   });
 
+  test("a slice's later pages read only their entries, with the first page's totals and top lists", async () => {
+    await writeLog(env.LOG_DB, Array.from({ length: SLICE_PAGE + 5 }, (_, i) => stored(i % 40, Math.floor(i / 40) + 2, 0, NOW - 60000 - i)));
+    const path = `/v1/survey/log/surveyor/ZED/${HOUR - 24}/${HOUR + 1}`;
+    const first = await (await get(path)).json();
+    assert.ok(first.next);
+    env.LOG_DB.log.length = 0;
+    const second = await (await get(`${path}?before=${first.next}`)).json();
+    assert.equal(env.LOG_DB.log.length, 1, 'the entries query alone');
+    assert.deepEqual(Object.keys(second).sort(), Object.keys(first).sort());
+    for (const k of ['words', 'world', 'hours', 'topTerritories', 'topThemes']) assert.deepEqual(second[k], first[k], k);
+    assert.equal(second.entries.length, first.words - SLICE_PAGE);
+    assert.equal(second.next, null);
+    // Asked for alone, a later page reads the first's totals once, and keeps them for the next.
+    forgetLog();
+    env.LOG_DB.log.length = 0;
+    assert.deepEqual(await (await get(`${path}?before=${first.next}`)).json(), second);
+    assert.equal(env.LOG_DB.log.length, 4);
+    env.LOG_DB.log.length = 0;
+    await get(path);
+    assert.equal(env.LOG_DB.log.length, 0);
+  });
+
   test('answers a surveyor, a theme and a territory, cached by how settled and how long they are', async () => {
     const one = await get(`/v1/survey/log/surveyor/ZED/${HOUR - 24}/${HOUR + 1}`);
     assert.equal(one.headers.get('Cache-Control'), `public, max-age=${LIVE_CACHE_S}`);
