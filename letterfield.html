@@ -1881,6 +1881,7 @@ function linkMoved(l, to, from) {
     Object.assign(l, { you: null, here: [] });
     if (posSent && posSent.l === l) posSent = null;
     clearTimeout(l.flush); l.flush = 0;
+    clearTimeout(l.answerTimer); l.answerTimer = 0;
     // Claims still out on it are asked about again when the sector is next joined.
     for (const c of outbox.values()) if (c.l === l && c.m.is('sent')) c.m.go('unanswered');
     matesLost();
@@ -2120,10 +2121,25 @@ function flushClaims(l) {
     if (c.backlog && limitDay === utcDay()) continue;  // past the day's limit, it'd only be turned away
     if (l.tokens < 1) { l.flush = setTimeout(() => flushClaims(l), (1 - l.tokens) * CLAIM_REFILL_MS); return; }
     l.tokens -= 1;
-    Object.assign(c, { l, initials: myInitials(), known: claims.has(c.e.key) });
+    Object.assign(c, { l, initials: myInitials(), known: claims.has(c.e.key), sentAt: performance.now() });
     c.m.go('sent');
     tell(l, { t: 'claim', w: c.e.w, x: c.e.x, y: c.e.y, d: c.e.d });
+    if (!l.answerTimer) l.answerTimer = setTimeout(() => awaitAnswers(l), CLAIM_ANSWER_MS);
   }
+}
+// A sector answers every claim at once, so one that hasn't in CLAIM_ANSWER_MS
+// is on a socket that's died without closing (the network dropped with no word
+// to the browser): it's dropped and joined again, and the claims go again.
+const CLAIM_ANSWER_MS = 15000;
+function awaitAnswers(l) {
+  l.answerTimer = 0;
+  if (!l.m.is('live')) return;
+  let oldest = Infinity;
+  for (const c of outbox.values()) if (c.l === l && c.m.is('sent')) oldest = Math.min(oldest, c.sentAt);
+  if (oldest === Infinity) return;
+  const left = oldest + CLAIM_ANSWER_MS - performance.now();
+  if (left <= 0) l.m.go('backoff');
+  else l.answerTimer = setTimeout(() => awaitAnswers(l), left);
 }
 // The sector's just been joined: claims that went out on its last socket but
 // never heard back are settled from the claims it holds, and the rest go.

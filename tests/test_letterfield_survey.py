@@ -1592,6 +1592,27 @@ def test_a_claim_whose_answer_was_lost_with_its_socket_is_still_credited(page: P
     assert errors == []
 
 
+def test_a_claim_never_answered_rejoins_its_sector_and_goes_again(page: Page, site_url, errors):
+    """With no check that a socket still worked, one that died without closing (the network gone
+    with no word to the browser) kept its claims waiting for answers that never came, and still
+    said it was live, until the browser gave up on it minutes later."""
+    page.clock.install()
+    words = known_words(page, site_url)
+    fake = FakeSurvey(lose="claim")
+    open_game(page, site_url, fake)
+    expect(page.locator("#survey")).to_have_attribute("data-state", "live")
+    circle(page, words[0])
+    eventually(page, lambda: len(fake.sent("claim")) == 1)
+    page.clock.run_for(10_000)
+    assert fake.sectors.count("0,0") == 1  # an answer can take a moment
+    fake.lose = None
+    page.clock.run_for(8000)
+    eventually(page, lambda: fake.sectors.count("0,0") == 2)
+    eventually(page, lambda: len(fake.sent("claim")) == 2)
+    eventually(page, lambda: page.evaluate("window.__lf.found.values().next().value.f") == 1)
+    assert errors == []
+
+
 def test_a_claim_lost_on_the_way_is_sent_again_when_the_sector_is_rejoined(page: Page, site_url, errors):
     word = known_words(page, site_url)[0]
     fake = FakeSurvey(lose="claim")
