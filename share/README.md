@@ -62,7 +62,8 @@ are drawn again in the new words.
   under `m<map>/<theme>/<slug>/<state>.png`, so each is drawn once
   worldwide. Nothing else goes there, so a script can't fill the bucket.
 - **Render limit:** new cards are limited to 30 a minute per address (a
-  salted hash, with `IP_SALT`). Over it, the request is sent to the game's
+  salted hash, with `IP_SALT`, of the address or, for IPv6, its /64, as
+  the survey counts it). Over it, the request is sent to the game's
   own preview image. Cards already drawn are never limited.
 
 Drawing a card takes 40–60 ms of CPU, so the Worker needs Workers Paid. The
