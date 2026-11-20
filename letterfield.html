@@ -368,9 +368,36 @@ li.row.nova-row:has(> .find.nova-find:hover){box-shadow:inset 0 0 0 100vmax var(
 .notes-foot{margin:0;padding:12px 18px 14px;border-top:1px solid var(--rule);font:400 11px/1.3 var(--f-mono);color:var(--muted)}
 .notes-foot .feedback{color:inherit}
 @keyframes blink{to{opacity:.25}}
-.survey{margin:12px 18px 0;padding:10px 12px 11px;border:1px solid var(--rule);border-radius:7px}
-.survey-head{margin:0 0 7px}
-.survey-text{margin:0;font:400 11.5px/1.5 var(--f-mono);color:var(--muted);white-space:pre-line}
+/* The shared survey: a row set as the Achievements row is, with the universe's count as its label and
+   value and yours as its line (or, off the survey, what's wrong), which opens on the Universe map and
+   the log. Its glyph's dot is the survey's state: solid live, a pulse while connecting, hollow offline. */
+.survey{margin:12px 18px 0;border:1px solid var(--rule);border-radius:10px}
+@media (hover: hover){.survey:has(> summary:hover){border-color:var(--ink)}}
+.survey > summary{list-style:none;display:flex;align-items:center;gap:12px;min-height:54px;padding:8px 10px 8px 12px;box-sizing:border-box;border-radius:9px;cursor:pointer}
+.survey > summary::-webkit-details-marker{display:none}
+.survey > summary:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.survey > summary .chev{transition:transform var(--t-fast) var(--ease-out)}
+.survey[open] > summary .chev{transform:rotate(90deg)}
+.survey-glyph{flex:none;width:24px;height:24px;color:var(--ink);fill:none;stroke:currentColor}
+.survey-glyph .dot{fill:var(--accent);stroke:none}
+.survey[data-state="connecting"] .survey-glyph .dot{animation:blink 1s ease-in-out infinite alternate}
+.survey[data-state="offline"] .survey-glyph{color:var(--muted)}
+.survey[data-state="offline"] .survey-glyph .dot{fill:none;stroke:var(--muted);stroke-width:1.4}
+@media (prefers-reduced-motion: reduce){.survey > summary .chev,.survey[data-state="connecting"] .survey-glyph .dot{transition:none;animation:none}}
+.survey-text{flex:1;min-width:0}
+.survey-text b{display:flex;flex-wrap:wrap;column-gap:8px;row-gap:3px;font:500 10px/1.2 var(--f-mono);letter-spacing:.14em;text-transform:uppercase;color:var(--muted)}
+.survey-text b > span:last-child{color:var(--ink);letter-spacing:.04em;white-space:nowrap;font-variant-numeric:tabular-nums}
+.survey-text b > span:empty{display:none}
+.survey-text > span:not(.vh){display:block;margin-top:4px;font-size:12.5px;line-height:1.3;color:var(--muted)}
+.survey-open{padding:0 12px}
+.survey-open canvas{display:block;width:min(100%, 240px);aspect-ratio:1;margin:0 auto;border:1px solid var(--rule);border-radius:6px;cursor:crosshair;touch-action:manipulation}
+/* Until the universe has come, a placeholder the map's size: a gentle pulse, or still under reduced motion. */
+.survey-open canvas.waiting{background:var(--hover);animation:blink 1.1s ease-in-out infinite alternate}
+@media (prefers-reduced-motion: reduce){.survey-open canvas.waiting{animation:none}}
+.survey-note{margin:8px 0 0;text-align:center;font-size:12.5px;line-height:1.3;color:var(--muted)}
+.survey-note:empty{display:none}
+.survey-log{display:flex;align-items:center;justify-content:center;gap:5px;min-height:44px;font:500 10px/1 var(--f-mono);letter-spacing:.14em;text-transform:uppercase;color:var(--muted);text-decoration:none}
+@media (hover: hover){.survey-log:hover{color:var(--ink)}}
 .survey-sign{display:flex;align-items:center;gap:8px;margin-top:10px}
 .survey-sign label{flex:1;min-width:0;font-size:13px}
 .survey-sign input,.signup input{width:74px;flex:none;box-sizing:border-box;font:500 16px/1 var(--f-mono);letter-spacing:.18em;text-transform:uppercase;height:40px;padding:0 6px 0 9px;border:1px solid var(--rule);border-radius:6px;background:var(--field);color:var(--ink)}
@@ -382,15 +409,6 @@ li.row.nova-row:has(> .find.nova-find:hover){box-shadow:inset 0 0 0 100vmax var(
 .survey-me b{font:800 26px/1 var(--f-display);letter-spacing:.1em}
 .survey-me-sub{font-size:12.5px;line-height:1.3;color:var(--muted)}
 .survey-hint{margin:7px 0 0;font-size:12px;color:var(--muted)}
-.survey-map{margin-top:9px}
-.survey-map summary{cursor:pointer;font:500 10px/1 var(--f-mono);letter-spacing:.14em;text-transform:uppercase;color:var(--muted);padding:4px 0}
-.survey-map canvas{display:block;width:min(100%, 220px);aspect-ratio:1;margin:8px auto 0;border:1px solid var(--rule);border-radius:4px;cursor:crosshair;touch-action:manipulation}
-/* Until the universe has come, a placeholder the map's size: a gentle pulse, or still under reduced motion. */
-.survey-map canvas.waiting{background:var(--hover);animation:blink 1.1s ease-in-out infinite alternate}
-@media (prefers-reduced-motion: reduce){.survey-map canvas.waiting{animation:none}}
-.survey-map-note{margin:6px 0 0;text-align:center;font:400 10.5px/1.4 var(--f-mono);color:var(--muted)}
-.survey-map-note:empty{display:none}
-.survey-log{display:block;margin-top:6px;padding:4px 0;font:500 10px/1.3 var(--f-mono);letter-spacing:.14em;text-transform:uppercase;color:var(--muted)}
 /* Surveyors: everyone else in the shared world, nearest first, each a row that
    flies you to their territory, with emotes to send them (see Surveyors). */
 .who-status{margin:8px 0 4px;font:400 11px/1.45 var(--f-mono);color:var(--muted);white-space:pre-line}
@@ -835,16 +853,18 @@ html[data-notes-page="marks"] .notes > :not(.marks-page){display:none!important}
     <div><dt>Longest</dt><dd id="tLong">—</dd></div>
   </dl>
   <button type="button" class="marks-row" id="marksRow"><span class="marks-mini" id="marksMini" aria-hidden="true"></span><span class="marks-text"><b>Achievements <span id="marksLine"></span></b><span id="marksDays"></span></span><i class="marks-new" id="marksNew" hidden></i><svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg></button>
-  <section class="survey" id="survey" data-state="connecting" aria-label="Shared survey" hidden>
-    <p class="eyebrow survey-head">Shared survey</p>
-    <p class="survey-text" id="surveyText"></p>
-    <details class="survey-map" id="surveyMap">
-      <summary>Universe map</summary>
+  <details class="survey" id="survey" data-state="connecting" hidden>
+    <summary>
+      <svg class="survey-glyph" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="4" stroke-width="1.7"/><path d="M9 3.6v16.8M15 3.6v16.8M3.6 9h16.8M3.6 15h16.8" stroke-width="1" opacity=".35"/><path d="M9 3.85h6V15H9z" fill="currentColor" stroke="none" opacity=".28"/><circle class="dot" cx="12" cy="12" r="2.4"/></svg>
+      <span class="survey-text"><b><span id="surveyLabel">Shared survey</span><span id="surveyCount"></span></b><span id="surveyText"></span><span class="vh">. Universe map and survey log</span></span>
+      <svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg>
+    </summary>
+    <div class="survey-open">
       <canvas id="worldMap" width="200" height="200" aria-label="Map of the universe: charted territories are darker, dots are surveyors. Tap to fly there."></canvas>
-      <p class="survey-map-note" id="worldNote"></p>
-    </details>
-    <a class="survey-log" href="/letterfield-log">Survey log and timelapse <span aria-hidden="true">↗</span></a>
-  </section>
+      <p class="survey-note" id="worldNote"></p>
+      <a class="survey-log" href="/letterfield-log">Survey log and timelapse <span aria-hidden="true">↗</span></a>
+    </div>
+  </details>
   <div class="filters" id="filters" role="group" aria-label="Filter the field notes"></div>
   <ol class="finds" id="finds"></ol>
   <section class="marks-page" id="marksPage" aria-labelledby="marksTitle" hidden>
@@ -1519,7 +1539,7 @@ const myInitials = () => {
 };
 const tell = (l, m) => { if (l && l.ws && l.m.is('open', 'live')) try { l.ws.send(JSON.stringify(m)); } catch (_) {} };
 const anyLive = () => [...links.values()].some(l => l.m.is('live'));
-const surveyEl = $('#survey'), surveyText = $('#surveyText'), surveyInput = $('#surveyInitials'), surveyHint = $('#surveyHint');
+const surveyEl = $('#survey'), surveyLabel = $('#surveyLabel'), surveyCount = $('#surveyCount'), surveyText = $('#surveyText'), surveyInput = $('#surveyInitials'), surveyHint = $('#surveyHint');
 const surveySign = $('#surveySign'), surveyMe = $('#surveyMe'), surveyEdit = $('#surveyEdit'), surveyCancel = $('#surveyCancel');
 
 // A survey pass: the Worker's word that this browser passed Turnstile, good
@@ -2143,15 +2163,23 @@ function renderSurvey() {
   surveyEl.dataset.state = status === 'live' ? 'live' : SURVEY_STATUS[status][0];
   // The live count ticks up with claims seen nearby between the Atlas's totals, and never runs backwards.
   if (world) worldShown = Math.min(world.total, Math.max(worldShown, world.charted + worldExtra));
-  // Live, the panel keeps to what nothing else says: the universe's count and
+  // Live, the box keeps to what nothing else says: the universe's count and
   // yours. The title says how this territory is going, and the Surveyors
-  // button who's online. Otherwise it says what's wrong.
-  if (status !== 'live') { surveyText.textContent = SURVEY_STATUS[status][1]; return; }
+  // button who's online. Otherwise it says what's wrong. The count shows in
+  // full, since it ticks up, and the total short ("1.1M"), with the full
+  // figure for screen readers.
+  const live = status === 'live', counted = live && world;
+  surveyLabel.textContent = counted ? 'Universe charted' : 'Shared survey';
+  const n = counted ? worldShown.toLocaleString() : '';
+  const count = counted ? `<span aria-hidden="true">${n} of ${shortCount(world.total)}</span><span class="vh">${n} of ${world.total.toLocaleString()}</span>` : '';
+  if (surveyCount.innerHTML !== count) surveyCount.innerHTML = count;
+  if (!live) { surveyText.textContent = SURVEY_STATUS[status][1]; return; }
   let firsts = 0;
   for (const e of found.values()) if (e.f) firsts++;
-  surveyText.textContent = (world ? `Universe: ${worldShown.toLocaleString()} of ${world.total.toLocaleString()} charted\n` : '') +
-    `${firsts} word${firsts === 1 ? '' : 's'} charted first by you`;
+  surveyText.textContent = `${firsts.toLocaleString()} word${firsts === 1 ? '' : 's'} charted first by you`;
 }
+// A big number in short: 1.1M, 52K.
+const shortCount = n => new Intl.NumberFormat(undefined, { notation: 'compact', maximumFractionDigits: 1 }).format(n);
 
 // The world map: fetched while it's open, from a cache the Worker keeps for a few seconds.
 async function fetchWorld(timeoutMs = 4000) {
@@ -2171,10 +2199,10 @@ async function fetchWorld(timeoutMs = 4000) {
     clearTimeout(timer);
   }
 }
-const worldCanvas = $('#worldMap'), worldNote = $('#worldNote'), surveyMapEl = $('#surveyMap');
+const worldCanvas = $('#worldMap'), worldNote = $('#worldNote');
 function drawWorld() {
   worldCanvas.classList.toggle('waiting', !worldMap);
-  if (!worldMap || !surveyMapEl.open) return;
+  if (!worldMap || !surveyEl.open) return;
   const px = Math.round((worldCanvas.clientWidth || 200) * Math.min(window.devicePixelRatio || 1, 2));
   if (worldCanvas.width !== px) { worldCanvas.width = px; worldCanvas.height = px; }
   const g = worldCanvas.getContext('2d'), { size, bytes, area } = worldMap, cell = px / size, first = -area * RG;
@@ -2218,11 +2246,11 @@ function drawWorld() {
 }
 async function refreshWorld() {
   clearTimeout(worldTimer); worldTimer = 0;
-  if (!surveyApi || !surveyMapEl.open || !Panel.is('notes') || surveyPaused) return;
+  if (!surveyApi || !surveyEl.open || !Panel.is('notes') || surveyPaused) return;
   drawWorld();  // what's known already (a new player's start asked for it), at once, then the latest
   if (await fetchWorld()) { drawWorld(); renderSurvey(); }
   else { worldNote.textContent = 'Couldn’t load the Universe map.'; worldCanvas.classList.remove('waiting'); }
-  if (surveyMapEl.open) worldTimer = setTimeout(refreshWorld, 20000);
+  if (surveyEl.open) worldTimer = setTimeout(refreshWorld, 20000);
 }
 // New players start where the Atlas suggests: in the middle of the biggest
 // crowd that has room, so there's company from the start.
@@ -4709,7 +4737,7 @@ surveySign.addEventListener('keydown', e => { if (e.key === 'Escape' && myInitia
 surveySign.addEventListener('submit', e => { e.preventDefault(); signAs(surveyInput.value, surveyHint); });
 signup.addEventListener('submit', e => { e.preventDefault(); signAs(signupInput.value, signupHint); });
 document.addEventListener('visibilitychange', () => { if (surveyApi) { surveyPaused = document.hidden; syncSurvey(); refreshWorld(); syncWho(); } });
-surveyMapEl.addEventListener('toggle', refreshWorld);
+surveyEl.addEventListener('toggle', refreshWorld);
 worldCanvas.addEventListener('click', e => {
   if (!worldMap) return;
   const r = worldCanvas.getBoundingClientRect(), first = -worldMap.area * RG;
