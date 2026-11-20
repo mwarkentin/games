@@ -229,6 +229,7 @@ def test_a_slow_room_waits_for_everyone_and_they_can_be_nudged(page: Page, brows
     expect(guest.locator("#flopBtn")).to_be_hidden()
     expect(page.locator("#waitText")).to_have_text("Everyone else has played. No rush.")
     guest.click("#nudgeBtn")
+    wait_until(guest, lambda: fake.messages("nudge"))  # the fake hears it a moment after the click
     assert fake.messages("nudge") == [{"t": "nudge"}]
     expect(guest.locator("#nudgeBtn")).to_be_disabled()
     # Dana's deck shakes, with a word about who nudged her.
@@ -252,6 +253,7 @@ def test_a_slow_room_waits_for_everyone_and_they_can_be_nudged(page: Page, brows
     page.evaluate("window.__war.waited(31000)")
     expect(page.locator("#flopBtn")).to_have_text("🫳 Flip Bob’s over")
     page.click("#flopBtn")
+    wait_until(page, lambda: fake.messages("flop"))
     assert fake.messages("flop") == [{"t": "flop"}]
     expect(guest.locator("#mySlot .card")).to_have_attribute("aria-label", "five of hearts")
     expect(guest.locator("#caption")).to_contain_text("flipped over for you")
