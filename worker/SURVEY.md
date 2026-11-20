@@ -1023,8 +1023,10 @@ hour ago (`SETTLED_MS`) is cached for a day, and the one still running for
 15 seconds:
 
 - `Cache-Control` on every answer, for browsers;
-- in each Worker instance's memory (up to 300 answers), so a crowd reading
-  the current hour costs one D1 query per instance every 15 s;
+- in each Worker instance's memory (up to 300 answers and 8 million
+  characters of them, the least recently asked for going first), so a crowd
+  reading the current hour costs one D1 query per instance every 15 s: those
+  who ask while it's being read wait for that one read;
 - in Cloudflare's cache through the Cache API. The cached copy has no CORS
   headers; each answer adds its own origin's. That cache is shared by every
   Worker on the same zone, and all of this account's `workers.dev` Workers,

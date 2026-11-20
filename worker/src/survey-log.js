@@ -107,6 +107,7 @@ export const SETTLED_MS = 3600000;      // an hour or day that ended this long a
 export const SETTLED_CACHE_S = 86400;   // seconds a settled answer is cached for
 export const LIVE_CACHE_S = 15;         // seconds the hour or day still running is cached for
 export const MEMO_MAX = 300;            // answers each Worker instance keeps
+export const MEMO_CHARS = 8_000_000;    // and the most text they come to, so big timelapse pages can't fill its memory
 export const HOUR_MS = 3600000;
 export const DAY_MS = 86400000;
 export const LOG_DAY_PATH = /^\/v1\/survey\/log\/day\/(\d{1,6})$/;
@@ -540,9 +541,13 @@ function tops(from, to, [surveyors, territories, guilds]) {
   };
 }
 
-// Answers kept by this Worker instance: host/path → {body, until}.
-const memo = new Map();
-export const forgetLog = () => memo.clear();  // for tests
+// Answers kept by this Worker instance: host/path → {body, until}, the
+// least recently used first; and the answers being read, so a crowd asking
+// at once waits for one read.
+const memo = new Map(), reading = new Map();
+let memoChars = 0;
+export const forgetLog = () => { memo.clear(); reading.clear(); memoChars = 0; };  // for tests
+const unmemo = (key) => { const held = memo.get(key); if (held) { memoChars -= held.body.length; memo.delete(key); } };
 
 // Answers the log's paths, or returns null for any other path.
 export function routeLog(request, env, now = Date.now()) {
@@ -650,10 +655,14 @@ async function keep(key, maxAge, read, cors, now, immutable = false) {
 const cacheControl = (maxAge, immutable) => `public, max-age=${maxAge}${immutable ? ', immutable' : ''}`;
 // The same, as the answer's text: from memory, Cloudflare's cache or `read`.
 async function kept(key, maxAge, read, now, immutable = false) {
-  const control = cacheControl(maxAge, immutable);
   const held = memo.get(key);
-  if (held && held.until > now) return held.body;
-  memo.delete(key);
+  if (held && held.until > now) { memo.delete(key); memo.set(key, held); return held.body; }
+  unmemo(key);
+  if (!reading.has(key)) reading.set(key, fresh(key, maxAge, read, now, immutable).finally(() => reading.delete(key)));
+  return reading.get(key);
+}
+async function fresh(key, maxAge, read, now, immutable) {
+  const control = cacheControl(maxAge, immutable);
   const cache = edgeCache(), cacheKey = new Request(`https://${key.replace('/', '/_cache/survey-log/')}`);
   let body = null;
   if (cache) {
@@ -666,7 +675,9 @@ async function kept(key, maxAge, read, now, immutable = false) {
       try { await cache.put(cacheKey, new Response(body, { headers: { 'Cache-Control': control } })); } catch { /* not cached */ }
     }
   }
+  unmemo(key);
   memo.set(key, { body, until: now + maxAge * 1000 });
-  while (memo.size > MEMO_MAX) memo.delete(memo.keys().next().value);
+  memoChars += body.length;
+  while (memo.size > MEMO_MAX || memoChars > MEMO_CHARS) unmemo(memo.keys().next().value);
   return body;
 }
