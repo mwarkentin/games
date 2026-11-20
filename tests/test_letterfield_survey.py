@@ -123,6 +123,8 @@ def eventually(page: Page, check, timeout_ms: int = 5000) -> None:
     assert check()
 
 
+# A surveyor with initials, set before the page loads.
+SIGNED = "localStorage.setItem('games.initials', JSON.stringify('MLW'))"
 # Fakes a tab hidden (true) or shown again (false).
 HIDE = """hidden => {
   Object.defineProperty(document, 'hidden', { configurable: true, get: () => hidden });
@@ -286,6 +288,7 @@ def test_a_claim_lost_on_the_way_that_someone_else_charted_is_marked_theirs(page
 
 def test_a_claim_still_waiting_survives_a_reload(page: Page, site_url, errors):
     word = known_words(page, site_url)[0]
+    page.add_init_script(SIGNED)  # a claim read back from storage waits for initials
     fake = FakeSurvey(hold=lambda url: True)  # this visit, the survey never lets us in
     open_game(page, site_url, fake)
     eventually(page, lambda: len(fake.held) == 4)
@@ -306,6 +309,7 @@ def test_claims_waiting_in_two_tabs_are_both_kept(page: Page, site_url, errors):
     """Each tab wrote its whole list of waiting claims, so the last to write dropped the other's
     for good: that word stayed in the notes, never claimed."""
     words = known_words(page, site_url)
+    page.context.add_init_script(SIGNED)
     fake = FakeSurvey(hold=lambda url: True)  # neither tab gets in
     open_game(page, site_url, fake)
     other = page.context.new_page()
@@ -441,6 +445,32 @@ def test_a_find_the_survey_never_got_is_claimed_and_can_set_its_territory_off(pa
     expect(page.locator("#tCharted")).to_have_text(f" · {len(words)}/{len(words)} charted")
     expect(page.locator("#legendList .legend-note")).to_have_text("Every word here is charted.")
     assert page.evaluate(f"window.__lf.found.get('{'~'.join(map(str, last))}').f") == 1
+    assert errors == []
+
+
+def test_an_old_find_waits_for_initials_before_its_claimed(page: Page, site_url, errors):
+    """A find from before the survey, kept by a surveyor with no initials, went as a claim as soon as
+    its sector was live, while the sign card was still asking for them: charted first with nobody's
+    initials, for good."""
+    word = known_words(page, site_url)[0]
+    page.add_init_script(f"""
+      if (!localStorage.getItem('letterfield.finds.v4'))
+        localStorage.setItem('letterfield.finds.v4', JSON.stringify([{json.dumps({"w": word[0], "x": word[1], "y": word[2], "d": word[3], "t": NOW_MS - 86_400_000, "s": 0})}]));
+    """)
+    fake = FakeSurvey()
+    open_game(page, site_url, fake)
+    expect(page.locator("html")).to_have_attribute("data-intro", "sign")
+    expect(page.locator("#survey")).to_have_attribute("data-state", "live")
+    eventually(page, lambda: len(fake.sent("me")) == 4)
+    page.wait_for_timeout(500)
+    assert fake.sent("claim") == []
+    assert page.evaluate("window.__lf.outbox()") == [[word[0], "queued"]]
+    # Signed, it goes, after the sector has heard who's signing it.
+    page.fill("#signupInitials", "ASD")
+    page.click("#signup button")
+    eventually(page, lambda: [m["w"] for m in fake.sent("claim")] == [word[0]])
+    first = next(i for i, m in enumerate(fake.received) if m["t"] == "claim")
+    assert any(m["t"] == "me" and m["initials"] == "ASD" and m["sector"] == "0,0" for m in fake.received[:first])
     assert errors == []
 
 

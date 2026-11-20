@@ -2033,7 +2033,7 @@ function claimWord(e, from = 'queued', waited = from !== 'queued') {
   if (!surveyApi || outbox.has(e.key) || claims.has(e.key)) return;
   const l = links.get(sectorKey(e.x, e.y));
   // `backlog`: it waited for its sector, rather than going as it was circled.
-  const c = { e, l: null, backlog: waited || !(l && l.m.is('live')), initials: waited ? myInitials() : '', known: false, beaten: false };
+  const c = { e, l: null, waited, backlog: waited || !(l && l.m.is('live')), initials: waited ? myInitials() : '', known: false, beaten: false };
   c.m = machine('claim', CLAIM_MOVES, from, { el: null, onMove: to => {
     if (CLAIM_ENDS.includes(to)) { outbox.delete(e.key); outboxEnded.add(e.key); }
     if (to === 'theirs') chartedBy(e.key);
@@ -2107,6 +2107,7 @@ function flushClaims(l) {
   for (const c of outbox.values()) {
     if (!c.m.is('queued', 'unanswered') || sectorKey(c.e.x, c.e.y) !== l.k) continue;
     if (c.backlog && claims.has(c.e.key)) { c.m.go('theirs'); continue; }  // someone charted it while it waited
+    if (c.waited && !myInitials()) continue;  // an old find waits for initials to sign it (see signAs)
     if (l.tokens < 1) { l.flush = setTimeout(() => flushClaims(l), (1 - l.tokens) * CLAIM_REFILL_MS); return; }
     l.tokens -= 1;
     Object.assign(c, { l, initials: myInitials(), known: claims.has(c.e.key) });
@@ -5235,6 +5236,7 @@ function signAs(v, hint) {
   takeInitials(v, hint === surveyHint);
   settingsChanged();
   tellMe();
+  for (const l of links.values()) flushClaims(l);  // old finds that waited for initials
   return true;
 }
 for (const input of [surveyInput, signupInput]) input.addEventListener('input', () => {
