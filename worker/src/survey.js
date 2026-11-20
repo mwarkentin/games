@@ -895,7 +895,16 @@ export class Sector {
     this.presenceAt = this.now();
     this.presenceDue = false;
     // One caret a player: a player on two linked devices here shows where they last moved.
-    const seen = new Set(), here = this.here().sort((a, b) => b.moved - a.moved).filter((p) => { const id = p.pid || p.id; return !seen.has(id) && seen.add(id); });
+    const seen = new Set();
+    let here = this.here().sort((a, b) => b.moved - a.moved).filter((p) => { const id = p.pid || p.id; return !seen.has(id) && seen.add(id); });
+    // With more than fit, each address's latest mover comes first, then each
+    // one's next, and so on: sockets from one address, however busy, can't
+    // crowd everyone else off the map.
+    if (here.length > PRESENCE_MAX) {
+      const ranks = new Map(), rank = new Map();
+      for (const p of here) { const a = p.address ?? p.id, r = ranks.get(a) ?? 0; ranks.set(a, r + 1); rank.set(p, r); }
+      here = here.sort((a, b) => rank.get(a) - rank.get(b));
+    }
     // A member's guild tags: one as a string, as an older game reads it, several as a list.
     // Then the badge they show and their card, if they have them.
     const tags = (p) => {

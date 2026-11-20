@@ -437,6 +437,24 @@ describe('Sector', () => {
     assert.equal(frame.p[0][2], PRESENCE_MAX + 5); // most recently moved first
   });
 
+  test("keeps a place in the update for everyone, however busy one address's sockets are", async () => {
+    const fromAddress = (address) => { const ws = fakeSocket(); sector.join(ws, 0, 0, address); return ws; };
+    const people = Array.from({ length: 5 }, (_, i) => fromAddress(hashed(100 + i)));
+    for (const [i, ws] of people.entries()) { clock += 1; await say(ws, { t: 'pos', x: 1000 + i, y: 0 }); }
+    // Two addresses' sockets, moving all the time, after everyone else.
+    const busy = Array.from({ length: ADDRESS_SOCKETS * 2 }, (_, i) => fromAddress(hashed(i % 2)));
+    for (let round = 0; round < 3; round++) {
+      for (const [i, ws] of busy.entries()) { clock += 1; await say(ws, { t: 'pos', x: i, y: round }); }
+    }
+    clock += PRESENCE_MS;
+    await say(busy[0], { t: 'pos', x: 0, y: 9 });
+    const frame = people[0].last('presence');
+    assert.equal(frame.n, people.length + busy.length);
+    assert.equal(frame.p.length, PRESENCE_MAX);
+    const shown = new Set(frame.p.map((e) => e[0]));
+    for (const ws of people) assert.ok(shown.has(ws.deserializeAttachment().id));
+  });
+
   test('tells players a full sector, or a full survey, has no room', async () => {
     // Stand-ins for the runtime's WebSocketPair and its 101 responses.
     let pair;

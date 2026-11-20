@@ -84,7 +84,9 @@ From [Scaling One Million Checkboxes][omcb] and
 - **Positions** go only to the sector under the middle of your screen, at
   most once a second, and only after you've moved at least a cell. A sector
   sends one list of positions a second (up to 64 people, plus a head count)
-  however many players moved.
+  however many players moved. With more than 64 here, each address's latest
+  mover goes in first, then each one's next, so one address's sockets can't
+  crowd everyone else off the map.
 - **The Atlas** is one object for the shared world. Each sector in the area
   reports its charted counts, player count and the middle of its crowd at
   most every 10 s while something is changing. Reports are absolute numbers, so a lost
