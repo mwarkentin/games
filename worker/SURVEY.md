@@ -177,15 +177,18 @@ survey also limits each IP address, wherever it plays:
   `IP_SALT`, as the leaderboard does, and hands the sector only the hash, in
   a header it sets itself. An IPv6 address counts by its /64, because a
   device can pick any address in its /64.
-- **Claims: 6 a minute per address, across every sector.** That's a
+- **Claims: about 6 a minute per address.** That's a
   [rate-limiting binding][ratelimit] (`SURVEY_CLAIMS` in `wrangler.toml`),
   on top of each socket's own limit. A player rarely finds more than one
   word a minute, and counting over a minute rather than 10 s means a few
   spotted together still all count. The cost is to players who share an
   address: a family, a classroom, or a mobile network that puts many phones
-  behind one IPv4 address share those 6 (and the daily 300 below). A refused
-  claim gets the same `slow down` as a socket claiming too fast, and the
-  game says "Too quick to chart · kept in your notes".
+  behind one IPv4 address share those 6 (and the daily 300 below). The count
+  is kept where each sector's object runs, and is approximate (see "Why a
+  binding" below), so sectors that live in different places each count
+  their own. A refused claim gets the same `slow down` as a socket claiming
+  too fast, and the game says nothing: the claim waits a minute in its
+  outbox and goes again, and the word is in the notes all along.
 - **Words charted: 300 a day per address, in the shared world.** At 6 a
   minute, a script left running all day would still chart 8,640 words a day.
   A person charting one a minute would need five hours to reach 300. With
@@ -316,8 +319,8 @@ drawer like the notes': a sheet from the bottom on a phone, and on a computer
 a panel over the docked notes. `P` opens and closes it, and Escape closes it.
 It started as a fold of the field notes, but with guilds, your initials,
 linking devices and recovery codes it outgrew them, and the notes are about
-the map and your finds. To make room on a phone's top bar, the title there
-is "LF".
+the map and your finds. To make room on a phone's top bar, there's no title
+there at all (the tab and the Home Screen name say it).
 
 The drawer has two pages, one at a time (the page's `peoplePage` machine,
 shown as `<html data-people-page>`), so the list is only people and
@@ -325,10 +328,11 @@ everything about you is one tap away:
 
 - **The list.** First a row for you: your initials in a ring of your
   caret's colour, and a line naming what's on your page (initials, guild
-  and devices), never how each is set. It opens your page. Then your guild, if you're in one, under a heading with
-  its name, how many mates are online and "+ Invite", which copies the
-  invite link (and says "Link copied" for a moment); mates online come
-  first, then those offline with when they were last seen. Then everyone
+  and devices), never how each is set. It opens your page. Then each guild
+  you're in (up to five), under a heading of its own with its name, how many
+  members are online and "+ Invite", which copies the invite link (and says
+  "Link copied" for a moment); members online come first, then those offline
+  with when they were last seen. Then everyone
   else, nearest first. A row puts a phone's drawer away as it flies, as a
   find does the notes. Each row is three buttons (fly there, wave, and ⋯),
   so it works from a keyboard, and Escape folds an open row of emotes. What
@@ -475,8 +479,8 @@ only what one sector passes another.
 **Limits.**
 
 - Each socket: 3 at once, then one every 4 s.
-- Each address: 20 a minute, across every sector (`SURVEY_EMOTES`, a
-  rate-limiting binding like the claims').
+- Each address: about 20 a minute (`SURVEY_EMOTES`, a rate-limiting binding
+  like the claims', approximate in the same way).
 - Kept by the recipient's sector, which every emote for its players passes
   through, from anywhere: 3 a minute from one sender to one player (`slow
   down`), and 6 every 10 s to one player from everyone (`busy`). Nobody can
@@ -860,8 +864,8 @@ player's own devices reach it:
   days deletes itself (an alarm, put off by each day's first sync).
 
 The game's `sync` machine (off, idle, syncing, failed) shows on `<html
-data-sync>`, and the line at the foot of the field notes says "Synced with
-your linked devices".
+data-sync>`. Players see no line about it; a sync that fails tries again
+quietly.
 
 ### Cost
 
@@ -928,8 +932,8 @@ by a page that can be cached, which is what D1 is for.
   freshly woken sector, would put the log off again and again.
 - The alarm reads claims made since the last one D1 has (the sector's
   `logged` mark, with an index on the claims' time) and writes up to 240 in
-  one D1 batch: 12 rows to an `INSERT` (D1 binds at most 100 values to a
-  statement) and one transaction for the lot. Only then does the mark move.
+  one D1 batch: 11 rows to an `INSERT` (nine values a row, and D1 binds at
+  most 100 values to a statement) and one transaction for the lot. Only then does the mark move.
 - **If D1 fails**, nothing is lost: the claims are still in the sector, the
   mark stays, and the alarm tries again after 1, 2, 4… minutes, up to 10.
   Workers Logs gets a `{survey: 'log failed'}` line. A write that reached D1
@@ -939,8 +943,9 @@ by a page that can be cached, which is what D1 is for.
   object moved to a machine whose clock is behind, so the mark can't skip
   one.
 - The table is `WITHOUT ROWID` and ordered by `(at, key)`, so reading an hour
-  reads just that hour's rows, and there's no other index to write: one row
-  written per claim. The tests check each query's plan.
+  reads just that hour's rows. Its indexes (by initials, territory, theme
+  and guild) and the counts its triggers keep make more rows written per
+  claim; "Cost" below counts them. The tests check each query's plan.
 
 **Backfill.** None needed by hand. A sector that charted words before the log
 existed has no mark, so the first time it wakes after the deploy it sends
@@ -1010,9 +1015,8 @@ GET /v1/survey/log/timelapse/guild/<lid>/<day>?after=<at>~<key>
 An hour comes oldest first, 500 entries a page; `next` is the `after` for the
 next page. A day, hour or month that hasn't started is a 400. `world` counts
 the hidden words in the shared world, which go toward its 1,119,752. Top
-lists count hidden and stray words for surveyors, but only hidden words for
-territories and themes, since a stray's theme is one its word is in, not
-always its territory's. The day endpoint is still there for older copies of
+lists count hidden words: bonus words have left the log (`0009`), so they
+count nowhere. The day endpoint is still there for older copies of
 the page.
 
 **Caching.** Past hours and days don't change, but a claim can reach D1 up to
@@ -1061,8 +1065,9 @@ chart's table view; hovering or focusing a column shows its number too.
 **The hour, minute by minute,** opens from a day (its column, or "Minute by
 minute" on an hour's heading) rather than having a tab: most hours hold a
 handful of words, and a day already lists them. It's there for a busy
-hour. The hour still running says Live and reloads every 20 seconds while
-the page is on screen; nothing else reloads by itself.
+hour. The hour still running says So far and reloads every 20 seconds while
+the page is on screen; any other period still running reloads once, when
+it ends.
 
 **Counts, not rows.** A week or a year of the log itself could be a
 million rows to read, and the running ones change constantly, so the longer
@@ -1120,7 +1125,9 @@ history the same way as everyone's. Going into a view, or back to
 everyone's, is a new entry in the browser's history, so Back returns to
 where it came from; moving between periods replaces the address as before.
 A view's Share button uses the phone's share sheet, or copies the link.
-Link previews are still the page's own, since the site is static.
+Once the page's `SHARE_URL` is set, the link is the share Worker's `/v/…`
+card of the view (see "Share cards" in AGENTS.md); until then it's the
+page's own, with the page's own picture.
 
 Initials aren't unique, so "ZED" is everyone who typed ZED, and the view
 says so. A stray word's theme is its word's, not its territory's, so a theme
