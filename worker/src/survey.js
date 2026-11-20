@@ -92,7 +92,9 @@
 // add each address's charted words to their reports, and the Atlas answers
 // with the addresses past DAILY_CLAIMS today, which every sector then refuses.
 
-import { allowedInitials, corsHeaders, hashAddress, initialsOrNone, isInt, underLimit } from './leaderboard.js';
+import { addressOf, allowedInitials, corsHeaders, hashAddress, initialsOrNone, isInt, underLimit } from './leaderboard.js';
+
+export { addressOf };
 import { PASS_PATH, checkPass, handlePass } from './survey-pass.js';
 import { CH, DIRS, MAP_VERSION, RC, STRAY_MIN, VOCAB, chunk, fdiv, keyOf, letterAt, regionTheme, territoryTotal } from './letterfield-world.js';
 import { DAY_MS, HOUR_MS, LOG_BATCH, LOG_MS, LOG_RETRY_MAX_MS, writeLog } from './survey-log.js';
@@ -276,19 +278,6 @@ function unverified() {
 // Worker sets the header the sector reads itself, so a player can't choose
 // their own.
 const addressHash = (request, env) => hashAddress(addressOf(request.headers.get('CF-Connecting-IP') || 'unknown'), env.IP_SALT);
-
-// The part of an IP address that names one household or device: all of an
-// IPv4 address, or the /64 network of an IPv6 one, since a device can pick
-// any address in its /64 and change it at will.
-export function addressOf(ip) {
-  if (!ip.includes(':')) return ip;
-  const [head, tail] = ip.toLowerCase().split('::');
-  const before = head ? head.split(':') : [];
-  const after = tail === undefined ? [] : tail ? tail.split(':') : [];
-  const groups = tail === undefined ? before : [...before, ...Array(Math.max(0, 8 - before.length - after.length)).fill('0'), ...after];
-  const prefix = groups.slice(0, 4).map((g) => parseInt(g, 16));
-  return prefix.length === 4 && prefix.every((g) => g >= 0 && g <= 0xffff) ? `${prefix.map((g) => g.toString(16)).join(':')}::/64` : ip;
-}
 
 // Each Worker instance asks the Atlas for the world map at most once per
 // VIEW_MS and shares the answer, so players checking the map can't swamp it.

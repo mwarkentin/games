@@ -8,7 +8,7 @@ import { readFileSync, readdirSync } from 'node:fs';
 import { DatabaseSync } from 'node:sqlite';
 import { beforeEach, describe, test } from 'node:test';
 
-import { handle, validate } from '../src/leaderboard.js';
+import { handle, rateLimit, validate } from '../src/leaderboard.js';
 
 const MIGRATIONS = new URL('../migrations/', import.meta.url);
 const ORIGIN = 'https://games.michaelwarkentin.com';
@@ -256,6 +256,17 @@ describe('saving scores', () => {
     assert.equal((await save(entry(), { ip: '198.51.100.1' })).status, 201);
     clock += 10 * 60 * 1000;
     assert.equal((await save(entry())).status, 201);
+  });
+
+  test('limits requests sent all at once as it does one at a time', async () => {
+    const tries = await Promise.allSettled(Array.from({ length: 15 }, () => rateLimit(env.DB, 'score', 'one-address', clock)));
+    assert.deepEqual(tries.map((t) => t.status === 'fulfilled' ? 'ok' : t.reason.status), [...Array(10).fill('ok'), ...Array(5).fill(429)]);
+  });
+
+  test('counts an IPv6 address by its /64', async () => {
+    for (let i = 0; i < 10; i++) assert.equal((await save(entry(), { ip: `2001:db8:1:2::${i + 1}` })).status, 201);
+    assert.equal((await save(entry(), { ip: '2001:db8:1:2:ffff:1:2:3' })).status, 429);
+    assert.equal((await save(entry(), { ip: '2001:db8:1:3::1' })).status, 201);
   });
 
   test('stores a salted hash, not the IP address', async () => {

@@ -185,8 +185,23 @@ export async function readBody(request, max = MAX_BODY_BYTES, empty = undefined)
   try { return JSON.parse(text); } catch { throw new HttpError(400, 'body must be JSON'); }
 }
 
+// The part of an IP address that names one household or device: all of an
+// IPv4 address, or the /64 network of an IPv6 one, since a device can pick
+// any address in its /64 and change it at will.
+export function addressOf(ip) {
+  if (!ip.includes(':')) return ip;
+  const [head, tail] = ip.toLowerCase().split('::');
+  const before = head ? head.split(':') : [];
+  const after = tail === undefined ? [] : tail ? tail.split(':') : [];
+  const groups = tail === undefined ? before : [...before, ...Array(Math.max(0, 8 - before.length - after.length)).fill('0'), ...after];
+  const prefix = groups.slice(0, 4).map((g) => parseInt(g, 16));
+  return prefix.length === 4 && prefix.every((g) => g >= 0 && g <= 0xffff) ? `${prefix.map((g) => g.toString(16)).join(':')}::/64` : ip;
+}
+
+// The address every per-address limit counts, salted and hashed: an IPv6
+// address by its /64, as the survey's limits count it.
 export function hashIp(request, salt) {
-  return hashAddress(request.headers.get('CF-Connecting-IP') || 'unknown', salt);
+  return hashAddress(addressOf(request.headers.get('CF-Connecting-IP') || 'unknown'), salt);
 }
 
 // A salted SHA-256 of an address, so no IP address is ever stored as it is.
@@ -198,12 +213,12 @@ export async function hashAddress(address, salt) {
 export async function rateLimit(db, kind, ipHash, now) {
   const { max, windowMs } = LIMITS[kind];
   await db.prepare('DELETE FROM submissions WHERE created_at < ?').bind(now - HOUR).run();
-  const recent = await db
-    .prepare('SELECT COUNT(*) AS n FROM submissions WHERE kind = ? AND ip_hash = ? AND created_at >= ?')
-    .bind(kind, ipHash, now - windowMs)
-    .first('n');
-  if (recent >= max) throw new HttpError(429, 'too many requests, try again in a few minutes');
-  await db.prepare('INSERT INTO submissions (kind, ip_hash, created_at) VALUES (?, ?, ?)').bind(kind, ipHash, now).run();
+  // One statement counts and takes the turn, so requests sent at once can't all count before any takes one.
+  const took = await db
+    .prepare('INSERT INTO submissions (kind, ip_hash, created_at) SELECT ?, ?, ? WHERE (SELECT COUNT(*) FROM submissions WHERE kind = ? AND ip_hash = ? AND created_at >= ?) < ? RETURNING 1 AS ok')
+    .bind(kind, ipHash, now, kind, ipHash, now - windowMs, max)
+    .first('ok');
+  if (!took) throw new HttpError(429, 'too many requests, try again in a few minutes');
 }
 
 // Whether a rate limiter binding (wrangler.toml) lets `key` go ahead. Without
