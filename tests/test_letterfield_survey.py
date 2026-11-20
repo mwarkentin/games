@@ -94,6 +94,22 @@ def known_words(page: Page, site_url: str, js: str = HIDDEN_WORDS) -> list[list]
     return words
 
 
+def universe_count(page: Page, full: str, short: str) -> None:
+    """The survey box's count of the universe charted: the total short ("1.1M") on screen, and in full
+    for screen readers."""
+    expect(page.locator("#surveyLabel")).to_have_text("Universe charted")
+    expect(page.locator("#surveyCount [aria-hidden=true]")).to_have_text(short)
+    expect(page.locator("#surveyCount .vh")).to_have_text(full)
+
+
+def not_live(page: Page, state: str, say: str) -> None:
+    """Off the survey, the box names itself and says what's wrong, with no count."""
+    expect(page.locator("#survey")).to_have_attribute("data-state", state)
+    expect(page.locator("#surveyLabel")).to_have_text("Shared survey")
+    expect(page.locator("#surveyCount")).to_be_empty()
+    expect(page.locator("#surveyText")).to_have_text(say)
+
+
 def circle(page: Page, word: list) -> None:
     page.evaluate("([w, x, y, d]) => window.__lf.collect(w, x, y, d, false)", word)
 
@@ -162,9 +178,10 @@ def test_shared_map_shows_other_surveyors_and_their_words(page: Page, site_url, 
     )
     open_game(page, site_url, fake)
     expect(page.locator("#survey")).to_be_visible()
-    # The panel keeps to what nothing else says: the universe's count and yours.
+    # The box keeps to what nothing else says: the universe's count and yours.
     # The title has this territory's, and the Surveyors button who's online.
-    expect(page.locator("#surveyText")).to_have_text("Universe: 0 of 1,119,752 charted\n0 words charted first by you")
+    universe_count(page, "0 of 1,119,752", "0 of 1.1M")
+    expect(page.locator("#surveyText")).to_have_text("0 words charted first by you")
     assert sorted(fake.sectors) == ["-1,-1", "-1,0", "0,-1", "0,0"]
     expect(page.locator("#tCharted")).to_have_text(re.compile(r"^ · 1/\d+ charted$"))
     eventually(page, lambda: len(fake.sent("me")) == 4 and fake.sent("pos"))
@@ -197,7 +214,7 @@ def test_a_word_charted_first_shares_where_it_came_in_the_worlds_count(page: Pag
     fake = FakeSurvey(totals={"charted": 412_883, "total": AREA_WORDS, "players": 3_201})
     page.add_init_script(SHARE_SHEET_INIT)
     open_game(page, site_url, fake)
-    expect(page.locator("#surveyText")).to_contain_text("Universe: 412,883 of 1,119,752 charted")
+    universe_count(page, "412,883 of 1,119,752", "412,883 of 1.1M")
     circle(page, word)
     expect(page.locator("#findSay")).to_contain_text("First to chart it")
     open_notes(page)
@@ -639,8 +656,7 @@ def test_unreachable_survey_says_so_and_the_game_carries_on(page: Page, site_url
     page.goto(f"{site_url}/letterfield?survey={SURVEY}#debug")
     page.fill("#signupInitials", "OFF")
     page.click("#signup button")
-    expect(page.locator("#surveyText")).to_have_text("Survey offline. Your finds still save in this browser.")
-    expect(page.locator("#survey")).to_have_attribute("data-state", "offline")
+    not_live(page, "offline", "Survey offline. Your finds still save in this browser.")
     circle(page, hidden_words(page)[0])
     expect(page.locator("#notesBadge")).to_have_text("1", timeout=LANDS)
     # The title says so too, where the territory's count would be.
@@ -665,7 +681,7 @@ def test_hidden_tab_leaves_the_survey(page: Page, site_url, errors):
     open_game(page, site_url, fake)
     expect(page.locator("#survey")).to_have_attribute("data-state", "live")
     page.evaluate(HIDE, True)
-    expect(page.locator("#surveyText")).to_have_text("Paused while this tab is hidden.")
+    not_live(page, "connecting", "Paused while this tab is hidden.")
     assert page.evaluate("window.__lf.links.size") == 0
     page.evaluate(HIDE, False)
     expect(page.locator("#survey")).to_have_attribute("data-state", "live")
@@ -692,9 +708,9 @@ def test_world_counter_ticks_up_as_words_are_charted(page: Page, site_url, error
     words = known_words(page, site_url)
     fake = FakeSurvey(totals={"charted": 412_883, "total": AREA_WORDS, "players": 3_201})
     open_game(page, site_url, fake)
-    expect(page.locator("#surveyText")).to_contain_text("Universe: 412,883 of 1,119,752 charted")
+    universe_count(page, "412,883 of 1,119,752", "412,883 of 1.1M")
     circle(page, words[3])
-    expect(page.locator("#surveyText")).to_contain_text("Universe: 412,884 of 1,119,752 charted")
+    universe_count(page, "412,884 of 1,119,752", "412,884 of 1.1M")
     # The line under the title says what the game is; the panel keeps the count.
     expect(page.locator("#brandSub")).to_have_text("Endless word search")
     assert errors == []
@@ -712,7 +728,10 @@ def test_the_universe_map_holds_its_place_until_the_universe_comes(page: Page, s
     page.reload()
     page.wait_for_function("window.__lf")
     open_notes(page)
-    page.click("#surveyMap summary")
+    expect(page.locator("#survey")).to_have_attribute("data-state", "live")
+    page.wait_for_timeout(300)
+    assert held == []  # closed, the box asks for nothing
+    page.click("#survey summary")
     eventually(page, lambda: held)
     canvas = page.locator("#worldMap")
     expect(canvas).to_have_class(re.compile(r"\bwaiting\b"))
@@ -728,10 +747,18 @@ def test_world_map_shows_where_people_are_and_flies_there(page: Page, site_url, 
                                       sectors=[[0, 0, 12], [-5, 7, 45]], players=57))
     open_game(page, site_url, fake)
     open_notes(page)
-    page.click("#surveyMap summary")
-    expect(page.locator("#surveyMap summary")).to_have_text("Universe map")
+    # Closed, the box is one row: the map and the log are inside it.
+    log = page.locator("#survey a.survey-log")
+    expect(page.locator("#worldMap")).to_be_hidden()
+    expect(log).to_be_hidden()
+    expect(page.locator("#survey summary")).to_have_accessible_name(re.compile(r"Universe map and survey log$"))
+    page.click("#survey summary")
+    expect(page.locator("#survey")).to_have_attribute("open", "")
+    expect(page.locator("#worldMap")).to_be_visible()
+    expect(log).to_be_visible()
+    expect(log).to_have_attribute("href", "/letterfield-log")
     expect(page.locator("#worldNote")).to_have_text("")  # who's online is the Surveyors button's to say
-    expect(page.locator("#surveyText")).to_contain_text("Universe: 177 of 1,119,752 charted")
+    universe_count(page, "177 of 1,119,752", "177 of 1.1M")
     # Darker where charted: the territory at the origin is drawn stronger than an untouched one,
     # once the map is drawn (a pixel the paper's colour, never left clear).
     shade = """([tx, ty]) => { const c = document.getElementById('worldMap'), g = c.getContext('2d');
@@ -768,7 +795,7 @@ def test_new_players_start_where_the_atlas_suggests(page: Page, site_url, errors
 def test_full_sector_says_so(page: Page, site_url, errors):
     fake = FakeSurvey(full="sector")
     open_game(page, site_url, fake)
-    expect(page.locator("#surveyText")).to_have_text("This part of the map is crowded right now. Your finds still save in this browser.")
+    not_live(page, "offline", "This part of the map is crowded right now. Your finds still save in this browser.")
     expect(page.locator("#tCharted")).to_have_text(" · crowded")  # where the count would be: too many surveyors here
     circle(page, hidden_words(page)[0])
     expect(page.locator("#notesBadge")).to_have_text("1", timeout=LANDS)
@@ -789,8 +816,7 @@ def test_a_full_sector_says_crowded_even_with_its_neighbours_live(page: Page, si
 def test_full_survey_says_so(page: Page, site_url, errors):
     fake = FakeSurvey(full="world")
     open_game(page, site_url, fake)
-    expect(page.locator("#surveyText")).to_have_text("The survey is crowded right now. Your finds still save in this browser.")
-    expect(page.locator("#survey")).to_have_attribute("data-state", "offline")
+    not_live(page, "offline", "The survey is crowded right now. Your finds still save in this browser.")
     assert errors == []
 
 
@@ -1201,7 +1227,7 @@ def test_turnstile_shows_its_box_only_when_it_wants_a_tap(page: Page, site_url, 
     open_game(page, site_url, fake, f"&turnstile={SITE_KEY}")
     expect(page.locator("#surveyCheck")).to_have_class(re.compile("asking"))
     expect(page.locator("#surveyCheck")).to_contain_text("One tap to join the shared survey")
-    expect(page.locator("#surveyText")).to_have_text("Checking this is a person, not a bot…")
+    not_live(page, "connecting", "Checking this is a person, not a bot…")
     for other in ["#bar", "#signup", "#notes"]:
         assert not page.evaluate(OVERLAP, ["#surveyCheck", other]), f"the box covers {other}"
     assert fake.sectors == []
@@ -1344,9 +1370,8 @@ def test_failed_check_leaves_you_surveying_alone_once_passes_are_required(page: 
     with_turnstile(page, "fail")
     fake = FakeSurvey(require_pass=True)
     open_game(page, site_url, fake, f"&turnstile={SITE_KEY}")
-    expect(page.locator("#surveyText")).to_have_text(
-        "Couldn’t check this is a person, so you’re surveying alone for now. Your finds still save in this browser.")
-    expect(page.locator("#survey")).to_have_attribute("data-state", "offline")
+    not_live(page, "offline",
+             "Couldn’t check this is a person, so you’re surveying alone for now. Your finds still save in this browser.")
     circle(page, hidden_words(page)[0])
     expect(page.locator("#notesBadge")).to_have_text("1", timeout=LANDS)
     page.wait_for_timeout(2500)
@@ -1380,7 +1405,7 @@ def test_words_circled_while_joining_are_claimed_once_the_sector_is_live(page: P
     fake = FakeSurvey(hold=lambda url: True, rate=True)
     open_game(page, site_url, fake)
     eventually(page, lambda: len(fake.held) == 4)
-    expect(page.locator("#surveyText")).to_have_text("Joining the survey…")
+    not_live(page, "connecting", "Joining the survey…")
     for word in words:
         circle(page, word)
     page.wait_for_timeout(300)
@@ -1439,10 +1464,42 @@ def test_the_panel_says_its_joining_while_it_looks_for_where_to_start(page: Page
     page.route(f"{SURVEY}/v1/survey/world", lambda route: asked.append(route))  # a new player waits to hear where to start
     page.goto(f"{site_url}/letterfield?survey={SURVEY}#debug")
     eventually(page, lambda: asked)
-    expect(page.locator("#surveyText")).to_have_text("Joining the survey…")
-    expect(page.locator("#survey")).to_have_attribute("data-state", "connecting")
+    not_live(page, "connecting", "Joining the survey…")
     fake.handle_world(asked[0])
     expect(page.locator("#survey")).to_have_attribute("data-state", "live")
+    assert errors == []
+
+
+def test_live_before_the_universes_count_comes_the_box_still_counts_yours(page: Page, site_url, errors):
+    """A sector just woken may have no word of the universe's totals to send: live, the box names
+    itself without a count until one comes, and still says how many you charted first."""
+    page.add_init_script("localStorage.setItem('letterfield.cam.v1', JSON.stringify({ x: 6, y: 6, cs: 38 }))")
+    fake = FakeSurvey()  # no totals, and a returning surveyor asks for no universe
+    open_game(page, site_url, fake)
+    expect(page.locator("#survey")).to_have_attribute("data-state", "live")
+    expect(page.locator("#surveyLabel")).to_have_text("Shared survey")
+    expect(page.locator("#surveyCount")).to_be_empty()
+    expect(page.locator("#surveyText")).to_have_text("0 words charted first by you")
+    fake.sockets["0,0"].send(json.dumps({"t": "world", "charted": 52_311, "total": AREA_WORDS, "players": 9}))
+    universe_count(page, "52,311 of 1,119,752", "52,311 of 1.1M")
+    assert errors == []
+
+
+def test_the_boxs_dot_pulses_while_joining_unless_motion_is_reduced(page: Page, site_url, errors):
+    fake = FakeSurvey(hold=lambda url: True)
+    open_game(page, site_url, fake)
+    eventually(page, lambda: fake.held)
+    dot = page.locator("#survey .survey-glyph .dot")
+    animation = "e => getComputedStyle(e).animationName"
+    expect(page.locator("#survey")).to_have_attribute("data-state", "connecting")
+    assert dot.evaluate(animation) == "blink"
+    page.emulate_media(reduced_motion="reduce")
+    assert dot.evaluate(animation) == "none"
+    page.emulate_media(reduced_motion="no-preference")
+    fake.hold = None
+    fake.welcome()
+    expect(page.locator("#survey")).to_have_attribute("data-state", "live")
+    assert dot.evaluate(animation) == "none"  # solid once live
     assert errors == []
 
 
@@ -1659,7 +1716,7 @@ def test_the_world_map_shows_territories_charted_in_full_far_afield(page: Page, 
     fake = FakeSurvey(world=world_map(charted={(-10, 20): total, (-11, 20): total - 1}))
     open_game(page, site_url, fake)
     open_notes(page)
-    page.click("#surveyMap summary")
+    page.click("#survey summary")
     page.wait_for_function("window.__lf.remnants().length > 0")
     assert page.evaluate("window.__lf.remnants()") == ["-10,20"]
     assert errors == []
