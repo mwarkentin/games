@@ -35,7 +35,7 @@ from pathlib import Path
 from common import ROOT
 
 sys.path.insert(0, str(Path(__file__).parent))
-from render_album import TRACKS  # noqa: E402
+from render_album import ARTIST, TRACKS, YEAR  # noqa: E402
 
 ART = ROOT / "albums" / "letterfield"
 FONTS = ROOT / "_album" / "fonts"
@@ -438,12 +438,12 @@ def back(faces: dict[str, Face]) -> str:
         "oscillators, filters, delays and noise. No recordings, no samples.",
         f"Recorded from fixed seeds at 44.1 kHz.  {len(TRACKS)} tracks, {clock(sum(secs.values()))}.",
     ]
-    ny = y0 + h - 60 - 34 * (len(notes) - 1) - 20 - 34
+    ny = y0 + h - 60 - 34 * len(notes) - 20 - 34
     for i, line in enumerate(notes):
         body.append(mono.run(line, x0 + 70, ny + i * 34, 19, MUTED))
-    body.append(
-        faces["mono-medium"].run("GAMES.MICHAELWARKENTIN.COM/LETTERFIELD", x0 + 70, y0 + h - 60, 19, ACCENT, 0.08)
-    )
+    medium = faces["mono-medium"]
+    body.append(medium.run(f"{ARTIST.upper()}  ·  {YEAR}", x0 + 70, y0 + h - 60 - 34, 19, INK, 0.08))
+    body.append(medium.run("GAMES.MICHAELWARKENTIN.COM/LETTERFIELD", x0 + 70, y0 + h - 60, 19, ACCENT, 0.08))
     return svg(SIZE, SIZE, faces, "", "".join(body), "Letterfield (Original Soundtrack): back")
 
 

@@ -14,7 +14,8 @@ loudness, brings them all to one level and encodes them, with tags and the
 cover, into _album/ (never committed):
 
     _album/web/      what letterfield-soundtrack.html plays and offers, all
-                     in one folder, to put wherever ALBUM_URL says: the MP3s
+                     in one folder, to upload to the album's R2 bucket (see
+                     "The soundtrack album" in AGENTS.md): the MP3s
                      (LAME VBR, 44.1 kHz stereo, ID3v2.3 tags), the cover at
                      3000 and 1400 pixels, and a zip of the MP3s and the art
     _album/flac/     the tracks at 24 bits, lossless, for stores
@@ -61,9 +62,9 @@ ART = ROOT / "albums" / "letterfield"
 PREVIEW = ROOT / "previews" / "letterfield-soundtrack.jpg"
 RATE = 44100
 
-# The tags. ARTIST is a stand-in until the album's credit is settled.
+# The tags.
 ALBUM = "Letterfield (Original Soundtrack)"
-ARTIST = "Letterfield"
+ARTIST = "Michael Warkentin"
 YEAR = "2026"
 GENRE = "Ambient; Video Game"
 COMMENT = f"{BASE_URL}/letterfield"

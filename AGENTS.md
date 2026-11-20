@@ -526,11 +526,22 @@ each is made, to play or download.
   with the 3000px cover for stores, and a zip. It prints each track's length,
   loudness and size, writes them to `_album/album.json`, and warns when the
   page's lengths and sizes aren't the render's.
-- **Its files aren't in git.** `ALBUM_URL` in the page names the folder that
-  holds `_album/web/`'s files; while it's empty, the page lists the tracks
-  without players or downloads, and `?album=<url>` overrides it for tests.
-  `sw.js` stores only pages and `music/*.mid`, so the MP3s always come from
-  the network.
+- **Its files aren't in git.** They go in a public Cloudflare R2 bucket on a
+  custom domain, made by OpenTofu in mwarkentin/infra like the share
+  Worker's (no CORS needed: audio elements and downloads don't ask for it).
+  Upload what `_album/web/` holds under `letterfield/`, each file with its
+  type, then set `ALBUM_URL` in the page to that folder's address:
+
+  ```sh
+  for f in _album/web/*; do
+    case "$f" in *.mp3) t=audio/mpeg;; *.jpg) t=image/jpeg;; *.zip) t=application/zip;; esac
+    npx wrangler@4.151.0 r2 object put "<bucket>/letterfield/${f##*/}" --file "$f" --content-type "$t" --remote
+  done
+  ```
+
+  While `ALBUM_URL` is empty, the page lists the tracks without players or
+  downloads, and `?album=<url>` overrides it for tests. `sw.js` stores only
+  pages and `music/*.mid`, so the MP3s always come from the network.
 - **The art** is `albums/letterfield/`: the cover (a corner of the map, each
   piece circled in a territory of a theme that has its word, and Night Sky
   going supernova), the back and the link preview, drawn by

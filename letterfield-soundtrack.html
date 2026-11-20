@@ -122,7 +122,7 @@ html:not([data-player="off"]) .pending{display:none}
       <div class="album-head">
         <p class="eyebrow">Original soundtrack</p>
         <h2 id="albumTitle">Letterfield</h2>
-        <p class="meta">5 tracks · 22:48 · 2026</p>
+        <p class="meta">Michael Warkentin · 5 tracks · 22:48 · 2026</p>
         <ul class="downloads">
           <li><a id="zip" href="letterfield-soundtrack.zip" download>Download all <small>ZIP · 24 MB</small></a></li>
           <li><a id="coverJpg" href="letterfield-cover-3000.jpg" download>Cover <small>JPG · 3000 px</small></a></li>
@@ -294,7 +294,7 @@ function showPlayer(to, from, i = current) {
     if (to === 'playing') {
       try {
         navigator.mediaSession.metadata = new MediaMetadata({
-          title: tracks[current].title, album: 'Letterfield (Original Soundtrack)', artist: 'Letterfield',
+          title: tracks[current].title, album: 'Letterfield (Original Soundtrack)', artist: 'Michael Warkentin',
           artwork: [{ src: at('letterfield-cover-1400.jpg'), sizes: '1400x1400', type: 'image/jpeg' }],
         });
       } catch (_) {}
