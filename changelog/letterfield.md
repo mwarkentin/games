@@ -1,5 +1,6 @@
 ## 2026-11-20
 
+- A fourth piece of music, Lantern: a soft piano alone in a dim hall, a slow, wistful waltz with strings breathing in under it, a cello now and then and a celesta far off. It takes turns with Drift, Orbit and Chimes, and plays a little differently each time.
 - Supernovas now sit among your finds in the field notes, by when they went off: in the card of the visit you were on when one went off, or in a card of their own if you saw it from afar. A Supernovas filter beside All shows just them, still under their days.
 - Field notes with thousands of finds open at once, and draw more as you scroll.
 - The shared survey's box in your field notes is now a single row, like Achievements: how much of the universe is charted, and how many words you charted first. Tap it for the Universe map and the survey log.

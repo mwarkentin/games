@@ -91,7 +91,8 @@ utilities; games live here so they get their own origin and their own rules.
   its source at a fixed commit; `tests/test_music.py` checks.
   Ambient music with no tune to score, like Letterfield's drones and pads,
   can instead be generated in the page with the Web Audio API, still with
-  no audio files.
+  no audio files, and so can a piece composed for the game itself, like
+  Letterfield's Lantern, whose notes are written into the page.
 - Pause when the tab is hidden (`visibilitychange`) if the game runs on a
   timer.
 - Anything a page loads gets a placeholder its own size ahead of time
