@@ -213,6 +213,25 @@ def test_an_invite_can_wait_or_be_no_good(page: Page, site_url, errors):
     assert errors == [] or all("404" in e for e in errors)
 
 
+def test_an_invite_whose_look_up_fails_can_be_tried_again(page: Page, site_url, errors):
+    """An invite looked up offline, or while the Worker hiccupped, said it couldn't and offered only
+    Close, and with its code already off the address, a reload didn't bring it back either."""
+    guilds = FakeGuilds({CODE: {"name": NAME, "tag": TAG, "members": [[KIM[0], "KIM", NOW_MS]]}})
+    down, answer = [True], guilds.handle
+    guilds.handle = lambda r: (
+        r.fulfill(status=503, body="{}") if down[0] and r.request.url.endswith(f"/{CODE}") else answer(r)
+    )
+    start(page, site_url, FakeSurvey(), guilds, query=f"&guild={CODE}")
+    invite = page.locator("#guildInvite")
+    expect(invite).to_contain_text("Couldn’t look up that invite.")
+    down[0] = False
+    invite.get_by_role("button", name="Try again").click()
+    expect(invite).to_contain_text("1 member so far")
+    invite.get_by_role("button", name="Join").click()
+    expect(page.locator("html")).to_have_attribute("data-guild", "in")
+    assert errors == [] or all("503" in e for e in errors)
+
+
 def test_an_invite_while_in_a_guild_joins_a_second_and_keeps_the_first(page: Page, site_url, errors):
     guilds = in_cobalt()
     guilds.guilds[CODE2] = {"name": NAME2, "tag": TAG2, "members": [[KIM[0], "KIM", NOW_MS]]}

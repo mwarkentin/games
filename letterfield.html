@@ -6083,13 +6083,13 @@ async function startGuild() {
 }
 // An invite link: what the guild is, then whether to join it, and at the cap which of ours to leave for it.
 async function lookUpInvite(code) {
-  invite = { code, name: null, size: 0, error: '', drop: '' };
-  Membership.go('invited');
+  invite = { code, name: null, size: 0, error: '', drop: '', retry: false };
+  if (Membership.is('invited')) renderGuild(); else Membership.go('invited');  // Try again asks from the card
   const at = Membership.seq;
   const { status, data } = await guildCall(`/${code}`);
   if (Membership.seq !== at || !invite || invite.code !== code) return;
   if (status === 200 && goodName(data.name)) Object.assign(invite, { name: data.name, size: Number.isInteger(data.size) ? data.size : 0 });
-  else invite.error = status === 404 ? 'That invite isn’t good any more: its guild has ended.' : 'Couldn’t look up that invite.';
+  else Object.assign(invite, { error: status === 404 ? 'That invite isn’t good any more: its guild has ended.' : 'Couldn’t look up that invite.', retry: status !== 404 });  // the code is off the address: the card is the one way back to it
   renderGuild();
 }
 async function joinInvite() {
@@ -6323,7 +6323,7 @@ function renderGuild() {
   const busy = Membership.is('joining'), full = n >= GUILDS_MAX;
   const theirs = `${membersText(invite.size)} so far`, err = invite.error ? `<p class="guild-err" role="alert">${invite.error}</p>` : '';
   let card;
-  if (!invite.name) card = `<p class="eyebrow" id="guildInviteName">Invited to a guild</p><p>${invite.error || 'Looking it up…'}</p><div class="coach-row"><button type="button" class="btn ghost" data-g="not-now">${invite.error ? 'Close' : 'Not now'}</button></div>`;
+  if (!invite.name) card = `<p class="eyebrow" id="guildInviteName">Invited to a guild</p><p>${invite.error || 'Looking it up…'}</p><div class="coach-row"><button type="button" class="btn ghost" data-g="not-now">${invite.error ? 'Close' : 'Not now'}</button>${invite.retry ? '<button type="button" class="btn" data-g="invite-again">Try again</button>' : ''}</div>`;
   else if (full) {
     // At the cap: our guilds, each with its label and size, to choose one to leave.
     const drop = guildOfCode(invite.drop), r = drop && rosters.get(drop.code), only = r && r.known && r.list.length <= 1;
@@ -6356,6 +6356,7 @@ function onGuildClick(e) {
   else if (g === 'leave-yes') leaveGuild();
   else if (g === 'join') joinInvite();
   else if (g === 'not-now') dismissInvite();
+  else if (g === 'invite-again' && Membership.is('invited') && invite && !invite.name) lookUpInvite(invite.code);
 }
 guildCard.addEventListener('click', onGuildClick);
 guildCard.addEventListener('input', e => { const i = e.target.closest('input[data-label]'); if (i) labelDrafts.set(i.dataset.label, i.value); });
