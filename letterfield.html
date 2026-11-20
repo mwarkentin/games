@@ -6071,6 +6071,13 @@ async function startGuild() {
   Membership.go('making');
   const { status, data } = await guildCall('', { token: playerToken, initials: myInitials(), name: draftName });
   if (Membership.seq !== at + 1 || !Membership.is('making')) return;
+  if (status === 201 && goodGuild(data) && myGuilds.length >= GUILDS_MAX) {
+    // A linked device's list filled our places while it was being started: it can't be kept.
+    leaveLater(data.code);
+    guildError = `You’re in ${GUILDS_MAX} guilds now, from another device. To start another, leave one.`;
+    guildErrorCode = '';
+    return Membership.go('in');
+  }
   if (status === 201 && goodGuild(data)) {
     saveGuilds([...myGuilds, guildOf(data)]);
     takeRoster(data.code, data.members);
@@ -6102,6 +6109,14 @@ async function joinInvite() {
   const at = Membership.seq;
   const { status, data } = await guildCall(`/${code}/join`, { token: playerToken, initials: myInitials() });
   if (Membership.seq !== at) return;
+  const rest = myGuilds.filter(g => g.code !== (drop && drop.code) && g.code !== code);
+  if (status === 200 && goodGuild(data) && rest.length >= GUILDS_MAX) {
+    // A linked device's list filled our places while joining: this one can't be kept.
+    leaveLater(data.code);
+    invite.drop = '';
+    invite.error = `You’re in ${GUILDS_MAX} guilds now, from another device. Choose one to leave first.`;
+    return Membership.go('invited');
+  }
   if (status === 200 && goodGuild(data)) {
     keptLeaves(l => l.code !== code || l.token !== playerToken);  // a leave of it still to send would undo this
     if (drop) leaveLater(drop.code);  // at the cap: the one chosen makes room
@@ -6321,7 +6336,7 @@ function renderGuild() {
   else if (st === 'invited' || st === 'joining') tail = '<p class="you-pad">Looking at an invite to a guild…</p>';
   else if (!n) tail = `<button type="button" class="you-item" data-g="start"><span>Start a guild<small>A few surveyors who find each other: members first on the list, a note when one comes online, a mark on their carets.</small></span>${CHEV}</button><p class="guild-small">Or join one from a member’s invite link.</p>`;
   else if (n < GUILDS_MAX) tail = `<button type="button" class="you-item" data-g="start"><span>Start another guild<small>You’re in ${n} of ${GUILDS_MAX}. Or join one from a member’s invite link.</small></span>${CHEV}</button>`;
-  else tail = `<p class="you-pad guild-cap">You’re in ${GUILDS_MAX} guilds, the most at once. To join another, leave one.</p>`;
+  else tail = `<p class="you-pad guild-cap">You’re in ${GUILDS_MAX} guilds, the most at once. To join another, leave one.</p>${errFor('')}`;
   if (n) tail += '<p class="guild-small">Words you chart while in a guild count for it in the survey log, under its name: for every guild you’re in.</p>';
   const html = `${groups.join('')}<div class="group guild">${tail}</div><p class="guild-small guild-said" id="guildSaid" aria-live="polite"></p>`;
   // Against what it last drew, not its live HTML, which notes written into it
@@ -6385,7 +6400,8 @@ guildInvite.addEventListener('change', e => {
 guildInvite.addEventListener('keydown', e => { if (e.key === 'Escape') { e.stopPropagation(); dismissInvite(); } });
 // An invite link (?guild=<code>), read once (see takeParam).
 if (surveyApi) {
-  for (const l of keptLeaves(() => true)) leaveLater(l.code, l.token);
+  // One of ours that's in the list again was joined again (on a linked device, say): its leave is dropped.
+  for (const l of keptLeaves(l => l.token !== playerToken || !guildOfCode(l.code))) leaveLater(l.code, l.token);
   const code = takeParam('guild').toUpperCase();
   if (GUILD_CODE_RE.test(code) && !guildOfCode(code)) lookUpInvite(code);
   renderGuild();
@@ -6559,6 +6575,8 @@ function applySettings(c) {
 // A list of our guilds from elsewhere (a linked device, or another tab), and
 // what follows from it here.
 function takeGuilds(next, kept = false) {
+  // A guild in it again was joined again elsewhere as us: a leave of it still to send would undo that.
+  if (!kept) keptLeaves(l => l.token !== playerToken || !next.some(g => g.code === l.code));
   saveGuilds(next, true, kept);
   if (myGuilds.length && Membership.is('out')) Membership.go('in');
   else if (!myGuilds.length && Membership.is('in', 'confirming')) Membership.go('out');
