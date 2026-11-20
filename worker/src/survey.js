@@ -681,7 +681,8 @@ export class Sector {
       const oldest = this.sql.exec('SELECT MIN(at) AS at FROM claims WHERE at > ?', this.logMark()).one().at;
       if (oldest !== null) at = Math.min(at, Math.max(this.now() + 1000, oldest + LOG_MS));
     }
-    if (this.logAt && this.logAt <= at) return;
+    // While D1 is failing, a claim doesn't bring the backed-off retry forward.
+    if (this.logAt && (this.logAt <= at || this.logFails)) return;
     this.logAt = at;
     this.ctx.storage.setAlarm(at);
   }

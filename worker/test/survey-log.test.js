@@ -811,6 +811,24 @@ describe('Sector copying claims to the log', () => {
     assert.equal(state.alarm, null);
   });
 
+  test("doesn't bring a backed-off retry forward when claims keep coming", async () => {
+    const ws = join();
+    await claim(ws, 0);
+    env.LOG_DB.fail = 'D1 is down';
+    await fire();
+    await fire();
+    const due = state.alarm;
+    assert.equal(due, clock + LOG_MS * 4);
+    await claim(ws, 1);
+    assert.equal(state.alarm, due, 'a claim kept the retry where it was');
+    env.LOG_DB.fail = null;
+    await fire();
+    assert.deepEqual(env.LOG_DB.rows().map((r) => r.w), [word(0).w, word(1).w]);
+    // Once D1 takes them again, claims go within LOG_MS as before.
+    await claim(ws, 2);
+    assert.equal(state.alarm, clock + LOG_MS);
+  });
+
   test('sends claims made before the log existed, a batch at a time, after waking', async () => {
     // A sector from before the log: claims, but nothing marked as logged.
     const old = new Sector(state, {});
