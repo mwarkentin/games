@@ -247,12 +247,19 @@ async function checkGuild(sector, ws, me, code) {
 export function passMates(sector, guilds) {
   if (!guilds || typeof guilds !== 'object') return;
   sector.guildSent ??= new Map();
+  let members = null;  // tag → its members' sockets here, made once, when a frame first needs sending
   for (const [tag, on] of Object.entries(guilds)) {
     if (!GUILD_TAG.test(tag) || !Array.isArray(on)) continue;
     const frame = JSON.stringify({ t: 'guild', tag, on });
     if (sector.guildSent.get(tag) === frame) continue;
     sector.guildSent.set(tag, frame);
-    for (const [ws, p] of sector.everyone()) if (tagsOf(p).includes(tag)) try { ws.send(frame); } catch { /* closing */ }
+    if (!members) {
+      members = new Map();
+      for (const [ws, p] of sector.everyone()) {
+        for (const t of new Set(tagsOf(p))) { if (!members.has(t)) members.set(t, []); members.get(t).push(ws); }
+      }
+    }
+    for (const ws of members.get(tag) ?? []) try { ws.send(frame); } catch { /* closing */ }
   }
 }
 
