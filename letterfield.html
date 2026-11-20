@@ -5596,13 +5596,16 @@ async function fetchWho() {
 // world, or from before our sector reported us) is all others. The count we
 // had stays while no sector is joined (the tab hidden, reconnecting), and
 // while we wait to be counted by a sector just joined, which reports us
-// within seconds: a total from then can't say whether we're in it.
+// within seconds: a total from then can't say whether we're in it. Once no
+// sector can be joined (offline, crowded), it goes after BADGE_HOLD_MS.
 const WHO_FRESH_MS = 120000, BADGE_HOLD_MS = 15000, COUNT_WAIT_MS = 30000;  // a sector reports a newcomer within REPORT_MS (10 s)
 let badgeShown = 0, badgeZeroAt = 0;
 function othersOnline() {
   if (whoData && Date.now() - whoData.at < WHO_FRESH_MS) return whoData.n;
   let live = false, counted = false;
   for (const l of links.values()) if (l.m.is('live')) { live = true; counted = counted || !!(l.crowd && l.crowd.you); }
+  // With no sector joinable, what we last heard is no count at all.
+  if (!live && ['alone', 'offline', 'full-world', 'full-sector'].includes(surveyStatus())) return 0;
   const held = badgeShown && !badgeZeroAt ? badgeShown : 0;
   if (!live && held) return held;
   const home = links.get(sectorKey(Math.floor(cam.x), Math.floor(cam.y)));
