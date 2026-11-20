@@ -20,7 +20,7 @@
 // The renderer is passed in (index.js uses resvg), so tests can run this in
 // Node.
 
-import { edgeCache, hashAddress } from '../../worker/src/leaderboard.js';
+import { addressOf, edgeCache, hashAddress } from '../../worker/src/leaderboard.js';
 import { MAP_VERSION, RC, THEMES, keyOf, regionName } from '../../worker/src/letterfield-world.js';
 import { SECTOR, TOTALS_PATH, inArea } from '../../worker/src/survey.js';
 import { CARD_WORDS, day, esc, findSvg, parseFind, progress } from './card.js';
@@ -168,11 +168,12 @@ async function page(env, e, slug, dark, url) {
     return htmlPage({
       title: 'Letterfield', description: 'A word search the size of a world, charted together.',
       image: `${site(env)}/previews/letterfield.jpg`, alt: 'Letterfield', png: false,
-      self, target: `${site(env)}/letterfield`, linkText: 'Open Letterfield in Letterfield',
+      self, target: `${site(env)}/letterfield`, linkText: 'Open Letterfield',
     });
   }
   const state = await stateOf(env, e);
-  const description = `${e.s ? 'A bonus' : 'A'} ${THEMES[e.th].name.toLowerCase()} word in ${regionName(e.rx, e.ry)}, on Letterfield's map. `
+  const theme = THEMES[e.th].name;
+  const description = `${e.s ? 'A bonus' : /^[aeiou]/i.test(theme) ? 'An' : 'A'} ${theme} word in ${regionName(e.rx, e.ry)}, on Letterfield's map. `
     + (state.claim ? `Charted first${state.claim.initials ? ` by ${state.claim.initials}` : ''} on ${day(state.claim.at)}.`
       : state.claim === null ? 'Not yet charted.' : 'Find it on the map.');
   return htmlPage({
@@ -227,7 +228,8 @@ async function image(request, env, ctx, render, e, slug, dark) {
     if (object) return card(await object.arrayBuffer(), true);
   }
 
-  // Drawing costs ~50 ms of CPU, so new cards are limited per address; over
+  // Drawing costs ~50 ms of CPU, so new cards are limited per address (an
+  // IPv6 one by its /64, as the survey counts it); over
   // the limit, the game's own preview stands in.
   if (!(await allowed(request, env))) return standIn(env);
   const png = await render(findSvg(e, { ...state, dark, host: new URL(site(env)).host }));
@@ -248,7 +250,7 @@ async function allowed(request, env) {
   const ip = request.headers.get('CF-Connecting-IP');
   if (!ip) return true;
   try {
-    return (await env.RENDERS.limit({ key: await hashAddress(ip, env.IP_SALT) })).success !== false;
+    return (await env.RENDERS.limit({ key: await hashAddress(addressOf(ip), env.IP_SALT) })).success !== false;
   } catch {
     return true;
   }

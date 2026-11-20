@@ -101,6 +101,14 @@ def test_more_surveyors_come_a_page_at_a_time(page: Page, site_url, errors):
     page.click("#whoMore")
     expect(page.locator(".who-row")).to_have_count(45)
     expect(page.locator("#whoMore")).to_be_hidden()
+    # Opened again, it starts from the first page: every refresh kept asking for all it had shown.
+    page.locator("#peopleClose").click()
+    expect(page.locator("html")).to_have_attribute("data-who", "closed")
+    expect(page.locator("#people")).to_be_hidden()
+    fake.list_asks.clear()
+    open_list(page)
+    expect(page.locator(".who-row")).to_have_count(40)
+    assert [a["page"] for a in fake.list_asks] == ["0"]
     assert errors == []
 
 
@@ -723,6 +731,28 @@ def test_the_badge_holds_through_a_gap_but_goes_when_everyone_has(page: Page, si
     page.clock.run_for(10_000)
     expect(badge).to_have_text("2")
     page.clock.run_for(8000)
+    expect(badge).to_be_hidden()
+    expect(page.locator("#peopleBtn")).to_have_attribute("aria-label", "Surveyors")
+    assert errors == []
+
+
+def test_the_badge_goes_once_the_survey_cant_be_joined(page: Page, site_url, errors):
+    """The count held while no sector was live, meant for a hidden tab or a reconnect, held for
+    good once none could be joined: "Surveyors, 2 online" an hour after the survey was gone."""
+    page.clock.install()
+    fake = FakeSurvey()
+    start(page, site_url, fake)
+    badge = page.locator("#peopleBadge")
+    fake.totals_to("0,0", 3, you=True)
+    expect(badge).to_have_text("2")
+    # Every sector drops us, and turns us away when we try again.
+    fake.full = "sector"
+    for ws in list(fake.sockets.values()):
+        ws.close()
+    page.clock.run_for(5000)
+    expect(page.locator("#survey")).to_have_attribute("data-state", "offline")
+    expect(badge).to_have_text("2")  # held a moment, as through any gap
+    page.clock.run_for(20_000)
     expect(badge).to_be_hidden()
     expect(page.locator("#peopleBtn")).to_have_attribute("aria-label", "Surveyors")
     assert errors == []

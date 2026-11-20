@@ -58,7 +58,7 @@ From [Scaling One Million Checkboxes][omcb] and
 | Moves went out in batches every 200 ms; batching "massively reduced load" | claims go out in batches every 200 ms. In the load test, this took a sector from saturating at ~630 players to handling 750 |
 | Global data (players online) was served over HTTP with a low max-age so Cloudflare's cache absorbed it: "hundreds of millions of requests" | the world map is a `GET` with `max-age=5`, cached per Worker instance; the Atlas that builds it hears only from sectors, never from players |
 | Bandwidth was "my one unbounded cost" (OMCB capped its server at 250 Mbit/s) | Cloudflare doesn't charge for egress, and outgoing WebSocket messages are free |
-| "Bound my costs … instead of going serverless and scaling into bankruptcy" | `MAX_PLAYERS` per sector and `MAX_ONLINE` overall. Beyond them, players are told the survey is full; the bill can't run away |
+| "Bound my costs … instead of going serverless and scaling into bankruptcy" | `MAX_PLAYERS` per sector and `MAX_ONLINE` across the shared world. Beyond them, players are told the survey is full; the bill can't run away there (sectors outside it aren't counted: see "Bots") |
 | Validate everything: someone checked box 100,000,000 and broke OMCB | every claim is checked against the server's copy of the map generator |
 | Bots pushed absurd traffic once the Go rewrite made things fast | a burst of 5 claims per socket, then one per 1.5 s; and per IP address, however many sockets it opens, 6 a minute and 300 a day (see "Limits per address") |
 | Rollback netcode, so moves feel instant | not needed: a circled word is always kept locally, and the server only decides who gets the credit |
@@ -84,14 +84,20 @@ From [Scaling One Million Checkboxes][omcb] and
 - **Positions** go only to the sector under the middle of your screen, at
   most once a second, and only after you've moved at least a cell. A sector
   sends one list of positions a second (up to 64 people, plus a head count)
-  however many players moved.
+  however many players moved. With more than 64 here, each address's latest
+  mover goes in first, then each one's next, so one address's sockets can't
+  crowd everyone else off the map.
 - **The Atlas** is one object for the shared world. Each sector in the area
   reports its charted counts, player count and the middle of its crowd at
   most every 10 s while something is changing. Reports are absolute numbers, so a lost
   or repeated report does no harm. The Atlas writes the charted counts to
-  storage at most once a minute.
+  storage at most once a minute, and a sector's at once when its last
+  player has left (if it changed since it was last written), since nobody there will report again to put it right
+  if the Atlas is evicted (every deploy evicts it) before that minute is up.
 - **The world map** is one byte per territory (10 KB), plus players per
-  sector and a starting spot for newcomers. Each Worker instance fetches it
+  sector and a starting spot for newcomers: the middle of the crowd of the
+  most addresses with room, each address counted once there and in where
+  the middle is, so one address's sockets can't choose it. Each Worker instance fetches it
   from the Atlas at most every 5 s, and browsers cache it for 5 s.
 - **Hibernation, and why there are almost no timers.** Sectors use the
   [WebSocket Hibernation API][hib]. Cloudflare bills a Durable Object for
@@ -177,15 +183,18 @@ survey also limits each IP address, wherever it plays:
   `IP_SALT`, as the leaderboard does, and hands the sector only the hash, in
   a header it sets itself. An IPv6 address counts by its /64, because a
   device can pick any address in its /64.
-- **Claims: 6 a minute per address, across every sector.** That's a
+- **Claims: about 6 a minute per address.** That's a
   [rate-limiting binding][ratelimit] (`SURVEY_CLAIMS` in `wrangler.toml`),
   on top of each socket's own limit. A player rarely finds more than one
   word a minute, and counting over a minute rather than 10 s means a few
   spotted together still all count. The cost is to players who share an
   address: a family, a classroom, or a mobile network that puts many phones
-  behind one IPv4 address share those 6 (and the daily 300 below). A refused
-  claim gets the same `slow down` as a socket claiming too fast, and the
-  game says "Too quick to chart · kept in your notes".
+  behind one IPv4 address share those 6 (and the daily 300 below). The count
+  is kept where each sector's object runs, and is approximate (see "Why a
+  binding" below), so sectors that live in different places each count
+  their own. A refused claim gets the same `slow down` as a socket claiming
+  too fast, and the game says nothing: the claim waits a minute in its
+  outbox and goes again, and the word is in the notes all along.
 - **Words charted: 300 a day per address, in the shared world.** At 6 a
   minute, a script left running all day would still chart 8,640 words a day.
   A person charting one a minute would need five hours to reach 300. With
@@ -194,10 +203,15 @@ survey also limits each IP address, wherever it plays:
   keeps this count:
   - Each sector's reports, which already go out at most every 10 s while
     words are charted, also list how many words each address charted there
-    since the last report.
+    since the last report: up to 3,000 addresses a report (`REPORT_BY_MAX`,
+    the most words first), the rest with the next, so a report the Atlas
+    couldn't reach in time never grows past what it takes.
   - The Atlas adds these up for the UTC day. It answers with the addresses
     past the cap, the most recent 2,000, but only when that list has
-    changed since the sector last heard it.
+    changed since the sector last heard it. An address capped earlier that
+    has dropped off those 2,000 and charts again (its sectors no longer know
+    to refuse it) goes back to the end of the list with that report, so it's
+    refused again within a report, however many addresses are capped.
   - The sector refuses those addresses' claims with `daily limit`, and the
     game says "Today's charting limit reached · kept in your notes".
   - A sector keeps the list in memory, so one just woken from hibernation
@@ -212,6 +226,15 @@ survey also limits each IP address, wherever it plays:
     Atlas only counts an address's words when the sector reports them, so an
     address can chart a few words past 300 before every sector knows. The
     6-a-minute limit keeps that small.
+  - What a report owes the Atlas (each address's words, joins without a
+    pass, and a supernova it hasn't heard of) is kept in the sector's
+    storage too, in `owed`, until the Atlas has it. A sector that hibernates
+    before its next report, its sockets still open, sends it once it wakes.
+    Before this, words charted within 10 s of a report were lost whenever
+    the sector went quiet straight after, so a script that paused after
+    each few words had most of them never counted. It costs a row written
+    per word, and one per address per report. Only sectors in the area,
+    which report, keep it.
   - Worker Previews allow 1,000 a day (`SURVEY_DAILY_CLAIMS` in
     `[previews.vars]`, read by `dailyClaims()`) and 60 claims a minute, so
     a test can chart several whole territories in a day.
@@ -220,16 +243,41 @@ survey also limits each IP address, wherever it plays:
     start again, and every deploy of the Worker evicts it. Saving them would
     cost a row written per active address every minute.
   - Sectors outside the shared world don't report, so words charted there
-    aren't capped. They don't count toward the world's total.
+    aren't capped. They don't count toward the world's total, but their
+    hidden words still go to the log's D1, so there one address is bound
+    only by 6 claims a minute: up to about 8,600 log rows a day (about 1 MB a
+    day with their indexes), against 300 words a day in the shared world.
+    It takes a script that reads the map to do it, and many addresses for a
+    long time to come near D1's size limit.
 - **Sockets: 40 per address in a sector, and 120 new ones a minute per
   address.** A sector counts its own sockets exactly, so a few addresses
-  can't fill it and lock everyone else out. It counts again once the binding
-  below has answered, since other joins can come in while it does: a burst
-  of joins from one address, or everyone reconnecting after a deploy, still
-  stops at the caps. A second binding
+  can't fill it and lock everyone else out. A second binding
   (`SURVEY_JOINS`) counts sockets opened anywhere. A player roaming the map
-  opens about 10 an hour. Either limit is answered with `full`, and the
-  game tries again in a minute or so.
+  opens about 10 an hour. The Worker asks it before forwarding a join, so a
+  join it refuses never wakes (or makes) a sector. Either limit is answered
+  with `full`, and the game tries again in a minute or so. Every join counts
+  toward `SURVEY_JOINS`, those then turned away for a full sector or a full
+  survey included, so a game retrying against a crowd uses up its minute's
+  joins too. And a join the limiter refuses never reaches a sector, so a
+  missing Turnstile pass on it isn't counted in `unpassed`.
+- **The whole survey: an address counts for at most 40 toward
+  `MAX_ONLINE`.** The cap per sector alone would let one address fill the
+  survey, 40 sockets in each of the shared world's 625 sectors being 25,000.
+  So each report says how many people each address has placed there, and
+  the Atlas counts an address for no more than `ADDRESS_ONLINE` (40) across
+  every sector, in the players online it shows and in the count `MAX_ONLINE`
+  is checked against. Filling the survey takes 625 addresses, not one.
+- **Outside the shared world, `MAX_ONLINE` doesn't hold.** Sectors there
+  don't report, so their players aren't counted and they never turn anyone
+  away as the survey being full: only `MAX_PLAYERS` and the per-address
+  limits bound them. A crowd, or a script with many addresses, out there
+  costs what it costs. Counting them would mean every far sector reporting
+  to the Atlas too.
+- **Messages: 20 at once per socket, then 10 a second.** Every message
+  costs the sector's one thread some work (a position, initials, a badge to
+  check), so past that a socket's messages are dropped unread
+  (`FRAME_BURST`, `FRAME_REFILL_MS`). The game sends a few a second at most.
+  A badge and card are checked again only when the game sends new ones.
 - **Why a binding and not a Durable Object per address.** The binding keeps
   its counts in each Cloudflare location, in memory, and answers without
   waiting for other locations to agree. So it's approximate: counts are per
@@ -316,8 +364,8 @@ drawer like the notes': a sheet from the bottom on a phone, and on a computer
 a panel over the docked notes. `P` opens and closes it, and Escape closes it.
 It started as a fold of the field notes, but with guilds, your initials,
 linking devices and recovery codes it outgrew them, and the notes are about
-the map and your finds. To make room on a phone's top bar, the title there
-is "LF".
+the map and your finds. To make room on a phone's top bar, there's no title
+there at all (the tab and the Home Screen name say it).
 
 The drawer has two pages, one at a time (the page's `peoplePage` machine,
 shown as `<html data-people-page>`), so the list is only people and
@@ -325,10 +373,11 @@ everything about you is one tap away:
 
 - **The list.** First a row for you: your initials in a ring of your
   caret's colour, and a line naming what's on your page (initials, guild
-  and devices), never how each is set. It opens your page. Then your guild, if you're in one, under a heading with
-  its name, how many mates are online and "+ Invite", which copies the
-  invite link (and says "Link copied" for a moment); mates online come
-  first, then those offline with when they were last seen. Then everyone
+  and devices), never how each is set. It opens your page. Then each guild
+  you're in (up to five), under a heading of its own with its name, how many
+  members are online and "+ Invite", which copies the invite link (and says
+  "Link copied" for a moment); members online come first, then those offline
+  with when they were last seen. Then everyone
   else, nearest first. A row puts a phone's drawer away as it flies, as a
   find does the notes. Each row is three buttons (fly there, wave, and ⋯),
   so it works from a keyboard, and Escape folds an open row of emotes. What
@@ -475,8 +524,8 @@ only what one sector passes another.
 **Limits.**
 
 - Each socket: 3 at once, then one every 4 s.
-- Each address: 20 a minute, across every sector (`SURVEY_EMOTES`, a
-  rate-limiting binding like the claims').
+- Each address: about 20 a minute (`SURVEY_EMOTES`, a rate-limiting binding
+  like the claims', approximate in the same way).
 - Kept by the recipient's sector, which every emote for its players passes
   through, from anywhere: 3 a minute from one sender to one player (`slow
   down`), and 6 every 10 s to one player from everyone (`busy`). Nobody can
@@ -638,7 +687,12 @@ who isn't a member gets the same answer as a guild that doesn't exist.
   most every 10 minutes). A socket keeps `guilds: [{code, tag, lid, at}]` in
   its attachment; one saved by an older version, with a single guild, reads
   back as a list of one. The checks that are out are kept in memory, per
-  code.
+  code. A check that fails is tried again 30 s on (`GUILD_RETRY_MS`), not
+  with every message, so a guild that's struggling isn't asked by every
+  member's every move. And one socket can set off 10 checks at once and one
+  every 90 s after (`GUILD_CHECKS`), twice what its rechecks need: a game
+  naming new codes in every message waits for its allowance rather than
+  costing five requests a message.
 - **On the map.** Presence gives each player's tags (one as a string, as an
   older game reads it, several as a list); the game marks a mate's caret
   with every guild it shares with them (see "Several guilds"). Other
@@ -651,7 +705,7 @@ who isn't a member gets the same answer as a guild that doesn't exist.
 ### Who's online rides on the reports
 
 Each report's surveyors carry their guilds' tags, as a list, and the report lists the
-guilds of everyone in the sector (up to `GUILD_TAGS_MAX`, 100). The Atlas keeps who's online in each guild,
+guilds of everyone in the sector (up to `GUILD_TAGS_MAX`, 100; past that, each report asks about the next 100 round, so every guild there hears within a few reports). The Atlas keeps who's online in each guild,
 replaced sector by sector as reports come in, and answers each report with
 the online members of the guilds that sector asked about; a member of
 several is online in each. The sector passes
@@ -671,6 +725,9 @@ on or off, not with every report. It costs no requests of its own.
   guilds already.
 - **Outside the shared world** sectors don't report, so a member out there
   shows as offline, with when they were last seen.
+  So do yours: with no live sector of yours inside it (out past it, offline
+  or the tab hidden), the game forgets who was online, and shows every
+  member as offline until a sector inside says again.
 
 ### Cost
 
@@ -745,12 +802,15 @@ What a link carries, checked by `cleanCarry` in `worker/src/players.js`:
 the initials, the guilds (code, name and tag of each, up to five, with the
 first as `guild` too for an older game), the player's labels for them, the mutes, with who each
 muted surveyor was and when (for the Muted list on your page), and the
-switch under Surveyors for taking emotes, and the player's labels for their
-guilds. Mutes from both devices are kept. Guilds are merged, up to five:
+switch under Surveyors for taking emotes, the player's labels for their
+guilds, and the badge they show and their card (signed for them, so the
+device's own signatures, made for the self it leaves, go). Mutes from both devices are kept. Guilds are merged, up to five:
 theirs first, then this device's, which the linked surveyor joins (labels
 from both, theirs where both have one), so linking in either direction loses
-none that fit. Either way the device's old self leaves its guilds, since it
-won't be back. Field notes come from both devices from
+none that fit (a join that doesn't get through is tried again, up to three
+times). Either way the device's old self leaves its guilds, since it
+won't be back, and a recovery code saved on the device, which brings back
+that old self, is forgotten there. Field notes come from both devices from
 then on, through syncing; sound and music stay each device's own.
 
 ### Why a code, and how it's kept safe
@@ -804,7 +864,9 @@ that surveyor again.
   marks it saved, which exempts it from the 180-day clear-out while the
   code lasts. Using the code on a new device turns syncing on there with
   this device's settings older than the backup's, so the first sync brings
-  back the initials, guilds and labels, mutes and notes; that device's own
+  back the initials, guilds and labels, mutes and notes (a setting changed
+  there before that sync answers waits for it, and goes up only if the
+  backup had none); that device's own
   notes join them, and its guilds too: joined again as the recovered
   surveyor, kept aside until the backup's list arrives, then added to it up
   to five (any that don't fit are left), and the merged list goes back as the
@@ -827,15 +889,17 @@ player's own devices reach it:
     POST /v1/player/forget  {token} → {off: true}
 
 - **Only a link or a recovery code starts one.** Redeeming a link code or
-  saving a recovery code starts the player's Player; until then a sync
-  answers `off` and stores nothing. So a player who never linked a device or
+  saving a recovery code starts the player's Player (removing a code starts
+  none); until then a sync answers `off` and stores nothing. So a player who never linked a device or
   saved a code keeps everything in their browser, as before, and making
   Players costs as much as making codes, which is limited per address.
 - **A sync carries what's new.** Every row has the version it last changed
   in. A device sends what changed on it since its last sync (the finds and
   supernovas it's kept a list of, and its settings with when they last
   changed) and the version it last heard, and gets back everything that
-  changed since then, apart from what it just sent. A Player that was
+  changed since then, apart from what it just sent as it's kept (a find or
+  achievement it sent that merged with what another device had comes back
+  merged). A Player that was
   forgotten and started again has a new epoch, so a device that last heard
   from the old one starts over and sends all it has.
 - **Merging can't lose anything.** Finds are keyed by word and place, as
@@ -860,8 +924,8 @@ player's own devices reach it:
   days deletes itself (an alarm, put off by each day's first sync).
 
 The game's `sync` machine (off, idle, syncing, failed) shows on `<html
-data-sync>`, and the line at the foot of the field notes says "Synced with
-your linked devices".
+data-sync>`. Players see no line about it; a sync that fails tries again
+quietly.
 
 ### Cost
 
@@ -928,8 +992,8 @@ by a page that can be cached, which is what D1 is for.
   freshly woken sector, would put the log off again and again.
 - The alarm reads claims made since the last one D1 has (the sector's
   `logged` mark, with an index on the claims' time) and writes up to 240 in
-  one D1 batch: 12 rows to an `INSERT` (D1 binds at most 100 values to a
-  statement) and one transaction for the lot. Only then does the mark move.
+  one D1 batch: 11 rows to an `INSERT` (nine values a row, and D1 binds at
+  most 100 values to a statement) and one transaction for the lot. Only then does the mark move.
 - **If D1 fails**, nothing is lost: the claims are still in the sector, the
   mark stays, and the alarm tries again after 1, 2, 4… minutes, up to 10.
   Workers Logs gets a `{survey: 'log failed'}` line. A write that reached D1
@@ -939,8 +1003,9 @@ by a page that can be cached, which is what D1 is for.
   object moved to a machine whose clock is behind, so the mark can't skip
   one.
 - The table is `WITHOUT ROWID` and ordered by `(at, key)`, so reading an hour
-  reads just that hour's rows, and there's no other index to write: one row
-  written per claim. The tests check each query's plan.
+  reads just that hour's rows. Its indexes (by initials, territory, theme
+  and guild) and the counts its triggers keep make more rows written per
+  claim; "Cost" below counts them. The tests check each query's plan.
 
 **Backfill.** None needed by hand. A sector that charted words before the log
 existed has no mark, so the first time it wakes after the deploy it sends
@@ -1010,9 +1075,8 @@ GET /v1/survey/log/timelapse/guild/<lid>/<day>?after=<at>~<key>
 An hour comes oldest first, 500 entries a page; `next` is the `after` for the
 next page. A day, hour or month that hasn't started is a 400. `world` counts
 the hidden words in the shared world, which go toward its 1,119,752. Top
-lists count hidden and stray words for surveyors, but only hidden words for
-territories and themes, since a stray's theme is one its word is in, not
-always its territory's. The day endpoint is still there for older copies of
+lists count hidden words: bonus words have left the log (`0009`), so they
+count nowhere. The day endpoint is still there for older copies of
 the page.
 
 **Caching.** Past hours and days don't change, but a claim can reach D1 up to
@@ -1021,8 +1085,10 @@ hour ago (`SETTLED_MS`) is cached for a day, and the one still running for
 15 seconds:
 
 - `Cache-Control` on every answer, for browsers;
-- in each Worker instance's memory (up to 300 answers), so a crowd reading
-  the current hour costs one D1 query per instance every 15 s;
+- in each Worker instance's memory (up to 300 answers and 8 million
+  characters of them, the least recently asked for going first), so a crowd
+  reading the current hour costs one D1 query per instance every 15 s: those
+  who ask while it's being read wait for that one read;
 - in Cloudflare's cache through the Cache API. The cached copy has no CORS
   headers; each answer adds its own origin's. That cache is shared by every
   Worker on the same zone, and all of this account's `workers.dev` Workers,
@@ -1061,8 +1127,9 @@ chart's table view; hovering or focusing a column shows its number too.
 **The hour, minute by minute,** opens from a day (its column, or "Minute by
 minute" on an hour's heading) rather than having a tab: most hours hold a
 handful of words, and a day already lists them. It's there for a busy
-hour. The hour still running says Live and reloads every 20 seconds while
-the page is on screen; nothing else reloads by itself.
+hour. The hour still running says So far and reloads every 20 seconds while
+the page is on screen; any other period still running reloads once, when
+it ends.
 
 **Counts, not rows.** A week or a year of the log itself could be a
 million rows to read, and the running ones change constantly, so the longer
@@ -1120,7 +1187,9 @@ history the same way as everyone's. Going into a view, or back to
 everyone's, is a new entry in the browser's history, so Back returns to
 where it came from; moving between periods replaces the address as before.
 A view's Share button uses the phone's share sheet, or copies the link.
-Link previews are still the page's own, since the site is static.
+Once the page's `SHARE_URL` is set, the link is the share Worker's `/v/…`
+card of the view (see "Share cards" in AGENTS.md); until then it's the
+page's own, with the page's own picture.
 
 Initials aren't unique, so "ZED" is everyone who typed ZED, and the view
 says so. A stray word's theme is its word's, not its territory's, so a theme
@@ -1362,7 +1431,8 @@ kept in their notes' supernovas, and its territory becomes a remnant at
 once. The title's count is the sector's too, wherever the territory is,
 inside the shared world or out ("110/111 charted"), never the player's own
 notes, which can be short of it by words someone else charted first; its
-hover says how many are in the notes when they differ. Only playing alone
+hover says how many are in the notes when they differ (on a phone, which
+has no hover, it's in what a screen reader reads). Only playing alone
 does it count the notes ("found"). How it plays depends on how far off it is:
 
 - **Within 3 territories** of the middle of the view, or your own: the
@@ -1531,11 +1601,14 @@ On Workers Paid, per word charted: up to seven D1 rows written (the log's
 row, an update each to the hour's, the surveyor's and the territory's
 counts, and a row in each of the three indexes; no initials or a stray word
 skips two), and two more for a word charted in a guild (its index and its
-day's count; see "Guilds" under "The log"), one more row written in the sector (its time index), and a
-share of an alarm. A supernova, once per territory (10,000 in the shared
+day's count; see "Guilds" under "The log"), two more rows written in the sector (its time index, and
+what the next report owes the Atlas, in the shared world), and a share of an alarm. A supernova, once per territory (10,000 in the shared
 world), adds two rows written in its sector (the row and marking it sent)
-and two in D1 (the row and its index on time), and reads its territory's
-claims once, about 110 rows: next to the 112 words that made it, nothing.
+and two in D1 (the row and its index on time), and reads the sector's
+claims once, since no index covers a territory's cells: up to its ~1,800
+hidden words and any bonus words, once per territory. A sector also reads
+every claim once when it wakes, to count each territory's. At SQLite's
+price for rows read, both are next to nothing.
 Reading the list costs the supernovas in its range, at most 100 a page,
 plus one count for each. Each busy sector's
 alarm runs at most every 30 s: one Durable Object request and two rows
@@ -1564,7 +1637,9 @@ thousand rows, at most every 10 minutes per instance. If that ever shows in
 the bill, the next step is a monthly level of the same counts. A surveyor's
 or theme's view reads its rows in the range three times: all time for
 someone with 10,000 words is about 30,000 rows, at most every 2 minutes per
-instance while it's running.
+instance while it's running. Its later pages (`?before=`) read only their
+own 100 entries, and take the totals and top lists from the first page, as
+it's kept.
 
 **The timelapse** reads each word's row once per day it's kept. A full
 replay, cold, reads every word plus the index's count rows (one per hour
@@ -1743,7 +1818,8 @@ about 30 cents over the included million requests.
 ## Not done yet
 
 - **A spending alert.** Workers Paid has no spending cap; `MAX_ONLINE`
-  keeps the worst case near $18 a day. A scheduled check of Cloudflare's
+  keeps the worst case in the shared world near $18 a day, but nothing
+  bounds sectors outside it (see "Bots"). A scheduled check of Cloudflare's
   analytics API could open a GitHub issue when the month's usage passes a
   threshold.
 - **Run `load.js` against a deployment.** That would confirm the per-sector
@@ -1763,7 +1839,9 @@ about 30 cents over the included million requests.
   measured protobuf + zstd at about 30 times smaller than uncompressed JSON.
 - **Edge caching.** The world map is cached per Worker instance. On a
   custom domain, Cloudflare's cache could serve it as chessboards did.
-- **Zoomed-out views** only show live claims from the four nearest sectors.
+- **Zoomed-out views** only show live claims from the four nearest sectors
+  (after the nearest, a sector in view with a word of yours waiting to be
+  claimed comes first, so the word isn't left waiting).
   A cached per-sector snapshot could fill in the rest of the screen.
 - **The log, live, beyond the hour.** The running hour reloads every 20
   seconds; a running day, week or longer shows what it had when opened. It

@@ -289,7 +289,8 @@ hover card, and their card in their caret's menu (see "Profile cards").
   something that just happened here (a hat tipped) plays one.
 - **Never over another note.** The note waits while a find's bead is still
   flying, a supernova is going off, or another note is showing (up to about
-  20 seconds, then it shows anyway). Hats Off waits for the emote's own note.
+  20 seconds, then it shows anyway). In a hidden tab it waits, however long,
+  until the tab is back. Hats Off waits for the emote's own note.
 - **A day that counts** has a quieter note of its own, `day`: when the third
   word of the day is circled in this tab, "Today counts" with the strip's
   filled dot and "3 days running" (or "your first day surveyed", or how many
@@ -368,9 +369,13 @@ changed since the last version, and `best`, as finds go:
   one small message back, and about 25 bytes more in each find, on the
   device and in the Player. Nothing new is stored on the server.
 - **Badges:** one request when an achievement is earned, or when the
-  surveyor's card is missing a badge they hold, each checking the player's
-  signed finds (1,000 signatures is a few milliseconds), limited to 30 an
-  hour per address. No storage.
+  surveyor's card is missing a badge they hold, and once a visit while an
+  achievement is still unsigned, each checking the player's signed finds
+  (1,000 signatures is a few milliseconds; the 25,000 the notes can hold,
+  about a second, in about 1.75 MB), limited to 30 an hour per address. No
+  storage. The game keeps what it last asked once answered
+  (`letterfield.badgesasked.v1`), so a visit with no new achievement,
+  receipt or card to show doesn't ask again for the same answer, for a week.
 - **Cards:** one HMAC in the sector when a surveyor joins it or their card
   changes, and about 15 bytes more for each surveyor with one in each
   presence message (once a second while anyone moves). No storage beyond the

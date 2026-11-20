@@ -528,6 +528,33 @@ describe('rooms', () => {
     assert.deepEqual(room.info(), { code: 'K7QP', phase: 'lobby', players: 2, full: false });
   });
 
+  test('one socket takes one seat, whatever tokens it sends', async () => {
+    const ws = new FakeSocket();
+    room.connect(ws);
+    for (let i = 0; i < 5; i++) {
+      await say(room, ws, { t: 'hello', name: `Bob${i}`, avatar: 0, token: token(`ghost${i}`) });
+      room.clock += 1000;
+    }
+    assert.deepEqual(room.room.players.map((p) => p.name), ['Bob0']);
+    assert.equal(ws.last('error').error, 'Bad token.');
+    // Its own token again is fine: a new name.
+    await say(room, ws, { t: 'hello', name: 'Robert', avatar: 0, token: token('ghost0') });
+    assert.deepEqual(room.room.players.map((p) => p.name), ['Robert']);
+  });
+
+  test("a socket's saves are paced: a few at once, then a few a second", async () => {
+    const dana = await join(room, 'Dana');
+    await join(room, 'Bob');
+    const before = room.state.writes;
+    for (let i = 0; i < 40; i++) await say(room, dana, { t: 'slow', slow: i % 2 === 0 });
+    assert.equal(room.state.writes - before, 4, 'the four left after her hello');
+    room.clock += 1000;
+    for (let i = 0; i < 40; i++) await say(room, dana, { t: 'length', length: 'quick' });
+    assert.equal(room.state.writes - before, 9);
+    for (let i = 0; i < 40; i++) await say(room, dana, { t: 'hello', name: 'Dana', avatar: 1, token: token('Dana') });
+    assert.equal(room.state.writes - before, 9);
+  });
+
   test('a rude name is refused, with no seat', async () => {
     const ws = new FakeSocket();
     room.connect(ws);

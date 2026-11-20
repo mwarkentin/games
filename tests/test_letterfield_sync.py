@@ -14,8 +14,8 @@ import re
 from playwright.sync_api import Page, expect
 
 from fake_leaderboard import Held
-from fake_survey import FakeGuilds, FakeLinks, FakePlayers, FakeSurvey, reply
-from test_letterfield_guilds import CODE2, MINE, WORK
+from fake_survey import NOW_MS, FakeGuilds, FakeLinks, FakePlayers, FakeSurvey, player_id, receipt, reply
+from test_letterfield_guilds import CODE, CODE2, MINE, WORK, in_both, in_cobalt, stored
 from test_letterfield_guilds import start as start_guilds
 from test_letterfield_survey import SURVEY, eventually, known_words, open_you
 from test_letterfield_surveyors import KIM, PID, TOKEN
@@ -31,12 +31,15 @@ def start(
     finds=(),
     query: str = "",
     links: FakeLinks | None = None,
+    fake: FakeSurvey | None = None,
+    held: Held | None = None,
 ) -> None:
-    """Opens the game with our token and `finds` in the notes, synced through `players` as
-    a link leaves it (every find waiting to go up), or not synced at all."""
-    page.route(f"{SURVEY}/v1/player/**", players.handle)
+    """Opens the game with our token and `finds` in the notes, synced through `players` (or
+    `held`, holding some of its replies) as a link leaves it (every find waiting to go up), or
+    not synced at all."""
+    page.route(f"{SURVEY}/v1/player/**", (held or players).handle)
     page.route(f"{SURVEY}/v1/link**", (links or FakeLinks(players=players)).handle)
-    start_guilds(page, site_url, FakeSurvey(), FakeGuilds())
+    start_guilds(page, site_url, fake or FakeSurvey(), FakeGuilds())
     page.evaluate("finds => localStorage.setItem('letterfield.finds.v4', finds)", json.dumps(list(finds)))
     if synced:
         page.reload()
@@ -264,4 +267,161 @@ def test_a_device_linked_with_a_code_sends_all_it_has(page: Page, site_url, erro
     body = players.sent()[0]
     assert sorted(f["w"] for f in body["finds"]) == sorted(f["w"] for f in mine)
     expect(page.locator("html")).to_have_attribute("data-sync", "idle")
+    assert errors == []
+
+
+def start_in_guilds(page: Page, site_url: str, players: FakePlayers, guilds: FakeGuilds, mine: list) -> None:
+    """Opens the game synced, in the guilds `mine`, with `guilds` answering for them."""
+    page.route(f"{SURVEY}/v1/player/**", players.handle)
+    start_guilds(page, site_url, FakeSurvey(), guilds, mine=mine)
+    page.evaluate("on => localStorage.setItem('letterfield.sync.v1', JSON.stringify(on))", ON)
+    page.goto("about:blank")
+    page.goto(f"{site_url}/letterfield?survey={SURVEY}#debug")
+    page.wait_for_function(f"window.__lf && window.__lf.pid() === '{PID}'")
+    eventually(page, lambda: len(players.sent()) >= 1)  # the first sync, which brings nothing
+
+
+def guilds_from_there(page: Page, players: FakePlayers, guilds: list) -> None:
+    """A linked device changes our guilds to `guilds`, and this one syncs."""
+    players.add(
+        PID,
+        settings={"initials": "MLW", "guilds": guilds, "guild": guilds[0] if guilds else None},
+        settings_at=page.evaluate("Date.now()"),
+    )
+    page.evaluate("window.__lf.syncNow()")
+
+
+def test_a_guild_list_from_there_keeps_the_leave_being_asked_about(page: Page, site_url, errors):
+    """It used to clear which guild was being asked about without a move, leaving the card asking
+    nothing with data-guild still 'confirming' and every guild button refused."""
+    players = FakePlayers(started=[PID])
+    start_in_guilds(page, site_url, players, in_both(), [MINE, WORK])
+    open_you(page)
+    card, html = page.locator("#guildCard"), page.locator("html")
+    card.get_by_role("button", name="Leave").first.click()
+    expect(html).to_have_attribute("data-guild", "confirming")
+    expect(card).to_contain_text("Leave the Cobalt Compass Society?")
+    guilds_from_there(page, players, [MINE])  # left the other one there
+    eventually(page, lambda: page.evaluate("window.__lf.myGuilds().map(g => g.code)") == [CODE])
+    expect(html).to_have_attribute("data-guild", "confirming")
+    expect(card).to_contain_text("Leave the Cobalt Compass Society?")
+    card.get_by_role("button", name="Leave", exact=True).click()
+    expect(html).to_have_attribute("data-guild", "out")
+    assert errors == []
+
+
+def test_a_guild_list_from_there_while_naming_one_here_keeps_both(page: Page, site_url, errors):
+    """A list that came while this device was naming a guild used to be skipped, and the guild
+    started here then went up as the whole list, dropping the one joined there everywhere."""
+    players = FakePlayers(started=[PID])
+    guilds = in_cobalt()
+    start_in_guilds(page, site_url, players, guilds, [])
+    open_you(page)
+    card, html = page.locator("#guildCard"), page.locator("html")
+    card.get_by_role("button", name="Start a guild").click()
+    expect(html).to_have_attribute("data-guild", "naming")
+    guilds_from_there(page, players, [MINE])
+    eventually(page, lambda: page.evaluate("window.__lf.myGuilds().map(g => g.code)") == [CODE])
+    expect(html).to_have_attribute("data-guild", "naming")
+    card.get_by_role("button", name="Start it").click()
+    expect(html).to_have_attribute("data-guild", "in")
+    made = next(code for code in guilds.guilds if code != CODE)
+    assert [g["code"] for g in stored(page)] == [CODE, made]
+    eventually(
+        page, lambda: [g["code"] for g in players.players[PID]["settings"]["guilds"]] == [CODE, made], timeout_ms=8000
+    )
+    assert errors == []
+
+
+def test_a_tab_left_on_the_old_surveyor_starts_again_as_the_new_one(page: Page, site_url, errors):
+    """Another tab linked (or recovered) and became another surveyor. This one used to sync on as the
+    old self, whose Player says syncing has stopped, and so turned syncing off for the whole browser."""
+    players = FakePlayers(started=[PID])
+    start(page, site_url, players)
+    eventually(page, lambda: len(players.sent()) >= 1)
+    new = "e" * 32
+    players.start(player_id(new))
+    other = page.context.new_page()
+    other.goto(f"{site_url}/letterfield?survey={SURVEY}")
+    # What linking leaves behind: the new token, and syncing from here.
+    other.evaluate(
+        "t => { localStorage.setItem('letterfield.sync.v1', JSON.stringify({ on: true, epoch: '', at: 0, f: [], n: [], settingsAt: 1 })); localStorage.setItem('games.player', t); }",
+        new,
+    )
+    page.wait_for_function(f"window.__lf && window.__lf.pid() === '{player_id(new)}'")
+    page.evaluate("window.__lf.syncNow()")
+    eventually(page, lambda: any(b["token"] == new for b in players.sent()))
+    assert page.evaluate("localStorage.getItem('letterfield.sync.v1')") is not None
+    assert all(b["token"] == new for b in players.sent()[1:])
+    other.close()
+    assert errors == []
+
+
+def test_a_receipt_that_comes_while_its_find_is_going_up_goes_up_after(page: Page, site_url, errors):
+    """A find that changed while the sync sending it was out was taken off what's waiting when the
+    reply came, so its receipt (or charted first) never reached the other devices."""
+    mine = words(page, site_url, 1)
+    players = FakePlayers(started=[PID])
+    held = Held(players, lambda r: r.url.endswith("/v1/player/sync"))
+    held.holding = False
+    fake = FakeSurvey(lose="claim")  # its claim goes unanswered, so nothing else changes it
+    start(page, site_url, players, finds=mine, fake=fake, held=held)
+    held.holding = True
+    held.wait_for(page, timeout_ms=10_000)
+    key = page.evaluate("[...window.__lf.found.keys()][0]")
+    signed = receipt(NOW_MS, "f")
+    eventually(page, lambda: "0,0" in fake.sockets)
+    fake.sockets["0,0"].send(json.dumps({"t": "signed", "k": key, "r": signed}))
+    page.wait_for_function("k => window.__lf.found.get(k).r", arg=key)
+    held.release()
+    eventually(
+        page, lambda: any(f.get("r") == signed for f, _ in players.players[PID]["finds"].values()), timeout_ms=8000
+    )
+    assert errors == []
+
+
+def test_initials_signed_in_another_game_reach_the_linked_devices(page: Page, site_url, errors):
+    """The other games share the initials. A change from one never reached the linked devices, and
+    their next change of settings brought the old initials back, in every game."""
+    players = FakePlayers(started=[PID])
+    start(page, site_url, players)
+    eventually(page, lambda: len(players.sent()) >= 1)
+    page.wait_for_function("window.__lf.sync() === 'idle'")
+    other = page.context.new_page()
+    other.goto(f"{site_url}/")
+    other.evaluate("localStorage.setItem('games.initials', JSON.stringify('BOB'))")  # a score saved in another game
+    expect(page.locator("#surveyMeName")).to_have_text("BOB")
+    eventually(page, lambda: (players.players[PID]["settings"] or {}).get("initials") == "BOB", timeout_ms=8000)
+    # And one changed while Letterfield wasn't open is seen when it next is.
+    page.goto("about:blank")
+    other.evaluate("localStorage.setItem('games.initials', JSON.stringify('SUE'))")
+    page.goto(f"{site_url}/letterfield?survey={SURVEY}#debug")
+    eventually(page, lambda: (players.players[PID]["settings"] or {}).get("initials") == "SUE", timeout_ms=8000)
+    other.close()
+    assert errors == []
+
+
+def test_supernovas_from_a_linked_device_are_kept_with_your_own_first(page: Page, site_url, errors):
+    """The game kept 200 supernovas to the Player's 1,000, the newest whoever's they were, and
+    stored the whole list again for each one a sync brought: your own last word could fall out of
+    your notes behind strangers' far-off ones, and a big sync wrote storage a thousand times."""
+
+    def nova(i: int, **kw) -> dict:
+        return {"rx": i, "ry": 50, "t": 1_700_000_000_000 + i, "w": "WORD", "x": 0, "y": 0, "d": 0, "by": "ZED", **kw}
+
+    mine = nova(-1, mine=True, solo=False, by="")  # the oldest of all
+    page.add_init_script(f"""
+      if (location.protocol.startsWith('http') && !localStorage.getItem('letterfield.novas.v1'))
+        localStorage.setItem('letterfield.novas.v1', {json.dumps(json.dumps([mine]))});
+      window.__novaWrites = 0;
+      const set = Storage.prototype.setItem;
+      Storage.prototype.setItem = function (k, v) {{ if (k === 'letterfield.novas.v1') window.__novaWrites++; return set.call(this, k, v); }};
+    """)
+    players = FakePlayers(started=[PID])
+    players.add(PID, novas=[nova(i) for i in range(1000)])
+    start(page, site_url, players)
+    page.wait_for_function("window.__lf.novas().length === 1000")
+    kept = page.evaluate("window.__lf.novas().map(n => n.rx)")
+    assert -1 in kept and 0 not in kept  # yours stays; the oldest of the others' goes
+    assert page.evaluate("window.__novaWrites") <= 2
     assert errors == []

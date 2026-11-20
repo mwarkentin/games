@@ -56,8 +56,10 @@ export function text(str, x, y, font, px, fill, spacing = 0) {
 
 // The game's fragment form, f-<word>-<x>-<y>-<d> (m for minus), checked
 // against the map as the survey checks a claim. Returns the find, or null.
+// Numbers only as the game writes them (no leading zeros, no m0), so each
+// find has one address, and one card kept for it.
 export function parseFind(slug) {
-  const m = /^f-([a-z]{3,12})-(m?\d{1,9})-(m?\d{1,9})-([0-7])$/.exec(slug);
+  const m = /^f-([a-z]{3,12})-(0|m?[1-9]\d{0,8})-(0|m?[1-9]\d{0,8})-([0-7])$/.exec(slug);
   if (!m) return null;
   const num = (v) => (v[0] === 'm' ? -Number(v.slice(1)) : Number(v));
   const x = num(m[2]), y = num(m[3]);
@@ -70,7 +72,8 @@ export function parseFind(slug) {
 // Raised when what the cards say changes, so the cards already drawn and
 // kept for good (at the edge and in R2, by the state they show) are drawn
 // afresh: it ends every card's state. 2: the universe, and bonus words.
-export const CARD_WORDS = 2;
+// 3: a bonus word's theme keeps its capitals.
+export const CARD_WORDS = 3;
 
 // How much of the universe is charted, as the card says it: one decimal
 // under 1%, whole percents rounded down after that, so it never says 100%
@@ -136,7 +139,7 @@ export function findSvg(e, { claim, progressText = null, dark = false, host = 'g
   out.push(text('LETTERFIELD', X, 84, 'mono5', 20, C.muted, 0.14));
   out.push(text(e.w, X, 216, 'display', fit(e.w, 'display', 120, 40, R - X, 0.04), C.ink, 0.04));
   out.push(`<circle cx="${X + 9}" cy="262" r="9" fill="${col.stroke}"/>`);
-  const kind = `${e.s ? 'A bonus ' + theme.name.toLowerCase() : theme.name} word`;
+  const kind = `${e.s ? 'A bonus ' : ''}${theme.name} word`;
   out.push(text(kind, X + 30, 271, 'ui5', fit(kind, 'ui5', 26, 16, R - X - 30), C.muted));
   const place = regionName(e.rx, e.ry);
   out.push(text(place, X, 330, 'ui6', fit(place, 'ui6', 34, 18, R - X), C.ink));

@@ -18,8 +18,9 @@ utilities; games live here so they get their own origin and their own rules.
   back in the tab's history when the tab came from the map, so the map comes
   back as it was (`data-back`, and the helper beside it in the log), and the
   map keeps its place whenever an entry of its is come back to; links into
-  the log open it at its start. `tests/test_letterfield_back_links.py`
-  checks both. `letterfield-soundtrack.html`, the game's music as an album
+  the log open it at its start. The timelapse's "← Log" steps back the same
+  way when the tab came from the log, so the log comes back at its view.
+  `tests/test_letterfield_back_links.py` checks all of this. `letterfield-soundtrack.html`, the game's music as an album
   (see The soundtrack album), is another, linked from the music player in
   the game's tools, and its own "← Letterfield" steps back the same way.
 - `README.md`: the game list. The build turns it into `index.html`.

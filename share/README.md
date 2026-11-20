@@ -62,7 +62,8 @@ are drawn again in the new words.
   under `m<map>/<theme>/<slug>/<state>.png`, so each is drawn once
   worldwide. Nothing else goes there, so a script can't fill the bucket.
 - **Render limit:** new cards are limited to 30 a minute per address (a
-  salted hash, with `IP_SALT`). Over it, the request is sent to the game's
+  salted hash, with `IP_SALT`, of the address or, for IPv6, its /64, as
+  the survey counts it). Over it, the request is sent to the game's
   own preview image. Cards already drawn are never limited.
 
 Drawing a card takes 40–60 ms of CPU, so the Worker needs Workers Paid. The
@@ -142,9 +143,11 @@ GET /v/d/…, ….png                                        dark; the card itse
 - **Pinned:** `<period>` is `hour`, `day`, `week`, `month` or `year`;
   `<when>` is its first day in the sharer's time zone (`YYYY-MM-DD`, with
   `Thh` for an hour), which names it on the card and in the link back; and
-  `<from>-<to>` are the UTC hours it covers, the very hours the page asked
-  the log for. So a week shared on Monday is still that week on Friday, and
-  a card counts what the page did. An address whose hours can't be that
+  `<from>-<to>` are the UTC hours it covers, the very hours the page
+  counts: those that start in the period (in a zone half an hour off UTC,
+  not the first one it asks the log for), or for an hour, the ones it asks
+  for. So a week shared on Monday is still that week on Friday, and a card
+  counts what the page did. An address whose hours can't be that
   period in any time zone, or a week that doesn't start on a Monday, is not
   found.
 - **The numbers** come from the leaderboard Worker's own log answers

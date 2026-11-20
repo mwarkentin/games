@@ -123,6 +123,8 @@ def eventually(page: Page, check, timeout_ms: int = 5000) -> None:
     assert check()
 
 
+# A surveyor with initials, set before the page loads.
+SIGNED = "localStorage.setItem('games.initials', JSON.stringify('MLW'))"
 # Fakes a tab hidden (true) or shown again (false).
 HIDE = """hidden => {
   Object.defineProperty(document, 'hidden', { configurable: true, get: () => hidden });
@@ -209,6 +211,18 @@ def test_shared_map_shows_other_surveyors_and_their_words(page: Page, site_url, 
     assert errors == []
 
 
+def test_where_you_are_stays_in_your_own_sector_at_its_edge(page: Page, site_url, errors):
+    """Just inside a sector's right edge, the position the game sent was rounded across it: the
+    sector counted you but left you off its list, and your own badge counted you as someone else."""
+    page.add_init_script("localStorage.setItem('letterfield.cam.v1', JSON.stringify({ x: 191.97, y: 6, cs: 38 }))")
+    fake = FakeSurvey()
+    open_game(page, site_url, fake)
+    eventually(page, lambda: any(m["sector"] == "0,0" for m in fake.sent("pos")))
+    x = next(m["x"] for m in fake.sent("pos") if m["sector"] == "0,0")
+    assert 191 <= x < 192, x
+    assert errors == []
+
+
 def test_a_word_charted_first_shares_where_it_came_in_the_worlds_count(page: Page, site_url, errors):
     word = known_words(page, site_url)[3]
     fake = FakeSurvey(totals={"charted": 412_883, "total": AREA_WORDS, "players": 3_201})
@@ -286,6 +300,7 @@ def test_a_claim_lost_on_the_way_that_someone_else_charted_is_marked_theirs(page
 
 def test_a_claim_still_waiting_survives_a_reload(page: Page, site_url, errors):
     word = known_words(page, site_url)[0]
+    page.add_init_script(SIGNED)  # a claim read back from storage waits for initials
     fake = FakeSurvey(hold=lambda url: True)  # this visit, the survey never lets us in
     open_game(page, site_url, fake)
     eventually(page, lambda: len(fake.held) == 4)
@@ -306,6 +321,7 @@ def test_claims_waiting_in_two_tabs_are_both_kept(page: Page, site_url, errors):
     """Each tab wrote its whole list of waiting claims, so the last to write dropped the other's
     for good: that word stayed in the notes, never claimed."""
     words = known_words(page, site_url)
+    page.context.add_init_script(SIGNED)
     fake = FakeSurvey(hold=lambda url: True)  # neither tab gets in
     open_game(page, site_url, fake)
     other = page.context.new_page()
@@ -398,6 +414,7 @@ def test_a_claim_turned_away_as_too_quick_waits_and_goes_again(page: Page, site_
 
 def test_past_the_daily_limit_says_so_and_keeps_the_word(page: Page, site_url, errors):
     words = known_words(page, site_url)
+    page.add_init_script(SIGNED)  # so a word sent again on another day goes signed
     fake = FakeSurvey(refuse="daily limit")
     open_game(page, site_url, fake)
     expect(page.locator("#survey")).to_have_attribute("data-state", "live")
@@ -410,6 +427,57 @@ def test_past_the_daily_limit_says_so_and_keeps_the_word(page: Page, site_url, e
     expect(page.locator("#survey")).to_have_attribute("data-state", "live")
     page.wait_for_timeout(500)
     assert len(fake.sent("claim")) == 1
+    # The next day (UTC), in the same tab, it goes when its sector is next joined: it had stayed
+    # uncharted until a reload.
+    fake.refuse = None
+    page.evaluate("() => { const now = Date.now, ahead = 86_400_000; Date.now = () => now() + ahead; }")
+    page.evaluate(HIDE, True)
+    page.evaluate(HIDE, False)
+    eventually(page, lambda: len(fake.sent("claim")) == 2)
+    assert fake.sent("claim")[1]["w"] == words[0][0]
+    eventually(page, lambda: page.evaluate("window.__lf.found.values().next().value.f") == 1)
+    assert errors == []
+
+
+def test_a_word_past_the_daily_limit_goes_when_the_day_turns_with_the_tab_open(page: Page, site_url, errors):
+    """A word turned away for the day's limit waited for its sector's next join, so in a tab left
+    open and joined past midnight (UTC) it stayed uncharted until a pan, a reload or the tab hidden."""
+    words = known_words(page, site_url)
+    page.add_init_script(SIGNED)
+    midnight = (int(time.time()) // 86_400 + 1) * 86_400
+    page.clock.install(time=midnight - 120)
+    fake = FakeSurvey(refuse="daily limit")
+    open_game(page, site_url, fake)
+    expect(page.locator("#survey")).to_have_attribute("data-state", "live")
+    circle(page, words[0])
+    expect(page.locator("#toast")).to_contain_text("Today’s charting limit reached")
+    fake.refuse = None
+    page.clock.run_for(60_000)
+    page.wait_for_timeout(300)
+    assert len(fake.sent("claim")) == 1  # still the same day
+    page.clock.run_for(90_000)
+    eventually(page, lambda: len(fake.sent("claim")) == 2)
+    assert fake.sent("claim")[1]["w"] == words[0][0]
+    eventually(page, lambda: page.evaluate("window.__lf.found.values().next().value.f") == 1)
+    assert errors == []
+
+
+def test_queued_claims_wait_past_the_daily_limit(page: Page, site_url, errors):
+    """Once the survey said the day's limit was reached, every claim still waiting went anyway, only
+    to be turned away too."""
+    words = known_words(page, site_url)
+    fake = FakeSurvey(refuse="daily limit")
+    open_game(page, site_url, fake)
+    expect(page.locator("#survey")).to_have_attribute("data-state", "live")
+    circle(page, words[0])
+    expect(page.locator("#toast")).to_contain_text("Today’s charting limit reached")
+    page.evaluate(HIDE, True)
+    circle(page, words[1])  # it waits for its sector
+    page.evaluate(HIDE, False)
+    expect(page.locator("#survey")).to_have_attribute("data-state", "live")
+    page.wait_for_timeout(500)
+    assert len(fake.sent("claim")) == 1
+    assert page.evaluate("window.__lf.outbox()") == [[words[1][0], "queued"]]
     assert errors == []
 
 
@@ -441,6 +509,53 @@ def test_a_find_the_survey_never_got_is_claimed_and_can_set_its_territory_off(pa
     expect(page.locator("#tCharted")).to_have_text(f" · {len(words)}/{len(words)} charted")
     expect(page.locator("#legendList .legend-note")).to_have_text("Every word here is charted.")
     assert page.evaluate(f"window.__lf.found.get('{'~'.join(map(str, last))}').f") == 1
+    assert errors == []
+
+
+def test_an_old_find_waits_for_initials_before_its_claimed(page: Page, site_url, errors):
+    """A find from before the survey, kept by a surveyor with no initials, went as a claim as soon as
+    its sector was live, while the sign card was still asking for them: charted first with nobody's
+    initials, for good."""
+    word = known_words(page, site_url)[0]
+    page.add_init_script(f"""
+      if (!localStorage.getItem('letterfield.finds.v4'))
+        localStorage.setItem('letterfield.finds.v4', JSON.stringify([{json.dumps({"w": word[0], "x": word[1], "y": word[2], "d": word[3], "t": NOW_MS - 86_400_000, "s": 0})}]));
+    """)
+    fake = FakeSurvey()
+    open_game(page, site_url, fake)
+    expect(page.locator("html")).to_have_attribute("data-intro", "sign")
+    expect(page.locator("#survey")).to_have_attribute("data-state", "live")
+    eventually(page, lambda: len(fake.sent("me")) == 4)
+    page.wait_for_timeout(500)
+    assert fake.sent("claim") == []
+    assert page.evaluate("window.__lf.outbox()") == [[word[0], "queued"]]
+    # Signed, it goes, after the sector has heard who's signing it.
+    page.fill("#signupInitials", "ASD")
+    page.click("#signup button")
+    eventually(page, lambda: [m["w"] for m in fake.sent("claim")] == [word[0]])
+    first = next(i for i, m in enumerate(fake.received) if m["t"] == "claim")
+    assert any(m["t"] == "me" and m["initials"] == "ASD" and m["sector"] == "0,0" for m in fake.received[:first])
+    assert errors == []
+
+
+def test_an_old_find_waiting_for_initials_goes_once_another_tab_signs(page: Page, site_url, errors):
+    """Only signing here let finds waiting for initials go: initials signed in another tab or game
+    (or brought by a linked device) left them waiting until the next reload."""
+    word = known_words(page, site_url)[0]
+    page.add_init_script(f"""
+      if (!localStorage.getItem('letterfield.finds.v4'))
+        localStorage.setItem('letterfield.finds.v4', JSON.stringify([{json.dumps({"w": word[0], "x": word[1], "y": word[2], "d": word[3], "t": NOW_MS - 86_400_000, "s": 0})}]));
+    """)
+    fake = FakeSurvey()
+    open_game(page, site_url, fake)
+    expect(page.locator("#survey")).to_have_attribute("data-state", "live")
+    page.wait_for_timeout(500)
+    assert fake.sent("claim") == []
+    other = page.context.new_page()
+    other.goto(f"{site_url}/")
+    other.evaluate("localStorage.setItem('games.initials', JSON.stringify('BOB'))")  # signed in another game
+    eventually(page, lambda: [m["w"] for m in fake.sent("claim")] == [word[0]])
+    other.close()
     assert errors == []
 
 
@@ -804,6 +919,24 @@ def test_full_sector_says_so(page: Page, site_url, errors):
     assert errors == []
 
 
+def test_a_crowded_sector_is_asked_again_only_once_its_minute_is_up(page: Page, site_url, errors):
+    """A crowded sector was asked again after exactly 45 s: inside the minute the survey counts
+    joins over, so it was only turned away again, and every socket turned away together came
+    back together."""
+    page.clock.install()
+    fake = FakeSurvey(full="sector")
+    open_game(page, site_url, fake)
+    not_live(page, "offline", "This part of the map is crowded right now. Your finds still save in this browser.")
+    assert len(fake.sectors) == 4
+    page.clock.run_for(60_000)
+    assert len(fake.sectors) == 4  # not inside the minute
+    page.clock.run_for(31_000)
+    eventually(page, lambda: len(fake.sectors) == 8)
+    page.clock.run_for(91_000)
+    eventually(page, lambda: len(fake.sectors) == 12)
+    assert errors == []
+
+
 def test_a_full_sector_says_crowded_even_with_its_neighbours_live(page: Page, site_url, errors):
     """The title went by whether any sector was live, so a full one beside live ones said "joining…"."""
     fake = FakeSurvey(full={"0,0": "sector"})  # the one under the camera; its neighbours let us in
@@ -879,6 +1012,19 @@ def test_outside_the_universe_the_title_counts_what_the_survey_charted(page: Pag
     expect(page.locator("#tCharted")).to_have_text(f" · {len(words)}/{len(words)} charted")
     expect(page.locator("#tCharted")).to_have_attribute(
         "title", f"{len(words)} of {len(words)} hidden words charted · {len(words) - 1} in your notes")
+    assert errors == []
+
+
+def test_on_a_phone_a_screen_reader_hears_how_many_of_the_charted_words_are_in_your_notes(page: Page, site_url, errors):
+    """A phone has no hover, so what the title's hover says goes in what a screen reader reads."""
+    words = known_words(page, site_url, FAR_WORDS)
+    theirs, yours = words[1], words[2:]
+    far_out(page, yours)
+    fake = FakeSurvey(home=FAR_SECTOR, claims=[[*theirs, 0, "ZWW", NOW_MS - 3 * 86_400_000]]
+                      + [[*w, 0, "MLW", NOW_MS - 60_000] for w in yours])
+    open_game(page, site_url, fake, viewport={"width": 375, "height": 740})
+    n = len(words)
+    expect(page.locator("#tCharted .vh")).to_have_text(f", {n - 1} of {n} words charted, {n - 2} in your notes")
     assert errors == []
 
 
@@ -1500,6 +1646,68 @@ def test_a_claim_whose_answer_was_lost_with_its_socket_is_still_credited(page: P
     assert page.evaluate("[...window.__lf.found.values()][0].f") == 1
     expect(page.locator("#findSay")).to_contain_text("First to chart it")
     assert len(fake.sent("claim")) == 1  # the sector already had it: not sent again
+    assert errors == []
+
+
+def test_a_claim_whose_answer_was_lost_is_credited_by_the_initials_it_went_with(page: Page, site_url, errors):
+    """A claim read back after a reload was settled by the initials signed then, not those it went
+    with, so after a link brought new initials our own word was "charted by" our old ones."""
+    word = known_words(page, site_url)[0]
+    page.add_init_script(
+        "if (!sessionStorage.getItem('signed')) { sessionStorage.setItem('signed', '1');"
+        " localStorage.setItem('games.initials', JSON.stringify('ZED')); }"
+    )
+    fake = FakeSurvey(lose="answer")
+    open_game(page, site_url, fake)
+    expect(page.locator("#survey")).to_have_attribute("data-state", "live")
+    circle(page, word)
+    eventually(page, lambda: len(fake.claims) == 1)
+    assert fake.claims[0][5] == "ZED"
+    page.evaluate("localStorage.setItem('games.initials', JSON.stringify('ANN'))")  # as a link leaves them
+    page.reload()
+    expect(page.locator("#survey")).to_have_attribute("data-state", "live")
+    expect(page.locator("#surveyText")).to_contain_text("1 word charted first by you")
+    assert page.evaluate("[...window.__lf.found.values()][0].f") == 1
+    assert page.evaluate("[...window.__lf.found.values()][0].b || ''") == ""
+    assert errors == []
+
+
+def test_a_word_circled_in_a_sector_in_view_but_not_joined_joins_it(page: Page, site_url, errors):
+    """Zoomed out on a wide screen, six sectors can show but only the four nearest are joined: a
+    word circled in another waited, unclaimed, until a pan brought its sector nearer, and someone
+    else could chart it meanwhile."""
+    page.add_init_script("localStorage.setItem('letterfield.cam.v1', JSON.stringify({ x: 90, y: 0, cs: 9 }))")
+    fake = FakeSurvey()
+    open_game(page, site_url, fake, viewport={"width": 2560, "height": 1080})
+    expect(page.locator("#survey")).to_have_attribute("data-state", "live")
+    eventually(page, lambda: len(fake.sectors) == 4)
+    assert "1,0" not in fake.sectors  # in view, at the right, but furthest
+    word = page.evaluate("(o => [o.w, o.x, o.y, o.d])(window.__lf.chunk(16, 0).words[0])")
+    circle(page, word)
+    eventually(page, lambda: "1,0" in fake.sectors)
+    eventually(page, lambda: [m["w"] for m in fake.sent("claim")] == [word[0]])
+    assert fake.sent("claim")[0]["sector"] == "1,0"
+    assert errors == []
+
+
+def test_a_claim_never_answered_rejoins_its_sector_and_goes_again(page: Page, site_url, errors):
+    """With no check that a socket still worked, one that died without closing (the network gone
+    with no word to the browser) kept its claims waiting for answers that never came, and still
+    said it was live, until the browser gave up on it minutes later."""
+    page.clock.install()
+    words = known_words(page, site_url)
+    fake = FakeSurvey(lose="claim")
+    open_game(page, site_url, fake)
+    expect(page.locator("#survey")).to_have_attribute("data-state", "live")
+    circle(page, words[0])
+    eventually(page, lambda: len(fake.sent("claim")) == 1)
+    page.clock.run_for(10_000)
+    assert fake.sectors.count("0,0") == 1  # an answer can take a moment
+    fake.lose = None
+    page.clock.run_for(8000)
+    eventually(page, lambda: fake.sectors.count("0,0") == 2)
+    eventually(page, lambda: len(fake.sent("claim")) == 2)
+    eventually(page, lambda: page.evaluate("window.__lf.found.values().next().value.f") == 1)
     assert errors == []
 
 

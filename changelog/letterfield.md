@@ -5,7 +5,7 @@
 - The soundtrack: Letterfield's music as an album, recorded from the game itself. Drift, Orbit, Chimes and Lantern, each in a longer cut with a beginning and an end, and a supernova between them, to play or download, with notes on how each is made. It's free to share and reuse, with credit. The music player in the tools links to it.
 - A fourth piece of music, Lantern: a soft piano alone in a dim hall, a slow, wistful waltz with strings breathing in under it, a cello now and then and a celesta far off. It takes turns with Drift, Orbit and Chimes, and plays a little differently each time.
 - A music player in the tools, under the music's slider: pause and play, step back and forward through the pieces, or pick one from the list. The music starts with the piece you last heard, and pausing keeps your place in it.
-- On a computer or tablet, the tools open as a drawer in the field notes' place, like the Surveyors. Moving between tools, Surveyors and field notes no longer slides the map and buttons from side to side, and closing the tools brings your notes back. The drawer also lists every keyboard shortcut, and T opens it. On a phone the tools rise from the bottom like the field notes, only as tall as they need, so the map you're zooming stays in sight above them.
+- On a computer or tablet, the tools open as a drawer in the field notes' place, like the Surveyors. Moving between tools, Surveyors and field notes no longer slides the map and buttons from side to side, and on a computer, closing the tools brings your notes back as they were. The drawer also lists every keyboard shortcut, and T opens it. On a phone the tools rise from the bottom like the field notes, only as tall as they need, so the map you're zooming stays in sight above them.
 - Past the edge of the universe, the title now counts every word charted in the territory, as it does inside, rather than only the ones in your field notes, so it no longer says 110/111 when the territory goes supernova. Hover over it to see how many are in your notes.
 - Turned sideways on a phone, the title and buttons sit on a solid bar again, so the map's letters no longer show around and between them.
 - On a computer, the tools and Surveyors buttons stay solid under the pointer, so the map no longer shows through them.
@@ -13,6 +13,40 @@
 - Supernovas now sit among your finds in the field notes, by when they went off: in the card of the visit you were on when one went off, or in a card of their own if you saw it from afar. A Supernovas filter beside All shows just them, still under their days.
 - Field notes with thousands of finds open at once, and draw more as you scroll.
 - The shared survey's box in your field notes is now a single row, like Achievements: how much of the universe is charted, and how many words you charted first. Tap it for the Universe map and the survey log.
+- No more stalls on the map as the universe fills: once thousands of territories were nearly charted, each word charted by anyone, and the achievements check after each of your finds, could freeze the map for half a second.
+- Field notes keep your place when you shut and reopen them, even after a find tapped deep in them flies you to it, and long notes reopen faster.
+- Field notes that can no longer be saved on your device now say so once: out of room when the device's storage is full, or that the browser isn't keeping them when storage is blocked.
+- When a part of the universe is crowded, everyone's caret shows on the map again, instead of a few busy connections taking every place.
+- Guild members in a crowded part of the universe hear who's online again, and you no longer get "came online" notes for members who were there all along.
+- A surveyor who closes the game now drops off the online count and the Surveyors list straight away, instead of lingering for two minutes, and the count of others online no longer comes up one short just after you arrive.
+- A supernova that goes off just before its territory goes quiet now reaches surveyors across the universe, instead of sometimes going unannounced.
+- Words circled before you've picked initials now wait for your initials instead of being charted unsigned.
+- A word kept in your notes after the day's charting limit is charted once the day turns, even if the game stays open overnight.
+- A word circled at the edge of a wide zoomed-out view is charted at once, instead of waiting until you pan closer.
+- When the connection quietly drops, the game notices within seconds of your next find and sends your finds again.
+- Your own supernovas stay in your field notes, which now keep up to 1,000, however many others go off around the universe.
+- Guild members are no longer listed as online, idle for hours, while you're offline or out past the universe, and the Surveyors count no longer sticks while the survey can't be reached.
+- Linked devices now agree on every find and achievement: receipts and charted first reach your other devices, even ones that arrive while a find is syncing.
+- Linking a device or using a recovery code in one tab carries your other open tabs along, rather than turning syncing off, and brings along the badge you show and your card.
+- A word circled just before linking is no longer marked as charted by your old initials, and after a recovery code, settings changed before your backup arrives no longer replace it.
+- Linking forgets the recovery code saved on this device, which belonged to your old self, and says to make a new one. If linking hits a hiccup, trying the same code again now works.
+- Making a recovery code or linking another device no longer sends all your field notes up again.
+- Guilds, mutes and initials changed in another tab, or in another game, now show up here and reach your linked devices.
+- A guild started, joined or left on a linked device is no longer lost when it arrives while you're starting, joining or leaving one here. A guild you join again on another device stays joined.
+- At five guilds, leaving one to join another keeps trying the leave until it gets through, and the arrow keys choose which guild to leave instead of moving the map behind the invite.
+- A guild invite that couldn't be looked up has a Try again button.
+- An achievement the survey can't sign no longer sends your whole field notes to be checked again on every visit, and one earned just as you switch away from the tab waits for you to come back.
+- With a keyboard, you can now see which button has focus in the tools, the music player and the Surveyors drawer, and the Keys card lists H for Map centre and L for Last find.
+- On a phone, screen readers call the field notes button by its name again, not just its count, and the title's count tells them how many of the charted words are in your notes.
+- The music's icon rests while the music is paused, the first piece you hear is the one the music starts with next time, and paused music with sound effects off lets the device's audio rest.
+- With reduced motion, the buttons in the corner no longer slide across when a drawer opens on a computer.
+- The survey log's refresh of the hour so far keeps your place: the focus and the value showing stay put, and screen readers no longer hear the summary again every 20 seconds.
+- When a day, week, month or year ends while the survey log is open, it stops saying so far, then loads its last words a minute later, even if the tab was hidden for that minute.
+- An hour on the Supernovas tab shows each supernova in the minute it happened, not all at the top of the hour.
+- In time zones half an hour off UTC, a surveyor's, theme's or guild's day no longer says "Nothing charted" when its words are there, and its share card counts the same words as the page.
+- The second 1 AM on the day the clocks go back now opens again from its address and from its share card.
+- The timelapse's "← Log" goes back to the survey log where you left it.
+- Shared finds now read "An Apiary word" and "A bonus India word" in link previews and on their cards.
 
 ## 2026-11-18
 

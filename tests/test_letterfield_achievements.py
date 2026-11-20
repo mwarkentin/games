@@ -19,7 +19,7 @@ import pytest
 from playwright.sync_api import Page, expect
 
 from fake_leaderboard import without_worker
-from fake_survey import CARD_SIG, FakeBadges, FakePlayers, FakeSurvey, card
+from fake_survey import CARD_SIG, FakeBadges, FakePlayers, FakeSurvey, card, receipt
 from test_letterfield_survey import LANDS, SHARE_SHEET_INIT, SURVEY, circle, eventually, known_words, open_game
 from test_letterfield_surveyors import KIM, KIM_CARET, LOU, PID, ZED, open_list
 from test_letterfield_surveyors import start as start_survey
@@ -609,6 +609,35 @@ def test_achievements_from_before_signing_are_signed_on_the_games_word(page: Pag
     assert errors == []
 
 
+def test_a_badge_the_worker_wont_sign_isnt_asked_for_again_each_visit(page: Page, site_url, errors):
+    words = known_words(page, site_url, WORDS_JS)
+    began = dt.datetime(2026, 10, 4, 9, 0, tzinfo=TORONTO)
+    signed = [find(w, began + dt.timedelta(hours=i), r=receipt(1_000 + i)) for i, w in enumerate(words[:3])]
+    finds = signed + [find(w, began + dt.timedelta(hours=10 + i)) for i, w in enumerate(words[3:12])]
+    badges = FakeBadges(cards=True)  # a Worker past TRUSTED_UNTIL: the receipts prove nothing it was asked
+    on_survey(page, site_url, FakeSurvey(), badges, finds=finds, quiet=True)
+    page.wait_for_function("window.__lf.marks.card()")
+    page.wait_for_timeout(1500)  # each achievement the notes earn asks as it's latched
+    asked = len(badges.calls)
+    assert asked and len(badges.calls[-1]["finds"]) == 3 and badges.calls[-1]["earned"]
+    # Visits with nothing new to prove send the notes' signed finds no more.
+    for _ in range(2):
+        page.reload()
+        page.wait_for_function("window.__lf && window.__lf.marks && window.__lf.marks.card()")
+        page.wait_for_timeout(1500)
+    assert len(badges.calls) == asked
+    # A new receipt could change the answer, so the next visit asks again.
+    page.evaluate(
+        """r => { const f = JSON.parse(localStorage.getItem('letterfield.finds.v4')); f.find(e => !e.r).r = r;
+        localStorage.setItem('letterfield.finds.v4', JSON.stringify(f)); }""",
+        receipt(2_000),
+    )
+    page.reload()
+    eventually(page, lambda: len(badges.calls) == asked + 1)
+    assert len(badges.calls[-1]["finds"]) == 4
+    assert errors == []
+
+
 def test_someones_badge_shows_on_their_caret_hover_card_and_menu(page: Page, site_url, errors):
     fake = FakeSurvey(
         presence=[[KIM[0], "KIM", 9.5, 7.0, [], "seven-seas"], ["4b1d00000001", "LOU", 11.5, 9.0, [], "no-such-badge"]]
@@ -856,4 +885,19 @@ def test_a_shared_badge_opens_at_its_place_on_the_achievements_page(page: Page, 
     page.evaluate("location.hash = '#a-no-such-badge'")
     page.wait_for_timeout(300)
     expect(html).to_have_attribute("data-notes-page", "finds")
+    assert errors == []
+
+
+def test_a_note_due_while_the_tab_is_hidden_waits_until_its_back(page: Page, site_url, errors):
+    open_alone(page, site_url)
+    hide = "h => { Object.defineProperty(document, 'hidden', { configurable: true, get: () => h }); document.dispatchEvent(new Event('visibilitychange')); }"
+    page.evaluate(hide, True)
+    page.evaluate("window.__lf.marks.grant('first-mark')")
+    # Past the 20 seconds a busy screen is waited out, it still hasn't shown in the hidden tab.
+    page.wait_for_timeout(23_000)
+    assert notes(page) == []
+    assert marks(page)["sounds"] == 0
+    page.evaluate(hide, False)
+    expect(page.locator("#toast b")).to_have_text("First Mark")
+    assert notes(page) == ["First Mark"]
     assert errors == []

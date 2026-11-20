@@ -58,10 +58,11 @@ script_name = "games-leaderboard"
 
 # New cards drawn per address (a salted hash, with IP_SALT, as the survey's
 # limits are): 30 a minute. Cards already drawn are never limited. Each
-# namespace_id must be unique in the account (the leaderboard's are 73xx).
+# namespace_id must be unique in the account: the leaderboard's are 73xx,
+# the share Worker's 74xx (production 740x, previews 741x).
 [[ratelimits]]
 name = "RENDERS"
-namespace_id = "7303"
+namespace_id = "7401"
 
   [ratelimits.simple]
   limit = 30
@@ -82,7 +83,7 @@ bucket_name = "games-share-cards-previews"
 
 [[previews.ratelimits]]
 name = "RENDERS"
-namespace_id = "7313"
+namespace_id = "7411"
 
   [previews.ratelimits.simple]
   limit = 30

@@ -32,10 +32,12 @@ function fakeSocket() {
     deserializeAttachment: () => structuredClone(attachment),
   };
 }
-function time(label, runs, fn) {
-  fn(0);
+// Each run is awaited, so an async message handler (a claim waits on its
+// rate limiter) is measured to its end, not just to its first await.
+async function time(label, runs, fn) {
+  await fn(0);
   const t0 = performance.now();
-  for (let i = 1; i <= runs; i++) fn(i);
+  for (let i = 1; i <= runs; i++) await fn(i);
   const each = (performance.now() - t0) / runs;
   console.log(`${label.padEnd(52)} ${each < 1 ? `${(each * 1000).toFixed(1)} µs` : `${each.toFixed(2)} ms`}`);
   return each;
@@ -46,9 +48,9 @@ const words = [];
 for (let cy = 0; cy < SECTOR / 12; cy++) for (let cx = 0; cx < SECTOR / 12; cx++) words.push(...chunk(cx, cy).words);
 console.log(`sector 0,0 hides ${words.length} words; ${PLAYERS} players connected\n`);
 
-time('checkClaim, chunk already generated', 20000, (i) => checkClaim(words[i % words.length], 0, 0));
+await time('checkClaim, chunk already generated', 20000, (i) => checkClaim(words[i % words.length], 0, 0));
 let far = 0;
-time('checkClaim, chunk generated for it', 2000, () => {
+await time('checkClaim, chunk generated for it', 2000, () => {
   far += 1;
   const w = chunk(far * 40, 9000).words[0];
   checkClaim(w, Math.floor(w.x / SECTOR), Math.floor(w.y / SECTOR));
@@ -63,26 +65,26 @@ let n = 0;
 for (const ws of sockets) await sector.webSocketMessage(ws, JSON.stringify({ t: 'pos', x: (n++ % 190) + 0.5, y: n % 190 }));
 
 let claimed = 0;
-const claimMs = time(`claim, sent to ${PLAYERS} sockets without batching`, Math.min(2000, words.length - 1), (i) => {
+const claimMs = await time(`claim, sent to ${PLAYERS} sockets without batching`, Math.min(2000, words.length - 1), async (i) => {
   const ws = sockets[i % PLAYERS];
   const me = ws.deserializeAttachment();
   me.tokens = 5;
   ws.serializeAttachment(me);
   const { w, x, y, d } = words[i];
-  sector.claim(ws, me, { t: 'claim', w, x, y, d });
+  await sector.claim(ws, me, { t: 'claim', w, x, y, d });
   sector.sendBatch(true);
   claimed++;
 });
-const posMs = time('position update', 20000, (i) => {
-  sector.webSocketMessage(sockets[i % PLAYERS], `{"t":"pos","x":${i % 190},"y":${(i * 7) % 190}}`);
+const posMs = await time('position update', 20000, async (i) => {
+  await sector.webSocketMessage(sockets[i % PLAYERS], `{"t":"pos","x":${i % 190},"y":${(i * 7) % 190}}`);
 });
-const frameMs = time(`presence frame to ${PLAYERS} sockets`, 200, () => sector.sendPresence());
-time(`join, with ${claimed} claims in the snapshot`, 200, () => {
+const frameMs = await time(`presence frame to ${PLAYERS} sockets`, 200, () => sector.sendPresence());
+await time(`join, with ${claimed} claims in the snapshot`, 200, () => {
   const ws = fakeSocket();
   sector.join(ws, 0, 0);
   state.getWebSockets().pop();
 });
-time('join, first after waking from hibernation', 50, () => {
+await time('join, first after waking from hibernation', 50, () => {
   sector.claimsJson = null;
   const ws = fakeSocket();
   sector.join(ws, 0, 0);

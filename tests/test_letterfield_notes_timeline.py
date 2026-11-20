@@ -335,3 +335,97 @@ def test_a_long_survey_opens_its_notes_at_once_and_draws_more_as_it_scrolls(page
     assert 200 <= page.locator("#finds li.nova-row").count() <= 400
     expect(page.locator("#finds li.row:not(.nova-row)")).to_have_count(0)
     assert errors == []
+
+
+SEED_2000 = """() => {
+  const lf = window.__lf, finds = [], start = Date.now() - 40 * 86400000;
+  const words = (rx, ry) => { const out = []; for (let cy = 0; cy < 4; cy++) for (let cx = 0; cx < 4; cx++) out.push(...lf.chunk(rx * 4 + cx, ry * 4 + cy).words); return out; };
+  let t = start;
+  for (let r = 0; r < 80; r++) {
+    const rx = r % 10 - 5, ry = Math.floor(r / 10) - 4;
+    for (const w of words(rx, ry).slice(0, 25)) { t += 15000; finds.push({ w: w.w, x: w.x, y: w.y, d: w.d, t, s: 0 }); }
+    t += 9000000;
+  }
+  localStorage.setItem('letterfield.finds.v4', JSON.stringify(finds));
+  localStorage.setItem('letterfield.notes.v1', '0');
+  localStorage.setItem('letterfield.coach.v1', '1');
+}"""
+
+
+def seed_2000(page: Page, site_url, width, height):
+    without_worker(page, site_url, "letterfield")
+    page.set_viewport_size({"width": width, "height": height})
+    page.goto(f"{site_url}/letterfield#debug")
+    page.wait_for_function("window.__lf")
+    # 2,000 finds in visits of 25 words to 80 territories.
+    page.evaluate(SEED_2000)
+    page.reload()
+    page.wait_for_function("window.__lf && window.__lf.found.size === 2000")
+
+
+def scroll_to_the_end(page: Page):
+    rows = page.locator("#finds li.row")
+    while page.locator("#finds .finds-more").count():
+        n = rows.count()
+        page.evaluate("document.getElementById('notes').scrollTop = document.getElementById('finds').scrollTop = 1e9")
+        page.wait_for_function(f"document.querySelectorAll('#finds li.row').length > {n}")
+    assert rows.count() == 2000
+
+
+# Row n of the list scrolled to the middle of the view; its key and where it sits.
+AT_ROW = """n => { const a = document.querySelectorAll('#finds li.row a.find')[n];
+  a.scrollIntoView({ block: 'center' }); return { key: a.dataset.key, y: a.getBoundingClientRect().top }; }"""
+ROW_Y = """k => { const a = document.querySelector(`#finds a.find[data-key="${CSS.escape(k)}"]`);
+  return a ? a.getBoundingClientRect().top : null; }"""
+
+
+def test_notes_scrolled_deep_keep_their_place_but_not_every_row_once_closed(page: Page, site_url, errors):
+    seed_2000(page, site_url, 1280, 900)
+    rows = page.locator("#finds li.row")
+    open_notes(page)
+    assert rows.count() <= 400
+    # Scrolled to the end and back up to row 300: shut and opened again, the
+    # notes are where they were, drawn a page past it rather than all 2,000.
+    scroll_to_the_end(page)
+    at = page.evaluate(AT_ROW, 300)
+    page.click("#notesToggle")
+    expect(page.locator("html")).not_to_have_attribute("data-panel", "notes")
+    open_notes(page)
+    y = page.evaluate(ROW_Y, at["key"])
+    assert y is not None and abs(y - at["y"]) < 4, (y, at)
+    assert 540 <= rows.count() <= 600, rows.count()
+    # Scrolled deep, then back to the top, the next redraw (a find here) draws a page.
+    scroll_to_the_end(page)
+    page.evaluate("document.getElementById('notes').scrollTop = document.getElementById('finds').scrollTop = 0")
+    page.evaluate(
+        """() => { const lf = window.__lf, w = lf.chunk(40, 40).words[0]; lf.collect(w.w, w.x, w.y, w.d); }"""
+    )
+    page.wait_for_function("window.__lf.found.size === 2001")
+    expect(page.locator("#finds li.row").first).to_be_visible()
+    assert rows.count() <= 401, rows.count()
+    assert errors == []
+
+
+def test_a_find_tapped_deep_in_the_notes_on_a_phone_is_still_in_view_when_they_reopen(page: Page, site_url, errors):
+    seed_2000(page, site_url, 375, 740)
+    open_notes(page)
+    # Deep in the notes, a find tapped shuts them and flies there.
+    for _ in range(2):
+        n = page.locator("#finds li.row").count()
+        page.evaluate("document.getElementById('notes').scrollTop = document.getElementById('finds').scrollTop = 1e9")
+        page.wait_for_function(f"document.querySelectorAll('#finds li.row').length > {n}")
+    at = page.evaluate(AT_ROW, 400)
+    # Where it is as it's tapped: the click may scroll it into view first.
+    page.evaluate(
+        "k => addEventListener('pointerdown', () => { window.__tappedY = document.querySelector(`#finds a.find[data-key=\"${CSS.escape(k)}\"]`).getBoundingClientRect().top; }, { capture: true, once: true })",
+        at["key"],
+    )
+    page.click(f'#finds a.find[data-key="{at["key"]}"]')
+    expect(page.locator("html")).not_to_have_attribute("data-panel", "notes")
+    tapped = page.evaluate("window.__tappedY")
+    # Opened again, it's where it was, not back at the newest find.
+    open_notes(page)
+    page.locator("#notes").evaluate("e => Promise.all(e.getAnimations().map(a => a.finished))")
+    y = page.evaluate(ROW_Y, at["key"])
+    assert y is not None and abs(y - tapped) < 4, (y, tapped, at)
+    assert errors == []

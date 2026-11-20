@@ -118,7 +118,8 @@ Letterfield's field notes: up to three senses from Wiktionary, or, for a
 name Wiktionary doesn't know, the start of the Wikipedia article a search
 for the word beside its theme's name finds ("cronkite Broadcast"). The word
 must be in theme `th` of `letterfield-world.js`, so there are only about
-17,700 words ever to look up.
+28,800 words ever to look up (on map 4; see SURVEY.md), and a few more
+answers kept per theme where Wikipedia, or nothing, answers.
 
 ```
 GET /v1/define/BASIL/72
@@ -167,8 +168,8 @@ WebSocket, pages send JSON messages:
 
 | Message | Means |
 | --- | --- |
-| `{"t":"hello","name","avatar","token","deck"}` | join, or rejoin the same seat with the same token; `deck` is the deck theme your cards are drawn in |
-| `{"t":"length","length"}`, `{"t":"slow","slow"}`, `{"t":"shuffle","shuffle"}`, `{"t":"bots","n"}`, `{"t":"start"}` | the host sets up the game (its length, whether it's slow, with no clock, and whether winnings are shuffled on their way back) and deals |
+| `{"t":"hello","name","avatar","token","deck"}` | join, or rejoin the same seat with the same token (one token a socket); `deck` is the deck theme your cards are drawn in |
+| `{"t":"length","length"}`, `{"t":"slow","slow"}`, `{"t":"shuffle","shuffle"}`, `{"t":"bots","n"}`, `{"t":"start"}` | the host sets up the game (its length, whether it's slow, with no clock, and whether winnings are shuffled on their way back) and deals. These and `hello` save the room, so each socket gets 5 at once, then 5 a second |
 | `{"t":"gather"}` | put your winnings under your deck, any time in a game |
 | `{"t":"charge","tier"}`, `{"t":"slam","power","style"}` | charging up, then slamming (for show only) |
 | `{"t":"card","n","power"}` | in a war, slamming face-down card `n` (0 to 2) before the last one, which is the `slam` (for show only) |

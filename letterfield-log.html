@@ -580,7 +580,11 @@ function askSpan() {
 }
 function startOf(p, t) {
   const d = new Date(t), y = d.getFullYear(), m = d.getMonth(), day = d.getDate();
-  if (p === 'hour') return new Date(y, m, day, d.getHours()).getTime();
+  if (p === 'hour') {
+    // The day clocks go back, an hour's time comes twice; this is the one t is in.
+    const s = new Date(y, m, day, d.getHours()).getTime();
+    return t - s >= HOUR ? s + HOUR : s;
+  }
   if (p === 'day') return new Date(y, m, day).getTime();
   if (p === 'week') return new Date(y, m, day - (d.getDay() + 6) % 7).getTime();
   if (p === 'month') return new Date(y, m, 1).getTime();
@@ -840,13 +844,25 @@ async function renderNovas(run, p, start, end) {
   if (run !== state.run) return;
   const data = { places: { ...first.places }, themes: { ...first.themes } };
   const list = novaList(first, start, end);
-  const points = first.hours.filter(r => Array.isArray(r) && Number.isInteger(r[0]) && Number.isInteger(r[1])).map(r => [r[0] * HOUR, r[1], 0]);
+  let next = first.next;
+  // An hour's chart is minute by minute, so it counts each of the hour's
+  // supernovas where it happened: the hours' counts would put them all at :00.
+  for (let n = 1; p === 'hour' && typeof next === 'string' && n < SLICE_PAGES; n++) {
+    const more = await page(next);
+    if (run !== state.run) return;
+    list.push(...novaList(more, start, end));
+    Object.assign(data.places, more.places); Object.assign(data.themes, more.themes);
+    next = more.next;
+  }
+  const points = p === 'hour'
+    ? list.map(n => [n[2], 1, 0]).sort((a, b) => a[0] - b[0])
+    : first.hours.filter(r => Array.isArray(r) && Number.isInteger(r[0]) && Number.isInteger(r[1])).map(r => [r[0] * HOUR, r[1], 0]);
   const buckets = tally(bucketsOf(p, start, end), points), total = buckets.reduce((a, b) => a + b.n, 0);
   const latest = list[0], quick = list.reduce((a, n) => (!a || n[2] - n[8] < a[2] - a[8] ? n : a), null);
   tiles([
     ['Supernovas', total.toLocaleString(), total === 1 ? 'territory fully charted' : 'territories fully charted'],
     ['Latest', latest ? novaPlace(latest, data) : '—', latest ? `${monthDay.format(latest[2])} · ${timeFmt.format(latest[2])}` : ''],
-    ['Quickest', quick ? took(quick[2] - quick[8]) : '—', quick ? novaPlace(quick, data) + (first.next ? ' · of the latest 100' : '') : ''],
+    ['Quickest', quick ? took(quick[2] - quick[8]) : '—', quick ? novaPlace(quick, data) + (next ? ' · of the latest 100' : '') : ''],
   ]);
   // A year by its months: a calendar of days would be almost all empty.
   if (p === 'year') chartEl.replaceChildren(columnChart('all', tally(bucketsOf('all', start, end), points), { what: 'supernova' }));
@@ -868,8 +884,8 @@ async function renderNovas(run, p, start, end) {
   const ol = el('ol', 'novas');
   ol.append(...list.map(n => novaRow(n, data, { date: true })));
   logEl.replaceChildren(ol);
-  if (typeof first.next === 'string') {
-    logEl.append(moreButton(run, page, first.next, data, a => ol.append(...novaList(a, start, end).map(n => novaRow(n, data, { date: true })))));
+  if (typeof next === 'string') {
+    logEl.append(moreButton(run, page, next, data, a => ol.append(...novaList(a, start, end).map(n => novaRow(n, data, { date: true })))));
   }
 }
 
@@ -1103,6 +1119,7 @@ addEventListener('pointerdown', e => {
   if (picked && !picked.contains(e.target)) hideTip();
 }, true);
 function pickable(node, value, label, go = null) {
+  node.showTip = () => showTip(node, value, label, go ? 'Tap again to open' : '');
   node.addEventListener('pointerenter', e => { if (e.pointerType === 'mouse') showTip(node, value, label); });
   node.addEventListener('pointerleave', e => { if (e.pointerType === 'mouse' && picked !== node) hideTip(); });
   node.addEventListener('focus', () => { if (picked !== node) showTip(node, value, label); });
@@ -1111,9 +1128,28 @@ function pickable(node, value, label, go = null) {
     // A key press (detail 0) or a mouse opens at once; a tap first shows the value.
     const tap = e.detail !== 0 && (lastPointer === 'touch' || lastPointer === 'pen');
     if (go && (!tap || picked === node)) { hideTip(); go(); return; }
-    showTip(node, value, label, go ? 'Tap again to open' : '');
+    node.showTip();
     picked = node;
   });
+}
+// A refresh in place redraws what's on screen. These keep the place of what
+// had focus, and of the bar whose value was showing, so the redraw can put
+// them back: by id, or by place in its part of the page (in a word's row, by
+// that word's link).
+const FOCUSABLE = 'a[href], button, input, [tabindex]';
+function placeOf(node) {
+  if (!node || node === document.body || !node.isConnected) return null;
+  if (node.id) return { id: node.id };
+  const box = [chartEl, logEl, cardsEl, stripEl, $('#tiles')].find(b => b.contains(node));
+  if (!box) return null;
+  const row = node.closest('li'), fly = row && box.contains(row) ? row.querySelector('a.fly')?.getAttribute('href') : null;
+  return { box, fly, i: [...(fly ? row : box).querySelectorAll(FOCUSABLE)].indexOf(node) };
+}
+function atPlace(k) {
+  if (!k) return null;
+  if (k.id) return document.getElementById(k.id);
+  const row = k.fly ? [...k.box.querySelectorAll('li')].find(li => li.querySelector('a.fly')?.getAttribute('href') === k.fly) : k.box;
+  return row?.querySelectorAll(FOCUSABLE)[k.i] || null;
 }
 
 // A column chart of words per piece of the period. Tapping a column opens
@@ -1333,14 +1369,18 @@ function readUrl() {
     state.period = PERIODS.includes(p) ? p : defaultPeriod(state.focus);
     if (state.focus?.kind === 'territory') state.period = 'all';
     let t = parseDay(q.get('day'));
-    const h = Number(q.get('hour'));
-    if (t !== null && state.period === 'hour' && Number.isInteger(h) && h >= 0 && h < 24) t = new Date(new Date(t).setHours(h)).getTime();
+    const h = Number(q.get('hour')), at = q.get('at') ? Number(q.get('at')) * HOUR : NaN;
+    if (t !== null && state.period === 'hour' && Number.isInteger(h) && h >= 0 && h < 24) {
+      // The day clocks go back has an hour twice: ?at= (its UTC hour) says
+      // which, when it's that hour of that day here.
+      t = Number.isInteger(at) && isoDay(at) === q.get('day') && new Date(at).getHours() === h ? at : new Date(new Date(t).setHours(h)).getTime();
+    }
     state.start = startOf(state.period, t !== null && t <= Date.now() ? t : Date.now());
     state.mine = !state.focus && q.get('view') === 'mine';
   } catch (_) {}
 }
 readUrl();
-const logEl = $('#log'), chartEl = $('#chart'), cardsEl = $('#cards'), stripEl = $('#novaStrip'), dayInput = $('#dayInput');
+const summaryEl = $('#summary'), logEl = $('#log'), chartEl = $('#chart'), cardsEl = $('#cards'), stripEl = $('#novaStrip'), dayInput = $('#dayInput');
 // The Top lists heading, and the way down to it, only with top lists to show.
 new MutationObserver(() => { $('#tops').hidden = $('#jump').hidden = !cardsEl.children.length; }).observe(cardsEl, { childList: true });
 $('#zone').textContent = Intl.DateTimeFormat().resolvedOptions().timeZone || 'your time zone';
@@ -1377,7 +1417,7 @@ const Span = machine('span', {
 // week when it's read next month.
 function urlFor({ focus = state.focus, period = state.period, start = state.start, mine = state.mine, pin = false } = {}) {
   const q = new URLSearchParams(location.search);
-  for (const k of [...FOCUS_KEYS, 'name', 'period', 'day', 'hour', 'view']) q.delete(k);
+  for (const k of [...FOCUS_KEYS, 'name', 'period', 'day', 'hour', 'at', 'view']) q.delete(k);
   if (focus?.kind === 'surveyor') q.set('surveyor', focus.key);
   else if (focus?.kind === 'theme') q.set('theme', String(focus.key));
   else if (focus?.kind === 'guild') {
@@ -1391,7 +1431,11 @@ function urlFor({ focus = state.focus, period = state.period, start = state.star
     const here = period === 'all' || (!pin && start === startOf(period, Date.now()));
     if (period !== defaultPeriod(focus)) q.set('period', period);
     if (!here) q.set('day', isoDay(start));
-    if (period === 'hour' && !here) q.set('hour', String(new Date(start).getHours()));
+    if (period === 'hour' && !here) {
+      q.set('hour', String(new Date(start).getHours()));
+      // The second of an hour that comes twice, the day clocks go back.
+      if (new Date(start - HOUR).getHours() === new Date(start).getHours()) q.set('at', String(fdiv(start, HOUR)));
+    }
     if (mine && !focus) q.set('view', 'mine');
   }
   const s = q.toString().replace(/%2C/g, ',').replace(/(^|&)supernovas=(&|$)/, '$1supernovas$2');
@@ -1590,6 +1634,11 @@ async function render(quiet = false) {
   // A quiet refresh keeps what's on screen while it reloads; anything else shows the period loading.
   if (quiet && Log.is('ready', 'refreshing', 'stale')) { if (!Log.is('refreshing')) Log.go('refreshing'); }
   else if (!Log.is('loading')) Log.go('loading');
+  // A refresh in place puts back the focus and the value showing, and isn't read out again.
+  const focused = Log.is('refreshing') ? placeOf(document.activeElement) : null;
+  const tipped = Log.is('refreshing') && !tip.hidden ? placeOf(picked || (chartEl.contains(document.activeElement) ? document.activeElement : null)) : null;
+  const tipWasPicked = !!picked;
+  summaryEl.setAttribute('aria-live', Log.is('refreshing') ? 'off' : 'polite');
   if (state.period === 'all') state.start = allStart();
   saveUrl();
   hideTip();
@@ -1626,7 +1675,7 @@ async function render(quiet = false) {
   } catch (err) {
     if (run !== state.run) return;
     // A refresh that fails leaves the words on screen, and tries again.
-    if (Log.is('refreshing')) { Log.go('stale'); return scheduleRefresh(run, end); }
+    if (Log.is('refreshing')) { Log.go('stale'); summaryEl.setAttribute('aria-live', 'polite'); return scheduleRefresh(run, end); }
     tiles([]); chartEl.replaceChildren(); cardsEl.replaceChildren();
     stripEl.replaceChildren();
     if (state.focus && /status 400/.test(err?.message)) status('Not in the log', 'There’s no such surveyor, theme or territory to show.');
@@ -1637,6 +1686,11 @@ async function render(quiet = false) {
   // Top lists the view didn't ask for leave no placeholder behind.
   if (topsRun !== run) cardsEl.querySelectorAll('.ph-card').forEach(c => c.remove());
   openDefinition();
+  if (focused && (!document.activeElement || document.activeElement === document.body)) atPlace(focused)?.focus({ preventScroll: true });
+  const bar = atPlace(tipped);
+  if (bar?.showTip) { if (tip.hidden) bar.showTip(); if (tipWasPicked) picked = bar; }
+  // Read out again once the redraw is in.
+  setTimeout(() => { if (run === state.run) summaryEl.setAttribute('aria-live', 'polite'); }, 1000);
   Log.go('ready');
   scheduleRefresh(run, end);
 }
@@ -1695,19 +1749,30 @@ function placeholders() {
 // After a period is shown: the hour still running reloads every
 // LIVE_REFRESH_MS, until a minute after it ends while its last words reach the
 // log; any other period still running reloads once it's over, so it stops
-// saying So far and the way on to the next one opens. Nothing reloads while the
-// page is hidden; it catches up when it's back (see visibilitychange below).
+// saying So far and the way on to the next one opens, and again a minute
+// later, once its last words are in. A refresh that failed (stale) tries
+// again, less often each time, even once the period's over. Nothing reloads
+// while the page is hidden; it catches up when it's back (see visibilitychange below),
+// the reload a minute after a period ends included (lateDue).
+let staleTries = 0, lateDue = 0;  // lateDue: the end of a period whose reload a minute after it hasn't run
 function scheduleRefresh(run, end) {
   clearTimeout(liveTimer);
+  if (!Log.is('stale')) staleTries = 0;
+  const now = Date.now(), hour = state.period === 'hour';
+  if (hour || state.period === 'all') lateDue = 0;
+  else if (now >= end && now < end + LATE_MS) lateDue = end;
+  else if (now >= end + LATE_MS && Log.is('ready')) lateDue = 0;
   if (document.hidden || state.period === 'all') return;
   const tick = () => {
     if (run !== state.run) return;
     if (state.period !== 'hour' && Date.now() < end) liveTimer = setTimeout(tick, Math.min(end - Date.now() + 1000, DAY));
     else render(true);
   };
-  if (state.period === 'hour' ? Date.now() < end + LATE_MS : Date.now() < end) {
-    liveTimer = setTimeout(tick, state.period === 'hour' ? LIVE_REFRESH_MS : Math.min(end - Date.now() + 1000, DAY));
-  }
+  let wait = 0;
+  if (hour ? now < end + LATE_MS : now < end) wait = hour ? LIVE_REFRESH_MS : Math.min(end - now + 1000, DAY);
+  else if (!hour && now < end + LATE_MS) wait = end + LATE_MS - now;
+  else if (Log.is('stale')) wait = Math.min(LIVE_REFRESH_MS * 2 ** staleTries++, 5 * MINUTE);
+  if (wait) liveTimer = setTimeout(tick, wait);
 }
 
 function busiest(p, buckets) {
@@ -1954,6 +2019,17 @@ async function renderSlice(run, f, p, start, end, firsts) {
       : [rankCard('Top surveyors', surveyorRows(first.topSurveyors), 'By initials, which anyone can share'), rankCard('Top territories', places, 'Hidden words charted in each')];
   cardsEl.replaceChildren(...(total ? cards : []));
   entries = entries.filter(e => e[6] >= start && e[6] < end);
+  // In a zone half an hour off UTC, the hours asked run past the period's
+  // end, and a busy last half hour can fill whole pages: read on to the
+  // period's own words. (Newest first, so a page that ends after it is all after it.)
+  for (let n = 1, last = first.entries.at(-1); p !== 'hour' && !entries.length && typeof next === 'string' && last && last[6] >= end && n < SLICE_PAGES; n++) {
+    const more = await page(next);
+    if (run !== state.run) return;
+    Object.assign(data.places, more.places); Object.assign(data.themes, more.themes);
+    entries = more.entries.filter(okEntry).filter(e => e[6] >= start && e[6] < end);
+    last = more.entries.at(-1);
+    next = more.next;
+  }
   shareSlice(run, f, p, start, end, { total, world: buckets.reduce((a, b) => a + b.world, 0), places, surveyors: surveyorRows(first.topSurveyors), words: latestWords(entries, data) });
   if (!entries.length) {
     // A guild the log has never had a word from has no name there either:
@@ -2130,9 +2206,9 @@ function offerShare(run, c) {
 }
 
 // The view on screen as the share Worker's address (share/src/view.js): its
-// period pinned by its first day here and the UTC hours it covers, which are
-// the hours this page asks the log for, so the card counts what the page did,
-// and a guild's name as ?name=.
+// period pinned by its first day here and the UTC hours it covers, the hours
+// this page counts, so the card counts what the page did, and a guild's name
+// as ?name=.
 // A dark page shares the dark card.
 function viewPath() {
   const f = state.focus;
@@ -2147,7 +2223,12 @@ function viewPath() {
   const n = f.kind === 'guild' ? guildNumbers(f) : null, name = n ? `?name=${n.join('-')}` : '';
   if (p === 'all') return `${base}/all${name}`;
   const hour = p === 'hour' ? 'T' + String(new Date(s).getHours()).padStart(2, '0') : '';
-  return `${base}/${p}/${isoDay(s)}${hour}/${fdiv(s, HOUR)}-${fdiv(endOf(p, s) - 1, HOUR) + 1}${name}`;
+  // Longer than an hour, the page counts the UTC hours that start in the
+  // period (tally()), which in a zone half an hour off UTC aren't all the
+  // hours it asks for: the card counts those. An hour is counted word by word,
+  // so its card has the hours it asks for.
+  const e = endOf(p, s), hours = p === 'hour' ? [fdiv(s, HOUR), fdiv(e - 1, HOUR) + 1] : [fdiv(s - 1, HOUR) + 1, fdiv(e - 1, HOUR) + 1];
+  return `${base}/${p}/${isoDay(s)}${hour}/${hours[0]}-${hours[1]}${name}`;
 }
 
 // The picture: the page's own colours and type, on a card the size link
@@ -2270,11 +2351,13 @@ dayInput.onchange = () => {
 // Field notes change in Letterfield's own tab: "Mine" follows.
 addEventListener('storage', e => { if (e.key === K_FINDS && state.mine) render(); });
 // Reloading pauses while the tab is hidden. Back on screen, the running hour
-// catches up, and a period that ended meanwhile stops saying So far.
+// catches up, a period that ended meanwhile stops saying So far, and one
+// whose last words came in meanwhile reloads for them.
 document.addEventListener('visibilitychange', () => {
   if (document.hidden) return clearTimeout(liveTimer);
   const end = endOf(state.period, state.start), now = Date.now();
-  if ((liveUntil && now >= liveUntil) || (state.period === 'hour' && now < end + LATE_MS)) render(true);
+  if ((liveUntil && now >= liveUntil) || (state.period === 'hour' && now < end + LATE_MS)
+    || (lateDue === end && now >= end + LATE_MS)) render(true);
   else scheduleRefresh(state.run, end);
 });
 render();

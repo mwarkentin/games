@@ -897,6 +897,16 @@ function showYours() {
 showYours();
 $('#chipClose').addEventListener('click', closeChip);
 if (surveyParam) $('#toLog').href = `/letterfield-log?survey=${encodeURIComponent(surveyParam)}`;
+// "← Log" steps back to the log when the tab came here from it, so the log
+// comes back at the view it was on, as its own "← Letterfield" does for the map.
+$('#toLog').addEventListener('click', e => {
+  if (e.defaultPrevented || e.button || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+  let ref = null;
+  try { ref = new URL(document.referrer); } catch (_) {}
+  if (history.length < 2 || !ref || ref.origin !== location.origin || ref.pathname.replace(/\.html$/, '') !== '/letterfield-log') return;
+  e.preventDefault();
+  history.back();
+});
 
 /* ---------- Saving a video ---------- */
 // The whole history, recorded in the browser from a square canvas of its

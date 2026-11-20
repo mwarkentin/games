@@ -10,7 +10,7 @@
 //     → 503 {error} when Wiktionary or Wikipedia can't answer right now
 //
 // The words are Letterfield's own (letterfield-world.js), so there are only
-// so many to look up: about 17,700 words, each fetched once and then kept in
+// so many to look up: about 28,800 words, each fetched once and then kept in
 // D1 for good, with Cloudflare's cache in front. Only a lookup D1 doesn't
 // have reaches Wikimedia, counted per address (DEFINE_LOOKUPS in
 // wrangler.toml). Wikimedia rate-limits shared addresses like Cloudflare's,

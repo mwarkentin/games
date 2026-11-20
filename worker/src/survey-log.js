@@ -107,6 +107,7 @@ export const SETTLED_MS = 3600000;      // an hour or day that ended this long a
 export const SETTLED_CACHE_S = 86400;   // seconds a settled answer is cached for
 export const LIVE_CACHE_S = 15;         // seconds the hour or day still running is cached for
 export const MEMO_MAX = 300;            // answers each Worker instance keeps
+export const MEMO_CHARS = 8_000_000;    // and the most text they come to, so big timelapse pages can't fill its memory
 export const HOUR_MS = 3600000;
 export const DAY_MS = 86400000;
 export const LOG_DAY_PATH = /^\/v1\/survey\/log\/day\/(\d{1,6})$/;
@@ -407,19 +408,28 @@ function themeRows(territories) {
 // guild, in which themes), who (for a theme or a guild), and the newest, a
 // page at a time. Reads the rows of that surveyor, theme or guild in the
 // range, through its own index.
-export async function readSlice(db, kind, key, fromHour, toHour, before = null) {
+// `first`, if given, gives the slice's first page, whose totals and top lists
+// a later page repeats rather than reading them all again.
+export async function readSlice(db, kind, key, fromHour, toHour, before = null, first = null) {
   const sql = sliceSql(kind, !!before), range = [key, fromHour * HOUR_MS, toHour * HOUR_MS];
-  const [hours, places, people, rows, guild] = await Promise.all([
+  const entriesOf = async () => {
+    const list = (await db.prepare(sql.entries).bind(...range, ...(before ? [before.at, before.key] : []), SLICE_PAGE + 1).all()).results;
+    const next = pageEnd(list, SLICE_PAGE), places = {}, themes = {};
+    const entries = list.map((r) => entryOf(r, places, themes));
+    return { entries, places, themes, next };
+  };
+  if (first) {
+    const [summary, page] = await Promise.all([first(), entriesOf()]);
+    return { ...summary, ...page };  // the page's own entries, and their names, over the first's
+  }
+  const [hours, places, people, page, guild] = await Promise.all([
     db.prepare(sql.hours).bind(...range).all(),
     db.prepare(sql.places).bind(...range).all(),
     kind !== 'surveyor' ? db.prepare(sql.people).bind(...range).all() : null,
-    db.prepare(sql.entries).bind(...range, ...(before ? [before.at, before.key] : []), SLICE_PAGE + 1).all(),
+    entriesOf(),
     kind === 'guild' ? db.prepare(GUILD_NAME_SQL).bind(key).first() : null,
   ]);
   const name = guild ? named(guild) : null;
-  const list = rows.results, next = pageEnd(list, SLICE_PAGE);
-  const placeNames = {}, themeNames = {};
-  const entries = list.map((r) => entryOf(r, placeNames, themeNames));
   return {
     kind, key, from: fromHour, to: toHour,
     ...(kind === 'theme' ? { name: THEMES[key].name, hue: THEMES[key].hue } : {}),
@@ -430,7 +440,7 @@ export async function readSlice(db, kind, key, fromHour, toHour, before = null) 
     topTerritories: ranked(places.results).slice(0, TOP_N).map(territoryRow),
     ...(kind !== 'theme' ? { topThemes: themeRows(places.results) } : {}),
     ...(people ? { topSurveyors: people.results.map((r) => [r.initials, r.n]) } : {}),
-    entries, places: placeNames, themes: themeNames, next,
+    ...page,
   };
 }
 
@@ -540,9 +550,13 @@ function tops(from, to, [surveyors, territories, guilds]) {
   };
 }
 
-// Answers kept by this Worker instance: host/path → {body, until}.
-const memo = new Map();
-export const forgetLog = () => memo.clear();  // for tests
+// Answers kept by this Worker instance: host/path → {body, until}, the
+// least recently used first; and the answers being read, so a crowd asking
+// at once waits for one read.
+const memo = new Map(), reading = new Map();
+let memoChars = 0;
+export const forgetLog = () => { memo.clear(); reading.clear(); memoChars = 0; };  // for tests
+const unmemo = (key) => { const held = memo.get(key); if (held) { memoChars -= held.body.length; memo.delete(key); } };
 
 // Answers the log's paths, or returns null for any other path.
 export function routeLog(request, env, now = Date.now()) {
@@ -560,7 +574,8 @@ export function routeLog(request, env, now = Date.now()) {
   // Every answer is kept under this Worker's own host and map (see the top of this file).
   const answer = (key, maxAge, read, immutable = false) => keep(`${url.host}/m${MAP_VERSION}/${key}`, maxAge, read, cors, now, immutable);
   // An answer about time that ends at `ends` (ms): cached for a day once that's SETTLED_MS ago, for `live` seconds until then.
-  const timed = (key, ends, read, live = LIVE_CACHE_S) => answer(key, now >= ends + SETTLED_MS ? SETTLED_CACHE_S : live, read);
+  const ageOf = (ends, live = LIVE_CACHE_S) => (now >= ends + SETTLED_MS ? SETTLED_CACHE_S : live);
+  const timed = (key, ends, read, live = LIVE_CACHE_S) => answer(key, ageOf(ends, live), read);
   // The page asked for by ?<name>=: {cursor, query} (null and '' for the first page), or null for a bad cursor.
   const pageOf = (name, pattern = CURSOR, parse = (m) => ({ at: Number(m[1]), key: m[2] })) => {
     const value = url.searchParams.get(name);
@@ -607,8 +622,12 @@ export function routeLog(request, env, now = Date.now()) {
     const page = pageOf('before');
     if (!page) return json({ error: 'bad cursor' }, 400, cors);
     const kind = surveyor ? 'surveyor' : guild ? 'guild' : 'theme', k = theme ? Number(key) : key;
-    return timed(`${kind}/${k}/${from}/${to}${page.query}`, to * HOUR_MS, () => readSlice(env.LOG_DB, kind, k, from, to, page.cursor),
-      to - from > 48 ? SLICE_SLOW_CACHE_S : LIVE_CACHE_S);
+    const base = `${kind}/${k}/${from}/${to}`, live = to - from > 48 ? SLICE_SLOW_CACHE_S : LIVE_CACHE_S;
+    // A later page takes its totals and top lists from the first page, kept as that is.
+    const first = page.cursor
+      ? async () => JSON.parse(await kept(`${url.host}/m${MAP_VERSION}/${base}`, ageOf(to * HOUR_MS, live), () => readSlice(env.LOG_DB, kind, k, from, to), now))
+      : null;
+    return timed(`${base}${page.query}`, to * HOUR_MS, () => readSlice(env.LOG_DB, kind, k, from, to, page.cursor, first), live);
   }
   if (month) {
     const m = Number(month[1]), [from, to] = monthHours(m);
@@ -650,10 +669,14 @@ async function keep(key, maxAge, read, cors, now, immutable = false) {
 const cacheControl = (maxAge, immutable) => `public, max-age=${maxAge}${immutable ? ', immutable' : ''}`;
 // The same, as the answer's text: from memory, Cloudflare's cache or `read`.
 async function kept(key, maxAge, read, now, immutable = false) {
-  const control = cacheControl(maxAge, immutable);
   const held = memo.get(key);
-  if (held && held.until > now) return held.body;
-  memo.delete(key);
+  if (held && held.until > now) { memo.delete(key); memo.set(key, held); return held.body; }
+  unmemo(key);
+  if (!reading.has(key)) reading.set(key, fresh(key, maxAge, read, now, immutable).finally(() => reading.delete(key)));
+  return reading.get(key);
+}
+async function fresh(key, maxAge, read, now, immutable) {
+  const control = cacheControl(maxAge, immutable);
   const cache = edgeCache(), cacheKey = new Request(`https://${key.replace('/', '/_cache/survey-log/')}`);
   let body = null;
   if (cache) {
@@ -666,7 +689,9 @@ async function kept(key, maxAge, read, now, immutable = false) {
       try { await cache.put(cacheKey, new Response(body, { headers: { 'Cache-Control': control } })); } catch { /* not cached */ }
     }
   }
+  unmemo(key);
   memo.set(key, { body, until: now + maxAge * 1000 });
-  while (memo.size > MEMO_MAX) memo.delete(memo.keys().next().value);
+  memoChars += body.length;
+  while (memo.size > MEMO_MAX || memoChars > MEMO_CHARS) unmemo(memo.keys().next().value);
   return body;
 }

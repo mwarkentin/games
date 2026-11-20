@@ -357,7 +357,9 @@ output "letterfield_turnstile_sitekey" {
   "write a script and pay a solver", which deters the casual and barely
   slows the determined.
 - **Compared with the per-address limits.** They do the heavy lifting:
-  they're exact about what one address can do, cost nothing per player, and
+  they bound what one address can do (approximately: each is counted per
+  Cloudflare location, joins where the surveyor connects and claims where
+  the sector's object runs), cost nothing per player, and
   can't be bought past. Turnstile adds one thing they can't: it's a check
   per *browser*, so it prices out the cheapest addresses (free proxy lists,
   data-centre ranges) that come with no browser behind them.
