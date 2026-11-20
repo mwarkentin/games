@@ -4360,7 +4360,7 @@ canvas.addEventListener('wheel', e => {
 
 window.addEventListener('keydown', e => {
   if (e.key === 'Shift') canvas.classList.add('select');
-  const inNotes = e.target && e.target.closest && e.target.closest('.notes, .people, .signup');
+  const inNotes = e.target && e.target.closest && e.target.closest('.notes, .people, .signup, .guild-invite');  // their keys are their own
   if (e.key === 'Escape') {
     if (sel.anchor) {
       sel.anchor = null; sel.end = null;
