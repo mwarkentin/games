@@ -663,6 +663,41 @@ describe('Sector', () => {
     assert.deepEqual(reports.at(-1).by, [[hashed(2), 1]]);
   });
 
+  test('keeps the words charted since its last report through hibernation, so the daily cap counts them all', async () => {
+    const reports = [];
+    reportingSector(reports);
+    const env = sector.env;
+    const ws = fakeSocket();
+    sector.join(ws, 2, -3, hashed(1));
+    await claim(ws, words[0]);
+    await settle();
+    // (Leaving out the sector's ask about the cap, which carries no words.)
+    const charted = () => reports.filter((r) => r.by.length).map((r) => r.by);
+    assert.deepEqual(charted(), [[[hashed(1), 1]]]);
+    const before = reports.length;
+    // Two more within REPORT_MS wait for a later report; then the sector goes
+    // quiet and hibernates before one goes, the socket still open.
+    clock += 1000;
+    await claim(ws, words[1]);
+    clock += 1000;
+    await claim(ws, words[2]);
+    await settle();
+    assert.equal(reports.length, before);
+    clock += 30000;
+    sector = new Sector(state, env);
+    sector.now = () => clock;
+    await say(ws, { t: 'here' });  // the game's next word that it's still here wakes it
+    await settle();
+    assert.deepEqual(charted(), [[[hashed(1), 1]], [[hashed(1), 2]]]);
+    // Once the Atlas has them they're owed no more, through another wake too.
+    clock += REPORT_MS;
+    sector = new Sector(state, env);
+    sector.now = () => clock;
+    await say(ws, { t: 'here' });
+    await settle();
+    assert.deepEqual(reports.at(-1).by, []);
+  });
+
   test('counts joins without a Turnstile pass in its reports, and keeps the count if a report fails', async () => {
     const reports = [];
     let fail = true;
@@ -701,9 +736,16 @@ describe('Sector', () => {
     await say(player, { t: 'pos', x: 400, y: -500 });
     await settle();
     assert.equal(reports.length, 0);  // that report failed
-    fail = false;
     clock += REPORT_MS;
     await say(player, { t: 'pos', x: 410, y: -500 });
+    await settle();
+    assert.equal(reports.length, 0);  // failed again
+    // Hibernating in between doesn't lose them.
+    sector = new Sector(state, sector.env);
+    sector.now = () => clock;
+    fail = false;
+    clock += REPORT_MS;
+    await say(player, { t: 'pos', x: 415, y: -500 });
     await settle();
     assert.equal(reports.at(-1).unpassed, 2);
     // Nothing new: the report leaves it out.

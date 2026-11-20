@@ -1462,6 +1462,28 @@ describe('supernovas reaching the whole shared world, through the Atlas', () => 
     assert.equal(novasTo(far).length, 1);
   });
 
+  test('a supernova the Atlas hasn\'t heard of yet is kept through hibernation, and sent once', async () => {
+    const far = join('5,5');
+    await look('5,5', far);
+    atlasDown = true;
+    const { ws, at } = await chartLast(1, 2);
+    atlasDown = false;
+    reports.length = 0;
+    // Sector 0,0 hibernates before its next report, and wakes with the next message.
+    clock += REPORT_MS;
+    sectorAt('0,0', true);
+    await look('0,0', ws);
+    assert.deepEqual(reports.map((r) => r.novas?.map((n) => n[2])), [[at]]);
+    clock += REPORT_MS;
+    sectorAt('0,0', true);
+    await look('0,0', ws);
+    assert.equal(reports.length, 2);
+    assert.equal(reports[1].novas, undefined, 'not sent again');
+    clock += REPORT_MS;
+    await look('5,5', far);
+    assert.equal(novasTo(far).length, 1);
+  });
+
   test('the Atlas takes only real supernovas, from their own sector, with every word charted', async () => {
     const report = async (body) => {
       const res = await atlasObject.fetch(new Request('https://atlas/report', { method: 'POST', body: JSON.stringify({ players: 0, by: [], ...body }) }));

@@ -212,6 +212,14 @@ survey also limits each IP address, wherever it plays:
     Atlas only counts an address's words when the sector reports them, so an
     address can chart a few words past 300 before every sector knows. The
     6-a-minute limit keeps that small.
+  - What a report owes the Atlas (each address's words, joins without a
+    pass, and a supernova it hasn't heard of) is kept in the sector's
+    storage too, in `owed`, until the Atlas has it. A sector that hibernates
+    before its next report, its sockets still open, sends it once it wakes.
+    Before this, words charted within 10 s of a report were lost whenever
+    the sector went quiet straight after, so a script that paused after
+    each few words had most of them never counted. It costs a row written
+    per word, and one per address per report.
   - Worker Previews allow 1,000 a day (`SURVEY_DAILY_CLAIMS` in
     `[previews.vars]`, read by `dailyClaims()`) and 60 claims a minute, so
     a test can chart several whole territories in a day.
@@ -1531,8 +1539,8 @@ On Workers Paid, per word charted: up to seven D1 rows written (the log's
 row, an update each to the hour's, the surveyor's and the territory's
 counts, and a row in each of the three indexes; no initials or a stray word
 skips two), and two more for a word charted in a guild (its index and its
-day's count; see "Guilds" under "The log"), one more row written in the sector (its time index), and a
-share of an alarm. A supernova, once per territory (10,000 in the shared
+day's count; see "Guilds" under "The log"), two more rows written in the sector (its time index, and
+what the next report owes the Atlas, in the shared world), and a share of an alarm. A supernova, once per territory (10,000 in the shared
 world), adds two rows written in its sector (the row and marking it sent)
 and two in D1 (the row and its index on time), and reads its territory's
 claims once, about 110 rows: next to the 112 words that made it, nothing.
