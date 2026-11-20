@@ -236,7 +236,11 @@ survey also limits each IP address, wherever it plays:
   (`SURVEY_JOINS`) counts sockets opened anywhere. A player roaming the map
   opens about 10 an hour. The Worker asks it before forwarding a join, so a
   join it refuses never wakes (or makes) a sector. Either limit is answered
-  with `full`, and the game tries again in a minute or so.
+  with `full`, and the game tries again in a minute or so. Every join counts
+  toward `SURVEY_JOINS`, those then turned away for a full sector or a full
+  survey included, so a game retrying against a crowd uses up its minute's
+  joins too. And a join the limiter refuses never reaches a sector, so a
+  missing Turnstile pass on it isn't counted in `unpassed`.
 - **The whole survey: an address counts for at most 40 toward
   `MAX_ONLINE`.** The cap per sector alone would let one address fill the
   survey, 40 sockets in each of the shared world's 625 sectors being 25,000.

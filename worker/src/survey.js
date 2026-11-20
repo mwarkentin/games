@@ -1356,6 +1356,10 @@ export class Atlas {
     // But no address counts for more than ADDRESS_ONLINE, however many
     // sectors it's in: sockets from a few addresses, spread over the shared
     // world, can't fill the survey (MAX_ONLINE) and lock everyone out.
+    // That cap is taken from each sector's own counts, so someone listed in
+    // two sectors' reports counts twice toward their address's held people
+    // while counting once in ids: near the cap, players online can read low.
+    // It only ever errs toward letting people in, so it's left that way.
     let charted = 0, unlisted = 0;
     const ids = new Set();
     for (const r of this.load().values()) {
