@@ -418,6 +418,22 @@ describe('membership in sectors', () => {
     assert.ok(listedNow.includes(one.pid) && !listedNow.includes(two.pid), JSON.stringify(listedNow));
   });
 
+  test("doesn't hand a member arriving in a sector the guild's frame from members who left it long ago", async () => {
+    const one = await w.player(0, 0, { id: 1, initials: 'ONE', guild: g.code, x: 5, y: 5 });
+    const outsider = await w.player(0, 0, { id: 7, initials: 'OUT', x: 7, y: 7 });  // keeps the sector awake
+    await w.tick(one, REFRESH_MS);
+    assert.deepEqual(one.ws.last('guild').on.map((e) => e[0]), [one.pid]);
+    one.ws.close();
+    await one.sector.webSocketClose(one.ws);
+    await settle();
+    await w.tick(outsider, 3 * 3600000);  // hours on
+    const two = await w.player(0, 0, { id: 2, initials: 'TWO', guild: g.code, x: 6, y: 6 });
+    await w.tick(two, REPORT_MS);
+    const frames = two.ws.all('guild');
+    assert.ok(frames.length > 0);
+    assert.deepEqual(frames[0].on.map((e) => e[0]), [two.pid]);  // ONE never shows as online
+  });
+
   test('tells a member of several guilds who is online in each, and members of each about them', async () => {
     const other = await w.make(3, 'TRI', [3, 2, 11]);
     await w.call(`/v1/survey/guilds/${other.code}/join`, { token: token(1), initials: 'ONE' });

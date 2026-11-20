@@ -11,6 +11,7 @@ import vm from 'node:vm';
 
 import worker from '../src/index.js';
 import { CH, DEAL, DIRS, HOLDERS, MAP_VERSION, RG, STRAY_MIN, THEMES, THEME_DATA, VOCAB, chunk, genChunk, keyOf, letterAt, regionName, regionTheme, strayTheme, wordEnd } from '../src/letterfield-world.js';
+import { GUILD_TAGS_MAX } from '../src/survey-guild.js';
 import {
   ADDRESS_HEADER, ADDRESS_SOCKETS, AREA, AREA_WORDS, Atlas, BATCH_MS, DAILY_CLAIMS, dailyClaims, DAILY_LIST_MAX, CLAIM_BURST, CLAIM_REFILL_MS, FRAME_BURST, FRAME_REFILL_MS, MAX_ONLINE, MAX_PLAYERS, ONLINE_MS, PRESENCE_MAX, PRESENCE_MS,
   QUIET, REPORT_BY_MAX, REPORT_MS, UNPASSED_HEADER, SAVE_MS, SAVE_POS_MS, SECTOR, SPAWN_MAX, Sector, VIEW_MS, addressOf, checkClaim, routeSurvey,
@@ -600,6 +601,19 @@ describe('Sector', () => {
     assert.deepEqual(b.last('world'), { t: 'world', charted: 1002, total: AREA_WORDS, players: 40 });
     // Later joiners get the totals straight away.
     assert.deepEqual(join(2, -3).sent[1], { t: 'world', charted: 1002, total: AREA_WORDS, players: 40 });
+  });
+
+  test('asks the Atlas about every guild here within a few reports, past the most one report asks about', async () => {
+    const tag = (i) => i.toString(16).padStart(8, '0');
+    for (let i = 0; i < GUILD_TAGS_MAX + 10; i++) {
+      const ws = join(2, -3);
+      sector.everyone().get(ws).guilds = [{ code: 'ABCDEF', tag: tag(i), lid: null, at: NOW }];
+    }
+    sector.guildSent = new Map([[tag(0), '{}'], [tag(999999), '{}']]);
+    const first = sector.listing().tags, second = sector.listing().tags;
+    assert.ok(first.length <= GUILD_TAGS_MAX && second.length <= GUILD_TAGS_MAX);
+    assert.equal(new Set([...first, ...second]).size, GUILD_TAGS_MAX + 10);
+    assert.deepEqual([...sector.guildSent.keys()], [tag(0)]);  // and forgets the last frame of a guild nobody here is in
   });
 
   test('reports the middle of the crowd, not the stragglers', async () => {

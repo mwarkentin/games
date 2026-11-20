@@ -260,8 +260,14 @@ async function checkGuild(sector, ws, me, code) {
   if (!tagChanged) return;
   sector.reportDue = true;
   sector.schedulePresence(false);
+  // The guild's last frame here, if others here carry its tag, so reports
+  // have kept it current. If nobody else does, it may be from hours ago: the
+  // next report's answer goes to them instead, as new.
   const known = tag && sector.guildSent?.get(tag);
-  if (known) try { ws.send(known); } catch { /* closing */ }
+  if (!known) return;
+  const others = [...sector.everyone()].some(([other, p]) => other !== ws && tagsOf(p).includes(tag));
+  if (!others) sector.guildSent.delete(tag);
+  else try { ws.send(known); } catch { /* closing */ }
 }
 
 // What the Atlas said about guilds, passed on to the members here, but only

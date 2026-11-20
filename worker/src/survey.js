@@ -920,7 +920,17 @@ export class Sector {
   listing() {
     const [sx, sy] = this.coords();
     const who = listed(this.everyone().values(), sx, sy, this.now());
-    const tags = [...new Set([...this.everyone().values()].flatMap(tagsOf))].slice(0, GUILD_TAGS_MAX);
+    const all = new Set([...this.everyone().values()].flatMap(tagsOf));
+    // A guild nobody here is in any more needs no last frame kept for it.
+    for (const tag of this.guildSent?.keys() ?? []) if (!all.has(tag)) this.guildSent.delete(tag);
+    // Past GUILD_TAGS_MAX, each report asks about the next ones round, so
+    // every guild here hears who's online within a few reports.
+    let tags = [...all].sort();
+    if (tags.length > GUILD_TAGS_MAX) {
+      const from = (this.tagsFrom ?? 0) % tags.length;
+      tags = [...tags, ...tags].slice(from, from + GUILD_TAGS_MAX);
+      this.tagsFrom = from + GUILD_TAGS_MAX;
+    }
     return { ...(who.length ? { who } : {}), ...(tags.length ? { tags } : {}) };
   }
 

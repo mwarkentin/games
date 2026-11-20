@@ -664,7 +664,7 @@ who isn't a member gets the same answer as a guild that doesn't exist.
 ### Who's online rides on the reports
 
 Each report's surveyors carry their guilds' tags, as a list, and the report lists the
-guilds of everyone in the sector (up to `GUILD_TAGS_MAX`, 100). The Atlas keeps who's online in each guild,
+guilds of everyone in the sector (up to `GUILD_TAGS_MAX`, 100; past that, each report asks about the next 100 round, so every guild there hears within a few reports). The Atlas keeps who's online in each guild,
 replaced sector by sector as reports come in, and answers each report with
 the online members of the guilds that sector asked about; a member of
 several is online in each. The sector passes
