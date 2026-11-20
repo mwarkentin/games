@@ -1115,6 +1115,7 @@ addEventListener('pointerdown', e => {
   if (picked && !picked.contains(e.target)) hideTip();
 }, true);
 function pickable(node, value, label, go = null) {
+  node.showTip = () => showTip(node, value, label, go ? 'Tap again to open' : '');
   node.addEventListener('pointerenter', e => { if (e.pointerType === 'mouse') showTip(node, value, label); });
   node.addEventListener('pointerleave', e => { if (e.pointerType === 'mouse' && picked !== node) hideTip(); });
   node.addEventListener('focus', () => { if (picked !== node) showTip(node, value, label); });
@@ -1123,9 +1124,28 @@ function pickable(node, value, label, go = null) {
     // A key press (detail 0) or a mouse opens at once; a tap first shows the value.
     const tap = e.detail !== 0 && (lastPointer === 'touch' || lastPointer === 'pen');
     if (go && (!tap || picked === node)) { hideTip(); go(); return; }
-    showTip(node, value, label, go ? 'Tap again to open' : '');
+    node.showTip();
     picked = node;
   });
+}
+// A refresh in place redraws what's on screen. These keep the place of what
+// had focus, and of the bar whose value was showing, so the redraw can put
+// them back: by id, or by place in its part of the page (in a word's row, by
+// that word's link).
+const FOCUSABLE = 'a[href], button, input, [tabindex]';
+function placeOf(node) {
+  if (!node || node === document.body || !node.isConnected) return null;
+  if (node.id) return { id: node.id };
+  const box = [chartEl, logEl, cardsEl, stripEl, $('#tiles')].find(b => b.contains(node));
+  if (!box) return null;
+  const row = node.closest('li'), fly = row && box.contains(row) ? row.querySelector('a.fly')?.getAttribute('href') : null;
+  return { box, fly, i: [...(fly ? row : box).querySelectorAll(FOCUSABLE)].indexOf(node) };
+}
+function atPlace(k) {
+  if (!k) return null;
+  if (k.id) return document.getElementById(k.id);
+  const row = k.fly ? [...k.box.querySelectorAll('li')].find(li => li.querySelector('a.fly')?.getAttribute('href') === k.fly) : k.box;
+  return row?.querySelectorAll(FOCUSABLE)[k.i] || null;
 }
 
 // A column chart of words per piece of the period. Tapping a column opens
@@ -1352,7 +1372,7 @@ function readUrl() {
   } catch (_) {}
 }
 readUrl();
-const logEl = $('#log'), chartEl = $('#chart'), cardsEl = $('#cards'), stripEl = $('#novaStrip'), dayInput = $('#dayInput');
+const summaryEl = $('#summary'), logEl = $('#log'), chartEl = $('#chart'), cardsEl = $('#cards'), stripEl = $('#novaStrip'), dayInput = $('#dayInput');
 // The Top lists heading, and the way down to it, only with top lists to show.
 new MutationObserver(() => { $('#tops').hidden = $('#jump').hidden = !cardsEl.children.length; }).observe(cardsEl, { childList: true });
 $('#zone').textContent = Intl.DateTimeFormat().resolvedOptions().timeZone || 'your time zone';
@@ -1602,6 +1622,11 @@ async function render(quiet = false) {
   // A quiet refresh keeps what's on screen while it reloads; anything else shows the period loading.
   if (quiet && Log.is('ready', 'refreshing', 'stale')) { if (!Log.is('refreshing')) Log.go('refreshing'); }
   else if (!Log.is('loading')) Log.go('loading');
+  // A refresh in place puts back the focus and the value showing, and isn't read out again.
+  const focused = Log.is('refreshing') ? placeOf(document.activeElement) : null;
+  const tipped = Log.is('refreshing') && !tip.hidden ? placeOf(picked || (chartEl.contains(document.activeElement) ? document.activeElement : null)) : null;
+  const tipWasPicked = !!picked;
+  summaryEl.setAttribute('aria-live', Log.is('refreshing') ? 'off' : 'polite');
   if (state.period === 'all') state.start = allStart();
   saveUrl();
   hideTip();
@@ -1638,7 +1663,7 @@ async function render(quiet = false) {
   } catch (err) {
     if (run !== state.run) return;
     // A refresh that fails leaves the words on screen, and tries again.
-    if (Log.is('refreshing')) { Log.go('stale'); return scheduleRefresh(run, end); }
+    if (Log.is('refreshing')) { Log.go('stale'); summaryEl.setAttribute('aria-live', 'polite'); return scheduleRefresh(run, end); }
     tiles([]); chartEl.replaceChildren(); cardsEl.replaceChildren();
     stripEl.replaceChildren();
     if (state.focus && /status 400/.test(err?.message)) status('Not in the log', 'There’s no such surveyor, theme or territory to show.');
@@ -1649,6 +1674,11 @@ async function render(quiet = false) {
   // Top lists the view didn't ask for leave no placeholder behind.
   if (topsRun !== run) cardsEl.querySelectorAll('.ph-card').forEach(c => c.remove());
   openDefinition();
+  if (focused && (!document.activeElement || document.activeElement === document.body)) atPlace(focused)?.focus({ preventScroll: true });
+  const bar = atPlace(tipped);
+  if (bar?.showTip) { if (tip.hidden) bar.showTip(); if (tipWasPicked) picked = bar; }
+  // Read out again once the redraw is in.
+  setTimeout(() => { if (run === state.run) summaryEl.setAttribute('aria-live', 'polite'); }, 1000);
   Log.go('ready');
   scheduleRefresh(run, end);
 }

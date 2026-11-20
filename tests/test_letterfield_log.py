@@ -560,6 +560,31 @@ def test_a_live_hour_that_fails_to_refresh_keeps_its_words_and_tries_again(page:
     expect(page.locator("html")).to_have_attribute("data-log", "ready")
 
 
+def test_a_live_hours_refresh_keeps_the_focus_and_the_value_showing(page: Page, site_url, errors):
+    fake = FakeSurveyLog([ACORN, MONET, ZEUS], PLACES, THEMES)
+    open_log(page, site_url, fake, query="&period=hour", running=True)
+    expect(page.locator(".entry")).to_have_count(1)  # MONET, at 3:05
+    bar = page.locator("#chart .bar.some")
+    bar.focus()
+    expect(page.locator("#tip")).to_be_visible()
+    fake.entries.append(["FERN", 10, 20, 0, 0, "AMY", NOW_MS + 10_000, 11])
+    page.clock.fast_forward(21_000)  # the hour reloads every 20 s
+    expect(page.locator(".entry")).to_have_count(2)
+    expect(page.locator("html")).to_have_attribute("data-log", "ready")
+    # The minute's bar was drawn again, and has the focus back, with its value showing.
+    assert page.evaluate("document.activeElement.getAttribute('aria-label')").startswith("3:05")
+    expect(page.locator("#tip")).to_be_visible()
+    expect(page.locator("#tip")).to_contain_text("1 word")
+    # The same for a word's link in the list.
+    page.locator(".entry", has_text="MONET").locator("a.fly").focus()
+    page.clock.fast_forward(21_000)
+    eventually(page, lambda: page.evaluate("document.activeElement.textContent") == "MONET")
+    # The redraw isn't read out (aria-live is off while it's drawn), then the summary is read out as before.
+    page.clock.fast_forward(2_000)
+    expect(page.locator("#summary")).to_have_attribute("aria-live", "polite")
+    assert errors == []
+
+
 def test_a_day_that_ends_on_screen_stops_saying_so_far(page: Page, site_url, errors):
     late = int(datetime(2026, 11, 7, 4, 59, 30, tzinfo=UTC).timestamp() * 1000)  # 11:59:30 PM in Toronto
     fake = FakeSurveyLog([ACORN, MONET, ZEUS], PLACES, THEMES)
