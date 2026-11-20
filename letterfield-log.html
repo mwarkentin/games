@@ -1966,6 +1966,17 @@ async function renderSlice(run, f, p, start, end, firsts) {
       : [rankCard('Top surveyors', surveyorRows(first.topSurveyors), 'By initials, which anyone can share'), rankCard('Top territories', places, 'Hidden words charted in each')];
   cardsEl.replaceChildren(...(total ? cards : []));
   entries = entries.filter(e => e[6] >= start && e[6] < end);
+  // In a zone half an hour off UTC, the hours asked run past the period's
+  // end, and a busy last half hour can fill whole pages: read on to the
+  // period's own words. (Newest first, so a page that ends after it is all after it.)
+  for (let n = 1, last = first.entries.at(-1); p !== 'hour' && !entries.length && typeof next === 'string' && last && last[6] >= end && n < SLICE_PAGES; n++) {
+    const more = await page(next);
+    if (run !== state.run) return;
+    Object.assign(data.places, more.places); Object.assign(data.themes, more.themes);
+    entries = more.entries.filter(okEntry).filter(e => e[6] >= start && e[6] < end);
+    last = more.entries.at(-1);
+    next = more.next;
+  }
   shareSlice(run, f, p, start, end, { total, world: buckets.reduce((a, b) => a + b.world, 0), places, surveyors: surveyorRows(first.topSurveyors), words: latestWords(entries, data) });
   if (!entries.length) {
     // A guild the log has never had a word from has no name there either:

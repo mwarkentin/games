@@ -13,6 +13,7 @@ import re
 from datetime import UTC, datetime
 from urllib.parse import parse_qs, urlsplit
 
+import pytest
 from playwright.sync_api import Page, expect
 
 from fake_leaderboard import Held, blank_constants
@@ -494,6 +495,21 @@ def test_a_busy_surveyors_words_come_a_hundred_at_a_time(page: Page, site_url, e
     # The second page carries on under the same day.
     expect(page.locator(".hour h3")).to_have_text(["Friday, November 6130 words"])
     assert any(r.endswith("?before=100") for r in fake.requests)
+    assert errors == []
+
+
+@pytest.mark.browser_context_args(timezone_id="Asia/Kolkata")
+def test_a_view_of_one_finds_its_words_past_a_busy_half_hour_after_it(page: Page, site_url, errors):
+    # In India a day ends at 18:30 UTC, but the log is asked for whole UTC hours, to 19:00. A
+    # surveyor's busy first half hour of the next day fills the first page; the day's own word is past it.
+    end = int(datetime(2026, 11, 5, 18, 30, tzinfo=UTC).timestamp() * 1000)  # midnight, Nov 6 in India
+    late = [["BIRCH", i, 0, 0, 0, "ZED", end + (i + 1) * MINUTE, 11] for i in range(12)]
+    fern = ["FERN", 10, 20, 0, 0, "ZED", end - 6 * HOUR_MS, 11]  # 6:00 PM, Nov 5 in India
+    fake = FakeSurveyLog([*late, fern], PLACES, THEMES, slice_page=10)
+    open_log(page, site_url, fake, query="&surveyor=ZED&period=day&day=2026-11-05")
+    expect(page.locator("#sumTitle")).to_have_text(re.compile("November 5"))
+    expect(page.locator(".entry .word")).to_have_text(["FERN"])
+    expect(page.locator(".more")).to_have_count(0)
     assert errors == []
 
 
