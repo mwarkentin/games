@@ -58,7 +58,7 @@ From [Scaling One Million Checkboxes][omcb] and
 | Moves went out in batches every 200 ms; batching "massively reduced load" | claims go out in batches every 200 ms. In the load test, this took a sector from saturating at ~630 players to handling 750 |
 | Global data (players online) was served over HTTP with a low max-age so Cloudflare's cache absorbed it: "hundreds of millions of requests" | the world map is a `GET` with `max-age=5`, cached per Worker instance; the Atlas that builds it hears only from sectors, never from players |
 | Bandwidth was "my one unbounded cost" (OMCB capped its server at 250 Mbit/s) | Cloudflare doesn't charge for egress, and outgoing WebSocket messages are free |
-| "Bound my costs … instead of going serverless and scaling into bankruptcy" | `MAX_PLAYERS` per sector and `MAX_ONLINE` overall. Beyond them, players are told the survey is full; the bill can't run away |
+| "Bound my costs … instead of going serverless and scaling into bankruptcy" | `MAX_PLAYERS` per sector and `MAX_ONLINE` across the shared world. Beyond them, players are told the survey is full; the bill can't run away there (sectors outside it aren't counted: see "Bots") |
 | Validate everything: someone checked box 100,000,000 and broke OMCB | every claim is checked against the server's copy of the map generator |
 | Bots pushed absurd traffic once the Go rewrite made things fast | a burst of 5 claims per socket, then one per 1.5 s; and per IP address, however many sockets it opens, 6 a minute and 300 a day (see "Limits per address") |
 | Rollback netcode, so moves feel instant | not needed: a circled word is always kept locally, and the server only decides who gets the credit |
@@ -84,14 +84,18 @@ From [Scaling One Million Checkboxes][omcb] and
 - **Positions** go only to the sector under the middle of your screen, at
   most once a second, and only after you've moved at least a cell. A sector
   sends one list of positions a second (up to 64 people, plus a head count)
-  however many players moved.
+  however many players moved. With more than 64 here, each address's latest
+  mover goes in first, then each one's next, so one address's sockets can't
+  crowd everyone else off the map.
 - **The Atlas** is one object for the shared world. Each sector in the area
   reports its charted counts, player count and the middle of its crowd at
   most every 10 s while something is changing. Reports are absolute numbers, so a lost
   or repeated report does no harm. The Atlas writes the charted counts to
   storage at most once a minute.
 - **The world map** is one byte per territory (10 KB), plus players per
-  sector and a starting spot for newcomers. Each Worker instance fetches it
+  sector and a starting spot for newcomers: the middle of the crowd of the
+  most addresses with room, each address counted once there and in where
+  the middle is, so one address's sockets can't choose it. Each Worker instance fetches it
   from the Atlas at most every 5 s, and browsers cache it for 5 s.
 - **Hibernation, and why there are almost no timers.** Sectors use the
   [WebSocket Hibernation API][hib]. Cloudflare bills a Durable Object for
@@ -194,10 +198,15 @@ survey also limits each IP address, wherever it plays:
   keeps this count:
   - Each sector's reports, which already go out at most every 10 s while
     words are charted, also list how many words each address charted there
-    since the last report.
+    since the last report: up to 3,000 addresses a report (`REPORT_BY_MAX`,
+    the most words first), the rest with the next, so a report the Atlas
+    couldn't reach in time never grows past what it takes.
   - The Atlas adds these up for the UTC day. It answers with the addresses
     past the cap, the most recent 2,000, but only when that list has
-    changed since the sector last heard it.
+    changed since the sector last heard it. An address capped earlier that
+    has dropped off those 2,000 and charts again (its sectors no longer know
+    to refuse it) goes back to the end of the list with that report, so it's
+    refused again within a report, however many addresses are capped.
   - The sector refuses those addresses' claims with `daily limit`, and the
     game says "Today's charting limit reached · kept in your notes".
   - A sector keeps the list in memory, so one just woken from hibernation
@@ -223,13 +232,33 @@ survey also limits each IP address, wherever it plays:
     aren't capped. They don't count toward the world's total.
 - **Sockets: 40 per address in a sector, and 120 new ones a minute per
   address.** A sector counts its own sockets exactly, so a few addresses
-  can't fill it and lock everyone else out. It counts again once the binding
-  below has answered, since other joins can come in while it does: a burst
-  of joins from one address, or everyone reconnecting after a deploy, still
-  stops at the caps. A second binding
+  can't fill it and lock everyone else out. A second binding
   (`SURVEY_JOINS`) counts sockets opened anywhere. A player roaming the map
-  opens about 10 an hour. Either limit is answered with `full`, and the
-  game tries again in a minute or so.
+  opens about 10 an hour. The Worker asks it before forwarding a join, so a
+  join it refuses never wakes (or makes) a sector. Either limit is answered
+  with `full`, and the game tries again in a minute or so. Every join counts
+  toward `SURVEY_JOINS`, those then turned away for a full sector or a full
+  survey included, so a game retrying against a crowd uses up its minute's
+  joins too. And a join the limiter refuses never reaches a sector, so a
+  missing Turnstile pass on it isn't counted in `unpassed`.
+- **The whole survey: an address counts for at most 40 toward
+  `MAX_ONLINE`.** The cap per sector alone would let one address fill the
+  survey, 40 sockets in each of the shared world's 625 sectors being 25,000.
+  So each report says how many people each address has placed there, and
+  the Atlas counts an address for no more than `ADDRESS_ONLINE` (40) across
+  every sector, in the players online it shows and in the count `MAX_ONLINE`
+  is checked against. Filling the survey takes 625 addresses, not one.
+- **Outside the shared world, `MAX_ONLINE` doesn't hold.** Sectors there
+  don't report, so their players aren't counted and they never turn anyone
+  away as the survey being full: only `MAX_PLAYERS` and the per-address
+  limits bound them. A crowd, or a script with many addresses, out there
+  costs what it costs. Counting them would mean every far sector reporting
+  to the Atlas too.
+- **Messages: 20 at once per socket, then 10 a second.** Every message
+  costs the sector's one thread some work (a position, initials, a badge to
+  check), so past that a socket's messages are dropped unread
+  (`FRAME_BURST`, `FRAME_REFILL_MS`). The game sends a few a second at most.
+  A badge and card are checked again only when the game sends new ones.
 - **Why a binding and not a Durable Object per address.** The binding keeps
   its counts in each Cloudflare location, in memory, and answers without
   waiting for other locations to agree. So it's approximate: counts are per
@@ -638,7 +667,12 @@ who isn't a member gets the same answer as a guild that doesn't exist.
   most every 10 minutes). A socket keeps `guilds: [{code, tag, lid, at}]` in
   its attachment; one saved by an older version, with a single guild, reads
   back as a list of one. The checks that are out are kept in memory, per
-  code.
+  code. A check that fails is tried again 30 s on (`GUILD_RETRY_MS`), not
+  with every message, so a guild that's struggling isn't asked by every
+  member's every move. And one socket can set off 10 checks at once and one
+  every 90 s after (`GUILD_CHECKS`), twice what its rechecks need: a game
+  naming new codes in every message waits for its allowance rather than
+  costing five requests a message.
 - **On the map.** Presence gives each player's tags (one as a string, as an
   older game reads it, several as a list); the game marks a mate's caret
   with every guild it shares with them (see "Several guilds"). Other
@@ -651,7 +685,7 @@ who isn't a member gets the same answer as a guild that doesn't exist.
 ### Who's online rides on the reports
 
 Each report's surveyors carry their guilds' tags, as a list, and the report lists the
-guilds of everyone in the sector (up to `GUILD_TAGS_MAX`, 100). The Atlas keeps who's online in each guild,
+guilds of everyone in the sector (up to `GUILD_TAGS_MAX`, 100; past that, each report asks about the next 100 round, so every guild there hears within a few reports). The Atlas keeps who's online in each guild,
 replaced sector by sector as reports come in, and answers each report with
 the online members of the guilds that sector asked about; a member of
 several is online in each. The sector passes
@@ -1743,7 +1777,8 @@ about 30 cents over the included million requests.
 ## Not done yet
 
 - **A spending alert.** Workers Paid has no spending cap; `MAX_ONLINE`
-  keeps the worst case near $18 a day. A scheduled check of Cloudflare's
+  keeps the worst case in the shared world near $18 a day, but nothing
+  bounds sectors outside it (see "Bots"). A scheduled check of Cloudflare's
   analytics API could open a GitHub issue when the month's usage passes a
   threshold.
 - **Run `load.js` against a deployment.** That would confirm the per-sector

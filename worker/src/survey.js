@@ -86,7 +86,9 @@
 //
 // Limits per address (see "Bots" in SURVEY.md): the Worker hands each sector
 // a salted hash of the player's IP address, never the address itself. A
-// sector takes at most ADDRESS_SOCKETS sockets from one address, and two
+// socket's messages past FRAME_BURST at once are dropped unread. A
+// sector takes at most ADDRESS_SOCKETS sockets from one address (and the
+// Atlas counts an address for at most ADDRESS_ONLINE toward MAX_ONLINE), and two
 // rate-limiting bindings, set in wrangler.toml, count joins and claims per
 // address across every sector. For a daily cap, sectors in the shared world
 // add each address's charted words to their reports, and the Atlas answers
@@ -107,6 +109,8 @@ export const BATCH_MS = 200;          // claims go out together at most this oft
 export const PRESENCE_MAX = 64;       // positions per update; `n` still counts everyone
 export const CLAIM_BURST = 5;         // claims a socket can make at once,
 export const CLAIM_REFILL_MS = 1500;  // then one per this many milliseconds
+export const FRAME_BURST = 20;        // messages of any kind a socket can send at once,
+export const FRAME_REFILL_MS = 100;   // then one per this many milliseconds; the game sends a few a second at most
 export const AREA = 12;               // the shared world: sectors -12 to 12 each way
 export const AREA_WORDS = 1119752;    // hidden words in it (test/survey.test.js recounts them)
 export const REPORT_MS = 10000;       // a busy sector reports to the atlas at most this often
@@ -115,6 +119,7 @@ export const VIEW_MS = 5000;          // the world map is rebuilt, and cached, f
 export const ONLINE_MS = 2 * 60000;   // players count as online this long after their sector reported them
 export const SPAWN_MAX = 300;         // new players join the biggest crowd with fewer players than this
 export const MAX_ONLINE = 25000;      // players the whole survey takes at once: a ceiling on the bill
+export const ADDRESS_ONLINE = 40;     // players one address counts for toward MAX_ONLINE, however many sectors it's in
 export const QUIET = 32;              // a sector with fewer sockets than this sets a timer for a player leaving
 export const SAVE_POS_MS = 5000;      // a moving player's position is saved to their socket this often
 export const ADDRESS_SOCKETS = 40;    // sockets one address can hold in one sector (a classroom shares an address)
@@ -122,6 +127,7 @@ export const ADDRESS_HEADER = 'X-Survey-Address';  // the hashed address, from t
 export const UNPASSED_HEADER = 'X-Survey-Unpassed';  // '1' on a join without a good Turnstile pass, from the Worker
 export const DAILY_CLAIMS = 300;      // words one address can chart in the shared world each UTC day
 export const DAILY_LIST_MAX = 2000;   // addresses past the daily cap that the Atlas hands out, latest first
+export const REPORT_BY_MAX = MAX_PLAYERS * 4;  // addresses one report counts words for: more wait for the next
 export const RELAY_MS = ONLINE_MS;    // the Atlas keeps the shared world's supernovas this long, for sectors to pass on
 export const RELAY_MAX = 64;          // and at most this many
 export const NOVA_REPORT_MS = 1000;   // a sector with a supernova to report reports this soon after its last report
@@ -244,6 +250,9 @@ export function routeSurvey(request, env) {
     const address = await addressHash(request, env);
     const unpassed = !!env.TURNSTILE_SECRET && !(await checkPass(env.TURNSTILE_SECRET, address, url.searchParams.get('pass')));
     if (unpassed && turnstileRequired(env)) return unverified();
+    // Joins per address are counted here, before the sector is woken (or
+    // made): a join the limiter refuses costs no Durable Object at all.
+    if (!(await underLimit(env.SURVEY_JOINS, address))) return refused('full', { world: false }, 4000, 'too many joins');
     // The pass stays here: the sector only needs the path, the address and
     // whether the join had a pass. The Worker sets both headers itself, so a
     // player can't choose either.
@@ -261,14 +270,17 @@ export function routeSurvey(request, env) {
 // refused.
 export const turnstileRequired = (env) => env.TURNSTILE_REQUIRED === true || env.TURNSTILE_REQUIRED === 'true';
 
-// A join without a good pass, while passes are required, is answered by the Worker itself, without waking
+// A join without a good pass, while passes are required, or past its
+// address's limit on joins, is answered by the Worker itself, without waking
 // the sector, and in words the game can read: a browser learns nothing from a
 // refused WebSocket upgrade.
-function unverified() {
+const unverified = () => refused('unverified', {}, 4001, 'survey pass needed');
+
+function refused(t, frame, code, reason) {
   const [client, server] = Object.values(new WebSocketPair());
   server.accept();
-  send(server, { t: 'unverified' });
-  server.close(4001, 'survey pass needed');
+  send(server, { t, ...frame });
+  server.close(code, reason);
   return new Response(null, { status: 101, webSocket: client });
 }
 
@@ -330,11 +342,13 @@ export class Sector {
     this.worldSent = new WeakMap();  // socket → the last totals frame it was sent, so a frame only goes again when it changes
     this.people = null;      // socket → its attachment, read from the sockets on first use after waking
     this.guildChecks = new WeakMap();  // socket → codes of its guilds whose check is out (checkGuilds): kept in memory, never in an attachment
+    this.frames = new WeakMap();  // socket → {tokens, at}: its allowance of messages, in memory only
+    this.shownChecked = new WeakMap();  // socket → the badge and card it last sent, and what checking them found
     this.chartedBy = new Map();  // address → words it charted here since the last report
     this.unpassed = 0;           // joins without a Turnstile pass since the last report (a bot signal)
     this.overDay = -1;       // the UTC day `over` is for
     this.over = new Set();   // addresses past the daily cap today, as the Atlas last said
-    this.overAt = 0;         // how many the Atlas had counted then; it only resends the list when this changes
+    this.overAt = 0;         // the Atlas's count of changes to that list then; it only resends the list when this changes
     // Whether the sector knows who is past today's cap: unknown since waking
     // (or since the day turned), asking the Atlas (`asking` is out), or known
     // (`heardDay` is today). Until it's known, a claim from an address waits
@@ -402,10 +416,9 @@ export class Sector {
     const address = request.headers.get(ADDRESS_HEADER) || null;
     if (request.headers.get(UNPASSED_HEADER) === '1') { this.unpassed++; this.reportDue = true; }
     const full = () => this.ctx.getWebSockets().length >= MAX_PLAYERS || (address && this.fromAddress(address) >= ADDRESS_SOCKETS);
+    // (The Worker has counted the join against the address's limit already.)
     if (this.world && this.world.players >= MAX_ONLINE) this.turnAway(server, true);
-    // The limiter answers from outside this object, so others may have joined
-    // while it did: the counts are checked again after it.
-    else if (full() || !(await underLimit(this.env.SURVEY_JOINS, address)) || full()) this.turnAway(server, false);
+    else if (full()) this.turnAway(server, false);
     else this.join(server, Number(m[1]), Number(m[2]), address);
     return new Response(null, { status: 101, webSocket: client });
   }
@@ -540,6 +553,15 @@ export class Sector {
 
   async webSocketMessage(ws, message) {
     if (typeof message !== 'string' || message.length > MAX_MESSAGE) return;
+    // Every message costs the sector's one thread some work, whatever it
+    // says, so past a few a second a socket's messages are dropped unread.
+    // (Claims and emotes have tighter limits of their own, which answer.)
+    const now = this.now(), allowance = this.frames.get(ws) ?? { tokens: FRAME_BURST, at: now };
+    allowance.tokens = Math.min(FRAME_BURST, allowance.tokens + (now - allowance.at) / FRAME_REFILL_MS);
+    allowance.at = now;
+    this.frames.set(ws, allowance);
+    if (allowance.tokens < 1) return;
+    allowance.tokens -= 1;
     let msg;
     try { msg = JSON.parse(message); } catch { return; }
     const me = this.person(ws);
@@ -549,10 +571,16 @@ export class Sector {
       // Who the player is, whether they take emotes, and their guilds: for the surveyor list and guild checks.
       const social = await takeMe(me, msg);
       if (social) this.reportDue = true;
-      // The badge they show, if the Worker signed it for them.
-      const badge = me.pid ? await checkBadge(this.env, me.pid, msg.badge) : null;
-      // And their card, the same way: others see it without its signature.
-      const card = me.pid ? (await checkCard(this.env, me.pid, msg.card))?.shown ?? null : null;
+      // The badge they show, if the Worker signed it for them, and their card,
+      // the same way: others see it without its signature. Each is checked
+      // again only when the game sends something new.
+      const sent = JSON.stringify([me.pid ?? null, msg.badge ?? null, msg.card ?? null]), last = this.shownChecked.get(ws);
+      let badge = last?.sent === sent ? last.badge : null, card = last?.sent === sent ? last.card : null;
+      if (last?.sent !== sent) {
+        badge = me.pid ? await checkBadge(this.env, me.pid, msg.badge) : null;
+        card = me.pid ? (await checkCard(this.env, me.pid, msg.card))?.shown ?? null : null;
+        this.shownChecked.set(ws, { sent, badge, card });
+      }
       const shown = badge !== (me.badge ?? null) || card !== (me.card ?? null);
       if (shown) { me.badge = badge; me.card = card; }
       if (initials !== me.initials || social || shown) { me.initials = initials; this.save(ws, me); this.schedulePresence(false); }
@@ -869,7 +897,16 @@ export class Sector {
     this.presenceAt = this.now();
     this.presenceDue = false;
     // One caret a player: a player on two linked devices here shows where they last moved.
-    const seen = new Set(), here = this.here().sort((a, b) => b.moved - a.moved).filter((p) => { const id = p.pid || p.id; return !seen.has(id) && seen.add(id); });
+    const seen = new Set();
+    let here = this.here().sort((a, b) => b.moved - a.moved).filter((p) => { const id = p.pid || p.id; return !seen.has(id) && seen.add(id); });
+    // With more than fit, each address's latest mover comes first, then each
+    // one's next, and so on: sockets from one address, however busy, can't
+    // crowd everyone else off the map.
+    if (here.length > PRESENCE_MAX) {
+      const ranks = new Map(), rank = new Map();
+      for (const p of here) { const a = p.address ?? p.id, r = ranks.get(a) ?? 0; ranks.set(a, r + 1); rank.set(p, r); }
+      here = here.sort((a, b) => rank.get(a) - rank.get(b));
+    }
     // A member's guild tags: one as a string, as an older game reads it, several as a list.
     // Then the badge they show and their card, if they have them.
     const tags = (p) => {
@@ -882,8 +919,12 @@ export class Sector {
 
   // The middle of the crowd: the median of where players are looking, which
   // a few people wandering off on their own don't pull away from everyone else.
+  // Each address counts once, where it last moved, so one address's sockets
+  // can't choose the spot.
   crowd() {
-    const here = this.here();
+    const latest = new Map();
+    for (const p of this.here()) { const a = p.address ?? p.id, q = latest.get(a); if (!q || p.moved > q.moved) latest.set(a, p); }
+    const here = [...latest.values()];
     if (!here.length) return null;
     const median = (values) => Math.floor(values.sort((a, b) => a - b)[values.length >> 1]);
     return [median(here.map((p) => p.x)), median(here.map((p) => p.y))];
@@ -894,7 +935,17 @@ export class Sector {
   listing() {
     const [sx, sy] = this.coords();
     const who = listed(this.everyone().values(), sx, sy, this.now());
-    const tags = [...new Set([...this.everyone().values()].flatMap(tagsOf))].slice(0, GUILD_TAGS_MAX);
+    const all = new Set([...this.everyone().values()].flatMap(tagsOf));
+    // A guild nobody here is in any more needs no last frame kept for it.
+    for (const tag of this.guildSent?.keys() ?? []) if (!all.has(tag)) this.guildSent.delete(tag);
+    // Past GUILD_TAGS_MAX, each report asks about the next ones round, so
+    // every guild here hears who's online within a few reports.
+    let tags = [...all].sort();
+    if (tags.length > GUILD_TAGS_MAX) {
+      const from = (this.tagsFrom ?? 0) % tags.length;
+      tags = [...tags, ...tags].slice(from, from + GUILD_TAGS_MAX);
+      this.tagsFrom = from + GUILD_TAGS_MAX;
+    }
     return { ...(who.length ? { who } : {}), ...(tags.length ? { tags } : {}) };
   }
 
@@ -965,7 +1016,7 @@ export class Sector {
     return atlas(this.env).fetch('https://atlas/report', {
       method: 'POST',
       body: JSON.stringify({
-        sx, sy, players: this.headcount(), charted: this.chartedCounts(), hot: this.crowd() ?? this.hot,
+        sx, sy, players: this.headcount(), perAddress: this.perAddress(), charted: this.chartedCounts(), hot: this.crowd() ?? this.hot,
         day: this.overDay, overAt: this.overAt, novaSeq: this.heardNovaSeq(), ...listing, ...extra,
       }),
     });
@@ -975,6 +1026,14 @@ export class Sector {
   // surveyor list, which counts by id.
   headcount() {
     return new Set(this.here().map((p) => p.pid || p.id)).size;
+  }
+
+  // The same, by address: [[address, people], ...], for the Atlas to count
+  // each address for at most ADDRESS_ONLINE across the survey.
+  perAddress() {
+    const by = new Map();
+    for (const p of this.here()) if (p.address) { if (!by.has(p.address)) by.set(p.address, new Set()); by.get(p.address).add(p.pid || p.id); }
+    return [...by].map(([address, ids]) => [address, ids.size]);
   }
 
   // The world's totals, as the Atlas answered a report, to each socket here
@@ -1021,8 +1080,18 @@ export class Sector {
     this.reporting = true;
     // Words charted by each address since the last report: sent once, or
     // put back to go with the next report if this one fails.
-    const by = this.chartedBy, unpassed = this.unpassed, novas = this.novasOwed;
+    // At most REPORT_BY_MAX addresses, the most words first, so a report
+    // stays one the Atlas takes however many charted here since the last
+    // one: the rest go with the next.
+    let by = this.chartedBy;
+    const unpassed = this.unpassed, novas = this.novasOwed;
     this.chartedBy = new Map();
+    if (by.size > REPORT_BY_MAX) {
+      const most = [...by].sort((a, b) => b[1] - a[1]);
+      by = new Map(most.slice(0, REPORT_BY_MAX));
+      this.chartedBy = new Map(most.slice(REPORT_BY_MAX));
+      this.reportDue = true;
+    }
     this.unpassed = 0;
     this.novasOwed = [];
     let world, listed;
@@ -1057,17 +1126,22 @@ export class Atlas {
     this.now = () => Date.now();
     this.rows = null;      // 'sx,sy' → {sx, sy, players, charted: [16 counts], done, hot, who, at}, loaded on first use
     this.dirty = new Set();
+    this.held = new Map();  // address → people it has placed in sectors reporting now (hold())
+    this.heldOver = 0;      // how many those add up to past ADDRESS_ONLINE each
     this.saveTimer = null;
     this.view = null;      // the world map as JSON, rebuilt at most every VIEW_MS
     this.list = null;      // everyone on the surveyor list as JSON, rebuilt at most every LIST_MS
     this.daily = dailyClaims(env);
     // Words each address charted today (UTC), and those past the daily cap in
-    // the order they got there. Kept in memory only: the Atlas hears from
-    // every busy sector every few seconds, so it's rarely evicted, and if it
-    // is, the day's counts start again.
+    // the order they got there (address → its place, `overSeq` when it was
+    // put there). Kept in memory only: the Atlas hears from every busy sector
+    // every few seconds, so it's rarely evicted, and if it is, the day's
+    // counts start again. `overSeq` counts every change to the list, and goes
+    // to sectors as `overAt`: they're sent the list again when it changes.
     this.day = -1;
     this.chartedToday = new Map();
-    this.overList = [];
+    this.overList = new Map();
+    this.overSeq = 0;
     // The numbers that would show bots at work, for the UTC day so far and
     // the day before (in the world map), and for the hour so far (in an
     // hourly line in Workers Logs). Bots that claim without saying where
@@ -1112,9 +1186,11 @@ export class Atlas {
       const by = r?.by ?? [];
       const ok = r && Number.isInteger(r.sx) && Number.isInteger(r.sy) && inArea(r.sx, r.sy) && isInt(r.players, 0, MAX_PLAYERS)
         && Array.isArray(r.charted) && r.charted.length === TERR * TERR && r.charted.every((n) => isInt(n, 0, 1000))
-        && Array.isArray(by) && by.length <= MAX_PLAYERS * 4
+        && Array.isArray(by) && by.length <= REPORT_BY_MAX
         && by.every((e) => Array.isArray(e) && typeof e[0] === 'string' && HASH.test(e[0]) && isInt(e[1], 1, TERR * TERR * 1000))
         && (r.unpassed === undefined || isInt(r.unpassed, 0, 1e6)) && goodWho(r.who, r.sx, r.sy, MAX_PLAYERS)
+        && (r.perAddress === undefined || (Array.isArray(r.perAddress) && r.perAddress.length <= MAX_PLAYERS
+          && r.perAddress.every((e) => Array.isArray(e) && typeof e[0] === 'string' && HASH.test(e[0]) && isInt(e[1], 1, MAX_PLAYERS))))
         && (r.tags === undefined || (Array.isArray(r.tags) && r.tags.length <= GUILD_TAGS_MAX && r.tags.every((t) => typeof t === 'string' && GUILD_TAG.test(t))))
         && (r.novaSeq === undefined || Number.isInteger(r.novaSeq)) && (r.novas === undefined || (Array.isArray(r.novas) && r.novas.length <= TERR * TERR));
       if (!ok) return json({ error: 'bad report' }, 400);
@@ -1124,15 +1200,17 @@ export class Atlas {
       const key = `${r.sx},${r.sy}`, done = r.charted.reduce((a, b) => a + b, 0), old = this.load().get(key);
       const inside = (v, s) => Number.isInteger(v) && fdiv(v, SECTOR) === s;
       const hot = Array.isArray(r.hot) && inside(r.hot[0], r.sx) && inside(r.hot[1], r.sy) ? r.hot.slice(0, 2) : old?.hot ?? null;
-      this.rows.set(key, { sx: r.sx, sy: r.sy, players: r.players, charted: r.charted, done, hot, who: r.who ?? [], at: this.now() });
+      if (old?.held) this.hold(old.perAddress, -1);
+      this.rows.set(key, { sx: r.sx, sy: r.sy, players: r.players, perAddress: r.perAddress ?? [], held: true, charted: r.charted, done, hot, who: r.who ?? [], at: this.now() });
+      this.hold(r.perAddress ?? [], 1);
       noteMates(this, key, r.who, this.now());  // who's online in each guild (survey-guild.js)
       if (!old || old.done !== done) this.save(key);
       this.takeNovas(r);
       // The list of addresses past the cap goes back only when it has
       // changed since this sector last heard it.
-      const fresh = r.day === this.day && r.overAt === this.overList.length;
+      const fresh = r.day === this.day && r.overAt === this.overSeq;
       return json({
-        ...this.totals(), day: this.day, overAt: this.overList.length, ...(fresh ? {} : { over: this.overList.slice(-DAILY_LIST_MAX) }),
+        ...this.totals(), day: this.day, overAt: this.overSeq, ...(fresh ? {} : { over: [...this.overList.keys()].slice(-DAILY_LIST_MAX) }),
         ...(r.tags?.length ? { guilds: matesFor(this, r.tags, this.now(), ONLINE_MS) } : {}),
         ...this.novasFor(r.novaSeq),
       });
@@ -1187,8 +1265,15 @@ export class Atlas {
       this.stats.charted += n;
       this.hour.charted += n;
       if (before < this.daily && before + n >= this.daily) {
-        this.overList.push(address);
-        console.log({ survey: 'daily cap', capped: this.overList.length });  // never the address, hashed or not
+        this.overList.set(address, ++this.overSeq);
+        console.log({ survey: 'daily cap', capped: this.overList.size });  // never the address, hashed or not
+      } else if (before >= this.daily && this.overSeq - this.overList.get(address) >= DAILY_LIST_MAX) {
+        // Past the cap, but charting again: it has dropped out of the latest
+        // DAILY_LIST_MAX the sectors are handed, so it goes back to the end.
+        // (Places only ever move later, so this may move one that hadn't quite
+        // dropped out yet, which does no harm.)
+        this.overList.delete(address);
+        this.overList.set(address, ++this.overSeq);
       }
     }
   }
@@ -1206,12 +1291,13 @@ export class Atlas {
     if (this.day >= 0) this.yesterday = day - this.day === 1 ? this.statsNow() : this.newStats(day - 1);
     this.day = day;
     this.chartedToday = new Map();
-    this.overList = [];
+    this.overList = new Map();
+    this.overSeq = 0;
     this.stats = this.newStats(day);
   }
 
   statsNow() {
-    const s = { ...this.stats, addresses: this.chartedToday.size, capped: this.overList.length };
+    const s = { ...this.stats, addresses: this.chartedToday.size, capped: this.overList.size };
     s.playerHours = Math.round(s.playerHours * 100) / 100;
     return s;
   }
@@ -1267,15 +1353,38 @@ export class Atlas {
     // Players by id, so someone in two sectors' reports (moving between them,
     // or on two devices) counts once, as on the surveyor list; and anyone a
     // sector counts without listing (an older game, with no id), as they are.
+    // But no address counts for more than ADDRESS_ONLINE, however many
+    // sectors it's in: sockets from a few addresses, spread over the shared
+    // world, can't fill the survey (MAX_ONLINE) and lock everyone out.
+    // That cap is taken from each sector's own counts, so someone listed in
+    // two sectors' reports counts twice toward their address's held people
+    // while counting once in ids: near the cap, players online can read low.
+    // It only ever errs toward letting people in, so it's left that way.
     let charted = 0, unlisted = 0;
     const ids = new Set();
     for (const r of this.load().values()) {
       charted += r.done;
-      if (now - r.at >= ONLINE_MS) continue;
+      if (now - r.at >= ONLINE_MS) {
+        if (r.held) { this.hold(r.perAddress, -1); r.held = false; }
+        continue;
+      }
       for (const e of r.who) ids.add(e[0]);
       unlisted += Math.max(0, r.players - r.who.length);
     }
-    return { charted, total: AREA_WORDS, players: ids.size + unlisted };
+    return { charted, total: AREA_WORDS, players: Math.max(0, ids.size + unlisted - this.heldOver) };
+  }
+
+  // People each address has placed in sectors reporting now, kept up to
+  // date report by report (a sector's last replaces what it said before),
+  // and how many past ADDRESS_ONLINE they add up to: one pass over every
+  // address on each report would cost the Atlas more than the rest of it.
+  hold(perAddress, sign) {
+    for (const [address, n] of perAddress) {
+      const before = this.held.get(address) ?? 0, after = before + sign * n;
+      this.heldOver += Math.max(0, after - ADDRESS_ONLINE) - Math.max(0, before - ADDRESS_ONLINE);
+      if (after > 0) this.held.set(address, after);
+      else this.held.delete(address);
+    }
   }
 
   worldMap() {
@@ -1300,9 +1409,12 @@ export class Atlas {
   // crowd that still has room, so the first thing they see is lots of people
   // at work; beside the biggest crowd if every crowd is full; or at the
   // origin (null) while nobody is playing.
+  // A crowd's size here counts each address once, where sectors say (an
+  // older sector doesn't), so one address's sockets don't make the biggest.
   spawn(live) {
     const centre = (r) => [r.sx * SECTOR + SECTOR / 2, r.sy * SECTOR + SECTOR / 2];
-    const open = live.filter((r) => r.players < SPAWN_MAX).sort((a, b) => b.players - a.players);
+    const size = (r) => (r.perAddress?.length ? r.perAddress.length : r.players);
+    const open = live.filter((r) => r.players < SPAWN_MAX).sort((a, b) => size(b) - size(a));
     if (open.length) return open[0].hot ?? centre(open[0]);
     if (!live.length) return null;
     const biggest = live.reduce((a, b) => (b.players > a.players ? b : a));
