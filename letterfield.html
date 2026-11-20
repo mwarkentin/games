@@ -188,6 +188,10 @@ body.docked .corner{right:calc(var(--notes-w) + 16px)}
 @media (hover: hover){.tool-step button:hover{background:var(--hover)}}
 .tool-step button + button{border-left:1px solid var(--rule)}
 .tool-stack .tool-step svg{width:16px;height:16px}
+/* After the player's buttons, the soundtrack: the pieces as an album, on a page of their own. */
+.tool-album{flex:none;width:42px;height:42px;display:grid;place-items:center;border:1px solid var(--rule);border-radius:8px;background:var(--panel);color:var(--ink)}
+@media (hover: hover){.tool-album:hover{background:var(--hover)}}
+.tool-stack .tool-album svg{width:17px;height:17px}
 /* The mixer: a row each for sound effects and music, its icon a switch (a line
    through it while it's off) and its slider how loud, 0 being off. */
 .tool-mix{display:grid;grid-template-columns:40px 50px minmax(0,1fr);align-items:center;column-gap:4px;min-height:50px;box-sizing:border-box;padding:0 14px 0 5px;font:500 14.5px/1 var(--f-ui);color:var(--ink)}
@@ -1015,7 +1019,7 @@ html[data-notes-page="marks"] .notes > :not(.marks-page){display:none!important}
     <div class="group tool-group" role="group" aria-labelledby="toolsSoundHead">
       <div class="tool-mix"><button type="button" id="sound" aria-pressed="true" aria-label="Sound effects" aria-keyshortcuts="M" title="Sound effects (M)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 9.5h3.5L12 6v12l-4.5-3.5H4z"/><path class="on" d="M15.5 9.2a4 4 0 0 1 0 5.6M18.2 6.6a7.6 7.6 0 0 1 0 10.8"/><path class="off" d="M16 9.5l5 5M21 9.5l-5 5"/></svg></button><label for="soundVol" aria-hidden="true">Effects</label><input type="range" id="soundVol" min="0" max="100" step="5" value="100" aria-label="Sound effects volume" title="Sound effects volume"></div>
       <div class="tool-mix"><button type="button" id="music" aria-pressed="false" aria-label="Music" aria-keyshortcuts="B" title="Music (B)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 17.5V6l10-2v11.5"/><circle cx="6.5" cy="17.5" r="2.5"/><circle cx="16.5" cy="15.5" r="2.5"/><path class="off" d="M3.5 3.5l17 17"/></svg></button><label for="musicVol" aria-hidden="true">Music</label><input type="range" id="musicVol" min="0" max="100" step="5" value="0" aria-keyshortcuts="[ ]" aria-label="Music volume" title="Music volume ([ and ])"></div>
-      <div class="tool-player music-player"><svg class="bars" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="5" y="6" width="3" height="13" rx="1"/><rect x="10.5" y="6" width="3" height="13" rx="1"/><rect x="16" y="6" width="3" height="13" rx="1"/></svg><span id="pieceName">Drift</span><div class="tool-step"><button type="button" id="musicPrev" aria-label="Previous piece" title="Previous piece"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6.5 5.5v13M18 6.5l-8.5 5.5 8.5 5.5z"/></svg></button><button type="button" id="musicPlay" aria-label="Play music" title="Play music"><svg class="i-play" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 5.5l11 6.5-11 6.5z"/></svg><svg class="i-pause" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M8.5 6v12M15.5 6v12"/></svg></button><button type="button" id="musicNext" aria-label="Next piece" title="Next piece"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M17.5 5.5v13M6 6.5l8.5 5.5-8.5 5.5z"/></svg></button></div></div>
+      <div class="tool-player music-player"><svg class="bars" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="5" y="6" width="3" height="13" rx="1"/><rect x="10.5" y="6" width="3" height="13" rx="1"/><rect x="16" y="6" width="3" height="13" rx="1"/></svg><span id="pieceName">Drift</span><div class="tool-step"><button type="button" id="musicPrev" aria-label="Previous piece" title="Previous piece"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6.5 5.5v13M18 6.5l-8.5 5.5 8.5 5.5z"/></svg></button><button type="button" id="musicPlay" aria-label="Play music" title="Play music"><svg class="i-play" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 5.5l11 6.5-11 6.5z"/></svg><svg class="i-pause" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M8.5 6v12M15.5 6v12"/></svg></button><button type="button" id="musicNext" aria-label="Next piece" title="Next piece"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M17.5 5.5v13M6 6.5l8.5 5.5-8.5 5.5z"/></svg></button></div><a class="tool-album" href="/letterfield-soundtrack" id="soundtrackLink" aria-label="The soundtrack, to play or download" title="The soundtrack, to play or download"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="2.2"/><path d="M12 6.4a5.6 5.6 0 0 1 5.6 5.6"/></svg></a></div>
       <ol class="tool-pieces music-player" id="musicPieces" aria-label="Pieces"></ol>
     </div>
     <section class="tool-keys" aria-labelledby="toolsKeysHead">
@@ -2940,7 +2944,11 @@ soundVolEl.addEventListener('input', () => { gestured = true; setSoundVol(+sound
 // minutes each, crossfading, in that order, which takes each into a key
 // close to its own. Each keeps to about twenty oscillators, to go easy on
 // phones: Drift and Orbit use a pair of delays for an echo instead of a
-// reverb, and Chimes and Lantern a convolver each, fed mono.
+// reverb, and Chimes and Lantern a convolver each, fed mono. Each takes a
+// seed, a new one each time it plays, for every choice it makes, so a seed
+// plays it the same way again: the soundtrack album is recorded from fixed
+// ones (scripts/render_album.py). The noise their reverbs and the effects are
+// made from is seeded too, the same everywhere.
 // The volume slider runs 0 to 100, and the music's gain is the square of
 // it, so the lower half isn't nearly silent. 75 is the level the music always
 // had (.45). The slider is always there and 0 is off: it shows 0 while the
@@ -2982,8 +2990,8 @@ function trackBase(a, out, [left, right, feedback, tone]) {
 // and then, mostly heard in its echoes.
 const DRIFT_CHORDS = [[50, 57, 64, 66], [47, 54, 61, 66], [43, 55, 62, 66], [52, 59, 62, 66], [45, 57, 61, 64]];
 const DRIFT_BELLS = [74, 76, 78, 81, 83, 86, 88, 90];
-function driftTrack(a, out) {
-  const T = trackBase(a, out, [.74, 1.11, .48, 2400]), { keep, bus, send } = T;
+function driftTrack(a, out, seed = Math.floor(Math.random() * 4294967296)) {
+  const T = trackBase(a, out, [.74, 1.11, .48, 2400]), { keep, bus, send } = T, rnd = rng(seed);
   // Pads go through one slowly breathing low-pass filter.
   const pads = a.createBiquadFilter(); pads.type = 'lowpass'; pads.frequency.value = 900; pads.Q.value = .4; pads.connect(bus);
   const lfo = keep(a.createOscillator()), lfoDepth = a.createGain();
@@ -3023,21 +3031,21 @@ function driftTrack(a, out) {
     g.gain.exponentialRampToValueAtTime(.0001, t + 4.5);
     o.connect(g);
     let to = g;
-    if (a.createStereoPanner) { const p = a.createStereoPanner(); p.pan.value = Math.random() * 1.4 - .7; g.connect(p); to = p; }
+    if (a.createStereoPanner) { const p = a.createStereoPanner(); p.pan.value = rnd() * 1.4 - .7; g.connect(p); to = p; }
     to.connect(bus); to.connect(send);
     o.start(t); o.stop(t + 4.6);
   }
   let at = a.currentTime + .05, bellAt = at + 6, last = -1;
   return {
-    name: 'drift', bus, nodes: T.nodes, stop: T.stop,
+    name: 'drift', bus, nodes: T.nodes, stop: T.stop, seed,
     play(until) {
       while (at < until) {
         let i;
-        do i = Math.floor(Math.random() * DRIFT_CHORDS.length); while (i === last);
+        do i = Math.floor(rnd() * DRIFT_CHORDS.length); while (i === last);
         chord(at, DRIFT_CHORDS[last = i]);
-        at += 15 + Math.random() * 4;
+        at += 15 + rnd() * 4;
       }
-      while (bellAt < until) { bell(bellAt, DRIFT_BELLS[Math.floor(Math.random() * DRIFT_BELLS.length)]); bellAt += 3 + Math.random() * 7; }
+      while (bellAt < until) { bell(bellAt, DRIFT_BELLS[Math.floor(rnd() * DRIFT_BELLS.length)]); bellAt += 3 + rnd() * 7; }
     },
     resync(now) { at = Math.max(at, now + .05); bellAt = Math.max(bellAt, now + 2); },
   };
@@ -3060,8 +3068,8 @@ function organWave(a, amps) {
   amps.forEach((v, i) => { im[i + 1] = v; });
   return a.createPeriodicWave(re, im);
 }
-function orbitTrack(a, out) {
-  const T = trackBase(a, out, [.53, .8, .42, 2000]), { keep, bus, send } = T;
+function orbitTrack(a, out, seed = Math.floor(Math.random() * 4294967296)) {
+  const T = trackBase(a, out, [.53, .8, .42, 2000]), { keep, bus, send } = T, rnd = rng(seed);
   const tone = a.createBiquadFilter(); tone.type = 'lowpass'; tone.frequency.value = 2800; tone.Q.value = .3; tone.connect(bus);
   const toEcho = a.createGain(); toEcho.gain.value = .35; tone.connect(toEcho); toEcho.connect(send);
   const full = organWave(a, [1, .7, .35, .45, .1, .25, 0, .18]), flute = organWave(a, [1, .28, .08, .04]), pedalWave = organWave(a, [1, .55, .2, .25]);
@@ -3081,7 +3089,7 @@ function orbitTrack(a, out) {
   function bar(t) {
     const round = Math.floor(slot / 4) % 4, i = slot % 4;
     if (i === 0) {
-      if (round === 0) prog = ORBIT_PROGS[Math.floor(Math.random() * ORBIT_PROGS.length)];
+      if (round === 0) prog = ORBIT_PROGS[Math.floor(rnd() * ORBIT_PROGS.length)];
       ORBIT_ARC[round].forEach((v, k) => {
         parts[k].gain.setValueAtTime(levels[k], t);
         parts[k].gain.linearRampToValueAtTime(levels[k] = v * peaks[k], t + ORBIT_CHORD);
@@ -3094,13 +3102,13 @@ function orbitTrack(a, out) {
       note(s, m, flute, tick, ORBIT_EIGHTH * .95, .012, 1);
       if (k % 2 === 0) note(s, m + 12, flute, high, ORBIT_EIGHTH * .9, .012, 1);
     }
-    for (const m of chord) note(t, m, full, chords, ORBIT_CHORD + 1.2, 1.2, 1, Math.random() * 4 - 2);
+    for (const m of chord) note(t, m, full, chords, ORBIT_CHORD + 1.2, 1.2, 1, rnd() * 4 - 2);
     note(t, root, pedalWave, pedal, ORBIT_CHORD + .8, .8, 1);
     note(t, root - 12, pedalWave, pedal, ORBIT_CHORD + .8, .8, .7);
     slot++;
   }
   return {
-    name: 'orbit', bus, nodes: T.nodes, stop: T.stop,
+    name: 'orbit', bus, nodes: T.nodes, stop: T.stop, seed,
     play(until) { while (at < until) { bar(at); at += ORBIT_CHORD; } },
     resync(now) { at = Math.max(at, now + .05); },
   };
@@ -3148,20 +3156,20 @@ function pulseWave(a, duty, harmonics, soften) {
 const perContext = make => { const bufs = new WeakMap(); return a => { let b = bufs.get(a); if (!b) bufs.set(a, b = make(a)); return b; }; };
 const hallOf = perContext(a => {  // a long, airy tail that darkens as it fades
   const n = Math.floor(a.sampleRate * CHIMES_HALL), pre = Math.floor(a.sampleRate * .02), swell = a.sampleRate * .09;
-  const b = a.createBuffer(2, n, a.sampleRate);
+  const b = a.createBuffer(2, n, a.sampleRate), rnd = rng(0x4a11);
   for (let ch = 0; ch < 2; ch++) {
     const d = b.getChannelData(ch);
     let y = 0;
     for (let i = pre; i < n; i++) {
       const t = (i - pre) / (n - pre), k = .85 - .7 * t;
-      y += k * (Math.random() * 2 - 1 - y);
+      y += k * (rnd() * 2 - 1 - y);
       d[i] = y * Math.min(1, (i - pre) / swell) * Math.exp(-6.9 * t) / Math.sqrt(k);
     }
   }
   return b;
 });
-function chimesTrack(a, out) {
-  const T = trackBase(a, out, [.99, 1.32, .3, 1800]), { keep, bus, send } = T;
+function chimesTrack(a, out, seed = Math.floor(Math.random() * 4294967296)) {
+  const T = trackBase(a, out, [.99, 1.32, .3, 1800]), { keep, bus, send } = T, rnd = rng(seed);
   const hall = a.createConvolver();
   try { hall.channelCountMode = 'explicit'; hall.channelCount = 1; } catch (_) {}
   hall.buffer = hallOf(a);
@@ -3174,7 +3182,7 @@ function chimesTrack(a, out) {
   function voice(t, f, type, to, level, attack, len) {
     const o = keep(a.createOscillator()), g = a.createGain();
     if (type) o.type = type; else o.setPeriodicWave(chime);
-    o.frequency.value = f; o.detune.value = Math.random() * 6 - 3;
+    o.frequency.value = f; o.detune.value = rnd() * 6 - 3;
     g.gain.setValueAtTime(0, t);
     g.gain.linearRampToValueAtTime(level, t + attack);
     o.connect(g); g.connect(to); o.start(t); o.stop(t + len + .05);
@@ -3206,20 +3214,20 @@ function chimesTrack(a, out) {
   function chord(t) {
     if (i === 4) {
       let p;
-      do p = Math.floor(Math.random() * CHIMES_PHRASES.length); while (p === last);
+      do p = Math.floor(rnd() * CHIMES_PHRASES.length); while (p === last);
       phrase = CHIMES_PHRASES[last = p]; i = 0;
     }
     const [root, notes] = CHIMES_CHORDS[phrase[i]];
     const tones = [...notes, ...notes.map(m => m + 12), notes[0] + 24];
-    const fig = i === 3 && Math.random() < .4 ? CHIMES_FIGURES[4] : CHIMES_FIGURES[Math.floor(Math.random() * 4)];
+    const fig = i === 3 && rnd() < .4 ? CHIMES_FIGURES[4] : CHIMES_FIGURES[Math.floor(rnd() * 4)];
     fig.forEach((k, s) => { if (k >= 0) ding(t + s * CHIMES_STEP, tones[k], sides[step++ % 2], s === 0 ? .077 : .058); });
     hold(t, root, 'triangle', mid, .11, CHIMES_CHORD + .4, .08);
     for (const m of [notes[1], notes[3]]) hold(t, m, 'triangle', hush, .022, CHIMES_CHORD + 1.5, 1.6);
-    if (Math.random() < .55) bell(t + CHIMES_STEP * (Math.random() < .5 ? 0 : 8), notes[1 + Math.floor(Math.random() * 3)] + 24);
+    if (rnd() < .55) bell(t + CHIMES_STEP * (rnd() < .5 ? 0 : 8), notes[1 + Math.floor(rnd() * 3)] + 24);
     i++;
   }
   return {
-    name: 'chimes', bus, nodes: T.nodes, stop: T.stop,
+    name: 'chimes', bus, nodes: T.nodes, stop: T.stop, seed,
     play(until) { while (at < until) { chord(at); at += CHIMES_CHORD; } },
     resync(now) { at = Math.max(at, now + .05); },
   };
@@ -3344,9 +3352,9 @@ function lanternArc(rnd) {
 // The knock of the felt on the string: a few hundredths of a second of soft
 // noise, made once.
 const knockOf = perContext(a => {
-  const n = Math.floor(a.sampleRate * .08), b = a.createBuffer(1, n, a.sampleRate), d = b.getChannelData(0);
+  const n = Math.floor(a.sampleRate * .08), b = a.createBuffer(1, n, a.sampleRate), d = b.getChannelData(0), rnd = rng(0xfe17);
   let y = 0;
-  for (let i = 0; i < n; i++) { y += .25 * (Math.random() * 2 - 1 - y); d[i] = y * Math.exp(-i / (a.sampleRate * .012)); }
+  for (let i = 0; i < n; i++) { y += .25 * (rnd() * 2 - 1 - y); d[i] = y * Math.exp(-i / (a.sampleRate * .012)); }
   return b;
 });
 function lanternTrack(a, out, seed = Math.floor(Math.random() * 4294967296)) {
@@ -3691,13 +3699,13 @@ $('#musicNext').addEventListener('click', () => choosePiece(musicPiece + 1));
 showPiece(); showPlayer();
 
 const noiseOf = perContext(a => {
-  const b = a.createBuffer(1, a.sampleRate * 2, a.sampleRate), d = b.getChannelData(0);
-  for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+  const b = a.createBuffer(1, a.sampleRate * 2, a.sampleRate), d = b.getChannelData(0), rnd = rng(0x9015e);
+  for (let i = 0; i < d.length; i++) d[i] = rnd() * 2 - 1;
   return b;
 });
 const roomOf = perContext(a => {  // a long, dark reverb tail
-  const n = Math.floor(a.sampleRate * 3.8), b = a.createBuffer(2, n, a.sampleRate);
-  for (let ch = 0; ch < 2; ch++) { const d = b.getChannelData(ch); for (let i = 0; i < n; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / n, 3.2); }
+  const n = Math.floor(a.sampleRate * 3.8), b = a.createBuffer(2, n, a.sampleRate), rnd = rng(0x6005);
+  for (let ch = 0; ch < 2; ch++) { const d = b.getChannelData(ch); for (let i = 0; i < n; i++) d[i] = (rnd() * 2 - 1) * Math.pow(1 - i / n, 3.2); }
   return b;
 });
 // The sound of a star going: a rising charge, a held breath, the blast and its
@@ -7936,7 +7944,7 @@ if (surveyApi) {
 updateHud();
 invalidate();
 if (redrawn) setTimeout(() => toast(`<i></i><b>The map has been redrawn</b><span>${NT} themes of about ${Math.round(THEMES.reduce((a, t) => a + t.words.length, 0) / NT / 10) * 10} words now, so a territory never repeats one · ${redrawn.kept ? `${redrawn.kept} of your ${redrawn.had} finds are still on it` : 'your old finds are not on it'}</span>`, null, 8000), 900);
-if (location.hash === '#debug') window.__lf = { cam, found, claims, links, chunk, wordEnd, collect, territoryProgress, remnants: () => [...remnants().set], novas: () => [...novasSeen.values()], territoryName: regionName, world: () => world, supernova, novaSound, audioOut, musicTracks: MUSIC_TRACKS, musicPiece: () => musicPiece, audio: () => ac, music: () => musicNow && { state: ac.state, track: musicNow.track().name, nodes: musicNow.track().nodes.size, fade: musicNow.track().bus.gain.value, fading: musicNow.fading(), level: musicNow.master.gain.value, master: musicNow.master, volume: musicVol, target: musicLevel(), swap: musicNow.swap }, nova: () => nova, novaWave: () => nova && novaLast && { cx: novaLast.cx, cy: novaLast.cy, R: novaLast.R || 0, amp: novaLast.amp, virtual: novaLast.virtual }, distantAt: v => { distantAt = v; },
+if (location.hash === '#debug') window.__lf = { cam, found, claims, links, chunk, wordEnd, collect, territoryProgress, remnants: () => [...remnants().set], novas: () => [...novasSeen.values()], territoryName: regionName, world: () => world, supernova, novaSound, distantSound, markSound, audioOut, musicTracks: MUSIC_TRACKS, lanternArc, rng, musicPiece: () => musicPiece, audio: () => ac, music: () => musicNow && { state: ac.state, track: musicNow.track().name, nodes: musicNow.track().nodes.size, fade: musicNow.track().bus.gain.value, fading: musicNow.fading(), level: musicNow.master.gain.value, master: musicNow.master, volume: musicVol, target: musicLevel(), swap: musicNow.swap }, nova: () => nova, novaWave: () => nova && novaLast && { cx: novaLast.cx, cy: novaLast.cy, R: novaLast.R || 0, amp: novaLast.amp, virtual: novaLast.virtual }, distantAt: v => { distantAt = v; },
   who: () => Who.state, surveyors: () => whoData, panel: () => Panel.state, mapWidth: () => W - dock, peoplePage: () => PeoplePage.state, emoteMotion, guild: () => Membership.state, myGuilds: () => myGuilds, labels: () => Object.fromEntries(labels),
   mates: () => [...new Set([...mates.values()].flatMap(m => [...m.keys()]))], matesOf: tag => [...(mates.get(tag) || new Map()).keys()],
   roster: code => rosterOf(guildOfCode(code) || myGuilds[0] || { code: '' }),

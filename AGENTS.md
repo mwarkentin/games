@@ -19,7 +19,9 @@ utilities; games live here so they get their own origin and their own rules.
   back as it was (`data-back`, and the helper beside it in the log), and the
   map keeps its place whenever an entry of its is come back to; links into
   the log open it at its start. `tests/test_letterfield_back_links.py`
-  checks both.
+  checks both. `letterfield-soundtrack.html`, the game's music as an album
+  (see The soundtrack album), is another, linked from the music player in
+  the game's tools, and its own "← Letterfield" steps back the same way.
 - `README.md`: the game list. The build turns it into `index.html`.
 - `changelog/`: each game's changelog for players, `<game>.md`, which the
   build turns into `/changelog/<game>` (see Changelogs).
@@ -48,6 +50,10 @@ utilities; games live here so they get their own origin and their own rules.
   beside it by `scripts/render_icons.py`.
 - `music/`: public-domain MIDI files that games play, with a README of where
   each came from. The build publishes them as they are.
+- `albums/letterfield/`: the soundtrack album's art, drawn as SVG with its
+  letters as outlines by `scripts/draw_album_art.py`. `scripts/render_album.py`
+  records the album into `_album/` (never committed) from the game's own
+  music (see The soundtrack album).
 - `tests/`: pytest with Playwright.
 - `worker/`: the leaderboard API, a Cloudflare Worker with a D1 database,
   which also runs War's multiplayer rooms and Letterfield's shared survey as
@@ -92,7 +98,9 @@ utilities; games live here so they get their own origin and their own rules.
   Ambient music with no tune to score, like Letterfield's drones and pads,
   can instead be generated in the page with the Web Audio API, still with
   no audio files, and so can a piece composed for the game itself, like
-  Letterfield's Lantern, whose notes are written into the page.
+  Letterfield's Lantern, whose notes are written into the page. A generated
+  piece takes a seed for every choice it makes (a new one each time it
+  plays), so it can be recorded the same way twice.
 - Pause when the tab is hidden (`visibilitychange`) if the game runs on a
   timer.
 - Anything a page loads gets a placeholder its own size ahead of time
@@ -204,6 +212,7 @@ The machines each page keeps:
 | | `define` (each word's meaning; `el: null`, see `__log.definitions()`) | loading, ready, none, failed |
 | `letterfield-timelapse.html` | `tl` (the replay) | loading, empty, failed, paused, playing, waiting |
 | | `rec` (saving a video) | off, preparing, recording, done, failed |
+| `letterfield-soundtrack.html` | `player` (the album's tracks) | off, idle, playing, paused, failed |
 | `war.html` | `screen` | menu, lobby, table, ending, over |
 | | `overlay` (what covers the screen) | none, pause, invite, styles, history |
 | | `session` (what the page plays through) | none, joining, solo, room |
@@ -372,6 +381,9 @@ built from `BASE_URL`.
   the game is cramped at that height.
 - A game without one gets a small card with its 512px icon. The home page
   and colophon use `previews/index.jpg` if there is one, or the site's icon.
+- A page in another game's app shares that game's preview, unless it has one
+  of its own, `previews/<page>.jpg`, like the soundtrack's, drawn from its
+  cover by `scripts/draw_album_art.py`.
 - A page that writes its own `og:title` keeps its own tags.
 
 ### Share cards
@@ -490,6 +502,58 @@ instead (see below). When bringing a new artifact over:
 2. Drop `<meta name="claude:viewport-fit-sides">`; nothing here reads it.
 3. Put the artifact's URL in the commit message so the colophon links back
    to it.
+
+## The soundtrack album
+
+Letterfield's music is also an album, `letterfield-soundtrack.html`: its four
+pieces, each in a longer cut, and a supernova between them, with notes on how
+each is made, to play or download.
+
+- **Recorded from the game:** `scripts/render_album.py` plays the game's own
+  music in headless Chromium (`letterfield.html#debug`, whose `__lf` hands
+  over the pieces, `audioOut` and the sound effects), each piece from a fixed
+  seed into an `OfflineAudioContext`, scheduled as the game schedules it and
+  through the same compressor and limiter. Each track is a cut in `TRACKS`:
+  where it stops and fades, in the piece's own bars. It serves the page from
+  here with its Worker addresses blanked and refuses every other host, so it
+  never reaches production. Renders are the same every time to about a
+  millionth of full scale (Chromium sums three or more signals meeting at a
+  node in no fixed order), so the MP3s' bytes can differ from one run to the
+  next.
+- **One level:** ffmpeg measures each track by EBU R128 and brings it to
+  −17 LUFS, unless its true peak would pass −1.5 dBTP, then encodes LAME VBR
+  (V2) MP3s at 44.1 kHz with ID3v2.3 tags and the 1400px cover, 24-bit FLACs
+  with the 3000px cover for stores, and a zip. It prints each track's length,
+  loudness and size, writes them to `_album/album.json`, and warns when the
+  page's lengths and sizes aren't the render's.
+- **Its files aren't in git.** They're in a public Cloudflare R2 bucket,
+  `games-media`, under `letterfield/`, on `media.michaelwarkentin.com`
+  (made by OpenTofu in mwarkentin/infra; no CORS needed, since audio
+  elements and downloads don't ask for it), which is the page's `ALBUM_URL`.
+  `uv run scripts/render_album.py --upload` puts `_album/web/` there, each
+  file with its type, a day's caching and, for downloads, the name it's
+  saved as (`Content-Disposition`, since browsers ignore a link's `download`
+  attribute on another origin). It needs `CLOUDFLARE_ACCOUNT_ID` and the
+  bucket's upload token (`tofu output -raw games_media_upload_token` in
+  infra) as `CLOUDFLARE_API_TOKEN`, or `npx wrangler login`. The files are
+  cached for a day, so a re-render that must show at once goes under a new
+  prefix (`letterfield/v2/`, in `PREFIX` and `ALBUM_URL` both). With
+  `ALBUM_URL` empty, the page lists the tracks without players or
+  downloads, and `?album=<url>` overrides it for tests. `sw.js` stores only
+  pages and `music/*.mid`, so the MP3s always come from the network.
+- **The art** is `albums/letterfield/`: the cover (a corner of the map, each
+  piece circled in a territory of a theme that has its word, and Night Sky
+  going supernova), the back and the link preview, drawn by
+  `scripts/draw_album_art.py` with every letter an outline from the game's
+  fonts, so rendering them needs no fonts or network. It also puts the cover
+  into the page, inline, so it shows offline.
+- **Credit and licence:** Michael Warkentin, and CC BY 4.0 for the
+  recordings and their art (the code that makes them is the repo's, Apache
+  2.0). `ARTIST`, `LICENSE` and `COPYRIGHT` in the script put them in the
+  tags, the zip's `LICENSE.txt` and on the back; the page says so too.
+- `tests/test_letterfield_soundtrack.py` renders a few seconds of every track
+  with the script's own code, and checks the page against `TRACKS` and the
+  cover; it fakes the recordings with a short tone.
 
 ## Leaderboards
 
@@ -736,6 +800,9 @@ node --disable-warning=ExperimentalWarning --test "worker/test/*.test.js"   # th
 (cd share && npm ci) && node --disable-warning=ExperimentalWarning --test "share/test/*.test.js"   # the share Worker
 uv run ./build.sh && python3 -m http.server -d _site 8000   # preview the real site
 uv run scripts/render_icons.py       # after drawing or changing an icon
+uv run scripts/render_album.py       # record Letterfield's soundtrack into _album/ (needs ffmpeg)
+uv run scripts/render_album.py --upload   # then put it in its R2 bucket (needs a token that can write there)
+uv run --with fonttools --with uharfbuzz scripts/draw_album_art.py   # after changing the album's art
 scripts/lint.sh                      # lint everything, as CI does
 scripts/lint.sh --fix                # fix and format what can be, then lint
 uv run --only-group lint prek install   # once per clone: lint and fix staged files on each commit
