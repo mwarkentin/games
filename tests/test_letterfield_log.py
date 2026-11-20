@@ -576,6 +576,44 @@ def test_a_day_that_ends_on_screen_stops_saying_so_far(page: Page, site_url, err
     assert errors == []
 
 
+def test_a_day_that_ends_on_screen_reloads_once_its_last_words_are_in(page: Page, site_url, errors):
+    late = int(datetime(2026, 11, 7, 4, 59, 30, tzinfo=UTC).timestamp() * 1000)  # 11:59:30 PM in Toronto
+    fake = FakeSurveyLog([ACORN, MONET, ZEUS], PLACES, THEMES)
+    open_log(page, site_url, fake, now_ms=late, running=True)
+    expect(page.locator(".entry")).to_have_count(2)
+    page.clock.fast_forward(35_000)  # midnight passes, and the day reloads
+    expect(page.locator("#sumTitle")).to_have_text("Yesterday")
+    # A word charted at 11:59:50 reaches the log a little late, as sectors' words do.
+    fake.entries.append(["FERN", 10, 20, 0, 0, "AMY", late + 20_000, 11])
+    page.clock.fast_forward(60_000)  # a minute after midnight
+    expect(page.locator(".entry")).to_have_count(3)
+    expect(page.locator("html")).to_have_attribute("data-log", "ready")
+    assert errors == []
+
+
+def test_a_day_that_ends_on_screen_tries_again_when_its_last_reload_fails(page: Page, site_url):
+    # Skips the errors fixture: the browser logs the 503s.
+    late = int(datetime(2026, 11, 7, 4, 59, 30, tzinfo=UTC).timestamp() * 1000)  # 11:59:30 PM in Toronto
+    fake = FakeSurveyLog([ACORN, MONET, ZEUS], PLACES, THEMES)
+    open_log(page, site_url, fake, now_ms=late, running=True)
+    expect(page.locator(".entry")).to_have_count(2)
+    fake.fail = True
+    page.clock.fast_forward(35_000)  # midnight passes; its reload fails
+    expect(page.locator("html")).to_have_attribute("data-log", "stale")
+    page.clock.fast_forward(60_000)  # and so does the one a minute after midnight
+    page.wait_for_timeout(500)  # for the page to take the failure in
+    asked = len(fake.requests)
+    page.clock.fast_forward(25_000)
+    eventually(page, lambda: len(fake.requests) > asked)  # it keeps trying
+    expect(page.locator("html")).to_have_attribute("data-log", "stale")
+    # Once the server's back, the day's last words come in.
+    fake.fail = False
+    fake.entries.append(["FERN", 10, 20, 0, 0, "AMY", late + 20_000, 11])
+    page.clock.fast_forward(45_000)
+    expect(page.locator(".entry")).to_have_count(3)
+    expect(page.locator("html")).to_have_attribute("data-log", "ready")
+
+
 def test_an_hour_that_ended_while_the_page_was_hidden_stops_saying_so_far(page: Page, site_url, errors):
     fake = FakeSurveyLog([ACORN, MONET, ZEUS], PLACES, THEMES)
     open_log(page, site_url, fake, query="&period=hour", now_ms=NOW_MS + 29 * MINUTE, running=True)  # 3:59 PM

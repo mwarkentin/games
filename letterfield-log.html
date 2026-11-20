@@ -1707,19 +1707,26 @@ function placeholders() {
 // After a period is shown: the hour still running reloads every
 // LIVE_REFRESH_MS, until a minute after it ends while its last words reach the
 // log; any other period still running reloads once it's over, so it stops
-// saying So far and the way on to the next one opens. Nothing reloads while the
-// page is hidden; it catches up when it's back (see visibilitychange below).
+// saying So far and the way on to the next one opens, and again a minute
+// later, once its last words are in. A refresh that failed (stale) tries
+// again, less often each time, even once the period's over. Nothing reloads
+// while the page is hidden; it catches up when it's back (see visibilitychange below).
+let staleTries = 0;
 function scheduleRefresh(run, end) {
   clearTimeout(liveTimer);
+  if (!Log.is('stale')) staleTries = 0;
   if (document.hidden || state.period === 'all') return;
   const tick = () => {
     if (run !== state.run) return;
     if (state.period !== 'hour' && Date.now() < end) liveTimer = setTimeout(tick, Math.min(end - Date.now() + 1000, DAY));
     else render(true);
   };
-  if (state.period === 'hour' ? Date.now() < end + LATE_MS : Date.now() < end) {
-    liveTimer = setTimeout(tick, state.period === 'hour' ? LIVE_REFRESH_MS : Math.min(end - Date.now() + 1000, DAY));
-  }
+  const now = Date.now(), hour = state.period === 'hour';
+  let wait = 0;
+  if (hour ? now < end + LATE_MS : now < end) wait = hour ? LIVE_REFRESH_MS : Math.min(end - now + 1000, DAY);
+  else if (!hour && now < end + LATE_MS) wait = end + LATE_MS - now;
+  else if (Log.is('stale')) wait = Math.min(LIVE_REFRESH_MS * 2 ** staleTries++, 5 * MINUTE);
+  if (wait) liveTimer = setTimeout(tick, wait);
 }
 
 function busiest(p, buckets) {
