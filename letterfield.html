@@ -6423,9 +6423,12 @@ function syncSoon(ms) {
   syncDue = due;
   syncTimer = setTimeout(() => { syncDue = 0; syncNow(); }, ms);
 }
+// Turning it on: from here, the first time. A device syncing already (making
+// a recovery code, or linking a third device) carries on where it was, rather
+// than sending every find again and taking the whole backup back.
 function startSync() {
   if (!surveyApi || !playerToken) return;
-  writeSync(syncFromHere((readSync() || {}).settingsAt || 1));
+  if (!readSync()) writeSync(syncFromHere(1));
   if (Sync.is('off')) Sync.go('idle');
   syncSoon(SYNC_GAP_MS);
 }

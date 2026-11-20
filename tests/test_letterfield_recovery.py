@@ -18,9 +18,10 @@ from fake_survey import NOW_MS, FakeLinks, FakePlayers, FakeRecovery, player_id,
 from test_letterfield_guilds import CODE as COBALT
 from test_letterfield_guilds import MINE, in_cobalt
 from test_letterfield_linking import OTHER, THEIR_PID, THEIRS, start
-from test_letterfield_survey import SURVEY, open_you
+from test_letterfield_survey import SURVEY, eventually, open_you
 from test_letterfield_surveyors import KIM, TOKEN
 from test_letterfield_sync import noted, words
+from test_letterfield_sync import start as sync_start
 
 CODE = "BCDFGHJKMNPQRSTVWXYZ"  # a code saved earlier, for THEIRS
 
@@ -64,6 +65,29 @@ def test_a_recovery_code_is_shown_once_and_keeps_a_backup(page: Page, site_url, 
     assert page.evaluate("localStorage.getItem('letterfield.recovery.v1')") is None
     page.keyboard.press("Escape")
     expect(page.locator("html")).to_have_attribute("data-pair", "idle")
+    assert errors == []
+
+
+def test_a_device_syncing_already_carries_on_when_it_makes_a_code(page: Page, site_url, errors):
+    """Making a recovery code (or linking a third device) on a device that already synced started its
+    sync over: every find went up again, a batch at a time, and the whole backup came back down."""
+    mine = words(page, site_url, 3)
+    players = FakePlayers(started=[player_id(TOKEN)])
+    links = FakeLinks(players=players)
+    sync_start(page, site_url, players, finds=mine, links=links)
+    page.route(f"{SURVEY}/v1/recovery**", FakeRecovery(players).handle)
+    eventually(page, lambda: len(players.sent()) >= 1)
+    page.wait_for_function("window.__lf.sync() === 'idle'")
+    at = json.loads(page.evaluate("localStorage.getItem('letterfield.sync.v1')"))["at"]
+    assert at > 0
+    open_you(page)
+    card = page.locator("#pairCard")
+    card.get_by_role("button", name="Recovery code").click()
+    card.get_by_role("button", name="Make one").click()
+    expect(page.locator("html")).to_have_attribute("data-pair", "kept")
+    eventually(page, lambda: len(players.sent()) >= 2, timeout_ms=8000)
+    again = players.sent()[1]
+    assert again["since"] == at and again["finds"] == []
     assert errors == []
 
 
