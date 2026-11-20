@@ -7623,17 +7623,28 @@ function sayCardMark(b) {
 // Asks the Worker to sign what it will for us, for achievements without a
 // signature: when one is earned, and once a visit. The answer is kept with
 // them, and synced, so a badge earned from older notes stays showable.
+// What it was last asked, once answered, is kept too (K_ASKED), so a visit
+// with nothing new to show it (no new achievement, receipt or card) doesn't
+// send every signed find again for the same answer, for a week.
+const K_ASKED = 'letterfield.badgesasked.v1', ASKED_FOR = 7 * 86400000;
 let badgesAsked = '';
-async function askBadges() {
-  if (!surveyApi || !playerToken) return;
+function badgesAsk() {
   const want = marksHere().filter(a => marks.got[a.id] && !marks.got[a.id][2]).map(a => a.id);
   const held = Object.fromEntries(MARKS.filter(a => marks.got[a.id] && marks.got[a.id][2]).map(a => [a.id, marks.got[a.id][2]]));
   // Our card is due, once we've found something, if we have none or it's missing a badge we hold.
   const card = myCard(), on = readCard(card), due = found.size > 0 && (!on || Object.keys(held).some(id => !on.ids.includes(id)));
-  const finds = [...found.values()].filter(e => e.r).map(e => ({ w: e.w, x: e.x, y: e.y, d: e.d, r: e.r }));
-  const asking = `${want.join()}|${finds.length}|${card}`;
-  if ((!want.length && !due) || asking === badgesAsked) return;
+  const finds = [...found.values()].filter(e => e.r);
+  return { want, held, card, due, finds, asking: `${want.join()}|${finds.length}|${card}` };
+}
+function askedBefore(asking) {
+  try { const v = JSON.parse(LS.get(K_ASKED)); return v.a === asking && Date.now() - v.t < ASKED_FOR && Date.now() >= v.t; } catch (_) { return false; }
+}
+async function askBadges() {
+  if (!surveyApi || !playerToken) return;
+  const { want, held, card, due, finds: signed, asking } = badgesAsk();
+  if ((!want.length && !due) || asking === badgesAsked || askedBefore(asking)) return;
   badgesAsked = asking;
+  const finds = signed.map(e => ({ w: e.w, x: e.x, y: e.y, d: e.d, r: e.r }));
   let since = Infinity;
   for (const e of found.values()) if (e.t < since) since = e.t;
   const { status, data } = await workerCall('/v1/survey/badges', {
@@ -7649,9 +7660,11 @@ async function askBadges() {
     syncLater('m', id);
     changed = true;
   }
-  if (!changed) return;
-  LS.set(K_MARKS, JSON.stringify(marks));
-  if (NotesPage.is('marks')) renderMarksPage();
+  if (changed) {
+    LS.set(K_MARKS, JSON.stringify(marks));
+    if (NotesPage.is('marks')) renderMarksPage();
+  }
+  LS.set(K_ASKED, JSON.stringify({ a: badgesAsk().asking, t: Date.now() }));  // what asking now would ask: answered
 }
 // Sharing one: a sentence and the game's address, through the phone's share sheet or copied.
 // With the share Worker, the link is its page for the badge, whose preview is
