@@ -383,3 +383,18 @@ def test_a_guild_join_that_doesnt_get_through_while_linking_is_tried_again(page:
     assert [g["code"] for g in json.loads(page.evaluate("localStorage.getItem('letterfield.guilds.v1')"))] == [CODE]
     assert [m[0] for m in guilds.guilds[CODE]["members"]] == [THEIR_PID]
     assert errors == [] or all("503" in e for e in errors)
+
+
+def test_linking_forgets_the_recovery_code_saved_for_the_self_it_leaves(page: Page, site_url, errors):
+    """The Recovery code row still said Saved for the surveyor this device became, its Remove removed
+    their code, and the code kept brought back the self this device had left."""
+    links = FakeLinks({"CDEFGHJK": {"token": THEIRS, "carry": {"initials": "MLW"}}})
+    start(page, site_url, links, query="&link=CDEFGHJK")
+    page.evaluate("localStorage.setItem('letterfield.recovery.v1', '1700000000000')")
+    page.locator("#pairOffer").get_by_role("button", name="Link", exact=True).click()
+    linked(page)
+    assert page.evaluate("localStorage.getItem('letterfield.recovery.v1')") is None
+    expect(page.locator("#toast span")).to_contain_text("The recovery code saved here won’t bring them back")
+    open_you(page)
+    expect(page.locator("#pairCard").get_by_role("button", name="Recovery code")).to_contain_text("Not saved")
+    assert errors == []

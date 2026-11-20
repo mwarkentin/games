@@ -6787,9 +6787,9 @@ async function redeemCode(code) {
   if (Pair.seq !== at) return;
   if (status === 200 && TOKEN_RE.test(data.token)) {
     LS.remove(K_LINK_CODE);  // a code made here was for the self it leaves
-    if (recovering) await takeRecovered(data.token, data.made); else await takeLink(data.token, data.carry || {});
+    const hadCode = recovering ? await takeRecovered(data.token, data.made) : await takeLink(data.token, data.carry || {});
     Pair.go('done');
-    try { sessionStorage.setItem(K_LINKED, recovering ? 'recovered' : 'linked'); } catch (_) {}
+    try { sessionStorage.setItem(K_LINKED, recovering ? 'recovered' : hadCode ? 'linked-code' : 'linked'); } catch (_) {}
     location.reload();
     return;
   }
@@ -6830,7 +6830,9 @@ async function takeLink(token, c) {
   }
   // Their labels win where both have one; any of this device's for its own guilds stay.
   for (const [k, l] of Object.entries(c.labels && typeof c.labels === 'object' ? c.labels : {})) { const t = cleanLabel(l); if (t) labels.set(k, t); }
-  if (token !== old) leaveSignatures();
+  // A recovery code saved here brings back the self this device leaves, not the one it becomes.
+  const hadCode = token !== old && !!LS.get(K_RECOVERY);
+  if (token !== old) { leaveSignatures(); LS.remove(K_RECOVERY); }
   // The badge they show and their card are theirs, signed for them: they come along.
   if ('badge' in c) takeShownBadge(c.badge);
   if (c.card) takeCard(c.card, true);
@@ -6845,6 +6847,7 @@ async function takeLink(token, c) {
   // From now on the two keep in step, starting with everything here; these
   // settings, mutes from both, are the newest.
   writeSync(syncFromHere(Date.now()));
+  return hadCode;
 }
 // Be the surveyor a recovery code names again. What they had (initials,
 // guilds, mutes, notes) comes back with the first sync, so this device's own
@@ -7099,6 +7102,7 @@ if (surveyApi) {
   let linked = '';
   try { linked = sessionStorage.getItem(K_LINKED) || ''; sessionStorage.removeItem(K_LINKED); } catch (_) {}
   if (linked === 'linked') setTimeout(() => toast(`<i></i><b>Linked</b><span>This device plays as ${myInitials() || 'your surveyor'} now, as your other one does</span>`, null, 5000), 600);
+  else if (linked === 'linked-code') setTimeout(() => toast(`<i></i><b>Linked</b><span>This device plays as ${myInitials() || 'your surveyor'} now. The recovery code saved here won’t bring them back: make a new one</span>`, null, 8000), 600);
   else if (linked === 'recovered') setTimeout(() => toast('<i></i><b>Welcome back</b><span>This device is your surveyor again, and your notes are on their way</span>', null, 5000), 600);
   renderPair();
 }
