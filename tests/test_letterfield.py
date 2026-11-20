@@ -1483,3 +1483,56 @@ def test_a_note_waits_while_the_mouse_is_on_it(page: Page, site_url, errors):
     page.mouse.move(300, 600)
     expect(toast).not_to_have_class(re.compile(r"\bshow\b"), timeout=4000)
     assert errors == []
+
+
+# Where the top bar has gaps (between the title and the buttons, above and
+# below them, at either end): what's at each, from the page's own hit-testing.
+TOPBAR_GAPS_JS = """() => {
+  const bar = document.getElementById('topbar').getBoundingClientRect(), map = document.getElementById('map').getBoundingClientRect();
+  const t = document.querySelector('header.cartouche').getBoundingClientRect(), c = document.querySelector('.corner').getBoundingClientRect();
+  const pts = [[(t.right + c.left) / 2, bar.top + bar.height / 2], [c.left + 2, bar.top + 2], [c.right - 2, bar.bottom - 2],
+    [1, bar.top + 1], [bar.right - 1, bar.bottom - 1], [t.left + 4, bar.bottom - 2]];
+  return { bar: [bar.left, bar.top, bar.width, bar.bottom], mapTop: map.top, scroll: [scrollY, document.scrollingElement.scrollTop],
+    hits: pts.map(([x, y]) => { const e = document.elementFromPoint(x, y); return e && e.closest('#topbar') ? 'bar' : e ? (e.id || e.tagName) : null; }) };
+}"""
+
+
+@pytest.mark.parametrize("size", [(375, 812), (844, 390), (932, 430)], ids=["phone", "phone-sideways", "big-phone-sideways"])
+def test_no_map_shows_behind_or_between_the_top_bars_parts(page: Page, site_url, errors, size):
+    """On a phone, either way up, the title and the buttons sit on one solid bar
+    from edge to edge, and the map starts at its bottom: no letters show
+    behind them, between them or above them. It stays so when the bar grows,
+    the phone turns, or a swipe tries to scroll the page. (Sideways, a phone is
+    as wide as a tablet, where the title and buttons once floated over the map.)"""
+    without_worker(page, site_url, "letterfield")
+    page.set_viewport_size({"width": size[0], "height": size[1]})
+    page.goto(f"{site_url}/letterfield#debug")
+    page.click("#coachOk")
+
+    def check(w):
+        got = page.evaluate(TOPBAR_GAPS_JS)
+        left, top, width, bottom = got["bar"]
+        assert left == 0 and top == 0 and width == w, got
+        assert got["mapTop"] >= round(bottom) - 0.5, got  # the map starts at the bar's bottom, never above it
+        assert got["hits"] == ["bar"] * len(got["hits"]), got
+        assert got["scroll"] == [0, 0], got
+        return bottom
+
+    before = check(size[0])
+    # The bar grows (a second line, say): the map moves down with it.
+    page.add_style_tag(content="#topbar{padding-bottom:40px !important}")
+    page.wait_for_function("b => document.getElementById('map').getBoundingClientRect().top >= b + 30", arg=before)
+    check(size[0])
+    # Turned the other way up.
+    page.set_viewport_size({"width": size[1], "height": size[0]})
+    page.wait_for_function("w => window.innerWidth === w", arg=size[1])
+    page.wait_for_function(
+        "() => Math.abs(document.getElementById('map').getBoundingClientRect().top - document.getElementById('topbar').getBoundingClientRect().bottom) < 1")
+    check(size[1])
+    # A swipe or wheel over the bar, and a script, try to scroll the page: it doesn't move.
+    page.mouse.move(size[1] / 2, 20)
+    page.mouse.wheel(0, 300)
+    page.evaluate("() => { window.scrollTo(0, 300); document.scrollingElement.scrollTop = 300; }")
+    page.wait_for_timeout(200)
+    check(size[1])
+    assert errors == []
