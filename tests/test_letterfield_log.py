@@ -567,6 +567,7 @@ def test_a_live_hours_refresh_keeps_the_focus_and_the_value_showing(page: Page, 
     bar = page.locator("#chart .bar.some")
     bar.focus()
     expect(page.locator("#tip")).to_be_visible()
+    page.wait_for_load_state("networkidle")  # before the clock jumps on, which would time out a request still out
     fake.entries.append(["FERN", 10, 20, 0, 0, "AMY", NOW_MS + 10_000, 11])
     page.clock.fast_forward(21_000)  # the hour reloads every 20 s
     expect(page.locator(".entry")).to_have_count(2)
@@ -577,6 +578,7 @@ def test_a_live_hours_refresh_keeps_the_focus_and_the_value_showing(page: Page, 
     expect(page.locator("#tip")).to_contain_text("1 word")
     # The same for a word's link in the list.
     page.locator(".entry", has_text="MONET").locator("a.fly").focus()
+    page.wait_for_load_state("networkidle")
     page.clock.fast_forward(21_000)
     eventually(page, lambda: page.evaluate("document.activeElement.textContent") == "MONET")
     # The redraw isn't read out (aria-live is off while it's drawn), then the summary is read out as before.
@@ -608,6 +610,10 @@ def test_a_day_that_ends_on_screen_reloads_once_its_last_words_are_in(page: Page
     expect(page.locator(".entry")).to_have_count(2)
     page.clock.fast_forward(35_000)  # midnight passes, and the day reloads
     expect(page.locator("#sumTitle")).to_have_text("Yesterday")
+    # All in before the clock jumps on, which would time out a request still out.
+    expect(page.locator("html")).to_have_attribute("data-log", "ready")
+    expect(page.locator("#cards .ph-card")).to_have_count(0)
+    page.wait_for_load_state("networkidle")
     # A word charted at 11:59:50 reaches the log a little late, as sectors' words do.
     fake.entries.append(["FERN", 10, 20, 0, 0, "AMY", late + 20_000, 11])
     page.clock.fast_forward(60_000)  # a minute after midnight
