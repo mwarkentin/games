@@ -1,0 +1,341 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="description" content="Letterfield's music, recorded from the game's own code: four pieces and a supernova, with notes on how each is made, to play here or download.">
+<meta name="theme-color" media="(prefers-color-scheme: light)" content="#EBEEE7">
+<meta name="theme-color" media="(prefers-color-scheme: dark)" content="#0F171A">
+<meta name="apple-mobile-web-app-title" content="Soundtrack">
+<!-- Part of Letterfield's home-screen app rather than an app of its own (see app_of in scripts/common.py). -->
+<meta name="games:app" content="letterfield">
+<title>Letterfield soundtrack</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Big+Shoulders+Display:wght@700;800&family=Martian+Mono:wght@400;500&family=Schibsted+Grotesk:wght@400;500;600&display=swap">
+<style>
+/* The game's music as an album, not a game: it scrolls like a document, in
+   Letterfield's colours and type, like the survey log. The cover, then the
+   tracks, each with its player, its notes and its file, then how it's made. */
+:root{
+  --paper:#EBEEE7; --panel:#F7F8F4; --ink:#1B2428; --muted:#59656A; --rule:#C6CFC6;
+  --accent:#2A43C2; --hover:rgba(27,36,40,.055);
+  --mark-s:58%; --mark-l:38%; --mark-a:.26;
+  --f-display:"Big Shoulders Display","Arial Narrow",Impact,sans-serif;
+  --f-mono:"Martian Mono",ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+  --f-ui:"Schibsted Grotesk",system-ui,-apple-system,"Segoe UI",sans-serif;
+  color-scheme:light;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --paper:#0F171A; --panel:#162024; --ink:#E2E7DE; --muted:#93A19D; --rule:#2B3A3E;
+    --accent:#97A9FF; --hover:rgba(226,231,222,.06);
+    --mark-s:68%; --mark-l:68%; --mark-a:.22; color-scheme:dark;
+  }
+}
+:root[data-theme="dark"]{
+  --paper:#0F171A; --panel:#162024; --ink:#E2E7DE; --muted:#93A19D; --rule:#2B3A3E;
+  --accent:#97A9FF; --hover:rgba(226,231,222,.06);
+  --mark-s:68%; --mark-l:68%; --mark-a:.22; color-scheme:dark;
+}
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+body{
+  margin:0;background:var(--paper);color:var(--ink);font:15px/1.5 var(--f-ui);
+  padding:calc(env(safe-area-inset-top,0px) + 16px) max(16px, env(safe-area-inset-right,0px)) calc(env(safe-area-inset-bottom,0px) + 32px) max(16px, env(safe-area-inset-left,0px));
+  -webkit-tap-highlight-color:transparent;
+}
+main{max-width:62rem;margin:0 auto}
+a{color:var(--accent)}
+a:focus-visible,audio:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.eyebrow{margin:0;font:500 10.5px/1.4 var(--f-mono);letter-spacing:.14em;text-transform:uppercase;color:var(--muted)}
+
+header{padding-bottom:16px}
+.home{display:inline-flex;align-items:center;min-height:40px;margin:-8px 0 0 -4px;padding:0 4px;font:500 12px/1 var(--f-mono);color:var(--muted);text-decoration:none;border-radius:6px}
+.home:hover{color:var(--ink);background:var(--hover)}
+header h1{margin:2px 0 0;font:800 40px/.9 var(--f-display);letter-spacing:.04em;text-transform:uppercase}
+header p{margin:8px 0 0;color:var(--muted);max-width:46ch}
+
+/* The cover, then the tracks; side by side where there's room, the cover
+   staying in sight as the tracks scroll by. */
+.album{display:grid;gap:22px;align-items:start}
+.cover{margin:0;max-width:30rem}
+.cover svg{display:block;width:100%;height:auto;aspect-ratio:1;border-radius:10px;box-shadow:0 1px 0 var(--rule),0 12px 32px -18px rgba(4,7,22,.55)}
+@media (min-width:860px){
+  .album{grid-template-columns:minmax(0,24rem) minmax(0,1fr);gap:36px}
+  .cover{position:sticky;top:calc(env(safe-area-inset-top,0px) + 16px)}
+}
+.album-head h2{margin:0;font:800 30px/1 var(--f-display);letter-spacing:.04em;text-transform:uppercase}
+.album-head .meta{margin:6px 0 0;font:400 12px/1.5 var(--f-mono);color:var(--muted)}
+.downloads{display:flex;flex-wrap:wrap;gap:8px;margin:12px 0 0;padding:0;list-style:none}
+.downloads a,.dl{display:inline-flex;align-items:center;gap:6px;min-height:40px;padding:0 14px;border:1px solid var(--rule);border-radius:999px;background:var(--panel);font:500 12px/1 var(--f-mono);letter-spacing:.04em;color:var(--ink);text-decoration:none}
+.downloads a:hover,.dl:hover{background:var(--hover)}
+.downloads small,.dl small{color:var(--muted);font-size:11px}
+.pending{margin:14px 0 0;padding:12px 14px;border:1px dashed var(--rule);border-radius:8px;color:var(--muted);font-size:14px}
+
+/* A track: its number, its title circled in its territory's colour as a
+   find is on the map, and its length; then its player, notes and file. The
+   one playing is marked down its side. */
+.tracks ol{list-style:none;margin:18px 0 0;padding:0;counter-reset:none}
+.track{--c:hsl(var(--h) var(--mark-s) var(--mark-l));position:relative;padding:16px 0 18px 14px;border-top:1px solid var(--rule)}
+.track::before{content:"";position:absolute;left:0;top:16px;bottom:18px;width:3px;border-radius:2px;background:transparent}
+.track[aria-current="true"]::before{background:var(--c)}
+.track .row{display:flex;align-items:center;gap:12px;min-height:44px}
+.track .n{font:400 13px/1 var(--f-mono);color:var(--muted);font-variant-numeric:tabular-nums}
+.track h3{margin:0;display:flex;align-items:center;gap:10px;flex-wrap:wrap;flex:1;min-width:0}
+.track h3 b{display:inline-block;padding:5px 14px 4px;border:2px solid var(--c);border-radius:999px;background:hsl(var(--h) 75% 55% / var(--mark-a));font:800 24px/1 var(--f-display);letter-spacing:.04em;text-transform:uppercase}
+.track h3 small{font:500 10.5px/1 var(--f-mono);letter-spacing:.14em;text-transform:uppercase;color:var(--muted)}
+.track .len{font:400 14px/1 var(--f-mono);font-variant-numeric:tabular-nums}
+.track audio{display:block;width:100%;height:44px;margin:12px 0 0}
+.track .key{margin:12px 0 0;font:400 11.5px/1.5 var(--f-mono);color:var(--muted)}
+.track .notes{margin:6px 0 0;max-width:62ch}
+.track .dl{margin-top:12px}
+.track .failed{margin:8px 0 0;color:var(--muted);font-size:13px}
+.track:not([data-failed]) .failed{display:none}
+/* Until the recordings are online, the tracks are listed without players
+   (and without the script, which sets the player going, the same). */
+html:is(:not([data-player]), [data-player="off"]) :is(.track audio, .dl, .downloads){display:none}
+html:not([data-player="off"]) .pending{display:none}
+
+.about{margin-top:34px;padding-top:16px;border-top:1px solid var(--rule);max-width:62ch}
+.about h2{margin:0 0 6px;font:800 24px/1 var(--f-display);letter-spacing:.04em;text-transform:uppercase}
+.about p{margin:8px 0 0}
+.foot{margin-top:28px;padding-top:12px;border-top:1px solid var(--rule);color:var(--muted);font-size:13px}
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <a class="home" href="/letterfield" data-back>← Letterfield</a>
+    <h1>Soundtrack</h1>
+    <p>The game’s music, recorded from the game itself: its four pieces, each in a longer cut with a beginning and an end, and a supernova between them.</p>
+  </header>
+
+  <div class="album">
+    <figure class="cover">
+<!-- BEGIN COVER -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 1200" role="img" aria-label="Letterfield (Original Soundtrack): cover"><title>Letterfield (Original Soundtrack): cover</title><defs><path id="lf-display-L-o" d="M86 800V-800H345V572H720V800Z"/><path id="lf-display-E-o" d="M86 800V-800H718V-572H345V-126H698V102H345V572H718V800Z"/><path id="lf-display-T-o" d="M255 800V-572H12V-800H757V-572H513V800Z"/><path id="lf-display-R-o" d="M86 800V-800H437Q639 -800 728 -717Q818 -634 825 -443Q827 -379 828 -328Q829 -276 828 -226Q827 -175 825 -115Q821 7 784 84Q747 160 668 199L849 800H575L425 242H345V800ZM345 14H436Q501 14 532 -16Q564 -45 567 -102Q570 -158 571 -218Q572 -279 571 -340Q570 -400 567 -456Q564 -513 532 -542Q501 -572 437 -572H345Z"/><path id="lf-display-F-o" d="M86 800V-800H718V-572H345V-126H698V102H345V800Z"/><path id="lf-display-I-o" d="M86 800V-800H345V800Z"/><path id="lf-display-D-o" d="M86 800V-800H455Q658 -800 749 -713Q840 -626 843 -426Q846 -274 847 -138Q848 -1 847 136Q846 272 843 424Q840 625 749 712Q658 800 454 800ZM345 572H454Q519 572 552 542Q584 512 585 455Q588 340 590 226Q591 113 591 -1Q591 -115 590 -229Q588 -343 585 -456Q584 -513 552 -542Q519 -572 455 -572H345Z"/><path id="lf-mono-S" d="M-156 196Q-139 251 -98 280Q-57 309 7 309Q77 309 117 274Q157 239 157 177Q157 132 128 102Q98 73 43 65L-45 52Q-149 34 -202 -23Q-255 -80 -255 -176Q-255 -249 -222 -302Q-188 -356 -128 -386Q-67 -416 13 -416Q93 -416 153 -387Q213 -358 248 -304Q282 -251 287 -176H179Q163 -240 121 -274Q79 -309 13 -309Q-60 -309 -102 -274Q-143 -238 -143 -176Q-143 -130 -114 -101Q-84 -72 -30 -63L58 -50Q163 -33 216 24Q269 82 269 177Q269 250 236 304Q204 357 145 386Q86 416 7 416Q-73 416 -132 390Q-192 363 -226 314Q-261 264 -265 196Z"/><path id="lf-mono-L" d="M-170 400V-400H-56V293H283V400Z"/><path id="lf-mono-R" d="M-235 400V-400H36Q113 -400 170 -372Q227 -344 258 -292Q290 -240 290 -169Q290 -102 258 -52Q226 -2 169 26Q112 55 36 55H-121V400ZM180 400 -36 35H87L310 400ZM-121 -44H38Q101 -44 138 -78Q176 -112 176 -168Q176 -225 138 -259Q101 -293 38 -293H-121Z"/><path id="lf-mono-N" d="M-264 400V-400H-70L152 327H163L159 97V-400H264V400H70L-152 -327H-163L-159 -97V400Z"/><path id="lf-mono-I" d="M-257 400V293H-57V-293H-257V-400H257V-293H57V293H257V400Z"/><path id="lf-mono-Y" d="M-186 -400 -13 -80 -2 -44H8L18 -80L194 -400H309L57 57V400H-57V57L-309 -400Z"/><path id="lf-mono-A" d="M-298 400 -93 -400H93L298 400H179L2 -315H-8L-186 400ZM-173 129V21H173V129Z"/><path id="lf-mono-T" d="M-57 400V-293H-293V-400H293V-293H57V400Z"/><path id="lf-mono-H" d="M-257 400V-400H-143V-57H143V-400H257V400H143V51H-143V400Z"/><path id="lf-mono-M" d="M-277 400V-400H-96L-2 63H9L102 -400H277V400H173V-60L177 -320H165L76 130H-75L-165 -320H-177L-173 -60V400Z"/><path id="lf-mono-D" d="M-257 400V-400H-33Q129 -400 210 -300Q292 -199 292 0Q292 199 210 300Q129 400 -33 400ZM-143 293H-33Q73 293 126 220Q178 148 178 0Q178 -149 126 -221Q73 -293 -33 -293H-143Z"/><path id="lf-mono-E" d="M-210 400V-400H263V-293H-96V-53H213V47H-96V293H253V400Z"/><path id="lf-mono-X" d="M-285 400 -89 15 -299 -400H-171L-15 -89L-5 -40H6L16 -89L176 -400H299L89 9L285 400H155L16 119L5 68H-6L-16 119L-159 400Z"/><path id="lf-mono-F" d="M-190 400V-400H283V-293H-76V-41H233V59H-76V400Z"/><path id="lf-mono-J" d="M-18 416Q-97 416 -154 386Q-212 355 -242 298Q-273 242 -273 163V50H-161V153Q-161 226 -123 268Q-85 309 -18 309Q50 309 88 268Q126 226 126 153V-290H-215V-400H240V163Q240 242 209 298Q178 355 120 386Q63 416 -18 416Z"/><path id="lf-mono-O" d="M0 416Q-146 416 -219 312Q-292 208 -292 0Q-292 -208 -219 -312Q-146 -416 0 -416Q146 -416 219 -312Q292 -208 292 0Q292 208 219 312Q146 416 0 416ZM0 309Q92 309 135 234Q178 159 178 0Q178 -159 135 -234Q92 -309 0 -309Q-92 -309 -135 -234Q-178 -159 -178 0Q-178 159 -135 234Q-92 309 0 309Z"/><path id="lf-mono-P" d="M-220 400V-400H54Q130 -400 186 -371Q242 -342 273 -290Q304 -237 304 -165Q304 -93 273 -40Q242 12 186 40Q130 69 54 69H-106V400ZM-106 -33H58Q119 -33 154 -68Q190 -103 190 -163Q190 -223 154 -258Q119 -293 58 -293H-106Z"/><path id="lf-mono-C" d="M17 416Q-126 416 -198 312Q-269 209 -269 0Q-269 -209 -196 -312Q-122 -416 26 -416Q106 -416 164 -382Q222 -348 256 -282Q289 -217 295 -123H190Q176 -214 134 -262Q93 -309 26 -309Q-67 -309 -111 -234Q-155 -159 -155 0Q-155 159 -114 234Q-72 309 17 309Q81 309 120 265Q159 221 172 137H277Q271 226 239 288Q207 351 150 384Q94 416 17 416Z"/><path id="lf-mono-U" d="M-265 -400H-151V127Q-151 212 -111 260Q-71 309 2 309Q75 309 115 260Q155 212 155 127V-400H265V137Q265 272 197 344Q129 416 0 416Q-129 416 -197 344Q-265 272 -265 137Z"/><path id="lf-mono-B" d="M-228 400V-400H10Q131 -400 201 -342Q271 -284 271 -183Q271 -125 240 -82Q210 -39 155 -21V-5Q217 14 251 63Q285 112 285 180Q285 282 212 341Q138 400 10 400ZM-114 294H10Q88 294 130 262Q171 229 171 170Q171 111 130 78Q88 46 10 46H-114ZM-114 -54H10Q84 -54 123 -85Q162 -116 162 -174Q162 -232 123 -263Q84 -294 10 -294H-114Z"/><path id="lf-mono-K" d="M-212 -400H-98V400H-212ZM149 400 -132 13 167 -400H299L3 8L288 400Z"/><path id="lf-mono-Q" d="M-30 524V390H30V429L257 502V616ZM0 416Q-146 416 -219 312Q-292 208 -292 0Q-292 -208 -219 -312Q-146 -416 0 -416Q146 -416 219 -312Q292 -208 292 0Q292 208 219 312Q146 416 0 416ZM0 309Q92 309 135 234Q178 159 178 0Q178 -159 135 -234Q92 -309 0 -309Q-92 -309 -135 -234Q-178 -159 -178 0Q-178 159 -135 234Q-92 309 0 309Z"/><path id="lf-mono-W" d="M-221 -400 -158 136 -145 320H-134L-73 -200H82L139 320H150L165 136L229 -400H327L229 400H66L7 -133H-4L-67 400H-229L-327 -400Z"/><path id="lf-mono-medium-O-o" d="M350 417Q202 417 126 312Q51 208 51 0Q51 -208 126 -312Q202 -417 350 -417Q499 -417 574 -312Q649 -208 649 0Q649 208 574 312Q499 417 350 417ZM350 295Q436 295 477 223Q518 151 518 0Q518 -151 477 -223Q436 -295 350 -295Q264 -295 223 -223Q182 -151 182 0Q182 151 223 223Q264 295 350 295Z"/><path id="lf-mono-medium-R-o" d="M104 400V-400H387Q465 -400 523 -371Q581 -342 613 -289Q645 -236 645 -163Q645 -96 612 -45Q580 6 522 34Q464 63 387 63H235V400ZM517 400 306 41H446L665 400ZM235 -49H387Q445 -49 480 -80Q514 -111 514 -163Q514 -215 480 -246Q445 -277 387 -277H235Z"/><path id="lf-mono-medium-I-o" d="M86 400V276H285V-276H86V-400H614V-276H415V276H614V400Z"/><path id="lf-mono-medium-G-o" d="M327 415Q203 415 134 310Q64 204 64 0Q64 -208 140 -312Q216 -417 366 -417Q447 -417 506 -384Q565 -351 600 -289Q634 -227 640 -139H518Q504 -215 466 -255Q429 -295 366 -295Q279 -295 237 -223Q195 -151 195 0Q195 156 236 230Q278 303 366 303Q407 303 440 278Q472 252 492 209Q511 166 511 113H348V-6H623V400H511V336H479Q462 373 422 394Q382 415 327 415Z"/><path id="lf-mono-medium-N-o" d="M79 400V-400H295L496 310H509L504 57V-400H621V400H405L204 -310H191L196 -57V400Z"/><path id="lf-mono-medium-A-o" d="M45 400 243 -400H457L655 400H520L353 -303H340L171 400ZM172 140V17H528V140Z"/><path id="lf-mono-medium-L-o" d="M169 400V-400H299V276H636V400Z"/><path id="lf-mono-medium-S-o" d="M205 191Q220 242 259 269Q298 296 357 296Q422 296 460 264Q497 232 497 176Q497 134 470 108Q443 81 393 73L302 60Q197 42 142 -16Q88 -75 88 -173Q88 -247 122 -302Q156 -357 218 -387Q279 -417 362 -417Q445 -417 506 -388Q567 -358 602 -304Q638 -249 642 -171H519Q504 -232 464 -264Q424 -296 362 -296Q294 -296 255 -264Q216 -231 216 -174Q216 -133 243 -106Q270 -79 320 -71L412 -58Q517 -41 571 18Q625 77 625 174Q625 248 592 302Q559 357 498 387Q438 417 357 417Q275 417 214 390Q153 363 118 312Q83 262 79 191Z"/><path id="lf-mono-medium-U-o" d="M77 -400H208V123Q208 204 246 250Q284 295 352 295Q421 295 459 249Q497 203 497 121V-400H623V131Q623 269 553 343Q483 417 350 417Q217 417 147 343Q77 269 77 131Z"/><path id="lf-mono-medium-D-o" d="M86 400V-400H318Q482 -400 566 -299Q649 -198 649 0Q649 198 566 299Q482 400 318 400ZM217 277H318Q419 277 468 208Q518 140 518 0Q518 -141 468 -209Q419 -277 318 -277H217Z"/><path id="lf-mono-medium-T-o" d="M285 400V-276H51V-400H649V-276H415V400Z"/><path id="lf-mono-medium-C-o" d="M366 417Q221 417 148 312Q74 208 74 0Q74 -208 150 -312Q225 -417 375 -417Q457 -417 517 -382Q577 -348 611 -282Q645 -215 651 -120H531Q516 -206 478 -250Q439 -295 375 -295Q288 -295 246 -223Q205 -151 205 0Q205 151 244 223Q283 295 366 295Q426 295 463 254Q500 212 514 133H634Q628 223 594 286Q561 350 503 384Q445 417 366 417Z"/><path id="lf-mono-medium-K-o" d="M129 -400H259V400H129ZM489 400 225 13 508 -400H655L376 8L644 400Z"/><radialGradient id="lf-shade" gradientUnits="userSpaceOnUse" cx="994.3" cy="231.4" r="1226.0"><stop offset="0" stop-color="#040716" stop-opacity="0"/><stop offset="0.181" stop-color="#040716" stop-opacity="0"/><stop offset="0.266" stop-color="#040716" stop-opacity=".1"/><stop offset="1" stop-color="#040716" stop-opacity=".14"/></radialGradient><radialGradient id="lf-core" gradientUnits="userSpaceOnUse" cx="994.3" cy="231.4" r="210"><stop offset="0" stop-color="#fff" stop-opacity=".95"/><stop offset=".07" stop-color="hsl(168,95%,88%)" stop-opacity=".8"/><stop offset=".25" stop-color="hsl(168,95%,60%)" stop-opacity=".2"/><stop offset="1" stop-color="hsl(168,95%,50%)" stop-opacity="0"/></radialGradient><radialGradient id="lf-heat" gradientUnits="userSpaceOnUse" cx="994.3" cy="231.4" r="480.0"><stop offset="0" stop-color="hsl(168,95%,45%)" stop-opacity=".12"/><stop offset="1" stop-color="hsl(168,95%,45%)" stop-opacity=".03"/></radialGradient><radialGradient id="lf-ring0" gradientUnits="userSpaceOnUse" cx="994.3" cy="231.4" r="317.2"><stop offset="0.7655" stop-color="hsl(168,95%,55%)" stop-opacity="0.000"/><stop offset="0.8918" stop-color="hsl(168,95%,55%)" stop-opacity="0.500"/><stop offset="0.9333" stop-color="#fff" stop-opacity="0.850"/><stop offset="1.0000" stop-color="hsl(168,95%,55%)" stop-opacity="0.000"/></radialGradient><radialGradient id="lf-ring1" gradientUnits="userSpaceOnUse" cx="994.3" cy="231.4" r="233.7"><stop offset="0.7831" stop-color="hsl(168,95%,55%)" stop-opacity="0.000"/><stop offset="0.8999" stop-color="hsl(168,95%,55%)" stop-opacity="0.160"/><stop offset="0.9383" stop-color="#fff" stop-opacity="0.272"/><stop offset="1.0000" stop-color="hsl(168,95%,55%)" stop-opacity="0.000"/></radialGradient><radialGradient id="lf-ring2" gradientUnits="userSpaceOnUse" cx="994.3" cy="231.4" r="167.7"><stop offset="0.6977" stop-color="hsl(168,95%,55%)" stop-opacity="0.000"/><stop offset="0.8605" stop-color="hsl(168,95%,55%)" stop-opacity="0.080"/><stop offset="0.9140" stop-color="#fff" stop-opacity="0.136"/><stop offset="1.0000" stop-color="hsl(168,95%,55%)" stop-opacity="0.000"/></radialGradient></defs><rect width="1200" height="1200" fill="#0F171A"/><rect x="0.0" y="0.0" width="685.7" height="514.3" fill="hsla(223,45%,50%,0.15)"/><rect x="685.7" y="0.0" width="514.3" height="514.3" fill="hsla(168,45%,50%,0.15)"/><rect x="0.0" y="514.3" width="428.6" height="685.7" fill="hsla(298,45%,50%,0.15)"/><rect x="428.6" y="514.3" width="428.6" height="685.7" fill="hsla(115,45%,50%,0.15)"/><rect x="857.1" y="514.3" width="342.9" height="685.7" fill="hsla(55,45%,50%,0.15)"/><rect x="685.7" y="0.0" width="514.3" height="514.3" fill="url(#lf-heat)"/><g stroke="#93A19D" stroke-opacity=".38" stroke-width="2.4" stroke-dasharray="7 9" fill="none"><line x1="0.0" y1="514.3" x2="428.6" y2="514.3"/><line x1="0.0" y1="514.3" x2="685.7" y2="514.3"/><line x1="428.6" y1="514.3" x2="428.6" y2="1200.0"/><line x1="428.6" y1="514.3" x2="857.1" y2="514.3"/><line x1="685.7" y1="0.0" x2="685.7" y2="514.3"/><line x1="685.7" y1="514.3" x2="1200.0" y2="514.3"/><line x1="857.1" y1="514.3" x2="857.1" y2="1200.0"/><line x1="857.1" y1="514.3" x2="1200.0" y2="514.3"/></g><rect x="-31.7" y="-31.7" width="492.0" height="63.4" rx="31.7" transform="translate(128.6 471.4) rotate(0)" fill="hsla(223,75%,55%,0.22)" stroke="hsl(223,68%,68%)" stroke-width="5"/><rect x="-31.7" y="-31.7" width="406.3" height="63.4" rx="31.7" transform="translate(214.3 642.9) rotate(90)" fill="hsla(298,75%,55%,0.22)" stroke="hsl(298,68%,68%)" stroke-width="5"/><rect x="-31.7" y="-31.7" width="548.3" height="63.4" rx="31.7" transform="translate(471.4 728.6) rotate(45)" fill="hsla(115,75%,55%,0.22)" stroke="hsl(115,68%,68%)" stroke-width="5"/><rect x="-31.7" y="-31.7" width="577.7" height="63.4" rx="31.7" transform="translate(1071.4 557.1) rotate(90)" fill="hsla(55,75%,55%,0.22)" stroke="hsl(55,68%,68%)" stroke-width="5"/><use href="#lf-mono-S" transform="translate(42.9 42.9) scale(0.03771)" fill="#E2E7DE" fill-opacity="0.56"/><use href="#lf-mono-L" transform="translate(128.6 42.9) scale(0.03771)" fill="#E2E7DE" fill-opacity="0.56"/><use href="#lf-mono-R" transform="translate(214.3 42.9) scale(0.03771)" fill="#E2E7DE" fill-opacity="0.56"/><use href="#lf-mono-N" transform="translate(300.0 42.9) scale(0.03771)" fill="#E2E7DE" fill-opacity="0.56"/><use href="#lf-mono-I" transform="translate(385.7 42.9) scale(0.03771)" fill="#E2E7DE" fill-opacity="0.56"/><use href="#lf-mono-Y" transform="translate(471.4 42.9) scale(0.03771)" fill="#E2E7DE" fill-opacity="0.56"/><use href="#lf-mono-A" transform="translate(557.1 42.9) scale(0.03771)" fill="#E2E7DE" fill-opacity="0.56"/><use href="#lf-mono-Y" transform="translate(642.9 42.9) scale(0.03771)" fill="#E2E7DE" fill-opacity="0.56"/><use href="#lf-mono-T" transform="translate(727.2 41.9) scale(0.03895)" fill="#E2E7DE" fill-opacity="0.59"/><use href="#lf-mono-S" transform="translate(817.7 46.5) scale(0.03771)" fill="#E2E7DE" fill-opacity="0.56"/><use href="#lf-mono-T" transform="translate(896.6 36.0) scale(0.04336)" fill="#E2E7DE" fill-opacity="0.72"/><use href="#lf-mono-S" transform="translate(985.7 41.9) scale(0.03841)" fill="#E2E7DE" fill-opacity="0.58"/><use href="#lf-mono-T" transform="translate(1073.3 38.2) scale(0.04143)" fill="#E2E7DE" fill-opacity="0.67"/><use href="#lf-mono-T" transform="translate(1151.8 49.1) scale(0.03771)" fill="#E2E7DE" fill-opacity="0.56"/><use href="#lf-mono-I" transform="translate(42.9 128.6) scale(0.03771)" fill="#E2E7DE" fill-opacity="0.56"/><use href="#lf-mono-A" transform="translate(128.6 128.6) scale(0.03771)" fill="#E2E7DE" fill-opacity="0.56"/><use href="#lf-mono-H" transform="translate(214.3 128.6) scale(0.03771)" fill="#E2E7DE" fill-opacity="0.56"/><use href="#lf-mono-N" transform="translate(300.0 128.6) scale(0.03771)" fill="#E2E7DE" fill-opacity="0.56"/><use href="#lf-mono-I" transform="translate(385.7 128.6) scale(0.03771)" fill="#E2E7DE" fill-opacity="0.56"/><use href="#lf-mono-T" transform="translate(471.4 128.6) scale(0.03771)" fill="#E2E7DE" fill-opacity="0.56"/><use href="#lf-mono-L" transform="translate(557.1 128.6) scale(0.03771)" fill="#E2E7DE" fill-opacity="0.56"/><use href="#lf-mono-M" transform="translate(642.9 128.6) scale(0.03771)" fill="#E2E7DE" fill-opacity="0.56"/><use href="#lf-mono-D" transform="translate(707.4 120.4) scale(0.05435)" fill="hsl(168,90%,88%)"/><use href="#lf-mono-I" transform="translate(808.7 125.4) scale(0.04245)" fill="#E2E7DE" fill-opacity="0.69"/><use href="#lf-mono-E" transform="translate(900.0 128.6) scale(0.03771)" fill="#E2E7DE" fill-opacity="0.56"/><use href="#lf-mono-I" transform="translate(985.7 128.6) scale(0.03771)" fill="#E2E7DE" fill-opacity="0.56"/><use href="#lf-mono-E" transform="translate(1071.4 128.6) scale(0.03771)" fill="#E2E7DE" fill-opacity="0.56"/><use href="#lf-mono-T" transform="translate(1158.5 127.7) scale(0.03890)" fill="#E2E7DE" fill-opacity="0.59"/><use href="#lf-mono-Y" transform="translate(42.9 214.3) scale(0.03771)" fill="#E2E7DE" fill-opacity="0.56"/><use href="#lf-mono-N" transform="translate(128.6 214.3) scale(0.03771)" fill="#E2E7DE" fill-opacity="0.56"/><use href="#lf-mono-L" transform="translate(214.3 214.3) scale(0.03771)" fill="#E2E7DE" fill-opacity="0.56"/><use href="#lf-mono-X" transform="translate(300.0 214.3) scale(0.03771)" fill="#E2E7DE" fill-opacity="0.56"/><use href="#lf-mono-S" transform="translate(385.7 214.3) scale(0.03771)" fill="#E2E7DE" fill-opacity="0.56"/><use href="#lf-mono-N" transform="translate(471.4 214.3) scale(0.03771)" fill="#E2E7DE" fill-opacity="0.56"/><use href="#lf-mono-I" transform="translate(557.1 214.3) scale(0.03771)" fill="#E2E7DE" fill-opacity="0.56"/><use href="#lf-mono-N" transform="translate(642.9 214.3) scale(0.03771)" fill="#E2E7DE" fill-opacity="0.56"/><use href="#lf-mono-F" transform="translate(728.5 214.3) scale(0.03775)" fill="#E2E7DE" fill-opacity="0.56"/><use href="#lf-mono-N" transform="translate(814.0 214.3) scale(0.03790)" fill="#E2E7DE" fill-opacity="0.57"/><use href="#lf-mono-N" transform="translate(900.0 214.3) scale(0.03771)" fill="#E2E7DE" fill-opacity="0.56"/><use href="#lf-mono-E" transform="translate(985.7 214.3) scale(0.03771)" fill="#E2E7DE" fill-opacity="0.56"/><use href="#lf-mono-J" transform="translate(1071.4 214.3) scale(0.03771)" fill="#E2E7DE" fill-opacity="0.56"/><use href="#lf-mono-D" transform="translate(1157.1 214.3) scale(0.03772)" fill="#E2E7DE" fill-opacity="0.56"/><use href="#lf-mono-L" transform="translate(42.9 300.0) scale(0.03771)" fill="#E2E7DE" fill-opacity="0.56"/><use href="#lf-mono-O" transform="translate(128.6 300.0) scale(0.03771)" fill="#E2E7DE" fill-opacity="0.56"/><use href="#lf-mono-N" transform="translate(214.3 300.0) scale(0.03771)" fill="#E2E7DE" fill-opacity="0.56"/><use href="#lf-mono-O" transform="translate(300.0 300.0) scale(0.03771)" fill="#E2E7DE" fill-opacity="0.56"/><use href="#lf-mono-S" transform="translate(385.7 300.0) scale(0.03771)" fill="#E2E7DE" fill-opacity="0.56"/><use href="#lf-mono-R" transform="translate(471.4 300.0) scale(0.03771)" fill="#E2E7DE" fill-opacity="0.56"/><use href="#lf-mono-E" transform="translate(557.1 300.0) scale(0.03771)" fill="#E2E7DE" fill-opacity="0.56"/><use href="#lf-mono-P" transform="translate(642.9 300.0) scale(0.03771)" fill="#E2E7DE" fill-opacity="0.56"/><use href="#lf-mono-S" transform="translate(719.1 302.5) scale(0.04492)" fill="hsl(168,90%,88%)" fill-opacity="0.76"/><use href="#lf-mono-N" transform="translate(812.8 300.6) scale(0.03890)" fill="#E2E7DE" fill-opacity="0.59"/><use href="#lf-mono-E" transform="translate(900.0 300.0) scale(0.03771)" fill="#E2E7DE" fill-opacity="0.56"/><use href="#lf-mono-C" transform="translate(985.7 300.0) scale(0.03771)" fill="#E2E7DE" fill-opacity="0.56"/><use href="#lf-mono-R" transform="translate(1071.4 300.0) scale(0.03771)" fill="#E2E7DE" fill-opacity="0.56"/><use href="#lf-mono-R" transform="translate(1157.3 300.0) scale(0.03780)" fill="#E2E7DE" fill-opacity="0.56"/><use href="#lf-mono-I" transform="translate(42.9 385.7) scale(0.03771)" fill="#E2E7DE" fill-opacity="0.56"/><use href="#lf-mono-H" transform="translate(128.6 385.7) scale(0.03771)" fill="#E2E7DE" fill-opacity="0.56"/><use href="#lf-mono-H" transform="translate(214.3 385.7) scale(0.03771)" fill="#E2E7DE" fill-opacity="0.56"/><use href="#lf-mono-H" transform="translate(300.0 385.7) scale(0.03771)" fill="#E2E7DE" fill-opacity="0.56"/><use href="#lf-mono-N" transform="translate(385.7 385.7) scale(0.03771)" fill="#E2E7DE" fill-opacity="0.56"/><use href="#lf-mono-O" transform="translate(471.4 385.7) scale(0.03771)" fill="#E2E7DE" fill-opacity="0.56"/><use href="#lf-mono-S" transform="translate(557.1 385.7) scale(0.03771)" fill="#E2E7DE" fill-opacity="0.56"/><use href="#lf-mono-U" transform="translate(642.9 385.7) scale(0.03771)" fill="#E2E7DE" fill-opacity="0.56"/><use href="#lf-mono-N" transform="translate(706.4 398.6) scale(0.05652)" fill="hsl(168,90%,88%)"/><use href="#lf-mono-E" transform="translate(815.4 384.8) scale(0.03771)" fill="#E2E7DE" fill-opacity="0.56"/><use href="#lf-mono-P" transform="translate(899.9 385.9) scale(0.03790)" fill="#E2E7DE" fill-opacity="0.57"/><use href="#lf-mono-L" transform="translate(985.7 385.7) scale(0.03771)" fill="#E2E7DE" fill-opacity="0.56"/><use href="#lf-mono-P" transform="translate(1071.5 385.8) scale(0.03775)" fill="#E2E7DE" fill-opacity="0.56"/><use href="#lf-mono-H" transform="translate(1162.6 390.9) scale(0.04322)" fill="#E2E7DE" fill-opacity="0.72"/><use href="#lf-mono-E" transform="translate(42.9 471.4) scale(0.03771)" fill="#E2E7DE" fill-opacity="0.56"/><use href="#lf-mono-C" transform="translate(128.6 471.4) scale(0.03771)" fill="#E2E7DE"/><use href="#lf-mono-H" transform="translate(214.3 471.4) scale(0.03771)" fill="#E2E7DE"/><use href="#lf-mono-I" transform="translate(300.0 471.4) scale(0.03771)" fill="#E2E7DE"/><use href="#lf-mono-M" transform="translate(385.7 471.4) scale(0.03771)" fill="#E2E7DE"/><use href="#lf-mono-E" transform="translate(471.4 471.4) scale(0.03771)" fill="#E2E7DE"/><use href="#lf-mono-S" transform="translate(557.1 471.4) scale(0.03771)" fill="#E2E7DE"/><use href="#lf-mono-A" transform="translate(642.9 471.4) scale(0.03771)" fill="#E2E7DE" fill-opacity="0.56"/><use href="#lf-mono-B" transform="translate(728.6 471.4) scale(0.03771)" fill="#E2E7DE" fill-opacity="0.56"/><use href="#lf-mono-E" transform="translate(795.2 496.9) scale(0.06110)" fill="hsl(168,90%,88%)"/><use href="#lf-mono-T" transform="translate(902.5 465.1) scale(0.03771)" fill="#E2E7DE" fill-opacity="0.56"/><use href="#lf-mono-X" transform="translate(985.9 467.6) scale(0.03771)" fill="#E2E7DE" fill-opacity="0.56"/><use href="#lf-mono-I" transform="translate(1068.9 463.4) scale(0.03771)" fill="#E2E7DE" fill-opacity="0.56"/><use href="#lf-mono-O" transform="translate(1172.6 494.2) scale(0.05788)" fill="hsl(168,90%,88%)"/><use href="#lf-mono-Y" transform="translate(42.9 557.1) scale(0.03771)" fill="#E2E7DE" fill-opacity="0.56"/><use href="#lf-mono-I" transform="translate(128.6 557.1) scale(0.03771)" fill="#E2E7DE" fill-opacity="0.56"/><use href="#lf-mono-S" transform="translate(214.3 557.1) scale(0.03771)" fill="#E2E7DE" fill-opacity="0.56"/><use href="#lf-mono-T" transform="translate(300.0 557.1) scale(0.03771)" fill="#E2E7DE" fill-opacity="0.56"/><use href="#lf-mono-E" transform="translate(385.7 557.1) scale(0.03771)" fill="#E2E7DE" fill-opacity="0.56"/><use href="#lf-mono-E" transform="translate(471.4 557.1) scale(0.03771)" fill="#E2E7DE" fill-opacity="0.56"/><use href="#lf-mono-J" transform="translate(557.1 557.1) scale(0.03771)" fill="#E2E7DE" fill-opacity="0.56"/><use href="#lf-mono-R" transform="translate(642.9 557.1) scale(0.03771)" fill="#E2E7DE" fill-opacity="0.56"/><use href="#lf-mono-O" transform="translate(728.6 557.1) scale(0.03771)" fill="#E2E7DE" fill-opacity="0.56"/><use href="#lf-mono-E" transform="translate(814.3 557.1) scale(0.03771)" fill="#E2E7DE" fill-opacity="0.56"/><use href="#lf-mono-O" transform="translate(900.0 557.2) scale(0.03774)" fill="#E2E7DE" fill-opacity="0.56"/><use href="#lf-mono-F" transform="translate(985.7 558.8) scale(0.03895)" fill="#E2E7DE" fill-opacity="0.59"/><use href="#lf-mono-L" transform="translate(1071.4 557.1) scale(0.03771)" fill="#E2E7DE"/><use href="#lf-mono-A" transform="translate(1157.1 557.1) scale(0.03771)" fill="#E2E7DE" fill-opacity="0.56"/><use href="#lf-mono-Y" transform="translate(42.9 642.9) scale(0.03771)" fill="#E2E7DE" fill-opacity="0.56"/><use href="#lf-mono-E" transform="translate(128.6 642.9) scale(0.03771)" fill="#E2E7DE" fill-opacity="0.56"/><use href="#lf-mono-D" transform="translate(214.3 642.9) scale(0.03771)" fill="#E2E7DE"/><use href="#lf-mono-E" transform="translate(300.0 642.9) scale(0.03771)" fill="#E2E7DE" fill-opacity="0.56"/><use href="#lf-mono-O" transform="translate(385.7 642.9) scale(0.03771)" fill="#E2E7DE" fill-opacity="0.56"/><use href="#lf-mono-N" transform="translate(471.4 642.9) scale(0.03771)" fill="#E2E7DE" fill-opacity="0.56"/><use href="#lf-mono-O" transform="translate(557.1 642.9) scale(0.03771)" fill="#E2E7DE" fill-opacity="0.56"/><use href="#lf-mono-P" transform="translate(642.9 642.9) scale(0.03771)" fill="#E2E7DE" fill-opacity="0.56"/><use href="#lf-mono-C" transform="translate(728.6 642.9) scale(0.03771)" fill="#E2E7DE" fill-opacity="0.56"/><use href="#lf-mono-I" transform="translate(814.3 642.9) scale(0.03771)" fill="#E2E7DE" fill-opacity="0.56"/><use href="#lf-mono-E" transform="translate(900.0 642.9) scale(0.03771)" fill="#E2E7DE" fill-opacity="0.56"/><use href="#lf-mono-N" transform="translate(985.7 642.9) scale(0.03771)" fill="#E2E7DE" fill-opacity="0.56"/><use href="#lf-mono-A" transform="translate(1071.4 642.9) scale(0.03771)" fill="#E2E7DE"/><use href="#lf-mono-E" transform="translate(1157.1 642.9) scale(0.03771)" fill="#E2E7DE" fill-opacity="0.56"/><use href="#lf-mono-T" transform="translate(42.9 728.6) scale(0.03771)" fill="#E2E7DE" fill-opacity="0.56"/><use href="#lf-mono-T" transform="translate(128.6 728.6) scale(0.03771)" fill="#E2E7DE" fill-opacity="0.56"/><use href="#lf-mono-R" transform="translate(214.3 728.6) scale(0.03771)" fill="#E2E7DE"/><use href="#lf-mono-N" transform="translate(300.0 728.6) scale(0.03771)" fill="#E2E7DE" fill-opacity="0.56"/><use href="#lf-mono-E" transform="translate(385.7 728.6) scale(0.03771)" fill="#E2E7DE" fill-opacity="0.56"/><use href="#lf-mono-O" transform="translate(471.4 728.6) scale(0.03771)" fill="#E2E7DE"/><use href="#lf-mono-A" transform="translate(557.1 728.6) scale(0.03771)" fill="#E2E7DE" fill-opacity="0.56"/><use href="#lf-mono-D" transform="translate(642.9 728.6) scale(0.03771)" fill="#E2E7DE" fill-opacity="0.56"/><use href="#lf-mono-E" transform="translate(728.6 728.6) scale(0.03771)" fill="#E2E7DE" fill-opacity="0.56"/><use href="#lf-mono-H" transform="translate(814.3 728.6) scale(0.03771)" fill="#E2E7DE" fill-opacity="0.56"/><use href="#lf-mono-D" transform="translate(900.0 728.6) scale(0.03771)" fill="#E2E7DE" fill-opacity="0.56"/><use href="#lf-mono-B" transform="translate(985.7 728.6) scale(0.03771)" fill="#E2E7DE" fill-opacity="0.56"/><use href="#lf-mono-N" transform="translate(1071.4 728.6) scale(0.03771)" fill="#E2E7DE"/><use href="#lf-mono-M" transform="translate(1157.1 728.6) scale(0.03771)" fill="#E2E7DE" fill-opacity="0.56"/><use href="#lf-mono-I" transform="translate(42.9 814.3) scale(0.03771)" fill="#E2E7DE" fill-opacity="0.56"/><use href="#lf-mono-R" transform="translate(128.6 814.3) scale(0.03771)" fill="#E2E7DE" fill-opacity="0.56"/><use href="#lf-mono-I" transform="translate(214.3 814.3) scale(0.03771)" fill="#E2E7DE"/><use href="#lf-mono-S" transform="translate(300.0 814.3) scale(0.03771)" fill="#E2E7DE" fill-opacity="0.56"/><use href="#lf-mono-D" transform="translate(385.7 814.3) scale(0.03771)" fill="#E2E7DE" fill-opacity="0.56"/><use href="#lf-mono-Y" transform="translate(471.4 814.3) scale(0.03771)" fill="#E2E7DE" fill-opacity="0.56"/><use href="#lf-mono-R" transform="translate(557.1 814.3) scale(0.03771)" fill="#E2E7DE"/><use href="#lf-mono-I" transform="translate(642.9 814.3) scale(0.03771)" fill="#E2E7DE" fill-opacity="0.56"/><use href="#lf-mono-L" transform="translate(728.6 814.3) scale(0.03771)" fill="#E2E7DE" fill-opacity="0.56"/><use href="#lf-mono-H" transform="translate(814.3 814.3) scale(0.03771)" fill="#E2E7DE" fill-opacity="0.56"/><use href="#lf-mono-E" transform="translate(900.0 814.3) scale(0.03771)" fill="#E2E7DE" fill-opacity="0.56"/><use href="#lf-mono-T" transform="translate(985.7 814.3) scale(0.03771)" fill="#E2E7DE" fill-opacity="0.56"/><use href="#lf-mono-T" transform="translate(1071.4 814.3) scale(0.03771)" fill="#E2E7DE"/><use href="#lf-mono-T" transform="translate(1157.1 814.3) scale(0.03771)" fill="#E2E7DE" fill-opacity="0.56"/><use href="#lf-mono-E" transform="translate(42.9 900.0) scale(0.03771)" fill="#E2E7DE" fill-opacity="0.56"/><use href="#lf-mono-N" transform="translate(128.6 900.0) scale(0.03771)" fill="#E2E7DE" fill-opacity="0.56"/><use href="#lf-mono-F" transform="translate(214.3 900.0) scale(0.03771)" fill="#E2E7DE"/><use href="#lf-mono-H" transform="translate(300.0 900.0) scale(0.03771)" fill="#E2E7DE" fill-opacity="0.56"/><use href="#lf-mono-O" transform="translate(385.7 900.0) scale(0.03771)" fill="#E2E7DE" fill-opacity="0.56"/><use href="#lf-mono-M" transform="translate(471.4 900.0) scale(0.03771)" fill="#E2E7DE" fill-opacity="0.56"/><use href="#lf-mono-I" transform="translate(557.1 900.0) scale(0.03771)" fill="#E2E7DE" fill-opacity="0.56"/><use href="#lf-mono-B" transform="translate(642.9 900.0) scale(0.03771)" fill="#E2E7DE"/><use href="#lf-mono-J" transform="translate(728.6 900.0) scale(0.03771)" fill="#E2E7DE" fill-opacity="0.56"/><use href="#lf-mono-E" transform="translate(814.3 900.0) scale(0.03771)" fill="#E2E7DE" fill-opacity="0.56"/><use href="#lf-mono-C" transform="translate(900.0 900.0) scale(0.03771)" fill="#E2E7DE" fill-opacity="0.56"/><use href="#lf-mono-K" transform="translate(985.7 900.0) scale(0.03771)" fill="#E2E7DE" fill-opacity="0.56"/><use href="#lf-mono-E" transform="translate(1071.4 900.0) scale(0.03771)" fill="#E2E7DE"/><use href="#lf-mono-I" transform="translate(1157.1 900.0) scale(0.03771)" fill="#E2E7DE" fill-opacity="0.56"/><use href="#lf-mono-R" transform="translate(42.9 985.7) scale(0.03771)" fill="#E2E7DE" fill-opacity="0.56"/><use href="#lf-mono-U" transform="translate(128.6 985.7) scale(0.03771)" fill="#E2E7DE" fill-opacity="0.56"/><use href="#lf-mono-T" transform="translate(214.3 985.7) scale(0.03771)" fill="#E2E7DE"/><use href="#lf-mono-O" transform="translate(300.0 985.7) scale(0.03771)" fill="#E2E7DE" fill-opacity="0.56"/><use href="#lf-mono-Q" transform="translate(385.7 985.7) scale(0.03771)" fill="#E2E7DE" fill-opacity="0.56"/><use href="#lf-mono-U" transform="translate(471.4 985.7) scale(0.03771)" fill="#E2E7DE" fill-opacity="0.56"/><use href="#lf-mono-D" transform="translate(557.1 985.7) scale(0.03771)" fill="#E2E7DE" fill-opacity="0.56"/><use href="#lf-mono-N" transform="translate(642.9 985.7) scale(0.03771)" fill="#E2E7DE" fill-opacity="0.56"/><use href="#lf-mono-I" transform="translate(728.6 985.7) scale(0.03771)" fill="#E2E7DE"/><use href="#lf-mono-H" transform="translate(814.3 985.7) scale(0.03771)" fill="#E2E7DE" fill-opacity="0.56"/><use href="#lf-mono-E" transform="translate(900.0 985.7) scale(0.03771)" fill="#E2E7DE" fill-opacity="0.56"/><use href="#lf-mono-D" transform="translate(985.7 985.7) scale(0.03771)" fill="#E2E7DE" fill-opacity="0.56"/><use href="#lf-mono-R" transform="translate(1071.4 985.7) scale(0.03771)" fill="#E2E7DE"/><use href="#lf-mono-S" transform="translate(1157.1 985.7) scale(0.03771)" fill="#E2E7DE" fill-opacity="0.56"/><use href="#lf-mono-S" transform="translate(42.9 1071.4) scale(0.03771)" fill="#E2E7DE" fill-opacity="0.56"/><use href="#lf-mono-I" transform="translate(128.6 1071.4) scale(0.03771)" fill="#E2E7DE" fill-opacity="0.56"/><use href="#lf-mono-Q" transform="translate(214.3 1071.4) scale(0.03771)" fill="#E2E7DE" fill-opacity="0.56"/><use href="#lf-mono-X" transform="translate(300.0 1071.4) scale(0.03771)" fill="#E2E7DE" fill-opacity="0.56"/><use href="#lf-mono-W" transform="translate(385.7 1071.4) scale(0.03771)" fill="#E2E7DE" fill-opacity="0.56"/><use href="#lf-mono-S" transform="translate(471.4 1071.4) scale(0.03771)" fill="#E2E7DE" fill-opacity="0.56"/><use href="#lf-mono-A" transform="translate(557.1 1071.4) scale(0.03771)" fill="#E2E7DE" fill-opacity="0.56"/><use href="#lf-mono-O" transform="translate(642.9 1071.4) scale(0.03771)" fill="#E2E7DE" fill-opacity="0.56"/><use href="#lf-mono-I" transform="translate(728.6 1071.4) scale(0.03771)" fill="#E2E7DE" fill-opacity="0.56"/><use href="#lf-mono-T" transform="translate(814.3 1071.4) scale(0.03771)" fill="#E2E7DE"/><use href="#lf-mono-E" transform="translate(900.0 1071.4) scale(0.03771)" fill="#E2E7DE" fill-opacity="0.56"/><use href="#lf-mono-D" transform="translate(985.7 1071.4) scale(0.03771)" fill="#E2E7DE" fill-opacity="0.56"/><use href="#lf-mono-N" transform="translate(1071.4 1071.4) scale(0.03771)" fill="#E2E7DE"/><use href="#lf-mono-U" transform="translate(1157.1 1071.4) scale(0.03771)" fill="#E2E7DE" fill-opacity="0.56"/><use href="#lf-mono-A" transform="translate(42.9 1157.1) scale(0.03771)" fill="#E2E7DE" fill-opacity="0.56"/><use href="#lf-mono-M" transform="translate(128.6 1157.1) scale(0.03771)" fill="#E2E7DE" fill-opacity="0.56"/><use href="#lf-mono-E" transform="translate(214.3 1157.1) scale(0.03771)" fill="#E2E7DE" fill-opacity="0.56"/><use href="#lf-mono-E" transform="translate(300.0 1157.1) scale(0.03771)" fill="#E2E7DE" fill-opacity="0.56"/><use href="#lf-mono-R" transform="translate(385.7 1157.1) scale(0.03771)" fill="#E2E7DE" fill-opacity="0.56"/><use href="#lf-mono-S" transform="translate(471.4 1157.1) scale(0.03771)" fill="#E2E7DE" fill-opacity="0.56"/><use href="#lf-mono-A" transform="translate(557.1 1157.1) scale(0.03771)" fill="#E2E7DE" fill-opacity="0.56"/><use href="#lf-mono-O" transform="translate(642.9 1157.1) scale(0.03771)" fill="#E2E7DE" fill-opacity="0.56"/><use href="#lf-mono-R" transform="translate(728.6 1157.1) scale(0.03771)" fill="#E2E7DE" fill-opacity="0.56"/><use href="#lf-mono-O" transform="translate(814.3 1157.1) scale(0.03771)" fill="#E2E7DE" fill-opacity="0.56"/><use href="#lf-mono-A" transform="translate(900.0 1157.1) scale(0.03771)" fill="#E2E7DE" fill-opacity="0.56"/><use href="#lf-mono-C" transform="translate(985.7 1157.1) scale(0.03771)" fill="#E2E7DE" fill-opacity="0.56"/><use href="#lf-mono-S" transform="translate(1071.4 1157.1) scale(0.03771)" fill="#E2E7DE" fill-opacity="0.56"/><use href="#lf-mono-E" transform="translate(1157.1 1157.1) scale(0.03771)" fill="#E2E7DE" fill-opacity="0.56"/><rect width="1200" height="1200" fill="url(#lf-shade)"/><g style="mix-blend-mode:screen"><circle cx="994.3" cy="231.4" r="317.2" fill="url(#lf-ring0)"/><circle cx="994.3" cy="231.4" r="233.7" fill="url(#lf-ring1)"/><circle cx="994.3" cy="231.4" r="167.7" fill="url(#lf-ring2)"/><line x1="989.8" y1="69.6" x2="989.5" y2="61.3" stroke="hsl(168,95%,80%)" stroke-width="1.8" stroke-linecap="round" opacity="0.45"/><line x1="1099.3" y1="109.8" x2="1107.9" y2="100.0" stroke="hsl(168,95%,80%)" stroke-width="2.5" stroke-linecap="round" opacity="0.84"/><line x1="965.5" y1="179.9" x2="955.6" y2="162.2" stroke="hsl(168,95%,80%)" stroke-width="2.2" stroke-linecap="round" opacity="0.54"/><line x1="872.2" y1="473.2" x2="870.0" y2="477.5" stroke="hsl(168,95%,80%)" stroke-width="3.2" stroke-linecap="round" opacity="0.90"/><line x1="993.4" y1="268.6" x2="993.1" y2="277.9" stroke="hsl(168,95%,80%)" stroke-width="2.6" stroke-linecap="round" opacity="0.44"/><line x1="804.7" y1="356.4" x2="802.3" y2="358.0" stroke="hsl(168,95%,80%)" stroke-width="2.2" stroke-linecap="round" opacity="0.51"/><line x1="1072.4" y1="340.0" x2="1078.1" y2="347.9" stroke="hsl(168,95%,80%)" stroke-width="2.4" stroke-linecap="round" opacity="0.65"/><line x1="867.8" y1="15.9" x2="865.5" y2="12.0" stroke="hsl(168,95%,80%)" stroke-width="2.2" stroke-linecap="round" opacity="0.60"/><line x1="1234.3" y1="370.2" x2="1238.2" y2="372.4" stroke="hsl(168,95%,80%)" stroke-width="2.6" stroke-linecap="round" opacity="0.41"/><line x1="1148.6" y1="406.7" x2="1156.1" y2="415.2" stroke="hsl(168,95%,80%)" stroke-width="2.9" stroke-linecap="round" opacity="0.85"/><line x1="1057.6" y1="245.3" x2="1062.6" y2="246.4" stroke="hsl(168,95%,80%)" stroke-width="1.8" stroke-linecap="round" opacity="0.47"/><line x1="827.7" y1="235.6" x2="814.7" y2="235.9" stroke="hsl(168,95%,80%)" stroke-width="2.9" stroke-linecap="round" opacity="0.39"/><line x1="1240.3" y1="310.9" x2="1246.2" y2="312.8" stroke="hsl(168,95%,80%)" stroke-width="2.9" stroke-linecap="round" opacity="0.65"/><line x1="950.9" y1="285.3" x2="946.3" y2="291.0" stroke="hsl(168,95%,80%)" stroke-width="1.5" stroke-linecap="round" opacity="0.51"/><line x1="887.2" y1="5.3" x2="884.8" y2="0.2" stroke="hsl(168,95%,80%)" stroke-width="2.8" stroke-linecap="round" opacity="0.38"/><line x1="1028.7" y1="209.4" x2="1037.1" y2="204.0" stroke="hsl(168,95%,80%)" stroke-width="2.8" stroke-linecap="round" opacity="0.40"/><line x1="881.1" y1="64.4" x2="873.8" y2="53.6" stroke="hsl(168,95%,80%)" stroke-width="2.8" stroke-linecap="round" opacity="0.61"/><line x1="716.0" y1="273.0" x2="712.3" y2="273.6" stroke="hsl(168,95%,80%)" stroke-width="2.6" stroke-linecap="round" opacity="0.36"/><line x1="1048.8" y1="261.9" x2="1067.6" y2="272.4" stroke="hsl(168,95%,80%)" stroke-width="2.6" stroke-linecap="round" opacity="0.82"/><line x1="1020.4" y1="140.5" x2="1025.7" y2="122.3" stroke="hsl(168,95%,80%)" stroke-width="2.6" stroke-linecap="round" opacity="0.38"/><line x1="1086.1" y1="214.6" x2="1097.4" y2="212.6" stroke="hsl(168,95%,80%)" stroke-width="3.0" stroke-linecap="round" opacity="0.43"/><line x1="1188.8" y1="66.9" x2="1193.8" y2="62.7" stroke="hsl(168,95%,80%)" stroke-width="1.6" stroke-linecap="round" opacity="0.69"/><line x1="788.6" y1="265.8" x2="776.7" y2="267.8" stroke="hsl(168,95%,80%)" stroke-width="2.5" stroke-linecap="round" opacity="0.53"/><line x1="964.1" y1="268.6" x2="960.5" y2="273.0" stroke="hsl(168,95%,80%)" stroke-width="2.0" stroke-linecap="round" opacity="0.49"/><line x1="1258.4" y1="322.6" x2="1263.5" y2="324.4" stroke="hsl(168,95%,80%)" stroke-width="1.8" stroke-linecap="round" opacity="0.64"/><line x1="786.2" y1="356.9" x2="781.7" y2="359.6" stroke="hsl(168,95%,80%)" stroke-width="2.7" stroke-linecap="round" opacity="0.78"/><line x1="748.8" y1="155.3" x2="745.6" y2="154.4" stroke="hsl(168,95%,80%)" stroke-width="2.7" stroke-linecap="round" opacity="0.56"/><line x1="1043.2" y1="219.3" x2="1057.6" y2="215.8" stroke="hsl(168,95%,80%)" stroke-width="2.7" stroke-linecap="round" opacity="0.67"/><line x1="1190.9" y1="322.2" x2="1195.5" y2="324.4" stroke="hsl(168,95%,80%)" stroke-width="2.7" stroke-linecap="round" opacity="0.68"/><line x1="997.9" y1="268.7" x2="999.8" y2="289.0" stroke="hsl(168,95%,80%)" stroke-width="3.0" stroke-linecap="round" opacity="0.71"/><line x1="850.5" y1="168.3" x2="838.3" y2="162.9" stroke="hsl(168,95%,80%)" stroke-width="2.4" stroke-linecap="round" opacity="0.89"/><line x1="1146.2" y1="230.5" x2="1153.6" y2="230.4" stroke="hsl(168,95%,80%)" stroke-width="1.5" stroke-linecap="round" opacity="0.51"/><line x1="1003.9" y1="303.2" x2="1005.1" y2="312.4" stroke="hsl(168,95%,80%)" stroke-width="1.7" stroke-linecap="round" opacity="0.73"/><line x1="1036.1" y1="99.8" x2="1038.1" y2="93.7" stroke="hsl(168,95%,80%)" stroke-width="3.0" stroke-linecap="round" opacity="0.90"/><circle cx="994.3" cy="231.4" r="210" fill="url(#lf-core)"/></g><rect x="40.0" y="40.0" width="614.7" height="214.8" rx="14.1" fill="#162024" stroke="#2B3A3E" stroke-width="2.94"/><g fill="#E2E7DE" transform="translate(74.05 125.25) scale(0.064000)"><use href="#lf-display-L-o" x="0"/><use href="#lf-display-E-o" x="768"/><use href="#lf-display-T-o" x="1551"/><use href="#lf-display-T-o" x="2360"/><use href="#lf-display-E-o" x="3149"/><use href="#lf-display-R-o" x="3932"/><use href="#lf-display-F-o" x="4841"/><use href="#lf-display-I-o" x="5617"/><use href="#lf-display-E-o" x="6068"/><use href="#lf-display-L-o" x="6851"/><use href="#lf-display-D-o" x="7619"/></g><g fill="#93A19D" transform="translate(76.10 210.75) scale(0.024960)"><use href="#lf-mono-medium-O-o" x="0"/><use href="#lf-mono-medium-R-o" x="860"/><use href="#lf-mono-medium-I-o" x="1720"/><use href="#lf-mono-medium-G-o" x="2580"/><use href="#lf-mono-medium-I-o" x="3440"/><use href="#lf-mono-medium-N-o" x="4300"/><use href="#lf-mono-medium-A-o" x="5160"/><use href="#lf-mono-medium-L-o" x="6020"/><use href="#lf-mono-medium-S-o" x="7740"/><use href="#lf-mono-medium-O-o" x="8600"/><use href="#lf-mono-medium-U-o" x="9460"/><use href="#lf-mono-medium-N-o" x="10320"/><use href="#lf-mono-medium-D-o" x="11180"/><use href="#lf-mono-medium-T-o" x="12040"/><use href="#lf-mono-medium-R-o" x="12900"/><use href="#lf-mono-medium-A-o" x="13760"/><use href="#lf-mono-medium-C-o" x="14620"/><use href="#lf-mono-medium-K-o" x="15480"/></g></svg>
+<!-- END COVER -->
+    </figure>
+
+    <section class="tracks" aria-labelledby="albumTitle">
+      <div class="album-head">
+        <p class="eyebrow">Original soundtrack</p>
+        <h2 id="albumTitle">Letterfield</h2>
+        <p class="meta">5 tracks · 22:48 · 2026</p>
+        <ul class="downloads">
+          <li><a id="zip" href="letterfield-soundtrack.zip" download>Download all <small>ZIP · 24 MB</small></a></li>
+          <li><a id="coverJpg" href="letterfield-cover-3000.jpg" download>Cover <small>JPG · 3000 px</small></a></li>
+        </ul>
+        <p class="pending" id="pending">The recordings aren’t online yet. Until they are, here’s what they’ll be, and the game plays every piece in its tools, under Music.</p>
+      </div>
+
+      <ol id="tracks">
+        <li class="track" style="--h:298" data-file="letterfield-01-drift.mp3">
+          <div class="row"><span class="n">01</span><h3><b>Drift</b></h3><span class="len">7:00</span></div>
+          <audio controls preload="none" aria-label="Drift"></audio>
+          <p class="failed">This track didn’t load. Try again in a moment.</p>
+          <p class="key">D major · sawtooth pads, a sine bell, a triangle drone · two crossed delays</p>
+          <p class="notes">The piece most likely to meet you when you switch the music on, and the slowest. Pads walk at random through five chords over a low D and its fifth, each chord fading in over seven seconds and out over nine, and now and then a bell rings high up on a note of the D major pentatonic, mostly heard in its echoes. Each pad note is two sawtooth oscillators a few cents apart, through one slowly breathing low-pass filter; the echo is two delays, one each side, feeding each other, a little duller each time round.</p>
+          <a class="dl" href="letterfield-01-drift.mp3" download>MP3 <small>7.0 MB</small></a>
+        </li>
+        <li class="track" style="--h:115" data-file="letterfield-02-orbit.mp3">
+          <div class="row"><span class="n">02</span><h3><b>Orbit</b></h3><span class="len">5:37</span></div>
+          <audio controls preload="none" aria-label="Orbit"></audio>
+          <p class="failed">This track didn’t load. Try again in a moment.</p>
+          <p class="key">A minor · a pipe organ: flute, full organ and pedal stops · two crossed delays</p>
+          <p class="notes">A pipe organ built from nothing: each stop is a waveform of a few chosen harmonics. A flute stop ticks out eight notes to the bar while full-organ chords and a pedal two octaves deep swell in under it and fall away again, over four rounds of four chords, about a minute and three quarters. Each time round picks one of two progressions, A minor, F, C, G or A minor, D minor, E. This cut goes round three times and comes home to A minor.</p>
+          <a class="dl" href="letterfield-02-orbit.mp3" download>MP3 <small>4.2 MB</small></a>
+        </li>
+        <li class="track" style="--h:168" data-file="letterfield-03-supernova.mp3">
+          <div class="row"><span class="n">03</span><h3><b>Supernova</b><small>Interlude</small></h3><span class="len">0:22</span></div>
+          <audio controls preload="none" aria-label="Supernova (Interlude)"></audio>
+          <p class="failed">This track didn’t load. Try again in a moment.</p>
+          <p class="key">The game’s sound effects · oscillators, filtered noise and a generated room</p>
+          <p class="notes">When every hidden word in a territory has been charted, its star goes supernova. Here two go off far away, one on each side, muffled by the distance; then one right here. A drone climbs two octaves through a resonant filter, throbbing faster as it rises, and holds its breath; then the blast, a falling boom, a punch and a crack, the rumble rolling away, the shockwave rushing past from left to right and a shimmer of C major, as if the stars rang. Last come the two soft bells the game rings for an achievement: Witness, for being there when a territory goes supernova.</p>
+          <a class="dl" href="letterfield-03-supernova.mp3" download>MP3 <small>0.5 MB</small></a>
+        </li>
+        <li class="track" style="--h:223" data-file="letterfield-04-chimes.mp3">
+          <div class="row"><span class="n">04</span><h3><b>Chimes</b></h3><span class="len">5:39</span></div>
+          <audio controls preload="none" aria-label="Chimes"></audio>
+          <p class="failed">This track didn’t load. Try again in a moment.</p>
+          <p class="key">E major · pulse-wave chimes, an FM bell, a triangle bass · a generated hall</p>
+          <p class="notes">Glassy chimes rolling up and down slow arpeggios, the way an old console role-playing game sets a quiet town at night. Each chime is a narrow pulse wave, the sound 8-bit consoles made, with its highest harmonics rolled off so it rings like glass instead of buzzing. Phrases of four chords in E major, with a borrowed C or D now and then, follow one another at random, each chord broken into one of five sixteen-note figures over a soft triangle bass and a haze of held notes, and a bell made by frequency modulation sounds high above. It was the first of the pieces with a real reverb: a hall three and a half seconds long, made from noise.</p>
+          <a class="dl" href="letterfield-04-chimes.mp3" download>MP3 <small>7.0 MB</small></a>
+        </li>
+        <li class="track" style="--h:55" data-file="letterfield-05-lantern.mp3">
+          <div class="row"><span class="n">05</span><h3><b>Lantern</b></h3><span class="len">4:10</span></div>
+          <audio controls preload="none" aria-label="Lantern"></audio>
+          <p class="failed">This track didn’t load. Try again in a moment.</p>
+          <p class="key">F♯ minor · piano, strings, a cello and a celesta · a generated hall</p>
+          <p class="notes">The quiet side of a score for exploring somewhere old and dark: a slow waltz for a soft piano alone in a high, dim hall. Its tune is two phrases that leap up a sixth and fall back, the second closing on a sigh up to the minor third, and it comes back four times, a little changed each time, around a warmer middle and a darker, lower turn. Strings breathe in under it most of the way, with a cello now and then and a celesta far off. Each piano note is a few harmonics for the string, a brighter voice that dies within a second and the soft knock of the felt. It’s the one piece written to a length, the four minutes each has in the game, so here it plays once through, as written, to the rolled chord at its end.</p>
+          <a class="dl" href="letterfield-05-lantern.mp3" download>MP3 <small>4.4 MB</small></a>
+        </li>
+      </ol>
+    </section>
+  </div>
+
+  <section class="about" aria-labelledby="aboutTitle">
+    <h2 id="aboutTitle">How it’s made</h2>
+    <p>Every sound here is made by Letterfield’s own code as it runs in a browser: oscillators, filters, delays and noise from the Web Audio API, with no recordings and no samples. In the game the four pieces take turns, four minutes each, crossfading, and no two plays are alike, since each draws its choices from a new seed.</p>
+    <p>For this album each piece was played from a fixed seed, through the same compressor and limiter as in the game, into an offline audio context that renders as fast as it can, and given a cut of its own with a beginning and an end. The tracks are brought to one level, −17 LUFS, and encoded as VBR MP3s at 44.1 kHz. The script that does it, <a href="https://github.com/mwarkentin/games/blob/main/scripts/render_album.py">render_album.py</a>, is in the game’s repository, and makes the same album every time.</p>
+  </section>
+
+  <p class="foot feedback">Found a bug or have an idea? <a href="https://github.com/mwarkentin/games/issues/new/choose" target="_blank" rel="noopener" data-feedback>Send feedback</a></p>
+</main>
+<script>
+'use strict';
+// "← Letterfield" goes back to the map: when the tab came here from the map,
+// it steps back to it in the tab's history instead of opening it afresh, so
+// the map comes back as you left it, in a Home Screen app with no Back button
+// too. The page makes no history entries of its own, so the map is one step
+// back, kept in the entry's state (lfBack) through a reload; a fragment link,
+// which adds an entry, makes it a normal link again.
+(() => {
+  let back = false;
+  const s = history.state;
+  if (s && typeof s === 'object' && 'lfBack' in s) back = s.lfBack === 1;
+  else {
+    let ref = null;
+    try { ref = new URL(document.referrer); } catch (_) {}
+    // A tab's first entry has nothing before it, whoever opened it.
+    back = history.length > 1 && !!ref && ref.origin === location.origin && ref.pathname.replace(/\.html$/, '') === '/letterfield';
+    try { history.replaceState({ ...(s && typeof s === 'object' ? s : {}), lfBack: back ? 1 : 0 }, ''); } catch (_) {}
+  }
+  addEventListener('hashchange', () => { back = false; });
+  document.addEventListener('click', e => {
+    const a = e.target instanceof Element && e.target.closest('a[data-back]');
+    if (!a || !back || e.defaultPrevented || e.button || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+    e.preventDefault();
+    history.back();
+  });
+})();
+// Where the recordings are: a folder holding what scripts/render_album.py
+// writes into _album/web/ (the MP3s, the cover and the zip), as an address or
+// a path on this site. While it's empty, the tracks are listed without
+// players or downloads. ?album=<url> overrides it for testing.
+const ALBUM_URL = '';
+
+(() => {
+const albumUrl = (() => {
+  try {
+    const q = new URLSearchParams(location.search).get('album');
+    if (q !== null && /^(https?:\/\/[^\s"'<>]+|\/[^\s"'<>]*)$/.test(q)) return q;
+  } catch (_) {}
+  return ALBUM_URL;
+})().replace(/\/+$/, '');
+
+// ---- BEGIN STATE MACHINE ----
+// The same in every page that has one (tests/test_state_machines.py checks).
+// An explicit state machine, as "State machines" in AGENTS.md describes: the
+// states something can be in, and the moves it may make from each. go(to)
+// makes a listed move and nothing else. It shows the new state as el's
+// data-<name> attribute (on <html> unless el says otherwise), for CSS, tests
+// and anyone reading the page, then calls onMove(to, from, ...args). Any
+// other move, like a state the table doesn't name, is a bug: it's refused
+// with a console error, which fails the tests, and the player carries on as
+// if it had never been tried. seq counts the moves made, so a timer or a
+// reply that waited can tell whether anything moved in the meantime.
+function machine(name, moves, state, { el = document.documentElement, onMove } = {}) {
+  const known = (s) => s in moves || (console.error(`${name}: no state called ${s}`), false);
+  Object.values(moves).flat().forEach(known);
+  known(state);
+  let seq = 0;
+  if (el) el.dataset[name] = state;
+  return {
+    get state() { return state; },
+    get seq() { return seq; },
+    is: (...states) => states.filter(known).includes(state),
+    can: (to) => known(to) && moves[state].includes(to),
+    go(to, ...args) {
+      if (!moves[state].includes(to)) {
+        console.error(`${name}: no move from ${state} to ${to}`);
+        return false;
+      }
+      const from = state;
+      state = to;
+      seq += 1;
+      if (el) el.dataset[name] = to;
+      if (onMove) onMove(to, from, ...args);
+      return true;
+    },
+  };
+}
+// ---- END STATE MACHINE ----
+
+const tracks = [...document.querySelectorAll('.track')].map(li => ({
+  li, audio: li.querySelector('audio'), file: li.dataset.file,
+  title: li.querySelector('audio').getAttribute('aria-label'),
+}));
+const at = file => `${albumUrl}/${file}`;
+let current = -1;  // the track the player is on, while it's on one
+
+// The album's player: off while the recordings aren't online; idle until a
+// track plays; playing one track (moving to another plays it, and pauses the
+// rest); paused; or stopped by a track that didn't load. A track that ends
+// plays the next, and the last one leaves it idle.
+const Player = machine('player', {
+  off: [],
+  idle: ['playing', 'failed'],
+  playing: ['playing', 'paused', 'idle', 'failed'],
+  paused: ['playing', 'idle', 'failed'],
+  failed: ['playing', 'failed'],
+}, albumUrl ? 'idle' : 'off', { onMove: showPlayer });
+
+function showPlayer(to, from, i = current) {
+  if (to === 'playing' || to === 'failed') current = i;
+  if (to === 'idle') current = -1;
+  tracks.forEach((t, k) => {
+    if (k === current && to !== 'idle') t.li.setAttribute('aria-current', 'true'); else t.li.removeAttribute('aria-current');
+    if (k === current && to === 'failed') t.li.dataset.failed = ''; else if (k === current) delete t.li.dataset.failed;
+    if (k !== current && !t.audio.paused) t.audio.pause();
+  });
+  if ('mediaSession' in navigator) {
+    if (to === 'playing') {
+      try {
+        navigator.mediaSession.metadata = new MediaMetadata({
+          title: tracks[current].title, album: 'Letterfield (Original Soundtrack)', artist: 'Letterfield',
+          artwork: [{ src: at('letterfield-cover-1400.jpg'), sizes: '1400x1400', type: 'image/jpeg' }],
+        });
+      } catch (_) {}
+    }
+    navigator.mediaSession.playbackState = to === 'playing' ? 'playing' : to === 'paused' ? 'paused' : 'none';
+  }
+}
+
+// Plays track i from where it was. If the browser won't, and nothing has
+// moved since and nothing is still sounding, the player goes idle.
+function start(i) {
+  const seq = Player.seq;
+  tracks[i].audio.play().catch(() => {
+    if (Player.seq === seq && Player.is('playing') && tracks[current].audio.paused) Player.go('idle');
+  });
+}
+
+if (albumUrl) {
+  for (const a of document.querySelectorAll('.dl, .downloads a')) a.href = at(a.getAttribute('href'));
+  tracks.forEach((t, i) => {
+    t.audio.src = at(t.file);
+    t.audio.addEventListener('play', () => { if (!Player.is('off')) Player.go('playing', i); });
+    // A pause of the track playing, by its own controls; not the pause as
+    // another starts, nor the one as it ends.
+    t.audio.addEventListener('pause', () => { if (i === current && Player.is('playing') && !t.audio.ended) Player.go('paused'); });
+    t.audio.addEventListener('ended', () => {
+      if (i !== current || !Player.is('playing')) return;
+      if (i + 1 < tracks.length) { t.audio.currentTime = 0; start(i + 1); } else Player.go('idle');
+    });
+    t.audio.addEventListener('error', () => { if (!Player.is('off')) Player.go('failed', i); });
+  });
+  if ('mediaSession' in navigator) {
+    const step = d => () => { if (current >= 0 && tracks[current + d]) start(current + d); };
+    try {
+      navigator.mediaSession.setActionHandler('previoustrack', step(-1));
+      navigator.mediaSession.setActionHandler('nexttrack', step(1));
+    } catch (_) {}
+  }
+}
+if (location.hash === '#debug') window.__album = { albumUrl, player: () => Player.state, current: () => current };
+})();
+</script>
+</body>
+</html>
