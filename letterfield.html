@@ -1915,7 +1915,7 @@ function sendPos() {
   const home = links.get(sectorKey(Math.floor(cam.x), Math.floor(cam.y)));
   if (posSent && posSent.l !== home) { tell(posSent.l, { t: 'pos', away: true }); posSent = null; }
   if (!home || !home.m.is('open', 'live')) return;
-  const x = Math.round(cam.x * 10) / 10, y = Math.round(cam.y * 10) / 10;
+  const x = Math.floor(cam.x * 10) / 10, y = Math.floor(cam.y * 10) / 10;  // down, so it stays in home's sector
   if (posSent && Math.hypot(x - posSent.x, y - posSent.y) < 1) return;
   const wait = posSent ? posSent.at + 1000 - Date.now() : 0;
   if (wait > 0) { posTimer = setTimeout(sendPos, wait); return; }

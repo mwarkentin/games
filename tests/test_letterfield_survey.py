@@ -211,6 +211,18 @@ def test_shared_map_shows_other_surveyors_and_their_words(page: Page, site_url, 
     assert errors == []
 
 
+def test_where_you_are_stays_in_your_own_sector_at_its_edge(page: Page, site_url, errors):
+    """Just inside a sector's right edge, the position the game sent was rounded across it: the
+    sector counted you but left you off its list, and your own badge counted you as someone else."""
+    page.add_init_script("localStorage.setItem('letterfield.cam.v1', JSON.stringify({ x: 191.97, y: 6, cs: 38 }))")
+    fake = FakeSurvey()
+    open_game(page, site_url, fake)
+    eventually(page, lambda: any(m["sector"] == "0,0" for m in fake.sent("pos")))
+    x = next(m["x"] for m in fake.sent("pos") if m["sector"] == "0,0")
+    assert 191 <= x < 192, x
+    assert errors == []
+
+
 def test_a_word_charted_first_shares_where_it_came_in_the_worlds_count(page: Page, site_url, errors):
     word = known_words(page, site_url)[3]
     fake = FakeSurvey(totals={"charted": 412_883, "total": AREA_WORDS, "players": 3_201})
