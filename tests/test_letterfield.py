@@ -483,17 +483,17 @@ def test_every_music_track_makes_sound_and_they_take_turns(page: Page, site_url,
           return out;
         }"""
     )
-    assert len(levels) == 3
+    assert len(levels) == 4
     assert all(0.001 < level < 0.2 for level in levels), levels
     page.keyboard.press("Shift")
     page.wait_for_function("window.__lf.music() !== null")
-    # Each swap hands over to the next piece, and all three come round.
+    # Each swap hands over to the next piece, and all four come round.
     heard = [page.evaluate("window.__lf.music().track")]
-    for _ in range(3):
+    for _ in range(4):
         page.evaluate("window.__lf.music().swap()")
         heard.append(page.evaluate("window.__lf.music().track"))
-    assert sorted(set(heard)) == ["chimes", "drift", "orbit"], heard
-    assert heard[3] == heard[0] and len(set(heard[:3])) == 3, heard
+    assert sorted(set(heard)) == ["chimes", "drift", "lantern", "orbit"], heard
+    assert heard[4] == heard[0] and len(set(heard[:4])) == 4, heard
     assert errors == []
 
 

@@ -91,7 +91,8 @@ utilities; games live here so they get their own origin and their own rules.
   its source at a fixed commit; `tests/test_music.py` checks.
   Ambient music with no tune to score, like Letterfield's drones and pads,
   can instead be generated in the page with the Web Audio API, still with
-  no audio files.
+  no audio files, and so can a piece composed for the game itself, like
+  Letterfield's Lantern, whose notes are written into the page.
 - Pause when the tab is hidden (`visibilitychange`) if the game runs on a
   timer.
 - Anything a page loads gets a placeholder its own size ahead of time
@@ -197,6 +198,7 @@ The machines each page keeps:
 | | `pairCode` (a link code made here, watched until used) | none, making, waiting, used, gone |
 | | `sync` (keeping linked devices in step) | off, idle, syncing, failed |
 | | `notesPage` (the field notes drawer's page) | finds, marks |
+| | `music` (the music player in the tools) | off, waiting, playing, paused |
 | `letterfield-log.html` | `log` (what the page shows) | loading, ready, refreshing, stale, failed |
 | | `span` (where the log starts, which ‹ stops at) | asking, known, failed |
 | | `define` (each word's meaning; `el: null`, see `__log.definitions()`) | loading, ready, none, failed |

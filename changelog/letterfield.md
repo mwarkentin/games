@@ -1,5 +1,7 @@
 ## 2026-11-20
 
+- A fourth piece of music, Lantern: a soft piano alone in a dim hall, a slow, wistful waltz with strings breathing in under it, a cello now and then and a celesta far off. It takes turns with Drift, Orbit and Chimes, and plays a little differently each time.
+- A music player in the tools, under the music's slider: pause and play, step back and forward through the pieces, or pick one from the list. The music starts with the piece you last heard, and pausing keeps your place in it.
 - On a computer or tablet, the tools open as a drawer in the field notes' place, like the Surveyors. Moving between tools, Surveyors and field notes no longer slides the map and buttons from side to side, and closing the tools brings your notes back. The drawer also lists every keyboard shortcut, and T opens it. On a phone the tools rise from the bottom like the field notes, only as tall as they need, so the map you're zooming stays in sight above them.
 - Past the edge of the universe, the title now counts every word charted in the territory, as it does inside, rather than only the ones in your field notes, so it no longer says 110/111 when the territory goes supernova. Hover over it to see how many are in your notes.
 - Turned sideways on a phone, the title and buttons sit on a solid bar again, so the map's letters no longer show around and between them.
