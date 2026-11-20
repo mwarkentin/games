@@ -265,3 +265,29 @@ def test_a_device_linked_with_a_code_sends_all_it_has(page: Page, site_url, erro
     assert sorted(f["w"] for f in body["finds"]) == sorted(f["w"] for f in mine)
     expect(page.locator("html")).to_have_attribute("data-sync", "idle")
     assert errors == []
+
+
+def test_supernovas_from_a_linked_device_are_kept_with_your_own_first(page: Page, site_url, errors):
+    """The game kept 200 supernovas to the Player's 1,000, the newest whoever's they were, and
+    stored the whole list again for each one a sync brought: your own last word could fall out of
+    your notes behind strangers' far-off ones, and a big sync wrote storage a thousand times."""
+
+    def nova(i: int, **kw) -> dict:
+        return {"rx": i, "ry": 50, "t": 1_700_000_000_000 + i, "w": "WORD", "x": 0, "y": 0, "d": 0, "by": "ZED", **kw}
+
+    mine = nova(-1, mine=True, solo=False, by="")  # the oldest of all
+    page.add_init_script(f"""
+      if (location.protocol.startsWith('http') && !localStorage.getItem('letterfield.novas.v1'))
+        localStorage.setItem('letterfield.novas.v1', {json.dumps(json.dumps([mine]))});
+      window.__novaWrites = 0;
+      const set = Storage.prototype.setItem;
+      Storage.prototype.setItem = function (k, v) {{ if (k === 'letterfield.novas.v1') window.__novaWrites++; return set.call(this, k, v); }};
+    """)
+    players = FakePlayers(started=[PID])
+    players.add(PID, novas=[nova(i) for i in range(1000)])
+    start(page, site_url, players)
+    page.wait_for_function("window.__lf.novas().length === 1000")
+    kept = page.evaluate("window.__lf.novas().map(n => n.rx)")
+    assert -1 in kept and 0 not in kept  # yours stays; the oldest of the others' goes
+    assert page.evaluate("window.__novaWrites") <= 2
+    assert errors == []

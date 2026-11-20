@@ -2543,8 +2543,10 @@ function novaBanner() {
 // field notes: the shared survey's, near enough to watch or far enough for a
 // note, and territories you found every word of yourself. Each is
 // { rx, ry, t, w, x, y, d, by, mine, solo }: when, the last word and who
-// charted it, whether that was you, and whether it was yours alone.
-const K_NOVAS = 'letterfield.novas.v1', NOVAS_MAX = 200;
+// charted it, whether that was you, and whether it was yours alone. As many
+// as a linked device's Player keeps (NOVAS_MAX in worker/src/players.js),
+// your own first: past that, the oldest of others' go.
+const K_NOVAS = 'letterfield.novas.v1', NOVAS_MAX = 1000;
 const novasSeen = new Map();  // 'rx,ry' → its record
 let novaFresh = '';            // the one that just arrived, which glows once in the notes
 function cleanNova(o) {
@@ -2559,18 +2561,23 @@ function loadNovas() {
 loadNovas();
 // Records one, once: a territory goes supernova only once. One that came
 // from a linked device (see Syncing linked devices) isn't sent back.
-function sawNova(o, synced = false) {
+// `save` false leaves storing it to the caller (saveNovas), for many at once.
+function sawNova(o, synced = false, save = true) {
   const k = o.rx + ',' + o.ry, had = novasSeen.get(k);
   if (had) return had;
   const n = cleanNova(o);
   if (!n) return null;
   novasSeen.set(k, n);
-  const list = [...novasSeen.values()].sort((a, b) => b.t - a.t).slice(0, NOVAS_MAX);
-  if (list.length < novasSeen.size) { novasSeen.clear(); for (const v of list) novasSeen.set(v.rx + ',' + v.ry, v); }
-  LS.set(K_NOVAS, JSON.stringify(list));
+  if (save) saveNovas();
   if (!synced) syncLater('n', k);
   if (Panel.is('notes')) { novaFresh = k; renderNotesSoon(); }
   return n;
+}
+function saveNovas() {
+  const own = n => n.mine || n.solo ? 1 : 0;
+  const list = [...novasSeen.values()].sort((a, b) => own(b) - own(a) || b.t - a.t).slice(0, NOVAS_MAX).sort((a, b) => b.t - a.t);
+  if (list.length < novasSeen.size) { novasSeen.clear(); for (const v of list) novasSeen.set(v.rx + ',' + v.ry, v); }
+  LS.set(K_NOVAS, JSON.stringify(list));
 }
 window.addEventListener('storage', e => { if (e.key === K_NOVAS) { loadNovas(); if (Panel.is('notes')) renderNotes(); } });
 // A supernova as a sentence, with a link: on the shared survey, the share
@@ -6485,7 +6492,9 @@ async function syncNow() {
 // What came from linked devices, taken in as a save from another tab is.
 function takeSynced(data, st) {
   if (takeIn(Array.isArray(data.finds) ? data.finds : []).added) { saveLocal(); renderNotes(); scheduleHud(); invalidate(); }
-  for (const o of Array.isArray(data.novas) ? data.novas : []) { const n = cleanNova(o); if (n) sawNova(n, true); }
+  const novas = novasSeen.size;
+  for (const o of Array.isArray(data.novas) ? data.novas : []) { const n = cleanNova(o); if (n) sawNova(n, true, false); }
+  if (novasSeen.size !== novas) saveNovas();  // stored once, however many came
   takeSyncedMarks(data.marks, data.best);
   if (data.settings && Number.isFinite(data.settingsAt) && data.settingsAt > st.settingsAt) {
     applySettings(data.settings);
