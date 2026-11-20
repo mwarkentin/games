@@ -1516,7 +1516,8 @@ function machine(name, moves, state, { el = document.documentElement, onMove } =
 /* ---------- Storage ---------- */
 const LS = {
   get(k) { try { return localStorage.getItem(k); } catch (_) { return null; } },
-  set(k, v) { try { localStorage.setItem(k, v); return true; } catch (_) { return false; } },  // false: not kept (out of room, or storage off)
+  // true once kept; if not, 'full' (out of room) or 'off' (storage blocked or missing)
+  set(k, v) { try { localStorage.setItem(k, v); return true; } catch (e) { return e && (e.name === 'QuotaExceededError' || e.name === 'NS_ERROR_DOM_QUOTA_REACHED' || e.code === 22 || e.code === 1014) ? 'full' : 'off'; } },
   remove(k) { try { localStorage.removeItem(k); } catch (_) {} },
 };
 const found = new Map();
@@ -1601,9 +1602,10 @@ let notesUnsaved = false;
 function saveLocal() {
   takeIn(readList(K_FINDS));
   const kept = LS.set(K_FINDS, JSON.stringify([...found.values()].map(plain)));
-  if (kept || notesUnsaved) { if (kept) notesUnsaved = false; return; }
+  if (kept === true || notesUnsaved) { if (kept === true) notesUnsaved = false; return; }
   notesUnsaved = true;
-  setTimeout(() => toast('<i></i><b class="wraps">Your field notes can’t be saved on this device</b><span>It’s out of room · new finds are lost when the page closes</span>', null, 10000), 6400);  // past a find's note (SHARE_TOAST_MS)
+  const why = kept === 'full' ? 'It’s out of room' : 'This browser isn’t keeping them';
+  setTimeout(() => toast(`<i></i><b class="wraps">Your field notes can’t be saved on this device</b><span>${why} · new finds are lost when the page closes</span>`, null, 10000), 6400);  // past a find's note (SHARE_TOAST_MS)
 }
 window.addEventListener('storage', e => {
   if (e.key !== K_FINDS) return;
@@ -4894,7 +4896,7 @@ function panelMoved(to, from, { focus = false, refocus = false, start = false } 
   applyDock(start);
   if (from === 'people') { listScroll = 0; if (PeoplePage.is('you')) PeoplePage.go('list'); }  // it opens on the list again
   if (from === 'notes' && NotesPage.is('marks')) NotesPage.go('finds');  // and the notes on the finds
-  if (from === 'notes') { notesShown = NOTES_PAGE; notesEl.scrollTop = findsEl.scrollTop = 0; }  // at their start, a page long
+  if (from === 'notes') notesKeepPlace();  // where they were, drawn no further than a page past it
   if (notesOpen) { renderNotes(); refreshWorld(); }
   // Opened from their button, focus moves into the tools; shut from in there, it comes back to the button.
   if (toolsOpen && focus) focusQuiet($('#zoomOut'));
@@ -5014,6 +5016,23 @@ function entrySel(el) {
   const k = el.dataset.key !== undefined ? `[data-key="${CSS.escape(el.dataset.key)}"]` : el.dataset.nova !== undefined ? `[data-nova="${CSS.escape(el.dataset.nova)}"]` : '';
   return k && el.classList[0] ? `${el.tagName.toLowerCase()}.${el.classList[0]}${k}` : '';
 }
+// The list's scroller, the top of what shows of it, and whether it's scrolled into.
+function notesView() {
+  const sc = notesScroller(), viewTop = sc === notesEl ? Math.max(sc.getBoundingClientRect().top, filtersEl.getBoundingClientRect().bottom) : sc.getBoundingClientRect().top;
+  const into = sc === notesEl ? findsEl.getBoundingClientRect().top < viewTop - 1 : sc.scrollTop > 0;
+  return { sc, viewTop, into };
+}
+// Shut, the notes keep their place (tapping a find on a phone shuts them to
+// fly there), but the next redraw reaches only a page past the first entry
+// showing, not every row scrolled through on the way.
+function notesKeepPlace() {
+  const { viewTop, into } = notesView();
+  if (!into) { notesShown = NOTES_PAGE; return; }
+  const rows = findsEl.querySelectorAll('li.row');
+  let lo = 0, hi = rows.length;
+  while (lo < hi) { const m = (lo + hi) >> 1; if (rows[m].getBoundingClientRect().bottom > viewTop + 4) hi = m; else lo = m + 1; }
+  notesShown = Math.min(Math.max(notesShown, notesAt), lo + NOTES_PAGE);
+}
 function renderNotes({ top = false } = {}) {
   const all = [...found.values()].sort((a, b) => b.t - a.t);
   showCount(all);
@@ -5048,8 +5067,7 @@ function renderNotes({ top = false } = {}) {
   }
   // Kept in view: the first entry showing, where it was, once the list is
   // scrolled into; at its top, something new should show at the top.
-  const sc = notesScroller(), viewTop = sc === notesEl ? Math.max(sc.getBoundingClientRect().top, filtersEl.getBoundingClientRect().bottom) : sc.getBoundingClientRect().top;
-  const into = sc === notesEl ? findsEl.getBoundingClientRect().top < viewTop - 1 : sc.scrollTop > 0;
+  const { sc, viewTop, into } = notesView();
   if (top || !into) notesShown = NOTES_PAGE;  // at the top, a page is all that shows: scrolling draws the rest again
   notesAt = pageEnd(notesLine, 0, Math.max(NOTES_PAGE, notesShown), now);
   html += timelineHtml(notesLine, 0, notesAt, now, st);
@@ -7896,7 +7914,7 @@ setTimeout(() => {
       // For screenshots and tests: earn one now (with its note), or all quietly, or start over.
       grant: id => { marksState = marksState || marksReplay(); if (MARK_BY[id]) { delete marks.got[id]; markEvent(id); } },
       grantAll: () => { for (const a of marksHere()) if (!marks.got[a.id]) marks.got[a.id] = [Date.now(), 0]; saveMarks(); renderMarksRow(); if (NotesPage.is('marks')) renderMarksPage(); },
-      reset: () => { LS.remove(K_MARKS); marks = { got: {}, best: 0, fresh: [] }; markQueue = []; marksSig = ''; renderMarksRow(); },
+      reset: () => { LS.remove(K_MARKS); LS.remove(K_ASKED); marks = { got: {}, best: 0, fresh: [] }; markQueue = []; marksSig = ''; renderMarksRow(); },
       badge: (id, st = 'got', frac = 0, big = false) => badgeSvg(MARK_BY[id], st, frac, big),
       draw: MARK_DRAW,
       // Our card, and one offered as another of our devices would.

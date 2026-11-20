@@ -70,6 +70,7 @@ def test_notes_too_big_to_save_say_so_once(page: Page, site_url, errors):
     toast = page.locator("#toast")
     page.clock.run_for(7000)  # after the find's own note
     expect(toast).to_contain_text("Your field notes can’t be saved on this device")
+    expect(toast).to_contain_text("It’s out of room")
     page.clock.run_for(11000)
     expect(toast).not_to_have_class(re.compile(r"\bshow\b"))
     # Once a visit: the next find doesn't say it again.
@@ -77,6 +78,27 @@ def test_notes_too_big_to_save_say_so_once(page: Page, site_url, errors):
     expect(page.locator("#notesBadge")).to_have_text("2")
     page.clock.run_for(7000)
     expect(toast).not_to_have_class(re.compile(r"\bshow\b"))
+    assert errors == []
+
+
+def test_notes_blocked_from_storage_dont_say_its_out_of_room(page: Page, site_url, errors):
+    without_worker(page, site_url, "letterfield")
+    page.set_viewport_size({"width": 1280, "height": 900})
+    page.clock.install()
+    page.goto(f"{site_url}/letterfield#debug")
+    page.wait_for_function("window.__lf")
+    # Storage refused outright (site data blocked), not full.
+    page.evaluate("""() => { const set = Storage.prototype.setItem;
+      Storage.prototype.setItem = function (k, v) {
+        if (k === 'letterfield.finds.v4') throw new DOMException('blocked', 'SecurityError');
+        return set.call(this, k, v); }; }""")
+    page.evaluate("() => { const lf = window.__lf, w = lf.chunk(0, 0).words[0]; lf.collect(w.w, w.x, w.y, w.d); }")
+    expect(page.locator("#notesBadge")).to_have_text("1")
+    toast = page.locator("#toast")
+    page.clock.run_for(7000)
+    expect(toast).to_contain_text("Your field notes can’t be saved on this device")
+    expect(toast).to_contain_text("This browser isn’t keeping them")
+    expect(toast).not_to_contain_text("out of room")
     assert errors == []
 
 
