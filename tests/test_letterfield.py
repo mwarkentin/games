@@ -5,7 +5,7 @@ from playwright.sync_api import Page, expect
 
 from fake_leaderboard import without_worker
 from test_letterfield_log import NO_SHARE_SHEET
-from test_letterfield_survey import HIDE, LANDS, SHARE_SHEET_INIT, TERRITORY_WORDS, open_notes
+from test_letterfield_survey import HIDE, LANDS, SHARE_SHEET_INIT, TERRITORY_WORDS, known_words, open_notes
 
 # Screen positions of a legend word's first and last letters, for a word whose
 # ends are both on open map rather than under a panel. Mirrors the game's
@@ -1481,7 +1481,7 @@ def test_on_a_computer_the_tools_take_the_docked_drawers_place(page: Page, site_
     keys = page.locator(".tool-keys")
     expect(keys).to_be_visible()
     for key, does in [("WASD", "Move around"), ("Shift", "Circle a word"), ("N", "Field notes"), ("T", "Tools"),
-                      ("M", "Effects"), ("B", "Music"), ("Esc", "Close")]:
+                      ("M", "Effects"), ("B", "Music"), ("Esc", "Close"), ("H", "Map centre"), ("L", "Last find")]:
         expect(keys.locator("dl > div", has=page.locator("kbd", has_text=re.compile(f"^{re.escape(key)}$")))).to_contain_text(does)
     expect(page.locator("#keysPeople")).to_be_hidden()  # no Surveyors without the survey
 
@@ -1527,6 +1527,64 @@ def test_on_a_computer_the_tools_take_the_docked_drawers_place(page: Page, site_
     expect(html).to_have_attribute("data-panel", "none")
     expect(page.locator("body")).not_to_have_class(re.compile(r"\bdocked\b"))
     assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
+    assert errors == []
+
+
+def test_the_docked_tools_bring_back_the_drawer_they_stood_in_for_as_it_was(page: Page, site_url, errors):
+    open_after_settling(page, site_url, (1280, 900))
+    html = page.locator("html")
+    expect(html).to_have_attribute("data-panel", "notes")
+    page.click("#marksRow")
+    expect(html).to_have_attribute("data-notes-page", "marks")
+    # The tools only stand in for the notes, so shutting them brings back their achievements.
+    page.click("#toolsBtn")
+    expect(html).to_have_attribute("data-panel", "tools")
+    page.click("#toolsClose")
+    expect(html).to_have_attribute("data-panel", "notes")
+    expect(html).to_have_attribute("data-notes-page", "marks")
+    # Put away for good, they open on the finds again.
+    page.locator("#map").focus()
+    page.keyboard.press("n")
+    expect(html).to_have_attribute("data-panel", "none")
+    page.keyboard.press("n")
+    expect(html).to_have_attribute("data-notes-page", "finds")
+    assert errors == []
+
+
+def test_keyboard_focus_shows_inside_the_tools_rows_and_steppers(page: Page, site_url, errors):
+    """The tools' rows and steppers clip what's outside them, so their focus ring is drawn inside."""
+    open_after_settling(page, site_url, (1280, 900))
+    page.click("#toolsBtn")
+    expect(page.locator("#zoomOut")).to_be_focused()
+    for el in ["#zoomIn", "#home"]:
+        page.keyboard.press("Tab")
+        expect(page.locator(el)).to_be_focused()
+        assert page.evaluate("getComputedStyle(document.activeElement).outlineOffset") == "-2px", el
+    page.locator("#toolsBtn").focus()
+    assert page.evaluate("getComputedStyle(document.activeElement).outlineOffset") == "2px"  # elsewhere, outside
+    assert errors == []
+
+
+def test_on_a_phone_the_field_notes_button_is_still_named(page: Page, site_url, errors):
+    word = known_words(page, site_url)[0]
+    without_worker(page, site_url, "letterfield")
+    page.set_viewport_size({"width": 375, "height": 740})
+    page.goto(f"{site_url}/letterfield#debug")
+    w, x, y, d = word
+    page.evaluate("f => localStorage.setItem('letterfield.finds.v4', JSON.stringify([f]))",
+                  {"w": w, "x": x, "y": y, "d": d, "t": 1_700_000_000_000, "s": 0})
+    page.reload()
+    expect(page.locator("#notesBadge")).to_have_text("1")
+    expect(page.locator("#notesToggle .label")).not_to_be_in_viewport()  # no room for the word on a phone
+    expect(page.get_by_role("button", name=re.compile(r"^Field notes"))).to_have_count(1)
+    assert errors == []
+
+
+def test_with_reduced_motion_the_corner_buttons_dont_slide_as_a_drawer_docks(page: Page, site_url, errors):
+    page.emulate_media(reduced_motion="reduce")
+    open_after_settling(page, site_url, (1280, 900))
+    expect(page.locator("body")).to_have_class(re.compile(r"\bdocked\b"))
+    assert page.evaluate("getComputedStyle(document.querySelector('.corner')).transitionDuration") == "0s"
     assert errors == []
 
 

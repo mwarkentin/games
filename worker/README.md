@@ -118,7 +118,8 @@ Letterfield's field notes: up to three senses from Wiktionary, or, for a
 name Wiktionary doesn't know, the start of the Wikipedia article a search
 for the word beside its theme's name finds ("cronkite Broadcast"). The word
 must be in theme `th` of `letterfield-world.js`, so there are only about
-17,700 words ever to look up.
+28,800 words ever to look up (on map 4; see SURVEY.md), and a few more
+answers kept per theme where Wikipedia, or nothing, answers.
 
 ```
 GET /v1/define/BASIL/72

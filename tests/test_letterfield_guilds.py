@@ -435,6 +435,22 @@ def test_a_guild_joined_as_another_list_fills_the_places_is_left_not_lost(page: 
     assert errors == []
 
 
+def test_at_five_guilds_the_arrow_keys_choose_which_to_leave_not_move_the_map(page: Page, site_url, errors):
+    start(page, site_url, FakeSurvey(), five_guilds(), query="&guild=PQR789", mine=FIVE)
+    invite = page.locator("#guildInvite")
+    invite.get_by_role("radio", name="Cobalt Compass Society").check()
+    cam = "[window.__lf.cam.x, window.__lf.cam.y]"
+    was = page.evaluate(cam)
+    page.keyboard.press("ArrowDown")
+    expect(invite.get_by_role("radio", name="Amber Lantern Bureau")).to_be_checked()
+    page.keyboard.press("ArrowDown")
+    expect(invite.get_by_role("radio", name="Crimson Quill Circle")).to_be_checked()
+    expect(invite.get_by_role("radio", name="Crimson Quill Circle")).to_be_focused()
+    page.wait_for_timeout(300)  # a flight would have started by now
+    assert page.evaluate(cam) == was
+    assert errors == []
+
+
 def test_at_five_guilds_the_card_asking_which_to_leave_scrolls_on_a_short_phone(page: Page, site_url, errors):
     start(
         page,

@@ -994,6 +994,19 @@ def test_outside_the_universe_the_title_counts_what_the_survey_charted(page: Pag
     assert errors == []
 
 
+def test_on_a_phone_a_screen_reader_hears_how_many_of_the_charted_words_are_in_your_notes(page: Page, site_url, errors):
+    """A phone has no hover, so what the title's hover says goes in what a screen reader reads."""
+    words = known_words(page, site_url, FAR_WORDS)
+    theirs, yours = words[1], words[2:]
+    far_out(page, yours)
+    fake = FakeSurvey(home=FAR_SECTOR, claims=[[*theirs, 0, "ZWW", NOW_MS - 3 * 86_400_000]]
+                      + [[*w, 0, "MLW", NOW_MS - 60_000] for w in yours])
+    open_game(page, site_url, fake, viewport={"width": 375, "height": 740})
+    n = len(words)
+    expect(page.locator("#tCharted .vh")).to_have_text(f", {n - 1} of {n} words charted, {n - 2} in your notes")
+    assert errors == []
+
+
 def test_outside_the_universe_the_title_says_the_survey_is_joining_or_offline(page: Page, site_url, errors):
     far_out(page, [])
     fake = FakeSurvey(home=FAR_SECTOR, hold=lambda url: True)
