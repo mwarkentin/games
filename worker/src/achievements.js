@@ -114,6 +114,7 @@ function achievementsCore(world) {
     ['fellowship', 'company', 'slu', null],
     ['two-places', 'company', 'slu', null],
     ['hats-off', 'company', 'shlu', null],
+    ['number-of-the-beast', 'notes', 'h', (T) => pair(T.finds, 666)],
   ];
   const CHECK = new Map(CATALOG.map(([id, , , check]) => [id, check]));
   // The ones signed finds can prove: all but l and u.
@@ -361,6 +362,7 @@ const MARK_DRAW = {
   orbit: '<circle cx="16" cy="16" r="8.8"/><circle class="f" cx="16" cy="16" r="2.6"/><circle class="f" cx="22.2" cy="9.8" r="1.9"/>',
   carets: '<path d="M10.5 11v10M16 8.5v15M21.5 11v10" stroke-width="2.8"/>',
   devices: '<rect x="6.5" y="10" width="7" height="12.5" rx="1.4"/><path d="M16 11.5h9.5v8.5H16zM14.5 23h12.5"/>',
+  beast: '<path d="M11.8 14.2a1.8 1.8 0 0 0 -3.6 0V21.2a1.8 1.8 0 0 0 3.6 0V19.288a1.8 1.8 0 0 0 -3.6 0M17.8 14.2a1.8 1.8 0 0 0 -3.6 0V21.2a1.8 1.8 0 0 0 3.6 0V19.288a1.8 1.8 0 0 0 -3.6 0M23.8 14.2a1.8 1.8 0 0 0 -3.6 0V21.2a1.8 1.8 0 0 0 3.6 0V19.288a1.8 1.8 0 0 0 -3.6 0"/><path d="M13.4 10.7c-2.2-.3-3.4-2.4-2.4-5 .3 1.7 1.4 2.8 3.2 3.2M18.6 10.7c2.2-.3 3.4-2.4 2.4-5-.3 1.7-1.4 2.8-3.2 3.2"/>',
   hat: '<path d="M7.5 21.6c4.4 1.7 12.6 1.7 17 0"/><path d="M11 21.2v-6.4c0-2.2 2.2-3.8 5-3.8s5 1.6 5 3.8v6.4"/><path d="M11 18.2h10"/>',
   secret: '<path d="M12.6 12.4a3.5 3.5 0 1 1 4.9 3.2c-.9.4-1.5 1.2-1.5 2.2v.8"/><circle class="f" cx="16" cy="22" r="1.3"/>',
 };
@@ -405,6 +407,7 @@ const MARK_TEXT = {
   'fellowship': ['carets', 'Fellowship', 'Be in a guild.'],
   'two-places': ['devices', 'Two Places at Once', 'Link another device, or save a recovery code.'],
   'hats-off': ['hat', 'Hats Off', 'Have someone tip their hat to you.'],
+  'number-of-the-beast': ['beast', 'Number of the Beast', 'Keep 666 words in your field notes.'],
 };
 // ---- END BADGE ART ----
 export { MARK_DRAW, MARK_GROUPS, MARK_TEXT };

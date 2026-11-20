@@ -65,8 +65,8 @@ streaks, and anything that pays for spamming emotes or joining guilds.
 
 ## The catalog
 
-Thirty-nine achievements in nine groups. Each is checked from the notes
-unless it says otherwise, and none needs a particular time of day. Five
+Forty achievements in nine groups. Each is checked from the notes
+unless it says otherwise, and none needs a particular time of day. Six
 are secret (hidden until earned, to keep the surprise, never to make them
 missable). Nine are for the shared survey only, and don't show in solo play.
 
@@ -79,6 +79,7 @@ that isn't about charting first or other surveyors works in both.
 | --- | --- | --- | --- |
 | **Field notes** | First Mark | Circle your first word. | finds ≥ 1 |
 | | Field Book | Keep 100 words in your field notes. | finds ≥ 100 |
+| | Number of the Beast (secret) | Keep 666 words in your field notes. | finds ≥ 666 |
 | | Bound Volume | Keep 1,000 words in your field notes. | finds ≥ 1,000 |
 | | Great Atlas | Keep 5,000 words in your field notes. | finds ≥ 5,000 |
 | **Charting** (survey) | First Light | Chart a word first on the shared survey. | finds with `f` ≥ 1 |
@@ -145,8 +146,17 @@ that isn't about charting first or other surveyors works in both.
 - **Bots** gain nothing: badges are personal, the counts are capped, and the
   survey's own limits already bound how fast anyone charts.
 - **Secrets** are found by playing (a palindrome, the word SURVEYOR, a round
-  number, far travel, a hat tip). Each is shown as "Secret" with a question
-  mark until earned, and nothing in its hint names a hidden word.
+  number, far travel, a hat tip, the 666th word). Each is shown as "Secret"
+  with a question mark until earned, never with a ring of how far along it
+  is (which would give away a count), and nothing in its hint names a hidden
+  word.
+- **Number of the Beast** is a joke between the tiers: a secret at 666
+  finds, between Field Book and Bound Volume, which nobody aims for and
+  everyone on the way to Bound Volume meets. It came after the rest, so it's
+  last in the catalog (see "Profile cards"); the page shows it after Field
+  Book (`MARK_LATER` in the game, which also says when it arrived). Its
+  badge is "666" with two small horns, the digits drawn tall and narrow
+  like the game's display face, Big Shoulders.
 
 ## Badges
 
@@ -161,7 +171,8 @@ different people.
   - **Under way:** an empty ring whose arc fills clockwise from the top with
     the progress, and the drawing in the muted ink.
   - **Not started:** a dashed ring and a faint drawing, so you can see what
-    there is to do. A secret one shows a question mark.
+    there is to do. A secret one shows a question mark, and stays one
+    while it's under way.
 - **Two sizes.** 24 px, in the field notes' row and the unlock note, and
   64 px, on the Achievements page. The strokes are drawn thicker at the
   small size and thinner at the large one, so lines read the same at both;
@@ -216,7 +227,7 @@ from today for the current one; both give the same answer for any day).
 **In the field notes**, which are already the record of your survey:
 
 - **A row under the tally:** the three newest badges at 24 px, how many of
-  how many, and the streak ("12 of 39 · 4 days running"), with a dot when
+  how many, and the streak ("12 of 40 · 4 days running"), with a dot when
   something's new since you last looked. It opens the page.
 - **The Achievements page**, in the notes drawer in the finds' place
   (the page's `notesPage` machine: `finds` or `marks`, on
@@ -268,6 +279,10 @@ hover card, and their card in their caret's menu (see "Profile cards").
   achievements, everything their notes have earned is earned at once, each
   dated from the find that earned it, and **one** note says so ("14
   achievements from your field notes so far", with See). Never a note each.
+- **A new achievement** that a player's notes had already earned before it
+  arrived (`MARK_LATER`'s date) comes the same way as one from elsewhere:
+  dated by the find that earned it, marked "From your notes", with the dot
+  and no note.
 - **From elsewhere.** An achievement whose find came from a linked device or
   another tab is earned quietly: the dot shows, but there's no note. Only a
   find circled in this tab, a supernova seen in the last two minutes, or
@@ -346,7 +361,7 @@ changed since the last version, and `best`, as finds go:
   1.5 s while the tab is on screen). At the 25,000-find cap it takes about
   16 ms on a laptop; dating what's newly earned is a second pass, only when
   something is. A few hundred finds take well under a millisecond.
-- **Syncing:** at most 39 rows a player, written once each, plus `best` when
+- **Syncing:** at most 40 rows a player, written once each, plus `best` when
   it grows. Next to a find's row per word, unmeasurable. No new requests:
   marks ride the syncs that go anyway.
 - **Signing finds:** one HMAC per word circled on the survey (microseconds),
@@ -467,7 +482,8 @@ map shows their caret, just as their initials and caret do.
 - **The catalog only grows at its end:** a card names badges by their place
   in it. The page groups them by their group, so a new achievement can go
   last whatever its group. `worker/test/achievements.test.js` checks the
-  first 39 keep their places; there's room for 53.
+  first 39 keep their places, with Number of the Beast after them;
+  there's room for 53.
 
 **In the Surveyors list too:** ⋯ beside someone's name opens the same
 card above their emotes and Mute, while their caret is on your map. A card
@@ -484,7 +500,7 @@ A shared badge links to the share Worker's page for it,
 `share.michaelwarkentin.com/a/<id>` (`/a/d/<id>` from a dark page), whose
 link preview is a 1200×630 card (`share/src/badge.js`): the badge, earned,
 at 330px on a soft halo of its group's colour, then its name, its group (and
-"secret" for one of those), what it asks for, and "One of 39 achievements".
+"secret" for one of those), what it asks for, and "One of 40 achievements".
 Nothing on it is about who shared it, so it needs no checking: the share's
 own words say who earned it.
 

@@ -7109,6 +7109,7 @@ function achievementsCore(world) {
     ['fellowship', 'company', 'slu', null],
     ['two-places', 'company', 'slu', null],
     ['hats-off', 'company', 'shlu', null],
+    ['number-of-the-beast', 'notes', 'h', (T) => pair(T.finds, 666)],
   ];
   const CHECK = new Map(CATALOG.map(([id, , , check]) => [id, check]));
   // The ones signed finds can prove: all but l and u.
@@ -7291,6 +7292,7 @@ const MARK_DRAW = {
   orbit: '<circle cx="16" cy="16" r="8.8"/><circle class="f" cx="16" cy="16" r="2.6"/><circle class="f" cx="22.2" cy="9.8" r="1.9"/>',
   carets: '<path d="M10.5 11v10M16 8.5v15M21.5 11v10" stroke-width="2.8"/>',
   devices: '<rect x="6.5" y="10" width="7" height="12.5" rx="1.4"/><path d="M16 11.5h9.5v8.5H16zM14.5 23h12.5"/>',
+  beast: '<path d="M11.8 14.2a1.8 1.8 0 0 0 -3.6 0V21.2a1.8 1.8 0 0 0 3.6 0V19.288a1.8 1.8 0 0 0 -3.6 0M17.8 14.2a1.8 1.8 0 0 0 -3.6 0V21.2a1.8 1.8 0 0 0 3.6 0V19.288a1.8 1.8 0 0 0 -3.6 0M23.8 14.2a1.8 1.8 0 0 0 -3.6 0V21.2a1.8 1.8 0 0 0 3.6 0V19.288a1.8 1.8 0 0 0 -3.6 0"/><path d="M13.4 10.7c-2.2-.3-3.4-2.4-2.4-5 .3 1.7 1.4 2.8 3.2 3.2M18.6 10.7c2.2-.3 3.4-2.4 2.4-5-.3 1.7-1.4 2.8-3.2 3.2"/>',
   hat: '<path d="M7.5 21.6c4.4 1.7 12.6 1.7 17 0"/><path d="M11 21.2v-6.4c0-2.2 2.2-3.8 5-3.8s5 1.6 5 3.8v6.4"/><path d="M11 18.2h10"/>',
   secret: '<path d="M12.6 12.4a3.5 3.5 0 1 1 4.9 3.2c-.9.4-1.5 1.2-1.5 2.2v.8"/><circle class="f" cx="16" cy="22" r="1.3"/>',
 };
@@ -7335,6 +7337,7 @@ const MARK_TEXT = {
   'fellowship': ['carets', 'Fellowship', 'Be in a guild.'],
   'two-places': ['devices', 'Two Places at Once', 'Link another device, or save a recovery code.'],
   'hats-off': ['hat', 'Hats Off', 'Have someone tip their hat to you.'],
+  'number-of-the-beast': ['beast', 'Number of the Beast', 'Keep 666 words in your field notes.'],
 };
 // ---- END BADGE ART ----
 const MARK_GROUP = Object.fromEntries(MARK_GROUPS.map(g => [g.id, g]));
@@ -7347,6 +7350,14 @@ const MARKS = CORE.CATALOG.map(([id, g, flags, p]) => ({
   id, g, p, survey: flags.includes('s'), secret: flags.includes('h'), latch: flags.includes('l'), proof: !/[lu]/.test(flags),
   draw: MARK_TEXT[id][0], name: MARK_TEXT[id][1], desc: MARK_TEXT[id][2],
 }));
+// Achievements added after the rest. The catalog only grows at its end, so
+// each says which badge it's shown after, and when it arrived: one earned by
+// finds from before then is "from your notes", never a note of its own.
+const MARK_LATER = { 'number-of-the-beast': { after: 'field-book', added: Date.UTC(2026, 10, 20) } };
+for (const [id, { after }] of Object.entries(MARK_LATER)) {
+  const a = MARKS.splice(MARKS.findIndex(m => m.id === id), 1)[0];
+  MARKS.splice(MARKS.findIndex(m => m.id === after) + 1, 0, a);
+}
 const MARK_BY = Object.fromEntries(MARKS.map(a => [a.id, a]));
 // Those this game can earn: the survey's only on the survey.
 const marksHere = () => MARKS.filter(a => surveyApi || !a.survey);
@@ -7430,7 +7441,8 @@ function marksCheck() {
     if (a.latch) { if (!latched(a.id)) continue; }
     else if (!pending.includes(a.id)) continue;
     else if (st.reached[a.id]) ({ at, by } = st.reached[a.id]);  // otherwise a latched streak whose finds have gone: now
-    marks.got[a.id] = [at, backfill ? 1 : 0];
+    const older = MARK_LATER[a.id] && by && at < MARK_LATER[a.id].added;  // earned before it existed
+    marks.got[a.id] = [at, backfill || older ? 1 : 0];
     got.push(a.id);
     syncLater('m', a.id);
     // Earned in play, here: by a find circled in this tab, a supernova just seen, or a latch.
@@ -7574,7 +7586,7 @@ const cardMarkHidden = a => a.secret && !marks.got[a.id];
 let cardSaid = { key: '', id: '' };
 const cardSay = a => cardMarkHidden(a) ? '<b>A secret achievement</b> · find it yourself to see which' : `<b>${a.name}</b> · ${a.desc}`;
 function cardHtml(s, key) {
-  const ids = s.card.ids.filter(id => MARK_BY[id]), shown = MARK_BY[s.badge], said = cardSaid.key === key && ids.includes(cardSaid.id) ? cardSaid.id : '';
+  const ids = MARKS.filter(a => s.card.ids.includes(a.id)).map(a => a.id), shown = MARK_BY[s.badge], said = cardSaid.key === key && ids.includes(cardSaid.id) ? cardSaid.id : '';
   const big = !shown ? '' : `<div class="pc-shown">${badgeSvg(shown, 'got', 1, true)}<p><b>${shown.name}</b><span>${cardMarkHidden(shown) ? 'A secret achievement.' : shown.desc}</span></p></div>`;
   const line = [s.card.day ? `<span>Surveying since ${sinceText(s.card.day)}</span>` : '', ids.length ? `<span>${plural(ids.length, 'badge')}</span>` : ''].filter(Boolean).join('<span class="vh"> · </span>');
   const grid = ids.map(id => {
@@ -7770,7 +7782,7 @@ function renderDays() {
 }
 function markCard(a) {
   const got = marks.got[a.id], [have, need, of] = got ? [1, 1, ''] : markProgress(a);
-  const st = got ? 'got' : have > 0 && need > 1 ? 'prog' : 'locked', hidden = !got && a.secret;
+  const hidden = !got && a.secret, st = got ? 'got' : !hidden && have > 0 && need > 1 ? 'prog' : 'locked';  // a secret shows no progress, which would give it away
   const name = hidden ? 'Secret' : a.name, desc = hidden ? 'Keep exploring: it shows itself when you find it.' : a.desc;
   const p = got ? `Earned ${shortDate(got[0])}${got[1] ? ' · from your notes' : ''}`
     : hidden ? '' : st === 'prog' ? `${have.toLocaleString()} of ${need.toLocaleString()}${of ? ` · ${of}` : ''}` : a.survey && !surveyApi ? 'On the shared survey' : 'Not yet';

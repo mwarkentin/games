@@ -476,7 +476,7 @@ ACHIEVEMENTS = (
     " every-last-word five-sheets lions-share map-key full-legend lexicographer dawn-chorus seven-seas star-chart"
     " passport happy-accident serendipity long-measure compass-rose mirror-image self-portrait over-the-horizon"
     " edge-of-the-universe here-be-dragons witness starfield last-word seven-days lunar-month thirty-days full-circle"
-    " fellowship two-places hats-off"
+    " fellowship two-places hats-off number-of-the-beast"
 ).split()
 CARD_SIG = "CardSigAbCdE"
 
