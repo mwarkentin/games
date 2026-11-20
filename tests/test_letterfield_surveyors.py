@@ -101,6 +101,14 @@ def test_more_surveyors_come_a_page_at_a_time(page: Page, site_url, errors):
     page.click("#whoMore")
     expect(page.locator(".who-row")).to_have_count(45)
     expect(page.locator("#whoMore")).to_be_hidden()
+    # Opened again, it starts from the first page: every refresh kept asking for all it had shown.
+    page.locator("#peopleClose").click()
+    expect(page.locator("html")).to_have_attribute("data-who", "closed")
+    expect(page.locator("#people")).to_be_hidden()
+    fake.list_asks.clear()
+    open_list(page)
+    expect(page.locator(".who-row")).to_have_count(40)
+    assert [a["page"] for a in fake.list_asks] == ["0"]
     assert errors == []
 
 

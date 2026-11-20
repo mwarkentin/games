@@ -5547,7 +5547,7 @@ function whoMoved(to) {
     const at = Who.seq;
     whoTimer = setTimeout(() => { if (Who.seq === at) Who.go(to === 'ready' ? 'refreshing' : 'loading'); }, to === 'ready' ? WHO_REFRESH_MS : WHO_RETRY_MS);
   }
-  if (to === 'closed') whoOpen = '';
+  if (to === 'closed') { whoOpen = ''; whoPages = 1; }  // pages shown with Show more aren't asked for again
   renderWho();
   if (to === 'ready' && myGuilds.length) renderGuild();  // its counts of members online take in the list (see Guilds)
 }
