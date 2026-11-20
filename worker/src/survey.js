@@ -334,7 +334,7 @@ export class Sector {
     this.unpassed = 0;           // joins without a Turnstile pass since the last report (a bot signal)
     this.overDay = -1;       // the UTC day `over` is for
     this.over = new Set();   // addresses past the daily cap today, as the Atlas last said
-    this.overAt = 0;         // how many the Atlas had counted then; it only resends the list when this changes
+    this.overAt = 0;         // the Atlas's count of changes to that list then; it only resends the list when this changes
     // Whether the sector knows who is past today's cap: unknown since waking
     // (or since the day turned), asking the Atlas (`asking` is out), or known
     // (`heardDay` is today). Until it's known, a claim from an address waits
@@ -1062,12 +1062,15 @@ export class Atlas {
     this.list = null;      // everyone on the surveyor list as JSON, rebuilt at most every LIST_MS
     this.daily = dailyClaims(env);
     // Words each address charted today (UTC), and those past the daily cap in
-    // the order they got there. Kept in memory only: the Atlas hears from
-    // every busy sector every few seconds, so it's rarely evicted, and if it
-    // is, the day's counts start again.
+    // the order they got there (address → its place, `overSeq` when it was
+    // put there). Kept in memory only: the Atlas hears from every busy sector
+    // every few seconds, so it's rarely evicted, and if it is, the day's
+    // counts start again. `overSeq` counts every change to the list, and goes
+    // to sectors as `overAt`: they're sent the list again when it changes.
     this.day = -1;
     this.chartedToday = new Map();
-    this.overList = [];
+    this.overList = new Map();
+    this.overSeq = 0;
     // The numbers that would show bots at work, for the UTC day so far and
     // the day before (in the world map), and for the hour so far (in an
     // hourly line in Workers Logs). Bots that claim without saying where
@@ -1130,9 +1133,9 @@ export class Atlas {
       this.takeNovas(r);
       // The list of addresses past the cap goes back only when it has
       // changed since this sector last heard it.
-      const fresh = r.day === this.day && r.overAt === this.overList.length;
+      const fresh = r.day === this.day && r.overAt === this.overSeq;
       return json({
-        ...this.totals(), day: this.day, overAt: this.overList.length, ...(fresh ? {} : { over: this.overList.slice(-DAILY_LIST_MAX) }),
+        ...this.totals(), day: this.day, overAt: this.overSeq, ...(fresh ? {} : { over: [...this.overList.keys()].slice(-DAILY_LIST_MAX) }),
         ...(r.tags?.length ? { guilds: matesFor(this, r.tags, this.now(), ONLINE_MS) } : {}),
         ...this.novasFor(r.novaSeq),
       });
@@ -1187,8 +1190,15 @@ export class Atlas {
       this.stats.charted += n;
       this.hour.charted += n;
       if (before < this.daily && before + n >= this.daily) {
-        this.overList.push(address);
-        console.log({ survey: 'daily cap', capped: this.overList.length });  // never the address, hashed or not
+        this.overList.set(address, ++this.overSeq);
+        console.log({ survey: 'daily cap', capped: this.overList.size });  // never the address, hashed or not
+      } else if (before >= this.daily && this.overSeq - this.overList.get(address) >= DAILY_LIST_MAX) {
+        // Past the cap, but charting again: it has dropped out of the latest
+        // DAILY_LIST_MAX the sectors are handed, so it goes back to the end.
+        // (Places only ever move later, so this may move one that hadn't quite
+        // dropped out yet, which does no harm.)
+        this.overList.delete(address);
+        this.overList.set(address, ++this.overSeq);
       }
     }
   }
@@ -1206,12 +1216,13 @@ export class Atlas {
     if (this.day >= 0) this.yesterday = day - this.day === 1 ? this.statsNow() : this.newStats(day - 1);
     this.day = day;
     this.chartedToday = new Map();
-    this.overList = [];
+    this.overList = new Map();
+    this.overSeq = 0;
     this.stats = this.newStats(day);
   }
 
   statsNow() {
-    const s = { ...this.stats, addresses: this.chartedToday.size, capped: this.overList.length };
+    const s = { ...this.stats, addresses: this.chartedToday.size, capped: this.overList.size };
     s.playerHours = Math.round(s.playerHours * 100) / 100;
     return s;
   }

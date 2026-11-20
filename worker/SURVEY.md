@@ -197,7 +197,10 @@ survey also limits each IP address, wherever it plays:
     since the last report.
   - The Atlas adds these up for the UTC day. It answers with the addresses
     past the cap, the most recent 2,000, but only when that list has
-    changed since the sector last heard it.
+    changed since the sector last heard it. An address capped earlier that
+    has dropped off those 2,000 and charts again (its sectors no longer know
+    to refuse it) goes back to the end of the list with that report, so it's
+    refused again within a report, however many addresses are capped.
   - The sector refuses those addresses' claims with `daily limit`, and the
     game says "Today's charting limit reached · kept in your notes".
   - A sector keeps the list in memory, so one just woken from hibernation

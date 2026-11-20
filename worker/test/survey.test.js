@@ -762,9 +762,9 @@ describe('Sector', () => {
     const atlasObject = new Atlas(fakeState(), { SURVEY_DAILY_CLAIMS: '1000' });
     atlasObject.now = () => clock;
     atlasObject.countCharted([[hashed(1), DAILY_CLAIMS]]);
-    assert.equal(atlasObject.overList.length, 0);
+    assert.equal(atlasObject.overList.size, 0);
     atlasObject.countCharted([[hashed(1), 1000 - DAILY_CLAIMS]]);
-    assert.deepEqual(atlasObject.overList, [hashed(1)]);
+    assert.deepEqual([...atlasObject.overList.keys()], [hashed(1)]);
   });
 
   // An Atlas that already counts hashed(1) past today's cap. `held` keeps its
@@ -909,6 +909,23 @@ describe('Atlas', () => {
     const [, answer] = await report({ sx: 0, sy: 0, players: 0, charted: counts() }, { all: true });
     assert.equal(answer.overAt, DAILY_LIST_MAX + 5);
     assert.deepEqual(answer.over, many.slice(5).map(([a]) => a));
+  });
+
+  test('hands out again an address past the cap that charts once it has dropped off the list', async () => {
+    const many = Array.from({ length: DAILY_LIST_MAX + 5 }, (_, i) => [hashed(i + 1), DAILY_CLAIMS]);
+    atlasObject.countCharted(many);
+    const base = { sx: 0, sy: 0, players: 0, charted: counts(), day: TODAY };
+    const [, before] = await report({ ...base, overAt: 0 }, { all: true });
+    assert.ok(!before.over.includes(hashed(1)));
+    // The first address capped, no longer handed out, so its sector took its words.
+    const [, after] = await report({ ...base, overAt: before.overAt, by: [[hashed(1), 2]] }, { all: true });
+    assert.notEqual(after.overAt, before.overAt);
+    assert.equal(after.over.length, DAILY_LIST_MAX);
+    assert.equal(after.over.at(-1), hashed(1));
+    // One still on the list going on charting changes nothing.
+    const [, again] = await report({ ...base, overAt: after.overAt, by: [[hashed(DAILY_LIST_MAX + 5), 1]] }, { all: true });
+    assert.deepEqual([again.overAt, again.over], [after.overAt, undefined]);
+    assert.equal((await worldMap()).today.capped, DAILY_LIST_MAX + 5);
   });
 
   test('keeps the day\'s numbers for the world map, and yesterday\'s', async () => {
