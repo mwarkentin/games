@@ -5959,7 +5959,7 @@ const GUILD_FIRST = [['Crimson', 350], ['Coral', 8], ['Copper', 22], ['Amber', 3
 const GUILD_SECOND = ['Compass', 'Sextant', 'Lantern', 'Quill', 'Atlas', 'Meridian', 'Beacon', 'Theodolite', 'Chart', 'Lodestar', 'Spyglass', 'Waypoint', 'Ledger', 'Inkwell', 'Horizon', 'Contour'];
 const GUILD_THIRD = ['Society', 'Guild', 'Company', 'Circle', 'Club', 'Expedition', 'Lodge', 'Fellowship', 'League', 'Order', 'Corps', 'Bureau', 'Institute', 'Academy', 'Alliance', 'Caravan'];
 const K_GUILDS = 'letterfield.guilds.v1', K_GUILD = 'letterfield.guild.v1', K_GUILD_LABELS = 'letterfield.guild-labels.v1';
-const K_GUILD_FOLDED = 'letterfield.guild-folded.v1', K_GUILD_MERGE = 'letterfield.guild-merge.v1';
+const K_GUILD_FOLDED = 'letterfield.guild-folded.v1', K_GUILD_MERGE = 'letterfield.guild-merge.v1', K_GUILD_LEAVES = 'letterfield.guild-leaves.v1';
 const GUILD_CODE_RE = /^[A-HJKMNP-Z2-9]{6}$/, NOTE_AGAIN_MS = 10 * 60000;
 const GUILDS_MAX = 5, LABEL_MAX = 24;  // as the Worker's GUILDS_MAX (survey-social.js) and LABEL_MAX (players.js)
 const goodName = n => Array.isArray(n) && n.length === 3 && [GUILD_FIRST, GUILD_SECOND, GUILD_THIRD].every((list, i) => Number.isInteger(n[i]) && n[i] >= 0 && n[i] < list.length);
@@ -6103,7 +6103,8 @@ async function joinInvite() {
   const { status, data } = await guildCall(`/${code}/join`, { token: playerToken, initials: myInitials() });
   if (Membership.seq !== at) return;
   if (status === 200 && goodGuild(data)) {
-    if (drop) guildCall(`/${drop.code}/leave`, { token: playerToken });  // at the cap: the one chosen makes room
+    keptLeaves(l => l.code !== code || l.token !== playerToken);  // a leave of it still to send would undo this
+    if (drop) leaveLater(drop.code);  // at the cap: the one chosen makes room
     saveGuilds([...myGuilds.filter(g => g.code !== (drop && drop.code) && g.code !== data.code), guildOf(data)]);
     takeRoster(data.code, data.members);
     invite = null;
@@ -6113,6 +6114,20 @@ async function joinInvite() {
   }
   invite.error = status === 409 ? 'That guild is full.' : status === 429 ? 'Too many guilds joined from this network: try again later.' : 'Couldn’t join. Try again in a moment.';
   Membership.go('invited');
+}
+// A leave this device can't follow on screen (the guild's gone from the list
+// at once) is kept until the Worker has it, and sent again on later visits:
+// one lost would leave us a member no device knows, holding a place.
+const keptLeaves = keep => {
+  const list = [].concat(readStored(K_GUILD_LEAVES, [])).filter(l => l && GUILD_CODE_RE.test(l.code) && TOKEN_RE.test(l.token) && keep(l));
+  if (list.length) LS.set(K_GUILD_LEAVES, JSON.stringify(list.slice(-20))); else LS.remove(K_GUILD_LEAVES);
+  return list;
+};
+async function leaveLater(code, token = playerToken) {
+  const others = l => l.code !== code || l.token !== token;
+  LS.set(K_GUILD_LEAVES, JSON.stringify([...keptLeaves(others), { code, token }].slice(-20)));
+  const { status } = await guildCall(`/${code}/leave`, { token });
+  if (status === 200 || status === 404) keptLeaves(others);
 }
 function dismissInvite() {
   if (!Membership.is('invited')) return;
@@ -6370,6 +6385,7 @@ guildInvite.addEventListener('change', e => {
 guildInvite.addEventListener('keydown', e => { if (e.key === 'Escape') { e.stopPropagation(); dismissInvite(); } });
 // An invite link (?guild=<code>), read once (see takeParam).
 if (surveyApi) {
+  for (const l of keptLeaves(() => true)) leaveLater(l.code, l.token);
   const code = takeParam('guild').toUpperCase();
   if (GUILD_CODE_RE.test(code) && !guildOfCode(code)) lookUpInvite(code);
   renderGuild();

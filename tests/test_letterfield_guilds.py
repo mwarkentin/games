@@ -339,6 +339,28 @@ def test_at_five_guilds_an_invite_asks_which_to_leave_naming_them(page: Page, si
     assert errors == []
 
 
+def test_at_five_guilds_a_leave_that_doesnt_get_through_is_sent_again(page: Page, site_url, errors):
+    """The guild left to make room went from the list at once, while its leave went unchecked: one
+    lost left us a member there that no device knew of, holding one of its places for good."""
+    guilds = five_guilds()
+    down, answer = [True], guilds.handle
+    guilds.handle = lambda r: (
+        r.fulfill(status=503, body="{}") if down[0] and r.request.url.endswith("/leave") else answer(r)
+    )
+    start(page, site_url, FakeSurvey(), guilds, query="&guild=PQR789", mine=FIVE)
+    invite = page.locator("#guildInvite")
+    invite.get_by_role("radio", name="Amber Lantern Bureau").check()
+    invite.get_by_role("button", name="Leave and join").click()
+    expect(page.locator("html")).to_have_attribute("data-guild", "in")
+    page.wait_for_function("(localStorage.getItem('letterfield.guild-leaves.v1') || '').includes('QRT567')")
+    assert PID in [m[0] for m in guilds.guilds[CODE2]["members"]]
+    down[0] = False
+    page.reload()
+    eventually(page, lambda: PID not in [m[0] for m in guilds.guilds[CODE2]["members"]])
+    page.wait_for_function("localStorage.getItem('letterfield.guild-leaves.v1') === null")
+    assert errors == [] or all("503" in e for e in errors)
+
+
 def test_at_five_guilds_the_card_asking_which_to_leave_scrolls_on_a_short_phone(page: Page, site_url, errors):
     start(
         page,
