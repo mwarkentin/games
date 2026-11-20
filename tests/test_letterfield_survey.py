@@ -439,6 +439,29 @@ def test_past_the_daily_limit_says_so_and_keeps_the_word(page: Page, site_url, e
     assert errors == []
 
 
+def test_a_word_past_the_daily_limit_goes_when_the_day_turns_with_the_tab_open(page: Page, site_url, errors):
+    """A word turned away for the day's limit waited for its sector's next join, so in a tab left
+    open and joined past midnight (UTC) it stayed uncharted until a pan, a reload or the tab hidden."""
+    words = known_words(page, site_url)
+    page.add_init_script(SIGNED)
+    midnight = (int(time.time()) // 86_400 + 1) * 86_400
+    page.clock.install(time=midnight - 120)
+    fake = FakeSurvey(refuse="daily limit")
+    open_game(page, site_url, fake)
+    expect(page.locator("#survey")).to_have_attribute("data-state", "live")
+    circle(page, words[0])
+    expect(page.locator("#toast")).to_contain_text("Today’s charting limit reached")
+    fake.refuse = None
+    page.clock.run_for(60_000)
+    page.wait_for_timeout(300)
+    assert len(fake.sent("claim")) == 1  # still the same day
+    page.clock.run_for(90_000)
+    eventually(page, lambda: len(fake.sent("claim")) == 2)
+    assert fake.sent("claim")[1]["w"] == words[0][0]
+    eventually(page, lambda: page.evaluate("window.__lf.found.values().next().value.f") == 1)
+    assert errors == []
+
+
 def test_queued_claims_wait_past_the_daily_limit(page: Page, site_url, errors):
     """Once the survey said the day's limit was reached, every claim still waiting went anyway, only
     to be turned away too."""

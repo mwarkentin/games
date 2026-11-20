@@ -1809,7 +1809,7 @@ function sectorsInView() {
   out.sort((a, b) => a.dist - b.dist);
   if (out.length <= SECTOR_LINKS) return out;
   const waiting = new Set();
-  for (const c of outbox.values()) if (c.m.is('queued', 'unanswered')) waiting.add(sectorKey(c.e.x, c.e.y));
+  for (const c of outbox.values()) if (c.m.is('queued', 'unanswered') && !claimHeld(c)) waiting.add(sectorKey(c.e.x, c.e.y));
   const waits = o => waiting.has(o.sx + ',' + o.sy) ? 1 : 0, [near, ...rest] = out;
   return [near, ...rest.sort((a, b) => waits(b) - waits(a) || a.dist - b.dist)].slice(0, SECTOR_LINKS);
 }
@@ -2096,6 +2096,24 @@ function restoreOutbox() {
 let limitDay = -1;
 const limited = new Map();
 const utcDay = () => Math.floor(Date.now() / 86400000);
+// A waiting claim that isn't sent yet, however long its sector is live: an old
+// find waits for initials to sign it (see signAs), and one waiting past the
+// day's limit would only be turned away. flushClaims passes these over, and
+// sectorsInView doesn't favour their sectors.
+function claimHeld(c) { return (c.waited && !myInitials()) || (c.backlog && limitDay === utcDay()); }
+// Past the day's limit, the claims held for it go when the day (UTC) turns,
+// in a tab that stays open and joined overnight, not only at the next join.
+let limitTimer = 0;
+function limitReached() {
+  limitDay = utcDay();
+  clearTimeout(limitTimer);
+  limitTimer = setTimeout(newLimitDay, (limitDay + 1) * 86400000 - Date.now() + 1000);
+}
+function newLimitDay() {
+  limitTimer = 0;
+  if (limitDay === utcDay()) return limitReached();  // woken early: wait on
+  for (const l of links.values()) if (l.m.is('live')) { claimUnsent(l); flushClaims(l); }
+}
 function claimUnsent(l) {
   if (limitDay === utcDay()) return;
   const elsewhere = new Set(readList(K_OUTBOX).filter(o => Array.isArray(o) && o.length === 5).map(o => keyOf(o[0], o[1], o[2], o[3])));
@@ -2126,8 +2144,7 @@ function flushClaims(l) {
   for (const c of outbox.values()) {
     if (!c.m.is('queued', 'unanswered') || sectorKey(c.e.x, c.e.y) !== l.k) continue;
     if (c.backlog && claims.has(c.e.key)) { c.m.go('theirs'); continue; }  // someone charted it while it waited
-    if (c.waited && !myInitials()) continue;  // an old find waits for initials to sign it (see signAs)
-    if (c.backlog && limitDay === utcDay()) continue;  // past the day's limit, it'd only be turned away
+    if (claimHeld(c)) continue;
     if (l.tokens < 1) { l.flush = setTimeout(() => flushClaims(l), (1 - l.tokens) * CLAIM_REFILL_MS); return; }
     l.tokens -= 1;
     Object.assign(c, { l, initials: myInitials(), known: claims.has(c.e.key), sentAt: performance.now() });
@@ -2172,8 +2189,9 @@ function settleClaims(l) {
 // and every word counts, bonus words too, so a quick run of finds reaches it
 // easily): dropped, it would leave the word in your notes but never charted,
 // and its territory unable to go supernova. Past the day's limit the word
-// stays in your notes, unsigned for now, and goes when its sector is next
-// joined on another day (claimUnsent); only one just circled says so.
+// stays in your notes, unsigned for now, and goes once the day (UTC) turns,
+// or when its sector is next joined on another day (claimUnsent); only one
+// just circled says so.
 function claimRefused(l, c, error) {
   if (error === 'slow down') {
     c.backlog = true;  // it waits now: if someone charts it meanwhile, it's theirs, quietly
@@ -2181,7 +2199,7 @@ function claimRefused(l, c, error) {
     l.tokens = 1 - 60000 / CLAIM_REFILL_MS;  // this sector's claims wait a minute
     return flushClaims(l);
   }
-  if (error === 'daily limit') limited.set(c.e.key, limitDay = utcDay());
+  if (error === 'daily limit') { limitReached(); limited.set(c.e.key, limitDay); }
   c.m.go('refused');
   const e = error === 'daily limit' && !c.backlog ? found.get(c.e.key) : null;
   if (e) toast(`<i></i><b>${e.w}</b><span>Today’s charting limit reached · kept in your notes</span>`, THEMES[e.th].hue, 0, e);
