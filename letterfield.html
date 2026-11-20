@@ -6790,6 +6790,16 @@ async function redeemCode(code) {
   Pair.go('entering');
   focusQuiet($('#pairInput'));
 }
+// Joining one of this device's guilds as the surveyor it becomes, before its
+// old self leaves: a join that doesn't get through (no network, the Worker
+// down a moment) is tried again, since one lost would lose the guild's code.
+async function joinAs(code, token, initials) {
+  for (let i = 0; ; i++) {
+    const r = await guildCall(`/${code}/join`, { token, initials });
+    if ((r.status && r.status < 500) || i === 2) return r;
+    await new Promise(ok => setTimeout(ok, 1500));
+  }
+}
 // Become the surveyor the code came from. Their guilds come first, then this
 // device's join them, as that surveyor, up to GUILDS_MAX in all, with labels
 // from both (theirs first). Either way this device's old self leaves its
@@ -6801,7 +6811,7 @@ async function takeLink(token, c) {
   if (token !== old) {
     for (const g of mine) {
       if (!guilds.some(t => t.code === g.code) && guilds.length < GUILDS_MAX && initials) {
-        const { status, data } = await guildCall(`/${g.code}/join`, { token, initials });
+        const { status, data } = await joinAs(g.code, token, initials);
         if (status === 200 && goodGuild(data)) guilds = [...guilds, guildOf(data)];
       }
       await guildCall(`/${g.code}/leave`, { token: old });
@@ -6836,7 +6846,7 @@ async function takeRecovered(token, made) {
     const kept = [];
     for (const g of myGuilds) {
       if (initials) {
-        const { status, data } = await guildCall(`/${g.code}/join`, { token, initials });
+        const { status, data } = await joinAs(g.code, token, initials);
         if (status === 200 && goodGuild(data)) kept.push(guildOf(data));
       }
       await guildCall(`/${g.code}/leave`, { token: old });

@@ -360,3 +360,26 @@ def test_linking_leaves_this_devices_signatures_and_brings_their_badge_and_card(
     assert settings["badge"] == ["field-book", "TheirSigAbCd"] and settings["card"] == their_card
     assert all(len(m) < 4 for m in links.players.sent()[0]["marks"])  # no signature made for the old self
     assert errors == []
+
+
+def test_a_guild_join_that_doesnt_get_through_while_linking_is_tried_again(page: Page, site_url, errors):
+    """A join for the surveyor this device became that failed (no network, the Worker down a moment)
+    dropped the guild, while the old self still left it, so its code was gone from every device."""
+    links = FakeLinks({"CDEFGHJK": {"token": THEIRS, "carry": {"initials": "MLW"}}})
+    guilds = in_cobalt()
+    start(page, site_url, links, guilds, query="&link=CDEFGHJK", mine=[MINE])
+    failed = []
+
+    def flaky(route):
+        if route.request.url.endswith("/join") and not failed:
+            failed.append(route.request.url)
+            return route.fulfill(status=503, body="{}")
+        guilds.handle(route)
+
+    page.route(f"{SURVEY}/v1/survey/guilds**", flaky)
+    page.locator("#pairOffer").get_by_role("button", name="Link", exact=True).click()
+    linked(page)
+    assert failed
+    assert [g["code"] for g in json.loads(page.evaluate("localStorage.getItem('letterfield.guilds.v1')"))] == [CODE]
+    assert [m[0] for m in guilds.guilds[CODE]["members"]] == [THEIR_PID]
+    assert errors == [] or all("503" in e for e in errors)
