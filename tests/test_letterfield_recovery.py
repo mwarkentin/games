@@ -162,6 +162,41 @@ def test_entering_a_recovery_code_brings_the_surveyor_back(page: Page, site_url,
     assert errors == [] or all("404" in e for e in errors)
 
 
+def test_a_change_made_before_the_backup_comes_doesnt_replace_it(page: Page, site_url, errors):
+    """A setting changed after entering the code, before the first sync had brought the backup (one
+    that failed, here), counted as newer than the backup, which was then lost for good."""
+    players = FakePlayers(started=[THEIR_PID])
+    settings = {"initials": "ZED", "guild": OTHER, "muted": [KIM[0]], "mutedAs": {}, "emotes": True}
+    players.add(THEIR_PID, settings=settings, settings_at=5)
+    links = FakeLinks(players=players)
+    recovery = FakeRecovery(players, {CODE: THEIRS})
+    start(page, site_url, links, recovery=recovery, initials="QQQ")
+    failed = []
+
+    def flaky(route: Route) -> None:
+        if route.request.url.endswith("/sync") and not failed:
+            failed.append(1)
+            return reply(route, {"error": "down"}, 503)
+        players.handle(route)
+
+    page.route(f"{SURVEY}/v1/player/**", flaky)
+    open_you(page)
+    page.locator("#pairCard").get_by_role("button", name="I have a code").click()
+    page.locator("#pairInput").fill(CODE.lower())
+    page.keyboard.press("Enter")
+    page.wait_for_function(f"window.__lf && window.__lf.pid() === '{THEIR_PID}'", timeout=10_000)
+    expect(page.locator("html")).to_have_attribute("data-sync", "failed", timeout=8000)
+    page.locator("#whoEmotes").evaluate("e => e.click()")  # a change here, before the backup has come
+    page.evaluate("window.__lf.syncNow()")
+    expect(page.locator("#surveyMeName")).to_have_text("ZED", timeout=8000)
+    expect(page.locator("html")).to_have_attribute("data-guild", "in")
+    assert page.evaluate("window.__lf.muted()") == [KIM[0]]
+    page.wait_for_timeout(2500)
+    assert players.players[THEIR_PID]["settings"]["initials"] == "ZED"
+    assert players.players[THEIR_PID]["settings"]["guild"] == OTHER
+    assert errors == [] or all("503" in e or "404" in e for e in errors)
+
+
 def test_a_device_brought_back_keeps_its_guilds_beside_the_backups(page: Page, site_url, errors):
     players = FakePlayers(started=[THEIR_PID])
     settings = {

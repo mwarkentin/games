@@ -6388,7 +6388,7 @@ const K_SYNC = 'letterfield.sync.v1', SYNC_EVERY_MS = 60000, SYNC_SOON_MS = 5000
 function readSync() {
   try {
     const o = JSON.parse(LS.get(K_SYNC) || 'null');
-    if (o && o.on) return { on: true, epoch: typeof o.epoch === 'string' ? o.epoch : '', at: Number.isInteger(o.at) ? o.at : 0, f: Array.isArray(o.f) ? o.f : [], n: Array.isArray(o.n) ? o.n : [], m: Array.isArray(o.m) ? o.m : ['*'], settingsAt: Number.isFinite(o.settingsAt) ? o.settingsAt : 0 };
+    if (o && o.on) return { on: true, epoch: typeof o.epoch === 'string' ? o.epoch : '', at: Number.isInteger(o.at) ? o.at : 0, f: Array.isArray(o.f) ? o.f : [], n: Array.isArray(o.n) ? o.n : [], m: Array.isArray(o.m) ? o.m : ['*'], settingsAt: Number.isFinite(o.settingsAt) ? o.settingsAt : 0, ...(o.fromBackup ? { fromBackup: true, held: !!o.held } : {}) };
   } catch (_) {}
   return null;
 }
@@ -6435,9 +6435,14 @@ function syncLater(kind, key) {
   if (!st[kind].includes(key)) { st[kind].push(key); writeSync(st); }
   syncSoon(SYNC_SOON_MS);
 }
+// Until a recovery's first sync has brought the backup's settings
+// (`fromBackup`), a change here waits (`held`): the backup's replace it, and
+// it goes up only if the backup had none. Otherwise it would count as newer,
+// and the backup's guilds, initials and mutes would be lost for good.
 function settingsChanged() {
   const st = readSync();
   if (!st || Sync.is('off')) return;
+  if (st.fromBackup) { st.held = true; return writeSync(st); }
   st.settingsAt = Date.now();
   writeSync(st);
   syncSoon(SYNC_GAP_MS);
@@ -6482,10 +6487,13 @@ async function syncNow() {
   now.m = fresh ? Object.keys(marks.got) : (now.m || []).filter(k => !went('m', k));
   now.epoch = data.epoch;
   now.at = data.at;
+  const held = now.fromBackup && now.held;
+  delete now.fromBackup; delete now.held;
   takeSynced(data, now);
+  if (held && !now.settingsAt) now.settingsAt = Date.now();  // the backup had no settings: ours are the newest after all
   writeSync(now);
   Sync.go('idle');
-  syncSoon(now.f.length || now.n.length || now.m.length ? SYNC_GAP_MS : SYNC_EVERY_MS);
+  syncSoon(now.f.length || now.n.length || now.m.length || held ? SYNC_GAP_MS : SYNC_EVERY_MS);
 }
 // What came from linked devices, taken in as a save from another tab is.
 function takeSynced(data, st) {
@@ -6861,7 +6869,7 @@ async function takeRecovered(token, made) {
     if (kept.length) LS.set(K_GUILD_MERGE, JSON.stringify(kept.map(g => ({ ...bareGuild(g), label: labelOf(g) }))));
   }
   if (Number.isFinite(made)) LS.set(K_RECOVERY, String(made));
-  writeSync(syncFromHere(0));
+  writeSync({ ...syncFromHere(0), fromBackup: true });
 }
 // Badges' signatures, the badge shown and the card were made for the self
 // this device leaves, and prove nothing for the one it becomes: they go, so
