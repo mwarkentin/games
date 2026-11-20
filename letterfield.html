@@ -1516,7 +1516,7 @@ function machine(name, moves, state, { el = document.documentElement, onMove } =
 /* ---------- Storage ---------- */
 const LS = {
   get(k) { try { return localStorage.getItem(k); } catch (_) { return null; } },
-  set(k, v) { try { localStorage.setItem(k, v); } catch (_) {} },
+  set(k, v) { try { localStorage.setItem(k, v); return true; } catch (_) { return false; } },  // false: not kept (out of room, or storage off)
   remove(k) { try { localStorage.removeItem(k); } catch (_) {} },
 };
 const found = new Map();
@@ -1595,9 +1595,15 @@ function takeIn(list) {
   }
   return { added, behind: behind || stored.size < found.size };
 }
+// Notes that no longer fit in this device's storage say so, once, after the
+// find's own note: finds from then on live only until the page closes.
+let notesUnsaved = false;
 function saveLocal() {
   takeIn(readList(K_FINDS));
-  LS.set(K_FINDS, JSON.stringify([...found.values()].map(plain)));
+  const kept = LS.set(K_FINDS, JSON.stringify([...found.values()].map(plain)));
+  if (kept || notesUnsaved) { if (kept) notesUnsaved = false; return; }
+  notesUnsaved = true;
+  setTimeout(() => toast('<i></i><b class="wraps">Your field notes can’t be saved on this device</b><span>It’s out of room · new finds are lost when the page closes</span>', null, 10000), 6400);  // past a find's note (SHARE_TOAST_MS)
 }
 window.addEventListener('storage', e => {
   if (e.key !== K_FINDS) return;
