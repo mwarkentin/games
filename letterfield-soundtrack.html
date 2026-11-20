@@ -214,9 +214,10 @@ html:not([data-player="off"]) .pending{display:none}
 })();
 // Where the recordings are: a folder holding what scripts/render_album.py
 // writes into _album/web/ (the MP3s, the cover and the zip), as an address or
-// a path on this site. While it's empty, the tracks are listed without
+// a path on this site; its --upload puts them in this one, an R2 bucket made
+// in mwarkentin/infra. While it's empty, the tracks are listed without
 // players or downloads. ?album=<url> overrides it for testing.
-const ALBUM_URL = '';
+const ALBUM_URL = 'https://media.michaelwarkentin.com/letterfield';
 
 (() => {
 const albumUrl = (() => {

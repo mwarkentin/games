@@ -526,20 +526,19 @@ each is made, to play or download.
   with the 3000px cover for stores, and a zip. It prints each track's length,
   loudness and size, writes them to `_album/album.json`, and warns when the
   page's lengths and sizes aren't the render's.
-- **Its files aren't in git.** They go in a public Cloudflare R2 bucket on a
-  custom domain, made by OpenTofu in mwarkentin/infra like the share
-  Worker's (no CORS needed: audio elements and downloads don't ask for it).
-  Upload what `_album/web/` holds under `letterfield/`, each file with its
-  type, then set `ALBUM_URL` in the page to that folder's address:
-
-  ```sh
-  for f in _album/web/*; do
-    case "$f" in *.mp3) t=audio/mpeg;; *.jpg) t=image/jpeg;; *.zip) t=application/zip;; esac
-    npx wrangler@4.151.0 r2 object put "<bucket>/letterfield/${f##*/}" --file "$f" --content-type "$t" --remote
-  done
-  ```
-
-  While `ALBUM_URL` is empty, the page lists the tracks without players or
+- **Its files aren't in git.** They're in a public Cloudflare R2 bucket,
+  `games-media`, under `letterfield/`, on `media.michaelwarkentin.com`
+  (made by OpenTofu in mwarkentin/infra; no CORS needed, since audio
+  elements and downloads don't ask for it), which is the page's `ALBUM_URL`.
+  `uv run scripts/render_album.py --upload` puts `_album/web/` there, each
+  file with its type, a day's caching and, for downloads, the name it's
+  saved as (`Content-Disposition`, since browsers ignore a link's `download`
+  attribute on another origin). It needs `CLOUDFLARE_ACCOUNT_ID` and the
+  bucket's upload token (`tofu output -raw games_media_upload_token` in
+  infra) as `CLOUDFLARE_API_TOKEN`, or `npx wrangler login`. The files are
+  cached for a day, so a re-render that must show at once goes under a new
+  prefix (`letterfield/v2/`, in `PREFIX` and `ALBUM_URL` both). With
+  `ALBUM_URL` empty, the page lists the tracks without players or
   downloads, and `?album=<url>` overrides it for tests. `sw.js` stores only
   pages and `music/*.mid`, so the MP3s always come from the network.
 - **The art** is `albums/letterfield/`: the cover (a corner of the map, each
@@ -802,6 +801,7 @@ node --disable-warning=ExperimentalWarning --test "worker/test/*.test.js"   # th
 uv run ./build.sh && python3 -m http.server -d _site 8000   # preview the real site
 uv run scripts/render_icons.py       # after drawing or changing an icon
 uv run scripts/render_album.py       # record Letterfield's soundtrack into _album/ (needs ffmpeg)
+uv run scripts/render_album.py --upload   # then put it in its R2 bucket (needs a token that can write there)
 uv run --with fonttools --with uharfbuzz scripts/draw_album_art.py   # after changing the album's art
 scripts/lint.sh                      # lint everything, as CI does
 scripts/lint.sh --fix                # fix and format what can be, then lint

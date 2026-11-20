@@ -17,6 +17,7 @@ from playwright.sync_api import Page, Route, expect
 
 import render_album
 from common import ROOT
+from fake_leaderboard import blank_constants
 
 PAGE = ROOT / "letterfield-soundtrack.html"
 ALBUM = "https://album.test"
@@ -135,7 +136,46 @@ def test_the_art_needs_no_fonts_or_network():
         assert not re.search(r'(?:href|src)="(?:https?:)?//', svg), name
 
 
+def test_the_page_plays_the_album_from_where_the_script_uploads_it():
+    assert f"const ALBUM_URL = '{render_album.ALBUM_HOME}';" in PAGE.read_text("utf-8")
+
+
+def options(args: list[str]) -> dict[str, str | bool]:
+    """A command's options: each with its value, or True for a flag."""
+    out, i = {}, 0
+    while i < len(args):
+        value = i + 1 < len(args) and not args[i + 1].startswith("--")
+        out[args[i]] = args[i + 1] if value else True
+        i += 2 if value else 1
+    return out
+
+
+def test_the_upload_puts_every_file_the_page_offers_with_its_type_and_name():
+    commands = render_album.upload_commands()
+    keys = [c[c.index("put") + 1] for c in commands]
+    flags = [options(c[c.index("--file") :]) for c in commands]
+    text = PAGE.read_text("utf-8")
+    offered = set(re.findall(r'data-file="([^"]+)"', text)) | set(re.findall(r'class="dl" href="([^"]+)"', text))
+    offered |= set(re.findall(r'<a id="\w+" href="([^"]+)" download>', text)) | {"letterfield-cover-1400.jpg"}
+    assert {k.removeprefix(f"{render_album.BUCKET}/{render_album.PREFIX}/") for k in keys} == offered
+    for key, f in zip(keys, flags):
+        assert f["--remote"] is True
+        assert (
+            f["--content-type"]
+            == {"mp3": "audio/mpeg", "jpg": "image/jpeg", "zip": "application/zip"}[key.rsplit(".", 1)[1]]
+        )
+        # Saved, not opened, from another origin, where a link's download attribute does nothing;
+        # but the cover the system's media controls show stays inline.
+        if key.endswith("cover-1400.jpg"):
+            assert "--content-disposition" not in f
+        else:
+            assert re.fullmatch(
+                r'attachment; filename="Letterfield[^"/]*\.(mp3|jpg|zip)"', f["--content-disposition"]
+            ), f
+
+
 def test_without_recordings_the_tracks_are_listed_without_players(page: Page, site_url, errors):
+    blank_constants(page, "letterfield-soundtrack", "ALBUM_URL")
     requests = []
     page.on(
         "request",

@@ -27,6 +27,7 @@ Run it with:
     uv run scripts/render_album.py                  # art, then every track
     uv run scripts/render_album.py --tracks lantern # one track (by slug)
     uv run scripts/render_album.py --art            # only the art
+    uv run scripts/render_album.py --upload         # put _album/web/ in the album's bucket
 
 It needs ffmpeg (with libmp3lame) on the PATH, and nothing from the network:
 the page is served from here with its Worker addresses blanked, and every
@@ -59,6 +60,11 @@ from common import BASE_URL, PREVIEW_SIZE, ROOT
 
 OUT = ROOT / "_album"
 ART = ROOT / "albums" / "letterfield"
+# Where the album is published: an R2 bucket (made in mwarkentin/infra) on a
+# custom domain. letterfield-soundtrack.html's ALBUM_URL is ALBUM_HOME.
+BUCKET, PREFIX = "games-media", "letterfield"
+ALBUM_HOME = f"https://media.michaelwarkentin.com/{PREFIX}"
+WRANGLER = ["npx", "--yes", "wrangler@4.151.0"]
 PREVIEW = ROOT / "previews" / "letterfield-soundtrack.jpg"
 RATE = 44100
 
@@ -567,12 +573,57 @@ def check_page(tracks: list[dict], zipped: Path) -> None:
         print(f"letterfield-soundtrack.html should say ZIP · {megabytes(zipped.stat().st_size)}", file=sys.stderr)
 
 
+def upload_commands(out: Path = OUT) -> list[list[str]]:
+    """Wrangler commands that put each file of _album/web/ in the bucket, with its type, how long it's
+    cached and, for the ones offered as downloads, the name it's saved as. The page is on another
+    origin, where browsers ignore a link's download attribute, so Content-Disposition does that
+    instead; the 1400px cover, which the page shows to the system's media controls, stays inline.
+    An audio element ignores Content-Disposition, so the MP3s still play on the page."""
+    web = out / "web"
+    files = [
+        (f"{file_stem(t)}.mp3", "audio/mpeg", f"{FILE_STEM.title()} - {n:02d} {t['title']}.mp3")
+        for n, t in enumerate(TRACKS, 1)
+    ]
+    files += [
+        (f"{FILE_STEM}-cover-1400.jpg", "image/jpeg", None),
+        (f"{FILE_STEM}-cover-3000.jpg", "image/jpeg", f"{ALBUM} - cover.jpg"),
+        (f"{FILE_STEM}-soundtrack.zip", "application/zip", f"{ALBUM}.zip"),
+    ]
+    commands = []
+    for name, kind, saved in files:
+        command = [*WRANGLER, "r2", "object", "put", f"{BUCKET}/{PREFIX}/{name}", "--file", str(web / name)]
+        command += ["--content-type", kind, "--cache-control", "public, max-age=86400", "--remote"]
+        if saved:
+            command += ["--content-disposition", f'attachment; filename="{saved}"']
+        commands.append(command)
+    return commands
+
+
+def upload(out: Path) -> None:
+    """Puts the album in its bucket. Wrangler needs CLOUDFLARE_ACCOUNT_ID and a token that can
+    write to it (the bucket's upload token from infra), or `npx wrangler login`."""
+    commands = upload_commands(out)
+    missing = [c[c.index("--file") + 1] for c in commands if not Path(c[c.index("--file") + 1]).exists()]
+    if missing:
+        sys.exit(f"render the album first: {', '.join(missing)} missing")
+    for command in commands:
+        print(f"{command[5]}", flush=True)
+        subprocess.run(command, check=True)
+    print(f"Uploaded {len(commands)} files to {ALBUM_HOME}/")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     parser.add_argument("--tracks", help="only these tracks, by slug, comma-separated")
     parser.add_argument("--art", action="store_true", help="only the art")
     parser.add_argument("--out", type=Path, default=OUT, help="where to write (default: _album/)")
+    parser.add_argument(
+        "--upload", action="store_true", help=f"put _album/web/ in {BUCKET}/{PREFIX}/, and nothing else"
+    )
     args = parser.parse_args()
+    if args.upload:
+        upload(args.out)
+        return
     if not shutil.which("ffmpeg"):
         sys.exit("render_album.py needs ffmpeg, with libmp3lame, on the PATH")
     wanted = TRACKS
