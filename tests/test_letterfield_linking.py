@@ -15,7 +15,7 @@ import re
 import pytest
 from playwright.sync_api import Page, expect
 
-from fake_survey import NOW_MS, FakeGuilds, FakeLinks, FakeRecovery, FakeSurvey, player_id
+from fake_survey import NOW_MS, FakeGuilds, FakeLinks, FakeRecovery, FakeSurvey, card, player_id
 from test_letterfield_guilds import CODE, FIVE, MINE, NAME, TAG, in_cobalt
 from test_letterfield_guilds import start as start_guilds
 from test_letterfield_survey import OVERLAP, SURVEY, circle, eventually, known_words, open_you
@@ -336,4 +336,27 @@ def test_the_code_stays_put_while_it_asks_whether_its_been_used(page: Page, site
     page.wait_for_timeout(300)
     assert page.evaluate("window.__qr.isConnected"), "the QR code was drawn again"
     assert page.evaluate("document.getElementById('people').scrollTop") == before
+    assert errors == []
+
+
+def test_linking_leaves_this_devices_signatures_and_brings_their_badge_and_card(page: Page, site_url, errors):
+    """Badge signatures are made for one surveyor. This device's were kept for the one it became,
+    which the Worker refused and never signed again, and spread to the other devices; and its first
+    sync sent its own badge (none) as the newest, taking away the badge the other device showed."""
+    their_card = card(["first-mark", "field-book"], 19_000, signed=True)
+    carry = {"initials": "MLW", "badge": ["field-book", "TheirSigAbCd"], "card": their_card}
+    links = FakeLinks({"CDEFGHJK": {"token": THEIRS, "carry": carry}})
+    start(page, site_url, links, query="&link=CDEFGHJK")
+    page.evaluate(
+        "() => { localStorage.setItem('letterfield.marks.v1', JSON.stringify({ got: { 'first-mark': [1, 1, 'OldSigOldSig'] }, best: 0, fresh: [] }));"
+        " localStorage.setItem('letterfield.badge.v1', JSON.stringify(['first-mark', 'OldSigOldSig']));"
+        " localStorage.setItem('letterfield.card.v1', '1.0.OldCardSigAb'); }"
+    )
+    page.locator("#pairOffer").get_by_role("button", name="Link", exact=True).click()
+    linked(page)
+    assert json.loads(page.evaluate("localStorage.getItem('letterfield.marks.v1')"))["got"]["first-mark"] == [1, 1]
+    eventually(page, lambda: len(links.players.sent()) >= 1, timeout_ms=10_000)
+    settings = links.players.sent()[0]["settings"]
+    assert settings["badge"] == ["field-book", "TheirSigAbCd"] and settings["card"] == their_card
+    assert all(len(m) < 4 for m in links.players.sent()[0]["marks"])  # no signature made for the old self
     assert errors == []

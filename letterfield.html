@@ -6716,7 +6716,7 @@ const linkCall = (path, body) => workerCall(`/v1/link${path}`, body);
 // Our guilds go as a list, with the first as `guild` too, for an older game on a linked device.
 const mySettings = () => ({
   initials: myInitials(), guilds: myGuilds.map(bareGuild), guild: myGuilds.length ? bareGuild(myGuilds[0]) : null, labels: Object.fromEntries(labels),
-  muted: [...muted].slice(-MUTED_MAX), mutedAs: Object.fromEntries(mutedAs), emotes: emotesOn, badge: shownBadge(), card: myCard(),
+  muted: [...muted].slice(-MUTED_MAX), mutedAs: Object.fromEntries(mutedAs), emotes: emotesOn, badge: chosenBadge(), card: myCard(),
 });
 // The Worker's guild, link, recovery and player paths: JSON sent as
 // text/plain, so no preflight, as the leaderboards do; with no body, a GET.
@@ -6809,6 +6809,10 @@ async function takeLink(token, c) {
   }
   // Their labels win where both have one; any of this device's for its own guilds stay.
   for (const [k, l] of Object.entries(c.labels && typeof c.labels === 'object' ? c.labels : {})) { const t = cleanLabel(l); if (t) labels.set(k, t); }
+  if (token !== old) leaveSignatures();
+  // The badge they show and their card are theirs, signed for them: they come along.
+  if ('badge' in c) takeShownBadge(c.badge);
+  if (c.card) takeCard(c.card, true);
   LS.set(K_PLAYER, token);
   if (initials) LS.set(K_INITIALS, JSON.stringify(initials));
   saveGuilds(guilds, true);
@@ -6837,6 +6841,7 @@ async function takeRecovered(token, made) {
       }
       await guildCall(`/${g.code}/leave`, { token: old });
     }
+    leaveSignatures();
     LS.set(K_PLAYER, token);
     saveGuilds(kept, true);
     // Kept aside with this device's labels for them, which the backup's would otherwise replace.
@@ -6844,6 +6849,16 @@ async function takeRecovered(token, made) {
   }
   if (Number.isFinite(made)) LS.set(K_RECOVERY, String(made));
   writeSync(syncFromHere(0));
+}
+// Badges' signatures, the badge shown and the card were made for the self
+// this device leaves, and prove nothing for the one it becomes: they go, so
+// the Worker is asked again, and none of them spreads to the other devices.
+function leaveSignatures() {
+  marks = mergeMarks(marks, readMarks());
+  marks.got = Object.fromEntries(Object.entries(marks.got).map(([id, v]) => [id, v.slice(0, 2)]));
+  LS.set(K_MARKS, JSON.stringify(marks));
+  LS.remove(K_BADGE);
+  LS.remove(K_CARD);
 }
 async function makeRecovery() {
   if (!playerToken || !Pair.is('recovery')) return;
@@ -7568,6 +7583,15 @@ function takeSyncedMarks(list, best) {
    page: it goes in our `me` message, our sector checks the signature, and
    it shows on our caret's hover card and menu. */
 const K_BADGE = 'letterfield.badge.v1';
+// The badge we show, as settings carry it: also one a linked device chose
+// whose achievement hasn't reached this device yet, which it isn't ours to drop.
+function chosenBadge() {
+  try {
+    const b = JSON.parse(LS.get(K_BADGE) || 'null');
+    if (Array.isArray(b) && MARK_BY[b[0]] && goodSig(b[1]) && !marks.got[b[0]]) return [b[0], b[1]];
+  } catch (_) {}
+  return shownBadge();
+}
 // The badge we show, [id, sig], while it's still one of ours with that signature.
 function shownBadge() {
   try {
