@@ -540,6 +540,32 @@ describe('who counts as online', () => {
     assert.deepEqual(b.ws.last('world'), { t: 'world', charted: 0, total: AREA_WORDS, players: 1, you: 1 });
   });
 
+  test('a surveyor who leaves while a report is out comes off the count with a report straight after it', async () => {
+    const atlas = w.env.ATLAS.get(), held = [];
+    let hold = false;
+    w.env.ATLAS = {
+      idFromName: (name) => name,
+      get: () => ({ fetch: (url, init) => (hold ? new Promise((resolve) => held.push(() => resolve(atlas.fetch(url, init)))) : atlas.fetch(url, init)) }),
+    };
+    const p = await w.player(0, 0, { id: 1, x: 5, y: 5 });
+    await settle();
+    hold = true;
+    w.clock.now += REPORT_MS;
+    await p.say({ t: 'pos', x: 6, y: 6 });  // a report goes out, listing them
+    assert.equal(held.length, 1);
+    p.ws.close();
+    await p.sector.webSocketClose(p.ws);  // and they close the tab before it's answered
+    held[0]();
+    await settle();
+    await settle();
+    assert.equal(w.atlas.totals().players, 1);  // the report that was out still listed them
+    assert.equal(held.length, 2, 'the sector reports again once the first is answered');
+    held[1]();
+    await settle();
+    await settle();
+    assert.equal(w.atlas.totals().players, 0);
+  });
+
   test('a surveyor sitting still stays counted, through their game saying it is here', async () => {
     const idle = await w.player(0, 0, { id: 1, x: 5, y: 5 });
     await w.tick(idle, REPORT_MS);

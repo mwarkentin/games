@@ -320,6 +320,7 @@ export class Sector {
     this.reportedAt = 0;     // when the Atlas last heard from this sector
     this.reportDue = false;
     this.reporting = false;
+    this.leaveDue = false;   // a forced report (someone left) came while one was out
     this.hot = null;         // [x, y] of the latest claim, for where new players land when nobody's placed
     this.where = null;       // [sx, sy], from the first socket to join or wake it
     this.claimsJson = null;  // every claim as JSON, built on the first join after waking, then kept up to date
@@ -1014,6 +1015,9 @@ export class Sector {
     if (!this.env.ATLAS || !where || !inArea(...where)) return;
     const since = this.now() - this.reportedAt;
     const owed = this.novasOwed.length > 0 && since >= NOVA_REPORT_MS;
+    // One forced while a report is out (someone left, and the sector may now
+    // go quiet) goes as soon as that report is answered, or has failed.
+    if (this.reporting && force) this.leaveDue = true;
     if (this.reporting || (!force && !owed && since < REPORT_MS)) { this.reportDue = true; return; }
     this.report();
   }
@@ -1039,13 +1043,14 @@ export class Sector {
       for (const [address, n] of by) this.chartedBy.set(address, (this.chartedBy.get(address) ?? 0) + n);
       this.unpassed += unpassed;
       this.novasOwed.unshift(...novas);
-      return;  // the totals just go out later
-    } finally {
-      this.reporting = false;
+      this.reportDue = true;  // the totals just go out later, with a later message
+      world = null;
     }
-    this.heard(world);
-    if (this.novasOwed.length) this.maybeReport();  // one that came while this report was out
-    this.takeTotals(world, listed);
+    this.reporting = false;
+    if (world) this.heard(world);
+    if (this.leaveDue) { this.leaveDue = false; this.maybeReport(true); }
+    else if (world && this.novasOwed.length) this.maybeReport();  // one that came while this report was out
+    if (world) this.takeTotals(world, listed);
   }
 }
 
