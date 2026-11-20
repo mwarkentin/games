@@ -618,3 +618,82 @@ def test_an_emote_before_signing_opens_your_page_to_sign(page: Page, site_url, e
     page.get_by_role("button", name="Wave to KIM").click()
     eventually(page, lambda: fake.sent("emote"))
     assert errors == []
+
+
+# Every time the people button's badge hides, as the page sees it.
+WATCH_BADGE = """() => { window.__hides = 0; new MutationObserver(() => { if (document.getElementById('peopleBadge').hidden) window.__hides++; })
+  .observe(document.getElementById('peopleBadge'), { attributes: true, attributeFilter: ['hidden'] }); }"""
+
+
+def test_the_badge_counts_everyone_else_by_whether_the_sector_counted_you(page: Page, site_url, errors):
+    """The button's count is everyone else online: the world's total less one only when the
+    sector says it counted us, so it's right whether or not we're in the total yet."""
+    page.clock.install()
+    fake = FakeSurvey()
+    start(page, site_url, fake)
+    badge = page.locator("#peopleBadge")
+    expect(badge).to_be_hidden()
+    # Our sector counted us and one other.
+    fake.totals_to("0,0", 2, you=True)
+    expect(badge).to_have_text("1")
+    page.evaluate(WATCH_BADGE)
+    # Another sector in view, which counts the other surveyor but not us: still one.
+    fake.totals_to("-1,0", 2)
+    page.clock.run_for(3000)
+    expect(badge).to_have_text("1")
+    # A total from before our sector reported us (one, the other surveyor): still one, not none.
+    fake.totals_to("0,0", 1)
+    page.clock.run_for(3000)
+    expect(badge).to_have_text("1")
+    assert page.evaluate("window.__hides") == 0
+    expect(page.locator("#peopleBtn")).to_have_attribute("aria-label", "Surveyors, 1 online")
+    assert errors == []
+
+
+def test_the_badge_holds_through_a_gap_but_goes_when_everyone_has(page: Page, site_url, errors):
+    """A count that dips to nothing and comes back within a few seconds (a sector between
+    reports, a socket reconnecting) doesn't make the badge blink; one that stays at nothing
+    hides it, after BADGE_HOLD_MS. A rise shows at once."""
+    page.clock.install()
+    fake = FakeSurvey()
+    start(page, site_url, fake)
+    badge = page.locator("#peopleBadge")
+    fake.totals_to("0,0", 2, you=True)
+    expect(badge).to_have_text("1")
+    page.evaluate(WATCH_BADGE)
+    # A gap: just us for a few seconds, then the other surveyor again.
+    fake.totals_to("0,0", 1, you=True)
+    page.clock.run_for(6000)
+    expect(badge).to_have_text("1")
+    fake.totals_to("0,0", 3, you=True)
+    expect(badge).to_have_text("2")  # at once
+    page.clock.run_for(20_000)
+    assert page.evaluate("window.__hides") == 0
+    # Everyone else really gone: the badge goes once the hold is up, and not before.
+    fake.totals_to("0,0", 1, you=True)
+    page.clock.run_for(10_000)
+    expect(badge).to_have_text("2")
+    page.clock.run_for(8000)
+    expect(badge).to_be_hidden()
+    expect(page.locator("#peopleBtn")).to_have_attribute("aria-label", "Surveyors")
+    assert errors == []
+
+
+def test_the_badge_agrees_with_the_list_when_the_drawer_opens_and_closes(page: Page, site_url, errors):
+    """The list's count (others, by id) and the world's total less us are one number, so opening
+    the drawer, and the list going stale after it shuts, don't change the badge."""
+    page.clock.install()
+    fake = FakeSurvey(surveyors=[KIM])
+    start(page, site_url, fake)
+    badge = page.locator("#peopleBadge")
+    fake.totals_to("0,0", 2, you=True)
+    expect(badge).to_have_text("1")
+    page.evaluate(WATCH_BADGE)
+    open_list(page)
+    expect(badge).to_have_text("1")
+    page.keyboard.press("Escape")
+    expect(page.locator("#people")).to_be_hidden()
+    page.clock.run_for(130_000)  # the list's count is stale now: the world's total takes over
+    expect(badge).to_have_text("1")
+    assert page.evaluate("window.__hides") == 0
+    assert errors == []

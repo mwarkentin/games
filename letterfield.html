@@ -166,7 +166,9 @@ body.docked .corner{right:calc(var(--notes-w) + 16px)}
 .tools-btn svg circle{transition:transform var(--t-slow) var(--ease-pop)}
 .tools-btn[aria-expanded="true"] svg circle:first-of-type{transform:translateX(-5px)}
 .tools-btn[aria-expanded="true"] svg circle:last-of-type{transform:translateX(5px)}
-@media (hover: hover){.tools-btn:hover,.people-btn:hover{background:var(--hover)}}  /* a tap leaves no grey behind on a phone */
+/* The hover tint goes over the panel, not in its place: it's see-through, and the
+   buttons float over the map. A tap leaves no grey behind on a phone. */
+@media (hover: hover){.tools-btn:hover,.people-btn:hover{background:linear-gradient(var(--hover), var(--hover)) var(--panel)}}
 /* Open, each of the corner's buttons is pressed: one of the three at a time. */
 .tools-btn[aria-expanded="true"],.people-btn[aria-expanded="true"],.notes-toggle[aria-expanded="true"]{background:var(--ink);border-color:var(--ink);color:var(--panel)}
 .tools-btn svg,.people-btn svg{width:20px;height:20px}
@@ -639,17 +641,23 @@ body.docked .nova{left:calc((100% - var(--notes-w)) / 2)}
 .peek i{width:8px;height:8px;border-radius:50%;background:var(--c);flex:none}
 .peek b{font-weight:600;letter-spacing:.08em}
 .peek span{color:var(--muted)}
-@media (max-width: 699px){
-  /* The top bar, solid from edge to edge and up through the safe area, like the
-     bottom one: the title takes what the buttons leave, flat on the bar. */
+/* The top bar, solid from edge to edge and up through the safe area, like the
+   bottom one: the title takes what the buttons leave, flat on the bar. On a
+   phone either way up: turned sideways, it's as wide as a tablet, but floating
+   cards there leave the map's letters showing around and between them. */
+@media (max-width: 699px), (max-height: 540px){
   .topbar{display:flex;align-items:stretch;gap:8px;position:fixed;top:0;left:0;right:0;z-index:20;background:var(--panel);border-bottom:1px solid var(--rule);
     box-shadow:0 8px 22px -16px rgba(0,0,0,.4);padding:calc(env(safe-area-inset-top, 0px) + 10px) var(--gr) 8px var(--gl)}
   .topbar .cartouche{position:static;flex:1;min-width:0;max-width:none;padding:2px;outline-offset:-4px;box-shadow:none}
   .topbar .corner{position:static;z-index:auto}
-  .topbar .tools-btn,.topbar .notes-toggle,.topbar .people-btn{box-shadow:none}
-  /* No title on a phone, so the territory has the room: the tab and the Home
+  .topbar .tools-btn,.topbar .notes-toggle,.topbar .people-btn{box-shadow:none;height:46px}
+  .topbar .tools-btn,.topbar .people-btn{width:44px}
+  .topbar .corner{align-self:center}
+  /* No title on a phone (sideways too: the map needs the height), so the territory has the room: the tab and the Home
      Screen icon say what this is, and a screen reader still hears it. */
   .brand{position:absolute;width:1px;height:1px;padding:0;border:0;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
+}
+@media (max-width: 699px){
   .territory{padding:6px 8px 6px 8px;column-gap:7px;row-gap:2px}
   .swatch{width:9px;height:9px}
   .t-name{font-size:15.5px}
@@ -1797,7 +1805,7 @@ function linkMoved(l, to, from) {
   }
   if (to === 'closed' && links.get(l.k) === l) links.delete(l.k);
   if (to === 'live') {
-    l.tries = 0; l.full = false;
+    l.tries = 0; l.full = false; l.liveAt = Date.now();
     l.tokens = CLAIM_BURST; l.refilled = performance.now();
     settleClaims(l);
   }
@@ -1876,6 +1884,9 @@ function onSurvey(l, m) {
   } else if (m.t === 'world' && Number.isInteger(m.charted) && Number.isInteger(m.total) && Number.isInteger(m.players)) {
     world = { charted: m.charted, total: m.total, players: m.players };
     worldExtra = 0;
+    // Whether this sector counted us in that total (see othersOnline).
+    l.crowd = { players: m.players, you: m.you === 1, at: Date.now() };
+    renderPeopleBadge();
   } else if (m.t === 'unverified') {
     // No good pass (it expired, or our address changed); the socket closes with code 4001.
     return turnedAway(l);
@@ -5059,6 +5070,45 @@ async function fetchWho() {
     clearTimeout(timer);
   }
 }
+// The button's count: everyone else online in the shared world, by id, so you
+// never count yourself, on this device or another of yours. The list's own
+// count while it's recent (it comes every WHO_REFRESH_MS while open).
+// Otherwise the newest of the world's totals, from whichever sector or the
+// universe map, less one when a sector we're joined to says it counted us
+// ({t: 'world', you: 1}): a total that doesn't count us (outside the shared
+// world, or from before our sector reported us) is all others. The count we
+// had stays while no sector is joined (the tab hidden, reconnecting), and
+// while we wait to be counted by a sector just joined, which reports us
+// within seconds: a total from then can't say whether we're in it.
+const WHO_FRESH_MS = 120000, BADGE_HOLD_MS = 15000, COUNT_WAIT_MS = 30000;  // a sector reports a newcomer within REPORT_MS (10 s)
+let badgeShown = 0, badgeZeroAt = 0;
+function othersOnline() {
+  if (whoData && Date.now() - whoData.at < WHO_FRESH_MS) return whoData.n;
+  let live = false, counted = false;
+  for (const l of links.values()) if (l.m.is('live')) { live = true; counted = counted || !!(l.crowd && l.crowd.you); }
+  const held = badgeShown && !badgeZeroAt ? badgeShown : 0;
+  if (!live && held) return held;
+  const home = links.get(sectorKey(Math.floor(cam.x), Math.floor(cam.y)));
+  const [sx, sy] = home ? home.k.split(',').map(Number) : [0, 0], area = worldMap ? worldMap.area : Infinity;
+  const waiting = myPid && home && home.m.is('live') && Date.now() - home.liveAt < COUNT_WAIT_MS && Math.abs(sx) <= area && Math.abs(sy) <= area;
+  if (!counted && waiting && held) return held;
+  return world ? Math.max(0, world.players - (counted ? 1 : 0)) : 0;
+}
+// A count that falls to nothing is held for BADGE_HOLD_MS before the badge
+// goes, so a gap in the numbers (a sector between reports, a socket
+// reconnecting) doesn't make it blink; if nobody's back by then, it goes.
+// Every other change shows at once.
+function renderPeopleBadge() {
+  if (!surveyApi) return;
+  const want = othersOnline(), now = Date.now();
+  if (want > 0 || !badgeShown) { badgeShown = want; badgeZeroAt = 0; }
+  else if (!badgeZeroAt) badgeZeroAt = now;
+  else if (now - badgeZeroAt >= BADGE_HOLD_MS) { badgeShown = 0; badgeZeroAt = 0; }
+  const others = badgeShown;
+  if (peopleBadge.textContent !== String(others)) peopleBadge.textContent = others;
+  peopleBadge.hidden = !others;
+  peopleBtn.setAttribute('aria-label', others ? `Surveyors, ${others.toLocaleString()} online` : 'Surveyors');
+}
 // Nearest first, from where we are now rather than where we asked from.
 function sortedWho() {
   const [cx, cy] = camTerr(), d = s => Math.max(Math.abs(s.rx - cx), Math.abs(s.ry - cy)), h = s => Math.hypot(s.rx - cx, s.ry - cy);
@@ -5066,13 +5116,7 @@ function sortedWho() {
 }
 function renderWho() {
   if (!surveyApi) return;
-  // The button's count: everyone else online in the shared world. The list's
-  // own count while it's recent (it comes every WHO_REFRESH_MS while open); the
-  // world's total otherwise, which trails the Atlas's reports by a minute or so.
-  const others = whoData && Date.now() - whoData.at < 120000 ? whoData.n : world ? Math.max(0, world.players - 1) : 0;
-  if (peopleBadge.textContent !== String(others)) peopleBadge.textContent = others;
-  peopleBadge.hidden = !others;
-  peopleBtn.setAttribute('aria-label', others ? `Surveyors, ${others.toLocaleString()} online` : 'Surveyors');
+  renderPeopleBadge();
   if (!Panel.is('people')) return;
   renderYouRow();
   const st = Who.state;
@@ -5380,6 +5424,7 @@ canvas.addEventListener('pointerdown', e => {
 setInterval(() => {
   if (!surveyApi) return;
   renderWhoIfMoved();
+  renderPeopleBadge();  // a count held at nothing goes once its time is up
   if (surveyPaused) return;
   const home = links.get(sectorKey(Math.floor(cam.x), Math.floor(cam.y))), now = Date.now();
   if (!home || !home.m.is('live') || now - lastHere < HERE_MS || (posSent && posSent.l === home && now - posSent.at < HERE_MS)) return;
@@ -7336,8 +7381,9 @@ function resize() {
 window.addEventListener('resize', resize);
 if (window.ResizeObserver) {
   const ro = new ResizeObserver(() => { if (Math.round(barEl.getBoundingClientRect().top) !== mapTop + H || (topEl.getBoundingClientRect().bottom || 0) !== mapTop) resize(); });
-  ro.observe(barEl);
-  ro.observe(topEl);
+  // Their border boxes: the bars' padding takes in the safe areas, which change as a phone turns.
+  ro.observe(barEl, { box: 'border-box' });
+  ro.observe(topEl, { box: 'border-box' });
 }
 matchMedia('(prefers-color-scheme: dark)').addEventListener('change', readColors);
 new MutationObserver(readColors).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme', 'class'] });

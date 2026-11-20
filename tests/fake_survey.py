@@ -179,6 +179,12 @@ class FakeSurvey:
         `word` ([w, x, y, d]) was charted, `ago` milliseconds before."""
         self.sockets[sector].send(json.dumps({"t": "nova", "n": [rx, ry, NOW_MS, *word, initials], "ago": ago}))
 
+    def totals_to(self, sector: str, players: int, you: bool = False, charted: int = 0) -> None:
+        """Sends sector `sector`'s socket the world's totals, as the sector passes on the Atlas's answer
+        to a report: `you` when that sector counted this player in them."""
+        frame = {"t": "world", "charted": charted, "total": AREA_WORDS, "players": players}
+        self.sockets[sector].send(json.dumps({**frame, "you": 1} if you else frame))
+
     def handle_world(self, route: Route) -> None:
         reply(route, self.world)
 

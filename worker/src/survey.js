@@ -68,7 +68,8 @@
 //   {t: 'guild', tag, on}           which members of one of this player's guilds are online, and where
 //                                   ([id, initials, rx, ry, idle, flags], flags as the list's),
 //                                   from the Atlas, as it changes
-//   {t: 'world', charted, total, players}   the whole world's totals, as they change
+//   {t: 'world', charted, total, players, you?}   the whole world's totals, as they change: players
+//                                   by id, each once; you: 1 when this sector counted this player in them
 //   {t: 'nova', n: [rx, ry, at, w, x, y, d, initials], ago}
 //                                   a territory in another sector has gone supernova, `ago` ms before:
 //                                   the claim of its last hidden word, which that sector broadcast to
@@ -325,6 +326,8 @@ export class Sector {
     this.counts = null;      // hidden words charted in each of the sector's 16 territories, likewise
     this.hidden = null;      // hidden words each of those territories has, from the map, worked out when first needed
     this.world = null;       // the last totals the Atlas sent back
+    this.counted = new Set();  // the ids this sector listed in the report those totals answered: they're in its count
+    this.worldSent = new WeakMap();  // socket → the last totals frame it was sent, so a frame only goes again when it changes
     this.people = null;      // socket → its attachment, read from the sockets on first use after waking
     this.guildChecks = new WeakMap();  // socket → codes of its guilds whose check is out (checkGuilds): kept in memory, never in an attachment
     this.chartedBy = new Map();  // address → words it charted here since the last report
@@ -501,7 +504,9 @@ export class Sector {
     this.claimsJson ??= JSON.stringify(this.sql.exec('SELECT w, x, y, d, s, initials, at FROM claims ORDER BY at, key').toArray().map(row));
     const hello = JSON.stringify({ t: 'hello', you: id, sector: [sx, sy], claims: [] });
     try { ws.send(hello.replace('"claims":[]', `"claims":${this.claimsJson}`)); } catch { /* closing */ }
-    if (this.world) send(ws, { t: 'world', ...this.world });
+    // The totals, unless they're older than anyone counts as online for: a sector
+    // left awake but quiet would otherwise hand a newcomer an old count.
+    if (this.world && this.now() - this.reportedAt < ONLINE_MS) this.tellWorld([ws]);
     if (!this.logChecked) {
       // The first join after waking: supernovas from before they were
       // recorded are found, and anything the log hasn't got goes soon.
@@ -946,8 +951,8 @@ export class Sector {
   async askAtlas() {
     this.askedAt = this.now();
     try {
-      const res = await this.toAtlas({ by: [] });
-      if (res.ok) this.heard(await res.json());
+      const res = await this.toAtlas({ by: [] }), listed = this.listedIds;
+      if (res.ok) { const world = await res.json(); this.heard(world); this.takeTotals(world, listed); }
     } catch { /* claims go ahead */ }
   }
 
@@ -955,13 +960,43 @@ export class Sector {
   toAtlas(extra) {
     const [sx, sy] = this.coords();
     this.overToday();
+    const listing = this.listing();
+    this.listedIds = new Set((listing.who ?? []).map((e) => e[0]));
     return atlas(this.env).fetch('https://atlas/report', {
       method: 'POST',
       body: JSON.stringify({
-        sx, sy, players: this.here().length, charted: this.chartedCounts(), hot: this.crowd() ?? this.hot,
-        day: this.overDay, overAt: this.overAt, novaSeq: this.heardNovaSeq(), ...this.listing(), ...extra,
+        sx, sy, players: this.headcount(), charted: this.chartedCounts(), hot: this.crowd() ?? this.hot,
+        day: this.overDay, overAt: this.overAt, novaSeq: this.heardNovaSeq(), ...listing, ...extra,
       }),
     });
+  }
+
+  // People here, each once: a surveyor on two linked devices is one, as on the
+  // surveyor list, which counts by id.
+  headcount() {
+    return new Set(this.here().map((p) => p.pid || p.id)).size;
+  }
+
+  // The world's totals, as the Atlas answered a report, to each socket here
+  // whose frame they change (or to `to`). Each says whether the count takes in
+  // that socket's surveyor (`you`): this sector listed them in the report, so
+  // the game can leave itself out of "others online" exactly, rather than
+  // guess it was counted.
+  takeTotals(world, ids) {
+    if (!isInt(world?.charted, 0, AREA_WORDS) || !isInt(world?.players, 0, 1e9)) return;
+    this.world = { charted: world.charted, total: AREA_WORDS, players: world.players };
+    this.counted = ids;
+    this.tellWorld();
+  }
+
+  tellWorld(to = this.ctx.getWebSockets()) {
+    for (const ws of to) {
+      const pid = this.person(ws)?.pid;
+      const frame = JSON.stringify({ t: 'world', ...this.world, ...(pid && this.counted.has(pid) ? { you: 1 } : {}) });
+      if (this.worldSent.get(ws) === frame) continue;
+      this.worldSent.set(ws, frame);
+      try { ws.send(frame); } catch { /* closing */ }
+    }
   }
 
   // Sectors in the shared world tell the Atlas their numbers at most every
@@ -990,9 +1025,10 @@ export class Sector {
     this.chartedBy = new Map();
     this.unpassed = 0;
     this.novasOwed = [];
-    let world;
+    let world, listed;
     try {
       const res = await this.toAtlas({ by: [...by], ...(unpassed ? { unpassed } : {}), ...(novas.length ? { novas } : {}) });
+      listed = this.listedIds;
       if (!res.ok) throw new Error(`atlas ${res.status}`);
       world = await res.json();
     } catch {
@@ -1005,10 +1041,7 @@ export class Sector {
     }
     this.heard(world);
     if (this.novasOwed.length) this.maybeReport();  // one that came while this report was out
-    if (!isInt(world?.charted, 0, AREA_WORDS) || !isInt(world?.players, 0, 1e9)) return;
-    if (this.world && world.charted === this.world.charted && world.players === this.world.players) return;
-    this.world = { charted: world.charted, total: AREA_WORDS, players: world.players };
-    broadcast(this.ctx, JSON.stringify({ t: 'world', ...this.world }));
+    this.takeTotals(world, listed);
   }
 }
 
@@ -1231,12 +1264,18 @@ export class Atlas {
 
   totals() {
     const now = this.now();
-    let charted = 0, players = 0;
+    // Players by id, so someone in two sectors' reports (moving between them,
+    // or on two devices) counts once, as on the surveyor list; and anyone a
+    // sector counts without listing (an older game, with no id), as they are.
+    let charted = 0, unlisted = 0;
+    const ids = new Set();
     for (const r of this.load().values()) {
       charted += r.done;
-      if (now - r.at < ONLINE_MS) players += r.players;
+      if (now - r.at >= ONLINE_MS) continue;
+      for (const e of r.who) ids.add(e[0]);
+      unlisted += Math.max(0, r.players - r.who.length);
     }
-    return { charted, total: AREA_WORDS, players };
+    return { charted, total: AREA_WORDS, players: ids.size + unlisted };
   }
 
   worldMap() {
