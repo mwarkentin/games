@@ -6032,15 +6032,18 @@ function guildMoved(to, from) {
 }
 const saveLabels = () => LS.set(K_GUILD_LABELS, JSON.stringify(Object.fromEntries(labels)));
 // Every change to our guilds goes through here: kept, told to every sector,
-// and (unless it came from a linked device) synced to the others.
-function saveGuilds(list, synced = false) {
+// and (unless it came from a linked device) synced to the others. One that
+// another tab saved (`kept`) is only taken in here.
+function saveGuilds(list, synced = false, kept = false) {
   const before = myGuilds.map(g => g.code).join();
   myGuilds = guildList(list);
-  LS.set(K_GUILDS, JSON.stringify(myGuilds));
-  // The first, where a page from when there was one guild at a time looks.
-  if (myGuilds.length) LS.set(K_GUILD, JSON.stringify(myGuilds[0])); else LS.remove(K_GUILD);
   for (const c of [...labels.keys()]) if (!guildOfCode(c)) labels.delete(c);
-  saveLabels();
+  if (!kept) {
+    LS.set(K_GUILDS, JSON.stringify(myGuilds));
+    // The first, where a page from when there was one guild at a time looks.
+    if (myGuilds.length) LS.set(K_GUILD, JSON.stringify(myGuilds[0])); else LS.remove(K_GUILD);
+    saveLabels();
+  }
   if (myGuilds.map(g => g.code).join() !== before) {
     const tags = new Set(myGuilds.map(g => g.tag));
     for (const t of [...mates.keys()]) if (!tags.has(t)) mates.delete(t);
@@ -6519,7 +6522,12 @@ function applySettings(c) {
     saveLabels();
   }
   if (!next || next.map(g => g.code).join() === myGuilds.map(g => g.code).join()) { renderGuild(); renderWho(); return; }
-  saveGuilds(next, true);
+  takeGuilds(next);
+}
+// A list of our guilds from elsewhere (a linked device, or another tab), and
+// what follows from it here.
+function takeGuilds(next, kept = false) {
+  saveGuilds(next, true, kept);
   if (myGuilds.length && Membership.is('out')) Membership.go('in');
   else if (!myGuilds.length && Membership.is('in', 'confirming')) Membership.go('out');
   else if (Membership.is('confirming') && !guildOfCode(confirming)) Membership.go('in');  // the one we were asking about went elsewhere
@@ -6529,6 +6537,24 @@ function applySettings(c) {
     renderGuild(); renderWho(); invalidate();
   }
 }
+// Another tab changed our guilds, our labels for them or who's muted: take
+// them in as they are, so this tab never saves back what it had before.
+window.addEventListener('storage', e => {
+  if (e.key === K_GUILDS || e.key === K_GUILD_LABELS) {
+    const next = guildList(readStored(K_GUILDS, [])).map(g => { const had = guildOfCode(g.code); return had && had.lid && !g.lid ? { ...g, lid: had.lid } : g; });
+    labels.clear();
+    for (const [code, l] of Object.entries(readStored(K_GUILD_LABELS, {}) || {})) { const t = cleanLabel(l); if (t && next.some(g => g.code === code)) labels.set(code, t); }
+    if (next.map(g => g.code).join() !== myGuilds.map(g => g.code).join()) return takeGuilds(next, true);
+    myGuilds = next;
+    renderGuild(); renderWho(); invalidate();
+  } else if (e.key === K_MUTED || e.key === K_MUTED_AS) {
+    muted.clear();
+    for (const p of readList(K_MUTED).slice(-MUTED_MAX)) if (typeof p === 'string' && PID_RE.test(p)) muted.add(p);
+    mutedAs.clear();
+    for (const [p, v] of mutedAsOf(readStored(K_MUTED_AS, {}))) if (muted.has(p)) mutedAs.set(p, v);
+    renderWho(); renderMuted(); invalidate();
+  }
+});
 // A device that was brought back with a recovery code keeps the guilds it was
 // in, joined again as the surveyor it's become, and adds them to the backup's
 // once the first sync has brought those, up to GUILDS_MAX; any that don't fit

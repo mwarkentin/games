@@ -708,3 +708,29 @@ def test_a_guild_that_let_you_go_elsewhere_goes_and_the_others_stay(page: Page, 
     assert stored(page, "letterfield.guild-labels.v1") == {CODE2: "Work"}
     expect(page.locator(".who-guild .who-head-name")).to_have_text(["WorkAmber Lantern Bureau"])
     assert errors == [] or all("404" in e for e in errors)
+
+
+def test_guilds_labels_and_mutes_changed_in_another_tab_are_taken_in(page: Page, site_url, errors):
+    """Each tab kept its own guilds and mutes from when it loaded, so the next save from one
+    put back what another tab had just changed, there and on every linked device."""
+    guilds = in_both()
+    start(page, site_url, FakeSurvey(), guilds, mine=[MINE])
+    html = page.locator("html")
+    expect(html).to_have_attribute("data-guild", "in")
+    other = page.context.new_page()
+    other.goto(f"{site_url}/")  # the same origin: what another Letterfield tab saving would do
+    # Joined another guild there, with a label for it, and muted someone.
+    other.evaluate(
+        "([list, labels, kim]) => { localStorage.setItem('letterfield.guilds.v1', JSON.stringify(list));"
+        " localStorage.setItem('letterfield.guild-labels.v1', JSON.stringify(labels));"
+        " localStorage.setItem('letterfield.muted.v1', JSON.stringify([kim])); }",
+        [[MINE, WORK], {CODE2: "Work"}, KIM[0]],
+    )
+    page.wait_for_function(f"window.__lf.myGuilds().map(g => g.code).join() === '{CODE},{CODE2}'")
+    assert page.evaluate("window.__lf.labels()") == {CODE2: "Work"}
+    page.wait_for_function(f"window.__lf.muted().join() === '{KIM[0]}'")
+    # Then left them all there.
+    other.evaluate("localStorage.setItem('letterfield.guilds.v1', '[]')")
+    expect(html).to_have_attribute("data-guild", "out")
+    other.close()
+    assert errors == []
