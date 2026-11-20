@@ -338,11 +338,13 @@ def test_the_corner_opens_one_panel_at_a_time(page: Page, site_url, errors, size
         assert page.locator("#map").bounding_box()["width"] == map_width
 
     page.click("#toolsBtn")
-    expect(page.locator("#toolStack")).to_be_visible()
+    expect(page.locator("#toolsPanel")).to_be_visible()
     assert page.evaluate(PRESSED) == ["#toolsBtn"]
     expect(page.locator("#people")).to_be_hidden()
     expect(html).to_have_attribute("data-panel", "tools")
-    expect(page.locator("body")).not_to_have_class(re.compile(r"\bdocked\b"))
+    if desk:  # in the same slot too
+        expect(page.locator("body")).to_have_class(re.compile(r"\bdocked\b"))
+        assert page.locator("#map").bounding_box()["width"] == map_width
     tools_bg = page.locator("#toolsBtn").evaluate(SETTLED_BG)
 
     # The keys too: N for the notes, P for the Surveyors, each putting away what was open.
@@ -350,7 +352,7 @@ def test_the_corner_opens_one_panel_at_a_time(page: Page, site_url, errors, size
     page.keyboard.press("n")
     expect(html).to_have_attribute("data-panel", "notes")
     assert page.evaluate(PRESSED) == ["#notesToggle"]
-    expect(page.locator("#toolStack")).to_be_hidden()
+    expect(page.locator("#toolsPanel")).to_be_hidden()
     # Open, the notes button shows pressed as the others do, docked or not.
     expect(page.locator("#notesToggle")).to_be_visible()
     assert page.locator("#notesToggle").evaluate(SETTLED_BG) == tools_bg
@@ -362,6 +364,53 @@ def test_the_corner_opens_one_panel_at_a_time(page: Page, site_url, errors, size
     page.click("#peopleBtn")
     expect(html).to_have_attribute("data-panel", "none")
     assert page.evaluate(PRESSED) == []
+    assert errors == []
+
+
+# Clicks `sel`, then measures every frame for half a second (past any slide): where the
+# corner, the bar and the drawer now open are, how wide the map is, and where it's looking.
+WATCH_SWITCH = """async sel => {
+  const box = s => { const b = document.querySelector(s).getBoundingClientRect(); return [b.left, b.top, b.width, b.height].map(Math.round); };
+  const open = () => ({ notes: '#notes', people: '#people', tools: '#toolsPanel' })[window.__lf.panel()];
+  const frames = [];
+  document.querySelector(sel).click();
+  const t0 = performance.now();
+  while (performance.now() - t0 < 500) {
+    const c = window.__lf.cam;
+    frames.push({ panel: window.__lf.panel(), corner: box('.corner'), bar: box('#bar'), map: window.__lf.mapWidth(),
+      cam: [c.x, c.y, c.cs].map(v => +v.toFixed(3)), drawer: box(open()), toast: getComputedStyle(document.getElementById('toast')).right });
+    await new Promise(requestAnimationFrame);
+  }
+  return frames;
+}"""
+
+
+def test_moving_between_the_corners_panels_on_a_computer_moves_nothing(page: Page, site_url, errors):
+    """With the notes docked, opening the tools put the notes away: the map widened and
+    moved, and the buttons, the bar and the notes slid right by the drawer's width, then
+    back as the Surveyors docked in their place. Now notes, tools and Surveyors share the
+    one place beside the map: from one to the next, the map, the corner, the bar and where a
+    note pops up hold still, and the new drawer is in place from its first frame, not
+    sliding in."""
+    start(page, site_url, FakeSurvey(surveyors=[KIM]), viewport={"width": 1280, "height": 900})
+    expect(page.locator("html")).to_have_attribute("data-panel", "notes")
+    page.wait_for_timeout(400)  # the first frames settled
+    before = page.evaluate(WATCH_SWITCH.replace("document.querySelector(sel).click();", ""), "")[-1]
+    assert before["map"] == 1280 - 340 and before["drawer"] == [939, 0, 341, 900], before  # 340 wide, and its border
+    for sel, panel in [
+        ("#toolsBtn", "tools"),
+        ("#peopleBtn", "people"),
+        ("#notesToggle", "notes"),
+        ("#toolsBtn", "tools"),
+    ]:
+        frames = page.evaluate(WATCH_SWITCH, sel)
+        assert all(f["panel"] == panel for f in frames), (sel, frames[0])
+        for f in frames:
+            for k in ("corner", "bar", "map", "cam", "drawer", "toast"):
+                assert f[k] == before[k], (sel, k, f[k], before[k])
+    # The tools' own button shuts them, and the drawer they stood in for (the notes) is back.
+    frames = page.evaluate(WATCH_SWITCH, "#toolsBtn")
+    assert frames[-1]["panel"] == "notes" and frames[-1]["corner"] == before["corner"]
     assert errors == []
 
 

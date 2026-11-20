@@ -245,7 +245,7 @@ def test_the_tools_are_three_groups_and_a_mixer(page: Page, site_url, errors):
     page.goto(f"{site_url}/letterfield#debug")
     page.wait_for_function("window.__lf")
     open_tools_quietly(page)
-    stack = page.locator("#toolStack")
+    stack = page.locator("#toolsPanel")
     music, slider = page.locator("#music"), page.get_by_role("slider", name="Music volume")
     sound, effects = page.locator("#sound"), page.get_by_role("slider", name="Sound effects volume")
     # Zoom in one row, the places, then a row each for sound effects and music:
@@ -257,7 +257,7 @@ def test_the_tools_are_three_groups_and_a_mixer(page: Page, site_url, errors):
     expect(effects).to_have_value("100")
     expect(slider).to_have_value("0")  # the music's off, so its slider's at 0
     expect(slider).to_have_attribute("aria-valuetext", "Music off")
-    stack.evaluate("e => Promise.all(e.getAnimations({ subtree: true }).map(a => a.finished))")  # done popping up
+    stack.evaluate("e => Promise.all(e.getAnimations({ subtree: true }).map(a => a.finished))")  # done rising
     box = stack.bounding_box()
     for row in page.locator(".tool-mix").all():
         assert row.bounding_box()["height"] >= 44
@@ -837,8 +837,8 @@ def test_the_word_list_names_only_words_half_in_sight(page: Page, site_url, erro
     # ends, can't be seen either. A word reading away from the title box (down),
     # or from the bar (up), with its first three letters under the panel isn't
     # listed, and with only its first two there it is, where the rest lands on
-    # open map. The open tools don't count, so opening them never reshuffles
-    # the list.
+    # open map. The tools' sheet on a phone doesn't count, so opening it never
+    # reshuffles the list; on a computer they're docked beside the map.
     cs = 12
     open_tools(page)
     # On a phone the map starts below the top bar, which holds the title box.
@@ -855,10 +855,14 @@ def test_the_word_list_names_only_words_half_in_sight(page: Page, site_url, erro
         assert not seen, (sel, got)
         seen, got = listed(key, sx, hidden2, cs)
         assert seen, (sel, got)
-    page.locator("#toolStack").evaluate("e => Promise.all(e.getAnimations({ subtree: true }).map(a => a.finished))")  # done dropping down
-    box = page.locator("#toolStack").bounding_box()
-    seen, got = listed(down, box["x"] + box["width"] / 2, box["y"] + box["height"] - 2.5 * cs, cs)
-    assert seen, ("#toolStack", got)
+    page.locator("#toolsPanel").evaluate("e => Promise.all(e.getAnimations({ subtree: true }).map(a => a.finished))")  # done opening
+    box = page.locator("#toolsPanel").bounding_box()
+    if size[0] < 700:  # a sheet over the map's bottom: a word reading up from under its top edge is still listed
+        seen, got = listed(up, box["x"] + box["width"] / 2, box["y"] + 2.5 * cs, cs)
+        assert seen, ("#toolsPanel", got)
+    else:  # docked beside it, in the notes' place, so the map's edge is where it was
+        assert box["x"] >= right - 1  # its border on the map's edge
+        assert page.evaluate("innerWidth - (document.body.classList.contains('docked') ? 340 : 0)") == right
     assert errors == []
 
 
@@ -1292,17 +1296,22 @@ def test_a_supernova_leaves_its_remnant_behind_the_shockwave(page: Page, site_ur
     assert errors == []
 
 
-@pytest.mark.parametrize("size", [(375, 740), (1280, 900)], ids=["phone", "desktop"])
-def test_the_tools_drop_down_from_their_button_and_go_again(page: Page, site_url, errors, size):
+@pytest.mark.parametrize("size", [(375, 667), (390, 844)], ids=["small-phone", "phone"])
+def test_on_a_phone_the_tools_rise_as_a_short_sheet_and_go_again(page: Page, site_url, errors, size):
+    """On a phone the tools dropped from their button while the other drawers rose from the
+    bottom. Now they rise as a sheet too, only as tall as they are, so the middle of the
+    map, where zoom closes in, stays in sight above them, even on a small phone."""
     without_worker(page, site_url, "letterfield")
     page.set_viewport_size({"width": size[0], "height": size[1]})
     page.goto(f"{site_url}/letterfield#debug")
     page.click("#coachOk")
-    button, stack = page.locator("#toolsBtn"), page.locator("#toolStack")
+    page.evaluate("(([w, x, y, d]) => window.__lf.collect(w, x, y, d, false))(window.__lf.chunk(0, 0).words.map(o => [o.w, o.x, o.y, o.d])[0])")
+    expect(page.locator("#lastFind")).to_be_attached()  # a find, so Last find is there and the sheet's at its tallest
+    button, stack = page.locator("#toolsBtn"), page.locator("#toolsPanel")
     # Closed at first: out of sight, out of reach of taps and Tab.
     expect(button).to_have_attribute("aria-expanded", "false")
     expect(stack).to_be_hidden()
-    assert page.evaluate("document.getElementById('toolStack').inert")
+    assert page.evaluate("document.getElementById('toolsPanel').inert")
 
     # The map ends at the bar's top edge, and the bar runs to the screen's
     # bottom. On a phone it starts at the bottom of a bar along the top.
@@ -1310,24 +1319,26 @@ def test_the_tools_drop_down_from_their_button_and_go_again(page: Page, site_url
     box = page.locator("#map").bounding_box()
     assert round(box["y"] + box["height"]) == round(bar["y"])
     assert round(bar["y"] + bar["height"]) == size[1] and bar["x"] == 0
-    if size[0] < 700:
-        top = page.locator("#topbar").bounding_box()
-        assert top["x"] == 0 and top["y"] == 0 and top["width"] == size[0] and round(box["y"]) == round(top["y"] + top["height"])
-    else:
-        assert box["y"] == 0
+    top = page.locator("#topbar").bounding_box()
+    assert top["x"] == 0 and top["y"] == 0 and top["width"] == size[0] and round(box["y"]) == round(top["y"] + top["height"])
 
     # A tap opens it and focus moves in.
     button.click()
     expect(button).to_have_attribute("aria-expanded", "true")
     expect(stack).to_be_visible()
     expect(page.locator("#zoomOut")).to_be_focused()  # the zoom row's first button
-    stack.evaluate("e => Promise.all(e.getAnimations({ subtree: true }).map(a => a.finished))")  # done popping up
-    box, tools = stack.bounding_box(), button.bounding_box()
-    assert box["y"] >= tools["y"] + tools["height"] and box["y"] + box["height"] <= bar["y"], "it drops from its button, clear of the word list"
-    assert abs(box["x"] + box["width"] - tools["x"] - tools["width"]) < 1
-    for el in ["#toolsBtn", "#music", "#sound", "#home", "#zoomIn", "#zoomOut"]:
+    expect(page.locator("#lastFind")).to_be_visible()
+    stack.evaluate("e => Promise.all(e.getAnimations({ subtree: true }).map(a => a.finished))")  # done rising
+    box = stack.bounding_box()
+    assert box["x"] == 0 and box["width"] == size[0] and box["y"] + box["height"] == size[1], box  # edge to edge, from the bottom
+    middle = page.evaluate("(m => m.getBoundingClientRect().top + m.clientHeight / 2)(document.getElementById('map'))")
+    assert box["y"] > middle + 12, (box, middle)  # the middle of the map, and the row of letters on it, in sight above
+    expect(page.locator(".tools-head h2")).to_have_text("Tools")  # a title and close button, as the other sheets have
+    expect(page.locator("#toolsClose")).to_be_visible()
+    expect(page.locator(".tool-keys")).to_be_hidden()  # but no keys on a phone
+    for el in ["#toolsBtn", "#music", "#sound", "#home", "#lastFind", "#zoomIn", "#zoomOut", "#toolsClose"]:
         b = page.locator(el).bounding_box()
-        assert b["width"] >= 40 and b["height"] >= 40, (el, b)
+        assert b["width"] >= 36 and b["height"] >= 36, (el, b)
     assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
     # Left open, it starts shut all the same on the next visit.
     page.reload()
@@ -1340,19 +1351,23 @@ def test_the_tools_drop_down_from_their_button_and_go_again(page: Page, site_url
     expect(button).to_have_attribute("aria-expanded", "false")
     expect(stack).to_be_hidden()
 
-    # Escape shuts it and brings focus back to the button.
+    # Escape shuts it and brings focus back to the button, and so does its close button.
     button.click()
     page.keyboard.press("Tab")
     page.keyboard.press("Escape")
     expect(button).to_have_attribute("aria-expanded", "false")
     expect(button).to_be_focused()
+    button.click()
+    page.click("#toolsClose")
+    expect(button).to_have_attribute("aria-expanded", "false")
+    expect(button).to_be_focused()
 
     # Dragging the map leaves it open; a tap on the map shuts it, and does nothing else.
     button.click()
-    cx, cy = 80, page.evaluate("(m => m.getBoundingClientRect().top + m.clientHeight / 2)(document.getElementById('map'))")  # clear of the stack, top right
+    cx, cy = 80, middle - 60  # on the map, above the sheet
     page.mouse.move(cx, cy)
     page.mouse.down()
-    page.mouse.move(cx + 60, cy + 30, steps=5)
+    page.mouse.move(cx + 60, cy + 20, steps=5)
     page.mouse.up()
     expect(button).to_have_attribute("aria-expanded", "true")
     # The drag's glide comes to rest: the camera holds still from one frame to the next.
@@ -1365,6 +1380,142 @@ def test_the_tools_drop_down_from_their_button_and_go_again(page: Page, site_url
     expect(button).to_have_attribute("aria-expanded", "false")
     expect(stack).to_be_hidden()
     assert page.evaluate("({ ...window.__lf.cam })") == cam
+    assert errors == []
+
+
+def open_after_settling(page: Page, site_url: str, size: tuple[int, int]) -> None:
+    without_worker(page, site_url, "letterfield")
+    page.set_viewport_size({"width": size[0], "height": size[1]})
+    page.goto(f"{site_url}/letterfield#debug")
+    page.click("#coachOk")
+
+
+SETTLED = "e => Promise.all(e.getAnimations({ subtree: true }).map(a => a.finished))"
+# Where everything around the map is, and how wide the map is: what mustn't move between drawers.
+AROUND_THE_MAP = """() => {
+  const r = s => { const b = document.querySelector(s).getBoundingClientRect(); return [b.left, b.top, b.width, b.height]; };
+  return { corner: r('.corner'), bar: r('#bar'), map: window.__lf.mapWidth(), docked: document.body.classList.contains('docked'),
+    toast: getComputedStyle(document.getElementById('toast')).right };
+}"""
+
+
+def test_on_a_computer_the_tools_take_the_docked_drawers_place(page: Page, site_url, errors):
+    """The tools were a stack dropping from their button, and opening them put away the
+    docked notes, so the map, the buttons and the bar slid right, and back again when the
+    notes came back. They're a drawer in the notes' place now, swapped in, and shutting
+    them brings the notes back."""
+    open_after_settling(page, site_url, (1280, 900))
+    button, panel, html = page.locator("#toolsBtn"), page.locator("#toolsPanel"), page.locator("html")
+    expect(html).to_have_attribute("data-panel", "notes")  # a computer opens with the notes docked
+    expect(panel).to_be_hidden()
+    assert page.evaluate("document.getElementById('toolsPanel').inert")
+    around = page.evaluate(AROUND_THE_MAP)
+    assert around["docked"] and around["map"] == 1280 - 340
+    notes = page.locator("#notes").bounding_box()
+
+    # A tap opens them in the notes' place, focus moves in, and nothing around the map moves.
+    button.click()
+    expect(html).to_have_attribute("data-panel", "tools")
+    expect(button).to_have_attribute("aria-expanded", "true")
+    expect(page.locator("#notesToggle")).to_have_attribute("aria-expanded", "false")
+    expect(page.locator("#zoomOut")).to_be_focused()
+    panel.evaluate(SETTLED)
+    assert panel.bounding_box() == notes  # just where the notes were
+    expect(page.locator("#notes")).to_be_hidden()
+    assert page.evaluate(AROUND_THE_MAP) == around
+    # Every tool is there, at a size to tap, with the keys listed for a keyboard.
+    expect(page.locator(".tools-head h2")).to_have_text("Tools")
+    expect(page.locator(".tool-mix")).to_have_text(["Effects", "Music"])
+    for el in ["#music", "#sound", "#home", "#zoomIn", "#zoomOut", "#toolsClose"]:
+        b = page.locator(el).bounding_box()
+        assert b["width"] >= 36 and b["height"] >= 36 and b["x"] >= 1280 - 340, (el, b)
+    keys = page.locator(".tool-keys")
+    expect(keys).to_be_visible()
+    for key, does in [("WASD", "Move around"), ("Shift", "Circle a word"), ("N", "Field notes"), ("T", "Tools"),
+                      ("M", "Effects"), ("B", "Music"), ("Esc", "Close")]:
+        expect(keys.locator("dl > div", has=page.locator("kbd", has_text=re.compile(f"^{re.escape(key)}$")))).to_contain_text(does)
+    expect(page.locator("#keysPeople")).to_be_hidden()  # no Surveyors without the survey
+
+    # A tap on the map leaves them be: they're beside it, not over it, so it starts a circle,
+    # and Escape lets go of that before it shuts anything.
+    page.mouse.click(300, 450)
+    expect(html).to_have_attribute("data-panel", "tools")
+    page.keyboard.press("Escape")
+    expect(html).to_have_attribute("data-panel", "tools")
+
+    # A second tap shuts them, and the notes they stood in for come back, docked as they were.
+    button.click()
+    expect(html).to_have_attribute("data-panel", "notes")
+    expect(page.locator("#notes")).to_be_visible()
+    expect(panel).to_be_hidden()
+    assert page.evaluate(AROUND_THE_MAP) == around
+    # So do Escape and the close button, with focus back on the tools button.
+    button.click()
+    page.keyboard.press("Escape")
+    expect(html).to_have_attribute("data-panel", "notes")
+    expect(button).to_be_focused()
+    button.click()
+    page.click("#toolsClose")
+    expect(html).to_have_attribute("data-panel", "notes")
+    expect(button).to_be_focused()
+
+    # T opens and shuts them as N does the notes, focus staying on the map.
+    page.locator("#map").focus()
+    page.keyboard.press("t")
+    expect(html).to_have_attribute("data-panel", "tools")
+    expect(page.locator("#map")).to_be_focused()
+    page.keyboard.press("n")
+    expect(html).to_have_attribute("data-panel", "notes")
+    assert page.evaluate(AROUND_THE_MAP) == around
+
+    # With the notes shut, the tools dock on their own, and shutting them leaves nothing open.
+    page.keyboard.press("n")
+    expect(html).to_have_attribute("data-panel", "none")
+    page.keyboard.press("t")
+    expect(html).to_have_attribute("data-panel", "tools")
+    expect(page.locator("body")).to_have_class(re.compile(r"\bdocked\b"))
+    page.keyboard.press("t")
+    expect(html).to_have_attribute("data-panel", "none")
+    expect(page.locator("body")).not_to_have_class(re.compile(r"\bdocked\b"))
+    assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
+    assert errors == []
+
+
+def test_on_a_tablet_the_tools_open_over_the_map_like_the_drawers(page: Page, site_url, errors):
+    """On a tablet the drawers open over the map, and so do the tools, in their place; the
+    title makes way for them as for the others, and a tap on the map puts them away."""
+    open_after_settling(page, site_url, (820, 1180))
+    button, panel, html = page.locator("#toolsBtn"), page.locator("#toolsPanel"), page.locator("html")
+    expect(html).to_have_attribute("data-panel", "none")
+    button.click()
+    expect(html).to_have_attribute("data-panel", "tools")
+    expect(page.locator("#zoomOut")).to_be_focused()
+    panel.evaluate(SETTLED)
+    box = panel.bounding_box()
+    assert box["x"] + box["width"] == 820 and box["width"] == 341 and box["height"] == 1180  # 340 wide, and its border
+    assert page.evaluate("window.__lf.mapWidth()") == 820  # over the map, not beside it
+    expect(page.locator(".brand")).to_have_css("position", "absolute")  # tucked away for screen readers
+    # Zooming from the panel, the map stays open.
+    cs = page.evaluate("window.__lf.cam.cs")
+    page.click("#zoomIn")
+    page.wait_for_function(f"window.__lf.cam.cs > {cs}")
+    expect(html).to_have_attribute("data-panel", "tools")
+    # A tap on the map shuts them, and does nothing else.
+    page.wait_for_function("() => { const c = JSON.stringify(window.__lf.cam), still = c === window.__camWas; window.__camWas = c; return still; }", polling="raf")
+    cam = page.evaluate("({ ...window.__lf.cam })")
+    page.mouse.click(200, 600)
+    expect(html).to_have_attribute("data-panel", "none")
+    expect(panel).to_be_hidden()
+    assert page.evaluate("({ ...window.__lf.cam })") == cam
+    # Swapped for the notes and back, it's never closed in between.
+    button.click()
+    page.keyboard.press("n")
+    expect(html).to_have_attribute("data-panel", "notes")
+    page.keyboard.press("t")
+    expect(html).to_have_attribute("data-panel", "tools")
+    page.keyboard.press("Escape")
+    expect(html).to_have_attribute("data-panel", "none")
+    assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
     assert errors == []
 
 
