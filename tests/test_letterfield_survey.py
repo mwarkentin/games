@@ -871,7 +871,7 @@ def test_a_supernova_you_saw_is_kept_in_your_notes_and_shares_its_card(page: Pag
     row = page.locator("#finds li.nova-row")
     expect(row).to_have_count(1)
     expect(page.locator("#finds li.run:has(li.nova-row) .run-head b")).to_have_text(place)
-    expect(row.locator(".find-meta")).to_have_text(f"{words[0][0]}, the last by SIS")
+    expect(row.locator(".find-meta")).to_have_text(f"{words[0][0]} · SIS")
     page.reload()
     open_notes(page)
     expect(page.locator("#finds li.nova-row")).to_have_count(1)
@@ -900,7 +900,7 @@ def test_a_supernova_far_away_passes_as_a_distant_wave_and_is_kept(page: Page, s
     page.wait_for_function("window.__shared.length === 1")
     assert page.evaluate("window.__shared[0].text").endswith(f"the last, {words[0][0]}.")
     open_notes(page)
-    expect(page.locator("#finds .nova-row .find-meta")).to_have_text(f"{words[0][0]}, every word charted")
+    expect(page.locator("#finds .nova-row .find-meta")).to_have_text(words[0][0])
     assert errors == []
 
 
@@ -939,7 +939,7 @@ def test_a_supernova_in_a_neighbouring_sector_sweeps_across_the_view(page: Page,
     assert "4,0" in page.evaluate("window.__lf.remnants()")
     open_notes(page)
     expect(page.locator("#finds li.nova-row")).to_have_count(1)
-    expect(page.locator("#finds .nova-row .find-meta")).to_have_text(f"{word[0]}, the last by SIS")
+    expect(page.locator("#finds .nova-row .find-meta")).to_have_text(f"{word[0]} · SIS")
     assert errors == []
 
 

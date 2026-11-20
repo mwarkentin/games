@@ -108,13 +108,13 @@ def test_supernovas_take_their_place_among_the_finds_by_time(page: Page, site_ur
     expect(mine).to_have_attribute(
         "aria-label", f"{name[(0, 0)]} went supernova when you charted its last hidden word, {n[1]}; fly there"
     )
-    expect(mine.locator(".find-meta")).to_have_text(f"{n[1]}, the last by you")
-    expect(mine.locator(".find-meta b.you")).to_have_text("the last by you")
+    expect(mine.locator(".find-meta")).to_have_text(f"{n[1]} · you")
+    expect(mine.locator(".find-meta b.you")).to_have_text("you")
     far = page.locator('#finds a.nova-find[data-nova="5,-3"]')
     expect(far).to_have_attribute(
         "aria-label", f"{name[(5, -3)]} went supernova when ZED charted its last hidden word, {n[2]}; fly there"
     )
-    expect(far.locator(".find-meta")).to_have_text(f"{n[2]}, the last by ZED")
+    expect(far.locator(".find-meta")).to_have_text(f"{n[2]} · ZED")
     # The separate list of supernovas is gone.
     expect(page.locator("#novasSec, #novaList")).to_have_count(0)
     assert errors == []

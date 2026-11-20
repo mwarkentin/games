@@ -132,7 +132,7 @@ def test_finding_every_word_in_a_territory_goes_supernova(page: Page, site_url, 
     expect(page.locator("#toast .share")).to_be_visible()
     # Your field notes keep it: alone, it was all yours.
     open_notes(page)
-    expect(page.locator("#finds .nova-row .find-meta")).to_have_text(f"{words[0][0]}, all found by you")
+    expect(page.locator("#finds .nova-row .find-meta")).to_have_text(f"{words[0][0]} · all found by you")
     record = page.evaluate("JSON.parse(localStorage.getItem('letterfield.novas.v1'))")
     assert [(n["rx"], n["ry"], n["w"], n["solo"], n["mine"]) for n in record] == [(0, 0, words[0][0], True, True)]
     # Sharing it alone links to the game, flying to its last word.

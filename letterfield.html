@@ -329,7 +329,7 @@ li.row > button{margin-top:2px}
 /* A supernova in the timeline, in the card of the visit it ended (or one of its own, seen from afar): a band
    of its territory's deep shade, as its remnant is on the map, lit from its star, which stands where a find
    has its dot. "Supernova" in the territory's colour where a find has its word, and under it the last word,
-   set as a find's, and who charted it, "you" in the territory's colour. It glows once as it arrives, unless
+   set as a find's, signed by who charted it, "you" in the territory's colour. It glows once as it arrives, unless
    motion is reduced; otherwise it keeps still. */
 .nova-star{width:18px;height:18px;justify-self:center;align-self:center;overflow:visible;fill:var(--c);filter:drop-shadow(0 0 3px hsl(var(--h,200) 95% 60% / .6))}
 .nova-star circle{fill:#fff}
@@ -4432,11 +4432,11 @@ function timelineHtml(line, from, to, now, st) {
   return html;
 }
 // A supernova's row: its star where a find has its dot, "Supernova", when,
-// and under it the last word, set as a find's, and who charted it, with
-// "you" in the territory's colour.
+// and under it the last word, set as a find's, signed by whoever charted it
+// ("you" in the territory's colour), or "all found by you" playing alone.
 function novaWho(n) {
   const w = `<b class="w">${n.w}</b>`;
-  return n.solo ? `${w}, <b class="you">all found by you</b>` : n.mine ? `${w}, <b class="you">the last by you</b>` : n.by ? `${w}, the last by <b>${n.by}</b>` : `${w}, every word charted`;
+  return n.solo ? `${w} · <b class="you">all found by you</b>` : n.mine ? `${w} · <b class="you">you</b>` : n.by ? `${w} · <b>${n.by}</b>` : w;
 }
 function novaLabel(n) {
   const place = regionName(n.rx, n.ry);
