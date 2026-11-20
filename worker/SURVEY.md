@@ -646,7 +646,12 @@ who isn't a member gets the same answer as a guild that doesn't exist.
   most every 10 minutes). A socket keeps `guilds: [{code, tag, lid, at}]` in
   its attachment; one saved by an older version, with a single guild, reads
   back as a list of one. The checks that are out are kept in memory, per
-  code.
+  code. A check that fails is tried again 30 s on (`GUILD_RETRY_MS`), not
+  with every message, so a guild that's struggling isn't asked by every
+  member's every move. And one socket can set off 10 checks at once and one
+  every 90 s after (`GUILD_CHECKS`), twice what its rechecks need: a game
+  naming new codes in every message waits for its allowance rather than
+  costing five requests a message.
 - **On the map.** Presence gives each player's tags (one as a string, as an
   older game reads it, several as a list); the game marks a mate's caret
   with every guild it shares with them (see "Several guilds"). Other

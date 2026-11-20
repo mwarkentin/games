@@ -12,7 +12,7 @@ import worker from '../src/index.js';
 import { Atlas, ONLINE_MS, REPORT_MS, SECTOR, Sector } from '../src/survey.js';
 import { chunk } from '../src/letterfield-world.js';
 import {
-  GUILD_CODE, GUILD_FIRST, GUILD_LOG_ID, GUILD_MAX, GUILD_RECHECK_MS, GUILD_SECOND, GUILD_THIRD, GUILD_WORDS, Guild, SEEN_MS,
+  GUILD_CHECKS, GUILD_CHECK_REFILL_MS, GUILD_CODE, GUILD_FIRST, GUILD_LOG_ID, GUILD_MAX, GUILD_RECHECK_MS, GUILD_RETRY_MS, GUILD_SECOND, GUILD_THIRD, GUILD_WORDS, Guild, SEEN_MS,
   idleShown, matesFor, noteMates, passMates,
 } from '../src/survey-guild.js';
 import { FLAG_QUIET, GUILDS_MAX, REFRESH_MS, playerId, snapshot, tagsOf, takeMe } from '../src/survey-social.js';
@@ -317,6 +317,44 @@ describe('membership in sectors', () => {
     const me = {};
     takeMe(me, { guilds: [made[1].code, made[1].code, 'abc', ...made.map((m) => m.code)] });
     assert.deepEqual(me.guilds.map((x) => x.code), [made[1].code, made[0].code, ...made.slice(2, 5).map((m) => m.code)]);
+  });
+
+  test('checks only so many guilds for one socket, however many new codes its game names', async () => {
+    let asked = 0;
+    const fetch = w.env.GUILDS.get;
+    w.env.GUILDS.get = (n) => { asked++; return fetch(n); };
+    const one = await w.player(0, 0, { id: 1, initials: 'ONE', guild: g.code, x: 5, y: 5 });
+    const code = (i, j) => `${'ABCDEFGHJK'[i % 10]}${'MNPQRSTVWX'[j]}CDEF`;
+    for (let i = 0; i < 20; i++) {
+      await one.say({ t: 'me', initials: 'ONE', token: token(1), guilds: Array.from({ length: GUILDS_MAX }, (_, j) => code(i, j)) });
+    }
+    await settle();
+    assert.equal(asked, GUILD_CHECKS);
+    // The allowance comes back over time, and a real guild named then is checked.
+    w.clock.now += GUILD_CHECK_REFILL_MS;
+    await one.say({ t: 'me', initials: 'ONE', token: token(1), guilds: [g.code] });
+    await settle();
+    assert.equal(asked, GUILD_CHECKS + 1);
+    assert.deepEqual(one.tags(), [g.tag]);
+  });
+
+  test('asks a guild that failed to answer again only after a while, not with every message', async () => {
+    const one = await w.player(0, 0, { id: 1, initials: 'ONE', x: 5, y: 5 });
+    let asked = 0, down = true;
+    const fetch = w.env.GUILDS.get;
+    w.env.GUILDS.get = (n) => ({ fetch: async (url, init) => { asked++; return down ? new Response('overloaded', { status: 503 }) : fetch(n).fetch(url, init); } });
+    await one.say({ t: 'me', initials: 'ONE', token: token(1), guild: g.code });
+    await settle();
+    assert.equal(asked, 1);
+    for (let i = 0; i < 10; i++) { w.clock.now += 1000; await one.say({ t: 'pos', x: 5 + i, y: 5 }); await settle(); }
+    assert.equal(asked, 1);
+    assert.deepEqual(one.tags(), []);
+    down = false;
+    w.clock.now += GUILD_RETRY_MS;
+    await one.say({ t: 'here' });
+    await settle();
+    assert.equal(asked, 2);
+    assert.deepEqual(one.tags(), [g.tag]);
   });
 
   test('drops a guild left on another device at its next check, and keeps the others', async () => {

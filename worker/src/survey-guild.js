@@ -55,6 +55,9 @@ export const GUILD_WORDS = [GUILD_FIRST.length, GUILD_SECOND.length, GUILD_THIRD
 export const guildName = (n) => `${GUILD_FIRST[n[0]][0]} ${GUILD_SECOND[n[1]]} ${GUILD_THIRD[n[2]]}`;
 export const guildHue = (n) => GUILD_FIRST[n[0]][1];
 export const GUILD_RECHECK_MS = 15 * 60000;  // a sector checks a playing member again this often
+export const GUILD_CHECKS = GUILDS_MAX * 2;  // checks one socket can set off at once,
+export const GUILD_CHECK_REFILL_MS = GUILD_RECHECK_MS / GUILD_CHECKS;  // then one per this long: twice what rechecks take
+export const GUILD_RETRY_MS = 30000;         // a check that failed is tried again after this long
 export const SEEN_MS = 10 * 60000;           // "last seen" is written at most this often
 export const GUILD_TAGS_MAX = 100;           // guilds one report can ask about
 const GUILDS_PATH = '/v1/survey/guilds';
@@ -196,14 +199,27 @@ export class Guild {
 // its own clock: a guild that says yes puts its tag on the socket (and so on
 // their caret and in reports), and one that says no takes it off, as when
 // they left it on another device. A check that fails leaves that guild as it
-// was and tries again on a later message. The checks that are out are kept in
-// memory (sector.guildChecks, socket → codes), never on `me`, which is the
-// socket's attachment: a sector that sleeps and wakes would otherwise read
-// back a check that will never come back, and never check again.
+// was and tries again on a message GUILD_RETRY_MS or more later. The checks
+// that are out are kept in memory (sector.guildChecks, socket → codes), never
+// on `me`, which is the socket's attachment: a sector that sleeps and wakes
+// would otherwise read back a check that will never come back, and never
+// check again. A socket can set off GUILD_CHECKS at once and one every
+// GUILD_CHECK_REFILL_MS after (sector.guildBudget, in memory too), so a
+// game that names new codes in every message can't turn each into five
+// requests to guilds; the checks past that wait for a later message.
 export function checkGuilds(sector, ws, me) {
   if (!sector.env.GUILDS || !me.pid) return [];
   const out = sector.guildChecks.get(ws), now = sector.now();
-  return upgradeGuilds(me).filter((g) => !out?.has(g.code) && now - (g.at ?? 0) >= GUILD_RECHECK_MS).map((g) => checkGuild(sector, ws, me, g.code));
+  const due = upgradeGuilds(me).filter((g) => !out?.has(g.code) && now - (g.at ?? 0) >= GUILD_RECHECK_MS);
+  if (!due.length) return [];
+  sector.guildBudget ??= new WeakMap();
+  const budget = sector.guildBudget.get(ws) ?? { tokens: GUILD_CHECKS, at: now };
+  budget.tokens = Math.min(GUILD_CHECKS, budget.tokens + (now - budget.at) / GUILD_CHECK_REFILL_MS);
+  budget.at = now;
+  sector.guildBudget.set(ws, budget);
+  const go = due.slice(0, Math.max(0, Math.floor(budget.tokens)));
+  budget.tokens -= go.length;
+  return go.map((g) => checkGuild(sector, ws, me, g.code));
 }
 
 async function checkGuild(sector, ws, me, code) {
@@ -211,13 +227,19 @@ async function checkGuild(sector, ws, me, code) {
   const out = sector.guildChecks.get(ws);
   out.add(code);
   let tag, lid = null, name = null;
+  // A failed check is tried again GUILD_RETRY_MS on, not with the very next
+  // message: a guild that's struggling isn't asked by every member's every move.
+  const retry = () => {
+    const g = me.guilds?.find((x) => x.code === code);
+    if (g) g.at = Math.max(g.at ?? 0, sector.now() - GUILD_RECHECK_MS + GUILD_RETRY_MS);
+  };
   try {
     const res = await ask(sector.env, code, '/check', { pid: me.pid, initials: me.initials || null });
     if (res.ok) ({ tag, lid = null, name = null } = await res.json());
     else if (res.status === 404) tag = null;
-    else return;
+    else return retry();
   } catch {
-    return;
+    return retry();
   } finally {
     out.delete(code);
     if (!out.size && sector.guildChecks.get(ws) === out) sector.guildChecks.delete(ws);
