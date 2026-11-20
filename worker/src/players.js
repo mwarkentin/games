@@ -139,9 +139,16 @@ export function routeLinks(request, env, now = Date.now()) {
       ? await db.prepare('UPDATE links SET used = 1 WHERE code = ? AND used = 0 AND expires >= ? RETURNING token, carry').bind(code, now).first()
       : null;
     if (!row) throw new HttpError(404, 'no such code, or it has run out');
+    // Linked devices keep in step from now on. If the Player can't start, the code isn't spent, so trying again works.
+    if (env.PLAYERS) {
+      try {
+        await playerStub(env, await playerId(row.token)).fetch('https://player/start', { method: 'POST', body: '{}' });
+      } catch (e) {
+        await db.prepare('UPDATE links SET used = 0 WHERE code = ?').bind(code).run();
+        throw e;
+      }
+    }
     await db.prepare("UPDATE links SET carry = '' WHERE code = ?").bind(code).run();
-    // Linked devices keep in step from now on.
-    if (env.PLAYERS) await playerStub(env, await playerId(row.token)).fetch('https://player/start', { method: 'POST', body: '{}' });
     return json({ token: row.token, carry: JSON.parse(row.carry) }, 200, cors);
   });
 }
@@ -249,14 +256,17 @@ export class Player {
     if (finds.length > SYNC_BATCH || novas.length > SYNC_BATCH) return [{ error: 'too many at once' }, 413];
     const since = body.epoch === m.epoch && Number.isInteger(body.since) && body.since >= 0 && body.since <= m.v ? body.since : 0;
     const v = m.v + 1;
+    // What this sync merged into a row already here is sent back, though it's
+    // at this sync's version: the other copy knew things this device didn't.
     let wrote = false, count = null;
+    const merged = new Set();
     for (const o of finds) {
       const f = cleanFind(o);
       if (!f) continue;
       const k = findKey(f), had = this.sql.exec('SELECT body FROM finds WHERE k = ?', k).toArray()[0];
       if (had) {
-        const merged = mergedFind(JSON.parse(had.body), f);
-        if (merged) { this.sql.exec('UPDATE finds SET body = ?, v = ? WHERE k = ?', JSON.stringify(merged), v, k); wrote = true; }
+        const both = mergedFind(JSON.parse(had.body), f);
+        if (both) { this.sql.exec('UPDATE finds SET body = ?, v = ? WHERE k = ?', JSON.stringify(both), v, k); wrote = true; if (['f', 'n', 'b', 'r'].some((p) => both[p] !== f[p])) merged.add(k); }
         continue;
       }
       count ??= this.sql.exec('SELECT COUNT(*) AS n FROM finds').one().n;
@@ -282,8 +292,8 @@ export class Player {
       if (!mk) continue;
       const had = this.sql.exec('SELECT body FROM marks WHERE id = ?', mk[0]).toArray()[0];
       if (had) {
-        const merged = mergedMark(JSON.parse(had.body), mk);
-        if (merged) { this.sql.exec('UPDATE marks SET body = ?, v = ? WHERE id = ?', JSON.stringify(merged), v, mk[0]); wrote = true; }
+        const both = mergedMark(JSON.parse(had.body), mk);
+        if (both) { this.sql.exec('UPDATE marks SET body = ?, v = ? WHERE id = ?', JSON.stringify(both), v, mk[0]); wrote = true; if (both.join() !== mk.join()) merged.add(`~mark:${mk[0]}`); }
         continue;
       }
       markCount ??= this.sql.exec("SELECT COUNT(*) AS n FROM marks WHERE id != '~best'").one().n;
@@ -307,9 +317,11 @@ export class Player {
     const keep = now - m.kept > 86400000;  // put off the clear-out, once a day at most
     this.sql.exec('UPDATE meta SET v = ?, settings = ?, settings_at = ?, synced = ?, kept = ? WHERE id = 0', at, kept, settingsAt, now, keep ? now : m.kept);
     if (keep) await this.ctx.storage.setAlarm(now + KEEP_MS);
-    const rows = (table) => this.sql.exec(`SELECT body FROM ${table} WHERE v > ? AND v != ? ORDER BY v`, since, v).toArray().map((r) => JSON.parse(r.body));
+    const rows = (table) => this.sql.exec(`SELECT k, body, v FROM ${table} WHERE v > ? ORDER BY v`, since).toArray()
+      .filter((r) => r.v !== v || merged.has(r.k)).map((r) => JSON.parse(r.body));
     const theirs = int(body.settingsAt, 1e15) ? body.settingsAt : 0;
-    const markRows = this.sql.exec('SELECT id, body FROM marks WHERE v > ? AND v != ? ORDER BY v', since, v).toArray();
+    const markRows = this.sql.exec('SELECT id, body, v FROM marks WHERE v > ? ORDER BY v', since).toArray()
+      .filter((r) => r.v !== v || merged.has(`~mark:${r.id}`));
     const best = markRows.find((r) => r.id === '~best');
     return [{
       epoch: m.epoch, at, finds: rows('finds'), novas: rows('novas'),
@@ -320,7 +332,8 @@ export class Player {
 
   // Whether a recovery code is saved for this player: if so, the clear-out leaves it be.
   async save(on) {
-    this.start();
+    // Only a link or a recovery code starts a Player: taking a code away from one that isn't there leaves it so.
+    if (!this.meta()) { if (!on) return; this.start(); }
     this.sql.exec('UPDATE meta SET saved = ? WHERE id = 0', on ? 1 : 0);
     if (!on) await this.ctx.storage.setAlarm(this.now() + KEEP_MS);
   }
