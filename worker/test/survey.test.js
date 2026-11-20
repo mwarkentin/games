@@ -1042,6 +1042,16 @@ describe('Atlas', () => {
     assert.deepEqual((await worldMap()).players, 0);
   });
 
+  test("writes a sector's count at once when nobody's left there, so an eviction can't lose it", async () => {
+    await report({ sx: 0, sy: 0, players: 2, charted: counts(5) });
+    await report({ sx: 0, sy: 0, players: 0, charted: counts(6) });  // they've finished and gone
+    await report({ sx: 1, sy: 0, players: 1, charted: counts(2) });  // still busy: waits for the minute
+    // Evicted (a deploy) before the minute's write.
+    atlasObject = new Atlas(state, {});
+    atlasObject.now = () => clock;
+    assert.equal((await worldMap()).charted, 6);
+  });
+
   test('draws the world map, one byte per territory', async () => {
     await report({ sx: -AREA, sy: -AREA, players: 2, charted: counts(9) });
     await report({ sx: 1, sy: 0, players: SPAWN_MAX, charted: counts(0, 0, 0, 0, 0, 7) });

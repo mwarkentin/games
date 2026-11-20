@@ -1166,7 +1166,10 @@ export class Atlas {
       const hot = Array.isArray(r.hot) && inside(r.hot[0], r.sx) && inside(r.hot[1], r.sy) ? r.hot.slice(0, 2) : old?.hot ?? null;
       this.rows.set(key, { sx: r.sx, sy: r.sy, players: r.players, charted: r.charted, done, hot, who: r.who ?? [], at: this.now() });
       noteMates(this, key, r.who, this.now());  // who's online in each guild (survey-guild.js)
-      if (!old || old.done !== done) this.save(key);
+      // A sector nobody's in may not report again for days, so its last
+      // count is stored straight away: one only in memory would be lost
+      // if the Atlas were evicted (by a deploy, say) before the next flush.
+      if (!old || old.done !== done) this.save(key, r.players === 0);
       this.takeNovas(r);
       // The list of addresses past the cap goes back only when it has
       // changed since this sector last heard it.
@@ -1284,22 +1287,27 @@ export class Atlas {
 
   // Charted counts only change storage once a minute per sector at most:
   // writing every report would cost a row written per busy sector every
-  // REPORT_MS, and players online don't need storing at all.
-  save(key) {
+  // REPORT_MS, and players online don't need storing at all. A sector's
+  // last report as it empties is written at once (`now`), since nothing
+  // there will report again to put it right if this one is lost.
+  save(key, now = false) {
+    if (now) { this.dirty.delete(key); return this.write(key); }
     this.dirty.add(key);
     this.saveTimer ??= setTimeout(() => this.flush(), SAVE_MS);
   }
 
   flush() {
     this.saveTimer = null;
-    for (const key of this.dirty) {
-      const r = this.rows.get(key);
-      this.sql.exec(
-        'INSERT INTO sectors (sx, sy, charted, done) VALUES (?, ?, ?, ?) ON CONFLICT (sx, sy) DO UPDATE SET charted = excluded.charted, done = excluded.done',
-        r.sx, r.sy, r.charted.join(','), r.done,
-      );
-    }
+    for (const key of this.dirty) this.write(key);
     this.dirty.clear();
+  }
+
+  write(key) {
+    const r = this.rows.get(key);
+    this.sql.exec(
+      'INSERT INTO sectors (sx, sy, charted, done) VALUES (?, ?, ?, ?) ON CONFLICT (sx, sy) DO UPDATE SET charted = excluded.charted, done = excluded.done',
+      r.sx, r.sy, r.charted.join(','), r.done,
+    );
   }
 
   totals() {

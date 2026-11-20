@@ -89,7 +89,9 @@ From [Scaling One Million Checkboxes][omcb] and
   reports its charted counts, player count and the middle of its crowd at
   most every 10 s while something is changing. Reports are absolute numbers, so a lost
   or repeated report does no harm. The Atlas writes the charted counts to
-  storage at most once a minute.
+  storage at most once a minute, and a sector's at once when its last
+  player has left, since nobody there will report again to put it right
+  if the Atlas is evicted (every deploy evicts it) before that minute is up.
 - **The world map** is one byte per territory (10 KB), plus players per
   sector and a starting spot for newcomers. Each Worker instance fetches it
   from the Atlas at most every 5 s, and browsers cache it for 5 s.
