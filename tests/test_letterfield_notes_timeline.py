@@ -415,11 +415,17 @@ def test_a_find_tapped_deep_in_the_notes_on_a_phone_is_still_in_view_when_they_r
         page.evaluate("document.getElementById('notes').scrollTop = document.getElementById('finds').scrollTop = 1e9")
         page.wait_for_function(f"document.querySelectorAll('#finds li.row').length > {n}")
     at = page.evaluate(AT_ROW, 400)
+    # Where it is as it's tapped: the click may scroll it into view first.
+    page.evaluate(
+        "k => addEventListener('pointerdown', () => { window.__tappedY = document.querySelector(`#finds a.find[data-key=\"${CSS.escape(k)}\"]`).getBoundingClientRect().top; }, { capture: true, once: true })",
+        at["key"],
+    )
     page.click(f'#finds a.find[data-key="{at["key"]}"]')
     expect(page.locator("html")).not_to_have_attribute("data-panel", "notes")
+    tapped = page.evaluate("window.__tappedY")
     # Opened again, it's where it was, not back at the newest find.
     open_notes(page)
     page.locator("#notes").evaluate("e => Promise.all(e.getAnimations().map(a => a.finished))")
     y = page.evaluate(ROW_Y, at["key"])
-    assert y is not None and abs(y - at["y"]) < 4, (y, at)
+    assert y is not None and abs(y - tapped) < 4, (y, tapped, at)
     assert errors == []
