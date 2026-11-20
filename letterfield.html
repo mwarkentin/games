@@ -6667,7 +6667,7 @@ window.addEventListener('storage', e => {
   const v = myInitials(), st = readSync();
   if (v) { surveyInput.value = signupInput.value = v; showSigning(false); if (Intro.is('sign')) Intro.go('exploring'); }
   tellMe();
-  if (st && v && st.initials !== v) settingsChanged();
+  if (st && 'initials' in st && v && st.initials !== v) settingsChanged();
 });
 
 /* ---------- Linking devices ---------- */
