@@ -1362,7 +1362,8 @@ kept in their notes' supernovas, and its territory becomes a remnant at
 once. The title's count is the sector's too, wherever the territory is,
 inside the shared world or out ("110/111 charted"), never the player's own
 notes, which can be short of it by words someone else charted first; its
-hover says how many are in the notes when they differ. Only playing alone
+hover says how many are in the notes when they differ (on a phone, which
+has no hover, it's in what a screen reader reads). Only playing alone
 does it count the notes ("found"). How it plays depends on how far off it is:
 
 - **Within 3 territories** of the middle of the view, or your own: the

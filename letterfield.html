@@ -4423,9 +4423,10 @@ function updateHud() {
   // it's doing instead (see hereStatus). On the survey it's the sector's count
   // wherever you are, inside the universe or out, since that's what sets off
   // a supernova: your notes can be short of it by words someone else charted
-  // that you didn't add, which the hover says.
-  const tally = (done, total, verb) => innerWidth < 700
-    ? `<span aria-hidden="true"> · ${done}/${total}</span><span class="vh">, ${done} of ${total} words ${verb}</span>`
+  // that you didn't add, which the hover says (and on a phone, which has no
+  // hover, what a screen reader reads).
+  const tally = (done, total, verb, mine = done) => innerWidth < 700
+    ? `<span aria-hidden="true"> · ${done}/${total}</span><span class="vh">, ${done} of ${total} words ${verb}${mine !== done ? `, ${mine} in your notes` : ''}</span>`
     : ` · ${done}/${total} ${verb}`;
   tCharted.hidden = false;
   tCharted.removeAttribute('title');
@@ -4436,7 +4437,7 @@ function updateHud() {
     if (status) tCharted.textContent = ` · ${status}`;
     else {
       const [done, total] = territoryProgress(rx, ry), mine = territoryFound(rx, ry);
-      tCharted.innerHTML = tally(done, total, 'charted');
+      tCharted.innerHTML = tally(done, total, 'charted', mine);
       if (mine !== done) tCharted.title = `${done} of ${total} hidden words charted · ${mine} in your notes`;
     }
   }
