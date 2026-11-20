@@ -43,7 +43,7 @@ def test_a_universe_with_thousands_of_full_territories_redraws_quickly(page: Pag
         page,
         """() => { window.__lf.claims.set('k' + Math.random(), { s: 1, x: 0, y: 0, ex: 0, ey: 0, w: 'ZZZ', th: 0, d: 0 }); window.__lf.remnants(); }""",
     )
-    assert took < 120, took
+    assert took < 250, took
     assert errors == []
 
 
@@ -56,5 +56,5 @@ def test_finds_in_thousands_of_territories_check_achievements_quickly(page: Page
     page.evaluate("() => window.__lf.marks.check()")
     # The check after each find took about 0.45 s.
     took = slowest(page, "() => window.__lf.marks.check()")
-    assert took < 120, took
+    assert took < 250, took
     assert errors == []

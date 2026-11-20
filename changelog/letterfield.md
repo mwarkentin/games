@@ -23,7 +23,7 @@
 - Words circled before you've picked initials now wait for your initials instead of being charted unsigned.
 - A word kept in your notes after the day's charting limit is charted once the day turns, even if the game stays open overnight.
 - A word circled at the edge of a wide zoomed-out view is charted at once, instead of waiting until you pan closer.
-- When the connection quietly drops, the game notices within seconds and sends your finds again.
+- When the connection quietly drops, the game notices within seconds of your next find and sends your finds again.
 - Your own supernovas stay in your field notes, which now keep up to 1,000, however many others go off around the universe.
 - Guild members are no longer listed as online, idle for hours, while you're offline or out past the universe, and the Surveyors count no longer sticks while the survey can't be reached.
 - Linked devices now agree on every find and achievement: receipts and charted first reach your other devices, even ones that arrive while a find is syncing.

@@ -5344,9 +5344,11 @@ function signAs(v, hint) {
   takeInitials(v, hint === surveyHint);
   settingsChanged();
   tellMe();
-  for (const l of links.values()) flushClaims(l);  // old finds that waited for initials
+  releaseHeld();
   return true;
 }
+// Old finds that waited for initials go once there are some, however they came.
+function releaseHeld() { for (const l of links.values()) flushClaims(l); }
 for (const input of [surveyInput, signupInput]) input.addEventListener('input', () => {
   const v = input.value.toUpperCase().replace(/[^A-Z]/g, '').slice(0, 3);
   if (v !== input.value) input.value = v;
@@ -6669,7 +6671,7 @@ function takeSynced(data, st) {
   if (LS.get(K_GUILD_MERGE)) mergeRecovered(st);
 }
 function applySettings(c) {
-  if (initialsOf(c.initials) && c.initials !== myInitials()) takeInitials(c.initials);
+  if (initialsOf(c.initials) && c.initials !== myInitials()) { takeInitials(c.initials); releaseHeld(); }
   if (Array.isArray(c.muted)) {
     muted.clear();
     for (const p of c.muted.slice(-MUTED_MAX)) if (typeof p === 'string' && PID_RE.test(p)) muted.add(p);
@@ -6793,6 +6795,7 @@ window.addEventListener('storage', e => {
   if (v) { surveyInput.value = signupInput.value = v; showSigning(false); if (Intro.is('sign')) Intro.go('exploring'); }
   tellMe();
   if (st && 'initials' in st && v && st.initials !== v) settingsChanged();
+  if (v) releaseHeld();
 });
 
 /* ---------- Linking devices ---------- */
@@ -7061,6 +7064,7 @@ function leaveSignatures() {
   LS.set(K_MARKS, JSON.stringify(marks));
   LS.remove(K_BADGE);
   LS.remove(K_CARD);
+  LS.remove(K_ASKED);  // what was asked for the self this device leaves
 }
 async function makeRecovery() {
   if (!playerToken || !Pair.is('recovery')) return;

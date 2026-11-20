@@ -538,6 +538,27 @@ def test_an_old_find_waits_for_initials_before_its_claimed(page: Page, site_url,
     assert errors == []
 
 
+def test_an_old_find_waiting_for_initials_goes_once_another_tab_signs(page: Page, site_url, errors):
+    """Only signing here let finds waiting for initials go: initials signed in another tab or game
+    (or brought by a linked device) left them waiting until the next reload."""
+    word = known_words(page, site_url)[0]
+    page.add_init_script(f"""
+      if (!localStorage.getItem('letterfield.finds.v4'))
+        localStorage.setItem('letterfield.finds.v4', JSON.stringify([{json.dumps({"w": word[0], "x": word[1], "y": word[2], "d": word[3], "t": NOW_MS - 86_400_000, "s": 0})}]));
+    """)
+    fake = FakeSurvey()
+    open_game(page, site_url, fake)
+    expect(page.locator("#survey")).to_have_attribute("data-state", "live")
+    page.wait_for_timeout(500)
+    assert fake.sent("claim") == []
+    other = page.context.new_page()
+    other.goto(f"{site_url}/")
+    other.evaluate("localStorage.setItem('games.initials', JSON.stringify('BOB'))")  # signed in another game
+    eventually(page, lambda: [m["w"] for m in fake.sent("claim")] == [word[0]])
+    other.close()
+    assert errors == []
+
+
 def test_signing_initials_tells_every_sector(page: Page, site_url, errors):
     fake = FakeSurvey()
     open_game(page, site_url, fake)
