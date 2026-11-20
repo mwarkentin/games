@@ -57,7 +57,22 @@ describe('the achievements core', () => {
   test("names only themes the map has, and puts the universe's edge where the survey's is", () => {
     for (const i of [...CORE.BIRDS, ...CORE.SEAS, ...CORE.SKIES, ...CORE.NATIONS]) assert.ok(i >= 0);
     assert.equal(UNIVERSE_EDGE, AREA * 4);
-    assert.equal(CORE.CATALOG.length, 39);
+    assert.equal(CORE.CATALOG.length, 40);
+  });
+
+  test('Number of the Beast is a secret earned at 666 finds, not 665, and signed finds can prove it', () => {
+    const [, group, flags] = CORE.CATALOG.find(([id]) => id === 'number-of-the-beast');
+    assert.equal(group, 'notes');
+    assert.ok(flags.includes('h'));
+    assert.ok(CORE.PROVABLE.has('number-of-the-beast'));
+    const words = [];
+    for (let ry = 0; words.length < 666; ry++) for (let rx = 0; rx < 8 && words.length < 666; rx++) words.push(...territoryWords(rx, ry));
+    const finds = words.slice(0, 666).map((w, i) => ({ ...w, t: Date.UTC(2026, 10, 1) + i * 60000, th: 0 }));
+    const have = (n) => CORE.CHECK.get('number-of-the-beast')(CORE.tally(finds.slice(0, n), [], Date.UTC(2026, 10, 20)).T);
+    assert.deepEqual(have(665).slice(0, 2), [665, 666]);
+    assert.deepEqual(have(666).slice(0, 2), [666, 666]);
+    const { reached } = CORE.tally(finds, [], Date.UTC(2026, 10, 20), ['number-of-the-beast']);
+    assert.equal(reached['number-of-the-beast'].at, finds[665].t);
   });
 
   // A card names badges by their places in the catalog, so a card made today
@@ -69,9 +84,10 @@ describe('the achievements core', () => {
       'mirror-image', 'self-portrait', 'over-the-horizon', 'edge-of-the-universe', 'here-be-dragons', 'witness', 'starfield',
       'last-word', 'seven-days', 'lunar-month', 'thirty-days', 'full-circle', 'fellowship', 'two-places', 'hats-off'];
     assert.deepEqual(CORE.CATALOG.slice(0, FIRST.length).map(([id]) => id), FIRST);
+    assert.deepEqual(CORE.CATALOG.slice(FIRST.length).map(([id]) => id), ['number-of-the-beast']);
     const all = new Set(CORE.CATALOG.map(([id]) => id));
     assert.deepEqual(CORE.cardIds(CORE.cardMask(all)), [...all]);
-    assert.equal(CORE.PROVABLE.size, 33);  // not Cairn, Witness, Starfield or the company's three
+    assert.equal(CORE.PROVABLE.size, 34);  // not Cairn, Witness, Starfield or the company's three
     assert.deepEqual(CORE.cardIds(CORE.cardMask(new Set(['hats-off', 'seven-seas', 'witness']))), ['seven-seas', 'witness', 'hats-off']);
     assert.equal(CORE.cardMask(new Set()), 0);
     assert.ok(Number.isSafeInteger(CORE.cardMask(all)));
@@ -249,6 +265,16 @@ describe('POST /v1/survey/badges', () => {
     assert.equal(badges['first-mark'], await badgeSig(env, pid, 'first-mark'));
     assert.equal(badges['field-book'], undefined);  // 12 finds, not 100
     assert.equal(badges.witness, undefined);  // being there for a supernova isn't something a find proves
+  });
+
+  test('signs Number of the Beast for 666 signed finds, not 665', async () => {
+    const words = [];
+    for (let rx = 0; words.length < 666; rx++) words.push(...territoryWords(rx, 0));
+    const finds = await signed(words.slice(0, 666), Date.UTC(2026, 11, 20, 10));
+    assert.equal((await ask({ finds: finds.slice(0, 665) }))[1].badges['number-of-the-beast'], undefined);
+    const [, { badges }] = await ask({ finds });
+    assert.equal(badges['number-of-the-beast'], await badgeSig(env, await playerId(token(1)), 'number-of-the-beast'));
+    assert.equal(badges['bound-volume'], undefined);
   });
 
   test("takes the game's word for what it earned until TRUSTED_UNTIL, and after that only signed finds", async () => {

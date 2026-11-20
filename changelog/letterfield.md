@@ -1,5 +1,7 @@
 ## 2026-11-20
 
+- A fortieth achievement, and a secret one. Keep filling your field notes and it shows itself; if you're already far enough along, it's waiting for you on the Achievements page.
+- A secret achievement no longer gives itself away while you're on the way to it: it stays a question mark, without a drawing or a ring of how far along you are, until you earn it.
 - A fourth piece of music, Lantern: a soft piano alone in a dim hall, a slow, wistful waltz with strings breathing in under it, a cello now and then and a celesta far off. It takes turns with Drift, Orbit and Chimes, and plays a little differently each time.
 - A music player in the tools, under the music's slider: pause and play, step back and forward through the pieces, or pick one from the list. The music starts with the piece you last heard, and pausing keeps your place in it.
 - On a computer or tablet, the tools open as a drawer in the field notes' place, like the Surveyors. Moving between tools, Surveyors and field notes no longer slides the map and buttons from side to side, and closing the tools brings your notes back. The drawer also lists every keyboard shortcut, and T opens it. On a phone the tools rise from the bottom like the field notes, only as tall as they need, so the map you're zooming stays in sight above them.

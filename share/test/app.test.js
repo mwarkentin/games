@@ -397,7 +397,7 @@ describe('an achievement', () => {
     assert.equal(response.status, 200);
     const html = await response.text();
     assert.equal(meta(html, 'og:title'), 'Seven Seas · Letterfield');
-    assert.equal(meta(html, 'og:description'), 'Find words from all 7 themes of the sea. One of 39 achievements in Letterfield, a word search the size of a world.');
+    assert.equal(meta(html, 'og:description'), 'Find words from all 7 themes of the sea. One of 40 achievements in Letterfield, a word search the size of a world.');
     assert.equal(meta(html, 'og:url'), `${SHARE}/a/seven-seas`);
     assert.match(meta(html, 'og:image'), new RegExp(`^${SHARE}/a/seven-seas\\.png\\?s=[0-9a-f]{12}$`));
     assert.ok(html.includes(`location.replace(${JSON.stringify(`${SITE}/letterfield#a-seven-seas`)})`));

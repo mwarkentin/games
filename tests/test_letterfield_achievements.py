@@ -28,7 +28,7 @@ from test_letterfield_sync import words as sync_words
 
 TORONTO = ZoneInfo("America/Toronto")
 NOW = dt.datetime(2026, 11, 17, 15, 0, tzinfo=TORONTO)
-ALONE, ON_SURVEY = 30, 39  # achievements in the catalog alone and on the shared survey
+ALONE, ON_SURVEY = 31, 40  # achievements in the catalog alone and on the shared survey
 
 # Hidden words in territories (0, 0) and (1, 0), as [w, x, y, d].
 WORDS_JS = """() => {
@@ -187,6 +187,72 @@ def test_several_at_once_in_play_are_one_note(page: Page, site_url, errors):
     expect(toast).to_contain_text("Field Book, Long Measure and 1 more")
     page.wait_for_timeout(2500)
     assert notes(page) == ["3 achievements"]
+    assert errors == []
+
+
+# Hidden words in the first eight territories along the map centre's row, enough for 666 finds.
+MANY_WORDS_JS = WORDS_JS.replace("[[0, 0], [1, 0]]", "[0, 1, 2, 3, 4, 5, 6, 7].map(rx => [rx, 0])")
+BEAST = "#mk-number-of-the-beast"
+
+
+def test_number_of_the_beast_is_a_secret_until_the_666th_find(page: Page, site_url, errors):
+    words = known_words(page, site_url, MANY_WORDS_JS)
+    assert len(words) >= 666
+    earlier = dt.datetime(2026, 11, 25, 12, 0, tzinfo=TORONTO)
+    seeds = [find(w, earlier + dt.timedelta(seconds=i)) for i, w in enumerate(words[:665])]
+    record = json.dumps({"got": {}, "best": 0, "fresh": []})
+    open_alone(
+        page,
+        site_url,
+        seeds,
+        store={"letterfield.marks.v1": record},
+        now=dt.datetime(2026, 12, 1, 15, 0, tzinfo=TORONTO),
+    )
+    page.wait_for_function("'field-book' in window.__lf.marks.state().got", timeout=LANDS)
+    assert "number-of-the-beast" not in marks(page)["got"]
+    assert marks(page)["progress"]["number-of-the-beast"] == [665, 666]
+
+    # On the page it sits after Field Book, a question mark with no arc of how far along it is.
+    open_page(page)
+    beast = page.locator(BEAST)
+    expect(beast).to_contain_text("Secret")
+    expect(beast).not_to_contain_text("666")
+    expect(beast).to_have_class(re.compile(r"\blocked\b"))
+    expect(beast.locator(".mk-arc")).to_have_count(0)
+    expect(beast.locator(".mk-dash")).to_have_count(1)
+    assert page.evaluate(f"document.querySelector('{BEAST}').previousElementSibling.id") == "mk-field-book"
+    page.click("#marksBack")
+
+    circle(page, words[665])
+    toast = page.locator("#toast")
+    expect(toast.locator("b")).to_have_text("Number of the Beast", timeout=LANDS)
+    expect(toast).to_contain_text("Achievement · Keep 666 words in your field notes.")
+    assert marks(page)["got"]["number-of-the-beast"][1] == 0  # earned in play
+    open_page(page)
+    expect(beast).to_have_class(re.compile(r"\bgot\b"))
+    expect(beast).to_contain_text("Number of the Beast")
+    expect(beast).to_contain_text("Earned")
+    expect(beast.locator(".mk-disc")).to_have_count(1)
+    assert errors == []
+
+
+def test_a_player_already_past_666_gets_number_of_the_beast_quietly_from_their_notes(page: Page, site_url, errors):
+    words = known_words(page, site_url, MANY_WORDS_JS)
+    long_ago = dt.datetime(2026, 10, 1, 12, 0, tzinfo=TORONTO)
+    finds = [find(w, long_ago + dt.timedelta(minutes=i)) for i, w in enumerate(words[:700])]
+    # Their record already has what those notes earned before this achievement came along.
+    got = {i: [finds[0]["t"], 1] for i in ("first-mark", "field-book", "compass-rose")}
+    record = json.dumps({"got": got, "best": 0, "fresh": []})
+    open_alone(page, site_url, finds, store={"letterfield.marks.v1": record})
+    page.wait_for_function("'number-of-the-beast' in window.__lf.marks.state().got", timeout=LANDS)
+    state = marks(page)
+    assert state["got"]["number-of-the-beast"] == [finds[665]["t"], 1]  # dated by the 666th find, from the notes
+    assert "number-of-the-beast" in state["fresh"]
+    expect(page.locator("#marksNew")).to_be_visible()
+    page.wait_for_timeout(2500)
+    assert "Number of the Beast" not in notes(page)
+    open_page(page)
+    expect(page.locator(BEAST)).to_contain_text("from your notes")
     assert errors == []
 
 

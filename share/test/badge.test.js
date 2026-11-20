@@ -30,7 +30,7 @@ describe('badgeSvg', () => {
     const svg = badgeSvg(parseBadge('seven-seas'));
     const words = texts(svg).map((t) => t[3]);
     assert.deepEqual(words, ['LETTERFIELD · ACHIEVEMENT', 'SEVEN SEAS', 'Themes', 'Find words from all 7 themes of', 'the sea.',
-      'One of 39 achievements', 'games.michaelwarkentin.com']);
+      'One of 40 achievements', 'games.michaelwarkentin.com']);
     assert.ok(svg.includes(`stroke="hsl(275,${PALETTES.light.markS},${PALETTES.light.markL})"`));
     assert.ok(!svg.includes('class="f"'));  // the drawing's dots are filled in the badge's colour
     assert.ok(badgeSvg(parseBadge('seven-seas'), { dark: true }).includes(PALETTES.dark.paper));
