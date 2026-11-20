@@ -958,10 +958,11 @@ describe('Atlas', () => {
     await report({ ...base, sx: 0, sy: 0, players: 3, by: [[hashed(1), 40], [hashed(2), 2]] });
     clock += 60000;  // 3 players for a minute
     await report({ ...base, sx: 1, sy: 0, players: 1, by: [[hashed(1), DAILY_CLAIMS - 40]] });
-    clock += 30 * 60000;  // both sectors went quiet, so their players stopped counting as online
+    // Both sectors went quiet: their 4 players count for ONLINE_MS (2 minutes), then stop.
+    clock += 30 * 60000;
     await report({ ...base, sx: 1, sy: 0, players: 0 });
     let map = await worldMap();
-    assert.deepEqual(map.today, { day: TODAY, charted: DAILY_CLAIMS + 2, addresses: 2, capped: 1, playerHours: 0.05, unpassed: 0 });
+    assert.deepEqual(map.today, { day: TODAY, charted: DAILY_CLAIMS + 2, addresses: 2, capped: 1, playerHours: 0.18, unpassed: 0 });
     assert.equal(map.yesterday, null);
 
     clock += DAY;
@@ -992,9 +993,9 @@ describe('Atlas', () => {
     await report({ ...base, sx: 0, sy: 0, players: 2 });
     const [hour] = logs('hour');
     assert.equal(hour.hour, new Date(clock - 3600000 - 60000).toISOString());
-    // 310 words in 2 players' minute: a rate no person reaches.
+    // 310 words in 2 players' minute, and the 2 minutes they counted as online for after: a rate no person reaches.
     assert.deepEqual({ ...hour, today: undefined }, {
-      survey: 'hour', hour: hour.hour, charted: DAILY_CLAIMS + 10, playerHours: 0.03, perPlayerHour: 9300, today: undefined,
+      survey: 'hour', hour: hour.hour, charted: DAILY_CLAIMS + 10, playerHours: 0.1, perPlayerHour: 3100, today: undefined,
     });
     assert.equal(hour.today.capped, 1);
   });

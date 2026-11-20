@@ -1119,6 +1119,7 @@ export class Atlas {
     this.yesterday = null;
     this.hour = { at: -1, charted: 0, playerHours: 0 };
     this.sampledAt = 0;
+    this.playersNow = 0;   // players online, as totals() last counted them
     // The shared world's latest supernovas, as sectors report them, for every
     // sector to pass on with its next report: {seq, n, at}, numbered in order
     // by the Atlas's clock so a sector's count survives the Atlas being
@@ -1259,14 +1260,17 @@ export class Atlas {
     return s;
   }
 
-  // On each report: adds up player-hours since the last one (a gap counts
-  // for at most ONLINE_MS, after which nobody counts as online anyway), and
+  // On each report: adds up player-hours since the last one, from the players
+  // online as it began (a gap counts for at most ONLINE_MS, after which
+  // nobody counted then is online any more), and
   // once an hour writes the hour's numbers to the log.
   tally() {
     const now = this.now();
     this.rollDay();
     if (this.sampledAt) {
-      const hours = this.totals().players * Math.min(now - this.sampledAt, ONLINE_MS) / HOUR_MS;
+      // Players online since the last report, as its answer counted them:
+      // counting again here would walk every surveyor online a second time.
+      const hours = this.playersNow * Math.min(now - this.sampledAt, ONLINE_MS) / HOUR_MS;
       this.stats.playerHours += hours;
       this.hour.playerHours += hours;
     }
@@ -1323,7 +1327,8 @@ export class Atlas {
       for (const e of r.who) ids.add(e[0]);
       unlisted += Math.max(0, r.players - r.who.length);
     }
-    return { charted, total: AREA_WORDS, players: ids.size + unlisted };
+    this.playersNow = ids.size + unlisted;
+    return { charted, total: AREA_WORDS, players: this.playersNow };
   }
 
   worldMap() {
