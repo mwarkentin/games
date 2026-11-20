@@ -202,6 +202,27 @@ body.docked .corner{right:calc(var(--notes-w) + 16px)}
 .tool-mix input::-moz-range-thumb{width:20px;height:20px;border:0;border-radius:50%;background:var(--ink);box-shadow:0 0 0 3px var(--panel)}
 .tool-mix input:focus-visible::-webkit-slider-thumb{outline:2px solid var(--accent);outline-offset:2px}
 .tool-mix input:focus-visible::-moz-range-thumb{outline:2px solid var(--accent);outline-offset:2px}
+/* The player, under the music's slider: the piece playing and buttons to step
+   through the pieces and pause, in one row like zoom's, then every piece to
+   pick from, the one playing marked by bars that move while it plays (not on
+   a phone, where the sheet stays short). The play button shows pause while
+   the music plays (html's data-music). */
+.tool-player{display:flex;align-items:center;gap:11px;min-height:50px;box-sizing:border-box;padding:0 5px 0 14px;font:500 14.5px/1 var(--f-ui);color:var(--ink)}
+.tool-player > span{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.tool-player .i-pause,html[data-music="playing"] .tool-player .i-play{display:none}
+html[data-music="playing"] .tool-player .i-pause{display:block}
+/* Past six pieces or so the list scrolls, the next one half in sight. */
+.tool-pieces{position:relative;list-style:none;padding:4px 0;max-height:calc(6.5 * 40px + 4px);overflow-y:auto;overscroll-behavior:contain}
+.tool-pieces button{display:flex;align-items:center;gap:11px;width:100%;box-sizing:border-box;min-height:40px;padding:0 12px 0 14px;border:0;background:transparent;color:var(--ink);cursor:pointer;text-align:left;font:500 14.5px/1.2 var(--f-ui)}
+@media (hover: hover){.tool-pieces button:hover{background:var(--hover)}}
+.music-player .bars{color:var(--accent)}
+.music-player .bars rect{transform-origin:50% 19px;transform:scaleY(.45)}
+.tool-pieces .bars{visibility:hidden}
+.tool-pieces [aria-current="true"] .bars{visibility:visible}
+html[data-music="playing"] :is(.tool-player, .tool-pieces [aria-current="true"]) .bars rect{animation:bars 1.1s ease-in-out infinite alternate}
+.music-player .bars rect:nth-child(2){animation-delay:-.4s!important}
+.music-player .bars rect:nth-child(3){animation-delay:-.8s!important}
+@keyframes bars{from{transform:scaleY(.3)}to{transform:scaleY(1)}}
 /* The keys, for a keyboard: every shortcut in one card, each key before what
    it does, two to a row where they're short. */
 .tool-keys dl{margin:0;padding:8px 10px 9px 12px;display:grid;grid-template-columns:1fr 1fr;gap:2px 10px}
@@ -692,7 +713,12 @@ body.docked .nova{left:calc((100% - var(--notes-w)) / 2)}
   .tools-head .notes-sub,.tool-eb,.tool-keys{display:none}
   .tool-stack{padding:0 14px 14px}
   .tool-group ~ .tool-group{margin-top:10px}
-  .tool-group > button,.tool-zoom,.tool-mix{min-height:48px}
+  .tool-group > button,.tool-zoom{min-height:48px}
+  /* The sound rows a little lower, and the player only its row, with no list
+     of pieces (Previous and Next step through them), so the sheet still
+     leaves the middle of the map in sight on a small phone. */
+  .tool-mix,.tool-player{min-height:44px}
+  .tool-pieces{display:none}
   /* Map centre and Last find side by side, under zoom, to keep the sheet short. */
   .tool-group:has(#home){display:grid;grid-template-columns:1fr 1fr}
   .tool-zoom,.tool-group:has(#lastFind[hidden]) #home{grid-column:1 / -1}
@@ -702,6 +728,7 @@ body.docked .nova{left:calc((100% - var(--notes-w)) / 2)}
 @media (prefers-reduced-motion: reduce){
   .notes,.people,.tools-panel,.toast,.bar,.tools-btn,.tools-btn svg circle{transition:none!important}
   .notes,.people,.tools-panel{animation:none!important}
+  .music-player .bars rect{animation:none!important;transform:none}
   .find-def[data-define="loading"] .def-note{animation:none}
   #music[aria-pressed="true"] svg{animation:none}
 }
@@ -988,6 +1015,8 @@ html[data-notes-page="marks"] .notes > :not(.marks-page){display:none!important}
     <div class="group tool-group" role="group" aria-labelledby="toolsSoundHead">
       <div class="tool-mix"><button type="button" id="sound" aria-pressed="true" aria-label="Sound effects" aria-keyshortcuts="M" title="Sound effects (M)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 9.5h3.5L12 6v12l-4.5-3.5H4z"/><path class="on" d="M15.5 9.2a4 4 0 0 1 0 5.6M18.2 6.6a7.6 7.6 0 0 1 0 10.8"/><path class="off" d="M16 9.5l5 5M21 9.5l-5 5"/></svg></button><label for="soundVol" aria-hidden="true">Effects</label><input type="range" id="soundVol" min="0" max="100" step="5" value="100" aria-label="Sound effects volume" title="Sound effects volume"></div>
       <div class="tool-mix"><button type="button" id="music" aria-pressed="false" aria-label="Music" aria-keyshortcuts="B" title="Music (B)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 17.5V6l10-2v11.5"/><circle cx="6.5" cy="17.5" r="2.5"/><circle cx="16.5" cy="15.5" r="2.5"/><path class="off" d="M3.5 3.5l17 17"/></svg></button><label for="musicVol" aria-hidden="true">Music</label><input type="range" id="musicVol" min="0" max="100" step="5" value="0" aria-keyshortcuts="[ ]" aria-label="Music volume" title="Music volume ([ and ])"></div>
+      <div class="tool-player music-player"><svg class="bars" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="5" y="6" width="3" height="13" rx="1"/><rect x="10.5" y="6" width="3" height="13" rx="1"/><rect x="16" y="6" width="3" height="13" rx="1"/></svg><span id="pieceName">Drift</span><div class="tool-step"><button type="button" id="musicPrev" aria-label="Previous piece" title="Previous piece"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6.5 5.5v13M18 6.5l-8.5 5.5 8.5 5.5z"/></svg></button><button type="button" id="musicPlay" aria-label="Play music" title="Play music"><svg class="i-play" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 5.5l11 6.5-11 6.5z"/></svg><svg class="i-pause" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M8.5 6v12M15.5 6v12"/></svg></button><button type="button" id="musicNext" aria-label="Next piece" title="Next piece"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M17.5 5.5v13M6 6.5l8.5 5.5-8.5 5.5z"/></svg></button></div></div>
+      <ol class="tool-pieces music-player" id="musicPieces" aria-label="Pieces"></ol>
     </div>
     <section class="tool-keys" aria-labelledby="toolsKeysHead">
       <p class="you-eb" id="toolsKeysHead">Keys</p>
@@ -2810,7 +2839,7 @@ const novaBuses = new Set();
 function audioCtx() {
   if (!gestured || !(soundOn || musicOn)) return null;
   if (ac && ac.state === 'closed') {  // the browser gave it up: start again on a new one
-    if (musicNow) { try { musicNow.end(); } catch (_) {} musicNow = null; }
+    if (musicNow) { try { musicNow.end(); } catch (_) {} musicNow = null; Player.go('waiting'); }
     ac = null;
   }
   if (!ac) {
@@ -2845,7 +2874,7 @@ function audioOut(a) {
 function onGesture(e) {
   gestured = true;
   if (soundOn || musicOn) wakeCtx();
-  if (e.target && e.target.closest && e.target.closest('#sound, #music')) return;  // the buttons decide
+  if (e.target && e.target.closest && e.target.closest('#sound, #music, .music-player')) return;  // the buttons decide
   if (e.type === 'keydown' && (e.key === 'b' || e.key === 'B') && !e.metaKey && !e.ctrlKey && !e.altKey) return;  // and so does B, the music's key
   audioCtx();
   if (musicOn && !musicNow) startMusic();
@@ -2859,7 +2888,7 @@ document.addEventListener('visibilitychange', () => {
     setTimeout(() => { if (document.hidden) ac.suspend().catch(() => {}); }, musicNow ? 700 : 0);
   } else if (soundOn || musicOn) {
     wakeCtx();
-    if (musicNow) musicNow.wake();
+    if (Player.is('playing')) musicNow.wake();  // paused, it stays quiet
   }
 });
 // `pan`, for one from afar: the side it's on, for its distant rumble.
@@ -3207,7 +3236,7 @@ function chimesTrack(a, out) {
 // each phrase. Each play is seeded: a few bars of the tune, its grace notes
 // and the celesta's answers change; its shape doesn't. It has one convolver,
 // Chimes' hall behind a short pre-delay, fed mono.
-const LANTERN_KEY = .28, LANTERN_PAD = .026, LANTERN_CELLO = .058, LANTERN_BELL = .075, LANTERN_WET = .8;
+const LANTERN_KEY = .28, LANTERN_PAD = .026, LANTERN_CELLO = .058, LANTERN_BELL = .066, LANTERN_WET = .8;
 const LANTERN_CHORDS = {  // bass; three notes above it for the left hand; the strings' three, and V's suspension
   i: [42, [49, 52, 57], [54, 57, 61]], VI: [38, [45, 54, 52], [54, 57, 61]], iv: [35, [42, 50, 57], [54, 59, 62]],
   V: [37, [44, 54, 53], [53, 56, 61], 54], III: [37, [45, 52, 57], [52, 57, 61]], VII: [40, [47, 56, 52], [52, 56, 59]],
@@ -3440,7 +3469,7 @@ function lanternTrack(a, out, seed = Math.floor(Math.random() * 4294967296)) {
       if (m) {
         const [n1, n2] = b.tune.slice(k + 1), when = at(s) + .008 + rnd() * .018;
         const stop = n1 && !n1[0] ? at(s + d) + .08 : n2 ? at(s + d + n1[1]) + .03 : end;
-        const v = b.dyn * [.96, 1.03, 1, .92][b.phrase] * (.86 + (m - 66) * .018) * (s ? 1 : 1.05) * (.94 + rnd() * .12);
+        const v = b.dyn * [.96, 1.03, 1, .92][b.phrase] * (.84 + (m - 66) * .007) * (s ? 1 : 1.05) * (.94 + rnd() * .12);
         if (d >= 2 && rnd() < b.grace) key(when - .075, m + LANTERN_UP[m % 12], v * .5, when + .05, rh, false);
         key(when, m, v, stop, rh, 'tune');
         if (b.double && d >= 1.5 && rnd() < .7) celesta(when + .01, m + 12, v);
@@ -3483,21 +3512,46 @@ function lanternTrack(a, out, seed = Math.floor(Math.random() * 4294967296)) {
   };
 }
 
-const MUSIC_TRACKS = [driftTrack, orbitTrack, chimesTrack, lanternTrack];
-// Plays the music on the page's context: schedules a few seconds ahead from a
-// one-second timer, which stops while the tab is hidden, and hands over to
-// the next piece every few minutes.
-function playMusic(a) {
+// The pieces, in the order they take turns, with the names the tools list
+// them by.
+const MUSIC_PIECES = [[driftTrack, 'Drift'], [orbitTrack, 'Orbit'], [chimesTrack, 'Chimes'], [lanternTrack, 'Lantern']];
+const MUSIC_TRACKS = MUSIC_PIECES.map(p => p[0]);
+// The piece playing, or the one that will when the music comes on: the last
+// one heard, kept for next time, or one at random the first time.
+const K_MUSIC_PIECE = 'letterfield.musicpiece.v1';
+let musicPiece = (i => Number.isInteger(i) && i >= 0 && i < MUSIC_TRACKS.length ? i : Math.floor(Math.random() * MUSIC_TRACKS.length))(Number(LS.get(K_MUSIC_PIECE) ?? NaN));
+// The music's mode: off; on, but waiting for a first tap or key (or for the
+// browser to give it sound again); playing; or paused, holding its place in
+// the piece. The music switch and its slider turn it on and off; the
+// player's button moves it between playing and paused. musicNow, the music
+// playing, is there exactly while it's playing or paused.
+const Player = machine('music', {
+  off: ['waiting', 'playing'],
+  waiting: ['playing', 'off'],
+  playing: ['paused', 'waiting', 'off'],
+  paused: ['playing', 'waiting', 'off'],
+}, musicOn ? 'waiting' : 'off', { onMove: showPlayer });
+// Plays the music on the page's context, starting with piece n: schedules a
+// few seconds ahead from a one-second timer, which stops while the tab is
+// hidden or the music is paused, and hands over to the next piece every few
+// minutes.
+function playMusic(a, n) {
   const master = a.createGain(); master.gain.value = 0; master.connect(acOut);
-  let n = Math.floor(Math.random() * MUSIC_TRACKS.length), track = MUSIC_TRACKS[n](a, master);
-  let timer = 0, swapAt = a.currentTime + TRACK_TIME;
+  let track = MUSIC_TRACKS[n](a, master), fading = null, gone = 0;
+  let timer = 0, swapAt = a.currentTime + TRACK_TIME, pausedAt = 0;
   track.bus.gain.value = 1;
-  function swap() {
-    const old = track;
-    glide(old.bus.gain, 0, 8, a); setTimeout(old.stop, 9000);
-    n = (n + 1) % MUSIC_TRACKS.length; track = MUSIC_TRACKS[n](a, master);
-    glide(track.bus.gain, 1, 8, a);
+  // Hands over to piece `to`, the next unless told, crossfading over `fade`
+  // seconds. A piece still fading out from the last hand-over, after a few
+  // quick taps on Next, goes at once rather than piling up.
+  function swap(to = (n + 1) % MUSIC_TRACKS.length, fade = 8) {
+    if (fading) { const f = fading; clearTimeout(gone); glide(f.bus.gain, 0, .08, a); setTimeout(f.stop, 150); }
+    const old = fading = track;
+    glide(old.bus.gain, 0, fade, a);
+    gone = setTimeout(() => { old.stop(); if (fading === old) fading = null; }, fade * 1000 + 1000);
+    n = to; track = MUSIC_TRACKS[n](a, master);
+    glide(track.bus.gain, 1, fade, a);
     swapAt = a.currentTime + TRACK_TIME;
+    setPiece(n);
   }
   function tick() {
     if (a.currentTime >= swapAt) swap();
@@ -3507,27 +3561,38 @@ function playMusic(a) {
   run();
   glide(master.gain, musicLevel(), 4, a);
   return {
-    track: () => track, master, swap,
+    track: () => track, piece: () => n, fading: () => !!fading, master, swap,
     hush() { clearInterval(timer); glide(master.gain, 0, .5, a); },
     wake() {
       track.resync(a.currentTime);
       run(); glide(master.gain, musicLevel(), 2.5, a);
     },
+    // Paused, it goes quiet and schedules nothing more; played again, it
+    // picks up from the next bar it hadn't scheduled, and its four minutes
+    // leave out the pause.
+    pause() { clearInterval(timer); pausedAt = a.currentTime; glide(master.gain, 0, .4, a); },
+    resume() {
+      swapAt += a.currentTime - pausedAt;
+      track.resync(a.currentTime);
+      run(); glide(master.gain, musicLevel(), 1, a);
+    },
     // A move of the slider: a quick glide, short enough to follow a drag and
-    // long enough not to click. While the tab is hidden, wake() picks the level up.
-    level() { if (!document.hidden) glide(master.gain, musicLevel(), .04, a); },
+    // long enough not to click. While the tab is hidden, wake() picks the
+    // level up, and resume() while it's paused.
+    level() { if (!document.hidden && Player.is('playing')) glide(master.gain, musicLevel(), .04, a); },
     end() {  // switched off: gone in half a second
-      clearInterval(timer);
+      clearInterval(timer); clearTimeout(gone);
       glide(master.gain, 0, .5, a);
-      const t = track;
-      setTimeout(() => { t.stop(); master.disconnect(); }, 800);
+      const t = track, f = fading;
+      setTimeout(() => { t.stop(); if (f) f.stop(); master.disconnect(); }, 800);
     },
   };
 }
 function startMusic() {
   const a = audioCtx();
   if (!a || musicNow) return;
-  musicNow = playMusic(a);
+  musicNow = playMusic(a, musicPiece);
+  Player.go('playing');
   if (document.hidden) musicNow.hush();
 }
 const musicBtn = $('#music'), musicVolEl = $('#musicVol');
@@ -3549,8 +3614,13 @@ function setMusic(on) {
   LS.set(K_MUSIC, on ? '1' : '0');
   musicBtn.setAttribute('aria-pressed', String(on));
   showMusicVol();
-  if (on) startMusic();
-  else if (musicNow) { musicNow.end(); musicNow = null; }
+  if (on) {
+    if (Player.is('off')) Player.go('waiting');
+    startMusic();
+  } else {
+    if (musicNow) { musicNow.end(); musicNow = null; }
+    if (!Player.is('off')) Player.go('off');
+  }
 }
 musicBtn.setAttribute('aria-pressed', String(musicOn));
 showMusicVol();
@@ -3559,6 +3629,65 @@ showMusicVol();
 // off unheard.
 function toggleMusic() { gestured = true; if (musicOn && !musicNow) startMusic(); else setMusic(!musicOn); }
 musicBtn.addEventListener('click', toggleMusic);
+
+// The player, in the tools under the music's slider: the piece playing, a
+// button to pause and play it and two to step through the pieces, and, where
+// there's room (not on a phone), every piece to pick from, the one playing
+// marked. Picking one while the music's off switches it on with that piece;
+// while it's paused, plays it.
+const pieceName = $('#pieceName'), playBtn = $('#musicPlay'), pieceList = $('#musicPieces');
+pieceList.replaceChildren(...MUSIC_PIECES.map(([, name], i) => {
+  const li = document.createElement('li'), b = document.createElement('button');
+  b.type = 'button'; b.dataset.piece = String(i);
+  b.innerHTML = `${$('.tool-player .bars').outerHTML}<span></span>`;
+  b.querySelector('span').textContent = name;
+  b.addEventListener('click', () => choosePiece(i));
+  li.append(b);
+  return li;
+}));
+function setPiece(i) {
+  musicPiece = i;
+  LS.set(K_MUSIC_PIECE, String(i));
+  showPiece();
+}
+function showPiece() {
+  pieceName.textContent = MUSIC_PIECES[musicPiece][1];
+  for (const b of pieceList.querySelectorAll('button')) {
+    if (+b.dataset.piece === musicPiece) b.setAttribute('aria-current', 'true'); else b.removeAttribute('aria-current');
+  }
+  // A list long enough to scroll brings the piece playing into the middle of
+  // it, without moving the drawer or the page.
+  const li = pieceList.children[musicPiece], l = pieceList;
+  if (l.scrollHeight > l.clientHeight) l.scrollTop = li.offsetTop - (l.clientHeight - li.offsetHeight) / 2;
+}
+function showPlayer() {
+  const what = Player.is('playing') ? 'Pause music' : 'Play music';
+  playBtn.setAttribute('aria-label', what); playBtn.title = what;
+}
+function playPause() {
+  gestured = true;
+  if (Player.is('playing')) { musicNow.pause(); Player.go('paused'); }
+  else if (Player.is('paused')) { musicNow.resume(); Player.go('playing'); }
+  else if (Player.is('waiting')) startMusic();
+  else setMusic(true);
+}
+// Another piece, crossfading over three seconds, quick enough to follow a
+// tap. Picked again, the piece playing carries on.
+function choosePiece(i) {
+  gestured = true;
+  i = (i + MUSIC_TRACKS.length) % MUSIC_TRACKS.length;
+  if (!musicNow) {
+    setPiece(i);
+    if (Player.is('waiting')) startMusic(); else setMusic(true);
+    return;
+  }
+  if (Player.is('paused')) { musicNow.resume(); Player.go('playing'); }
+  if (i !== musicNow.piece()) musicNow.swap(i, 3);
+}
+playBtn.addEventListener('click', playPause);
+$('#musicPrev').addEventListener('click', () => choosePiece(musicPiece - 1));
+$('#musicNext').addEventListener('click', () => choosePiece(musicPiece + 1));
+showPiece(); showPlayer();
 
 const noiseOf = perContext(a => {
   const b = a.createBuffer(1, a.sampleRate * 2, a.sampleRate), d = b.getChannelData(0);
@@ -7794,7 +7923,7 @@ if (surveyApi) {
 updateHud();
 invalidate();
 if (redrawn) setTimeout(() => toast(`<i></i><b>The map has been redrawn</b><span>${NT} themes of about ${Math.round(THEMES.reduce((a, t) => a + t.words.length, 0) / NT / 10) * 10} words now, so a territory never repeats one · ${redrawn.kept ? `${redrawn.kept} of your ${redrawn.had} finds are still on it` : 'your old finds are not on it'}</span>`, null, 8000), 900);
-if (location.hash === '#debug') window.__lf = { cam, found, claims, links, chunk, wordEnd, collect, territoryProgress, remnants: () => [...remnants().set], novas: () => [...novasSeen.values()], territoryName: regionName, world: () => world, supernova, novaSound, audioOut, musicTracks: MUSIC_TRACKS, audio: () => ac, music: () => musicNow && { state: ac.state, track: musicNow.track().name, nodes: musicNow.track().nodes.size, fade: musicNow.track().bus.gain.value, level: musicNow.master.gain.value, master: musicNow.master, volume: musicVol, target: musicLevel(), swap: musicNow.swap }, nova: () => nova, novaWave: () => nova && novaLast && { cx: novaLast.cx, cy: novaLast.cy, R: novaLast.R || 0, amp: novaLast.amp, virtual: novaLast.virtual }, distantAt: v => { distantAt = v; },
+if (location.hash === '#debug') window.__lf = { cam, found, claims, links, chunk, wordEnd, collect, territoryProgress, remnants: () => [...remnants().set], novas: () => [...novasSeen.values()], territoryName: regionName, world: () => world, supernova, novaSound, audioOut, musicTracks: MUSIC_TRACKS, musicPiece: () => musicPiece, audio: () => ac, music: () => musicNow && { state: ac.state, track: musicNow.track().name, nodes: musicNow.track().nodes.size, fade: musicNow.track().bus.gain.value, fading: musicNow.fading(), level: musicNow.master.gain.value, master: musicNow.master, volume: musicVol, target: musicLevel(), swap: musicNow.swap }, nova: () => nova, novaWave: () => nova && novaLast && { cx: novaLast.cx, cy: novaLast.cy, R: novaLast.R || 0, amp: novaLast.amp, virtual: novaLast.virtual }, distantAt: v => { distantAt = v; },
   who: () => Who.state, surveyors: () => whoData, panel: () => Panel.state, mapWidth: () => W - dock, peoplePage: () => PeoplePage.state, emoteMotion, guild: () => Membership.state, myGuilds: () => myGuilds, labels: () => Object.fromEntries(labels),
   mates: () => [...new Set([...mates.values()].flatMap(m => [...m.keys()]))], matesOf: tag => [...(mates.get(tag) || new Map()).keys()],
   roster: code => rosterOf(guildOfCode(code) || myGuilds[0] || { code: '' }),

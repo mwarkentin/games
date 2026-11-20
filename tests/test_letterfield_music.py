@@ -3,7 +3,10 @@ The music's switches, volume and turns are in test_letterfield.py."""
 
 import math
 
+import pytest
 from playwright.sync_api import Page, expect
+
+from test_letterfield_survey import HIDE
 
 INIT = "localStorage.setItem('letterfield.coach.v1', '1'); localStorage.setItem('letterfield.music.v1', '1');"
 
@@ -163,4 +166,169 @@ def test_the_crossfade_into_lantern_has_no_gap(page: Page, site_url, errors):
     assert min(rms[1:]) > 0.001, rms
     assert max(rms) < 0.1, rms
     assert got["left"] == 0  # Chimes, stopped after its fade, has nothing left playing
+    assert errors == []
+
+
+# The music player in the tools: a row with the piece playing, previous, play
+# or pause and next, and a list of every piece.
+PIECES = "[...document.querySelectorAll('#musicPieces button span')].map(b => b.textContent)"
+TRACK = "window.__lf.music() && window.__lf.music().track"
+
+
+def open_player(page: Page, site_url, init: str = "", size=(1280, 900)):
+    page.set_viewport_size({"width": size[0], "height": size[1]})
+    page.add_init_script(INIT.replace("localStorage.setItem('letterfield.music.v1', '1');", "") + init)
+    page.goto(f"{site_url}/letterfield#debug")
+    page.wait_for_function("window.__lf")
+    page.evaluate("document.getElementById('toolsBtn').click()")  # no tap or key, which would start the audio
+    expect(page.locator("#toolsBtn")).to_have_attribute("aria-expanded", "true")
+
+
+def test_the_player_lists_every_piece_and_steps_through_them(page: Page, site_url, errors):
+    # Orbit last heard, before this test (the init script runs again on reload).
+    open_player(
+        page,
+        site_url,
+        "if (!sessionStorage.getItem('seen')) { sessionStorage.setItem('seen', '1'); localStorage.setItem('letterfield.musicpiece.v1', '1'); }",
+    )
+    html, name, play = page.locator("html"), page.locator("#pieceName"), page.locator("#musicPlay")
+    # Every piece, in the order they take turns, and the one that will play
+    # (the last one heard) named and marked, before any music.
+    order = page.evaluate("window.__lf.musicTracks.map(f => f.name.replace('Track', ''))")
+    assert [n.lower() for n in page.evaluate(PIECES)] == order == ["drift", "orbit", "chimes", "lantern"]
+    expect(html).to_have_attribute("data-music", "off")
+    expect(name).to_have_text("Orbit")
+    expect(page.locator("#musicPieces [aria-current='true'] span")).to_have_text("Orbit")
+    expect(play).to_have_accessible_name("Play music")
+
+    # Play switches the music on with that piece.
+    play.click()
+    expect(html).to_have_attribute("data-music", "playing")
+    expect(page.locator("#music")).to_have_attribute("aria-pressed", "true")
+    expect(play).to_have_accessible_name("Pause music")
+    assert page.evaluate(TRACK) == "orbit"
+
+    # Next and previous step through them, round from either end, each kept for next time.
+    page.locator("#musicNext").click()
+    page.wait_for_function(f"{TRACK} === 'chimes'")
+    expect(name).to_have_text("Chimes")
+    expect(page.locator("#musicPieces [aria-current='true'] span")).to_have_text("Chimes")
+    assert page.evaluate("localStorage.getItem('letterfield.musicpiece.v1')") == "2"
+    for _ in range(3):
+        page.locator("#musicPrev").click()
+    page.wait_for_function(f"{TRACK} === 'lantern'")
+    expect(name).to_have_text("Lantern")
+
+    # Picking one from the list plays it; picking the one playing carries on with it.
+    page.locator("#musicPieces button", has_text="Orbit").click()
+    page.wait_for_function(f"{TRACK} === 'orbit'")
+    page.wait_for_function("!window.__lf.music().fading", timeout=6000)
+    page.locator("#musicPieces button", has_text="Orbit").click()
+    assert page.evaluate("window.__lf.music().fading") is False
+
+    # A few quick taps on Next leave only the last two pieces sounding, and the
+    # one before soon fades away.
+    for _ in range(3):
+        page.locator("#musicNext").click()
+    page.wait_for_function(f"{TRACK} === 'drift'")
+    page.wait_for_function("!window.__lf.music().fading", timeout=6000)
+
+    # Next time, the music starts with the piece last heard.
+    page.reload()
+    page.wait_for_function("window.__lf")
+    expect(page.locator("#pieceName")).to_have_text("Drift")
+    assert errors == []
+
+
+def test_pausing_holds_the_music_until_played_again(page: Page, site_url, errors):
+    open_player(
+        page,
+        site_url,
+        "localStorage.setItem('letterfield.music.v1', '1'); localStorage.setItem('letterfield.musicpiece.v1', '3');",
+    )
+    html, play = page.locator("html"), page.locator("#musicPlay")
+    expect(html).to_have_attribute("data-music", "waiting")  # on, till the first tap or key
+    page.keyboard.press("Shift")
+    expect(html).to_have_attribute("data-music", "playing")
+    page.wait_for_function("window.__lf.music().level > .1")
+
+    play.click()
+    expect(html).to_have_attribute("data-music", "paused")
+    expect(play).to_have_accessible_name("Play music")
+    expect(page.locator("#music")).to_have_attribute("aria-pressed", "true")  # paused, not switched off
+    page.wait_for_function("window.__lf.music().level < .01")
+    # Paused, the tab hidden and shown again doesn't bring the music back, and
+    # nor does moving its slider.
+    page.evaluate(HIDE, True)
+    page.wait_for_function("window.__lf.music().state === 'suspended'")
+    page.evaluate(HIDE, False)
+    page.wait_for_function("window.__lf.music().state === 'running'")
+    page.locator("#musicVol").fill("50")
+    page.wait_for_timeout(1500)
+    expect(html).to_have_attribute("data-music", "paused")
+    assert page.evaluate("window.__lf.music().level") < 0.01
+
+    # Played again, the same piece carries on, at the slider's new level.
+    play.click()
+    expect(html).to_have_attribute("data-music", "playing")
+    page.wait_for_function("Math.abs(window.__lf.music().level - window.__lf.music().target) < 1e-3", timeout=4000)
+    assert page.evaluate(TRACK) == "lantern"
+
+    # Paused, the music's switch still switches it off.
+    play.click()
+    expect(html).to_have_attribute("data-music", "paused")
+    page.keyboard.press("b")
+    expect(html).to_have_attribute("data-music", "off")
+    assert page.evaluate("window.__lf.music()") is None
+    assert errors == []
+
+
+def test_picking_a_piece_with_the_music_off_switches_it_on_with_that_piece(page: Page, site_url, errors):
+    open_player(page, site_url, "localStorage.setItem('letterfield.musicpiece.v1', '0');")
+    page.locator("#musicPieces button", has_text="Lantern").click()
+    expect(page.locator("html")).to_have_attribute("data-music", "playing")
+    expect(page.locator("#musicVol")).to_have_value("75")
+    assert page.evaluate(TRACK) == "lantern"
+    assert page.evaluate("localStorage.getItem('letterfield.music.v1')") == "1"
+    assert errors == []
+
+
+MORE_PIECES = """() => {
+  const l = document.getElementById('musicPieces');
+  for (const n of ['Ember', 'Tidepool', 'Hollowmere', 'Vesper', 'Quarry', 'Lull']) {
+    const li = l.children[0].cloneNode(true), b = li.querySelector('button');
+    b.removeAttribute('aria-current'); b.querySelector('span').textContent = n;
+    l.append(li);
+  }
+}"""
+
+
+def test_the_list_of_pieces_scrolls_once_there_are_more_than_fit(page: Page, site_url, errors):
+    open_player(page, site_url)
+    pieces = page.locator("#musicPieces")
+    assert pieces.evaluate("l => l.scrollHeight <= l.clientHeight"), "four pieces fit without scrolling"
+    # Past six or so, the list scrolls on its own, the next one half in sight,
+    # with the drawer and the page staying put.
+    page.evaluate(MORE_PIECES)
+    assert pieces.evaluate("l => l.scrollHeight > l.clientHeight && l.scrollWidth <= l.clientWidth")
+    assert 6 * 40 < pieces.bounding_box()["height"] < 7 * 40
+    assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
+    assert errors == []
+
+
+@pytest.mark.parametrize("size", [(375, 667), (390, 844)], ids=["small-phone", "phone"])
+def test_on_a_phone_the_player_is_one_row(page: Page, site_url, errors, size):
+    # No list of pieces on a phone, where the tools' sheet must leave the
+    # middle of the map in sight (see the tools' own test): Previous and Next
+    # step through them, however many there are.
+    open_player(page, site_url, "localStorage.setItem('letterfield.musicpiece.v1', '2');", size=size)
+    expect(page.locator("#musicPieces")).to_be_hidden()
+    expect(page.locator("#pieceName")).to_have_text("Chimes")
+    for el in ["#musicPrev", "#musicPlay", "#musicNext"]:
+        b = page.locator(el).bounding_box()
+        assert b["width"] >= 36 and b["height"] >= 36, (el, b)
+    page.locator("#musicNext").click()
+    page.wait_for_function(f"{TRACK} === 'lantern'")
+    expect(page.locator("#pieceName")).to_have_text("Lantern")
+    assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
     assert errors == []

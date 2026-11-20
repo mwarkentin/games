@@ -198,6 +198,7 @@ The machines each page keeps:
 | | `pairCode` (a link code made here, watched until used) | none, making, waiting, used, gone |
 | | `sync` (keeping linked devices in step) | off, idle, syncing, failed |
 | | `notesPage` (the field notes drawer's page) | finds, marks |
+| | `music` (the music player in the tools) | off, waiting, playing, paused |
 | `letterfield-log.html` | `log` (what the page shows) | loading, ready, refreshing, stale, failed |
 | | `span` (where the log starts, which ‹ stops at) | asking, known, failed |
 | | `define` (each word's meaning; `el: null`, see `__log.definitions()`) | loading, ready, none, failed |
