@@ -58,7 +58,7 @@ From [Scaling One Million Checkboxes][omcb] and
 | Moves went out in batches every 200 ms; batching "massively reduced load" | claims go out in batches every 200 ms. In the load test, this took a sector from saturating at ~630 players to handling 750 |
 | Global data (players online) was served over HTTP with a low max-age so Cloudflare's cache absorbed it: "hundreds of millions of requests" | the world map is a `GET` with `max-age=5`, cached per Worker instance; the Atlas that builds it hears only from sectors, never from players |
 | Bandwidth was "my one unbounded cost" (OMCB capped its server at 250 Mbit/s) | Cloudflare doesn't charge for egress, and outgoing WebSocket messages are free |
-| "Bound my costs … instead of going serverless and scaling into bankruptcy" | `MAX_PLAYERS` per sector and `MAX_ONLINE` overall. Beyond them, players are told the survey is full; the bill can't run away |
+| "Bound my costs … instead of going serverless and scaling into bankruptcy" | `MAX_PLAYERS` per sector and `MAX_ONLINE` across the shared world. Beyond them, players are told the survey is full; the bill can't run away there (sectors outside it aren't counted: see "Bots") |
 | Validate everything: someone checked box 100,000,000 and broke OMCB | every claim is checked against the server's copy of the map generator |
 | Bots pushed absurd traffic once the Go rewrite made things fast | a burst of 5 claims per socket, then one per 1.5 s; and per IP address, however many sockets it opens, 6 a minute and 300 a day (see "Limits per address") |
 | Rollback netcode, so moves feel instant | not needed: a circled word is always kept locally, and the server only decides who gets the credit |
@@ -235,6 +235,19 @@ survey also limits each IP address, wherever it plays:
   opens about 10 an hour. The Worker asks it before forwarding a join, so a
   join it refuses never wakes (or makes) a sector. Either limit is answered
   with `full`, and the game tries again in a minute or so.
+- **The whole survey: an address counts for at most 40 toward
+  `MAX_ONLINE`.** The cap per sector alone would let one address fill the
+  survey, 40 sockets in each of the shared world's 625 sectors being 25,000.
+  So each report says how many people each address has placed there, and
+  the Atlas counts an address for no more than `ADDRESS_ONLINE` (40) across
+  every sector, in the players online it shows and in the count `MAX_ONLINE`
+  is checked against. Filling the survey takes 625 addresses, not one.
+- **Outside the shared world, `MAX_ONLINE` doesn't hold.** Sectors there
+  don't report, so their players aren't counted and they never turn anyone
+  away as the survey being full: only `MAX_PLAYERS` and the per-address
+  limits bound them. A crowd, or a script with many addresses, out there
+  costs what it costs. Counting them would mean every far sector reporting
+  to the Atlas too.
 - **Messages: 20 at once per socket, then 10 a second.** Every message
   costs the sector's one thread some work (a position, initials, a badge to
   check), so past that a socket's messages are dropped unread
@@ -1758,7 +1771,8 @@ about 30 cents over the included million requests.
 ## Not done yet
 
 - **A spending alert.** Workers Paid has no spending cap; `MAX_ONLINE`
-  keeps the worst case near $18 a day. A scheduled check of Cloudflare's
+  keeps the worst case in the shared world near $18 a day, but nothing
+  bounds sectors outside it (see "Bots"). A scheduled check of Cloudflare's
   analytics API could open a GitHub issue when the month's usage passes a
   threshold.
 - **Run `load.js` against a deployment.** That would confirm the per-sector

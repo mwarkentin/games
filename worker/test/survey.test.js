@@ -13,7 +13,7 @@ import worker from '../src/index.js';
 import { CH, DEAL, DIRS, HOLDERS, MAP_VERSION, RG, STRAY_MIN, THEMES, THEME_DATA, VOCAB, chunk, genChunk, keyOf, letterAt, regionName, regionTheme, strayTheme, wordEnd } from '../src/letterfield-world.js';
 import { GUILD_TAGS_MAX } from '../src/survey-guild.js';
 import {
-  ADDRESS_HEADER, ADDRESS_SOCKETS, AREA, AREA_WORDS, Atlas, BATCH_MS, DAILY_CLAIMS, dailyClaims, DAILY_LIST_MAX, CLAIM_BURST, CLAIM_REFILL_MS, FRAME_BURST, FRAME_REFILL_MS, MAX_ONLINE, MAX_PLAYERS, ONLINE_MS, PRESENCE_MAX, PRESENCE_MS,
+  ADDRESS_HEADER, ADDRESS_ONLINE, ADDRESS_SOCKETS, AREA, AREA_WORDS, Atlas, BATCH_MS, DAILY_CLAIMS, dailyClaims, DAILY_LIST_MAX, CLAIM_BURST, CLAIM_REFILL_MS, FRAME_BURST, FRAME_REFILL_MS, MAX_ONLINE, MAX_PLAYERS, ONLINE_MS, PRESENCE_MAX, PRESENCE_MS,
   QUIET, REPORT_BY_MAX, REPORT_MS, UNPASSED_HEADER, SAVE_MS, SAVE_POS_MS, SECTOR, SPAWN_MAX, Sector, VIEW_MS, addressOf, checkClaim, routeSurvey,
 } from '../src/survey.js';
 
@@ -603,7 +603,7 @@ describe('Sector', () => {
     const [a, b] = [join(2, -3), join(2, -3)];
     await claim(a, words[0]);
     await settle();
-    assert.deepEqual(reports, [{ sx: 2, sy: -3, players: 0, charted: countsFor(1), hot: [words[0].x, words[0].y], by: [], day: TODAY, overAt: 0, novaSeq: -1 }]);
+    assert.deepEqual(reports, [{ sx: 2, sy: -3, players: 0, perAddress: [], charted: countsFor(1), hot: [words[0].x, words[0].y], by: [], day: TODAY, overAt: 0, novaSeq: -1 }]);
     assert.deepEqual(b.last('world'), { t: 'world', charted: 1001, total: AREA_WORDS, players: 40 });
 
     // Changes within REPORT_MS wait for the first message after it.
@@ -615,7 +615,7 @@ describe('Sector', () => {
     clock += REPORT_MS;
     await say(b, { t: 'pos', x: 401, y: -500 });
     await settle();
-    assert.deepEqual(reports[1], { sx: 2, sy: -3, players: 1, charted: countsFor(2), hot: [401, -500], by: [], day: TODAY, overAt: 0, novaSeq: -1 });  // where the player is
+    assert.deepEqual(reports[1], { sx: 2, sy: -3, players: 1, perAddress: [], charted: countsFor(2), hot: [401, -500], by: [], day: TODAY, overAt: 0, novaSeq: -1 });  // where the player is
     assert.deepEqual(b.last('world'), { t: 'world', charted: 1002, total: AREA_WORDS, players: 40 });
     // Later joiners get the totals straight away.
     assert.deepEqual(join(2, -3).sent[1], { t: 'world', charted: 1002, total: AREA_WORDS, players: 40 });
@@ -1034,6 +1034,38 @@ describe('Atlas', () => {
       survey: 'hour', hour: hour.hour, charted: DAILY_CLAIMS + 10, playerHours: 0.03, perPlayerHour: 9300, today: undefined,
     });
     assert.equal(hour.today.capped, 1);
+  });
+
+  test('counts no address for more than ADDRESS_ONLINE players across the survey, so a few cannot fill it', async () => {
+    // One address with ADDRESS_ONLINE sockets in each of three sectors, and a surveyor of their own in one.
+    for (const sx of [0, 1, 2]) {
+      await report({ sx, sy: 0, players: ADDRESS_ONLINE + (sx === 0 ? 1 : 0), charted: counts(), perAddress: [[hashed(1), ADDRESS_ONLINE], ...(sx === 0 ? [[hashed(2), 1]] : [])] });
+    }
+    assert.equal((await report({ sx: 3, sy: 0, players: 0, charted: counts() }))[1].players, ADDRESS_ONLINE + 1);
+    // As the world map shows it too, and older sectors that send none count as before.
+    await report({ sx: 4, sy: 0, players: 2, charted: counts() });
+    clock += VIEW_MS;
+    assert.equal((await worldMap()).players, ADDRESS_ONLINE + 3);
+    // A sector's next report replaces what it said, and one gone quiet stops counting.
+    await report({ sx: 1, sy: 0, players: 0, charted: counts(), perAddress: [] });
+    assert.equal((await report({ sx: 3, sy: 0, players: 0, charted: counts() }))[1].players, ADDRESS_ONLINE + 3);
+    clock += ONLINE_MS;
+    await report({ sx: 5, sy: 0, players: 1, charted: counts(), perAddress: [[hashed(1), 1]] });
+    assert.equal((await report({ sx: 3, sy: 0, players: 0, charted: counts() }))[1].players, 1);
+    assert.deepEqual([...atlasObject.held], [[hashed(1), 1]]);
+    for (const perAddress of ['x', [[hashed(1), 0]], [['nope', 1]], Array(MAX_PLAYERS + 1).fill([hashed(1), 1])]) {
+      assert.equal((await report({ sx: 0, sy: 0, players: 1, charted: counts(), perAddress }))[0], 400);
+    }
+  });
+
+  test('tells the Atlas how many people each address has placed in a sector', async () => {
+    const sector = new Sector(fakeState(), {});
+    sector.now = () => clock;
+    for (let i = 0; i < 3; i++) { const ws = fakeSocket(); sector.join(ws, 0, 0, hashed(1)); await sector.webSocketMessage(ws, JSON.stringify({ t: 'pos', x: i, y: 0 })); }
+    const ws = fakeSocket();
+    sector.join(ws, 0, 0, hashed(2));
+    await sector.webSocketMessage(ws, JSON.stringify({ t: 'pos', x: 9, y: 0 }));
+    assert.deepEqual(sector.perAddress().sort(), [[hashed(1), 3], [hashed(2), 1]]);
   });
 
   test('stops counting players whose sector has gone quiet', async () => {
