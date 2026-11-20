@@ -1536,3 +1536,23 @@ def test_no_map_shows_behind_or_between_the_top_bars_parts(page: Page, site_url,
     page.wait_for_timeout(200)
     check(size[1])
     assert errors == []
+
+
+@pytest.mark.parametrize("scheme", ["light", "dark"])
+def test_the_corner_buttons_stay_solid_under_the_pointer(page: Page, site_url, errors, scheme):
+    """Hovered on a computer, where they float over the map, the corner's buttons
+    keep their solid background with the tint over it: the hover colour alone is
+    see-through, and the map's letters showed through it."""
+    without_worker(page, site_url, "letterfield")
+    page.emulate_media(color_scheme=scheme)
+    page.set_viewport_size({"width": 1280, "height": 900})
+    page.goto(f"{site_url}/letterfield#debug")
+    page.click("#coachOk")
+    page.evaluate("document.getElementById('peopleBtn').hidden = false")  # shown once the survey's on
+    for sel in ["#toolsBtn", "#peopleBtn", "#notesToggle"]:
+        page.hover(sel)
+        page.locator(sel).evaluate("e => Promise.all(e.getAnimations().map(a => a.finished))")  # its colour done changing
+        bg = page.locator(sel).evaluate("e => getComputedStyle(e).backgroundColor")
+        alpha = re.findall(r"[\d.]+", bg)[3:4]
+        assert not alpha or float(alpha[0]) == 1, (sel, bg)
+    assert errors == []

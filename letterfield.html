@@ -166,7 +166,9 @@ body.docked .corner{right:calc(var(--notes-w) + 16px)}
 .tools-btn svg circle{transition:transform var(--t-slow) var(--ease-pop)}
 .tools-btn[aria-expanded="true"] svg circle:first-of-type{transform:translateX(-5px)}
 .tools-btn[aria-expanded="true"] svg circle:last-of-type{transform:translateX(5px)}
-@media (hover: hover){.tools-btn:hover,.people-btn:hover{background:var(--hover)}}  /* a tap leaves no grey behind on a phone */
+/* The hover tint goes over the panel, not in its place: it's see-through, and the
+   buttons float over the map. A tap leaves no grey behind on a phone. */
+@media (hover: hover){.tools-btn:hover,.people-btn:hover{background:linear-gradient(var(--hover), var(--hover)) var(--panel)}}
 /* Open, each of the corner's buttons is pressed: one of the three at a time. */
 .tools-btn[aria-expanded="true"],.people-btn[aria-expanded="true"],.notes-toggle[aria-expanded="true"]{background:var(--ink);border-color:var(--ink);color:var(--panel)}
 .tools-btn svg,.people-btn svg{width:20px;height:20px}
