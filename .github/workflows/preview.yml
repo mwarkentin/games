@@ -4,15 +4,13 @@ name: Preview
 # at https://pr-<number>-games-preview.mwarkentin.workers.dev: a Worker
 # Preview of the assets-only games-preview Worker (preview/wrangler.toml).
 #
-# A pull request whose branch changes worker/ from main's (stacked pull
-# requests included, whatever their base) also gets a Worker Preview of the
-# leaderboard Worker at
-# https://pr-<number>-games-leaderboard.mwarkentin.workers.dev, with Durable
-# Objects of its own and the Previews' test databases, and the site preview
-# points at it. So does one labelled worker-preview, for trying pages that
-# need the Worker (Letterfield's log, say) without changing it. Without one,
-# the site preview keeps production's Worker, which only answers the live
-# site, so it can't write there.
+# Every pull request also gets a Worker Preview of the leaderboard Worker at
+# https://pr-<number>-games-leaderboard.mwarkentin.workers.dev, built from
+# its branch, with Durable Objects of its own and the Previews' test
+# databases, and the site preview points at it: its leaderboards, War's
+# rooms and Letterfield's survey work there. Production's Worker only
+# answers the live site, so a preview never points at it; if the Worker
+# Preview can't be made, neither is the site preview.
 #
 # A pull request whose branch changes share/ (or worker/src/, whose code it
 # imports), or that's labelled worker-preview, also gets a Worker Preview of
@@ -54,32 +52,27 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       share: ${{ steps.share.outputs.share }}
-      worker: ${{ steps.diff.outputs.worker }}
-      why: ${{ steps.diff.outputs.why }}
+      migrations: ${{ steps.diff.outputs.migrations }}
     steps:
       # The pull request's merge commit against the default branch: what the
       # preview would serve that production doesn't. For a pull request on
       # main that's everything it changes; for one stacked on another pull
-      # request's branch, it counts that branch's changes too, since its
-      # pages need that branch's Worker as much as their own. The
-      # worker-preview label asks for one whatever the branch changes.
+      # request's branch, it counts that branch's changes too.
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0
+      # Whether the branch brings database migrations of its own, which only
+      # its Worker Preview applies to the Previews' shared databases. Those
+      # take turns (see the worker job); the rest needn't wait.
       - id: diff
         env:
           DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
-          LABELLED: ${{ contains(github.event.pull_request.labels.*.name, 'worker-preview') }}
         run: |
           git fetch --quiet origin "$DEFAULT_BRANCH"
-          if git diff --name-only "origin/$DEFAULT_BRANCH...HEAD" | grep -qE '^(worker/|\.github/workflows/preview\.yml$)'; then
-            echo "worker=true" >> "$GITHUB_OUTPUT"
-            echo "why=changes" >> "$GITHUB_OUTPUT"
-          elif [ "$LABELLED" = true ]; then
-            echo "worker=true" >> "$GITHUB_OUTPUT"
-            echo "why=label" >> "$GITHUB_OUTPUT"
+          if git diff --name-only "origin/$DEFAULT_BRANCH...HEAD" | grep -qE '^worker/(migrations/|migrations-log/|wrangler\.previews-migrations\.toml$)'; then
+            echo "migrations=true" >> "$GITHUB_OUTPUT"
           else
-            echo "worker=false" >> "$GITHUB_OUTPUT"
+            echo "migrations=false" >> "$GITHUB_OUTPUT"
           fi
 
       # The share Worker, against the same merge base. It bundles the
@@ -99,16 +92,19 @@ jobs:
 
   worker:
     needs: changes
-    if: needs.changes.outputs.worker == 'true'
     runs-on: ubuntu-latest
     permissions:
       contents: read
       pull-requests: read # whether the pull request is still open
-    # One at a time across pull requests: Previews share a database, and two
-    # runs applying its migrations at once could race.
+    # Previews share their databases, and two runs applying new migrations to
+    # them at once could race: so a branch that brings migrations takes its
+    # turn with the others that do, one at a time across pull requests. Any
+    # other branch's migrations are main's, already applied, so its run goes
+    # at once, and a newer push to the same pull request takes over from one
+    # still going, as the site job's does.
     concurrency:
-      group: worker-preview
-      cancel-in-progress: false
+      group: ${{ needs.changes.outputs.migrations == 'true' && 'worker-preview' || format('worker-preview-{0}', github.event.pull_request.number) }}
+      cancel-in-progress: ${{ needs.changes.outputs.migrations != 'true' }}
     outputs:
       url: ${{ steps.preview.outputs.url }}
     defaults:
@@ -131,6 +127,7 @@ jobs:
           state="$(gh api "repos/$GITHUB_REPOSITORY/pulls/$PR" --jq .state)"
           echo "open=$([ "$state" = open ] && echo true || echo false)" >> "$GITHUB_OUTPUT"
       # Migrations go on before the code that needs them, as in production.
+      # For a branch without migrations of its own this finds nothing to do.
       # A branch's migrations stay on the shared database after it closes,
       # which is fine for test scores; if they get in the way, empty or
       # replace the database (see worker/README.md).
@@ -227,12 +224,12 @@ jobs:
 
   site:
     needs: [changes, worker, share]
-    # After the Worker Previews, or without them when the pull request doesn't
-    # touch their code; never pointed at production when making one failed.
+    # After the Worker Previews: the leaderboard's always, the share Worker's
+    # when there is one. Never pointed at production when making one failed.
     if: >-
       always() &&
       needs.changes.result == 'success' &&
-      (needs.worker.result == 'success' || needs.worker.result == 'skipped') &&
+      needs.worker.result == 'success' &&
       (needs.share.result == 'success' || needs.share.result == 'skipped')
     runs-on: ubuntu-latest
     permissions:
@@ -288,7 +285,12 @@ jobs:
         id: preview
         if: steps.open.outputs.open == 'true'
         working-directory: preview
+        env:
+          WORKER: ${{ needs.worker.outputs.url }}
         run: |
+          # Its pages were pointed at the Worker Preview above; without one they'd
+          # still name production's Worker, which refuses the preview.
+          test -n "$WORKER" || { echo "::error::There's no Worker Preview to point the site preview at, so it isn't made. Re-run this workflow."; exit 1; }
           set -o pipefail
           output="$(npx --yes wrangler@4.151.0 preview --name "$PREVIEW" \
             --message "${{ github.event.pull_request.head.sha }}" --json)"
@@ -310,7 +312,6 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           SITE: ${{ steps.preview.outputs.url }}
           WORKER: ${{ needs.worker.outputs.url }}
-          WHY: ${{ needs.changes.outputs.why }}
           PR: ${{ github.event.pull_request.number }}
           SHA: ${{ github.event.pull_request.head.sha }}
           SHARE: ${{ needs.share.outputs.url }}
@@ -331,22 +332,11 @@ jobs:
 
           Changed here: $games"
           fi
-          if [ -n "$WORKER" ]; then
-            if [ "$WHY" = label ]; then
-              why="This pull request is labelled \`worker-preview\`, so the preview's pages"
-            else
-              why="This pull request's branch changes the Worker, so the preview's pages"
-            fi
-            body="$body
+          body="$body
 
           **Worker Preview:** $WORKER
 
-          $why point at its Worker Preview: War's rooms, the leaderboards and Letterfield's log already use it, and [Letterfield's shared survey]($SITE/letterfield?survey=$WORKER) does with \`?survey=\`. Rooms and the survey start empty and are this Preview's alone; scores and the survey log go to the Previews' test databases."
-          else
-            body="$body
-
-          This pull request's branch doesn't change \`worker/\` from main's, so the preview's pages keep production's Worker, which only answers the live site: here the leaderboards say they can't be reached and War's rooms can't start. Solo play works as usual. To try them against a Worker Preview of their own, add the \`worker-preview\` label."
-          fi
+          The preview's pages use this pull request's own copy of the Worker, built from its branch: the leaderboards, War's rooms, and Letterfield's shared survey, log and definitions. Rooms and the survey start empty and are this Preview's alone; scores and the survey log go to the Previews' test databases."
           if [ -n "$SHARE" ]; then
             # A word on this branch's own map, for an example card.
             slug="$(node --input-type=module -e "
@@ -371,13 +361,15 @@ jobs:
             gh api "repos/$GITHUB_REPOSITORY/issues/$PR/comments" -f body="$body" > /dev/null
           fi
 
-  # Worker Previews are made one at a time across pull requests, and GitHub
-  # keeps only the newest run waiting for that turn: an older one still
-  # waiting is cancelled, and its site preview skipped. Fail, saying so,
-  # rather than leave the preview quietly out of date.
+  # Worker Previews that bring migrations are made one at a time across pull
+  # requests, and GitHub keeps only the newest run waiting for that turn: an
+  # older one still waiting is cancelled, and its site preview skipped. Fail,
+  # saying so, rather than leave the preview quietly out of date. (Any other
+  # run is only ever cancelled by a newer push to its own pull request, which
+  # makes the previews again.)
   worker-cancelled:
-    needs: worker
-    if: always() && needs.worker.result == 'cancelled'
+    needs: [changes, worker]
+    if: always() && needs.worker.result == 'cancelled' && needs.changes.outputs.migrations == 'true'
     runs-on: ubuntu-latest
     steps:
       - name: Say the Worker Preview was cancelled

@@ -326,10 +326,9 @@ views, so changing what `/v1/survey/log/surveyor|theme|territory/…` answer
 
 ## Previews
 
-Every pull request whose branch changes `worker/` from `main`'s, stacked
-pull requests included, or that's labelled `worker-preview`, gets a
+Every pull request gets a
 [Worker Preview](https://developers.cloudflare.com/workers/previews/): its
-own copy of the Worker at
+own copy of the Worker, built from its branch, at
 `https://pr-<number>-games-leaderboard.mwarkentin.workers.dev`. The
 **Preview** workflow (`.github/workflows/preview.yml`) makes it, then builds
 the pull request's own copy of the site at
@@ -337,12 +336,19 @@ the pull request's own copy of the site at
 pointed at the Worker Preview (see Previews in `AGENTS.md`), comments on the
 pull request with both, and deletes both when the pull request closes. It's
 the way to try War's rooms or the survey with real phones before merging.
+A preview never points at production's Worker, which only answers the live
+site: if the Worker Preview can't be made, neither is the site preview.
 
-- **One at a time:** Worker Previews are made one after another across pull
+- **One at a time, with migrations:** a branch that brings migrations of its
+  own (`migrations/`, `migrations-log/` or
+  `wrangler.previews-migrations.toml`, compared with `main`'s) applies them
+  to the Previews' shared databases, so those runs take turns across pull
   requests, and GitHub keeps only the newest run waiting for that turn. A
   run still waiting when another queues behind it is cancelled, and fails
   (the `worker-cancelled` job) rather than leave its previews quietly out of
-  date: re-run it.
+  date: re-run it. Any other branch's migrations are `main`'s, already
+  applied, so its Worker Preview is made at once, and a newer push to the
+  same pull request takes over from one still going.
 - **After closing:** a run that gets its turn after its pull request has
   closed makes nothing, and its site job deletes the Previews in case
   cleanup didn't get to (cleanup shares the site job's group, so one cancels
