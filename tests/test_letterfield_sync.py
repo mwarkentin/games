@@ -14,7 +14,7 @@ import re
 from playwright.sync_api import Page, expect
 
 from fake_leaderboard import Held
-from fake_survey import FakeGuilds, FakeLinks, FakePlayers, FakeSurvey, reply
+from fake_survey import FakeGuilds, FakeLinks, FakePlayers, FakeSurvey, player_id, reply
 from test_letterfield_guilds import CODE, CODE2, MINE, WORK, in_both, in_cobalt, stored
 from test_letterfield_guilds import start as start_guilds
 from test_letterfield_survey import SURVEY, eventually, known_words, open_you
@@ -327,4 +327,28 @@ def test_a_guild_list_from_there_while_naming_one_here_keeps_both(page: Page, si
     eventually(
         page, lambda: [g["code"] for g in players.players[PID]["settings"]["guilds"]] == [CODE, made], timeout_ms=8000
     )
+    assert errors == []
+
+
+def test_a_tab_left_on_the_old_surveyor_starts_again_as_the_new_one(page: Page, site_url, errors):
+    """Another tab linked (or recovered) and became another surveyor. This one used to sync on as the
+    old self, whose Player says syncing has stopped, and so turned syncing off for the whole browser."""
+    players = FakePlayers(started=[PID])
+    start(page, site_url, players)
+    eventually(page, lambda: len(players.sent()) >= 1)
+    new = "e" * 32
+    players.start(player_id(new))
+    other = page.context.new_page()
+    other.goto(f"{site_url}/letterfield?survey={SURVEY}")
+    # What linking leaves behind: the new token, and syncing from here.
+    other.evaluate(
+        "t => { localStorage.setItem('letterfield.sync.v1', JSON.stringify({ on: true, epoch: '', at: 0, f: [], n: [], settingsAt: 1 })); localStorage.setItem('games.player', t); }",
+        new,
+    )
+    page.wait_for_function(f"window.__lf && window.__lf.pid() === '{player_id(new)}'")
+    page.evaluate("window.__lf.syncNow()")
+    eventually(page, lambda: any(b["token"] == new for b in players.sent()))
+    assert page.evaluate("localStorage.getItem('letterfield.sync.v1')") is not None
+    assert all(b["token"] == new for b in players.sent()[1:])
+    other.close()
     assert errors == []

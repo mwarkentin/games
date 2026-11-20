@@ -5396,6 +5396,12 @@ const playerToken = (() => {
   }
   return t;
 })();
+// Another tab became another surveyor (linking, or a recovery code): this
+// one starts again as them, rather than syncing, claiming and joining as a
+// self that's gone, whose Player would say syncing has stopped for all of them.
+window.addEventListener('storage', e => {
+  if (e.key === K_PLAYER && playerToken && TOKEN_RE.test(e.newValue || '') && e.newValue !== playerToken) location.reload();
+});
 let myPid = '';
 if (playerToken && window.crypto && crypto.subtle) {
   crypto.subtle.digest('SHA-256', new TextEncoder().encode('games-player:' + playerToken))
@@ -6432,6 +6438,7 @@ function settingsChanged() {
 }
 async function syncNow() {
   if (!Sync.is('idle', 'failed') || document.hidden) return;  // a hidden tab syncs when it shows again
+  if (LS.get(K_PLAYER) !== playerToken) return;  // another tab became another surveyor: this one reloads as them
   const st = readSync();
   if (!st) return Sync.go('off');
   // Achievements waiting: '*' (from a device syncing since before there were any) means every one.
@@ -6445,7 +6452,7 @@ async function syncNow() {
     marks: sentM.filter(id => marks.got[id]).slice(0, 200).map(id => [id, ...marks.got[id]]), ...(marks.best ? { best: marks.best } : {}),
     settings: mySettings(), settingsAt: st.settingsAt,
   });
-  if (Sync.seq !== at) return;
+  if (Sync.seq !== at || LS.get(K_PLAYER) !== playerToken) return;  // stopped meanwhile, or this tab is about to reload as another surveyor
   if (status === 200 && data.off) {
     writeSync(null);
     LS.remove(K_RECOVERY);  // stopped on every device: the recovery code went with it
