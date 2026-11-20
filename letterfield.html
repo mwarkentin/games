@@ -6092,7 +6092,7 @@ async function joinInvite() {
   if (Membership.seq !== at) return;
   if (status === 200 && goodGuild(data)) {
     if (drop) guildCall(`/${drop.code}/leave`, { token: playerToken });  // at the cap: the one chosen makes room
-    saveGuilds([...myGuilds.filter(g => g !== drop && g.code !== data.code), guildOf(data)]);
+    saveGuilds([...myGuilds.filter(g => g.code !== (drop && drop.code) && g.code !== data.code), guildOf(data)]);
     takeRoster(data.code, data.members);
     invite = null;
     Membership.go('in');  // the invite's card goes first, so the note takes the top
@@ -6117,7 +6117,7 @@ async function leaveGuild() {
   if (status === 200) { saveGuilds(myGuilds.filter(x => x.code !== g.code)); return Membership.go(restState()); }
   guildError = 'Couldn’t leave just now. Try again in a moment.';
   guildErrorCode = g.code;
-  Membership.go('in');
+  Membership.go(restState());  // a linked device's list may have taken it, and the rest, meanwhile
 }
 let invited = { code: '', at: 0 };  // which guild's Invite last copied its link, and when: the list's says so for a moment
 const INVITED_MS = 2500;
@@ -6494,9 +6494,11 @@ function applySettings(c) {
   if ('badge' in c) takeShownBadge(c.badge);
   if ('card' in c) takeCard(c.card);
   tellMe(); renderWho(); invalidate();
-  // Our labels for our guilds, then the guilds themselves, if this device
-  // isn't in the middle of changing them itself. Each keeps the log id this
-  // device learnt for it. An older game sends one guild, not a list.
+  // Our labels for our guilds, then the guilds themselves. Each keeps the log
+  // id this device learnt for it. An older game sends one guild, not a list.
+  // A change of this device's own that's under way (naming, joining, leaving)
+  // carries on from the new list, which it adds to or takes from as it ends,
+  // so the list is taken now whatever the state: one skipped would be lost.
   const list = Array.isArray(c.guilds) ? c.guilds : c.guild === undefined ? null : c.guild ? [c.guild] : [];
   const next = list && guildList(list).map(g => { const had = guildOfCode(g.code); return had && had.lid ? { ...bareGuild(g), lid: had.lid } : bareGuild(g); });
   const codes = next ? next.map(g => g.code) : myGuilds.map(g => g.code);
@@ -6505,12 +6507,16 @@ function applySettings(c) {
     for (const [code, l] of Object.entries(c.labels)) { const t = cleanLabel(l); if (t && codes.includes(code)) labels.set(code, t); }
     saveLabels();
   }
-  if (!next || next.map(g => g.code).join() === myGuilds.map(g => g.code).join() || !Membership.is('in', 'confirming', 'out')) { renderGuild(); renderWho(); return; }
+  if (!next || next.map(g => g.code).join() === myGuilds.map(g => g.code).join()) { renderGuild(); renderWho(); return; }
   saveGuilds(next, true);
   if (myGuilds.length && Membership.is('out')) Membership.go('in');
-  else if (!myGuilds.length) Membership.go('out');
+  else if (!myGuilds.length && Membership.is('in', 'confirming')) Membership.go('out');
   else if (Membership.is('confirming') && !guildOfCode(confirming)) Membership.go('in');  // the one we were asking about went elsewhere
-  else guildMoved('in', 'in');
+  else {
+    // No move: still asking about the same guild, or mid-change. The list has new members to show.
+    if (Who.is('ready')) Who.go('refreshing');
+    renderGuild(); renderWho(); invalidate();
+  }
 }
 // A device that was brought back with a recovery code keeps the guilds it was
 // in, joined again as the surveyor it's become, and adds them to the backup's

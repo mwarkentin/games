@@ -15,7 +15,7 @@ from playwright.sync_api import Page, expect
 
 from fake_leaderboard import Held
 from fake_survey import FakeGuilds, FakeLinks, FakePlayers, FakeSurvey, reply
-from test_letterfield_guilds import CODE2, MINE, WORK
+from test_letterfield_guilds import CODE, CODE2, MINE, WORK, in_both, in_cobalt, stored
 from test_letterfield_guilds import start as start_guilds
 from test_letterfield_survey import SURVEY, eventually, known_words, open_you
 from test_letterfield_surveyors import KIM, PID, TOKEN
@@ -264,4 +264,67 @@ def test_a_device_linked_with_a_code_sends_all_it_has(page: Page, site_url, erro
     body = players.sent()[0]
     assert sorted(f["w"] for f in body["finds"]) == sorted(f["w"] for f in mine)
     expect(page.locator("html")).to_have_attribute("data-sync", "idle")
+    assert errors == []
+
+
+def start_in_guilds(page: Page, site_url: str, players: FakePlayers, guilds: FakeGuilds, mine: list) -> None:
+    """Opens the game synced, in the guilds `mine`, with `guilds` answering for them."""
+    page.route(f"{SURVEY}/v1/player/**", players.handle)
+    start_guilds(page, site_url, FakeSurvey(), guilds, mine=mine)
+    page.evaluate("on => localStorage.setItem('letterfield.sync.v1', JSON.stringify(on))", ON)
+    page.goto("about:blank")
+    page.goto(f"{site_url}/letterfield?survey={SURVEY}#debug")
+    page.wait_for_function(f"window.__lf && window.__lf.pid() === '{PID}'")
+    eventually(page, lambda: len(players.sent()) >= 1)  # the first sync, which brings nothing
+
+
+def guilds_from_there(page: Page, players: FakePlayers, guilds: list) -> None:
+    """A linked device changes our guilds to `guilds`, and this one syncs."""
+    players.add(
+        PID,
+        settings={"initials": "MLW", "guilds": guilds, "guild": guilds[0] if guilds else None},
+        settings_at=page.evaluate("Date.now()"),
+    )
+    page.evaluate("window.__lf.syncNow()")
+
+
+def test_a_guild_list_from_there_keeps_the_leave_being_asked_about(page: Page, site_url, errors):
+    """It used to clear which guild was being asked about without a move, leaving the card asking
+    nothing with data-guild still 'confirming' and every guild button refused."""
+    players = FakePlayers(started=[PID])
+    start_in_guilds(page, site_url, players, in_both(), [MINE, WORK])
+    open_you(page)
+    card, html = page.locator("#guildCard"), page.locator("html")
+    card.get_by_role("button", name="Leave").first.click()
+    expect(html).to_have_attribute("data-guild", "confirming")
+    expect(card).to_contain_text("Leave the Cobalt Compass Society?")
+    guilds_from_there(page, players, [MINE])  # left the other one there
+    eventually(page, lambda: page.evaluate("window.__lf.myGuilds().map(g => g.code)") == [CODE])
+    expect(html).to_have_attribute("data-guild", "confirming")
+    expect(card).to_contain_text("Leave the Cobalt Compass Society?")
+    card.get_by_role("button", name="Leave", exact=True).click()
+    expect(html).to_have_attribute("data-guild", "out")
+    assert errors == []
+
+
+def test_a_guild_list_from_there_while_naming_one_here_keeps_both(page: Page, site_url, errors):
+    """A list that came while this device was naming a guild used to be skipped, and the guild
+    started here then went up as the whole list, dropping the one joined there everywhere."""
+    players = FakePlayers(started=[PID])
+    guilds = in_cobalt()
+    start_in_guilds(page, site_url, players, guilds, [])
+    open_you(page)
+    card, html = page.locator("#guildCard"), page.locator("html")
+    card.get_by_role("button", name="Start a guild").click()
+    expect(html).to_have_attribute("data-guild", "naming")
+    guilds_from_there(page, players, [MINE])
+    eventually(page, lambda: page.evaluate("window.__lf.myGuilds().map(g => g.code)") == [CODE])
+    expect(html).to_have_attribute("data-guild", "naming")
+    card.get_by_role("button", name="Start it").click()
+    expect(html).to_have_attribute("data-guild", "in")
+    made = next(code for code in guilds.guilds if code != CODE)
+    assert [g["code"] for g in stored(page)] == [CODE, made]
+    eventually(
+        page, lambda: [g["code"] for g in players.players[PID]["settings"]["guilds"]] == [CODE, made], timeout_ms=8000
+    )
     assert errors == []
