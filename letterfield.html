@@ -2178,7 +2178,7 @@ function territoryTotal(rx, ry) {
   if (total === undefined) {
     total = 0;
     for (let cy = ry * RG; cy < ry * RG + RG; cy++) for (let cx = rx * RG; cx < rx * RG + RG; cx++) total += chunk(cx, cy).words.length;
-    if (terrTotals.size > 2000) terrTotals.clear();
+    if (terrTotals.size > 40000) terrTotals.clear();  // well past the universe's 10,000, so a pass over them all never empties it partway
     terrTotals.set(k, total);
   }
   return total;
