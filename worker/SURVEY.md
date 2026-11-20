@@ -1348,7 +1348,11 @@ travels with the reports sectors already send the Atlas:
 
 **On the page,** every supernova a player is online for, near or far, is
 kept in their notes' supernovas, and its territory becomes a remnant at
-once. How it plays depends on how far off it is:
+once. The title's count is the sector's too, wherever the territory is,
+inside the shared world or out ("110/111 charted"), never the player's own
+notes, which can be short of it by words someone else charted first; its
+hover says how many are in the notes when they differ. Only playing alone
+does it count the notes ("found"). How it plays depends on how far off it is:
 
 - **Within 3 territories** of the middle of the view, or your own: the
   whole thing, charge, dimming, burst and shockwave, as before.

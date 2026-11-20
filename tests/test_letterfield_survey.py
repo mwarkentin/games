@@ -837,6 +837,70 @@ def test_charting_the_last_word_in_a_territory_sets_it_off(page: Page, site_url,
     assert errors == []
 
 
+# Player Shore, at 2568W · 1512N: territory (-54, -32), in sector (-14, -8), past the universe's edge
+# (sectors -12 to 12), where sectors still take claims but don't report to the Atlas.
+FAR = (-54, -32)
+FAR_SECTOR = "-14,-8"
+FAR_WORDS = """() => {
+  const out = [];
+  for (let cy = -128; cy < -124; cy++) for (let cx = -216; cx < -212; cx++) for (const o of window.__lf.chunk(cx, cy).words) out.push([o.w, o.x, o.y, o.d]);
+  return out;
+}"""
+
+
+def far_out(page: Page, mine: list) -> None:
+    """Starts the camera in Player Shore, with `mine` ([w, x, y, d]) in the field notes and initials signed."""
+    finds = [{"w": w[0], "x": w[1], "y": w[2], "d": w[3], "t": NOW_MS - 86_400_000, "s": 0} for w in mine]
+    page.add_init_script(f"""
+      localStorage.setItem('games.initials', JSON.stringify('MLW'));
+      localStorage.setItem('letterfield.cam.v1', JSON.stringify({{ x: -2568, y: -1512, cs: 30 }}));
+      if (!localStorage.getItem('letterfield.finds.v4')) localStorage.setItem('letterfield.finds.v4', {json.dumps(json.dumps(finds))});
+    """)
+
+
+def test_outside_the_universe_the_title_counts_what_the_survey_charted(page: Page, site_url, errors):
+    """Past the universe's edge the title counted your field notes ("110/111 found") while the
+    sector counted every word charted, so a territory went supernova a word short of the title:
+    a word someone else charted first isn't in your notes unless you add it."""
+    words = known_words(page, site_url, FAR_WORDS)
+    assert {(w[1] // 48, w[2] // 48) for w in words} == {FAR}
+    last, theirs, yours = words[0], words[1], words[2:]
+    far_out(page, yours)
+    fake = FakeSurvey(home=FAR_SECTOR, claims=[[*theirs, 0, "ZWW", NOW_MS - 3 * 86_400_000]]
+                      + [[*w, 0, "MLW", NOW_MS - 60_000] for w in yours])
+    open_game(page, site_url, fake)
+    expect(page.locator("#tName")).to_have_text(page.evaluate(f"window.__lf.territoryName{FAR}"))
+    expect(page.locator("#tCharted")).to_have_text(f" · {len(words) - 1}/{len(words)} charted")
+    expect(page.locator("#tCharted")).to_have_attribute(
+        "title", f"{len(words) - 1} of {len(words)} hidden words charted · {len(words) - 2} in your notes")
+    circle(page, last)
+    expect(page.locator("#nova")).to_be_visible(timeout=6000)
+    expect(page.locator("#novaText")).to_contain_text("every hidden word charted, the last by you")
+    expect(page.locator("#tCharted")).to_have_text(f" · {len(words)}/{len(words)} charted")
+    expect(page.locator("#tCharted")).to_have_attribute(
+        "title", f"{len(words)} of {len(words)} hidden words charted · {len(words) - 1} in your notes")
+    assert errors == []
+
+
+def test_outside_the_universe_the_title_says_the_survey_is_joining_or_offline(page: Page, site_url, errors):
+    far_out(page, [])
+    fake = FakeSurvey(home=FAR_SECTOR, hold=lambda url: True)
+    open_game(page, site_url, fake)
+    eventually(page, lambda: any(FAR_SECTOR.replace(",", "/") in ws.url for ws in fake.held))
+    expect(page.locator("#tCharted")).to_have_text(" · joining…")
+    fake.hold = None
+    fake.welcome()
+    expect(page.locator("#tCharted")).to_have_text(re.compile(r"^ · 0/\d+ charted$"))
+    assert errors == []
+
+
+def test_outside_the_universe_a_crowded_sector_says_so(page: Page, site_url, errors):
+    far_out(page, [])
+    open_game(page, site_url, FakeSurvey(full={FAR_SECTOR: "sector"}))
+    expect(page.locator("#tCharted")).to_have_text(" · crowded")
+    assert errors == []
+
+
 def test_someone_else_finishing_a_territory_nearby_sets_it_off_too(page: Page, site_url, errors):
     words = territory_words(page, site_url)
     fake = FakeSurvey(claims=[[*w, 0, "MRW", NOW_MS - 60_000] for w in words[1:]])
