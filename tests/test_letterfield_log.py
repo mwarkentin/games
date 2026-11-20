@@ -600,9 +600,15 @@ def test_a_live_hours_refresh_keeps_the_focus_and_the_value_showing(page: Page, 
     # The same for a word's link in the list.
     page.locator(".entry", has_text="MONET").locator("a.fly").focus()
     page.wait_for_load_state("networkidle")
+    held = Held(fake, lambda r: True)
+    page.route(f"{SURVEY}/v1/survey/log/**", held.handle)  # later routes win
     page.clock.fast_forward(21_000)
+    held.wait_for(page)
+    # The redraw isn't read out: aria-live is off while it's out and drawn,
+    expect(page.locator("#summary")).to_have_attribute("aria-live", "off")
+    held.release()
     eventually(page, lambda: page.evaluate("document.activeElement.textContent") == "MONET")
-    # The redraw isn't read out (aria-live is off while it's drawn), then the summary is read out as before.
+    # then the summary is read out as before.
     page.clock.fast_forward(2_000)
     expect(page.locator("#summary")).to_have_attribute("aria-live", "polite")
     assert errors == []
@@ -638,6 +644,25 @@ def test_a_day_that_ends_on_screen_reloads_once_its_last_words_are_in(page: Page
     # A word charted at 11:59:50 reaches the log a little late, as sectors' words do.
     fake.entries.append(["FERN", 10, 20, 0, 0, "AMY", late + 20_000, 11])
     page.clock.fast_forward(60_000)  # a minute after midnight
+    expect(page.locator(".entry")).to_have_count(3)
+    expect(page.locator("html")).to_have_attribute("data-log", "ready")
+    assert errors == []
+
+
+def test_a_day_whose_last_words_come_in_while_the_page_is_hidden_reloads_for_them(page: Page, site_url, errors):
+    late = int(datetime(2026, 11, 7, 4, 59, 30, tzinfo=UTC).timestamp() * 1000)  # 11:59:30 PM in Toronto
+    fake = FakeSurveyLog([ACORN, MONET, ZEUS], PLACES, THEMES)
+    open_log(page, site_url, fake, now_ms=late, running=True)
+    expect(page.locator(".entry")).to_have_count(2)
+    page.clock.fast_forward(35_000)  # midnight passes, and the day reloads
+    expect(page.locator("#sumTitle")).to_have_text("Yesterday")
+    expect(page.locator("html")).to_have_attribute("data-log", "ready")
+    page.wait_for_load_state("networkidle")
+    # Hidden before the reload a minute after midnight, and back after it was due.
+    page.evaluate(HIDE, True)
+    fake.entries.append(["FERN", 10, 20, 0, 0, "AMY", late + 20_000, 11])
+    page.clock.fast_forward(90_000)
+    page.evaluate(HIDE, False)
     expect(page.locator(".entry")).to_have_count(3)
     expect(page.locator("html")).to_have_attribute("data-log", "ready")
     assert errors == []

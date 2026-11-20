@@ -1752,18 +1752,22 @@ function placeholders() {
 // saying So far and the way on to the next one opens, and again a minute
 // later, once its last words are in. A refresh that failed (stale) tries
 // again, less often each time, even once the period's over. Nothing reloads
-// while the page is hidden; it catches up when it's back (see visibilitychange below).
-let staleTries = 0;
+// while the page is hidden; it catches up when it's back (see visibilitychange below),
+// the reload a minute after a period ends included (lateDue).
+let staleTries = 0, lateDue = 0;  // lateDue: the end of a period whose reload a minute after it hasn't run
 function scheduleRefresh(run, end) {
   clearTimeout(liveTimer);
   if (!Log.is('stale')) staleTries = 0;
+  const now = Date.now(), hour = state.period === 'hour';
+  if (hour || state.period === 'all') lateDue = 0;
+  else if (now >= end && now < end + LATE_MS) lateDue = end;
+  else if (now >= end + LATE_MS && Log.is('ready')) lateDue = 0;
   if (document.hidden || state.period === 'all') return;
   const tick = () => {
     if (run !== state.run) return;
     if (state.period !== 'hour' && Date.now() < end) liveTimer = setTimeout(tick, Math.min(end - Date.now() + 1000, DAY));
     else render(true);
   };
-  const now = Date.now(), hour = state.period === 'hour';
   let wait = 0;
   if (hour ? now < end + LATE_MS : now < end) wait = hour ? LIVE_REFRESH_MS : Math.min(end - now + 1000, DAY);
   else if (!hour && now < end + LATE_MS) wait = end + LATE_MS - now;
@@ -2347,11 +2351,13 @@ dayInput.onchange = () => {
 // Field notes change in Letterfield's own tab: "Mine" follows.
 addEventListener('storage', e => { if (e.key === K_FINDS && state.mine) render(); });
 // Reloading pauses while the tab is hidden. Back on screen, the running hour
-// catches up, and a period that ended meanwhile stops saying So far.
+// catches up, a period that ended meanwhile stops saying So far, and one
+// whose last words came in meanwhile reloads for them.
 document.addEventListener('visibilitychange', () => {
   if (document.hidden) return clearTimeout(liveTimer);
   const end = endOf(state.period, state.start), now = Date.now();
-  if ((liveUntil && now >= liveUntil) || (state.period === 'hour' && now < end + LATE_MS)) render(true);
+  if ((liveUntil && now >= liveUntil) || (state.period === 'hour' && now < end + LATE_MS)
+    || (lateDue === end && now >= end + LATE_MS)) render(true);
   else scheduleRefresh(state.run, end);
 });
 render();
