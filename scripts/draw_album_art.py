@@ -35,7 +35,7 @@ from pathlib import Path
 from common import ROOT
 
 sys.path.insert(0, str(Path(__file__).parent))
-from render_album import ARTIST, TRACKS, YEAR  # noqa: E402
+from render_album import ARTIST, LICENSE, TRACKS, YEAR  # noqa: E402
 
 ART = ROOT / "albums" / "letterfield"
 FONTS = ROOT / "_album" / "fonts"
@@ -442,7 +442,7 @@ def back(faces: dict[str, Face]) -> str:
     for i, line in enumerate(notes):
         body.append(mono.run(line, x0 + 70, ny + i * 34, 19, MUTED))
     medium = faces["mono-medium"]
-    body.append(medium.run(f"{ARTIST.upper()}  ·  {YEAR}", x0 + 70, y0 + h - 60 - 34, 19, INK, 0.08))
+    body.append(medium.run(f"{ARTIST.upper()}  ·  {YEAR}  ·  {LICENSE}", x0 + 70, y0 + h - 60 - 34, 19, INK, 0.08))
     body.append(medium.run("GAMES.MICHAELWARKENTIN.COM/LETTERFIELD", x0 + 70, y0 + h - 60, 19, ACCENT, 0.08))
     return svg(SIZE, SIZE, faces, "", "".join(body), "Letterfield (Original Soundtrack): back")
 

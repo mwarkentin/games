@@ -548,6 +548,10 @@ each is made, to play or download.
   `scripts/draw_album_art.py` with every letter an outline from the game's
   fonts, so rendering them needs no fonts or network. It also puts the cover
   into the page, inline, so it shows offline.
+- **Credit and licence:** Michael Warkentin, and CC BY 4.0 for the
+  recordings and their art (the code that makes them is the repo's, Apache
+  2.0). `ARTIST`, `LICENSE` and `COPYRIGHT` in the script put them in the
+  tags, the zip's `LICENSE.txt` and on the back; the page says so too.
 - `tests/test_letterfield_soundtrack.py` renders a few seconds of every track
   with the script's own code, and checks the page against `TRACKS` and the
   cover; it fakes the recordings with a short tone.

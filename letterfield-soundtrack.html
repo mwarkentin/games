@@ -10,6 +10,7 @@
 <!-- Part of Letterfield's home-screen app rather than an app of its own (see app_of in scripts/common.py). -->
 <meta name="games:app" content="letterfield">
 <title>Letterfield soundtrack</title>
+<link rel="license" href="https://creativecommons.org/licenses/by/4.0/">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Big+Shoulders+Display:wght@700;800&family=Martian+Mono:wght@400;500&family=Schibsted+Grotesk:wght@400;500;600&display=swap">
@@ -179,6 +180,7 @@ html:not([data-player="off"]) .pending{display:none}
     <h2 id="aboutTitle">How it’s made</h2>
     <p>Every sound here is made by Letterfield’s own code as it runs in a browser: oscillators, filters, delays and noise from the Web Audio API, with no recordings and no samples. In the game the four pieces take turns, four minutes each, crossfading, and no two plays are alike, since each draws its choices from a new seed.</p>
     <p>For this album each piece was played from a fixed seed, through the same compressor and limiter as in the game, into an offline audio context that renders as fast as it can, and given a cut of its own with a beginning and an end. The tracks are brought to one level, −17 LUFS, and encoded as VBR MP3s at 44.1 kHz. The script that does it, <a href="https://github.com/mwarkentin/games/blob/main/scripts/render_album.py">render_album.py</a>, is in the game’s repository, and makes the same album every time.</p>
+    <p id="licence">The recordings and their art are © 2026 Michael Warkentin, under <a href="https://creativecommons.org/licenses/by/4.0/" rel="license">CC BY 4.0</a>: share them and use them in anything of your own, even to sell, as long as you credit “Letterfield (Original Soundtrack)” by Michael Warkentin. The code that makes them is the game’s, under the Apache License 2.0.</p>
   </section>
 
   <p class="foot feedback">Found a bug or have an idea? <a href="https://github.com/mwarkentin/games/issues/new/choose" target="_blank" rel="noopener" data-feedback>Send feedback</a></p>

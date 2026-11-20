@@ -114,7 +114,12 @@ def test_the_page_lists_the_tracks_the_script_renders():
         for t in render_album.TRACKS
     ]
     assert page_tracks() == want
-    assert f"{len(render_album.TRACKS)} tracks · " in PAGE.read_text("utf-8")
+    text = PAGE.read_text("utf-8")
+    assert f"{len(render_album.TRACKS)} tracks · " in text
+    # Credited and licensed as the tags are.
+    assert f"{render_album.ARTIST} · " in text
+    assert f'<link rel="license" href="{render_album.LICENSE_URL}">' in text
+    assert f'<a href="{render_album.LICENSE_URL}" rel="license">{render_album.LICENSE}</a>' in text
 
 
 def test_the_pages_cover_is_the_albums():

@@ -68,6 +68,22 @@ ARTIST = "Michael Warkentin"
 YEAR = "2026"
 GENRE = "Ambient; Video Game"
 COMMENT = f"{BASE_URL}/letterfield"
+# The recordings and their art are CC BY 4.0 (the code that makes them is the
+# repo's, Apache 2.0): in the tags, the zip, the page and on the back.
+LICENSE = "CC BY 4.0"
+LICENSE_URL = "https://creativecommons.org/licenses/by/4.0/"
+COPYRIGHT = f"{YEAR} {ARTIST}. Licensed under {LICENSE}: {LICENSE_URL}"
+LICENSE_TXT = f"""{ALBUM}
+Music and art (c) {YEAR} {ARTIST}
+
+Licensed under the Creative Commons Attribution 4.0 International licence
+({LICENSE}): share and adapt it, for any purpose, even commercially, as long
+as you give credit, link to the licence and say if you changed anything.
+{LICENSE_URL}
+
+Credit it as: "{ALBUM}" by {ARTIST}, {LICENSE}
+{BASE_URL}/letterfield-soundtrack
+"""
 FILE_STEM = "letterfield"
 
 # How loud the album is: every track at TARGET_LUFS integrated, unless that
@@ -323,6 +339,7 @@ def tags(track: dict) -> dict:
         "date": YEAR,
         "genre": GENRE,
         "comment": COMMENT,
+        "copyright": COPYRIGHT,
     }
 
 
@@ -392,7 +409,14 @@ def encode(raw: Path, gain: float, track: dict, number: int, total: int, cover: 
             "8",
             *(["-metadata:s:v", "title=Album cover", "-metadata:s:v", "comment=Cover (front)"] if art else []),
             *metadata_args(
-                {**base, "track": str(number), "TRACKTOTAL": str(total), "DISCNUMBER": "1", "DISCTOTAL": "1"}
+                {
+                    **base,
+                    "track": str(number),
+                    "TRACKTOTAL": str(total),
+                    "DISCNUMBER": "1",
+                    "DISCTOTAL": "1",
+                    "LICENSE": LICENSE_URL,
+                }
             ),
             "-fflags",
             "+bitexact",
@@ -509,7 +533,7 @@ def render_tracks(browser, wanted: list[dict], out: Path, cover: dict[str, Path]
 
 
 def zip_album(out: Path, cover: dict[str, Path]) -> Path:
-    """The MP3s and the art in one file, named for people, stored as they are (MP3s don't shrink)."""
+    """The MP3s, the art and the licence in one file, named for people, stored as they are (MP3s don't shrink)."""
     path = out / "web" / f"{FILE_STEM}-soundtrack.zip"
     with zipfile.ZipFile(path, "w", zipfile.ZIP_STORED) as z:
         for number, track in enumerate(TRACKS, 1):
@@ -517,6 +541,7 @@ def zip_album(out: Path, cover: dict[str, Path]) -> Path:
         for key, name in (("3000", "cover.jpg"), ("back", "back.jpg")):
             if key in cover:
                 z.write(cover[key], f"{ALBUM}/{name}")
+        z.writestr(f"{ALBUM}/LICENSE.txt", LICENSE_TXT)
     return path
 
 
