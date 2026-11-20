@@ -474,3 +474,58 @@ test('the Atlas still totals a sector that lists its surveyors', async () => {
   }));
   assert.deepEqual(await res.json(), { charted: 0, total: AREA_WORDS, players: 1, day: Math.floor(NOW / 86400000), overAt: 0, over: [] });
 });
+
+describe('who counts as online', () => {
+  let w;
+  beforeEach(() => { mock.timers.enable({ apis: ['setTimeout'] }); w = world(); });
+  afterEach(() => mock.timers.reset());
+
+  test('a surveyor counts once, however many devices and sectors report them, as on the list', async () => {
+    const phone = await w.player(0, 0, { id: 1, x: 5, y: 5 });
+    await w.player(0, 0, { id: 1, x: 90, y: 90 });               // a linked laptop, in the same sector
+    const tablet = await w.player(1, 0, { id: 1, x: SECTOR + 5, y: 5 });  // and a tablet in the next
+    const other = await w.player(1, 0, { id: 2, x: SECTOR + 9, y: 9 });
+    await w.player(1, 0, { id: null, x: SECTOR + 20, y: 20 });    // an older game, with no id: counted as it is
+    await w.tick(phone, REPORT_MS);
+    await w.tick(tablet, REPORT_MS);
+    assert.equal(w.atlas.totals().players, 3);
+    assert.equal(other.ws.last('world').players, 3);
+  });
+
+  test('each socket is told whether the count takes it in, and told again when that changes', async () => {
+    const a = await w.player(0, 0, { id: 1, x: 5, y: 5 });
+    const b = await w.player(0, 0, { id: 2 });  // looking elsewhere: another sector counts them
+    await w.tick(a, REPORT_MS);
+    assert.deepEqual(a.ws.last('world'), { t: 'world', charted: 0, total: AREA_WORDS, players: 1, you: 1 });
+    assert.deepEqual(b.ws.last('world'), { t: 'world', charted: 0, total: AREA_WORDS, players: 1 });
+    // They swap: the total stays 1, but who it takes in changes, so both hear.
+    await a.say({ t: 'pos', away: true });
+    await b.say({ t: 'pos', x: 7, y: 7 });
+    const [sentA, sentB] = [a.ws.all('world').length, b.ws.all('world').length];
+    await w.tick(b, REPORT_MS);
+    assert.equal(w.atlas.totals().players, 1);
+    assert.deepEqual(a.ws.last('world'), { t: 'world', charted: 0, total: AREA_WORDS, players: 1 });
+    assert.deepEqual(b.ws.last('world'), { t: 'world', charted: 0, total: AREA_WORDS, players: 1, you: 1 });
+    assert.equal(a.ws.all('world').length, sentA + 1);
+    assert.equal(b.ws.all('world').length, sentB + 1);
+    // Nothing changed: nothing more is sent.
+    await w.tick(b, REPORT_MS);
+    assert.equal(b.ws.all('world').length, sentB + 1);
+    // A socket joining later hears at once, counted or not.
+    const c = await w.player(0, 0, { id: 2 });
+    assert.deepEqual(c.ws.last('world'), { t: 'world', charted: 0, total: AREA_WORDS, players: 1, you: 1 });
+    assert.deepEqual((await w.player(0, 0, { id: 3 })).ws.last('world'), { t: 'world', charted: 0, total: AREA_WORDS, players: 1 });
+  });
+
+  test('a surveyor sitting still stays counted, through their game saying it is here', async () => {
+    const idle = await w.player(0, 0, { id: 1, x: 5, y: 5 });
+    await w.tick(idle, REPORT_MS);
+    for (let i = 0; i < 12; i++) {  // six minutes, the game's 'here' every 30 s
+      await w.tick(idle, 30000);
+      assert.equal(w.atlas.totals().players, 1, `after ${(i + 1) * 30} s`);
+    }
+    // Gone quiet altogether (no socket would stay so long): off the count after ONLINE_MS.
+    w.clock.now += ONLINE_MS;
+    assert.equal(w.atlas.totals().players, 0);
+  });
+});

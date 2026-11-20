@@ -72,8 +72,9 @@ class FakeSurvey:
 
     def __init__(self, claims=(), presence=(), taken=(), world=None, totals=None, full=None, refuse=None, refuse_passes=(),
                  require_pass=False, hold=None, lose=None, rate=False, surveyors=(), emote_error=None, list_status=200,
-                 sign=False):
-        self.claims = list(claims)        # [w, x, y, d, s, initials, at] already charted in sector 0,0
+                 sign=False, home="0,0"):
+        self.home = home                  # the sector that holds `claims` and `presence`
+        self.claims = list(claims)        # [w, x, y, d, s, initials, at] already charted in sector `home`
         self.presence = list(presence)    # [id, initials, x, y] of other players in sector 0,0
         self.taken = {tuple(c[:4]): c for c in taken}  # words someone else charts first, just before us
         self.world = world or world_map()  # what GET /v1/survey/world answers
@@ -119,7 +120,7 @@ class FakeSurvey:
         self.sectors.append(key)
         self.sockets[key] = ws
         you = f"you-{key}-{len(self.sectors)}"  # every socket is someone new to the sector
-        home = key == "0,0"
+        home = key == self.home
         full = self.full.get(key) if isinstance(self.full, dict) else self.full
         if full:
             ws.send(json.dumps({"t": "full", "world": full == "world"}))
@@ -177,6 +178,12 @@ class FakeSurvey:
         neighbour's at once, any other's from the Atlas): territory (rx, ry) went supernova when
         `word` ([w, x, y, d]) was charted, `ago` milliseconds before."""
         self.sockets[sector].send(json.dumps({"t": "nova", "n": [rx, ry, NOW_MS, *word, initials], "ago": ago}))
+
+    def totals_to(self, sector: str, players: int, you: bool = False, charted: int = 0) -> None:
+        """Sends sector `sector`'s socket the world's totals, as the sector passes on the Atlas's answer
+        to a report: `you` when that sector counted this player in them."""
+        frame = {"t": "world", "charted": charted, "total": AREA_WORDS, "players": players}
+        self.sockets[sector].send(json.dumps({**frame, "you": 1} if you else frame))
 
     def handle_world(self, route: Route) -> None:
         reply(route, self.world)

@@ -390,6 +390,17 @@ is open, the notes are open and the tab is on screen.
   `ONLINE_MS`. An idle game now sends `{t: 'here'}` every 30 s, and a sector
   reports at least every `REFRESH_MS` (50 s) while messages arrive, changed or
   not. Players who sit still stay counted on the world map too.
+- **One count.** The world's `players` counts surveyors by id, each once,
+  however many devices or sectors report them (a sector reports its people
+  by id, and the Atlas takes the ids in every recent report, plus anyone a
+  sector counts without an id, such as an older game). It's the list's count
+  with you in it. Each sector's `{t: 'world'}` frame says `you: 1` to a socket
+  whose surveyor it listed in the report those totals answered, and goes
+  again to any socket whose frame that changes, so the game shows "others
+  online" as the total less one only when it's been counted, never guessing.
+  Until a sector it just joined counts it (within `REPORT_MS`), the game keeps
+  the count it had, and a count that falls to nothing is held 15 s before the
+  badge goes, so a gap between reports doesn't make it blink.
 - **Leaving.** A listed player whose socket closes is taken off with a report
   straight away, rather than lingering until `ONLINE_MS`.
 - **Moving between sectors.** For a few seconds someone can be in two
@@ -1348,7 +1359,11 @@ travels with the reports sectors already send the Atlas:
 
 **On the page,** every supernova a player is online for, near or far, is
 kept in their notes' supernovas, and its territory becomes a remnant at
-once. How it plays depends on how far off it is:
+once. The title's count is the sector's too, wherever the territory is,
+inside the shared world or out ("110/111 charted"), never the player's own
+notes, which can be short of it by words someone else charted first; its
+hover says how many are in the notes when they differ. Only playing alone
+does it count the notes ("found"). How it plays depends on how far off it is:
 
 - **Within 3 territories** of the middle of the view, or your own: the
   whole thing, charge, dimming, burst and shockwave, as before.
