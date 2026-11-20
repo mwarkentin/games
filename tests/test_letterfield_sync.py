@@ -378,3 +378,24 @@ def test_a_receipt_that_comes_while_its_find_is_going_up_goes_up_after(page: Pag
         page, lambda: any(f.get("r") == signed for f, _ in players.players[PID]["finds"].values()), timeout_ms=8000
     )
     assert errors == []
+
+
+def test_initials_signed_in_another_game_reach_the_linked_devices(page: Page, site_url, errors):
+    """The other games share the initials. A change from one never reached the linked devices, and
+    their next change of settings brought the old initials back, in every game."""
+    players = FakePlayers(started=[PID])
+    start(page, site_url, players)
+    eventually(page, lambda: len(players.sent()) >= 1)
+    page.wait_for_function("window.__lf.sync() === 'idle'")
+    other = page.context.new_page()
+    other.goto(f"{site_url}/")
+    other.evaluate("localStorage.setItem('games.initials', JSON.stringify('BOB'))")  # a score saved in another game
+    expect(page.locator("#surveyMeName")).to_have_text("BOB")
+    eventually(page, lambda: (players.players[PID]["settings"] or {}).get("initials") == "BOB", timeout_ms=8000)
+    # And one changed while Letterfield wasn't open is seen when it next is.
+    page.goto("about:blank")
+    other.evaluate("localStorage.setItem('games.initials', JSON.stringify('SUE'))")
+    page.goto(f"{site_url}/letterfield?survey={SURVEY}#debug")
+    eventually(page, lambda: (players.players[PID]["settings"] or {}).get("initials") == "SUE", timeout_ms=8000)
+    other.close()
+    assert errors == []

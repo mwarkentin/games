@@ -6405,7 +6405,7 @@ const K_SYNC = 'letterfield.sync.v1', SYNC_EVERY_MS = 60000, SYNC_SOON_MS = 5000
 function readSync() {
   try {
     const o = JSON.parse(LS.get(K_SYNC) || 'null');
-    if (o && o.on) return { on: true, epoch: typeof o.epoch === 'string' ? o.epoch : '', at: Number.isInteger(o.at) ? o.at : 0, f: Array.isArray(o.f) ? o.f : [], n: Array.isArray(o.n) ? o.n : [], m: Array.isArray(o.m) ? o.m : ['*'], settingsAt: Number.isFinite(o.settingsAt) ? o.settingsAt : 0, ...(o.fromBackup ? { fromBackup: true, held: !!o.held } : {}) };
+    if (o && o.on) return { on: true, epoch: typeof o.epoch === 'string' ? o.epoch : '', at: Number.isInteger(o.at) ? o.at : 0, f: Array.isArray(o.f) ? o.f : [], n: Array.isArray(o.n) ? o.n : [], m: Array.isArray(o.m) ? o.m : ['*'], settingsAt: Number.isFinite(o.settingsAt) ? o.settingsAt : 0, ...(typeof o.initials === 'string' ? { initials: o.initials } : {}), ...(o.fromBackup ? { fromBackup: true, held: !!o.held } : {}) };
   } catch (_) {}
   return null;
 }
@@ -6511,6 +6511,7 @@ async function syncNow() {
   delete now.fromBackup; delete now.held;
   takeSynced(data, now);
   if (held && !now.settingsAt) now.settingsAt = Date.now();  // the backup had no settings: ours are the newest after all
+  now.initials = myInitials();  // as the linked devices know them, so a change made in another game is seen
   writeSync(now);
   Sync.go('idle');
   syncSoon(now.f.length || now.n.length || now.m.length || held ? SYNC_GAP_MS : SYNC_EVERY_MS);
@@ -6635,7 +6636,21 @@ window.addEventListener('storage', e => {
   if (on && Sync.is('off')) { Sync.go('idle'); syncSoon(SYNC_GAP_MS); }
   else if (!on && !Sync.is('off')) Sync.go('off');
 });
-if (Sync.is('idle')) syncSoon(1000);
+// Initials are shared with the other games, which can change them while
+// Letterfield isn't open: once seen here, they go to the linked devices as a
+// change of ours, as if signed here.
+if (Sync.is('idle')) {
+  const st = readSync();
+  if (st && 'initials' in st && myInitials() && st.initials !== myInitials()) settingsChanged();
+  syncSoon(1000);
+}
+window.addEventListener('storage', e => {
+  if (e.key !== K_INITIALS) return;
+  const v = myInitials(), st = readSync();
+  if (v) { surveyInput.value = signupInput.value = v; showSigning(false); if (Intro.is('sign')) Intro.go('exploring'); }
+  tellMe();
+  if (st && v && st.initials !== v) settingsChanged();
+});
 
 /* ---------- Linking devices ---------- */
 // One surveyor on every device (see "One player, several devices" in
