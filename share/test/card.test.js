@@ -37,6 +37,18 @@ describe('parseFind', () => {
     ]) assert.equal(parseFind(slug), null, slug);
   });
 
+  test('takes numbers only as the game writes them, so a find has one address', () => {
+    const { w, x, y, d } = PLACED;
+    assert.ok(x > 0 && y > 0);
+    for (const slug of [
+      `f-${w.toLowerCase()}-0${x}-${y}-${d}`,
+      `f-${w.toLowerCase()}-${x}-00${y}-${d}`,
+      `f-${w.toLowerCase()}-m0${x}-${y}-${d}`,
+    ]) assert.equal(parseFind(slug), null, slug);
+    assert.equal(parseFind(`f-${w.toLowerCase()}-${x}-${y}-${d}`).key, keyOf(w, x, y, d));
+    assert.ok(parseFind(slugOf(FAR)));
+  });
+
   test('refuses a stray shorter than the game counts', () => {
     // Every three-letter run of letters on the map that spells a word would
     // otherwise be a card.

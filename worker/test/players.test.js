@@ -83,6 +83,16 @@ describe('linking a device', () => {
     assert.ok(env.PLAYERS.player(await playerId(token(1))).meta());
   });
 
+  test("leaves a code unspent when the player's Player can't start", async () => {
+    const [, made] = await call('/v1/link', { token: token(1), carry });
+    const players = env.PLAYERS;
+    env.PLAYERS = { ...players, get: () => ({ fetch: async () => { throw new Error('Durable Object reset'); } }) };
+    await assert.rejects(call(`/v1/link/${made.code}`, {}));
+    assert.deepEqual(await call(`/v1/link/${made.code}/status`, { token: token(1) }), [200, { state: 'waiting' }]);
+    env.PLAYERS = players;
+    assert.deepEqual(await call(`/v1/link/${made.code}`, {}), [200, { token: token(1), carry }]);
+  });
+
   test('retires an older code nobody used when a new one is made', async () => {
     const [, first] = await call('/v1/link', { token: token(1), carry });
     const [, theirs] = await call('/v1/link', { token: token(2), carry });
@@ -238,6 +248,20 @@ describe('syncing linked devices', () => {
     // An unsigned surveyor is "?", and a find charted first carries no b at all.
     assert.deepEqual(cleanFind(find('COMET', 1, { b: '?' })), find('COMET', 1, { b: '?' }));
     assert.deepEqual(cleanFind(find('COMET', 1, { f: 1, b: 'ZED' })), find('COMET', 1, { f: 1 }));
+  });
+
+  test('sends back what a merge added to the device whose upload made it', async () => {
+    await start(1);
+    const r = 'mhxyz1.f.AbCdEfGhIjKl', sig = 'AbCdEfGhIjKl';
+    // One device charted MAPS first and earned First Mark in play, early.
+    const [, a] = await sync(1, { finds: [find('MAPS', 1, { f: 1 })], marks: [['first-mark', NOW - 9000, 0]] });
+    // Another, which hasn't heard, sends MAPS with a receipt and a later, signed First Mark.
+    const [, b] = await sync(1, { epoch: a.epoch, since: 0, finds: [find('MAPS', 1, { r })], marks: [['first-mark', NOW, 0, sig]] });
+    assert.deepEqual(b.finds, [find('MAPS', 1, { f: 1, r })]);
+    assert.deepEqual(b.marks, [['first-mark', NOW - 9000, 0, sig]]);
+    // What it sent as it's kept isn't sent back.
+    const [, c] = await sync(1, { epoch: a.epoch, since: b.at, finds: [find('MAPS', 1, { f: 1, r })], marks: [['first-mark', NOW - 9000, 0, sig]] });
+    assert.deepEqual([c.finds, c.marks], [[], []]);
   });
 
   test('settings go with whichever device changed them last', async () => {
@@ -410,6 +434,13 @@ describe('recovery codes', () => {
     assert.ok(tries.every((t) => t === 404));
     const link = await routeLinks(new Request('https://survey.test/v1/link/ABCDEFGH', { method: 'POST', headers: { Origin: ORIGIN, 'CF-Connecting-IP': ip }, body: '{}' }), env, clock.now);
     assert.equal(link.status, 429);
+  });
+
+  test('removing a code starts no Player for a token that has none', async () => {
+    assert.deepEqual(await call('/remove', { token: token(3) }), [200, { ok: true }]);
+    assert.equal((await player(3)).meta(), null);
+    const res = await routePlayers(new Request('https://survey.test/v1/player/sync', { method: 'POST', headers: { Origin: ORIGIN }, body: JSON.stringify({ token: token(3), finds: [] }) }), env);
+    assert.deepEqual(await res.json(), { off: true });
   });
 
   test('needs a real token and the site, and is what the Worker does with the paths', async () => {

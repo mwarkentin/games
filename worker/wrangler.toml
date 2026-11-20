@@ -95,7 +95,8 @@ new_sqlite_classes = ["Player"]
 # across every sector (see "Bots" in SURVEY.md). Counts are kept per
 # Cloudflare location and are approximate, which is enough to stop one
 # script charting the world. Periods can only be 10 or 60 seconds, and each
-# namespace_id must be unique in the account.
+# namespace_id must be unique in the account: these are 73xx (production
+# 730x, previews 731x), and the share Worker's (share/wrangler.toml) 74xx.
 [[ratelimits]]
 name = "SURVEY_CLAIMS"     # words claimed: 6 a minute, counted over a minute so a quick few all count
 namespace_id = "7301"

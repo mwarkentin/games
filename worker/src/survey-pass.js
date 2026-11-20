@@ -99,8 +99,11 @@ export async function verifyToken(env, token, ip, fetcher = fetch) {
 export async function handlePass(request, env, address, cors, fetcher = fetch) {
   if (!cors['Access-Control-Allow-Origin']) return json({ error: 'origin not allowed' }, 403, cors);
   if (!env.TURNSTILE_SECRET) return json({ error: 'passes are off' }, 404, cors);
+  // Only a body a token could fit in is read, and only one that fits is parsed.
+  const most = MAX_TOKEN + 64;
+  if (Number(request.headers.get('Content-Length')) > most) return json({ error: 'expected {"token"}' }, 400, cors);
   let token = null;
-  try { ({ token } = JSON.parse(await request.text())); } catch { /* below */ }
+  try { const text = await request.text(); if (text.length <= most) ({ token } = JSON.parse(text)); } catch { /* below */ }
   if (typeof token !== 'string' || !token || token.length > MAX_TOKEN) return json({ error: 'expected {"token"}' }, 400, cors);
   // Siteverify costs nothing, but each ask is a Worker request: one address
   // gets as many as it may open sockets.

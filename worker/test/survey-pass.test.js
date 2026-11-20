@@ -6,7 +6,7 @@
 
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { describe, test } from 'node:test';
+import { describe, mock, test } from 'node:test';
 
 import { hashAddress } from '../src/leaderboard.js';
 import { ACTION, PASS_MS, PASS_PATH, SITEVERIFY, checkPass, handlePass, issuePass, verifyToken } from '../src/survey-pass.js';
@@ -122,6 +122,13 @@ describe('POST /v1/survey/pass', () => {
     for (const body of ['', 'nope', '{}', JSON.stringify({ token: 7 }), JSON.stringify({ token: 'x'.repeat(2049) })]) {
       assert.equal((await handlePass(post(body), env, 'aaaa', cors, fake.fetcher)).status, 400, body.slice(0, 20));
     }
+    // A body too big for a token is never read, by what it says it is, or parsed, if it says nothing.
+    const unread = { headers: new Headers({ 'Content-Length': String(50 * 1024 * 1024) }), text: () => assert.fail('read a body too big for a token') };
+    assert.equal((await handlePass(unread, env, 'aaaa', cors, fake.fetcher)).status, 400);
+    const parse = mock.method(JSON, 'parse');
+    assert.equal((await handlePass(post(JSON.stringify({ token: 'x'.repeat(100_000) })), env, 'aaaa', cors, fake.fetcher)).status, 400);
+    assert.equal(parse.mock.callCount(), 0);
+    parse.mock.restore();
     assert.equal((await handlePass(post(JSON.stringify({ token: TOKEN })), env, 'aaaa', {}, fake.fetcher)).status, 403);
     assert.equal((await handlePass(post(JSON.stringify({ token: TOKEN })), {}, 'aaaa', cors, fake.fetcher)).status, 404);
     assert.equal(fake.calls.length, 0);

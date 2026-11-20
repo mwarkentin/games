@@ -885,15 +885,17 @@ player's own devices reach it:
     POST /v1/player/forget  {token} → {off: true}
 
 - **Only a link or a recovery code starts one.** Redeeming a link code or
-  saving a recovery code starts the player's Player; until then a sync
-  answers `off` and stores nothing. So a player who never linked a device or
+  saving a recovery code starts the player's Player (removing a code starts
+  none); until then a sync answers `off` and stores nothing. So a player who never linked a device or
   saved a code keeps everything in their browser, as before, and making
   Players costs as much as making codes, which is limited per address.
 - **A sync carries what's new.** Every row has the version it last changed
   in. A device sends what changed on it since its last sync (the finds and
   supernovas it's kept a list of, and its settings with when they last
   changed) and the version it last heard, and gets back everything that
-  changed since then, apart from what it just sent. A Player that was
+  changed since then, apart from what it just sent as it's kept (a find or
+  achievement it sent that merged with what another device had comes back
+  merged). A Player that was
   forgotten and started again has a new epoch, so a device that last heard
   from the old one starts over and sends all it has.
 - **Merging can't lose anything.** Finds are keyed by word and place, as
@@ -1079,8 +1081,10 @@ hour ago (`SETTLED_MS`) is cached for a day, and the one still running for
 15 seconds:
 
 - `Cache-Control` on every answer, for browsers;
-- in each Worker instance's memory (up to 300 answers), so a crowd reading
-  the current hour costs one D1 query per instance every 15 s;
+- in each Worker instance's memory (up to 300 answers and 8 million
+  characters of them, the least recently asked for going first), so a crowd
+  reading the current hour costs one D1 query per instance every 15 s: those
+  who ask while it's being read wait for that one read;
 - in Cloudflare's cache through the Cache API. The cached copy has no CORS
   headers; each answer adds its own origin's. That cache is shared by every
   Worker on the same zone, and all of this account's `workers.dev` Workers,
@@ -1625,7 +1629,9 @@ thousand rows, at most every 10 minutes per instance. If that ever shows in
 the bill, the next step is a monthly level of the same counts. A surveyor's
 or theme's view reads its rows in the range three times: all time for
 someone with 10,000 words is about 30,000 rows, at most every 2 minutes per
-instance while it's running.
+instance while it's running. Its later pages (`?before=`) read only their
+own 100 entries, and take the totals and top lists from the first page, as
+it's kept.
 
 **The timelapse** reads each word's row once per day it's kept. A full
 replay, cold, reads every word plus the index's count rows (one per hour

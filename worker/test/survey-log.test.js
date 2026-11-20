@@ -14,7 +14,7 @@ import { CH, DIRS, MAP_VERSION, RC, STRAY_MIN, THEMES, VOCAB, chunk, fdiv, keyOf
 import {
   DAY_MS, HOURS_SQL, HOUR_AFTER_SQL, HOUR_MS, HOUR_SQL, LIVE_CACHE_S, LOG_BATCH, LOG_MS, LOG_PAGE, LOG_RETRY_MAX_MS, SETTLED_MS,
   FIRST_SQL, LAST_SQL, SLICES, SLICE_MAX_HOURS, SLICE_PAGE, SLICE_SLOW_CACHE_S, SPAN_CACHE_S, SURVEYORS_SQL, TERRITORIES_SQL,
-  TOP_MAX_DAYS, TOP_N, TOP_SLOW_CACHE_S, forgetLog, monthHours, readDay, readHour, readMonth, readSlice, readSpan, readTerritory,
+  MEMO_CHARS, MEMO_MAX, TOP_MAX_DAYS, TOP_N, TOP_SLOW_CACHE_S, forgetLog, monthHours, readDay, readHour, readMonth, readSlice, readSpan, readTerritory,
   readTop, readTopHours, routeLog, sliceSql, writeLog, HOURS_SURVEYORS_SQL, HOURS_TERRITORIES_SQL, TOP_HOURS_MAX,
   NOVAS_SQL, NOVAS_BEFORE_SQL, NOVA_HOURS_SQL, NOVA_PAGE, NOVA_SQL, readNovas,
   GUILDS_SQL, GUILD_NAME_SQL, HOURS_GUILDS_SQL,
@@ -565,6 +565,33 @@ describe('routeLog', () => {
     assert.equal(reads(), 2);
   });
 
+  test('reads D1 once for a crowd asking at the same moment', async () => {
+    const reads = () => env.LOG_DB.log.filter((q) => q.sql.startsWith('SELECT')).length;
+    const answers = await Promise.all(Array.from({ length: 20 }, () => get(`/v1/survey/log/hour/${HOUR}`)));
+    assert.ok(answers.every((a) => a.status === 200));
+    assert.equal(reads(), 1);
+  });
+
+  test('keeps the answers most recently asked for, up to a total size', async () => {
+    const reads = () => env.LOG_DB.log.filter((q) => q.sql.startsWith('SELECT')).length;
+    await get(`/v1/survey/log/day/${DAY - 2}`);
+    for (let i = 0; i < MEMO_MAX - 1; i++) await get(`/v1/survey/log/hour/${HOUR - 100 - i}`);
+    await get(`/v1/survey/log/day/${DAY - 2}`);  // asked again, so it's kept over older ones
+    await get(`/v1/survey/log/hour/${HOUR - 99}`);
+    const before = reads();
+    await get(`/v1/survey/log/day/${DAY - 2}`);
+    assert.equal(reads(), before);
+    // Two answers bigger than half of MEMO_CHARS aren't both kept.
+    const big = 'X'.repeat(MEMO_CHARS / 2 + 1);
+    await writeLog(env.LOG_DB, [stored(5, 5, 0, (HOUR - 10) * HOUR_MS, 'BIG'), stored(6, 5, 0, (HOUR - 11) * HOUR_MS, 'BIG')]);
+    env.LOG_DB.raw.prepare("UPDATE survey_log SET w = ? WHERE initials = 'BIG'").run(big);
+    await get(`/v1/survey/log/hour/${HOUR - 10}`);
+    await get(`/v1/survey/log/hour/${HOUR - 11}`);
+    const both = reads();
+    await get(`/v1/survey/log/hour/${HOUR - 10}`);
+    assert.equal(reads(), both + 1);
+  });
+
   test('uses Cloudflare\'s cache where there is one, with each origin\'s own CORS headers', async () => {
     const stored = new Map();
     globalThis.caches = { default: { match: async (r) => stored.get(r.url)?.clone(), put: async (r, res) => { stored.set(r.url, res); } } };
@@ -619,6 +646,28 @@ describe('routeLog', () => {
     assert.equal((await get(`/v1/survey/log/top/hours/${HOUR + 1}/${HOUR + 2}`)).status, 400);
     assert.equal((await get(`/v1/survey/log/top/hours/${HOUR}/${HOUR}`)).status, 400);
     assert.equal((await get(`/v1/survey/log/top/hours/${HOUR - TOP_HOURS_MAX - 1}/${HOUR}`)).status, 400);
+  });
+
+  test("a slice's later pages read only their entries, with the first page's totals and top lists", async () => {
+    await writeLog(env.LOG_DB, Array.from({ length: SLICE_PAGE + 5 }, (_, i) => stored(i % 40, Math.floor(i / 40) + 2, 0, NOW - 60000 - i)));
+    const path = `/v1/survey/log/surveyor/ZED/${HOUR - 24}/${HOUR + 1}`;
+    const first = await (await get(path)).json();
+    assert.ok(first.next);
+    env.LOG_DB.log.length = 0;
+    const second = await (await get(`${path}?before=${first.next}`)).json();
+    assert.equal(env.LOG_DB.log.length, 1, 'the entries query alone');
+    assert.deepEqual(Object.keys(second).sort(), Object.keys(first).sort());
+    for (const k of ['words', 'world', 'hours', 'topTerritories', 'topThemes']) assert.deepEqual(second[k], first[k], k);
+    assert.equal(second.entries.length, first.words - SLICE_PAGE);
+    assert.equal(second.next, null);
+    // Asked for alone, a later page reads the first's totals once, and keeps them for the next.
+    forgetLog();
+    env.LOG_DB.log.length = 0;
+    assert.deepEqual(await (await get(`${path}?before=${first.next}`)).json(), second);
+    assert.equal(env.LOG_DB.log.length, 4);
+    env.LOG_DB.log.length = 0;
+    await get(path);
+    assert.equal(env.LOG_DB.log.length, 0);
   });
 
   test('answers a surveyor, a theme and a territory, cached by how settled and how long they are', async () => {

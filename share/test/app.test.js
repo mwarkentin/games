@@ -205,6 +205,18 @@ describe('the card', () => {
   });
 });
 
+describe('limiting by address', () => {
+  test('counts an IPv6 address by its /64', async () => {
+    const { env, asked } = fakeEnv({ limited: true });
+    await get(`/f/${SLUG}.png?s=x`, env, { 'CF-Connecting-IP': '2001:db8:1:2::1' });
+    await get(`/f/${SLUG}.png?s=y`, env, { 'CF-Connecting-IP': '2001:db8:1:2:aaaa:bbbb:cccc:dddd' });
+    await get(`/f/${SLUG}.png?s=z`, env, { 'CF-Connecting-IP': '2001:db8:1:3::1' });
+    assert.equal(asked.limits.length, 3);
+    assert.equal(asked.limits[0], asked.limits[1]);
+    assert.notEqual(asked.limits[0], asked.limits[2]);
+  });
+});
+
 describe('asking the survey', () => {
   test('asks the word\'s own sector by its key', async () => {
     const { env, asked } = fakeEnv();
