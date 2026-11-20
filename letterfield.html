@@ -1887,8 +1887,11 @@ function linkMoved(l, to, from) {
   }
   if (to === 'backoff') {
     l.tries++;  // one more failure since it was last live
-    // A full sector is asked again in a minute or so; anything else backs off from a second.
-    const wait = l.full ? 45000 : Math.min(30000, 1000 * 2 ** (l.tries - 1)) * (.5 + Math.random());
+    // A full sector is asked again in a minute or so, past the minute the
+    // survey counts joins over (SURVEY_JOINS), each at its own moment, so the
+    // sockets turned away together don't all come back together; anything
+    // else backs off from a second.
+    const wait = l.full ? 60000 * (1 + Math.random() / 2) : Math.min(30000, 1000 * 2 ** (l.tries - 1)) * (.5 + Math.random());
     l.timer = setTimeout(() => {
       if (!l.m.is('backoff')) return;
       l.m.go(mayJoin() ? 'connecting' : 'closed');  // without a pass, syncSurvey opens it again once there is one

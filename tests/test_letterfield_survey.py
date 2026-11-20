@@ -875,6 +875,24 @@ def test_full_sector_says_so(page: Page, site_url, errors):
     assert errors == []
 
 
+def test_a_crowded_sector_is_asked_again_only_once_its_minute_is_up(page: Page, site_url, errors):
+    """A crowded sector was asked again after exactly 45 s: inside the minute the survey counts
+    joins over, so it was only turned away again, and every socket turned away together came
+    back together."""
+    page.clock.install()
+    fake = FakeSurvey(full="sector")
+    open_game(page, site_url, fake)
+    not_live(page, "offline", "This part of the map is crowded right now. Your finds still save in this browser.")
+    assert len(fake.sectors) == 4
+    page.clock.run_for(60_000)
+    assert len(fake.sectors) == 4  # not inside the minute
+    page.clock.run_for(31_000)
+    eventually(page, lambda: len(fake.sectors) == 8)
+    page.clock.run_for(91_000)
+    eventually(page, lambda: len(fake.sectors) == 12)
+    assert errors == []
+
+
 def test_a_full_sector_says_crowded_even_with_its_neighbours_live(page: Page, site_url, errors):
     """The title went by whether any sector was live, so a full one beside live ones said "joining…"."""
     fake = FakeSurvey(full={"0,0": "sector"})  # the one under the camera; its neighbours let us in
