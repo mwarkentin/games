@@ -607,7 +607,7 @@ def upload(out: Path) -> None:
     if missing:
         sys.exit(f"render the album first: {', '.join(missing)} missing")
     for command in commands:
-        print(f"{command[5]}", flush=True)
+        print(command[command.index("put") + 1], flush=True)
         subprocess.run(command, check=True)
     print(f"Uploaded {len(commands)} files to {ALBUM_HOME}/")
 
