@@ -72,7 +72,8 @@ export function parseFind(slug) {
 // Raised when what the cards say changes, so the cards already drawn and
 // kept for good (at the edge and in R2, by the state they show) are drawn
 // afresh: it ends every card's state. 2: the universe, and bonus words.
-export const CARD_WORDS = 2;
+// 3: a bonus word's theme keeps its capitals.
+export const CARD_WORDS = 3;
 
 // How much of the universe is charted, as the card says it: one decimal
 // under 1%, whole percents rounded down after that, so it never says 100%
@@ -138,7 +139,7 @@ export function findSvg(e, { claim, progressText = null, dark = false, host = 'g
   out.push(text('LETTERFIELD', X, 84, 'mono5', 20, C.muted, 0.14));
   out.push(text(e.w, X, 216, 'display', fit(e.w, 'display', 120, 40, R - X, 0.04), C.ink, 0.04));
   out.push(`<circle cx="${X + 9}" cy="262" r="9" fill="${col.stroke}"/>`);
-  const kind = `${e.s ? 'A bonus ' + theme.name.toLowerCase() : theme.name} word`;
+  const kind = `${e.s ? 'A bonus ' : ''}${theme.name} word`;
   out.push(text(kind, X + 30, 271, 'ui5', fit(kind, 'ui5', 26, 16, R - X - 30), C.muted));
   const place = regionName(e.rx, e.ry);
   out.push(text(place, X, 330, 'ui6', fit(place, 'ui6', 34, 18, R - X), C.ink));

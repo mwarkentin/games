@@ -3,7 +3,7 @@
 import assert from 'node:assert/strict';
 import { afterEach, beforeEach, describe, mock, test } from 'node:test';
 
-import { DIRS, keyOf, letterAt, regionName, regionTheme } from '../../worker/src/letterfield-world.js';
+import { DIRS, THEMES, chunk, keyOf, letterAt, regionName, regionTheme } from '../../worker/src/letterfield-world.js';
 import { ASK_MS, PAGE_MS, claimOf, forgetTotals, handle, novaOf, stateToken, totalsOf } from '../src/app.js';
 import { parseFind } from '../src/card.js';
 import { FAR, PLACED, slugOf } from './card.test.js';
@@ -73,7 +73,7 @@ describe('the page', () => {
     assert.match(meta(html, 'og:description'), /Charted first by ZED on 9 Nov 2026\.$/);
     // og:url is the share address itself, never the game.
     assert.equal(meta(html, 'og:url'), `${SHARE}/f/${SLUG}`);
-    assert.equal(meta(html, 'og:image'), `${SHARE}/f/${SLUG}.png?s=cZED.20766.0.4.w2`);
+    assert.equal(meta(html, 'og:image'), `${SHARE}/f/${SLUG}.png?s=cZED.20766.0.4.w3`);
     assert.equal(meta(html, 'og:image:width'), '1200');
     assert.equal(meta(html, 'twitter:card'), 'summary_large_image');
     const target = `${SITE}/letterfield#${SLUG}`;
@@ -86,7 +86,7 @@ describe('the page', () => {
   test('a dark share points at the dark card, and still sends people to the same game', async () => {
     const { env } = fakeEnv();
     const html = await (await get(`/f/d/${SLUG}`, env)).text();
-    assert.equal(meta(html, 'og:image'), `${SHARE}/f/d/${SLUG}.png?s=o.0.4.w2`);
+    assert.equal(meta(html, 'og:image'), `${SHARE}/f/d/${SLUG}.png?s=o.0.4.w3`);
     assert.equal(meta(html, 'og:url'), `${SHARE}/f/d/${SLUG}`);
     assert.ok(html.includes(`location.replace(${JSON.stringify(`${SITE}/letterfield#${SLUG}`)})`));
   });
@@ -98,6 +98,19 @@ describe('the page', () => {
     const html = await response.text();
     assert.equal(meta(html, 'og:image'), `${SITE}/previews/letterfield.jpg`);
     assert.ok(html.includes(`location.replace(${JSON.stringify(`${SITE}/letterfield`)})`));
+    assert.ok(html.includes('>Open Letterfield</a>'));
+  });
+
+  test('says "an" before a theme that starts with a vowel, and keeps its capitals', async () => {
+    // The first hidden word, out along the top row of chunks, whose territory's theme starts with a vowel.
+    let p = null;
+    for (let cx = 0; cx < 400 && !p; cx++) {
+      const w = chunk(cx, 0).words[0];
+      if (w && /^[AEIOU]/.test(THEMES[w.th].name)) p = w;
+    }
+    assert.ok(p);
+    const html = await (await get(`/f/${slugOf(p)}`, fakeEnv().env)).text();
+    assert.ok(meta(html, 'og:description').startsWith(`An ${THEMES[p.th].name} word in `), meta(html, 'og:description'));
   });
 
   test('calls a word turned up by chance a bonus word, as the card does', async () => {
@@ -113,7 +126,7 @@ describe('the page', () => {
     assert.ok(slug);
     const html = await (await get(`/f/${slug}`, fakeEnv().env)).text();
     for (const name of ['og:description', 'description']) {
-      assert.match(meta(html, name), /^A bonus [a-z ]+ word in /);
+      assert.match(meta(html, name), /^A bonus [A-Z][A-Za-z' ]* word in /);
       assert.doesNotMatch(meta(html, name), /stray/i);
     }
   });
@@ -157,21 +170,21 @@ describe('the card', () => {
 
   test('a charted word\'s card is drawn once and kept in R2; others are only kept at the edge', async () => {
     const { env, stored } = fakeEnv({ claims: new Map([[KEY, { initials: 'ZED', at: AT }]]) });
-    const path = `/f/${SLUG}.png?s=cZED.20766.0.4.w2`;
+    const path = `/f/${SLUG}.png?s=cZED.20766.0.4.w3`;
     const first = await get(path, env);
     assert.equal(first.headers.get('Cache-Control'), 'public, max-age=31536000, immutable');
-    assert.deepEqual([...stored.keys()], [`m4/light/${SLUG}/cZED.20766.0.4.w2.png`]);
+    assert.deepEqual([...stored.keys()], [`m4/light/${SLUG}/cZED.20766.0.4.w3.png`]);
     await get(path, env);  // another data centre: no edge copy, but R2 has it
     assert.equal(renders.length, 1);
 
     const open = fakeEnv();
-    await get(`/f/${SLUG}.png?s=o.0.4.w2`, open.env);
+    await get(`/f/${SLUG}.png?s=o.0.4.w3`, open.env);
     assert.equal(open.stored.size, 0);
   });
 
   test('asked for with an old or made-up state, it draws the card as it is now, kept briefly and never stored', async () => {
     const { env, stored } = fakeEnv({ claims: new Map([[KEY, { initials: 'ZED', at: AT }]]) });
-    const response = await get(`/f/${SLUG}.png?s=cEVE.1.50.w2`, env);
+    const response = await get(`/f/${SLUG}.png?s=cEVE.1.50.w3`, env);
     assert.equal(response.headers.get('Cache-Control'), 'public, max-age=300');
     assert.ok(renders[0].includes('by ZED · 9 Nov 2026'));
     assert.ok(!renders[0].includes('EVE'));
@@ -188,7 +201,7 @@ describe('the card', () => {
     const cache = fakeCache();
     globalThis.caches = cache;
     const { env, asked } = fakeEnv({ limited: true });
-    const over = await get(`/f/${SLUG}.png?s=o.0.4.w2`, env);
+    const over = await get(`/f/${SLUG}.png?s=o.0.4.w3`, env);
     assert.equal(over.status, 302);
     assert.equal(over.headers.get('Location'), `${SITE}/previews/letterfield.jpg`);
     assert.equal(renders.length, 0);
@@ -197,9 +210,9 @@ describe('the card', () => {
     assert.ok(!asked.limits[0].includes('203.0.113.9'));
 
     const free = fakeEnv();
-    await get(`/f/${SLUG}.png?s=o.0.4.w2`, free.env);  // drawn, and kept at the edge
+    await get(`/f/${SLUG}.png?s=o.0.4.w3`, free.env);  // drawn, and kept at the edge
     assert.equal(renders.length, 1);
-    const again = await get(`/f/${SLUG}.png?s=o.0.4.w2`, env);  // the limited address, from the edge
+    const again = await get(`/f/${SLUG}.png?s=o.0.4.w3`, env);  // the limited address, from the edge
     assert.equal(again.status, 200);
     assert.equal(renders.length, 1);
   });
@@ -267,16 +280,16 @@ describe('asking the survey', () => {
     const { env } = fakeEnv();
     const { SECTORS, ATLAS, ...preview } = env;
     const html = await (await get(`/f/${SLUG}`, preview)).text();
-    assert.match(meta(html, 'og:image'), /\?s=u\.x\.w2$/);
-    await get(`/f/${SLUG}.png?s=u.x.w2`, preview);
+    assert.match(meta(html, 'og:image'), /\?s=u\.x\.w3$/);
+    await get(`/f/${SLUG}.png?s=u.x.w3`, preview);
     assert.equal(renders.length, 1);
   });
 
   test('names the state the card shows', () => {
-    assert.equal(stateToken({ claim: { initials: 'ZED', at: AT }, progressText: '3% of the universe charted' }), 'cZED.20766.3.w2');
-    assert.equal(stateToken({ claim: { initials: '', at: AT }, progressText: null }), 'c.20766.x.w2');
-    assert.equal(stateToken({ claim: null, progressText: 'Every word in the universe charted' }), 'o.every.w2');
-    assert.equal(stateToken({ claim: undefined, progressText: 'Under 0.1% of the universe charted' }), 'u.under.w2');
+    assert.equal(stateToken({ claim: { initials: 'ZED', at: AT }, progressText: '3% of the universe charted' }), 'cZED.20766.3.w3');
+    assert.equal(stateToken({ claim: { initials: '', at: AT }, progressText: null }), 'c.20766.x.w3');
+    assert.equal(stateToken({ claim: null, progressText: 'Every word in the universe charted' }), 'o.every.w3');
+    assert.equal(stateToken({ claim: undefined, progressText: 'Under 0.1% of the universe charted' }), 'u.under.w3');
   });
 });
 
@@ -312,7 +325,7 @@ describe('a territory gone supernova moments ago', () => {
     const html = await (await get('/v/territory/0,1', env)).text();
     assert.deepEqual(asked, [['0,0', '/nova/0/1']]);
     assert.match(meta(html, 'og:description'), /^Sodden Wold went supernova in Letterfield’s shared survey on 11 Nov 2026: all 116 hidden words charted by 1 surveyor in 21 hours, the last, MULTITOOL, by LMW\.$/);
-    assert.match(meta(html, 'og:image'), /\/v\/territory\/0,1\.png\?s=112\.[a-z0-9]+n\.w2$/);
+    assert.match(meta(html, 'og:image'), /\/v\/territory\/0,1\.png\?s=112\.[a-z0-9]+n\.w3$/);
     await get('/v/territory/0,1.png', env);
     assert.ok(renders[0].includes('>LETTERFIELD · SUPERNOVA · ') && renders[0].includes('>MULTITOOL<'));
   });
@@ -375,7 +388,7 @@ describe('the Supernovas page', () => {
     assert.deepEqual(asked.slice(-1).map((p) => p.split('/').slice(0, 5).join('/')), ['/v1/survey/log/novas']);
     assert.equal(meta(html, 'og:title'), 'Supernovas · Letterfield survey log');
     assert.equal(meta(html, 'og:description'), '1 territory went supernova in Letterfield’s shared survey so far, every hidden word charted. Latest: Monet Reach.');
-    assert.match(meta(html, 'og:image'), /^https:\/\/share\.test\/v\/novas\/all\.png\?s=1\.[a-z0-9]+\.w2$/);
+    assert.match(meta(html, 'og:image'), /^https:\/\/share\.test\/v\/novas\/all\.png\?s=1\.[a-z0-9]+\.w3$/);
     assert.match(html, /<meta http-equiv="refresh" content="0;url=https:\/\/games\.test\/letterfield-log\?supernovas">/);
     await get('/v/novas/all.png', env);
     assert.ok(renders.at(-1).includes('>SUPERNOVAS<') && renders.at(-1).includes('>OAK<'));

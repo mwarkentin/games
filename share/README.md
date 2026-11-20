@@ -143,9 +143,11 @@ GET /v/d/…, ….png                                        dark; the card itse
 - **Pinned:** `<period>` is `hour`, `day`, `week`, `month` or `year`;
   `<when>` is its first day in the sharer's time zone (`YYYY-MM-DD`, with
   `Thh` for an hour), which names it on the card and in the link back; and
-  `<from>-<to>` are the UTC hours it covers, the very hours the page asked
-  the log for. So a week shared on Monday is still that week on Friday, and
-  a card counts what the page did. An address whose hours can't be that
+  `<from>-<to>` are the UTC hours it covers, the very hours the page
+  counts: those that start in the period (in a zone half an hour off UTC,
+  not the first one it asks the log for), or for an hour, the ones it asks
+  for. So a week shared on Monday is still that week on Friday, and a card
+  counts what the page did. An address whose hours can't be that
   period in any time zone, or a week that doesn't start on a Monday, is not
   found.
 - **The numbers** come from the leaderboard Worker's own log answers

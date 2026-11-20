@@ -150,3 +150,19 @@ def test_a_tabs_first_page_has_nothing_to_step_back_to(page: Page, site_url, err
     tab.wait_for_url("**/letterfield")
     assert at(tab)[1] == 2
     assert errors == []
+
+
+def test_the_timelapse_steps_back_to_the_log_it_came_from(page: Page, site_url, errors):
+    fake = FakeSurveyLog([ACORN, MONET, ZEUS], PLACES, THEMES)
+    open_log(page, site_url, fake, query="&period=week&day=2026-10-19")  # three weeks back
+    expect(page.locator("#sumTitle")).to_contain_text("Oct")
+    log, n = at(page)
+    page.click("#timelapseLink")
+    page.wait_for_url("**/letterfield-timelapse**")
+    assert at(page)[1] == n + 1
+    # "← Log" is a step back, to the week the log was on, not the log afresh.
+    page.click("#toLog")
+    page.wait_for_url("**/letterfield-log**")
+    assert at(page) == (log, n + 1)
+    expect(page.locator("#sumTitle")).to_contain_text("Oct")
+    assert errors == []

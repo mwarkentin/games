@@ -118,7 +118,7 @@ describe('findSvg', () => {
 
   test('calls a word turned up by chance a bonus word, in its theme', () => {
     const t = texts(findSvg({ ...e, s: 1 }, {}));
-    assert.ok(t.some((s) => /^A bonus [a-z ]+ word$/.test(s)), JSON.stringify(t));
+    assert.ok(t.some((s) => /^A bonus [A-Z][A-Za-z' ]* word$/.test(s)), JSON.stringify(t));
     assert.ok(!t.some((s) => /stray/i.test(s)));
   });
 

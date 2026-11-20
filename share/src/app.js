@@ -168,11 +168,12 @@ async function page(env, e, slug, dark, url) {
     return htmlPage({
       title: 'Letterfield', description: 'A word search the size of a world, charted together.',
       image: `${site(env)}/previews/letterfield.jpg`, alt: 'Letterfield', png: false,
-      self, target: `${site(env)}/letterfield`, linkText: 'Open Letterfield in Letterfield',
+      self, target: `${site(env)}/letterfield`, linkText: 'Open Letterfield',
     });
   }
   const state = await stateOf(env, e);
-  const description = `${e.s ? 'A bonus' : 'A'} ${THEMES[e.th].name.toLowerCase()} word in ${regionName(e.rx, e.ry)}, on Letterfield's map. `
+  const theme = THEMES[e.th].name;
+  const description = `${e.s ? 'A bonus' : /^[aeiou]/i.test(theme) ? 'An' : 'A'} ${theme} word in ${regionName(e.rx, e.ry)}, on Letterfield's map. `
     + (state.claim ? `Charted first${state.claim.initials ? ` by ${state.claim.initials}` : ''} on ${day(state.claim.at)}.`
       : state.claim === null ? 'Not yet charted.' : 'Find it on the map.');
   return htmlPage({

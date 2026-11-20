@@ -13,6 +13,7 @@ import re
 from datetime import UTC, datetime
 from urllib.parse import parse_qs, urlsplit
 
+import pytest
 from playwright.sync_api import Page, expect
 
 from fake_leaderboard import Held, blank_constants
@@ -497,6 +498,42 @@ def test_a_busy_surveyors_words_come_a_hundred_at_a_time(page: Page, site_url, e
     assert errors == []
 
 
+@pytest.mark.browser_context_args(timezone_id="Asia/Kolkata")
+def test_a_view_of_one_finds_its_words_past_a_busy_half_hour_after_it(page: Page, site_url, errors):
+    # In India a day ends at 18:30 UTC, but the log is asked for whole UTC hours, to 19:00. A
+    # surveyor's busy first half hour of the next day fills the first page; the day's own word is past it.
+    end = int(datetime(2026, 11, 5, 18, 30, tzinfo=UTC).timestamp() * 1000)  # midnight, Nov 6 in India
+    late = [["BIRCH", i, 0, 0, 0, "ZED", end + (i + 1) * MINUTE, 11] for i in range(12)]
+    fern = ["FERN", 10, 20, 0, 0, "ZED", end - 6 * HOUR_MS, 11]  # 6:00 PM, Nov 5 in India
+    fake = FakeSurveyLog([*late, fern], PLACES, THEMES, slice_page=10)
+    open_log(page, site_url, fake, query="&surveyor=ZED&period=day&day=2026-11-05")
+    expect(page.locator("#sumTitle")).to_have_text(re.compile("November 5"))
+    expect(page.locator(".entry .word")).to_have_text(["FERN"])
+    expect(page.locator(".more")).to_have_count(0)
+    assert errors == []
+
+
+def test_the_second_1_am_the_day_clocks_go_back_has_an_address_of_its_own(page: Page, site_url, errors):
+    # In Toronto, 1:00 AM comes twice on Nov 1, 2026: at 05:00 UTC, then at 06:00 UTC.
+    first = int(datetime(2026, 11, 1, 5, 10, tzinfo=UTC).timestamp() * 1000)
+    second = int(datetime(2026, 11, 1, 6, 10, tzinfo=UTC).timestamp() * 1000)
+    fake = FakeSurveyLog(
+        [["ACORN", 5, 7, 0, 0, "ZED", first, 11], ["FERN", 10, 20, 0, 0, "ZED", second, 11]], PLACES, THEMES
+    )
+    open_log(page, site_url, fake, query="&period=hour&day=2026-11-01&hour=1")
+    expect(page.locator(".entry .word")).to_have_text(["ACORN"])
+    assert "at=" not in page.url
+    page.click("#next")  # the second 1 AM
+    expect(page.locator(".entry .word")).to_have_text(["FERN"])
+    assert f"at={second // HOUR_MS}" in page.url and "hour=1" in page.url
+    # Its address opens it again, as a share card's link does.
+    page.reload()
+    expect(page.locator(".entry .word")).to_have_text(["FERN"])
+    page.click("#prev")
+    expect(page.locator(".entry .word")).to_have_text(["ACORN"])
+    assert errors == []
+
+
 def test_a_theme_that_isnt_one_says_so(page: Page, site_url):
     open_log(page, site_url, FakeSurveyLog([ACORN], PLACES, THEMES), query="&theme=500")
     expect(page.locator(".status strong")).to_have_text("Not in the log")
@@ -544,6 +581,39 @@ def test_a_live_hour_that_fails_to_refresh_keeps_its_words_and_tries_again(page:
     expect(page.locator("html")).to_have_attribute("data-log", "ready")
 
 
+def test_a_live_hours_refresh_keeps_the_focus_and_the_value_showing(page: Page, site_url, errors):
+    fake = FakeSurveyLog([ACORN, MONET, ZEUS], PLACES, THEMES)
+    open_log(page, site_url, fake, query="&period=hour", running=True)
+    expect(page.locator(".entry")).to_have_count(1)  # MONET, at 3:05
+    bar = page.locator("#chart .bar.some")
+    bar.focus()
+    expect(page.locator("#tip")).to_be_visible()
+    page.wait_for_load_state("networkidle")  # before the clock jumps on, which would time out a request still out
+    fake.entries.append(["FERN", 10, 20, 0, 0, "AMY", NOW_MS + 10_000, 11])
+    page.clock.fast_forward(21_000)  # the hour reloads every 20 s
+    expect(page.locator(".entry")).to_have_count(2)
+    expect(page.locator("html")).to_have_attribute("data-log", "ready")
+    # The minute's bar was drawn again, and has the focus back, with its value showing.
+    assert page.evaluate("document.activeElement.getAttribute('aria-label')").startswith("3:05")
+    expect(page.locator("#tip")).to_be_visible()
+    expect(page.locator("#tip")).to_contain_text("1 word")
+    # The same for a word's link in the list.
+    page.locator(".entry", has_text="MONET").locator("a.fly").focus()
+    page.wait_for_load_state("networkidle")
+    held = Held(fake, lambda r: True)
+    page.route(f"{SURVEY}/v1/survey/log/**", held.handle)  # later routes win
+    page.clock.fast_forward(21_000)
+    held.wait_for(page)
+    # The redraw isn't read out: aria-live is off while it's out and drawn,
+    expect(page.locator("#summary")).to_have_attribute("aria-live", "off")
+    held.release()
+    eventually(page, lambda: page.evaluate("document.activeElement.textContent") == "MONET")
+    # then the summary is read out as before.
+    page.clock.fast_forward(2_000)
+    expect(page.locator("#summary")).to_have_attribute("aria-live", "polite")
+    assert errors == []
+
+
 def test_a_day_that_ends_on_screen_stops_saying_so_far(page: Page, site_url, errors):
     late = int(datetime(2026, 11, 7, 4, 59, 30, tzinfo=UTC).timestamp() * 1000)  # 11:59:30 PM in Toronto
     fake = FakeSurveyLog([ACORN, MONET, ZEUS], PLACES, THEMES)
@@ -558,6 +628,67 @@ def test_a_day_that_ends_on_screen_stops_saying_so_far(page: Page, site_url, err
     assert "day=2026-11-06" in page.url
     expect(page.locator("html")).to_have_attribute("data-log", "ready")
     assert errors == []
+
+
+def test_a_day_that_ends_on_screen_reloads_once_its_last_words_are_in(page: Page, site_url, errors):
+    late = int(datetime(2026, 11, 7, 4, 59, 30, tzinfo=UTC).timestamp() * 1000)  # 11:59:30 PM in Toronto
+    fake = FakeSurveyLog([ACORN, MONET, ZEUS], PLACES, THEMES)
+    open_log(page, site_url, fake, now_ms=late, running=True)
+    expect(page.locator(".entry")).to_have_count(2)
+    page.clock.fast_forward(35_000)  # midnight passes, and the day reloads
+    expect(page.locator("#sumTitle")).to_have_text("Yesterday")
+    # All in before the clock jumps on, which would time out a request still out.
+    expect(page.locator("html")).to_have_attribute("data-log", "ready")
+    expect(page.locator("#cards .ph-card")).to_have_count(0)
+    page.wait_for_load_state("networkidle")
+    # A word charted at 11:59:50 reaches the log a little late, as sectors' words do.
+    fake.entries.append(["FERN", 10, 20, 0, 0, "AMY", late + 20_000, 11])
+    page.clock.fast_forward(60_000)  # a minute after midnight
+    expect(page.locator(".entry")).to_have_count(3)
+    expect(page.locator("html")).to_have_attribute("data-log", "ready")
+    assert errors == []
+
+
+def test_a_day_whose_last_words_come_in_while_the_page_is_hidden_reloads_for_them(page: Page, site_url, errors):
+    late = int(datetime(2026, 11, 7, 4, 59, 30, tzinfo=UTC).timestamp() * 1000)  # 11:59:30 PM in Toronto
+    fake = FakeSurveyLog([ACORN, MONET, ZEUS], PLACES, THEMES)
+    open_log(page, site_url, fake, now_ms=late, running=True)
+    expect(page.locator(".entry")).to_have_count(2)
+    page.clock.fast_forward(35_000)  # midnight passes, and the day reloads
+    expect(page.locator("#sumTitle")).to_have_text("Yesterday")
+    expect(page.locator("html")).to_have_attribute("data-log", "ready")
+    page.wait_for_load_state("networkidle")
+    # Hidden before the reload a minute after midnight, and back after it was due.
+    page.evaluate(HIDE, True)
+    fake.entries.append(["FERN", 10, 20, 0, 0, "AMY", late + 20_000, 11])
+    page.clock.fast_forward(90_000)
+    page.evaluate(HIDE, False)
+    expect(page.locator(".entry")).to_have_count(3)
+    expect(page.locator("html")).to_have_attribute("data-log", "ready")
+    assert errors == []
+
+
+def test_a_day_that_ends_on_screen_tries_again_when_its_last_reload_fails(page: Page, site_url):
+    # Skips the errors fixture: the browser logs the 503s.
+    late = int(datetime(2026, 11, 7, 4, 59, 30, tzinfo=UTC).timestamp() * 1000)  # 11:59:30 PM in Toronto
+    fake = FakeSurveyLog([ACORN, MONET, ZEUS], PLACES, THEMES)
+    open_log(page, site_url, fake, now_ms=late, running=True)
+    expect(page.locator(".entry")).to_have_count(2)
+    fake.fail = True
+    page.clock.fast_forward(35_000)  # midnight passes; its reload fails
+    expect(page.locator("html")).to_have_attribute("data-log", "stale")
+    page.clock.fast_forward(60_000)  # and so does the one a minute after midnight
+    page.wait_for_timeout(500)  # for the page to take the failure in
+    asked = len(fake.requests)
+    page.clock.fast_forward(25_000)
+    eventually(page, lambda: len(fake.requests) > asked)  # it keeps trying
+    expect(page.locator("html")).to_have_attribute("data-log", "stale")
+    # Once the server's back, the day's last words come in.
+    fake.fail = False
+    fake.entries.append(["FERN", 10, 20, 0, 0, "AMY", late + 20_000, 11])
+    page.clock.fast_forward(45_000)
+    expect(page.locator(".entry")).to_have_count(3)
+    expect(page.locator("html")).to_have_attribute("data-log", "ready")
 
 
 def test_an_hour_that_ended_while_the_page_was_hidden_stops_saying_so_far(page: Page, site_url, errors):
@@ -772,6 +903,27 @@ def test_with_a_share_worker_a_view_links_to_its_card_with_no_picture_of_its_own
     assert errors == []
 
 
+@pytest.mark.browser_context_args(timezone_id="Asia/Kolkata")
+def test_a_share_card_counts_the_hours_the_page_counts_half_an_hour_off_utc(page: Page, site_url, errors):
+    # In India Nov 5 runs from 18:30 UTC on Nov 4. The page counts the UTC hours that start in it,
+    # 19:00 on Nov 4 to 18:00 on Nov 5, and its card is pinned to the same hours, not the 25 it asks for.
+    start = int(datetime(2026, 11, 4, 18, 30, tzinfo=UTC).timestamp() * 1000)
+    early = ["BIRCH", 1, 0, 0, 0, "ZED", start - 10 * MINUTE, 11]  # Nov 4 in India, in the hour before
+    fern = ["FERN", 10, 20, 0, 0, "ZED", start + 6 * HOUR_MS, 11]
+    fake = FakeSurveyLog([early, fern], PLACES, THEMES)
+    page.add_init_script(SHARE_SHEET)
+    open_log(page, site_url, fake, query="&share=https://share.test/&surveyor=ZED&period=day&day=2026-11-05#debug")
+    expect(page.locator(".entry .word")).to_have_text(["FERN"])
+    expect(tile(page, 0)).to_contain_text("Words charted1")
+    page.wait_for_function("window.__log.share()?.run === window.__log.state.run")
+    page.click("#share")
+    page.wait_for_function("window.__shared")
+    h = start // HOUR_MS
+    assert f"/surveyor/ZED/{h}/{h + 25}" in fake.requests
+    assert page.evaluate("window.__shared.url") == f"https://share.test/v/surveyor/ZED/day/2026-11-05/{h + 1}-{h + 25}"
+    assert errors == []
+
+
 # Monet Reach (1,0) hides two words in these tests; OAK, its last, comes in at 3:10 PM.
 BIRCH = ["BIRCH", 50, 4, 0, 0, "AMY", NOW_MS - 50 * MINUTE, 0]  # 2:40 PM
 OAK = ["OAK", 70, 10, 2, 0, "ZED", NOW_MS - 20 * MINUTE, 0]  # 3:10 PM
@@ -877,6 +1029,17 @@ def test_a_day_and_an_hour_show_their_supernovas_where_they_happened(page: Page,
     page.click("#prev")
     expect(page.locator(".entry")).to_have_count(1)
     expect(strip).to_have_count(0)
+    assert errors == []
+
+
+def test_an_hours_supernovas_are_charted_in_the_minute_they_went(page: Page, site_url, errors):
+    fake = FakeSurveyLog([ACORN, MONET, BIRCH, OAK, ZEUS], PLACES, THEMES, totals=NOVA_TOTALS)
+    open_log(page, site_url, fake, query="&supernovas&period=hour&day=2026-11-06&hour=15")
+    expect(page.locator("#sumTitle")).to_have_text(re.compile(r"3:00\s?PM – 4:00\s?PM"))
+    expect(tile(page, 0)).to_contain_text("Supernovas1")
+    # Monet Reach went at 3:10, not at the top of the hour.
+    expect(page.locator("#chart .bar.some")).to_have_count(1)
+    expect(page.locator("#chart .bar.some")).to_have_attribute("aria-label", re.compile(r"^3:10\s?PM: 1 supernova$"))
     assert errors == []
 
 
