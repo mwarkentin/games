@@ -405,9 +405,11 @@ export class Sector {
 
   // The Atlas has had a report: what it carried comes off what's owed.
   paid(by, unpassed, novas) {
+    // One row written either way: the row goes once it's all paid, and is
+    // only lowered when more came in while the report was out.
     const take = (k, n) => {
-      this.sql.exec('UPDATE owed SET n = n - ? WHERE k = ?', n, k);
-      this.sql.exec('DELETE FROM owed WHERE k = ? AND n <= 0', k);
+      this.sql.exec('DELETE FROM owed WHERE k = ? AND n <= ?', k, n);
+      this.sql.exec('UPDATE owed SET n = n - ? WHERE k = ? AND n > ?', n, k, n);
     };
     for (const [address, n] of by) take(`a${address}`, n);
     if (unpassed) take('u', unpassed);
@@ -431,7 +433,11 @@ export class Sector {
     if (request.headers.get('Upgrade') !== 'websocket') return new Response('expected a WebSocket', { status: 426 });
     const [client, server] = Object.values(new WebSocketPair());
     const address = request.headers.get(ADDRESS_HEADER) || null;
-    if (request.headers.get(UNPASSED_HEADER) === '1') { this.unpassed++; this.owe('u'); this.reportDue = true; }
+    // Only a sector that reports owes the Atlas its joins without a pass:
+    // one outside the shared world would keep the row forever.
+    if (request.headers.get(UNPASSED_HEADER) === '1' && this.env.ATLAS && inArea(Number(m[1]), Number(m[2]))) {
+      this.unpassed++; this.owe('u'); this.reportDue = true;
+    }
     const full = () => this.ctx.getWebSockets().length >= MAX_PLAYERS || (address && this.fromAddress(address) >= ADDRESS_SOCKETS);
     if (this.world && this.world.players >= MAX_ONLINE) this.turnAway(server, true);
     // The limiter answers from outside this object, so others may have joined
@@ -1119,7 +1125,7 @@ export class Atlas {
     this.yesterday = null;
     this.hour = { at: -1, charted: 0, playerHours: 0 };
     this.sampledAt = 0;
-    this.playersNow = 0;   // players online, as totals() last counted them
+    this.playersNow = 0;   // players online, as the last report's answer counted them
     // The shared world's latest supernovas, as sectors report them, for every
     // sector to pass on with its next report: {seq, n, at}, numbered in order
     // by the Atlas's clock so a sector's count survives the Atlas being
@@ -1168,15 +1174,18 @@ export class Atlas {
       this.rows.set(key, { sx: r.sx, sy: r.sy, players: r.players, charted: r.charted, done, hot, who: r.who ?? [], at: this.now() });
       noteMates(this, key, r.who, this.now());  // who's online in each guild (survey-guild.js)
       // A sector nobody's in may not report again for days, so its last
-      // count is stored straight away: one only in memory would be lost
-      // if the Atlas were evicted (by a deploy, say) before the next flush.
-      if (!old || old.done !== done) this.save(key, r.players === 0);
+      // count is stored straight away, whether it changed now or in a
+      // report still waiting for the flush: one only in memory would be
+      // lost if the Atlas were evicted (by a deploy, say) before then.
+      if (!old || old.done !== done || (r.players === 0 && this.dirty.has(key))) this.save(key, r.players === 0);
       this.takeNovas(r);
+      const totals = this.totals();
+      this.playersNow = totals.players;  // for tally() at the next report
       // The list of addresses past the cap goes back only when it has
       // changed since this sector last heard it.
       const fresh = r.day === this.day && r.overAt === this.overList.length;
       return json({
-        ...this.totals(), day: this.day, overAt: this.overList.length, ...(fresh ? {} : { over: this.overList.slice(-DAILY_LIST_MAX) }),
+        ...totals, day: this.day, overAt: this.overList.length, ...(fresh ? {} : { over: this.overList.slice(-DAILY_LIST_MAX) }),
         ...(r.tags?.length ? { guilds: matesFor(this, r.tags, this.now(), ONLINE_MS) } : {}),
         ...this.novasFor(r.novaSeq),
       });
@@ -1327,8 +1336,7 @@ export class Atlas {
       for (const e of r.who) ids.add(e[0]);
       unlisted += Math.max(0, r.players - r.who.length);
     }
-    this.playersNow = ids.size + unlisted;
-    return { charted, total: AREA_WORDS, players: this.playersNow };
+    return { charted, total: AREA_WORDS, players: ids.size + unlisted };
   }
 
   worldMap() {

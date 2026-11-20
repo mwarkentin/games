@@ -1053,6 +1053,14 @@ describe('Atlas', () => {
     assert.equal((await worldMap()).charted, 6);
   });
 
+  test("writes a sector's waiting count at once when its last player leaves after reporting it", async () => {
+    await report({ sx: 0, sy: 0, players: 1, charted: counts(6) });  // the last word, reported while they're there
+    await report({ sx: 0, sy: 0, players: 0, charted: counts(6) });  // then they go: nothing new to count
+    atlasObject = new Atlas(state, {});
+    atlasObject.now = () => clock;
+    assert.equal((await worldMap()).charted, 6);
+  });
+
   test('draws the world map, one byte per territory', async () => {
     await report({ sx: -AREA, sy: -AREA, players: 2, charted: counts(9) });
     await report({ sx: 1, sy: 0, players: SPAWN_MAX, charted: counts(0, 0, 0, 0, 0, 7) });

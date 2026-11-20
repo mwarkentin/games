@@ -90,7 +90,7 @@ From [Scaling One Million Checkboxes][omcb] and
   most every 10 s while something is changing. Reports are absolute numbers, so a lost
   or repeated report does no harm. The Atlas writes the charted counts to
   storage at most once a minute, and a sector's at once when its last
-  player has left, since nobody there will report again to put it right
+  player has left (if it changed since it was last written), since nobody there will report again to put it right
   if the Atlas is evicted (every deploy evicts it) before that minute is up.
 - **The world map** is one byte per territory (10 KB), plus players per
   sector and a starting spot for newcomers. Each Worker instance fetches it
@@ -221,7 +221,8 @@ survey also limits each IP address, wherever it plays:
     Before this, words charted within 10 s of a report were lost whenever
     the sector went quiet straight after, so a script that paused after
     each few words had most of them never counted. It costs a row written
-    per word, and one per address per report.
+    per word, and one per address per report. Only sectors in the area,
+    which report, keep it.
   - Worker Previews allow 1,000 a day (`SURVEY_DAILY_CLAIMS` in
     `[previews.vars]`, read by `dailyClaims()`) and 60 claims a minute, so
     a test can chart several whole territories in a day.
