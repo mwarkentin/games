@@ -15,6 +15,7 @@ import time
 
 from playwright.sync_api import Page, expect
 
+from fake_leaderboard import Held
 from fake_survey import NOW_MS, FakeGuilds, FakeSurvey, player_id
 from test_letterfield_survey import OVERLAP, SURVEY, circle, eventually, known_words, open_game, open_people, open_you
 from test_letterfield_surveyors import KIM, LOU, PID, SAM, TOKEN, ZED, open_list, wait_landed
@@ -213,6 +214,25 @@ def test_an_invite_can_wait_or_be_no_good(page: Page, site_url, errors):
     assert errors == [] or all("404" in e for e in errors)
 
 
+def test_an_invite_whose_look_up_fails_can_be_tried_again(page: Page, site_url, errors):
+    """An invite looked up offline, or while the Worker hiccupped, said it couldn't and offered only
+    Close, and with its code already off the address, a reload didn't bring it back either."""
+    guilds = FakeGuilds({CODE: {"name": NAME, "tag": TAG, "members": [[KIM[0], "KIM", NOW_MS]]}})
+    down, answer = [True], guilds.handle
+    guilds.handle = lambda r: (
+        r.fulfill(status=503, body="{}") if down[0] and r.request.url.endswith(f"/{CODE}") else answer(r)
+    )
+    start(page, site_url, FakeSurvey(), guilds, query=f"&guild={CODE}")
+    invite = page.locator("#guildInvite")
+    expect(invite).to_contain_text("Couldn’t look up that invite.")
+    down[0] = False
+    invite.get_by_role("button", name="Try again").click()
+    expect(invite).to_contain_text("1 member so far")
+    invite.get_by_role("button", name="Join").click()
+    expect(page.locator("html")).to_have_attribute("data-guild", "in")
+    assert errors == [] or all("503" in e for e in errors)
+
+
 def test_an_invite_while_in_a_guild_joins_a_second_and_keeps_the_first(page: Page, site_url, errors):
     guilds = in_cobalt()
     guilds.guilds[CODE2] = {"name": NAME2, "tag": TAG2, "members": [[KIM[0], "KIM", NOW_MS]]}
@@ -317,6 +337,101 @@ def test_at_five_guilds_an_invite_asks_which_to_leave_naming_them(page: Page, si
     assert [g["code"] for g in stored(page)] == [CODE, "BCD234", "BCD235", "BCD236", "PQR789"]
     # The label for the guild we left goes with it.
     assert stored(page, "letterfield.guild-labels.v1") == {CODE: "Family"}
+    assert errors == []
+
+
+def test_at_five_guilds_a_leave_that_doesnt_get_through_is_sent_again(page: Page, site_url, errors):
+    """The guild left to make room went from the list at once, while its leave went unchecked: one
+    lost left us a member there that no device knew of, holding one of its places for good."""
+    guilds = five_guilds()
+    down, answer = [True], guilds.handle
+    guilds.handle = lambda r: (
+        r.fulfill(status=503, body="{}") if down[0] and r.request.url.endswith("/leave") else answer(r)
+    )
+    start(page, site_url, FakeSurvey(), guilds, query="&guild=PQR789", mine=FIVE)
+    invite = page.locator("#guildInvite")
+    invite.get_by_role("radio", name="Amber Lantern Bureau").check()
+    invite.get_by_role("button", name="Leave and join").click()
+    expect(page.locator("html")).to_have_attribute("data-guild", "in")
+    page.wait_for_function("(localStorage.getItem('letterfield.guild-leaves.v1') || '').includes('QRT567')")
+    assert PID in [m[0] for m in guilds.guilds[CODE2]["members"]]
+    down[0] = False
+    page.reload()
+    eventually(page, lambda: PID not in [m[0] for m in guilds.guilds[CODE2]["members"]])
+    page.wait_for_function("localStorage.getItem('letterfield.guild-leaves.v1') === null")
+    assert errors == [] or all("503" in e for e in errors)
+
+
+def test_a_leave_kept_for_a_guild_joined_again_elsewhere_is_dropped(page: Page, site_url, errors):
+    """A leave that didn't get through was sent again on the next visit even once a linked device
+    had joined that guild again as us, and the list brought here says so: the leave undid it."""
+    guilds = in_cobalt()
+    start(page, site_url, FakeSurvey(), guilds, mine=[MINE])
+    page.evaluate(
+        f"localStorage.setItem('letterfield.guild-leaves.v1', JSON.stringify([{{code: '{CODE}', token: '{TOKEN}'}}]))"
+    )
+    guilds.calls.clear()
+    page.reload()
+    expect(page.locator("html")).to_have_attribute("data-guild", "in")
+    page.wait_for_function("localStorage.getItem('letterfield.guild-leaves.v1') === null")
+    page.wait_for_timeout(300)
+    assert not any(path.endswith("/leave") for _, path, _ in guilds.calls)
+    assert PID in [m[0] for m in guilds.guilds[CODE]["members"]]
+    assert errors == []
+
+
+def other_tab_lists(page: Page, guilds: list) -> None:
+    """Another tab (or a linked device's sync there) saves `guilds` as our list."""
+    page.evaluate(
+        """list => { localStorage.setItem('letterfield.guilds.v1', JSON.stringify(list));
+      window.dispatchEvent(new StorageEvent('storage', { key: 'letterfield.guilds.v1' })); }""",
+        guilds,
+    )
+
+
+def test_a_guild_started_as_another_list_fills_the_places_is_left_not_lost(page: Page, site_url, errors):
+    """A list that brought us to five while a guild was being started kept the five and silently
+    dropped the new one, while the Worker kept us in it: a member no device knew of."""
+    guilds = five_guilds()
+    held = Held(guilds, lambda r: r.method == "POST" and r.url.endswith("/v1/survey/guilds"))
+    start(page, site_url, FakeSurvey(), guilds, mine=FIVE[:4])
+    page.unroute(f"{SURVEY}/v1/survey/guilds**")
+    page.route(f"{SURVEY}/v1/survey/guilds**", held.handle)
+    open_you(page)
+    card = page.locator("#guildCard")
+    card.get_by_role("button", name="Start another guild").click()
+    card.get_by_role("button", name="Start it").click()
+    expect(page.locator("html")).to_have_attribute("data-guild", "making")
+    held.wait_for(page)
+    other_tab_lists(page, FIVE)
+    held.release()
+    expect(page.locator("html")).to_have_attribute("data-guild", "in")
+    [new] = [c for c in guilds.guilds if c not in {x["code"] for x in FIVE} and c != "PQR789"]
+    eventually(page, lambda: PID not in [m[0] for m in guilds.guilds.get(new, {"members": []})["members"]])
+    assert [g["code"] for g in stored(page)] == [x["code"] for x in FIVE]
+    expect(card.locator(".guild-err")).to_have_text(
+        "You’re in 5 guilds now, from another device. To start another, leave one."
+    )
+    assert errors == []
+
+
+def test_a_guild_joined_as_another_list_fills_the_places_is_left_not_lost(page: Page, site_url, errors):
+    guilds = five_guilds()
+    held = Held(guilds, lambda r: r.url.endswith("/join"))
+    page.route(f"{SURVEY}/v1/survey/guilds**", held.handle)  # first, so start()'s own route doesn't take it
+    start(page, site_url, FakeSurvey(), guilds, query="&guild=PQR789", mine=FIVE[:4])
+    page.unroute(f"{SURVEY}/v1/survey/guilds**", guilds.handle)
+    invite = page.locator("#guildInvite")
+    invite.get_by_role("button", name="Join").click()
+    held.wait_for(page)
+    other_tab_lists(page, FIVE)
+    held.release()
+    expect(page.locator("html")).to_have_attribute("data-guild", "invited")
+    expect(invite.locator(".guild-err")).to_have_text(
+        "You’re in 5 guilds now, from another device. Choose one to leave first."
+    )
+    eventually(page, lambda: PID not in [m[0] for m in guilds.guilds["PQR789"]["members"]])
+    assert [g["code"] for g in stored(page)] == [x["code"] for x in FIVE]
     assert errors == []
 
 
@@ -708,3 +823,29 @@ def test_a_guild_that_let_you_go_elsewhere_goes_and_the_others_stay(page: Page, 
     assert stored(page, "letterfield.guild-labels.v1") == {CODE2: "Work"}
     expect(page.locator(".who-guild .who-head-name")).to_have_text(["WorkAmber Lantern Bureau"])
     assert errors == [] or all("404" in e for e in errors)
+
+
+def test_guilds_labels_and_mutes_changed_in_another_tab_are_taken_in(page: Page, site_url, errors):
+    """Each tab kept its own guilds and mutes from when it loaded, so the next save from one
+    put back what another tab had just changed, there and on every linked device."""
+    guilds = in_both()
+    start(page, site_url, FakeSurvey(), guilds, mine=[MINE])
+    html = page.locator("html")
+    expect(html).to_have_attribute("data-guild", "in")
+    other = page.context.new_page()
+    other.goto(f"{site_url}/")  # the same origin: what another Letterfield tab saving would do
+    # Joined another guild there, with a label for it, and muted someone.
+    other.evaluate(
+        "([list, labels, kim]) => { localStorage.setItem('letterfield.guilds.v1', JSON.stringify(list));"
+        " localStorage.setItem('letterfield.guild-labels.v1', JSON.stringify(labels));"
+        " localStorage.setItem('letterfield.muted.v1', JSON.stringify([kim])); }",
+        [[MINE, WORK], {CODE2: "Work"}, KIM[0]],
+    )
+    page.wait_for_function(f"window.__lf.myGuilds().map(g => g.code).join() === '{CODE},{CODE2}'")
+    assert page.evaluate("window.__lf.labels()") == {CODE2: "Work"}
+    page.wait_for_function(f"window.__lf.muted().join() === '{KIM[0]}'")
+    # Then left them all there.
+    other.evaluate("localStorage.setItem('letterfield.guilds.v1', '[]')")
+    expect(html).to_have_attribute("data-guild", "out")
+    other.close()
+    assert errors == []

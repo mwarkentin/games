@@ -779,12 +779,15 @@ What a link carries, checked by `cleanCarry` in `worker/src/players.js`:
 the initials, the guilds (code, name and tag of each, up to five, with the
 first as `guild` too for an older game), the player's labels for them, the mutes, with who each
 muted surveyor was and when (for the Muted list on your page), and the
-switch under Surveyors for taking emotes, and the player's labels for their
-guilds. Mutes from both devices are kept. Guilds are merged, up to five:
+switch under Surveyors for taking emotes, the player's labels for their
+guilds, and the badge they show and their card (signed for them, so the
+device's own signatures, made for the self it leaves, go). Mutes from both devices are kept. Guilds are merged, up to five:
 theirs first, then this device's, which the linked surveyor joins (labels
 from both, theirs where both have one), so linking in either direction loses
-none that fit. Either way the device's old self leaves its guilds, since it
-won't be back. Field notes come from both devices from
+none that fit (a join that doesn't get through is tried again, up to three
+times). Either way the device's old self leaves its guilds, since it
+won't be back, and a recovery code saved on the device, which brings back
+that old self, is forgotten there. Field notes come from both devices from
 then on, through syncing; sound and music stay each device's own.
 
 ### Why a code, and how it's kept safe
@@ -838,7 +841,9 @@ that surveyor again.
   marks it saved, which exempts it from the 180-day clear-out while the
   code lasts. Using the code on a new device turns syncing on there with
   this device's settings older than the backup's, so the first sync brings
-  back the initials, guilds and labels, mutes and notes; that device's own
+  back the initials, guilds and labels, mutes and notes (a setting changed
+  there before that sync answers waits for it, and goes up only if the
+  backup had none); that device's own
   notes join them, and its guilds too: joined again as the recovered
   surveyor, kept aside until the backup's list arrives, then added to it up
   to five (any that don't fit are left), and the merged list goes back as the

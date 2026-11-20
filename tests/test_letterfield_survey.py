@@ -1503,6 +1503,29 @@ def test_a_claim_whose_answer_was_lost_with_its_socket_is_still_credited(page: P
     assert errors == []
 
 
+def test_a_claim_whose_answer_was_lost_is_credited_by_the_initials_it_went_with(page: Page, site_url, errors):
+    """A claim read back after a reload was settled by the initials signed then, not those it went
+    with, so after a link brought new initials our own word was "charted by" our old ones."""
+    word = known_words(page, site_url)[0]
+    page.add_init_script(
+        "if (!sessionStorage.getItem('signed')) { sessionStorage.setItem('signed', '1');"
+        " localStorage.setItem('games.initials', JSON.stringify('ZED')); }"
+    )
+    fake = FakeSurvey(lose="answer")
+    open_game(page, site_url, fake)
+    expect(page.locator("#survey")).to_have_attribute("data-state", "live")
+    circle(page, word)
+    eventually(page, lambda: len(fake.claims) == 1)
+    assert fake.claims[0][5] == "ZED"
+    page.evaluate("localStorage.setItem('games.initials', JSON.stringify('ANN'))")  # as a link leaves them
+    page.reload()
+    expect(page.locator("#survey")).to_have_attribute("data-state", "live")
+    expect(page.locator("#surveyText")).to_contain_text("1 word charted first by you")
+    assert page.evaluate("[...window.__lf.found.values()][0].f") == 1
+    assert page.evaluate("[...window.__lf.found.values()][0].b || ''") == ""
+    assert errors == []
+
+
 def test_a_claim_lost_on_the_way_is_sent_again_when_the_sector_is_rejoined(page: Page, site_url, errors):
     word = known_words(page, site_url)[0]
     fake = FakeSurvey(lose="claim")

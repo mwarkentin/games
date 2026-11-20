@@ -2027,13 +2027,14 @@ const CLAIM_ENDS = ['first', 'theirs', 'refused'];
 const CLAIM_BURST = 4, CLAIM_REFILL_MS = 1600;
 // `from` is queued for a word just circled; a claim read back from storage
 // starts queued, or unanswered if it may have reached its sector already.
-// `waited`: it's an old find of ours, not one just circled.
-function claimWord(e, from = 'queued', waited = from !== 'queued') {
+// `waited`: it's an old find of ours, not one just circled; `initials`, those
+// it went with, if it may have gone already.
+function claimWord(e, from = 'queued', waited = from !== 'queued', initials = myInitials()) {
   // A word someone else charted, added to the notes anyway, is theirs already.
   if (!surveyApi || outbox.has(e.key) || claims.has(e.key)) return;
   const l = links.get(sectorKey(e.x, e.y));
   // `backlog`: it waited for its sector, rather than going as it was circled.
-  const c = { e, l: null, backlog: waited || !(l && l.m.is('live')), initials: waited ? myInitials() : '', known: false, beaten: false };
+  const c = { e, l: null, backlog: waited || !(l && l.m.is('live')), initials: waited ? initials : '', known: false, beaten: false };
   c.m = machine('claim', CLAIM_MOVES, from, { el: null, onMove: to => {
     if (CLAIM_ENDS.includes(to)) { outbox.delete(e.key); outboxEnded.add(e.key); }
     if (to === 'theirs') chartedBy(e.key);
@@ -2044,7 +2045,8 @@ function claimWord(e, from = 'queued', waited = from !== 'queued') {
   if (l && !waited) flushClaims(l);
 }
 // Claims still out, kept in storage so a reload doesn't lose them, as [w, x,
-// y, d, 1 if it may have reached its sector]: read back once the survey
+// y, d, the initials it went with if it may have reached its sector (1 from
+// before they were kept, or with none), else 0]: read back once the survey
 // starts (restoreOutbox), each claim as one that waited. Another tab's stay
 // too, unless this tab has seen them end: every tab writes the whole list, so
 // the last to write would otherwise drop the others' for good.
@@ -2056,14 +2058,15 @@ function saveOutbox() {
     const k = keyOf(o[0], o[1], o[2], o[3]), e = found.get(k);
     if (!outboxEnded.has(k) && !(e && (e.f || e.b))) list.set(k, o);
   }
-  for (const c of outbox.values()) list.set(c.e.key, [c.e.w, c.e.x, c.e.y, c.e.d, c.m.is('sent', 'unanswered') ? 1 : 0]);
+  for (const c of outbox.values()) list.set(c.e.key, [c.e.w, c.e.x, c.e.y, c.e.d, c.m.is('sent', 'unanswered') ? c.initials || 1 : 0]);
   LS.set(K_OUTBOX, JSON.stringify([...list.values()].slice(-OUTBOX_MAX)));
 }
 function restoreOutbox() {
   for (const o of readList(K_OUTBOX)) {
     if (!Array.isArray(o)) continue;
     const e = found.get(keyOf(o[0], o[1], o[2], o[3]));
-    if (e && !e.f && !e.b) claimWord(e, o[4] ? 'unanswered' : 'queued', true);
+    // Settled by the initials it went with: these may have changed since (a link brings the other device's).
+    if (e && !e.f && !e.b) claimWord(e, o[4] ? 'unanswered' : 'queued', true, initialsOf(o[4]) || myInitials());
   }
   saveOutbox();
 }
@@ -5396,6 +5399,12 @@ const playerToken = (() => {
   }
   return t;
 })();
+// Another tab became another surveyor (linking, or a recovery code): this
+// one starts again as them, rather than syncing, claiming and joining as a
+// self that's gone, whose Player would say syncing has stopped for all of them.
+window.addEventListener('storage', e => {
+  if (e.key === K_PLAYER && playerToken && TOKEN_RE.test(e.newValue || '') && e.newValue !== playerToken) location.reload();
+});
 let myPid = '';
 if (playerToken && window.crypto && crypto.subtle) {
   crypto.subtle.digest('SHA-256', new TextEncoder().encode('games-player:' + playerToken))
@@ -5950,7 +5959,7 @@ const GUILD_FIRST = [['Crimson', 350], ['Coral', 8], ['Copper', 22], ['Amber', 3
 const GUILD_SECOND = ['Compass', 'Sextant', 'Lantern', 'Quill', 'Atlas', 'Meridian', 'Beacon', 'Theodolite', 'Chart', 'Lodestar', 'Spyglass', 'Waypoint', 'Ledger', 'Inkwell', 'Horizon', 'Contour'];
 const GUILD_THIRD = ['Society', 'Guild', 'Company', 'Circle', 'Club', 'Expedition', 'Lodge', 'Fellowship', 'League', 'Order', 'Corps', 'Bureau', 'Institute', 'Academy', 'Alliance', 'Caravan'];
 const K_GUILDS = 'letterfield.guilds.v1', K_GUILD = 'letterfield.guild.v1', K_GUILD_LABELS = 'letterfield.guild-labels.v1';
-const K_GUILD_FOLDED = 'letterfield.guild-folded.v1', K_GUILD_MERGE = 'letterfield.guild-merge.v1';
+const K_GUILD_FOLDED = 'letterfield.guild-folded.v1', K_GUILD_MERGE = 'letterfield.guild-merge.v1', K_GUILD_LEAVES = 'letterfield.guild-leaves.v1';
 const GUILD_CODE_RE = /^[A-HJKMNP-Z2-9]{6}$/, NOTE_AGAIN_MS = 10 * 60000;
 const GUILDS_MAX = 5, LABEL_MAX = 24;  // as the Worker's GUILDS_MAX (survey-social.js) and LABEL_MAX (players.js)
 const goodName = n => Array.isArray(n) && n.length === 3 && [GUILD_FIRST, GUILD_SECOND, GUILD_THIRD].every((list, i) => Number.isInteger(n[i]) && n[i] >= 0 && n[i] < list.length);
@@ -6026,15 +6035,18 @@ function guildMoved(to, from) {
 }
 const saveLabels = () => LS.set(K_GUILD_LABELS, JSON.stringify(Object.fromEntries(labels)));
 // Every change to our guilds goes through here: kept, told to every sector,
-// and (unless it came from a linked device) synced to the others.
-function saveGuilds(list, synced = false) {
+// and (unless it came from a linked device) synced to the others. One that
+// another tab saved (`kept`) is only taken in here.
+function saveGuilds(list, synced = false, kept = false) {
   const before = myGuilds.map(g => g.code).join();
   myGuilds = guildList(list);
-  LS.set(K_GUILDS, JSON.stringify(myGuilds));
-  // The first, where a page from when there was one guild at a time looks.
-  if (myGuilds.length) LS.set(K_GUILD, JSON.stringify(myGuilds[0])); else LS.remove(K_GUILD);
   for (const c of [...labels.keys()]) if (!guildOfCode(c)) labels.delete(c);
-  saveLabels();
+  if (!kept) {
+    LS.set(K_GUILDS, JSON.stringify(myGuilds));
+    // The first, where a page from when there was one guild at a time looks.
+    if (myGuilds.length) LS.set(K_GUILD, JSON.stringify(myGuilds[0])); else LS.remove(K_GUILD);
+    saveLabels();
+  }
   if (myGuilds.map(g => g.code).join() !== before) {
     const tags = new Set(myGuilds.map(g => g.tag));
     for (const t of [...mates.keys()]) if (!tags.has(t)) mates.delete(t);
@@ -6059,6 +6071,13 @@ async function startGuild() {
   Membership.go('making');
   const { status, data } = await guildCall('', { token: playerToken, initials: myInitials(), name: draftName });
   if (Membership.seq !== at + 1 || !Membership.is('making')) return;
+  if (status === 201 && goodGuild(data) && myGuilds.length >= GUILDS_MAX) {
+    // A linked device's list filled our places while it was being started: it can't be kept.
+    leaveLater(data.code);
+    guildError = `You’re in ${GUILDS_MAX} guilds now, from another device. To start another, leave one.`;
+    guildErrorCode = '';
+    return Membership.go('in');
+  }
   if (status === 201 && goodGuild(data)) {
     saveGuilds([...myGuilds, guildOf(data)]);
     takeRoster(data.code, data.members);
@@ -6071,13 +6090,13 @@ async function startGuild() {
 }
 // An invite link: what the guild is, then whether to join it, and at the cap which of ours to leave for it.
 async function lookUpInvite(code) {
-  invite = { code, name: null, size: 0, error: '', drop: '' };
-  Membership.go('invited');
+  invite = { code, name: null, size: 0, error: '', drop: '', retry: false };
+  if (Membership.is('invited')) renderGuild(); else Membership.go('invited');  // Try again asks from the card
   const at = Membership.seq;
   const { status, data } = await guildCall(`/${code}`);
   if (Membership.seq !== at || !invite || invite.code !== code) return;
   if (status === 200 && goodName(data.name)) Object.assign(invite, { name: data.name, size: Number.isInteger(data.size) ? data.size : 0 });
-  else invite.error = status === 404 ? 'That invite isn’t good any more: its guild has ended.' : 'Couldn’t look up that invite.';
+  else Object.assign(invite, { error: status === 404 ? 'That invite isn’t good any more: its guild has ended.' : 'Couldn’t look up that invite.', retry: status !== 404 });  // the code is off the address: the card is the one way back to it
   renderGuild();
 }
 async function joinInvite() {
@@ -6090,9 +6109,18 @@ async function joinInvite() {
   const at = Membership.seq;
   const { status, data } = await guildCall(`/${code}/join`, { token: playerToken, initials: myInitials() });
   if (Membership.seq !== at) return;
+  const rest = myGuilds.filter(g => g.code !== (drop && drop.code) && g.code !== code);
+  if (status === 200 && goodGuild(data) && rest.length >= GUILDS_MAX) {
+    // A linked device's list filled our places while joining: this one can't be kept.
+    leaveLater(data.code);
+    invite.drop = '';
+    invite.error = `You’re in ${GUILDS_MAX} guilds now, from another device. Choose one to leave first.`;
+    return Membership.go('invited');
+  }
   if (status === 200 && goodGuild(data)) {
-    if (drop) guildCall(`/${drop.code}/leave`, { token: playerToken });  // at the cap: the one chosen makes room
-    saveGuilds([...myGuilds.filter(g => g !== drop && g.code !== data.code), guildOf(data)]);
+    keptLeaves(l => l.code !== code || l.token !== playerToken);  // a leave of it still to send would undo this
+    if (drop) leaveLater(drop.code);  // at the cap: the one chosen makes room
+    saveGuilds([...myGuilds.filter(g => g.code !== (drop && drop.code) && g.code !== data.code), guildOf(data)]);
     takeRoster(data.code, data.members);
     invite = null;
     Membership.go('in');  // the invite's card goes first, so the note takes the top
@@ -6101,6 +6129,20 @@ async function joinInvite() {
   }
   invite.error = status === 409 ? 'That guild is full.' : status === 429 ? 'Too many guilds joined from this network: try again later.' : 'Couldn’t join. Try again in a moment.';
   Membership.go('invited');
+}
+// A leave this device can't follow on screen (the guild's gone from the list
+// at once) is kept until the Worker has it, and sent again on later visits:
+// one lost would leave us a member no device knows, holding a place.
+const keptLeaves = keep => {
+  const list = [].concat(readStored(K_GUILD_LEAVES, [])).filter(l => l && GUILD_CODE_RE.test(l.code) && TOKEN_RE.test(l.token) && keep(l));
+  if (list.length) LS.set(K_GUILD_LEAVES, JSON.stringify(list.slice(-20))); else LS.remove(K_GUILD_LEAVES);
+  return list;
+};
+async function leaveLater(code, token = playerToken) {
+  const others = l => l.code !== code || l.token !== token;
+  LS.set(K_GUILD_LEAVES, JSON.stringify([...keptLeaves(others), { code, token }].slice(-20)));
+  const { status } = await guildCall(`/${code}/leave`, { token });
+  if (status === 200 || status === 404) keptLeaves(others);
 }
 function dismissInvite() {
   if (!Membership.is('invited')) return;
@@ -6117,7 +6159,7 @@ async function leaveGuild() {
   if (status === 200) { saveGuilds(myGuilds.filter(x => x.code !== g.code)); return Membership.go(restState()); }
   guildError = 'Couldn’t leave just now. Try again in a moment.';
   guildErrorCode = g.code;
-  Membership.go('in');
+  Membership.go(restState());  // a linked device's list may have taken it, and the rest, meanwhile
 }
 let invited = { code: '', at: 0 };  // which guild's Invite last copied its link, and when: the list's says so for a moment
 const INVITED_MS = 2500;
@@ -6294,7 +6336,7 @@ function renderGuild() {
   else if (st === 'invited' || st === 'joining') tail = '<p class="you-pad">Looking at an invite to a guild…</p>';
   else if (!n) tail = `<button type="button" class="you-item" data-g="start"><span>Start a guild<small>A few surveyors who find each other: members first on the list, a note when one comes online, a mark on their carets.</small></span>${CHEV}</button><p class="guild-small">Or join one from a member’s invite link.</p>`;
   else if (n < GUILDS_MAX) tail = `<button type="button" class="you-item" data-g="start"><span>Start another guild<small>You’re in ${n} of ${GUILDS_MAX}. Or join one from a member’s invite link.</small></span>${CHEV}</button>`;
-  else tail = `<p class="you-pad guild-cap">You’re in ${GUILDS_MAX} guilds, the most at once. To join another, leave one.</p>`;
+  else tail = `<p class="you-pad guild-cap">You’re in ${GUILDS_MAX} guilds, the most at once. To join another, leave one.</p>${errFor('')}`;
   if (n) tail += '<p class="guild-small">Words you chart while in a guild count for it in the survey log, under its name: for every guild you’re in.</p>';
   const html = `${groups.join('')}<div class="group guild">${tail}</div><p class="guild-small guild-said" id="guildSaid" aria-live="polite"></p>`;
   // Against what it last drew, not its live HTML, which notes written into it
@@ -6311,7 +6353,7 @@ function renderGuild() {
   const busy = Membership.is('joining'), full = n >= GUILDS_MAX;
   const theirs = `${membersText(invite.size)} so far`, err = invite.error ? `<p class="guild-err" role="alert">${invite.error}</p>` : '';
   let card;
-  if (!invite.name) card = `<p class="eyebrow" id="guildInviteName">Invited to a guild</p><p>${invite.error || 'Looking it up…'}</p><div class="coach-row"><button type="button" class="btn ghost" data-g="not-now">${invite.error ? 'Close' : 'Not now'}</button></div>`;
+  if (!invite.name) card = `<p class="eyebrow" id="guildInviteName">Invited to a guild</p><p>${invite.error || 'Looking it up…'}</p><div class="coach-row"><button type="button" class="btn ghost" data-g="not-now">${invite.error ? 'Close' : 'Not now'}</button>${invite.retry ? '<button type="button" class="btn" data-g="invite-again">Try again</button>' : ''}</div>`;
   else if (full) {
     // At the cap: our guilds, each with its label and size, to choose one to leave.
     const drop = guildOfCode(invite.drop), r = drop && rosters.get(drop.code), only = r && r.known && r.list.length <= 1;
@@ -6344,6 +6386,7 @@ function onGuildClick(e) {
   else if (g === 'leave-yes') leaveGuild();
   else if (g === 'join') joinInvite();
   else if (g === 'not-now') dismissInvite();
+  else if (g === 'invite-again' && Membership.is('invited') && invite && !invite.name) lookUpInvite(invite.code);
 }
 guildCard.addEventListener('click', onGuildClick);
 guildCard.addEventListener('input', e => { const i = e.target.closest('input[data-label]'); if (i) labelDrafts.set(i.dataset.label, i.value); });
@@ -6357,6 +6400,8 @@ guildInvite.addEventListener('change', e => {
 guildInvite.addEventListener('keydown', e => { if (e.key === 'Escape') { e.stopPropagation(); dismissInvite(); } });
 // An invite link (?guild=<code>), read once (see takeParam).
 if (surveyApi) {
+  // One of ours that's in the list again was joined again (on a linked device, say): its leave is dropped.
+  for (const l of keptLeaves(l => l.token !== playerToken || !guildOfCode(l.code))) leaveLater(l.code, l.token);
   const code = takeParam('guild').toUpperCase();
   if (GUILD_CODE_RE.test(code) && !guildOfCode(code)) lookUpInvite(code);
   renderGuild();
@@ -6376,7 +6421,7 @@ const K_SYNC = 'letterfield.sync.v1', SYNC_EVERY_MS = 60000, SYNC_SOON_MS = 5000
 function readSync() {
   try {
     const o = JSON.parse(LS.get(K_SYNC) || 'null');
-    if (o && o.on) return { on: true, epoch: typeof o.epoch === 'string' ? o.epoch : '', at: Number.isInteger(o.at) ? o.at : 0, f: Array.isArray(o.f) ? o.f : [], n: Array.isArray(o.n) ? o.n : [], m: Array.isArray(o.m) ? o.m : ['*'], settingsAt: Number.isFinite(o.settingsAt) ? o.settingsAt : 0 };
+    if (o && o.on) return { on: true, epoch: typeof o.epoch === 'string' ? o.epoch : '', at: Number.isInteger(o.at) ? o.at : 0, f: Array.isArray(o.f) ? o.f : [], n: Array.isArray(o.n) ? o.n : [], m: Array.isArray(o.m) ? o.m : ['*'], settingsAt: Number.isFinite(o.settingsAt) ? o.settingsAt : 0, ...(typeof o.initials === 'string' ? { initials: o.initials } : {}), ...(o.fromBackup ? { fromBackup: true, held: !!o.held } : {}) };
   } catch (_) {}
   return null;
 }
@@ -6410,9 +6455,12 @@ function syncSoon(ms) {
   syncDue = due;
   syncTimer = setTimeout(() => { syncDue = 0; syncNow(); }, ms);
 }
+// Turning it on: from here, the first time. A device syncing already (making
+// a recovery code, or linking a third device) carries on where it was, rather
+// than sending every find again and taking the whole backup back.
 function startSync() {
   if (!surveyApi || !playerToken) return;
-  writeSync(syncFromHere((readSync() || {}).settingsAt || 1));
+  if (!readSync()) writeSync(syncFromHere(1));
   if (Sync.is('off')) Sync.go('idle');
   syncSoon(SYNC_GAP_MS);
 }
@@ -6423,19 +6471,27 @@ function syncLater(kind, key) {
   if (!st[kind].includes(key)) { st[kind].push(key); writeSync(st); }
   syncSoon(SYNC_SOON_MS);
 }
+// Until a recovery's first sync has brought the backup's settings
+// (`fromBackup`), a change here waits (`held`): the backup's replace it, and
+// it goes up only if the backup had none. Otherwise it would count as newer,
+// and the backup's guilds, initials and mutes would be lost for good.
 function settingsChanged() {
   const st = readSync();
   if (!st || Sync.is('off')) return;
+  if (st.fromBackup) { st.held = true; return writeSync(st); }
   st.settingsAt = Date.now();
   writeSync(st);
   syncSoon(SYNC_GAP_MS);
 }
+const asSent = e => (e ? JSON.stringify(plain(e)) : '');
 async function syncNow() {
   if (!Sync.is('idle', 'failed') || document.hidden) return;  // a hidden tab syncs when it shows again
+  if (LS.get(K_PLAYER) !== playerToken) return;  // another tab became another surveyor: this one reloads as them
   const st = readSync();
   if (!st) return Sync.go('off');
   // Achievements waiting: '*' (from a device syncing since before there were any) means every one.
   const sentF = st.f.slice(0, SYNC_BATCH), sentN = st.n.slice(0, SYNC_BATCH), sentM = st.m.includes('*') ? ['*', ...Object.keys(marks.got)] : st.m.slice(0, 200);
+  const wentF = new Map(sentF.map(k => [k, asSent(found.get(k))])), wentM = new Map(sentM.map(k => [k, JSON.stringify(marks.got[k] || null)]));
   Sync.go('syncing');
   const at = Sync.seq;
   const { status, data } = await workerCall('/v1/player/sync', {
@@ -6445,7 +6501,7 @@ async function syncNow() {
     marks: sentM.filter(id => marks.got[id]).slice(0, 200).map(id => [id, ...marks.got[id]]), ...(marks.best ? { best: marks.best } : {}),
     settings: mySettings(), settingsAt: st.settingsAt,
   });
-  if (Sync.seq !== at) return;
+  if (Sync.seq !== at || LS.get(K_PLAYER) !== playerToken) return;  // stopped meanwhile, or this tab is about to reload as another surveyor
   if (status === 200 && data.off) {
     writeSync(null);
     LS.remove(K_RECOVERY);  // stopped on every device: the recovery code went with it
@@ -6457,18 +6513,24 @@ async function syncNow() {
     return syncSoon(status === 429 ? SYNC_GAP_MS : 30000);
   }
   const now = readSync() || st;  // another tab may have added to it meanwhile
-  const sent = new Set([...sentF.map(k => 'f' + k), ...sentN.map(k => 'n' + k), ...sentM.map(k => 'm' + k)]);
+  // What went, as it was when it went: one that's changed since (a receipt, charted first, a badge's signature) goes again.
+  const sent = new Map([...sentF.map(k => ['f' + k, wentF.get(k)]), ...sentN.map(k => ['n' + k, '']), ...sentM.map(k => ['m' + k, wentM.get(k)])]);
+  const went = (kind, k) => sent.has(kind + k) && sent.get(kind + k) === (kind === 'f' ? asSent(found.get(k)) : kind === 'm' ? JSON.stringify(marks.got[k] || null) : '');
   // The Worker started over (everything was forgotten, then linked again): send it all.
   const fresh = st.epoch && data.epoch !== st.epoch;
-  now.f = fresh ? [...found.keys()] : now.f.filter(k => !sent.has('f' + k));
-  now.n = fresh ? [...novasSeen.keys()] : now.n.filter(k => !sent.has('n' + k));
-  now.m = fresh ? Object.keys(marks.got) : (now.m || []).filter(k => !sent.has('m' + k));
+  now.f = fresh ? [...found.keys()] : now.f.filter(k => !went('f', k));
+  now.n = fresh ? [...novasSeen.keys()] : now.n.filter(k => !went('n', k));
+  now.m = fresh ? Object.keys(marks.got) : (now.m || []).filter(k => !went('m', k));
   now.epoch = data.epoch;
   now.at = data.at;
+  const held = now.fromBackup && now.held;
+  delete now.fromBackup; delete now.held;
   takeSynced(data, now);
+  if (held && !now.settingsAt) now.settingsAt = Date.now();  // the backup had no settings: ours are the newest after all
+  now.initials = myInitials();  // as the linked devices know them, so a change made in another game is seen
   writeSync(now);
   Sync.go('idle');
-  syncSoon(now.f.length || now.n.length || now.m.length ? SYNC_GAP_MS : SYNC_EVERY_MS);
+  syncSoon(now.f.length || now.n.length || now.m.length || held ? SYNC_GAP_MS : SYNC_EVERY_MS);
 }
 // What came from linked devices, taken in as a save from another tab is.
 function takeSynced(data, st) {
@@ -6494,9 +6556,11 @@ function applySettings(c) {
   if ('badge' in c) takeShownBadge(c.badge);
   if ('card' in c) takeCard(c.card);
   tellMe(); renderWho(); invalidate();
-  // Our labels for our guilds, then the guilds themselves, if this device
-  // isn't in the middle of changing them itself. Each keeps the log id this
-  // device learnt for it. An older game sends one guild, not a list.
+  // Our labels for our guilds, then the guilds themselves. Each keeps the log
+  // id this device learnt for it. An older game sends one guild, not a list.
+  // A change of this device's own that's under way (naming, joining, leaving)
+  // carries on from the new list, which it adds to or takes from as it ends,
+  // so the list is taken now whatever the state: one skipped would be lost.
   const list = Array.isArray(c.guilds) ? c.guilds : c.guild === undefined ? null : c.guild ? [c.guild] : [];
   const next = list && guildList(list).map(g => { const had = guildOfCode(g.code); return had && had.lid ? { ...bareGuild(g), lid: had.lid } : bareGuild(g); });
   const codes = next ? next.map(g => g.code) : myGuilds.map(g => g.code);
@@ -6505,13 +6569,42 @@ function applySettings(c) {
     for (const [code, l] of Object.entries(c.labels)) { const t = cleanLabel(l); if (t && codes.includes(code)) labels.set(code, t); }
     saveLabels();
   }
-  if (!next || next.map(g => g.code).join() === myGuilds.map(g => g.code).join() || !Membership.is('in', 'confirming', 'out')) { renderGuild(); renderWho(); return; }
-  saveGuilds(next, true);
-  if (myGuilds.length && Membership.is('out')) Membership.go('in');
-  else if (!myGuilds.length) Membership.go('out');
-  else if (Membership.is('confirming') && !guildOfCode(confirming)) Membership.go('in');  // the one we were asking about went elsewhere
-  else guildMoved('in', 'in');
+  if (!next || next.map(g => g.code).join() === myGuilds.map(g => g.code).join()) { renderGuild(); renderWho(); return; }
+  takeGuilds(next);
 }
+// A list of our guilds from elsewhere (a linked device, or another tab), and
+// what follows from it here.
+function takeGuilds(next, kept = false) {
+  // A guild in it again was joined again elsewhere as us: a leave of it still to send would undo that.
+  if (!kept) keptLeaves(l => l.token !== playerToken || !next.some(g => g.code === l.code));
+  saveGuilds(next, true, kept);
+  if (myGuilds.length && Membership.is('out')) Membership.go('in');
+  else if (!myGuilds.length && Membership.is('in', 'confirming')) Membership.go('out');
+  else if (Membership.is('confirming') && !guildOfCode(confirming)) Membership.go('in');  // the one we were asking about went elsewhere
+  else {
+    // No move: still asking about the same guild, or mid-change. The list has new members to show.
+    if (Who.is('ready')) Who.go('refreshing');
+    renderGuild(); renderWho(); invalidate();
+  }
+}
+// Another tab changed our guilds, our labels for them or who's muted: take
+// them in as they are, so this tab never saves back what it had before.
+window.addEventListener('storage', e => {
+  if (e.key === K_GUILDS || e.key === K_GUILD_LABELS) {
+    const next = guildList(readStored(K_GUILDS, [])).map(g => { const had = guildOfCode(g.code); return had && had.lid && !g.lid ? { ...g, lid: had.lid } : g; });
+    labels.clear();
+    for (const [code, l] of Object.entries(readStored(K_GUILD_LABELS, {}) || {})) { const t = cleanLabel(l); if (t && next.some(g => g.code === code)) labels.set(code, t); }
+    if (next.map(g => g.code).join() !== myGuilds.map(g => g.code).join()) return takeGuilds(next, true);
+    myGuilds = next;
+    renderGuild(); renderWho(); invalidate();
+  } else if (e.key === K_MUTED || e.key === K_MUTED_AS) {
+    muted.clear();
+    for (const p of readList(K_MUTED).slice(-MUTED_MAX)) if (typeof p === 'string' && PID_RE.test(p)) muted.add(p);
+    mutedAs.clear();
+    for (const [p, v] of mutedAsOf(readStored(K_MUTED_AS, {}))) if (muted.has(p)) mutedAs.set(p, v);
+    renderWho(); renderMuted(); invalidate();
+  }
+});
 // A device that was brought back with a recovery code keeps the guilds it was
 // in, joined again as the surveyor it's become, and adds them to the backup's
 // once the first sync has brought those, up to GUILDS_MAX; any that don't fit
@@ -6561,7 +6654,21 @@ window.addEventListener('storage', e => {
   if (on && Sync.is('off')) { Sync.go('idle'); syncSoon(SYNC_GAP_MS); }
   else if (!on && !Sync.is('off')) Sync.go('off');
 });
-if (Sync.is('idle')) syncSoon(1000);
+// Initials are shared with the other games, which can change them while
+// Letterfield isn't open: once seen here, they go to the linked devices as a
+// change of ours, as if signed here.
+if (Sync.is('idle')) {
+  const st = readSync();
+  if (st && 'initials' in st && myInitials() && st.initials !== myInitials()) settingsChanged();
+  syncSoon(1000);
+}
+window.addEventListener('storage', e => {
+  if (e.key !== K_INITIALS) return;
+  const v = myInitials(), st = readSync();
+  if (v) { surveyInput.value = signupInput.value = v; showSigning(false); if (Intro.is('sign')) Intro.go('exploring'); }
+  tellMe();
+  if (st && 'initials' in st && v && st.initials !== v) settingsChanged();
+});
 
 /* ---------- Linking devices ---------- */
 // One surveyor on every device (see "One player, several devices" in
@@ -6673,7 +6780,7 @@ const linkCall = (path, body) => workerCall(`/v1/link${path}`, body);
 // Our guilds go as a list, with the first as `guild` too, for an older game on a linked device.
 const mySettings = () => ({
   initials: myInitials(), guilds: myGuilds.map(bareGuild), guild: myGuilds.length ? bareGuild(myGuilds[0]) : null, labels: Object.fromEntries(labels),
-  muted: [...muted].slice(-MUTED_MAX), mutedAs: Object.fromEntries(mutedAs), emotes: emotesOn, badge: shownBadge(), card: myCard(),
+  muted: [...muted].slice(-MUTED_MAX), mutedAs: Object.fromEntries(mutedAs), emotes: emotesOn, badge: chosenBadge(), card: myCard(),
 });
 // The Worker's guild, link, recovery and player paths: JSON sent as
 // text/plain, so no preflight, as the leaderboards do; with no body, a GET.
@@ -6733,9 +6840,9 @@ async function redeemCode(code) {
   if (Pair.seq !== at) return;
   if (status === 200 && TOKEN_RE.test(data.token)) {
     LS.remove(K_LINK_CODE);  // a code made here was for the self it leaves
-    if (recovering) await takeRecovered(data.token, data.made); else await takeLink(data.token, data.carry || {});
+    const hadCode = recovering ? await takeRecovered(data.token, data.made) : await takeLink(data.token, data.carry || {});
     Pair.go('done');
-    try { sessionStorage.setItem(K_LINKED, recovering ? 'recovered' : 'linked'); } catch (_) {}
+    try { sessionStorage.setItem(K_LINKED, recovering ? 'recovered' : hadCode ? 'linked-code' : 'linked'); } catch (_) {}
     location.reload();
     return;
   }
@@ -6746,6 +6853,16 @@ async function redeemCode(code) {
   if (Intro.is('link')) return Pair.go('failed');
   Pair.go('entering');
   focusQuiet($('#pairInput'));
+}
+// Joining one of this device's guilds as the surveyor it becomes, before its
+// old self leaves: a join that doesn't get through (no network, the Worker
+// down a moment) is tried again, since one lost would lose the guild's code.
+async function joinAs(code, token, initials) {
+  for (let i = 0; ; i++) {
+    const r = await guildCall(`/${code}/join`, { token, initials });
+    if ((r.status && r.status < 500) || i === 2) return r;
+    await new Promise(ok => setTimeout(ok, 1500));
+  }
 }
 // Become the surveyor the code came from. Their guilds come first, then this
 // device's join them, as that surveyor, up to GUILDS_MAX in all, with labels
@@ -6758,7 +6875,7 @@ async function takeLink(token, c) {
   if (token !== old) {
     for (const g of mine) {
       if (!guilds.some(t => t.code === g.code) && guilds.length < GUILDS_MAX && initials) {
-        const { status, data } = await guildCall(`/${g.code}/join`, { token, initials });
+        const { status, data } = await joinAs(g.code, token, initials);
         if (status === 200 && goodGuild(data)) guilds = [...guilds, guildOf(data)];
       }
       await guildCall(`/${g.code}/leave`, { token: old });
@@ -6766,6 +6883,12 @@ async function takeLink(token, c) {
   }
   // Their labels win where both have one; any of this device's for its own guilds stay.
   for (const [k, l] of Object.entries(c.labels && typeof c.labels === 'object' ? c.labels : {})) { const t = cleanLabel(l); if (t) labels.set(k, t); }
+  // A recovery code saved here brings back the self this device leaves, not the one it becomes.
+  const hadCode = token !== old && !!LS.get(K_RECOVERY);
+  if (token !== old) { leaveSignatures(); LS.remove(K_RECOVERY); }
+  // The badge they show and their card are theirs, signed for them: they come along.
+  if ('badge' in c) takeShownBadge(c.badge);
+  if (c.card) takeCard(c.card, true);
   LS.set(K_PLAYER, token);
   if (initials) LS.set(K_INITIALS, JSON.stringify(initials));
   saveGuilds(guilds, true);
@@ -6777,6 +6900,7 @@ async function takeLink(token, c) {
   // From now on the two keep in step, starting with everything here; these
   // settings, mutes from both, are the newest.
   writeSync(syncFromHere(Date.now()));
+  return hadCode;
 }
 // Be the surveyor a recovery code names again. What they had (initials,
 // guilds, mutes, notes) comes back with the first sync, so this device's own
@@ -6789,18 +6913,29 @@ async function takeRecovered(token, made) {
     const kept = [];
     for (const g of myGuilds) {
       if (initials) {
-        const { status, data } = await guildCall(`/${g.code}/join`, { token, initials });
+        const { status, data } = await joinAs(g.code, token, initials);
         if (status === 200 && goodGuild(data)) kept.push(guildOf(data));
       }
       await guildCall(`/${g.code}/leave`, { token: old });
     }
+    leaveSignatures();
     LS.set(K_PLAYER, token);
     saveGuilds(kept, true);
     // Kept aside with this device's labels for them, which the backup's would otherwise replace.
     if (kept.length) LS.set(K_GUILD_MERGE, JSON.stringify(kept.map(g => ({ ...bareGuild(g), label: labelOf(g) }))));
   }
   if (Number.isFinite(made)) LS.set(K_RECOVERY, String(made));
-  writeSync(syncFromHere(0));
+  writeSync({ ...syncFromHere(0), fromBackup: true });
+}
+// Badges' signatures, the badge shown and the card were made for the self
+// this device leaves, and prove nothing for the one it becomes: they go, so
+// the Worker is asked again, and none of them spreads to the other devices.
+function leaveSignatures() {
+  marks = mergeMarks(marks, readMarks());
+  marks.got = Object.fromEntries(Object.entries(marks.got).map(([id, v]) => [id, v.slice(0, 2)]));
+  LS.set(K_MARKS, JSON.stringify(marks));
+  LS.remove(K_BADGE);
+  LS.remove(K_CARD);
 }
 async function makeRecovery() {
   if (!playerToken || !Pair.is('recovery')) return;
@@ -7020,6 +7155,7 @@ if (surveyApi) {
   let linked = '';
   try { linked = sessionStorage.getItem(K_LINKED) || ''; sessionStorage.removeItem(K_LINKED); } catch (_) {}
   if (linked === 'linked') setTimeout(() => toast(`<i></i><b>Linked</b><span>This device plays as ${myInitials() || 'your surveyor'} now, as your other one does</span>`, null, 5000), 600);
+  else if (linked === 'linked-code') setTimeout(() => toast(`<i></i><b>Linked</b><span>This device plays as ${myInitials() || 'your surveyor'} now. The recovery code saved here won’t bring them back: make a new one</span>`, null, 8000), 600);
   else if (linked === 'recovered') setTimeout(() => toast('<i></i><b>Welcome back</b><span>This device is your surveyor again, and your notes are on their way</span>', null, 5000), 600);
   renderPair();
 }
@@ -7525,6 +7661,15 @@ function takeSyncedMarks(list, best) {
    page: it goes in our `me` message, our sector checks the signature, and
    it shows on our caret's hover card and menu. */
 const K_BADGE = 'letterfield.badge.v1';
+// The badge we show, as settings carry it: also one a linked device chose
+// whose achievement hasn't reached this device yet, which it isn't ours to drop.
+function chosenBadge() {
+  try {
+    const b = JSON.parse(LS.get(K_BADGE) || 'null');
+    if (Array.isArray(b) && MARK_BY[b[0]] && goodSig(b[1]) && !marks.got[b[0]]) return [b[0], b[1]];
+  } catch (_) {}
+  return shownBadge();
+}
 // The badge we show, [id, sig], while it's still one of ours with that signature.
 function shownBadge() {
   try {

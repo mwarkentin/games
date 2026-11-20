@@ -18,9 +18,10 @@ from fake_survey import NOW_MS, FakeLinks, FakePlayers, FakeRecovery, player_id,
 from test_letterfield_guilds import CODE as COBALT
 from test_letterfield_guilds import MINE, in_cobalt
 from test_letterfield_linking import OTHER, THEIR_PID, THEIRS, start
-from test_letterfield_survey import SURVEY, open_you
+from test_letterfield_survey import SURVEY, eventually, open_you
 from test_letterfield_surveyors import KIM, TOKEN
 from test_letterfield_sync import noted, words
+from test_letterfield_sync import start as sync_start
 
 CODE = "BCDFGHJKMNPQRSTVWXYZ"  # a code saved earlier, for THEIRS
 
@@ -64,6 +65,29 @@ def test_a_recovery_code_is_shown_once_and_keeps_a_backup(page: Page, site_url, 
     assert page.evaluate("localStorage.getItem('letterfield.recovery.v1')") is None
     page.keyboard.press("Escape")
     expect(page.locator("html")).to_have_attribute("data-pair", "idle")
+    assert errors == []
+
+
+def test_a_device_syncing_already_carries_on_when_it_makes_a_code(page: Page, site_url, errors):
+    """Making a recovery code (or linking a third device) on a device that already synced started its
+    sync over: every find went up again, a batch at a time, and the whole backup came back down."""
+    mine = words(page, site_url, 3)
+    players = FakePlayers(started=[player_id(TOKEN)])
+    links = FakeLinks(players=players)
+    sync_start(page, site_url, players, finds=mine, links=links)
+    page.route(f"{SURVEY}/v1/recovery**", FakeRecovery(players).handle)
+    eventually(page, lambda: len(players.sent()) >= 1)
+    page.wait_for_function("window.__lf.sync() === 'idle'")
+    at = json.loads(page.evaluate("localStorage.getItem('letterfield.sync.v1')"))["at"]
+    assert at > 0
+    open_you(page)
+    card = page.locator("#pairCard")
+    card.get_by_role("button", name="Recovery code").click()
+    card.get_by_role("button", name="Make one").click()
+    expect(page.locator("html")).to_have_attribute("data-pair", "kept")
+    eventually(page, lambda: len(players.sent()) >= 2, timeout_ms=8000)
+    again = players.sent()[1]
+    assert again["since"] == at and again["finds"] == []
     assert errors == []
 
 
@@ -160,6 +184,41 @@ def test_entering_a_recovery_code_brings_the_surveyor_back(page: Page, site_url,
     assert json.loads(page.evaluate("localStorage.getItem('letterfield.sync.v1')"))["on"] is True
     assert page.evaluate("localStorage.getItem('letterfield.recovery.v1')") is not None
     assert errors == [] or all("404" in e for e in errors)
+
+
+def test_a_change_made_before_the_backup_comes_doesnt_replace_it(page: Page, site_url, errors):
+    """A setting changed after entering the code, before the first sync had brought the backup (one
+    that failed, here), counted as newer than the backup, which was then lost for good."""
+    players = FakePlayers(started=[THEIR_PID])
+    settings = {"initials": "ZED", "guild": OTHER, "muted": [KIM[0]], "mutedAs": {}, "emotes": True}
+    players.add(THEIR_PID, settings=settings, settings_at=5)
+    links = FakeLinks(players=players)
+    recovery = FakeRecovery(players, {CODE: THEIRS})
+    start(page, site_url, links, recovery=recovery, initials="QQQ")
+    failed = []
+
+    def flaky(route: Route) -> None:
+        if route.request.url.endswith("/sync") and not failed:
+            failed.append(1)
+            return reply(route, {"error": "down"}, 503)
+        players.handle(route)
+
+    page.route(f"{SURVEY}/v1/player/**", flaky)
+    open_you(page)
+    page.locator("#pairCard").get_by_role("button", name="I have a code").click()
+    page.locator("#pairInput").fill(CODE.lower())
+    page.keyboard.press("Enter")
+    page.wait_for_function(f"window.__lf && window.__lf.pid() === '{THEIR_PID}'", timeout=10_000)
+    expect(page.locator("html")).to_have_attribute("data-sync", "failed", timeout=8000)
+    page.locator("#whoEmotes").evaluate("e => e.click()")  # a change here, before the backup has come
+    page.evaluate("window.__lf.syncNow()")
+    expect(page.locator("#surveyMeName")).to_have_text("ZED", timeout=8000)
+    expect(page.locator("html")).to_have_attribute("data-guild", "in")
+    assert page.evaluate("window.__lf.muted()") == [KIM[0]]
+    page.wait_for_timeout(2500)
+    assert players.players[THEIR_PID]["settings"]["initials"] == "ZED"
+    assert players.players[THEIR_PID]["settings"]["guild"] == OTHER
+    assert errors == [] or all("503" in e or "404" in e for e in errors)
 
 
 def test_a_device_brought_back_keeps_its_guilds_beside_the_backups(page: Page, site_url, errors):
