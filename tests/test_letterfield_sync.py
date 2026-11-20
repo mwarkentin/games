@@ -14,7 +14,7 @@ import re
 from playwright.sync_api import Page, expect
 
 from fake_leaderboard import Held
-from fake_survey import FakeGuilds, FakeLinks, FakePlayers, FakeSurvey, player_id, reply
+from fake_survey import NOW_MS, FakeGuilds, FakeLinks, FakePlayers, FakeSurvey, player_id, receipt, reply
 from test_letterfield_guilds import CODE, CODE2, MINE, WORK, in_both, in_cobalt, stored
 from test_letterfield_guilds import start as start_guilds
 from test_letterfield_survey import SURVEY, eventually, known_words, open_you
@@ -31,12 +31,15 @@ def start(
     finds=(),
     query: str = "",
     links: FakeLinks | None = None,
+    fake: FakeSurvey | None = None,
+    held: Held | None = None,
 ) -> None:
-    """Opens the game with our token and `finds` in the notes, synced through `players` as
-    a link leaves it (every find waiting to go up), or not synced at all."""
-    page.route(f"{SURVEY}/v1/player/**", players.handle)
+    """Opens the game with our token and `finds` in the notes, synced through `players` (or
+    `held`, holding some of its replies) as a link leaves it (every find waiting to go up), or
+    not synced at all."""
+    page.route(f"{SURVEY}/v1/player/**", (held or players).handle)
     page.route(f"{SURVEY}/v1/link**", (links or FakeLinks(players=players)).handle)
-    start_guilds(page, site_url, FakeSurvey(), FakeGuilds())
+    start_guilds(page, site_url, fake or FakeSurvey(), FakeGuilds())
     page.evaluate("finds => localStorage.setItem('letterfield.finds.v4', finds)", json.dumps(list(finds)))
     if synced:
         page.reload()
@@ -351,4 +354,27 @@ def test_a_tab_left_on_the_old_surveyor_starts_again_as_the_new_one(page: Page, 
     assert page.evaluate("localStorage.getItem('letterfield.sync.v1')") is not None
     assert all(b["token"] == new for b in players.sent()[1:])
     other.close()
+    assert errors == []
+
+
+def test_a_receipt_that_comes_while_its_find_is_going_up_goes_up_after(page: Page, site_url, errors):
+    """A find that changed while the sync sending it was out was taken off what's waiting when the
+    reply came, so its receipt (or charted first) never reached the other devices."""
+    mine = words(page, site_url, 1)
+    players = FakePlayers(started=[PID])
+    held = Held(players, lambda r: r.url.endswith("/v1/player/sync"))
+    held.holding = False
+    fake = FakeSurvey(lose="claim")  # its claim goes unanswered, so nothing else changes it
+    start(page, site_url, players, finds=mine, fake=fake, held=held)
+    held.holding = True
+    held.wait_for(page, timeout_ms=10_000)
+    key = page.evaluate("[...window.__lf.found.keys()][0]")
+    signed = receipt(NOW_MS, "f")
+    eventually(page, lambda: "0,0" in fake.sockets)
+    fake.sockets["0,0"].send(json.dumps({"t": "signed", "k": key, "r": signed}))
+    page.wait_for_function("k => window.__lf.found.get(k).r", arg=key)
+    held.release()
+    eventually(
+        page, lambda: any(f.get("r") == signed for f, _ in players.players[PID]["finds"].values()), timeout_ms=8000
+    )
     assert errors == []

@@ -6436,6 +6436,7 @@ function settingsChanged() {
   writeSync(st);
   syncSoon(SYNC_GAP_MS);
 }
+const asSent = e => (e ? JSON.stringify(plain(e)) : '');
 async function syncNow() {
   if (!Sync.is('idle', 'failed') || document.hidden) return;  // a hidden tab syncs when it shows again
   if (LS.get(K_PLAYER) !== playerToken) return;  // another tab became another surveyor: this one reloads as them
@@ -6443,6 +6444,7 @@ async function syncNow() {
   if (!st) return Sync.go('off');
   // Achievements waiting: '*' (from a device syncing since before there were any) means every one.
   const sentF = st.f.slice(0, SYNC_BATCH), sentN = st.n.slice(0, SYNC_BATCH), sentM = st.m.includes('*') ? ['*', ...Object.keys(marks.got)] : st.m.slice(0, 200);
+  const wentF = new Map(sentF.map(k => [k, asSent(found.get(k))])), wentM = new Map(sentM.map(k => [k, JSON.stringify(marks.got[k] || null)]));
   Sync.go('syncing');
   const at = Sync.seq;
   const { status, data } = await workerCall('/v1/player/sync', {
@@ -6464,12 +6466,14 @@ async function syncNow() {
     return syncSoon(status === 429 ? SYNC_GAP_MS : 30000);
   }
   const now = readSync() || st;  // another tab may have added to it meanwhile
-  const sent = new Set([...sentF.map(k => 'f' + k), ...sentN.map(k => 'n' + k), ...sentM.map(k => 'm' + k)]);
+  // What went, as it was when it went: one that's changed since (a receipt, charted first, a badge's signature) goes again.
+  const sent = new Map([...sentF.map(k => ['f' + k, wentF.get(k)]), ...sentN.map(k => ['n' + k, '']), ...sentM.map(k => ['m' + k, wentM.get(k)])]);
+  const went = (kind, k) => sent.has(kind + k) && sent.get(kind + k) === (kind === 'f' ? asSent(found.get(k)) : kind === 'm' ? JSON.stringify(marks.got[k] || null) : '');
   // The Worker started over (everything was forgotten, then linked again): send it all.
   const fresh = st.epoch && data.epoch !== st.epoch;
-  now.f = fresh ? [...found.keys()] : now.f.filter(k => !sent.has('f' + k));
-  now.n = fresh ? [...novasSeen.keys()] : now.n.filter(k => !sent.has('n' + k));
-  now.m = fresh ? Object.keys(marks.got) : (now.m || []).filter(k => !sent.has('m' + k));
+  now.f = fresh ? [...found.keys()] : now.f.filter(k => !went('f', k));
+  now.n = fresh ? [...novasSeen.keys()] : now.n.filter(k => !went('n', k));
+  now.m = fresh ? Object.keys(marks.got) : (now.m || []).filter(k => !went('m', k));
   now.epoch = data.epoch;
   now.at = data.at;
   takeSynced(data, now);
