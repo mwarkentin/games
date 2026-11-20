@@ -2073,18 +2073,23 @@ function restoreOutbox() {
 // its territory from going supernova, and the word list, which leaves out what
 // you've found, gives no way to tell. So each goes as a claim that waited,
 // once the sector is joined and its claims are known; another tab's waiting
-// claims are its own to send. Each goes at most once a visit, and not on a
-// day the survey has said we've charted all we may: turned away, it would
-// only be turned away again. A bonus word too short to count, kept from an
+// claims are its own to send. Each goes at most once a visit (one turned
+// away for the day's limit, once a day), and not on a day the survey has said
+// we've charted all we may: turned away, it would only be turned away again. A bonus word too short to count, kept from an
 // older map, never goes.
+// One refused for the day's limit goes again on a later day, even in a tab
+// that stays open past midnight (UTC): `limited` keeps the day it was refused.
 let limitDay = -1;
+const limited = new Map();
 const utcDay = () => Math.floor(Date.now() / 86400000);
 function claimUnsent(l) {
   if (limitDay === utcDay()) return;
   const elsewhere = new Set(readList(K_OUTBOX).filter(o => Array.isArray(o) && o.length === 5).map(o => keyOf(o[0], o[1], o[2], o[3])));
   for (const e of found.values()) {
     if (e.f || e.b || sectorKey(e.x, e.y) !== l.k || (e.s && e.w.length < STRAY_MIN)) continue;
-    if (claims.has(e.key) || outbox.has(e.key) || outboxEnded.has(e.key) || elsewhere.has(e.key)) continue;
+    const ended = outboxEnded.has(e.key) && !(limited.get(e.key) < utcDay());
+    if (claims.has(e.key) || outbox.has(e.key) || ended || elsewhere.has(e.key)) continue;
+    limited.delete(e.key);
     claimWord(e, 'queued', true);
   }
 }
@@ -2108,6 +2113,7 @@ function flushClaims(l) {
     if (!c.m.is('queued', 'unanswered') || sectorKey(c.e.x, c.e.y) !== l.k) continue;
     if (c.backlog && claims.has(c.e.key)) { c.m.go('theirs'); continue; }  // someone charted it while it waited
     if (c.waited && !myInitials()) continue;  // an old find waits for initials to sign it (see signAs)
+    if (c.backlog && limitDay === utcDay()) continue;  // past the day's limit, it'd only be turned away
     if (l.tokens < 1) { l.flush = setTimeout(() => flushClaims(l), (1 - l.tokens) * CLAIM_REFILL_MS); return; }
     l.tokens -= 1;
     Object.assign(c, { l, initials: myInitials(), known: claims.has(c.e.key) });
@@ -2146,7 +2152,7 @@ function claimRefused(l, c, error) {
     l.tokens = 1 - 60000 / CLAIM_REFILL_MS;  // this sector's claims wait a minute
     return flushClaims(l);
   }
-  if (error === 'daily limit') limitDay = utcDay();
+  if (error === 'daily limit') limited.set(c.e.key, limitDay = utcDay());
   c.m.go('refused');
   const e = error === 'daily limit' && !c.backlog ? found.get(c.e.key) : null;
   if (e) toast(`<i></i><b>${e.w}</b><span>Today’s charting limit reached · kept in your notes</span>`, THEMES[e.th].hue, 0, e);

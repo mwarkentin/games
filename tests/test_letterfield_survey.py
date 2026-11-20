@@ -402,6 +402,7 @@ def test_a_claim_turned_away_as_too_quick_waits_and_goes_again(page: Page, site_
 
 def test_past_the_daily_limit_says_so_and_keeps_the_word(page: Page, site_url, errors):
     words = known_words(page, site_url)
+    page.add_init_script(SIGNED)  # so a word sent again on another day goes signed
     fake = FakeSurvey(refuse="daily limit")
     open_game(page, site_url, fake)
     expect(page.locator("#survey")).to_have_attribute("data-state", "live")
@@ -414,6 +415,34 @@ def test_past_the_daily_limit_says_so_and_keeps_the_word(page: Page, site_url, e
     expect(page.locator("#survey")).to_have_attribute("data-state", "live")
     page.wait_for_timeout(500)
     assert len(fake.sent("claim")) == 1
+    # The next day (UTC), in the same tab, it goes when its sector is next joined: it had stayed
+    # uncharted until a reload.
+    fake.refuse = None
+    page.evaluate("() => { const now = Date.now, ahead = 86_400_000; Date.now = () => now() + ahead; }")
+    page.evaluate(HIDE, True)
+    page.evaluate(HIDE, False)
+    eventually(page, lambda: len(fake.sent("claim")) == 2)
+    assert fake.sent("claim")[1]["w"] == words[0][0]
+    eventually(page, lambda: page.evaluate("window.__lf.found.values().next().value.f") == 1)
+    assert errors == []
+
+
+def test_queued_claims_wait_past_the_daily_limit(page: Page, site_url, errors):
+    """Once the survey said the day's limit was reached, every claim still waiting went anyway, only
+    to be turned away too."""
+    words = known_words(page, site_url)
+    fake = FakeSurvey(refuse="daily limit")
+    open_game(page, site_url, fake)
+    expect(page.locator("#survey")).to_have_attribute("data-state", "live")
+    circle(page, words[0])
+    expect(page.locator("#toast")).to_contain_text("Today’s charting limit reached")
+    page.evaluate(HIDE, True)
+    circle(page, words[1])  # it waits for its sector
+    page.evaluate(HIDE, False)
+    expect(page.locator("#survey")).to_have_attribute("data-state", "live")
+    page.wait_for_timeout(500)
+    assert len(fake.sent("claim")) == 1
+    assert page.evaluate("window.__lf.outbox()") == [[words[1][0], "queued"]]
     assert errors == []
 
 
