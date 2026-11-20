@@ -336,6 +336,10 @@ const CHEER_GAP_MS = 400;
 const DECK_GAP_MS = 1000;
 const TIDY_GAP_MS = 1000;
 const NUDGE_GAP_MS = 3000;
+// Messages that save the room and send everyone its state (hello, and the
+// host's settings): a few at once, then this many a second, per socket.
+const PACE_BURST = 5;
+const PACE_PER_S = 5;
 const NAME = /^[\p{L}\p{N}][\p{L}\p{N} '&.,!?-]{0,15}$/u;
 const TOKEN = /^[A-Za-z0-9-]{16,64}$/;
 // The deck a player's cards are drawn in, one of war.html's DECKS. Rooms only
@@ -428,6 +432,7 @@ export class WarRoom {
     this.decked = new WeakMap();
     this.tidied = new WeakMap();
     this.nudged = new WeakMap();
+    this.paces = new WeakMap();
     this.now = () => Date.now();
     this.random = Math.random;
   }
@@ -662,6 +667,15 @@ export class WarRoom {
     };
   }
 
+  // Whether ws may send another message that saves the room (PACE_BURST).
+  paced(ws) {
+    const now = this.now(), [left, at] = this.paces.get(ws) ?? [PACE_BURST, now];
+    const have = Math.min(PACE_BURST, left + ((now - at) * PACE_PER_S) / 1000);
+    if (have < 1) return false;
+    this.paces.set(ws, [have - 1, now]);
+    return true;
+  }
+
   async webSocketMessage(ws, data) {
     if (typeof data !== 'string' || data.length > MAX_MESSAGE) return;
     let message;
@@ -673,20 +687,20 @@ export class WarRoom {
     const seat = this.seatOf(ws);
     const host = this.isHost(ws);
     switch (message.t) {
-      case 'hello': return this.hello(ws, message);
+      case 'hello': return this.paced(ws) ? this.hello(ws, message) : undefined;
       case 'leave': return this.leave(ws);
       case 'length':
-        if (!host || !Object.hasOwn(WAR.LENGTHS, message.length)) return;
+        if (!host || !Object.hasOwn(WAR.LENGTHS, message.length) || !this.paced(ws)) return;
         room.length = message.length;
         await this.save();
         return this.sendStates();
       case 'slow':
-        if (!host || typeof message.slow !== 'boolean') return;
+        if (!host || typeof message.slow !== 'boolean' || !this.paced(ws)) return;
         room.slow = message.slow;
         await this.save();
         return this.sendStates();
       case 'shuffle':
-        if (!host || typeof message.shuffle !== 'boolean') return;
+        if (!host || typeof message.shuffle !== 'boolean' || !this.paced(ws)) return;
         room.shuffle = message.shuffle;
         await this.save();
         return this.sendStates();
@@ -697,7 +711,7 @@ export class WarRoom {
         this.broadcast({ t: 'gather', seat });
         return this.save();
       case 'bots':
-        if (!host || !Number.isInteger(message.n)) return;
+        if (!host || !Number.isInteger(message.n) || !this.paced(ws)) return;
         return this.setBots(message.n);
       case 'start':
         if (!host) return;
@@ -780,6 +794,9 @@ export class WarRoom {
     if (!name) return this.send(ws, { t: 'error', error: 'Pick a name of up to 16 letters or numbers.' });
     if (!nameIsKind(name)) return this.send(ws, { t: 'error', error: 'Pick a different name, please.' });
     if (typeof message.token !== 'string' || !TOKEN.test(message.token)) return this.send(ws, { t: 'error', error: 'Bad token.' });
+    // One socket is one person: it can't take a second seat with another token.
+    const was = ws.deserializeAttachment()?.token;
+    if (was && was !== message.token) return this.send(ws, { t: 'error', error: 'Bad token.' });
     let player = room.players.find((p) => p.token === message.token);
     if (player && this.is('lobby', 'over')) Object.assign(player, { name, avatar });
     if (player) player.deck = deck;  // only for show, so it can change mid-game
