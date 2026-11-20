@@ -919,8 +919,12 @@ export class Sector {
 
   // The middle of the crowd: the median of where players are looking, which
   // a few people wandering off on their own don't pull away from everyone else.
+  // Each address counts once, where it last moved, so one address's sockets
+  // can't choose the spot.
   crowd() {
-    const here = this.here();
+    const latest = new Map();
+    for (const p of this.here()) { const a = p.address ?? p.id, q = latest.get(a); if (!q || p.moved > q.moved) latest.set(a, p); }
+    const here = [...latest.values()];
     if (!here.length) return null;
     const median = (values) => Math.floor(values.sort((a, b) => a - b)[values.length >> 1]);
     return [median(here.map((p) => p.x)), median(here.map((p) => p.y))];
@@ -1401,9 +1405,12 @@ export class Atlas {
   // crowd that still has room, so the first thing they see is lots of people
   // at work; beside the biggest crowd if every crowd is full; or at the
   // origin (null) while nobody is playing.
+  // A crowd's size here counts each address once, where sectors say (an
+  // older sector doesn't), so one address's sockets don't make the biggest.
   spawn(live) {
     const centre = (r) => [r.sx * SECTOR + SECTOR / 2, r.sy * SECTOR + SECTOR / 2];
-    const open = live.filter((r) => r.players < SPAWN_MAX).sort((a, b) => b.players - a.players);
+    const size = (r) => (r.perAddress?.length ? r.perAddress.length : r.players);
+    const open = live.filter((r) => r.players < SPAWN_MAX).sort((a, b) => size(b) - size(a));
     if (open.length) return open[0].hot ?? centre(open[0]);
     if (!live.length) return null;
     const biggest = live.reduce((a, b) => (b.players > a.players ? b : a));

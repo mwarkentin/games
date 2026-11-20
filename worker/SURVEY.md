@@ -93,7 +93,9 @@ From [Scaling One Million Checkboxes][omcb] and
   or repeated report does no harm. The Atlas writes the charted counts to
   storage at most once a minute.
 - **The world map** is one byte per territory (10 KB), plus players per
-  sector and a starting spot for newcomers. Each Worker instance fetches it
+  sector and a starting spot for newcomers: the middle of the crowd of the
+  most addresses with room, each address counted once there and in where
+  the middle is, so one address's sockets can't choose it. Each Worker instance fetches it
   from the Atlas at most every 5 s, and browsers cache it for 5 s.
 - **Hibernation, and why there are almost no timers.** Sectors use the
   [WebSocket Hibernation API][hib]. Cloudflare bills a Durable Object for

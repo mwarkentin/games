@@ -647,6 +647,19 @@ describe('Sector', () => {
     assert.deepEqual(reports.at(-1).hot, [402, -539]);
   });
 
+  test("reports the middle of the crowd with each address once, so one address's sockets don't choose it", async () => {
+    const reports = [];
+    reportingSector(reports);
+    const at = (address, x, y) => { const ws = fakeSocket(); sector.join(ws, 2, -3, address); clock += 1; return say(ws, { t: 'pos', x, y }); };
+    for (const [i, [x, y]] of [[400, -540], [402, -541], [405, -538]].entries()) await at(hashed(i + 1), x, y);
+    for (let i = 0; i < 10; i++) await at(hashed(9), 560, -400);
+    await settle();
+    clock += REPORT_MS;
+    await at(hashed(1), 400, -540);
+    await settle();
+    assert.deepEqual(reports.at(-1).hot, [405, -538]);  // with the crowd, not the 10 sockets at 560, -400
+  });
+
   test('reports its last change when its players leave', async () => {
     const reports = [];
     reportingSector(reports);
@@ -1136,6 +1149,13 @@ describe('Atlas', () => {
     await report({ sx: -2, sy: 5, players: 81, charted: counts() });
     clock += VIEW_MS;
     assert.deepEqual((await worldMap()).spawn, [-2 * SECTOR + 50, 5 * SECTOR + 60]);
+  });
+
+  test("starts new players with the crowd of the most addresses, not one address's many sockets", async () => {
+    await report({ sx: 3, sy: 3, players: 6, perAddress: Array.from({ length: 6 }, (_, i) => [hashed(i + 10), 1]), charted: counts(), hot: [3 * SECTOR + 7, 3 * SECTOR + 9] });
+    await report({ sx: -2, sy: 5, players: ADDRESS_SOCKETS, perAddress: [[hashed(1), ADDRESS_SOCKETS]], charted: counts(), hot: [-2 * SECTOR + 50, 5 * SECTOR + 60] });
+    clock += VIEW_MS;
+    assert.deepEqual((await worldMap()).spawn, [3 * SECTOR + 7, 3 * SECTOR + 9]);
   });
 
   test('starts new players beside the biggest crowd when every crowd is full', async () => {
