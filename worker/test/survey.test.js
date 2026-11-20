@@ -738,6 +738,41 @@ describe('Sector', () => {
     assert.equal(atlasObject.chartedToday.size, REPORT_BY_MAX + 1);
   });
 
+  test('keeps the words charted since its last report through hibernation, so the daily cap counts them all', async () => {
+    const reports = [];
+    reportingSector(reports);
+    const env = sector.env;
+    const ws = fakeSocket();
+    sector.join(ws, 2, -3, hashed(1));
+    await claim(ws, words[0]);
+    await settle();
+    // (Leaving out the sector's ask about the cap, which carries no words.)
+    const charted = () => reports.filter((r) => r.by.length).map((r) => r.by);
+    assert.deepEqual(charted(), [[[hashed(1), 1]]]);
+    const before = reports.length;
+    // Two more within REPORT_MS wait for a later report; then the sector goes
+    // quiet and hibernates before one goes, the socket still open.
+    clock += 1000;
+    await claim(ws, words[1]);
+    clock += 1000;
+    await claim(ws, words[2]);
+    await settle();
+    assert.equal(reports.length, before);
+    clock += 30000;
+    sector = new Sector(state, env);
+    sector.now = () => clock;
+    await say(ws, { t: 'here' });  // the game's next word that it's still here wakes it
+    await settle();
+    assert.deepEqual(charted(), [[[hashed(1), 1]], [[hashed(1), 2]]]);
+    // Once the Atlas has them they're owed no more, through another wake too.
+    clock += REPORT_MS;
+    sector = new Sector(state, env);
+    sector.now = () => clock;
+    await say(ws, { t: 'here' });
+    await settle();
+    assert.deepEqual(reports.at(-1).by, []);
+  });
+
   test('counts joins without a Turnstile pass in its reports, and keeps the count if a report fails', async () => {
     const reports = [];
     let fail = true;
@@ -776,9 +811,16 @@ describe('Sector', () => {
     await say(player, { t: 'pos', x: 400, y: -500 });
     await settle();
     assert.equal(reports.length, 0);  // that report failed
-    fail = false;
     clock += REPORT_MS;
     await say(player, { t: 'pos', x: 410, y: -500 });
+    await settle();
+    assert.equal(reports.length, 0);  // failed again
+    // Hibernating in between doesn't lose them.
+    sector = new Sector(state, sector.env);
+    sector.now = () => clock;
+    fail = false;
+    clock += REPORT_MS;
+    await say(player, { t: 'pos', x: 415, y: -500 });
     await settle();
     assert.equal(reports.at(-1).unpassed, 2);
     // Nothing new: the report leaves it out.
@@ -1008,10 +1050,11 @@ describe('Atlas', () => {
     await report({ ...base, sx: 0, sy: 0, players: 3, by: [[hashed(1), 40], [hashed(2), 2]] });
     clock += 60000;  // 3 players for a minute
     await report({ ...base, sx: 1, sy: 0, players: 1, by: [[hashed(1), DAILY_CLAIMS - 40]] });
-    clock += 30 * 60000;  // both sectors went quiet, so their players stopped counting as online
+    // Both sectors went quiet: their 4 players count for ONLINE_MS (2 minutes), then stop.
+    clock += 30 * 60000;
     await report({ ...base, sx: 1, sy: 0, players: 0 });
     let map = await worldMap();
-    assert.deepEqual(map.today, { day: TODAY, charted: DAILY_CLAIMS + 2, addresses: 2, capped: 1, playerHours: 0.05, unpassed: 0 });
+    assert.deepEqual(map.today, { day: TODAY, charted: DAILY_CLAIMS + 2, addresses: 2, capped: 1, playerHours: 0.18, unpassed: 0 });
     assert.equal(map.yesterday, null);
 
     clock += DAY;
@@ -1042,9 +1085,9 @@ describe('Atlas', () => {
     await report({ ...base, sx: 0, sy: 0, players: 2 });
     const [hour] = logs('hour');
     assert.equal(hour.hour, new Date(clock - 3600000 - 60000).toISOString());
-    // 310 words in 2 players' minute: a rate no person reaches.
+    // 310 words in 2 players' minute, and the 2 minutes they counted as online for after: a rate no person reaches.
     assert.deepEqual({ ...hour, today: undefined }, {
-      survey: 'hour', hour: hour.hour, charted: DAILY_CLAIMS + 10, playerHours: 0.03, perPlayerHour: 9300, today: undefined,
+      survey: 'hour', hour: hour.hour, charted: DAILY_CLAIMS + 10, playerHours: 0.1, perPlayerHour: 3100, today: undefined,
     });
     assert.equal(hour.today.capped, 1);
   });
@@ -1122,6 +1165,24 @@ describe('Atlas', () => {
     atlasObject.now = () => clock;
     assert.deepEqual((await worldMap()).charted, 7);
     assert.deepEqual((await worldMap()).players, 0);
+  });
+
+  test("writes a sector's count at once when nobody's left there, so an eviction can't lose it", async () => {
+    await report({ sx: 0, sy: 0, players: 2, charted: counts(5) });
+    await report({ sx: 0, sy: 0, players: 0, charted: counts(6) });  // they've finished and gone
+    await report({ sx: 1, sy: 0, players: 1, charted: counts(2) });  // still busy: waits for the minute
+    // Evicted (a deploy) before the minute's write.
+    atlasObject = new Atlas(state, {});
+    atlasObject.now = () => clock;
+    assert.equal((await worldMap()).charted, 6);
+  });
+
+  test("writes a sector's waiting count at once when its last player leaves after reporting it", async () => {
+    await report({ sx: 0, sy: 0, players: 1, charted: counts(6) });  // the last word, reported while they're there
+    await report({ sx: 0, sy: 0, players: 0, charted: counts(6) });  // then they go: nothing new to count
+    atlasObject = new Atlas(state, {});
+    atlasObject.now = () => clock;
+    assert.equal((await worldMap()).charted, 6);
   });
 
   test('draws the world map, one byte per territory', async () => {

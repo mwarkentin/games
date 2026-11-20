@@ -91,7 +91,9 @@ From [Scaling One Million Checkboxes][omcb] and
   reports its charted counts, player count and the middle of its crowd at
   most every 10 s while something is changing. Reports are absolute numbers, so a lost
   or repeated report does no harm. The Atlas writes the charted counts to
-  storage at most once a minute.
+  storage at most once a minute, and a sector's at once when its last
+  player has left (if it changed since it was last written), since nobody there will report again to put it right
+  if the Atlas is evicted (every deploy evicts it) before that minute is up.
 - **The world map** is one byte per territory (10 KB), plus players per
   sector and a starting spot for newcomers: the middle of the crowd of the
   most addresses with room, each address counted once there and in where
@@ -221,6 +223,15 @@ survey also limits each IP address, wherever it plays:
     Atlas only counts an address's words when the sector reports them, so an
     address can chart a few words past 300 before every sector knows. The
     6-a-minute limit keeps that small.
+  - What a report owes the Atlas (each address's words, joins without a
+    pass, and a supernova it hasn't heard of) is kept in the sector's
+    storage too, in `owed`, until the Atlas has it. A sector that hibernates
+    before its next report, its sockets still open, sends it once it wakes.
+    Before this, words charted within 10 s of a report were lost whenever
+    the sector went quiet straight after, so a script that paused after
+    each few words had most of them never counted. It costs a row written
+    per word, and one per address per report. Only sectors in the area,
+    which report, keep it.
   - Worker Previews allow 1,000 a day (`SURVEY_DAILY_CLAIMS` in
     `[previews.vars]`, read by `dailyClaims()`) and 60 claims a minute, so
     a test can chart several whole territories in a day.
@@ -229,7 +240,12 @@ survey also limits each IP address, wherever it plays:
     start again, and every deploy of the Worker evicts it. Saving them would
     cost a row written per active address every minute.
   - Sectors outside the shared world don't report, so words charted there
-    aren't capped. They don't count toward the world's total.
+    aren't capped. They don't count toward the world's total, but their
+    hidden words still go to the log's D1, so there one address is bound
+    only by 6 claims a minute: up to about 8,600 log rows a day (about 1 MB a
+    day with their indexes), against 300 words a day in the shared world.
+    It takes a script that reads the map to do it, and many addresses for a
+    long time to come near D1's size limit.
 - **Sockets: 40 per address in a sector, and 120 new ones a minute per
   address.** A sector counts its own sockets exactly, so a few addresses
   can't fill it and lock everyone else out. A second binding
@@ -1570,11 +1586,14 @@ On Workers Paid, per word charted: up to seven D1 rows written (the log's
 row, an update each to the hour's, the surveyor's and the territory's
 counts, and a row in each of the three indexes; no initials or a stray word
 skips two), and two more for a word charted in a guild (its index and its
-day's count; see "Guilds" under "The log"), one more row written in the sector (its time index), and a
-share of an alarm. A supernova, once per territory (10,000 in the shared
+day's count; see "Guilds" under "The log"), two more rows written in the sector (its time index, and
+what the next report owes the Atlas, in the shared world), and a share of an alarm. A supernova, once per territory (10,000 in the shared
 world), adds two rows written in its sector (the row and marking it sent)
-and two in D1 (the row and its index on time), and reads its territory's
-claims once, about 110 rows: next to the 112 words that made it, nothing.
+and two in D1 (the row and its index on time), and reads the sector's
+claims once, since no index covers a territory's cells: up to its ~1,800
+hidden words and any bonus words, once per territory. A sector also reads
+every claim once when it wakes, to count each territory's. At SQLite's
+price for rows read, both are next to nothing.
 Reading the list costs the supernovas in its range, at most 100 a page,
 plus one count for each. Each busy sector's
 alarm runs at most every 30 s: one Durable Object request and two rows

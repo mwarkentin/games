@@ -811,6 +811,24 @@ describe('Sector copying claims to the log', () => {
     assert.equal(state.alarm, null);
   });
 
+  test("doesn't bring a backed-off retry forward when claims keep coming", async () => {
+    const ws = join();
+    await claim(ws, 0);
+    env.LOG_DB.fail = 'D1 is down';
+    await fire();
+    await fire();
+    const due = state.alarm;
+    assert.equal(due, clock + LOG_MS * 4);
+    await claim(ws, 1);
+    assert.equal(state.alarm, due, 'a claim kept the retry where it was');
+    env.LOG_DB.fail = null;
+    await fire();
+    assert.deepEqual(env.LOG_DB.rows().map((r) => r.w), [word(0).w, word(1).w]);
+    // Once D1 takes them again, claims go within LOG_MS as before.
+    await claim(ws, 2);
+    assert.equal(state.alarm, clock + LOG_MS);
+  });
+
   test('sends claims made before the log existed, a batch at a time, after waking', async () => {
     // A sector from before the log: claims, but nothing marked as logged.
     const old = new Sector(state, {});
@@ -1439,6 +1457,28 @@ describe('supernovas reaching the whole shared world, through the Atlas', () => 
     await look('0,0', ws);
     assert.equal(reports.length, 1);
     assert.equal(reports[0].novas[0][2], at);
+    clock += REPORT_MS;
+    await look('5,5', far);
+    assert.equal(novasTo(far).length, 1);
+  });
+
+  test('a supernova the Atlas hasn\'t heard of yet is kept through hibernation, and sent once', async () => {
+    const far = join('5,5');
+    await look('5,5', far);
+    atlasDown = true;
+    const { ws, at } = await chartLast(1, 2);
+    atlasDown = false;
+    reports.length = 0;
+    // Sector 0,0 hibernates before its next report, and wakes with the next message.
+    clock += REPORT_MS;
+    sectorAt('0,0', true);
+    await look('0,0', ws);
+    assert.deepEqual(reports.map((r) => r.novas?.map((n) => n[2])), [[at]]);
+    clock += REPORT_MS;
+    sectorAt('0,0', true);
+    await look('0,0', ws);
+    assert.equal(reports.length, 2);
+    assert.equal(reports[1].novas, undefined, 'not sent again');
     clock += REPORT_MS;
     await look('5,5', far);
     assert.equal(novasTo(far).length, 1);

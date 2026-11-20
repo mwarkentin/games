@@ -332,6 +332,7 @@ export class Sector {
     this.reportedAt = 0;     // when the Atlas last heard from this sector
     this.reportDue = false;
     this.reporting = false;
+    this.leaveDue = false;   // a forced report (someone left) came while one was out
     this.hot = null;         // [x, y] of the latest claim, for where new players land when nobody's placed
     this.where = null;       // [sx, sy], from the first socket to join or wake it
     this.claimsJson = null;  // every claim as JSON, built on the first join after waking, then kept up to date
@@ -344,6 +345,8 @@ export class Sector {
     this.guildChecks = new WeakMap();  // socket → codes of its guilds whose check is out (checkGuilds): kept in memory, never in an attachment
     this.frames = new WeakMap();  // socket → {tokens, at}: its allowance of messages, in memory only
     this.shownChecked = new WeakMap();  // socket → the badge and card it last sent, and what checking them found
+    // What the next report owes the Atlas, kept in storage too (`owed`, read
+    // below) so a sector that hibernates before reporting still sends it.
     this.chartedBy = new Map();  // address → words it charted here since the last report
     this.unpassed = 0;           // joins without a Turnstile pass since the last report (a bot signal)
     this.overDay = -1;       // the UTC day `over` is for
@@ -389,12 +392,42 @@ export class Sector {
     // The shared world's supernovas this sector has passed on, by the
     // Atlas's count, so one woken from hibernation picks up where it left off.
     this.sql.exec('CREATE TABLE IF NOT EXISTS relayed (id INTEGER PRIMARY KEY CHECK (id = 0), seq INTEGER NOT NULL)');
+    // What the next report owes the Atlas (owe()): 'a' and an address for the
+    // words it charted here, 'u' for joins without a pass, 'n' and a
+    // supernova as JSON. Written as each comes in and taken off once the
+    // Atlas has it, so the daily cap counts every word, even ones charted
+    // just before the sector hibernated.
+    this.sql.exec('CREATE TABLE IF NOT EXISTS owed (k TEXT PRIMARY KEY, n INTEGER NOT NULL) WITHOUT ROWID');
     // Claims from an older map name words that aren't there any more.
     if (onOlderMap(this.sql)) {
       this.sql.exec('DELETE FROM claims');
       this.sql.exec('DELETE FROM logged');
       this.sql.exec('DELETE FROM novas');
     }
+    for (const { k, n } of this.sql.exec('SELECT k, n FROM owed').toArray()) {
+      if (k[0] === 'a') this.chartedBy.set(k.slice(1), n);
+      else if (k === 'u') this.unpassed = n;
+      else if (k[0] === 'n') this.novasOwed.push(JSON.parse(k.slice(1)));
+      this.reportDue = true;
+    }
+  }
+
+  // Something for the next report: in memory, and in storage until the Atlas has it.
+  owe(k, n = 1) {
+    this.sql.exec('INSERT INTO owed (k, n) VALUES (?, ?) ON CONFLICT (k) DO UPDATE SET n = n + excluded.n', k, n);
+  }
+
+  // The Atlas has had a report: what it carried comes off what's owed.
+  paid(by, unpassed, novas) {
+    // One row written either way: the row goes once it's all paid, and is
+    // only lowered when more came in while the report was out.
+    const take = (k, n) => {
+      this.sql.exec('DELETE FROM owed WHERE k = ? AND n <= ?', k, n);
+      this.sql.exec('UPDATE owed SET n = n - ? WHERE k = ? AND n > ?', n, k, n);
+    };
+    for (const [address, n] of by) take(`a${address}`, n);
+    if (unpassed) take('u', unpassed);
+    for (const nova of novas) take(`n${JSON.stringify(nova)}`, 1);
   }
 
   async fetch(request) {
@@ -414,7 +447,11 @@ export class Sector {
     if (request.headers.get('Upgrade') !== 'websocket') return new Response('expected a WebSocket', { status: 426 });
     const [client, server] = Object.values(new WebSocketPair());
     const address = request.headers.get(ADDRESS_HEADER) || null;
-    if (request.headers.get(UNPASSED_HEADER) === '1') { this.unpassed++; this.reportDue = true; }
+    // Only a sector that reports owes the Atlas its joins without a pass:
+    // one outside the shared world would keep the row forever.
+    if (request.headers.get(UNPASSED_HEADER) === '1' && this.env.ATLAS && inArea(Number(m[1]), Number(m[2]))) {
+      this.unpassed++; this.owe('u'); this.reportDue = true;
+    }
     const full = () => this.ctx.getWebSockets().length >= MAX_PLAYERS || (address && this.fromAddress(address) >= ADDRESS_SOCKETS);
     // (The Worker has counted the join against the address's limit already.)
     if (this.world && this.world.players >= MAX_ONLINE) this.turnAway(server, true);
@@ -653,12 +690,12 @@ export class Sector {
         if (nova) {
           this.passOn(nova);
           // And to the Atlas, for every other sector in the shared world.
-          if (this.env.ATLAS && inArea(...this.coords())) this.novasOwed.push(nova);
+          if (this.env.ATLAS && inArea(...this.coords())) { this.novasOwed.push(nova); this.owe(`n${JSON.stringify(nova)}`); }
         }
       }
     }
     this.hot = [c.x, c.y];
-    if (me.address && inArea(...this.coords())) this.chartedBy.set(me.address, (this.chartedBy.get(me.address) ?? 0) + 1);
+    if (me.address && inArea(...this.coords())) { this.chartedBy.set(me.address, (this.chartedBy.get(me.address) ?? 0) + 1); this.owe(`a${me.address}`); }
     this.batch.push(`{"t":"claimed","c":${claimed},"by":${JSON.stringify(me.id)}}`);
     this.sendBatch();
     this.maybeReport();
@@ -709,7 +746,8 @@ export class Sector {
       const oldest = this.sql.exec('SELECT MIN(at) AS at FROM claims WHERE at > ?', this.logMark()).one().at;
       if (oldest !== null) at = Math.min(at, Math.max(this.now() + 1000, oldest + LOG_MS));
     }
-    if (this.logAt && this.logAt <= at) return;
+    // While D1 is failing, a claim doesn't bring the backed-off retry forward.
+    if (this.logAt && (this.logAt <= at || this.logFails)) return;
     this.logAt = at;
     this.ctx.storage.setAlarm(at);
   }
@@ -1002,7 +1040,9 @@ export class Sector {
   async askAtlas() {
     this.askedAt = this.now();
     try {
-      const res = await this.toAtlas({ by: [] }), listed = this.listedIds;
+      // The ids this request lists, read before anything else can go out and change them.
+      const sent = this.toAtlas({ by: [] }), listed = this.listedIds;
+      const res = await sent;
       if (res.ok) { const world = await res.json(); this.heard(world); this.takeTotals(world, listed); }
     } catch { /* claims go ahead */ }
   }
@@ -1070,6 +1110,9 @@ export class Sector {
     if (!this.env.ATLAS || !where || !inArea(...where)) return;
     const since = this.now() - this.reportedAt;
     const owed = this.novasOwed.length > 0 && since >= NOVA_REPORT_MS;
+    // One forced while a report is out (someone left, and the sector may now
+    // go quiet) goes as soon as that report is answered, or has failed.
+    if (this.reporting && force) this.leaveDue = true;
     if (this.reporting || (!force && !owed && since < REPORT_MS)) { this.reportDue = true; return; }
     this.report();
   }
@@ -1096,21 +1139,24 @@ export class Sector {
     this.novasOwed = [];
     let world, listed;
     try {
-      const res = await this.toAtlas({ by: [...by], ...(unpassed ? { unpassed } : {}), ...(novas.length ? { novas } : {}) });
-      listed = this.listedIds;
+      const sent = this.toAtlas({ by: [...by], ...(unpassed ? { unpassed } : {}), ...(novas.length ? { novas } : {}) });
+      listed = this.listedIds;  // as askAtlas: this request's own, before an ask can change them
+      const res = await sent;
       if (!res.ok) throw new Error(`atlas ${res.status}`);
       world = await res.json();
+      this.paid(by, unpassed, novas);
     } catch {
       for (const [address, n] of by) this.chartedBy.set(address, (this.chartedBy.get(address) ?? 0) + n);
       this.unpassed += unpassed;
       this.novasOwed.unshift(...novas);
-      return;  // the totals just go out later
-    } finally {
-      this.reporting = false;
+      this.reportDue = true;  // the totals just go out later, with a later message
+      world = null;
     }
-    this.heard(world);
-    if (this.novasOwed.length) this.maybeReport();  // one that came while this report was out
-    this.takeTotals(world, listed);
+    this.reporting = false;
+    if (world) this.heard(world);
+    if (this.leaveDue) { this.leaveDue = false; this.maybeReport(true); }
+    else if (world && this.novasOwed.length) this.maybeReport();  // one that came while this report was out
+    if (world) this.takeTotals(world, listed);
   }
 }
 
@@ -1153,6 +1199,7 @@ export class Atlas {
     this.yesterday = null;
     this.hour = { at: -1, charted: 0, playerHours: 0 };
     this.sampledAt = 0;
+    this.playersNow = 0;   // players online, as the last report's answer counted them
     // The shared world's latest supernovas, as sectors report them, for every
     // sector to pass on with its next report: {seq, n, at}, numbered in order
     // by the Atlas's clock so a sector's count survives the Atlas being
@@ -1204,13 +1251,19 @@ export class Atlas {
       this.rows.set(key, { sx: r.sx, sy: r.sy, players: r.players, perAddress: r.perAddress ?? [], held: true, charted: r.charted, done, hot, who: r.who ?? [], at: this.now() });
       this.hold(r.perAddress ?? [], 1);
       noteMates(this, key, r.who, this.now());  // who's online in each guild (survey-guild.js)
-      if (!old || old.done !== done) this.save(key);
+      // A sector nobody's in may not report again for days, so its last
+      // count is stored straight away, whether it changed now or in a
+      // report still waiting for the flush: one only in memory would be
+      // lost if the Atlas were evicted (by a deploy, say) before then.
+      if (!old || old.done !== done || (r.players === 0 && this.dirty.has(key))) this.save(key, r.players === 0);
       this.takeNovas(r);
+      const totals = this.totals();
+      this.playersNow = totals.players;  // for tally() at the next report
       // The list of addresses past the cap goes back only when it has
       // changed since this sector last heard it.
       const fresh = r.day === this.day && r.overAt === this.overSeq;
       return json({
-        ...this.totals(), day: this.day, overAt: this.overSeq, ...(fresh ? {} : { over: [...this.overList.keys()].slice(-DAILY_LIST_MAX) }),
+        ...totals, day: this.day, overAt: this.overSeq, ...(fresh ? {} : { over: [...this.overList.keys()].slice(-DAILY_LIST_MAX) }),
         ...(r.tags?.length ? { guilds: matesFor(this, r.tags, this.now(), ONLINE_MS) } : {}),
         ...this.novasFor(r.novaSeq),
       });
@@ -1302,14 +1355,17 @@ export class Atlas {
     return s;
   }
 
-  // On each report: adds up player-hours since the last one (a gap counts
-  // for at most ONLINE_MS, after which nobody counts as online anyway), and
+  // On each report: adds up player-hours since the last one, from the players
+  // online as it began (a gap counts for at most ONLINE_MS, after which
+  // nobody counted then is online any more), and
   // once an hour writes the hour's numbers to the log.
   tally() {
     const now = this.now();
     this.rollDay();
     if (this.sampledAt) {
-      const hours = this.totals().players * Math.min(now - this.sampledAt, ONLINE_MS) / HOUR_MS;
+      // Players online since the last report, as its answer counted them:
+      // counting again here would walk every surveyor online a second time.
+      const hours = this.playersNow * Math.min(now - this.sampledAt, ONLINE_MS) / HOUR_MS;
       this.stats.playerHours += hours;
       this.hour.playerHours += hours;
     }
@@ -1330,22 +1386,27 @@ export class Atlas {
 
   // Charted counts only change storage once a minute per sector at most:
   // writing every report would cost a row written per busy sector every
-  // REPORT_MS, and players online don't need storing at all.
-  save(key) {
+  // REPORT_MS, and players online don't need storing at all. A sector's
+  // last report as it empties is written at once (`now`), since nothing
+  // there will report again to put it right if this one is lost.
+  save(key, now = false) {
+    if (now) { this.dirty.delete(key); return this.write(key); }
     this.dirty.add(key);
     this.saveTimer ??= setTimeout(() => this.flush(), SAVE_MS);
   }
 
   flush() {
     this.saveTimer = null;
-    for (const key of this.dirty) {
-      const r = this.rows.get(key);
-      this.sql.exec(
-        'INSERT INTO sectors (sx, sy, charted, done) VALUES (?, ?, ?, ?) ON CONFLICT (sx, sy) DO UPDATE SET charted = excluded.charted, done = excluded.done',
-        r.sx, r.sy, r.charted.join(','), r.done,
-      );
-    }
+    for (const key of this.dirty) this.write(key);
     this.dirty.clear();
+  }
+
+  write(key) {
+    const r = this.rows.get(key);
+    this.sql.exec(
+      'INSERT INTO sectors (sx, sy, charted, done) VALUES (?, ?, ?, ?) ON CONFLICT (sx, sy) DO UPDATE SET charted = excluded.charted, done = excluded.done',
+      r.sx, r.sy, r.charted.join(','), r.done,
+    );
   }
 
   totals() {
