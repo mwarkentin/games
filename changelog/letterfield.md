@@ -1,5 +1,6 @@
 ## 2026-11-20
 
+- On a computer or tablet, the tools open as a drawer in the field notes' place, like the Surveyors. Moving between tools, Surveyors and field notes no longer slides the map and buttons from side to side, and closing the tools brings your notes back. The drawer also lists every keyboard shortcut, and T opens it. On a phone the tools still drop down from their button.
 - Turned sideways on a phone, the title and buttons sit on a solid bar again, so the map's letters no longer show around and between them.
 - On a computer, the tools and Surveyors buttons stay solid under the pointer, so the map no longer shows through them.
 - The count of surveyors online on the Surveyors button no longer comes and goes: it never counts you (on any of your devices), and a moment's gap between updates doesn't hide it.
