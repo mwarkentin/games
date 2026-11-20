@@ -1766,7 +1766,9 @@ about 30 cents over the included million requests.
   measured protobuf + zstd at about 30 times smaller than uncompressed JSON.
 - **Edge caching.** The world map is cached per Worker instance. On a
   custom domain, Cloudflare's cache could serve it as chessboards did.
-- **Zoomed-out views** only show live claims from the four nearest sectors.
+- **Zoomed-out views** only show live claims from the four nearest sectors
+  (after the nearest, a sector in view with a word of yours waiting to be
+  claimed comes first, so the word isn't left waiting).
   A cached per-sector snapshot could fill in the rest of the screen.
 - **The log, live, beyond the hour.** The running hour reloads every 20
   seconds; a running day, week or longer shows what it had when opened. It

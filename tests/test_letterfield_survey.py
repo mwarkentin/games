@@ -1592,6 +1592,24 @@ def test_a_claim_whose_answer_was_lost_with_its_socket_is_still_credited(page: P
     assert errors == []
 
 
+def test_a_word_circled_in_a_sector_in_view_but_not_joined_joins_it(page: Page, site_url, errors):
+    """Zoomed out on a wide screen, six sectors can show but only the four nearest are joined: a
+    word circled in another waited, unclaimed, until a pan brought its sector nearer, and someone
+    else could chart it meanwhile."""
+    page.add_init_script("localStorage.setItem('letterfield.cam.v1', JSON.stringify({ x: 90, y: 0, cs: 9 }))")
+    fake = FakeSurvey()
+    open_game(page, site_url, fake, viewport={"width": 2560, "height": 1080})
+    expect(page.locator("#survey")).to_have_attribute("data-state", "live")
+    eventually(page, lambda: len(fake.sectors) == 4)
+    assert "1,0" not in fake.sectors  # in view, at the right, but furthest
+    word = page.evaluate("(o => [o.w, o.x, o.y, o.d])(window.__lf.chunk(16, 0).words[0])")
+    circle(page, word)
+    eventually(page, lambda: "1,0" in fake.sectors)
+    eventually(page, lambda: [m["w"] for m in fake.sent("claim")] == [word[0]])
+    assert fake.sent("claim")[0]["sector"] == "1,0"
+    assert errors == []
+
+
 def test_a_claim_never_answered_rejoins_its_sector_and_goes_again(page: Page, site_url, errors):
     """With no check that a socket still worked, one that died without closing (the network gone
     with no word to the browser) kept its claims waiting for answers that never came, and still

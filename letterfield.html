@@ -1798,12 +1798,20 @@ function passRefused(used) {
   else Pass.go('none');
 }
 
+// Zoomed far out on a wide screen more can show than are joined, so after the
+// nearest, ones with a word of ours waiting to be claimed come first: left
+// waiting, someone else could chart it meanwhile.
 function sectorsInView() {
   const cs = cam.cs, hw = (W - dock) / 2 / cs, hh = H / 2 / cs, out = [];
   for (let sy = fdiv(Math.floor(cam.y - hh), SECTOR); sy <= fdiv(Math.floor(cam.y + hh), SECTOR); sy++)
     for (let sx = fdiv(Math.floor(cam.x - hw), SECTOR); sx <= fdiv(Math.floor(cam.x + hw), SECTOR); sx++)
       out.push({ sx, sy, dist: Math.hypot((sx + .5) * SECTOR - cam.x, (sy + .5) * SECTOR - cam.y) });
-  return out.sort((a, b) => a.dist - b.dist).slice(0, SECTOR_LINKS);
+  out.sort((a, b) => a.dist - b.dist);
+  if (out.length <= SECTOR_LINKS) return out;
+  const waiting = new Set();
+  for (const c of outbox.values()) if (c.m.is('queued', 'unanswered')) waiting.add(sectorKey(c.e.x, c.e.y));
+  const waits = o => waiting.has(o.sx + ',' + o.sy) ? 1 : 0, [near, ...rest] = out;
+  return [near, ...rest.sort((a, b) => waits(b) - waits(a) || a.dist - b.dist)].slice(0, SECTOR_LINKS);
 }
 // Joins the sectors in view and leaves ones that have been out of view a few
 // seconds. Mid-flight it joins nothing, rather than every sector on the way.
@@ -2047,6 +2055,7 @@ function claimWord(e, from = 'queued', waited = from !== 'queued') {
   outbox.set(e.key, c);
   saveOutbox();
   if (l && !waited) flushClaims(l);
+  else if (!l && !waited) syncSurvey();  // its sector may be in view but not joined (see sectorsInView)
 }
 // Claims still out, kept in storage so a reload doesn't lose them, as [w, x,
 // y, d, 1 if it may have reached its sector]: read back once the survey
