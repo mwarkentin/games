@@ -228,13 +228,11 @@ survey also limits each IP address, wherever it plays:
     aren't capped. They don't count toward the world's total.
 - **Sockets: 40 per address in a sector, and 120 new ones a minute per
   address.** A sector counts its own sockets exactly, so a few addresses
-  can't fill it and lock everyone else out. It counts again once the binding
-  below has answered, since other joins can come in while it does: a burst
-  of joins from one address, or everyone reconnecting after a deploy, still
-  stops at the caps. A second binding
+  can't fill it and lock everyone else out. A second binding
   (`SURVEY_JOINS`) counts sockets opened anywhere. A player roaming the map
-  opens about 10 an hour. Either limit is answered with `full`, and the
-  game tries again in a minute or so.
+  opens about 10 an hour. The Worker asks it before forwarding a join, so a
+  join it refuses never wakes (or makes) a sector. Either limit is answered
+  with `full`, and the game tries again in a minute or so.
 - **Why a binding and not a Durable Object per address.** The binding keeps
   its counts in each Cloudflare location, in memory, and answers without
   waiting for other locations to agree. So it's approximate: counts are per

@@ -488,23 +488,8 @@ describe('Sector', () => {
     assert.equal((await openFrom('aaaa')).sent[0].t, 'full');
   });
 
-  test('turns an address away when it opens sockets too fast, and lets everyone in if the limiter fails', async () => {
-    const joins = fakeLimiter(2);
-    sector = new Sector(state, { SURVEY_JOINS: joins });
-    assert.equal((await openFrom('aaaa')).sent[0].t, 'hello');
-    assert.equal((await openFrom('aaaa')).sent[0].t, 'hello');
-    assert.deepEqual((await openFrom('aaaa')).sent, [{ t: 'full', world: false }]);
-    assert.equal((await openFrom('bbbb')).sent[0].t, 'hello');
-    assert.deepEqual([...joins.counts], [['aaaa', 3], ['bbbb', 1]]);
-
-    sector = new Sector(state, { SURVEY_JOINS: { limit: async () => { throw new Error('limiter down'); } } });
-    assert.equal((await openFrom('aaaa')).sent[0].t, 'hello');
-  });
-
-  test('counts sockets again once the limiter answers, so joins arriving together still stop at the cap', async () => {
-    // A limiter that says yes after a moment, as a call out of the object does:
-    // other joins come in while it answers.
-    sector = new Sector(state, { SURVEY_JOINS: { limit: () => new Promise((resolve) => setImmediate(() => resolve({ success: true }))) } });
+  test('stops joins arriving together at the cap', async () => {
+    sector = new Sector(state, {});
     const servers = [];
     globalThis.WebSocketPair = function WebSocketPair() { const pair = [fakeSocket(), fakeSocket()]; servers.push(pair[1]); return { 0: pair[0], 1: pair[1] }; };
     const RealResponse = Response;
@@ -1250,6 +1235,32 @@ describe('routeSurvey', () => {
     assert.notEqual(await addressFor('2001:db8:aa:bc::9'), v6);
     env.IP_SALT = 'pepper';
     try { assert.notEqual(await addressFor('203.0.113.7'), a); } finally { delete env.IP_SALT; }
+  });
+
+  test('turns an address away when it opens sockets too fast, before waking its sector, and lets everyone in if the limiter fails', async () => {
+    const counts = new Map();
+    const limited = { ...env, SURVEY_JOINS: { limit: async ({ key }) => { counts.set(key, (counts.get(key) ?? 0) + 1); return { success: counts.get(key) <= 2 }; } } };
+    const from = (ip, e = limited) => routeSurvey(new Request('https://survey.test/v1/survey/5/5', { headers: { Origin: ORIGIN, Upgrade: 'websocket', 'CF-Connecting-IP': ip } }), e);
+    forwarded.length = 0;
+    await from('203.0.113.7');
+    await from('203.0.113.7');
+    let server;
+    globalThis.WebSocketPair = function WebSocketPair() {
+      const socket = () => ({ sent: [], accept() {}, send(t) { this.sent.push(JSON.parse(t)); }, close(code) { this.code = code; } });
+      const pair = [socket(), socket()];
+      server = pair[1];
+      return { 0: pair[0], 1: pair[1] };
+    };
+    const RealResponse = Response;
+    globalThis.Response = class { constructor(body, init) { Object.assign(this, init); } };
+    try { await from('203.0.113.7'); } finally { globalThis.Response = RealResponse; delete globalThis.WebSocketPair; }
+    assert.deepEqual(server.sent, [{ t: 'full', world: false }]);
+    assert.equal(server.code, 4000);
+    assert.equal(forwarded.length, 2);  // the sector never heard of the third
+    await from('203.0.113.8');  // someone else still gets in
+    assert.equal(forwarded.length, 3);
+    await from('203.0.113.7', { ...env, SURVEY_JOINS: { limit: async () => { throw new Error('limiter down'); } } });
+    assert.equal(forwarded.length, 4);
   });
 
   test('turns away other origins and plain requests', async () => {

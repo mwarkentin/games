@@ -245,6 +245,9 @@ export function routeSurvey(request, env) {
     const address = await addressHash(request, env);
     const unpassed = !!env.TURNSTILE_SECRET && !(await checkPass(env.TURNSTILE_SECRET, address, url.searchParams.get('pass')));
     if (unpassed && turnstileRequired(env)) return unverified();
+    // Joins per address are counted here, before the sector is woken (or
+    // made): a join the limiter refuses costs no Durable Object at all.
+    if (!(await underLimit(env.SURVEY_JOINS, address))) return refused('full', { world: false }, 4000, 'too many joins');
     // The pass stays here: the sector only needs the path, the address and
     // whether the join had a pass. The Worker sets both headers itself, so a
     // player can't choose either.
@@ -262,14 +265,17 @@ export function routeSurvey(request, env) {
 // refused.
 export const turnstileRequired = (env) => env.TURNSTILE_REQUIRED === true || env.TURNSTILE_REQUIRED === 'true';
 
-// A join without a good pass, while passes are required, is answered by the Worker itself, without waking
+// A join without a good pass, while passes are required, or past its
+// address's limit on joins, is answered by the Worker itself, without waking
 // the sector, and in words the game can read: a browser learns nothing from a
 // refused WebSocket upgrade.
-function unverified() {
+const unverified = () => refused('unverified', {}, 4001, 'survey pass needed');
+
+function refused(t, frame, code, reason) {
   const [client, server] = Object.values(new WebSocketPair());
   server.accept();
-  send(server, { t: 'unverified' });
-  server.close(4001, 'survey pass needed');
+  send(server, { t, ...frame });
+  server.close(code, reason);
   return new Response(null, { status: 101, webSocket: client });
 }
 
@@ -403,10 +409,9 @@ export class Sector {
     const address = request.headers.get(ADDRESS_HEADER) || null;
     if (request.headers.get(UNPASSED_HEADER) === '1') { this.unpassed++; this.reportDue = true; }
     const full = () => this.ctx.getWebSockets().length >= MAX_PLAYERS || (address && this.fromAddress(address) >= ADDRESS_SOCKETS);
+    // (The Worker has counted the join against the address's limit already.)
     if (this.world && this.world.players >= MAX_ONLINE) this.turnAway(server, true);
-    // The limiter answers from outside this object, so others may have joined
-    // while it did: the counts are checked again after it.
-    else if (full() || !(await underLimit(this.env.SURVEY_JOINS, address)) || full()) this.turnAway(server, false);
+    else if (full()) this.turnAway(server, false);
     else this.join(server, Number(m[1]), Number(m[2]), address);
     return new Response(null, { status: 101, webSocket: client });
   }
