@@ -335,3 +335,55 @@ def test_a_long_survey_opens_its_notes_at_once_and_draws_more_as_it_scrolls(page
     assert 200 <= page.locator("#finds li.nova-row").count() <= 400
     expect(page.locator("#finds li.row:not(.nova-row)")).to_have_count(0)
     assert errors == []
+
+
+def test_notes_scrolled_deep_draw_a_page_again_once_closed_or_back_at_the_top(page: Page, site_url, errors):
+    without_worker(page, site_url, "letterfield")
+    page.set_viewport_size({"width": 1280, "height": 900})
+    page.goto(f"{site_url}/letterfield#debug")
+    page.wait_for_function("window.__lf")
+    # 2,000 finds in visits of 25 words to 80 territories.
+    page.evaluate("""() => {
+      const lf = window.__lf, finds = [], start = Date.now() - 40 * 86400000;
+      const words = (rx, ry) => { const out = []; for (let cy = 0; cy < 4; cy++) for (let cx = 0; cx < 4; cx++) out.push(...lf.chunk(rx * 4 + cx, ry * 4 + cy).words); return out; };
+      let t = start;
+      for (let r = 0; r < 80; r++) {
+        const rx = r % 10 - 5, ry = Math.floor(r / 10) - 4;
+        for (const w of words(rx, ry).slice(0, 25)) { t += 15000; finds.push({ w: w.w, x: w.x, y: w.y, d: w.d, t, s: 0 }); }
+        t += 9000000;
+      }
+      localStorage.setItem('letterfield.finds.v4', JSON.stringify(finds));
+      localStorage.setItem('letterfield.notes.v1', '0');
+      localStorage.setItem('letterfield.coach.v1', '1');
+    }""")
+    page.reload()
+    page.wait_for_function("window.__lf && window.__lf.found.size === 2000")
+    rows = page.locator("#finds li.row")
+
+    def scroll_to_the_end():
+        while page.locator("#finds .finds-more").count():
+            n = rows.count()
+            page.evaluate(
+                "document.getElementById('notes').scrollTop = document.getElementById('finds').scrollTop = 1e9"
+            )
+            page.wait_for_function(f"document.querySelectorAll('#finds li.row').length > {n}")
+        assert rows.count() == 2000
+
+    open_notes(page)
+    assert rows.count() <= 400
+    scroll_to_the_end()
+    # Shut and opened again, the notes start a page long, not with every row scrolled through.
+    page.click("#notesToggle")
+    expect(page.locator("html")).not_to_have_attribute("data-panel", "notes")
+    open_notes(page)
+    assert rows.count() <= 400, rows.count()
+    # Scrolled deep, then back to the top, the next redraw (a find here) draws a page too.
+    scroll_to_the_end()
+    page.evaluate("document.getElementById('notes').scrollTop = document.getElementById('finds').scrollTop = 0")
+    page.evaluate(
+        """() => { const lf = window.__lf, w = lf.chunk(40, 40).words[0]; lf.collect(w.w, w.x, w.y, w.d); }"""
+    )
+    page.wait_for_function("window.__lf.found.size === 2001")
+    expect(page.locator("#finds li.row").first).to_be_visible()
+    assert rows.count() <= 401, rows.count()
+    assert errors == []

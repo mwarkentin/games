@@ -4876,6 +4876,7 @@ function panelMoved(to, from, { focus = false, refocus = false, start = false } 
   applyDock(start);
   if (from === 'people') { listScroll = 0; if (PeoplePage.is('you')) PeoplePage.go('list'); }  // it opens on the list again
   if (from === 'notes' && NotesPage.is('marks')) NotesPage.go('finds');  // and the notes on the finds
+  if (from === 'notes') { notesShown = NOTES_PAGE; notesEl.scrollTop = findsEl.scrollTop = 0; }  // at their start, a page long
   if (notesOpen) { renderNotes(); refreshWorld(); }
   // Opened from their button, focus moves into the tools; shut from in there, it comes back to the button.
   if (toolsOpen && focus) focusQuiet($('#zoomOut'));
@@ -5027,7 +5028,11 @@ function renderNotes({ top = false } = {}) {
       : novas.length ? '<li class="finds-empty"><strong>No words yet</strong>Circle a word on the map and it lands here, among the supernovas you’ve seen, with its territory and the bearing it reads in.</li>'
       : '<li class="finds-empty"><strong>No words yet</strong>Circle a word on the map and it lands here with its territory and the bearing it reads in. Tap an entry later to fly straight back to it.</li>';
   }
-  if (top) notesShown = NOTES_PAGE;
+  // Kept in view: the first entry showing, where it was, once the list is
+  // scrolled into; at its top, something new should show at the top.
+  const sc = notesScroller(), viewTop = sc === notesEl ? Math.max(sc.getBoundingClientRect().top, filtersEl.getBoundingClientRect().bottom) : sc.getBoundingClientRect().top;
+  const into = sc === notesEl ? findsEl.getBoundingClientRect().top < viewTop - 1 : sc.scrollTop > 0;
+  if (top || !into) notesShown = NOTES_PAGE;  // at the top, a page is all that shows: scrolling draws the rest again
   notesAt = pageEnd(notesLine, 0, Math.max(NOTES_PAGE, notesShown), now);
   html += timelineHtml(notesLine, 0, notesAt, now, st);
   if (st.open === true) html += '</ol></li>';
@@ -5035,10 +5040,6 @@ function renderNotes({ top = false } = {}) {
   if (notesAt < notesLine.length) html += MORE;
   novaFresh = '';
   if (html === notesDrawn) return;
-  // Kept in view: the first entry showing, where it was, once the list is
-  // scrolled into; at its top, something new should show at the top.
-  const sc = notesScroller(), viewTop = sc === notesEl ? Math.max(sc.getBoundingClientRect().top, filtersEl.getBoundingClientRect().bottom) : sc.getBoundingClientRect().top;
-  const into = sc === notesEl ? findsEl.getBoundingClientRect().top < viewTop - 1 : sc.scrollTop > 0;
   let anchor = null;
   if (!top && into) {
     for (const a of findsEl.querySelectorAll('a.find')) {
