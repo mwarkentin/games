@@ -952,7 +952,9 @@ export class Sector {
   async askAtlas() {
     this.askedAt = this.now();
     try {
-      const res = await this.toAtlas({ by: [] }), listed = this.listedIds;
+      // The ids this request lists, read before anything else can go out and change them.
+      const sent = this.toAtlas({ by: [] }), listed = this.listedIds;
+      const res = await sent;
       if (res.ok) { const world = await res.json(); this.heard(world); this.takeTotals(world, listed); }
     } catch { /* claims go ahead */ }
   }
@@ -1028,8 +1030,9 @@ export class Sector {
     this.novasOwed = [];
     let world, listed;
     try {
-      const res = await this.toAtlas({ by: [...by], ...(unpassed ? { unpassed } : {}), ...(novas.length ? { novas } : {}) });
-      listed = this.listedIds;
+      const sent = this.toAtlas({ by: [...by], ...(unpassed ? { unpassed } : {}), ...(novas.length ? { novas } : {}) });
+      listed = this.listedIds;  // as askAtlas: this request's own, before an ask can change them
+      const res = await sent;
       if (!res.ok) throw new Error(`atlas ${res.status}`);
       world = await res.json();
     } catch {

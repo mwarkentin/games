@@ -517,6 +517,29 @@ describe('who counts as online', () => {
     assert.deepEqual((await w.player(0, 0, { id: 3 })).ws.last('world'), { t: 'world', charted: 0, total: AREA_WORDS, players: 1 });
   });
 
+  test("each answer from the Atlas is paired with the ids its own request listed, when an ask and a report are out together", async () => {
+    // The Atlas's answers wait until the test lets them go, in the order it chooses.
+    const atlas = w.env.ATLAS.get(), held = [];
+    w.env.ATLAS = { idFromName: (name) => name, get: () => ({ fetch: (url, init) => new Promise((resolve) => held.push(() => resolve(atlas.fetch(url, init)))) }) };
+    // A report goes out listing nobody: a has said who they are but not where.
+    const a = await w.player(0, 0, { id: 1, address: 'a'.repeat(64) });
+    assert.equal(held.length, 1);
+    // b arrives and is listed; a's claim then asks the Atlas about the cap, listing b.
+    const b = await w.player(0, 0, { id: 2, x: 5, y: 5 });
+    const claimed = a.say({ t: 'claim', w: 'ZZZ', x: 1, y: 1, d: 0 });
+    await settle();
+    assert.equal(held.length, 2);
+    // The report's answer comes first. It doesn't count b, so b isn't told it does.
+    held[0]();
+    await settle();
+    await settle();
+    assert.deepEqual(b.ws.last('world'), { t: 'world', charted: 0, total: AREA_WORDS, players: 0 });
+    held[1]();
+    await claimed;
+    await settle();
+    assert.deepEqual(b.ws.last('world'), { t: 'world', charted: 0, total: AREA_WORDS, players: 1, you: 1 });
+  });
+
   test('a surveyor sitting still stays counted, through their game saying it is here', async () => {
     const idle = await w.player(0, 0, { id: 1, x: 5, y: 5 });
     await w.tick(idle, REPORT_MS);
