@@ -7,9 +7,10 @@ rewrites, in every text file:
 
 - the live site's address (link previews, the sitemap, the game list's
   links) to the preview's own, so moving around the preview stays on it;
-- the leaderboard Worker's address (LEADERBOARD_URL, ROOMS_URL and the
-  survey log's SURVEY_URL in the games) to the pull request's Worker
-  Preview, when it has one. Without --worker the pages keep production's
+- the leaderboard Worker's address (LEADERBOARD_URL, ROOMS_URL, and
+  Letterfield's SURVEY_URL and DEFINE_URL in the games) to the pull
+  request's Worker Preview (--worker), which the workflow always makes.
+  Without --worker (a build tried by hand, say) the pages keep production's
   Worker, which answers only the live site's origin, so a preview can never
   write to production's scores or rooms;
 - the share Worker's address (Letterfield's SHARE_URL) to the pull

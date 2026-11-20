@@ -53,8 +53,8 @@ utilities; games live here so they get their own origin and their own rules.
   which also runs War's multiplayer rooms and Letterfield's shared survey as
   Durable Objects (see `worker/SURVEY.md`, and `worker/TURNSTILE.md` for its
   optional bot check). It deploys through its own
-  workflow and is never part of the site. A pull request that changes it
-  gets a Worker Preview of its own (see Previews below, and in
+  workflow and is never part of the site. Every pull request gets a Worker
+  Preview of it, built from its branch (see Previews below, and in
   `worker/README.md`).
 - `share/`: the `games-share` Worker, which draws link-preview cards for
   shared Letterfield finds (see Share cards). It deploys through its own
@@ -437,30 +437,29 @@ kept up to date), and deletes it when the pull request closes.
   request and commit, linked to the pull request; games get none, but
   every page's `<title>` starts with "PR <number> · ", so a game's tab
   says it's a preview too.
-- **The Worker:** a pull request whose branch changes `worker/` (or
-  `preview.yml`) from `main`'s also gets a Worker Preview of the leaderboard Worker, made first, and
-  `point_preview.py` points the games' `LEADERBOARD_URL`, `ROOMS_URL` and the
-  survey log's `SURVEY_URL` at it, so the preview's War rooms, leaderboards
-  and survey log run against the pull request's own Worker. That Preview
-  also allows the site preview's origin in `ALLOWED_ORIGINS`, passed with
-  `--var` for that Preview only; `wrangler.toml` doesn't change.
-  Letterfield's survey still needs `?survey=`, which the comment links to.
-  It's `main` it compares against, not the pull request's base, so one
-  stacked on another pull request's branch gets a Worker Preview of its own
-  when that branch changes the Worker, built from everything it carries.
-  To try pages that need the Worker without changing it, such as
-  Letterfield's log, label the pull request `worker-preview`: adding the
-  label makes the previews again, with a Worker Preview.
-- **Without one,** the preview keeps production's Worker, which only answers
-  the live site's origin: leaderboards say they can't be reached and War's
-  rooms can't start, and a preview can never write to production. Solo play
-  is unaffected.
+- **The Worker:** every pull request also gets a Worker Preview of the
+  leaderboard Worker, built from its branch and made first, at
+  `https://pr-<number>-games-leaderboard.mwarkentin.workers.dev`, and
+  `point_preview.py --worker` points every address of the Worker in the games
+  at it (`LEADERBOARD_URL`, `ROOMS_URL`, and Letterfield's `SURVEY_URL` and
+  `DEFINE_URL`), so the preview's leaderboards, War's rooms and Letterfield's
+  survey, log and definitions run against the pull request's own Worker.
+  That Preview also allows the site preview's origin in `ALLOWED_ORIGINS`,
+  passed with `--var` for that Preview only; `wrangler.toml` doesn't change.
+  Production's Worker only answers the live site, so a preview never points
+  at it: if the Worker Preview can't be made, the site preview isn't either.
+  Worker Previews take turns only when their branch brings database
+  migrations, which go on the Previews' shared databases (see Previews in
+  `worker/README.md`); every other pull request's is made at once.
 - **The share Worker:** a pull request whose branch changes `share/` or
-  `worker/src/` (whose code it bundles), or `preview.yml`, from `main`'s gets
-  a Worker Preview of `games-share` too, at
-  `https://pr-<number>-games-share.mwarkentin.workers.dev`, made alongside
-  the leaderboard's, and `point_preview.py --share` points Letterfield's
-  `SHARE_URL` at it. Its `SITE_URL` is the site preview, passed with
+  `worker/src/` (whose code it bundles), or `preview.yml`, from `main`'s, or
+  that's labelled `worker-preview`, gets a Worker Preview of `games-share`
+  too, at `https://pr-<number>-games-share.mwarkentin.workers.dev`, made
+  alongside the leaderboard's, and `point_preview.py --share` points
+  Letterfield's `SHARE_URL` at it. It's `main` it compares against, not the
+  pull request's base, so one stacked on another pull request's branch gets
+  one when that branch changes the share Worker. Adding the label makes the
+  previews again, with a share Preview. Its `SITE_URL` is the site preview, passed with
   `--var`, so its pages send people back there; its other bindings are
   `[previews]` in `share/wrangler.toml` (the previews' R2 bucket and rate
   limit, no survey, so its cards leave their charting lines off). The
