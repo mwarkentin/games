@@ -75,6 +75,8 @@ body{
 .notes,.people,input,textarea{-webkit-user-select:text;user-select:text;-webkit-touch-callout:default}
 button{font:inherit;color:inherit}
 button:focus-visible,a:focus-visible,#map:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+/* Inside a container that clips (a group of rows, a stepper, the pieces list), the ring goes inside the button. */
+.group :is(button,a):focus-visible,.tool-step button:focus-visible,.tool-pieces button:focus-visible{outline-offset:-2px}
 .mark{--c:hsl(var(--h,200) var(--mark-s) var(--mark-l))}
 
 #map{position:fixed;top:0;left:0;width:100%;height:100%;display:block;touch-action:none;cursor:grab;outline:none}
@@ -540,7 +542,6 @@ html[data-who="loading"] .who-status{animation:blink 1s infinite alternate}
 .guild-swap .guild-name{margin:3px 0 0}
 .guild-invite .guild-swap .guild-meta{margin:2px 0 0 18px}
 .guild-swap-label{font:500 10px/1.2 var(--f-mono);letter-spacing:.12em;text-transform:uppercase;color:var(--muted)}
-.guild-invite .guild-swap .guild-swap-to{margin-top:10px;padding-top:10px;border-top:1px solid var(--rule)}
 .guild-invite .guild-warn{display:flex;gap:9px;align-items:flex-start;padding:9px 11px;border:1px solid var(--danger);border-radius:8px;font-size:13px;line-height:1.45}
 .guild-warn svg{flex:none;width:18px;height:18px;margin-top:1px;color:var(--danger)}
 /* Linking devices: a code that carries this surveyor to another device, or one to type in (see Linking devices). */
@@ -699,7 +700,7 @@ body.docked .nova{left:calc((100% - var(--notes-w)) / 2)}
   .t-meta{font-size:9.5px}
   .t-coord{display:none}  /* no room for the grid reference on a phone */
   .notes-toggle,.tools-btn,.people-btn{padding:0;width:44px;height:46px;justify-content:center;gap:0}
-  .notes-toggle .label{display:none}
+  .notes-toggle .label{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}  /* still its name */
   .notes-toggle .badge,.people-btn .badge{position:absolute;top:-5px;right:-5px}
   /* The bar's list takes two rows, its head over its chips, which scroll from
      one edge of the screen to the other. */
@@ -730,7 +731,7 @@ body.docked .nova{left:calc((100% - var(--notes-w)) / 2)}
   .coach{--coach-top:calc(var(--top) + 68px);right:var(--gr);width:auto}
 }
 @media (prefers-reduced-motion: reduce){
-  .notes,.people,.tools-panel,.toast,.bar,.tools-btn,.tools-btn svg circle{transition:none!important}
+  .notes,.people,.tools-panel,.toast,.bar,.corner,.tools-btn,.tools-btn svg circle{transition:none!important}
   .notes,.people,.tools-panel{animation:none!important}
   .music-player .bars rect{animation:none!important;transform:none}
   .find-def[data-define="loading"] .def-note{animation:none}
@@ -1029,6 +1030,8 @@ html[data-notes-page="marks"] .notes > :not(.marks-page){display:none!important}
         <div class="wide"><dt>Circle a word</dt><dd><kbd>Shift</kbd><span>+ drag</span></dd></div>
         <div><dt>Zoom</dt><dd><kbd>+</kbd><kbd>−</kbd></dd></div>
         <div><dt>Close</dt><dd><kbd>Esc</kbd></dd></div>
+        <div><dt>Map centre</dt><dd><kbd>H</kbd></dd></div>
+        <div><dt>Last find</dt><dd><kbd>L</kbd></dd></div>
         <div><dt>Field notes</dt><dd><kbd>N</kbd></dd></div>
         <div id="keysPeople"><dt>Surveyors</dt><dd><kbd>P</kbd></dd></div>
         <div><dt>Tools</dt><dd><kbd>T</kbd></dd></div>
@@ -4874,8 +4877,11 @@ function panelMoved(to, from, { focus = false, refocus = false, start = false } 
   toolsPanel.inert = !toolsOpen;  // shut, it takes no taps or focus
   placeCheck();  // Turnstile's box keeps clear of the tools' sheet on a phone
   applyDock(start);
-  if (from === 'people') { listScroll = 0; if (PeoplePage.is('you')) PeoplePage.go('list'); }  // it opens on the list again
-  if (from === 'notes' && NotesPage.is('marks')) NotesPage.go('finds');  // and the notes on the finds
+  // A drawer left opens on its first page again, but not one the docked tools
+  // only stood in for: shutting them brings it back as it was.
+  const left = from === 'tools' ? (to === toolsStoodIn ? 'none' : toolsStoodIn) : to === 'tools' && from === toolsStoodIn ? 'none' : from;
+  if (left === 'people') { listScroll = 0; if (PeoplePage.is('you')) PeoplePage.go('list'); }  // it opens on the list again
+  if (left === 'notes' && NotesPage.is('marks')) NotesPage.go('finds');  // and the notes on the finds
   if (notesOpen) { renderNotes(); refreshWorld(); }
   // Opened from their button, focus moves into the tools; shut from in there, it comes back to the button.
   if (toolsOpen && focus) focusQuiet($('#zoomOut'));
@@ -6292,7 +6298,7 @@ function renderGuild() {
   let tail;
   if (st === 'naming' || st === 'making') tail = `<div class="you-pad"><p>Your ${n ? 'new ' : ''}guild will be called</p>${named(draftName)}${errFor('')}<div class="guild-acts" style="margin-top:10px"><button type="button" class="btn ghost" data-g="redraw"${st === 'making' ? ' disabled' : ''}>Another name</button><button type="button" class="btn" data-g="create"${st === 'making' ? ' disabled' : ''}>${st === 'making' ? 'Starting…' : 'Start it'}</button><button type="button" class="btn ghost" data-g="cancel"${st === 'making' ? ' disabled' : ''}>Cancel</button></div></div>`;
   else if (st === 'invited' || st === 'joining') tail = '<p class="you-pad">Looking at an invite to a guild…</p>';
-  else if (!n) tail = `<button type="button" class="you-item" data-g="start"><span>Start a guild<small>A few surveyors who find each other: members first on the list, a note when one comes online, a mark on their carets.</small></span>${CHEV}</button><p class="guild-small">Or join one from a member’s invite link.</p>`;
+  else if (!n) tail = `<button type="button" class="you-item" data-g="start"><span>Start a guild<small>A few surveyors who find each other on the map: members first on the Surveyors list, a note when one comes online, a mark on their carets.</small></span>${CHEV}</button><p class="guild-small">Or join one from a member’s invite link.</p>`;
   else if (n < GUILDS_MAX) tail = `<button type="button" class="you-item" data-g="start"><span>Start another guild<small>You’re in ${n} of ${GUILDS_MAX}. Or join one from a member’s invite link.</small></span>${CHEV}</button>`;
   else tail = `<p class="you-pad guild-cap">You’re in ${GUILDS_MAX} guilds, the most at once. To join another, leave one.</p>`;
   if (n) tail += '<p class="guild-small">Words you chart while in a guild count for it in the survey log, under its name: for every guild you’re in.</p>';
@@ -6326,7 +6332,7 @@ function renderGuild() {
   } else {
     card = `<p class="eyebrow">Invited to a guild</p>${named(invite.name, 'guildInviteName')}<p>${theirs}. ${n
       ? `You’ll be in ${n + 1} guilds: the ${n === 1 ? guildName(myGuilds[0].name) : `${n} you’re in`} stay${n === 1 ? 's' : ''} as ${n === 1 ? 'it is' : 'they are'}, and each finds its own members on the map.`
-      : 'A guild finds each other on the map: members first on the surveyor list, a note when one comes online, a mark on their carets.'}</p>${err}<div class="coach-row"><button type="button" class="btn ghost" data-g="not-now">Not now</button><button type="button" class="btn" data-g="join"${busy ? ' disabled' : ''}>${busy ? 'Joining…' : 'Join'}</button></div>`;
+      : 'A few surveyors who find each other on the map: members first on the Surveyors list, a note when one comes online, a mark on their carets.'}</p>${err}<div class="coach-row"><button type="button" class="btn ghost" data-g="not-now">Not now</button><button type="button" class="btn" data-g="join"${busy ? ' disabled' : ''}>${busy ? 'Joining…' : 'Join'}</button></div>`;
   }
   drawKeepingFocus(guildInvite, card, f => (f.dataset.g ? `[data-g="${f.dataset.g}"]${f.dataset.g === 'drop' ? `[value="${f.value}"]` : ''}` : ''));
 }
