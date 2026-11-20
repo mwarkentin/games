@@ -3236,7 +3236,7 @@ function chimesTrack(a, out) {
 // each phrase. Each play is seeded: a few bars of the tune, its grace notes
 // and the celesta's answers change; its shape doesn't. It has one convolver,
 // Chimes' hall behind a short pre-delay, fed mono.
-const LANTERN_KEY = .28, LANTERN_TUNE = .45, LANTERN_PAD = .031, LANTERN_CELLO = .068, LANTERN_BELL = .066, LANTERN_WET = .8;
+const LANTERN_KEY = .3, LANTERN_TUNE = .45, LANTERN_PAD = .031, LANTERN_CELLO = .068, LANTERN_BELL = .066, LANTERN_WET = .8;
 const LANTERN_CHORDS = {  // bass; three notes above it for the left hand; the strings' three, and V's suspension
   i: [42, [49, 52, 57], [54, 57, 61]], VI: [38, [45, 54, 52], [54, 57, 61]], iv: [35, [42, 50, 57], [54, 59, 62]],
   V: [37, [44, 54, 53], [53, 56, 61], 54], III: [37, [45, 52, 57], [52, 57, 61]], VII: [40, [47, 56, 52], [52, 56, 59]],
@@ -3388,8 +3388,9 @@ function lanternTrack(a, out, seed = Math.floor(Math.random() * 4294967296)) {
   const pianoWave = organWave(a, [1, .42, .2, .1, .045, .025, .012]);
   const brightWave = organWave(a, [.1, .35, .45, .4, .32, .25, .18, .13, .09, .06, .04]);
 
-  // A struck string: a quick first fall and then a long, slower one, longer
-  // for low notes, until the damper. Most of what rings on is the fundamental
+  // A struck string, eased in over a couple of hundredths of a second, as
+  // soft felt does, the softer the slower: a gentle first fall and then a
+  // long, slower one, longer for low notes, until the damper. Most of what rings on is the fundamental
   // and its first overtones; the brighter ones are a voice of their own for
   // the tune and the bass, louder the harder the note is struck and gone in a
   // second or so, so the highs die first, as a piano's do. It's tuned a hair
@@ -3398,12 +3399,12 @@ function lanternTrack(a, out, seed = Math.floor(Math.random() * 4294967296)) {
   function key(t, m, vel, end, to, bright) {
     const f = hz(m), peak = vel * LANTERN_KEY, ring = 2.8 * Math.pow(2, (48 - m) / 30), after = t + .45;
     end = Math.max(t + .08, Math.min(end, after + 5 * ring));
-    const detune = (m - 60) * .08 + (rnd() - .5) * 4, attack = .004 + (1 - vel) * .008;
+    const detune = (m - 60) * .08 + (rnd() - .5) * 4, attack = .01 + (1 - vel) * .02;
     const o = keep(a.createOscillator()), g = a.createGain();
     o.setPeriodicWave(pianoWave); o.frequency.value = f; o.detune.value = detune;
     g.gain.setValueAtTime(0, t);
-    g.gain.linearRampToValueAtTime(peak, t + attack);
-    g.gain.setTargetAtTime(peak * .3, t + attack, .22);
+    g.gain.linearRampToValueAtTime(peak * .78, t + attack);
+    g.gain.setTargetAtTime(peak * .3, t + attack, .3);
     if (end > after) g.gain.setTargetAtTime(0, after, ring);
     g.gain.setTargetAtTime(0, end, .035);
     o.connect(g); g.connect(to);
@@ -3412,14 +3413,14 @@ function lanternTrack(a, out, seed = Math.floor(Math.random() * 4294967296)) {
     const s = keep(a.createOscillator()), sg = a.createGain(), gone = Math.min(end, t + 1.6);
     s.setPeriodicWave(brightWave); s.frequency.value = f * (1.0008 + rnd() * .0008); s.detune.value = detune;
     sg.gain.setValueAtTime(0, t);
-    sg.gain.linearRampToValueAtTime(peak * (.25 + .7 * vel) * clamp(1 - (m - 70) * .03, .6, 1), t + attack);
+    sg.gain.linearRampToValueAtTime(peak * (.18 + .5 * vel) * clamp(1 - (m - 70) * .03, .6, 1), t + attack);
     sg.gain.setTargetAtTime(0, t + attack, .22 + .2 * clamp((72 - m) / 36, 0, 1));
     sg.gain.setTargetAtTime(0, gone, .035);
     s.connect(sg); sg.connect(to);
     s.start(t); s.stop(gone + .15);
     if (bright !== 'tune') return;
     const knock = keep(a.createBufferSource()), kg = a.createGain();
-    knock.buffer = knockOf(a); knock.playbackRate.value = clamp(f / 500, .6, 1.8); kg.gain.value = peak * .05;
+    knock.buffer = knockOf(a); knock.playbackRate.value = clamp(f / 500, .6, 1.8); kg.gain.value = peak * .025;
     knock.connect(kg); kg.connect(to);
     knock.start(t); knock.stop(t + .1);
   }
