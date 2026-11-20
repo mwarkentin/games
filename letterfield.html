@@ -1516,7 +1516,8 @@ function machine(name, moves, state, { el = document.documentElement, onMove } =
 /* ---------- Storage ---------- */
 const LS = {
   get(k) { try { return localStorage.getItem(k); } catch (_) { return null; } },
-  set(k, v) { try { localStorage.setItem(k, v); } catch (_) {} },
+  // true once kept; if not, 'full' (out of room) or 'off' (storage blocked or missing)
+  set(k, v) { try { localStorage.setItem(k, v); return true; } catch (e) { return e && (e.name === 'QuotaExceededError' || e.name === 'NS_ERROR_DOM_QUOTA_REACHED' || e.code === 22 || e.code === 1014) ? 'full' : 'off'; } },
   remove(k) { try { localStorage.removeItem(k); } catch (_) {} },
 };
 const found = new Map();
@@ -1595,9 +1596,16 @@ function takeIn(list) {
   }
   return { added, behind: behind || stored.size < found.size };
 }
+// Notes that no longer fit in this device's storage say so, once, after the
+// find's own note: finds from then on live only until the page closes.
+let notesUnsaved = false;
 function saveLocal() {
   takeIn(readList(K_FINDS));
-  LS.set(K_FINDS, JSON.stringify([...found.values()].map(plain)));
+  const kept = LS.set(K_FINDS, JSON.stringify([...found.values()].map(plain)));
+  if (kept === true || notesUnsaved) { if (kept === true) notesUnsaved = false; return; }
+  notesUnsaved = true;
+  const why = kept === 'full' ? 'It’s out of room' : 'This browser isn’t keeping them';
+  setTimeout(() => toast(`<i></i><b class="wraps">Your field notes can’t be saved on this device</b><span>${why} · new finds are lost when the page closes</span>`, null, 10000), 6400);  // past a find's note (SHARE_TOAST_MS)
 }
 window.addEventListener('storage', e => {
   if (e.key !== K_FINDS) return;
@@ -2235,7 +2243,7 @@ function territoryTotal(rx, ry) {
   if (total === undefined) {
     total = 0;
     for (let cy = ry * RG; cy < ry * RG + RG; cy++) for (let cx = rx * RG; cx < rx * RG + RG; cx++) total += chunk(cx, cy).words.length;
-    if (terrTotals.size > 2000) terrTotals.clear();
+    if (terrTotals.size > 40000) terrTotals.clear();  // well past the universe's 10,000, so a pass over them all never empties it partway
     terrTotals.set(k, total);
   }
   return total;
@@ -2926,8 +2934,10 @@ function audioCtx() {
 // Anything but running means stopped: 'suspended', or Safari's 'interrupted'
 // after another app took the audio. A browser can refuse to resume outside a
 // tap or key (iOS does, coming back to the page), so every tap and key tries
-// again, whichever of sound and music is on.
+// again, whichever of sound and music is on. Paused music with sound off
+// needs nothing running, so the context stays asleep till it plays again.
 function wakeCtx() {
+  if (!soundOn && Player.is('paused')) return;
   if (ac && ac.state !== 'running' && ac.state !== 'closed' && !document.hidden) ac.resume().catch(() => {});
 }
 // Gain, then a compressor and a limiter, so a blast never clips.
@@ -2984,7 +2994,11 @@ function setSound(on) {
   soundBtn.setAttribute('aria-pressed', String(on));
   showSoundVol();
   if (on) { audioCtx(); if (fxOut) fxOut.gain.value = fxLevel(); }
-  else { for (const b of novaBuses) b.gain.value = 0; novaBuses.clear(); }
+  else {
+    for (const b of novaBuses) b.gain.value = 0;
+    novaBuses.clear();
+    if (ac && ac.state === 'running' && Player.is('paused')) ac.suspend().catch(() => {});  // nothing left to hear
+  }
 }
 function setSoundVol(v) {
   v = Math.max(0, Math.min(100, Math.round(v)));
@@ -3643,8 +3657,14 @@ function playMusic(a, n) {
     // Paused, it goes quiet and schedules nothing more; played again, it
     // picks up from the next bar it hadn't scheduled, and its four minutes
     // leave out the pause.
-    pause() { clearInterval(timer); pausedAt = a.currentTime; glide(master.gain, 0, .4, a); },
+    // With sound off, nothing else needs the context once it's quiet, so it
+    // sleeps, and its held voices with it, till played again.
+    pause() {
+      clearInterval(timer); pausedAt = a.currentTime; glide(master.gain, 0, .4, a);
+      setTimeout(() => { if (Player.is('paused') && !soundOn && a.state === 'running') a.suspend().catch(() => {}); }, 500);
+    },
     resume() {
+      if (a.state !== 'running' && a.state !== 'closed' && !document.hidden) a.resume().catch(() => {});
       swapAt += a.currentTime - pausedAt;
       track.resync(a.currentTime);
       run(); glide(master.gain, musicLevel(), 1, a);
@@ -4940,6 +4960,7 @@ function panelMoved(to, from, { focus = false, refocus = false, start = false } 
   applyDock(start);
   if (from === 'people') { listScroll = 0; if (PeoplePage.is('you')) PeoplePage.go('list'); }  // it opens on the list again
   if (from === 'notes' && NotesPage.is('marks')) NotesPage.go('finds');  // and the notes on the finds
+  if (from === 'notes') notesKeepPlace();  // where they were, drawn no further than a page past it
   if (notesOpen) { renderNotes(); refreshWorld(); }
   // Opened from their button, focus moves into the tools; shut from in there, it comes back to the button.
   if (toolsOpen && focus) focusQuiet($('#zoomOut'));
@@ -5059,6 +5080,23 @@ function entrySel(el) {
   const k = el.dataset.key !== undefined ? `[data-key="${CSS.escape(el.dataset.key)}"]` : el.dataset.nova !== undefined ? `[data-nova="${CSS.escape(el.dataset.nova)}"]` : '';
   return k && el.classList[0] ? `${el.tagName.toLowerCase()}.${el.classList[0]}${k}` : '';
 }
+// The list's scroller, the top of what shows of it, and whether it's scrolled into.
+function notesView() {
+  const sc = notesScroller(), viewTop = sc === notesEl ? Math.max(sc.getBoundingClientRect().top, filtersEl.getBoundingClientRect().bottom) : sc.getBoundingClientRect().top;
+  const into = sc === notesEl ? findsEl.getBoundingClientRect().top < viewTop - 1 : sc.scrollTop > 0;
+  return { sc, viewTop, into };
+}
+// Shut, the notes keep their place (tapping a find on a phone shuts them to
+// fly there), but the next redraw reaches only a page past the first entry
+// showing, not every row scrolled through on the way.
+function notesKeepPlace() {
+  const { viewTop, into } = notesView();
+  if (!into) { notesShown = NOTES_PAGE; return; }
+  const rows = findsEl.querySelectorAll('li.row');
+  let lo = 0, hi = rows.length;
+  while (lo < hi) { const m = (lo + hi) >> 1; if (rows[m].getBoundingClientRect().bottom > viewTop + 4) hi = m; else lo = m + 1; }
+  notesShown = Math.min(Math.max(notesShown, notesAt), lo + NOTES_PAGE);
+}
 function renderNotes({ top = false } = {}) {
   const all = [...found.values()].sort((a, b) => b.t - a.t);
   showCount(all);
@@ -5091,7 +5129,10 @@ function renderNotes({ top = false } = {}) {
       : novas.length ? '<li class="finds-empty"><strong>No words yet</strong>Circle a word on the map and it lands here, among the supernovas you’ve seen, with its territory and the bearing it reads in.</li>'
       : '<li class="finds-empty"><strong>No words yet</strong>Circle a word on the map and it lands here with its territory and the bearing it reads in. Tap an entry later to fly straight back to it.</li>';
   }
-  if (top) notesShown = NOTES_PAGE;
+  // Kept in view: the first entry showing, where it was, once the list is
+  // scrolled into; at its top, something new should show at the top.
+  const { sc, viewTop, into } = notesView();
+  if (top || !into) notesShown = NOTES_PAGE;  // at the top, a page is all that shows: scrolling draws the rest again
   notesAt = pageEnd(notesLine, 0, Math.max(NOTES_PAGE, notesShown), now);
   html += timelineHtml(notesLine, 0, notesAt, now, st);
   if (st.open === true) html += '</ol></li>';
@@ -5099,10 +5140,6 @@ function renderNotes({ top = false } = {}) {
   if (notesAt < notesLine.length) html += MORE;
   novaFresh = '';
   if (html === notesDrawn) return;
-  // Kept in view: the first entry showing, where it was, once the list is
-  // scrolled into; at its top, something new should show at the top.
-  const sc = notesScroller(), viewTop = sc === notesEl ? Math.max(sc.getBoundingClientRect().top, filtersEl.getBoundingClientRect().bottom) : sc.getBoundingClientRect().top;
-  const into = sc === notesEl ? findsEl.getBoundingClientRect().top < viewTop - 1 : sc.scrollTop > 0;
   let anchor = null;
   if (!top && into) {
     for (const a of findsEl.querySelectorAll('a.find')) {
@@ -7835,17 +7872,28 @@ function sayCardMark(b) {
 // Asks the Worker to sign what it will for us, for achievements without a
 // signature: when one is earned, and once a visit. The answer is kept with
 // them, and synced, so a badge earned from older notes stays showable.
+// What it was last asked, once answered, is kept too (K_ASKED), so a visit
+// with nothing new to show it (no new achievement, receipt or card) doesn't
+// send every signed find again for the same answer, for a week.
+const K_ASKED = 'letterfield.badgesasked.v1', ASKED_FOR = 7 * 86400000;
 let badgesAsked = '';
-async function askBadges() {
-  if (!surveyApi || !playerToken) return;
+function badgesAsk() {
   const want = marksHere().filter(a => marks.got[a.id] && !marks.got[a.id][2]).map(a => a.id);
   const held = Object.fromEntries(MARKS.filter(a => marks.got[a.id] && marks.got[a.id][2]).map(a => [a.id, marks.got[a.id][2]]));
   // Our card is due, once we've found something, if we have none or it's missing a badge we hold.
   const card = myCard(), on = readCard(card), due = found.size > 0 && (!on || Object.keys(held).some(id => !on.ids.includes(id)));
-  const finds = [...found.values()].filter(e => e.r).map(e => ({ w: e.w, x: e.x, y: e.y, d: e.d, r: e.r }));
-  const asking = `${want.join()}|${finds.length}|${card}`;
-  if ((!want.length && !due) || asking === badgesAsked) return;
+  const finds = [...found.values()].filter(e => e.r);
+  return { want, held, card, due, finds, asking: `${want.join()}|${finds.length}|${card}` };
+}
+function askedBefore(asking) {
+  try { const v = JSON.parse(LS.get(K_ASKED)); return v.a === asking && Date.now() - v.t < ASKED_FOR && Date.now() >= v.t; } catch (_) { return false; }
+}
+async function askBadges() {
+  if (!surveyApi || !playerToken) return;
+  const { want, held, card, due, finds: signed, asking } = badgesAsk();
+  if ((!want.length && !due) || asking === badgesAsked || askedBefore(asking)) return;
   badgesAsked = asking;
+  const finds = signed.map(e => ({ w: e.w, x: e.x, y: e.y, d: e.d, r: e.r }));
   let since = Infinity;
   for (const e of found.values()) if (e.t < since) since = e.t;
   const { status, data } = await workerCall('/v1/survey/badges', {
@@ -7861,9 +7909,11 @@ async function askBadges() {
     syncLater('m', id);
     changed = true;
   }
-  if (!changed) return;
-  LS.set(K_MARKS, JSON.stringify(marks));
-  if (NotesPage.is('marks')) renderMarksPage();
+  if (changed) {
+    LS.set(K_MARKS, JSON.stringify(marks));
+    if (NotesPage.is('marks')) renderMarksPage();
+  }
+  LS.set(K_ASKED, JSON.stringify({ a: badgesAsk().asking, t: Date.now() }));  // what asking now would ask: answered
 }
 // Sharing one: a sentence and the game's address, through the phone's share sheet or copied.
 // With the share Worker, the link is its page for the badge, whose preview is
@@ -8089,7 +8139,7 @@ setTimeout(() => {
       // For screenshots and tests: earn one now (with its note), or all quietly, or start over.
       grant: id => { marksState = marksState || marksReplay(); if (MARK_BY[id]) { delete marks.got[id]; markEvent(id); } },
       grantAll: () => { for (const a of marksHere()) if (!marks.got[a.id]) marks.got[a.id] = [Date.now(), 0]; saveMarks(); renderMarksRow(); if (NotesPage.is('marks')) renderMarksPage(); },
-      reset: () => { LS.remove(K_MARKS); marks = { got: {}, best: 0, fresh: [] }; markQueue = []; marksSig = ''; renderMarksRow(); },
+      reset: () => { LS.remove(K_MARKS); LS.remove(K_ASKED); marks = { got: {}, best: 0, fresh: [] }; markQueue = []; marksSig = ''; renderMarksRow(); },
       badge: (id, st = 'got', frac = 0, big = false) => badgeSvg(MARK_BY[id], st, frac, big),
       draw: MARK_DRAW,
       // Our card, and one offered as another of our devices would.
