@@ -18,7 +18,7 @@ from playwright.sync_api import Page, expect
 from fake_survey import NOW_MS, FakeGuilds, FakeLinks, FakeRecovery, FakeSurvey, card, player_id
 from test_letterfield_guilds import CODE, FIVE, MINE, NAME, TAG, in_cobalt
 from test_letterfield_guilds import start as start_guilds
-from test_letterfield_survey import OVERLAP, SURVEY, circle, eventually, known_words, open_you
+from test_letterfield_survey import OVERLAP, SURVEY, WORD_ENDS, circle, eventually, known_words, open_you
 from test_letterfield_surveyors import KIM, LOU, PID, TOKEN
 
 THEIRS = "f" * 32  # the other device's token
@@ -189,6 +189,25 @@ def test_a_link_from_another_device_offers_first_then_becomes_that_surveyor(page
     expect(page.locator("#toast span")).to_have_text("This device plays as MLW now, as your other one does")
     expect(page.locator("html")).to_have_attribute("data-intro", "exploring")  # signed, by the link
     expect(page.locator("html")).to_have_attribute("data-guild", "in")
+    assert errors == []
+
+
+def test_words_wait_for_initials_while_the_offer_to_link_is_up(page: Page, site_url, errors):
+    """The sign card kept a new surveyor from circling until they'd picked initials, but the offer to
+    link this device, which comes before it, didn't: a word circled then was charted first with
+    nobody's initials, for good."""
+    links = FakeLinks({"CDEFGHJK": {"token": THEIRS, "carry": {}}})
+    survey = FakeSurvey()
+    start(page, site_url, links, survey=survey, query="&link=CDEFGHJK", initials="")
+    expect(page.locator("html")).to_have_attribute("data-intro", "link")
+    expect(page.locator("#survey")).to_have_attribute("data-state", "live")
+    target = page.evaluate(WORD_ENDS)
+    assert target, "no hidden word with both ends clear on screen"
+    for x, y in target["ends"]:
+        page.mouse.click(x, y)
+    page.wait_for_timeout(500)
+    expect(page.locator("#notesBadge")).to_have_text("0")
+    assert survey.sent("claim") == []
     assert errors == []
 
 

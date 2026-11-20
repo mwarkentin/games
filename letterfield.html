@@ -1798,12 +1798,20 @@ function passRefused(used) {
   else Pass.go('none');
 }
 
+// Zoomed far out on a wide screen more can show than are joined, so after the
+// nearest, ones with a word of ours waiting to be claimed come first: left
+// waiting, someone else could chart it meanwhile.
 function sectorsInView() {
   const cs = cam.cs, hw = (W - dock) / 2 / cs, hh = H / 2 / cs, out = [];
   for (let sy = fdiv(Math.floor(cam.y - hh), SECTOR); sy <= fdiv(Math.floor(cam.y + hh), SECTOR); sy++)
     for (let sx = fdiv(Math.floor(cam.x - hw), SECTOR); sx <= fdiv(Math.floor(cam.x + hw), SECTOR); sx++)
       out.push({ sx, sy, dist: Math.hypot((sx + .5) * SECTOR - cam.x, (sy + .5) * SECTOR - cam.y) });
-  return out.sort((a, b) => a.dist - b.dist).slice(0, SECTOR_LINKS);
+  out.sort((a, b) => a.dist - b.dist);
+  if (out.length <= SECTOR_LINKS) return out;
+  const waiting = new Set();
+  for (const c of outbox.values()) if (c.m.is('queued', 'unanswered') && !claimHeld(c)) waiting.add(sectorKey(c.e.x, c.e.y));
+  const waits = o => waiting.has(o.sx + ',' + o.sy) ? 1 : 0, [near, ...rest] = out;
+  return [near, ...rest.sort((a, b) => waits(b) - waits(a) || a.dist - b.dist)].slice(0, SECTOR_LINKS);
 }
 // Joins the sectors in view and leaves ones that have been out of view a few
 // seconds. Mid-flight it joins nothing, rather than every sector on the way.
@@ -1881,13 +1889,18 @@ function linkMoved(l, to, from) {
     Object.assign(l, { you: null, here: [] });
     if (posSent && posSent.l === l) posSent = null;
     clearTimeout(l.flush); l.flush = 0;
+    clearTimeout(l.answerTimer); l.answerTimer = 0;
     // Claims still out on it are asked about again when the sector is next joined.
     for (const c of outbox.values()) if (c.l === l && c.m.is('sent')) c.m.go('unanswered');
+    matesLost();
   }
   if (to === 'backoff') {
     l.tries++;  // one more failure since it was last live
-    // A full sector is asked again in a minute or so; anything else backs off from a second.
-    const wait = l.full ? 45000 : Math.min(30000, 1000 * 2 ** (l.tries - 1)) * (.5 + Math.random());
+    // A full sector is asked again in a minute or so, past the minute the
+    // survey counts joins over (SURVEY_JOINS), each at its own moment, so the
+    // sockets turned away together don't all come back together; anything
+    // else backs off from a second.
+    const wait = l.full ? 60000 * (1 + Math.random() / 2) : Math.min(30000, 1000 * 2 ** (l.tries - 1)) * (.5 + Math.random());
     l.timer = setTimeout(() => {
       if (!l.m.is('backoff')) return;
       l.m.go(mayJoin() ? 'connecting' : 'closed');  // without a pass, syncSurvey opens it again once there is one
@@ -1915,7 +1928,7 @@ function sendPos() {
   const home = links.get(sectorKey(Math.floor(cam.x), Math.floor(cam.y)));
   if (posSent && posSent.l !== home) { tell(posSent.l, { t: 'pos', away: true }); posSent = null; }
   if (!home || !home.m.is('open', 'live')) return;
-  const x = Math.round(cam.x * 10) / 10, y = Math.round(cam.y * 10) / 10;
+  const x = Math.floor(cam.x * 10) / 10, y = Math.floor(cam.y * 10) / 10;  // down, so it stays in home's sector
   if (posSent && Math.hypot(x - posSent.x, y - posSent.y) < 1) return;
   const wait = posSent ? posSent.at + 1000 - Date.now() : 0;
   if (wait > 0) { posTimer = setTimeout(sendPos, wait); return; }
@@ -2034,7 +2047,7 @@ function claimWord(e, from = 'queued', waited = from !== 'queued', initials = my
   if (!surveyApi || outbox.has(e.key) || claims.has(e.key)) return;
   const l = links.get(sectorKey(e.x, e.y));
   // `backlog`: it waited for its sector, rather than going as it was circled.
-  const c = { e, l: null, backlog: waited || !(l && l.m.is('live')), initials: waited ? initials : '', known: false, beaten: false };
+  const c = { e, l: null, waited, backlog: waited || !(l && l.m.is('live')), initials: waited ? initials : '', known: false, beaten: false };
   c.m = machine('claim', CLAIM_MOVES, from, { el: null, onMove: to => {
     if (CLAIM_ENDS.includes(to)) { outbox.delete(e.key); outboxEnded.add(e.key); }
     if (to === 'theirs') chartedBy(e.key);
@@ -2043,6 +2056,7 @@ function claimWord(e, from = 'queued', waited = from !== 'queued', initials = my
   outbox.set(e.key, c);
   saveOutbox();
   if (l && !waited) flushClaims(l);
+  else if (!l && !waited) syncSurvey();  // its sector may be in view but not joined (see sectorsInView)
 }
 // Claims still out, kept in storage so a reload doesn't lose them, as [w, x,
 // y, d, the initials it went with if it may have reached its sector (1 from
@@ -2076,18 +2090,41 @@ function restoreOutbox() {
 // its territory from going supernova, and the word list, which leaves out what
 // you've found, gives no way to tell. So each goes as a claim that waited,
 // once the sector is joined and its claims are known; another tab's waiting
-// claims are its own to send. Each goes at most once a visit, and not on a
-// day the survey has said we've charted all we may: turned away, it would
-// only be turned away again. A bonus word too short to count, kept from an
+// claims are its own to send. Each goes at most once a visit (one turned
+// away for the day's limit, once a day), and not on a day the survey has said
+// we've charted all we may: turned away, it would only be turned away again. A bonus word too short to count, kept from an
 // older map, never goes.
+// One refused for the day's limit goes again on a later day, even in a tab
+// that stays open past midnight (UTC): `limited` keeps the day it was refused.
 let limitDay = -1;
+const limited = new Map();
 const utcDay = () => Math.floor(Date.now() / 86400000);
+// A waiting claim that isn't sent yet, however long its sector is live: an old
+// find waits for initials to sign it (see signAs), and one waiting past the
+// day's limit would only be turned away. flushClaims passes these over, and
+// sectorsInView doesn't favour their sectors.
+function claimHeld(c) { return (c.waited && !myInitials()) || (c.backlog && limitDay === utcDay()); }
+// Past the day's limit, the claims held for it go when the day (UTC) turns,
+// in a tab that stays open and joined overnight, not only at the next join.
+let limitTimer = 0;
+function limitReached() {
+  limitDay = utcDay();
+  clearTimeout(limitTimer);
+  limitTimer = setTimeout(newLimitDay, (limitDay + 1) * 86400000 - Date.now() + 1000);
+}
+function newLimitDay() {
+  limitTimer = 0;
+  if (limitDay === utcDay()) return limitReached();  // woken early: wait on
+  for (const l of links.values()) if (l.m.is('live')) { claimUnsent(l); flushClaims(l); }
+}
 function claimUnsent(l) {
   if (limitDay === utcDay()) return;
   const elsewhere = new Set(readList(K_OUTBOX).filter(o => Array.isArray(o) && o.length === 5).map(o => keyOf(o[0], o[1], o[2], o[3])));
   for (const e of found.values()) {
     if (e.f || e.b || sectorKey(e.x, e.y) !== l.k || (e.s && e.w.length < STRAY_MIN)) continue;
-    if (claims.has(e.key) || outbox.has(e.key) || outboxEnded.has(e.key) || elsewhere.has(e.key)) continue;
+    const ended = outboxEnded.has(e.key) && !(limited.get(e.key) < utcDay());
+    if (claims.has(e.key) || outbox.has(e.key) || ended || elsewhere.has(e.key)) continue;
+    limited.delete(e.key);
     claimWord(e, 'queued', true);
   }
 }
@@ -2110,12 +2147,28 @@ function flushClaims(l) {
   for (const c of outbox.values()) {
     if (!c.m.is('queued', 'unanswered') || sectorKey(c.e.x, c.e.y) !== l.k) continue;
     if (c.backlog && claims.has(c.e.key)) { c.m.go('theirs'); continue; }  // someone charted it while it waited
+    if (claimHeld(c)) continue;
     if (l.tokens < 1) { l.flush = setTimeout(() => flushClaims(l), (1 - l.tokens) * CLAIM_REFILL_MS); return; }
     l.tokens -= 1;
-    Object.assign(c, { l, initials: myInitials(), known: claims.has(c.e.key) });
+    Object.assign(c, { l, initials: myInitials(), known: claims.has(c.e.key), sentAt: performance.now() });
     c.m.go('sent');
     tell(l, { t: 'claim', w: c.e.w, x: c.e.x, y: c.e.y, d: c.e.d });
+    if (!l.answerTimer) l.answerTimer = setTimeout(() => awaitAnswers(l), CLAIM_ANSWER_MS);
   }
+}
+// A sector answers every claim at once, so one that hasn't in CLAIM_ANSWER_MS
+// is on a socket that's died without closing (the network dropped with no word
+// to the browser): it's dropped and joined again, and the claims go again.
+const CLAIM_ANSWER_MS = 15000;
+function awaitAnswers(l) {
+  l.answerTimer = 0;
+  if (!l.m.is('live')) return;
+  let oldest = Infinity;
+  for (const c of outbox.values()) if (c.l === l && c.m.is('sent')) oldest = Math.min(oldest, c.sentAt);
+  if (oldest === Infinity) return;
+  const left = oldest + CLAIM_ANSWER_MS - performance.now();
+  if (left <= 0) l.m.go('backoff');
+  else l.answerTimer = setTimeout(() => awaitAnswers(l), left);
 }
 // The sector's just been joined: claims that went out on its last socket but
 // never heard back are settled from the claims it holds, and the rest go.
@@ -2139,8 +2192,9 @@ function settleClaims(l) {
 // and every word counts, bonus words too, so a quick run of finds reaches it
 // easily): dropped, it would leave the word in your notes but never charted,
 // and its territory unable to go supernova. Past the day's limit the word
-// stays in your notes, unsigned for now, and goes when its sector is next
-// joined on another day (claimUnsent); only one just circled says so.
+// stays in your notes, unsigned for now, and goes once the day (UTC) turns,
+// or when its sector is next joined on another day (claimUnsent); only one
+// just circled says so.
 function claimRefused(l, c, error) {
   if (error === 'slow down') {
     c.backlog = true;  // it waits now: if someone charts it meanwhile, it's theirs, quietly
@@ -2148,7 +2202,7 @@ function claimRefused(l, c, error) {
     l.tokens = 1 - 60000 / CLAIM_REFILL_MS;  // this sector's claims wait a minute
     return flushClaims(l);
   }
-  if (error === 'daily limit') limitDay = utcDay();
+  if (error === 'daily limit') { limitReached(); limited.set(c.e.key, limitDay); }
   c.m.go('refused');
   const e = error === 'daily limit' && !c.backlog ? found.get(c.e.key) : null;
   if (e) toast(`<i></i><b>${e.w}</b><span>Today’s charting limit reached · kept in your notes</span>`, THEMES[e.th].hue, 0, e);
@@ -2539,8 +2593,10 @@ function novaBanner() {
 // field notes: the shared survey's, near enough to watch or far enough for a
 // note, and territories you found every word of yourself. Each is
 // { rx, ry, t, w, x, y, d, by, mine, solo }: when, the last word and who
-// charted it, whether that was you, and whether it was yours alone.
-const K_NOVAS = 'letterfield.novas.v1', NOVAS_MAX = 200;
+// charted it, whether that was you, and whether it was yours alone. As many
+// as a linked device's Player keeps (NOVAS_MAX in worker/src/players.js),
+// your own first: past that, the oldest of others' go.
+const K_NOVAS = 'letterfield.novas.v1', NOVAS_MAX = 1000;
 const novasSeen = new Map();  // 'rx,ry' → its record
 let novaFresh = '';            // the one that just arrived, which glows once in the notes
 function cleanNova(o) {
@@ -2555,18 +2611,23 @@ function loadNovas() {
 loadNovas();
 // Records one, once: a territory goes supernova only once. One that came
 // from a linked device (see Syncing linked devices) isn't sent back.
-function sawNova(o, synced = false) {
+// `save` false leaves storing it to the caller (saveNovas), for many at once.
+function sawNova(o, synced = false, save = true) {
   const k = o.rx + ',' + o.ry, had = novasSeen.get(k);
   if (had) return had;
   const n = cleanNova(o);
   if (!n) return null;
   novasSeen.set(k, n);
-  const list = [...novasSeen.values()].sort((a, b) => b.t - a.t).slice(0, NOVAS_MAX);
-  if (list.length < novasSeen.size) { novasSeen.clear(); for (const v of list) novasSeen.set(v.rx + ',' + v.ry, v); }
-  LS.set(K_NOVAS, JSON.stringify(list));
+  if (save) saveNovas();
   if (!synced) syncLater('n', k);
   if (Panel.is('notes')) { novaFresh = k; renderNotesSoon(); }
   return n;
+}
+function saveNovas() {
+  const own = n => n.mine || n.solo ? 1 : 0;
+  const list = [...novasSeen.values()].sort((a, b) => own(b) - own(a) || b.t - a.t).slice(0, NOVAS_MAX).sort((a, b) => b.t - a.t);
+  if (list.length < novasSeen.size) { novasSeen.clear(); for (const v of list) novasSeen.set(v.rx + ',' + v.ry, v); }
+  LS.set(K_NOVAS, JSON.stringify(list));
 }
 window.addEventListener('storage', e => { if (e.key === K_NOVAS) { loadNovas(); if (Panel.is('notes')) renderNotes(); } });
 // A supernova as a sentence, with a link: on the shared survey, the share
@@ -4202,7 +4263,7 @@ function collect(w, x, y, d, stray, keep = false) {
 }
 function onTap(c) {
   if (cam.cs < LETTER_MIN) { flyTo(c.wx, c.wy, 30); return; }
-  if (Intro.is('sign')) { askSign(); return; }
+  if (mustSign()) { if (Intro.is('sign')) askSign(); return; }
   const a = sel.anchor;
   if (!a) { sel.anchor = { x: c.x, y: c.y }; sel.end = null; }
   else if (a.x === c.x && a.y === c.y) { sel.anchor = null; sel.end = null; }
@@ -4253,7 +4314,7 @@ canvas.addEventListener('pointermove', e => {
   if (gest.type === 'press') {
     if (Math.hypot(e.clientX - gest.x0, mapY(e) - gest.y0) < (e.pointerType === 'touch' ? 9 : 5)) return;
     if (gest.sd && cam.cs >= LETTER_MIN && Intro.is('sign')) askSign();  // and it pans instead
-    if (gest.sd && cam.cs >= LETTER_MIN && !Intro.is('sign')) { const c0 = cellAtScreen(gest.x0, gest.y0); gest.type = 'seldrag'; sel.anchor = { x: c0.x, y: c0.y }; }
+    if (gest.sd && cam.cs >= LETTER_MIN && !mustSign()) { const c0 = cellAtScreen(gest.x0, gest.y0); gest.type = 'seldrag'; sel.anchor = { x: c0.x, y: c0.y }; }
     else { gest.type = 'pan'; canvas.classList.add('grabbing'); }
   }
   if (gest.type === 'pan') {
@@ -5214,6 +5275,10 @@ $('#keysPeople').hidden = !surveyApi;
 // the map asks again until they do. For a new player the same card is the
 // how-to-play too, so signing is all a first visit asks.
 const signup = $('#signup'), signupInput = $('#signupInitials'), signupHint = $('#signupHint');
+// Circling waits for initials: while the sign card is up, and while the offer
+// to link this device comes before it (a word circled then would be charted
+// with nobody's initials, for good).
+const mustSign = () => Intro.is('sign') || (Intro.is('link') && !!surveyApi && !myInitials());
 function askSign() {
   signupHint.textContent = 'Initials first, then circle away.';
   focusQuiet(signupInput);
@@ -5234,6 +5299,7 @@ function signAs(v, hint) {
   takeInitials(v, hint === surveyHint);
   settingsChanged();
   tellMe();
+  for (const l of links.values()) flushClaims(l);  // old finds that waited for initials
   return true;
 }
 for (const input of [surveyInput, signupInput]) input.addEventListener('input', () => {
@@ -5544,7 +5610,7 @@ function whoMoved(to) {
     const at = Who.seq;
     whoTimer = setTimeout(() => { if (Who.seq === at) Who.go(to === 'ready' ? 'refreshing' : 'loading'); }, to === 'ready' ? WHO_REFRESH_MS : WHO_RETRY_MS);
   }
-  if (to === 'closed') whoOpen = '';
+  if (to === 'closed') { whoOpen = ''; whoPages = 1; }  // pages shown with Show more aren't asked for again
   renderWho();
   if (to === 'ready' && myGuilds.length) renderGuild();  // its counts of members online take in the list (see Guilds)
 }
@@ -5586,13 +5652,16 @@ async function fetchWho() {
 // world, or from before our sector reported us) is all others. The count we
 // had stays while no sector is joined (the tab hidden, reconnecting), and
 // while we wait to be counted by a sector just joined, which reports us
-// within seconds: a total from then can't say whether we're in it.
+// within seconds: a total from then can't say whether we're in it. Once no
+// sector can be joined (offline, crowded), it goes after BADGE_HOLD_MS.
 const WHO_FRESH_MS = 120000, BADGE_HOLD_MS = 15000, COUNT_WAIT_MS = 30000;  // a sector reports a newcomer within REPORT_MS (10 s)
 let badgeShown = 0, badgeZeroAt = 0;
 function othersOnline() {
   if (whoData && Date.now() - whoData.at < WHO_FRESH_MS) return whoData.n;
   let live = false, counted = false;
   for (const l of links.values()) if (l.m.is('live')) { live = true; counted = counted || !!(l.crowd && l.crowd.you); }
+  // With no sector joinable, what we last heard is no count at all.
+  if (!live && ['alone', 'offline', 'full-world', 'full-sector'].includes(surveyStatus())) return 0;
   const held = badgeShown && !badgeZeroAt ? badgeShown : 0;
   if (!live && held) return held;
   const home = links.get(sectorKey(Math.floor(cam.x), Math.floor(cam.y)));
@@ -6245,6 +6314,15 @@ function onGuild(m) {
   }
   renderGuild(); renderWho(); invalidate();
 }
+// Who's online in our guilds comes only from live sectors in the universe
+// (outside it, sectors hear nothing of guilds). With none, it isn't known: it
+// goes, and a sector joined again says who's here afresh, with no note.
+function matesLost() {
+  const inUniverse = l => l.k.split(',').every(v => Math.abs(v) <= SURVEY_AREA);
+  if (!mates.size || [...links.values()].some(l => l.m.is('live') && inUniverse(l))) return;
+  mates.clear(); heard.clear();
+  renderGuild(); renderWho();
+}
 // Someone online in any of our guilds, by id.
 function mateOf(pid) {
   for (const list of mates.values()) { const s = list.get(pid); if (s) return s; }
@@ -6535,7 +6613,9 @@ async function syncNow() {
 // What came from linked devices, taken in as a save from another tab is.
 function takeSynced(data, st) {
   if (takeIn(Array.isArray(data.finds) ? data.finds : []).added) { saveLocal(); renderNotes(); scheduleHud(); invalidate(); }
-  for (const o of Array.isArray(data.novas) ? data.novas : []) { const n = cleanNova(o); if (n) sawNova(n, true); }
+  const novas = novasSeen.size;
+  for (const o of Array.isArray(data.novas) ? data.novas : []) { const n = cleanNova(o); if (n) sawNova(n, true, false); }
+  if (novasSeen.size !== novas) saveNovas();  // stored once, however many came
   takeSyncedMarks(data.marks, data.best);
   if (data.settings && Number.isFinite(data.settingsAt) && data.settingsAt > st.settingsAt) {
     applySettings(data.settings);

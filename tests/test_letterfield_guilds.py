@@ -519,6 +519,26 @@ def test_mates_come_first_with_when_the_rest_were_seen_and_a_note_when_one_comes
     assert errors == []
 
 
+def test_members_online_are_forgotten_once_no_sector_can_say(page: Page, site_url, errors):
+    """Who of a guild was online changed only when a sector said so, so with every sector gone
+    (offline, or out past the universe, where sectors hear nothing of guilds) members long gone
+    stayed listed as online, idle for hours."""
+    guilds = in_cobalt([ZED[0], "ZED", NOW_MS])
+    fake = FakeSurvey()
+    start(page, site_url, fake, guilds, guild=MINE)
+    expect(page.locator("#survey")).to_have_attribute("data-state", "live")
+    fake.guild("0,0", TAG, [[ZED[0], "ZED", 1, 0, 0]])
+    page.wait_for_function(f"window.__lf.mates().includes('{ZED[0]}')")
+    fake.full = "sector"
+    for ws in list(fake.sockets.values()):
+        ws.close()
+    expect(page.locator("#survey")).to_have_attribute("data-state", "offline")
+    page.wait_for_function("window.__lf.mates().length === 0")
+    open_list(page)
+    expect(page.locator(".who-row.away .who-ini")).to_have_text("ZED")  # seen, not online
+    assert errors == []
+
+
 def test_a_member_who_takes_no_emotes_shows_as_one(page: Page, site_url, errors):
     # SAM, in our guild, takes no emotes: the list says so (its last field), and so do our sectors.
     guilds = in_cobalt([SAM[0], "SAM", NOW_MS])
