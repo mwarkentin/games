@@ -1020,10 +1020,12 @@ def test_the_word_list_can_name_every_word_left_in_the_territory(page: Page, sit
 
 # Where each part of each row in the field notes sits, up and down: the
 # middle of its marker, word, time, book and share button.
+# A supernova's star is centred on both its lines instead (star), as is the row (both).
 ROW_MIDDLES = """() => [...document.querySelectorAll('#finds li.row')].map(li => {
   const mid = sel => { const el = li.querySelector(sel); if (!el) return null; const r = el.getBoundingClientRect(); return r.top + r.height / 2; };
   return { w: li.querySelector('.find-w').textContent, second: !!li.querySelector('.find-meta'),
-    at: ['.find-dot, .nova-star', '.find-w', '.find-when', '.find-define', '.find-share'].map(mid).filter(v => v !== null) };
+    at: ['.find-dot', '.find-w', '.find-when', '.find-define', '.find-share'].map(mid).filter(v => v !== null),
+    star: mid('.nova-star'), both: mid('a.find') };
 })"""
 
 
@@ -1051,7 +1053,9 @@ def test_every_part_of_a_find_sits_on_its_words_line(page: Page, site_url, error
     rows = page.evaluate(ROW_MIDDLES)
     assert [r["second"] for r in rows] == [True, False, True], rows  # the finds, then the supernova an hour before
     for r in rows:
-        assert 4 <= len(r["at"]) <= 5 and max(r["at"]) - min(r["at"]) <= 1, r
+        assert 3 <= len(r["at"]) <= 5 and max(r["at"]) - min(r["at"]) <= 1, r
+        if r["star"] is not None:
+            assert abs(r["star"] - r["both"]) <= 1, r
     # And the supernova's star, place, time and share button stand in the finds' columns.
     cols = page.evaluate("""() => {
       const at = (row, sel) => { const r = row.querySelector(sel).getBoundingClientRect(); return [r.left + r.width / 2, r.left, r.right]; };

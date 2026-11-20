@@ -333,10 +333,11 @@ li.row > button{margin-top:2px}
    motion is reduced; otherwise it keeps still. */
 .nova-star{width:18px;height:18px;justify-self:center;align-self:center;overflow:visible;fill:var(--c);filter:drop-shadow(0 0 3px hsl(var(--h,200) 95% 60% / .6))}
 .nova-star circle{fill:#fff}
-li.row.nova-row{--nv-bg:hsl(var(--h) 60% 34% / .1);--nv-glow:hsl(var(--h) 95% 58% / .22);background:radial-gradient(ellipse 120px 52px at 20px 22px, var(--nv-glow), transparent),var(--nv-bg)}
+li.row.nova-row{--nv-bg:hsl(var(--h) 60% 34% / .1);--nv-glow:hsl(var(--h) 95% 58% / .22);background:radial-gradient(ellipse 120px 52px at 20px 50%, var(--nv-glow), transparent),var(--nv-bg)}
 @media (prefers-color-scheme: dark){:root:not([data-theme="light"]) li.row.nova-row{--nv-bg:hsl(var(--h) 50% 3% / .55);--nv-glow:hsl(var(--h) 95% 66% / .16)}}
 :root[data-theme="dark"] li.row.nova-row{--nv-bg:hsl(var(--h) 50% 3% / .55);--nv-glow:hsl(var(--h) 95% 66% / .16)}
 li.row.nova-row > .find-share{grid-column:3}
+.nova-find > .nova-star{grid-row:1 / 3}  /* centred on both lines, the word's and the one under it */
 .nova-find .find-w{color:var(--c);text-transform:uppercase}
 .nova-find .find-meta{margin:-4px 0 4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .nova-find .find-meta b.w{font:700 14px/0 var(--f-display);letter-spacing:.07em;color:var(--ink)}
