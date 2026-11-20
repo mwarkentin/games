@@ -56,8 +56,10 @@ export function text(str, x, y, font, px, fill, spacing = 0) {
 
 // The game's fragment form, f-<word>-<x>-<y>-<d> (m for minus), checked
 // against the map as the survey checks a claim. Returns the find, or null.
+// Numbers only as the game writes them (no leading zeros, no m0), so each
+// find has one address, and one card kept for it.
 export function parseFind(slug) {
-  const m = /^f-([a-z]{3,12})-(m?\d{1,9})-(m?\d{1,9})-([0-7])$/.exec(slug);
+  const m = /^f-([a-z]{3,12})-(0|m?[1-9]\d{0,8})-(0|m?[1-9]\d{0,8})-([0-7])$/.exec(slug);
   if (!m) return null;
   const num = (v) => (v[0] === 'm' ? -Number(v.slice(1)) : Number(v));
   const x = num(m[2]), y = num(m[3]);
