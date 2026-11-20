@@ -100,7 +100,7 @@ describe('what a card says', () => {
     assert.equal(pagePath(parseView('/v/theme/11/all', NOW)), '/letterfield-log?theme=11');
     assert.equal(pagePath(parseView('/v/territory/-3,12', NOW)), '/letterfield-log?territory=-3,12');
     const hour = parseView(`/v/surveyor/ZED/hour/2026-11-10T09/${Date.UTC(2026, 10, 10, 14) / HOUR}-${Date.UTC(2026, 10, 10, 15) / HOUR}`, NOW);
-    assert.equal(pagePath(hour), '/letterfield-log?surveyor=ZED&period=hour&day=2026-11-10&hour=9');
+    assert.equal(pagePath(hour), `/letterfield-log?surveyor=ZED&period=hour&day=2026-11-10&hour=9&at=${Date.UTC(2026, 10, 10, 14) / HOUR}`);
   });
 
   test('names the period by its dates, never "this week"', () => {

@@ -124,7 +124,8 @@ export function pagePath(v, name = null) {
   if (v.period !== 'all') {
     q.set('period', v.period);
     q.set('day', `${v.y}-${pad(v.mo)}-${pad(v.d)}`);
-    if (v.period === 'hour') q.set('hour', String(v.h));
+    // And the hour's UTC hour, for the day clocks go back, when an hour's time comes twice.
+    if (v.period === 'hour') { q.set('hour', String(v.h)); q.set('at', String(v.from)); }
   }
   return `/letterfield-log?${q.toString().replace(/%2C/g, ',').replace(/(^|&)supernovas=(&|$)/, '$1supernovas$2')}`;
 }

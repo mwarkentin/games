@@ -513,6 +513,27 @@ def test_a_view_of_one_finds_its_words_past_a_busy_half_hour_after_it(page: Page
     assert errors == []
 
 
+def test_the_second_1_am_the_day_clocks_go_back_has_an_address_of_its_own(page: Page, site_url, errors):
+    # In Toronto, 1:00 AM comes twice on Nov 1, 2026: at 05:00 UTC, then at 06:00 UTC.
+    first = int(datetime(2026, 11, 1, 5, 10, tzinfo=UTC).timestamp() * 1000)
+    second = int(datetime(2026, 11, 1, 6, 10, tzinfo=UTC).timestamp() * 1000)
+    fake = FakeSurveyLog(
+        [["ACORN", 5, 7, 0, 0, "ZED", first, 11], ["FERN", 10, 20, 0, 0, "ZED", second, 11]], PLACES, THEMES
+    )
+    open_log(page, site_url, fake, query="&period=hour&day=2026-11-01&hour=1")
+    expect(page.locator(".entry .word")).to_have_text(["ACORN"])
+    assert "at=" not in page.url
+    page.click("#next")  # the second 1 AM
+    expect(page.locator(".entry .word")).to_have_text(["FERN"])
+    assert f"at={second // HOUR_MS}" in page.url and "hour=1" in page.url
+    # Its address opens it again, as a share card's link does.
+    page.reload()
+    expect(page.locator(".entry .word")).to_have_text(["FERN"])
+    page.click("#prev")
+    expect(page.locator(".entry .word")).to_have_text(["ACORN"])
+    assert errors == []
+
+
 def test_a_theme_that_isnt_one_says_so(page: Page, site_url):
     open_log(page, site_url, FakeSurveyLog([ACORN], PLACES, THEMES), query="&theme=500")
     expect(page.locator(".status strong")).to_have_text("Not in the log")

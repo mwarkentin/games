@@ -580,7 +580,11 @@ function askSpan() {
 }
 function startOf(p, t) {
   const d = new Date(t), y = d.getFullYear(), m = d.getMonth(), day = d.getDate();
-  if (p === 'hour') return new Date(y, m, day, d.getHours()).getTime();
+  if (p === 'hour') {
+    // The day clocks go back, an hour's time comes twice; this is the one t is in.
+    const s = new Date(y, m, day, d.getHours()).getTime();
+    return t - s >= HOUR ? s + HOUR : s;
+  }
   if (p === 'day') return new Date(y, m, day).getTime();
   if (p === 'week') return new Date(y, m, day - (d.getDay() + 6) % 7).getTime();
   if (p === 'month') return new Date(y, m, 1).getTime();
@@ -1365,8 +1369,12 @@ function readUrl() {
     state.period = PERIODS.includes(p) ? p : defaultPeriod(state.focus);
     if (state.focus?.kind === 'territory') state.period = 'all';
     let t = parseDay(q.get('day'));
-    const h = Number(q.get('hour'));
-    if (t !== null && state.period === 'hour' && Number.isInteger(h) && h >= 0 && h < 24) t = new Date(new Date(t).setHours(h)).getTime();
+    const h = Number(q.get('hour')), at = q.get('at') ? Number(q.get('at')) * HOUR : NaN;
+    if (t !== null && state.period === 'hour' && Number.isInteger(h) && h >= 0 && h < 24) {
+      // The day clocks go back has an hour twice: ?at= (its UTC hour) says
+      // which, when it's that hour of that day here.
+      t = Number.isInteger(at) && isoDay(at) === q.get('day') && new Date(at).getHours() === h ? at : new Date(new Date(t).setHours(h)).getTime();
+    }
     state.start = startOf(state.period, t !== null && t <= Date.now() ? t : Date.now());
     state.mine = !state.focus && q.get('view') === 'mine';
   } catch (_) {}
@@ -1409,7 +1417,7 @@ const Span = machine('span', {
 // week when it's read next month.
 function urlFor({ focus = state.focus, period = state.period, start = state.start, mine = state.mine, pin = false } = {}) {
   const q = new URLSearchParams(location.search);
-  for (const k of [...FOCUS_KEYS, 'name', 'period', 'day', 'hour', 'view']) q.delete(k);
+  for (const k of [...FOCUS_KEYS, 'name', 'period', 'day', 'hour', 'at', 'view']) q.delete(k);
   if (focus?.kind === 'surveyor') q.set('surveyor', focus.key);
   else if (focus?.kind === 'theme') q.set('theme', String(focus.key));
   else if (focus?.kind === 'guild') {
@@ -1423,7 +1431,11 @@ function urlFor({ focus = state.focus, period = state.period, start = state.star
     const here = period === 'all' || (!pin && start === startOf(period, Date.now()));
     if (period !== defaultPeriod(focus)) q.set('period', period);
     if (!here) q.set('day', isoDay(start));
-    if (period === 'hour' && !here) q.set('hour', String(new Date(start).getHours()));
+    if (period === 'hour' && !here) {
+      q.set('hour', String(new Date(start).getHours()));
+      // The second of an hour that comes twice, the day clocks go back.
+      if (new Date(start - HOUR).getHours() === new Date(start).getHours()) q.set('at', String(fdiv(start, HOUR)));
+    }
     if (mine && !focus) q.set('view', 'mine');
   }
   const s = q.toString().replace(/%2C/g, ',').replace(/(^|&)supernovas=(&|$)/, '$1supernovas$2');
