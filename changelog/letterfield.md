@@ -1,4 +1,4 @@
-## 2026-11-19
+## 2026-11-20
 
 - Supernovas now sit among your finds in the field notes, by when they went off: in the card of the visit you were on when one went off, or in a card of their own if you saw it from afar. A Supernovas filter beside All shows just them, still under their days.
 - Field notes with thousands of finds open at once, and draw more as you scroll.
