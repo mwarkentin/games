@@ -1883,6 +1883,7 @@ function linkMoved(l, to, from) {
     clearTimeout(l.flush); l.flush = 0;
     // Claims still out on it are asked about again when the sector is next joined.
     for (const c of outbox.values()) if (c.l === l && c.m.is('sent')) c.m.go('unanswered');
+    matesLost();
   }
   if (to === 'backoff') {
     l.tries++;  // one more failure since it was last live
@@ -6224,6 +6225,15 @@ function onGuild(m) {
     guildToast(g.name, `${who}${more ? ` and ${more} more` : ''} came online`, `${myGuilds.length > 1 ? `${esc(shownName(g))} · ` : ''}${regionName(s.rx, s.ry)} · ${away(s.rx, s.ry)}`, flyThere(who, s));
   }
   renderGuild(); renderWho(); invalidate();
+}
+// Who's online in our guilds comes only from live sectors in the universe
+// (outside it, sectors hear nothing of guilds). With none, it isn't known: it
+// goes, and a sector joined again says who's here afresh, with no note.
+function matesLost() {
+  const inUniverse = l => l.k.split(',').every(v => Math.abs(v) <= SURVEY_AREA);
+  if (!mates.size || [...links.values()].some(l => l.m.is('live') && inUniverse(l))) return;
+  mates.clear(); heard.clear();
+  renderGuild(); renderWho();
 }
 // Someone online in any of our guilds, by id.
 function mateOf(pid) {

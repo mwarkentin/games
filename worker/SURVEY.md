@@ -671,6 +671,9 @@ on or off, not with every report. It costs no requests of its own.
   guilds already.
 - **Outside the shared world** sectors don't report, so a member out there
   shows as offline, with when they were last seen.
+  So do yours: with no live sector of yours inside it (out past it, offline
+  or the tab hidden), the game forgets who was online, and shows every
+  member as offline until a sector inside says again.
 
 ### Cost
 
