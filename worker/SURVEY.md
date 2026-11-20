@@ -194,7 +194,9 @@ survey also limits each IP address, wherever it plays:
   keeps this count:
   - Each sector's reports, which already go out at most every 10 s while
     words are charted, also list how many words each address charted there
-    since the last report.
+    since the last report: up to 3,000 addresses a report (`REPORT_BY_MAX`,
+    the most words first), the rest with the next, so a report the Atlas
+    couldn't reach in time never grows past what it takes.
   - The Atlas adds these up for the UTC day. It answers with the addresses
     past the cap, the most recent 2,000, but only when that list has
     changed since the sector last heard it. An address capped earlier that

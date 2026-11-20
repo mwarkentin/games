@@ -13,7 +13,7 @@ import worker from '../src/index.js';
 import { CH, DEAL, DIRS, HOLDERS, MAP_VERSION, RG, STRAY_MIN, THEMES, THEME_DATA, VOCAB, chunk, genChunk, keyOf, letterAt, regionName, regionTheme, strayTheme, wordEnd } from '../src/letterfield-world.js';
 import {
   ADDRESS_HEADER, ADDRESS_SOCKETS, AREA, AREA_WORDS, Atlas, BATCH_MS, DAILY_CLAIMS, dailyClaims, DAILY_LIST_MAX, CLAIM_BURST, CLAIM_REFILL_MS, MAX_ONLINE, MAX_PLAYERS, ONLINE_MS, PRESENCE_MAX, PRESENCE_MS,
-  QUIET, REPORT_MS, UNPASSED_HEADER, SAVE_MS, SAVE_POS_MS, SECTOR, SPAWN_MAX, Sector, VIEW_MS, addressOf, checkClaim, routeSurvey,
+  QUIET, REPORT_BY_MAX, REPORT_MS, UNPASSED_HEADER, SAVE_MS, SAVE_POS_MS, SECTOR, SPAWN_MAX, Sector, VIEW_MS, addressOf, checkClaim, routeSurvey,
 } from '../src/survey.js';
 
 const ORIGIN = 'https://games.michaelwarkentin.com';
@@ -661,6 +661,34 @@ describe('Sector', () => {
     await say(a, { t: 'pos', x: 400, y: -500 });
     await settle();
     assert.deepEqual(reports.at(-1).by, [[hashed(2), 1]]);
+  });
+
+  test('counts words for at most REPORT_BY_MAX addresses a report, so a crowd of them still reaches the Atlas', async () => {
+    const atlasObject = new Atlas(fakeState(), {});
+    atlasObject.now = () => clock;
+    const answers = [];
+    sector = new Sector(state, {
+      ATLAS: {
+        idFromName: (name) => name,
+        get: () => ({ fetch: async (url, init) => { const res = await atlasObject.fetch(new Request(url, init)); answers.push(res.status); return res; } }),
+      },
+    });
+    sector.now = () => clock;
+    const ws = fakeSocket();
+    sector.join(ws, 2, -3, hashed(1));
+    // More addresses than one report takes charted here while the Atlas was out (one twice).
+    for (let i = 0; i <= REPORT_BY_MAX; i++) sector.chartedBy.set(hashed(i + 2), i === REPORT_BY_MAX ? 2 : 1);
+    await say(ws, { t: 'pos', x: 400, y: -500 });
+    await settle();
+    assert.deepEqual(answers, [200]);
+    assert.equal(atlasObject.chartedToday.size, REPORT_BY_MAX);
+    assert.equal(atlasObject.chartedToday.get(hashed(REPORT_BY_MAX + 2)), 2);  // the most words go first
+    assert.equal(sector.chartedBy.size, 1);  // and the rest with the next
+    clock += REPORT_MS;
+    await say(ws, { t: 'pos', x: 410, y: -500 });
+    await settle();
+    assert.deepEqual(answers, [200, 200]);
+    assert.equal(atlasObject.chartedToday.size, REPORT_BY_MAX + 1);
   });
 
   test('counts joins without a Turnstile pass in its reports, and keeps the count if a report fails', async () => {

@@ -122,6 +122,7 @@ export const ADDRESS_HEADER = 'X-Survey-Address';  // the hashed address, from t
 export const UNPASSED_HEADER = 'X-Survey-Unpassed';  // '1' on a join without a good Turnstile pass, from the Worker
 export const DAILY_CLAIMS = 300;      // words one address can chart in the shared world each UTC day
 export const DAILY_LIST_MAX = 2000;   // addresses past the daily cap that the Atlas hands out, latest first
+export const REPORT_BY_MAX = MAX_PLAYERS * 4;  // addresses one report counts words for: more wait for the next
 export const RELAY_MS = ONLINE_MS;    // the Atlas keeps the shared world's supernovas this long, for sectors to pass on
 export const RELAY_MAX = 64;          // and at most this many
 export const NOVA_REPORT_MS = 1000;   // a sector with a supernova to report reports this soon after its last report
@@ -1021,8 +1022,18 @@ export class Sector {
     this.reporting = true;
     // Words charted by each address since the last report: sent once, or
     // put back to go with the next report if this one fails.
-    const by = this.chartedBy, unpassed = this.unpassed, novas = this.novasOwed;
+    // At most REPORT_BY_MAX addresses, the most words first, so a report
+    // stays one the Atlas takes however many charted here since the last
+    // one: the rest go with the next.
+    let by = this.chartedBy;
+    const unpassed = this.unpassed, novas = this.novasOwed;
     this.chartedBy = new Map();
+    if (by.size > REPORT_BY_MAX) {
+      const most = [...by].sort((a, b) => b[1] - a[1]);
+      by = new Map(most.slice(0, REPORT_BY_MAX));
+      this.chartedBy = new Map(most.slice(REPORT_BY_MAX));
+      this.reportDue = true;
+    }
     this.unpassed = 0;
     this.novasOwed = [];
     let world, listed;
@@ -1115,7 +1126,7 @@ export class Atlas {
       const by = r?.by ?? [];
       const ok = r && Number.isInteger(r.sx) && Number.isInteger(r.sy) && inArea(r.sx, r.sy) && isInt(r.players, 0, MAX_PLAYERS)
         && Array.isArray(r.charted) && r.charted.length === TERR * TERR && r.charted.every((n) => isInt(n, 0, 1000))
-        && Array.isArray(by) && by.length <= MAX_PLAYERS * 4
+        && Array.isArray(by) && by.length <= REPORT_BY_MAX
         && by.every((e) => Array.isArray(e) && typeof e[0] === 'string' && HASH.test(e[0]) && isInt(e[1], 1, TERR * TERR * 1000))
         && (r.unpassed === undefined || isInt(r.unpassed, 0, 1e6)) && goodWho(r.who, r.sx, r.sy, MAX_PLAYERS)
         && (r.tags === undefined || (Array.isArray(r.tags) && r.tags.length <= GUILD_TAGS_MAX && r.tags.every((t) => typeof t === 'string' && GUILD_TAG.test(t))))
