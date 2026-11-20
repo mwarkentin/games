@@ -155,7 +155,8 @@ that isn't about charting first or other surveyors works in both.
   everyone on the way to Bound Volume meets. It came after the rest, so it's
   last in the catalog (see "Profile cards"); the page shows it after Field
   Book (`MARK_LATER` in the game, which also says when it arrived). Its
-  badge is "666" with two small horns.
+  badge is "666" with two small horns, the digits drawn tall and narrow
+  like the game's display face, Big Shoulders.
 
 ## Badges
 
