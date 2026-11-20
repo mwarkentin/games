@@ -3236,7 +3236,7 @@ function chimesTrack(a, out) {
 // each phrase. Each play is seeded: a few bars of the tune, its grace notes
 // and the celesta's answers change; its shape doesn't. It has one convolver,
 // Chimes' hall behind a short pre-delay, fed mono.
-const LANTERN_KEY = .28, LANTERN_PAD = .026, LANTERN_CELLO = .058, LANTERN_BELL = .066, LANTERN_WET = .8;
+const LANTERN_KEY = .28, LANTERN_TUNE = .64, LANTERN_PAD = .029, LANTERN_CELLO = .064, LANTERN_BELL = .066, LANTERN_WET = .8;
 const LANTERN_CHORDS = {  // bass; three notes above it for the left hand; the strings' three, and V's suspension
   i: [42, [49, 52, 57], [54, 57, 61]], VI: [38, [45, 54, 52], [54, 57, 61]], iv: [35, [42, 50, 57], [54, 59, 62]],
   V: [37, [44, 54, 53], [53, 56, 61], 54], III: [37, [45, 52, 57], [52, 57, 61]], VII: [40, [47, 56, 52], [52, 56, 59]],
@@ -3412,7 +3412,7 @@ function lanternTrack(a, out, seed = Math.floor(Math.random() * 4294967296)) {
     const s = keep(a.createOscillator()), sg = a.createGain(), gone = Math.min(end, t + 1.6);
     s.setPeriodicWave(brightWave); s.frequency.value = f * (1.0008 + rnd() * .0008); s.detune.value = detune;
     sg.gain.setValueAtTime(0, t);
-    sg.gain.linearRampToValueAtTime(peak * (.25 + .7 * vel), t + attack);
+    sg.gain.linearRampToValueAtTime(peak * (.25 + .7 * vel) * clamp(1 - (m - 70) * .03, .6, 1), t + attack);
     sg.gain.setTargetAtTime(0, t + attack, .22 + .2 * clamp((72 - m) / 36, 0, 1));
     sg.gain.setTargetAtTime(0, gone, .035);
     s.connect(sg); sg.connect(to);
@@ -3458,7 +3458,7 @@ function lanternTrack(a, out, seed = Math.floor(Math.random() * 4294967296)) {
       celesta(at(1.5), 85, .45);
     } else {
       for (const [s, m, v, held] of LANTERN_FIGURES[b.lh](bass, up)) {
-        key(at(s) + (s ? rnd() * .012 : 0), m, b.dyn * .62 * v, held ? at(s + held) : end, lh, !s && 'bass');
+        key(at(s) + (s ? rnd() * .012 : 0), m, b.dyn * .69 * v, held ? at(s + held) : end, lh, !s && 'bass');
       }
     }
     // The tune, a little behind the beat, louder as it rises and over the
@@ -3469,7 +3469,7 @@ function lanternTrack(a, out, seed = Math.floor(Math.random() * 4294967296)) {
       if (m) {
         const [n1, n2] = b.tune.slice(k + 1), when = at(s) + .008 + rnd() * .018;
         const stop = n1 && !n1[0] ? at(s + d) + .08 : n2 ? at(s + d + n1[1]) + .03 : end;
-        const v = b.dyn * [.96, 1.03, 1, .92][b.phrase] * (.84 + (m - 66) * .007) * (s ? 1 : 1.05) * (.94 + rnd() * .12);
+        const v = LANTERN_TUNE * b.dyn * [.96, 1.03, 1, .92][b.phrase] * (.84 + (m - 66) * .007) * (s ? 1 : 1.05) * (.94 + rnd() * .12);
         if (d >= 2 && rnd() < b.grace) key(when - .075, m + LANTERN_UP[m % 12], v * .5, when + .05, rh, false);
         key(when, m, v, stop, rh, 'tune');
         if (b.double && d >= 1.5 && rnd() < .7) celesta(when + .01, m + 12, v);
