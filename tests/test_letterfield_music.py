@@ -332,3 +332,39 @@ def test_on_a_phone_the_player_is_one_row(page: Page, site_url, errors, size):
     expect(page.locator("#pieceName")).to_have_text("Lantern")
     assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
     assert errors == []
+
+
+def test_paused_music_with_sound_off_lets_the_audio_sleep(page: Page, site_url, errors):
+    open_player(
+        page,
+        site_url,
+        "localStorage.setItem('letterfield.music.v1', '1'); localStorage.setItem('letterfield.musicpiece.v1', '3');"
+        " localStorage.setItem('letterfield.sound.v1', '0');",
+    )
+    html, play = page.locator("html"), page.locator("#musicPlay")
+    page.keyboard.press("Shift")
+    expect(html).to_have_attribute("data-music", "playing")
+    page.wait_for_function("window.__lf.music().level > .1")
+    # Paused, with no sound effects to play, Lantern's held strings and the rest
+    # stop running once it's quiet, and taps and keys leave them asleep.
+    play.click()
+    expect(html).to_have_attribute("data-music", "paused")
+    page.wait_for_function("window.__lf.music().state === 'suspended'")
+    page.keyboard.press("Shift")
+    page.mouse.click(400, 500)
+    page.evaluate(HIDE, True)
+    page.evaluate(HIDE, False)
+    page.wait_for_timeout(500)
+    assert page.evaluate("window.__lf.music().state") == "suspended"
+    # Sound switched on wakes it for effects; off again, it sleeps.
+    page.locator("#sound").click()
+    page.wait_for_function("window.__lf.music().state === 'running'")
+    page.locator("#sound").click()
+    page.wait_for_function("window.__lf.music().state === 'suspended'")
+    # Played again, it wakes and carries on with the same piece.
+    play.click()
+    expect(html).to_have_attribute("data-music", "playing")
+    page.wait_for_function("window.__lf.music().state === 'running'")
+    page.wait_for_function("window.__lf.music().level > .1", timeout=4000)
+    assert page.evaluate(TRACK) == "lantern"
+    assert errors == []

@@ -2862,8 +2862,10 @@ function audioCtx() {
 // Anything but running means stopped: 'suspended', or Safari's 'interrupted'
 // after another app took the audio. A browser can refuse to resume outside a
 // tap or key (iOS does, coming back to the page), so every tap and key tries
-// again, whichever of sound and music is on.
+// again, whichever of sound and music is on. Paused music with sound off
+// needs nothing running, so the context stays asleep till it plays again.
 function wakeCtx() {
+  if (!soundOn && Player.is('paused')) return;
   if (ac && ac.state !== 'running' && ac.state !== 'closed' && !document.hidden) ac.resume().catch(() => {});
 }
 // Gain, then a compressor and a limiter, so a blast never clips.
@@ -2920,7 +2922,11 @@ function setSound(on) {
   soundBtn.setAttribute('aria-pressed', String(on));
   showSoundVol();
   if (on) { audioCtx(); if (fxOut) fxOut.gain.value = fxLevel(); }
-  else { for (const b of novaBuses) b.gain.value = 0; novaBuses.clear(); }
+  else {
+    for (const b of novaBuses) b.gain.value = 0;
+    novaBuses.clear();
+    if (ac && ac.state === 'running' && Player.is('paused')) ac.suspend().catch(() => {});  // nothing left to hear
+  }
 }
 function setSoundVol(v) {
   v = Math.max(0, Math.min(100, Math.round(v)));
@@ -3579,8 +3585,14 @@ function playMusic(a, n) {
     // Paused, it goes quiet and schedules nothing more; played again, it
     // picks up from the next bar it hadn't scheduled, and its four minutes
     // leave out the pause.
-    pause() { clearInterval(timer); pausedAt = a.currentTime; glide(master.gain, 0, .4, a); },
+    // With sound off, nothing else needs the context once it's quiet, so it
+    // sleeps, and its held voices with it, till played again.
+    pause() {
+      clearInterval(timer); pausedAt = a.currentTime; glide(master.gain, 0, .4, a);
+      setTimeout(() => { if (Player.is('paused') && !soundOn && a.state === 'running') a.suspend().catch(() => {}); }, 500);
+    },
     resume() {
+      if (a.state !== 'running' && a.state !== 'closed' && !document.hidden) a.resume().catch(() => {});
       swapAt += a.currentTime - pausedAt;
       track.resync(a.currentTime);
       run(); glide(master.gain, musicLevel(), 1, a);
