@@ -3995,17 +3995,25 @@ function updateHud() {
   tCoord.textContent = fmtCoord(cx, cy);
   // How much of the territory is charted (or found, alone), on a phone just
   // "3/113" to leave the theme room; while the survey isn't live here, what
-  // it's doing instead (see hereStatus).
+  // it's doing instead (see hereStatus). On the survey it's the sector's count
+  // wherever you are, inside the universe or out, since that's what sets off
+  // a supernova: your notes can be short of it by words someone else charted
+  // that you didn't add, which the hover says.
   const tally = (done, total, verb) => innerWidth < 700
     ? `<span aria-hidden="true"> · ${done}/${total}</span><span class="vh">, ${done} of ${total} words ${verb}</span>`
     : ` · ${done}/${total} ${verb}`;
   tCharted.hidden = false;
+  tCharted.removeAttribute('title');
   syncSurvey();  // does nothing without the survey
-  if (!surveyApi || !inSurveyArea(cx, cy)) tCharted.innerHTML = tally(territoryFound(rx, ry), territoryTotal(rx, ry), 'found');
+  if (!surveyApi) tCharted.innerHTML = tally(territoryFound(rx, ry), territoryTotal(rx, ry), 'found');
   else {
     const status = hereStatus(cx, cy);
     if (status) tCharted.textContent = ` · ${status}`;
-    else tCharted.innerHTML = tally(...territoryProgress(rx, ry), 'charted');
+    else {
+      const [done, total] = territoryProgress(rx, ry), mine = territoryFound(rx, ry);
+      tCharted.innerHTML = tally(done, total, 'charted');
+      if (mine !== done) tCharted.title = `${done} of ${total} hidden words charted · ${mine} in your notes`;
+    }
   }
   updateLegend();
 }

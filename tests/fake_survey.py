@@ -72,8 +72,9 @@ class FakeSurvey:
 
     def __init__(self, claims=(), presence=(), taken=(), world=None, totals=None, full=None, refuse=None, refuse_passes=(),
                  require_pass=False, hold=None, lose=None, rate=False, surveyors=(), emote_error=None, list_status=200,
-                 sign=False):
-        self.claims = list(claims)        # [w, x, y, d, s, initials, at] already charted in sector 0,0
+                 sign=False, home="0,0"):
+        self.home = home                  # the sector that holds `claims` and `presence`
+        self.claims = list(claims)        # [w, x, y, d, s, initials, at] already charted in sector `home`
         self.presence = list(presence)    # [id, initials, x, y] of other players in sector 0,0
         self.taken = {tuple(c[:4]): c for c in taken}  # words someone else charts first, just before us
         self.world = world or world_map()  # what GET /v1/survey/world answers
@@ -119,7 +120,7 @@ class FakeSurvey:
         self.sectors.append(key)
         self.sockets[key] = ws
         you = f"you-{key}-{len(self.sectors)}"  # every socket is someone new to the sector
-        home = key == "0,0"
+        home = key == self.home
         full = self.full.get(key) if isinstance(self.full, dict) else self.full
         if full:
             ws.send(json.dumps({"t": "full", "world": full == "world"}))
