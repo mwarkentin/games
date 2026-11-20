@@ -86,6 +86,7 @@
 //
 // Limits per address (see "Bots" in SURVEY.md): the Worker hands each sector
 // a salted hash of the player's IP address, never the address itself. A
+// socket's messages past FRAME_BURST at once are dropped unread. A
 // sector takes at most ADDRESS_SOCKETS sockets from one address, and two
 // rate-limiting bindings, set in wrangler.toml, count joins and claims per
 // address across every sector. For a daily cap, sectors in the shared world
@@ -107,6 +108,8 @@ export const BATCH_MS = 200;          // claims go out together at most this oft
 export const PRESENCE_MAX = 64;       // positions per update; `n` still counts everyone
 export const CLAIM_BURST = 5;         // claims a socket can make at once,
 export const CLAIM_REFILL_MS = 1500;  // then one per this many milliseconds
+export const FRAME_BURST = 20;        // messages of any kind a socket can send at once,
+export const FRAME_REFILL_MS = 100;   // then one per this many milliseconds; the game sends a few a second at most
 export const AREA = 12;               // the shared world: sectors -12 to 12 each way
 export const AREA_WORDS = 1119752;    // hidden words in it (test/survey.test.js recounts them)
 export const REPORT_MS = 10000;       // a busy sector reports to the atlas at most this often
@@ -337,6 +340,8 @@ export class Sector {
     this.worldSent = new WeakMap();  // socket → the last totals frame it was sent, so a frame only goes again when it changes
     this.people = null;      // socket → its attachment, read from the sockets on first use after waking
     this.guildChecks = new WeakMap();  // socket → codes of its guilds whose check is out (checkGuilds): kept in memory, never in an attachment
+    this.frames = new WeakMap();  // socket → {tokens, at}: its allowance of messages, in memory only
+    this.shownChecked = new WeakMap();  // socket → the badge and card it last sent, and what checking them found
     this.chartedBy = new Map();  // address → words it charted here since the last report
     this.unpassed = 0;           // joins without a Turnstile pass since the last report (a bot signal)
     this.overDay = -1;       // the UTC day `over` is for
@@ -546,6 +551,15 @@ export class Sector {
 
   async webSocketMessage(ws, message) {
     if (typeof message !== 'string' || message.length > MAX_MESSAGE) return;
+    // Every message costs the sector's one thread some work, whatever it
+    // says, so past a few a second a socket's messages are dropped unread.
+    // (Claims and emotes have tighter limits of their own, which answer.)
+    const now = this.now(), allowance = this.frames.get(ws) ?? { tokens: FRAME_BURST, at: now };
+    allowance.tokens = Math.min(FRAME_BURST, allowance.tokens + (now - allowance.at) / FRAME_REFILL_MS);
+    allowance.at = now;
+    this.frames.set(ws, allowance);
+    if (allowance.tokens < 1) return;
+    allowance.tokens -= 1;
     let msg;
     try { msg = JSON.parse(message); } catch { return; }
     const me = this.person(ws);
@@ -555,10 +569,16 @@ export class Sector {
       // Who the player is, whether they take emotes, and their guilds: for the surveyor list and guild checks.
       const social = await takeMe(me, msg);
       if (social) this.reportDue = true;
-      // The badge they show, if the Worker signed it for them.
-      const badge = me.pid ? await checkBadge(this.env, me.pid, msg.badge) : null;
-      // And their card, the same way: others see it without its signature.
-      const card = me.pid ? (await checkCard(this.env, me.pid, msg.card))?.shown ?? null : null;
+      // The badge they show, if the Worker signed it for them, and their card,
+      // the same way: others see it without its signature. Each is checked
+      // again only when the game sends something new.
+      const sent = JSON.stringify([me.pid ?? null, msg.badge ?? null, msg.card ?? null]), last = this.shownChecked.get(ws);
+      let badge = last?.sent === sent ? last.badge : null, card = last?.sent === sent ? last.card : null;
+      if (last?.sent !== sent) {
+        badge = me.pid ? await checkBadge(this.env, me.pid, msg.badge) : null;
+        card = me.pid ? (await checkCard(this.env, me.pid, msg.card))?.shown ?? null : null;
+        this.shownChecked.set(ws, { sent, badge, card });
+      }
       const shown = badge !== (me.badge ?? null) || card !== (me.card ?? null);
       if (shown) { me.badge = badge; me.card = card; }
       if (initials !== me.initials || social || shown) { me.initials = initials; this.save(ws, me); this.schedulePresence(false); }

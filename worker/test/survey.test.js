@@ -12,7 +12,7 @@ import vm from 'node:vm';
 import worker from '../src/index.js';
 import { CH, DEAL, DIRS, HOLDERS, MAP_VERSION, RG, STRAY_MIN, THEMES, THEME_DATA, VOCAB, chunk, genChunk, keyOf, letterAt, regionName, regionTheme, strayTheme, wordEnd } from '../src/letterfield-world.js';
 import {
-  ADDRESS_HEADER, ADDRESS_SOCKETS, AREA, AREA_WORDS, Atlas, BATCH_MS, DAILY_CLAIMS, dailyClaims, DAILY_LIST_MAX, CLAIM_BURST, CLAIM_REFILL_MS, MAX_ONLINE, MAX_PLAYERS, ONLINE_MS, PRESENCE_MAX, PRESENCE_MS,
+  ADDRESS_HEADER, ADDRESS_SOCKETS, AREA, AREA_WORDS, Atlas, BATCH_MS, DAILY_CLAIMS, dailyClaims, DAILY_LIST_MAX, CLAIM_BURST, CLAIM_REFILL_MS, FRAME_BURST, FRAME_REFILL_MS, MAX_ONLINE, MAX_PLAYERS, ONLINE_MS, PRESENCE_MAX, PRESENCE_MS,
   QUIET, REPORT_BY_MAX, REPORT_MS, UNPASSED_HEADER, SAVE_MS, SAVE_POS_MS, SECTOR, SPAWN_MAX, Sector, VIEW_MS, addressOf, checkClaim, routeSurvey,
 } from '../src/survey.js';
 
@@ -306,6 +306,23 @@ describe('Sector', () => {
     await sector.webSocketMessage(ws, new ArrayBuffer(8));
     assert.equal(ws.deserializeAttachment().x, null);
     assert.equal(ws.sent.length, 1); // just the hello
+  });
+
+  test('drops messages a socket sends faster than FRAME_BURST at once and one per FRAME_REFILL_MS after', async () => {
+    const ws = join();
+    const saves = ws.saves;
+    // Initials that change every message: each read would save the socket.
+    for (let i = 0; i < FRAME_BURST * 5; i++) await say(ws, { t: 'me', initials: i % 2 ? 'AAA' : 'BBB' });
+    assert.equal(ws.saves - saves, FRAME_BURST);
+    await say(ws, { t: 'pos', x: 1, y: 2 });
+    assert.equal(ws.deserializeAttachment().x, null);  // dropped too
+    clock += FRAME_REFILL_MS;
+    await say(ws, { t: 'pos', x: 1, y: 2 });
+    assert.equal(ws.deserializeAttachment().x, 1);
+    // Another socket has its own allowance.
+    const other = join();
+    await say(other, { t: 'pos', x: 3, y: 4 });
+    assert.equal(other.deserializeAttachment().x, 3);
   });
 
   test('limits how fast one socket can claim', async () => {

@@ -233,6 +233,11 @@ survey also limits each IP address, wherever it plays:
   opens about 10 an hour. The Worker asks it before forwarding a join, so a
   join it refuses never wakes (or makes) a sector. Either limit is answered
   with `full`, and the game tries again in a minute or so.
+- **Messages: 20 at once per socket, then 10 a second.** Every message
+  costs the sector's one thread some work (a position, initials, a badge to
+  check), so past that a socket's messages are dropped unread
+  (`FRAME_BURST`, `FRAME_REFILL_MS`). The game sends a few a second at most.
+  A badge and card are checked again only when the game sends new ones.
 - **Why a binding and not a Durable Object per address.** The binding keeps
   its counts in each Cloudflare location, in memory, and answers without
   waiting for other locations to agree. So it's approximate: counts are per
