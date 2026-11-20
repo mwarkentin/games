@@ -840,13 +840,25 @@ async function renderNovas(run, p, start, end) {
   if (run !== state.run) return;
   const data = { places: { ...first.places }, themes: { ...first.themes } };
   const list = novaList(first, start, end);
-  const points = first.hours.filter(r => Array.isArray(r) && Number.isInteger(r[0]) && Number.isInteger(r[1])).map(r => [r[0] * HOUR, r[1], 0]);
+  let next = first.next;
+  // An hour's chart is minute by minute, so it counts each of the hour's
+  // supernovas where it happened: the hours' counts would put them all at :00.
+  for (let n = 1; p === 'hour' && typeof next === 'string' && n < SLICE_PAGES; n++) {
+    const more = await page(next);
+    if (run !== state.run) return;
+    list.push(...novaList(more, start, end));
+    Object.assign(data.places, more.places); Object.assign(data.themes, more.themes);
+    next = more.next;
+  }
+  const points = p === 'hour'
+    ? list.map(n => [n[2], 1, 0]).sort((a, b) => a[0] - b[0])
+    : first.hours.filter(r => Array.isArray(r) && Number.isInteger(r[0]) && Number.isInteger(r[1])).map(r => [r[0] * HOUR, r[1], 0]);
   const buckets = tally(bucketsOf(p, start, end), points), total = buckets.reduce((a, b) => a + b.n, 0);
   const latest = list[0], quick = list.reduce((a, n) => (!a || n[2] - n[8] < a[2] - a[8] ? n : a), null);
   tiles([
     ['Supernovas', total.toLocaleString(), total === 1 ? 'territory fully charted' : 'territories fully charted'],
     ['Latest', latest ? novaPlace(latest, data) : '—', latest ? `${monthDay.format(latest[2])} · ${timeFmt.format(latest[2])}` : ''],
-    ['Quickest', quick ? took(quick[2] - quick[8]) : '—', quick ? novaPlace(quick, data) + (first.next ? ' · of the latest 100' : '') : ''],
+    ['Quickest', quick ? took(quick[2] - quick[8]) : '—', quick ? novaPlace(quick, data) + (next ? ' · of the latest 100' : '') : ''],
   ]);
   // A year by its months: a calendar of days would be almost all empty.
   if (p === 'year') chartEl.replaceChildren(columnChart('all', tally(bucketsOf('all', start, end), points), { what: 'supernova' }));
@@ -868,8 +880,8 @@ async function renderNovas(run, p, start, end) {
   const ol = el('ol', 'novas');
   ol.append(...list.map(n => novaRow(n, data, { date: true })));
   logEl.replaceChildren(ol);
-  if (typeof first.next === 'string') {
-    logEl.append(moreButton(run, page, first.next, data, a => ol.append(...novaList(a, start, end).map(n => novaRow(n, data, { date: true })))));
+  if (typeof next === 'string') {
+    logEl.append(moreButton(run, page, next, data, a => ol.append(...novaList(a, start, end).map(n => novaRow(n, data, { date: true })))));
   }
 }
 

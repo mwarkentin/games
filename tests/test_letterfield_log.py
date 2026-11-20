@@ -880,6 +880,17 @@ def test_a_day_and_an_hour_show_their_supernovas_where_they_happened(page: Page,
     assert errors == []
 
 
+def test_an_hours_supernovas_are_charted_in_the_minute_they_went(page: Page, site_url, errors):
+    fake = FakeSurveyLog([ACORN, MONET, BIRCH, OAK, ZEUS], PLACES, THEMES, totals=NOVA_TOTALS)
+    open_log(page, site_url, fake, query="&supernovas&period=hour&day=2026-11-06&hour=15")
+    expect(page.locator("#sumTitle")).to_have_text(re.compile(r"3:00\s?PM – 4:00\s?PM"))
+    expect(tile(page, 0)).to_contain_text("Supernovas1")
+    # Monet Reach went at 3:10, not at the top of the hour.
+    expect(page.locator("#chart .bar.some")).to_have_count(1)
+    expect(page.locator("#chart .bar.some")).to_have_attribute("aria-label", re.compile(r"^3:10\s?PM: 1 supernova$"))
+    assert errors == []
+
+
 def test_a_period_shows_without_its_supernovas_when_they_cannot_load(page: Page, site_url, errors):
     fake = FakeSurveyLog([ACORN, BIRCH, OAK], PLACES, THEMES, totals=NOVA_TOTALS)
     fake.fail_novas = True
