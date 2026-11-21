@@ -19,31 +19,12 @@ hand.
   survey log makes itself (`/v1/survey/world` and `/v1/survey/log/…`), kept
   in `data/survey.json` without anyone's initials.
 - Letterfield's history is `main`'s first-parent log, in
-  `data/history.json`: 78 of the 118 pull requests the site merged in its
-  first 24 days touched Letterfield's files, and the lines count only its
-  own code (its pages, its Worker modules and its tests), not the other
-  games' or what every game shares.
+  `data/history.json`: the 78 pull requests that touched Letterfield's files
+  in its first 24 days, and the lines of its own code at each (its pages,
+  its Worker modules and its tests).
 - Costs are worked out from SURVEY.md's use per player-hour and
   Cloudflare's published prices, the same way in the figure and the
   calculator.
-
-## What isn't Letterfield's
-
-The repo and the Worker serve the whole site, so a few parts in the
-figures belong to the other games, and are drawn in grey or named as such:
-
-- **WarRoom** is the Durable Object for War's multiplayer rooms, the site's
-  card game. It runs in the same Worker as the survey (its first Durable
-  Object, migration v1), and Letterfield doesn't use it.
-- **games-leaderboard**, the D1 database, keeps the other games' scores,
-  groups and submissions, and Letterfield's definitions, link codes and
-  recovery codes beside them.
-- **The pipeline** in "How a change ships" is the site's, the same for
-  every game; so is the account's free-plan allowance in the cost figures,
-  which every game's Durable Objects would share.
-- The survey also borrows helpers from the leaderboards' code
-  (`worker/src/leaderboard.js`): hashing addresses, the rate-limit check,
-  CORS headers and the checks on initials.
 
 ## What's made up
 
@@ -137,11 +118,11 @@ median, and 532 at four letters or more against its "some 530".
 
 | Fact | Source |
 | --- | --- |
-| Durable Object classes: WarRoom (v1), Sector and Atlas (v2), Guild (v3), Player (v4), all SQLite-backed | worker/wrangler.toml [[migrations]] |
-| Two D1 databases: games-leaderboard (binding DB) and games-survey-log (binding LOG_DB) | worker/wrangler.toml [[d1_databases]] |
+| The survey's Durable Object classes: Sector and Atlas (v2), Guild (v3) and Player (v4), all SQLite-backed | worker/wrangler.toml [[migrations]] |
+| Two D1 databases: games-survey-log (binding LOG_DB), and games-leaderboard (binding DB), where Letterfield keeps its definitions, link codes and recovery codes | worker/wrangler.toml [[d1_databases]] |
 | Rate-limit bindings: SURVEY_CLAIMS 6/60 s, SURVEY_JOINS 120/60 s, SURVEY_EMOTES 20/60 s, DEFINE_LOOKUPS 20/60 s | worker/wrangler.toml [[ratelimits]] |
-| The router's order: /v1/war/ first, then survey, surveyors, guilds, links, players, recovery, badges, log, define, and the leaderboard last | worker/src/index.js fetch() |
-| 625 sectors in the shared world: sectors -12 to 12 each way (AREA = 12) | worker/src/survey.js AREA |
+| The router hands each path to its handler: the survey, surveyors, guilds, links, players, recovery, badges, the log and definitions | worker/src/index.js fetch() |
+| 625 sectors in the universe: sectors -12 to 12 each way (AREA = 12) | worker/src/survey.js AREA |
 | The share Worker binds Sector and Atlas from games-leaderboard and the Worker itself as LOG, and keeps cards in R2 (games-share-cards) | share/wrangler.toml |
 | The game is one file, letterfield.html: 8,248 lines at commit 44fe976 (PR #126) | wc -l letterfield.html |
 | Turnstile passes are handed out but not required (TURNSTILE_REQUIRED = "false") | worker/wrangler.toml [vars]; worker/TURNSTILE.md |
@@ -180,7 +161,7 @@ median, and 532 at four letters or more against its "some 530".
 | Fact | Source |
 | --- | --- |
 | The table's rows and figures | worker/SURVEY.md 'What eieio's games teach, and where it shows up here' |
-| OMCB's state was a 125 KB bitset; the shared world's would be 137 KB (1,119,752 bits) | worker/SURVEY.md |
+| OMCB's state was a 125 KB bitset; the universe's would be 137 KB (1,119,752 bits) | worker/SURVEY.md |
 | Batching 'took a sector from saturating at ~630 players to handling 750' | worker/SURVEY.md |
 | OMCB cost about $850; One Million Chessboards 'a few hundred dollars' | worker/SURVEY.md 'Cost' |
 | Sources: eieio.games/blog/scaling-one-million-checkboxes and eieio.games/blog/a-million-realtime-chess-boards-in-a-single-process | worker/SURVEY.md links |
@@ -402,15 +383,18 @@ median, and 532 at four letters or more against its "some 530".
 
 ### 8. How it was built
 
-#### 118 pull requests in 24 days
+#### 78 pull requests in 24 days
 
 | Fact | Source |
 | --- | --- |
-| 118 pull requests merged to main between 28 October and 20 November 2026 | git log --first-parent origin/main |
-| Line counts at each merge: letterfield.html; letterfield-log/timelapse/soundtrack.html; worker/src/*.js; tests/*.py | git show <merge>:<path> (data/history.json) |
-| Milestone dates and PR numbers | git log; PR titles |
-| CI sharding took the suite from about 19 minutes to about 3 | PR #83's title |
-| Coding agents wrote the pull requests and open them once work is pushed | AGENTS.md 'Pull requests'; the commit trailers |
+| 78 pull requests merged to main between 28 October and 20 November 2026 touched Letterfield's files | git log --first-parent origin/main, each merge's changed files (render.py LETTERFIELD) |
+| None of Letterfield's files changed on main except through a pull request | git log --first-parent origin/main |
+| 73 of the 78 came from claude/ branches, the ones Claude Code sessions push to; the other five (#99, #100, #104, #106, #109) from branches named otherwise | the pull requests' head branches on GitHub |
+| Every pull request got a preview of the site and the Worker from 7 November (#34, itself one of Letterfield's): 11 merged before it and 66 after | .github/workflows/preview.yml, added in 159010d |
+| Line counts at each merge: letterfield.html; letterfield-log, -timelapse and -soundtrack.html; Letterfield's Worker modules (survey*.js, letterfield-world.js, players.js, achievements.js, define.js); its tests (tests/test_letterfield*, test_survey_watch, its fakes, and worker/test for those modules) | git show at each merge (data/history.json) |
+| At 20 November: game 8,248 lines; pages 3,813; Worker code 4,401; tests 18,178 | data/history.json |
+| The most Letterfield pull requests in a day: 14, on 10 November | data/history.json |
+| Milestones: #1 Letterfield, #7 the survey explored, #26 limits per address, #30 the log, #48 state machines, #49 map 4, #58 share cards, #59 definitions, #81 timelapse, #83 CI sharded, #94 surveyors, guilds and devices, #115 achievements, #123 Lantern, #124 the album | PR titles in main's history |
 
 #### How a change ships
 

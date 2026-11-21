@@ -108,8 +108,7 @@ def render_pngs(svgs: list[Path]) -> None:
         browser.close()
 
 
-# Letterfield's own files, as against the site's other games and what every game shares (the build, CI,
-# telemetry, the leaderboards, War's rooms): a pull request that touches one of these is one of Letterfield's.
+# Letterfield's own files: a pull request that touches one of these is one of Letterfield's.
 LETTERFIELD = re.compile(
     r"^(letterfield[^/]*\.html|changelog/letterfield\.md|albums/letterfield/|icons/letterfield|previews/letterfield"
     r"|worker/src/(survey[^/]*|letterfield-world|players|achievements|define)\.js|worker/(SURVEY|ACHIEVEMENTS|TURNSTILE)\.md"
@@ -194,10 +193,8 @@ def record_clips(ids: list[str], fps: int = 20, scale: float = 1.25, workers: in
 def refresh_history() -> None:
     """Letterfield's growth, PR by PR, from main's first-parent history, into data/history.json.
 
-    Each merge to main is a row: its pull request, date and title, whether it touched Letterfield
-    (`lf`), and the lines then in the game, its three companion pages, its code in the Worker and
-    its tests. The site's other games share the repo, so their pull requests are rows too, with
-    `lf` false, and their code counts in none of the lines."""
+    A row for each pull request that touched Letterfield's files: its number and date, and the lines
+    then in the game, its three companion pages, its code in the Worker and its tests."""
     import subprocess
 
     def git(*args: str) -> str:
@@ -211,31 +208,24 @@ def refresh_history() -> None:
         return sum(lines(rev, f) for f in git("ls-tree", "-r", "--name-only", rev).split() if pattern.match(f))
 
     rows = []
-    log = git("log", "--first-parent", "origin/main", "--reverse", "--date=short", "--format=%H|%P|%ad|%s|%b%x1e")
-    for entry in filter(None, (e.strip() for e in log.split("\x1e"))):
-        sha, parents, date, subject, body = (entry.split("|", 4) + [""])[:5]
-        merge = re.match(r"Merge pull request #(\d+) from (\S+)", subject)
-        squash = re.search(r"\(#(\d+)\)\s*$", subject)
-        if merge:
-            body_lines = [b for b in body.splitlines() if b.strip()]
-            pr, title = int(merge[1]), body_lines[0] if body_lines else merge[2].split("/", 1)[-1]
-        elif squash:
-            pr, title = int(squash[1]), re.sub(r"\s*\(#\d+\)\s*$", "", subject)
-        else:
-            pr, title = None, subject
+    log = git("log", "--first-parent", "origin/main", "--reverse", "--date=short", "--format=%H|%P|%ad|%s")
+    for entry in log.splitlines():
+        sha, parents, date, subject = entry.split("|", 3)
+        # A merge commit names its pull request first; a squashed one, last.
+        number = re.match(r"Merge pull request #(\d+) ", subject) or re.search(r"\(#(\d+)\)\s*$", subject)
+        pr = int(number[1]) if number else None
         changed = git("diff", "--name-only", parents.split()[0], sha).split() if parents else []
+        if not pr or not any(LETTERFIELD.match(f) for f in changed):
+            continue
         rows.append({
-            "pr": pr, "date": date, "title": title, "lf": any(LETTERFIELD.match(f) for f in changed),
+            "pr": pr, "date": date,
             "game": lines(sha, "letterfield.html"),
             "pages": sum(lines(sha, f) for f in ("letterfield-log.html", "letterfield-timelapse.html",
                                                  "letterfield-soundtrack.html")),
             "worker": matching(sha, LETTERFIELD_WORKER), "tests": matching(sha, LETTERFIELD_TESTS),
         })  # fmt: skip
     (HERE / "data" / "history.json").write_text(json.dumps(rows, indent=0) + "\n")
-    prs = [r for r in rows if r["pr"]]
-    print(
-        f"history: {len(rows)} commits on main, {len(prs)} pull requests, {sum(r['lf'] for r in prs)} of them Letterfield's"
-    )
+    print(f"history: {len(rows)} of Letterfield's pull requests")
 
 
 def main() -> None:

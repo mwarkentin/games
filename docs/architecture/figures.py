@@ -477,30 +477,26 @@ def star(f: Fig, x: float, y: float, r: float, fill: str, stroke: str) -> None:
     "api.games.michaelwarkentin.com, which holds no state itself: it hashes the player's address, checks the "
     "per-address limits, and hands each request to the Durable Object that owns it. Each of the map's sectors "
     "is its own object, with its own SQLite storage and the WebSockets of everyone looking at it; one Atlas "
-    "keeps the world's totals; guilds and linked players get objects of their own. Two D1 databases keep what "
-    "has to be queried across the whole map: the survey's log, and one shared with the site's other games, "
-    "where Letterfield keeps its link codes, recovery codes and definitions beside their leaderboards. The "
-    "same Worker also runs those leaderboards and War's multiplayer rooms, drawn here in grey. A second Worker "
-    "draws the link-preview cards.",
+    "keeps the universe's totals; guilds and linked players get objects of their own. Two D1 databases keep what "
+    "has to be queried across the whole map: the survey's log, and one with Letterfield's link codes, recovery "
+    "codes and definitions. A second Worker draws the link-preview cards.",
     "Architecture diagram. At the top, three pages in the browser served by GitHub Pages: the game "
     "letterfield.html, the survey log and the timelapse. Arrows lead down to one Cloudflare Worker, "
     "games-leaderboard, which lists its routes and its per-address checks. Below it are Durable Objects: "
-    "Sector (625 in the shared world, more beyond), Atlas (one), Guild and Player, and in grey WarRoom, the "
-    "rooms of War, another game on the site, with arrows from sectors to the Atlas (reports every 10 seconds "
-    "at most), to guilds (membership checks) and to each other (supernovas and emotes). At the bottom, two D1 "
-    "databases: games-survey-log, written by sectors from an alarm, and games-leaderboard, shared with the "
-    "other games. On the right, the games-share Worker with its R2 bucket of cards, bound "
-    "directly to the Sector and Atlas classes, and the outside services: Turnstile, Sentry, Counterscale and "
-    "Wiktionary with Wikipedia.",
+    "Sector (625 in the universe, more beyond), Atlas (one), Guild and Player, with arrows from sectors to "
+    "the Atlas (reports every 10 seconds at most), to guilds (membership checks) and to each other (supernovas "
+    "and emotes). Below them, two D1 databases: games-survey-log, written by sectors from an alarm, and "
+    "games-leaderboard, with the link codes, recovery codes and definitions. On the right, the games-share Worker with its R2 bucket of cards, bound "
+    "directly to the Sector and Atlas classes. Along the bottom, the outside services: Turnstile, Sentry, "
+    "Counterscale and Wiktionary with Wikipedia.",
     [
         (
-            "Durable Object classes: WarRoom (v1, War's multiplayer rooms: another game on the same Worker), Sector "
-            "and Atlas (v2), Guild (v3), Player (v4), all SQLite-backed",
+            "The survey's Durable Object classes: Sector and Atlas (v2), Guild (v3) and Player (v4), all SQLite-backed",
             "worker/wrangler.toml [[migrations]]",
         ),
         (
-            "Two D1 databases: games-survey-log (binding LOG_DB), and games-leaderboard (binding DB), whose tables "
-            "are the other games' scores, groups and submissions and Letterfield's definitions, links and recovery",
+            "Two D1 databases: games-survey-log (binding LOG_DB), and games-leaderboard (binding DB), where "
+            "Letterfield keeps its definitions, link codes and recovery codes",
             "worker/wrangler.toml [[d1_databases]]",
         ),
         (
@@ -509,11 +505,11 @@ def star(f: Fig, x: float, y: float, r: float, fill: str, stroke: str) -> None:
             "worker/wrangler.toml [[ratelimits]]",
         ),
         (
-            "The router's order: /v1/war/ first, then survey, surveyors, guilds, links, players, recovery, badges, "
-            "log, define, and the leaderboard last",
+            "The router hands each path to its handler: the survey, surveyors, guilds, links, players, recovery, "
+            "badges, the log and definitions",
             "worker/src/index.js fetch()",
         ),
-        ("625 sectors in the shared world: sectors -12 to 12 each way (AREA = 12)", "worker/src/survey.js AREA"),
+        ("625 sectors in the universe: sectors -12 to 12 each way (AREA = 12)", "worker/src/survey.js AREA"),
         (
             "The share Worker binds Sector and Atlas from games-leaderboard and the Worker itself as LOG, and keeps "
             "cards in R2 (games-share-cards)",
@@ -565,7 +561,7 @@ def big_picture(t: Theme) -> Fig:
            "ui", 11, t.muted)  # fmt: skip
     routes = ["/v1/survey/<sx>/<sy>  /v1/survey/world  /v1/survey/surveyors",
               "/v1/survey/log/…  /v1/survey/guilds  /v1/player/sync  /v1/link",
-              "/v1/recovery  /v1/survey/badges  /v1/define  /v1/scores  /v1/war"]  # fmt: skip
+              "/v1/recovery  /v1/survey/badges  /v1/define"]  # fmt: skip
     for i, r in enumerate(routes):
         f.text(L + 14, wy + 42 + i * 13, r, "mono", 8.3, t.ink)
     f.text(L + 14, wy + 84, "stateless: hashes the address, checks limits and the pass, forwards", "ui", 10, t.muted)
@@ -579,20 +575,20 @@ def big_picture(t: Theme) -> Fig:
 
     # Durable Objects.
     dy = 372
-    objs = [("Sector", "× 625 in the shared world", 170), ("Atlas", "× 1: the world", 116),
-            ("Guild", "× 1 a guild", 104), ("Player", "× 1 a linked player", 132), ("WarRoom", "War's: another game", 0)]  # fmt: skip
+    objs = [("Sector", "× 625 in the universe", 196), ("Atlas", "× 1 for the universe", 150),
+            ("Guild", "× 1 a guild", 150), ("Player", "× 1 a linked player", 0)]  # fmt: skip
     ox, ob = L, {}
     for name, sub, w in objs:
         w = w or R - ox
-        # War's rooms share the Worker but not the survey: drawn in grey, as the rest of the site.
-        cell_box(f, ox, dy, w, 46, name, "other" if name == "WarRoom" else "object", sub, size=12.5)
+        cell_box(f, ox, dy, w, 46, name, "object", sub, size=12.5)
         ob[name] = (ox, w)
         ox += w + 8
-    for name in ("Sector", "Atlas", "Guild", "Player"):
+    for name in ("Sector", "Atlas", "Guild"):
         ox, w = ob[name]
         f.arrow([(ox + w / 2, wy + wh), (ox + w / 2, dy)], k["worker"], 1.3)
-    wx, ww = ob["WarRoom"]
-    f.arrow([(M - 20, wy + 74), (wx + ww / 2, wy + 74), (wx + ww / 2, dy)], t.muted, 1.2, dash="3 3")
+    # Player sits past the Worker's right edge: its arrow leaves the side, under the share Worker's note.
+    ox, w = ob["Player"]
+    f.arrow([(M - 20, wy + wh - 22), (ox + w / 2, wy + wh - 22), (ox + w / 2, dy)], k["worker"], 1.3)
     f.eyebrow(L, dy - 12, "Durable Objects · one thread and its own SQLite each", knock=True)
     sx, sw_ = ob["Sector"]
     ax, aw = ob["Atlas"]
@@ -610,7 +606,7 @@ def big_picture(t: Theme) -> Fig:
     by = 500
     cell_box(f, L, by, 262, 46, "games-survey-log", "store", "every word charted, counts, supernovas", size=12.5)
     cell_box(f, L + 270, by, R - L - 270, 46, "games-leaderboard", "store",
-             "shared: other games' scores; Letterfield's codes, definitions", size=12.5)  # fmt: skip
+             "link and recovery codes, definitions", size=12.5)  # fmt: skip
     f.arrow([(sx + 16, dy + 46), (sx + 16, by)], k["object"], 1.3)
     f.eyebrow(L, by - 12, "D1 · SQLite to query across the map", knock=True)
     f.label(sx + 24, by - 32, "an alarm copies new claims, ≤ 30 s later")
@@ -1932,7 +1928,7 @@ def monthly_bill(online: float, hours: float = 720) -> dict[str, float]:
     "It stays at the $5 plan until about a hundred people are online around the clock, because outgoing "
     "WebSocket messages are free and incoming ones count as a twentieth of a request. The ceiling is the cap "
     "itself: at 25,000 online, about $0.73 an hour. On the free plan, Durable Object requests would run out "
-    "at about 940 player-hours a day, and every object on the account, the site's other games' included, would stop "
+    "at about 940 player-hours a day, and every Durable Object on the account would stop "
     "until midnight UTC.",
     "A stacked area chart. The horizontal axis is players online around the clock for a month, on a log "
     "scale from 1 to 25,000; the vertical axis is the monthly bill in dollars, from 0 to 600. The bill is a "
@@ -2115,12 +2111,12 @@ def load_test(t: Theme) -> Fig:
 # How it was built
 # =============================================================================
 MILESTONES = [  # from main's history (data/history.json); PR numbers in brackets
-    ("2026-10-28", "Letterfield and the site (#1)"),
+    ("2026-10-28", "Letterfield (#1)"),
     ("2026-11-05", "One Million Words explored on Durable Objects (#7)"),
     ("2026-11-06", "the survey on; limits per address (#26); the log (#30)"),
     ("2026-11-08", "state machines (#48); map 4: 225 themes (#49)"),
     ("2026-11-10", "share cards (#58); definitions (#59)"),
-    ("2026-11-12", "timelapse (#81); the site's CI sharded, 19 → 3 min (#83)"),
+    ("2026-11-12", "timelapse (#81); CI sharded, 19 → 3 min (#83)"),
     ("2026-11-13", "surveyors, emotes, guilds, devices (#94)"),
     ("2026-11-18", "achievements (#115)"),
     ("2026-11-20", "Lantern (#123); the soundtrack album (#124)"),
@@ -2131,12 +2127,13 @@ MILESTONES = [  # from main's history (data/history.json); PR numbers in bracket
     "timeline",
     "built",
     "78 pull requests in 24 days",
-    "Letterfield began as one of four games on the site's first day, 28 October 2026. Everything since came as "
-    "pull requests, almost all written by coding agents and each tested on its own preview before merging: 78 of "
-    "the 118 the site merged by 20 November touched Letterfield, and the rest were its other games and what "
-    "they all share. The lines count Letterfield's own code alone, merge by merge: the game's one file, its "
-    "three companion pages, its code in the Worker and its tests; the bars along the bottom count its pull "
-    "requests merged each day. The tests grew fastest of all.",
+    "Letterfield began as a single-player word search on the site's first day, 28 October 2026. Everything "
+    "since came as pull requests, almost "
+    "all written by coding agents: 78 of them by 20 November, and from 7 November each with a preview of its own "
+    "to play before it merged. "
+    "The lines count Letterfield's code, merge by merge: the game's one file, its three companion pages, its "
+    "code in the Worker and its tests; the bars along the bottom count its pull requests merged each day. The "
+    "tests grew fastest of all.",
     "A line chart from 28 October to 20 November 2026 of Letterfield's lines of code at each merge to main. Its "
     "tests, in the game and the Worker, grow from 38 lines to about 18,200; the game, letterfield.html, from "
     "about 1,200 to 8,248; its Worker code to about 4,400; and the log, timelapse and soundtrack pages to about "
@@ -2147,9 +2144,22 @@ MILESTONES = [  # from main's history (data/history.json); PR numbers in bracket
     "count Letterfield's pull requests merged each day, up to 14 on 10 November.",
     [
         (
-            "78 of the 118 pull requests merged to main between 28 October and 20 November 2026 touched Letterfield's "
-            "files; the other 40 were War, the other games' leaderboards and what every game shares",
+            "78 pull requests merged to main between 28 October and 20 November 2026 touched Letterfield's files",
             "git log --first-parent origin/main, each merge's changed files (render.py LETTERFIELD)",
+        ),
+        (
+            "None of Letterfield's files changed on main except through a pull request",
+            "git log --first-parent origin/main",
+        ),
+        (
+            "73 of the 78 came from claude/ branches, the ones Claude Code sessions push to; the other five "
+            "(#99, #100, #104, #106, #109) from branches named otherwise",
+            "the pull requests' head branches on GitHub",
+        ),
+        (
+            "Every pull request got a preview of the site and the Worker from 7 November (#34, itself one of "
+            "Letterfield's): 11 merged before it and 66 after",
+            ".github/workflows/preview.yml, added in 159010d",
         ),
         (
             "Line counts at each merge: letterfield.html; letterfield-log, -timelapse and -soundtrack.html; "
@@ -2160,8 +2170,8 @@ MILESTONES = [  # from main's history (data/history.json); PR numbers in bracket
         ("At 20 November: game 8,248 lines; pages 3,813; Worker code 4,401; tests 18,178", "data/history.json"),
         ("The most Letterfield pull requests in a day: 14, on 10 November", "data/history.json"),
         (
-            "Milestones: #1 the site, #7 the survey explored, #26 limits per address, #30 the log, #48 state "
-            "machines, #49 map 4, #58 share cards, #59 definitions, #81 timelapse, #83 the site's CI sharded, #94 "
+            "Milestones: #1 Letterfield, #7 the survey explored, #26 limits per address, #30 the log, #48 state "
+            "machines, #49 map 4, #58 share cards, #59 definitions, #81 timelapse, #83 CI sharded, #94 "
             "surveyors, guilds and devices, #115 achievements, #123 Lantern, #124 the album",
             "PR titles in main's history",
         ),
@@ -2172,7 +2182,7 @@ def timeline(t: Theme) -> Fig:
 
     f = Fig(t, 720)
     hist = json.loads((HERE / "data" / "history.json").read_text())
-    ours = [r for r in hist if r["pr"] and r["lf"]]
+    ours = [r for r in hist if r["pr"]]
     f.header("Letterfield · how it was built", f"{len(ours)} pull requests in 24 days")
     d0, d1 = date(2026, 10, 28), date(2026, 11, 21)
     x0, x1, y0, y1, ymax = 82, 640, 150, 470, 21_000
@@ -2262,7 +2272,7 @@ def timeline(t: Theme) -> Fig:
     "against a Durable Object per sector.",
     [
         ("The table's rows and figures", "worker/SURVEY.md 'What eieio's games teach, and where it shows up here'"),
-        ("OMCB's state was a 125 KB bitset; the shared world's would be 137 KB (1,119,752 bits)", "worker/SURVEY.md"),
+        ("OMCB's state was a 125 KB bitset; the universe's would be 137 KB (1,119,752 bits)", "worker/SURVEY.md"),
         ("Batching 'took a sector from saturating at ~630 players to handling 750'", "worker/SURVEY.md"),
         ("OMCB cost about $850; One Million Chessboards 'a few hundred dollars'", "worker/SURVEY.md 'Cost'"),
         (
@@ -2353,7 +2363,7 @@ def eieio_lessons(t: Theme) -> Fig:
     "ci-previews",
     "built",
     "How a change ships",
-    "Every change to the site, Letterfield's or another game's, is a pull request. CI runs only the tests its files need, split across up to three shards "
+    "Every change is a pull request. CI runs only the tests its files need, split across up to three shards "
     "of four workers each, plus the linters and the two Workers' own tests, and a single required check, "
     "test, stands for them all. Meanwhile a preview workflow builds the pull request's own copy of the site "
     "and of each Worker on Cloudflare, so it can be tried on a phone, with its own empty survey, before "
@@ -2361,7 +2371,7 @@ def eieio_lessons(t: Theme) -> Fig:
     "migrations first.",
     "A flow from left to right. A pull request runs two workflows. Test: a plan job picks the tests the "
     "changes need, then pytest in up to three shards of four workers, the lint job, and node tests for the "
-    "leaderboard Worker and the share Worker, all feeding one required check called test. Preview: a Worker "
+    "two Workers, all feeding one required check called test. Preview: a Worker "
     "Preview of games-leaderboard (taking turns when the branch brings migrations), a Preview of games-share "
     "when it changed, then the site built with build.sh, its URLs pointed at those Previews, uploaded as a "
     "Preview of games-preview, and a comment with the links. After merging to main: GitHub Pages deploys the "
@@ -2432,7 +2442,7 @@ def ci_previews(t: Theme) -> Fig:
         cell_box(f, px + 12, yy, 276, 36, f"pr-<n>-{name}", "worker", sub, size=10, align="start")
     f.arrow([(144, 250), (160, 250), (160, 200), (tx, 200)], t.muted, 1.3)
     f.arrow([(160, 250), (160, py + 60), (px, py + 60)], t.muted, 1.3)
-    f.para(px + 12, py + 172, "Each preview has its own empty survey, rooms and storage; a comment on the pull request "
+    f.para(px + 12, py + 172, "Each preview has its own empty survey and storage; a comment on the pull request "
            "links to them.", 290, "ui", 9.5, lh=1.3, fill=t.muted)  # fmt: skip
     # Merge and deploy.
     mx = 520
@@ -2498,8 +2508,8 @@ POSTS = [
      "Worked out from the survey's use per player-hour: the $5 plan until about a hundred people are online around "
      "the clock, and at most about $0.73 an hour at the cap of 25,000."),
     ("built", "How it was built",
-     "118 pull requests in 24 days, each with its own copy of the site and the Worker to play on a phone before "
-     "it merged."),
+     "78 pull requests in 24 days, almost all by coding agents, and from 7 November each with its own copy of "
+     "the site and the Worker to play on a phone before it merged."),
 ]  # fmt: skip
 
 
@@ -2528,7 +2538,11 @@ def write_docs() -> None:
                 continue
             moves = f.draw(THEMES[0]).cycle  # a figure that moves loops in its SVG, and has clips too
             files = f"figures/{f.id}-light.svg · -dark.svg · .png" + (" · .mp4 · .gif" if moves else "")
-            items.append((f"Figure, moving in a {moves:g}-second loop" if moves else "Figure", f.title, files, f))
+            label = "Figure"
+            if moves:
+                article = "an" if f"{moves:g}".startswith("8") or moves in (11, 18) else "a"
+                label = f"Figure, moving in {article} {moves:g}-second loop"
+            items.append((label, f.title, files, f))
         items += [(KINDS[e.kind], e.title, e.files, e) for e in EXTRAS if e.post == key]
         for kind, name, files, item in items:
             posts.append(

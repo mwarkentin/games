@@ -1,159 +1,7 @@
 [
 {
-"pr": null,
-"date": "2026-10-28",
-"title": "Initial commit",
-"lf": false,
-"game": 0,
-"pages": 0,
-"worker": 0,
-"tests": 0
-},
-{
 "pr": 1,
 "date": "2026-10-28",
-"title": "Scaffold games.michaelwarkentin.com with four games",
-"lf": true,
-"game": 1203,
-"pages": 0,
-"worker": 0,
-"tests": 38
-},
-{
-"pr": 2,
-"date": "2026-10-29",
-"title": "claude/fb-leaderboard",
-"lf": false,
-"game": 1203,
-"pages": 0,
-"worker": 0,
-"tests": 38
-},
-{
-"pr": 4,
-"date": "2026-10-29",
-"title": "claude/doodle-chomp-leaderboard",
-"lf": false,
-"game": 1203,
-"pages": 0,
-"worker": 0,
-"tests": 38
-},
-{
-"pr": 6,
-"date": "2026-10-29",
-"title": "claude/atc-resume",
-"lf": false,
-"game": 1203,
-"pages": 0,
-"worker": 0,
-"tests": 38
-},
-{
-"pr": 5,
-"date": "2026-10-29",
-"title": "claude/atc-leaderboard",
-"lf": false,
-"game": 1203,
-"pages": 0,
-"worker": 0,
-"tests": 38
-},
-{
-"pr": 8,
-"date": "2026-10-29",
-"title": "Report game errors, performance and replays to Sentry",
-"lf": false,
-"game": 1203,
-"pages": 0,
-"worker": 0,
-"tests": 38
-},
-{
-"pr": 9,
-"date": "2026-10-29",
-"title": "Stop rewriting unchanged text and attributes every frame",
-"lf": false,
-"game": 1203,
-"pages": 0,
-"worker": 0,
-"tests": 38
-},
-{
-"pr": 10,
-"date": "2026-10-30",
-"title": "claude/leaderboard-periods",
-"lf": false,
-"game": 1203,
-"pages": 0,
-"worker": 0,
-"tests": 38
-},
-{
-"pr": 11,
-"date": "2026-11-02",
-"title": "Add a tip jar link to the home page and colophon, hidden until TIP_URL is set",
-"lf": false,
-"game": 1203,
-"pages": 0,
-"worker": 0,
-"tests": 38
-},
-{
-"pr": 13,
-"date": "2026-11-02",
-"title": "claude/fix-monday-period-test",
-"lf": false,
-"game": 1203,
-"pages": 0,
-"worker": 0,
-"tests": 38
-},
-{
-"pr": 14,
-"date": "2026-11-02",
-"title": "claude/doodle-chomp-initials-focus",
-"lf": false,
-"game": 1203,
-"pages": 0,
-"worker": 0,
-"tests": 38
-},
-{
-"pr": 12,
-"date": "2026-11-02",
-"title": "claude/leaderboard-database-id",
-"lf": false,
-"game": 1203,
-"pages": 0,
-"worker": 0,
-"tests": 38
-},
-{
-"pr": 15,
-"date": "2026-11-02",
-"title": "claude/counterscale-analytics",
-"lf": false,
-"game": 1203,
-"pages": 0,
-"worker": 0,
-"tests": 38
-},
-{
-"pr": 16,
-"date": "2026-11-02",
-"title": "claude/war-slam-edition",
-"lf": false,
-"game": 1203,
-"pages": 0,
-"worker": 0,
-"tests": 38
-},
-{
-"pr": 17,
-"date": "2026-11-03",
-"title": "War: slam every card in a war, and mash or fling as well as hold",
-"lf": false,
 "game": 1203,
 "pages": 0,
 "worker": 0,
@@ -162,38 +10,6 @@
 {
 "pr": 18,
 "date": "2026-11-03",
-"title": "Make every game a home-screen app that works offline",
-"lf": true,
-"game": 1205,
-"pages": 0,
-"worker": 0,
-"tests": 38
-},
-{
-"pr": 20,
-"date": "2026-11-04",
-"title": "claude/counterscale-url",
-"lf": false,
-"game": 1205,
-"pages": 0,
-"worker": 0,
-"tests": 38
-},
-{
-"pr": 21,
-"date": "2026-11-05",
-"title": "Deploy the leaderboard Worker and point the games at it",
-"lf": false,
-"game": 1205,
-"pages": 0,
-"worker": 0,
-"tests": 38
-},
-{
-"pr": 19,
-"date": "2026-11-05",
-"title": "claude/war-slam-edition",
-"lf": false,
 "game": 1205,
 "pages": 0,
 "worker": 0,
@@ -202,8 +18,6 @@
 {
 "pr": 7,
 "date": "2026-11-05",
-"title": "Explore One Million Words: an eieio-style shared Letterfield on Durable Objects",
-"lf": true,
 "game": 2192,
 "pages": 0,
 "worker": 729,
@@ -212,18 +26,6 @@
 {
 "pr": 22,
 "date": "2026-11-05",
-"title": "Letterfield: no word-list hints on the shared survey",
-"lf": true,
-"game": 2201,
-"pages": 0,
-"worker": 729,
-"tests": 1246
-},
-{
-"pr": 24,
-"date": "2026-11-05",
-"title": "claude/war-slam-edition",
-"lf": false,
 "game": 2201,
 "pages": 0,
 "worker": 729,
@@ -232,8 +34,6 @@
 {
 "pr": 25,
 "date": "2026-11-05",
-"title": "claude/letterfield-music",
-"lf": true,
 "game": 2442,
 "pages": 0,
 "worker": 729,
@@ -242,8 +42,6 @@
 {
 "pr": 26,
 "date": "2026-11-06",
-"title": "claude/survey-bot-protection",
-"lf": true,
 "game": 2446,
 "pages": 0,
 "worker": 841,
@@ -252,8 +50,6 @@
 {
 "pr": 29,
 "date": "2026-11-06",
-"title": "Add link previews to every page, with screenshots for every game",
-"lf": true,
 "game": 2446,
 "pages": 0,
 "worker": 841,
@@ -262,8 +58,6 @@
 {
 "pr": 28,
 "date": "2026-11-06",
-"title": "Letterfield survey: numbers that would show bots, and a daily check",
-"lf": true,
 "game": 2446,
 "pages": 0,
 "worker": 910,
@@ -272,18 +66,6 @@
 {
 "pr": 27,
 "date": "2026-11-06",
-"title": "Letterfield survey: evaluate Turnstile, and a switched-off prototype",
-"lf": true,
-"game": 2561,
-"pages": 0,
-"worker": 1069,
-"tests": 2234
-},
-{
-"pr": 31,
-"date": "2026-11-06",
-"title": "Give each worker pull request a Worker Preview",
-"lf": false,
 "game": 2561,
 "pages": 0,
 "worker": 1069,
@@ -292,8 +74,6 @@
 {
 "pr": 30,
 "date": "2026-11-06",
-"title": "Letterfield survey log: every word charted, hour by hour",
-"lf": true,
 "game": 2564,
 "pages": 468,
 "worker": 1317,
@@ -302,8 +82,6 @@
 {
 "pr": 32,
 "date": "2026-11-06",
-"title": "claude/survey-bot-protection",
-"lf": true,
 "game": 2564,
 "pages": 468,
 "worker": 1317,
@@ -312,88 +90,6 @@
 {
 "pr": 34,
 "date": "2026-11-07",
-"title": "claude/serene-edison-qdlfce",
-"lf": true,
-"game": 2564,
-"pages": 468,
-"worker": 1317,
-"tests": 2832
-},
-{
-"pr": 35,
-"date": "2026-11-07",
-"title": "claude/pr-previews",
-"lf": false,
-"game": 2564,
-"pages": 468,
-"worker": 1317,
-"tests": 2832
-},
-{
-"pr": 37,
-"date": "2026-11-07",
-"title": "Preview: pair stacked pull requests with a Worker Preview too",
-"lf": false,
-"game": 2564,
-"pages": 468,
-"worker": 1317,
-"tests": 2832
-},
-{
-"pr": 33,
-"date": "2026-11-07",
-"title": "War: jokers, everyone's own deck, a pile of winnings, the game told battle by battle, and easier invites",
-"lf": false,
-"game": 2564,
-"pages": 468,
-"worker": 1317,
-"tests": 2832
-},
-{
-"pr": 36,
-"date": "2026-11-07",
-"title": "claude/war-versus",
-"lf": false,
-"game": 2564,
-"pages": 468,
-"worker": 1317,
-"tests": 2832
-},
-{
-"pr": 38,
-"date": "2026-11-07",
-"title": "claude/war-tidy-keep-order",
-"lf": false,
-"game": 2564,
-"pages": 468,
-"worker": 1317,
-"tests": 2832
-},
-{
-"pr": 39,
-"date": "2026-11-07",
-"title": "claude/war-six-seven",
-"lf": false,
-"game": 2564,
-"pages": 468,
-"worker": 1317,
-"tests": 2832
-},
-{
-"pr": 41,
-"date": "2026-11-07",
-"title": "claude/war-tidy-keep-order",
-"lf": false,
-"game": 2564,
-"pages": 468,
-"worker": 1317,
-"tests": 2832
-},
-{
-"pr": 40,
-"date": "2026-11-07",
-"title": "claude/war-joker-war",
-"lf": false,
 "game": 2564,
 "pages": 468,
 "worker": 1317,
@@ -402,8 +98,6 @@
 {
 "pr": 23,
 "date": "2026-11-08",
-"title": "claude/letterfield-multiplayer",
-"lf": true,
 "game": 2565,
 "pages": 468,
 "worker": 1317,
@@ -412,18 +106,6 @@
 {
 "pr": 43,
 "date": "2026-11-08",
-"title": "claude/survey-log",
-"lf": true,
-"game": 2565,
-"pages": 1267,
-"worker": 1527,
-"tests": 3560
-},
-{
-"pr": 44,
-"date": "2026-11-08",
-"title": "claude/war-joker-war",
-"lf": false,
 "game": 2565,
 "pages": 1267,
 "worker": 1527,
@@ -432,8 +114,6 @@
 {
 "pr": 45,
 "date": "2026-11-08",
-"title": "claude/survey-log",
-"lf": true,
 "game": 2645,
 "pages": 1267,
 "worker": 1527,
@@ -442,8 +122,6 @@
 {
 "pr": 46,
 "date": "2026-11-08",
-"title": "claude/survey-log",
-"lf": true,
 "game": 2645,
 "pages": 1271,
 "worker": 1533,
@@ -452,18 +130,6 @@
 {
 "pr": 47,
 "date": "2026-11-08",
-"title": "claude/survey-log",
-"lf": true,
-"game": 2774,
-"pages": 1272,
-"worker": 1681,
-"tests": 3773
-},
-{
-"pr": 42,
-"date": "2026-11-08",
-"title": "claude/war-face-up-slow",
-"lf": false,
 "game": 2774,
 "pages": 1272,
 "worker": 1681,
@@ -472,8 +138,6 @@
 {
 "pr": 48,
 "date": "2026-11-08",
-"title": "claude/implicit-state-machines-audit-yfrmh8",
-"lf": true,
 "game": 3041,
 "pages": 1352,
 "worker": 1739,
@@ -482,38 +146,6 @@
 {
 "pr": 49,
 "date": "2026-11-08",
-"title": "claude/clever-albattani-jihzh8",
-"lf": true,
-"game": 3083,
-"pages": 1352,
-"worker": 1739,
-"tests": 4284
-},
-{
-"pr": 50,
-"date": "2026-11-09",
-"title": "War: a Quiet commentary setting",
-"lf": false,
-"game": 3083,
-"pages": 1352,
-"worker": 1739,
-"tests": 4284
-},
-{
-"pr": 53,
-"date": "2026-11-09",
-"title": "War: solo decks each keep a theme of their own",
-"lf": false,
-"game": 3083,
-"pages": 1352,
-"worker": 1739,
-"tests": 4284
-},
-{
-"pr": 52,
-"date": "2026-11-09",
-"title": "War: picking up your winnings is an animated moment",
-"lf": false,
 "game": 3083,
 "pages": 1352,
 "worker": 1739,
@@ -522,8 +154,6 @@
 {
 "pr": 54,
 "date": "2026-11-09",
-"title": "Point the games at the Worker's and Counterscale's own domains",
-"lf": true,
 "game": 3083,
 "pages": 1352,
 "worker": 1739,
@@ -532,8 +162,6 @@
 {
 "pr": 57,
 "date": "2026-11-10",
-"title": "claude/word-list-scroll",
-"lf": true,
 "game": 3086,
 "pages": 1352,
 "worker": 1739,
@@ -542,8 +170,6 @@
 {
 "pr": 56,
 "date": "2026-11-10",
-"title": "claude/turnstile-box-stuck",
-"lf": true,
 "game": 3119,
 "pages": 1352,
 "worker": 1739,
@@ -552,8 +178,6 @@
 {
 "pr": 58,
 "date": "2026-11-10",
-"title": "claude/share-cards",
-"lf": true,
 "game": 3131,
 "pages": 1352,
 "worker": 1755,
@@ -562,8 +186,6 @@
 {
 "pr": 59,
 "date": "2026-11-10",
-"title": "claude/letterfield-definitions",
-"lf": true,
 "game": 3238,
 "pages": 1352,
 "worker": 1970,
@@ -572,8 +194,6 @@
 {
 "pr": 61,
 "date": "2026-11-10",
-"title": "claude/share-cards-on",
-"lf": true,
 "game": 3238,
 "pages": 1352,
 "worker": 1970,
@@ -582,8 +202,6 @@
 {
 "pr": 60,
 "date": "2026-11-10",
-"title": "claude/legend-visible-words",
-"lf": true,
 "game": 3271,
 "pages": 1352,
 "worker": 1970,
@@ -592,8 +210,6 @@
 {
 "pr": 51,
 "date": "2026-11-10",
-"title": "Survey log: share pictures and text, and top lists for a day and an hour",
-"lf": true,
 "game": 3271,
 "pages": 1511,
 "worker": 2001,
@@ -602,8 +218,6 @@
 {
 "pr": 62,
 "date": "2026-11-10",
-"title": "Make Worker Previews of the share Worker on pull requests that change it",
-"lf": true,
 "game": 3271,
 "pages": 1511,
 "worker": 2001,
@@ -612,8 +226,6 @@
 {
 "pr": 63,
 "date": "2026-11-10",
-"title": "Share cards for the survey log's views",
-"lf": true,
 "game": 3271,
 "pages": 1540,
 "worker": 2001,
@@ -622,8 +234,6 @@
 {
 "pr": 64,
 "date": "2026-11-10",
-"title": "Survey log: shared views link to their share card",
-"lf": true,
 "game": 3271,
 "pages": 1540,
 "worker": 2001,
@@ -632,18 +242,6 @@
 {
 "pr": 55,
 "date": "2026-11-10",
-"title": "Add \"Send feedback\" to every game, a feedback form and issue forms",
-"lf": true,
-"game": 3272,
-"pages": 1542,
-"worker": 2001,
-"tests": 5275
-},
-{
-"pr": 65,
-"date": "2026-11-10",
-"title": "War: spoils of war when a war is won",
-"lf": false,
 "game": 3272,
 "pages": 1542,
 "worker": 2001,
@@ -652,8 +250,6 @@
 {
 "pr": 67,
 "date": "2026-11-10",
-"title": "Letterfield: fix the field notes drawer on phones with the survey, and show initials as \"Surveyor MLW\"",
-"lf": true,
 "game": 3308,
 "pages": 1542,
 "worker": 2001,
@@ -662,8 +258,6 @@
 {
 "pr": 69,
 "date": "2026-11-10",
-"title": "Letterfield: Chimes, a third piece of music",
-"lf": true,
 "game": 3431,
 "pages": 1542,
 "worker": 2001,
@@ -672,8 +266,6 @@
 {
 "pr": 68,
 "date": "2026-11-10",
-"title": "Letterfield: word list for the whole territory, without charted words",
-"lf": true,
 "game": 3483,
 "pages": 1542,
 "worker": 2001,
@@ -682,8 +274,6 @@
 {
 "pr": 66,
 "date": "2026-11-11",
-"title": "Letterfield: list a word in view once any half of it shows",
-"lf": true,
 "game": 3486,
 "pages": 1542,
 "worker": 2001,
@@ -692,18 +282,6 @@
 {
 "pr": 71,
 "date": "2026-11-11",
-"title": "Letterfield: one welcome card, and initials shared with the leaderboards",
-"lf": true,
-"game": 3505,
-"pages": 1542,
-"worker": 2001,
-"tests": 5708
-},
-{
-"pr": 72,
-"date": "2026-11-11",
-"title": "Worker Previews: 60 survey claims a minute per address, not 6",
-"lf": false,
 "game": 3505,
 "pages": 1542,
 "worker": 2001,
@@ -712,8 +290,6 @@
 {
 "pr": 73,
 "date": "2026-11-11",
-"title": "Worker Previews: 1,000 survey words a day per address, not 300",
-"lf": true,
 "game": 3505,
 "pages": 1542,
 "worker": 2009,
@@ -722,8 +298,6 @@
 {
 "pr": 70,
 "date": "2026-11-11",
-"title": "Letterfield: supernovas recorded in the log, and remnants on the map",
-"lf": true,
 "game": 3617,
 "pages": 1769,
 "worker": 2167,
@@ -732,8 +306,6 @@
 {
 "pr": 74,
 "date": "2026-11-11",
-"title": "Letterfield: supernovas you see kept in your notes, shared on a card of their own",
-"lf": true,
 "game": 3724,
 "pages": 1769,
 "worker": 2179,
@@ -742,8 +314,6 @@
 {
 "pr": 75,
 "date": "2026-11-11",
-"title": "Letterfield: word list on a solid bottom bar, tools at the top right, notes that fold into the field notes",
-"lf": true,
 "game": 3898,
 "pages": 1769,
 "worker": 2179,
@@ -752,8 +322,6 @@
 {
 "pr": 76,
 "date": "2026-11-12",
-"title": "Letterfield: \"Hidden in view\" counts only letters seen whole",
-"lf": true,
 "game": 3932,
 "pages": 1769,
 "worker": 2179,
@@ -762,8 +330,6 @@
 {
 "pr": 77,
 "date": "2026-11-12",
-"title": "Letterfield: no note for a word you find; its circle flies into the field notes",
-"lf": true,
 "game": 3949,
 "pages": 1769,
 "worker": 2179,
@@ -772,8 +338,6 @@
 {
 "pr": 82,
 "date": "2026-11-12",
-"title": "Letterfield: open docked rather than sliding there",
-"lf": true,
 "game": 3955,
 "pages": 1769,
 "worker": 2179,
@@ -782,8 +346,6 @@
 {
 "pr": 83,
 "date": "2026-11-12",
-"title": "CI: shard pytest over parallel workers, about 3 minutes instead of 19",
-"lf": true,
 "game": 3955,
 "pages": 1769,
 "worker": 2179,
@@ -792,18 +354,6 @@
 {
 "pr": 80,
 "date": "2026-11-12",
-"title": "Letterfield: a volume slider for the music, and music that comes back after switching apps",
-"lf": true,
-"game": 4016,
-"pages": 1769,
-"worker": 2179,
-"tests": 6764
-},
-{
-"pr": 84,
-"date": "2026-11-12",
-"title": "CI: install only Chromium's headless shell, without apt-get",
-"lf": false,
 "game": 4016,
 "pages": 1769,
 "worker": 2179,
@@ -812,8 +362,6 @@
 {
 "pr": 85,
 "date": "2026-11-12",
-"title": "CI: run only the tests a pull request's changes need",
-"lf": true,
 "game": 4016,
 "pages": 1769,
 "worker": 2179,
@@ -822,28 +370,6 @@
 {
 "pr": 90,
 "date": "2026-11-12",
-"title": "Lint: ruff, Biome, shellcheck and actionlint, with a lint job in CI",
-"lf": true,
-"game": 4016,
-"pages": 1769,
-"worker": 2179,
-"tests": 6806
-},
-{
-"pr": 92,
-"date": "2026-11-12",
-"title": "AGENTS.md: agents open a pull request once their work is pushed",
-"lf": false,
-"game": 4016,
-"pages": 1769,
-"worker": 2179,
-"tests": 6806
-},
-{
-"pr": 91,
-"date": "2026-11-12",
-"title": "CI: make test the one check main requires",
-"lf": false,
 "game": 4016,
 "pages": 1769,
 "worker": 2179,
@@ -852,18 +378,6 @@
 {
 "pr": 81,
 "date": "2026-11-12",
-"title": "Letterfield: a timelapse of the shared survey, replayed from the log",
-"lf": true,
-"game": 4016,
-"pages": 2748,
-"worker": 2302,
-"tests": 7367
-},
-{
-"pr": 93,
-"date": "2026-11-12",
-"title": "Lint before each commit with prek, in cloud sessions too",
-"lf": false,
 "game": 4016,
 "pages": 2748,
 "worker": 2302,
@@ -872,8 +386,6 @@
 {
 "pr": 78,
 "date": "2026-11-12",
-"title": "Letterfield: supernovas reach players in neighbouring sectors, and show rather than say",
-"lf": true,
 "game": 4046,
 "pages": 2748,
 "worker": 2369,
@@ -882,8 +394,6 @@
 {
 "pr": 94,
 "date": "2026-11-13",
-"title": "Letterfield: surveyors, emotes, guilds, and one surveyor on every device",
-"lf": true,
 "game": 5671,
 "pages": 2748,
 "worker": 3328,
@@ -892,8 +402,6 @@
 {
 "pr": 98,
 "date": "2026-11-13",
-"title": "Letterfield: the list switch says your guild still sees you",
-"lf": true,
 "game": 5671,
 "pages": 2748,
 "worker": 3328,
@@ -902,8 +410,6 @@
 {
 "pr": 99,
 "date": "2026-11-13",
-"title": "Letterfield: guilds in the survey log, with a page and a share card each",
-"lf": true,
 "game": 5686,
 "pages": 2781,
 "worker": 3415,
@@ -912,8 +418,6 @@
 {
 "pr": 100,
 "date": "2026-11-13",
-"title": "Letterfield: the timelapse can follow a guild",
-"lf": true,
 "game": 5686,
 "pages": 2847,
 "worker": 3466,
@@ -922,8 +426,6 @@
 {
 "pr": 79,
 "date": "2026-11-13",
-"title": "Letterfield: every supernova in the shared world reaches players online",
-"lf": true,
 "game": 5740,
 "pages": 2847,
 "worker": 3568,
@@ -932,8 +434,6 @@
 {
 "pr": 102,
 "date": "2026-11-14",
-"title": "Letterfield: a long press on a caret opens its menu, not the phone's selection",
-"lf": true,
 "game": 5745,
 "pages": 2847,
 "worker": 3568,
@@ -942,8 +442,6 @@
 {
 "pr": 103,
 "date": "2026-11-14",
-"title": "Letterfield: add a word someone else charted to your field notes",
-"lf": true,
 "game": 5751,
 "pages": 2847,
 "worker": 3568,
@@ -952,18 +450,6 @@
 {
 "pr": 101,
 "date": "2026-11-14",
-"title": "Letterfield: each setting shows once, beside its control; remove Claude code from every game",
-"lf": true,
-"game": 5697,
-"pages": 2847,
-"worker": 3568,
-"tests": 10997
-},
-{
-"pr": 107,
-"date": "2026-11-14",
-"title": "Turn away rude names in War rooms and leaderboard groups",
-"lf": false,
 "game": 5697,
 "pages": 2847,
 "worker": 3568,
@@ -972,8 +458,6 @@
 {
 "pr": 105,
 "date": "2026-11-14",
-"title": "Letterfield UI review A: the game",
-"lf": true,
 "game": 6076,
 "pages": 2847,
 "worker": 3588,
@@ -982,8 +466,6 @@
 {
 "pr": 106,
 "date": "2026-11-14",
-"title": "Letterfield survey log: new header, words first on a phone, and a Supernovas card (UI review groups 8\u201310)",
-"lf": true,
 "game": 6076,
 "pages": 3287,
 "worker": 3592,
@@ -992,8 +474,6 @@
 {
 "pr": 104,
 "date": "2026-11-14",
-"title": "Letterfield UI review, group 11: the timelapse",
-"lf": true,
 "game": 6076,
 "pages": 3311,
 "worker": 3592,
@@ -1002,8 +482,6 @@
 {
 "pr": 108,
 "date": "2026-11-14",
-"title": "Letterfield: guild members who take no emotes say so; bigger taps on the word bar's switch",
-"lf": true,
 "game": 6082,
 "pages": 3311,
 "worker": 3597,
@@ -1012,8 +490,6 @@
 {
 "pr": 109,
 "date": "2026-11-14",
-"title": "Letterfield UI review D: between the pages",
-"lf": true,
 "game": 6098,
 "pages": 3380,
 "worker": 3597,
@@ -1022,8 +498,6 @@
 {
 "pr": 110,
 "date": "2026-11-14",
-"title": "Letterfield: a word turned away as too quick waits instead of being dropped",
-"lf": true,
 "game": 6128,
 "pages": 3380,
 "worker": 3597,
@@ -1032,8 +506,6 @@
 {
 "pr": 111,
 "date": "2026-11-15",
-"title": "Letterfield: a clean-up pass, about 500 lines lighter",
-"lf": true,
 "game": 5969,
 "pages": 3326,
 "worker": 3455,
@@ -1042,8 +514,6 @@
 {
 "pr": 112,
 "date": "2026-11-15",
-"title": "Letterfield: fix the 22 bugs the clean-up review found",
-"lf": true,
 "game": 5977,
 "pages": 3335,
 "worker": 3459,
@@ -1052,8 +522,6 @@
 {
 "pr": 113,
 "date": "2026-11-15",
-"title": "Letterfield: a note whose Share was tapped goes away again",
-"lf": true,
 "game": 5988,
 "pages": 3335,
 "worker": 3459,
@@ -1062,8 +530,6 @@
 {
 "pr": 114,
 "date": "2026-11-16",
-"title": "Letterfield: be in up to five guilds at once, with labels of your own",
-"lf": true,
 "game": 6218,
 "pages": 3376,
 "worker": 3559,
@@ -1072,8 +538,6 @@
 {
 "pr": 115,
 "date": "2026-11-18",
-"title": "Letterfield: achievements, days surveyed, and badges others can see",
-"lf": true,
 "game": 7177,
 "pages": 3376,
 "worker": 4121,
@@ -1082,8 +546,6 @@
 {
 "pr": 116,
 "date": "2026-11-18",
-"title": "Letterfield: days fill a slice per word, and a note when a day counts",
-"lf": true,
 "game": 7217,
 "pages": 3376,
 "worker": 4121,
@@ -1092,8 +554,6 @@
 {
 "pr": 117,
 "date": "2026-11-19",
-"title": "Letterfield: supernovas join the field notes' timeline, with a pill of their own",
-"lf": true,
 "game": 7367,
 "pages": 3376,
 "worker": 4121,
@@ -1102,18 +562,6 @@
 {
 "pr": 118,
 "date": "2026-11-20",
-"title": "Letterfield: the shared survey's box becomes a row like Achievements",
-"lf": true,
-"game": 7395,
-"pages": 3376,
-"worker": 4121,
-"tests": 15271
-},
-{
-"pr": 119,
-"date": "2026-11-20",
-"title": "Previews: every pull request gets a Worker Preview of its own",
-"lf": false,
 "game": 7395,
 "pages": 3376,
 "worker": 4121,
@@ -1122,8 +570,6 @@
 {
 "pr": 120,
 "date": "2026-11-20",
-"title": "Letterfield: solid top bar sideways, solid buttons on hover, and a surveyor count that holds still",
-"lf": true,
 "game": 7441,
 "pages": 3376,
 "worker": 4160,
@@ -1132,8 +578,6 @@
 {
 "pr": 121,
 "date": "2026-11-20",
-"title": "Letterfield: past the universe's edge, the title counts what's charted",
-"lf": true,
 "game": 7449,
 "pages": 3376,
 "worker": 4160,
@@ -1142,8 +586,6 @@
 {
 "pr": 122,
 "date": "2026-11-20",
-"title": "Letterfield: the tools become a drawer in the notes' place, so switching panels moves nothing",
-"lf": true,
 "game": 7520,
 "pages": 3376,
 "worker": 4160,
@@ -1152,8 +594,6 @@
 {
 "pr": 123,
 "date": "2026-11-20",
-"title": "Letterfield: Lantern, a fourth piece of music, and a music player in the tools",
-"lf": true,
 "game": 7939,
 "pages": 3376,
 "worker": 4160,
@@ -1162,8 +602,6 @@
 {
 "pr": 124,
 "date": "2026-11-20",
-"title": "Letterfield: a soundtrack album, recorded from the game's own music",
-"lf": true,
 "game": 7947,
 "pages": 3720,
 "worker": 4160,
@@ -1172,8 +610,6 @@
 {
 "pr": 125,
 "date": "2026-11-20",
-"title": "Letterfield: Number of the Beast, a secret achievement for 666 words",
-"lf": true,
 "game": 7959,
 "pages": 3720,
 "worker": 4163,
@@ -1182,8 +618,6 @@
 {
 "pr": 126,
 "date": "2026-11-20",
-"title": "Letterfield: fixes from a full review of the game and its Worker",
-"lf": true,
 "game": 8248,
 "pages": 3813,
 "worker": 4401,

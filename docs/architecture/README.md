@@ -84,9 +84,8 @@ and dark, the hues of its 225 themes for territories, Big Shoulders Display
 for titles, Martian Mono for labels and Schibsted Grotesk for text, and the
 letter grid with a word circled, as on the game's icon. In the figures each
 kind of part keeps one colour: Durable Objects teal, storage copper, Workers
-indigo and browsers rose, and the parts of the site that aren't
-Letterfield's, like War's rooms, are grey. The people in them are made up
-(ZED, KIM, SIS and the rest); the map, its words and its territories are
+indigo, browsers rose and outside services grey. The people in them are made
+up (ZED, KIM, SIS and the rest); the map, its words and its territories are
 real.
 
 Figures that show a process move. Their SVG loops through it, in 8 to 14
@@ -110,7 +109,7 @@ Letterfield's map has no edge and nothing stored: one seed, a deck of words for 
 
 #### A map from a seed
 
-Figure: `figures/map-from-a-seed-light.svg · -dark.svg · .png`
+Figure, moving in a 13-second loop: `figures/map-from-a-seed-light.svg · -dark.svg · .png · .mp4 · .gif`
 
 **Caption.** Letterfield's map has no file. Every letter comes from one fixed seed, through a generator small enough to run in the page: a chunk of 12 × 12 cells hashes its coordinates with the seed, deals itself the next nine cards from its territory's shuffled deck of theme words, places six to eight of them in eight directions, and fills the rest with letters drawn from its own words. So every player sees the same endless map, and the survey's server, which runs a copy of the same code, can check that every word anyone claims is really there. This is the real chunk at the origin, in Menorah Hollow, a Festivals territory.
 
@@ -146,11 +145,11 @@ Figure: `figures/universe-light.svg · -dark.svg · .png`
 
 #### The big picture
 
-Figure: `figures/big-picture-light.svg · -dark.svg · .png`
+Figure, moving in an 8-second loop: `figures/big-picture-light.svg · -dark.svg · .png · .mp4 · .gif`
 
-**Caption.** Letterfield is one HTML file on GitHub Pages. Everything shared lives behind one Cloudflare Worker at api.games.michaelwarkentin.com, which holds no state itself: it hashes the player's address, checks the per-address limits, and hands each request to the Durable Object that owns it. Each of the map's sectors is its own object, with its own SQLite storage and the WebSockets of everyone looking at it; one Atlas keeps the world's totals; guilds and linked players get objects of their own. Two D1 databases keep what has to be queried across the whole map: the survey's log, and the leaderboards with their link and recovery codes. A second Worker draws the link-preview cards.
+**Caption.** Letterfield is one HTML file on GitHub Pages. Everything shared lives behind one Cloudflare Worker at api.games.michaelwarkentin.com, which holds no state itself: it hashes the player's address, checks the per-address limits, and hands each request to the Durable Object that owns it. Each of the map's sectors is its own object, with its own SQLite storage and the WebSockets of everyone looking at it; one Atlas keeps the universe's totals; guilds and linked players get objects of their own. Two D1 databases keep what has to be queried across the whole map: the survey's log, and one with Letterfield's link codes, recovery codes and definitions. A second Worker draws the link-preview cards.
 
-**Alt text.** Architecture diagram. At the top, three pages in the browser served by GitHub Pages: the game letterfield.html, the survey log and the timelapse. Arrows lead down to one Cloudflare Worker, games-leaderboard, which lists its routes and its per-address checks. Below it are Durable Objects: Sector (625 in the shared world, more beyond), Atlas (one), Guild, Player and WarRoom, with arrows from sectors to the Atlas (reports every 10 seconds at most), to guilds (membership checks) and to each other (supernovas and emotes). At the bottom, two D1 databases: games-survey-log, written by sectors from an alarm, and games-leaderboard. On the right, the games-share Worker with its R2 bucket of cards, bound directly to the Sector and Atlas classes, and the outside services: Turnstile, Sentry, Counterscale and Wiktionary with Wikipedia.
+**Alt text.** Architecture diagram. At the top, three pages in the browser served by GitHub Pages: the game letterfield.html, the survey log and the timelapse. Arrows lead down to one Cloudflare Worker, games-leaderboard, which lists its routes and its per-address checks. Below it are Durable Objects: Sector (625 in the universe, more beyond), Atlas (one), Guild and Player, with arrows from sectors to the Atlas (reports every 10 seconds at most), to guilds (membership checks) and to each other (supernovas and emotes). Below them, two D1 databases: games-survey-log, written by sectors from an alarm, and games-leaderboard, with the link codes, recovery codes and definitions. On the right, the games-share Worker with its R2 bucket of cards, bound directly to the Sector and Atlas classes. Along the bottom, the outside services: Turnstile, Sentry, Counterscale and Wiktionary with Wikipedia.
 
 #### Inside one sector
 
@@ -162,7 +161,7 @@ Figure: `figures/sector-anatomy-light.svg · -dark.svg · .png`
 
 #### Presence, and the Atlas
 
-Figure: `figures/atlas-reports-light.svg · -dark.svg · .png`
+Figure, moving in a 10-second loop: `figures/atlas-reports-light.svg · -dark.svg · .png · .mp4 · .gif`
 
 **Caption.** Players never talk to the Atlas. Each sector in the universe tells it the sector's numbers at most every 10 seconds while something is changing (charted counts for its 16 territories, who is there, how many words each address charted), riding on the next message rather than a timer. Reports are absolute numbers, so a lost or repeated one does no harm. The Atlas answers with the world's totals, the addresses past today's cap, which guild members are online and any supernova news, and each sector passes those on to its players. Anything global, like the world map and the list of surveyors, is read over HTTP from a short cache, in the spirit of One Million Checkboxes.
 
@@ -206,7 +205,7 @@ One thread per sector settles a race with a plain insert; around it, limits per 
 
 #### The life of a claim, and a race
 
-Figure: `figures/claim-life-light.svg · -dark.svg · .png`
+Figure, moving in a 12-second loop: `figures/claim-life-light.svg · -dark.svg · .png · .mp4 · .gif`
 
 **Caption.** Circling a word sends a claim to the sector the word starts in, over the WebSocket already open to it. The sector checks it against each limit and against its own copy of the map, then inserts it. Two players who circle the same word at once can't both win: the sector runs one message at a time, so the second insert finds the row and that player hears 'taken', with who charted it and when. The winner's claim goes out to everyone in the sector in the next 200 ms batch, each claimer gets a signed receipt, and within 30 seconds an alarm copies it to the log. Either way, the word stays in both players' field notes.
 
@@ -214,7 +213,7 @@ Figure: `figures/claim-life-light.svg · -dark.svg · .png`
 
 #### Defence in depth
 
-Figure: `figures/defence-in-depth-light.svg · -dark.svg · .png`
+Figure, moving in a 13-second loop: `figures/defence-in-depth-light.svg · -dark.svg · .png · .mp4 · .gif`
 
 **Caption.** The map and its generator are in the page, so a script can list every word without playing. No single limit stops that; each layer bounds something different, from the Worker that sees every request down to the insert itself. Most count per hashed address, which bounds one script well and a pool of many addresses only once per address; that's where a Turnstile check would come in, built and handing out passes but not required. A daily workflow watches the Atlas's numbers for the signs of a pool.
 
@@ -242,7 +241,7 @@ When a territory's last hidden word is charted, its sector tells its neighbours 
 
 #### A supernova, from the last word to the shockwave
 
-Figure: `figures/supernova-flow-light.svg · -dark.svg · .png`
+Figure, moving in a 14-second loop: `figures/supernova-flow-light.svg · -dark.svg · .png · .mp4 · .gif`
 
 **Caption.** A territory goes supernova when every one of its hidden words has been charted. A territory lies inside one sector, whose claims run one at a time, so exactly one claim can be the last, and the sector writes the supernova in the same step as that claim. Then the news spreads three ways: straight to the neighbouring sectors close enough for their players to see it (three, five or eight of them, depending on where the territory sits), to the Atlas with the sector's next report, which relays it to every other sector in the universe for two minutes, and to the log with the next batch. In the game it plays as a charge, a burst and a shockwave nearby, or a distant wave further off.
 
@@ -270,7 +269,7 @@ Each sector copies its words to D1 from an alarm, triggers count them on the way
 
 #### The log: from a sector's claims to a cached answer
 
-Figure: `figures/log-pipeline-light.svg · -dark.svg · .png`
+Figure, moving in an 11-second loop: `figures/log-pipeline-light.svg · -dark.svg · .png · .mp4 · .gif`
 
 **Caption.** Sectors keep every claim, but a page can't ask 625 objects what happened between two and three o'clock. So each sector copies its new claims to a D1 database of their own, like an outbox: an alarm at most 30 seconds after a claim sends up to 240 at once in one transaction, and only then moves its mark. The table is ordered by time, so an hour reads just that hour's rows; triggers keep running counts per hour, per day per surveyor and per day per territory, so a year reads counts rather than a million rows; and virtual columns give every word its territory and theme for the indexes, at no cost per row. Answers are cached three times over, and a past hour, once settled, for a day.
 
@@ -298,7 +297,7 @@ A surveyor is a hash of a random token; a one-time code or a recovery code makes
 
 #### One surveyor on every device
 
-Figure: `figures/devices-sync-light.svg · -dark.svg · .png`
+Figure, moving in an 11-second loop: `figures/devices-sync-light.svg · -dark.svg · .png · .mp4 · .gif`
 
 **Caption.** A surveyor is a random token in one browser's storage; the survey knows them by a hash of it. To be the same surveyor on a phone and a laptop, one device asks for a one-time code and the other redeems it for the token. With no other device to hand, a recovery code does the same, and the Worker can't read it: the code's own hash is both the key that seals the token and the address of the row. Linked devices then keep their field notes, supernovas, achievements and settings in step through a Player, a Durable Object per surveyor, whose merge rules can only ever add.
 
@@ -328,7 +327,7 @@ Worked out from the survey's use per player-hour: the $5 plan until about a hund
 
 Figure: `figures/cost-curve-light.svg · -dark.svg · .png`
 
-**Caption.** The survey's bill, worked out from SURVEY.md's figures per player-hour (about 30 Worker requests, 106 Durable Object requests and 0.35 GB-seconds of Durable Object time) and Workers Paid's published prices. It stays at the $5 plan until about a hundred people are online around the clock, because outgoing WebSocket messages are free and incoming ones count as a twentieth of a request. The ceiling is the cap itself: at 25,000 online, about $0.73 an hour. On the free plan, Durable Object requests would run out at about 940 player-hours a day, and every object on the account, War's rooms included, would stop until midnight UTC.
+**Caption.** The survey's bill, worked out from SURVEY.md's figures per player-hour (about 30 Worker requests, 106 Durable Object requests and 0.35 GB-seconds of Durable Object time) and Workers Paid's published prices. It stays at the $5 plan until about a hundred people are online around the clock, because outgoing WebSocket messages are free and incoming ones count as a twentieth of a request. The ceiling is the cap itself: at 25,000 online, about $0.73 an hour. On the free plan, Durable Object requests would run out at about 940 player-hours a day, and every Durable Object on the account would stop until midnight UTC.
 
 **Alt text.** A stacked area chart. The horizontal axis is players online around the clock for a month, on a log scale from 1 to 25,000; the vertical axis is the monthly bill in dollars, from 0 to 600. The bill is a flat $5 up to about a hundred players, about $20 at 1,000, about $210 at 10,000 and about $525 at the 25,000 cap, made mostly of Durable Object requests, then Worker requests, then Durable Object time. A dashed line at about 39 players marks where the free plan's daily Durable Object requests would run out.
 
@@ -350,22 +349,22 @@ Interactive explainer: `explainers/cost.html (to embed) · artifacts/cost.html (
 
 ### 8. How it was built
 
-118 pull requests in 24 days, each with its own copy of the site and the Worker to play on a phone before it merged.
+78 pull requests in 24 days, almost all by coding agents, and from 7 November each with its own copy of the site and the Worker to play on a phone before it merged.
 
-#### 118 pull requests in 24 days
+#### 78 pull requests in 24 days
 
-Figure: `figures/timeline-light.svg · -dark.svg · .png`
+Figure, moving in a 12-second loop: `figures/timeline-light.svg · -dark.svg · .png · .mp4 · .gif`
 
-**Caption.** Letterfield began as a single-player word search on the site's first day, 28 October 2026. Everything since came as pull requests, almost all written by coding agents and each tested on its own preview before merging: 118 of them by 20 November. The lines show the game's one file, its three companion pages, the Worker's code and the tests growing PR by PR; the bars along the bottom count the pull requests merged each day. The tests grew fastest of all.
+**Caption.** Letterfield began as a single-player word search on the site's first day, 28 October 2026. Everything since came as pull requests, almost all written by coding agents: 78 of them by 20 November, and from 7 November each with a preview of its own to play before it merged. The lines count Letterfield's code, merge by merge: the game's one file, its three companion pages, its code in the Worker and its tests; the bars along the bottom count its pull requests merged each day. The tests grew fastest of all.
 
-**Alt text.** A line chart from 28 October to 20 November 2026 of lines of code at each merge to main. Tests grow from nothing to about 20,000 lines; the game, letterfield.html, from about 1,200 to 8,248; the Worker's source to about 5,900; and the log, timelapse and soundtrack pages to about 3,800. Milestones are marked along the top: the shared survey explored on Durable Objects, the survey switched on with limits per address and the log on 6 November, map 4 with 225 themes, share cards, the timelapse, surveyors, guilds and linked devices on 13 November, achievements, and the soundtrack album on 20 November. Small bars along the bottom count the pull requests merged each day, up to 15 on 10 November.
+**Alt text.** A line chart from 28 October to 20 November 2026 of Letterfield's lines of code at each merge to main. Its tests, in the game and the Worker, grow from 38 lines to about 18,200; the game, letterfield.html, from about 1,200 to 8,248; its Worker code to about 4,400; and the log, timelapse and soundtrack pages to about 3,800. Milestones are numbered along the top: the shared survey explored on Durable Objects, the survey switched on with limits per address and the log on 6 November, state machines and map 4 with 225 themes, share cards and definitions, the timelapse and the site's CI sharded, surveyors, guilds and linked devices on 13 November, achievements, and the soundtrack album on 20 November. Small bars along the bottom count Letterfield's pull requests merged each day, up to 14 on 10 November.
 
 #### How a change ships
 
-Figure: `figures/ci-previews-light.svg · -dark.svg · .png`
+Figure, moving in a 9-second loop: `figures/ci-previews-light.svg · -dark.svg · .png · .mp4 · .gif`
 
 **Caption.** Every change is a pull request. CI runs only the tests its files need, split across up to three shards of four workers each, plus the linters and the two Workers' own tests, and a single required check, test, stands for them all. Meanwhile a preview workflow builds the pull request's own copy of the site and of each Worker on Cloudflare, so it can be tried on a phone, with its own empty survey, before merging. Merging to main deploys the site to GitHub Pages and, when they changed, the Workers, migrations first.
 
-**Alt text.** A flow from left to right. A pull request runs two workflows. Test: a plan job picks the tests the changes need, then pytest in up to three shards of four workers, the lint job, and node tests for the leaderboard Worker and the share Worker, all feeding one required check called test. Preview: a Worker Preview of games-leaderboard (taking turns when the branch brings migrations), a Preview of games-share when it changed, then the site built with build.sh, its URLs pointed at those Previews, uploaded as a Preview of games-preview, and a comment with the links. After merging to main: GitHub Pages deploys the site, the Worker deploy applies migrations then deploys, and the share Worker deploys. A nightly job watches the survey for bots.
+**Alt text.** A flow from left to right. A pull request runs two workflows. Test: a plan job picks the tests the changes need, then pytest in up to three shards of four workers, the lint job, and node tests for the two Workers, all feeding one required check called test. Preview: a Worker Preview of games-leaderboard (taking turns when the branch brings migrations), a Preview of games-share when it changed, then the site built with build.sh, its URLs pointed at those Previews, uploaded as a Preview of games-preview, and a comment with the links. After merging to main: GitHub Pages deploys the site, the Worker deploy applies migrations then deploys, and the share Worker deploys. A nightly job watches the survey for bots.
 
 <!-- END POSTS -->
