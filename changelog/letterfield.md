@@ -1,3 +1,9 @@
+## 2026-11-21
+
+- The shared survey's box in your field notes counts your words the way the universe does: under Universe charted, it says how many of those words you charted first, and counts any you charted past the universe's edge apart. Bonus words, which the survey log doesn't keep, no longer count there, so the box and the log agree.
+- The survey log says how many of its words were charted past the universe's edge: under Words charted, under the Top lists heading, and beside each territory out there in the top territories and on its own page. Its third number is now called In the universe, the same count as Universe charted in the game, so the numbers add up.
+- The universe's count in your field notes no longer creeps a word or two ahead when words are charted in quick succession.
+
 ## 2026-11-20
 
 - A fortieth achievement, and a secret one. Keep filling your field notes and it shows itself; if you're already far enough along, it's waiting for you on the Achievements page.

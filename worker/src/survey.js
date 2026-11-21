@@ -896,6 +896,8 @@ export class Sector {
       }
       return;
     }
+    clearTimeout(this.batchTimer);
+    this.batchTimer = null;
     const frames = this.batch;
     this.batch = [];
     this.batchAt = this.now();
@@ -1037,8 +1039,13 @@ export class Sector {
   }
 
   // A report to the Atlas: the sector's numbers, with what this one carries (`extra`).
+  // Claims still waiting for their batch go out first: the totals that come
+  // back count them, and the game adds every claim it hears of to the last
+  // totals it had, so it must hear of each claim before totals that count it,
+  // or it counts that one twice.
   toAtlas(extra) {
     const [sx, sy] = this.coords();
+    this.sendBatch(true);
     this.overToday();
     const listing = this.listing();
     this.listedIds = new Set((listing.who ?? []).map((e) => e[0]));

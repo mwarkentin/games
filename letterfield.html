@@ -1992,9 +1992,16 @@ function renderSurvey() {
   const count = counted ? `<span aria-hidden="true">${n} of ${shortCount(world.total)}</span><span class="vh">${n} of ${world.total.toLocaleString()}</span>` : '';
   if (surveyCount.innerHTML !== count) surveyCount.innerHTML = count;
   if (!live) { surveyText.textContent = SURVEY_STATUS[status][1]; return; }
-  let firsts = 0;
-  for (const e of found.values()) if (e.f) firsts++;
-  surveyText.textContent = `${firsts.toLocaleString()} word${firsts === 1 ? '' : 's'} charted first by you`;
+  // Yours, counted as the survey counts: hidden words you charted first, those
+  // in the universe (of the count above) apart from those past its edge, which
+  // the survey charts too but the universe's count leaves out. The survey log
+  // counts the same way: its Words charted and top lists take in both, its In
+  // the universe only the first. Bonus words count in neither, as in the log.
+  let inside = 0, past = 0;
+  for (const e of found.values()) if (e.f && !e.s) { if (inSurveyArea(e.x, e.y)) inside++; else past++; }
+  const all = inside + past;
+  surveyText.textContent = !counted ? `${all.toLocaleString()} word${all === 1 ? '' : 's'} charted first by you`
+    : `${inside.toLocaleString()} of them charted first by you${past ? `, and ${past.toLocaleString()} past its edge` : ''}`;
 }
 // A big number in short: 1.1M, 52K.
 const shortCount = n => new Intl.NumberFormat(undefined, { notation: 'compact', maximumFractionDigits: 1 }).format(n);

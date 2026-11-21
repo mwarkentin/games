@@ -602,6 +602,30 @@ describe('Sector', () => {
     assert.deepEqual(join(2, -3).sent[1], { t: 'world', charted: 1002, total: AREA_WORDS, players: 40 });
   });
 
+  test('tells its players of every claim before the totals that count it', async () => {
+    // The game adds each claim it hears of to the last totals, until the next
+    // ones, and its count never goes back: totals that counted a claim it
+    // hadn't heard of yet would count that claim twice, for as long as it's open.
+    const reports = [];
+    reportingSector(reports);
+    const [a, b] = [join(2, -3), join(2, -3)];
+    await claim(a, words[0]);  // goes at once, and reports
+    await settle();
+    clock += REPORT_MS - 50;
+    await claim(a, words[1]);  // goes at once too, and is too soon to report
+    clock += 50;
+    await claim(a, words[2]);  // waits for its batch, and brings the report due, which counts it
+    await settle();
+    assert.equal(reports.length, 2);
+    assert.deepEqual(reports[1].charted, countsFor(3));
+    const heard = b.sent.filter((m) => m.t === 'claimed' || m.t === 'world').map((m) => (m.t === 'world' ? m.charted : m.c[0]));
+    assert.deepEqual(heard, [words[0].w, 1001, words[1].w, words[2].w, 1002]);
+    // Nothing goes twice when the batch's own time comes.
+    clock += BATCH_MS;
+    mock.timers.tick(BATCH_MS);
+    assert.equal(b.sent.filter((m) => m.t === 'claimed').length, 3);
+  });
+
   test('asks the Atlas about every guild here within a few reports, past the most one report asks about', async () => {
     const tag = (i) => i.toString(16).padStart(8, '0');
     for (let i = 0; i < GUILD_TAGS_MAX + 10; i++) {
