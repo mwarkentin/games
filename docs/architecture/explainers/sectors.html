@@ -1,0 +1,366 @@
+<title>Sectors and sockets</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<style>
+/* FONTS */
+/* Layout: one column; the map is the page, with its controls above and what it shows beside it. */
+:root{
+  --paper:#EBEEE7; --panel:#F7F8F4; --ink:#1B2428; --muted:#59656A; --rule:#C6CFC6; --accent:#2A43C2; --on-accent:#FFFFFF;
+  --teal:#259889; --copper:#995629; --indigo:#2c48a5; --rose:#992961; --mark-s:58%; --mark-l:38%; --tint-a:.16;
+  --f-display:"Big Shoulders Display","Arial Narrow",Impact,sans-serif;
+  --f-mono:"Martian Mono",ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+  --f-ui:"Schibsted Grotesk",system-ui,-apple-system,"Segoe UI",sans-serif;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --paper:#0F171A; --panel:#162024; --ink:#E2E7DE; --muted:#93A19D; --rule:#2B3A3E; --accent:#97A9FF; --on-accent:#0C1330;
+    --teal:#21ab99; --copper:#d97736; --indigo:#758fe6; --rose:#e160a1; --mark-s:68%; --mark-l:68%; --tint-a:.13; color-scheme:dark;
+  }
+}
+:root[data-theme="dark"]{
+  --paper:#0F171A; --panel:#162024; --ink:#E2E7DE; --muted:#93A19D; --rule:#2B3A3E; --accent:#97A9FF; --on-accent:#0C1330;
+  --teal:#21ab99; --copper:#d97736; --indigo:#758fe6; --rose:#e160a1; --mark-s:68%; --mark-l:68%; --tint-a:.13; color-scheme:dark;
+}
+*{box-sizing:border-box}
+html,body{margin:0}
+body{background:var(--paper);color:var(--ink);font:15px/1.5 var(--f-ui)}
+.wrap{max-width:980px;margin:0 auto;padding-block:20px 28px;padding-left:max(16px, env(safe-area-inset-left, 0px));padding-right:max(16px, env(safe-area-inset-right, 0px))}
+.eyebrow{font:500 10px/1 var(--f-mono);letter-spacing:.14em;text-transform:uppercase;color:var(--muted)}
+h1{font:800 clamp(28px,6vw,38px)/1.05 var(--f-display);margin:8px 0 6px;text-wrap:balance}
+.lede{margin:0 0 14px;color:var(--muted);max-width:64ch}
+.controls{display:flex;flex-wrap:wrap;gap:10px 18px;align-items:center;margin-bottom:12px}
+.seg{display:inline-flex;border:1px solid var(--rule);border-radius:999px;padding:2px;background:var(--panel)}
+.seg button{font:500 13px/1 var(--f-ui);border:0;background:none;color:var(--muted);padding:8px 12px;border-radius:999px;cursor:pointer;min-height:34px}
+.seg button[aria-pressed="true"]{background:var(--ink);color:var(--panel)}
+.seg button:focus-visible,canvas:focus-visible,.btn:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.label{font:500 10px/1 var(--f-mono);letter-spacing:.12em;text-transform:uppercase;color:var(--muted);margin-right:6px}
+.grid{display:grid;grid-template-columns:minmax(0,1fr) 270px;gap:16px;align-items:start}
+@media (max-width:760px){.grid{grid-template-columns:minmax(0,1fr)}}
+.stage{position:relative;border:1px solid var(--rule);border-radius:10px;overflow:hidden;background:var(--panel);touch-action:none}
+canvas{display:block;width:100%;height:auto;cursor:grab}
+canvas.dragging{cursor:grabbing}
+.hint{position:absolute;left:10px;bottom:8px;font:400 11px/1.3 var(--f-ui);color:var(--muted);background:var(--panel);padding:3px 7px;border-radius:6px;opacity:.92}
+.panel{background:var(--panel);border:1px solid var(--rule);border-radius:10px;padding:14px 14px 12px;min-width:0}
+.panel h2{font:600 15px/1.25 var(--f-ui);margin:0 0 4px}
+.panel p{margin:6px 0;font-size:13.5px;color:var(--muted)}
+.stat{display:flex;gap:18px;margin:6px 0 10px}
+.stat b{display:block;font:800 30px/1 var(--f-display);color:var(--ink)}
+.stat span{font-size:12px;color:var(--muted)}
+.links{list-style:none;margin:8px 0 0;padding:0;display:grid;gap:6px}
+.links li{display:flex;align-items:center;gap:8px;font-size:13px;padding:6px 8px;border:1px solid var(--rule);border-radius:7px;background:var(--paper)}
+.links code{font:500 12px/1 var(--f-mono)}
+.chip{margin-left:auto;font:600 11px/1 var(--f-ui);padding:4px 7px;border-radius:999px;border:1px solid currentColor;white-space:nowrap}
+.chip.live{color:var(--teal)} .chip.connecting{color:var(--indigo)} .chip.leaving{color:var(--copper)}
+.dot{width:9px;height:9px;border-radius:50%;flex:none}
+.key{display:grid;gap:5px;margin-top:10px;font-size:12.5px;color:var(--muted)}
+.key div{display:flex;align-items:center;gap:8px}
+.sw{width:14px;height:10px;border-radius:2px;flex:none}
+.notes{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px 22px;margin-top:18px}
+.notes h3{font:600 14px/1.3 var(--f-ui);margin:0 0 4px}
+.notes p{margin:0;font-size:13.5px;color:var(--muted)}
+.notes code,.panel code{font-family:var(--f-mono);font-size:.86em}
+.src{margin-top:16px;font:400 11px/1.5 var(--f-mono);color:var(--muted)}
+</style>
+<main class="wrap">
+  <div class="eyebrow">Letterfield · the shared survey</div>
+  <h1>Sectors and sockets</h1>
+  <p class="lede">The survey's map is cut into sectors of 4 × 4 territories, and every sector is its own Durable Object on Cloudflare. Your game holds a WebSocket to at most four of them: the four nearest the middle of your screen. Drag the map and watch it join and leave them.</p>
+  <div class="controls">
+    <div><span class="label">Show</span><span class="seg" id="mode"><button type="button" data-v="join" aria-pressed="true">Joining</button><button type="button" data-v="nova" aria-pressed="false">A supernova</button></span></div>
+    <div><span class="label">Screen</span><span class="seg" id="device"><button type="button" data-v="phone" aria-pressed="false">Phone</button><button type="button" data-v="laptop" aria-pressed="true">Laptop</button><button type="button" data-v="wide" aria-pressed="false">Wide</button></span></div>
+    <div><span class="label">Zoom</span><span class="seg" id="zoom"><button type="button" data-v="2" aria-pressed="true">2 px</button><button type="button" data-v="4" aria-pressed="false">4 px</button><button type="button" data-v="9" aria-pressed="false">9 px</button><button type="button" data-v="20" aria-pressed="false">20 px</button></span></div>
+  </div>
+  <div class="grid">
+    <div class="stage">
+      <canvas id="map" tabindex="0" aria-label="Map of sectors around the origin, with your screen as a rectangle in the middle. Drag, or use the arrow keys, to move it."></canvas>
+      <div class="hint" id="hint">Drag the map, or use the arrow keys</div>
+    </div>
+    <aside class="panel" id="panel" aria-live="polite"></aside>
+  </div>
+  <section class="notes">
+    <div><h3>A sector</h3><p>192 × 192 cells: 16 territories. One thread with its own SQLite storage holds their claims and the sockets of everyone looking at them, up to 750. Only one message runs at a time, so the first to claim a word wins with a plain <code>INSERT … ON CONFLICT DO NOTHING</code>.</p></div>
+    <div><h3>Joining</h3><p>The game joins the sectors in view nearest the middle of the screen, at most four (a sector with a word of yours still to claim comes next). One that drops out of view stays joined for four seconds, so a little panning doesn't reconnect.</p></div>
+    <div><h3>Zoomed out</h3><p>At 2 pixels a cell a wide screen shows dozens of sectors but joins four, so far-off claims don't arrive live. You can only circle words from 9 pixels a cell up, where a screen covers a sector or two.</p></div>
+    <div><h3>The universe</h3><p>Sectors −12 to 12 each way, 625 in all, hide 1,119,752 words. They report to one Atlas for the world's totals. Out past the edge the map goes on, but those sectors don't report.</p></div>
+  </section>
+  <div class="src">From worker/src/survey.js and letterfield.html (sectorsInView, syncSurvey, novaNeighbours, nearView) · games.michaelwarkentin.com/letterfield</div>
+</main>
+<script>
+(() => {
+  // The game's numbers (letterfield.html, worker/src/survey.js).
+  const RC = 48, TERR = 4, SECTOR = RC * TERR, LINKS = 4, LEAVE_MS = 4000, AREA = 12, REACH = 3;
+  const DEVICES = { phone: [390, 844], laptop: [1440, 900], wide: [2560, 1440] };
+  // Every theme's name and hue, in the game's order; territory (rx, ry) has theme (rx + 15 ry) mod 225.
+  const THEMES = [/* THEMES */];
+  const fdiv = (a, b) => Math.floor(a / b);
+  const mod = (a, n) => ((a % n) + n) % n;
+  const themeOf = (rx, ry) => THEMES[mod(rx + 15 * ry, THEMES.length)] || ['', 200];
+  const inArea = (sx, sy) => Math.abs(sx) <= AREA && Math.abs(sy) <= AREA;
+  const RM = matchMedia('(prefers-reduced-motion: reduce)');
+
+  const canvas = document.getElementById('map'), ctx = canvas.getContext('2d'), panel = document.getElementById('panel');
+  const state = { mode: 'join', device: 'laptop', zoom: 2, cx: 96, cy: 96, links: new Map(), nova: null, frame: 0 };
+  let W = 0, H = 0, dpr = 1, C = {};
+
+  function colours() {
+    const s = getComputedStyle(document.documentElement), v = (n) => s.getPropertyValue(n).trim();
+    C = { paper: v('--paper'), panel: v('--panel'), ink: v('--ink'), muted: v('--muted'), rule: v('--rule'), accent: v('--accent'),
+      teal: v('--teal'), copper: v('--copper'), indigo: v('--indigo'), rose: v('--rose'), markS: v('--mark-s'), markL: v('--mark-l'),
+      tintA: Number(v('--tint-a')) || 0.15, dark: s.colorScheme === 'dark' || v('--paper').toLowerCase() === '#0f171a' };
+  }
+
+  // The overview: enough cells across to show the screen with room around it.
+  function scale() {
+    const [dw, dh] = DEVICES[state.device], sw = dw / state.zoom, sh = dh / state.zoom;
+    return Math.min(W / Math.max(5.2 * SECTOR, sw * 1.5), H / Math.max(3.4 * SECTOR, sh * 1.5));
+  }
+  const screenCells = () => { const [dw, dh] = DEVICES[state.device]; return [dw / state.zoom, dh / state.zoom]; };
+
+  // sectorsInView: the sectors the screen overlaps, nearest the middle first, at most four.
+  function inView() {
+    const [sw, sh] = screenCells(), out = [];
+    for (let sy = fdiv(Math.floor(state.cy - sh / 2), SECTOR); sy <= fdiv(Math.floor(state.cy + sh / 2), SECTOR); sy++)
+      for (let sx = fdiv(Math.floor(state.cx - sw / 2), SECTOR); sx <= fdiv(Math.floor(state.cx + sw / 2), SECTOR); sx++)
+        out.push({ sx, sy, k: sx + ',' + sy, dist: Math.hypot((sx + 0.5) * SECTOR - state.cx, (sy + 0.5) * SECTOR - state.cy) });
+    return out.sort((a, b) => a.dist - b.dist);
+  }
+
+  // syncSurvey: join what's wanted; what isn't stays joined LEAVE_MS, then closes.
+  function sync(now) {
+    const view = inView(), want = view.slice(0, LINKS), keep = new Set(want.map((w) => w.k));
+    for (const w of want) {
+      const l = state.links.get(w.k);
+      if (l) l.unwanted = 0;
+      else state.links.set(w.k, { sx: w.sx, sy: w.sy, k: w.k, since: now, unwanted: 0 });
+    }
+    for (const [k, l] of state.links) {
+      if (keep.has(k)) continue;
+      if (!l.unwanted) l.unwanted = now;
+      if (now - l.unwanted > LEAVE_MS) state.links.delete(k);
+    }
+    return view;
+  }
+  const linkState = (l, now) => (l.unwanted ? 'leaving' : now - l.since < (RM.matches ? 0 : 450) ? 'connecting' : 'live');
+
+  // novaNeighbours: other sectors with a territory within REACH of (rx, ry).
+  function neighbours(rx, ry) {
+    const sx = fdiv(rx, TERR), sy = fdiv(ry, TERR), out = [];
+    for (let ny = fdiv(ry - REACH, TERR); ny <= fdiv(ry + REACH, TERR); ny++)
+      for (let nx = fdiv(rx - REACH, TERR); nx <= fdiv(rx + REACH, TERR); nx++) if (nx !== sx || ny !== sy) out.push([nx, ny]);
+    return out;
+  }
+
+  // Other surveyors, for the supernova: the middle of each one's screen.
+  const PLAYERS = (() => {
+    let a = 0x1e77e2; const r = () => { a = (a + 0x6d2b79f5) | 0; let t = Math.imul(a ^ (a >>> 15), 1 | a); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
+    return Array.from({ length: 46 }, () => [Math.round((r() - 0.45) * SECTOR * 6), Math.round((r() - 0.45) * SECTOR * 4)]);
+  })();
+
+  function resize() {
+    const box = canvas.parentElement.getBoundingClientRect();
+    dpr = Math.min(2, window.devicePixelRatio || 1);
+    W = Math.max(280, Math.floor(box.width));
+    H = Math.round(Math.min(560, Math.max(300, W * 0.66)));
+    canvas.width = W * dpr; canvas.height = H * dpr; canvas.style.height = H + 'px';
+    invalidate();
+  }
+
+  let pending = 0;
+  function invalidate() { if (!pending) pending = requestAnimationFrame(draw); }
+
+  function draw() {
+    pending = 0;
+    const now = performance.now(), s = scale(), view = sync(now);
+    const X = (cx) => W / 2 + (cx - state.cx) * s, Y = (cy) => H / 2 + (cy - state.cy) * s;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.fillStyle = C.panel; ctx.fillRect(0, 0, W, H);
+    const x0 = state.cx - W / 2 / s, x1 = state.cx + W / 2 / s, y0 = state.cy - H / 2 / s, y1 = state.cy + H / 2 / s;
+    // Territories, in their themes' tints.
+    const tpx = RC * s;
+    for (let ry = fdiv(Math.floor(y0), RC); ry <= fdiv(Math.floor(y1), RC); ry++) {
+      for (let rx = fdiv(Math.floor(x0), RC); rx <= fdiv(Math.floor(x1), RC); rx++) {
+        ctx.globalAlpha = C.tintA * (inArea(fdiv(rx, TERR), fdiv(ry, TERR)) ? 1.15 : 0.6);
+        ctx.fillStyle = `hsl(${themeOf(rx, ry)[1]}, 45%, 50%)`;
+        ctx.fillRect(X(rx * RC), Y(ry * RC), tpx + 0.5, tpx + 0.5);
+      }
+    }
+    ctx.globalAlpha = 1;
+    if (tpx > 7) grid(RC, C.rule, 0.6, 0.8, X, Y, x0, x1, y0, y1);
+    // The sectors' state: joined, leaving, or in view and not joined.
+    if (state.mode === 'join') {
+      for (const v of view) if (!state.links.has(v.k)) hatch(X(v.sx * SECTOR), Y(v.sy * SECTOR), SECTOR * s);
+      for (const l of state.links.values()) {
+        const st = linkState(l, now), x = X(l.sx * SECTOR), y = Y(l.sy * SECTOR), w = SECTOR * s;
+        ctx.globalAlpha = st === 'leaving' ? 0.16 : st === 'connecting' ? 0.14 : 0.24;
+        ctx.fillStyle = st === 'leaving' ? C.copper : st === 'connecting' ? C.indigo : C.teal;
+        ctx.fillRect(x, y, w, w);
+        ctx.globalAlpha = 1;
+        ctx.strokeStyle = ctx.fillStyle; ctx.lineWidth = 2.2; ctx.setLineDash(st === 'leaving' ? [6, 5] : []);
+        ctx.strokeRect(x + 1.1, y + 1.1, w - 2.2, w - 2.2); ctx.setLineDash([]);
+        if (st === 'leaving' && w > 40) countdown(x + w / 2, y + w / 2, Math.min(18, w / 5), (now - l.unwanted) / LEAVE_MS);
+      }
+    }
+    grid(SECTOR, C.ink, 1.2, 0.5, X, Y, x0, x1, y0, y1);
+    // The universe's edge.
+    ctx.strokeStyle = C.ink; ctx.lineWidth = 2.4; ctx.setLineDash([10, 6]);
+    ctx.strokeRect(X(-AREA * SECTOR), Y(-AREA * SECTOR), (2 * AREA + 1) * SECTOR * s, (2 * AREA + 1) * SECTOR * s);
+    ctx.setLineDash([]);
+    // Sector names.
+    if (SECTOR * s > 70) {
+      ctx.font = `500 ${Math.min(11, SECTOR * s / 9)}px ${getComputedStyle(document.body).getPropertyValue('--f-mono') || 'monospace'}`;
+      ctx.fillStyle = C.muted;
+      for (let sy = fdiv(Math.floor(y0), SECTOR); sy <= fdiv(Math.floor(y1), SECTOR); sy++)
+        for (let sx = fdiv(Math.floor(x0), SECTOR); sx <= fdiv(Math.floor(x1), SECTOR); sx++)
+          ctx.fillText(`${sx},${sy}`, X(sx * SECTOR) + 6, Y(sy * SECTOR) + 15);
+    }
+    if (state.mode === 'nova') drawNova(now, X, Y, s);
+    // Your screen, and the sector under its middle, which gets your position.
+    const [sw, sh] = screenCells();
+    ctx.strokeStyle = C.ink; ctx.lineWidth = 2; ctx.fillStyle = C.ink;
+    roundRect(W / 2 - sw * s / 2, H / 2 - sh * s / 2, sw * s, sh * s, 6); ctx.stroke();
+    ctx.globalAlpha = 0.05; ctx.fill(); ctx.globalAlpha = 1;
+    ctx.beginPath(); ctx.moveTo(W / 2 - 7, H / 2); ctx.lineTo(W / 2 + 7, H / 2); ctx.moveTo(W / 2, H / 2 - 7); ctx.lineTo(W / 2, H / 2 + 7); ctx.stroke();
+    ctx.font = `600 12px ${getComputedStyle(document.body).fontFamily}`;
+    ctx.fillStyle = C.ink;
+    ctx.fillText('your screen', W / 2 - sw * s / 2 + 6, H / 2 - sh * s / 2 - 7);
+    panelFor(view, now);
+    if (state.frame++ < 2 || [...state.links.values()].some((l) => l.unwanted || linkState(l, now) === 'connecting') || (state.nova && now - state.nova.t < 7000)) invalidate();
+  }
+
+  function grid(step, colour, width, alpha, X, Y, x0, x1, y0, y1) {
+    ctx.strokeStyle = colour; ctx.lineWidth = width; ctx.globalAlpha = alpha; ctx.beginPath();
+    for (let v = Math.ceil(x0 / step) * step; v <= x1; v += step) { ctx.moveTo(Math.round(X(v)) + 0.5, 0); ctx.lineTo(Math.round(X(v)) + 0.5, H); }
+    for (let v = Math.ceil(y0 / step) * step; v <= y1; v += step) { ctx.moveTo(0, Math.round(Y(v)) + 0.5); ctx.lineTo(W, Math.round(Y(v)) + 0.5); }
+    ctx.stroke(); ctx.globalAlpha = 1;
+  }
+  function hatch(x, y, w) {
+    ctx.save(); ctx.beginPath(); ctx.rect(x, y, w, w); ctx.clip();
+    ctx.strokeStyle = C.muted; ctx.globalAlpha = 0.2; ctx.lineWidth = 1; ctx.beginPath();
+    for (let d = -w; d < w; d += 9) { ctx.moveTo(x + d, y + w); ctx.lineTo(x + d + w, y); }
+    ctx.stroke(); ctx.restore();
+  }
+  function countdown(x, y, r, f) {
+    ctx.fillStyle = C.panel; ctx.beginPath(); ctx.arc(x, y, r + 3, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = C.copper; ctx.beginPath(); ctx.moveTo(x, y); ctx.arc(x, y, r, -Math.PI / 2 + f * Math.PI * 2, Math.PI * 1.5); ctx.closePath(); ctx.fill();
+  }
+  function roundRect(x, y, w, h, r) {
+    ctx.beginPath(); ctx.moveTo(x + r, y); ctx.arcTo(x + w, y, x + w, y + h, r); ctx.arcTo(x + w, y + h, x, y + h, r);
+    ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r); ctx.closePath();
+  }
+  function star(x, y, r, fill) {
+    ctx.beginPath();
+    for (let i = 0; i < 8; i++) { const a = Math.PI / 4 * i - Math.PI / 2, rr = i % 2 ? r * 0.32 : r; ctx.lineTo(x + rr * Math.cos(a), y + rr * Math.sin(a)); }
+    ctx.closePath(); ctx.fillStyle = fill; ctx.fill(); ctx.strokeStyle = C.ink; ctx.lineWidth = 1; ctx.stroke();
+  }
+
+  // A supernova: its own sector, the neighbours told at once, and everyone else in the universe with the Atlas's relay.
+  function drawNova(now, X, Y, s) {
+    for (const [px, py] of PLAYERS) {
+      const seen = state.nova ? seenBy(px, py) : null;
+      ctx.beginPath(); ctx.arc(X(px), Y(py), seen === 'burst' ? 5.5 : 4, 0, Math.PI * 2);
+      ctx.fillStyle = seen === 'burst' ? C.rose : seen === 'wave' ? C.indigo : C.panel;
+      ctx.fill(); ctx.strokeStyle = seen ? C.panel : C.muted; ctx.lineWidth = seen ? 1.5 : 1.2; ctx.stroke();
+    }
+    if (!state.nova) return;
+    const { rx, ry, t } = state.nova, el = RM.matches ? 9 : (now - t) / 1000, w = SECTOR * s;
+    const own = [fdiv(rx, TERR), fdiv(ry, TERR)], told = neighbours(rx, ry), relayed = inArea(own[0], own[1]);
+    if (relayed) {
+      for (let sy = -AREA; sy <= AREA; sy++) for (let sx = -AREA; sx <= AREA; sx++) {
+        const delay = 0.6 + ((sx * 7 + sy * 13) & 15) / 4;  // each sector hears with its next report
+        if (el < delay || told.some(([a, b]) => a === sx && b === sy) || (sx === own[0] && sy === own[1])) continue;
+        ctx.globalAlpha = 0.1; ctx.fillStyle = C.indigo; ctx.fillRect(X(sx * SECTOR), Y(sy * SECTOR), w, w);
+      }
+      ctx.globalAlpha = 1;
+    }
+    for (const [sx, sy] of told) {
+      ctx.globalAlpha = 0.3; ctx.fillStyle = C.teal; ctx.fillRect(X(sx * SECTOR), Y(sy * SECTOR), w, w);
+      ctx.globalAlpha = 1; ctx.strokeStyle = C.teal; ctx.lineWidth = 2; ctx.strokeRect(X(sx * SECTOR) + 1, Y(sy * SECTOR) + 1, w - 2, w - 2);
+    }
+    ctx.strokeStyle = C.copper; ctx.lineWidth = 3; ctx.strokeRect(X(own[0] * SECTOR) + 1.5, Y(own[1] * SECTOR) + 1.5, w - 3, w - 3);
+    ctx.setLineDash([5, 4]); ctx.strokeStyle = C.accent; ctx.lineWidth = 1.5;
+    ctx.strokeRect(X((rx - REACH) * RC), Y((ry - REACH) * RC), 7 * RC * s, 7 * RC * s); ctx.setLineDash([]);
+    const cx = X((rx + 0.5) * RC), cy = Y((ry + 0.5) * RC);
+    if (!RM.matches && el < 6) {
+      const r = Math.max(0, el - 0.3) * 260 * Math.max(0.4, s * 2);
+      ctx.globalAlpha = Math.max(0, 1 - el / 6); ctx.strokeStyle = `hsl(${themeOf(rx, ry)[1]}, ${C.markS}, ${C.markL})`; ctx.lineWidth = 4;
+      ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.stroke(); ctx.globalAlpha = 1;
+    }
+    star(cx, cy, Math.max(8, Math.min(14, RC * s / 3)), `hsl(${themeOf(rx, ry)[1]}, ${C.markS}, ${C.markL})`);
+  }
+  function seenBy(px, py) {
+    const { rx, ry } = state.nova, prx = fdiv(px, RC), pry = fdiv(py, RC);
+    if (Math.max(Math.abs(prx - rx), Math.abs(pry - ry)) <= REACH) return 'burst';
+    return inArea(fdiv(rx, TERR), fdiv(ry, TERR)) && inArea(fdiv(px, SECTOR), fdiv(py, SECTOR)) ? 'wave' : null;
+  }
+
+  function panelFor(view, now) {
+    let html;
+    if (state.mode === 'join') {
+      const links = [...state.links.values()].sort((a, b) => (a.unwanted ? 1 : 0) - (b.unwanted ? 1 : 0));
+      const under = `${fdiv(Math.floor(state.cx), SECTOR)},${fdiv(Math.floor(state.cy), SECTOR)}`;
+      html = `<h2>Your game's sockets</h2><div class="stat"><div><b>${view.length}</b><span>sectors in view</span></div><div><b>${[...state.links.values()].filter((l) => !l.unwanted).length}</b><span>joined</span></div></div>`
+        + `<ul class="links">${links.map((l) => {
+          const st = linkState(l, now), left = st === 'leaving' ? ` · ${Math.max(0, (LEAVE_MS - (now - l.unwanted)) / 1000).toFixed(1)} s` : '';
+          return `<li><span class="dot" style="background:var(--${st === 'live' ? 'teal' : st === 'connecting' ? 'indigo' : 'copper'})"></span><code>sector ${l.k}</code><span class="chip ${st}">${st === 'leaving' ? 'leaving' + left : st}</span></li>`;
+        }).join('')}</ul>`
+        + `<p>Your position goes only to <code>sector ${under}</code>, under the middle of the screen, at most once a second.</p>`
+        + `<div class="key"><div><span class="sw" style="background:var(--teal);opacity:.6"></span>joined: a live WebSocket</div><div><span class="sw" style="background:var(--copper);opacity:.5"></span>out of view, leaving after 4 s</div><div><span class="sw" style="background:repeating-linear-gradient(135deg,var(--muted) 0 1px,transparent 1px 6px)"></span>in view, not joined</div></div>`;
+    } else if (!state.nova) {
+      html = '<h2>Set one off</h2><p>Tap any territory to finish its last hidden word. The dots are other surveyors, each at the middle of their screen.</p>';
+    } else {
+      const { rx, ry } = state.nova, own = `${fdiv(rx, TERR)},${fdiv(ry, TERR)}`, n = neighbours(rx, ry).length;
+      const lx = mod(rx, TERR), ly = mod(ry, TERR), where = (lx === 0 || lx === 3) && (ly === 0 || ly === 3) ? 'a corner' : (lx === 0 || lx === 3 || ly === 0 || ly === 3) ? 'an edge' : 'one of the middle four';
+      const counts = { burst: 0, wave: 0, none: 0 };
+      for (const [px, py] of PLAYERS) counts[seenBy(px, py) || 'none']++;
+      const inside = inArea(fdiv(rx, TERR), fdiv(ry, TERR));
+      html = `<h2>Territory ${rx}, ${ry} · ${themeOf(rx, ry)[0]}</h2><p>It's ${where} territory of <code>sector ${own}</code>, which records it with the claim of its last word, then tells <b>${n}</b> neighbouring sectors at once (<code>POST /near</code>).</p>`
+        + (inside ? '<p>The Atlas hears with the sector\'s next report and relays it to every other sector in the universe for two minutes, each with its own next report.</p>' : '<p>This one is outside the universe, whose sectors don\'t report to the Atlas: only its neighbours hear.</p>')
+        + `<div class="stat"><div><b>${counts.burst}</b><span>see the burst</span></div><div><b>${counts.wave}</b><span>a distant wave</span></div><div><b>${counts.none}</b><span>nothing yet</span></div></div>`
+        + `<div class="key"><div><span class="dot" style="background:var(--rose)"></span>within 3 territories: charge, burst, shockwave</div><div><span class="dot" style="background:var(--indigo)"></span>elsewhere in the universe: a wave from that side, if it's under 20 s old</div><div><span class="dot" style="border:1px solid var(--muted)"></span>out past the edge: the remnant, when they visit</div></div>`;
+    }
+    if (panel.dataset.html !== html) { panel.innerHTML = html; panel.dataset.html = html; }
+  }
+
+  // Controls.
+  function segmented(id, key, parse = (v) => v) {
+    const el = document.getElementById(id);
+    el.addEventListener('click', (e) => {
+      const b = e.target.closest('button'); if (!b) return;
+      for (const o of el.querySelectorAll('button')) o.setAttribute('aria-pressed', String(o === b));
+      state[key] = parse(b.dataset.v);
+      if (key === 'mode') { state.nova = null; document.getElementById('hint').textContent = state.mode === 'nova' ? 'Tap a territory to set it off' : 'Drag the map, or use the arrow keys'; }
+      state.frame = 0; invalidate();
+    });
+  }
+  segmented('mode', 'mode'); segmented('device', 'device'); segmented('zoom', 'zoom', Number);
+
+  let drag = null;
+  canvas.addEventListener('pointerdown', (e) => { drag = { x: e.clientX, y: e.clientY, cx: state.cx, cy: state.cy, moved: 0 }; canvas.setPointerCapture(e.pointerId); canvas.classList.add('dragging'); });
+  canvas.addEventListener('pointermove', (e) => {
+    if (!drag) return;
+    const s = scale(); drag.moved = Math.max(drag.moved, Math.hypot(e.clientX - drag.x, e.clientY - drag.y));
+    state.cx = drag.cx - (e.clientX - drag.x) / s; state.cy = drag.cy - (e.clientY - drag.y) / s; invalidate();
+  });
+  canvas.addEventListener('pointerup', (e) => {
+    canvas.classList.remove('dragging');
+    if (drag && drag.moved < 6 && state.mode === 'nova') {
+      const r = canvas.getBoundingClientRect(), s = scale();
+      const cx = state.cx + (e.clientX - r.left - W / 2) / s, cy = state.cy + (e.clientY - r.top - H / 2) / s;
+      state.nova = { rx: fdiv(cx, RC), ry: fdiv(cy, RC), t: performance.now() };
+    }
+    drag = null; invalidate();
+  });
+  canvas.addEventListener('keydown', (e) => {
+    const step = Math.max(12, 60 / scale() * 0.6), d = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] }[e.key];
+    if (d) { e.preventDefault(); state.cx += d[0] * step; state.cy += d[1] * step; invalidate(); }
+    if ((e.key === 'Enter' || e.key === ' ') && state.mode === 'nova') { e.preventDefault(); state.nova = { rx: fdiv(state.cx, RC), ry: fdiv(state.cy, RC), t: performance.now() }; invalidate(); }
+  });
+  new ResizeObserver(resize).observe(canvas.parentElement);
+  matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => { colours(); invalidate(); });
+  new MutationObserver(() => { colours(); invalidate(); }).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+  colours(); resize();
+})();
+// A page that embeds this one in an iframe hears how tall it is, so the frame can fit it (see README.md).
+if (window.parent !== window) {
+  new ResizeObserver(() => window.parent.postMessage({ explainer: 'sectors', height: document.documentElement.scrollHeight }, '*')).observe(document.body);
+}
+</script>

@@ -1,0 +1,755 @@
+<title>The life of a claim</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<style>
+/* FONTS */
+/* Layout: one column. The stage puts both phones above their sector, the log beside it, and the outbox's states to the left when there's room; on a phone it's one column, and the step's caption sticks to the bottom while it scrolls. */
+:root{
+  --paper:#EBEEE7; --panel:#F7F8F4; --field:#FFFFFF; --ink:#1B2428; --muted:#59656A; --rule:#C6CFC6; --accent:#2A43C2; --on-accent:#FFFFFF;
+  --danger:#B23A2C; --teal:#259889; --copper:#995629; --indigo:#2c48a5; --rose:#992961; --mark-s:58%; --mark-l:38%;
+  --zed:var(--rose); --kim:var(--indigo);
+  --f-display:"Big Shoulders Display","Arial Narrow",Impact,sans-serif;
+  --f-mono:"Martian Mono",ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+  --f-ui:"Schibsted Grotesk",system-ui,-apple-system,"Segoe UI",sans-serif;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --paper:#0F171A; --panel:#162024; --field:#0F171A; --ink:#E2E7DE; --muted:#93A19D; --rule:#2B3A3E; --accent:#97A9FF; --on-accent:#0C1330;
+    --danger:#FF8D7C; --teal:#21ab99; --copper:#d97736; --indigo:#758fe6; --rose:#e160a1; --mark-s:68%; --mark-l:68%; color-scheme:dark;
+  }
+}
+:root[data-theme="dark"]{
+  --paper:#0F171A; --panel:#162024; --field:#0F171A; --ink:#E2E7DE; --muted:#93A19D; --rule:#2B3A3E; --accent:#97A9FF; --on-accent:#0C1330;
+  --danger:#FF8D7C; --teal:#21ab99; --copper:#d97736; --indigo:#758fe6; --rose:#e160a1; --mark-s:68%; --mark-l:68%; color-scheme:dark;
+}
+*{box-sizing:border-box}
+html,body{margin:0}
+body{background:var(--paper);color:var(--ink);font:15px/1.5 var(--f-ui)}
+.wrap{max-width:1060px;margin:0 auto;padding-block:20px 28px;padding-left:max(16px, env(safe-area-inset-left, 0px));padding-right:max(16px, env(safe-area-inset-right, 0px))}
+.eyebrow{font:500 10px/1 var(--f-mono);letter-spacing:.14em;text-transform:uppercase;color:var(--muted)}
+h1{font:800 clamp(28px,6vw,38px)/1.05 var(--f-display);margin:8px 0 6px;text-wrap:balance}
+.lede{margin:0 0 14px;color:var(--muted);max-width:66ch}
+.controls{display:flex;flex-wrap:wrap;gap:8px 22px;align-items:center;margin:0 0 12px}
+.switch{display:inline-flex;align-items:center;gap:9px;font:500 13.5px/1.2 var(--f-ui);cursor:pointer;min-height:34px}
+.switch input{appearance:none;-webkit-appearance:none;flex:none;width:34px;height:20px;border-radius:999px;background:var(--rule);position:relative;margin:0;cursor:pointer;transition:background .2s}
+.switch input::after{content:"";position:absolute;top:2px;left:2px;width:16px;height:16px;border-radius:50%;background:var(--panel);transition:transform .2s}
+.switch input:checked{background:var(--ink)}
+.switch input:checked::after{transform:translateX(14px)}
+.switch input:focus-visible,.btn:focus-visible,.dots button:focus-visible,.stage:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.stage{border:1px solid var(--rule);border-radius:10px;background:var(--panel);padding:14px;margin:0}
+#stage{display:block;width:100%;height:auto;margin:0 auto;overflow:visible}
+.stage.tall #stage{max-width:470px}
+.caption{background:var(--paper);border-top:1px solid var(--rule);margin-top:14px;padding-top:12px;padding-bottom:12px}
+.narrow .caption{position:sticky;bottom:0;z-index:2;padding-bottom:calc(12px + env(safe-area-inset-bottom, 0px))}
+.caprow{display:flex;flex-wrap:wrap;align-items:center;gap:8px 14px}
+.stepno{font:500 10px/1 var(--f-mono);letter-spacing:.12em;text-transform:uppercase;color:var(--muted)}
+.buttons{display:flex;gap:6px;margin-left:auto}
+.btn{font:500 13px/1 var(--f-ui);border:1px solid var(--rule);background:var(--panel);color:var(--ink);padding:9px 13px;border-radius:999px;cursor:pointer;min-height:36px}
+.btn.primary{background:var(--ink);color:var(--panel);border-color:var(--ink);min-width:76px}
+.btn:disabled{opacity:.4;cursor:default}
+.caption h2{font:600 17px/1.25 var(--f-ui);margin:8px 0 4px;text-wrap:balance}
+.caption p{margin:0;max-width:72ch;color:var(--muted);font-size:14.5px;min-height:4.5em}
+.caption pre{margin:8px 0 0;padding:8px 10px;background:var(--panel);border:1px solid var(--rule);border-radius:7px;font:500 11.5px/1.5 var(--f-mono);overflow-x:auto;white-space:pre}
+.dots{display:flex;gap:4px;margin-top:10px}
+.dots button{flex:1 1 0;min-width:0;height:18px;border:0;padding:0;background:none;cursor:pointer;display:flex;align-items:center}
+.dots button::before{content:"";display:block;width:100%;height:4px;border-radius:2px;background:var(--rule)}
+.dots button.done::before{background:var(--muted)}
+.dots button[aria-current="step"]::before{background:var(--ink);height:6px}
+.notes{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:12px 22px;margin-top:20px}
+.notes h3{font:600 14px/1.3 var(--f-ui);margin:0 0 4px}
+.notes p{margin:0;font-size:13.5px;color:var(--muted)}
+.notes code{font-family:var(--f-mono);font-size:.86em}
+.src{margin-top:16px;font:400 11px/1.5 var(--f-mono);color:var(--muted)}
+#stage text{fill:var(--ink);font-family:var(--f-ui)}
+#stage .nm{font:600 12px var(--f-ui)}
+#stage .sub{font:400 10px var(--f-ui);fill:var(--muted)}
+#stage .say{font:500 10.5px var(--f-ui)}
+#stage .say tspan+tspan{fill:var(--muted);font-weight:400}
+#stage .stat{font:500 10.5px var(--f-ui)}
+#stage .eb{font:500 8.5px var(--f-mono);letter-spacing:.12em;fill:var(--muted)}
+#stage .lt{font:500 8.5px var(--f-mono);fill:var(--muted)}
+#stage.wide .lt{font-size:9.5px}
+#stage .no{font:500 8.5px var(--f-mono);fill:var(--muted)}
+#stage .mono{font:500 9px var(--f-mono)}
+#stage .chipt{font:600 8.5px var(--f-mono)}
+#stage .box{fill:var(--panel);stroke:var(--rule);stroke-width:1}
+#stage .lit>.box{stroke:var(--ink);stroke-width:1.6}
+#stage .gbox{fill:var(--paper);stroke:var(--rule);stroke-width:1}
+#stage .gate.lit .gbox{fill:var(--field);stroke:var(--ink);stroke-width:1.5}
+#stage .store{fill:var(--paper);stroke:var(--copper);stroke-width:1.2}
+#stage .lit>.store{stroke-width:2}
+#stage .cap{fill:hsl(var(--hue) var(--mark-s) var(--mark-l) / .24);stroke:hsl(var(--hue) var(--mark-s) var(--mark-l));stroke-width:1.3}
+#stage .tag rect{fill:var(--zed)}
+#stage .tag text{font:600 7.5px var(--f-mono);fill:var(--on-accent)}
+#stage .key{stroke:none}
+#stage .k-teal{fill:var(--teal)} #stage .k-copper{fill:var(--copper)} #stage .k-muted{fill:var(--muted)}
+#stage .sock{fill:none;stroke-width:1.6}
+#stage .track{fill:none;stroke-width:1.2;stroke-dasharray:2 4}
+#stage .s-zed{stroke:var(--zed)} #stage .s-kim{stroke:var(--kim)} #stage .s-teal{stroke:var(--teal)} #stage .s-copper{stroke:var(--copper)} #stage .s-muted{stroke:var(--muted)}
+#stage .dash{stroke-dasharray:4 3}
+#stage .ah-teal{fill:var(--teal)} #stage .ah-copper{fill:var(--copper)} #stage .ah-muted{fill:var(--muted)}
+#stage .chip rect{fill:var(--panel);stroke-width:1.2}
+#stage .c-queued rect,#stage .c-unanswered rect{stroke:var(--muted)} #stage .c-queued text,#stage .c-unanswered text{fill:var(--muted)}
+#stage .c-sent rect{stroke:var(--accent)} #stage .c-sent text{fill:var(--accent)}
+#stage .c-first rect{stroke:var(--teal)} #stage .c-first text{fill:var(--teal)}
+#stage .c-theirs rect{stroke:var(--copper)} #stage .c-theirs text{fill:var(--copper)}
+#stage .c-refused rect{stroke:var(--danger)} #stage .c-refused text{fill:var(--danger)}
+#stage .dot-queued,#stage .dot-unanswered{fill:var(--muted)} #stage .dot-sent{fill:var(--accent)} #stage .dot-first{fill:var(--teal)}
+#stage .dot-theirs{fill:var(--copper)} #stage .dot-refused{fill:var(--danger)}
+#stage .slot circle{fill:var(--panel);stroke:var(--rule);stroke-width:1.2}
+#stage .slot.ok.z circle{fill:var(--zed);stroke:var(--zed)}
+#stage .slot.ok.k circle{fill:var(--kim);stroke:var(--kim)}
+#stage .slot.fail circle{fill:var(--danger);stroke:var(--danger)}
+#stage .slot path{fill:none;stroke:var(--on-accent);stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round;display:none}
+#stage .slot.ok .tick,#stage .slot.fail .cross{display:inline}
+#stage .tok circle,#stage .mk circle{stroke:var(--panel);stroke-width:2}
+#stage .tok text,#stage .mk text{font:600 9.5px var(--f-ui);fill:var(--on-accent)}
+#stage .tok.z circle,#stage .mk.z circle{fill:var(--zed)} #stage .tok.k circle,#stage .mk.k circle{fill:var(--kim)}
+#stage .tok.fail circle{fill:var(--danger)}
+#stage .pill rect{fill:var(--field);stroke-width:1.3}
+#stage .pill text{font:600 9px var(--f-mono)}
+#stage .p-ok rect{stroke:var(--teal)} #stage .p-bad rect{stroke:var(--danger)} #stage .p-bad text{fill:var(--danger)}
+#stage .p-plain rect{stroke:var(--muted)} #stage .p-store rect{stroke:var(--copper)}
+#stage .sector-chip rect{fill:var(--panel);stroke:var(--teal);stroke-width:1.2} #stage .sector-chip text{fill:var(--teal)}
+#stage.asleep .sector-chip rect{stroke:var(--muted)} #stage.asleep .sector-chip text{fill:var(--muted)}
+#stage.asleep .gates{opacity:.45}
+#stage .k-only{transition:opacity .2s}
+#stage.solo .k-only{display:none}
+@media (prefers-reduced-motion: reduce){.switch input,.switch input::after{transition:none}}
+</style>
+<main class="wrap" id="page">
+  <div class="eyebrow">Letterfield · the shared survey</div>
+  <h1>The life of a claim</h1>
+  <p class="lede">What happens between circling a word and seeing it charted: the game’s outbox, the sector’s checks, the race to the insert, the answers, and the copy to the survey’s log. The word, the map and every limit are the real ones.</p>
+  <div class="controls">
+    <label class="switch"><input type="checkbox" id="race" checked> Two surveyors race for it</label>
+    <label class="switch"><input type="checkbox" id="asleep"> The sector starts asleep</label>
+  </div>
+  <figure class="stage" id="wrap" tabindex="0" aria-label="The claim's journey. Use the arrow keys to step through it.">
+    <svg id="stage" role="img" aria-label="Two surveyors' phones above sector 0,0, whose six checks run top to bottom, with the Atlas, the log's alarm, D1 and the survey log beside it. Step through it with the buttons below; each step is described there."></svg>
+  </figure>
+  <section class="caption" aria-label="This step">
+    <div class="caprow">
+      <span class="stepno" id="stepno">Step 1</span>
+      <div class="buttons">
+        <button type="button" class="btn" id="back">Back</button>
+        <button type="button" class="btn primary" id="play">Play</button>
+        <button type="button" class="btn" id="next">Next</button>
+      </div>
+    </div>
+    <div aria-live="polite">
+      <h2 id="cap-title"></h2>
+      <p id="cap-text"></p>
+    </div>
+    <pre id="cap-code"></pre>
+    <div class="dots" id="dots"></div>
+  </section>
+  <section class="notes">
+    <div><h3>Why one thread decides</h3><p>Every claim on this patch of the map goes through one Durable Object, which runs one message at a time. A race is settled by a plain <code>INSERT … ON CONFLICT DO NOTHING</code>, with no locks and nothing to retry.</p></div>
+    <div><h3>Why batches</h3><p>Sending each claim to every socket costs players × claims sends, which grows with the square of the crowd. Batching for 200 ms keeps it to about five frames a second for each player, however busy the sector.</p></div>
+    <div><h3>Why an alarm</h3><p>A Durable Object holding a timer can’t hibernate, and is billed while it waits. An alarm lets it sleep and wakes it if it was evicted, so the log can trail by up to 30 s at no cost.</p></div>
+  </section>
+  <p class="src">From worker/src/survey.js (Sector.claim, checkClaim, sendBatch, receipt, report, logSoon, flushLog), worker/src/survey-log.js, worker/migrations-log/ and letterfield.html (collect, claimWord, flushClaims, onSurvey) · games.michaelwarkentin.com/letterfield</p>
+</main>
+<script>
+(() => {
+  const NS = 'http://www.w3.org/2000/svg';
+  const THEMES = [/* THEMES */];
+  // The real map around the word, from the Worker's copy of the generator: cells x 4–10, y 0–5.
+  const GRID = [/* AREA 4 0 7 6 */], GX = 4, GY = 0;
+  const TERR = [/* TERRITORY 0 0 */];  // [rx, ry, theme, hue, hidden words, name]
+  const WORD = { w: 'PURIM', x: 5, y: 5, d: 7 };  // d 7 runs up and to the right, as the generator placed it
+  const PLACE = TERR[5], THEME = THEMES[TERR[2]][0], HIDDEN = TERR[4];
+  const spelt = [...WORD.w].map((_, i) => GRID[WORD.y - GY - i]?.[WORD.x - GX + i]).join('');
+  if (spelt !== WORD.w) console.error(`${WORD.w} isn't at ${WORD.x},${WORD.y} on this map (${spelt})`);
+
+  const stage = document.getElementById('stage'), wrapEl = document.getElementById('wrap');
+  const reduce = matchMedia('(prefers-reduced-motion: reduce)');
+  stage.style.setProperty('--hue', TERR[3]);
+
+  // ---- the two layouts: wide (phones above the sector, the log beside it) and tall (all in one column) ----
+  const LAYOUTS = {
+    wide: {
+      w: 1000, h: 604, cell: 13, card: { y: 0, h: 150, w: 142 }, cards: { zed: 250, kim: 404, all: 558 },
+      sector: { x: 250, y: 178, w: 450 }, legend: { x: 0, y: 0, w: 222 },
+      phone: { x: 0, y: 262, w: 222 }, atlas: { x: 728, y: 0, w: 272, h: 150 }, alarm: { x: 728, y: 178, w: 272, h: 92 },
+      d1: { x: 728, y: 300, w: 272, h: 154 }, log: { x: 728, y: 484, w: 272, h: 116 },
+    },
+    medium: {
+      w: 750, h: 604, cell: 13, card: { y: 0, h: 150, w: 142 }, cards: { zed: 0, kim: 154, all: 308 },
+      sector: { x: 0, y: 178, w: 450 }, atlas: { x: 478, y: 0, w: 272, h: 150 }, alarm: { x: 478, y: 178, w: 272, h: 92 },
+      d1: { x: 478, y: 300, w: 272, h: 154 }, log: { x: 478, y: 484, w: 272, h: 116 },
+    },
+    tall: {
+      w: 360, h: 1052, cell: 11, card: { y: 0, h: 140, w: 114 }, cards: { zed: 0, kim: 123, all: 246 },
+      sector: { x: 0, y: 168, w: 360 },
+      alarm: { x: 0, y: 620, w: 172, h: 104 }, d1: { x: 0, y: 752, w: 172, h: 168 }, log: { x: 0, y: 948, w: 172, h: 104 },
+      atlas: { x: 188, y: 620, w: 172, h: 168 }, legend: { x: 188, y: 816, w: 172 },
+    },
+  };
+  const SECTOR_H = 422;
+  const GATES = [
+    ['Messages', '≤ 256 characters; 20 at once, then 10 a second', 'dropped'],
+    ['Claims from this socket', '5 at once, then 1 every 1.5 s', 'slow down'],
+    ['Claims from this address', '6 a minute, counted across every sector', 'slow down'],
+    ['Today’s cap', '300 a UTC day per address, in the universe', 'daily limit'],
+    ['On the map?', 'checkClaim, with the game’s own generator', 'not there'],
+    ['INSERT … ON CONFLICT DO NOTHING', 'one statement, nothing awaited: first wins', 'taken'],
+  ];
+  const LEGEND = [
+    ['queued', 'waiting for its sector'], ['sent', 'answer due within 15 s'], ['first', 'charted first: yours'],
+    ['theirs', 'someone else was first'], ['refused', 'turned down by the sector'], ['unanswered', 'socket closed: ask again'],
+  ];
+
+  const measure = document.createElement('canvas').getContext('2d');
+  const FONT = { ui: '"Schibsted Grotesk", system-ui, sans-serif', mono: '"Martian Mono", ui-monospace, monospace' };
+  const textWidth = (s, font) => { measure.font = font; return measure.measureText(s).width; };
+  function wrapText(s, font, max) {
+    const out = [];
+    let line = '';
+    for (const word of s.split(' ')) {
+      const next = line ? `${line} ${word}` : word;
+      if (line && textWidth(next, font) > max) { out.push(line); line = word; } else line = next;
+    }
+    if (line) out.push(line);
+    return out;
+  }
+
+  function E(tag, attrs, parent) {
+    const n = document.createElementNS(NS, tag);
+    for (const k in attrs) if (attrs[k] !== null && attrs[k] !== undefined) n.setAttribute(k, attrs[k]);
+    if (parent) parent.appendChild(n);
+    return n;
+  }
+  function T(parent, x, y, s, cls, anchor) {
+    const n = E('text', { x, y, class: cls, 'text-anchor': anchor || null }, parent);
+    n.textContent = s;
+    return n;
+  }
+  function setLines(n, lines, lh) {
+    n.replaceChildren();
+    const x = n.getAttribute('x');
+    lines.forEach((s, i) => { E('tspan', { x, dy: i ? lh : 0 }, n).textContent = s; });
+  }
+  const pts = (p) => p.map(([x, y]) => `${x},${y}`).join(' ');
+
+  let L, G, ui, layout = '';
+
+  function geometry() {
+    const s = L.sector, gx = s.x + 12, gw = s.w - 28, cell = L.cell;
+    const gateTop = (i) => s.y + 46 + i * 52, gateCy = (i) => gateTop(i) + 23;
+    const tz = gx + 17, tk = gx + 38, rail = s.x + s.w - 8, cardBottom = L.card.y + L.card.h;
+    const gridX = (who) => L.cards[who] + (L.card.w - 7 * cell) / 2, gridY = L.card.y + 28;
+    const wordAt = (who) => [gridX(who) + 3.5 * cell, gridY + 3.5 * cell];
+    const bend = cardBottom + 13, storeY = s.y + 362, storeCy = storeY + 24;
+    const stops = {
+      z: { word: wordAt('zed'), port: [tz, cardBottom], top: [tz, s.y + 40], store: [tz, storeCy] },
+      k: { word: wordAt('kim'), port: [L.cards.kim + 30, cardBottom], b1: [L.cards.kim + 30, bend], b2: [tk, bend], top: [tk, s.y + 40] },
+    };
+    for (let i = 0; i < 6; i++) { stops.z[`g${i}`] = [tz, gateCy(i)]; stops.k[`g${i}`] = [tk, gateCy(i)]; }
+    const lanes = {
+      z: ['word', 'port', 'top', 'g0', 'g1', 'g2', 'g3', 'g4', 'g5', 'store'],
+      k: ['word', 'port', 'b1', 'b2', 'top', 'g0', 'g1', 'g2', 'g3', 'g4', 'g5'],
+    };
+    const a = L.atlas, al = L.alarm, d = L.d1, lg = L.log, r1 = s.x + s.w + 14, r2 = s.x + s.w + 21, ay = a.y + a.h / 2, mid = al.x + al.w / 2;
+    const routes = layout !== 'tall' ? {
+      atlas: [[s.x + s.w, s.y + 22], [r1, s.y + 22], [r1, ay], [a.x, ay]],
+      ask: [[gx + gw, gateCy(3)], [rail, gateCy(3)], [rail, s.y + 22], [r1, s.y + 22], [r1, ay], [a.x + 30, ay]],
+      log: [[gx + gw, storeCy], [r2, storeCy], [r2, al.y + al.h / 2], [al.x, al.y + al.h / 2]],
+      copy: [[gx + gw, storeCy], [r2, storeCy], [r2, al.y + al.h / 2], [al.x + 30, al.y + al.h / 2], [mid, al.y + al.h], [mid, d.y + 22]],
+      d1: [[mid, al.y + al.h], [mid, d.y]], read: [[mid, d.y + d.h], [mid, lg.y]],
+      readFly: [[mid, d.y + d.h - 20], [mid, lg.y + 24]],
+    } : {
+      atlas: [[274, s.y + SECTOR_H], [274, a.y]],
+      ask: [[gx + gw, gateCy(3)], [rail, gateCy(3)], [rail, s.y + SECTOR_H - 10], [274, s.y + SECTOR_H - 10], [274, a.y + 26]],
+      log: [[86, storeY + 48], [86, al.y]],
+      copy: [[86, storeY + 48], [86, al.y + al.h], [86, d.y + 22]],
+      d1: [[86, al.y + al.h], [86, d.y]], read: [[86, d.y + d.h], [86, lg.y]],
+      readFly: [[86, d.y + d.h - 20], [86, lg.y + 24]],
+    };
+    return { s, gx, gw, cell, gateTop, gateCy, tz, tk, rail, cardBottom, gridX, gridY, wordAt, storeY, storeCy, stops, lanes, routes, textX: gx + 58 };
+  }
+
+  function along(who, from, to) {
+    const lane = G.lanes[who], i = lane.indexOf(from), j = lane.indexOf(to);
+    const names = i <= j ? lane.slice(i, j + 1) : lane.slice(j, i + 1).reverse();
+    return names.map((n) => G.stops[who][n]);
+  }
+  const toCard = { z: () => along('z', 'g5', 'word'), k: () => along('k', 'g5', 'word'),
+    all: () => [[G.gx + G.gw, G.gateCy(5)], [G.rail, G.gateCy(5)], [G.rail, G.cardBottom], G.wordAt('all')] };
+
+  // ---- drawing ----
+  function marker(defs, cls) {
+    const m = E('marker', { id: `ah-${cls}-${layout}`, viewBox: '0 0 8 8', refX: 7, refY: 4, markerWidth: 7, markerHeight: 7, orient: 'auto-start-reverse' }, defs);
+    E('path', { d: 'M0.5 0.8 L7 4 L0.5 7.2 Z', class: `ah-${cls}` }, m);
+  }
+  function line(parent, p, cls, arrow) {
+    return E('polyline', { points: pts(p), class: cls, fill: 'none', 'marker-end': arrow ? `url(#ah-${arrow}-${layout})` : null }, parent);
+  }
+  function chipWidth(s) { return textWidth(s, `600 8.5px ${FONT.mono}`) + 14; }
+
+  function drawCard(who, name) {
+    const x = L.cards[who], y = L.card.y, w = L.card.w, h = L.card.h, cell = G.cell;
+    const g = E('g', { id: `card-${who}` }, stage);
+    E('rect', { x, y, width: w, height: h, rx: 8, class: 'box' }, g);
+    T(g, x + 10, y + 18, name, 'nm');
+    let chip = null;
+    if (who !== 'all') {
+      chip = E('g', { class: 'chip' }, g);
+      chip.rect = E('rect', { y: y + 7.5, height: 15, rx: 7.5 }, chip);
+      chip.text = T(chip, 0, y + 18, '', 'chipt', 'middle');
+      chip.right = x + w - 8;
+    }
+    const gx0 = G.gridX(who), gy0 = G.gridY;
+    const [cx, cy] = [gx0 + 3.5 * cell, gy0 + 3.5 * cell], len = 4 * Math.SQRT2 * cell + cell * 0.94, ht = cell * 0.94;
+    const cap = E('rect', { x: cx - len / 2, y: cy - ht / 2, width: len, height: ht, rx: ht / 2, transform: `rotate(-45 ${cx} ${cy})`, class: 'cap' }, g);
+    const grid = E('g', {}, g);
+    GRID.forEach((row, r) => [...row].forEach((ch, c) => T(grid, gx0 + c * cell + cell / 2, gy0 + r * cell + cell * 0.72, ch, 'lt', 'middle')));
+    const tag = E('g', { class: 'tag' }, g), tx = gx0 + 6.5 * cell + 6, ty = gy0 + 0.5 * cell;
+    E('rect', { x: tx - 11.5, y: ty - 6, width: 23, height: 12, rx: 6 }, tag);
+    T(tag, tx, ty + 3, 'ZED', '', 'middle');
+    const say = E('text', { x: x + 10, y: gy0 + 6 * cell + 16, class: 'say' }, g);
+    ui.cards[who] = { g, chip, cap, tag, say };
+  }
+
+  function drawSector() {
+    const s = G.s, g = E('g', { id: 'sector' }, stage);
+    E('rect', { x: s.x, y: s.y, width: s.w, height: SECTOR_H, rx: 10, class: 'box' }, g);
+    T(g, s.x + 12, s.y + 18, 'SECTOR 0,0 · DURABLE OBJECT', 'eb');
+    T(g, s.x + 12, s.y + 33, 'one thread, one message at a time', 'sub');
+    const chip = E('g', { class: 'sector-chip' }, g);
+    ui.sectorChip = { rect: E('rect', { y: s.y + 9, height: 15, rx: 7.5 }, chip), text: T(chip, 0, s.y + 19.5, '', 'chipt', 'middle'), right: s.x + s.w - 12 };
+    const gates = E('g', { class: 'gates' }, g);
+    line(gates, [G.stops.z.top, G.stops.z.g5], 'track s-zed');
+    line(gates, [G.stops.k.top, G.stops.k.g5], 'track s-kim k-only');
+    ui.gates = GATES.map(([title, sub, no], i) => {
+      const top = G.gateTop(i), cy = G.gateCy(i), gg = E('g', { class: 'gate', id: `gate-${i}` }, gates);
+      E('rect', { x: G.gx, y: top, width: G.gw, height: 46, rx: 7, class: 'gbox' }, gg);
+      const t = T(gg, G.textX, top + 19, title, 'nm');
+      T(gg, G.gx + G.gw - 10, top + 19, no, 'no', 'end');
+      const room = G.gx + G.gw - 10 - textWidth(no, `500 8.5px ${FONT.mono}`) - 10 - G.textX;
+      if (t.getComputedTextLength() > room) t.style.fontSize = `${Math.max(9.5, 12 * room / t.getComputedTextLength())}px`;
+      const sb = T(gg, G.textX, top + 35, sub, 'sub'), roomSub = G.gx + G.gw - 10 - G.textX;
+      if (sb.getComputedTextLength() > roomSub) sb.style.fontSize = `${Math.max(8.5, 10 * roomSub / sb.getComputedTextLength())}px`;
+      const slot = (x, who) => {
+        const sl = E('g', { class: `slot ${who}${who === 'k' ? ' k-only' : ''}` }, gg);
+        E('circle', { cx: x, cy, r: 6.5 }, sl);
+        E('path', { d: `M${x - 3} ${cy + 0.2} l2 2.2 l4 -4.4`, class: 'tick' }, sl);
+        E('path', { d: `M${x - 2.6} ${cy - 2.6} l5.2 5.2 M${x + 2.6} ${cy - 2.6} l-5.2 5.2`, class: 'cross' }, sl);
+        return sl;
+      };
+      return { g: gg, z: slot(G.tz, 'z'), k: slot(G.tk, 'k') };
+    });
+    const st = E('g', { id: 'store' }, g);
+    E('rect', { x: G.gx, y: G.storeY, width: G.gw, height: 48, rx: 7, class: 'store' }, st);
+    T(st, G.textX, G.storeY + 20, 'Kept in the sector', 'nm');
+    T(st, G.textX, G.storeY + 36, 'its own SQLite: claims, a row a word', 'sub');
+    ui.store = T(st, G.gx + G.gw - 10, G.storeY + 20, '', 'mono', 'end');
+  }
+
+  // A part of the system: a panel with its kind's colour down its left edge, a name, a line on what it
+  // is, and what it says at this step (or, with `fixed`, lines that never change, which set its height).
+  function drawBox(id, b, title, sub, kind, fixed) {
+    const g = E('g', { id }, stage), clip = `clip-${id}-${layout}`;
+    const subs = wrapText(sub, `400 10px ${FONT.ui}`, b.w - 26);
+    const items = (fixed || []).map((t) => wrapText(t, `500 10.5px ${FONT.ui}`, b.w - 38));
+    const top = b.y + 35 + subs.length * 13 + 8, h = b.h ?? top - b.y + items.reduce((n, l) => n + l.length * 14 + 6, 0);
+    E('rect', { x: b.x, y: b.y, width: b.w, height: h, rx: 8, class: 'box' }, g);
+    const cp = E('clipPath', { id: clip }, g);
+    E('rect', { x: b.x, y: b.y, width: b.w, height: h, rx: 8 }, cp);
+    E('rect', { x: b.x, y: b.y, width: 4, height: h, class: `key k-${kind}`, 'clip-path': `url(#${clip})` }, g);
+    T(g, b.x + 14, b.y + 20, title, 'nm');
+    setLines(E('text', { x: b.x + 14, y: b.y + 35, class: 'sub' }, g), subs, 13);
+    if (!fixed) return void (ui.boxes[id] = { g, stat: E('text', { x: b.x + 14, y: top, class: 'stat' }, g), w: b.w });
+    let y = top;
+    for (const lines of items) {
+      E('circle', { cx: b.x + 18, cy: y - 3.6, r: 1.9, class: `key k-${kind}` }, g);
+      setLines(E('text', { x: b.x + 26, y, class: 'stat' }, g), lines, 14);
+      y += lines.length * 14 + 6;
+    }
+  }
+
+  function drawLegend() {
+    const b = L.legend, g = E('g', { id: 'legend' }, stage), h = 46 + LEGEND.length * 30 + 6;
+    E('rect', { x: b.x, y: b.y, width: b.w, height: h, rx: 8, class: 'box' }, g);
+    T(g, b.x + 12, b.y + 20, 'Each claim, in the game', 'nm');
+    T(g, b.x + 12, b.y + 34, 'the outbox’s states', 'sub');
+    ui.legend = {};
+    LEGEND.forEach(([state, meaning], i) => {
+      const top = b.y + 44 + i * 30;
+      E('circle', { cx: b.x + 16, cy: top + 9, r: 3.5, class: `dot-${state}` }, g);
+      T(g, b.x + 26, top + 12, state, 'mono');
+      T(g, b.x + 26, top + 25, meaning, 'sub');
+      const mk = (who, x) => { const m = E('g', { class: `mk ${who}${who === 'k' ? ' k-only' : ''}` }, g); E('circle', { cx: x, cy: top + 10, r: 6.5 }, m); T(m, x, top + 13.3, who === 'z' ? 'Z' : 'K', '', 'middle'); return m; };
+      ui.legend[state] = { z: mk('z', b.x + b.w - 16), k: mk('k', b.x + b.w - 33) };
+    });
+  }
+
+  function token(who) {
+    const g = E('g', { class: `tok ${who}` }, stage);
+    E('circle', { cx: 0, cy: 0, r: 9 }, g);
+    T(g, 0, 3.4, who === 'z' ? 'Z' : 'K', '', 'middle');
+    return g;
+  }
+
+  function build(name) {
+    layout = name; L = LAYOUTS[name];
+    stage.replaceChildren();
+    stage.setAttribute('viewBox', `0 0 ${L.w} ${L.h}`);
+    stage.classList.toggle('wide', name !== 'tall');
+    wrapEl.classList.toggle('tall', name === 'tall');
+    document.getElementById('page').classList.toggle('narrow', name === 'tall');
+    G = geometry();
+    ui = { cards: {}, boxes: {} };
+    const defs = E('defs', {}, stage);
+    ['teal', 'copper', 'muted'].forEach((c) => marker(defs, c));
+    const links = E('g', {}, stage);
+    line(links, along('z', 'port', 'top'), 'sock s-zed');
+    line(links, along('k', 'port', 'top'), 'sock s-kim');
+    line(links, [[G.rail, G.cardBottom], [G.rail, G.gateCy(5)], [G.gx + G.gw, G.gateCy(5)]], 'sock s-muted dash');
+    line(links, G.routes.atlas, 'sock s-teal dash', 'teal');
+    line(links, G.routes.log, 'sock s-copper', 'copper');
+    line(links, G.routes.d1, 'sock s-copper', 'copper');
+    line(links, G.routes.read, 'sock s-muted', 'muted');
+    drawCard('zed', 'ZED');
+    drawCard('kim', 'KIM');
+    drawCard('all', 'Everyone else');
+    drawSector();
+    drawBox('atlas', L.atlas, 'Atlas', 'One Durable Object: the universe’s totals, and who’s past today’s cap', 'teal');
+    drawBox('alarm', L.alarm, 'The log’s alarm', 'Goes off within 30 s of the oldest claim the log hasn’t got', 'teal');
+    drawBox('d1', L.d1, 'D1 · survey_log', 'Every word charted, with counts kept by triggers', 'copper');
+    drawBox('log', L.log, 'The survey log', 'The log page, through /v1/survey/log/…', 'muted');
+    if (L.legend) drawLegend();
+    if (L.phone) {
+      drawBox('phone', L.phone, 'The game’s side', 'What the phone does so every claim gets through', 'muted', [
+        'Its allowance: 4 at once, then 1 every 1.6 s, inside the sector’s 5 and 1.5 s',
+        'No answer in 15 s: it joins again, then settles the claim from the sector’s, or resends it',
+        '“Slow down”: back in the queue, resent a minute later',
+        'Daily limit: kept in the notes, sent the next day (UTC)',
+        'The outbox is kept in storage, so a reload carries on',
+      ]);
+    }
+    ui.tok = { z: token('z'), k: token('k') };
+    ui.fly = E('g', {}, stage);
+  }
+
+  // ---- the story, as states ----
+  function blank(o) {
+    return {
+      race: o.race, sector: o.asleep ? 'asleep' : 'awake', lit: [],
+      zed: { chip: '', circled: false, tag: false, say: ['Joined to sector 0,0'] },
+      kim: { chip: '', circled: false, tag: false, say: [o.race ? 'Joined to sector 0,0' : 'Looking nearby'] },
+      all: { circled: false, tag: false, say: ['Joined to sector 0,0'] },
+      tok: { z: null, k: null }, fail: false, pass: { z: 0, k: 0 }, store: '',
+      atlas: [], alarm: [], d1: [], log: [],
+    };
+  }
+
+  function story(o) {
+    const R = o.race, A = o.asleep, out = [];
+    const step = (title, text, code, apply, fly) => out.push({ title, text, code, apply, fly: fly || [] });
+    const gate = (i) => (s) => { s.tok.z = `g${i}`; s.pass.z = i + 1; if (R) { s.tok.k = `g${i}`; s.pass.k = i + 1; } s.lit = [`gate-${i}`]; };
+    step('ZED circles PURIM',
+      `Five letters running up through ${PLACE}, a ${THEME} territory. The find goes into ZED’s field notes at once, before anything leaves the phone, and a claim for it joins the game’s outbox, queued and kept in storage, so a reload carries on with it.`,
+      'found  → letterfield.finds.v4\noutbox → letterfield.outbox.v1   queued',
+      (s) => { s.zed.circled = true; s.zed.chip = 'queued'; s.zed.say = ['In your field notes']; s.tok.z = 'word'; s.lit = ['card-zed']; });
+    step('Sent on the open socket',
+      'The game is already joined to sector 0,0, the Durable Object for this patch of the map, over a WebSocket. Its own allowance, 4 claims at once and then one every 1.6 s, keeps a little inside the sector’s, so the claim goes now. With no answer in 15 s, the game joins again and resends it.',
+      '{"t":"claim","w":"PURIM","x":5,"y":5,"d":7}',
+      (s) => { s.zed.chip = 'sent'; s.tok.z = 'top'; s.lit = []; });
+    if (A) {
+      step('The message wakes the sector',
+        'The sector had hibernated: its sockets stayed open, but it held nothing in memory and cost nothing. A message wakes it. Its constructor runs, and it reads who is who back from each socket’s attachment, where anything a woken object must still know is kept.',
+        'ws.deserializeAttachment()   // id, initials, hashed address, sector',
+        (s) => { s.sector = 'awake'; s.lit = ['sector']; });
+    }
+    if (R) {
+      step('KIM circles it too',
+        'KIM, on another phone and joined to the same sector, circles the same word a moment later, before news of ZED’s claim arrives. Once a word is charted it shows circled on every map and can’t be found again, so a race can only happen in that moment.',
+        '{"t":"claim","w":"PURIM","x":5,"y":5,"d":7}   // KIM’s',
+        (s) => { s.kim.circled = true; s.kim.chip = 'sent'; s.kim.say = ['In your field notes']; s.tok.k = 'top'; s.lit = ['card-kim']; });
+    }
+    step('One message at a time',
+      'A sector is one thread, so it handles one message and then the next. Every message costs that thread something, so one longer than 256 characters, or past 20 at once from a socket (then 10 a second), is dropped unread.',
+      'MAX_MESSAGE = 256 · FRAME_BURST = 20 · FRAME_REFILL_MS = 100', gate(0));
+    step('This socket’s claims',
+      'Claims have a tighter allowance of their own: 5 at once from a socket, then one every 1.5 s. Past it, the sector answers with an error.',
+      'CLAIM_BURST = 5 · CLAIM_REFILL_MS = 1500\n{"t":"error","key":"PURIM~5~5~7","error":"slow down"}', gate(1));
+    step('This address, everywhere',
+      'A rate-limit binding counts claims by address, a salted hash of it, across every sector: 6 a minute, so more sockets don’t chart any faster. “Slow down” puts the claim back in the queue, and the game sends it again a minute later. The sector awaits this answer, so another claim can run in the meantime.',
+      '[[ratelimits]] SURVEY_CLAIMS   limit = 6, period = 60', gate(2));
+    step('Today’s cap',
+      A ? 'In the universe an address can chart 300 words a day (UTC), and the Atlas keeps the list of addresses past it. Waking forgot that list, so before the first claim from the universe the sector asks for it again; claims waiting share the one ask, and if the Atlas can’t be reached they go ahead.'
+        : 'In the universe an address can chart 300 words a day (UTC). Sectors report who charted what, and the Atlas hands back the addresses past the cap, which every sector then refuses. The word stays in the notes and goes again the next day.',
+      'DAILY_CLAIMS = 300\n{"t":"error","key":"PURIM~5~5~7","error":"daily limit"}',
+      (s) => { gate(3)(s); if (A) { s.atlas = ['Asked who’s past today’s cap: ZED’s address isn’t']; s.lit.push('atlas'); } },
+      A ? [{ label: 'ask', cls: 'p-ok', path: () => G.routes.ask }, { label: 'today’s list', cls: 'p-ok', path: () => [...G.routes.ask].reverse(), delay: 900 }] : []);
+    step('Is it on the map?',
+      `checkClaim runs the Worker’s copy of the game’s map generator: PURIM is in the word list, starts in this sector, every letter is where the claim says, and it is one of the ${HIDDEN} words ${PLACE} hides. A word the letters spell by chance counts too, from six letters.`,
+      'checkClaim({w: "PURIM", x: 5, y: 5, d: 7}, 0, 0)\n→ {key: "PURIM~5~5~7", s: 0}   // s 0: a hidden word', gate(4));
+    step('The insert decides',
+      (R ? 'Both claims pass. The insert is one statement with nothing awaited, so whichever claim reaches it first wins, whatever order they arrived in. ZED’s adds the row; KIM’s finds the key there and adds nothing.'
+        : 'The insert is one statement with nothing awaited, so if two claims race for a word, whichever reaches it first wins. ZED’s adds the row.')
+        + (A ? ' As the first claim since waking, it also reads the latest claim’s time, so this one is stamped after it.' : ''),
+      'INSERT INTO claims (key, w, x, y, d, s, initials, at, guild)\nVALUES (…) ON CONFLICT (key) DO NOTHING RETURNING key',
+      (s) => {
+        s.tok.z = 'store'; s.pass.z = 6; s.store = 'PURIM · ZED'; s.lit = ['gate-5', 'store'];
+        if (R) { s.tok.k = 'g5'; s.pass.k = 5; s.fail = true; }
+        s.alarm = [A ? 'Set from the oldest claim the log hasn’t got' : 'Set: goes off within 30 s'];
+      });
+    step('“claimed”, to everyone here',
+      'Every socket joined to the sector hears it. The first claim after a lull goes at once; later ones wait for the next batch, at most 200 ms, so a busy sector sends each player about five frames a second however many claims there are. ZED’s game sees its own id: first to chart it.',
+      '{"t":"claimed","c":["PURIM",5,5,7,0,"ZED",at],"by":"<ZED’s id>"}',
+      (s) => {
+        s.tok.z = null; s.zed.chip = 'first'; s.zed.tag = true; s.zed.say = ['First to chart it'];
+        s.all.circled = true; s.all.tag = true; s.all.say = ['PURIM, charted by ZED']; s.lit = ['card-zed', 'card-all'];
+        if (!R) { s.kim.circled = true; s.kim.tag = true; s.kim.say = ['PURIM, charted by ZED']; s.lit.push('card-kim'); }
+      },
+      [{ label: 'claimed', cls: 'p-ok', path: () => toCard.z() }, { label: 'claimed', cls: 'p-ok', path: () => toCard.k() }, { label: 'claimed', cls: 'p-ok', path: () => toCard.all() }]);
+    if (R) {
+      step('“taken”, to KIM alone',
+        'KIM’s claim gets an answer of its own, with the row that won. The word stays in KIM’s field notes, marked charted by ZED: the credit is ZED’s.',
+        '{"t":"taken","c":["PURIM",5,5,7,0,"ZED",at]}',
+        (s) => { s.tok.k = null; s.kim.chip = 'theirs'; s.kim.tag = true; s.kim.say = ['Charted by ZED', 'kept in your notes']; s.lit = ['card-kim']; },
+        [{ label: 'taken', cls: 'p-bad', path: () => toCard.k() }]);
+    }
+    step('A receipt each',
+      `Each claimer with a player id then gets a receipt: an HMAC of the find, for that player and that time, kept with it in the notes. Badges that others see are signed only from finds a sector vouched for like this. ZED’s says first${R ? '; KIM’s, found' : ''}.`,
+      '{"t":"signed","k":"PURIM~5~5~7","r":"<receipt>"}',
+      (s) => { s.zed.say = ['First to chart it', 'receipt kept']; if (R) s.kim.say = ['Charted by ZED', 'receipt kept']; s.lit = R ? ['card-zed', 'card-kim'] : ['card-zed']; },
+      [{ label: 'signed', cls: 'p-plain', path: () => toCard.z() }, ...(R ? [{ label: 'signed', cls: 'p-plain', path: () => toCard.k() }] : [])]);
+    step('The Atlas hears',
+      'Reports go to the Atlas at most every 10 s, riding on the next message rather than a timer, so a quiet sector can hibernate. This one carries the charted counts of the sector’s 16 territories and one more word for ZED’s address today.',
+      'REPORT_MS = 10000   // with the first message after it’s due',
+      (s) => { s.atlas = ['ZED’s address: 1 more word today', `${PLACE}: 1 more charted`]; s.lit = ['atlas']; },
+      [{ label: 'report', cls: 'p-ok', path: () => G.routes.atlas }]);
+    step('An alarm copies it to the log',
+      'The claim lives in the sector’s own SQLite. An alarm, which unlike a timer lets the object hibernate, goes off within 30 s of the oldest claim the log hasn’t got and sends up to 240 at once to D1. Bonus words stay out of the public log.'
+        + (A ? ' Woken, the sector didn’t know the alarm it set before sleeping, so it set one no later than 30 s after that oldest claim.' : ''),
+      'LOG_MS = 30000 · LOG_BATCH = 240\nINSERT OR IGNORE INTO survey_log (at, key, w, x, y, d, s, initials, guild) …',
+      (s) => { s.alarm = ['Went off: copied the claim']; s.d1 = ['survey_log: +1 row']; s.lit = ['alarm', 'd1', 'store']; },
+      [{ label: 'PURIM', cls: 'p-store', path: () => G.routes.copy }]);
+    step('Counted on the way in',
+      'D1 adds the row with INSERT OR IGNORE, so a claim sent twice is kept once, and triggers add one to its hour, to ZED’s day and to its territory’s day. The log’s totals are lookups, not counts.',
+      'AFTER INSERT ON survey_log → survey_log_hours,\n                             survey_log_surveyors, survey_log_territories',
+      (s) => { s.d1 = ['survey_log: +1 row', 'Its hour, ZED’s day and its territory’s day: +1 each']; s.lit = ['d1']; });
+    step('Read through caches',
+      'The survey log asks /v1/survey/log/…. An answer about an hour still running is cached for 15 s, in the Worker and the browser; once the hour has been over for an hour, for a day. PURIM shows there, credited to ZED.',
+      'Cache-Control: public, max-age=15      // the hour still running\nCache-Control: public, max-age=86400   // an hour after it ended',
+      (s) => { s.log = ['PURIM, charted by ZED', 'Kept 15 s while the hour runs']; s.lit = ['log']; },
+      [{ label: 'read', cls: 'p-plain', path: () => G.routes.readFly }]);
+    return out;
+  }
+
+  let STEPS = [], STATES = [];
+  function compile() {
+    const o = { race: document.getElementById('race').checked, asleep: document.getElementById('asleep').checked };
+    STEPS = story(o);
+    let s = blank(o);
+    STATES = STEPS.map((st) => { s = structuredClone(s); s.lit = []; st.apply(s); return s; });
+  }
+
+  // ---- rendering a state ----
+  function setChip(chip, state) {
+    chip.style.display = state ? '' : 'none';
+    if (!state) return;
+    chip.setAttribute('class', `chip c-${state}`);
+    const w = chipWidth(state);
+    chip.rect.setAttribute('x', chip.right - w);
+    chip.rect.setAttribute('width', w);
+    chip.text.setAttribute('x', chip.right - w / 2);
+    chip.text.textContent = state;
+  }
+  function place(el, p) { el.setAttribute('transform', `translate(${p[0]} ${p[1]})`); }
+  function render(s) {
+    stage.classList.toggle('asleep', s.sector === 'asleep');
+    stage.classList.toggle('solo', !s.race);
+    const sc = ui.sectorChip, label = s.sector === 'asleep' ? 'hibernating' : 'awake', w = chipWidth(label);
+    sc.rect.setAttribute('x', sc.right - w); sc.rect.setAttribute('width', w);
+    sc.text.setAttribute('x', sc.right - w / 2); sc.text.textContent = label;
+    for (const who of ['zed', 'kim', 'all']) {
+      const c = ui.cards[who], st = s[who];
+      c.cap.style.display = st.circled ? '' : 'none';
+      c.tag.style.display = st.tag ? '' : 'none';
+      setLines(c.say, st.say, 13);
+      if (c.chip) setChip(c.chip, st.chip);
+    }
+    for (const who of ['z', 'k']) {
+      const at = s.tok[who], el = ui.tok[who];
+      el.style.display = at ? '' : 'none';
+      if (at) place(el, G.stops[who][at]);
+    }
+    ui.tok.k.classList.toggle('fail', s.fail);
+    ui.gates.forEach((gate, i) => {
+      gate.z.setAttribute('class', `slot z${i < s.pass.z ? ' ok' : ''}`);
+      gate.k.setAttribute('class', `slot k k-only${s.fail && i === 5 ? ' fail' : i < s.pass.k ? ' ok' : ''}`);
+    });
+    ui.store.textContent = s.store;
+    for (const id of ['atlas', 'alarm', 'd1', 'log']) {
+      const b = ui.boxes[id];
+      setLines(b.stat, s[id].flatMap((t) => wrapText(t, `500 10.5px ${FONT.ui}`, b.w - 26)), 14);
+    }
+    for (const [state, m] of Object.entries(ui.legend || {})) {
+      m.z.style.display = s.zed.chip === state ? '' : 'none';
+      m.k.style.display = s.race && s.kim.chip === state ? '' : 'none';
+    }
+    light(s.lit);
+  }
+  function light(ids) {
+    for (const el of stage.querySelectorAll('.lit')) el.classList.remove('lit');
+    for (const id of ids) document.getElementById(id)?.classList.add('lit');
+  }
+
+  // ---- motion ----
+  const SPEED = 520;  // units a second
+  const lengthOf = (p) => p.slice(1).reduce((n, q, i) => n + Math.hypot(q[0] - p[i][0], q[1] - p[i][1]), 0);
+  function pointAt(p, len, u) {
+    let d = u * len;
+    for (let i = 1; i < p.length; i++) {
+      const seg = Math.hypot(p[i][0] - p[i - 1][0], p[i][1] - p[i - 1][1]);
+      if (d <= seg || i === p.length - 1) { const f = seg ? Math.min(1, d / seg) : 1; return [p[i - 1][0] + (p[i][0] - p[i - 1][0]) * f, p[i - 1][1] + (p[i][1] - p[i - 1][1]) * f]; }
+      d -= seg;
+    }
+    return p[p.length - 1];
+  }
+  const ease = (u) => (u < 0.5 ? 2 * u * u : 1 - (-2 * u + 2) ** 2 / 2);
+  function pill(label, cls) {
+    const g = E('g', { class: `pill ${cls}` }, ui.fly), w = textWidth(label, `600 9px ${FONT.mono}`) + 14;
+    E('rect', { x: -w / 2, y: -8, width: w, height: 16, rx: 8 }, g);
+    T(g, 0, 3.2, label, '', 'middle');
+    return g;
+  }
+  let run = 0;
+  function animate(moves, id) {
+    return new Promise((resolve) => {
+      if (!moves.length) return resolve(true);
+      const items = moves.map((m) => { const len = lengthOf(m.path); return { ...m, len, dur: Math.min(1300, Math.max(450, (len / SPEED) * 1000)) / speed, delay: (m.delay || 0) / speed }; });
+      const total = Math.max(...items.map((m) => m.dur + m.delay)), t0 = performance.now();
+      const frame = (now) => {
+        if (id !== run) { items.forEach((m) => m.done?.()); return resolve(false); }
+        const t = now - t0;
+        for (const m of items) {
+          const u = Math.min(1, Math.max(0, (t - m.delay) / m.dur));
+          m.set(pointAt(m.path, m.len, ease(u)), u, t >= m.delay);
+        }
+        if (t < total) requestAnimationFrame(frame);
+        else { items.forEach((m) => m.done?.()); resolve(true); }
+      };
+      requestAnimationFrame(frame);
+    });
+  }
+  function movesFor(i) {
+    const s0 = i > 0 ? STATES[i - 1] : blank({ race: STATES[i].race, asleep: false }), s1 = STATES[i], moves = [];
+    for (const who of ['z', 'k']) {
+      const to = s1.tok[who];
+      if (!to || to === s0.tok[who]) continue;
+      const el = ui.tok[who], path = along(who, s0.tok[who] || 'word', to);
+      el.style.display = '';
+      moves.push({ path, set: (p) => place(el, p) });
+    }
+    for (const f of STEPS[i].fly) {
+      const el = pill(f.label, f.cls);
+      el.style.opacity = 0;
+      moves.push({ path: f.path(), delay: f.delay || 0, set: (p, u, on) => { place(el, p); el.style.opacity = on ? Math.min(1, u * 8, (1 - u) * 5 + 0.15) : 0; }, done: () => el.remove() });
+    }
+    return moves;
+  }
+
+  // ---- playing it ----
+  let cur = 0, playing = false, timer = 0, speed = 1;
+  const $ = (id) => document.getElementById(id);
+  function caption(i) {
+    const st = STEPS[i];
+    $('stepno').textContent = `Step ${i + 1} of ${STEPS.length}`;
+    $('cap-title').textContent = st.title;
+    $('cap-text').textContent = st.text;
+    $('cap-code').textContent = st.code || '';
+    $('cap-code').hidden = !st.code;
+    $('back').disabled = i === 0;
+    $('next').disabled = i === STEPS.length - 1;
+    [...$('dots').children].forEach((b, j) => { b.classList.toggle('done', j < i); if (j === i) b.setAttribute('aria-current', 'step'); else b.removeAttribute('aria-current'); });
+  }
+  function dots() {
+    $('dots').replaceChildren(...STEPS.map((st, j) => {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.setAttribute('aria-label', `Step ${j + 1}: ${st.title}`);
+      b.addEventListener('click', () => { pause(); show(j, false); });
+      return b;
+    }));
+  }
+  function show(i, moving) {
+    i = Math.max(0, Math.min(STEPS.length - 1, i));
+    const from = cur;
+    cur = i;
+    const id = ++run;
+    caption(i);
+    if (moving && i === from + 1 && !reduce.matches) {
+      light(STATES[i].lit);
+      return animate(movesFor(i), id).then((ok) => { if (id === run) render(STATES[i]); return ok; });
+    }
+    ui.fly.replaceChildren();
+    render(STATES[i]);
+    return Promise.resolve(true);
+  }
+  const words = (s) => s.split(/\s+/).length;
+  function dwell(i) { return Math.min(7000, 1300 + 30 * words(STEPS[i].text)) / speed; }
+  function tick() {
+    clearTimeout(timer);
+    if (!playing) return;
+    if (cur >= STEPS.length - 1) return setPlaying(false);
+    timer = setTimeout(() => show(cur + 1, true).then((ok) => { if (ok && playing) tick(); }), dwell(cur));
+  }
+  function setPlaying(on) {
+    playing = on;
+    $('play').textContent = on ? 'Pause' : 'Play';
+    $('play').setAttribute('aria-pressed', on);
+  }
+  function play() {
+    if (cur >= STEPS.length - 1) show(0, false);
+    setPlaying(true);
+    clearTimeout(timer);
+    timer = setTimeout(() => show(cur + 1, true).then((ok) => { if (ok && playing) tick(); }), cur === 0 ? 900 / speed : 300);
+  }
+  function pause() { setPlaying(false); clearTimeout(timer); }
+
+  $('play').addEventListener('click', () => (playing ? pause() : play()));
+  $('next').addEventListener('click', () => { pause(); show(cur + 1, true); });
+  $('back').addEventListener('click', () => { pause(); show(cur - 1, false); });
+  for (const id of ['race', 'asleep']) $(id).addEventListener('change', () => { pause(); compile(); dots(); cur = 0; show(0, false); });
+  wrapEl.addEventListener('keydown', (e) => {
+    if (e.key === 'ArrowRight') { e.preventDefault(); pause(); show(cur + 1, true); }
+    else if (e.key === 'ArrowLeft') { e.preventDefault(); pause(); show(cur - 1, false); }
+    else if (e.key === ' ') { e.preventDefault(); if (playing) pause(); else play(); }
+  });
+  document.addEventListener('visibilitychange', () => { if (document.hidden) pause(); });
+
+  function fit() {
+    // Wide shows the outbox's states beside the stage; medium, for a blog's column, leaves them out; tall is a phone's.
+    const width = wrapEl.clientWidth, name = width >= 960 ? 'wide' : width >= 600 ? 'medium' : 'tall';
+    if (name === layout) return;
+    run++;
+    build(name);
+    render(STATES[cur]);
+  }
+
+  document.fonts.ready.then(() => {
+    compile();
+    dots();
+    fit();
+    show(0, false);
+    new ResizeObserver(fit).observe(wrapEl);
+    // Plays once the first time it's in view, unless motion is reduced.
+    let played = false;
+    new IntersectionObserver((entries) => {
+      if (played || reduce.matches || !entries.some((e) => e.isIntersecting)) return;
+      played = true;
+      if (!playing && cur === 0) play();
+    }, { threshold: 0.45 }).observe(wrapEl);
+    window.__claim = { show: (i) => { pause(); return show(i, false); }, play, pause, steps: () => STEPS.length, step: () => cur, speed: (x) => { speed = x; } };
+  });
+})();
+// A page that embeds this one in an iframe hears how tall it is, so the frame can fit it (see README.md).
+if (window.parent !== window) {
+  new ResizeObserver(() => window.parent.postMessage({ explainer: 'claim', height: document.documentElement.scrollHeight }, '*')).observe(document.body);
+}
+</script>

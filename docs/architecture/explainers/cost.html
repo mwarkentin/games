@@ -1,0 +1,355 @@
+<title>What the survey costs</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<style>
+/* FONTS */
+/* Layout: the scenario and its bill on the left, the bill against surveyors online on the right; one column on a phone. */
+:root{
+  --paper:#EBEEE7; --panel:#F7F8F4; --field:#FFFFFF; --ink:#1B2428; --muted:#59656A; --rule:#C6CFC6; --accent:#2A43C2; --on-accent:#FFFFFF;
+  --danger:#B23A2C; --teal:#259889; --copper:#995629; --indigo:#2c48a5; --rose:#992961; --base:#8A9590;
+  --f-display:"Big Shoulders Display","Arial Narrow",Impact,sans-serif;
+  --f-mono:"Martian Mono",ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+  --f-ui:"Schibsted Grotesk",system-ui,-apple-system,"Segoe UI",sans-serif;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --paper:#0F171A; --panel:#162024; --field:#0F171A; --ink:#E2E7DE; --muted:#93A19D; --rule:#2B3A3E; --accent:#97A9FF; --on-accent:#0C1330;
+    --danger:#FF8D7C; --teal:#21ab99; --copper:#d97736; --indigo:#758fe6; --rose:#e160a1; --base:#5E6B68; color-scheme:dark;
+  }
+}
+:root[data-theme="dark"]{
+  --paper:#0F171A; --panel:#162024; --field:#0F171A; --ink:#E2E7DE; --muted:#93A19D; --rule:#2B3A3E; --accent:#97A9FF; --on-accent:#0C1330;
+  --danger:#FF8D7C; --teal:#21ab99; --copper:#d97736; --indigo:#758fe6; --rose:#e160a1; --base:#5E6B68; color-scheme:dark;
+}
+*{box-sizing:border-box}
+html,body{margin:0}
+body{background:var(--paper);color:var(--ink);font:15px/1.5 var(--f-ui)}
+.wrap{max-width:1040px;margin:0 auto;padding-block:20px 28px;padding-left:max(16px, env(safe-area-inset-left, 0px));padding-right:max(16px, env(safe-area-inset-right, 0px))}
+.eyebrow{font:500 10px/1 var(--f-mono);letter-spacing:.14em;text-transform:uppercase;color:var(--muted)}
+h1{font:800 clamp(28px,6vw,38px)/1.05 var(--f-display);margin:8px 0 6px;text-wrap:balance}
+.lede{margin:0 0 16px;color:var(--muted);max-width:66ch}
+.grid{display:grid;grid-template-columns:minmax(0,360px) minmax(0,1fr);gap:18px;align-items:start}
+@media (max-width:800px){.grid{grid-template-columns:minmax(0,1fr)}}
+.card{background:var(--panel);border:1px solid var(--rule);border-radius:10px;padding:16px;min-width:0}
+.presets{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:14px}
+.presets button{font:500 13px/1.2 var(--f-ui);border:1px solid var(--rule);background:var(--paper);color:var(--ink);padding:8px 11px;border-radius:999px;cursor:pointer;min-height:34px}
+.presets button[aria-pressed="true"]{background:var(--ink);color:var(--panel);border-color:var(--ink)}
+.presets button:focus-visible,input:focus-visible,#chart:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.field{display:grid;grid-template-columns:1fr auto;align-items:baseline;gap:2px 10px;margin:0 0 12px}
+.field span{font:500 13.5px/1.3 var(--f-ui)}
+.field output{font:600 16px/1 var(--f-mono);font-variant-numeric:tabular-nums}
+.field input{grid-column:1/-1;width:100%;margin:6px 0 0;accent-color:var(--ink);height:28px;font-size:16px}
+.total{border-top:1px solid var(--rule);margin-top:16px;padding-top:14px}
+.total b{display:block;font:800 clamp(48px,11vw,64px)/.95 var(--f-display);font-variant-numeric:tabular-nums}
+.total span{display:block;color:var(--muted);font-size:13.5px;margin-top:4px}
+.parts{list-style:none;margin:12px 0 0;padding:0;display:grid;gap:8px}
+.parts li{display:grid;grid-template-columns:12px minmax(0,1fr) auto;gap:2px 10px;align-items:baseline}
+.parts i{width:12px;height:12px;border-radius:3px;align-self:center}
+.parts b{font:600 13.5px/1.3 var(--f-ui)}
+.parts em{font:500 13px/1 var(--f-mono);font-style:normal;font-variant-numeric:tabular-nums;text-align:right}
+.parts small{grid-column:2/-1;color:var(--muted);font-size:12.5px;line-height:1.35}
+.bar{display:flex;height:10px;border-radius:5px;overflow:hidden;margin-top:14px;background:var(--rule);gap:2px}
+.bar span{display:block;height:100%;min-width:0;transition:flex-grow .25s}
+.free{margin:14px 0 0;padding:10px 12px;border-radius:8px;border:1px solid var(--rule);background:var(--paper);font-size:13.5px;color:var(--muted)}
+.free strong{color:var(--ink);font-weight:600}
+.chartcard h2{font:600 16px/1.3 var(--f-ui);margin:0}
+.chartcard .hint{margin:2px 0 8px;color:var(--muted);font-size:13px}
+.chart{position:relative}
+#chart{display:block;width:100%;height:auto;touch-action:pan-y;cursor:crosshair}
+#chart text{font:400 10.5px var(--f-ui);fill:var(--muted)}
+#chart .axis-title{font-weight:500;fill:var(--ink)}
+#chart .grid-line{stroke:var(--rule);stroke-width:1}
+#chart .pick-label{font:600 12px var(--f-ui);fill:var(--ink)}
+#chart .free-label{font:600 10.5px var(--f-ui);fill:var(--ink)}
+.tip{position:absolute;pointer-events:none;background:var(--panel);border:1px solid var(--rule);border-radius:8px;padding:8px 10px;font-size:12.5px;line-height:1.45;box-shadow:0 4px 14px rgb(0 0 0 / .12);white-space:nowrap;transform:translate(-50%,-100%)}
+.tip b{font:600 13px/1.3 var(--f-ui);display:block}
+.tip div{display:flex;justify-content:space-between;gap:12px;color:var(--muted)}
+.tip div span:last-child{font-family:var(--f-mono);font-size:11.5px;color:var(--ink)}
+.legend{list-style:none;margin:8px 0 0;padding:0;display:flex;flex-wrap:wrap;gap:6px 16px;font-size:12.5px;color:var(--muted)}
+.legend li{display:flex;align-items:center;gap:6px}
+.legend i{width:12px;height:12px;border-radius:3px}
+.table{margin-top:12px}
+.table summary{cursor:pointer;font-size:13px;color:var(--muted)}
+.table table{border-collapse:collapse;width:100%;margin-top:8px;font-size:12.5px;font-variant-numeric:tabular-nums}
+.table th,.table td{text-align:right;padding:4px 6px;border-bottom:1px solid var(--rule)}
+.table th:first-child,.table td:first-child{text-align:left}
+.table th{font-weight:600;color:var(--muted)}
+.table .wide{overflow-x:auto}
+.notes{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:12px 22px;margin-top:20px}
+.notes h3{font:600 14px/1.3 var(--f-ui);margin:0 0 4px}
+.notes p{margin:0;font-size:13.5px;color:var(--muted)}
+.notes code{font-family:var(--f-mono);font-size:.86em}
+.src{margin-top:16px;font:400 11px/1.5 var(--f-mono);color:var(--muted)}
+.c-base{background:var(--base)} .c-do{background:var(--teal)} .c-worker{background:var(--indigo)} .c-gbs{background:var(--copper)}
+@media (prefers-reduced-motion: reduce){.bar span{transition:none}}
+</style>
+<main class="wrap">
+  <div class="eyebrow">Letterfield · cost and scale</div>
+  <h1>What the survey costs</h1>
+  <p class="lede">The shared survey runs on Cloudflare’s Workers Paid plan. Choose how many people play and for how long, and see the month’s bill, worked out from the survey’s use per player-hour and Cloudflare’s published prices.</p>
+  <div class="grid">
+    <section class="card" aria-label="The scenario and its bill">
+      <div class="presets" role="group" aria-label="Examples">
+        <button type="button" data-online="25" data-hours="3" data-days="30">A quiet month</button>
+        <button type="button" data-online="1000" data-hours="2" data-days="30">1,000 people, 2 h a day</button>
+        <button type="button" data-online="5000" data-hours="24" data-days="14">A viral fortnight</button>
+        <button type="button" data-online="25000" data-hours="24" data-days="30">The ceiling</button>
+      </div>
+      <label class="field"><span>Surveyors online at once</span><output id="o-online" for="online"></output><input type="range" id="online" min="0" max="1000" step="1"></label>
+      <label class="field"><span>Hours a day they play</span><output id="o-hours" for="hours"></output><input type="range" id="hours" min="1" max="24" step="1"></label>
+      <label class="field"><span>Days of play in the month</span><output id="o-days" for="days"></output><input type="range" id="days" min="1" max="30" step="1"></label>
+      <div class="total" aria-live="polite"><b id="total"></b><span id="total-sub"></span></div>
+      <div class="bar" id="bar" aria-hidden="true"><span class="c-base"></span><span class="c-do"></span><span class="c-worker"></span><span class="c-gbs"></span></div>
+      <ul class="parts" id="parts"></ul>
+      <p class="free" id="free"></p>
+    </section>
+    <section class="card chartcard" aria-label="The bill by surveyors online">
+      <h2>The month’s bill, by surveyors online</h2>
+      <p class="hint" id="hint"></p>
+      <div class="chart"><svg id="chart" viewBox="0 0 600 320" tabindex="0" role="img" aria-label="Stacked area chart of the month's bill against surveyors online, on a log scale from 1 to 25,000, for the hours and days chosen. The chosen number is marked."></svg><div class="tip" id="tip" hidden></div></div>
+      <ul class="legend">
+        <li><i class="c-gbs"></i>Durable Object time</li>
+        <li><i class="c-worker"></i>Worker requests</li>
+        <li><i class="c-do"></i>Durable Object requests</li>
+        <li><i class="c-base"></i>the $5 plan</li>
+      </ul>
+      <details class="table"><summary>The numbers as a table</summary><div class="wide"><table id="table"></table></div></details>
+    </section>
+  </div>
+  <section class="notes">
+    <div><h3>Where the numbers come from</h3><p>Each player-hour makes about 30 Worker requests (about 10 sockets opened while roaming, and world map reads), 106 Durable Object requests (those sockets and about 1,900 incoming messages, which count a twentieth each; outgoing ones are free) and 0.35 GB-s of Durable Object time, about 0.8 ms of a sector’s time per player each second. Those come from the survey’s design and a 700-player load test.</p></div>
+    <div><h3>Why it’s cheap</h3><p>No sector holds a timer while it waits, so between messages it hibernates and costs nothing, and positions go out once a second however many people move. Past the included allowances a thousand player-hours cost about 3 cents, and the survey takes at most 25,000 people at once, about $0.73 an hour.</p></div>
+    <div><h3>Not in the curve</h3><p>The list of surveyors and emotes add about $1.50 a day at 10,000 online, and guilds about $0.30. The survey’s log stays inside the included allowances at expected sizes; with every sector charting nonstop it raises the worst case from about $0.75 to $0.92 an hour.</p></div>
+    <div><h3>For comparison</h3><p>One Million Checkboards cost about $850 to run, on 8 VMs, Redis and bandwidth; One Million Chessboards, a few hundred dollars. With nobody playing, the survey costs the $5 plan.</p></div>
+  </section>
+  <p class="src">From worker/SURVEY.md (“Cost”, “Why Workers Paid”, the log’s “Cost”) and Cloudflare’s published Workers and Durable Objects prices · games.michaelwarkentin.com/letterfield</p>
+</main>
+<script>
+(() => {
+  // Use per player-hour, from SURVEY.md's "Cost" (the design, and bench/load.js's 700-player run).
+  const USE = { worker: 30, do: 106, gbs: 0.35 };
+  // Workers Paid, a month: $5 with 10 M Worker requests, 1 M Durable Object requests and 400,000 GB-s included.
+  const PRICE = { worker: [10e6, 0.3 / 1e6], do: [1e6, 0.15 / 1e6], gbs: [400000, 12.5 / 1e6] };
+  // Workers Free, a day: 100,000 Durable Object requests, shared by the whole account and reset at 00:00 UTC.
+  const FREE_DO_A_DAY = 100000, MAX_ONLINE = 25000;
+  const PARTS = [
+    ['base', 'The $5 plan', 'Workers Paid, with its allowances'],
+    ['do', 'Durable Object requests', ''],
+    ['worker', 'Worker requests', ''],
+    ['gbs', 'Durable Object time', ''],
+  ];
+
+  const $ = (id) => document.getElementById(id);
+  const fmt = (n) => Math.round(n).toLocaleString('en-US');
+  const big = (n) => (n >= 1e9 ? `${(n / 1e9).toFixed(n >= 1e10 ? 0 : 1)} B` : n >= 1e6 ? `${(n / 1e6).toFixed(n >= 1e7 ? 0 : 1)} M` : n >= 1e4 ? `${fmt(n / 1e3)}k` : fmt(n));
+  const money = (n) => (n < 10 ? `$${n.toFixed(2)}` : `$${fmt(n)}`);
+  function bill(online, hours, days) {
+    const ph = online * hours * days, use = {}, cost = { base: 5 };
+    for (const k of ['do', 'worker', 'gbs']) { use[k] = USE[k] * ph; cost[k] = Math.max(0, use[k] - PRICE[k][0]) * PRICE[k][1]; }
+    return { ph, use, cost, total: cost.base + cost.do + cost.worker + cost.gbs };
+  }
+
+  // The online slider is logarithmic, from 1 to the survey's cap, snapped to two significant figures.
+  const LOG_MAX = Math.log10(MAX_ONLINE);
+  const toOnline = (v) => { const n = 10 ** ((v / 1000) * LOG_MAX), p = 10 ** Math.max(0, Math.floor(Math.log10(n)) - 1); return Math.min(MAX_ONLINE, Math.max(1, Math.round(n / p) * p)); };
+  const toSlider = (n) => Math.round((Math.log10(n) / LOG_MAX) * 1000);
+
+  const state = { online: 1000, hours: 2, days: 30 };
+  // The last scenario looked at, kept in this browser only.
+  try {
+    const kept = JSON.parse(localStorage.getItem('survey-cost') || '{}');
+    const ok = (v, lo, hi) => Number.isInteger(v) && v >= lo && v <= hi;
+    if (ok(kept.online, 1, MAX_ONLINE) && ok(kept.hours, 1, 24) && ok(kept.days, 1, 30)) Object.assign(state, { online: kept.online, hours: kept.hours, days: kept.days });
+  } catch { /* storage off */ }
+
+  function presetsPressed() {
+    for (const b of document.querySelectorAll('.presets button')) {
+      const on = +b.dataset.online === state.online && +b.dataset.hours === state.hours && +b.dataset.days === state.days;
+      b.setAttribute('aria-pressed', on);
+    }
+  }
+
+  function update() {
+    const { online, hours, days } = state, b = bill(online, hours, days);
+    $('online').value = toSlider(online);
+    $('hours').value = hours;
+    $('days').value = days;
+    $('o-online').textContent = fmt(online);
+    $('o-hours').textContent = hours;
+    $('o-days').textContent = days;
+    $('total').textContent = money(b.total);
+    $('total-sub').textContent = `for the month: ${fmt(b.ph)} player-hours`;
+    const included = { do: '1 M included', worker: '10 M included', gbs: '400,000 GB-s included' };
+    const used = { do: `${big(b.use.do)} requests`, worker: `${big(b.use.worker)} requests`, gbs: `${big(b.use.gbs)} GB-s` };
+    $('parts').replaceChildren(...PARTS.map(([k, name, note]) => {
+      const li = document.createElement('li');
+      li.innerHTML = '<i></i><b></b><em></em><small></small>';
+      li.children[0].className = `c-${k}`;
+      li.children[1].textContent = name;
+      li.children[2].textContent = money(b.cost[k]);
+      li.children[3].textContent = k === 'base' ? note : `${used[k]}, of ${included[k]}${b.cost[k] ? '' : ': nothing more'}`;
+      return li;
+    }));
+    [...$('bar').children].forEach((s, i) => { s.style.flexGrow = b.cost[PARTS[i][0]]; });
+    // On the free plan, Durable Object requests run out first, at about 940 player-hours a day.
+    const perDay = online * hours, freeHours = FREE_DO_A_DAY / USE.do;
+    const free = $('free');
+    if (perDay <= freeHours) {
+      free.innerHTML = `<strong>Would fit the free plan:</strong> ${fmt(perDay)} player-hours a day, of about ${fmt(freeHours)} its 100,000 daily Durable Object requests allow.`;
+    } else {
+      const minutes = (freeHours / online) * 60;
+      const when = minutes < 90 ? `${fmt(minutes)} minutes` : `${(minutes / 60).toFixed(1)} hours`;
+      free.innerHTML = `<strong>On the free plan</strong>, Durable Object requests would run out ${when} into each day’s play, at about ${fmt(freeHours)} player-hours, and every Durable Object on the account, War’s rooms too, would stop until midnight UTC.`;
+    }
+    $('hint').textContent = `${hours} ${hours === 1 ? 'hour' : 'hours'} a day, ${days} ${days === 1 ? 'day' : 'days'} · tap or drag across it to choose`;
+    presetsPressed();
+    drawChart();
+    try { localStorage.setItem('survey-cost', JSON.stringify(state)); } catch { /* storage off */ }
+  }
+
+  // ---- the chart ----
+  // Drawn at its own width in pixels, so its text stays full size on a phone.
+  const NS = 'http://www.w3.org/2000/svg', svg = $('chart');
+  let W = 600, H = 320, X1 = 582, Y1 = 270;
+  const X0 = 52, Y0 = 18;
+  const xOf = (n) => X0 + (Math.log10(n) / LOG_MAX) * (X1 - X0);
+  const nOf = (x) => 10 ** (((Math.min(X1, Math.max(X0, x)) - X0) / (X1 - X0)) * LOG_MAX);
+  // Four or so round steps up the axis: 1, 2, 2.5 or 5 times a power of ten.
+  function ticks(top) {
+    const raw = top / 4, p = 10 ** Math.floor(Math.log10(raw));
+    const step = [1, 2, 2.5, 5, 10].map((m) => m * p).find((m) => m >= raw);
+    return { step, max: step * Math.ceil(top / step) };
+  }
+  const dollars = (v) => (v < 10 && v % 1 ? `$${v.toFixed(2)}` : `$${fmt(v)}`);
+  function E(tag, attrs, parent) {
+    const n = document.createElementNS(NS, tag);
+    for (const k in attrs) n.setAttribute(k, attrs[k]);
+    parent.appendChild(n);
+    return n;
+  }
+  let scale = null;
+  function drawChart() {
+    const { hours, days, online } = state;
+    W = Math.max(300, Math.round(svg.getBoundingClientRect().width || 600));
+    H = W < 480 ? 280 : 320;
+    X1 = W - 18;
+    Y1 = H - 50;
+    svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
+    svg.replaceChildren();
+    const xs = Array.from({ length: 161 }, (_, i) => 10 ** ((i / 160) * LOG_MAX));
+    const bills = xs.map((n) => bill(n, hours, days));
+    const axis = ticks(Math.max(10, bills[bills.length - 1].total * 1.04)), ymax = axis.max;
+    const yOf = (v) => Y1 - (v / ymax) * (Y1 - Y0);
+    scale = { yOf };
+    for (let v = 0; v <= ymax + 1e-9; v += axis.step) {
+      const y = yOf(v);
+      E('line', { x1: X0, x2: X1, y1: y, y2: y, class: 'grid-line' }, svg);
+      E('text', { x: X0 - 8, y: y + 3.5, 'text-anchor': 'end' }, svg).textContent = dollars(v);
+    }
+    for (const n of [1, 10, 100, 1000, 10000, 25000]) {
+      E('line', { x1: xOf(n), x2: xOf(n), y1: Y1, y2: Y1 + 4, stroke: 'var(--muted)' }, svg);
+      if (n === 10000 && W < 480) continue;  // too close to 25k to label on a phone
+      E('text', { x: xOf(n), y: Y1 + 17, 'text-anchor': n === 25000 ? 'end' : 'middle' }, svg).textContent = n >= 1000 ? `${n / 1000}k` : n;
+    }
+    E('text', { x: (X0 + X1) / 2, y: Y1 + 40, 'text-anchor': 'middle', class: 'axis-title' }, svg).textContent = 'surveyors online at once (log scale)';
+    // Stacked parts: the plan, then Durable Object requests, Worker requests and Durable Object time.
+    const colours = { base: 'var(--base)', do: 'var(--teal)', worker: 'var(--indigo)', gbs: 'var(--copper)' };
+    let below = xs.map(() => 0);
+    for (const [k] of PARTS) {
+      const above = below.map((b, i) => b + bills[i].cost[k]);
+      const top = xs.map((n, i) => `${xOf(n).toFixed(1)},${yOf(above[i]).toFixed(1)}`);
+      const bottom = xs.map((n, i) => `${xOf(n).toFixed(1)},${yOf(below[i]).toFixed(1)}`).reverse();
+      E('polygon', { points: [...top, ...bottom].join(' '), fill: colours[k], 'fill-opacity': k === 'base' ? 0.35 : 0.3 }, svg);
+      E('polyline', { points: top.join(' '), fill: 'none', stroke: colours[k], 'stroke-width': 2 }, svg);
+      below = above;
+    }
+    // The chosen number.
+    const b = bill(online, hours, days), px = xOf(online), py = yOf(b.total);
+    const lx = Math.min(X1 - 4, Math.max(X0 + 4, px)), anchor = px > X1 - 90 ? 'end' : px < X0 + 90 ? 'start' : 'middle';
+    const pick = `${money(b.total)} a month`, pw = pick.length * 6.6, ly = Math.max(Y0 + 10, py - 12);
+    const pickBox = [anchor === 'end' ? lx - pw : anchor === 'start' ? lx : lx - pw / 2, ly - 12, pw, 16];
+    // Where the free plan's daily Durable Object requests run out, for these hours a day.
+    const freeAt = FREE_DO_A_DAY / USE.do / hours;
+    if (freeAt >= 1 && freeAt <= MAX_ONLINE) {
+      const fx = xOf(freeAt), right = fx < X1 - 150, tx = fx + (right ? 6 : -6);
+      const box = [right ? tx : tx - 120, Y0, 120, 30];
+      const hits = box[0] < pickBox[0] + pickBox[2] && pickBox[0] < box[0] + box[2] && box[1] < pickBox[1] + pickBox[3] && pickBox[1] < box[1] + box[3];
+      const ty = hits ? Y0 + 46 : Y0 + 12;
+      E('line', { x1: fx, x2: fx, y1: Y0, y2: Y1, stroke: 'var(--danger)', 'stroke-width': 1.3, 'stroke-dasharray': '4 3' }, svg);
+      E('text', { x: tx, y: ty, 'text-anchor': right ? 'start' : 'end', class: 'free-label' }, svg).textContent = 'free plan runs out';
+      E('text', { x: tx, y: ty + 14, 'text-anchor': right ? 'start' : 'end' }, svg).textContent = `past ${fmt(freeAt)} online`;
+    }
+    E('line', { x1: px, x2: px, y1: py, y2: Y1, stroke: 'var(--ink)', 'stroke-width': 1.2 }, svg);
+    E('circle', { cx: px, cy: py, r: 5, fill: 'var(--ink)', stroke: 'var(--panel)', 'stroke-width': 2 }, svg);
+    E('text', { x: lx, y: ly, 'text-anchor': anchor, class: 'pick-label' }, svg).textContent = pick;
+    scale.hover = E('g', { visibility: 'hidden' }, svg);
+    E('line', { y1: Y0, y2: Y1, stroke: 'var(--muted)', 'stroke-width': 1, 'stroke-dasharray': '2 3' }, scale.hover);
+    E('circle', { r: 4, fill: 'var(--panel)', stroke: 'var(--ink)', 'stroke-width': 1.5 }, scale.hover);
+    drawTable();
+  }
+  function drawTable() {
+    const { hours, days } = state, rows = [1, 10, 100, 1000, 5000, 10000, 25000].map((n) => [n, bill(n, hours, days)]);
+    $('table').innerHTML = '<thead><tr><th>Online</th><th>Plan</th><th>DO requests</th><th>Worker requests</th><th>DO time</th><th>Month</th></tr></thead>';
+    const body = document.createElement('tbody');
+    for (const [n, b] of rows) {
+      const tr = document.createElement('tr');
+      for (const v of [fmt(n), money(b.cost.base), money(b.cost.do), money(b.cost.worker), money(b.cost.gbs), money(b.total)]) tr.appendChild(document.createElement('td')).textContent = v;
+      body.appendChild(tr);
+    }
+    $('table').appendChild(body);
+  }
+
+  // Hover shows the bill at any number; a tap or a drag chooses it.
+  const tip = $('tip');
+  function pointer(e, choose) {
+    const r = svg.getBoundingClientRect(), x = ((e.clientX - r.left) / r.width) * W;
+    if (x < X0 - 10 || x > X1 + 10) return hideTip();
+    const n = toOnline(toSlider(Math.max(1, nOf(x)))), b = bill(n, state.hours, state.days), hx = xOf(n), hy = scale.yOf(b.total);
+    if (choose) { state.online = n; update(); return; }
+    const [ln, dot] = scale.hover.children;
+    ln.setAttribute('x1', hx); ln.setAttribute('x2', hx);
+    dot.setAttribute('cx', hx); dot.setAttribute('cy', hy);
+    scale.hover.setAttribute('visibility', 'visible');
+    tip.innerHTML = '<b></b><div><span>Durable Object requests</span><span></span></div><div><span>Worker requests</span><span></span></div><div><span>Durable Object time</span><span></span></div>';
+    tip.children[0].textContent = `${fmt(n)} online: ${money(b.total)} a month`;
+    ['do', 'worker', 'gbs'].forEach((k, i) => { tip.children[i + 1].lastChild.textContent = money(b.cost[k]); });
+    tip.hidden = false;
+    const half = tip.offsetWidth / 2 + 4, left = (hx / W) * r.width, top = (hy / H) * r.height;
+    tip.style.left = `${Math.min(r.width - half, Math.max(half, left))}px`;
+    tip.style.top = `${Math.max(tip.offsetHeight + 4, top - 10)}px`;
+  }
+  function hideTip() { tip.hidden = true; if (scale?.hover) scale.hover.setAttribute('visibility', 'hidden'); }
+  let dragging = false;
+  svg.addEventListener('pointerdown', (e) => { dragging = true; pointer(e, true); });
+  svg.addEventListener('pointermove', (e) => pointer(e, dragging));
+  window.addEventListener('pointerup', () => { dragging = false; });
+  svg.addEventListener('pointerleave', hideTip);
+  svg.addEventListener('keydown', (e) => {
+    const step = { ArrowRight: 10, ArrowUp: 10, ArrowLeft: -10, ArrowDown: -10 }[e.key];
+    if (!step) return;
+    e.preventDefault();
+    state.online = toOnline(Math.min(1000, Math.max(0, toSlider(state.online) + step)));
+    update();
+  });
+
+  $('online').addEventListener('input', (e) => { state.online = toOnline(+e.target.value); update(); });
+  $('hours').addEventListener('input', (e) => { state.hours = +e.target.value; update(); });
+  $('days').addEventListener('input', (e) => { state.days = +e.target.value; update(); });
+  for (const b of document.querySelectorAll('.presets button')) {
+    b.addEventListener('click', () => { Object.assign(state, { online: +b.dataset.online, hours: +b.dataset.hours, days: +b.dataset.days }); update(); });
+  }
+  update();
+  // Redrawn at its new width when its column changes.
+  let lastWidth = 0;
+  new ResizeObserver(() => {
+    const w = Math.round(svg.getBoundingClientRect().width);
+    if (w && w !== lastWidth) {
+      lastWidth = w;
+      drawChart();
+    }
+  }).observe(svg);
+})();
+// A page that embeds this one in an iframe hears how tall it is, so the frame can fit it (see README.md).
+if (window.parent !== window) {
+  new ResizeObserver(() => window.parent.postMessage({ explainer: 'cost', height: document.documentElement.scrollHeight }, '*')).observe(document.body);
+}
+</script>

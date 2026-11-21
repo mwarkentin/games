@@ -9,3 +9,5 @@ games.json
 __pycache__/
 .venv/
 .pytest_cache/
+# Architecture figures, explainers and clips, rendered (see docs/architecture/README.md)
+_architecture/
