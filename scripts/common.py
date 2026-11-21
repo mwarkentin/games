@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import hashlib
 import html
+import json
+import posixpath
 import re
 from datetime import datetime
 from pathlib import Path
@@ -45,6 +48,78 @@ if ('serviceWorker' in navigator) {
   addEventListener('load', () => navigator.serviceWorker.register('/sw.js').catch(() => {}));
 }
 """
+
+
+# Modules games import, js/<game>/*.js (and js/*.js, for any shared by more
+# than one game): the code a game shares with the Workers, and parts of a big
+# game split from its page. Published as they are; see inject_modules.
+MODULES = "js"
+# The static imports in a page's or a module's script: `import ... from '...'`,
+# `export ... from '...'` and a bare `import '...'`.
+IMPORT = re.compile(r"""(?:\bfrom|\bimport)\s*(['"])([^'"\n]+)\1""")
+
+
+def module_files(root: Path = ROOT) -> list[str]:
+    """The modules games import, as paths like js/letterfield/world.js."""
+    return sorted(path.relative_to(root).as_posix() for path in (root / MODULES).rglob("*.js"))
+
+
+def module_urls(root: Path = ROOT) -> dict[str, str]:
+    """Each module's address on the site, named by a hash of what's in it:
+    {"/js/letterfield/world.js": "/js/letterfield/world.js?v=1a2b3c4d5e"}."""
+    return {
+        f"/{name}": f"/{name}?v={hashlib.sha256((root / name).read_bytes()).hexdigest()[:10]}"
+        for name in module_files(root)
+    }
+
+
+def page_modules(text: str, root: Path = ROOT) -> list[str]:
+    """The modules a page imports, and the ones they import, as site paths."""
+
+    def imports(source: str, base: str) -> list[str]:
+        return [
+            posixpath.normpath(posixpath.join(posixpath.dirname(base), spec))
+            for _, spec in IMPORT.findall(source)
+            if spec.startswith(("./", "../", "/"))
+        ]
+
+    scripts = "\n".join(re.findall(r"<script type=\"module\">(.*?)</script>", text, re.DOTALL))
+    found: list[str] = []
+    queue = imports(scripts, "/page")
+    while queue:
+        path = queue.pop(0)
+        if path in found:
+            continue
+        found.append(path)
+        file = root / path.lstrip("/")
+        if file.is_file():  # one that isn't fails inject_modules
+            queue += imports(file.read_text("utf-8"), path)
+    return found
+
+
+def inject_modules(text: str, root: Path = ROOT) -> str:
+    """Give a page that imports modules an import map and modulepreload links.
+
+    The page imports them by their plain paths (./js/letterfield/world.js), so
+    it runs as it is from any static server. On the site, the import map
+    names each by its hash (module_urls), for the page and for modules
+    importing one another. A page and its modules then always come from the
+    same deploy, cached or not: a page names the exact copies it was built
+    with, and a deploy that changes one module changes only that one's
+    address. The preload links fetch them all alongside the page, rather
+    than one import after another.
+    """
+    if '<script type="importmap"' in text:
+        return text
+    modules = page_modules(text, root)
+    if not modules:
+        return text
+    urls = module_urls(root)
+    missing = [path for path in modules if path not in urls]
+    assert not missing, f"imports modules that aren't in {MODULES}/: {missing}"
+    mapped = json.dumps({"imports": {path: urls[path] for path in modules}}, indent=1)
+    preload = "".join(f'<link rel="modulepreload" href="{urls[path]}">\n' for path in modules)
+    return insert_in_head(text, f'<script type="importmap">\n{mapped}\n</script>\n{preload}')
 
 
 def insert_in_head(text: str, tags: str) -> str:

@@ -43,6 +43,12 @@ def test_icons_previews_and_tests_belong_to_their_game():
     assert "funnels_and_buckets" in names(select(["previews/funnels-and-buckets.jpg"]))
 
 
+def test_a_games_modules_belong_to_it_and_shared_modules_run_everything():
+    assert names(select(["js/letterfield/world.js"])) == names(select(["letterfield.html"]))
+    assert select(["js/machine.js"])["tests"] == [], "a module in no game's folder is shared"
+    assert select(["js/nobody/x.js"])["tests"] == [], "a folder named for no game is shared"
+
+
 def test_anything_shared_runs_the_whole_suite():
     for path in (
         "feedback.js",

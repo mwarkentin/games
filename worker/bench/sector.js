@@ -9,7 +9,7 @@
 import { DatabaseSync } from 'node:sqlite';
 import { performance } from 'node:perf_hooks';
 
-import { chunk } from '../src/letterfield-world.js';
+import { chunk } from '../../js/letterfield/world.js';
 import { SECTOR, Sector, checkClaim } from '../src/survey.js';
 
 const PLAYERS = 1000;

@@ -5,7 +5,8 @@ spirit of [eieio.games](https://eieio.games/) (One Million Checkboxes, One
 Million Chessboards), and whether Cloudflare Workers and D1 can carry it.
 It's built and switched on:
 - the server: `src/survey.js`, on the leaderboard Worker
-- the map, shared with the game: `src/letterfield-world.js`
+- the map, the game's own: `js/letterfield/world.js` at the top of the repo,
+  which the game, this Worker and the share Worker all import
 - the survey code in `letterfield.html`, which joins the Worker at
   `SURVEY_URL`
 
@@ -78,9 +79,9 @@ From [Scaling One Million Checkboxes][omcb] and
   storage. It holds its claims and the sockets of everyone looking at it.
   - Only one message runs inside a sector at a time, so "first to claim
     wins" is a plain `INSERT … ON CONFLICT DO NOTHING`.
-  - The server checks every claim against its own copy of the generator: the
-    word must really be in the grid there, and inside this sector. A test
-    runs the game's generator and the copy and compares them.
+  - The server checks every claim against the game's own generator, which
+    it imports: the word must really be in the grid there, and inside this
+    sector.
 - **Positions** go only to the sector under the middle of your screen, at
   most once a second, and only after you've moved at least a cell. A sector
   sends one list of positions a second (up to 64 people, plus a head count)
@@ -129,7 +130,7 @@ Messages are listed at the top of `src/survey.js`.
 
 The map is the game's themes and the way it deals their words, so changing
 either redraws every territory, and a claim names a word that's no longer
-there. `MAP_VERSION` in `src/letterfield-world.js` says which map this is,
+there. `MAP_VERSION` in `js/letterfield/world.js` says which map this is,
 and changing it starts the survey over:
 
 - **Sectors and the Atlas** keep the version they last ran with in a table
@@ -1547,10 +1548,9 @@ days it's in.
 
 Coordinates mean little, so each answer names the territories its entries
 are in (`places`, such as "Monet Hollow") and gives each theme's name and
-hue. The Worker works these out with `regionName`, now in
-`src/letterfield-world.js` beside the themes it already had (a test checks
-it names every territory in the shared world as the game does). The page
-holds none of the map's 140 KB of theme data.
+hue. The Worker works these out with `regionName`, in
+`js/letterfield/world.js` beside the themes, the same function the game
+names territories with. The page holds none of the map's 140 KB of theme data.
 
 ### "Mine"
 

@@ -3,7 +3,7 @@
 import assert from 'node:assert/strict';
 import { afterEach, beforeEach, describe, mock, test } from 'node:test';
 
-import { DIRS, THEMES, chunk, keyOf, letterAt, regionName, regionTheme } from '../../worker/src/letterfield-world.js';
+import { DIRS, THEMES, chunk, keyOf, letterAt, regionName, regionTheme } from '../../js/letterfield/world.js';
 import { ASK_MS, PAGE_MS, claimOf, forgetTotals, handle, novaOf, stateToken, totalsOf } from '../src/app.js';
 import { parseFind } from '../src/card.js';
 import { FAR, PLACED, slugOf } from './card.test.js';

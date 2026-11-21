@@ -10,10 +10,11 @@ game's <head>: its <title>, description, theme-color and, for a short label
 under the icon, apple-mobile-web-app-title.
 
 Icons are the PNGs in icons/, drawn from the SVGs there by render_icons.py.
-sw.js keeps an offline copy of every page, and of the music in music/. It's
-the template at the root of the repo with those lists and a version filled
-in; the version is a hash of the pages and music, so each deploy that changes
-one refreshes every copy.
+sw.js keeps an offline copy of every page, of the modules in js/ they
+import (by their hashed addresses, as the pages' import maps name them) and
+of the music in music/. It's the template at the root of the repo with those
+lists and a version filled in; the version is a hash of the pages, modules
+and music, so each deploy that changes one refreshes every copy.
 
 Run after the pages are built (see build.sh). Usage: build_pwa.py [SITE_DIR]
 """
@@ -37,6 +38,8 @@ from common import (
     extract_title,
     game_files,
     generated_pages,
+    module_files,
+    module_urls,
     music_files,
     own_apps,
 )
@@ -49,6 +52,7 @@ DEFAULT_COLOR = "#ffffff"
 VERSION_LINE = re.compile(r"^const VERSION = .*;$", re.MULTILINE)
 PAGES_LINE = re.compile(r"^const PAGES = .*;$", re.MULTILINE)
 MUSIC_LINE = re.compile(r"^const MUSIC = .*;$", re.MULTILINE)
+MODULES_LINE = re.compile(r"^const MODULES = .*;$", re.MULTILINE)
 
 
 def build_manifest(app: str, path: str, *, name: str, short_name: str, description: str, color: str) -> dict:
@@ -98,14 +102,16 @@ def home_manifest() -> dict:
     )
 
 
-def build_service_worker(template: str, pages: list[str], music: list[str], version: str) -> str:
-    """Fill in the template's VERSION, PAGES and MUSIC lines."""
-    assert VERSION_LINE.search(template) and PAGES_LINE.search(template) and MUSIC_LINE.search(template), (
-        "sw.js needs VERSION, PAGES and MUSIC"
-    )
+def build_service_worker(
+    template: str, pages: list[str], music: list[str], version: str, modules: list[str] | None = None
+) -> str:
+    """Fill in the template's VERSION, PAGES, MUSIC and MODULES lines."""
+    lines = (VERSION_LINE, PAGES_LINE, MUSIC_LINE, MODULES_LINE)
+    assert all(line.search(template) for line in lines), "sw.js needs VERSION, PAGES, MUSIC and MODULES"
     worker = VERSION_LINE.sub(lambda _: f"const VERSION = {json.dumps(version)};", template, count=1)
     worker = PAGES_LINE.sub(lambda _: f"const PAGES = {json.dumps(pages)};", worker, count=1)
-    return MUSIC_LINE.sub(lambda _: f"const MUSIC = {json.dumps(music)};", worker, count=1)
+    worker = MUSIC_LINE.sub(lambda _: f"const MUSIC = {json.dumps(music)};", worker, count=1)
+    return MODULES_LINE.sub(lambda _: f"const MODULES = {json.dumps(modules or [])};", worker, count=1)
 
 
 def page_version(files: list[Path]) -> str:
@@ -141,10 +147,11 @@ def publish_pwa(site_dir: Path, root: Path = ROOT) -> dict[str, dict]:
     generated = generated_pages(root)
     pages = [*generated.values(), *(f"/{filename.removesuffix('.html')}" for filename in game_files(root))]
     music = [f"/{name}" for name in music_files(root)]
+    modules = list(module_urls(root).values())
     files = [site_dir / name for name in generated] + [site_dir / name for name in game_files(root)]
-    files += [root / name for name in music_files(root)]
+    files += [root / name for name in [*module_files(root), *music_files(root)]]
     template = (root / SERVICE_WORKER).read_text("utf-8")
-    worker = build_service_worker(template, pages, music, page_version([*files, root / SERVICE_WORKER]))
+    worker = build_service_worker(template, pages, music, page_version([*files, root / SERVICE_WORKER]), modules)
     (site_dir / SERVICE_WORKER).write_text(worker, "utf-8")
     return manifests
 

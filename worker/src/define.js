@@ -9,7 +9,7 @@
 //     → 429 {error} when one address looks up too many new words
 //     → 503 {error} when Wiktionary or Wikipedia can't answer right now
 //
-// The words are Letterfield's own (letterfield-world.js), so there are only
+// The words are Letterfield's own (js/letterfield/world.js), so there are only
 // so many to look up: about 28,800 words, each fetched once and then kept in
 // D1 for good, with Cloudflare's cache in front. Only a lookup D1 doesn't
 // have reaches Wikimedia, counted per address (DEFINE_LOOKUPS in
@@ -22,7 +22,7 @@
 // to the page, which the game shows beside it.
 
 import { corsHeaders, edgeCache, hashIp, json, underLimit } from './leaderboard.js';
-import { MAP_VERSION, THEMES } from './letterfield-world.js';
+import { MAP_VERSION, THEMES } from '../../js/letterfield/world.js';
 
 export const DEFINE_PATH = /^\/v1\/define\/([A-Z]{2,15})\/(\d{1,3})$/;
 export const UA = 'LetterfieldDefinitions/1.0 (https://games.michaelwarkentin.com/letterfield)';

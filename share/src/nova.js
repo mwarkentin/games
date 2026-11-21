@@ -10,7 +10,7 @@
 // still sits with its theme. Everything random is seeded by the territory,
 // so a territory's card is always the same picture.
 
-import { RC, THEMES, letterAt, regionTheme } from '../../worker/src/letterfield-world.js';
+import { RC, THEMES, letterAt, regionTheme } from '../../js/letterfield/world.js';
 import { H, W, fit, measure, text } from './card.js';
 
 // A small seeded generator (mulberry32), from the territory's coordinates.

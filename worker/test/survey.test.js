@@ -4,13 +4,13 @@
 // backed by node:sqlite and fake WebSockets that record what they're sent.
 
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { DatabaseSync } from 'node:sqlite';
 import { afterEach, beforeEach, describe, mock, test } from 'node:test';
-import vm from 'node:vm';
 
 import worker from '../src/index.js';
-import { CH, DEAL, DIRS, HOLDERS, MAP_VERSION, RG, STRAY_MIN, THEMES, THEME_DATA, VOCAB, chunk, genChunk, keyOf, letterAt, regionName, regionTheme, strayTheme, wordEnd } from '../src/letterfield-world.js';
+import { CH, DEAL, DIRS, HOLDERS, MAP_VERSION, RC, RG, STRAY_MIN, THEMES, THEME_DATA, VOCAB, chunk, genChunk, keyOf, letterAt, regionName, regionTheme, strayTheme, wordEnd } from '../../js/letterfield/world.js';
 import { GUILD_TAGS_MAX } from '../src/survey-guild.js';
 import {
   ADDRESS_HEADER, ADDRESS_ONLINE, ADDRESS_SOCKETS, AREA, AREA_WORDS, Atlas, BATCH_MS, DAILY_CLAIMS, dailyClaims, DAILY_LIST_MAX, CLAIM_BURST, CLAIM_REFILL_MS, FRAME_BURST, FRAME_REFILL_MS, MAX_ONLINE, MAX_PLAYERS, ONLINE_MS, PRESENCE_MAX, PRESENCE_MS,
@@ -23,15 +23,23 @@ const DAY = 86400000;
 const TODAY = Math.floor(NOW / DAY);  // the UTC day, as the daily cap counts it
 const hashed = (n) => n.toString(16).padStart(64, '0');  // a stand-in for a hashed address
 
-// Runs the world code from letterfield.html itself, from its world constants
-// up to its formatting helpers, so the copy in src/ can be compared with it.
-function gameWorld() {
+// The game's own survey constants, read from letterfield.html: how many
+// territories a sector has each way, and how many sectors the survey runs to.
+function gameSurvey() {
   const html = readFileSync(new URL('../../letterfield.html', import.meta.url), 'utf8');
-  const start = html.indexOf('/* ---------- World constants ---------- */');
-  const end = html.indexOf('/* ---------- Formatting ---------- */');
-  assert.ok(start > 0 && end > start, 'letterfield.html lost its section markers');
-  const context = vm.createContext({ matchMedia: () => ({ matches: false }) });
-  return vm.runInContext(`${html.slice(start, end)}; ({ genChunk, letterAt, regionName, regionTheme, strayTheme, SECTOR, SURVEY_AREA, THEME_DATA, THEMES })`, context);
+  const sector = html.match(/^const SECTOR = RC \* (\d+);/m), area = html.match(/^const SURVEY_AREA = (\d+);/m);
+  assert.ok(sector && area, 'letterfield.html lost SECTOR or SURVEY_AREA');
+  return { SECTOR: RC * Number(sector[1]), SURVEY_AREA: Number(area[1]) };
+}
+
+// A digest of each map: its themes and the letters and words of the 17 × 17
+// chunks around the centre. A change that redraws the map changes it, and
+// then MAP_VERSION has to go up with it (see MAP_VERSION in js/letterfield/world.js).
+const MAP_DIGESTS = { 4: '2148b2e9f1c8dd82' };
+function mapDigest() {
+  const h = createHash('sha256').update(THEME_DATA);
+  for (let cy = -8; cy <= 8; cy++) for (let cx = -8; cx <= 8; cx++) { const c = genChunk(cx, cy); h.update(c.g); h.update(JSON.stringify(c.words)); }
+  return h.digest('hex').slice(0, 16);
 }
 
 // A hidden word in the given chunk, as the game would send it.
@@ -59,32 +67,15 @@ function findStray(min = STRAY_MIN, max = 12) {
   return null;
 }
 
-describe('the world copy', () => {
-  test('matches the game, letter for letter and word for word', () => {
-    const game = gameWorld();
-    for (let cy = -6; cy <= 6; cy++) {
-      for (let cx = -6; cx <= 6; cx++) {
-        const ours = genChunk(cx, cy), theirs = game.genChunk(cx, cy);
-        assert.deepEqual([...ours.g], [...theirs.g], `letters differ in chunk ${cx},${cy}`);
-        assert.deepEqual(ours.words, JSON.parse(JSON.stringify(theirs.words)), `words differ in chunk ${cx},${cy}`);
-      }
-    }
-    for (const [x, y] of [[1e6, -3e5], [-987654, 123457], [40000, 40000]]) assert.equal(letterAt(x, y), game.letterAt(x, y));
+describe('the map', () => {
+  test('is the one the game draws: letterfield.html imports it and keeps no copy', () => {
+    const html = readFileSync(new URL('../../letterfield.html', import.meta.url), 'utf8');
+    assert.match(html, /^import \{[^}]*\bchunk\b[^}]*\} from '\.\/js\/letterfield\/world\.js';$/m);
+    assert.doesNotMatch(html, /function genChunk|const THEME_DATA|function regionName/);
   });
 
-  test('has the same themes as the game, and lays them out the same way', () => {
-    const game = gameWorld();
-    assert.equal(THEME_DATA, game.THEME_DATA);
-    // A stray takes its territory's theme when that theme has the word, as in the game.
-    for (const [i, t] of THEMES.entries()) {
-      for (const w of t.words.slice(0, 3)) for (const [rx, ry] of [[i, 0], [3, -7]]) assert.equal(strayTheme(w, rx, ry), game.strayTheme(w, rx, ry));
-    }
-    // One chunk in a territory of every theme.
-    for (let t = 0; t < THEMES.length; t++) {
-      const cx = t * RG + (t % RG), cy = -(t % 3);
-      assert.equal(regionTheme(Math.floor(cx / RG), Math.floor(cy / RG)), game.regionTheme(Math.floor(cx / RG), Math.floor(cy / RG)));
-      assert.deepEqual(genChunk(cx, cy).words, JSON.parse(JSON.stringify(game.genChunk(cx, cy).words)), `words differ in chunk ${cx},${cy}`);
-    }
+  test('is the map MAP_VERSION says it is', () => {
+    assert.equal(mapDigest(), MAP_DIGESTS[MAP_VERSION], 'the map was redrawn: raise MAP_VERSION and add its digest');
   });
 
   test('gives a stray in several themes its territory\'s theme where that has the word', () => {
@@ -98,20 +89,10 @@ describe('the world copy', () => {
     // Anywhere else, the first theme that has it.
     assert.equal(VOCAB.get(w), a);
     assert.equal(strayTheme(w, other, 0), a);
-    const game = gameWorld();
-    for (const t of [a, b, other]) assert.equal(game.strayTheme(w, t, 0), strayTheme(w, t, 0));
-  });
-
-  test('names territories as the game does, for the survey\'s log', () => {
-    const game = gameWorld();
-    for (let ry = -AREA * 4; ry < (AREA + 1) * 4; ry += 3) {
-      for (let rx = -AREA * 4; rx < (AREA + 1) * 4; rx++) assert.equal(regionName(rx, ry), game.regionName(rx, ry), `${rx},${ry}`);
-    }
-    for (const [rx, ry] of [[1e5, -3e4], [-98765, 4321]]) assert.equal(regionName(rx, ry), game.regionName(rx, ry));
   });
 
   test('splits the map into the same sectors and shared world as the game', () => {
-    const game = gameWorld();
+    const game = gameSurvey();
     assert.equal(game.SECTOR, SECTOR);
     assert.equal(game.SURVEY_AREA, AREA);
   });
@@ -1300,7 +1281,6 @@ describe('the map', () => {
   });
 
   test('names every territory in the shared world, with repeats at least 60 apart', () => {
-    const { regionName } = gameWorld();
     const where = new Map();
     for (let ry = -AREA * 4; ry < (AREA + 1) * 4; ry++) {
       for (let rx = -AREA * 4; rx < (AREA + 1) * 4; rx++) {

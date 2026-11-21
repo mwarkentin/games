@@ -3,7 +3,7 @@
 import assert from 'node:assert/strict';
 import { afterEach, beforeEach, describe, test } from 'node:test';
 
-import { THEMES, regionName, regionTheme } from '../../worker/src/letterfield-world.js';
+import { THEMES, regionName, regionTheme } from '../../js/letterfield/world.js';
 import { DEFAULT_LOG, LOG_MS, handle } from '../src/app.js';
 import { LOG_BEGAN_HOUR, logPaths, pagePath, parseView, summarize, viewSvg, whenOf } from '../src/view.js';
 

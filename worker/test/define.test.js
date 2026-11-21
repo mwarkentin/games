@@ -13,7 +13,7 @@ import worker from '../src/index.js';
 import {
   EDGE_CACHE_S, MAX_SENSES, MAX_SENSE_CHARS, NONE_CACHE_S, NONE_RETRY_MS, UA, forgetDefine, lookUp, plain, routeDefine, wiktionarySenses,
 } from '../src/define.js';
-import { THEMES } from '../src/letterfield-world.js';
+import { THEMES } from '../../js/letterfield/world.js';
 
 const MIGRATIONS = new URL('../migrations/', import.meta.url);
 const ORIGIN = 'https://games.michaelwarkentin.com';

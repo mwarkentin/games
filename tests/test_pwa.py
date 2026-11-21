@@ -12,6 +12,7 @@ import base64
 import json
 import re
 import struct
+from urllib.parse import urlparse
 
 import pytest
 from playwright.sync_api import Browser, BrowserContext, Page
@@ -26,6 +27,7 @@ from common import (
     extract_title,
     game_files,
     generated_pages,
+    module_urls,
     music_files,
     own_apps,
 )
@@ -143,20 +145,25 @@ def test_generated_pages_belong_to_the_home_app(site_dir, filename):
     assert page.count("<script data-pwa>") == 1
 
 
-def test_service_worker_keeps_every_page_and_the_music(site_dir):
+def test_service_worker_keeps_every_page_the_modules_and_the_music(site_dir):
     worker = (site_dir / "sw.js").read_text("utf-8")
     pages = json.loads(re.search(r"^const PAGES = (.*);$", worker, re.MULTILINE).group(1))
     assert sorted(pages) == sorted(PAGES)
     music = json.loads(re.search(r"^const MUSIC = (.*);$", worker, re.MULTILINE).group(1))
     assert music == [f"/{name}" for name in music_files()] and music
+    modules = json.loads(re.search(r"^const MODULES = (.*);$", worker, re.MULTILINE).group(1))
+    assert modules == list(module_urls().values()) and modules
     assert re.search(r'^const VERSION = "[0-9a-f]{16}";$', worker, re.MULTILINE)
 
 
-def test_build_service_worker_fills_in_version_pages_and_music():
-    template = "const VERSION = 'dev';\nconst PAGES = [];\nconst MUSIC = [];\nconst PAGE_CACHE = `pages-${VERSION}`;\n"
-    assert build_service_worker(template, ["/", "/a"], ["/music/a.mid"], "abc") == (
-        'const VERSION = "abc";\nconst PAGES = ["/", "/a"];\nconst MUSIC = ["/music/a.mid"];\n'
+def test_build_service_worker_fills_in_version_pages_music_and_modules():
+    template = (
+        "const VERSION = 'dev';\nconst PAGES = [];\nconst MUSIC = [];\nconst MODULES = [];\n"
         "const PAGE_CACHE = `pages-${VERSION}`;\n"
+    )
+    assert build_service_worker(template, ["/", "/a"], ["/music/a.mid"], "abc", ["/js/a/b.js?v=12"]) == (
+        'const VERSION = "abc";\nconst PAGES = ["/", "/a"];\nconst MUSIC = ["/music/a.mid"];\n'
+        'const MODULES = ["/js/a/b.js?v=12"];\nconst PAGE_CACHE = `pages-${VERSION}`;\n'
     )
 
 
@@ -224,6 +231,77 @@ def test_pages_come_from_the_network_first_and_update_the_offline_copy(sw_contex
     go_offline(sw_context, site_url)
     page.goto(f"{site_url}/letterfield")
     assert page.title() == "Letterfield, redeployed"
+
+
+def map_drawn(page: Page) -> None:
+    """Wait until Letterfield's script has run: its first state is on <html>."""
+    page.wait_for_function(
+        "document.documentElement.dataset.intro !== undefined && document.querySelector('#map').width > 1"
+    )
+
+
+def test_letterfield_plays_offline_with_its_modules(sw_context: BrowserContext, site_url):
+    page = sw_context.new_page()
+    errors = []
+    page.on("pageerror", lambda exc: errors.append(str(exc)))
+    page.on("console", lambda msg: errors.append(msg.text) if msg.type == "error" else None)
+    install(page, f"{site_url}/war")
+    go_offline(sw_context, site_url)
+    modules = []
+    page.on("response", lambda r: modules.append(r) if "/js/" in r.url else None)
+    page.goto(f"{site_url}/letterfield")
+    map_drawn(page)
+    assert {urlparse(r.url).path for r in modules} == {"/js/letterfield/world.js", "/js/letterfield/achievements.js"}
+    assert all(r.from_service_worker and r.ok for r in modules)
+    assert [e for e in errors if "ERR_INTERNET_DISCONNECTED" not in e and "Failed to load resource" not in e] == []
+
+
+def redeployed(site_dir, *, module_ok: bool):
+    """letterfield.html as a deploy that changed world.js would serve it: its
+    import map and preload link name a new hash, which answers or doesn't."""
+    page = (site_dir / "letterfield.html").read_text("utf-8")
+    old = module_urls()["/js/letterfield/world.js"]
+    new = "/js/letterfield/world.js?v=0123456789"
+    page = page.replace(old, new).replace("<title>", "<title>Redeployed ", 1)
+    world = (site_dir / "js/letterfield/world.js").read_text("utf-8")
+
+    def fulfil_module(route):
+        if module_ok:
+            route.fulfill(body=world, content_type="text/javascript")
+        else:
+            route.fulfill(status=503, body="")
+
+    return page, new, fulfil_module
+
+
+@pytest.mark.parametrize("module_ok", [True, False])
+def test_a_page_is_kept_only_with_the_modules_it_names(sw_context: BrowserContext, site_dir, site_url, module_ok):
+    page = sw_context.new_page()
+    install(page, f"{site_url}/letterfield")
+    body, new, fulfil_module = redeployed(site_dir, module_ok=module_ok)
+    sw_context.route(f"{site_url}/letterfield", lambda route: route.fulfill(body=body, content_type="text/html"))
+    sw_context.route(f"{site_url}{new}", fulfil_module)
+    page.goto(f"{site_url}/letterfield")
+    assert page.title().startswith("Redeployed ")
+    # The worker keeps the fresh page once its module is kept too, or never.
+    keep = """async ([newUrl]) => {
+      const name = (await caches.keys()).find((key) => key.startsWith('pages-'));
+      const cache = await caches.open(name);
+      const copy = await cache.match('/letterfield');
+      return [(await copy.text()).includes('<title>Redeployed '), !!(await cache.match(newUrl))];
+    }"""
+    if module_ok:
+        page.wait_for_function(f"({keep})([{json.dumps(new)}]).then(([p, m]) => p && m)")
+    else:
+        page.wait_for_timeout(1500)
+        assert page.evaluate(keep, [new]) == [False, False]
+    sw_context.unroute(f"{site_url}/letterfield")
+    sw_context.unroute(f"{site_url}{new}")
+    go_offline(sw_context, site_url)
+    page.goto(f"{site_url}/letterfield")
+    # Offline, the kept page always has the module it names: the new pair, or the old one.
+    assert page.title().startswith("Redeployed ") == module_ok
+    map_drawn(page)
 
 
 def test_service_worker_leaves_other_requests_alone(sw_context: BrowserContext, site_url):

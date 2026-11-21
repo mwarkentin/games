@@ -1,14 +1,15 @@
 name: Deploy share worker
 
 # games-share (share/): link-preview cards for Letterfield finds. It imports
-# the leaderboard Worker's map and survey code, so a change there redeploys it
-# too.
+# the leaderboard Worker's survey code and the game's map and achievements
+# (js/letterfield/), so a change to either redeploys it too.
 on:
   push:
     branches: [main]
     paths:
       - 'share/**'
       - 'worker/src/**'
+      - 'js/letterfield/**'
       - '.github/workflows/share.yml'
   workflow_dispatch:
 

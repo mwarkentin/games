@@ -253,15 +253,21 @@ def render_options(track: dict, rate: int = RATE, **changes) -> dict:
 
 
 class GameOnly(SimpleHTTPRequestHandler):
-    """Serves letterfield.html, with its Worker addresses blanked, and nothing else."""
+    """Serves letterfield.html, with its Worker addresses blanked, and the
+    modules it imports (js/letterfield/), and nothing else."""
 
     def do_GET(self) -> None:
-        if urlparse(self.path).path not in ("/letterfield", "/letterfield.html"):
+        path = urlparse(self.path).path
+        if re.fullmatch(r"/js/letterfield/[a-z-]+\.js", path) and (ROOT / path.lstrip("/")).exists():
+            body, kind = (ROOT / path.lstrip("/")).read_bytes(), "text/javascript; charset=utf-8"
+        elif path in ("/letterfield", "/letterfield.html"):
+            body = BLANK.sub(r"\1''", (ROOT / "letterfield.html").read_text("utf-8")).encode()
+            kind = "text/html; charset=utf-8"
+        else:
             self.send_error(404)
             return
-        body = BLANK.sub(r"\1''", (ROOT / "letterfield.html").read_text("utf-8")).encode()
         self.send_response(200)
-        self.send_header("Content-Type", "text/html; charset=utf-8")
+        self.send_header("Content-Type", kind)
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()
         self.wfile.write(body)

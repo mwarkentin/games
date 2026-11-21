@@ -20,7 +20,7 @@
 // territories they keep coming back to, each with its supernova as a sector
 // records it.
 
-import { RG, chunk, keyOf } from '../src/letterfield-world.js';
+import { RG, chunk, keyOf } from '../../js/letterfield/world.js';
 
 const DAYS = Number(process.argv[2] || 45), EXPLORE = process.argv[3] === 'explore';
 const HOUR = 3600000, now = Date.now(), start = now - DAYS * 86400000;
