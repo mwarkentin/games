@@ -183,7 +183,7 @@ def test_shared_map_shows_other_surveyors_and_their_words(page: Page, site_url, 
     # The box keeps to what nothing else says: the universe's count and yours.
     # The title has this territory's, and the Surveyors button who's online.
     universe_count(page, "0 of 1,119,752", "0 of 1.1M")
-    expect(page.locator("#surveyText")).to_have_text("0 words charted first by you")
+    expect(page.locator("#surveyText")).to_have_text("0 of them charted first by you")
     assert sorted(fake.sectors) == ["-1,-1", "-1,0", "0,-1", "0,0"]
     expect(page.locator("#tCharted")).to_have_text(re.compile(r"^ · 1/\d+ charted$"))
     eventually(page, lambda: len(fake.sent("me")) == 4 and fake.sent("pos"))
@@ -198,7 +198,7 @@ def test_shared_map_shows_other_surveyors_and_their_words(page: Page, site_url, 
     expect(page.locator("#tCharted")).to_have_text(re.compile(r"^ · 2/\d+ charted$"))
     w, x, y, d = words[1]
     assert fake.sent("claim") == [{"t": "claim", "w": w, "x": x, "y": y, "d": d, "sector": "0,0"}]
-    expect(page.locator("#surveyText")).to_contain_text("1 word charted first by you")
+    expect(page.locator("#surveyText")).to_contain_text("1 of them charted first by you")
     open_notes(page)
     expect(page.locator("#finds .find-dot.first")).to_have_count(1)  # a ring says charted first
 
@@ -1625,9 +1625,50 @@ def test_words_circled_while_joining_are_claimed_once_the_sector_is_live(page: P
     # Once the sector's live they all go, as fast as it takes them, and none is turned away.
     eventually(page, lambda: len(fake.sent("claim")) == len(words), 10000)
     assert [m["w"] for m in fake.sent("claim")] == [w[0] for w in words]
-    expect(page.locator("#surveyText")).to_contain_text(f"{len(words)} words charted first by you")
+    expect(page.locator("#surveyText")).to_contain_text(f"{len(words)} of them charted first by you")
     assert page.evaluate("window.__lf.outbox()") == []
     assert page.evaluate("window.__lf.linkStates()") == {"0,0": "live", "-1,0": "live", "0,-1": "live", "-1,-1": "live"}
+    assert errors == []
+
+
+# Hidden words in the universe and past its edge (sectors 13 east and -14 west), and a bonus
+# word near the origin, as [w, x, y, d], read from the map the game imports.
+EDGE_WORDS = """async () => {
+  const m = await import('/js/letterfield/world.js');
+  const hidden = (cx, cy) => { const o = m.chunk(cx, cy).words[0]; return [o.w, o.x, o.y, o.d]; };
+  let bonus = null;
+  for (let y = 0; y < 96 && !bonus; y++) for (let x = 0; x < 96 && !bonus; x++) for (let d = 0; d < 8 && !bonus; d++) {
+    let s = '';
+    for (let i = 0; i < 12 && !bonus; i++) {
+      s += String.fromCharCode(65 + m.letterAt(x + m.DIRS[d][0] * i, y + m.DIRS[d][1] * i));
+      const key = m.keyOf(s, x, y, d);
+      if (s.length >= m.STRAY_MIN && m.VOCAB.has(s) && !m.chunk(Math.floor(x / m.CH), Math.floor(y / m.CH)).words.some(p => p.key === key)) bonus = [s, x, y, d];
+    }
+  }
+  return { inside: [hidden(0, 0), hidden(1, 0), hidden(2, 0)], past: [hidden(13 * 16, 0), hidden(-13 * 16 - 1, 5)], bonus };
+}"""
+
+
+def test_your_count_is_the_surveys_own_in_the_universe_and_past_its_edge(page: Page, site_url, errors):
+    """The box counts yours as the survey and its log do: hidden words you charted first in the
+    universe ("N of them", of its count), those past its edge apart, and bonus words in neither."""
+    words = known_words(page, site_url, EDGE_WORDS)
+    assert words["bonus"], "no bonus word near the origin"
+
+    def find(w, **more):
+        return {"w": w[0], "x": w[1], "y": w[2], "d": w[3], "t": NOW_MS - 86_400_000, "s": 0, **more}
+
+    notes = [find(w, f=1) for w in words["inside"][:2]] + [find(words["inside"][2], b="ZED")]
+    notes += [find(w, f=1) for w in words["past"]] + [find(words["bonus"], f=1, s=1)]
+    page.add_init_script(
+        f"if (!localStorage.getItem('letterfield.finds.v4')) localStorage.setItem('letterfield.finds.v4', {json.dumps(json.dumps(notes))})"
+    )
+    fake = FakeSurvey(totals={"charted": 999, "total": AREA_WORDS, "players": 1})
+    open_game(page, site_url, fake)
+    open_notes(page)
+    universe_count(page, "999 of 1,119,752", "999 of 1.1M")
+    expect(page.locator("#surveyText")).to_have_text("2 of them charted first by you, and 2 past its edge")
+    expect(page.locator("#tWords")).to_have_text("6")  # the notes keep every find, bonus words and others' too
     assert errors == []
 
 
@@ -1642,7 +1683,7 @@ def test_a_claim_whose_answer_was_lost_with_its_socket_is_still_credited(page: P
     assert fake.claims[0][5] == "ZED"
     page.evaluate(HIDE, True)  # switching apps closes every socket
     page.evaluate(HIDE, False)
-    expect(page.locator("#surveyText")).to_contain_text("1 word charted first by you")
+    expect(page.locator("#surveyText")).to_contain_text("1 of them charted first by you")
     assert page.evaluate("[...window.__lf.found.values()][0].f") == 1
     expect(page.locator("#findSay")).to_contain_text("First to chart it")
     assert len(fake.sent("claim")) == 1  # the sector already had it: not sent again
@@ -1666,7 +1707,7 @@ def test_a_claim_whose_answer_was_lost_is_credited_by_the_initials_it_went_with(
     page.evaluate("localStorage.setItem('games.initials', JSON.stringify('ANN'))")  # as a link leaves them
     page.reload()
     expect(page.locator("#survey")).to_have_attribute("data-state", "live")
-    expect(page.locator("#surveyText")).to_contain_text("1 word charted first by you")
+    expect(page.locator("#surveyText")).to_contain_text("1 of them charted first by you")
     assert page.evaluate("[...window.__lf.found.values()][0].f") == 1
     assert page.evaluate("[...window.__lf.found.values()][0].b || ''") == ""
     assert errors == []

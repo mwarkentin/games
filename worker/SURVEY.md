@@ -91,7 +91,11 @@ From [Scaling One Million Checkboxes][omcb] and
 - **The Atlas** is one object for the shared world. Each sector in the area
   reports its charted counts, player count and the middle of its crowd at
   most every 10 s while something is changing. Reports are absolute numbers, so a lost
-  or repeated report does no harm. The Atlas writes the charted counts to
+  or repeated report does no harm. A sector sends its players any claims
+  still waiting for their batch before it reports: the totals that come back
+  count them, and the game adds each claim it hears of to the last totals it
+  had, so totals that arrived first would have it count those claims twice
+  (and its count never goes back). The Atlas writes the charted counts to
   storage at most once a minute, and a sector's at once when its last
   player has left (if it changed since it was last written), since nobody there will report again to put it right
   if the Atlas is evicted (every deploy evicts it) before that minute is up.
@@ -1031,7 +1035,7 @@ GET /v1/survey/log/top/<from>/<to>   (UTC days from..to-1, at most 3,660)
   → {"from", "to", "surveyors": [[initials, words], ...10],
      "territories": [[rx, ry, name, th, words], ...10],
      "themes": [[th, name, hue, words], ...],
-     "guilds": [[lid, name, hue, words], ...10], "hidden"}
+     "guilds": [[lid, name, hue, words], ...10], "hidden", "past"}
 GET /v1/survey/log/top/hours/<from>/<to>   (UTC hours from..to-1, at most 48)
   → the same, with "hours": true, for a day or an hour in the page's time zone
 GET /v1/survey/log/surveyor/<initials>/<from>/<to>   (UTC hours from..to-1)
@@ -1077,7 +1081,9 @@ An hour comes oldest first, 500 entries a page; `next` is the `after` for the
 next page. A day, hour or month that hasn't started is a 400. `world` counts
 the hidden words in the shared world, which go toward its 1,119,752. Top
 lists count hidden words: bonus words have left the log (`0009`), so they
-count nowhere. The day endpoint is still there for older copies of
+count nowhere. They count those charted past the universe's edge too, and
+`past` says how many of `hidden` those are (worked out from the territories'
+counts the answer reads anyway). The day endpoint is still there for older copies of
 the page.
 
 **Caching.** Past hours and days don't change, but a claim can reach D1 up to
@@ -1109,9 +1115,10 @@ were already cached.
 
 The page has tabs for a day, a week (Monday to Sunday), a month, a year and
 all time, each in the player's own time zone, with arrows to the one before
-or after. Each shows three numbers (words charted, the busiest piece of the
-period, and how many were hidden words in the shared world), a chart, and
-then what's in it:
+or after. Each shows three numbers (words charted, with how many of them were
+charted past the universe's edge; the busiest piece of the period; and how many
+are in the universe, or all time's share of it), a chart, and then what's in it
+(see "What each number counts" below):
 
 | period | chart | below it |
 | --- | --- | --- |
@@ -1168,6 +1175,44 @@ found, without asking the server. It has no top lists: they'd only ever say
 cached for a day, like an hour. The running month is cached for 15 seconds,
 and a running top list over more than two days for 10 minutes: it changes
 slowly and reads every day's rows in its range.
+
+### What each number counts
+
+The survey charts words everywhere, but the universe is the shared world
+alone: sectors -12 to 12 each way, 100 × 100 territories (`AREA` in
+`src/survey.js`, `SURVEY_AREA` in the game, `UNIVERSE_EDGE` in the
+achievements, the `WORLD` filter and `inUniverse` in `src/survey-log.js`, and
+the bounds in `migrations-log/0002`). Its 1,119,752 hidden words are the
+total everything counts toward. Each number says which it counts:
+
+| number | where | counts |
+| --- | --- | --- |
+| Universe charted | the game's survey box, from the Atlas (`/v1/survey/world` and each sector's `{t: 'world'}`) | hidden words charted in the universe |
+| In the universe | the log's third number (all time: the Universe's share), its share cards | the same words, from the log's rows (`world`) |
+| Words charted | the log's first number | every word in the log: hidden words in the universe and past its edge, which it counts under it ("122 past the universe's edge"). Bonus words left the log (`0009`) |
+| Top lists | the log, after the numbers | as Words charted, over whole UTC days, or the hours of a local day; when any are past the edge, the note under the heading says how many (`past`), and each such territory says "past the edge" |
+| N of them charted first by you, and M past its edge | the game's survey box, under Universe charted | finds in your field notes that a sector said you charted first: hidden words in the universe, then those past its edge. Bonus words count in neither, as in the log |
+| A surveyor's words | the log's view of a set of initials | every word signed with those initials, by everyone who typed them, on any device |
+
+**Universe charted and In the universe** are the same count from two
+places, and agree exactly once both have caught up. The Atlas hears from a
+busy sector within `REPORT_MS` (10 s), from one whose players sit still
+within `REFRESH_MS` (50 s), and at once when its last player leaves; the log
+has a claim within `LOG_MS` (30 s), later while D1 is failing, and the page
+keeps the running month for 15 s and shows what it had when opened. Between
+the Atlas's totals the game also adds the claims it sees nearby. So they're
+within a minute of each other while people chart, and the same when they've
+stopped. `survey-log.test.js` ("the universe, as the Atlas and the log count
+it") checks both count the same words, and neither those past the edge.
+
+**Your count and your initials' count** differ by design. The game counts
+your field notes (and your linked devices', which sync); the log counts
+initials, which anyone can type, and nothing on the server knows which words
+are a player's (see "Mine"). They part when you chart on a device or browser
+that isn't linked (on an iPhone, Safari and the Home Screen app keep separate
+storage), when someone else types your initials, when notes are lost, or
+when a claim's "first" answer is lost with nothing to settle it by. The
+log's Mine narrows to the words this device's notes say you charted first.
 
 ### Surveyors, territories and themes
 

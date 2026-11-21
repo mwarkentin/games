@@ -79,7 +79,7 @@ def test_shows_the_days_words_hour_by_hour_newest_first(page: Page, site_url, er
     # A tie goes to the earlier hour.
     expect(tile(page, 1)).to_contain_text("Busiest hour2–3 PM1 word")
     # ACORN is a hidden word in the universe; MONET, a bonus word, isn't one.
-    expect(tile(page, 2)).to_have_text("Hidden words1")
+    expect(tile(page, 2)).to_have_text("In the universe1")
     expect(page.locator("#chart .bar")).to_have_count(24)
     expect(page.locator("#chart .bar.some")).to_have_count(2)
     hours = page.locator(".hour h3")
@@ -115,9 +115,54 @@ def test_a_word_charted_beyond_the_universe_isnt_called_a_bonus_word(page: Page,
     far = ["FAR", 13 * 192 + 5, 7, 0, 0, "ZED", NOW_MS - 50 * MINUTE, 11]  # 2:40 PM
     fake = FakeSurveyLog([ACORN, far], PLACES, THEMES)
     open_log(page, site_url, fake)
-    expect(tile(page, 0)).to_contain_text("Words charted2")
-    expect(tile(page, 2)).to_have_text("Hidden words1")
+    expect(tile(page, 0)).to_have_text("Words charted21 past the universe’s edge")
+    expect(tile(page, 2)).to_have_text("In the universe1")
     expect(page.locator("#tiles")).not_to_contain_text("bonus")
+    assert errors == []
+
+
+def test_words_past_the_universes_edge_are_counted_apart_and_said_so(page: Page, site_url, errors):
+    """Words charted counts every word, the top lists too, and the universe's count (the game's
+    "Universe charted") only those inside its edge: each says which it is, so they add up."""
+    page.set_viewport_size({"width": 375, "height": 740})
+    edge = 13 * 192  # the first cell past the universe's east edge
+    words = [
+        ACORN,
+        ["OAK", 9, 12, 0, 0, "ZED", NOW_MS - 3 * 24 * 60 * MINUTE, 11],
+        ["SHORE", edge + 5, 7, 0, 0, "ZED", NOW_MS - 2 * 24 * 60 * MINUTE, 141],
+        ["SAND", edge + 9, 20, 2, 0, "ZED", NOW_MS - 2 * 24 * 60 * MINUTE + MINUTE, 141],
+        ["TIDE", edge + 14, 30, 0, 0, "ABC", NOW_MS - 2 * 24 * 60 * MINUTE + 2 * MINUTE, 141],
+    ]
+    places = {**PLACES, "52,0": "Player Shore"}
+    themes = {**THEMES, 141: ["Game Night", 300]}
+    fake = FakeSurveyLog(words, places, themes)
+    open_log(page, site_url, fake, query="&period=week")
+    expect(tile(page, 0)).to_have_text("Words charted53 past the universe’s edge")
+    expect(tile(page, 2)).to_have_text("In the universe2")
+    expect(page.locator("#utc")).to_have_text(
+        "Counted in whole days in UTC, Nov 2 – 6, 2026. They include 3 words charted past the universe’s edge."
+    )
+    cards = page.locator("#cards .card")
+    expect(cards.nth(0).locator(".rank .num")).to_have_text(["4", "1"])  # ZED: two inside, two past the edge
+    # A territory past the edge says so in the top territories.
+    shore = cards.nth(1).locator(".rank li", has_text="Player Shore")
+    expect(shore.locator("small.past")).to_have_text("past the edge")
+    expect(cards.nth(1).locator(".rank li", has_text="Acorn Hollow").locator("small.past")).to_have_count(0)
+    # So does its own view.
+    shore.locator("a").click()
+    expect(page.locator(".chart .ymax")).to_have_text(
+        re.compile(r"^3 of its \d+ hidden words · past the universe’s edge, so not in its count$")
+    )
+    page.go_back()
+    # All time: the universe's share, and Words charted with the words past its edge.
+    page.get_by_role("tab", name="All time").click()
+    expect(tile(page, 0)).to_have_text("Words charted53 past the universe’s edge")
+    expect(tile(page, 2)).to_contain_text("2 of its hidden words")
+    # A day with none past the edge says nothing of it.
+    page.get_by_role("tab", name="Day").click()
+    expect(tile(page, 0)).to_have_text("Words charted1")
+    expect(page.locator("#utc")).to_be_hidden()
+    assert page.evaluate("document.documentElement.scrollWidth") <= 375
     assert errors == []
 
 
@@ -158,7 +203,7 @@ def test_a_week_shows_its_days_and_who_and_where_charted_most(page: Page, site_u
     expect(page.locator("#sumText")).to_have_text(re.compile(r"^Nov 2 – Nov 8, 2026\s*·\s*So\sfar\s*·\s*Pick\sa\sday$"))
     expect(tile(page, 0)).to_contain_text("Words charted3")
     expect(tile(page, 1)).to_contain_text("Busiest dayFri, Nov 62 words")
-    expect(tile(page, 2)).to_have_text("Hidden words2")
+    expect(tile(page, 2)).to_have_text("In the universe2")
     expect(page.locator("#chart .ticks span")).to_have_text(["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"])
     # Days to come can't be opened; days so far are listed newest first.
     expect(page.locator("#chart .bar.go")).to_have_count(5)

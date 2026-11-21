@@ -1743,3 +1743,85 @@ describe('the timelapse', () => {
     } finally { delete globalThis.caches; }
   });
 });
+
+describe('the universe, as the Atlas and the log count it', () => {
+  // The game's "Universe charted" is the Atlas's count; the log's "In the
+  // universe" is its rows' `world`. Both are hidden words charted in sectors
+  // -AREA to AREA each way, so once the reports and the log have caught up
+  // they're the same number. The log also keeps hidden words charted past the
+  // universe's edge, which its "Words charted" and top lists count and the
+  // Atlas never hears of; bonus words count in neither.
+  let clock, logged, states, sectors, atlasObject, db;
+  beforeEach(() => {
+    logged = mock.method(console, 'log', () => {});
+    mock.timers.enable({ apis: ['setTimeout'] });
+    clock = NOW;
+    states = new Map();
+    sectors = new Map();
+    db = fakeD1();
+    forgetLog();
+    atlasObject = new Atlas(fakeState(), {});
+    atlasObject.now = () => clock;
+  });
+  afterEach(() => { mock.timers.reset(); logged.mock.restore(); });
+
+  const env = {
+    get LOG_DB() { return db; },
+    ATLAS: { idFromName: (name) => name, get: () => ({ fetch: (url, init) => atlasObject.fetch(new Request(url, init)) }) },
+  };
+  function sectorAt(name) {
+    if (!sectors.has(name)) {
+      const st = fakeState();
+      st.waitUntil = () => {};
+      states.set(name, st);
+      const s = new Sector(st, env);
+      s.now = () => clock;
+      sectors.set(name, s);
+    }
+    return sectors.get(name);
+  }
+  const settle = async () => { for (let i = 0; i < 10; i++) await new Promise((r) => setImmediate(r)); };
+  const say = (name, ws, m) => sectorAt(name).webSocketMessage(ws, JSON.stringify(m));
+
+  test('count the same words in the universe, and the log counts those past its edge apart', async () => {
+    const inside = ['0,0', `${AREA},${-AREA}`], outside = [`${AREA + 1},0`, `${-AREA - 2},${AREA - 3}`];
+    const players = new Map();
+    for (const name of [...inside, ...outside]) {
+      const [sx, sy] = name.split(',').map(Number), ws = fakeSocket();
+      sectorAt(name).join(ws, sx, sy);
+      players.set(name, ws);
+      await say(name, ws, { t: 'me', initials: 'ZED' });
+      for (const n of [0, 1]) {
+        clock += 2000;  // past the socket's claim limit
+        const { w, x, y, d } = chunk(sx * 16, sy * 16 + n).words[0];
+        await say(name, ws, { t: 'claim', w, x, y, d });
+      }
+    }
+    clock += 2000;
+    await say('0,0', players.get('0,0'), { t: 'claim', ...findStray() });  // a bonus word: in neither count
+    // The next message after REPORT_MS sends each sector's report, and the alarms copy the claims to the log.
+    clock += REPORT_MS;
+    for (const name of inside) await say(name, players.get(name), { t: 'here' });
+    await settle();
+    for (const [name, st] of states) {
+      if (st.alarm === null) continue;
+      clock = Math.max(clock, st.alarm);
+      st.alarm = null;
+      await sectorAt(name).alarm();
+    }
+
+    const universe = (await (await atlasObject.fetch(new Request('https://atlas/totals'))).json()).charted;
+    const month = await readMonth(db, (new Date(NOW).getUTCFullYear() - 1970) * 12 + new Date(NOW).getUTCMonth());
+    const top = await readTop(db, DAY, DAY + 1);
+    assert.equal(universe, 4);  // two hidden words in each sector inside
+    // As the game hears it, from the sector that reported last (another's frame can be a report behind).
+    assert.equal(players.get(inside[1]).sent.filter((m) => m.t === 'world').at(-1).charted, universe);
+    assert.equal(month.hours.reduce((a, h) => a + h[2], 0), universe);  // the log's "In the universe"
+    assert.equal(month.hours.reduce((a, h) => a + h[1], 0), 8);  // its "Words charted": past the edge too
+    assert.equal(top.hidden, 8);
+    assert.equal(top.past, 4);  // and say how many of theirs are past the edge
+    assert.deepEqual(top.surveyors, [['ZED', 8]]);  // top lists count past the edge too
+    const hours = await readTopHours(db, HOUR, HOUR + 1);
+    assert.deepEqual([hours.hidden, hours.past], [8, 4]);
+  });
+});
