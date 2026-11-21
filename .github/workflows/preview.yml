@@ -12,8 +12,8 @@ name: Preview
 # answers the live site, so a preview never points at it; if the Worker
 # Preview can't be made, neither is the site preview.
 #
-# A pull request whose branch changes share/ (or worker/src/, whose code it
-# imports), or that's labelled worker-preview, also gets a Worker Preview of
+# A pull request whose branch changes share/ (or worker/src/ or js/letterfield/,
+# whose code it imports), or that's labelled worker-preview, also gets a Worker Preview of
 # the share Worker at https://pr-<number>-games-share.mwarkentin.workers.dev,
 # whose cards send people to the site preview, and Letterfield's Share hands
 # out its links. Without one, the preview's shares link to its own game.
@@ -76,14 +76,14 @@ jobs:
           fi
 
       # The share Worker, against the same merge base. It bundles the
-      # leaderboard Worker's map and survey code from worker/src/, as its
-      # deploy does.
+      # leaderboard Worker's survey code from worker/src/ and the game's map
+      # and achievements from js/letterfield/, as its deploy does.
       - id: share
         env:
           DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
           LABELLED: ${{ contains(github.event.pull_request.labels.*.name, 'worker-preview') }}
         run: |
-          if git diff --name-only "origin/$DEFAULT_BRANCH...HEAD" | grep -qE '^(share/|worker/src/|\.github/workflows/preview\.yml$)' \
+          if git diff --name-only "origin/$DEFAULT_BRANCH...HEAD" | grep -qE '^(share/|worker/src/|js/letterfield/|\.github/workflows/preview\.yml$)' \
             || [ "$LABELLED" = true ]; then
             echo "share=true" >> "$GITHUB_OUTPUT"
           else
@@ -340,7 +340,7 @@ jobs:
           if [ -n "$SHARE" ]; then
             # A word on this branch's own map, for an example card.
             slug="$(node --input-type=module -e "
-              import { chunk } from './worker/src/letterfield-world.js';
+              import { chunk } from './js/letterfield/world.js';
               const n = (v) => (v < 0 ? 'm' + -v : String(v));
               const p = chunk(3, 7).words[0];
               console.log('f-' + p.w.toLowerCase() + '-' + n(p.x) + '-' + n(p.y) + '-' + p.d);")"

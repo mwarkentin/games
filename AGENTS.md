@@ -23,6 +23,11 @@ utilities; games live here so they get their own origin and their own rules.
   `tests/test_letterfield_back_links.py` checks all of this. `letterfield-soundtrack.html`, the game's music as an album
   (see The soundtrack album), is another, linked from the music player in
   the game's tools, and its own "← Letterfield" steps back the same way.
+- `js/<game>/`: modules a game's page imports (see Modules): for now
+  Letterfield's map, `js/letterfield/world.js` (its themes and the code that
+  lays out every letter), and its achievements' rules and badges,
+  `js/letterfield/achievements.js`, which the Workers import too, so each is
+  written once.
 - `README.md`: the game list. The build turns it into `index.html`.
 - `changelog/`: each game's changelog for players, `<game>.md`, which the
   build turns into `/changelog/<game>` (see Changelogs).
@@ -30,8 +35,9 @@ utilities; games live here so they get their own origin and their own rules.
   The build also generates `index.html`, `colophon.html`, the changelog
   pages, `sitemap.xml`, `games.json` and each page's web app manifest, so
   don't create those by hand. Games are published as committed, apart from
-  link-preview tags, `telemetry.js`, `feedback.js`, `analytics.js` and the
-  home-screen app links (see below).
+  link-preview tags, `telemetry.js`, `feedback.js`, `analytics.js`, the
+  home-screen app links and, for a page that imports modules, an import map
+  (see below).
 - `TIP_URL` in `scripts/common.py`: the Stripe Payment Link for tips. Once
   it's set, the header of the home page, colophon and changelogs link to it
   as "Tip jar", tagged with `client_reference_id=games-home`,
@@ -73,8 +79,10 @@ utilities; games live here so they get their own origin and their own rules.
 ## Rules for every game
 
 - One `.html` file with inline `<style>` and vanilla JavaScript. No React,
-  no JSX, no npm, no build step. A game can run to a couple of thousand
-  lines; keep it in one file anyway.
+  no JSX, no npm, no build step: the page runs as it is from any static
+  server. A game can run to thousands of lines; keep it in its page, apart
+  from code a Worker runs too, which is a module in `js/<game>/` that both
+  import, never a copy (see Modules).
 - Load libraries from `cdn.jsdelivr.net` or `cdnjs.cloudflare.com`, pinned
   to an exact version. Fonts may come from Google Fonts, with a system font
   later in every `font-family` so the game still works without them. The
@@ -237,6 +245,51 @@ arrives after its moment) checks the state it expects before it acts: an
 alarm works out `deadline()` again, and a slam for a stage already played
 out is dropped.
 
+## Modules
+
+A game's page holds its markup, its style and its code, with one exception:
+code that a Worker runs too, like Letterfield's map (the Worker checks a
+claimed word is really there) and its achievements' rules (the Worker signs
+badges by them). That lives once, as a module in `js/<game>/`, imported by
+the page and the Workers alike. Before, each was copied word for word into
+the Worker and kept in step by tests that read the page as text; a module
+retires the copy and the test.
+
+- **In the page,** the script that imports one is `<script type="module">`,
+  importing by plain relative path:
+  `import { chunk } from './js/letterfield/world.js';`. So the page runs
+  from any static server with nothing built, as before:
+  `python3 -m http.server` at the top of the repo, then `/letterfield.html`.
+  (Modules don't load from `file://`.) A module script is strict and has
+  its own scope, like the `(() => { ... })()` around a game's code, so
+  `window.__lf` and the other debug hooks stay as they are.
+- **In a Worker,** a relative import from `worker/src/` or `share/src/`
+  (`'../../js/letterfield/world.js'`); wrangler bundles it. A module has no
+  DOM and no state beyond caches, so node:test imports it as it is.
+- **On the site,** the build (`inject_modules` in `scripts/common.py`) gives
+  each page that imports modules an import map naming each module by a hash
+  of its contents (`/js/letterfield/world.js?v=1a2b3c4d5e`), and a
+  `modulepreload` link for each, so they download alongside the page rather
+  than one after another. A page and its modules then always come from the
+  same deploy: the page names the exact copies it was built with, and a
+  deploy that changes one module changes that one's address alone, so the
+  others stay cached (a deploy of Letterfield's game code leaves the 140 KB
+  of themes in the browser). `sw.js` keeps every module by its hashed
+  address, and keeps a page's fresh copy only once the modules it names are
+  kept too, so an offline page never imports a module that isn't there.
+  Browsers without import maps (Safari before 16.4) load the plain paths:
+  they work online, without the offline copies.
+- **Its tests** are its game's (`scripts/select_tests.py`), and the Workers'
+  tests run on every pull request. A change to a module the Workers import
+  also deploys and previews them (the `paths` of `leaderboard.yml` and
+  `share.yml`, and `preview.yml`).
+- **Not everything big belongs in a module.** Splitting a page by section
+  doesn't avoid merge conflicts: separate files would have spared none of
+  the 73 conflicts between Letterfield's recent pull requests, which all
+  fell within one section (see `docs/split-js.md`). And most of a game's
+  sections assign each other's variables, which an import can't do. Keep
+  the rest in the page.
+
 ## Changelogs
 
 The colophon shows every commit, for whoever works on the games. Each game's
@@ -343,13 +396,14 @@ the whole site (`index`), which opens at the game list. Names, descriptions
 and colors come from each game's `<head>`.
 
 The build links each page to its manifest and icons and registers `sw.js`.
-It stores every page, and the music in `music/`, when it installs. After
-that, pages come from the network first and fall back to the stored copy
-when the network fails or takes more than four seconds; music comes from the
-stored copy. Google Fonts are stored too. Nothing else goes through it, so
-the leaderboard, War's rooms, Sentry and Counterscale behave as they would
-without it. A hash of the pages and music is the worker's version, so each
-deploy refreshes every stored copy.
+It stores every page, the modules in `js/` (see Modules), and the music in
+`music/`, when it installs. After that, pages come from the network first
+and fall back to the stored copy when the network fails or takes more than
+four seconds; modules and music come from the stored copy. Google Fonts are
+stored too. Nothing else goes through it, so the leaderboard, War's rooms,
+Sentry and Counterscale behave as they would without it. A hash of the
+pages, modules and music is the worker's version, so each deploy refreshes
+every stored copy.
 
 Each app's icon is `icons/<app>.svg`, a full-bleed 512×512 square with
 everything that matters inside the middle circle (radius 205), drawn with
@@ -403,9 +457,8 @@ behind it, and `share/README.md` how it works.
 - A shared achievement links to `/a/<id>` (`/a/d/<id>` dark), a card of its
   badge, which sends people on to `/letterfield#a-<id>`, the Achievements page
   at that badge (see "Share cards" in `worker/ACHIEVEMENTS.md`). The badges'
-  drawings, names and groups sit between `BEGIN BADGE ART` and `END BADGE
-  ART` markers, word for word the same in `letterfield.html` and
-  `worker/src/achievements.js`, so change both.
+  drawings, names and groups are in `js/letterfield/achievements.js`, which
+  the game and the share Worker both import.
 - The survey log's views (a surveyor's, theme's, guild's or territory's page, and
   the Supernovas tab) have cards too, at `/v/…`: `letterfield-log.html` has a `SHARE_URL` of its own,
   and while it's empty Share links to the page and attaches the page's own
@@ -466,8 +519,8 @@ kept up to date), and deletes it when the pull request closes.
   Worker Previews take turns only when their branch brings database
   migrations, which go on the Previews' shared databases (see Previews in
   `worker/README.md`); every other pull request's is made at once.
-- **The share Worker:** a pull request whose branch changes `share/` or
-  `worker/src/` (whose code it bundles), or `preview.yml`, from `main`'s, or
+- **The share Worker:** a pull request whose branch changes `share/`,
+  `worker/src/` or `js/letterfield/` (whose code it bundles), or `preview.yml`, from `main`'s, or
   that's labelled `worker-preview`, gets a Worker Preview of `games-share`
   too, at `https://pr-<number>-games-share.mwarkentin.workers.dev`, made
   alongside the leaderboard's, and `point_preview.py --share` points
@@ -650,10 +703,11 @@ per sector of the map, plus an Atlas for the world's totals
 - A `SURVEY_URL` constant holds the Worker's URL. While it's empty,
   Letterfield is single-player and connects nowhere. `?survey=<url>`
   overrides it for local testing and for tests.
-- `worker/src/letterfield-world.js` is a copy of the game's map generator
-  and themes, so the Worker can check a claimed word is really there.
-  `worker/test/survey.test.js` runs the game's own code against it, so
-  change both.
+- The map (its themes and the code that lays out every letter) is
+  `js/letterfield/world.js`, which the game and the Workers all import, so
+  the Worker checks a claimed word against the very map the game draws.
+  `MAP_VERSION` there says which map it is: a change that redraws the map
+  raises it (`worker/test/survey.test.js` keeps a digest of each).
 - Its list of surveyors and their emotes are `worker/src/survey-social.js`
   ("Surveyors and emotes" in `worker/SURVEY.md`), and its guilds
   `worker/src/survey-guild.js`, a Durable Object per guild ("Guilds").
@@ -716,10 +770,9 @@ the notes drawer (`notesPage`), and their note is a kind of its own,
 `achievement`, which `letterfield.quiet.v1` can quieten; a day that counts
 has a quieter note, `day`, which it can quieten apart.
 
-- The rules sit between `BEGIN ACHIEVEMENTS CORE` and `END ACHIEVEMENTS
-  CORE` markers, word for word the same in `letterfield.html` and
-  `worker/src/achievements.js`, and `worker/test/achievements.test.js`
-  checks they match, so change both.
+- The rules are `js/letterfield/achievements.js` (`achievementsCore`, with
+  the badges' art), which the game and `worker/src/achievements.js` both
+  import.
 - A surveyor can show one badge to others, on their caret's hover card and
   menu. The Worker signs it only from finds the sectors signed (each claim's
   answer is followed by a receipt, `{t: 'signed'}`), or, until
@@ -826,8 +879,8 @@ branch. Fixes happen before the commit instead, with prek (below).
 - **Python** (`scripts/`, `tests/`, `share/scripts/`): ruff, which lints
   (pyflakes, bugbear, sorted imports, modern syntax) and formats at 120
   columns. Its version and rules are in `pyproject.toml`.
-- **JavaScript** (`worker/`, `share/`, the scripts the build inlines and
-  every game's inline `<script>`): Biome, through `npx`, so the games still
+- **JavaScript** (`worker/`, `share/`, `js/`, the scripts the build inlines
+  and every game's inline `<script>`): Biome, through `npx`, so the games still
   need no npm. Only its rules that catch bugs are on (`biome.jsonc`):
   undeclared names, unused variables and imports, impossible conditions.
   Its formatter is off, because it would rewrite nearly every line of the
@@ -893,7 +946,8 @@ leave testing to the pull request. `main` always runs them all. So:
   `uv run pytest -n auto --store-durations`, and commit it.
 - **A game's tests** are the files named for one of its pages
   (`tests/test_war_rooms.py` is War's) and any other test file that loads
-  one, found by its address in the file (`/war`, `"war"`, `war.html`). A
+  one, found by its address in the file (`/war`, `"war"`, `war.html`). Its
+  modules in `js/<game>/` count as its pages do. A
   test named for no game runs for every game's pull request, and a change
   to anything shared (`scripts/`, the fakes, `feedback.js`, the workflow)
   runs the whole suite. Name a test file for its game, and give a page it

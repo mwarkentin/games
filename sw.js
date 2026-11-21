@@ -1,17 +1,23 @@
 // Offline copies of every page, so a game added to the Home Screen still opens
 // without a connection. scripts/build_pwa.py publishes this with VERSION,
-// PAGES and MUSIC filled in; a new VERSION on each deploy refreshes every copy.
+// PAGES, MUSIC and MODULES filled in; a new VERSION on each deploy refreshes
+// every copy.
 //
 // Pages come from the network first, so a deploy shows up straight away, and
 // from the offline copy when the network fails or is too slow to answer. The
 // music games play (music/*.mid) is kept with them and comes from the offline
-// copy first: it only changes along with VERSION. Google Fonts are kept too.
-// Everything else (the leaderboard, War's rooms, Sentry, Counterscale) goes
-// straight to the network untouched.
+// copy first: it only changes along with VERSION. So do the modules in js/
+// that pages import, by the hashed addresses their import maps name
+// (/js/letterfield/world.js?v=1a2b3c4d5e): an address names one version for
+// good, so a kept copy is always the right one, and a page is kept only once
+// the modules it names are (keepPage). Google Fonts are kept too. Everything
+// else (the leaderboard, War's rooms, Sentry, Counterscale) goes straight to
+// the network untouched.
 
 const VERSION = 'dev';
 const PAGES = [];
 const MUSIC = [];
+const MODULES = [];
 
 const PAGE_CACHE = `pages-${VERSION}`;
 const FONT_CACHE = 'fonts';
@@ -40,15 +46,17 @@ addEventListener('fetch', (event) => {
     const page = pagePath(url.pathname);
     if (PAGES.includes(page)) event.respondWith(networkFirst(event, page));
     else if (MUSIC.includes(url.pathname)) event.respondWith(keptFirst(event, url.pathname));
+    else if (isModule(url)) event.respondWith(keptFirst(event, url.pathname + url.search, true));
   } else if (FONT_HOSTS.includes(url.hostname)) {
     event.respondWith(fromFontCache(event));
   }
 });
 
-// Every page and piece of music or none: if one can't be fetched, installing
-// fails and the previous version keeps serving its copies until the next try.
+// Every page, module and piece of music or none: if one can't be fetched,
+// installing fails and the previous version keeps serving its copies until
+// the next try.
 async function precache() {
-  const responses = await Promise.all([...PAGES, ...MUSIC].map(async (page) => {
+  const responses = await Promise.all([...PAGES, ...MUSIC, ...MODULES].map(async (page) => {
     const response = await fetch(page, { cache: 'no-cache' });
     if (!response.ok) throw new Error(`${page}: ${response.status}`);
     return [page, response];
@@ -62,6 +70,12 @@ function pagePath(pathname) {
   return pathname.replace(/\.html$/, '').replace(/\/index$/, '/') || '/';
 }
 
+// A module by its hashed address: one in MODULES, or one a newer deploy's
+// page names before this worker has been replaced, which is just as fixed.
+function isModule(url) {
+  return url.pathname.startsWith('/js/') && url.pathname.endsWith('.js') && /^\?v=[0-9a-f]+$/.test(url.search);
+}
+
 // Safari refuses to show a page from a response that followed a redirect.
 function unredirected(response) {
   if (!response.redirected) return response;
@@ -71,10 +85,7 @@ function unredirected(response) {
 
 async function networkFirst(event, page) {
   const network = fetch(event.request).then((response) => {
-    if (response.ok && response.type === 'basic') {
-      const copy = unredirected(response.clone());
-      event.waitUntil(caches.open(PAGE_CACHE).then((cache) => cache.put(page, copy)));
-    }
+    if (response.ok && response.type === 'basic') event.waitUntil(keepPage(page, unredirected(response.clone())));
     return response;
   });
   // Keep the worker alive to save the copy even if the offline one answers first.
@@ -87,9 +98,35 @@ async function networkFirst(event, page) {
   return Promise.race([fallback, slow]);
 }
 
-async function keptFirst(event, path) {
-  const cached = await (await caches.open(PAGE_CACHE)).match(path);
-  return cached || fetch(event.request);
+// A page's fresh copy replaces the kept one only once every module it names
+// (its modulepreload links) is kept too. If one can't be fetched, the old
+// page stays, with the modules it names, so an offline copy never imports
+// a module that isn't there.
+async function keepPage(page, response) {
+  const cache = await caches.open(PAGE_CACHE);
+  const text = await response.clone().text();
+  const modules = [...text.matchAll(/<link rel="modulepreload" href="([^"]+)">/g)].map((m) => m[1]);
+  try {
+    await Promise.all(modules.map(async (path) => {
+      if (await cache.match(path)) return;
+      const copy = await fetch(path);
+      if (!copy.ok) throw new Error(`${path}: ${copy.status}`);
+      await cache.put(path, unredirected(copy));
+    }));
+  } catch (_) {
+    return;
+  }
+  await cache.put(page, response);
+}
+
+// From the kept copy, or else the network; a module fetched so is kept too.
+async function keptFirst(event, path, keep = false) {
+  const cache = await caches.open(PAGE_CACHE);
+  const cached = await cache.match(path);
+  if (cached) return cached;
+  const response = await fetch(event.request);
+  if (keep && response.ok && response.type === 'basic') event.waitUntil(cache.put(path, unredirected(response.clone())));
+  return response;
 }
 
 // Font files never change at a given URL, so a kept one is simply used. The

@@ -32,7 +32,7 @@
 // protect them: a few a minute from one sender, and a cap from everyone.
 
 import { HttpError, corsHeaders, hex, initialsOrNone, isInt, json, underLimit } from './leaderboard.js';
-import { RC, fdiv } from './letterfield-world.js';
+import { RC, fdiv } from '../../js/letterfield/world.js';
 
 export const PID = /^[0-9a-f]{12}$/;     // a player, as everyone else knows them
 export const TOKEN = /^[0-9a-f]{32}$/;   // the secret the game keeps, which only it and the sectors see

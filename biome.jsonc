@@ -1,7 +1,7 @@
 {
-  // Biome lints the JavaScript: worker/, share/, the scripts the build
-  // inlines (telemetry.js, feedback.js, analytics.js, sw.js), and every
-  // game's inline <script>. Only rules that catch bugs (undefined names,
+  // Biome lints the JavaScript: worker/, share/, the games' modules in js/,
+  // the scripts the build inlines (telemetry.js, feedback.js, analytics.js,
+  // sw.js), and every game's inline <script>. Only rules that catch bugs (undefined names,
   // unused code, impossible conditions) are on, and its formatter is off:
   // it would rewrite nearly every line of the games. See "Linting" in
   // AGENTS.md. The version here, in scripts/lint.sh and in test.yml match.

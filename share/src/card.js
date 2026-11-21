@@ -1,5 +1,5 @@
 // A found word as an SVG card, 1200×630: findImage() in letterfield.html,
-// drawn from the Worker's copy of the map (worker/src/letterfield-world.js)
+// drawn from the game's own map (js/letterfield/world.js)
 // in either of the page's themes. resvg turns it into the PNG (index.js).
 //
 // Text is fitted with the fonts' own advance widths (metrics.json, made by
@@ -8,7 +8,7 @@
 import { SECTOR, checkClaim } from '../../worker/src/survey.js';
 import {
   DIRS, RC, THEMES, fdiv, letterAt, regionName, regionTheme, strayTheme, wordEnd,
-} from '../../worker/src/letterfield-world.js';
+} from '../../js/letterfield/world.js';
 import METRICS from './metrics.json' with { type: 'json' };
 
 export const W = 1200, H = 630;

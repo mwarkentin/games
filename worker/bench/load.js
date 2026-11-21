@@ -11,7 +11,7 @@
 
 import { performance } from 'node:perf_hooks';
 
-import { chunk } from '../src/letterfield-world.js';
+import { chunk } from '../../js/letterfield/world.js';
 import { SECTOR } from '../src/survey.js';
 
 const [base = 'http://127.0.0.1:8787', players = '200', seconds = '30', origin = 'http://localhost:8000'] = process.argv.slice(2);

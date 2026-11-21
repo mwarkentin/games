@@ -22,7 +22,8 @@ and the page sends people straight on to `/letterfield#f-muddy-42-89-7`.
   `games-leaderboard`. The renderer adds 2.6 MiB of wasm and fonts. Kept
   apart, the leaderboard, War's rooms and the survey stay small and stay free
   of npm dependencies, and a bad renderer deploy can't touch them. It imports
-  the same `worker/src/letterfield-world.js`, and asks the survey's Durable
+  the same map as the game (then `worker/src/letterfield-world.js`, now
+  `js/letterfield/world.js`), and asks the survey's Durable
   Objects who charted a word and how far along the map is.
 - **Use a custom domain, `share.michaelwarkentin.com`** (the zone is now on
   Cloudflare). The Cache API only works reliably on custom domains, and
@@ -366,7 +367,8 @@ lookups), `src/index.js` (resvg and fonts), `src/card.js` (the SVG drawing,
 from the prototype), `src/metrics.json`, `fonts/` (subset TTFs plus their
 `OFL.txt`), `wrangler.toml` (R2, the survey's Durable Objects by
 `script_name`, the render limit, `SITE_URL`, `[previews]` equivalents; no
-`routes`), `package.json` and a lockfile. It imports `../worker/src/letterfield-world.js` and `checkClaim`,
+`routes`), `package.json` and a lockfile. It imports the map (then `../worker/src/letterfield-world.js`, now
+`../js/letterfield/world.js`) and `checkClaim`,
 so the map is never copied a third time.
 
 **Pages.**
@@ -396,7 +398,7 @@ so the map is never copied a third time.
 - `scripts/common.py`: `SHARE_URL` next to `WORKER_URL`.
 - `scripts/point_preview.py`: point the pages' `SHARE_URL` at the share
   Worker's Preview when there is one, as it does for `LEADERBOARD_URL`.
-- `.github/workflows/preview.yml`: when `share/` (or `worker/src/letterfield-world.js`)
+- `.github/workflows/preview.yml`: when `share/` (or the map, now `js/letterfield/world.js`)
   changes, or the `worker-preview` label is set, make a Worker Preview of
   `games-share` too, with `--var SITE_URL=<the site preview's URL>`, so its
   pages send people to the preview, not production. Its R2 binding goes to a
@@ -404,7 +406,7 @@ so the map is never copied a third time.
   production's share links, which send people to production. That's harmless,
   but confusing, so blank `SHARE_URL` instead, as for the other URLs.
 - `.github/workflows/share.yml`: a deploy like `leaderboard.yml`, plus
-  `npm ci`, run on pushes to `main` that touch `share/` or `letterfield-world.js`.
+  `npm ci`, run on pushes to `main` that touch `share/` or the map (now `js/letterfield/`).
 - `AGENTS.md`: a "Share cards" section (what `SHARE_URL` does, how to test),
   the new Worker in Layout, and the Link previews section pointing to it.
   `share/README.md` for setup.

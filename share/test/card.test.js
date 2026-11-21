@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { describe, test } from 'node:test';
 
-import { chunk, keyOf } from '../../worker/src/letterfield-world.js';
+import { chunk, keyOf } from '../../js/letterfield/world.js';
 import { PALETTES, findSvg, fit, measure, parseFind, progress } from '../src/card.js';
 import { parseView, summarize } from '../src/view.js';
 

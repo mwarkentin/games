@@ -10,7 +10,7 @@ import { afterEach, beforeEach, describe, mock, test } from 'node:test';
 
 import worker from '../src/index.js';
 import { CORE, MARK_DRAW, MARK_GROUPS, MARK_TEXT, TRUSTED_UNTIL, UNIVERSE_EDGE, badgeSig, checkBadge, checkCard, checkReceipt, routeBadges, signCard, signFind } from '../src/achievements.js';
-import { chunk } from '../src/letterfield-world.js';
+import { chunk } from '../../js/letterfield/world.js';
 import { AREA, Sector } from '../src/survey.js';
 import { playerId } from '../src/survey-social.js';
 
@@ -27,31 +27,19 @@ const territoryWords = (rx, ry) => {
 const bare = ({ w, x, y, d }) => ({ w, x, y, d });
 
 describe('the achievements core', () => {
-  const block = (text) => {
-    const start = text.indexOf('// ---- BEGIN ACHIEVEMENTS CORE ----'), end = text.indexOf('// ---- END ACHIEVEMENTS CORE ----');
-    assert.ok(start >= 0 && end > start, 'lost its ACHIEVEMENTS CORE markers');
-    return text.slice(start, end);
-  };
-
-  test('is the same in letterfield.html, word for word', () => {
+  test('is the one the game uses: letterfield.html imports it and keeps no copy', () => {
     const game = readFileSync(new URL('../../letterfield.html', import.meta.url), 'utf8');
-    const ours = readFileSync(new URL('../src/achievements.js', import.meta.url), 'utf8');
-    assert.equal(block(ours), block(game));
+    assert.match(game, /^import \{[^}]*\bachievementsCore\b[^}]*\} from '\.\/js\/letterfield\/achievements\.js';$/m);
+    assert.doesNotMatch(game, /function achievementsCore|const MARK_TEXT = /);
   });
 
-  test("draws and names its badges as letterfield.html does, word for word, every one", () => {
-    const art = (text) => {
-      const start = text.indexOf('// ---- BEGIN BADGE ART ----'), end = text.indexOf('// ---- END BADGE ART ----');
-      assert.ok(start >= 0 && end > start, 'lost its BADGE ART markers');
-      return text.slice(start, end);
-    };
-    const game = readFileSync(new URL('../../letterfield.html', import.meta.url), 'utf8');
-    const ours = readFileSync(new URL('../src/achievements.js', import.meta.url), 'utf8');
-    assert.equal(art(ours), art(game));
+  test('draws and names every badge', () => {
     for (const [id, g] of CORE.CATALOG) {
       assert.ok(MARK_TEXT[id] && MARK_DRAW[MARK_TEXT[id][0]], `${id} has words and a drawing`);
       assert.ok(MARK_GROUPS.some((x) => x.id === g), `${id}'s group`);
     }
+    // The words that count a group's themes count them.
+    assert.match(MARK_TEXT['dawn-chorus'][2], new RegExp(`all ${CORE.BIRDS.length} bird themes`));
   });
 
   test("names only themes the map has, and puts the universe's edge where the survey's is", () => {

@@ -15,8 +15,9 @@ the same sectors.
   sectors signed (see "Badges others see"), and a card in each surveyor's
   caret menu with every badge signed for them and when they began (see
   "Profile cards").
-- **Shared code:** the rules are one block of code, word for word the same in
-  the game and in `src/achievements.js`.
+- **Shared code:** the rules are one module, `js/letterfield/achievements.js`
+  at the top of the repo, which the game and `src/achievements.js` both
+  import.
 
 ## What a player already has
 
@@ -510,9 +511,9 @@ Nothing on it is about who shared it, so it needs no checking: the share's
 own words say who earned it.
 
 - **Drawn as the game draws it:** the groups and their hues, each badge's
-  drawing, its name and what it asks for sit between `BEGIN BADGE ART` and
-  `END BADGE ART` markers, word for word the same in `letterfield.html` and
-  `src/achievements.js` (the test checks), which the share Worker imports.
+  drawing, its name and what it asks for are in the same module,
+  `js/letterfield/achievements.js`, which the share Worker imports through
+  `src/achievements.js`.
 - **Cached by what it draws:** the page names the card with a hash of its
   SVG, so a card changes only when its drawing, words or address do. With
   two cards an achievement, each is drawn once and kept in R2
@@ -595,7 +596,7 @@ a test isn't about, and answers the fake survey's badges with none.
 
 `worker/test/achievements.test.js` covers the Worker's side:
 
-- that the core matches the game's, word for word;
+- that the game imports the core and keeps no copy of it;
 - receipts, and a sector signing what it answers (with the supernova flag);
 - a badge shown in presence only when signed for that player;
 - a card in presence only when signed for that player, and a new one taking

@@ -1,14 +1,21 @@
-// Letterfield's world, copied from letterfield.html so the survey can check
-// that a circled word is really on the map. The game generates every letter
-// from a fixed seed, so this copy must stay identical to the game's: the test
-// in test/survey.test.js runs both and compares them.
+// Letterfield's world: every letter on the map, from a fixed seed, and the
+// themes its territories are laid out by. The game (letterfield.html), the
+// leaderboard Worker (worker/src/survey.js and the rest, to check that a
+// circled word is really on the map) and the share Worker (share/, to draw a
+// find's card) all import this one file, so they always agree on the map.
+//
+// No DOM and no state beyond a cache of chunks: node:test imports it as it is
+// (worker/test/survey.test.js checks the rules the map keeps).
 
 export const SEED = 0x1E77E2;
 // Which map this is. Changing the themes or how words are dealt redraws the
 // map, so the survey starts over: sectors and the Atlas forget what they held
-// for an older one (survey.js), and the log is cleared by a migration. Map 2
-// had 116 themes of about 47 words. Map 3, the same themes at about 150 words,
-// only ran in a pull request's preview. Map 4 has 225 themes of about 150.
+// for an older one (worker/src/survey.js), the log is cleared by a migration,
+// and the game moves field notes to a new key (K_FINDS in letterfield.html).
+// Map 2 had 116 themes of about 47 words. Map 3, the same themes at about
+// 150 words, only ran in a pull request's preview. Map 4 has 225 themes of
+// about 150. worker/test/survey.test.js keeps a digest of each map, so a
+// change that redraws it fails until this is raised.
 export const MAP_VERSION = 4;
 export const CH = 12;          // cells per chunk side
 export const RG = 4;           // chunks per territory side
@@ -23,7 +30,15 @@ export const DEAL = 9;
 // with some 17,700 words, shorter ones turn up hundreds of times a territory.
 export const STRAY_MIN = 6;
 
-// Themes as name|hue|words, in the game's order (a theme's index is its id).
+// Themes, one per line as name|hue|words, in their order on the map: territory
+// (rx, ry) has theme (rx + LAT_B * ry) mod NT. The order, the hues and LAT_B
+// were chosen together, so no theme comes round again within 14 territories and
+// neighbouring territories differ in colour and in kind (no two bird themes side
+// by side) and share no words. Changing a theme's words redraws its
+// territories, so the shared survey starts over (MAP_VERSION above) and field
+// notes move to a new key (K_FINDS in letterfield.html); adding or removing a
+// theme means laying them all out again (worker/test/survey.test.js checks the
+// rules).
 export const THEME_DATA = `
 Festivals|90|BIRTHDAY CHRISTMAS DIWALI EASTER EID FIREWORKS HALLOWEEN HANUKKAH HOLI KWANZAA NEWYEAR PASSOVER PARADE RAMADAN VALENTINE CONFETTI PARTY STREAMER PRESENT GIFT CAKE CANDLE GARLAND MAYPOLE PINATA FIESTA GALA JAMBOREE CELEBRATE FEAST HOLIDAY JUBILEE PAGEANT SPARKLER HAMPER STOCKING TINSEL WREATH ORNAMENT MASQUERADE HOGMANAY NAVRATRI DUSSEHRA ONAM PONGAL LOHRI VAISAKHI RAKHI PURIM SUKKOT SHAVUOT EPIPHANY ADVENT LENT PENTECOST CANDLEMAS MICHAELMAS WHITSUN SHROVETIDE SAMHAIN BELTANE IMBOLC LAMMAS JUNETEENTH NOWRUZ TET CHUSEOK OBON HANAMI TANABATA SONGKRAN VESAK MAWLID IFTAR SUHOOR EISTEDDFOD FASCHING MATSURI MELA NATIVITY SEDER MENORAH SUKKAH SHOFAR RANGOLI DIYA MEHNDI GARBA PUJA CAROLLER CAROLLING SANTA ANGEL EGGNOG NOEL SWEETHEART SURPRISE INVITATION INVITE BRIDEGROOM BRIDESMAID VOWS HONEYMOON ENGAGEMENT SLEEPOVER RESOLUTION CHEERS FESTIVAL FESTIVE FESTIVITY CEREMONY TRADITION CUSTOM OCCASION EVENT CELEBRANT POTLUCK REVELRY REVEL REVELLER MERRIMENT MERRYMAKER REJOICE GATHERING MARCHING MAJORETTE SHINDIG BASH HOMECOMING CENTENARY CENTENNIAL WRAPPING GREETING FESTOON DECORATION PARTYGOER GRADUATION KRAMPUS LATKE LUAU MOONCAKE REUNION RITUAL SIMNEL SOIREE STAR UNWRAP WEDDING YULE YULETIDE
 Pet Shop|137|KITTEN TABBY SIAMESE PERSIAN BENGAL SPHYNX MANX BURMESE RAGDOLL CALICO TORTIE MOGGY HAMSTER GERBIL CHINCHILLA BUDGIE GOLDFISH GUPPY HUTCH CAGE LITTER CATNIP PURR MEOW AQUARIUM FISHBOWL PARAKEET COCKATIEL LOVEBIRD PETSHOP SCRATCHER CATFLAP FURBALL GROOMING CHEW SQUEAKY BOWL TANK FILTER PELLETS SAWDUST TETRA MOLLY CAVY KITTY RODENT POUNCE HIMALAYAN ABYSSINIAN BIRMAN BALINESE TONKINESE CHARTREUX OCICAT SINGAPURA MUNCHKIN KORAT RAGAMUFFIN TOYGER PIXIEBOB SHORTHAIR LONGHAIR BICOLOUR PURRING MEW MEWL CATERWAUL CATNAP SNUGGLE SCRATCH CARRIER WORMER STRAY TOMCAT HOUSECAT FELINE KITTENISH MOG GRIMALKIN CUTTLEBONE BUBBLER AIRSTONE HORNWORT LOP LIONHEAD REX MICE LORY MYNAH PARROTLET CAIQUE BIRDCAGE PLATY SWORDTAIL BETTA GOURAMI CORYDORAS PLECO DANIO RASBORA KOI SHUBUNKIN ORANDA CICHLID KILLIFISH ZEBRAFISH RAMSHORN ADOPTION REHOME CATTERY PET PETTING COMPANION VETERINARY LIVEBEARER AROWANA ELODEA WATERWEED AQUASCAPE DAPHNIA FLAKES FANCIER RINGNECK FOSTER BARB BELL BREED BREEDER CATMINT COMB CROSSBREED DEWCLAW GROOMER LICK LITTERMATE LOACH MICROCHIP PEDIGREE PUSS ROSETTE SHAMPOO SHAVINGS SIPHON SQUAWK SQUEAKER WAXBILL WOODCHIP YOWL
@@ -251,24 +266,29 @@ Bookshelf|43|AUSTEN BRONTE CHAUCER CHEKHOV CHRISTIE DICKENS DICKINSON ELIOT HARD
 Roads & Wheels|118|AUTOBAHN AVENUE BICYCLE BOULEVARD BUS CAR COUPE CROSSROADS DETOUR DRIVER FREEWAY HATCHBACK HIGHWAY JEEP LIMOUSINE LORRY MINIBUS MOPED MOTORBIKE MOTORWAY ROUNDABOUT SEDAN STEERING TANDEM TAXI TOLLBOOTH TRAFFIC TRUCK TYRE VAN WINDSHIELD BUMPER HEADLIGHT HUBCAP MILEAGE MOTORIST PEDAL ROADWORKS SPEEDBUMP SATNAV TAILGATE CARWASH SIDECAR ROAD ROADWAY LANE FLYOVER BYPASS BACKROAD TOLL TOLLGATE TURNPIKE EXPRESSWAY PARKWAY MACADAM ASPHALT ODOMETER TACHOMETER DASHBOARD GLOVEBOX HAZARDS WIPER WINDSCREEN GRILLE MUDGUARD MUDFLAP SPOILER CHASSIS BODYWORK SUNROOF TOWBAR GEARSTICK SILENCER TAILPIPE UNLEADED RIM SPOKE HUB TREAD PUNCTURE AIRBAG REARVIEW LICENCE BACKSEAT PILLION CABRIOLET ROADSTER SPEEDSTER MINIVAN PICKUP KART MOTORCYCLE BIKER BIKE PUSHBIKE RICKSHAW PEDICAB CHARABANC OMNIBUS STROLLER WHEELCHAIR TIPPER JUGGERNAUT MINICAB JALOPY CLUNKER RALLY CHICANE LAP OVERTAKE MOTORSPORT MERGE SPEED BRAKING REV IDLING CARPOOL HITCHHIKER JOYRIDE CARSICK MOTORCADE TAILBACK CONGESTION GUARDRAIL ROADBLOCK ROADSIDE WHEELIE WHEELBASE WHEELSPIN KICKSTAND HANDLEBAR DERAILLEUR PANNIER CYCLEWAY FLATBED COACHWORK VELOCIPEDE DRIVE LEARNER PRAM PUSHCHAIR RADIAL REVERSE SKID SPEEDWAY STARTER SUSPENSION TRIKE TRUCKER
 Periodic Table|239|HYDROGEN HELIUM LITHIUM BORON CARBON NITROGEN OXYGEN FLUORINE NEON SODIUM MAGNESIUM ALUMINIUM SILICON PHOSPHORUS SULFUR CHLORINE ARGON POTASSIUM CALCIUM TITANIUM CHROMIUM IRON COBALT NICKEL COPPER ZINC ARSENIC BROMINE KRYPTON SILVER TIN IODINE XENON PLATINUM GOLD LEAD RADON RADIUM URANIUM PLUTONIUM TUNGSTEN CADMIUM GALLIUM BARIUM BISMUTH CESIUM OSMIUM PALLADIUM VANADIUM BERYLLIUM SCANDIUM MANGANESE GERMANIUM SELENIUM RUBIDIUM STRONTIUM YTTRIUM ZIRCONIUM NIOBIUM MOLYBDENUM TECHNETIUM RUTHENIUM INDIUM ANTIMONY TELLURIUM LANTHANUM CERIUM NEODYMIUM PROMETHIUM SAMARIUM EUROPIUM GADOLINIUM TERBIUM DYSPROSIUM HOLMIUM ERBIUM THULIUM YTTERBIUM LUTETIUM HAFNIUM TANTALUM RHENIUM IRIDIUM THALLIUM POLONIUM ASTATINE FRANCIUM ACTINIUM NEPTUNIUM AMERICIUM CURIUM BERKELIUM FERMIUM NOBELIUM LAWRENCIUM DUBNIUM SEABORGIUM BOHRIUM HASSIUM MEITNERIUM NIHONIUM FLEROVIUM MOSCOVIUM TENNESSINE OGANESSON PERIODIC GROUP METALLOID NONMETAL SEMIMETAL LANTHANIDE ACTINIDE TRANSITION SUPERHEAVY REACTIVE UNSTABLE VALENCE DEUTERIUM TRITIUM IONISE FLUORIDE SULFIDE BROMIDE IODIDE CARBIDE HYDROXIDE SULFATE GRAPHENE FULLERENE ALLOTROPE DIATOMIC OXIDISE OXIDATION CORRODE AURUM ARGENTUM FERRUM CUPRUM PLUMBUM STANNUM NATRIUM KALIUM WOLFRAM GASEOUS DUCTILE MALLEABLE MAGNETIC METALLURGY VALENCY
 `;
-export const THEMES = THEME_DATA.trim().split('\n').map((line) => {
+export const THEMES = THEME_DATA.trim().split('\n').map(line => {
   const [name, hue, words] = line.split('|');
   return { name, hue: Number(hue), words: words.split(' ') };
 });
-const NT = THEMES.length, LAT_B = 15;
+export const NT = THEMES.length, LAT_B = 15;
 // Every word, with the first theme that has it: a word can be in up to three
 // themes. HOLDERS counts the themes each word is in.
 export const VOCAB = new Map(), HOLDERS = new Map();
-THEMES.forEach((t, i) => t.words.forEach((w) => { if (!VOCAB.has(w)) VOCAB.set(w, i); HOLDERS.set(w, (HOLDERS.get(w) || 0) + 1); }));
-const THEME_SETS = THEMES.map((t) => new Set(t.words));
+THEMES.forEach((t, i) => t.words.forEach(w => { if (!VOCAB.has(w)) VOCAB.set(w, i); HOLDERS.set(w, (HOLDERS.get(w) || 0) + 1); }));
+export const THEME_SETS = THEMES.map(t => new Set(t.words));
+// Territory names: one of the theme's words and a landform. A theme's landform
+// moves on a step each row, so no two of its territories within 60 rows share a name.
+export const LANDFORMS = 'Hollow Reach Rise Flats Downs Heights Fields Vale Basin Ridge Point Crossing Common Green Row Lane Quarter Terrace Slope Banks Sound Strand Shallows Moor Marsh Wood Run Range Country Steppe Rim Verge Gulch Yard Works Corner Court Lands Cove Gate Spur Crest Hills Glen Dale Heath Wold Knoll Bluff Bend Haven End Fold Meadows Plains Shore Springs Cross Hook Hythe'.split(' ');
+// Names use only a theme's own words, in no other theme, so two themes never share one.
+export const NAMED = THEMES.map(t => t.words.filter(w => w.length >= 4 && HOLDERS.get(w) === 1));
 
-function h3(a, b, c) {
+export function h3(a, b, c) {
   let h = Math.imul(a | 0, 0x27d4eb2d) ^ Math.imul(b | 0, 0x165667b1) ^ (c | 0);
   h ^= h >>> 15; h = Math.imul(h, 0x85ebca6b);
   h ^= h >>> 13; h = Math.imul(h, 0xc2b2ae35);
   h ^= h >>> 16; return h >>> 0;
 }
-function rng(seed) {
+export function rng(seed) {
   let a = seed | 0;
   return () => {
     a = (a + 0x6D2B79F5) | 0;
@@ -279,20 +299,17 @@ function rng(seed) {
 }
 export const fdiv = (a, b) => Math.floor(a / b);
 const RSEED = SEED ^ 0x5bd1e995, DSEED = SEED ^ 0x2545f491;
-const mod = (a, n) => ((a % n) + n) % n;
+export const mod = (a, n) => ((a % n) + n) % n;
 export const regionTheme = (rx, ry) => mod(rx + LAT_B * ry, NT);
 // A stray's theme: its territory's, if that theme has the word, else the first that does.
 export const strayTheme = (w, rx, ry) => { const t = regionTheme(rx, ry); return THEME_SETS[t].has(w) ? t : VOCAB.get(w); };
-// Territory names, as the game shows them: one of the theme's words and a
-// landform (the survey's log names where each word was charted).
-const LANDFORMS = 'Hollow Reach Rise Flats Downs Heights Fields Vale Basin Ridge Point Crossing Common Green Row Lane Quarter Terrace Slope Banks Sound Strand Shallows Moor Marsh Wood Run Range Country Steppe Rim Verge Gulch Yard Works Corner Court Lands Cove Gate Spur Crest Hills Glen Dale Heath Wold Knoll Bluff Bend Haven End Fold Meadows Plains Shore Springs Cross Hook Hythe'.split(' ');
-// Names use only a theme's own words, in no other theme, so two themes never share one.
-const NAMED = THEMES.map((t) => t.words.filter((w) => w.length >= 4 && HOLDERS.get(w) === 1));
 export function regionName(rx, ry) {
   const k = rx + LAT_B * ry, t = mod(k, NT), words = NAMED[t];
   const w = words[h3(fdiv(k, NT), ry, RSEED) % words.length];
   return w[0] + w.slice(1).toLowerCase() + ' ' + LANDFORMS[mod(ry + 7 * t, LANDFORMS.length)];
 }
+// A territory deals its theme's words from one shuffled deck, each chunk from
+// a different point in it, so neighbouring chunks hide different words.
 function deckOf(rx, ry) {
   const r = rng(h3(rx, ry, DSEED)), deck = THEMES[regionTheme(rx, ry)].words.slice();
   for (let i = deck.length - 1; i > 0; i--) { const j = Math.floor(r() * (i + 1)); const t = deck[i]; deck[i] = deck[j]; deck[j] = t; }
@@ -348,11 +365,17 @@ export function letterAt(x, y) {
   const cx = fdiv(x, CH), cy = fdiv(y, CH);
   return chunk(cx, cy).g[(y - cy * CH) * CH + (x - cx * CH)];
 }
-// How many hidden words a territory has: its 16 chunks' words. Not part of
-// the game's copied code (the game has its own territoryTotal).
+export const wordEnd = (e) => [e.x + DIRS[e.d][0] * (e.w.length - 1), e.y + DIRS[e.d][1] * (e.w.length - 1)];
+// Whether the map spells w from x, y in direction d.
+export function onMap(w, x, y, d) {
+  for (let i = 0; i < w.length; i++) if (letterAt(x + DIRS[d][0] * i, y + DIRS[d][1] * i) !== w.charCodeAt(i) - 65) return false;
+  return true;
+}
+
+// How many hidden words a territory has: its 16 chunks' words. The game keeps
+// its own count of each territory it has seen, around this.
 export function territoryTotal(rx, ry) {
   let total = 0;
   for (let cy = ry * RG; cy < ry * RG + RG; cy++) for (let cx = rx * RG; cx < rx * RG + RG; cx++) total += chunk(cx, cy).words.length;
   return total;
 }
-export const wordEnd = (e) => [e.x + DIRS[e.d][0] * (e.w.length - 1), e.y + DIRS[e.d][1] * (e.w.length - 1)];

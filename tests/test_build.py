@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import re
 import shutil
 import subprocess
@@ -30,8 +31,11 @@ from common import (
     game_files,
     generated_pages,
     inject_analytics,
+    inject_modules,
     inject_pwa,
     inject_social,
+    module_files,
+    module_urls,
     music_files,
     own_apps,
     preview_files,
@@ -140,10 +144,57 @@ def test_site_contains_only_publishable_files(site_dir):
         "sw.js",
         *(f"manifests/{app}.webmanifest" for app in apps),
         *(f"icons/{app}-{size}.png" for app in apps for size in ICON_SIZES),
+        *module_files(),
         *music_files(),
         *preview_files(),
     }
-    assert published == expected, "the site should hold the games, generated pages, their apps, music and previews only"
+    assert published == expected, (
+        "the site should hold the games, generated pages, their apps, modules, music and previews only"
+    )
+
+
+def test_inject_modules_names_each_module_a_page_imports_by_its_hash(tmp_path):
+    (tmp_path / "js" / "x").mkdir(parents=True)
+    (tmp_path / "js" / "x" / "a.js").write_text("import { b } from './b.js';\nexport const a = b;\n")
+    (tmp_path / "js" / "x" / "b.js").write_text("export const b = 1;\n")
+    (tmp_path / "js" / "x" / "unused.js").write_text("export const c = 2;\n")
+    page = "<head><title>t</title></head><script type=\"module\">\nimport { a } from './js/x/a.js';\n</script>"
+    urls = module_urls(tmp_path)
+    assert set(urls) == {"/js/x/a.js", "/js/x/b.js", "/js/x/unused.js"}
+    assert all(re.fullmatch(rf"{path}\?v=[0-9a-f]{{10}}", url) for path, url in urls.items())
+    injected = inject_modules(page, tmp_path)
+    mapped = json.loads(re.search(r'<script type="importmap">(.*?)</script>', injected, re.DOTALL)[1])
+    assert mapped == {"imports": {"/js/x/a.js": urls["/js/x/a.js"], "/js/x/b.js": urls["/js/x/b.js"]}}
+    assert re.findall(r'<link rel="modulepreload" href="([^"]+)">', injected) == [
+        urls["/js/x/a.js"],
+        urls["/js/x/b.js"],
+    ]
+    assert injected.index("importmap") < injected.index("modulepreload") < injected.index("</head>")
+    assert inject_modules(injected, tmp_path) == injected
+    # A change to one module changes its address alone.
+    (tmp_path / "js" / "x" / "b.js").write_text("export const b = 2;\n")
+    assert (
+        module_urls(tmp_path)["/js/x/a.js"]
+        == urls["/js/x/a.js"]
+        != urls["/js/x/b.js"]
+        != module_urls(tmp_path)["/js/x/b.js"]
+    )
+    # A page with no module scripts is left as it is; one importing a missing module fails the build.
+    assert inject_modules("<head></head><script>import('./js/x/a.js')</script>", tmp_path).count("importmap") == 0
+    with pytest.raises(AssertionError, match="nope.js"):
+        inject_modules("<head></head><script type=\"module\">import './js/x/nope.js';</script>", tmp_path)
+
+
+def test_published_modules_are_the_ones_pages_name(site_dir):
+    for filename in game_files():
+        published = (site_dir / filename).read_text("utf-8")
+        found = re.search(r'<script type="importmap">(.*?)</script>', published, re.DOTALL)
+        if not found:
+            continue
+        for path, url in json.loads(found[1])["imports"].items():
+            assert url == module_urls()[path], (filename, path)
+            assert (site_dir / path.lstrip("/")).read_bytes() == (ROOT / path.lstrip("/")).read_bytes()
+            assert f'<link rel="modulepreload" href="{url}">' in published
 
 
 def test_inject_telemetry_goes_before_head_end_once():
@@ -169,9 +220,11 @@ def test_games_are_published_with_only_previews_telemetry_feedback_analytics_and
         published = (site_dir / filename).read_text("utf-8")
         slug = filename.removesuffix(".html")
         app = app_of(source, slug)
-        social = inject_social(source, app, f"/{slug}")
+        social = inject_social(inject_modules(source), app, f"/{slug}")
         with_scripts = inject_feedback(inject_telemetry(social, telemetry, current_release()), feedback)
         assert published == inject_pwa(inject_analytics(with_scripts), app)
+        if '<script type="importmap">' in published:
+            assert published.index('<script type="importmap">') < published.index('<meta property="og:title"')
         assert (
             published.index('<meta property="og:title"')
             < published.index("<script data-telemetry")
