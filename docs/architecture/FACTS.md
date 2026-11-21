@@ -18,11 +18,32 @@ hand.
   are the public survey's at 23:35 UTC on November 20, 2026, from GETs the
   survey log makes itself (`/v1/survey/world` and `/v1/survey/log/…`), kept
   in `data/survey.json` without anyone's initials.
-- The history (118 pull requests in 24 days) is `main`'s first-parent log,
-  in `data/history.json`.
+- Letterfield's history is `main`'s first-parent log, in
+  `data/history.json`: 78 of the 118 pull requests the site merged in its
+  first 24 days touched Letterfield's files, and the lines count only its
+  own code (its pages, its Worker modules and its tests), not the other
+  games' or what every game shares.
 - Costs are worked out from SURVEY.md's use per player-hour and
   Cloudflare's published prices, the same way in the figure and the
   calculator.
+
+## What isn't Letterfield's
+
+The repo and the Worker serve the whole site, so a few parts in the
+figures belong to the other games, and are drawn in grey or named as such:
+
+- **WarRoom** is the Durable Object for War's multiplayer rooms, the site's
+  card game. It runs in the same Worker as the survey (its first Durable
+  Object, migration v1), and Letterfield doesn't use it.
+- **games-leaderboard**, the D1 database, keeps the other games' scores,
+  groups and submissions, and Letterfield's definitions, link codes and
+  recovery codes beside them.
+- **The pipeline** in "How a change ships" is the site's, the same for
+  every game; so is the account's free-plan allowance in the cost figures,
+  which every game's Durable Objects would share.
+- The survey also borrows helpers from the leaderboards' code
+  (`worker/src/leaderboard.js`): hashing addresses, the rate-limit check,
+  CORS headers and the checks on initials.
 
 ## What's made up
 

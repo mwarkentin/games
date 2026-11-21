@@ -198,7 +198,7 @@ h1{font:800 clamp(28px,6vw,38px)/1.05 var(--f-display);margin:8px 0 6px;text-wra
     } else {
       const minutes = (freeHours / online) * 60;
       const when = minutes < 90 ? `${fmt(minutes)} minutes` : `${(minutes / 60).toFixed(1)} hours`;
-      free.innerHTML = `<strong>On the free plan</strong>, Durable Object requests would run out ${when} into each day’s play, at about ${fmt(freeHours)} player-hours, and every Durable Object on the account, War’s rooms too, would stop until midnight UTC.`;
+      free.innerHTML = `<strong>On the free plan</strong>, Durable Object requests would run out ${when} into each day’s play, at about ${fmt(freeHours)} player-hours, and every Durable Object on the account would stop until midnight UTC, the site’s other games’ too.`;
     }
     $('hint').textContent = `${hours} ${hours === 1 ? 'hour' : 'hours'} a day, ${days} ${days === 1 ? 'day' : 'days'} · tap or drag across it to choose`;
     presetsPressed();

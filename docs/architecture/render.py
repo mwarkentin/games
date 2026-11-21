@@ -11,6 +11,7 @@ figure's caption, alt text and sources never drift from the figure.
     uv run --with fonttools --with uharfbuzz --with brotli docs/architecture/render.py big-picture claim-life
     ... render.py --no-png        SVGs only, for a quick look
     ... render.py --explainers    the interactive explainers alone
+    ... render.py --clips         and each moving figure as an MP4 and a GIF too (needs ffmpeg)
 
 It needs Node (the figures read the map from worker/src/letterfield-world.js),
 Playwright's Chromium (`uv run playwright install chromium`, as the tests do)
@@ -98,7 +99,7 @@ def render_pngs(svgs: list[Path]) -> None:
 
     with sync_playwright() as p:
         browser = p.chromium.launch()
-        page = browser.new_page(device_scale_factor=2)
+        page = browser.new_page(device_scale_factor=2, reduced_motion="reduce")  # the still figure
         for svg in svgs:
             w, h = (round(float(v)) for v in re.search(r'viewBox="0 0 ([\d.]+) ([\d.]+)"', svg.read_text()).groups())
             page.set_viewport_size({"width": w, "height": h})
@@ -107,8 +108,83 @@ def render_pngs(svgs: list[Path]) -> None:
         browser.close()
 
 
+# Letterfield's own files, as against the site's other games and what every game shares (the build, CI,
+# telemetry, the leaderboards, War's rooms): a pull request that touches one of these is one of Letterfield's.
+LETTERFIELD = re.compile(
+    r"^(letterfield[^/]*\.html|changelog/letterfield\.md|albums/letterfield/|icons/letterfield|previews/letterfield"
+    r"|worker/src/(survey[^/]*|letterfield-world|players|achievements|define)\.js|worker/(SURVEY|ACHIEVEMENTS|TURNSTILE)\.md"
+    r"|worker/migrations-log/|worker/migrations/000[345]_|worker/bench/|worker/test/(survey|players|achievements|define)"
+    r"|share/|tests/(test_letterfield|test_survey|fake_survey|fake_definitions)[^/]*\.py"
+    r"|scripts/(render_album|draw_album_art|survey_watch)\.py|\.github/workflows/survey-watch\.yml|docs/link-previews\.md)"
+)
+# Letterfield's code in the Worker, and its tests (the game's in tests/, the Worker's in worker/test/).
+LETTERFIELD_WORKER = re.compile(r"^worker/src/(survey[^/]*|letterfield-world|players|achievements|define)\.js$")
+LETTERFIELD_TESTS = re.compile(
+    r"^(tests/(test_letterfield|test_survey|fake_survey|fake_definitions)[^/]*\.py"
+    r"|worker/test/(survey|players|achievements|define)[^/]*\.js)$"
+)
+
+
+# Steps an animated SVG's motion to `t` seconds: its SMIL dots through the SVG's own clock, its CSS
+# animations through the Web Animations API, both paused, so every frame is exactly where it should be.
+STEP_TO = """t => {
+  const svg = document.documentElement;
+  svg.pauseAnimations();
+  svg.setCurrentTime(t);
+  for (const a of document.getAnimations()) { a.pause(); a.currentTime = t * 1000; }
+}"""
+
+
+def frames(page, svg: Path, times: list[float], out: Path, scale: float = 1) -> None:
+    """Screenshots of an animated figure at each of `times` seconds, as out/f00000.png onwards."""
+    w, h = (round(float(v)) for v in re.search(r'viewBox="0 0 ([\d.]+) ([\d.]+)"', svg.read_text()).groups())
+    page.set_viewport_size({"width": w, "height": h})
+    page.goto(svg.as_uri())
+    out.mkdir(parents=True, exist_ok=True)
+    for i, t in enumerate(times):
+        page.evaluate(STEP_TO, t)
+        page.screenshot(path=out / f"f{i:05d}.png", clip={"x": 0, "y": 0, "width": w, "height": h})
+
+
+def record_clips(ids: list[str], fps: int = 25) -> None:
+    """Each animated figure's loop as an MP4 and a GIF beside its SVGs, in both themes (needs ffmpeg)."""
+    import shutil
+    import subprocess
+
+    from playwright.sync_api import sync_playwright
+
+    moving = [fid for fid in ids if FIGURES[fid].draw(THEMES[0]).cycle]
+    with sync_playwright() as p:
+        browser = p.chromium.launch()
+        page = browser.new_page(device_scale_factor=1.5)
+        for fid in moving:
+            cycle = FIGURES[fid].draw(THEMES[0]).cycle
+            for theme in THEMES:
+                svg = OUT / "figures" / f"{fid}-{theme.name}.svg"
+                folder = OUT / "frames" / f"{fid}-{theme.name}"
+                if folder.exists():
+                    shutil.rmtree(folder)
+                frames(page, svg, [i / fps for i in range(round(cycle * fps))], folder)
+                src = ["-framerate", str(fps), "-i", str(folder / "f%05d.png")]
+                subprocess.run(["ffmpeg", "-y", "-loglevel", "error", *src, "-vf", "scale=trunc(iw/2)*2:trunc(ih/2)*2",
+                                "-c:v", "libx264", "-pix_fmt", "yuv420p", "-crf", "22", "-preset", "slow",
+                                "-movflags", "+faststart", str(svg.with_suffix(".mp4"))], check=True)  # fmt: skip
+                palette = ("fps=12,scale=800:-1:flags=lanczos,split[a][b];[a]palettegen=max_colors=96:stats_mode=diff[p];"
+                           "[b][p]paletteuse=dither=none:diff_mode=rectangle")  # fmt: skip
+                subprocess.run(["ffmpeg", "-y", "-loglevel", "error", *src, "-vf", palette, str(svg.with_suffix(".gif"))],
+                               check=True)  # fmt: skip
+                shutil.rmtree(folder)
+            print(f"  clips of {fid}: {cycle:g} s loops, light and dark")
+        browser.close()
+
+
 def refresh_history() -> None:
-    """Letterfield's growth, PR by PR, from main's first-parent history, into data/history.json."""
+    """Letterfield's growth, PR by PR, from main's first-parent history, into data/history.json.
+
+    Each merge to main is a row: its pull request, date and title, whether it touched Letterfield
+    (`lf`), and the lines then in the game, its three companion pages, its code in the Worker and
+    its tests. The site's other games share the repo, so their pull requests are rows too, with
+    `lf` false, and their code counts in none of the lines."""
     import subprocess
 
     def git(*args: str) -> str:
@@ -118,15 +194,13 @@ def refresh_history() -> None:
         out = subprocess.run(["git", "show", f"{rev}:{path}"], cwd=HERE.parents[1], capture_output=True)
         return out.stdout.count(b"\n") if out.returncode == 0 else 0
 
-    def tree(rev: str, prefix: str, suffix: str) -> int:
-        return sum(
-            lines(rev, f) for f in git("ls-tree", "-r", "--name-only", rev, prefix).split() if f.endswith(suffix)
-        )
+    def matching(rev: str, pattern: re.Pattern) -> int:
+        return sum(lines(rev, f) for f in git("ls-tree", "-r", "--name-only", rev).split() if pattern.match(f))
 
     rows = []
-    log = git("log", "--first-parent", "origin/main", "--reverse", "--date=short", "--format=%H|%ad|%s|%b%x1e")
+    log = git("log", "--first-parent", "origin/main", "--reverse", "--date=short", "--format=%H|%P|%ad|%s|%b%x1e")
     for entry in filter(None, (e.strip() for e in log.split("\x1e"))):
-        sha, date, subject, body = (entry.split("|", 3) + [""])[:4]
+        sha, parents, date, subject, body = (entry.split("|", 4) + [""])[:5]
         merge = re.match(r"Merge pull request #(\d+) from (\S+)", subject)
         squash = re.search(r"\(#(\d+)\)\s*$", subject)
         if merge:
@@ -136,14 +210,19 @@ def refresh_history() -> None:
             pr, title = int(squash[1]), re.sub(r"\s*\(#\d+\)\s*$", "", subject)
         else:
             pr, title = None, subject
+        changed = git("diff", "--name-only", parents.split()[0], sha).split() if parents else []
         rows.append({
-            "pr": pr, "date": date, "title": title, "game": lines(sha, "letterfield.html"),
+            "pr": pr, "date": date, "title": title, "lf": any(LETTERFIELD.match(f) for f in changed),
+            "game": lines(sha, "letterfield.html"),
             "pages": sum(lines(sha, f) for f in ("letterfield-log.html", "letterfield-timelapse.html",
                                                  "letterfield-soundtrack.html")),
-            "worker": tree(sha, "worker/src", ".js"), "tests": tree(sha, "tests", ".py"),
+            "worker": matching(sha, LETTERFIELD_WORKER), "tests": matching(sha, LETTERFIELD_TESTS),
         })  # fmt: skip
     (HERE / "data" / "history.json").write_text(json.dumps(rows, indent=0) + "\n")
-    print(f"history: {len(rows)} commits on main, {sum(1 for r in rows if r['pr'])} pull requests")
+    prs = [r for r in rows if r["pr"]]
+    print(
+        f"history: {len(rows)} commits on main, {len(prs)} pull requests, {sum(r['lf'] for r in prs)} of them Letterfield's"
+    )
 
 
 def main() -> None:
@@ -153,6 +232,9 @@ def main() -> None:
     parser.add_argument("--no-explainers", action="store_true", help="skip building the interactive explainers")
     parser.add_argument("--explainers", action="store_true", help="build the interactive explainers alone")
     parser.add_argument("--refresh", action="store_true", help="read the live survey's public numbers again first")
+    parser.add_argument(
+        "--clips", action="store_true", help="also record each moving figure as MP4 and GIF (needs ffmpeg)"
+    )
     args = parser.parse_args()
     if args.explainers:
         return build_explainers()
@@ -175,6 +257,8 @@ def main() -> None:
         print(f"  {fid}: {f.title}")
     if not args.no_png:
         render_pngs(svgs)
+    if args.clips:
+        record_clips(ids)
     if not args.ids:
         write_docs()
         if not args.no_explainers:

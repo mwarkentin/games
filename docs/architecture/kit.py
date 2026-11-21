@@ -9,6 +9,12 @@ fetches the album's.
 
 Coordinates are CSS pixels: figures are 800 wide, for a blog column, and
 render.py turns each into a PNG at 2x.
+
+A figure that shows a process can also move (Fig.animate): its SVG loops
+through the process, with CSS animations and dots that travel along its
+arrows, and shows the still figure to anyone who asks for reduced motion.
+The PNG is always the still figure; render.py --clips records the motion as
+MP4 and GIF.
 """
 
 from __future__ import annotations
@@ -214,6 +220,9 @@ class Fig:
         self.body: list[str] = []
         self.glyphs: dict[str, str] = {}
         self.clips = 0
+        self.cycle: float | None = None  # seconds the figure's motion takes before it loops, if it moves
+        self.style: list[str] = []
+        self.cues = 0
 
     # -- text -----------------------------------------------------------------
     def width(self, text: str, font: str = "ui", size: float = 13, tracking: float = 0) -> float:
@@ -409,15 +418,86 @@ class Fig:
         self.line(x, self.h - 30, self.w - x, self.h - 30, self.t.rule, 1)
         self.text(x, self.h - 13, sources, "mono", 8, self.t.muted)
 
+    # -- motion -----------------------------------------------------------------
+    # Everything that moves runs on one loop of `cycle` seconds, so it stays in step however often it
+    # repeats: CSS animations for what changes in place, SMIL for dots travelling along a path (which
+    # also play where the SVG is an <img>). Under reduced motion, and in the PNG, the CSS animations
+    # don't run and the travelling dots aren't there: what's left is the still figure, complete.
+    def animate(self, seconds: float) -> None:
+        """Makes this a figure that moves, looping every `seconds`."""
+        self.cycle = seconds
+
+    def cue(self, frames: list[tuple[float, str]], origin: bool = False) -> str:
+        """A CSS animation over the loop, as (seconds into it, declarations) pairs, held between them;
+        returns the classes for a group(). With `origin`, transforms work from the group's own middle."""
+        self.cues += 1
+        name = f"c{self.cues}"
+        frames = sorted(frames)
+        # Held at both ends: a keyframe left out would drift back to the element's own style.
+        if frames[0][0] > 0:
+            frames.insert(0, (0, frames[0][1]))
+        if frames[-1][0] < self.cycle:
+            frames.append((self.cycle, frames[-1][1]))
+        keys = "".join(f"{100 * t / self.cycle:.3f}%{{{css}}}" for t, css in frames)
+        box = "transform-box:fill-box;transform-origin:center;" if origin else ""
+        self.style.append(
+            f"@keyframes {name}{{{keys}}}.{name}{{{box}animation:{name} {self.cycle}s linear infinite both}}"
+        )
+        return f"a {name}"
+
+    def group(self, cls: str = "") -> _Group:
+        """`with f.group(cls):` puts what's drawn inside in a <g>, for a cue to move or reveal."""
+        return _Group(self, cls)
+
+    def glow(self, x: float, y: float, w: float, h: float, at: float, length: float = 1.0, colour: str | None = None,
+             r: float = 6) -> None:  # fmt: skip
+        """A box outlined for a moment, `at` seconds into the loop, to show where something just happened."""
+        cue = self.cue([(at, "opacity:0"), (at + 0.15, "opacity:1"), (at + length, "opacity:0")])
+        with self.group(f"motion {cue}"):
+            self.rect(x - 2, y - 2, w + 4, h + 4, r=r, fill="none", stroke=colour or self.t.accent, sw=2.2)
+
+    def travel(self, pts: list[tuple[float, float]], start: float, end: float, colour: str, r: float = 3.6,
+               halo: bool = True) -> None:  # fmt: skip
+        """A dot running along `pts` from `start` to `end` seconds into the loop, seen only while it runs."""
+        c = self.cycle
+        s, e = max(0.0, start / c), min(1.0, end / c)
+        d = "M" + " L".join(f"{num(x)} {num(y)}" for x, y in pts)
+        fade = 0.012
+        on = f"0;{s:.4f};{min(s + fade, e):.4f};{max(e - fade, s + fade):.4f};{e:.4f};1"
+        ring = f'<circle r="{num(r + 2.2)}" fill="{self.t.paper}"/>' if halo else ""
+        self.body.append(
+            f'<g class="motion" opacity="0"><g>{ring}<circle r="{num(r)}" fill="{colour}"/>'
+            f'<animateMotion dur="{c}s" repeatCount="indefinite" calcMode="linear" keyPoints="0;0;1;1"'
+            f' keyTimes="0;{s:.4f};{e:.4f};1" path="{d}"/></g>'
+            f'<animate attributeName="opacity" dur="{c}s" repeatCount="indefinite" values="0;0;1;1;0;0" keyTimes="{on}"/>'
+            "</g>"
+        )
+
     def svg(self, title: str, desc: str) -> str:
         defs = "".join(f'<path id="{gid}" d="{d}"/>' for gid, d in self.glyphs.items())
+        style = ""
+        if self.cycle:
+            still = "@media (prefers-reduced-motion:reduce){.motion{display:none}.a{animation:none!important}}"
+            style = f"<style>{''.join(self.style)}{still}</style>"
         return (
             f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {self.w} {self.h}" width="{self.w}"'
             f' height="{self.h}" role="img" aria-labelledby="t d">'
             f'<title id="t">{escape(title)}</title><desc id="d">{escape(desc)}</desc>'
-            f"<defs>{defs}</defs>"
+            f"<defs>{defs}</defs>{style}"
             f'<rect width="{self.w}" height="{self.h}" fill="{self.t.paper}"/>' + "".join(self.body) + "</svg>"
         )
+
+
+class _Group:
+    def __init__(self, fig: Fig, cls: str):
+        self.fig, self.cls = fig, cls
+
+    def __enter__(self):
+        self.fig.body.append(f'<g class="{self.cls}">' if self.cls else "<g>")
+        return self
+
+    def __exit__(self, *exc):
+        self.fig.body.append("</g>")
 
 
 # -- data from the game's own map, through the Worker's copy of its generator --

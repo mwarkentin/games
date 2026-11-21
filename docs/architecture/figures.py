@@ -14,7 +14,7 @@ import re
 from collections.abc import Callable
 from dataclasses import dataclass, field
 
-from kit import HERE, Fig, Theme, cell_box, fmt, world
+from kit import HERE, THEMES, Fig, Theme, cell_box, fmt, world
 
 
 @dataclass
@@ -136,11 +136,46 @@ def map_from_a_seed(t: Theme) -> Fig:
     c = world("chunk", 0, 0)
     hue = c["hue"]
     x0, y0, cell = 32, 132, 26
+    # It moves: the chunk builds itself as the generator does, word by word in the order placed, each in its
+    # direction, then the filler letters, with the steps on the right lit as they happen.
+    f.animate(13)
+    first, every = 2.4, 0.95  # when the first word is placed, and how far apart the rest are
+    filler_at = first + len(c["words"]) * every + 0.3
+    out = 12.4  # everything fades, to start again
+
+    def shown(at, until=out):
+        return f.cue(
+            [
+                (0, "opacity:0"),
+                (at, "opacity:0"),
+                (at + 0.25, "opacity:1"),
+                (until, "opacity:1"),
+                (until + 0.5, "opacity:0"),
+            ]
+        )
+
+    def popped(at):
+        return f.cue([(0, "opacity:0;transform:scale(.6)"), (at, "opacity:0;transform:scale(.6)"),
+                      (at + 0.3, "opacity:1;transform:scale(1.06)"), (at + 0.45, "opacity:1;transform:scale(1)"),
+                      (out, "opacity:1;transform:scale(1)"), (out + 0.5, "opacity:0;transform:scale(1)")], origin=True)  # fmt: skip
+
     f.eyebrow(x0, y0 - 14, f"Chunk (0, 0) · {c['name']} · {c['theme']}")
     f.rect(x0 - 6, y0 - 6, 12 * cell + 12, 12 * cell + 12, r=8, fill=t.panel, stroke=t.rule)
-    for w in c["words"]:
-        circle_word(f, x0, y0, cell, w["x"], w["y"], len(w["w"]), w["d"], hue)
-    grid_letters(f, x0, y0, cell, c["letters"], 13.5)
+    in_words = set()
+    for i, w in enumerate(c["words"]):
+        dx, dy = DIRS[w["d"]]
+        cells = [(w["x"] + dx * k, w["y"] + dy * k) for k in range(len(w["w"]))]
+        in_words.update(cells)
+        with f.group(popped(first + i * every)):
+            circle_word(f, x0, y0, cell, w["x"], w["y"], len(w["w"]), w["d"], hue)
+        with f.group(shown(first + i * every + 0.1)):
+            rows = [" " * 12 for _ in range(12)]
+            for col, row in cells:
+                rows[row] = rows[row][:col] + c["letters"][row][col] + rows[row][col + 1 :]
+            grid_letters(f, x0, y0, cell, rows, 13.5)
+    with f.group(shown(filler_at)):
+        grid_letters(f, x0, y0, cell, ["".join(" " if (col, row) in in_words else ch for col, ch in enumerate(line))
+                                       for row, line in enumerate(c["letters"])], 13.5)  # fmt: skip
 
     # The words it hid, in the order it placed them.
     ly = y0 + 12 * cell + 32
@@ -148,15 +183,25 @@ def map_from_a_seed(t: Theme) -> Fig:
     for i, w in enumerate(c["words"]):
         col, row = i % 2, i // 2
         wx, wy = x0 + col * 160, ly + 22 + row * 20
-        f.rect(wx, wy - 11, 9, 14, r=2, fill=t.mark(hue), opacity=0.9)
-        ww = f.text(wx + 16, wy, w["w"], "mono5", 11)
-        f.text(wx + 22 + ww, wy + 0.5, ARROWS[w["d"]], "ui6", 12.5, t.muted)
+        with f.group(shown(first + i * every)):
+            f.rect(wx, wy - 11, 9, 14, r=2, fill=t.mark(hue), opacity=0.9)
+            ww = f.text(wx + 16, wy, w["w"], "mono5", 11)
+            f.text(wx + 22 + ww, wy + 0.5, ARROWS[w["d"]], "ui6", 12.5, t.muted)
 
-    # The steps.
+    # The steps, each marked while it happens.
     sx, sw = 380, 388
     y = 128
+    tops = [y]
+
+    def now(top, start, end):
+        with f.group(
+            f"motion {f.cue([(0, 'opacity:0'), (start, 'opacity:0'), (start + 0.2, 'opacity:1'), (end, 'opacity:1'), (end + 0.2, 'opacity:0')])}"
+        ):
+            f.rect(sx - 12, top - 14, 4, 22, r=2, fill=t.accent)
+
     y = step(f, sx, y, "1", "One seed", "SEED = 0x1E77E2. A chunk's coordinates are hashed with it, and the "
              "hash seeds the generator that makes every choice in that chunk.", sw) + 12  # fmt: skip
+    tops.append(y)
     y = step(f, sx, y, "2", "Chunks and territories", "A chunk is 12 × 12 cells and a territory 4 × 4 chunks, "
              "48 × 48 cells. Territory (rx, ry) has theme (rx + 15·ry) mod 225: (0, 0) is Festivals.", sw - 70) + 12  # fmt: skip
     # A territory's 16 chunks, this one lit.
@@ -165,10 +210,12 @@ def map_from_a_seed(t: Theme) -> Fig:
             on = r == 0 and q == 0
             f.rect(sx + sw - 52 + q * 13, y - 74 + r * 13, 11, 11, r=1.5, fill=t.mark(hue) if on else t.panel,
                    stroke=t.rule if not on else None, sw=0.8)  # fmt: skip
+    tops.append(y)
     y = step(f, sx, y, "3", "A deck per territory", "Its theme's 144 to 184 words, shuffled by the territory's own "
              "seed. Each chunk is dealt the next 9 cards and places them in order until it has its 6 to 8, so no "
              "word turns up twice in a territory.", sw) + 12  # fmt: skip
     rose_y = y
+    tops.append(y)
     y = step(f, sx, y, "4", "Eight directions", "Weighted to read forwards: east and south 3 in 14 each, "
              "south-east and north-east 2, the rest 1. Up to 40 tries a word; words may cross where their "
              "letters agree.", sw - 96) + 12  # fmt: skip
@@ -182,10 +229,24 @@ def map_from_a_seed(t: Theme) -> Fig:
         f.text(rcx + dx / n * (length + 9), rcy + dy / n * (length + 9) + 3.5, str(wt), "ui6", 9.5, t.muted,
                "middle")  # fmt: skip
     f.circle(rcx, rcy, 3, fill=t.ink)
+    # Each word's direction lights on the rose as it's placed.
+    for i, w in enumerate(c["words"]):
+        dx, dy = DIRS[w["d"]]
+        n, at = math.hypot(dx, dy), first + i * every
+        length = 10 + [3, 2, 3, 1, 1, 1, 1, 2][w["d"]] * 10
+        with f.group(
+            f"motion {f.cue([(0, 'opacity:0'), (at, 'opacity:0'), (at + 0.1, 'opacity:1'), (at + every - 0.1, 'opacity:1'), (at + every, 'opacity:0')])}"
+        ):
+            f.line(rcx, rcy, rcx + dx / n * length, rcy + dy / n * length, t.accent, 4.2)
+    tops.append(y)
     y = step(f, sx, y, "5", "Filler", "Every other cell gets a letter drawn from AEIOUNRSTL and the chunk's own "
              "words, so near-misses are everywhere.", sw) + 12  # fmt: skip
+    tops.append(y)
     y = step(f, sx, y, "6", "Bonus words", "Any real word of 6 or more letters the filler spells by chance counts "
              "too: about 20 a territory. Down to 4 letters there would be some 530.", sw)  # fmt: skip
+    for top, (start, end) in zip(tops, [(0.2, 0.9), (0.9, 1.6), (1.6, first), (first, filler_at - 0.3),
+                                        (filler_at - 0.2, filler_at + 1.2), (filler_at + 1.2, out)]):  # fmt: skip
+        now(top, start, end)
 
     # The server checks every claim with the same code.
     by = 588
@@ -417,24 +478,29 @@ def star(f: Fig, x: float, y: float, r: float, fill: str, stroke: str) -> None:
     "per-address limits, and hands each request to the Durable Object that owns it. Each of the map's sectors "
     "is its own object, with its own SQLite storage and the WebSockets of everyone looking at it; one Atlas "
     "keeps the world's totals; guilds and linked players get objects of their own. Two D1 databases keep what "
-    "has to be queried across the whole map: the survey's log, and the leaderboards with their link and "
-    "recovery codes. A second Worker draws the link-preview cards.",
+    "has to be queried across the whole map: the survey's log, and one shared with the site's other games, "
+    "where Letterfield keeps its link codes, recovery codes and definitions beside their leaderboards. The "
+    "same Worker also runs those leaderboards and War's multiplayer rooms, drawn here in grey. A second Worker "
+    "draws the link-preview cards.",
     "Architecture diagram. At the top, three pages in the browser served by GitHub Pages: the game "
     "letterfield.html, the survey log and the timelapse. Arrows lead down to one Cloudflare Worker, "
     "games-leaderboard, which lists its routes and its per-address checks. Below it are Durable Objects: "
-    "Sector (625 in the shared world, more beyond), Atlas (one), Guild, Player and WarRoom, with arrows from "
-    "sectors to the Atlas (reports every 10 seconds at most), to guilds (membership checks) and to each other "
-    "(supernovas and emotes). At the bottom, two D1 databases: games-survey-log, written by sectors from an "
-    "alarm, and games-leaderboard. On the right, the games-share Worker with its R2 bucket of cards, bound "
+    "Sector (625 in the shared world, more beyond), Atlas (one), Guild and Player, and in grey WarRoom, the "
+    "rooms of War, another game on the site, with arrows from sectors to the Atlas (reports every 10 seconds "
+    "at most), to guilds (membership checks) and to each other (supernovas and emotes). At the bottom, two D1 "
+    "databases: games-survey-log, written by sectors from an alarm, and games-leaderboard, shared with the "
+    "other games. On the right, the games-share Worker with its R2 bucket of cards, bound "
     "directly to the Sector and Atlas classes, and the outside services: Turnstile, Sentry, Counterscale and "
     "Wiktionary with Wikipedia.",
     [
         (
-            "Durable Object classes: WarRoom (v1), Sector and Atlas (v2), Guild (v3), Player (v4), all SQLite-backed",
+            "Durable Object classes: WarRoom (v1, War's multiplayer rooms: another game on the same Worker), Sector "
+            "and Atlas (v2), Guild (v3), Player (v4), all SQLite-backed",
             "worker/wrangler.toml [[migrations]]",
         ),
         (
-            "Two D1 databases: games-leaderboard (binding DB) and games-survey-log (binding LOG_DB)",
+            "Two D1 databases: games-survey-log (binding LOG_DB), and games-leaderboard (binding DB), whose tables "
+            "are the other games' scores, groups and submissions and Letterfield's definitions, links and recovery",
             "worker/wrangler.toml [[d1_databases]]",
         ),
         (
@@ -514,18 +580,19 @@ def big_picture(t: Theme) -> Fig:
     # Durable Objects.
     dy = 372
     objs = [("Sector", "× 625 in the shared world", 170), ("Atlas", "× 1: the world", 116),
-            ("Guild", "× 1 a guild", 104), ("Player", "× 1 a linked player", 132), ("WarRoom", "× 1 a War room", 0)]  # fmt: skip
+            ("Guild", "× 1 a guild", 104), ("Player", "× 1 a linked player", 132), ("WarRoom", "War's: another game", 0)]  # fmt: skip
     ox, ob = L, {}
     for name, sub, w in objs:
         w = w or R - ox
-        cell_box(f, ox, dy, w, 46, name, "object", sub, size=12.5)
+        # War's rooms share the Worker but not the survey: drawn in grey, as the rest of the site.
+        cell_box(f, ox, dy, w, 46, name, "other" if name == "WarRoom" else "object", sub, size=12.5)
         ob[name] = (ox, w)
         ox += w + 8
     for name in ("Sector", "Atlas", "Guild", "Player"):
         ox, w = ob[name]
         f.arrow([(ox + w / 2, wy + wh), (ox + w / 2, dy)], k["worker"], 1.3)
     wx, ww = ob["WarRoom"]
-    f.arrow([(M - 20, wy + 74), (wx + ww / 2, wy + 74), (wx + ww / 2, dy)], k["worker"], 1.3)
+    f.arrow([(M - 20, wy + 74), (wx + ww / 2, wy + 74), (wx + ww / 2, dy)], t.muted, 1.2, dash="3 3")
     f.eyebrow(L, dy - 12, "Durable Objects · one thread and its own SQLite each", knock=True)
     sx, sw_ = ob["Sector"]
     ax, aw = ob["Atlas"]
@@ -543,7 +610,7 @@ def big_picture(t: Theme) -> Fig:
     by = 500
     cell_box(f, L, by, 262, 46, "games-survey-log", "store", "every word charted, counts, supernovas", size=12.5)
     cell_box(f, L + 270, by, R - L - 270, 46, "games-leaderboard", "store",
-             "scores, groups, link and recovery codes, definitions", size=12.5)  # fmt: skip
+             "shared: other games' scores; Letterfield's codes, definitions", size=12.5)  # fmt: skip
     f.arrow([(sx + 16, dy + 46), (sx + 16, by)], k["object"], 1.3)
     f.eyebrow(L, by - 12, "D1 · SQLite to query across the map", knock=True)
     f.label(sx + 24, by - 32, "an alarm copies new claims, ≤ 30 s later")
@@ -557,6 +624,21 @@ def big_picture(t: Theme) -> Fig:
     for i, (name, sub) in enumerate(outside):
         cell_box(f, L + i * (ow + 8), oy, ow, 40, name, "other", sub, size=11.5)
     f.h = 660
+    # It moves: the game's messages reach their sector through the Worker, the log page's reads stop at the
+    # Worker's cache, the sector reports to the Atlas, tells a neighbour, and copies its claims to D1.
+    f.animate(8)
+    via = [(gx + 54, y + 46), (gx + 54, wy + wh - 6), (sx + sw_ / 2 - 30, wy + wh + 14), (sx + sw_ / 2 - 30, dy)]
+    f.travel(via, 0.2, 1.3, k["browser"])
+    f.glow(sx, dy, sw_, 46, 1.3, 0.7, k["object"])
+    f.travel([(lx + 30, y + 46), (lx + 30, wy + 4)], 1.0, 1.6, k["browser"])
+    f.glow(L, wy, M - 20 - L, wh, 1.6, 0.6, k["worker"], r=7)
+    f.travel([(sx + sw_ - 26, dy + 46), (sx + sw_ - 26, dy + 64), (ax + aw / 2, dy + 64), (ax + aw / 2, dy + 46)],
+             2.0, 2.8, k["object"])  # fmt: skip
+    f.glow(ax, dy, aw, 46, 2.8, 0.7, k["object"])
+    f.travel(via, 3.4, 4.5, k["browser"])
+    f.travel([(sx + 36, dy + 46), (sx + 36, dy + 64), (sx + 76, dy + 64), (sx + 76, dy + 46)], 4.6, 5.2, k["object"])
+    f.travel([(sx + 16, dy + 46), (sx + 16, by)], 5.6, 6.3, k["store"])
+    f.glow(L, by, 262, 46, 6.3, 0.8, k["store"])
     f.footer("Sources: worker/wrangler.toml · worker/src/index.js · share/wrangler.toml · AGENTS.md")
     return f
 
@@ -798,20 +880,24 @@ def claim_life(t: Theme) -> Fig:
         f.line(x, top + 38, x, bottom, t.rule, 1.2, dash="2 4")
     X = {name: x for name, _, _, x in lanes}
     y = top + 66
+    # It moves: each message runs along its arrow in turn, and each check lights as the claims pass it.
+    f.animate(12)
 
-    def msg(a, b, yy, text, colour=None, dash=None, below=False):
+    def msg(a, b, yy, text, colour=None, dash=None, below=False, at=None):
         f.arrow([(X[a], yy), (X[b], yy)], colour or t.ink, 1.4, dash=dash)
         mid = (X[a] + X[b]) / 2
         f.label(mid, yy + (13 if below else -6), text, "ui5", 10, t.ink, "middle")
+        if at is not None:
+            f.travel([(X[a], yy), (X[b], yy)], at, at + 0.7, colour or t.ink)
 
     # You circle PURIM; the rival does too, a moment later.
     f.capsule(X["You"] - 30, y - 4, X["You"] + 30, y - 4, 8, t.mark(90), t.wash(90), t.fill_a, 1.4)
     f.text(X["You"], y, "PURIM", "mono5", 9.5, anchor="middle")
     f.text(X["You"] - 60, y + 22, "outbox: queued → sent", "ui", 9.5, t.muted)
-    msg("You", "Sector 0,0", y + 40, "{t: 'claim', w: 'PURIM', x: 5, y: 5, d: 7}")
+    msg("You", "Sector 0,0", y + 40, "{t: 'claim', w: 'PURIM', x: 5, y: 5, d: 7}", at=0.4)
     f.capsule(X["Rival"] - 30, y + 58, X["Rival"] + 30, y + 58, 8, t.mark(90), t.wash(90), t.fill_a, 1.4)
     f.text(X["Rival"], y + 62, "PURIM", "mono5", 9.5, anchor="middle")
-    msg("Rival", "Sector 0,0", y + 86, "40 ms later, the same word", t.muted)
+    msg("Rival", "Sector 0,0", y + 86, "40 ms later, the same word", t.muted, at=0.8)
     f.text(X["Sector 0,0"] + 14, y + 4, "one message at a time:", "ui6", 10, t.ink)
 
     # The sector's checks, one message at a time.
@@ -822,6 +908,7 @@ def claim_life(t: Theme) -> Fig:
     for i, (a, b) in enumerate(checks):
         yy = cy + i * 24
         f.rect(cx, yy, 330, 20, r=4, fill=t.panel, stroke=t.rule)
+        f.glow(cx, yy, 330, 20, 1.7 + i * 0.35, 0.8, k["object"], r=4)
         f.path(f"M{cx + 7} {yy + 10} l3 3.2 l6 -6.6", stroke=k["object"], sw=1.8)
         f.text(cx + 22, yy + 14, a, "ui5", 9.5, t.ink)
         f.text(cx + 322, yy + 14, b, "ui", 9.5, t.muted, "end")
@@ -831,6 +918,7 @@ def claim_life(t: Theme) -> Fig:
     f.rect(cx, iy, 196, 40, r=5, fill=t.field if not t.dark else t.paper, stroke=k["store"], sw=1.2)
     f.text(cx + 8, iy + 15, "INSERT INTO claims …", "mono5", 8.5, t.ink)
     f.text(cx + 8, iy + 29, "ON CONFLICT (key) DO NOTHING", "mono5", 8.5, t.ink)
+    f.glow(cx, iy, 196, 40, 3.6, 1.2, k["store"], r=5)
     f.text(cx + 206, iy + 16, "ZED's: inserted", "ui5", 10, t.ink)
     f.text(cx + 206, iy + 31, "KIM's: the row is there", "ui5", 10, t.danger)
 
@@ -838,23 +926,23 @@ def claim_life(t: Theme) -> Fig:
     y3 = iy + 78
     f.rect(X["You"] - 50, y3 - 16, X["Sector 0,0"] - X["You"] + 50, 52, r=6, fill="none", stroke=t.rule, dash="3 3")
     f.text(X["You"] - 44, y3 - 3, "a batch: ≤ 200 ms", "ui5", 9.5, t.muted)
-    msg("Sector 0,0", "You", y3 + 10, "{t: 'claimed', c: [PURIM, …], by}", k["object"])
-    msg("Sector 0,0", "Rival", y3 + 28, "to every socket in the sector", k["object"])
+    msg("Sector 0,0", "You", y3 + 10, "{t: 'claimed', c: [PURIM, …], by}", k["object"], at=4.9)
+    msg("Sector 0,0", "Rival", y3 + 28, "to every socket in the sector", k["object"], at=4.9)
     f.text(X["You"] - 50, y3 + 52, "outbox: first", "ui", 9.5, t.muted)
     y2 = y3 + 74
-    msg("Sector 0,0", "Rival", y2, "{t: 'taken', c: [PURIM, … 'ZED', at]}", t.danger)
+    msg("Sector 0,0", "Rival", y2, "{t: 'taken', c: [PURIM, … 'ZED', at]}", t.danger, at=5.9)
     f.text(X["Rival"] - 50, y2 + 20, "outbox: theirs · notes: charted by ZED", "ui", 9.5, t.muted)
     y4 = y2 + 48
-    msg("Sector 0,0", "You", y4, "{t: 'signed', k, r}: each claimer's receipt", t.muted, dash="1 4")
+    msg("Sector 0,0", "You", y4, "{t: 'signed', k, r}: each claimer's receipt", t.muted, dash="1 4", at=6.8)
     f.text(X["You"] - 50, y4 + 20, "kept with the find, for badges", "ui", 9.5, t.muted)
 
     # The Atlas and the log, later.
     y5 = y4 + 52
-    msg("Sector 0,0", "Atlas", y5, "next report, ≤ 10 s", k["object"])
+    msg("Sector 0,0", "Atlas", y5, "next report, ≤ 10 s", k["object"], at=7.8)
     f.text(X["Atlas"] - 40, y5 + 20, "your address: 1 more", "ui", 9.5, t.muted)
     f.text(X["Atlas"] - 40, y5 + 32, "word today, of 300", "ui", 9.5, t.muted)
     y6 = y5 + 58
-    msg("Sector 0,0", "Survey log", y6, "alarm, ≤ 30 s: a batch of up to 240", k["store"])
+    msg("Sector 0,0", "Survey log", y6, "alarm, ≤ 30 s: a batch of up to 240", k["store"], at=8.9)
     f.text(X["Survey log"] - 44, y6 + 20, "INSERT OR IGNORE;", "ui", 9.5, t.muted)
     f.text(X["Survey log"] - 44, y6 + 32, "triggers count it", "ui", 9.5, t.muted)
     f.footer("Sources: worker/src/survey.js (claim, sendBatch, receipt, flushLog) · letterfield.html (the outbox)")
@@ -926,6 +1014,16 @@ def atlas_reports(t: Theme) -> Fig:
     f = Fig(t, 650)
     f.header("Letterfield · the server", "Presence, and the Atlas")
     k = t.kinds
+    # It moves through ten seconds: positions go out once a second, each busy sector reports once and hears
+    # back, a Worker asks for the world map twice and the surveyor list once, and the sleeping sector sleeps.
+    f.animate(10)
+    tick = f.cue(
+        [
+            fr
+            for sec in range(10)
+            for fr in ((sec + 0.0, "opacity:1"), (sec + 0.12, "opacity:.35"), (sec + 0.45, "opacity:1"))
+        ]
+    )
     # Sectors.
     sx, sw = 32, 196
     names = [("Sector 0,0", 5), ("Sector 1,0", 2), ("Sector -1,0", 0)]
@@ -933,8 +1031,9 @@ def atlas_reports(t: Theme) -> Fig:
     for (name, n), y in zip(names, ys):
         f.rect(sx, y, sw, 80, r=7, fill=t.panel, stroke=k["object"], sw=1.3)
         f.text(sx + 12, y + 20, name, "ui6", 12)
-        for i in range(n):
-            f.circle(sx + 18 + i * 16, y + 40, 5, fill=k["browser"])
+        with f.group(tick if n else ""):
+            for i in range(n):
+                f.circle(sx + 18 + i * 16, y + 40, 5, fill=k["browser"])
         f.text(sx + 12, y + 64, f"{n} surveyors" if n else "nobody here: asleep", "ui", 10, t.muted)
     # The Atlas.
     ax, aw, ay, ah = 340, 172, 150, 290
@@ -989,6 +1088,20 @@ def atlas_reports(t: Theme) -> Fig:
     for i, line in enumerate(["presence: ≤ once a second,", "  up to 64 positions + a count", "world: totals, as they change",
                               "guild: members online", "nova: news from elsewhere"]):  # fmt: skip
         f.text(rx, 510 + i * 14.5, line, "ui", 10, t.ink)
+    # The motion: each busy sector's report and the Atlas's answer, and the Worker's reads.
+    for (_name, n), y, at in zip(names, ys, (1.0, 4.4, None)):
+        if not n:
+            continue
+        f.travel([(sx + sw, y + 30), (ax, y + 30)], at, at + 0.7, k["object"])
+        f.glow(ax, ay, aw, ah, at + 0.7, 0.8, k["object"], r=9)
+        f.travel([(ax, y + 54), (sx + sw, y + 54)], at + 1.0, at + 1.7, t.muted)
+        f.glow(sx, y, sw, 80, at + 1.7, 0.8, k["object"], r=7)
+    for i, times in enumerate(((2.8, 7.8), (6.2,))):
+        y = 150 + i * 98
+        for at in times:
+            f.travel([(rx, y + 40), (ax + aw, ay + 60 + i * 60)], at, at + 0.6, k["worker"])
+            f.travel([(ax + aw, ay + 60 + i * 60), (rx, y + 40)], at + 0.75, at + 1.35, k["worker"])
+            f.glow(rx, y, 168, 80, at + 1.35, 0.7, k["worker"], r=7)
     f.footer("Sources: worker/src/survey.js (report, Atlas) · worker/src/survey-social.js · worker/SURVEY.md")
     return f
 
@@ -1062,6 +1175,17 @@ def supernova_flow(t: Theme) -> Fig:
     f = Fig(t, 786)
     f.header("Letterfield · the server", "A supernova, from the last word to the shockwave")
     k = t.kinds
+    # It moves: the burst, the reach, the sectors told as the news arrives, the news down the flow, and the
+    # game's own timeline played in real time.
+    f.animate(14)
+    told_cue = f.cue(
+        [(0, "opacity:0"), (1.35, "opacity:0"), (1.7, "opacity:1"), (13.4, "opacity:1"), (14, "opacity:0")]
+    )
+    star_cue = f.cue([(0, "transform:scale(1)"), (0.3, "transform:scale(1)"), (0.55, "transform:scale(2.3)"),
+                      (0.95, "transform:scale(1)")], origin=True)  # fmt: skip
+    reach_cue = f.cue([(0, "opacity:0;transform:scale(.15)"), (0.45, "opacity:0;transform:scale(.15)"),
+                       (1.25, "opacity:1;transform:scale(1)"), (13.4, "opacity:1;transform:scale(1)"),
+                       (14, "opacity:0;transform:scale(1)")], origin=True)  # fmt: skip
     # Three cases of who's told.
     cases = [("a corner territory", (0, 0)), ("an edge territory", (1, 0)), ("one of the middle four", (1, 1))]
     cell, mx0, my0 = 15, 32, 128
@@ -1071,20 +1195,24 @@ def supernova_flow(t: Theme) -> Fig:
         told = nova_neighbours(rx, ry)
         for sy in range(3):
             for sx in range(3):
-                on = (sx, sy) in told
                 own = (sx, sy) == (1, 1)
                 f.rect(x0 + sx * 4 * cell, my0 + sy * 4 * cell, 4 * cell, 4 * cell,
-                       fill=k["object"] if on or own else t.panel, fill_opacity=0.28 if on else 0.12 if own else 1,
-                       stroke=t.rule, sw=0.6)  # fmt: skip
+                       fill=k["object"] if own else t.panel, fill_opacity=0.12 if own else 1, stroke=t.rule, sw=0.6)  # fmt: skip
+        with f.group(told_cue):
+            for sx, sy in told:
+                f.rect(x0 + sx * 4 * cell, my0 + sy * 4 * cell, 4 * cell, 4 * cell, fill=k["object"],
+                       fill_opacity=0.28, stroke=t.rule, sw=0.6)  # fmt: skip
         for v in range(13):
             f.line(x0 + v * cell, my0, x0 + v * cell, my0 + 12 * cell, t.rule, 0.5, opacity=0.8)
             f.line(x0, my0 + v * cell, x0 + 12 * cell, my0 + v * cell, t.rule, 0.5, opacity=0.8)
         for v in range(4):
             f.line(x0 + v * 4 * cell, my0, x0 + v * 4 * cell, my0 + 12 * cell, t.ink, 1.2)
             f.line(x0, my0 + v * 4 * cell, x0 + 12 * cell, my0 + v * 4 * cell, t.ink, 1.2)
-        f.rect(x0 + (rx - 3) * cell, my0 + (ry - 3) * cell, 7 * cell, 7 * cell, fill="none", stroke=t.accent, sw=1.3,
-               dash="4 3")  # fmt: skip
-        star(f, x0 + (rx + 0.5) * cell, my0 + (ry + 0.5) * cell, 7.5, t.mark(30), t.ink)
+        with f.group(reach_cue):
+            f.rect(x0 + (rx - 3) * cell, my0 + (ry - 3) * cell, 7 * cell, 7 * cell, fill="none", stroke=t.accent,
+                   sw=1.3, dash="4 3")  # fmt: skip
+        with f.group(star_cue):
+            star(f, x0 + (rx + 0.5) * cell, my0 + (ry + 0.5) * cell, 7.5, t.mark(30), t.ink)
         f.text(x0, my0 + 12 * cell + 20, f"{len(told)} sectors told", "ui6", 12)
         f.text(x0, my0 + 12 * cell + 35, label, "ui", 10.5, t.muted)
     f.text(32, my0 + 12 * cell + 56, "Each map is 3 × 3 sectors of 4 × 4 territories. Dashed: three territories each "
@@ -1112,6 +1240,21 @@ def supernova_flow(t: Theme) -> Fig:
         f.rect(430, by, 338, 42, r=6, fill=t.panel, stroke=colour, sw=1.1)
         f.text(442, by + 17, head, "ui6", 11)
         f.para(442 + 80, by + 17, body, 338 - 92, "ui", 9.5, lh=1.25, fill=t.muted)
+
+    # The news on its way: to the row in novas at once, then the neighbours at once, the Atlas with the next
+    # report and the log with the next batch; each box lights as it arrives.
+    def glow(box, at):
+        x, y, w, h = box
+        with f.group(f.cue([(0, "opacity:0"), (at, "opacity:0"), (at + 0.15, "opacity:1"), (at + 1.1, "opacity:0")])):
+            f.rect(x - 2, y - 2, w + 4, h + 4, r=8, fill="none", stroke=t.accent, sw=2.2)
+
+    glow(b1, 0.0)
+    f.travel([(202, fy + 46), (226, fy + 46)], 0.55, 0.85, t.accent)
+    glow(b2, 0.85)
+    for i, (start, end) in enumerate([(1.0, 1.35), (1.6, 2.5), (3.2, 4.0)]):
+        by = fy + 6 + i * 50
+        f.travel([(396, fy + 46), (412, fy + 46), (412, by + 20), (430, by + 20)], start, end, t.accent)
+        glow((430, by, 338, 42), end)
     # The game's timeline.
     gy = fy + 190
     f.eyebrow(32, gy, "In the game")
@@ -1125,6 +1268,11 @@ def supernova_flow(t: Theme) -> Fig:
     f.arrow([(x0 + 11.4 * scale - 30, gy + 27), (x0 + 11.4 * scale + 4, gy + 27)], t.muted, 1.3, head=5)
     for sec in range(0, 12, 2):
         f.text(x0 + sec * scale, gy + 54, f"{sec} s", "mono", 8, t.muted, "middle" if sec else "start")
+    play = f.cue([(0, "transform:translateX(0px)"), (1.4, "transform:translateX(0px)"),
+                  (12.8, f"transform:translateX({11.4 * scale:.1f}px)"), (14, f"transform:translateX({11.4 * scale:.1f}px)")])  # fmt: skip
+    with f.group(f"motion {play}"):
+        f.line(x0, gy + 10, x0, gy + 44, t.ink, 2)
+        f.circle(x0, gy + 10, 3.5, fill=t.ink)
     f.text(x0 + 2.6 * scale, gy + 8, "burst", "ui6", 9.5, t.ink, "middle")
     f.para(32, gy + 76, "Within 3 territories of the middle of the view (or your own): the charge for 2.6 s, the "
            "burst, a 3.4 s shockwave that shoves the letters, then a remnant: a deeper tint, a faint shell and a few "
@@ -1289,10 +1437,12 @@ def defence_in_depth(t: Theme) -> Fig:
     for x, _w, head in cols:
         f.eyebrow(x + 6, y + 11, head)
     y += 26
+    spans = []  # each row's top and height, for the motion
     for i, (layer, where, limit, stops, not_) in enumerate(rows):
         cells = [layer, where, limit, stops, not_]
         lines = [f.wrap(c, w - 12, "ui6" if j == 0 else "ui", 10) for j, ((x, w, _), c) in enumerate(zip(cols, cells))]
         h = max(len(ls) for ls in lines) * 13.5 + 14
+        spans.append((y, h))
         if i % 2 == 0:
             f.rect(32, y, 736, h, r=3, fill=t.panel, opacity=0.6)
         depth = i / (len(rows) - 1)
@@ -1316,6 +1466,27 @@ def defence_in_depth(t: Theme) -> Fig:
                  "a minute; a bot that claims without moving adds words but no player-hours.", 736, "ui", 10,
                  fill=t.muted)  # fmt: skip
     f.h = round(end + 30)
+    # It moves: down a lane beside the table, surveyors pass every layer; each script stops at the layer that
+    # bounds it (no pass is required, so none stops at the first); and a pool of addresses gets through them
+    # all, to be seen only by the nightly watch.
+    f.animate(13)
+    lane, top, bottom = 19, spans[0][0] - 4, spans[-1][0] + spans[-1][1]
+    mid = lambda i: spans[i][0] + spans[i][1] / 2  # noqa: E731
+    per = (bottom - top) / 2.4  # how fast a dot falls, in units a second
+    person, script = k["browser"], t.ink
+    f.travel([(lane, top), (lane, bottom)], 0.3, 2.7, person)
+    f.travel([(lane, top), (lane, bottom)], 5.2, 7.6, person)
+    for at, row in [(1.0, 2), (1.9, 4), (2.8, 5), (3.8, 6), (6.0, 7), (7.0, 8), (8.0, 10)]:
+        arrive = at + (mid(row) - top) / per
+        f.travel([(lane, top), (lane, mid(row))], at, arrive, script, halo=False)
+        x, w = cols[3][0], cols[3][1]
+        f.glow(x, spans[row][0], w, spans[row][1], arrive, 0.9, t.danger, r=3)
+    for n in range(5):  # a pool of addresses, each under every limit
+        at = 9.0 + n * 0.16
+        f.travel([(lane + (n - 2) * 1.5, top), (lane + (n - 2) * 1.5, wy + 38), (40, wy + 38)], at, at + 2.6, script,
+                 r=3, halo=False)  # fmt: skip
+    for i in range(3):
+        f.glow(32 + i * 248, wy + 12, 240, 52, 11.7 + i * 0.12, 1.0, t.danger)
     f.footer(
         "Sources: worker/SURVEY.md 'Limits per address', 'Watching for bots' · worker/TURNSTILE.md · worker/src/survey.js"
     )
@@ -1385,14 +1556,20 @@ def log_pipeline(t: Theme) -> Fig:
     f = Fig(t, 660)
     f.header("Letterfield · the log", "From a sector's claims to a cached answer")
     k = t.kinds
+    # It moves: claims come in, the alarm copies them to D1 in one batch, the triggers count them, and a
+    # read goes all the way to D1 once, filling the caches, then comes back from the browser's own cache.
+    f.animate(11)
     # The sector.
     sx, sy, sw = 32, 126, 176
     f.rect(sx, sy, sw, 236, r=8, fill=t.panel, stroke=k["object"], sw=1.4)
     f.text(sx + 12, sy + 22, "Each sector", "ui6", 12.5)
+    claims_y = sy + 36
     yy = table_box(
         f, sx + 10, sy + 36, sw - 20, "claims", "key, w, x, y, d, s, initials, at, guild", "by time: (at, key)"
     )
+    claims_h, logged_y = yy - claims_y, yy + 6
     yy = table_box(f, sx + 10, yy + 6, sw - 20, "logged", "at: the last claim D1 has")
+    logged_h = yy - logged_y
     f.para(sx + 12, yy + 20, "A claim sets an alarm for 30 s later, if none is set. An alarm doesn't keep a sector "
            "awake, and wakes one that was evicted.", sw - 24, "ui", 9.5, lh=1.3, fill=t.muted)  # fmt: skip
     f.arrow([(sx + sw, sy + 118), (sx + sw + 34, sy + 118)], k["store"], 1.6)
@@ -1406,6 +1583,7 @@ def log_pipeline(t: Theme) -> Fig:
     f.text(dx + 16 + f.width("games-survey-log", "ui6", 12.5), dy + 22, "D1", "ui", 11, t.muted)
     yy = table_box(f, dx + 10, dy + 36, dw - 20, "survey_log", "at, key PRIMARY KEY · w, x, y, d, s, initials, guild · "
                    "WITHOUT ROWID", "ordered by time: an hour reads just its rows")  # fmt: skip
+    log_h = yy - (dy + 36)
     f.text(dx + 12, yy + 18, "virtual columns, stored only in indexes:", "ui5", 10, t.ink)
     f.text(dx + 12, yy + 33, "rx, ry = floor(x / 48), floor(y / 48)", "mono", 8.3, t.muted)
     f.text(dx + 12, yy + 46, "th = (rx + 15·ry) mod 225", "mono", 8.3, t.muted)
@@ -1447,6 +1625,29 @@ def log_pipeline(t: Theme) -> Fig:
         f.para(rx + 72, yy, what, rw - 72, "ui", 9.5, lh=1.2, fill=t.muted)
     f.para(rx, dy + 372, "A crowd reading this hour costs one D1 query per instance every 15 s: the rest wait for "
            "that read.", rw, "ui", 9.5, lh=1.3, fill=t.muted)  # fmt: skip
+    # The motion. Claims drop into the sector's table, a few seconds apart.
+    for i, at in enumerate([0.3, 1.0, 1.6, 2.5, 3.1]):
+        x = sx + 34 + i * 26
+        f.travel([(x, sy + 2), (x, claims_y + 8)], at, at + 0.45, k["object"], r=3.2)
+        f.glow(sx + 10, claims_y, sw - 20, claims_h, at + 0.45, 0.6, k["object"])
+    # The alarm goes off: one batch to D1, and the mark moves past it.
+    f.glow(sx + 10, logged_y, sw - 20, logged_h, 4.0, 1.0, k["store"])
+    f.travel([(sx + sw, sy + 118), (dx + 4, sy + 118), (dx + 40, dy + 70)], 4.1, 4.9, k["store"], r=5)
+    f.glow(dx + 10, dy + 36, dw - 20, log_h, 4.9, 1.0, k["store"])
+    for i in range(4):  # each trigger counts it
+        f.glow(dx + 8, ty + 18 + i * 26, dw - 16, 28, 5.2 + i * 0.22, 0.8, k["store"], r=4)
+    # A read: past every cache to D1 once, and back, filling the caches on the way.
+    edge, mid = rx + rw, dy + 118
+    f.travel([(edge + 14, dy + 140), (rx + rw / 2, dy + 140), (rx, mid), (dx + dw, mid), (dx + dw - 30, dy + 150)],
+             6.4, 7.3, k["worker"])  # fmt: skip
+    f.travel([(dx + dw - 30, dy + 150), (dx + dw, mid), (rx, mid), (rx + rw / 2, dy + 140), (edge + 14, dy + 140)],
+             7.5, 8.4, k["worker"])  # fmt: skip
+    for i in range(3):
+        f.glow(rx + 10, dy + 128 + i * 15 - 11, rw - 20, 15, 7.9 + i * 0.15, 0.9, k["worker"], r=3)
+    # And again: this time the browser's own copy answers, and D1 never hears of it.
+    f.travel([(edge + 14, dy + 158), (rx + 40, dy + 154)], 9.3, 9.75, k["worker"])
+    f.glow(rx + 10, dy + 128 + 2 * 15 - 11, rw - 20, 15, 9.75, 0.9, k["worker"], r=3)
+    f.travel([(rx + 40, dy + 154), (edge + 14, dy + 158)], 9.9, 10.35, k["worker"])
     f.footer("Sources: worker/src/survey-log.js · worker/migrations-log/*.sql · worker/SURVEY.md 'The log'")
     return f
 
@@ -1517,6 +1718,9 @@ def devices_sync(t: Theme) -> Fig:
     f = Fig(t, 760)
     f.header("Letterfield · devices", "One surveyor on every device")
     k = t.kinds
+    # It moves: the token becomes an id; a code links device B; a recovery code seals the token; and the
+    # Player keeps the devices in step.
+    f.animate(11)
     # The token and the id.
     y = 120
     f.rect(32, y, 736, 54, r=7, fill=t.panel, stroke=t.rule)
@@ -1528,6 +1732,8 @@ def devices_sync(t: Theme) -> Fig:
     f.text(330, y + 40, "first 48 bits: 4d1f0c7a29b3", "mono", 8.6, t.muted)
     f.para(540, y + 22, "The id is the same in every sector, every visit; nobody else ever sees a token.", 220, "ui",
            9.5, lh=1.3, fill=t.muted)  # fmt: skip
+    f.travel([(270, y + 27), (318, y + 27)], 0.3, 0.8, t.accent)
+    f.glow(324, y + 8, 200, 40, 0.8, 0.8, t.accent, r=5)
     # Linking.
     ly = 204
     f.eyebrow(32, ly, "Linking another device")
@@ -1538,14 +1744,17 @@ def devices_sync(t: Theme) -> Fig:
         f.line(x, ly + 38, x, ly + 300, t.rule, 1, dash="2 4")
     X = {n: x for n, x in lanes}
 
-    def step_msg(a, b, yy, text, colour=None, dash=None):
+    def step_msg(a, b, yy, text, colour=None, dash=None, at=None):
         f.arrow([(X[a], yy), (X[b], yy)], colour or t.ink, 1.3, dash=dash)
         f.label((X[a] + X[b]) / 2, yy - 5, text, "ui5", 9.2, t.ink, "middle")
+        if at is not None:
+            f.travel([(X[a], yy), (X[b], yy)], at, at + 0.6, colour or t.ink)
 
-    step_msg("Device A", "Worker · D1", ly + 66, "POST /v1/link {token, carry}")
+    step_msg("Device A", "Worker · D1", ly + 66, "POST /v1/link {token, carry}", at=1.2)
     f.text(X["Worker · D1"] + 8, ly + 86, "a code: 8 characters,", "ui", 9.2, t.muted)
     f.text(X["Worker · D1"] + 8, ly + 98, "10 minutes, one use", "ui", 9.2, t.muted)
-    step_msg("Worker · D1", "Device A", ly + 116, "ABCD-EFGH", t.muted)
+    step_msg("Worker · D1", "Device A", ly + 116, "ABCD-EFGH", t.muted, at=2.1)
+    f.glow(X["Device A"] - 40, ly + 128, 80, 46, 2.7, 0.9, t.accent, r=4)
     f.rect(X["Device A"] - 40, ly + 128, 80, 46, r=4, fill=t.paper, stroke=t.rule)
     for i in range(5):
         for j in range(5):
@@ -1554,9 +1763,10 @@ def devices_sync(t: Theme) -> Fig:
     f.text(X["Device A"] + 2, ly + 146, "QR,", "ui", 8.8, t.muted)
     f.text(X["Device A"] + 2, ly + 157, "a link,", "ui", 8.8, t.muted)
     f.text(X["Device A"] + 2, ly + 168, "the code", "ui", 8.8, t.muted)
-    step_msg("Device B", "Worker · D1", ly + 196, "POST /v1/link/ABCDEFGH")
-    step_msg("Worker · D1", "Device B", ly + 226, "{token, carry}, once", k["browser"])
-    step_msg("Device A", "Worker · D1", ly + 256, "every 5 s: /status → used", t.muted, dash="1 4")
+    step_msg("Device B", "Worker · D1", ly + 196, "POST /v1/link/ABCDEFGH", at=3.5)
+    step_msg("Worker · D1", "Device B", ly + 226, "{token, carry}, once", k["browser"], at=4.3)
+    f.glow(X["Device B"] - 44, ly + 12, 88, 26, 4.9, 0.9, k["browser"], r=5)
+    step_msg("Device A", "Worker · D1", ly + 256, "every 5 s: /status → used", t.muted, dash="1 4", at=5.3)
     f.para(32, ly + 322, "B reloads as the same surveyor, with A's initials, guilds and mutes. The token only "
            "travels in request bodies, never in an address. 10 codes, 20 tries an hour per address.", 360, "ui", 9.5,
            lh=1.3, fill=t.muted)  # fmt: skip
@@ -1576,8 +1786,15 @@ def devices_sync(t: Theme) -> Fig:
     f.text(rx + 255, ly + 131, "an AES-GCM key", "ui", 9.5, t.muted, "middle")
     f.arrow([(rx + 255, ly + 140), (rx + 255, ly + 162)], t.muted, 1.3)
     f.arrow([(rx + 82, ly + 140), (rx + 82, ly + 162)], t.muted, 1.3)
-    table_box(f, rx, ly + 166, 338, "recovery (D1)", "id · pid · box: the token, sealed · made",
-              "reading D1 gives no one a token; only the code opens its row")  # fmt: skip
+    table_end = table_box(f, rx, ly + 166, 338, "recovery (D1)", "id · pid · box: the token, sealed · made",
+                          "reading D1 gives no one a token; only the code opens its row")  # fmt: skip
+    f.glow(rx, ly + 12, 338, 34, 6.1, 0.8, t.accent)
+    f.travel([(rx + 169, ly + 72), (rx + 169, ly + 96)], 6.4, 6.8, t.accent)
+    f.glow(rx, ly + 100, 165, 40, 6.85, 0.8, k["store"], r=5)
+    f.glow(rx + 173, ly + 100, 165, 40, 6.85, 0.8, k["store"], r=5)
+    for x in (rx + 82, rx + 255):
+        f.travel([(x, ly + 140), (x, ly + 162)], 7.2, 7.5, k["store"])
+    f.glow(rx, ly + 166, 338, table_end - (ly + 166), 7.55, 0.9, k["store"], r=5)
     f.para(rx, ly + 252, "One code a player: a new one stops the old. Saving one starts a Player and keeps it "
            "past the 180-day clear-out. 5 new codes an hour per address.", 338, "ui", 9.5, lh=1.3, fill=t.muted)  # fmt: skip
     # The Player.
@@ -1589,6 +1806,7 @@ def devices_sync(t: Theme) -> Fig:
     for i, (a, b) in enumerate(rules):
         bx, by = 32 + (i % 3) * 248, py + 12 + (i // 3) * 50
         f.rect(bx, by, 240, 44, r=6, fill=t.panel, stroke=k["object"], sw=1)
+        f.glow(bx, by, 240, 44, 8.4 + i * 0.2, 0.9, k["object"])
         f.text(bx + 12, by + 18, a, "ui6", 10.5)
         f.text(bx + 12, by + 33, b, "ui", 9.5, t.muted)
     f.text(32, py + 132, "Syncs on opening, a few seconds after a find, when the tab comes back, and every minute. Only "
@@ -1714,7 +1932,7 @@ def monthly_bill(online: float, hours: float = 720) -> dict[str, float]:
     "It stays at the $5 plan until about a hundred people are online around the clock, because outgoing "
     "WebSocket messages are free and incoming ones count as a twentieth of a request. The ceiling is the cap "
     "itself: at 25,000 online, about $0.73 an hour. On the free plan, Durable Object requests would run out "
-    "at about 940 player-hours a day, and every object on the account, War's rooms included, would stop "
+    "at about 940 player-hours a day, and every object on the account, the site's other games' included, would stop "
     "until midnight UTC.",
     "A stacked area chart. The horizontal axis is players online around the clock for a month, on a log "
     "scale from 1 to 25,000; the vertical axis is the monthly bill in dollars, from 0 to 600. The bill is a "
@@ -1900,9 +2118,9 @@ MILESTONES = [  # from main's history (data/history.json); PR numbers in bracket
     ("2026-10-28", "Letterfield and the site (#1)"),
     ("2026-11-05", "One Million Words explored on Durable Objects (#7)"),
     ("2026-11-06", "the survey on; limits per address (#26); the log (#30)"),
-    ("2026-11-09", "map 4: 225 themes; state machines (#49)"),
+    ("2026-11-08", "state machines (#48); map 4: 225 themes (#49)"),
     ("2026-11-10", "share cards (#58); definitions (#59)"),
-    ("2026-11-12", "timelapse (#81); CI sharded, 19 → 3 min (#83)"),
+    ("2026-11-12", "timelapse (#81); the site's CI sharded, 19 → 3 min (#83)"),
     ("2026-11-13", "surveyors, emotes, guilds, devices (#94)"),
     ("2026-11-18", "achievements (#115)"),
     ("2026-11-20", "Lantern (#123); the soundtrack album (#124)"),
@@ -1912,34 +2130,40 @@ MILESTONES = [  # from main's history (data/history.json); PR numbers in bracket
 @figure(
     "timeline",
     "built",
-    "118 pull requests in 24 days",
-    "Letterfield began as a single-player word search on the site's first day, 28 October 2026. Everything "
-    "since came as pull requests, almost all written by coding agents and each tested on its own preview "
-    "before merging: 118 of them by 20 November. The lines show the game's one file, its three companion "
-    "pages, the Worker's code and the tests growing PR by PR; the bars along the bottom count the pull "
+    "78 pull requests in 24 days",
+    "Letterfield began as one of four games on the site's first day, 28 October 2026. Everything since came as "
+    "pull requests, almost all written by coding agents and each tested on its own preview before merging: 78 of "
+    "the 118 the site merged by 20 November touched Letterfield, and the rest were its other games and what "
+    "they all share. The lines count Letterfield's own code alone, merge by merge: the game's one file, its "
+    "three companion pages, its code in the Worker and its tests; the bars along the bottom count its pull "
     "requests merged each day. The tests grew fastest of all.",
-    "A line chart from 28 October to 20 November 2026 of lines of code at each merge to main. Tests grow from "
-    "nothing to about 20,000 lines; the game, letterfield.html, from about 1,200 to 8,248; the Worker's source "
-    "to about 5,900; and the log, timelapse and soundtrack pages to about 3,800. Milestones are marked along "
-    "the top: the shared survey explored on Durable Objects, the survey switched on with limits per address "
-    "and the log on 6 November, map 4 with 225 themes, share cards, the timelapse, surveyors, guilds and "
-    "linked devices on 13 November, achievements, and the soundtrack album on 20 November. Small bars along "
-    "the bottom count the pull requests merged each day, up to 15 on 10 November.",
+    "A line chart from 28 October to 20 November 2026 of Letterfield's lines of code at each merge to main. Its "
+    "tests, in the game and the Worker, grow from 38 lines to about 18,200; the game, letterfield.html, from "
+    "about 1,200 to 8,248; its Worker code to about 4,400; and the log, timelapse and soundtrack pages to about "
+    "3,800. Milestones are numbered along the top: the shared survey explored on Durable Objects, the survey "
+    "switched on with limits per address and the log on 6 November, state machines and map 4 with 225 themes, "
+    "share cards and definitions, the timelapse and the site's CI sharded, surveyors, guilds and linked "
+    "devices on 13 November, achievements, and the soundtrack album on 20 November. Small bars along the bottom "
+    "count Letterfield's pull requests merged each day, up to 14 on 10 November.",
     [
         (
-            "118 pull requests merged to main between 28 October and 20 November 2026",
-            "git log --first-parent origin/main",
+            "78 of the 118 pull requests merged to main between 28 October and 20 November 2026 touched Letterfield's "
+            "files; the other 40 were War, the other games' leaderboards and what every game shares",
+            "git log --first-parent origin/main, each merge's changed files (render.py LETTERFIELD)",
         ),
         (
-            "Line counts at each merge: letterfield.html; letterfield-log/timelapse/soundtrack.html; worker/src/*.js; "
-            "tests/*.py",
-            "git show <merge>:<path> (data/history.json)",
+            "Line counts at each merge: letterfield.html; letterfield-log, -timelapse and -soundtrack.html; "
+            "Letterfield's Worker modules (survey*.js, letterfield-world.js, players.js, achievements.js, define.js); "
+            "its tests (tests/test_letterfield*, test_survey_watch, its fakes, and worker/test for those modules)",
+            "git show at each merge (data/history.json)",
         ),
-        ("Milestone dates and PR numbers", "git log; PR titles"),
-        ("CI sharding took the suite from about 19 minutes to about 3", "PR #83's title"),
+        ("At 20 November: game 8,248 lines; pages 3,813; Worker code 4,401; tests 18,178", "data/history.json"),
+        ("The most Letterfield pull requests in a day: 14, on 10 November", "data/history.json"),
         (
-            "Coding agents wrote the pull requests and open them once work is pushed",
-            "AGENTS.md 'Pull requests'; the commit trailers",
+            "Milestones: #1 the site, #7 the survey explored, #26 limits per address, #30 the log, #48 state "
+            "machines, #49 map 4, #58 share cards, #59 definitions, #81 timelapse, #83 the site's CI sharded, #94 "
+            "surveyors, guilds and devices, #115 achievements, #123 Lantern, #124 the album",
+            "PR titles in main's history",
         ),
     ],
 )
@@ -1947,12 +2171,22 @@ def timeline(t: Theme) -> Fig:
     from datetime import date
 
     f = Fig(t, 720)
-    f.header("Letterfield · how it was built", "118 pull requests in 24 days")
     hist = json.loads((HERE / "data" / "history.json").read_text())
+    ours = [r for r in hist if r["pr"] and r["lf"]]
+    f.header("Letterfield · how it was built", f"{len(ours)} pull requests in 24 days")
     d0, d1 = date(2026, 10, 28), date(2026, 11, 21)
     x0, x1, y0, y1, ymax = 82, 640, 150, 470, 21_000
     xd = lambda d: x0 + (date.fromisoformat(d) - d0).days / (d1 - d0).days * (x1 - x0)  # noqa: E731
     yv = lambda v: y1 - v / ymax * (y1 - y0)  # noqa: E731
+    # It moves: the lines draw themselves across the 24 days, and each day's bar and each milestone appear as
+    # the lines reach them.
+    f.animate(12)
+    draw_from, draw_to, gone = 0.4, 8.4, 11.4
+    when = lambda x: draw_from + (x - x0) / (x1 - x0) * (draw_to - draw_from)  # noqa: E731
+
+    def appears(at):
+        return f.cue([(at, "opacity:0"), (at + 0.25, "opacity:1"), (gone, "opacity:1"), (gone + 0.5, "opacity:0")])
+
     for v in range(0, ymax, 5000):
         f.line(x0, yv(v), x1, yv(v), t.rule, 1)
         f.text(x0 - 8, yv(v) + 3.5, f"{v // 1000}K" if v else "0", "ui", 9.5, t.muted, "end")
@@ -1963,16 +2197,18 @@ def timeline(t: Theme) -> Fig:
             f.text(xd(d.isoformat()), y1 + 16, d.strftime("%-d %b"), "ui", 9.5, t.muted, "middle")
     # PRs a day, as small bars under the axis.
     per_day: dict[str, int] = {}
-    for r in hist:
-        if r["pr"]:
-            per_day[r["date"]] = per_day.get(r["date"], 0) + 1
+    for r in ours:
+        per_day[r["date"]] = per_day.get(r["date"], 0) + 1
     for d, n in per_day.items():
         x = xd(d) + (x1 - x0) / (d1 - d0).days / 2
-        f.rect(x - 4, y1 + 60 - n * 2.4, 8, n * 2.4, r=1.5, fill=t.muted, opacity=0.7)
-    f.text(x0, y1 + 74, "pull requests merged each day (the most: 15, on 10 Nov)", "ui", 9.5, t.muted)
+        with f.group(appears(when(x))):
+            f.rect(x - 4, y1 + 60 - n * 2.4, 8, n * 2.4, r=1.5, fill=t.muted, opacity=0.7)
+    busiest = max(per_day, key=per_day.get)
+    f.text(x0, y1 + 74, f"Letterfield's pull requests merged each day (the most: {per_day[busiest]}, on "
+           f"{date.fromisoformat(busiest).strftime('%-d %b')})", "ui", 9.5, t.muted)  # fmt: skip
     # The series: each merge's line counts, as steps through the day.
     teal, copper, indigo, rose = t.series
-    series = [("tests", rose, "tests"), ("game", teal, "letterfield.html"), ("worker", indigo, "worker/src"),
+    series = [("tests", rose, "its tests"), ("game", teal, "letterfield.html"), ("worker", indigo, "its Worker code"),
               ("pages", copper, "log, timelapse, album")]  # fmt: skip
     for key, colour, label in series:
         pts, seen = [], {}
@@ -1981,21 +2217,28 @@ def timeline(t: Theme) -> Fig:
         for d, v in sorted(seen.items()):
             pts.append((xd(d) + (x1 - x0) / (d1 - d0).days, yv(v)))
         d = "M" + " L".join(f"{x:.1f} {y:.1f}" for x, y in pts)
-        f.path(d, stroke=colour, sw=2)
+        # Drawn by its dash: a path of length 1 whose dash's offset runs from 1 to 0 as the days go by.
+        drawn = f.cue([(0, "stroke-dashoffset:1;opacity:1"), (draw_from, "stroke-dashoffset:1;opacity:1"),
+                       (draw_to, "stroke-dashoffset:0;opacity:1"), (gone, "stroke-dashoffset:0;opacity:1"),
+                       (gone + 0.5, "stroke-dashoffset:0;opacity:0")])  # fmt: skip
+        f.add(f'<path d="{d}" fill="none" stroke="{colour}" stroke-width="2" stroke-linecap="round" pathLength="1"'
+              f' stroke-dasharray="1" class="{drawn}"/>')  # fmt: skip
         ex, ey = pts[-1]
-        f.circle(ex, ey, 4, fill=colour, stroke=t.paper, sw=2)
-        f.text(ex + 10, ey + 3.5, f"{label} {fmt(hist[-1][key])}", "ui6", 10, t.ink)
+        with f.group(appears(draw_to)):
+            f.circle(ex, ey, 4, fill=colour, stroke=t.paper, sw=2)
+            f.text(ex + 10, ey + 3.5, f"{label} {fmt(hist[-1][key])}", "ui6", 10, t.ink)
     # Milestones: numbered on the chart, named in a key below it.
     for i, (d, label) in enumerate(MILESTONES):
         x = xd(d) + (x1 - x0) / (d1 - d0).days / 2
-        f.line(x, y0 - 8, x, y1, t.accent, 1, dash="2 3", opacity=0.55)
-        f.circle(x, y0 - 16, 8, fill=t.accent)
-        f.text(x, y0 - 12.5, str(i + 1), "ui6", 9.5, t.on_accent, "middle")
+        with f.group(appears(when(x))):
+            f.line(x, y0 - 8, x, y1, t.accent, 1, dash="2 3", opacity=0.55)
+            f.circle(x, y0 - 16, 8, fill=t.accent)
+            f.text(x, y0 - 12.5, str(i + 1), "ui6", 9.5, t.on_accent, "middle")
         kx, ky = 32 + (i // 5) * 372, y1 + 104 + (i % 5) * 17
         f.text(kx, ky, f"{i + 1}", "ui6", 9.5, t.accent)
         f.text(kx + 14, ky, f"{date.fromisoformat(d).strftime('%-d %b')} · {label}", "ui", 9.8, t.ink)
     f.footer(
-        "Sources: git log --first-parent origin/main · line counts at each merge (docs/architecture/data/history.json)"
+        "Sources: git log --first-parent origin/main · Letterfield's files at each merge (docs/architecture/data/history.json)"
     )
     return f
 
@@ -2110,7 +2353,7 @@ def eieio_lessons(t: Theme) -> Fig:
     "ci-previews",
     "built",
     "How a change ships",
-    "Every change is a pull request. CI runs only the tests its files need, split across up to three shards "
+    "Every change to the site, Letterfield's or another game's, is a pull request. CI runs only the tests its files need, split across up to three shards "
     "of four workers each, plus the linters and the two Workers' own tests, and a single required check, "
     "test, stands for them all. Meanwhile a preview workflow builds the pull request's own copy of the site "
     "and of each Worker on Cloudflare, so it can be tried on a phone, with its own empty survey, before "
@@ -2206,6 +2449,24 @@ def ci_previews(t: Theme) -> Fig:
         f.arrow([(mx + 110, 300), (630, 300), (630, dy + 24), (646, dy + 24)], t.muted, 1.2)
     f.eyebrow(646, 420, "Every night")
     cell_box(f, 646, 430, 122, 48, "survey watch", "other", "00:23 UTC, for bots", size=10.5)
+    # It moves: a pull request runs both workflows at once; the jobs run in parallel to the one check, the
+    # previews come up, the pull request merges, and main deploys what changed.
+    f.animate(9)
+    f.glow(32, 210, 112, 64, 0.1, 0.8, k["browser"], r=7)
+    f.travel([(144, 250), (160, 250), (160, 200), (tx, 200)], 0.4, 1.0, k["browser"])
+    f.travel([(144, 250), (160, 250), (160, py + 60), (px, py + 60)], 0.4, 1.2, k["browser"])
+    f.glow(tx + 12, ty + 30, 70, 30, 1.0, 0.7, t.accent, r=5)
+    for i in range(len(jobs)):
+        f.glow(tx + 100 + (i % 2) * 96, ty + 30 + (i // 2) * 40, 88, 32, 1.6 + (i % 3) * 0.12, 1.4, t.accent, r=5)
+    f.glow(tx + 12, ty + 144, 276, 30, 3.3, 1.0, k["object"], r=15)
+    for i in range(3):
+        f.glow(px + 12, py + 28 + i * 40, 276, 36, 1.4 + i * 0.8, 1.0, k["worker"])
+    f.travel([(tx + 300, ty + 159), (mx - 4, ty + 159), (mx - 4, 300), (mx + 20, 300)], 4.2, 4.9, k["object"])
+    f.glow(mx + 20, 276, 90, 48, 4.9, 0.9, t.ink, r=7)
+    for i in range(3):
+        dy = 206 + i * 64
+        f.travel([(mx + 110, 300), (630, 300), (630, dy + 24), (646, dy + 24)], 5.3 + i * 0.15, 6.0 + i * 0.15, t.muted)
+        f.glow(646, dy, 122, 48, 6.0 + i * 0.15, 1.0, k["worker"] if i else k["browser"])
     f.footer("Sources: .github/workflows/{test,preview,pages,leaderboard,share,survey-watch}.yml · AGENTS.md")
     return f
 
@@ -2261,11 +2522,13 @@ def write_docs() -> None:
     for n, (key, title, outline) in enumerate(POSTS, 1):
         posts.append(f"### {n}. {title}\n\n{outline}\n")
         facts.append(f"### {n}. {title}\n")
-        items = [
-            ("Figure", f.title, f"figures/{f.id}-light.svg · -dark.svg · .png", f)
-            for f in FIGURES.values()
-            if f.post == key
-        ]
+        items = []
+        for f in FIGURES.values():
+            if f.post != key:
+                continue
+            moves = f.draw(THEMES[0]).cycle  # a figure that moves loops in its SVG, and has clips too
+            files = f"figures/{f.id}-light.svg · -dark.svg · .png" + (" · .mp4 · .gif" if moves else "")
+            items.append((f"Figure, moving in a {moves:g}-second loop" if moves else "Figure", f.title, files, f))
         items += [(KINDS[e.kind], e.title, e.files, e) for e in EXTRAS if e.post == key]
         for kind, name, files, item in items:
             posts.append(

@@ -13,7 +13,7 @@ pages, no test reads `docs/`, and everything rendered goes to
 ## Making them
 
 ```sh
-uv run --with fonttools --with uharfbuzz --with brotli docs/architecture/render.py
+uv run --with fonttools --with uharfbuzz --with brotli docs/architecture/render.py --clips
 uv run docs/architecture/capture.py
 ```
 
@@ -21,8 +21,10 @@ uv run docs/architecture/capture.py
   colours, as SVG with every letter an outline (so they need no fonts) and
   as PNG at 2×, 1,600 pixels wide. It builds the interactive explainers with
   the game's fonts inlined, and writes the list of posts below and the list
-  in FACTS.md. Name figures to draw only those; `--no-png` skips the PNGs,
-  `--explainers` builds the explainers alone, and `--refresh` reads the live
+  in FACTS.md. With `--clips` it also records each moving figure (see The
+  look) as an MP4 and a GIF, frame by frame. Name figures to draw only
+  those; `--no-png` skips the PNGs, `--explainers` builds the explainers
+  alone, and `--refresh` reads the live
   survey's public numbers again (`data/survey.json`, from GETs the log page
   makes itself, kept without anyone's initials) and `main`'s history
   (`data/history.json`).
@@ -36,7 +38,7 @@ uv run docs/architecture/capture.py
 
 Both need Node (the figures and screens read the map through
 `worker/src/letterfield-world.js`), Playwright's Chromium and, once, the
-network for the fonts; `capture.py` also needs ffmpeg.
+network for the fonts; the clips also need ffmpeg.
 
 | Source | What it is |
 | --- | --- |
@@ -50,7 +52,8 @@ network for the fonts; `capture.py` also needs ffmpeg.
 
 | Output, in `_architecture/` | What it is |
 | --- | --- |
-| `figures/<id>-light.svg`, `-dark.svg`, `.png` | the static figures |
+| `figures/<id>-light.svg`, `-dark.svg`, `.png` | the figures: SVG, moving where they show a process, and a still PNG of each |
+| `figures/<id>-light.mp4`, `-dark.mp4`, `.gif` | each moving figure's loop, for where an SVG can't go |
 | `explainers/<name>.html` | each explainer as a whole page, to host beside a post and embed with an iframe |
 | `artifacts/<name>.html` | each explainer as published to claude.ai |
 | `clips/<name>.mp4`, `.gif` | the clips: an MP4 for a `<video>`, and a smaller GIF |
@@ -81,8 +84,19 @@ and dark, the hues of its 225 themes for territories, Big Shoulders Display
 for titles, Martian Mono for labels and Schibsted Grotesk for text, and the
 letter grid with a word circled, as on the game's icon. In the figures each
 kind of part keeps one colour: Durable Objects teal, storage copper, Workers
-indigo and browsers rose. The people in them are made up (ZED, KIM, SIS and
-the rest); the map, its words and its territories are real.
+indigo and browsers rose, and the parts of the site that aren't
+Letterfield's, like War's rooms, are grey. The people in them are made up
+(ZED, KIM, SIS and the rest); the map, its words and its territories are
+real.
+
+Figures that show a process move. Their SVG loops through it, in 8 to 14
+seconds: messages run along the arrows, boxes light up as something
+reaches them, the map builds itself word by word, a supernova's news
+spreads, and the timeline draws itself day by day. It plays wherever the
+SVG goes, an `<img>` included, and shows the still figure to readers who
+ask for reduced motion. The PNG is always the still figure, complete, and
+the MP4 and GIF are the loop for anywhere an SVG can't go. The maps, tables
+and charts stay still.
 
 ## Posts
 
