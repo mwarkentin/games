@@ -143,3 +143,74 @@ def test_without_the_survey_there_is_no_edge(page: Page, site_url, errors):
     expect(page.locator("#tWords")).to_have_text("1", timeout=10_000)
     assert SURVEY not in page.url
     assert errors == []
+
+
+# The music out past the edge: the place's own, made offline here, needing no speakers.
+PLACE_SOUND = """async ([key, seed, secs]) => {
+  const a = new OfflineAudioContext(2, 44100 * secs, 44100), oscs = [], make = a.createOscillator.bind(a);
+  a.createOscillator = () => {
+    const o = make(), r = { start: null, stop: null }, start = o.start.bind(o), stop = o.stop.bind(o);
+    oscs.push(r);
+    o.start = (t = 0) => { r.start = t; start(t); };
+    o.stop = (t = 0) => { r.stop = Math.max(t, a.currentTime); stop(t); };
+    return o;
+  };
+  const t = window.__lf.placeTracks[key](a, a.destination, seed);
+  t.bus.gain.value = .45;
+  t.play(secs);
+  const d = (await a.startRendering()).getChannelData(0);
+  let s = 0; for (const x of d) s += x * x;
+  t.play(600);  // ten minutes more, scheduled at once, to count its voices
+  const ev = [];
+  for (const r of oscs) if (r.start !== null) ev.push([r.start, 1], [r.stop === null ? 1e9 : r.stop, -1]);
+  ev.sort((x, y) => x[0] - y[0] || x[1] - y[1]);
+  let k = 0, most = 0;
+  for (const [, n] of ev) most = Math.max(most, k += n);
+  t.stop();
+  return { rms: Math.sqrt(s / d.length), most, left: t.nodes.size, unstopped: oscs.filter(r => r.start !== null && r.stop === null).length };
+}"""
+
+
+def test_hinterland_and_dripstone_make_sound_keep_to_their_voices_and_stop_cleanly(page: Page, site_url, errors):
+    page.goto(f"{site_url}/letterfield#debug")
+    page.wait_for_function("!!(window.__lf && window.__lf.placeTracks)")
+    for key, quiet, loud in (("wilds", 0.002, 0.1), ("void", 0.0003, 0.05)):
+        for seed in (1, 2):
+            got = page.evaluate(PLACE_SOUND, [key, seed, 14])
+            assert quiet < got["rms"] < loud, (key, seed, got)
+            assert got["most"] <= 20, (key, seed, got)  # about twenty oscillators at most, to go easy on phones
+            assert got["left"] == 0 and got["unstopped"] == 0, (key, seed, got)
+    assert errors == []
+
+
+def test_out_past_the_edge_the_music_is_the_places_own(page: Page, site_url, errors):
+    """In the void no music plays, only Dripstone's drips; in the wilds only Hinterland, which the
+    pieces' turns don't move on from; back in the universe they take turns again."""
+    page.add_init_script(
+        "localStorage.setItem('letterfield.music.v1', '1'); localStorage.setItem('letterfield.musicpiece.v1', '2');"
+    )
+    start_at(page, EDGE0 + 14, 6)
+    open_game(page, site_url, FakeSurvey())
+    page.keyboard.press("Shift")  # the first key starts the music
+    page.wait_for_function("window.__lf.music() !== null")
+    music = "window.__lf.music() && [window.__lf.music().place, window.__lf.music().track]"
+    name, step = page.locator("#pieceName"), page.locator("#musicNext")
+    assert page.evaluate(music) == ["inside", "chimes"]
+    expect(name).to_have_text("Chimes")
+
+    move_to(page, EDGE0 - 30, 6)
+    page.wait_for_function(f'JSON.stringify({music}) === \'["void","dripstone"]\'')
+    expect(name).to_have_text("Dripstone")
+    expect(step).to_be_disabled()
+
+    move_to(page, -2568, 6)
+    page.wait_for_function(f'JSON.stringify({music}) === \'["wilds","hinterland"]\'')
+    expect(name).to_have_text("Hinterland")
+    page.evaluate("window.__lf.music().swap()")  # a turn ends: out here it stays Hinterland
+    assert page.evaluate(music) == ["wilds", "hinterland"]
+
+    move_to(page, EDGE0 + 30, 6)
+    page.wait_for_function(f'JSON.stringify({music}) === \'["inside","lantern"]\'')  # the turn that passed out there
+    expect(name).to_have_text("Lantern")
+    expect(step).to_be_enabled()
+    assert errors == []

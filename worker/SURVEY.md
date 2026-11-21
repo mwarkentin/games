@@ -153,6 +153,10 @@ toward `MAX_ONLINE` (issue #131). Now nothing past the edge is shared:
   finder alone. Here Be Dragons, 250 territories out, is earned there, on
   the game's word (`u` in the achievements' catalog), since no sector signs
   a find out there.
+- **Their sound:** the music follows the view. In the void no music plays,
+  only Dripstone, water dripping in a cave; in the wilds only Hinterland, a
+  lone flute's lament of its own. Both are made in the page from a seed, like
+  the other pieces (`PLACE_PIECES` in the game).
 - **Crossing** the edge leaves the survey with a note, every time ("Past the
   edge of the universe", with Back to the universe), and coming back joins
   it again. The game keeps where the view is in its `zone` machine (inside,

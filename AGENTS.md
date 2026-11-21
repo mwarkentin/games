@@ -108,7 +108,9 @@ utilities; games live here so they get their own origin and their own rules.
   Ambient music with no tune to score, like Letterfield's drones and pads,
   can instead be generated in the page with the Web Audio API, still with
   no audio files, and so can a piece composed for the game itself, like
-  Letterfield's Lantern, whose notes are written into the page. A generated
+  Letterfield's Lantern, whose notes are written into the page, or
+  Hinterland, the one piece Letterfield plays in the wilds (Dripstone's cave
+  drips replace the music in the void). A generated
   piece takes a seed for every choice it makes (a new one each time it
   plays), so it can be recorded the same way twice.
 - Pause when the tab is hidden (`visibilitychange`) if the game runs on a

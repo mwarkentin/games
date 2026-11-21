@@ -196,6 +196,8 @@ body.docked .corner{right:calc(var(--notes-w) + 16px)}
 .tool-step button{width:40px;height:40px;padding:0;border:0;background:transparent;display:grid;place-items:center;cursor:pointer}
 @media (hover: hover){.tool-step button:hover{background:var(--hover)}}
 .tool-step button + button{border-left:1px solid var(--rule)}
+.tool-step button:disabled,.tool-pieces button:disabled{opacity:.38;cursor:default}
+@media (hover: hover){.tool-step button:disabled:hover{background:transparent}}
 .tool-stack .tool-step svg{width:16px;height:16px}
 /* After the player's buttons, the soundtrack: the pieces as an album, on a page of their own. */
 .tool-album{flex:none;width:42px;height:42px;display:grid;place-items:center;border:1px solid var(--rule);border-radius:8px;background:var(--panel);color:var(--ink)}
@@ -1322,6 +1324,8 @@ function updateZone() {
 function zoneMoved(to, from, quiet) {
   syncSurvey();  // leaves every sector, or joins again
   hudRegion = ''; scheduleHud(); renderSurvey(); invalidate();
+  if (musicNow) musicNow.follow(musicPlace());  // the place's own music, or the pieces' turns (see PLACE_PIECES)
+  showPiece();
   if (Panel.is('notes')) drawWorld();
   if (quiet) return;
   if (from === 'inside') edgeNote();
@@ -2865,7 +2869,9 @@ soundVolEl.addEventListener('input', () => { gestured = true; setSoundVol(+sound
 // seed, a new one each time it plays, for every choice it makes, so a seed
 // plays it the same way again: the soundtrack album is recorded from fixed
 // ones (scripts/render_album.py). The noise their reverbs and the effects are
-// made from is seeded too, the same everywhere.
+// made from is seeded too, the same everywhere. Out past the universe's edge, on the
+// survey, they give way to the place's own (PLACE_PIECES): Hinterland alone in
+// the wilds, and in the void no music, only Dripstone's drips.
 // The volume slider runs 0 to 100, and the music's gain is the square of
 // it, so the lower half isn't nearly silent. 75 is the level the music always
 // had (.45). The slider is always there and 0 is off: it shows 0 while the
@@ -3438,10 +3444,255 @@ function lanternTrack(a, out, seed = Math.floor(Math.random() * 4294967296)) {
   };
 }
 
+// Hinterland: the wilds' own piece, and the only one out there. Past the
+// void you survey alone, so it's lonely rather than frightening: a breathy
+// wooden flute, far off, sings a slow lament in D minor over a hollow drone of
+// open fifths that wavers as its pairs beat against each other, with wind
+// rising and falling. Its phrases fall away, and the long note at the end of
+// one often sags flat as it fades. In the gaps a fainter flute, from the other
+// side and a little out of tune, sometimes answers with the end of the last
+// phrase, as if someone else were out there; nobody is. Two soft notes of a
+// chord drift under each phrase, changing for its last note. It never ends:
+// a phrase, a breath, maybe an answer, and the next, each chosen by the seed.
+// It has Chimes' hall, fed mono, and a long echo.
+const HINTER_BEAT = 60 / 52, HINTER_FLUTE = .085, HINTER_ECHO = .3, HINTER_PAD = .019, HINTER_DRONE = .05;
+// Each phrase as [note, beats], and the chords under it, for its body and its last note.
+const HINTER_PHRASES = [
+  [[[69, 1.5], [65, 1], [64, 1], [62, 3]], ['i', 'VI']],
+  [[[74, 2], [72, 1], [69, 1], [70, 1], [69, 3]], ['iv', 'i']],
+  [[[65, 1], [67, 1], [69, 1.5], [72, 1], [69, 3]], ['VI', 'i']],
+  [[[64, 1.5], [65, 1], [62, 3.5]], ['v', 'i']],
+  [[[69, 1], [70, 1], [69, 1], [67, 1], [65, 1.5], [64, 3]], ['i', 'v']],
+  [[[72, 1.5], [70, 1], [67, 1], [69, 3.5]], ['iv', 'i']],
+  [[[74, 3], [69, 1], [72, 1], [70, 3]], ['i', 'iv']],
+  [[[62, 1], [65, 1], [64, 1], [60, 1], [62, 3.5]], ['VII', 'i']],
+];
+const HINTER_CHORDS = { i: [53, 57], VI: [53, 58], iv: [55, 58], v: [57, 60], VII: [55, 60] };
+function hinterlandTrack(a, out, seed = Math.floor(Math.random() * 4294967296)) {
+  const T = trackBase(a, out, [.83, 1.27, .38, 1500]), { keep, bus, send } = T, rnd = rng(seed), now = a.currentTime;
+  const hall = a.createConvolver();
+  try { hall.channelCountMode = 'explicit'; hall.channelCount = 1; } catch (_) {}
+  hall.buffer = hallOf(a);
+  const wet = a.createGain(); wet.gain.value = .75; hall.connect(wet); wet.connect(bus);
+  const wash = a.createGain(); wash.gain.value = .25; wet.connect(wash); wash.connect(send);
+  // A place in the open: a share of it dry, a share into the hall and one round the echo.
+  const place = (pan, dry, room, echo) => {
+    const to = a.createGain();
+    for (const [v, into] of [[dry, bus], [room, hall], [echo, send]]) if (v) { const s = a.createGain(); s.gain.value = v; to.connect(s); s.connect(into); }
+    if (!pan || !a.createStereoPanner) return to;
+    const p = a.createStereoPanner(); p.pan.value = pan; p.connect(to);
+    return p;
+  };
+  const near = place(-.2, .8, .6, .22), far = place(.62, .12, 1, .5), under = place(0, .7, .5, .08);
+  // The drone: D and the A above it, each a pair a few cents apart, so they beat slowly.
+  const droneTone = a.createBiquadFilter(); droneTone.type = 'lowpass'; droneTone.frequency.value = 420; droneTone.connect(under);
+  const drone = a.createGain(); drone.gain.value = HINTER_DRONE; drone.connect(droneTone);
+  const swell = keep(a.createOscillator()), swellDepth = a.createGain();
+  swell.frequency.value = .021; swellDepth.gain.value = HINTER_DRONE * .45; swell.connect(swellDepth); swellDepth.connect(drone.gain);
+  for (const [m, v] of [[38, .5], [38, .45], [45, .32], [45, .28]]) {
+    const o = keep(a.createOscillator()), g = a.createGain();
+    o.type = 'triangle'; o.frequency.value = hz(m); o.detune.value = (rnd() - .5) * 9; g.gain.value = v;
+    o.connect(g); g.connect(drone);
+  }
+  // The wind: noise through a band that wanders, one each side, rising and
+  // falling as two slow waves pull them, one each way.
+  const gust = keep(a.createOscillator()), sway = keep(a.createOscillator());
+  gust.frequency.value = .031; sway.frequency.value = .013;
+  for (const [pan, rate, f, way] of [[-.6, .73, 480, 1], [.6, .91, 720, -1]]) {
+    const n = keep(a.createBufferSource()), band = a.createBiquadFilter(), g = a.createGain(), gd = a.createGain(), fd = a.createGain();
+    n.buffer = noiseOf(a); n.loop = true; n.playbackRate.value = rate; n.loopStart = rnd() * 1.5;
+    band.type = 'bandpass'; band.frequency.value = f; band.Q.value = .8; g.gain.value = .014;
+    gd.gain.value = .011 * way; gust.connect(gd); gd.connect(g.gain);
+    fd.gain.value = f * .45 * way; sway.connect(fd); fd.connect(band.frequency);
+    n.connect(band); band.connect(g); g.connect(place(pan, .9, .3, 0));
+  }
+  // The flutes' shared vibrato, which each long note leans into late.
+  const vib = keep(a.createOscillator()); vib.frequency.value = 5.1;
+  for (const n of T.nodes) n.start(now);
+  const fluteWave = organWave(a, [1, .16, .05, .02]);
+
+  // A breathy wooden flute: it scoops up into each note, a puff of breath as
+  // it speaks and a little under it all along, vibrato only on the long
+  // notes, and a note that sags flat as it fades when the phrase ends sadly.
+  function flute(t, m, len, level, to, sag) {
+    const f = hz(m), o = keep(a.createOscillator()), g = a.createGain(), end = t + len;
+    o.setPeriodicWave(fluteWave);
+    o.frequency.setValueAtTime(f * Math.pow(2, -(25 + rnd() * 20) / 1200), t);
+    o.frequency.exponentialRampToValueAtTime(f, t + .09);
+    if (sag) o.frequency.setTargetAtTime(f * Math.pow(2, -(45 + rnd() * 35) / 1200), t + len * .55, len * .35);
+    g.gain.setValueAtTime(0, t);
+    g.gain.linearRampToValueAtTime(level, t + .16);
+    g.gain.setTargetAtTime(level * .82, t + .16, .5);
+    g.gain.setTargetAtTime(0, end, sag ? .7 : .09);
+    if (len > 1.4) {
+      const d = a.createGain();
+      d.gain.setValueAtTime(0, t); d.gain.setValueAtTime(0, t + .5); d.gain.linearRampToValueAtTime(8 + rnd() * 4, t + 1.3);
+      vib.connect(d); d.connect(o.detune);
+      o.addEventListener('ended', () => { try { vib.disconnect(d); } catch (_) {} });  // or the vibrato would keep every note's
+    }
+    o.connect(g); g.connect(to);
+    o.start(t); o.stop(end + (sag ? 3.5 : .6));
+    const b = keep(a.createBufferSource()), band = a.createBiquadFilter(), bg = a.createGain();
+    b.buffer = noiseOf(a); b.loop = true;
+    band.type = 'bandpass'; band.frequency.value = Math.min(6000, f * 2.2); band.Q.value = 1.4;
+    bg.gain.setValueAtTime(0, t);
+    bg.gain.linearRampToValueAtTime(level * .9, t + .03);
+    bg.gain.setTargetAtTime(level * .14, t + .03, .12);
+    bg.gain.setTargetAtTime(0, end, .1);
+    b.connect(band); band.connect(bg); bg.connect(to);
+    b.start(t, rnd() * 1.5); b.stop(end + .6);
+  }
+  // Two soft notes of a chord, swelling in over a few seconds and away again.
+  const padTone = a.createBiquadFilter(); padTone.type = 'lowpass'; padTone.frequency.value = 1100; padTone.connect(under);
+  let pad = null;
+  function chord(t, name) {
+    if (pad) { const p = pad; p.g.gain.setTargetAtTime(0, t, 1.6); for (const o of p.os) o.stop(t + 9); }
+    const g = a.createGain(), os = [];
+    g.gain.setValueAtTime(0, t); g.gain.setTargetAtTime(HINTER_PAD, t, 1.8); g.connect(padTone);
+    for (const [m, c] of HINTER_CHORDS[name].map((m, i) => [m, i ? 4 : -4])) {
+      const o = keep(a.createOscillator());
+      o.type = 'triangle'; o.frequency.value = hz(m); o.detune.value = c + (rnd() - .5) * 3;
+      o.connect(g); o.start(t); os.push(o);
+    }
+    pad = { g, os };
+  }
+  // One phrase from t, an octave down now and then, and its answer, maybe,
+  // in the gap after it. Returns when the next may start.
+  let last = -1;
+  function phrase(t) {
+    let i;
+    do i = Math.floor(rnd() * HINTER_PHRASES.length); while (i === last);
+    last = i;
+    const [notes, [body, close]] = HINTER_PHRASES[i], down = rnd() < .15 ? 12 : 0, sag = rnd() < .6;
+    const beat = HINTER_BEAT * (.94 + rnd() * .12);
+    chord(t - 1.5, body);
+    let s = t;
+    notes.forEach(([m, d], k) => {
+      const lastNote = k === notes.length - 1, len = d * beat * (lastNote ? 1 : 1.04);
+      if (lastNote) chord(s - .4, close);
+      flute(s, m - down, len, HINTER_FLUTE * (.85 + rnd() * .2) * (lastNote ? .92 : 1), near, lastNote && sag);
+      s += d * beat;
+    });
+    const gap = 2.5 + rnd() * 4.5;
+    if (rnd() < .5) {  // the answer: the last two or three notes, faint and a little flat, from far off
+      let e = s + 1 + rnd() * 1.2;
+      const tail = notes.slice(-(2 + Math.floor(rnd() * 2))), low = rnd() < .3 ? 12 : 0, flat = -(14 + rnd() * 12);
+      for (const [m, d] of tail) {
+        const len = d * beat * .9;
+        flute(e, m - down - low + flat / 100, len, HINTER_FLUTE * HINTER_ECHO, far, true);
+        e += d * beat;
+      }
+      return Math.max(e + 1.5, s + gap);
+    }
+    return s + gap;
+  }
+  let at = now + 4;
+  return {
+    name: 'hinterland', bus, nodes: T.nodes, stop: T.stop, seed,
+    play(until) { while (at < until) at = phrase(at); },
+    resync(now) { at = Math.max(at, now + .5); },
+  };
+}
+
+// Dripstone: the void's only sound, in place of any music. No tune, only
+// water dripping somewhere in a cave: each drop a tiny rising plink, ringing
+// off far walls through a long, cold echo whose repeats waver a little out
+// of tune. A few spots drip, each at its own pitch, its own place left or
+// right and its own slow, nearly steady pace, so their drops fall in and out
+// of step; now and then one drops twice, or stops for a while, and rarely a
+// deeper drop falls into a pool. Under it, the cave's breath, almost nothing.
+const DRIP_LEVEL = .17;
+const caveOf = perContext(a => {  // a long, cold tail with a few hard early bounces
+  const n = Math.floor(a.sampleRate * 5.5), b = a.createBuffer(2, n, a.sampleRate), rnd = rng(0xca7e);
+  for (let ch = 0; ch < 2; ch++) {
+    const d = b.getChannelData(ch);
+    let y = 0;
+    for (let i = 0; i < n; i++) {
+      const t = i / n, k = .7 - .55 * t;
+      y += k * (rnd() * 2 - 1 - y);
+      d[i] = y * Math.exp(-5.2 * t) * Math.min(1, i / (a.sampleRate * .03)) * .8;
+    }
+    for (const [ms, v] of [[19, .5], [37, .38], [61, .3], [97, .22], [149, .16]]) {
+      const i = Math.floor(a.sampleRate * (ms + ch * 7 + rnd() * 5) / 1000);
+      if (i < n) d[i] += v * (ch ? -1 : 1);
+    }
+  }
+  return b;
+});
+function dripstoneTrack(a, out, seed = Math.floor(Math.random() * 4294967296)) {
+  const T = trackBase(a, out, [.47, .71, .5, 2400]), { keep, bus, send } = T, rnd = rng(seed), now = a.currentTime;
+  const cave = a.createConvolver();
+  cave.buffer = caveOf(a);
+  const wet = a.createGain(); wet.gain.value = .75; cave.connect(wet); wet.connect(bus);
+  // The wavering echo: a long delay whose time sways slowly, so each repeat
+  // comes back a hair off pitch.
+  const sway = a.createDelay(1), swayBack = a.createGain(), swayTone = a.createBiquadFilter();
+  sway.delayTime.value = .33; swayBack.gain.value = .42; swayTone.type = 'lowpass'; swayTone.frequency.value = 1800;
+  sway.connect(swayTone); swayTone.connect(swayBack); swayBack.connect(sway); swayTone.connect(cave);
+  const swayer = keep(a.createOscillator()), swayDepth = a.createGain();
+  swayer.frequency.value = .17; swayDepth.gain.value = .0045; swayer.connect(swayDepth); swayDepth.connect(sway.delayTime);
+  // The cave's breath: noise kept low and dim, slowly swelling.
+  const air = keep(a.createBufferSource()), airTone = a.createBiquadFilter(), airGain = a.createGain();
+  air.buffer = noiseOf(a); air.loop = true; air.playbackRate.value = .61;
+  airTone.type = 'lowpass'; airTone.frequency.value = 170; airGain.gain.value = .014;
+  const breath = keep(a.createOscillator()), breathDepth = a.createGain();
+  breath.frequency.value = .033; breathDepth.gain.value = .008; breath.connect(breathDepth); breathDepth.connect(airGain.gain);
+  air.connect(airTone); airTone.connect(airGain); airGain.connect(bus); airGain.connect(cave);
+  for (const n of T.nodes) n.start(now);
+  // A spot in the cave: where, how near, its pitch and its pace.
+  const spot = (pan, near) => {
+    const to = a.createGain();
+    for (const [v, into] of [[.25 + near * .75, bus], [.8, cave], [.3, send], [.25 + (1 - near) * .35, sway]]) { const s = a.createGain(); s.gain.value = v; to.connect(s); s.connect(into); }
+    if (!a.createStereoPanner) return to;
+    const p = a.createStereoPanner(); p.pan.value = pan; p.connect(to);
+    return p;
+  };
+  const spots = Array.from({ length: 3 + Math.floor(rnd() * 3) }, () => {
+    const near = .25 + rnd() * .75;
+    return { to: spot(rnd() * 1.6 - .8, near), f: 820 * Math.pow(3.2, rnd()), level: DRIP_LEVEL * (.55 + .45 * near), every: 2.4 + rnd() * 6, next: now + 1 + rnd() * 5 };
+  });
+  // A drop: a sine that leaps up in pitch as the bubble it makes closes, gone
+  // in a tenth of a second or so, with a click of the splash.
+  function drop(t, f, level, to, slow = 1) {
+    const o = keep(a.createOscillator()), g = a.createGain(), len = (.09 + rnd() * .07) * slow;
+    o.frequency.setValueAtTime(f, t);
+    o.frequency.exponentialRampToValueAtTime(f * (1.6 + rnd() * .5), t + len * .45);
+    g.gain.setValueAtTime(0, t);
+    g.gain.linearRampToValueAtTime(level, t + .002);
+    g.gain.exponentialRampToValueAtTime(.0001, t + len);
+    o.connect(g); g.connect(to);
+    o.start(t); o.stop(t + len + .02);
+    const c = keep(a.createBufferSource()), hp = a.createBiquadFilter(), cg = a.createGain();
+    c.buffer = noiseOf(a); hp.type = 'highpass'; hp.frequency.value = 3200;
+    cg.gain.setValueAtTime(level * .2, t); cg.gain.exponentialRampToValueAtTime(.0001, t + .01);
+    c.connect(hp); hp.connect(cg); cg.connect(to);
+    c.start(t, rnd() * 1.5); c.stop(t + .02);
+  }
+  const pool = spot(rnd() * .8 - .4, .35);
+  let poolAt = now + 8 + rnd() * 20;
+  return {
+    name: 'dripstone', bus, nodes: T.nodes, stop: T.stop, seed,
+    play(until) {
+      for (const s of spots) while (s.next < until) {
+        drop(s.next, s.f * (1 + (rnd() - .5) * .04), s.level * (.8 + rnd() * .3), s.to);
+        if (rnd() < .12) drop(s.next + .09 + rnd() * .1, s.f * 1.08, s.level * .55, s.to);
+        s.next += s.every * (rnd() < .08 ? 2.5 + rnd() * 3 : 1 + (rnd() - .5) * .24);
+      }
+      while (poolAt < until) { drop(poolAt, 260 + rnd() * 160, DRIP_LEVEL * 1.3, pool, 2.6); poolAt += 15 + rnd() * 30; }
+    },
+    resync(now) { for (const s of spots) s.next = Math.max(s.next, now + .3 + rnd() * 2); poolAt = Math.max(poolAt, now + 5); },
+  };
+}
+
 // The pieces, in the order they take turns, with the names the tools list
 // them by.
 const MUSIC_PIECES = [[driftTrack, 'Drift'], [orbitTrack, 'Orbit'], [chimesTrack, 'Chimes'], [lanternTrack, 'Lantern']];
 const MUSIC_TRACKS = MUSIC_PIECES.map(p => p[0]);
+// Past the universe's edge, on the survey, the music is the place's own (see
+// Zone): Hinterland alone in the wilds, and in the void no music at all, only
+// Dripstone's drips. The pieces take turns again back in the universe.
+const PLACE_PIECES = { wilds: [hinterlandTrack, 'Hinterland'], void: [dripstoneTrack, 'Dripstone'] };
+const musicPlace = () => Zone.is('inside') ? 'inside' : Zone.state;
 // The piece playing, or the one that will when the music comes on: the last
 // one heard, kept for next time, or one at random the first time.
 const K_MUSIC_PIECE = 'letterfield.musicpiece.v1';
@@ -3461,33 +3712,50 @@ const Player = machine('music', {
 // few seconds ahead from a one-second timer, which stops while the tab is
 // hidden or the music is paused, and hands over to the next piece every few
 // minutes.
+// Out past the universe's edge it plays the place's own instead (here), and
+// never hands over until the view comes back.
 function playMusic(a, n) {
   const master = a.createGain(); master.gain.value = 0; master.connect(acOut);
-  let track = MUSIC_TRACKS[n](a, master), fading = null, gone = 0;
+  let here = musicPlace();
+  const make = () => (here === 'inside' ? MUSIC_TRACKS[n] : PLACE_PIECES[here][0])(a, master);
+  let track = make(), fading = null, gone = 0;
   let timer = 0, swapAt = a.currentTime + TRACK_TIME, pausedAt = 0;
   track.bus.gain.value = 1;
-  // Hands over to piece `to`, the next unless told, crossfading over `fade`
-  // seconds. A piece still fading out from the last hand-over, after a few
-  // quick taps on Next, goes at once rather than piling up.
-  function swap(to = (n + 1) % MUSIC_TRACKS.length, fade = 8) {
+  // Crossfades to a new track over `fade` seconds. A piece still fading out
+  // from the last hand-over, after a few quick taps on Next, goes at once
+  // rather than piling up.
+  function handOver(fade) {
     if (fading) { const f = fading; clearTimeout(gone); glide(f.bus.gain, 0, .08, a); setTimeout(f.stop, 150); }
     const old = fading = track;
     glide(old.bus.gain, 0, fade, a);
     gone = setTimeout(() => { old.stop(); if (fading === old) fading = null; }, fade * 1000 + 1000);
-    n = to; track = MUSIC_TRACKS[n](a, master);
+    track = make();
     glide(track.bus.gain, 1, fade, a);
     swapAt = a.currentTime + TRACK_TIME;
+  }
+  // Hands over to piece `to`, the next unless told; out past the edge, it's
+  // only the one to come back to.
+  function swap(to = (n + 1) % MUSIC_TRACKS.length, fade = 8) {
+    n = to;
     setPiece(n);
+    if (here === 'inside') handOver(fade);
+  }
+  // The view crossed into `place`: its own sound, quickly into the void's
+  // hush, more slowly into the wilds or back to the pieces' turns.
+  function follow(place) {
+    if (place === here) return;
+    here = place;
+    handOver(place === 'void' ? 2.5 : 6);
   }
   function tick() {
-    if (a.currentTime >= swapAt) swap();
+    if (here === 'inside' && a.currentTime >= swapAt) swap();
     track.play(a.currentTime + 3);
   }
   function run() { clearInterval(timer); tick(); timer = setInterval(tick, 1000); }
   run();
   glide(master.gain, musicLevel(), 4, a);
   return {
-    track: () => track, piece: () => n, fading: () => !!fading, master, swap,
+    track: () => track, piece: () => n, place: () => here, fading: () => !!fading, master, swap, follow,
     hush() { clearInterval(timer); glide(master.gain, 0, .5, a); },
     wake() {
       track.resync(a.currentTime);
@@ -3583,10 +3851,16 @@ function setPiece(i) {
   LS.set(K_MUSIC_PIECE, String(i));
   showPiece();
 }
+// Past the universe's edge, it names the place's own, and the pieces can't
+// be stepped through or picked until the view's back.
+const prevBtn = $('#musicPrev'), nextBtn = $('#musicNext');
 function showPiece() {
-  pieceName.textContent = MUSIC_PIECES[musicPiece][1];
+  const place = musicPlace(), away = place !== 'inside';
+  pieceName.textContent = away ? PLACE_PIECES[place][1] : MUSIC_PIECES[musicPiece][1];
+  prevBtn.disabled = nextBtn.disabled = away;
   for (const b of pieceList.querySelectorAll('button')) {
-    if (+b.dataset.piece === musicPiece) b.setAttribute('aria-current', 'true'); else b.removeAttribute('aria-current');
+    b.disabled = away;
+    if (!away && +b.dataset.piece === musicPiece) b.setAttribute('aria-current', 'true'); else b.removeAttribute('aria-current');
   }
   // A list long enough to scroll brings the piece playing into the middle of
   // it, without moving the drawer or the page.
@@ -3618,8 +3892,8 @@ function choosePiece(i) {
   if (i !== musicNow.piece()) musicNow.swap(i, 3);
 }
 playBtn.addEventListener('click', playPause);
-$('#musicPrev').addEventListener('click', () => choosePiece(musicPiece - 1));
-$('#musicNext').addEventListener('click', () => choosePiece(musicPiece + 1));
+prevBtn.addEventListener('click', () => choosePiece(musicPiece - 1));
+nextBtn.addEventListener('click', () => choosePiece(musicPiece + 1));
 showPiece(); showPlayer();
 
 const noiseOf = perContext(a => {
@@ -7869,9 +8143,10 @@ if (location.hash === '#debug') window.__lf = {
   // Music
   distantSound,
   lanternArc,
-  music: () => musicNow && { state: ac.state, track: musicNow.track().name, nodes: musicNow.track().nodes.size, fade: musicNow.track().bus.gain.value, fading: musicNow.fading(), level: musicNow.master.gain.value, master: musicNow.master, volume: musicVol, target: musicLevel(), swap: musicNow.swap },
+  music: () => musicNow && { state: ac.state, track: musicNow.track().name, nodes: musicNow.track().nodes.size, fade: musicNow.track().bus.gain.value, fading: musicNow.fading(), place: musicNow.place(), level: musicNow.master.gain.value, master: musicNow.master, volume: musicVol, target: musicLevel(), swap: musicNow.swap },
   musicPiece: () => musicPiece,
   musicTracks: MUSIC_TRACKS,
+  placeTracks: { wilds: hinterlandTrack, void: dripstoneTrack },
   novaSound,
   // Finding words
   collect,
