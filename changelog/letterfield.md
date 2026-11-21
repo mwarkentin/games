@@ -1,7 +1,9 @@
 ## 2026-11-21
 
-- The shared survey's box in your field notes counts your words the way the universe does: under Universe charted, it says how many of those words you charted first, and counts any you charted past the universe's edge apart. Bonus words, which the survey log doesn't keep, no longer count there, so the box and the log agree.
-- The survey log says how many of its words were charted past the universe's edge: under Words charted, under the Top lists heading, and beside each territory out there in the top territories and on its own page. Its third number is now called In the universe, the same count as Universe charted in the game, so the numbers add up.
+- The universe has an edge. Past it is the void, a ring of night where loose letters drift and nothing can be circled, and beyond that the wilds, where the map goes on and you find words alone: they stay in your field notes, and nobody sees your caret. Crossing the edge leaves the shared survey, with a note and a way back, and coming back joins it again.
+- Words charted past the universe's edge are no longer in the survey log or its counts. Any you found out there stay in your field notes, marked the void or the wilds.
+- The shared survey's box in your field notes counts your words the way the universe does: under Universe charted, it says how many of those words you charted first. Bonus words, which the survey log doesn't keep, no longer count there, so the box and the log agree.
+- The survey log's third number is now called In the universe, the same count as Universe charted in the game, so the numbers add up.
 - The universe's count in your field notes no longer creeps a word or two ahead when words are charted in quick succession.
 
 ## 2026-11-20

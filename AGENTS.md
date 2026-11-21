@@ -217,6 +217,7 @@ The machines each page keeps:
 | | `sync` (keeping linked devices in step) | off, idle, syncing, failed |
 | | `notesPage` (the field notes drawer's page) | finds, marks |
 | | `music` (the music player in the tools) | off, waiting, playing, paused |
+| | `zone` (where the view is, on the survey) | inside, void, wilds |
 | `letterfield-log.html` | `log` (what the page shows) | loading, ready, refreshing, stale, failed |
 | | `span` (where the log starts, which ‹ stops at) | asking, known, failed |
 | | `define` (each word's meaning; `el: null`, see `__log.definitions()`) | loading, ready, none, failed |
@@ -710,6 +711,14 @@ per sector of the map, plus an Atlas for the world's totals
   the Worker checks a claimed word against the very map the game draws.
   `MAP_VERSION` there says which map it is: a change that redraws the map
   raises it (`worker/test/survey.test.js` keeps a digest of each).
+- The survey stops at the universe's edge, sectors -12 to 12 each way (`AREA`
+  in `worker/src/survey.js`, `SURVEY_AREA` in the game). Past it, a sector
+  wide all round, is the void, where loose letters drift and nothing can be
+  circled, and beyond that the wilds, where words are found alone. The game
+  joins no sector out there (its `zone` machine), the Worker turns a join
+  away, and the log keeps nothing from there; finds made out there stay in
+  the finder's field notes ("The edge, the void and the wilds" in
+  `worker/SURVEY.md`). Playing alone, the map has no edge.
 - Its list of surveyors and their emotes are `worker/src/survey-social.js`
   ("Surveyors and emotes" in `worker/SURVEY.md`), and its guilds
   `worker/src/survey-guild.js`, a Durable Object per guild ("Guilds").
@@ -808,6 +817,9 @@ names, like `region` or `stray`):
 | Playing on one map together | the shared survey ("the survey" once that's clear) | |
 | Someone playing it | surveyor | player |
 | The area charted together | the universe (its map: "Universe map") | the shared world, the shared map, World |
+| Where it ends | the edge of the universe | the boundary, the border |
+| The sector-wide ring past it, with no grid | the void | the gap, the edge zone |
+| The map beyond the void, off the survey | the wilds | outside, far away, past the edge (once you mean the wilds) |
 | A theme's patch of the map | territory | region, sector, area |
 | The people in a guild | members | mates |
 | Your list of words | field notes ("your notes" after that) | |

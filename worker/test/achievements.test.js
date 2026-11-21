@@ -75,7 +75,7 @@ describe('the achievements core', () => {
     assert.deepEqual(CORE.CATALOG.slice(FIRST.length).map(([id]) => id), ['number-of-the-beast']);
     const all = new Set(CORE.CATALOG.map(([id]) => id));
     assert.deepEqual(CORE.cardIds(CORE.cardMask(all)), [...all]);
-    assert.equal(CORE.PROVABLE.size, 34);  // not Cairn, Witness, Starfield or the company's three
+    assert.equal(CORE.PROVABLE.size, 33);  // not Cairn, Here Be Dragons, Witness, Starfield or the company's three
     assert.deepEqual(CORE.cardIds(CORE.cardMask(new Set(['hats-off', 'seven-seas', 'witness']))), ['seven-seas', 'witness', 'hats-off']);
     assert.equal(CORE.cardMask(new Set()), 0);
     assert.ok(Number.isSafeInteger(CORE.cardMask(all)));

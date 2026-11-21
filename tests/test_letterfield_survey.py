@@ -970,31 +970,32 @@ def test_charting_the_last_word_in_a_territory_sets_it_off(page: Page, site_url,
     assert errors == []
 
 
-# Player Shore, at 2568W · 1512N: territory (-54, -32), in sector (-14, -8), past the universe's edge
-# (sectors -12 to 12), where sectors still take claims but don't report to the Atlas.
-FAR = (-54, -32)
-FAR_SECTOR = "-14,-8"
+# Territory (-48, -32), at 2280W · 1512N, the universe's westernmost, in sector (-12, -8): a sector
+# the game doesn't start in, with the universe's edge just out of view.
+FAR = (-48, -32)
+FAR_SECTOR = "-12,-8"
 FAR_WORDS = """() => {
   const out = [];
-  for (let cy = -128; cy < -124; cy++) for (let cx = -216; cx < -212; cx++) for (const o of window.__lf.chunk(cx, cy).words) out.push([o.w, o.x, o.y, o.d]);
+  for (let cy = -128; cy < -124; cy++) for (let cx = -192; cx < -188; cx++) for (const o of window.__lf.chunk(cx, cy).words) out.push([o.w, o.x, o.y, o.d]);
   return out;
 }"""
 
 
 def far_out(page: Page, mine: list) -> None:
-    """Starts the camera in Player Shore, with `mine` ([w, x, y, d]) in the field notes and initials signed."""
+    """Starts the camera in territory FAR, with `mine` ([w, x, y, d]) in the field notes and initials signed."""
     finds = [{"w": w[0], "x": w[1], "y": w[2], "d": w[3], "t": NOW_MS - 86_400_000, "s": 0} for w in mine]
     page.add_init_script(f"""
       localStorage.setItem('games.initials', JSON.stringify('MLW'));
-      localStorage.setItem('letterfield.cam.v1', JSON.stringify({{ x: -2568, y: -1512, cs: 30 }}));
+      localStorage.setItem('letterfield.cam.v1', JSON.stringify({{ x: -2280, y: -1512, cs: 30 }}));
       if (!localStorage.getItem('letterfield.finds.v4')) localStorage.setItem('letterfield.finds.v4', {json.dumps(json.dumps(finds))});
     """)
 
 
-def test_outside_the_universe_the_title_counts_what_the_survey_charted(page: Page, site_url, errors):
-    """Past the universe's edge the title counted your field notes ("110/111 found") while the
-    sector counted every word charted, so a territory went supernova a word short of the title:
-    a word someone else charted first isn't in your notes unless you add it."""
+def test_the_title_counts_what_the_survey_charted(page: Page, site_url, errors):
+    """The title once counted your field notes ("110/111 found") where the sector counted every
+    word charted, so a territory went supernova a word short of the title: a word someone else
+    charted first isn't in your notes unless you add it. It's the sector's count, with your notes
+    in its hover."""
     words = known_words(page, site_url, FAR_WORDS)
     assert {(w[1] // 48, w[2] // 48) for w in words} == {FAR}
     last, theirs, yours = words[0], words[1], words[2:]
@@ -1028,7 +1029,7 @@ def test_on_a_phone_a_screen_reader_hears_how_many_of_the_charted_words_are_in_y
     assert errors == []
 
 
-def test_outside_the_universe_the_title_says_the_survey_is_joining_or_offline(page: Page, site_url, errors):
+def test_the_title_says_the_survey_is_joining_or_offline(page: Page, site_url, errors):
     far_out(page, [])
     fake = FakeSurvey(home=FAR_SECTOR, hold=lambda url: True)
     open_game(page, site_url, fake)
@@ -1040,7 +1041,7 @@ def test_outside_the_universe_the_title_says_the_survey_is_joining_or_offline(pa
     assert errors == []
 
 
-def test_outside_the_universe_a_crowded_sector_says_so(page: Page, site_url, errors):
+def test_a_crowded_sector_says_so_in_the_title(page: Page, site_url, errors):
     far_out(page, [])
     open_game(page, site_url, FakeSurvey(full={FAR_SECTOR: "sector"}))
     expect(page.locator("#tCharted")).to_have_text(" · crowded")
@@ -1631,8 +1632,8 @@ def test_words_circled_while_joining_are_claimed_once_the_sector_is_live(page: P
     assert errors == []
 
 
-# Hidden words in the universe and past its edge (sectors 13 east and -14 west), and a bonus
-# word near the origin, as [w, x, y, d], read from the map the game imports.
+# Hidden words in the universe and past its edge (in the void, sector 13 east, and the wilds,
+# -14 west), and a bonus word near the origin, as [w, x, y, d], read from the map the game imports.
 EDGE_WORDS = """async () => {
   const m = await import('/js/letterfield/world.js');
   const hidden = (cx, cy) => { const o = m.chunk(cx, cy).words[0]; return [o.w, o.x, o.y, o.d]; };
@@ -1649,9 +1650,10 @@ EDGE_WORDS = """async () => {
 }"""
 
 
-def test_your_count_is_the_surveys_own_in_the_universe_and_past_its_edge(page: Page, site_url, errors):
+def test_your_count_is_the_surveys_own_in_the_universe(page: Page, site_url, errors):
     """The box counts yours as the survey and its log do: hidden words you charted first in the
-    universe ("N of them", of its count), those past its edge apart, and bonus words in neither."""
+    universe ("N of them", of its count). Finds past its edge stay in your notes alone, even ones
+    charted there before the edge closed, and bonus words are in neither."""
     words = known_words(page, site_url, EDGE_WORDS)
     assert words["bonus"], "no bonus word near the origin"
 
@@ -1667,7 +1669,7 @@ def test_your_count_is_the_surveys_own_in_the_universe_and_past_its_edge(page: P
     open_game(page, site_url, fake)
     open_notes(page)
     universe_count(page, "999 of 1,119,752", "999 of 1.1M")
-    expect(page.locator("#surveyText")).to_have_text("2 of them charted first by you, and 2 past its edge")
+    expect(page.locator("#surveyText")).to_have_text("2 of them charted first by you")
     expect(page.locator("#tWords")).to_have_text("6")  # the notes keep every find, bonus words and others' too
     assert errors == []
 

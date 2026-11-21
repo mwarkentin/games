@@ -32,13 +32,11 @@
 //                                    1970): {from, to, surveyors: [[initials, words], ...],
 //                                    territories: [[rx, ry, name, th, words], ...],
 //                                    themes: [[th, name, hue, words], ...],
-//                                    guilds: [[lid, name, hue, words], ...], hidden, past}, where
-//                                    hidden counts the hidden words charted and past those of
-//                                    them past the universe's edge
+//                                    guilds: [[lid, name, hue, words], ...], hidden}
 //   GET /v1/survey/log/top/hours/<from>/<to>   the same over UTC hours from..to-1 (hours since
 //                                    1970), at most TOP_HOURS_MAX, for a day or an hour in the
 //                                    page's own time zone: {from, to, hours: true, surveyors,
-//                                    territories, themes, guilds, hidden, past}
+//                                    territories, themes, guilds, hidden}
 //   GET /v1/survey/log/timelapse     what a replay of the whole log needs to know first (settled
 //                                    days' part kept for good, the rest read each minute): {hours:
 //                                    [[hour, words], ...], novas: [[hour, n], ...], bounds:
@@ -143,8 +141,9 @@ export const FOREVER_S = 31536000;      // a settled day of the replay never cha
 // Raised when a settled day's replay must change after all (a word taken out
 // for moderation, or the answer's shape): it's part of every cache key, and
 // the page's CACHE_VERSION goes up with it for browsers' copies. 2: bonus
-// words left the log (migrations-log/0009).
-export const TIMELAPSE_VERSION = 2;
+// words left the log (migrations-log/0009). 3: so did the words past the
+// universe's edge (0012).
+export const TIMELAPSE_VERSION = 3;
 const CURSOR = /^(\d{1,15})~([A-Z]{3,12}~-?\d{1,10}~-?\d{1,10}~[0-7])$/;
 const NOVA_CURSOR = /^(\d{1,15})~(-?\d{1,8})~(-?\d{1,8})$/;
 
@@ -200,9 +199,10 @@ export const GUILD_NAME_SQL = 'SELECT a, b, c FROM survey_log_guilds WHERE guild
 const named = (r) => (goodName([r.a, r.b, r.c]) ? [guildName([r.a, r.b, r.c]), guildHue([r.a, r.b, r.c])] : null);
 // The universe (the shared world): sectors -AREA to AREA each way, 4
 // territories a side, as AREA in survey.js counts it. Its hidden words are
-// the ones the Atlas counts, and the game's "Universe charted".
+// the ones the Atlas counts, and the game's "Universe charted". Nothing past
+// its edge reaches the log any more (migrations-log/0012 took out what had),
+// so every word logged is one of them; older rows are still read safely.
 const AREA = 12, EDGE = [-AREA * 4, (AREA + 1) * 4];  // territories from..to-1, each way
-const inUniverse = (rx, ry) => rx >= EDGE[0] && rx < EDGE[1] && ry >= EDGE[0] && ry < EDGE[1];
 const WORLD = `(s = 0 AND x >= ${EDGE[0] * RC} AND x < ${EDGE[1] * RC} AND y >= ${EDGE[0] * RC} AND y < ${EDGE[1] * RC})`;
 // A guild's words over a range of time: those whose first guild it is,
 // through its own index, and those it's another guild of
@@ -546,12 +546,9 @@ export async function readTopHours(db, from, to) {
     db.prepare(HOURS_GUILDS_SQL).bind(...range).all(),
   ])), hours: true };
 }
-// `hidden` is every hidden word charted in the range, and `past` those of them
-// past the universe's edge, which the top lists count and the universe doesn't.
 function tops(from, to, [surveyors, territories, guilds]) {
   return {
     from, to, hidden: territories.results.reduce((a, r) => a + r.n, 0),
-    past: territories.results.reduce((a, r) => a + (inUniverse(r.rx, r.ry) ? 0 : r.n), 0),
     surveyors: surveyors.results.map((r) => [r.initials, r.n]),
     territories: ranked(territories.results).slice(0, TOP_N).map(territoryRow),
     themes: themeRows(territories.results),

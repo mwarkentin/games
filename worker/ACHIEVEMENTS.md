@@ -107,7 +107,7 @@ that isn't about charting first or other surveyors works in both.
 | | Self-Portrait (secret) | Find the word SURVEYOR. | a find of SURVEYOR (Cartography, Building Site) |
 | **Far afield** | Over the Horizon | Find a word 10 territories from the map centre. | the find's territory, `max(|rx|, |ry|)` ≥ 10 |
 | | Edge of the Universe | Find a word 48 territories out, where the universe ends. | ≥ 48 (the universe runs from −48 to 51) |
-| | Here Be Dragons (secret) | Find a word 250 territories from the map centre. | ≥ 250 |
+| | Here Be Dragons (secret) | Find a word 250 territories from the map centre. | ≥ 250, out in the wilds, so on the game's word (`u`) |
 | **Supernovas** | Witness | Be there when a territory goes supernova. | supernovas seen ≥ 1 |
 | | Starfield | Be there for ten supernovas. | ≥ 10 |
 | | Last Word (survey) | Chart the last hidden word of a territory, and set it off. | a supernova with `mine` and not `solo` |
@@ -428,9 +428,11 @@ in D1, and a table of counts. Too much for a badge.
 
 **What signed finds can show:** everything built from words circled on the
 survey: notes, charting, territories, themes, words, far afield, Lion's Share,
-Last Word and days. Not Cairn (the universe's count is the game's), Witness
-and Starfield (being there isn't a claim), or the Company achievements;
-those are `u` in the core's catalog. Since no find could ever prove them,
+Last Word and days. Not Cairn (the universe's count is the game's), Here Be
+Dragons (250 territories out is in the wilds, past the universe's edge, where
+there's no survey to sign a find; see "The edge, the void and the wilds" in
+`SURVEY.md`), Witness and Starfield (being there isn't a claim), or the
+Company achievements; those are `u` in the core's catalog. Since no find could ever prove them,
 the Worker takes the game's word for them, always: they're small things to
 fake, and leaving them off would leave out the friendliest badges. Finds
 made alone, or before signing began, carry no receipt.
