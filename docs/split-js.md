@@ -185,10 +185,13 @@ still gets in the way.
 
 ## Other pages
 
-- **War** (8,560 lines) copies its rules (`BEGIN WAR CORE`) and name check
-  (`BEGIN NAME CHECK`) into the Worker. They should become
-  `js/war/core.js` and a shared name check the same way, which retires two
-  more copies and their tests.
+- **War** (8,560 lines) copied its rules (`BEGIN WAR CORE`) and name check
+  (`BEGIN NAME CHECK`) into the Worker. They're now `js/war/core.js` and
+  `js/war/names.js` the same way (in their own pull request), which retires
+  two more copies and their tests. War's script had no
+  `(() => { ... })()` around it, so its names were the window's, and a few
+  tests read them (`S`, `deck`...); its `#debug` now lends the window just
+  those.
 - **letterfield-log.html, the timelapse and the smaller games** (at most
   2,900 lines) share no code with a Worker, so they stay single files.
 - **The state machine helper**, copied into eight pages, could be one

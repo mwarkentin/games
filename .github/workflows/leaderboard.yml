@@ -6,6 +6,7 @@ on:
     paths:
       - 'worker/**'
       - 'js/letterfield/**' # the map and achievements, shared with the game
+      - 'js/war/**' # War's rules and the name check, shared with the game
       - '.github/workflows/leaderboard.yml'
   workflow_dispatch:
 

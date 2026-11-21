@@ -14,7 +14,7 @@
 // origins in ALLOWED_ORIGINS get a response the browser will read, and only
 // they may write.
 
-import { nameIsKind } from './names.js';
+import { nameIsKind } from '../../js/war/names.js';
 
 const TOP = 10;            // scores returned per view
 const RANK_LIMIT = 1000;   // ranks past this are reported as null, to cap rows read

@@ -13,7 +13,7 @@ import {
   EXPIRE_MS, MAX_SOCKETS, WAR, WarRoom, cleanDeck, cleanName, handleWar, warDeal, warDueAt, warNewGame, warRank, warResolve,
   warFlop, warGather, warShort, warSlam, warStandings, warUpCard,
 } from '../src/war.js';
-import { nameIsKind } from '../src/names.js';
+import { nameIsKind } from '../../js/war/names.js';
 // The room's state machine, as a namespace so the rest still runs against a
 // war.js without one.
 import * as warRoom from '../src/war.js';
@@ -382,26 +382,11 @@ describe('the rules', () => {
   });
 });
 
-test('war.html runs the same core as the Worker', () => {
-  const core = (text) => {
-    const match = text.match(/\/\/ ---- BEGIN WAR CORE ----\n([\s\S]*?)\/\/ ---- END WAR CORE ----/);
-    assert.ok(match, 'core markers are missing');
-    return match[1];
-  };
+test('war.html runs the rules and checks names with the Worker\'s own modules, and keeps no copy', () => {
   const page = readFileSync(new URL('../../war.html', import.meta.url), 'utf8');
-  const worker = readFileSync(new URL('../src/war.js', import.meta.url), 'utf8');
-  assert.equal(core(page), core(worker), 'the War core in war.html and worker/src/war.js must match word for word');
-});
-
-test('war.html checks names the same way as the Worker', () => {
-  const check = (text) => {
-    const match = text.match(/\/\/ ---- BEGIN NAME CHECK ----\n([\s\S]*?)\/\/ ---- END NAME CHECK ----/);
-    assert.ok(match, 'name check markers are missing');
-    return match[1];
-  };
-  const page = readFileSync(new URL('../../war.html', import.meta.url), 'utf8');
-  const worker = readFileSync(new URL('../src/names.js', import.meta.url), 'utf8');
-  assert.equal(check(page), check(worker), 'the name check in war.html and worker/src/names.js must match word for word');
+  assert.match(page, /^import \{[^}]*\bwarResolve\b[^}]*\} from '\.\/js\/war\/core\.js';$/m);
+  assert.match(page, /^import \{ nameIsKind \} from '\.\/js\/war\/names\.js';$/m);
+  assert.doesNotMatch(page, /const WAR = \{|function warResolve|function nameIsKind/);
 });
 
 test('rude names are turned away, however they are spelled', () => {

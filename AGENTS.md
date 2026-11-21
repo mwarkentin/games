@@ -23,11 +23,12 @@ utilities; games live here so they get their own origin and their own rules.
   `tests/test_letterfield_back_links.py` checks all of this. `letterfield-soundtrack.html`, the game's music as an album
   (see The soundtrack album), is another, linked from the music player in
   the game's tools, and its own "← Letterfield" steps back the same way.
-- `js/<game>/`: modules a game's page imports (see Modules): for now
-  Letterfield's map, `js/letterfield/world.js` (its themes and the code that
-  lays out every letter), and its achievements' rules and badges,
-  `js/letterfield/achievements.js`, which the Workers import too, so each is
-  written once.
+- `js/<game>/`: modules a game's page imports (see Modules): Letterfield's
+  map, `js/letterfield/world.js` (its themes and the code that lays out every
+  letter), and its achievements' rules and badges,
+  `js/letterfield/achievements.js`; War's rules, `js/war/core.js`, and its
+  check on players' names, `js/war/names.js`. The Workers import them too, so
+  each is written once.
 - `README.md`: the game list. The build turns it into `index.html`.
 - `changelog/`: each game's changelog for players, `<game>.md`, which the
   build turns into `/changelog/<game>` (see Changelogs).
@@ -250,7 +251,8 @@ out is dropped.
 A game's page holds its markup, its style and its code, with one exception:
 code that a Worker runs too, like Letterfield's map (the Worker checks a
 claimed word is really there) and its achievements' rules (the Worker signs
-badges by them). That lives once, as a module in `js/<game>/`, imported by
+badges by them), or War's rules (rooms play by them) and its name check.
+That lives once, as a module in `js/<game>/`, imported by
 the page and the Workers alike. Before, each was copied word for word into
 the Worker and kept in step by tests that read the page as text; a module
 retires the copy and the test.
@@ -261,8 +263,10 @@ retires the copy and the test.
   from any static server with nothing built, as before:
   `python3 -m http.server` at the top of the repo, then `/letterfield.html`.
   (Modules don't load from `file://`.) A module script is strict and has
-  its own scope, like the `(() => { ... })()` around a game's code, so
-  `window.__lf` and the other debug hooks stay as they are.
+  its own scope: its names aren't the window's, as a classic script's are.
+  Letterfield's code was already inside `(() => { ... })()`, so nothing
+  changed there; War's `#debug` lends the window the few names its tests
+  reach into (`S`, `deck`...), beside `window.__war`.
 - **In a Worker,** a relative import from `worker/src/` or `share/src/`
   (`'../../js/letterfield/world.js'`); wrangler bundles it. A module has no
   DOM and no state beyond caches, so node:test imports it as it is.
@@ -282,7 +286,7 @@ retires the copy and the test.
 - **Its tests** are its game's (`scripts/select_tests.py`), and the Workers'
   tests run on every pull request. A change to a module the Workers import
   also deploys and previews them (the `paths` of `leaderboard.yml` and
-  `share.yml`, and `preview.yml`).
+  `share.yml`, and `preview.yml`): add a new folder in `js/` there.
 - **Not everything big belongs in a module.** Splitting a page by section
   doesn't avoid merge conflicts: separate files would have spared none of
   the 73 conflicts between Letterfield's recent pull requests, which all
@@ -671,14 +675,12 @@ Object that holds the game and every player's WebSocket (`worker/src/war.js`).
   overrides it for local testing and for tests.
 - The room is in charge: it deals, waits for slams and plays every battle,
   and the page only shows what it's told. Solo games run the same rules in
-  the page. The rules sit between `BEGIN WAR CORE` and `END WAR CORE`
-  markers, word for word the same in `war.html` and `worker/src/war.js`, and
-  `worker/test/war.test.js` checks they match, so change both.
+  the page. The rules are `js/war/core.js`, which `war.html` and
+  `worker/src/war.js` both import (see Modules).
 - Players' names go through a word filter, `nameIsKind()` in
-  `worker/src/names.js`, which leaderboard groups' names go through too.
-  `war.html` keeps a copy between `BEGIN NAME CHECK` and `END NAME CHECK`
-  markers, word for word, and `worker/test/war.test.js` checks they match.
-  The page checks a name before it asks for a room, and the room refuses
+  `js/war/names.js`, which leaderboard groups' names go through too
+  (`worker/src/leaderboard.js` imports it, as do `war.html` and
+  `worker/src/war.js`). The page checks a name before it asks for a room, and the room refuses
   one that fails. Words that turn up inside ordinary names (ass in Cassandra, shit in
   Yamashita) count only on their own, so add a word to `NAME_ANYWHERE` only
   if no name hides it, and add an ordinary name that does to the test of
