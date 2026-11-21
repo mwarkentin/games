@@ -253,9 +253,9 @@ with nobody connected) or `over`, and makes only the moves listed in
 its old shape (`phase` and `pausedAt`), so pages and rooms from before still
 work.
 
-The rules between `BEGIN WAR CORE` and `END WAR CORE` in `src/war.js` are
-also in `war.html`, for solo games; `test/war.test.js` checks the two copies
-match.
+The rules are `js/war/core.js` at the top of the repo, which `src/war.js`
+imports for rooms and `war.html` for solo games, so the two play by the same
+rules.
 
 **Cost.** Rooms are SQLite-backed Durable Objects, as `wrangler.toml`'s
 migration asks. A room writes its storage once per battle, except in a

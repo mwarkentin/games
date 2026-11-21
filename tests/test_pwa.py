@@ -240,18 +240,28 @@ def map_drawn(page: Page) -> None:
     )
 
 
-def test_letterfield_plays_offline_with_its_modules(sw_context: BrowserContext, site_url):
+# Each page whose script imports modules, the modules, and the machine whose
+# state on <html> says its script has run.
+MODULE_PAGES = {
+    "letterfield": ({"/js/letterfield/world.js", "/js/letterfield/achievements.js"}, "intro"),
+    "war": ({"/js/war/core.js", "/js/war/names.js"}, "screen"),
+}
+
+
+@pytest.mark.parametrize("game", MODULE_PAGES)
+def test_a_game_plays_offline_with_its_modules(sw_context: BrowserContext, site_url, game):
+    paths, machine = MODULE_PAGES[game]
     page = sw_context.new_page()
     errors = []
     page.on("pageerror", lambda exc: errors.append(str(exc)))
     page.on("console", lambda msg: errors.append(msg.text) if msg.type == "error" else None)
-    install(page, f"{site_url}/war")
+    install(page, f"{site_url}/")
     go_offline(sw_context, site_url)
     modules = []
     page.on("response", lambda r: modules.append(r) if "/js/" in r.url else None)
-    page.goto(f"{site_url}/letterfield")
-    map_drawn(page)
-    assert {urlparse(r.url).path for r in modules} == {"/js/letterfield/world.js", "/js/letterfield/achievements.js"}
+    page.goto(f"{site_url}/{game}")
+    page.wait_for_function(f"document.documentElement.dataset.{machine} !== undefined")
+    assert {urlparse(r.url).path for r in modules} == paths
     assert all(r.from_service_worker and r.ok for r in modules)
     assert [e for e in errors if "ERR_INTERNET_DISCONNECTED" not in e and "Failed to load resource" not in e] == []
 

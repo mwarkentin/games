@@ -1,13 +1,10 @@
-// The word filter for names other people see, shared by War's rooms
-// (worker/src/war.js) and leaderboard groups (worker/src/leaderboard.js).
-// war.html keeps a copy word for word, so it can check a name before it
-// asks for a room.
-
-// ---- BEGIN NAME CHECK ----
 // Names other people see: players in a War room, and leaderboard groups.
 // war.html checks a name this way before it asks for a room, and the Worker
-// (worker/src/names.js, for rooms and groups alike) has the last word.
-// worker/test/war.test.js checks that the two copies match, so change both.
+// (worker/src/war.js for rooms, worker/src/leaderboard.js for groups) has the
+// last word, with this same file.
+//
+// No DOM: node:test imports it as it is (worker/test/war.test.js).
+
 // Accents come off, digits that look like letters count as those letters, and
 // any letter may repeat ("fuuuck"). Words that turn up inside ordinary names
 // (ass in Cassandra, shit in Yamashita, porn in Pornchai) count only as a word
@@ -41,6 +38,5 @@ function nameIsKind(name) {
     return ![...words, squashed].some((word) => NAME_ALONE_RES.some((re) => re.test(word)));
   });
 }
-// ---- END NAME CHECK ----
 
 export { nameIsKind };
