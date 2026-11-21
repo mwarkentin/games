@@ -276,7 +276,11 @@ def test_a_track_that_wont_load_says_so(page: Page, site_url, errors):
     # Another track plays as ever.
     play(page, 0)
     expect(page.locator("html")).to_have_attribute("data-player", "playing")
-    assert all("404" in e for e in errors), errors
+    # The missing track's 404, and nothing else. Chromium's media pipeline
+    # sometimes also aborts its request for that file as it gives up on it,
+    # about one run in twelve; that's the same missing file, not a new failure.
+    gone = f"Failed: {ALBUM}/letterfield-02-orbit.mp3 (net::ERR_ABORTED)"
+    assert all("404" in e or e == gone for e in errors), errors
 
 
 def test_the_maps_tools_link_here_and_the_way_back_steps_back(page: Page, site_url, errors):
