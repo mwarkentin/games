@@ -8233,14 +8233,86 @@ if (surveyApi) {
 updateHud();
 invalidate();
 if (redrawn) setTimeout(() => toast(`<i></i><b>The map has been redrawn</b><span>${NT} themes of about ${Math.round(THEMES.reduce((a, t) => a + t.words.length, 0) / NT / 10) * 10} words now, so a territory never repeats one · ${redrawn.kept ? `${redrawn.kept} of your ${redrawn.had} finds are still on it` : 'your old finds are not on it'}</span>`, null, 8000), 900);
-if (location.hash === '#debug') window.__lf = { cam, found, claims, links, chunk, wordEnd, collect, territoryProgress, remnants: () => [...remnants().set], novas: () => [...novasSeen.values()], territoryName: regionName, world: () => world, supernova, novaSound, distantSound, markSound, audioOut, musicTracks: MUSIC_TRACKS, lanternArc, rng, musicPiece: () => musicPiece, audio: () => ac, music: () => musicNow && { state: ac.state, track: musicNow.track().name, nodes: musicNow.track().nodes.size, fade: musicNow.track().bus.gain.value, fading: musicNow.fading(), level: musicNow.master.gain.value, master: musicNow.master, volume: musicVol, target: musicLevel(), swap: musicNow.swap }, nova: () => nova, novaWave: () => nova && novaLast && { cx: novaLast.cx, cy: novaLast.cy, R: novaLast.R || 0, amp: novaLast.amp, virtual: novaLast.virtual }, distantAt: v => { distantAt = v; },
-  who: () => Who.state, surveyors: () => whoData, panel: () => Panel.state, mapWidth: () => W - dock, peoplePage: () => PeoplePage.state, emoteMotion, guild: () => Membership.state, myGuilds: () => myGuilds, labels: () => Object.fromEntries(labels),
-  mates: () => [...new Set([...mates.values()].flatMap(m => [...m.keys()]))], matesOf: tag => [...(mates.get(tag) || new Map()).keys()],
-  roster: code => rosterOf(guildOfCode(code) || myGuilds[0] || { code: '' }),
-  pair: () => Pair.state, pairCode: () => linkCode && linkCode.code, linkCodeState: () => PairCode.state, recoveryCode: () => recoveryCode, sync: () => Sync.state, syncNow: () => { syncDue = 0; clearTimeout(syncTimer); return syncNow(); },
-  guildWords: () => [GUILD_FIRST.length, GUILD_SECOND.length, GUILD_THIRD.length], pops: () => pops.map(p => [p.pid, p.e]), pid: () => myPid, muted: () => [...muted], carets: () => [...ghosts.keys()], renderWho,
+// #debug's hooks (window.__lf), for tests and for scripts/render_album.py: one
+// a line, grouped by the section each comes from, alphabetical in its group.
+// Add one on a line of its own in its group, so pull requests that add hooks
+// don't collide, as they did when these were one long statement.
+if (location.hash === '#debug') window.__lf = {
+  // The map
+  chunk,
+  rng,
+  territoryName: regionName,
+  wordEnd,
+  // Storage
+  found,
+  // Shared survey
+  carets: () => [...ghosts.keys()],
   caretXY: id => { const gh = ghosts.get(id); return gh && { x: (Math.round(gh.x) - cam.x) * cam.cs + (W - dock) / 2, y: (Math.floor(gh.y) + .5 - cam.y) * cam.cs + H / 2 + mapTop }; },
-  pass: () => Pass.state, intro: () => Intro.state, surveyStatus, linkStates: () => Object.fromEntries([...links].map(([k, l]) => [k, l.m.state])), outbox: () => [...outbox.values()].map(c => [c.e.w, c.m.state]), definitions: () => Object.fromEntries([...definitions].map(([k, d]) => [k, d.m.state])) };
+  claims,
+  distantAt: v => { distantAt = v; },
+  links,
+  linkStates: () => Object.fromEntries([...links].map(([k, l]) => [k, l.m.state])),
+  outbox: () => [...outbox.values()].map(c => [c.e.w, c.m.state]),
+  pass: () => Pass.state,
+  surveyStatus,
+  territoryProgress,
+  world: () => world,
+  // Canvas + colours
+  cam,
+  mapWidth: () => W - dock,
+  // Supernova
+  nova: () => nova,
+  novas: () => [...novasSeen.values()],
+  novaWave: () => nova && novaLast && { cx: novaLast.cx, cy: novaLast.cy, R: novaLast.R || 0, amp: novaLast.amp, virtual: novaLast.virtual },
+  supernova,
+  // Remnants
+  remnants: () => [...remnants().set],
+  // Sound
+  audio: () => ac,
+  audioOut,
+  // Music
+  distantSound,
+  lanternArc,
+  music: () => musicNow && { state: ac.state, track: musicNow.track().name, nodes: musicNow.track().nodes.size, fade: musicNow.track().bus.gain.value, fading: musicNow.fading(), level: musicNow.master.gain.value, master: musicNow.master, volume: musicVol, target: musicLevel(), swap: musicNow.swap },
+  musicPiece: () => musicPiece,
+  musicTracks: MUSIC_TRACKS,
+  novaSound,
+  // Finding words
+  collect,
+  // Definitions
+  definitions: () => Object.fromEntries([...definitions].map(([k, d]) => [k, d.m.state])),
+  // Field notes
+  panel: () => Panel.state,
+  // Controls
+  intro: () => Intro.state,
+  // Surveyors
+  emoteMotion,
+  muted: () => [...muted],
+  peoplePage: () => PeoplePage.state,
+  pid: () => myPid,
+  pops: () => pops.map(p => [p.pid, p.e]),
+  renderWho,
+  surveyors: () => whoData,
+  who: () => Who.state,
+  // Guilds
+  guild: () => Membership.state,
+  guildWords: () => [GUILD_FIRST.length, GUILD_SECOND.length, GUILD_THIRD.length],
+  labels: () => Object.fromEntries(labels),
+  mates: () => [...new Set([...mates.values()].flatMap(m => [...m.keys()]))],
+  matesOf: tag => [...(mates.get(tag) || new Map()).keys()],
+  myGuilds: () => myGuilds,
+  roster: code => rosterOf(guildOfCode(code) || myGuilds[0] || { code: '' }),
+  // Syncing linked devices
+  sync: () => Sync.state,
+  syncNow: () => { syncDue = 0; clearTimeout(syncTimer); return syncNow(); },
+  // Linking devices
+  linkCodeState: () => PairCode.state,
+  pair: () => Pair.state,
+  pairCode: () => linkCode && linkCode.code,
+  recoveryCode: () => recoveryCode,
+  // Achievements
+  markSound,
+};
 
 })();
 </script>
