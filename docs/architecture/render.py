@@ -146,36 +146,49 @@ def frames(page, svg: Path, times: list[float], out: Path, scale: float = 1) -> 
         page.screenshot(path=out / f"f{i:05d}.png", clip={"x": 0, "y": 0, "width": w, "height": h})
 
 
-def record_clips(ids: list[str], fps: int = 25) -> None:
-    """Each animated figure's loop as an MP4 and a GIF beside its SVGs, in both themes (needs ffmpeg)."""
+def _record(job: tuple[str, str, float, int, float]) -> str:
+    """One moving figure in one theme: its loop as frames, then an MP4 and a GIF beside its SVG."""
     import shutil
     import subprocess
 
     from playwright.sync_api import sync_playwright
 
-    moving = [fid for fid in ids if FIGURES[fid].draw(THEMES[0]).cycle]
+    fid, theme, cycle, fps, scale = job
+    svg = OUT / "figures" / f"{fid}-{theme}.svg"
+    folder = OUT / "frames" / f"{fid}-{theme}"
+    if folder.exists():
+        shutil.rmtree(folder)
     with sync_playwright() as p:
         browser = p.chromium.launch()
-        page = browser.new_page(device_scale_factor=1.5)
-        for fid in moving:
-            cycle = FIGURES[fid].draw(THEMES[0]).cycle
-            for theme in THEMES:
-                svg = OUT / "figures" / f"{fid}-{theme.name}.svg"
-                folder = OUT / "frames" / f"{fid}-{theme.name}"
-                if folder.exists():
-                    shutil.rmtree(folder)
-                frames(page, svg, [i / fps for i in range(round(cycle * fps))], folder)
-                src = ["-framerate", str(fps), "-i", str(folder / "f%05d.png")]
-                subprocess.run(["ffmpeg", "-y", "-loglevel", "error", *src, "-vf", "scale=trunc(iw/2)*2:trunc(ih/2)*2",
-                                "-c:v", "libx264", "-pix_fmt", "yuv420p", "-crf", "22", "-preset", "slow",
-                                "-movflags", "+faststart", str(svg.with_suffix(".mp4"))], check=True)  # fmt: skip
-                palette = ("fps=12,scale=800:-1:flags=lanczos,split[a][b];[a]palettegen=max_colors=96:stats_mode=diff[p];"
-                           "[b][p]paletteuse=dither=none:diff_mode=rectangle")  # fmt: skip
-                subprocess.run(["ffmpeg", "-y", "-loglevel", "error", *src, "-vf", palette, str(svg.with_suffix(".gif"))],
-                               check=True)  # fmt: skip
-                shutil.rmtree(folder)
-            print(f"  clips of {fid}: {cycle:g} s loops, light and dark")
+        frames(browser.new_page(device_scale_factor=scale), svg, [i / fps for i in range(round(cycle * fps))], folder)
         browser.close()
+    src = ["-framerate", str(fps), "-i", str(folder / "f%05d.png")]
+    subprocess.run(["ffmpeg", "-y", "-loglevel", "error", *src, "-vf", "scale=trunc(iw/2)*2:trunc(ih/2)*2",
+                    "-c:v", "libx264", "-pix_fmt", "yuv420p", "-crf", "22", "-preset", "slow",
+                    "-movflags", "+faststart", str(svg.with_suffix(".mp4"))], check=True)  # fmt: skip
+    palette = ("fps=12,scale=800:-1:flags=lanczos,split[a][b];[a]palettegen=max_colors=96:stats_mode=diff[p];"
+               "[b][p]paletteuse=dither=none:diff_mode=rectangle")  # fmt: skip
+    subprocess.run(
+        ["ffmpeg", "-y", "-loglevel", "error", *src, "-vf", palette, str(svg.with_suffix(".gif"))], check=True
+    )
+    shutil.rmtree(folder)
+    return f"{fid}-{theme}"
+
+
+def record_clips(ids: list[str], fps: int = 20, scale: float = 1.25, workers: int = 3) -> None:
+    """Each moving figure's loop as an MP4 and a GIF beside its SVGs, in both themes, a few at once (needs ffmpeg).
+
+    These SVGs are heavy (every letter an outline), so frames are slow to draw: three browsers share the work."""
+    from concurrent.futures import ProcessPoolExecutor
+
+    jobs = []
+    for fid in ids:
+        cycle = FIGURES[fid].draw(THEMES[0]).cycle
+        if cycle:
+            jobs += [(fid, theme.name, cycle, fps, scale) for theme in THEMES]
+    with ProcessPoolExecutor(workers) as pool:
+        for done in pool.map(_record, jobs):
+            print(f"  clip {done}")
 
 
 def refresh_history() -> None:
