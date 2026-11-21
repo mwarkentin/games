@@ -18,7 +18,7 @@
 // covers, which the log is asked for. So a card shared on Monday still matches
 // its link on Friday, wherever it's opened.
 
-import { THEMES, regionName, regionTheme } from '../../worker/src/letterfield-world.js';
+import { THEMES, regionName, regionTheme } from '../../js/letterfield/world.js';
 import { GUILD_FIRST, GUILD_SECOND, GUILD_THIRD, goodName, guildHue, guildName } from '../../worker/src/survey-guild.js';
 import { SLICE_MAX_HOURS } from '../../worker/src/survey-log.js';
 import { CARD_WORDS, H, MONTHS, PALETTES, W, day, fit, measure, text } from './card.js';

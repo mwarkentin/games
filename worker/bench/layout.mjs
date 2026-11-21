@@ -7,13 +7,13 @@
 // This searches for an order of THEME_DATA in which every two neighbours
 // differ in hue by at least 30 degrees, differ in kind (theme-kinds.json: no
 // two bird themes side by side) and share no words, and prints THEME_DATA in
-// that order, to paste into letterfield.html and src/letterfield-world.js.
+// that order, to paste into js/letterfield/world.js.
 // test/survey.test.js checks the hues, the words and the spacing; the kinds
 // are this script's alone, so give a new theme one.
 //
 //   node bench/layout.mjs [seed] [lat_b] > /tmp/themes.txt
 import { readFileSync } from 'node:fs';
-import { THEMES } from '../src/letterfield-world.js';
+import { THEMES } from '../../js/letterfield/world.js';
 
 const kinds = JSON.parse(readFileSync(new URL('./theme-kinds.json', import.meta.url), 'utf8'));
 const NT = THEMES.length, LAT = Number(process.argv[3] ?? Math.floor(Math.sqrt(NT))), MIN_HUE = 30;

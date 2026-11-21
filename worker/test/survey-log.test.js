@@ -10,7 +10,7 @@ import { DatabaseSync } from 'node:sqlite';
 import { afterEach, beforeEach, describe, mock, test } from 'node:test';
 
 import worker from '../src/index.js';
-import { CH, DIRS, MAP_VERSION, RC, STRAY_MIN, THEMES, VOCAB, chunk, fdiv, keyOf, letterAt, regionName, regionTheme, territoryTotal } from '../src/letterfield-world.js';
+import { CH, DIRS, MAP_VERSION, RC, STRAY_MIN, THEMES, VOCAB, chunk, fdiv, keyOf, letterAt, regionName, regionTheme, territoryTotal } from '../../js/letterfield/world.js';
 import {
   DAY_MS, HOURS_SQL, HOUR_AFTER_SQL, HOUR_MS, HOUR_SQL, LIVE_CACHE_S, LOG_BATCH, LOG_MS, LOG_PAGE, LOG_RETRY_MAX_MS, SETTLED_MS,
   FIRST_SQL, LAST_SQL, SLICES, SLICE_MAX_HOURS, SLICE_PAGE, SLICE_SLOW_CACHE_S, SPAN_CACHE_S, SURVEYORS_SQL, TERRITORIES_SQL,

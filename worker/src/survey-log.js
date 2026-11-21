@@ -96,7 +96,7 @@
 // cached from the old one would otherwise outlive it.
 
 import { corsHeaders, edgeCache, json } from './leaderboard.js';
-import { MAP_VERSION, RC, THEMES, fdiv, regionName, regionTheme, strayTheme, territoryTotal } from './letterfield-world.js';
+import { MAP_VERSION, RC, THEMES, fdiv, regionName, regionTheme, strayTheme, territoryTotal } from '../../js/letterfield/world.js';
 import { GUILD_LOG_ID, GUILDS_MAX, goodName, guildHue, guildName } from './survey-guild.js';
 
 export const LOG_MS = 30000;            // a sector copies new claims to D1 at most this often

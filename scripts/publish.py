@@ -1,14 +1,16 @@
 #!/usr/bin/env python3
 """Copy everything publishable into the site directory.
 
-Games are copied as they are apart from five additions, inserted before
-</head>: link-preview tags (see inject_social in common.py), telemetry.js
-(Sentry), feedback.js (the "Send feedback" dialog), analytics.js
-(Counterscale), and the links and script that make
-each game a home-screen app (see build_pwa.py). Nothing is drawn on top of
-them, because each one owns the whole screen. games.json is copied alongside
-them, and so are the MIDI files in music/ that games play and the
-link-preview images in previews/. Anything not listed here or in build_pwa.py
+Games are copied as they are apart from six additions, inserted before
+</head>: for a page that imports modules from js/, an import map naming them
+by their hashes and links that preload them (see inject_modules in
+common.py), link-preview tags (see inject_social), telemetry.js (Sentry),
+feedback.js (the "Send feedback" dialog), analytics.js (Counterscale), and
+the links and script that make each game a home-screen app (see
+build_pwa.py). Nothing is drawn on top of them, because each one owns the
+whole screen. games.json is copied alongside them, and so are the modules in
+js/, the MIDI files in music/ that games play and the link-preview images in
+previews/. Anything not listed here or in build_pwa.py
 (scripts, tests, Markdown, the scripts' own files) never reaches the site.
 
 Usage: publish.py [SITE_DIR]
@@ -26,9 +28,11 @@ from common import (
     app_of,
     game_files,
     inject_analytics,
+    inject_modules,
     inject_pwa,
     inject_social,
     inline_script,
+    module_files,
     music_files,
     preview_files,
 )
@@ -68,7 +72,7 @@ def publish(site_dir: Path, root: Path = ROOT) -> list[str]:
         slug = filename.removesuffix(".html")
         source = (root / filename).read_text("utf-8")
         app = app_of(source, slug)
-        text = inject_social(source, app, f"/{slug}", root)
+        text = inject_social(inject_modules(source, root), app, f"/{slug}", root)
         text = inject_feedback(inject_telemetry(text, telemetry, release), feedback)
         text = inject_analytics(text, root)
         text = inject_pwa(text, app)
@@ -76,7 +80,7 @@ def publish(site_dir: Path, root: Path = ROOT) -> list[str]:
     games_json = root / "games.json"
     if games_json.exists():
         shutil.copy2(games_json, site_dir / "games.json")
-    for name in [*music_files(root), *preview_files(root)]:
+    for name in [*module_files(root), *music_files(root), *preview_files(root)]:
         (site_dir / name).parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(root / name, site_dir / name)
     return published

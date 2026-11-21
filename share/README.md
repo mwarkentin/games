@@ -111,8 +111,8 @@ GET /a/d/<id>…       the same, dark
 
 `<id>` is the achievement's id in the catalog (`CORE.CATALOG` in
 `worker/src/achievements.js`). The card (`src/badge.js`) is the badge as
-the game draws it, from the `BADGE ART` block that `achievements.js` copies
-from `letterfield.html`, with its name, its group and what it asks for. It
+the game draws it, from the badge art in `js/letterfield/achievements.js`
+that the game draws from too, with its name, its group and what it asks for. It
 says nothing about who shared it, so nothing needs asking or checking: an
 id not in the catalog gets the game's own preview, and its `.png` a 404.
 

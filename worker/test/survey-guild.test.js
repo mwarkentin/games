@@ -10,7 +10,7 @@ import { afterEach, beforeEach, describe, mock, test } from 'node:test';
 
 import worker from '../src/index.js';
 import { Atlas, ONLINE_MS, REPORT_MS, SECTOR, Sector } from '../src/survey.js';
-import { chunk } from '../src/letterfield-world.js';
+import { chunk } from '../../js/letterfield/world.js';
 import {
   GUILD_CHECKS, GUILD_CHECK_REFILL_MS, GUILD_CODE, GUILD_FIRST, GUILD_LOG_ID, GUILD_MAX, GUILD_RECHECK_MS, GUILD_RETRY_MS, GUILD_SECOND, GUILD_THIRD, GUILD_WORDS, Guild, SEEN_MS,
   idleShown, matesFor, noteMates, passMates,

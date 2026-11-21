@@ -6,8 +6,8 @@ one per line, and reads back JSON:
     {"pytest": true, "tests": ["tests/test_war.py", ...], "shards": [1, 2]}
 
 `tests` empty means the whole suite. A pull request whose every file belongs
-to one game or a few (its pages, its tests, its changelog, its icon, its link
-preview) runs those games' tests, and every test file named for no game,
+to one game or a few (its pages, its modules in js/<game>/, its tests, its
+changelog, its icon, its link preview) runs those games' tests, and every test file named for no game,
 which covers all of them at once (the smoke tests, the build, the PWA,
 feedback, telemetry...). Anything else changed means the whole suite: shared
 scripts, fakes, music, the workflow. Files no pytest test or build script
@@ -66,6 +66,8 @@ def owner(path: str, pages: dict[str, str]) -> str | None:
         return p.stem if p.stem in pages.values() else None
     if len(p.parts) == 2 and p.parts[0] == "previews" and p.suffix == ".jpg":
         return pages.get(p.stem)
+    if len(p.parts) == 3 and p.parts[0] == "js" and p.suffix == ".js":
+        return p.parts[1] if p.parts[1] in pages.values() else None  # js/letterfield/world.js
     if len(p.parts) == 2 and p.parts[0] == "icons":
         app = re.sub(r"-\d+$", "", p.stem)  # foo.svg and foo-192.png
         return app if app in pages.values() else None

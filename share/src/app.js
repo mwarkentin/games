@@ -21,7 +21,7 @@
 // Node.
 
 import { addressOf, edgeCache, hashAddress } from '../../worker/src/leaderboard.js';
-import { MAP_VERSION, RC, THEMES, keyOf, regionName } from '../../worker/src/letterfield-world.js';
+import { MAP_VERSION, RC, THEMES, keyOf, regionName } from '../../js/letterfield/world.js';
 import { SECTOR, TOTALS_PATH, inArea } from '../../worker/src/survey.js';
 import { CARD_WORDS, day, esc, findSvg, parseFind, progress } from './card.js';
 import { logPaths, nameOf, pagePath, parseView, summarize, viewSvg } from './view.js';

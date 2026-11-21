@@ -107,8 +107,8 @@ client's IP address included.
 `src/leaderboard.js` holds the logic and `src/index.js` only exports the
 Worker and the Durable Object classes: the runtime treats every
 export of the main module as an entry point, so constants exported for tests
-can't live there. `src/survey.js`, `src/survey-log.js` and `src/letterfield-world.js` are the
-survey, `src/define.js` Letterfield's definitions, and `src/achievements.js`
+can't live there. `src/survey.js` and `src/survey-log.js` are the survey, on
+the game's own map (`js/letterfield/world.js`, at the top of the repo), `src/define.js` Letterfield's definitions, and `src/achievements.js`
 its achievements' signed finds and badges (see ACHIEVEMENTS.md).
 
 ## Letterfield's definitions
@@ -117,7 +117,7 @@ its achievements' signed finds and badges (see ACHIEVEMENTS.md).
 Letterfield's field notes: up to three senses from Wiktionary, or, for a
 name Wiktionary doesn't know, the start of the Wikipedia article a search
 for the word beside its theme's name finds ("cronkite Broadcast"). The word
-must be in theme `th` of `letterfield-world.js`, so there are only about
+must be in theme `th` of the map (`js/letterfield/world.js`), so there are only about
 28,800 words ever to look up (on map 4; see SURVEY.md), and a few more
 answers kept per theme where Wikipedia, or nothing, answers.
 
@@ -253,9 +253,9 @@ with nobody connected) or `over`, and makes only the moves listed in
 its old shape (`phase` and `pausedAt`), so pages and rooms from before still
 work.
 
-The rules between `BEGIN WAR CORE` and `END WAR CORE` in `src/war.js` are
-also in `war.html`, for solo games; `test/war.test.js` checks the two copies
-match.
+The rules are `js/war/core.js` at the top of the repo, which `src/war.js`
+imports for rooms and `war.html` for solo games, so the two play by the same
+rules.
 
 **Cost.** Rooms are SQLite-backed Durable Objects, as `wrangler.toml`'s
 migration asks. A room writes its storage once per battle, except in a

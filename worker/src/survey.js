@@ -98,7 +98,7 @@ import { addressOf, allowedInitials, corsHeaders, hashAddress, initialsOrNone, i
 
 export { addressOf };
 import { PASS_PATH, checkPass, handlePass } from './survey-pass.js';
-import { CH, DIRS, MAP_VERSION, RC, STRAY_MIN, VOCAB, chunk, fdiv, keyOf, letterAt, regionTheme, territoryTotal } from './letterfield-world.js';
+import { CH, DIRS, MAP_VERSION, RC, STRAY_MIN, VOCAB, chunk, fdiv, keyOf, letterAt, regionTheme, territoryTotal } from '../../js/letterfield/world.js';
 import { DAY_MS, HOUR_MS, LOG_BATCH, LOG_MS, LOG_RETRY_MAX_MS, writeLog } from './survey-log.js';
 import { GUILD_TAG, GUILD_TAGS_MAX, checkGuilds, matesFor, noteMates, passMates } from './survey-guild.js';
 import { checkBadge, checkCard, signFind, signing } from './achievements.js';
