@@ -3595,24 +3595,25 @@ function hinterlandTrack(a, out, seed = Math.floor(Math.random() * 4294967296)) 
 }
 
 // Dripstone: the void's only sound, in place of any music. No tune, only
-// water dripping somewhere in a cave: each drop a tiny rising plink, ringing
-// off far walls through a long, cold echo whose repeats waver a little out
-// of tune. A few spots drip, each at its own pitch, its own place left or
-// right and its own slow, nearly steady pace, so their drops fall in and out
-// of step; now and then one drops twice, or stops for a while, and rarely a
-// deeper drop falls into a pool. Under it, the cave's breath, almost nothing.
-const DRIP_LEVEL = .17;
-const caveOf = perContext(a => {  // a long, cold tail with a few hard early bounces
-  const n = Math.floor(a.sampleRate * 5.5), b = a.createBuffer(2, n, a.sampleRate), rnd = rng(0xca7e);
+// water dripping somewhere deep in a vast cave: each drop a low, hollow
+// plunk, ringing off far walls through a long, dark echo whose repeats waver
+// a little out of tune. Two or three spots drip, each at its own pitch, its
+// own place left or right and its own slow, nearly steady pace, many
+// seconds apart, so their drops fall in and out of step; now and then one
+// drops twice, or stops for a long while, and rarely a deeper drop falls into
+// a pool. Under it, the cave's breath, a low rumble, almost nothing.
+const DRIP_LEVEL = .2;
+const caveOf = perContext(a => {  // a long, dark tail with a few hard, far bounces
+  const n = Math.floor(a.sampleRate * 7.5), b = a.createBuffer(2, n, a.sampleRate), rnd = rng(0xca7e);
   for (let ch = 0; ch < 2; ch++) {
     const d = b.getChannelData(ch);
     let y = 0;
     for (let i = 0; i < n; i++) {
-      const t = i / n, k = .7 - .55 * t;
+      const t = i / n, k = .45 - .37 * t;
       y += k * (rnd() * 2 - 1 - y);
-      d[i] = y * Math.exp(-5.2 * t) * Math.min(1, i / (a.sampleRate * .03)) * .8;
+      d[i] = y * Math.exp(-5 * t) * Math.min(1, i / (a.sampleRate * .05)) * 1.1;
     }
-    for (const [ms, v] of [[19, .5], [37, .38], [61, .3], [97, .22], [149, .16]]) {
+    for (const [ms, v] of [[31, .45], [59, .34], [97, .26], [151, .2], [233, .14]]) {
       const i = Math.floor(a.sampleRate * (ms + ch * 7 + rnd() * 5) / 1000);
       if (i < n) d[i] += v * (ch ? -1 : 1);
     }
@@ -3620,23 +3621,23 @@ const caveOf = perContext(a => {  // a long, cold tail with a few hard early bou
   return b;
 });
 function dripstoneTrack(a, out, seed = Math.floor(Math.random() * 4294967296)) {
-  const T = trackBase(a, out, [.47, .71, .5, 2400]), { keep, bus, send } = T, rnd = rng(seed), now = a.currentTime;
+  const T = trackBase(a, out, [.81, 1.23, .45, 1400]), { keep, bus, send } = T, rnd = rng(seed), now = a.currentTime;
   const cave = a.createConvolver();
   cave.buffer = caveOf(a);
-  const wet = a.createGain(); wet.gain.value = .75; cave.connect(wet); wet.connect(bus);
+  const wet = a.createGain(); wet.gain.value = .9; cave.connect(wet); wet.connect(bus);
   // The wavering echo: a long delay whose time sways slowly, so each repeat
   // comes back a hair off pitch.
   const sway = a.createDelay(1), swayBack = a.createGain(), swayTone = a.createBiquadFilter();
-  sway.delayTime.value = .33; swayBack.gain.value = .42; swayTone.type = 'lowpass'; swayTone.frequency.value = 1800;
+  sway.delayTime.value = .57; swayBack.gain.value = .45; swayTone.type = 'lowpass'; swayTone.frequency.value = 1100;
   sway.connect(swayTone); swayTone.connect(swayBack); swayBack.connect(sway); swayTone.connect(cave);
   const swayer = keep(a.createOscillator()), swayDepth = a.createGain();
-  swayer.frequency.value = .17; swayDepth.gain.value = .0045; swayer.connect(swayDepth); swayDepth.connect(sway.delayTime);
+  swayer.frequency.value = .11; swayDepth.gain.value = .006; swayer.connect(swayDepth); swayDepth.connect(sway.delayTime);
   // The cave's breath: noise kept low and dim, slowly swelling.
   const air = keep(a.createBufferSource()), airTone = a.createBiquadFilter(), airGain = a.createGain();
   air.buffer = noiseOf(a); air.loop = true; air.playbackRate.value = .61;
-  airTone.type = 'lowpass'; airTone.frequency.value = 170; airGain.gain.value = .014;
+  airTone.type = 'lowpass'; airTone.frequency.value = 110; airGain.gain.value = .02;
   const breath = keep(a.createOscillator()), breathDepth = a.createGain();
-  breath.frequency.value = .033; breathDepth.gain.value = .008; breath.connect(breathDepth); breathDepth.connect(airGain.gain);
+  breath.frequency.value = .021; breathDepth.gain.value = .011; breath.connect(breathDepth); breathDepth.connect(airGain.gain);
   air.connect(airTone); airTone.connect(airGain); airGain.connect(bus); airGain.connect(cave);
   for (const n of T.nodes) n.start(now);
   // A spot in the cave: where, how near, its pitch and its pace.
@@ -3647,38 +3648,38 @@ function dripstoneTrack(a, out, seed = Math.floor(Math.random() * 4294967296)) {
     const p = a.createStereoPanner(); p.pan.value = pan; p.connect(to);
     return p;
   };
-  const spots = Array.from({ length: 3 + Math.floor(rnd() * 3) }, () => {
+  const spots = Array.from({ length: 2 + Math.floor(rnd() * 2) }, () => {
     const near = .25 + rnd() * .75;
-    return { to: spot(rnd() * 1.6 - .8, near), f: 820 * Math.pow(3.2, rnd()), level: DRIP_LEVEL * (.55 + .45 * near), every: 2.4 + rnd() * 6, next: now + 1 + rnd() * 5 };
+    return { to: spot(rnd() * 1.6 - .8, near), f: 330 * Math.pow(2.2, rnd()), level: DRIP_LEVEL * (.55 + .45 * near), every: 7 + rnd() * 10, next: now + 1.5 + rnd() * 7 };
   });
-  // A drop: a sine that leaps up in pitch as the bubble it makes closes, gone
-  // in a tenth of a second or so, with a click of the splash.
+  // A drop: a sine that lifts in pitch as the bubble it makes closes, gone
+  // in a fifth of a second or so, with the dull slap of the splash.
   function drop(t, f, level, to, slow = 1) {
-    const o = keep(a.createOscillator()), g = a.createGain(), len = (.09 + rnd() * .07) * slow;
+    const o = keep(a.createOscillator()), g = a.createGain(), len = (.16 + rnd() * .1) * slow;
     o.frequency.setValueAtTime(f, t);
-    o.frequency.exponentialRampToValueAtTime(f * (1.6 + rnd() * .5), t + len * .45);
+    o.frequency.exponentialRampToValueAtTime(f * (1.35 + rnd() * .3), t + len * .45);
     g.gain.setValueAtTime(0, t);
     g.gain.linearRampToValueAtTime(level, t + .002);
     g.gain.exponentialRampToValueAtTime(.0001, t + len);
     o.connect(g); g.connect(to);
     o.start(t); o.stop(t + len + .02);
     const c = keep(a.createBufferSource()), hp = a.createBiquadFilter(), cg = a.createGain();
-    c.buffer = noiseOf(a); hp.type = 'highpass'; hp.frequency.value = 3200;
-    cg.gain.setValueAtTime(level * .2, t); cg.gain.exponentialRampToValueAtTime(.0001, t + .01);
+    c.buffer = noiseOf(a); hp.type = 'highpass'; hp.frequency.value = 1800;
+    cg.gain.setValueAtTime(level * .12, t); cg.gain.exponentialRampToValueAtTime(.0001, t + .016);
     c.connect(hp); hp.connect(cg); cg.connect(to);
     c.start(t, rnd() * 1.5); c.stop(t + .02);
   }
   const pool = spot(rnd() * .8 - .4, .35);
-  let poolAt = now + 8 + rnd() * 20;
+  let poolAt = now + 12 + rnd() * 25;
   return {
     name: 'dripstone', bus, nodes: T.nodes, stop: T.stop, seed,
     play(until) {
       for (const s of spots) while (s.next < until) {
         drop(s.next, s.f * (1 + (rnd() - .5) * .04), s.level * (.8 + rnd() * .3), s.to);
-        if (rnd() < .12) drop(s.next + .09 + rnd() * .1, s.f * 1.08, s.level * .55, s.to);
-        s.next += s.every * (rnd() < .08 ? 2.5 + rnd() * 3 : 1 + (rnd() - .5) * .24);
+        if (rnd() < .06) drop(s.next + .14 + rnd() * .12, s.f * 1.06, s.level * .55, s.to);
+        s.next += s.every * (rnd() < .12 ? 2.5 + rnd() * 3 : 1 + (rnd() - .5) * .24);
       }
-      while (poolAt < until) { drop(poolAt, 260 + rnd() * 160, DRIP_LEVEL * 1.3, pool, 2.6); poolAt += 15 + rnd() * 30; }
+      while (poolAt < until) { drop(poolAt, 140 + rnd() * 80, DRIP_LEVEL * 1.3, pool, 2.4); poolAt += 25 + rnd() * 35; }
     },
     resync(now) { for (const s of spots) s.next = Math.max(s.next, now + .3 + rnd() * 2); poolAt = Math.max(poolAt, now + 5); },
   };
