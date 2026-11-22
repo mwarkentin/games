@@ -59,7 +59,7 @@ From [Scaling One Million Checkboxes][omcb] and
 | Moves went out in batches every 200 ms; batching "massively reduced load" | claims go out in batches every 200 ms. In the load test, this took a sector from saturating at ~630 players to handling 750 |
 | Global data (players online) was served over HTTP with a low max-age so Cloudflare's cache absorbed it: "hundreds of millions of requests" | the world map is a `GET` with `max-age=5`, cached per Worker instance; the Atlas that builds it hears only from sectors, never from players |
 | Bandwidth was "my one unbounded cost" (OMCB capped its server at 250 Mbit/s) | Cloudflare doesn't charge for egress, and outgoing WebSocket messages are free |
-| "Bound my costs … instead of going serverless and scaling into bankruptcy" | `MAX_PLAYERS` per sector and `MAX_ONLINE` across the shared world. Beyond them, players are told the survey is full; the bill can't run away there (sectors outside it aren't counted: see "Bots") |
+| "Bound my costs … instead of going serverless and scaling into bankruptcy" | `MAX_PLAYERS` per sector and `MAX_ONLINE` across the shared world. Beyond them, players are told the survey is full; the bill can't run away there, and nobody's on the survey past the universe's edge (see "The edge, the void and the wilds") |
 | Validate everything: someone checked box 100,000,000 and broke OMCB | every claim is checked against the server's copy of the map generator |
 | Bots pushed absurd traffic once the Go rewrite made things fast | a burst of 5 claims per socket, then one per 1.5 s; and per IP address, however many sockets it opens, 6 a minute and 300 a day (see "Limits per address") |
 | Rollback netcode, so moves feel instant | not needed: a circled word is always kept locally, and the server only decides who gets the credit |
@@ -129,6 +129,50 @@ From [Scaling One Million Checkboxes][omcb] and
   positions are written to the attachment at most every 5 s.
 
 Messages are listed at the top of `src/survey.js`.
+
+### The edge, the void and the wilds
+
+The map goes on for ever, but the survey stops at the universe's edge:
+sectors -12 to 12 each way, 100 × 100 territories, whose 1,119,752 hidden
+words everything counts toward (`AREA` here, `SURVEY_AREA` in the game).
+Sectors past it used to take claims like any other but never reported, so
+their words went into the log and its top lists and not the universe's
+count, two numbers that never agreed, and their players weren't counted
+toward `MAX_ONLINE` (issue #131). Now nothing past the edge is shared:
+
+- **The edge** is drawn on the map: a glowing line, with the paper falling
+  away to night beyond it.
+- **The void** is the ring one sector wide past it (192 cells): night, with
+  loose letters drifting in slow eddies, off the grid and never lined up
+  into words, so nothing there can be circled. Its title box says "The void ·
+  Beyond the known universe". A sector wide, so each of its sectors is all
+  void, and the wilds start where a sector, and its territories, do.
+- **The wilds** are the map beyond the void, as it always was, in night ink.
+  Words are found there alone, as without the survey: they go in the field
+  notes and nowhere else, with no claim, no caret, and a supernova for the
+  finder alone. Here Be Dragons, 250 territories out, is earned there, on
+  the game's word (`u` in the achievements' catalog), since no sector signs
+  a find out there.
+- **Their sound:** the music follows the view. In the void no music plays,
+  only Dripstone, water dripping in a cave; in the wilds only Hinterland, a
+  lone flute's lament of its own. Both are made in the page from a seed, like
+  the other pieces (`PLACE_PIECES` in the game).
+- **Crossing** the edge leaves the survey with a note, every time ("Past the
+  edge of the universe", with Back to the universe), and coming back joins
+  it again. The game keeps where the view is in its `zone` machine (inside,
+  void, wilds) and joins no sector past the edge.
+- **The Worker** turns a join past the edge away before it wakes a sector,
+  with `{t: 'edge'}` and close code 4002 (`EDGE_CLOSE`), so an older copy of
+  the game can't chart there. A sector past the edge that wakes for anything
+  else (a supernova or claim asked after) forgets what it held from before
+  (`outside()` and `purge()`), and answers not found. The log took out every
+  word and supernova from past the edge (`migrations-log/0012`), and with
+  them their surveyors', territories', themes' and guilds' counts.
+- **Field notes keep them.** Finds made past the edge before it closed stay
+  in each finder's notes, marked "the void" or "the wilds", and count toward
+  achievements, but toward nothing shared: not the log, and not the survey
+  box's "charted first by you". A find in the void isn't circled on the map,
+  which has no letters there to circle.
 
 ### A new map
 
@@ -238,8 +282,7 @@ survey also limits each IP address, wherever it plays:
     Before this, words charted within 10 s of a report were lost whenever
     the sector went quiet straight after, so a script that paused after
     each few words had most of them never counted. It costs a row written
-    per word, and one per address per report. Only sectors in the area,
-    which report, keep it.
+    per word, and one per address per report.
   - Worker Previews allow 1,000 a day (`SURVEY_DAILY_CLAIMS` in
     `[previews.vars]`, read by `dailyClaims()`) and 60 claims a minute, so
     a test can chart several whole territories in a day.
@@ -247,13 +290,10 @@ survey also limits each IP address, wherever it plays:
     sectors report to it every few seconds, but if it is, the day's counts
     start again, and every deploy of the Worker evicts it. Saving them would
     cost a row written per active address every minute.
-  - Sectors outside the shared world don't report, so words charted there
-    aren't capped. They don't count toward the world's total, but their
-    hidden words still go to the log's D1, so there one address is bound
-    only by 6 claims a minute: up to about 8,600 log rows a day (about 1 MB a
-    day with their indexes), against 300 words a day in the shared world.
-    It takes a script that reads the map to do it, and many addresses for a
-    long time to come near D1's size limit.
+  - Nothing is charted past the universe's edge, so the cap holds for every
+    word (see "The edge, the void and the wilds"). Before, sectors out there
+    didn't report, so their words weren't capped, and one address could send
+    the log up to about 8,600 rows a day.
 - **Sockets: 40 per address in a sector, and 120 new ones a minute per
   address.** A sector counts its own sockets exactly, so a few addresses
   can't fill it and lock everyone else out. A second binding
@@ -272,12 +312,11 @@ survey also limits each IP address, wherever it plays:
   the Atlas counts an address for no more than `ADDRESS_ONLINE` (40) across
   every sector, in the players online it shows and in the count `MAX_ONLINE`
   is checked against. Filling the survey takes 625 addresses, not one.
-- **Outside the shared world, `MAX_ONLINE` doesn't hold.** Sectors there
-  don't report, so their players aren't counted and they never turn anyone
-  away as the survey being full: only `MAX_PLAYERS` and the per-address
-  limits bound them. A crowd, or a script with many addresses, out there
-  costs what it costs. Counting them would mean every far sector reporting
-  to the Atlas too.
+- **Nobody's on the survey past the universe's edge,** so `MAX_ONLINE`
+  counts everyone. The game joins no sector there, and the Worker turns a
+  join away before it reaches one. Before, sectors out there didn't report,
+  so their players went uncounted, bound only by `MAX_PLAYERS` and the
+  per-address limits.
 - **Messages: 20 at once per socket, then 10 a second.** Every message
   costs the sector's one thread some work (a position, initials, a badge to
   check), so past that a socket's messages are dropped unread
@@ -459,8 +498,8 @@ is open, the notes are open and the tab is on screen.
   straight away, rather than lingering until `ONLINE_MS`.
 - **Moving between sectors.** For a few seconds someone can be in two
   sectors' reports; the snapshot keeps them once, from the latest.
-- **Outside the shared world** sectors don't report, so the list covers the
-  shared world, like the world map. Emotes still reach a caret out there.
+- **Past the universe's edge** nobody's on the survey, so nobody out there is
+  listed, and nobody sees their caret.
 
 **Why not push it.** The cheapest list would ride on the reports: the Atlas
 could answer each sector with the surveyors nearest it, and the sector pass
@@ -728,11 +767,11 @@ on or off, not with every report. It costs no requests of its own.
   there**, and the guild's label or name when you're in several), at most
   once in 10 minutes each, and only if they weren't online in any of your
   guilds already.
-- **Outside the shared world** sectors don't report, so a member out there
-  shows as offline, with when they were last seen.
-  So do yours: with no live sector of yours inside it (out past it, offline
-  or the tab hidden), the game forgets who was online, and shows every
-  member as offline until a sector inside says again.
+- **Past the universe's edge** a member is off the survey, so shows as
+  offline, with when they were last seen. So do yours: with no live sector
+  of yours (out past the edge, offline or the tab hidden), the game forgets
+  who was online, and shows every member as offline until a sector says
+  again.
 
 ### Cost
 
@@ -1081,10 +1120,8 @@ An hour comes oldest first, 500 entries a page; `next` is the `after` for the
 next page. A day, hour or month that hasn't started is a 400. `world` counts
 the hidden words in the shared world, which go toward its 1,119,752. Top
 lists count hidden words: bonus words have left the log (`0009`), so they
-count nowhere. They count those charted past the universe's edge too, and
-`past` says how many of `hidden` those are (worked out from the territories'
-counts the answer reads anyway). The day endpoint is still there for older copies of
-the page.
+count nowhere, and nothing from past the universe's edge is logged
+(`0012`). The day endpoint is still there for older copies of the page.
 
 **Caching.** Past hours and days don't change, but a claim can reach D1 up to
 `LOG_MS` late, or later while D1 is failing. So an hour or day that ended an
@@ -1115,9 +1152,9 @@ were already cached.
 
 The page has tabs for a day, a week (Monday to Sunday), a month, a year and
 all time, each in the player's own time zone, with arrows to the one before
-or after. Each shows three numbers (words charted, with how many of them were
-charted past the universe's edge; the busiest piece of the period; and how many
-are in the universe, or all time's share of it), a chart, and then what's in it
+or after. Each shows three numbers (words charted; the busiest piece of the
+period; and how many are in the universe, or all time's share of it), a
+chart, and then what's in it
 (see "What each number counts" below):
 
 | period | chart | below it |
@@ -1178,20 +1215,20 @@ slowly and reads every day's rows in its range.
 
 ### What each number counts
 
-The survey charts words everywhere, but the universe is the shared world
-alone: sectors -12 to 12 each way, 100 × 100 territories (`AREA` in
-`src/survey.js`, `SURVEY_AREA` in the game, `UNIVERSE_EDGE` in the
-achievements, the `WORLD` filter and `inUniverse` in `src/survey-log.js`, and
-the bounds in `migrations-log/0002`). Its 1,119,752 hidden words are the
+The survey charts words in the universe alone: sectors -12 to 12 each way,
+100 × 100 territories (`AREA` in `src/survey.js`, `SURVEY_AREA` in the game,
+`UNIVERSE_EDGE` in the achievements, the `WORLD` filter in
+`src/survey-log.js`, and the bounds in `migrations-log/0002` and `0012`; see
+"The edge, the void and the wilds"). Its 1,119,752 hidden words are the
 total everything counts toward. Each number says which it counts:
 
 | number | where | counts |
 | --- | --- | --- |
 | Universe charted | the game's survey box, from the Atlas (`/v1/survey/world` and each sector's `{t: 'world'}`) | hidden words charted in the universe |
 | In the universe | the log's third number (all time: the Universe's share), its share cards | the same words, from the log's rows (`world`) |
-| Words charted | the log's first number | every word in the log: hidden words in the universe and past its edge, which it counts under it ("122 past the universe's edge"). Bonus words left the log (`0009`) |
-| Top lists | the log, after the numbers | as Words charted, over whole UTC days, or the hours of a local day; when any are past the edge, the note under the heading says how many (`past`), and each such territory says "past the edge" |
-| N of them charted first by you, and M past its edge | the game's survey box, under Universe charted | finds in your field notes that a sector said you charted first: hidden words in the universe, then those past its edge. Bonus words count in neither, as in the log |
+| Words charted | the log's first number | the period's words in the log: the same hidden words, as they were charted. Bonus words left the log (`0009`) |
+| Top lists | the log, after the numbers | as Words charted, over whole UTC days, or the hours of a local day |
+| N of them charted first by you | the game's survey box, under Universe charted | finds in your field notes in the universe that a sector said you charted first. Bonus words and finds past the edge don't count, as in the log |
 | A surveyor's words | the log's view of a set of initials | every word signed with those initials, by everyone who typed them, on any device |
 
 **Universe charted and In the universe** are the same count from two
@@ -1203,7 +1240,8 @@ keeps the running month for 15 s and shows what it had when opened. Between
 the Atlas's totals the game also adds the claims it sees nearby. So they're
 within a minute of each other while people chart, and the same when they've
 stopped. `survey-log.test.js` ("the universe, as the Atlas and the log count
-it") checks both count the same words, and neither those past the edge.
+it") checks both count the same words, and that nothing past the edge
+reaches either.
 
 **Your count and your initials' count** differ by design. The game counts
 your field notes (and your linked devices', which sync); the log counts
@@ -1468,9 +1506,9 @@ travels with the reports sectors already send the Atlas:
   went off, unless it's its own or a neighbour's it passed on already.
 - **When:** with a sector's next report, so within about 10 seconds where
   people are moving, and later where nobody is: reports go with the next
-  message. One that waited past `RELAY_MS` isn't sent. Sectors outside the
-  shared world don't report, so their supernovas only reach their
-  neighbours.
+  message. One that waited past `RELAY_MS` isn't sent. Past the universe's
+  edge there's no survey, so a supernova there, in the wilds, is the
+  finder's alone.
 
 **On the page,** every supernova a player is online for, near or far, is
 kept in their notes' supernovas, and its territory becomes a remnant at
@@ -1863,8 +1901,8 @@ about 30 cents over the included million requests.
 ## Not done yet
 
 - **A spending alert.** Workers Paid has no spending cap; `MAX_ONLINE`
-  keeps the worst case in the shared world near $18 a day, but nothing
-  bounds sectors outside it (see "Bots"). A scheduled check of Cloudflare's
+  keeps the worst case near $18 a day, now that nobody's on the survey past
+  the universe's edge. A scheduled check of Cloudflare's
   analytics API could open a GitHub issue when the month's usage passes a
   threshold.
 - **Run `load.js` against a deployment.** That would confirm the per-sector
@@ -1899,9 +1937,6 @@ about 30 cents over the included million requests.
   so players who are online but not moving hear of a far supernova only once
   someone there moves, and not at all after `RELAY_MS`. An alarm could
   report for them, at the cost of waking quiet sectors.
-- **Supernovas outside the shared world** are recorded and listed like any
-  other, but the game's world map only covers the shared world, so far
-  away ones only show as remnants when you're there.
 - **A richer timelapse.** The log has nothing on where people went, only
   what they charted. The Atlas could write how many surveyors were online
   in each sector once an hour (625 rows an hour at most, a few cents a

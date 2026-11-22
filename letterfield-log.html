@@ -183,8 +183,6 @@ header p{margin:8px 0 0;color:var(--muted);max-width:40ch}
 .rank .lbl{display:flex;align-items:center;gap:6px;min-width:0;line-height:1.25}
 .rank .lbl .dot{flex:none}
 .rank .lbl span{min-width:0;overflow-wrap:anywhere}
-.rank .lbl .name{display:flex;flex-direction:column;gap:1px}
-.rank .lbl small.past{font:400 10.5px/1.3 var(--f-mono);color:var(--muted)}
 .track{height:8px;min-width:0}
 .track i{display:block;height:100%;max-width:100%;background:var(--accent);border-radius:0 4px 4px 0;min-width:2px}
 .num{font:500 12px/1 var(--f-mono);font-variant-numeric:tabular-nums;text-align:right}
@@ -480,7 +478,6 @@ const fdiv = (a, b) => Math.floor(a / b);
 const keyOf = (w, x, y, d) => `${w}~${x}~${y}~${d}`;
 const hashNum = v => v < 0 ? 'm' + (-v) : String(v);
 const inWorld = (x, y) => x >= AREA_CELLS[0] && x < AREA_CELLS[1] && y >= AREA_CELLS[0] && y < AREA_CELLS[1];
-const pastEdge = (rx, ry) => !inWorld(rx * RC, ry * RC);  // territory (rx, ry) lies past the universe's edge
 const fmtCoord = (x, y) => `${Math.abs(x)}${x < 0 ? 'W' : 'E'} · ${Math.abs(y)}${y < 0 ? 'N' : 'S'}`;
 const timeFmt = new Intl.DateTimeFormat(undefined, { hour: 'numeric', minute: '2-digit' });
 const hourFmt = new Intl.DateTimeFormat(undefined, { hour: 'numeric' });
@@ -610,18 +607,17 @@ const UNIT = { hour: 'minute', day: 'hour', week: 'day', month: 'day', year: 'da
 function bucketsOf(p, s, e) {
   const u = UNIT[p], step = u === 'minute' ? t => t + MINUTE : t => shift(u, t, 1);
   const out = [];
-  for (let t = s; t < e; t = step(t)) out.push({ from: t, to: Math.min(step(t), e), n: 0, world: 0, past: 0 });
+  for (let t = s; t < e; t = step(t)) out.push({ from: t, to: Math.min(step(t), e), n: 0, world: 0 });
   return out;
 }
-// Adds sorted points [t, words, world, past] into the buckets they fall in:
-// words charted, the hidden words in the universe among them, and the hidden
-// words past its edge, which count toward Words charted and not the universe.
+// Adds sorted points [t, words, world] into the buckets they fall in: words
+// charted, and the hidden words in the universe among them.
 function tally(buckets, points) {
   let i = 0;
-  for (const [t, n, w, x = 0] of points) {
+  for (const [t, n, w] of points) {
     while (i < buckets.length && t >= buckets[i].to) i++;
     if (i >= buckets.length) break;
-    if (t >= buckets[i].from) { buckets[i].n += n; buckets[i].world += w; buckets[i].past += x; }
+    if (t >= buckets[i].from) { buckets[i].n += n; buckets[i].world += w; }
   }
   return buckets;
 }
@@ -655,26 +651,27 @@ function myFirsts() {
     if (!o || !o.f || o.s || typeof o.w !== 'string' || !/^[A-Z]{3,12}$/.test(o.w)) continue;
     const x = Number(o.x), y = Number(o.y), d = Number(o.d), t = Number(o.t);
     if (![x, y, d, t].every(Number.isFinite) || !Number.isInteger(x) || !Number.isInteger(y) || d < 0 || d > 7) continue;
+    // Nor are finds past the universe's edge, charted there before the edge or not: they stay in the notes alone.
+    if (!inWorld(x, y)) continue;
     out.set(keyOf(o.w, x, y, d), { w: o.w, x, y, d, t });
   }
   return out;
 }
-const minePoints = firsts => [...firsts.values()].map(f => (inWorld(f.x, f.y) ? [f.t, 1, 1, 0] : [f.t, 1, 0, 1])).sort((a, b) => a[0] - b[0]);
+// Only the universe's: finds past its edge were never the survey's (see myFirsts).
+const minePoints = firsts => [...firsts.values()].map(f => [f.t, 1, 1]).sort((a, b) => a[0] - b[0]);
 // The log's entries, newest first, as sorted points for tally(): each a word,
-// and a hidden word in the universe, or past its edge, unless it's a bonus word
-// (from before they left the log).
-const entryPoints = entries => entries.map(e => [e[6], 1, !e[4] && inWorld(e[1], e[2]) ? 1 : 0, !e[4] && !inWorld(e[1], e[2]) ? 1 : 0]).reverse();
-// A row of hourly counts [hour, words, world] as a point: the log keeps
-// hidden words only (worker/migrations-log/0009), so a word that isn't one of
-// the universe's lies past its edge.
-const hourPoint = r => [r[0] * HOUR, r[1], r[2], Math.max(0, r[1] - r[2])];
+// and a hidden word in the universe unless it's an older row's bonus word.
+const entryPoints = entries => entries.map(e => [e[6], 1, !e[4] && inWorld(e[1], e[2]) ? 1 : 0]).reverse();
+// A row of hourly counts [hour, words, world] as a point.
+const hourPoint = r => [r[0] * HOUR, r[1], r[2]];
 
 // Browsers keep settled answers for a day. Bumping this makes them forget
 // the ones they have: 2 dropped months a Worker Preview's test history had
 // put in Cloudflare's cache for production (see "Caching" in SURVEY.md), and
 // 3 the days of an older map, whose log a new one empties, and 4 the bonus
-// words that left the log (worker/migrations-log/0009).
-const CACHE_VERSION = 4;
+// words that left the log (worker/migrations-log/0009), and 5 the words past the
+// universe's edge that left it after them (0012).
+const CACHE_VERSION = 5;
 async function getJSON(path) {
   const ctl = new AbortController(), timer = setTimeout(() => ctl.abort(), 10000);
   try {
@@ -1309,9 +1306,7 @@ function rankCard(title, rows, note) {
     const li = el('li');
     const lbl = el('span', 'lbl' + (r.hue !== undefined ? ' mark' : ''));
     if (r.hue !== undefined) { lbl.style.setProperty('--h', r.hue); lbl.append(el('i', 'dot')); }
-    const name = r.focus ? toFocus(r.focus, el('span', '', r.label), '') : el('span', '', r.label);
-    // A territory past the universe's edge says so: its words aren't the universe's.
-    if (r.past) { const both = el('span', 'name'); both.append(name, el('small', 'past', 'past the edge')); lbl.append(both); } else lbl.append(name);
+    lbl.append(r.focus ? toFocus(r.focus, el('span', '', r.label), '') : el('span', '', r.label));
     lbl.title = r.label;
     if (r.focus && !sameFocus(r.focus, state.focus)) li.className = 'go';
     const track = el('span', 'track');
@@ -1791,18 +1786,15 @@ function busiest(p, buckets) {
   const b = buckets.reduce((a, c) => (c.n > (a ? a.n : 0) ? c : a), null);
   return b ? [bucketLabel(p, b), plural(b.n, 'word')] : ['—', ''];
 }
-// Words charted counts every word, the universe's hidden words and those
-// charted past its edge, which the survey charts too but the universe's count
-// (the game's "Universe charted") leaves out, so the first tile says how many
-// of them there are. The third tile fits the view: a period's hidden words in
-// the universe, the same count as the game's; all time's share of the universe.
-// The top lists that follow count words past the edge too (see loadTops).
+// The third tile fits the view: a period's hidden words in the universe, the
+// same count as the game's Universe charted; all time's share of the universe.
+// The survey charts nothing past the universe's edge, so since
+// worker/migrations-log/0012 every word in the log is one of them.
 function summaryTiles(p, buckets, mine, label = 'Words charted') {
   const total = buckets.reduce((a, b) => a + b.n, 0), world = buckets.reduce((a, b) => a + b.world, 0);
-  const past = buckets.reduce((a, b) => a + b.past, 0);
   const [when, much] = busiest(p, buckets);
   tiles([
-    [mine ? 'Charted first by you' : label, total.toLocaleString(), past ? `${past.toLocaleString()} past the universe’s edge` : ''],
+    [mine ? 'Charted first by you' : label, total.toLocaleString(), ''],
     [`Busiest ${UNIT[p]}`, when, much],
     p === 'all'
       ? ['Universe', `${pct(world)} charted`, `${world.toLocaleString()} of its hidden words`]
@@ -1957,13 +1949,8 @@ async function loadTops(run, start, end, byHour = false) {
     return;
   }
   if (run !== state.run || !top || !Array.isArray(top.surveyors)) return;
-  // The note on UTC days is said once, under the heading, for all the lists,
-  // and so is how many of their words were charted past the universe's edge
-  // (which the universe's count, here and in the game, leaves out).
-  const past = Number.isInteger(top.past) ? top.past : 0;
-  const edge = past ? `They include ${plural(past, 'word')} charted past the universe’s edge.` : '';
-  const days = `Counted in whole days in UTC, ${utcDays(from * DAY, (to - 1) * DAY)}`;
-  utcNote(byHour ? edge || null : edge ? `${days}. ${edge}` : days);
+  // The note on UTC days is said once, under the heading, for all the lists.
+  utcNote(byHour ? null : `Counted in whole days in UTC, ${utcDays(from * DAY, (to - 1) * DAY)}`);
   // Themes first, so each territory has its theme's hue.
   const themes = themeRows(top.themes), guilds = guildRows(top.guilds);
   cardsEl.replaceChildren(
@@ -1981,7 +1968,7 @@ const surveyorRows = rows => (Array.isArray(rows) ? rows : []).filter(r => okRow
 function territoryRows(rows) {
   return (Array.isArray(rows) ? rows : []).filter(r => okRow(r, 4) && okRow(r, 3) && typeof r[2] === 'string').map(r => {
     learnPlace(r[0], r[1], r[2], r[3]);
-    return { label: r[2], n: r[4], hue: known.themes[r[3]]?.[1], focus: { kind: 'territory', rx: r[0], ry: r[1] }, past: pastEdge(r[0], r[1]) };
+    return { label: r[2], n: r[4], hue: known.themes[r[3]]?.[1], focus: { kind: 'territory', rx: r[0], ry: r[1] } };
   });
 }
 // A guild's name is three words from fixed lists, so two can share one: each
@@ -2160,8 +2147,7 @@ async function renderTerritory(run, f, firsts) {
   const meter = meterOf(t.charted, t.total, 'Share of the territory’s hidden words charted', nova ? 'meter whole mark' : 'meter');
   if (nova && Number.isFinite(hue)) meter.style.setProperty('--h', hue);
   const wrap = el('div', 'chart');
-  const past = pastEdge(f.rx, f.ry) ? ' · past the universe’s edge, so not in its count' : '';
-  wrap.append(el('div', 'ymax', `${t.charted.toLocaleString()} of its ${t.total.toLocaleString()} hidden words${past}`), meter);
+  wrap.append(el('div', 'ymax', `${t.charted.toLocaleString()} of its ${t.total.toLocaleString()} hidden words`), meter);
   chartEl.replaceChildren(wrap);
   cardsEl.replaceChildren(...(entries.length ? [rankCard('Top surveyors', surveyorRows(t.topSurveyors), 'Words charted here, by initials')] : []));
   const name = typeof t.name === 'string' ? t.name : 'A territory', words = latestWords(entries, data);

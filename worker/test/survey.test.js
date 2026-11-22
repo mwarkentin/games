@@ -13,7 +13,7 @@ import worker from '../src/index.js';
 import { CH, DEAL, DIRS, HOLDERS, MAP_VERSION, RC, RG, STRAY_MIN, THEMES, THEME_DATA, VOCAB, chunk, genChunk, keyOf, letterAt, regionName, regionTheme, strayTheme, wordEnd } from '../../js/letterfield/world.js';
 import { GUILD_TAGS_MAX } from '../src/survey-guild.js';
 import {
-  ADDRESS_HEADER, ADDRESS_ONLINE, ADDRESS_SOCKETS, AREA, AREA_WORDS, Atlas, BATCH_MS, DAILY_CLAIMS, dailyClaims, DAILY_LIST_MAX, CLAIM_BURST, CLAIM_REFILL_MS, FRAME_BURST, FRAME_REFILL_MS, MAX_ONLINE, MAX_PLAYERS, ONLINE_MS, PRESENCE_MAX, PRESENCE_MS,
+  ADDRESS_HEADER, ADDRESS_ONLINE, ADDRESS_SOCKETS, AREA, AREA_WORDS, Atlas, BATCH_MS, EDGE_CLOSE, pastEdge, DAILY_CLAIMS, dailyClaims, DAILY_LIST_MAX, CLAIM_BURST, CLAIM_REFILL_MS, FRAME_BURST, FRAME_REFILL_MS, MAX_ONLINE, MAX_PLAYERS, ONLINE_MS, PRESENCE_MAX, PRESENCE_MS,
   QUIET, REPORT_BY_MAX, REPORT_MS, UNPASSED_HEADER, SAVE_MS, SAVE_POS_MS, SECTOR, SPAWN_MAX, Sector, VIEW_MS, addressOf, checkClaim, routeSurvey,
 } from '../src/survey.js';
 
@@ -941,6 +941,28 @@ describe('Sector', () => {
     assert.equal(ws.last('claimed').c[0], words[0].w);
   });
 
+  test("past the universe's edge, forgets what it held from before and takes nobody in", async () => {
+    // A sector out there from before the edge, holding a claim.
+    const word = chunk(Math.floor(((AREA + 1) * SECTOR + 5) / CH), 0).words[0], key = keyOf(word.w, word.x, word.y, word.d);
+    assert.ok(pastEdge(word.x, word.y));
+    state.storage.sql.exec("INSERT INTO claims (key, w, x, y, d, s, initials, at) VALUES (?, ?, ?, ?, ?, 0, 'ZED', ?)", key, word.w, word.x, word.y, word.d, NOW);
+    const count = () => state.storage.sql.exec('SELECT COUNT(*) AS n FROM claims').one().n;
+    // The share Worker never asks out here, but if anything does, it's told nothing, and the claim is gone.
+    assert.equal((await sector.fetch(new Request(`https://sector/claim/${encodeURIComponent(key)}`))).status, 404);
+    assert.equal(count(), 0);
+    // A join that reaches it anyway (from an older Worker) is told where it is, and turned away.
+    let pair;
+    globalThis.WebSocketPair = function WebSocketPair() { pair = [fakeSocket(), fakeSocket()]; return { 0: pair[0], 1: pair[1] }; };
+    const RealResponse = Response;
+    globalThis.Response = class { constructor(body, init) { Object.assign(this, init); } };
+    try {
+      await sector.fetch(new Request(`https://survey.test/v1/survey/${AREA + 1}/0`, { headers: { Upgrade: 'websocket' } }));
+    } finally { globalThis.Response = RealResponse; delete globalThis.WebSocketPair; }
+    assert.deepEqual([pair[1].sent, pair[1].code, state.sockets.length], [[{ t: 'edge' }], EDGE_CLOSE, 0]);
+    // A sector inside the universe answers as ever.
+    assert.equal((await new Sector(fakeState(), {}).fetch(new Request(`https://sector/claim/${encodeURIComponent(keyOf('CORAL', 5, 5, 0))}`))).status, 404);
+  });
+
   test('keeps sectors outside the shared world to themselves', async () => {
     const env = { ATLAS: { idFromName: () => 'atlas', get: () => assert.fail('reported') } };
     sector = new Sector(state, env);
@@ -1427,6 +1449,31 @@ describe('routeSurvey', () => {
     assert.equal(forwarded.length, 3);
     await from('203.0.113.7', { ...env, SURVEY_JOINS: { limit: async () => { throw new Error('limiter down'); } } });
     assert.equal(forwarded.length, 4);
+  });
+
+  test("turns away joins past the universe's edge in a frame the game can read, without waking a sector or counting the join", async () => {
+    forwarded.length = 0;
+    const counted = [];
+    const limited = { ...env, SURVEY_JOINS: { limit: async ({ key }) => { counted.push(key); return { success: true }; } } };
+    const servers = [];
+    globalThis.WebSocketPair = function WebSocketPair() {
+      const socket = () => ({ sent: [], accept() {}, send(t) { this.sent.push(JSON.parse(t)); }, close(code) { this.code = code; } });
+      const pair = [socket(), socket()];
+      servers.push(pair[1]);
+      return { 0: pair[0], 1: pair[1] };
+    };
+    const RealResponse = Response;
+    globalThis.Response = class { constructor(body, init) { Object.assign(this, init); } };
+    try {
+      for (const [sx, sy] of [[AREA + 1, 0], [0, -AREA - 1], [-AREA - 5, AREA + 9]]) {
+        await routeSurvey(new Request(`https://survey.test/v1/survey/${sx}/${sy}`, { headers: { Origin: ORIGIN, Upgrade: 'websocket' } }), limited);
+      }
+    } finally { globalThis.Response = RealResponse; delete globalThis.WebSocketPair; }
+    assert.deepEqual(servers.map((ws) => [ws.sent, ws.code]), Array(3).fill([[{ t: 'edge' }], EDGE_CLOSE]));
+    assert.deepEqual([forwarded.length, counted.length], [0, 0]);
+    // The universe's own last sectors, on its edge, still go through.
+    await open(`/v1/survey/${AREA}/${-AREA}`);
+    assert.deepEqual(forwarded.map(([name]) => name), [`${AREA},${-AREA}`]);
   });
 
   test('turns away other origins and plain requests', async () => {

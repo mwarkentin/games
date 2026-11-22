@@ -154,8 +154,6 @@ class FakeSurveyLog:
                 themes[theme_of[place]] += n
             body = {
                 "from": first, "to": last, "hidden": sum(places.values()), **({"hours": True} if top_hours else {}),
-                # Of those, the hidden words past the universe's edge.
-                "past": sum(n for (rx, ry), n in places.items() if not in_world([None, rx * 48, ry * 48, 0, 0])),
                 "surveyors": [[i, n] for i, n in sorted(surveyors.items(), key=lambda r: (-r[1], r[0]))[:10]],
                 "territories": [
                     [rx, ry, self.places.get(f"{rx},{ry}", f"Place {rx},{ry}"), theme_of[(rx, ry)], n]

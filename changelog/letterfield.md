@@ -1,3 +1,9 @@
+## 2026-11-22
+
+- The universe has an edge. Past it is the void, a ring of night where loose letters drift and nothing can be circled, and beyond that the wilds, where the map goes on and you find words alone: they stay in your field notes, and nobody sees your caret. Crossing the edge leaves the shared survey, with a note and a way back, and coming back joins it again.
+- The wilds have a piece of music of their own, Hinterland, the only one that plays out there: a lone wooden flute singing a slow lament over a wavering drone and the wind, with a fainter one far off sometimes answering. In the void the music stops, and you hear only water dripping, slow and deep, somewhere in a cave, echoing. Back in the universe the other pieces take turns again.
+- Words charted past the universe's edge are no longer in the survey log or its counts, so neither the log nor the shared survey's box in your field notes counts any apart now. Any you found out there stay in your field notes, marked the void or the wilds.
+
 ## 2026-11-21
 
 - The shared survey's box in your field notes counts your words the way the universe does: under Universe charted, it says how many of those words you charted first, and counts any you charted past the universe's edge apart. Bonus words, which the survey log doesn't keep, no longer count there, so the box and the log agree.

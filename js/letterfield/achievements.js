@@ -67,7 +67,7 @@ export function achievementsCore(world) {
     ['self-portrait', 'words', 'h', (T) => pair(T.surveyor, 1)],
     ['over-the-horizon', 'far', '', (T) => pair(T.far, 10)],
     ['edge-of-the-universe', 'far', '', (T) => pair(T.far, UNIVERSE_EDGE)],
-    ['here-be-dragons', 'far', 'h', (T) => pair(T.far, 250)],
+    ['here-be-dragons', 'far', 'hu', (T) => pair(T.far, 250)],  // u: 250 out is in the wilds, off the survey, where no find is signed
     ['witness', 'novas', 'u', (T) => pair(T.novas, 1)],
     ['starfield', 'novas', 'u', (T) => pair(T.novas, 10)],
     ['last-word', 'novas', 's', (T) => pair(T.lastWord, 1)],

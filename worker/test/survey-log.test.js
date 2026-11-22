@@ -233,6 +233,33 @@ describe('the log\'s counts', () => {
     assert.deepEqual(counts('survey_log_surveyors').filter((r) => r.n), [{ day: DAY, initials: 'ZED', n: 1 }]);
   });
 
+  test("take the words and supernovas past the universe's edge out of the log and its counts", async () => {
+    const EDGE = '0012_survey_log_past_the_edge.sql';
+    const before = readdirSync(MIGRATIONS).sort().indexOf(EDGE);
+    assert.ok(before > 0, `no ${EDGE}`);
+    db = fakeD1(before);
+    const edge = (AREA + 1) * SECTOR, [lid, other] = ['c0ba17c0ba', 'a3be21a3be'];
+    const nova = (rx, ry, at) => ({ rx, ry, at, w: 'ACORN', x: rx * RC, y: ry * RC, d: 0, initials: 'ZED', first: at - 1, words: 110, surveyors: 1, top: 'ZED', top_n: 110 });
+    await writeLog(db, [
+      at(0, 0, NOW), { ...at(edge - 1, 5, NOW + 1), guild: lid },                   // inside, on the east edge
+      { ...at(edge, 0, NOW + 2, { initials: 'AMY' }), guild: `${lid} ${other}` },    // the void, east
+      at(-AREA * SECTOR - 1, 0, NOW + 3), at(0, -AREA * SECTOR - 200, NOW + 4),    // the void west, the wilds north
+      at(5, edge + 9000, NOW + 5, { initials: 'AMY' }),                              // the wilds, far south
+    ], [nova(0, 0, NOW + 1), nova(-54, -32, NOW + 3), nova(52, 0, NOW + 2)]);
+    assert.deepEqual(hours(), [{ hour: HOUR, n: 6, world: 2 }]);
+    db.raw.exec(migrations()[before]);
+    assert.deepEqual(db.rows().map((r) => [r.x, r.y]), [[0, 0], [edge - 1, 5]]);
+    assert.deepEqual(hours(), [{ hour: HOUR, n: 2, world: 2 }]);  // every word left is the universe's
+    assert.deepEqual(counts('survey_log_surveyors').filter((r) => r.n), [{ day: DAY, initials: 'ZED', n: 2 }]);
+    assert.deepEqual(counts('survey_log_territories').filter((r) => r.n).map((r) => [r.rx, r.ry]), [[0, 0], [AREA * 4 + 3, 0]]);
+    assert.deepEqual(db.raw.prepare('SELECT guild, n FROM survey_log_guild_days WHERE n > 0').all().map((r) => ({ ...r })), [{ guild: lid, n: 1 }]);
+    assert.equal(db.raw.prepare('SELECT COUNT(*) AS n FROM survey_log_extra_guilds').get().n, 0);
+    assert.deepEqual(db.raw.prepare('SELECT rx, ry FROM survey_log_novas').all().map((r) => [r.rx, r.ry]), [[0, 0]]);
+    // The top lists and all time agree with the universe's own count.
+    const top = await readTop(db, DAY, DAY + 1);
+    assert.deepEqual([top.hidden, top.surveyors], [2, [['ZED', 2]]]);
+  });
+
   test('give a UTC month hour by hour, leaving out hours with none', async () => {
     const month = (2026 - 1970) * 12 + 10;  // November 2026
     const [from, to] = monthHours(month);
@@ -1203,6 +1230,9 @@ describe('supernovas reaching neighbouring sectors', () => {
     // Away from the origin and below zero, the same.
     assert.deepEqual(sorted(novaNeighbours(-5, 7)), sorted([[-2, 2], [-1, 1], [-1, 2]]));  // the bottom right corner of sector -2,1
     assert.equal(novaNeighbours(-6, 6).length, 8);
+    // At the universe's edge, sectors past it have nobody to tell, so they're left out.
+    assert.deepEqual(sorted(novaNeighbours(-AREA * 4, 0)), [`${-AREA},-1`]);
+    assert.equal(novaNeighbours(AREA * 4 + 3, AREA * 4 + 3).length, 0);  // the universe's far corner
     assert.deepEqual(sorted(novaNeighbours(-4, -4)), sorted([[-2, -2], [-2, -1], [-1, -2]]));
     // Each is right: every territory within reach is in this sector or one of them, and each has one in reach.
     for (let ly = 0; ly < 4; ly++) for (let lx = 0; lx < 4; lx++) {
@@ -1745,12 +1775,12 @@ describe('the timelapse', () => {
 });
 
 describe('the universe, as the Atlas and the log count it', () => {
-  // The game's "Universe charted" is the Atlas's count; the log's "In the
-  // universe" is its rows' `world`. Both are hidden words charted in sectors
-  // -AREA to AREA each way, so once the reports and the log have caught up
-  // they're the same number. The log also keeps hidden words charted past the
-  // universe's edge, which its "Words charted" and top lists count and the
-  // Atlas never hears of; bonus words count in neither.
+  // The game's "Universe charted" is the Atlas's count; the log's Words charted
+  // and its In the universe count its rows. Both are hidden words charted in
+  // sectors -AREA to AREA each way, the only place there is a survey: past the
+  // universe's edge (the void, then the wilds) nothing is shared, so a sector
+  // out there from before keeps nothing and sends nothing to the log. Once
+  // the reports and the log have caught up, every count is the same number.
   let clock, logged, states, sectors, atlasObject, db;
   beforeEach(() => {
     logged = mock.method(console, 'log', () => {});
@@ -1783,9 +1813,10 @@ describe('the universe, as the Atlas and the log count it', () => {
   const settle = async () => { for (let i = 0; i < 10; i++) await new Promise((r) => setImmediate(r)); };
   const say = (name, ws, m) => sectorAt(name).webSocketMessage(ws, JSON.stringify(m));
 
-  test('count the same words in the universe, and the log counts those past its edge apart', async () => {
+  test('count the same words, and nothing from past the edge', async () => {
     const inside = ['0,0', `${AREA},${-AREA}`], outside = [`${AREA + 1},0`, `${-AREA - 2},${AREA - 3}`];
     const players = new Map();
+    // Sectors out there are joined directly, as only a Worker from before the edge would have let anyone.
     for (const name of [...inside, ...outside]) {
       const [sx, sy] = name.split(',').map(Number), ws = fakeSocket();
       sectorAt(name).join(ws, sx, sy);
@@ -1816,12 +1847,11 @@ describe('the universe, as the Atlas and the log count it', () => {
     assert.equal(universe, 4);  // two hidden words in each sector inside
     // As the game hears it, from the sector that reported last (another's frame can be a report behind).
     assert.equal(players.get(inside[1]).sent.filter((m) => m.t === 'world').at(-1).charted, universe);
-    assert.equal(month.hours.reduce((a, h) => a + h[2], 0), universe);  // the log's "In the universe"
-    assert.equal(month.hours.reduce((a, h) => a + h[1], 0), 8);  // its "Words charted": past the edge too
-    assert.equal(top.hidden, 8);
-    assert.equal(top.past, 4);  // and say how many of theirs are past the edge
-    assert.deepEqual(top.surveyors, [['ZED', 8]]);  // top lists count past the edge too
-    const hours = await readTopHours(db, HOUR, HOUR + 1);
-    assert.deepEqual([hours.hidden, hours.past], [8, 4]);
+    assert.equal(month.hours.reduce((a, h) => a + h[1], 0), universe);  // the log's Words charted
+    assert.equal(month.hours.reduce((a, h) => a + h[2], 0), universe);  // and its In the universe
+    assert.equal(top.hidden, universe);
+    assert.deepEqual(top.surveyors, [['ZED', universe]]);
+    // The sectors out there kept nothing.
+    for (const name of outside) assert.equal(states.get(name).storage.sql.exec('SELECT COUNT(*) AS n FROM claims').toArray()[0].n, 0);
   });
 });

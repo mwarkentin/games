@@ -83,6 +83,9 @@
 //   {t: 'full', world}              no room in the sector (or, with world: true, in the whole
 //                                   survey), or the player's address holds or opens too many
 //                                   sockets; the socket then closes with code 4000
+//   {t: 'edge'}                     from the Worker, for a join to a sector past the universe's edge,
+//                                   where there's no survey (the game never asks); the socket then
+//                                   closes with code 4002 (EDGE_CLOSE)
 //
 // Limits per address (see "Bots" in SURVEY.md): the Worker hands each sector
 // a salted hash of the player's IP address, never the address itself. A
@@ -160,6 +163,10 @@ export function dailyClaims(env) {
   return Number.isInteger(n) && n >= 1 && n <= 1e6 ? n : DAILY_CLAIMS;
 }
 export const inArea = (sx, sy) => Math.abs(sx) <= AREA && Math.abs(sy) <= AREA;
+// The sector holding cell (x, y) lies past the universe's edge: in the void
+// (a ring one sector wide) or the wilds beyond, where the game surveys alone
+// and nothing is shared (see "The edge, the void and the wilds" in SURVEY.md).
+export const pastEdge = (x, y) => !inArea(fdiv(x, SECTOR), fdiv(y, SECTOR));
 
 // Whether a Durable Object's storage was last used with an older map
 // (MAP_VERSION), recording this one if so. Storage from before maps had
@@ -198,10 +205,11 @@ export function checkClaim(claim, sx, sy) {
 // supernova is in one of them or in its own sector. Sectors are 4 territories
 // wide and the reach is 3, so a territory on a sector's corner has three
 // neighbours to tell, one on an edge five, and one of the middle four all eight.
+// Sectors past the universe's edge have nobody in them to tell, so they're left out.
 export function novaNeighbours(rx, ry) {
   const sx = fdiv(rx, TERR), sy = fdiv(ry, TERR), out = [];
   for (let ny = fdiv(ry - NOVA_REACH, TERR); ny <= fdiv(ry + NOVA_REACH, TERR); ny++) {
-    for (let nx = fdiv(rx - NOVA_REACH, TERR); nx <= fdiv(rx + NOVA_REACH, TERR); nx++) if (nx !== sx || ny !== sy) out.push([nx, ny]);
+    for (let nx = fdiv(rx - NOVA_REACH, TERR); nx <= fdiv(rx + NOVA_REACH, TERR); nx++) if ((nx !== sx || ny !== sy) && inArea(nx, ny)) out.push([nx, ny]);
   }
   return out;
 }
@@ -247,6 +255,10 @@ export function routeSurvey(request, env) {
   if (world) return worldMap(env, cors);
   if (!cors['Access-Control-Allow-Origin']) return text('origin not allowed', 403);
   if (request.headers.get('Upgrade') !== 'websocket') return text('expected a WebSocket', 426);
+  // Past the universe's edge there's no survey: the game surveys alone out
+  // there and never asks, and an older game that does is told so without
+  // waking (or making) a sector, or counting the join.
+  if (!inArea(Number(m[1]), Number(m[2]))) return pastTheEdge();
   const name = `${Number(m[1])},${Number(m[2])}`;
   return (async () => {
     const address = await addressHash(request, env);
@@ -277,6 +289,8 @@ export const turnstileRequired = (env) => env.TURNSTILE_REQUIRED === true || env
 // the sector, and in words the game can read: a browser learns nothing from a
 // refused WebSocket upgrade.
 const unverified = () => refused('unverified', {}, 4001, 'survey pass needed');
+export const EDGE_CLOSE = 4002;
+const pastTheEdge = () => refused('edge', {}, EDGE_CLOSE, 'past the edge of the universe');
 
 function refused(t, frame, code, reason) {
   const [client, server] = Object.values(new WebSocketPair());
@@ -427,7 +441,7 @@ export class Sector {
     const claim = request.method === 'GET' && pathname.match(CLAIM_PATH);
     if (claim) return this.claimOf(decodeURIComponent(claim[1]));
     const nova = request.method === 'GET' && pathname.match(NOVA_PATH);
-    if (nova) return this.novaOf(Number(nova[1]), Number(nova[2]));
+    if (nova) return this.outside(Number(nova[1]) * RC, Number(nova[2]) * RC) ? Response.json({ error: 'no supernova' }, { status: 404 }) : this.novaOf(Number(nova[1]), Number(nova[2]));
     // An emote for a player here, from another sector (survey-social.js).
     if (request.method === 'POST' && pathname === EMOTE_PATH) return takeEmote(this, request);
     if (request.method === 'POST' && pathname === NEAR_PATH) return this.near(request);
@@ -435,6 +449,12 @@ export class Sector {
     if (!m) return new Response('not found', { status: 404 });
     if (request.headers.get('Upgrade') !== 'websocket') return new Response('expected a WebSocket', { status: 426 });
     const [client, server] = Object.values(new WebSocketPair());
+    if (this.outside(Number(m[1]) * SECTOR, Number(m[2]) * SECTOR)) {
+      server.accept();
+      send(server, { t: 'edge' });
+      server.close(EDGE_CLOSE, 'past the edge of the universe');
+      return new Response(null, { status: 101, webSocket: client });
+    }
     const address = request.headers.get(ADDRESS_HEADER) || null;
     // Only a sector that reports owes the Atlas its joins without a pass:
     // one outside the shared world would keep the row forever.
@@ -450,6 +470,8 @@ export class Sector {
   }
 
   claimOf(key) {
+    const [, x, y] = key.split('~').map(Number);
+    if (this.outside(x, y)) return Response.json({ error: 'not charted' }, { status: 404 });
     const row = this.sql.exec('SELECT initials, at FROM claims WHERE key = ?', key).toArray()[0];
     return row ? Response.json({ initials: row.initials, at: row.at }) : Response.json({ error: 'not charted' }, { status: 404 });
   }
@@ -459,6 +481,23 @@ export class Sector {
     return n
       ? Response.json({ nova: [n.rx, n.ry, n.at, n.w, n.x, n.y, n.d, n.initials, n.first, n.words, n.surveyors, n.top, n.top_n, regionTheme(n.rx, n.ry)] })
       : Response.json({ error: 'no supernova' }, { status: 404 });
+  }
+
+  // Whether cell (x, y), which a request has just named in this sector, lies
+  // past the universe's edge. If it does, this sector is out there, where
+  // nothing is shared: the router sends nothing here any more, but one woken
+  // anyway (an alarm, an older Worker's request) forgets what it held from
+  // before the edge, claims, supernovas and all.
+  outside(x, y) {
+    if (!Number.isInteger(x) || !Number.isInteger(y) || !pastEdge(x, y)) return false;
+    this.purge();
+    return true;
+  }
+
+  purge() {
+    for (const table of ['claims', 'logged', 'novas', 'guild_names', 'owed', 'relayed']) this.sql.exec(`DELETE FROM ${table}`);
+    this.claimsJson = null; this.counts = null; this.lastAt = null;
+    this.novasOwed = []; this.chartedBy = new Map(); this.unpassed = 0; this.reportDue = false;
   }
 
   // A neighbour's supernova, for the players here. A sector with nobody in
@@ -765,6 +804,8 @@ export class Sector {
     if (!this.env.LOG_DB) return false;
     const mark = this.logMark();
     let rows = this.unlogged(LOG_BATCH);
+    // A sector past the edge keeps nothing, and sends nothing to the log.
+    if (rows.length && this.outside(rows[0].x, rows[0].y)) return false;
     // Only the claim at the mark itself, which D1 already has.
     if (rows.length && rows.at(-1).at === mark) rows = [];
     const upTo = rows.length ? rows.at(-1).at : mark;

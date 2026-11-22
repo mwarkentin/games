@@ -31,6 +31,8 @@
   --shadow:0 10px 28px -14px rgba(27,36,40,.38);
   --mark-s:58%;
   --mark-l:38%;
+  --night:#14203A;
+  --night-ink:#D9E1F5;
   --mode:light;
   --f-display:"Big Shoulders Display","Arial Narrow",Impact,sans-serif;
   --f-mono:"Martian Mono",ui-monospace,"SF Mono",Menlo,Consolas,monospace;
@@ -54,12 +56,14 @@
     --paper:#0F171A; --panel:#162024; --field:#0F171A; --ink:#E2E7DE; --muted:#93A19D; --rule:#2B3A3E;
     --accent:#97A9FF; --on-accent:#0C1330; --danger:#FF8D7C; --on-danger:#2A0F0A; --hover:rgba(226,231,222,.06);
     --shadow:0 14px 32px -14px rgba(0,0,0,.7); --mark-s:68%; --mark-l:68%; --mode:dark; color-scheme:dark;
+    --night:#05080F; --night-ink:#C7D2F0;
   }
 }
 :root[data-theme="dark"]{
   --paper:#0F171A; --panel:#162024; --field:#0F171A; --ink:#E2E7DE; --muted:#93A19D; --rule:#2B3A3E;
   --accent:#97A9FF; --on-accent:#0C1330; --danger:#FF8D7C; --on-danger:#2A0F0A; --hover:rgba(226,231,222,.06);
   --shadow:0 14px 32px -14px rgba(0,0,0,.7); --mark-s:68%; --mark-l:68%; --mode:dark; color-scheme:dark;
+  --night:#05080F; --night-ink:#C7D2F0;
 }
 html,body{height:100%;overflow:hidden}
 body{
@@ -105,6 +109,9 @@ button:focus-visible,a:focus-visible,#map:focus-visible{outline:2px solid var(--
 }
 .territory{padding:8px 14px 8px 12px;display:grid;grid-template-columns:auto minmax(0,1fr);column-gap:10px;row-gap:3px;align-items:center;min-width:0}
 .swatch{grid-row:1 / span 2;width:12px;height:12px;border-radius:50%;background:var(--c);box-shadow:0 0 0 3px color-mix(in srgb, var(--c) 22%, transparent)}
+/* In the void there's no territory: the swatch is an empty ring, and no grid reference. */
+html[data-zone="void"] .territory .swatch{background:transparent;box-shadow:inset 0 0 0 1.5px var(--muted)}
+html[data-zone="void"] .territory .t-coord{display:none}
 .t-name{font:700 20px/1 var(--f-display);letter-spacing:.05em;text-transform:uppercase;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 /* When it runs short of room, the theme's name gives way, never the count of words found. */
 .t-meta{display:flex;font:400 11px/1.2 var(--f-mono);color:var(--muted);font-variant-numeric:tabular-nums;white-space:nowrap;overflow:hidden}
@@ -189,6 +196,8 @@ body.docked .corner{right:calc(var(--notes-w) + 16px)}
 .tool-step button{width:40px;height:40px;padding:0;border:0;background:transparent;display:grid;place-items:center;cursor:pointer}
 @media (hover: hover){.tool-step button:hover{background:var(--hover)}}
 .tool-step button + button{border-left:1px solid var(--rule)}
+.tool-step button:disabled,.tool-pieces button:disabled{opacity:.38;cursor:default}
+@media (hover: hover){.tool-step button:disabled:hover{background:transparent}}
 .tool-stack .tool-step svg{width:16px;height:16px}
 /* After the player's buttons, the soundtrack: the pieces as an album, on a page of their own. */
 .tool-album{flex:none;width:42px;height:42px;display:grid;place-items:center;border:1px solid var(--rule);border-radius:8px;background:var(--panel);color:var(--ink)}
@@ -1283,6 +1292,54 @@ let surveyPaused = false, posSent = null, posTimer = 0, lastNews = 0;
 let world = null, worldShown = 0, worldExtra = 0, worldMap = null, worldTimer = 0, spawning = false;
 const surveyHttp = surveyApi.replace(/^ws/, 'http');
 const inSurveyArea = (x, y) => Math.abs(fdiv(x, SECTOR)) <= SURVEY_AREA && Math.abs(fdiv(y, SECTOR)) <= SURVEY_AREA;
+// The universe's edge ("The edge, the void and the wilds" in worker/SURVEY.md).
+// On the survey the universe is sectors -SURVEY_AREA to SURVEY_AREA each way,
+// and past its edge lies the void, a ring one sector wide with no grid and
+// nothing to find, only loose letters swirling, then the wilds, where the map
+// goes on and you survey alone: finds there stay in your field notes, and
+// nothing is shared. Alone, with no survey, the map has no edge.
+const EDGE0 = -SURVEY_AREA * SECTOR, EDGE1 = (SURVEY_AREA + 1) * SECTOR;  // the universe's cells, from..to-1, each way
+const VOID_W = SECTOR;
+// How many cells past the universe's edge (x, y) lies, the larger of the two ways: 0 inside.
+const pastBy = (x, y) => Math.max(0, EDGE0 - x, x - EDGE1 + 1, EDGE0 - y, y - EDGE1 + 1);
+const zoneAt = (x, y) => { if (!surveyApi) return 'inside'; const o = pastBy(Math.floor(x), Math.floor(y)); return o === 0 ? 'inside' : o <= VOID_W ? 'void' : 'wilds'; };
+const inVoid = (x, y) => zoneAt(x, y) === 'void';
+// Whether n cells from (x, y) in direction d touch the void: nothing there can be circled.
+const touchesVoid = (x, y, d, n) => { for (let i = 0; i < n; i++) if (inVoid(x + DIRS[d][0] * i, y + DIRS[d][1] * i)) return true; return false; };
+// Where the middle of the view is (on <html data-zone>): in the universe, on
+// the survey; in the void; or in the wilds. Leaving the universe leaves the
+// survey, every time with a note, and coming back joins it again. Any zone
+// can follow any other: a flight or a link can jump straight across the void.
+const Zone = machine('zone', {
+  inside: ['void', 'wilds'],
+  void: ['inside', 'wilds'],
+  wilds: ['void', 'inside'],
+}, 'inside', { onMove: zoneMoved });
+let zoneKnown = false;  // the first zone is taken quietly: a reload out in the wilds needs no note
+function updateZone() {
+  const z = zoneAt(cam.x, cam.y), quiet = !zoneKnown;
+  zoneKnown = true;
+  if (z !== Zone.state) Zone.go(z, quiet);
+}
+function zoneMoved(to, from, quiet) {
+  syncSurvey();  // leaves every sector, or joins again
+  hudRegion = ''; scheduleHud(); renderSurvey(); invalidate();
+  if (musicNow) musicNow.follow(musicPlace());  // the place's own music, or the pieces' turns (see PLACE_PIECES)
+  showPiece();
+  if (Panel.is('notes')) drawWorld();
+  if (quiet) return;
+  if (from === 'inside') edgeNote();
+  else if (to === 'inside') toast('<i></i><b class="wraps">Back in the universe</b><span>You’re surveying again: words you find first are charted and signed with your initials.</span>', null, 4200);
+}
+const BACK_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 6l-6 6 6 6"/></svg>';
+function edgeNote() {
+  toast('<i></i><b class="wraps">Past the edge of the universe</b><span>You’ve left the shared survey. Nobody sees your caret out here, and words you find stay in your field notes alone.</span>', null, 9000,
+    { label: 'Back to the universe', text: 'Go back', icon: BACK_ICON, share: () => { hideToast(); backToUniverse(); } });
+}
+// To the nearest point a little way inside the universe.
+function backToUniverse() {
+  flyTo(clamp(cam.x, EDGE0 + 12, EDGE1 - 12), clamp(cam.y, EDGE0 + 12, EDGE1 - 12), clamp(cam.cs, 26, 40));
+}
 const sectorKey = (x, y) => fdiv(x, SECTOR) + ',' + fdiv(y, SECTOR);
 // The other games keep initials as JSON ("ABC"), and so does this one now;
 // one saved bare (ABC) by an earlier version still counts.
@@ -1465,7 +1522,7 @@ function sectorsInView() {
   const cs = cam.cs, hw = (W - dock) / 2 / cs, hh = H / 2 / cs, out = [];
   for (let sy = fdiv(Math.floor(cam.y - hh), SECTOR); sy <= fdiv(Math.floor(cam.y + hh), SECTOR); sy++)
     for (let sx = fdiv(Math.floor(cam.x - hw), SECTOR); sx <= fdiv(Math.floor(cam.x + hw), SECTOR); sx++)
-      out.push({ sx, sy, dist: Math.hypot((sx + .5) * SECTOR - cam.x, (sy + .5) * SECTOR - cam.y) });
+      if (Math.abs(sx) <= SURVEY_AREA && Math.abs(sy) <= SURVEY_AREA) out.push({ sx, sy, dist: Math.hypot((sx + .5) * SECTOR - cam.x, (sy + .5) * SECTOR - cam.y) });
   out.sort((a, b) => a.dist - b.dist);
   if (out.length <= SECTOR_LINKS) return out;
   const waiting = new Set();
@@ -1478,7 +1535,9 @@ function sectorsInView() {
 function syncSurvey() {
   if (!surveyApi) return;
   if (spawning) return renderSurvey();
-  const want = surveyPaused ? [] : sectorsInView(), keep = new Set(), now = Date.now();
+  updateZone();
+  // Past the universe's edge there's no survey: every sector is left at once.
+  const away = !Zone.is('inside'), want = surveyPaused || away ? [] : sectorsInView(), keep = new Set(), now = Date.now();
   if (want.length && !passGood()) ensurePass();
   for (const { sx, sy } of want) {
     const k = sx + ',' + sy, l = links.get(k);
@@ -1488,7 +1547,7 @@ function syncSurvey() {
   for (const [k, l] of links) {
     if (keep.has(k)) continue;
     if (!l.unwanted) l.unwanted = now;
-    if (surveyPaused || now - l.unwanted > 4000) l.m.go('closed');
+    if (surveyPaused || away || now - l.unwanted > 4000) l.m.go('closed');
   }
   sendPos();
   renderSurvey();
@@ -1704,7 +1763,8 @@ const CLAIM_BURST = 4, CLAIM_REFILL_MS = 1600;
 // it went with, if it may have gone already.
 function claimWord(e, from = 'queued', waited = from !== 'queued', initials = myInitials()) {
   // A word someone else charted, added to the notes anyway, is theirs already.
-  if (!surveyApi || outbox.has(e.key) || claims.has(e.key)) return;
+  // One past the universe's edge stays in the notes alone.
+  if (!surveyApi || !inSurveyArea(e.x, e.y) || outbox.has(e.key) || claims.has(e.key)) return;
   const l = links.get(sectorKey(e.x, e.y));
   // `backlog`: it waited for its sector, rather than going as it was circled.
   const c = { e, l: null, waited, backlog: waited || !(l && l.m.is('live')), initials: waited ? initials : '', known: false, beaten: false };
@@ -1950,6 +2010,7 @@ function hereStatus(cx, cy) {
 // Where the shared survey stands, worked out afresh from the links and the
 // pass every time, so #survey's data-state and its words always agree.
 function surveyStatus() {
+  if (!Zone.is('inside')) return Zone.state;  // void or wilds: no survey out there
   let live = false, failed = false;
   for (const l of links.values()) {
     if (l.m.is('live')) live = true;
@@ -1973,6 +2034,8 @@ const SURVEY_STATUS = {
   'full-world': ['offline', 'The survey is crowded right now. Your finds still save in this browser.'],
   'full-sector': ['offline', 'This part of the map is crowded right now. Your finds still save in this browser.'],
   offline: ['offline', 'Survey offline. Your finds still save in this browser.'],
+  void: ['offline', 'Loose letters, nothing to find. The universe is behind you.'],
+  wilds: ['offline', 'Words you find out here stay in your field notes, and nobody sees your caret.'],
   joining: ['connecting', 'Joining the survey…'],
 };
 function renderSurvey() {
@@ -1986,22 +2049,19 @@ function renderSurvey() {
   // button who's online. Otherwise it says what's wrong. The count shows in
   // full, since it ticks up, and the total short ("1.1M"), with the full
   // figure for screen readers.
-  const live = status === 'live', counted = live && world;
-  surveyLabel.textContent = counted ? 'Universe charted' : 'Shared survey';
+  const live = status === 'live', counted = live && world, away = status === 'void' || status === 'wilds';
+  surveyLabel.textContent = counted ? 'Universe charted' : status === 'void' ? 'The void' : status === 'wilds' ? 'The wilds' : 'Shared survey';
   const n = counted ? worldShown.toLocaleString() : '';
-  const count = counted ? `<span aria-hidden="true">${n} of ${shortCount(world.total)}</span><span class="vh">${n} of ${world.total.toLocaleString()}</span>` : '';
+  const count = counted ? `<span aria-hidden="true">${n} of ${shortCount(world.total)}</span><span class="vh">${n} of ${world.total.toLocaleString()}</span>`
+    : away ? (status === 'void' ? 'off the survey' : 'surveying alone') : '';
   if (surveyCount.innerHTML !== count) surveyCount.innerHTML = count;
   if (!live) { surveyText.textContent = SURVEY_STATUS[status][1]; return; }
-  // Yours, counted as the survey counts: hidden words you charted first, those
-  // in the universe (of the count above) apart from those past its edge, which
-  // the survey charts too but the universe's count leaves out. The survey log
-  // counts the same way: its Words charted and top lists take in both, its In
-  // the universe only the first. Bonus words count in neither, as in the log.
-  let inside = 0, past = 0;
-  for (const e of found.values()) if (e.f && !e.s) { if (inSurveyArea(e.x, e.y)) inside++; else past++; }
-  const all = inside + past;
-  surveyText.textContent = !counted ? `${all.toLocaleString()} word${all === 1 ? '' : 's'} charted first by you`
-    : `${inside.toLocaleString()} of them charted first by you${past ? `, and ${past.toLocaleString()} past its edge` : ''}`;
+  // Yours, counted as the survey and its log count: hidden words you charted
+  // first in the universe. Finds past its edge stay in your notes alone, even
+  // ones charted out there before the edge, and bonus words count nowhere.
+  let firsts = 0;
+  for (const e of found.values()) if (e.f && !e.s && inSurveyArea(e.x, e.y)) firsts++;
+  surveyText.textContent = counted ? `${firsts.toLocaleString()} of them charted first by you` : `${firsts.toLocaleString()} word${firsts === 1 ? '' : 's'} charted first by you`;
 }
 // A big number in short: 1.1M, 52K.
 const shortCount = n => new Intl.NumberFormat(undefined, { notation: 'compact', maximumFractionDigits: 1 }).format(n);
@@ -2061,8 +2121,9 @@ function drawWorld() {
     g.fill(); g.stroke();
   }
   g.globalAlpha = 1;
-  const yx = (cam.x / RC - first) * cell, yy = (cam.y / RC - first) * cell;
-  if (yx >= 0 && yy >= 0 && yx <= px && yy <= px) {
+  // You: off the map (past the universe's edge) you're shown at its rim, the nearest point to you.
+  const rim = px / 36 + px / 120, yx = clamp((cam.x / RC - first) * cell, rim, px - rim), yy = clamp((cam.y / RC - first) * cell, rim, px - rim);
+  {
     g.beginPath(); g.arc(yx, yy, px / 36, 0, Math.PI * 2);
     g.strokeStyle = C.paper; g.lineWidth = px / 60; g.stroke();
     g.strokeStyle = C.danger; g.lineWidth = px / 150; g.stroke();
@@ -2096,7 +2157,7 @@ const topEl = document.getElementById('topbar');
 // A pointer's height on the map, which starts below the top bar on a phone.
 const mapY = e => e.clientY - mapTop;
 const cam = { x: 6, y: 6, cs: 38 };
-let C = {}, TC = [], farRGB = [], REM = [], farRemRGB = [];
+let C = {}, TC = [], farRGB = [], REM = [], farRemRGB = [], farNightRGB = [0, 0, 0], farWildsRGB = [];
 
 function hexRGB(hex) {
   const m = /^#?([0-9a-f]{6})$/i.exec((hex || '').trim());
@@ -2113,7 +2174,8 @@ const rgba = (hex, a) => { const c = hexRGB(hex); return `rgba(${c[0]},${c[1]},$
 function readColors() {
   const st = getComputedStyle(document.documentElement);
   const g = n => st.getPropertyValue(n).trim();
-  C = { paper: g('--paper'), panel: g('--panel'), ink: g('--ink'), rule: g('--rule'), accent: g('--accent'), danger: g('--danger'), dark: g('--mode') === 'dark' };
+  C = { paper: g('--paper'), panel: g('--panel'), ink: g('--ink'), rule: g('--rule'), accent: g('--accent'), danger: g('--danger'), dark: g('--mode') === 'dark',
+    night: g('--night') || '#14203A', nightInk: g('--night-ink') || '#D9E1F5' };
   C.selFill = rgba(C.accent, C.dark ? .2 : .14);
   C.failFill = rgba(C.danger, .14);
   const ms = g('--mark-s') || '58%', ml = g('--mark-l') || '38%';
@@ -2133,12 +2195,15 @@ function readColors() {
     glow: a => `hsla(${t.hue}, 95%, ${C.dark ? 70 : 60}%, ${a})`,
   }));
   farRemRGB = THEMES.map(t => { const c = hslRGB(t.hue, .5, deepL); return [0, 1, 2].map(i => Math.round(pr[i] * (1 - ra) + c[i] * ra)); });
+  // Past the universe's edge, from afar: the void is night; the wilds, night with a breath of each theme.
+  farNightRGB = hexRGB(C.night);
+  farWildsRGB = THEMES.map(t => { const c = hslRGB(t.hue, .45, .5); return [0, 1, 2].map(i => Math.round(farNightRGB[i] * .88 + c[i] * .12)); });
   invalidate();
 }
 const tintAlpha = cs => { const base = C.dark ? .075 : .09, far = C.dark ? .15 : .2; return base + (far - base) * clamp((14 - cs) / 11, 0, 1); };
 
 /* Glyph atlas: 26 letters rendered once per zoom level, then blitted per cell */
-const atlas = { c: document.createElement('canvas'), key: '' };
+const atlas = { c: document.createElement('canvas'), key: '' }, nightAtlas = { c: document.createElement('canvas'), key: '' };
 let fontEpoch = 0;
 const glyphPx = S => Math.max(5, S * 0.42);  // a letter's font size in a tile of S device pixels
 // The box each drawn letter's ink fills, from its tile's centre, as a share
@@ -2160,14 +2225,14 @@ function glyphBoxes() {
   return glyphInk.boxes;
 }
 
-function ensureAtlas(S) {
-  const key = S + '|' + C.ink + '|' + fontEpoch;
-  if (atlas.key === key) return;
-  atlas.key = key;
-  const c = atlas.c; c.width = S * 26; c.height = S;
+function ensureAtlas(S, a = atlas, ink = C.ink) {
+  const key = S + '|' + ink + '|' + fontEpoch;
+  if (a.key === key) return;
+  a.key = key;
+  const c = a.c; c.width = S * 26; c.height = S;
   const g = c.getContext('2d');
   g.clearRect(0, 0, c.width, c.height);
-  g.fillStyle = C.ink;
+  g.fillStyle = ink;
   g.font = `500 ${glyphPx(S)}px ${GRID_FONT}`;
   g.textAlign = 'center'; g.textBaseline = 'alphabetic';
   const m = g.measureText('H'), capH = m.actualBoundingBoxAscent || S * 0.3;
@@ -2185,7 +2250,11 @@ function drawFar(vx0, vy0, cs) {
     let prx = NaN, col = null;
     for (let i = 0; i < gw; i++) {
       const rx = Math.floor((vx0 + (i + .5) * inv) / RC);
-      if (rx !== prx) { prx = rx; col = (rem.size && rem.has(rx + ',' + ry) ? farRemRGB : farRGB)[regionTheme(rx, ry)]; }
+      if (rx !== prx) {
+        prx = rx;
+        const z = zoneAt(rx * RC, ry * RC);
+        col = z === 'void' ? farNightRGB : (z === 'wilds' ? farWildsRGB : rem.size && rem.has(rx + ',' + ry) ? farRemRGB : farRGB)[regionTheme(rx, ry)] || farNightRGB;
+      }
       const p = (j * gw + i) * 4;
       data[p] = col[0]; data[p + 1] = col[1]; data[p + 2] = col[2]; data[p + 3] = 255;
     }
@@ -2205,6 +2274,121 @@ function drawFar(vx0, vy0, cs) {
     g.addColorStop(0, REM[q.th].glow(.75 * f)); g.addColorStop(1, REM[q.th].glow(0));
     ctx.fillStyle = g; ctx.beginPath(); ctx.arc(cx, cy, rad, 0, Math.PI * 2); ctx.fill();
   }
+}
+
+/* Past the universe's edge, on the survey (see EDGE0): night, from a soft fall
+   at the edge, with stars; in the void, loose letters swirling in slow eddies,
+   off the grid and never lined up into words; and a line at each edge. */
+const cellHash = (a, b) => { let h = (a * 374761393 + b * 668265263) | 0; h = (h ^ (h >>> 13)) * 1274126177; return ((h ^ (h >>> 16)) >>> 0) / 4294967296; };
+function drawNight(now, cs, SX, SY, vx0, vy0, vx1, vy1) {
+  const ux0 = SX(EDGE0), uy0 = SY(EDGE0), ux1 = SX(EDGE1), uy1 = SY(EDGE1);
+  ctx.globalAlpha = 1;
+  ctx.fillStyle = C.night;
+  ctx.beginPath(); ctx.rect(0, 0, W, H); ctx.rect(ux0, uy0, ux1 - ux0, uy1 - uy0); ctx.fill('evenodd');
+  const fall = Math.min(10 * cs, 300), uw = ux1 - ux0, uh = uy1 - uy0;
+  const strip = (x, y, w, h, gx0, gy0, gx1, gy1) => {
+    if (x > W || y > H || x + w < 0 || y + h < 0) return;
+    const g = ctx.createLinearGradient(gx0, gy0, gx1, gy1);
+    g.addColorStop(0, C.paper); g.addColorStop(1, C.night);
+    ctx.fillStyle = g; ctx.fillRect(Math.max(-1, x), Math.max(-1, y), Math.min(W + 2, x + w) - Math.max(-1, x), Math.min(H + 2, y + h) - Math.max(-1, y));
+  };
+  strip(ux0 - fall, uy0, fall, uh, ux0, 0, ux0 - fall, 0);
+  strip(ux1, uy0, fall, uh, ux1, 0, ux1 + fall, 0);
+  strip(ux0, uy0 - fall, uw, fall, 0, uy0, 0, uy0 - fall);
+  strip(ux0, uy1, uw, fall, 0, uy1, 0, uy1 + fall);
+  // Stars: a few to a territory, sampled more sparsely as you zoom out, and
+  // faint in the wilds once their letters show, so as not to speckle them.
+  const step = Math.max(1, Math.ceil(Math.sqrt((vx1 - vx0) * (vy1 - vy0) / 4000)));
+  const wildStars = 1 - .8 * clamp((cs - LETTER_MIN) / (LETTER_FULL - LETTER_MIN), 0, 1);
+  ctx.fillStyle = '#FFFFFF';
+  for (let y = Math.floor(vy0 / step) * step; y <= vy1; y += step) for (let x = Math.floor(vx0 / step) * step; x <= vx1; x += step) {
+    const o = pastBy(x, y);
+    if (!o) { x = Math.max(x, Math.floor((EDGE1 - 1) / step) * step); continue; }  // across the universe in one jump
+    const r = cellHash(x * 3 + 1, y * 5 + 2);
+    if (r > .035) continue;
+    ctx.globalAlpha = (RM ? .7 : .45 + .55 * Math.abs(Math.sin(now / 900 + r * 400))) * Math.min(1, o / 8) * (C.dark ? .9 : .75) * (o > VOID_W ? wildStars : 1);
+    ctx.beginPath(); ctx.arc(SX(x + cellHash(x, y)), SY(y + cellHash(y, x)), r < .008 ? 1.6 : 1, 0, Math.PI * 2); ctx.fill();
+  }
+  ctx.globalAlpha = 1;
+  return !RM;  // they twinkle
+}
+// Each loose letter is born at a fixed spot in the void and turns about the
+// eddy it was born in: eddies sit a territory apart, turning one way and the
+// other in turn, faster near their middles. Where a letter is depends only on
+// the time, so nothing is kept. Letters fade near both edges of the void, so
+// none drifts onto the grid of the universe or the wilds.
+function drawSwirl(now, cs, SX, SY, vx0, vy0, vx1, vy1) {
+  const L = RC, t = RM ? 0 : now / 1000;
+  let b = cs >= 8 ? 2 : 2 * Math.ceil(8 / cs);  // one letter per b × b cells
+  while ((vx1 - vx0 + 2 * L) * (vy1 - vy0 + 2 * L) / (b * b) > 5000) b *= 2;
+  const font = Math.max(5, cs * .46), dot = font < 6;
+  ctx.font = `500 ${font}px ${GRID_FONT}`;
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  let drawn = false;
+  for (let by = Math.floor((vy0 - L) / b) * b; by <= vy1 + L; by += b) for (let bx = Math.floor((vx0 - L) / b) * b; bx <= vx1 + L; bx += b) {
+    const h1 = cellHash(bx, by), h2 = cellHash(by + 7, bx - 3);
+    const px = bx + h1 * b, py = by + h2 * b, o = pastBy(Math.floor(px), Math.floor(py));
+    if (o < 1 || o > VOID_W) continue;  // only letters born in the void
+    const ex = fdiv(px, L), ey = fdiv(py, L);
+    const cx = (ex + .5) * L + cellHash(ex * 13, ey * 7) * 12 - 6, cy = (ey + .5) * L + cellHash(ey * 11, ex * 5) * 12 - 6;
+    const dx = px - cx, dy = py - cy, r = Math.hypot(dx, dy);
+    const a = ((ex + ey) & 1 ? 1 : -1) * .22 / (1 + r / 10) * t, k = 1 + .06 * Math.sin(t * .5 + h1 * 6);
+    const qx = cx + (dx * Math.cos(a) - dy * Math.sin(a)) * k, qy = cy + (dx * Math.sin(a) + dy * Math.cos(a)) * k;
+    if (qx < vx0 - 1 || qx > vx1 + 1 || qy < vy0 - 1 || qy > vy1 + 1) continue;
+    const oq = pastBy(Math.floor(qx), Math.floor(qy)), fade = clamp(Math.min(oq, VOID_W - oq) / 8, 0, 1);
+    if (fade <= 0) continue;
+    drawn = true;
+    ctx.globalAlpha = fade * (.22 + .5 * h1);
+    ctx.fillStyle = h2 < .28 ? `hsl(${Math.floor(cellHash(bx * 5, by * 3) * 360)}, 70%, 76%)` : C.nightInk;  // some come loose from a territory's colour
+    const X = SX(qx), Y = SY(qy);
+    if (dot) { ctx.fillRect(X - .8, Y - .8, 1.6, 1.6); continue; }
+    const spin = (cellHash(bx, by * 3) - .5) * 1.4 * t + h2 * 6.283, c = Math.cos(spin) * dpr, sn = Math.sin(spin) * dpr;
+    ctx.setTransform(c, sn, -sn, c, X * dpr, Y * dpr);
+    ctx.fillText(String.fromCharCode(65 + Math.floor(cellHash(bx * 3, by * 5) * 26)), 0, 0);
+  }
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.globalAlpha = 1;
+  return drawn && !RM;
+}
+// The edge of the universe, glowing, and the edge of the wilds across the
+// void, quieter, each drawn only where it's in view (a glow on a box the size
+// of the universe would be huge), with its name beside it on the outer side.
+function drawEdge(now, cs, SX, SY, vx0, vy0, vx1, vy1) {
+  const anim = cs >= 1.5 && drawSwirl(now, cs, SX, SY, vx0, vy0, vx1, vy1);
+  const sides = (x0, y0, x1, y1) => [
+    [x0, Math.max(y0, -40), x0, Math.min(y1, H + 40), 'w'], [x1, Math.max(y0, -40), x1, Math.min(y1, H + 40), 'e'],
+    [Math.max(x0, -40), y0, Math.min(x1, W + 40), y0, 'n'], [Math.max(x0, -40), y1, Math.min(x1, W + 40), y1, 's'],
+  ].filter(([a, b, c, d]) => a <= c && b <= d && Math.max(a, c) > -40 && Math.min(a, c) < W + 40 && Math.max(b, d) > -40 && Math.min(b, d) < H + 40);
+  const label = (text, x0, y0, x1, y1, side, gap, ink, ground) => {
+    if (cs < 4) return;
+    ctx.save();
+    ctx.font = `500 10px ${GRID_FONT}`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    const s = text.split('').join(String.fromCharCode(8202)), w = ctx.measureText(s).width + 18;
+    const along = side === 'w' || side === 'e' ? clamp(H / 2, y0 + w / 2, y1 - w / 2) : clamp((W - dock) / 2, x0 + w / 2, x1 - w / 2);
+    if (side === 'w' || side === 'e') { ctx.translate(x0 + (side === 'w' ? -gap : gap), along); ctx.rotate(-Math.PI / 2); } else ctx.translate(along, y0 + (side === 'n' ? -gap : gap));
+    ctx.globalAlpha = .92; ctx.fillStyle = ground; ctx.fillRect(-w / 2, -9, w, 17);
+    ctx.globalAlpha = 1; ctx.fillStyle = ink; ctx.fillText(s, 0, 0);
+    ctx.restore();
+  };
+  // The wilds' edge, one sector out
+  ctx.save();
+  ctx.strokeStyle = C.nightInk; ctx.globalAlpha = .5; ctx.lineWidth = 1; ctx.setLineDash([3, 5]);
+  const wilds = sides(SX(EDGE0 - VOID_W), SY(EDGE0 - VOID_W), SX(EDGE1 + VOID_W), SY(EDGE1 + VOID_W));
+  ctx.beginPath();
+  for (const [a, b, c, d] of wilds) { ctx.moveTo(Math.round(a) + .5, Math.round(b) + .5); ctx.lineTo(Math.round(c) + .5, Math.round(d) + .5); }
+  ctx.stroke();
+  ctx.restore();
+  for (const [a, b, c, d, side] of wilds) label('THE WILDS', a, b, c, d, side, 14, C.nightInk, C.night);
+  // The universe's edge
+  ctx.save();
+  ctx.shadowColor = C.accent; ctx.shadowBlur = 14; ctx.strokeStyle = C.accent; ctx.lineWidth = 2;
+  const edge = sides(SX(EDGE0), SY(EDGE0), SX(EDGE1), SY(EDGE1));
+  ctx.beginPath();
+  for (const [a, b, c, d] of edge) { ctx.moveTo(a, b); ctx.lineTo(c, d); }
+  ctx.stroke();
+  ctx.restore();
+  for (const [a, b, c, d, side] of edge) label('EDGE OF THE UNIVERSE', a, b, c, d, side, 14, C.nightInk, C.night);
+  return anim;
 }
 
 function capsule(x0, y0, x1, y1, r) {
@@ -2685,7 +2869,9 @@ soundVolEl.addEventListener('input', () => { gestured = true; setSoundVol(+sound
 // seed, a new one each time it plays, for every choice it makes, so a seed
 // plays it the same way again: the soundtrack album is recorded from fixed
 // ones (scripts/render_album.py). The noise their reverbs and the effects are
-// made from is seeded too, the same everywhere.
+// made from is seeded too, the same everywhere. Out past the universe's edge, on the
+// survey, they give way to the place's own (PLACE_PIECES): Hinterland alone in
+// the wilds, and in the void no music, only Dripstone's drips.
 // The volume slider runs 0 to 100, and the music's gain is the square of
 // it, so the lower half isn't nearly silent. 75 is the level the music always
 // had (.45). The slider is always there and 0 is off: it shows 0 while the
@@ -3258,10 +3444,256 @@ function lanternTrack(a, out, seed = Math.floor(Math.random() * 4294967296)) {
   };
 }
 
+// Hinterland: the wilds' own piece, and the only one out there. Past the
+// void you survey alone, so it's lonely rather than frightening: a breathy
+// wooden flute, far off, sings a slow lament in D minor over a hollow drone of
+// open fifths that wavers as its pairs beat against each other, with wind
+// rising and falling. Its phrases fall away, and the long note at the end of
+// one often sags flat as it fades. In the gaps a fainter flute, from the other
+// side and a little out of tune, sometimes answers with the end of the last
+// phrase, as if someone else were out there; nobody is. Two soft notes of a
+// chord drift under each phrase, changing for its last note. It never ends:
+// a phrase, a breath, maybe an answer, and the next, each chosen by the seed.
+// It has Chimes' hall, fed mono, and a long echo.
+const HINTER_BEAT = 60 / 52, HINTER_FLUTE = .085, HINTER_ECHO = .3, HINTER_PAD = .019, HINTER_DRONE = .05;
+// Each phrase as [note, beats], and the chords under it, for its body and its last note.
+const HINTER_PHRASES = [
+  [[[69, 1.5], [65, 1], [64, 1], [62, 3]], ['i', 'VI']],
+  [[[74, 2], [72, 1], [69, 1], [70, 1], [69, 3]], ['iv', 'i']],
+  [[[65, 1], [67, 1], [69, 1.5], [72, 1], [69, 3]], ['VI', 'i']],
+  [[[64, 1.5], [65, 1], [62, 3.5]], ['v', 'i']],
+  [[[69, 1], [70, 1], [69, 1], [67, 1], [65, 1.5], [64, 3]], ['i', 'v']],
+  [[[72, 1.5], [70, 1], [67, 1], [69, 3.5]], ['iv', 'i']],
+  [[[74, 3], [69, 1], [72, 1], [70, 3]], ['i', 'iv']],
+  [[[62, 1], [65, 1], [64, 1], [60, 1], [62, 3.5]], ['VII', 'i']],
+];
+const HINTER_CHORDS = { i: [53, 57], VI: [53, 58], iv: [55, 58], v: [57, 60], VII: [55, 60] };
+function hinterlandTrack(a, out, seed = Math.floor(Math.random() * 4294967296)) {
+  const T = trackBase(a, out, [.83, 1.27, .38, 1500]), { keep, bus, send } = T, rnd = rng(seed), now = a.currentTime;
+  const hall = a.createConvolver();
+  try { hall.channelCountMode = 'explicit'; hall.channelCount = 1; } catch (_) {}
+  hall.buffer = hallOf(a);
+  const wet = a.createGain(); wet.gain.value = .75; hall.connect(wet); wet.connect(bus);
+  const wash = a.createGain(); wash.gain.value = .25; wet.connect(wash); wash.connect(send);
+  // A place in the open: a share of it dry, a share into the hall and one round the echo.
+  const place = (pan, dry, room, echo) => {
+    const to = a.createGain();
+    for (const [v, into] of [[dry, bus], [room, hall], [echo, send]]) if (v) { const s = a.createGain(); s.gain.value = v; to.connect(s); s.connect(into); }
+    if (!pan || !a.createStereoPanner) return to;
+    const p = a.createStereoPanner(); p.pan.value = pan; p.connect(to);
+    return p;
+  };
+  const near = place(-.2, .8, .6, .22), far = place(.62, .12, 1, .5), under = place(0, .7, .5, .08);
+  // The drone: D and the A above it, each a pair a few cents apart, so they beat slowly.
+  const droneTone = a.createBiquadFilter(); droneTone.type = 'lowpass'; droneTone.frequency.value = 420; droneTone.connect(under);
+  const drone = a.createGain(); drone.gain.value = HINTER_DRONE; drone.connect(droneTone);
+  const swell = keep(a.createOscillator()), swellDepth = a.createGain();
+  swell.frequency.value = .021; swellDepth.gain.value = HINTER_DRONE * .45; swell.connect(swellDepth); swellDepth.connect(drone.gain);
+  for (const [m, v] of [[38, .5], [38, .45], [45, .32], [45, .28]]) {
+    const o = keep(a.createOscillator()), g = a.createGain();
+    o.type = 'triangle'; o.frequency.value = hz(m); o.detune.value = (rnd() - .5) * 9; g.gain.value = v;
+    o.connect(g); g.connect(drone);
+  }
+  // The wind: noise through a band that wanders, one each side, rising and
+  // falling as two slow waves pull them, one each way.
+  const gust = keep(a.createOscillator()), sway = keep(a.createOscillator());
+  gust.frequency.value = .031; sway.frequency.value = .013;
+  for (const [pan, rate, f, way] of [[-.6, .73, 480, 1], [.6, .91, 720, -1]]) {
+    const n = keep(a.createBufferSource()), band = a.createBiquadFilter(), g = a.createGain(), gd = a.createGain(), fd = a.createGain();
+    n.buffer = noiseOf(a); n.loop = true; n.playbackRate.value = rate; n.loopStart = rnd() * 1.5;
+    band.type = 'bandpass'; band.frequency.value = f; band.Q.value = .8; g.gain.value = .014;
+    gd.gain.value = .011 * way; gust.connect(gd); gd.connect(g.gain);
+    fd.gain.value = f * .45 * way; sway.connect(fd); fd.connect(band.frequency);
+    n.connect(band); band.connect(g); g.connect(place(pan, .9, .3, 0));
+  }
+  // The flutes' shared vibrato, which each long note leans into late.
+  const vib = keep(a.createOscillator()); vib.frequency.value = 5.1;
+  for (const n of T.nodes) n.start(now);
+  const fluteWave = organWave(a, [1, .16, .05, .02]);
+
+  // A breathy wooden flute: it scoops up into each note, a puff of breath as
+  // it speaks and a little under it all along, vibrato only on the long
+  // notes, and a note that sags flat as it fades when the phrase ends sadly.
+  function flute(t, m, len, level, to, sag) {
+    const f = hz(m), o = keep(a.createOscillator()), g = a.createGain(), end = t + len;
+    o.setPeriodicWave(fluteWave);
+    o.frequency.setValueAtTime(f * Math.pow(2, -(25 + rnd() * 20) / 1200), t);
+    o.frequency.exponentialRampToValueAtTime(f, t + .09);
+    if (sag) o.frequency.setTargetAtTime(f * Math.pow(2, -(45 + rnd() * 35) / 1200), t + len * .55, len * .35);
+    g.gain.setValueAtTime(0, t);
+    g.gain.linearRampToValueAtTime(level, t + .16);
+    g.gain.setTargetAtTime(level * .82, t + .16, .5);
+    g.gain.setTargetAtTime(0, end, sag ? .7 : .09);
+    if (len > 1.4) {
+      const d = a.createGain();
+      d.gain.setValueAtTime(0, t); d.gain.setValueAtTime(0, t + .5); d.gain.linearRampToValueAtTime(8 + rnd() * 4, t + 1.3);
+      vib.connect(d); d.connect(o.detune);
+      o.addEventListener('ended', () => { try { vib.disconnect(d); } catch (_) {} });  // or the vibrato would keep every note's
+    }
+    o.connect(g); g.connect(to);
+    o.start(t); o.stop(end + (sag ? 3.5 : .6));
+    const b = keep(a.createBufferSource()), band = a.createBiquadFilter(), bg = a.createGain();
+    b.buffer = noiseOf(a); b.loop = true;
+    band.type = 'bandpass'; band.frequency.value = Math.min(6000, f * 2.2); band.Q.value = 1.4;
+    bg.gain.setValueAtTime(0, t);
+    bg.gain.linearRampToValueAtTime(level * .9, t + .03);
+    bg.gain.setTargetAtTime(level * .14, t + .03, .12);
+    bg.gain.setTargetAtTime(0, end, .1);
+    b.connect(band); band.connect(bg); bg.connect(to);
+    b.start(t, rnd() * 1.5); b.stop(end + .6);
+  }
+  // Two soft notes of a chord, swelling in over a few seconds and away again.
+  const padTone = a.createBiquadFilter(); padTone.type = 'lowpass'; padTone.frequency.value = 1100; padTone.connect(under);
+  let pad = null;
+  function chord(t, name) {
+    if (pad) { const p = pad; p.g.gain.setTargetAtTime(0, t, 1.6); for (const o of p.os) o.stop(t + 9); }
+    const g = a.createGain(), os = [];
+    g.gain.setValueAtTime(0, t); g.gain.setTargetAtTime(HINTER_PAD, t, 1.8); g.connect(padTone);
+    for (const [m, c] of HINTER_CHORDS[name].map((m, i) => [m, i ? 4 : -4])) {
+      const o = keep(a.createOscillator());
+      o.type = 'triangle'; o.frequency.value = hz(m); o.detune.value = c + (rnd() - .5) * 3;
+      o.connect(g); o.start(t); os.push(o);
+    }
+    pad = { g, os };
+  }
+  // One phrase from t, an octave down now and then, and its answer, maybe,
+  // in the gap after it. Returns when the next may start.
+  let last = -1;
+  function phrase(t) {
+    let i;
+    do i = Math.floor(rnd() * HINTER_PHRASES.length); while (i === last);
+    last = i;
+    const [notes, [body, close]] = HINTER_PHRASES[i], down = rnd() < .15 ? 12 : 0, sag = rnd() < .6;
+    const beat = HINTER_BEAT * (.94 + rnd() * .12);
+    chord(t - 1.5, body);
+    let s = t;
+    notes.forEach(([m, d], k) => {
+      const lastNote = k === notes.length - 1, len = d * beat * (lastNote ? 1 : 1.04);
+      if (lastNote) chord(s - .4, close);
+      flute(s, m - down, len, HINTER_FLUTE * (.85 + rnd() * .2) * (lastNote ? .92 : 1), near, lastNote && sag);
+      s += d * beat;
+    });
+    const gap = 2.5 + rnd() * 4.5;
+    if (rnd() < .5) {  // the answer: the last two or three notes, faint and a little flat, from far off
+      let e = s + 1 + rnd() * 1.2;
+      const tail = notes.slice(-(2 + Math.floor(rnd() * 2))), low = rnd() < .3 ? 12 : 0, flat = -(14 + rnd() * 12);
+      for (const [m, d] of tail) {
+        const len = d * beat * .9;
+        flute(e, m - down - low + flat / 100, len, HINTER_FLUTE * HINTER_ECHO, far, true);
+        e += d * beat;
+      }
+      return Math.max(e + 1.5, s + gap);
+    }
+    return s + gap;
+  }
+  let at = now + 4;
+  return {
+    name: 'hinterland', bus, nodes: T.nodes, stop: T.stop, seed,
+    play(until) { while (at < until) at = phrase(at); },
+    resync(now) { at = Math.max(at, now + .5); },
+  };
+}
+
+// Dripstone: the void's only sound, in place of any music. No tune, only
+// water dripping somewhere deep in a vast cave: each drop a low, hollow
+// plunk, ringing off far walls through a long, dark echo whose repeats waver
+// a little out of tune. Two or three spots drip, each at its own pitch, its
+// own place left or right and its own slow, nearly steady pace, many
+// seconds apart, so their drops fall in and out of step; now and then one
+// drops twice, or stops for a long while, and rarely a deeper drop falls into
+// a pool. Under it, the cave's breath, a low rumble, almost nothing.
+const DRIP_LEVEL = .2;
+const caveOf = perContext(a => {  // a long, dark tail with a few hard, far bounces
+  const n = Math.floor(a.sampleRate * 7.5), b = a.createBuffer(2, n, a.sampleRate), rnd = rng(0xca7e);
+  for (let ch = 0; ch < 2; ch++) {
+    const d = b.getChannelData(ch);
+    let y = 0;
+    for (let i = 0; i < n; i++) {
+      const t = i / n, k = .45 - .37 * t;
+      y += k * (rnd() * 2 - 1 - y);
+      d[i] = y * Math.exp(-5 * t) * Math.min(1, i / (a.sampleRate * .05)) * 1.1;
+    }
+    for (const [ms, v] of [[31, .45], [59, .34], [97, .26], [151, .2], [233, .14]]) {
+      const i = Math.floor(a.sampleRate * (ms + ch * 7 + rnd() * 5) / 1000);
+      if (i < n) d[i] += v * (ch ? -1 : 1);
+    }
+  }
+  return b;
+});
+function dripstoneTrack(a, out, seed = Math.floor(Math.random() * 4294967296)) {
+  const T = trackBase(a, out, [.81, 1.23, .45, 1400]), { keep, bus, send } = T, rnd = rng(seed), now = a.currentTime;
+  const cave = a.createConvolver();
+  cave.buffer = caveOf(a);
+  const wet = a.createGain(); wet.gain.value = .9; cave.connect(wet); wet.connect(bus);
+  // The wavering echo: a long delay whose time sways slowly, so each repeat
+  // comes back a hair off pitch.
+  const sway = a.createDelay(1), swayBack = a.createGain(), swayTone = a.createBiquadFilter();
+  sway.delayTime.value = .57; swayBack.gain.value = .45; swayTone.type = 'lowpass'; swayTone.frequency.value = 1100;
+  sway.connect(swayTone); swayTone.connect(swayBack); swayBack.connect(sway); swayTone.connect(cave);
+  const swayer = keep(a.createOscillator()), swayDepth = a.createGain();
+  swayer.frequency.value = .11; swayDepth.gain.value = .006; swayer.connect(swayDepth); swayDepth.connect(sway.delayTime);
+  // The cave's breath: noise kept low and dim, slowly swelling.
+  const air = keep(a.createBufferSource()), airTone = a.createBiquadFilter(), airGain = a.createGain();
+  air.buffer = noiseOf(a); air.loop = true; air.playbackRate.value = .61;
+  airTone.type = 'lowpass'; airTone.frequency.value = 110; airGain.gain.value = .02;
+  const breath = keep(a.createOscillator()), breathDepth = a.createGain();
+  breath.frequency.value = .021; breathDepth.gain.value = .011; breath.connect(breathDepth); breathDepth.connect(airGain.gain);
+  air.connect(airTone); airTone.connect(airGain); airGain.connect(bus); airGain.connect(cave);
+  for (const n of T.nodes) n.start(now);
+  // A spot in the cave: where, how near, its pitch and its pace.
+  const spot = (pan, near) => {
+    const to = a.createGain();
+    for (const [v, into] of [[.25 + near * .75, bus], [.8, cave], [.3, send], [.25 + (1 - near) * .35, sway]]) { const s = a.createGain(); s.gain.value = v; to.connect(s); s.connect(into); }
+    if (!a.createStereoPanner) return to;
+    const p = a.createStereoPanner(); p.pan.value = pan; p.connect(to);
+    return p;
+  };
+  const spots = Array.from({ length: 2 + Math.floor(rnd() * 2) }, () => {
+    const near = .25 + rnd() * .75;
+    return { to: spot(rnd() * 1.6 - .8, near), f: 330 * Math.pow(2.2, rnd()), level: DRIP_LEVEL * (.55 + .45 * near), every: 7 + rnd() * 10, next: now + 1.5 + rnd() * 7 };
+  });
+  // A drop: a sine that lifts in pitch as the bubble it makes closes, gone
+  // in a fifth of a second or so, with the dull slap of the splash.
+  function drop(t, f, level, to, slow = 1) {
+    const o = keep(a.createOscillator()), g = a.createGain(), len = (.16 + rnd() * .1) * slow;
+    o.frequency.setValueAtTime(f, t);
+    o.frequency.exponentialRampToValueAtTime(f * (1.35 + rnd() * .3), t + len * .45);
+    g.gain.setValueAtTime(0, t);
+    g.gain.linearRampToValueAtTime(level, t + .002);
+    g.gain.exponentialRampToValueAtTime(.0001, t + len);
+    o.connect(g); g.connect(to);
+    o.start(t); o.stop(t + len + .02);
+    const c = keep(a.createBufferSource()), hp = a.createBiquadFilter(), cg = a.createGain();
+    c.buffer = noiseOf(a); hp.type = 'highpass'; hp.frequency.value = 1800;
+    cg.gain.setValueAtTime(level * .12, t); cg.gain.exponentialRampToValueAtTime(.0001, t + .016);
+    c.connect(hp); hp.connect(cg); cg.connect(to);
+    c.start(t, rnd() * 1.5); c.stop(t + .02);
+  }
+  const pool = spot(rnd() * .8 - .4, .35);
+  let poolAt = now + 12 + rnd() * 25;
+  return {
+    name: 'dripstone', bus, nodes: T.nodes, stop: T.stop, seed,
+    play(until) {
+      for (const s of spots) while (s.next < until) {
+        drop(s.next, s.f * (1 + (rnd() - .5) * .04), s.level * (.8 + rnd() * .3), s.to);
+        if (rnd() < .06) drop(s.next + .14 + rnd() * .12, s.f * 1.06, s.level * .55, s.to);
+        s.next += s.every * (rnd() < .12 ? 2.5 + rnd() * 3 : 1 + (rnd() - .5) * .24);
+      }
+      while (poolAt < until) { drop(poolAt, 140 + rnd() * 80, DRIP_LEVEL * 1.3, pool, 2.4); poolAt += 25 + rnd() * 35; }
+    },
+    resync(now) { for (const s of spots) s.next = Math.max(s.next, now + .3 + rnd() * 2); poolAt = Math.max(poolAt, now + 5); },
+  };
+}
+
 // The pieces, in the order they take turns, with the names the tools list
 // them by.
 const MUSIC_PIECES = [[driftTrack, 'Drift'], [orbitTrack, 'Orbit'], [chimesTrack, 'Chimes'], [lanternTrack, 'Lantern']];
 const MUSIC_TRACKS = MUSIC_PIECES.map(p => p[0]);
+// Past the universe's edge, on the survey, the music is the place's own (see
+// Zone): Hinterland alone in the wilds, and in the void no music at all, only
+// Dripstone's drips. The pieces take turns again back in the universe.
+const PLACE_PIECES = { wilds: [hinterlandTrack, 'Hinterland'], void: [dripstoneTrack, 'Dripstone'] };
+const musicPlace = () => Zone.is('inside') ? 'inside' : Zone.state;
 // The piece playing, or the one that will when the music comes on: the last
 // one heard, kept for next time, or one at random the first time.
 const K_MUSIC_PIECE = 'letterfield.musicpiece.v1';
@@ -3281,33 +3713,50 @@ const Player = machine('music', {
 // few seconds ahead from a one-second timer, which stops while the tab is
 // hidden or the music is paused, and hands over to the next piece every few
 // minutes.
+// Out past the universe's edge it plays the place's own instead (here), and
+// never hands over until the view comes back.
 function playMusic(a, n) {
   const master = a.createGain(); master.gain.value = 0; master.connect(acOut);
-  let track = MUSIC_TRACKS[n](a, master), fading = null, gone = 0;
+  let here = musicPlace();
+  const make = () => (here === 'inside' ? MUSIC_TRACKS[n] : PLACE_PIECES[here][0])(a, master);
+  let track = make(), fading = null, gone = 0;
   let timer = 0, swapAt = a.currentTime + TRACK_TIME, pausedAt = 0;
   track.bus.gain.value = 1;
-  // Hands over to piece `to`, the next unless told, crossfading over `fade`
-  // seconds. A piece still fading out from the last hand-over, after a few
-  // quick taps on Next, goes at once rather than piling up.
-  function swap(to = (n + 1) % MUSIC_TRACKS.length, fade = 8) {
+  // Crossfades to a new track over `fade` seconds. A piece still fading out
+  // from the last hand-over, after a few quick taps on Next, goes at once
+  // rather than piling up.
+  function handOver(fade) {
     if (fading) { const f = fading; clearTimeout(gone); glide(f.bus.gain, 0, .08, a); setTimeout(f.stop, 150); }
     const old = fading = track;
     glide(old.bus.gain, 0, fade, a);
     gone = setTimeout(() => { old.stop(); if (fading === old) fading = null; }, fade * 1000 + 1000);
-    n = to; track = MUSIC_TRACKS[n](a, master);
+    track = make();
     glide(track.bus.gain, 1, fade, a);
     swapAt = a.currentTime + TRACK_TIME;
+  }
+  // Hands over to piece `to`, the next unless told; out past the edge, it's
+  // only the one to come back to.
+  function swap(to = (n + 1) % MUSIC_TRACKS.length, fade = 8) {
+    n = to;
     setPiece(n);
+    if (here === 'inside') handOver(fade);
+  }
+  // The view crossed into `place`: its own sound, quickly into the void's
+  // hush, more slowly into the wilds or back to the pieces' turns.
+  function follow(place) {
+    if (place === here) return;
+    here = place;
+    handOver(place === 'void' ? 2.5 : 6);
   }
   function tick() {
-    if (a.currentTime >= swapAt) swap();
+    if (here === 'inside' && a.currentTime >= swapAt) swap();
     track.play(a.currentTime + 3);
   }
   function run() { clearInterval(timer); tick(); timer = setInterval(tick, 1000); }
   run();
   glide(master.gain, musicLevel(), 4, a);
   return {
-    track: () => track, piece: () => n, fading: () => !!fading, master, swap,
+    track: () => track, piece: () => n, place: () => here, fading: () => !!fading, master, swap, follow,
     hush() { clearInterval(timer); glide(master.gain, 0, .5, a); },
     wake() {
       track.resync(a.currentTime);
@@ -3403,10 +3852,16 @@ function setPiece(i) {
   LS.set(K_MUSIC_PIECE, String(i));
   showPiece();
 }
+// Past the universe's edge, it names the place's own, and the pieces can't
+// be stepped through or picked until the view's back.
+const prevBtn = $('#musicPrev'), nextBtn = $('#musicNext');
 function showPiece() {
-  pieceName.textContent = MUSIC_PIECES[musicPiece][1];
+  const place = musicPlace(), away = place !== 'inside';
+  pieceName.textContent = away ? PLACE_PIECES[place][1] : MUSIC_PIECES[musicPiece][1];
+  prevBtn.disabled = nextBtn.disabled = away;
   for (const b of pieceList.querySelectorAll('button')) {
-    if (+b.dataset.piece === musicPiece) b.setAttribute('aria-current', 'true'); else b.removeAttribute('aria-current');
+    b.disabled = away;
+    if (!away && +b.dataset.piece === musicPiece) b.setAttribute('aria-current', 'true'); else b.removeAttribute('aria-current');
   }
   // A list long enough to scroll brings the piece playing into the middle of
   // it, without moving the drawer or the page.
@@ -3438,8 +3893,8 @@ function choosePiece(i) {
   if (i !== musicNow.piece()) musicNow.swap(i, 3);
 }
 playBtn.addEventListener('click', playPause);
-$('#musicPrev').addEventListener('click', () => choosePiece(musicPiece - 1));
-$('#musicNext').addEventListener('click', () => choosePiece(musicPiece + 1));
+prevBtn.addEventListener('click', () => choosePiece(musicPiece - 1));
+nextBtn.addEventListener('click', () => choosePiece(musicPiece + 1));
 showPiece(); showPlayer();
 
 const noiseOf = perContext(a => {
@@ -3570,14 +4025,25 @@ function draw(now) {
   const rpx = RC * cs;
   const rx0 = fdiv(Math.floor(vx0), RC), rx1 = fdiv(Math.floor(vx1), RC);
   const ry0 = fdiv(Math.floor(vy0), RC), ry1 = fdiv(Math.floor(vy1), RC);
+  // Past the universe's edge, on the survey: night (see drawNight).
+  const edged = surveyApi && !(SX(EDGE0) <= 0 && SY(EDGE0) <= 0 && SX(EDGE1) >= W && SY(EDGE1) >= H);
+  if (edged && rpx >= 28) {
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    if (drawNight(now, cs, SX, SY, vx0, vy0, vx1, vy1)) anim = true;
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+  }
   if (rpx < 28) {
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     drawFar(vx0, vy0, cs);
   } else {
-    ctx.globalAlpha = tintAlpha(cs);
+    // In the void no territory is tinted; in the wilds, only from afar, faintly.
+    const base = tintAlpha(cs), wild = (1 - clamp((cs - LETTER_MIN) / (LETTER_FULL - LETTER_MIN), 0, 1)) * .1;
     for (let ry = ry0; ry <= ry1; ry++) {
       const y0 = Math.round(SY(ry * RC) * dpr), y1 = Math.round(SY((ry + 1) * RC) * dpr);
       for (let rx = rx0; rx <= rx1; rx++) {
+        const z = edged ? zoneAt(rx * RC, ry * RC) : 'inside';
+        if (z === 'void' || (z === 'wilds' && !wild)) continue;
+        ctx.globalAlpha = z === 'wilds' ? wild : base;
         const x0 = Math.round(SX(rx * RC) * dpr), x1 = Math.round(SX((rx + 1) * RC) * dpr);
         ctx.fillStyle = TC[regionTheme(rx, ry)].tint;
         ctx.fillRect(x0, y0, x1 - x0, y1 - y0);
@@ -3585,6 +4051,12 @@ function draw(now) {
     }
     ctx.globalAlpha = 1;
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    if (edged) {  // borders in the universe and the wilds, none across the void
+      const w0 = EDGE0 - VOID_W, ww = EDGE1 - EDGE0 + 2 * VOID_W;
+      ctx.save(); ctx.beginPath();
+      ctx.rect(0, 0, W, H); ctx.rect(SX(w0), SY(w0), ww * cs, ww * cs); ctx.rect(SX(EDGE0), SY(EDGE0), (EDGE1 - EDGE0) * cs, (EDGE1 - EDGE0) * cs);
+      ctx.clip('evenodd');
+    }
     ctx.strokeStyle = C.rule; ctx.lineWidth = 1;
     ctx.setLineDash(cs > 6 ? [5, 5] : []);
     ctx.beginPath();
@@ -3592,6 +4064,7 @@ function draw(now) {
     for (let ry = ry0 + 1; ry <= ry1; ry++) { const y = Math.round(SY(ry * RC)) + .5; ctx.moveTo(0, y); ctx.lineTo(W, y); }
     ctx.stroke();
     ctx.setLineDash([]);
+    if (edged) ctx.restore();
   }
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   if (rpx >= 28) drawRemnants(vx0, vy0, vx1, vy1, cs, SX, SY);
@@ -3603,6 +4076,7 @@ function draw(now) {
   const r = Math.max(1.6, cs * .40);
   const circled = (e, ex, ey, theirs) => {
     if (Math.max(e.x, ex) + 1 < vx0 || Math.min(e.x, ex) > vx1 || Math.max(e.y, ey) + 1 < vy0 || Math.min(e.y, ey) > vy1) return;
+    if (edged && (inVoid(e.x, e.y) || inVoid(ex, ey))) return;  // a find from before the void, kept in your notes, has no letters left to circle
     const tc = TC[e.th];
     if (theirs) ctx.globalAlpha = .6;
     if (cs < 3) {
@@ -3654,12 +4128,19 @@ function draw(now) {
   if (la > 0) {
     const csd = cs * dpr, S = Math.max(4, Math.round(csd));
     ensureAtlas(S);
-    const img = atlas.c, oxd = OX * dpr - cam.x * csd + (csd - S) / 2, oyd = OY * dpr - cam.y * csd + (csd - S) / 2;
+    if (edged) ensureAtlas(S, nightAtlas, C.nightInk);
+    const inkImg = atlas.c, nightImg = nightAtlas.c, oxd = OX * dpr - cam.x * csd + (csd - S) / 2, oyd = OY * dpr - cam.y * csd + (csd - S) / 2;
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.globalAlpha = la;
     const x0 = Math.floor(vx0), x1 = Math.floor(vx1), y0 = Math.floor(vy0), y1 = Math.floor(vy1), moved = nv && !RM;
     for (let cy = fdiv(y0, CH); cy <= fdiv(y1, CH); cy++) {
       for (let cx = fdiv(x0, CH); cx <= fdiv(x1, CH); cx++) {
+        // A chunk is all one zone, since sectors are whole chunks: the void has
+        // no grid at all, and the wilds come back in night ink.
+        const zn = edged ? zoneAt(cx * CH, cy * CH) : 'inside';
+        if (zn === 'void') continue;
+        const img = zn === 'wilds' ? nightImg : inkImg;
+        ctx.globalAlpha = zn === 'wilds' ? la * .62 : la;
         const g = chunk(cx, cy).g;
         const ax = Math.max(x0, cx * CH), bx = Math.min(x1, cx * CH + CH - 1);
         const ay = Math.max(y0, cy * CH), by = Math.min(y1, cy * CH + CH - 1);
@@ -3678,6 +4159,8 @@ function draw(now) {
     ctx.globalAlpha = 1;
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   }
+  // The void's loose letters, and the edges of the universe and of the wilds.
+  if (edged && drawEdge(now, cs, SX, SY, vx0, vy0, vx1, vy1)) anim = true;
 
   // Other surveyors: a caret in the gap beside the letter in the middle of their
   // view, like someone else's cursor (a dot when zoomed out), and never text on
@@ -3765,12 +4248,15 @@ function draw(now) {
     ctx.globalAlpha = lab;
     ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.lineJoin = 'round';
     for (let ry = ry0; ry <= ry1; ry++) for (let rx = rx0; rx <= rx1; rx++) {
+      const zn = edged ? zoneAt(rx * RC, ry * RC) : 'inside';
+      if (zn === 'void') continue;  // no territories there
       const t = regionTheme(rx, ry), cxs = SX((rx + .5) * RC), cys = SY((ry + .5) * RC);
       ctx.font = `800 ${fs}px ${DISPLAY_FONT}`;
       if (hasLS) ctx.letterSpacing = (fs * (fs > 14 ? .08 : .03)).toFixed(1) + 'px';
       const name = regionName(rx, ry).toUpperCase();
-      ctx.lineWidth = 4; ctx.strokeStyle = C.paper; ctx.strokeText(name, cxs, cys, rpx * .92);
-      ctx.fillStyle = C.ink; ctx.fillText(name, cxs, cys, rpx * .92);
+      const wilds = zn === 'wilds';  // out there, on night
+      ctx.lineWidth = 4; ctx.strokeStyle = wilds ? C.night : C.paper; ctx.strokeText(name, cxs, cys, rpx * .92);
+      ctx.fillStyle = wilds ? C.nightInk : C.ink; ctx.fillText(name, cxs, cys, rpx * .92);
       const fs2 = Math.max(8.5, fs * .4);
       ctx.font = `500 ${fs2}px ${GRID_FONT}`;
       if (hasLS) ctx.letterSpacing = (fs2 * .14).toFixed(1) + 'px';
@@ -3888,6 +4374,7 @@ function tryCollect(a, b) {
   const n = Math.max(Math.abs(b.x - a.x), Math.abs(b.y - a.y));
   const d = DIRS.findIndex(v => v[0] === dx && v[1] === dy);
   if (n < 2 || d < 0) return miss(a, b);
+  if (touchesVoid(a.x, a.y, d, n + 1)) { voidNote(); return miss(a, b); }
   let s = '';
   for (let i = 0; i <= n; i++) s += String.fromCharCode(65 + letterAt(a.x + dx * i, a.y + dy * i));
   const ch = chunk(fdiv(a.x, CH), fdiv(a.y, CH));
@@ -3901,8 +4388,10 @@ function tryCollect(a, b) {
   miss(a, b);
 }
 function miss(a, b) { fail = { a, b, t0: performance.now() }; invalidate(); }
+const voidNote = () => toast('<i></i><b class="wraps">The void</b><span>Loose letters, nothing to circle. The grid comes back in the wilds, and in the universe behind you.</span>', null, 2600);
 // `keep`: the player chose to add a word someone else charted to their notes.
 function collect(w, x, y, d, stray, keep = false) {
+  if (touchesVoid(x, y, d, w.length)) return voidNote();
   const key = keyOf(w, x, y, d);
   const have = found.get(key);
   if (have) {
@@ -3931,7 +4420,7 @@ function collect(w, x, y, d, stray, keep = false) {
   // Alone, finding a territory's last word sets it off. On the shared survey
   // the survey says when one goes (goneSupernova): your own count of its words
   // would set it off again, after a reload, for one charted long ago.
-  if (!stray && !surveyApi) {
+  if (!stray && (!surveyApi || zoneAt(x, y) === 'wilds')) {  // in the wilds, as alone
     const total = territoryTotal(rx, ry);
     if (territoryFound(rx, ry) === total) {
       const seen = sawNova({ rx, ry, t: e.t, w, x, y, d, mine: true, solo: true });
@@ -3944,6 +4433,7 @@ function collect(w, x, y, d, stray, keep = false) {
 function onTap(c) {
   if (cam.cs < LETTER_MIN) { flyTo(c.wx, c.wy, 30); return; }
   if (mustSign()) { if (Intro.is('sign')) askSign(); return; }
+  if (inVoid(c.x, c.y)) { sel.anchor = null; sel.end = null; voidNote(); invalidate(); return; }
   const a = sel.anchor;
   if (!a) { sel.anchor = { x: c.x, y: c.y }; sel.end = null; }
   else if (a.x === c.x && a.y === c.y) { sel.anchor = null; sel.end = null; }
@@ -4148,20 +4638,30 @@ const hints = !surveyApi;
 let hudTimer = 0, hudRegion = '', legendSig = '', legendWords = new Map();
 function scheduleHud() { if (!hudTimer) hudTimer = setTimeout(() => { hudTimer = 0; updateHud(); }, 110); }
 function updateHud() {
-  const cx = Math.floor(cam.x), cy = Math.floor(cam.y), rx = fdiv(cx, RC), ry = fdiv(cy, RC), rk = rx + ',' + ry;
+  const cx = Math.floor(cam.x), cy = Math.floor(cam.y), rx = fdiv(cx, RC), ry = fdiv(cy, RC), zone = zoneAt(cx, cy), rk = rx + ',' + ry + zone;
   if (rk !== hudRegion) {
     hudRegion = rk;
     const t = regionTheme(rx, ry);
-    tName.textContent = regionName(rx, ry);
-    tTheme.textContent = THEMES[t].name;
+    // The void has no territories: just where it is.
+    tName.textContent = zone === 'void' ? 'The void' : regionName(rx, ry);
+    tTheme.textContent = zone === 'void' ? 'Beyond the known universe' : THEMES[t].name;
     territory.style.setProperty('--h', THEMES[t].hue);
     if (Panel.is('notes')) drawWorld();  // moves "you are here" on the world map
   }
   tCoord.textContent = fmtCoord(cx, cy);
+  if (zone !== 'inside') {
+    syncSurvey();  // leaves the survey, if it's still joined
+    tCharted.hidden = zone === 'void';
+    tCharted.removeAttribute('title');
+    // The wilds: your own count of the territory, as alone.
+    if (zone === 'wilds') tCharted.innerHTML = (innerWidth < 700 ? ` · ${territoryFound(rx, ry)}/${territoryTotal(rx, ry)}` : ` · ${territoryFound(rx, ry)}/${territoryTotal(rx, ry)} found`) + ' · the wilds';
+    updateLegend();
+    return;
+  }
   // How much of the territory is charted (or found, alone), on a phone just
   // "3/113" to leave the theme room; while the survey isn't live here, what
-  // it's doing instead (see hereStatus). On the survey it's the sector's count
-  // wherever you are, inside the universe or out, since that's what sets off
+  // it's doing instead (see hereStatus). On the survey it's the sector's count,
+  // since that's what sets off
   // a supernova: your notes can be short of it by words someone else charted
   // that you didn't add, which the hover says (and on a phone, which has no
   // hover, what a screen reader reads).
@@ -4236,7 +4736,8 @@ function wordSeen(w, cs, OX, rects, boxes) {
 // way it leaves out words already found, by you or, on the shared survey, by
 // anyone, since what's worth looking for is what nobody has circled yet.
 const taken = key => found.has(key) || claims.has(key);
-const doneWord = surveyApi ? 'charted' : 'found';
+// What a word you can't find any more is: charted on the survey, found alone and in the wilds.
+const doneHere = () => (surveyApi && Zone.is('inside') ? 'charted' : 'found');
 const legendEl = $('.legend'), listBtns = { view: $('#listView'), whole: $('#listWhole') };
 let listWhole = LS.get(K_LIST) === 'whole';
 function showListMode() {
@@ -4261,12 +4762,16 @@ legendList.addEventListener('wheel', e => {
 }, { passive: false });
 function listTerritory() {
   const rx = fdiv(Math.floor(cam.x), RC), ry = fdiv(Math.floor(cam.y), RC), left = [];
+  if (inVoid(cam.x, cam.y)) {
+    if (legendSig !== 'void') { legendSig = 'void'; legendWords = new Map(); legendCount.textContent = ''; legendList.innerHTML = '<li class="legend-note">The void: loose letters, nothing to find.</li>'; }
+    return;
+  }
   for (let cy = ry * RG; cy < ry * RG + RG; cy++) for (let cx = rx * RG; cx < rx * RG + RG; cx++)
     for (const w of chunk(cx, cy).words) if (!taken(w.key)) left.push(w);
   left.sort((a, b) => (a.w < b.w ? -1 : a.w > b.w ? 1 : a.key < b.key ? -1 : 1));
   // Nothing left to find isn't always every word charted: a find of yours can
   // still be on its way to the survey, and the title's count waits for it.
-  const unsent = left.length || !surveyApi ? 0 : hereStatus(Math.floor(cam.x), Math.floor(cam.y)) ? -1 : territoryTotal(rx, ry) - territoryProgress(rx, ry)[0];
+  const unsent = left.length || !surveyApi || !Zone.is('inside') ? 0 : hereStatus(Math.floor(cam.x), Math.floor(cam.y)) ? -1 : territoryTotal(rx, ry) - territoryProgress(rx, ry)[0];
   const sig = `whole ${rx},${ry} ${unsent} ` + left.map(w => w.key).join('|');
   if (sig === legendSig) return;
   legendSig = sig;
@@ -4274,7 +4779,7 @@ function listTerritory() {
   legendCount.textContent = `${left.length} left`;
   legendList.innerHTML = left.length
     ? left.map(w => `<li><span class="chip mark" style="--h:${THEMES[w.th].hue}">${w.w}</span></li>`).join('')
-    : `<li class="legend-note">${!unsent ? `Every word here is ${doneWord}.` : unsent < 0 ? 'Every word here is in your notes.' : `Every word here is in your notes, ${unsent === 1 ? 'one still on its way' : `${unsent} still on their way`} to the survey.`}</li>`;
+    : `<li class="legend-note">${!unsent ? `Every word here is ${doneHere()}.` : unsent < 0 ? 'Every word here is in your notes.' : `Every word here is in your notes, ${unsent === 1 ? 'one still on its way' : `${unsent} still on their way`} to the survey.`}</li>`;
 }
 function updateLegend() {
   const cs = cam.cs;
@@ -4287,8 +4792,11 @@ function updateLegend() {
   const vx0 = cam.x - OX / cs, vx1 = cam.x + (W - dock - OX) / cs, vy0 = cam.y - H / 2 / cs, vy1 = cam.y + H / 2 / cs;
   const items = [], rects = coverRects(), boxes = glyphBoxesAt(cs);
   let gone = 0;
+  let voidOnly = true;
   for (let cy = fdiv(Math.floor(vy0), CH); cy <= fdiv(Math.floor(vy1), CH); cy++) {
     for (let cx = fdiv(Math.floor(vx0), CH); cx <= fdiv(Math.floor(vx1), CH); cx++) {
+      if (inVoid(cx * CH, cy * CH)) continue;  // a chunk is all void or none: sectors are whole chunks
+      voidOnly = false;
       for (const w of chunk(cx, cy).words) {
         const [ex, ey] = wordEnd(w);
         if (Math.max(w.x, ex) + 1 <= vx0 || Math.min(w.x, ex) >= vx1 || Math.max(w.y, ey) + 1 <= vy0 || Math.min(w.y, ey) >= vy1 || !wordSeen(w, cs, OX, rects, boxes)) continue;
@@ -4310,7 +4818,7 @@ function updateLegend() {
     ? shown.map(i => hints
       ? `<li><button type="button" class="chip mark" data-key="${i.w.key}" style="--h:${THEMES[i.w.th].hue}" title="Show where it starts">${i.w.w}</button></li>`
       : `<li><span class="chip mark" style="--h:${THEMES[i.w.th].hue}">${i.w.w}</span></li>`).join('')
-    : `<li class="legend-note">${gone ? `Every word in view is ${doneWord}.` : 'No words here. Keep wandering.'}</li>`;
+    : `<li class="legend-note">${voidOnly ? 'The void: loose letters, nothing to find.' : gone ? `Every word in view is ${doneHere()}.` : 'No words here. Keep wandering.'}</li>`;
 }
 legendList.addEventListener('click', e => {
   if (!hints) return;
@@ -4870,7 +5378,8 @@ function dayLabel(t, now) {
 function findNote(e) {
   const bonus = e.s ? `bonus ${THEMES[e.th].name.toLowerCase()} word` : '';
   const by = e.b ? `charted by ${e.b === '?' ? 'another surveyor' : e.b}` : '';
-  return [bonus, by].filter(Boolean).join(' · ');
+  const where = surveyApi && !inSurveyArea(e.x, e.y) ? (inVoid(e.x, e.y) ? 'the void' : 'the wilds') : '';
+  return [bonus, by, where].filter(Boolean).join(' · ');
 }
 function findRow(e) {
   const note = findNote(e), place = regionName(fdiv(e.x, RC), fdiv(e.y, RC));
@@ -7612,6 +8121,8 @@ if (location.hash === '#debug') window.__lf = {
   distantAt: v => { distantAt = v; },
   links,
   linkStates: () => Object.fromEntries([...links].map(([k, l]) => [k, l.m.state])),
+  zone: () => Zone.state,
+  edge: { EDGE0, EDGE1, VOID_W },
   outbox: () => [...outbox.values()].map(c => [c.e.w, c.m.state]),
   pass: () => Pass.state,
   surveyStatus,
@@ -7633,9 +8144,10 @@ if (location.hash === '#debug') window.__lf = {
   // Music
   distantSound,
   lanternArc,
-  music: () => musicNow && { state: ac.state, track: musicNow.track().name, nodes: musicNow.track().nodes.size, fade: musicNow.track().bus.gain.value, fading: musicNow.fading(), level: musicNow.master.gain.value, master: musicNow.master, volume: musicVol, target: musicLevel(), swap: musicNow.swap },
+  music: () => musicNow && { state: ac.state, track: musicNow.track().name, nodes: musicNow.track().nodes.size, fade: musicNow.track().bus.gain.value, fading: musicNow.fading(), place: musicNow.place(), level: musicNow.master.gain.value, master: musicNow.master, volume: musicVol, target: musicLevel(), swap: musicNow.swap },
   musicPiece: () => musicPiece,
   musicTracks: MUSIC_TRACKS,
+  placeTracks: { wilds: hinterlandTrack, void: dripstoneTrack },
   novaSound,
   // Finding words
   collect,
