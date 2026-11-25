@@ -41,6 +41,10 @@
 *{box-sizing:border-box}
 [hidden]{display:none!important}
 html{scroll-padding-top:calc(env(safe-area-inset-top,0px) + 56px)}
+/* Nothing here scrolls sideways. Should something still stick out past the
+   screen, it's cut off rather than dragging the page: clip, not hidden, which
+   would make the body a scroller and unstick the hours' headings. */
+html,body{overflow-x:clip}
 body{
   margin:0;background:var(--paper);color:var(--ink);font:15px/1.45 var(--f-ui);
   padding:calc(env(safe-area-inset-top,0px) + 16px) max(16px, env(safe-area-inset-right,0px)) calc(env(safe-area-inset-bottom,0px) + 32px) max(16px, env(safe-area-inset-left,0px));
@@ -208,8 +212,8 @@ header p{margin:8px 0 0;color:var(--muted);max-width:40ch}
 
 .hour{margin-top:6px}
 /* Above the rows' links and books (z-index 1), which scroll under it. */
-.hour h3{position:sticky;top:0;z-index:3;margin:0;display:flex;justify-content:space-between;align-items:center;gap:10px;padding:calc(env(safe-area-inset-top,0px) + 10px) 2px 8px;background:var(--paper);border-bottom:1px solid var(--rule);font:700 20px/1 var(--f-display);letter-spacing:.06em;white-space:nowrap}
-.hour h3 span{font:400 11px/1 var(--f-mono);letter-spacing:0;color:var(--muted);display:flex;align-items:center;gap:8px}
+.hour h3{position:sticky;top:0;z-index:3;margin:0;display:flex;flex-wrap:wrap;justify-content:space-between;align-items:center;gap:6px 10px;padding:calc(env(safe-area-inset-top,0px) + 10px) 2px 8px;background:var(--paper);border-bottom:1px solid var(--rule);font:700 20px/1 var(--f-display);letter-spacing:.06em;white-space:nowrap}
+.hour h3 span{margin-left:auto;font:400 11px/1 var(--f-mono);letter-spacing:0;color:var(--muted);display:flex;align-items:center;gap:8px}
 .hour h3 button{min-height:40px;border:1px solid var(--rule);background:var(--panel);border-radius:999px;padding:0 12px;font:500 10.5px/1 var(--f-mono);cursor:pointer;color:var(--ink)}
 .entries{list-style:none;margin:0;padding:4px 0}
 /* A word's row on the field notes' grid: a first line 40px tall, the book's
@@ -1109,8 +1113,10 @@ function showTip(target, value, label, hint = '') {
   tip.replaceChildren(el('b', '', value), label);
   if (hint) tip.append(el('span', 'hint', hint));
   tip.hidden = false;
-  const r = target.getBoundingClientRect();
-  const x = Math.min(Math.max(r.left + r.width / 2, 70), document.documentElement.clientWidth - 70);
+  // Centred on what it's for, but kept a gutter inside the screen, by its own
+  // width: one over the last bar on a phone would stick out past the edge.
+  const r = target.getBoundingClientRect(), half = tip.offsetWidth / 2 + 8;
+  const x = Math.max(half, Math.min(r.left + r.width / 2, document.documentElement.clientWidth - half));
   tip.style.left = (x + scrollX) + 'px';
   tip.style.top = (r.top + scrollY) + 'px';
 }
