@@ -1,3 +1,7 @@
+## 2026-11-25
+
+- The survey log no longer slides sideways on a phone. A chart's tooltip near the screen's edge, like the one over a supernova's hour, stays on screen, and an hour's heading that doesn't fit on one line wraps onto two.
+
 ## 2026-11-22
 
 - The universe has an edge. Past it is the void, a ring of night where loose letters drift and nothing can be circled, and beyond that the wilds, where the map goes on and you find words alone: they stay in your field notes, and nobody sees your caret. Crossing the edge leaves the shared survey, with a note and a way back, and coming back joins it again.

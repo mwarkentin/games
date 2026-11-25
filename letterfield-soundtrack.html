@@ -41,6 +41,9 @@
 }
 *{box-sizing:border-box}
 [hidden]{display:none!important}
+/* Nothing here scrolls sideways: should something stick out, it's cut off
+   rather than dragging the page. */
+html,body{overflow-x:clip}
 body{
   margin:0;background:var(--paper);color:var(--ink);font:15px/1.5 var(--f-ui);
   padding:calc(env(safe-area-inset-top,0px) + 16px) max(16px, env(safe-area-inset-right,0px)) calc(env(safe-area-inset-bottom,0px) + 32px) max(16px, env(safe-area-inset-left,0px));
