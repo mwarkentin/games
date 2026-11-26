@@ -325,8 +325,10 @@ def map_layer(mono: Face) -> str:
     return nova_defs, "".join(out)
 
 
-# Each track's colour: its territory's on the cover, Night Sky's for the supernova.
-HUES = {"drift": 298, "orbit": 115, "supernova": 168, "chimes": 223, "lantern": 55}
+# Each track's colour: its territory's on the cover, Night Sky's for the
+# supernova, and for the two from past the universe's edge, which no territory
+# holds, an ochre for the wilds and a cold blue for the void's cave.
+HUES = {"drift": 298, "orbit": 115, "supernova": 168, "chimes": 223, "lantern": 55, "hinterland": 22, "dripstone": 195}
 
 
 def title_panel(faces: dict[str, Face], x: float, y: float, title_size: float = 128) -> tuple[str, float, float]:
@@ -432,13 +434,16 @@ def back(faces: dict[str, Face]) -> str:
     )
     panel, _, ph = title_panel(faces, x0 + 50, y0 + 50, 84)
     body.append(panel)
-    body.append(track_list(faces, x0 + 70, y0 + 50 + ph + 50, w - 140, 118, 62))
     notes = [
         "Made as it plays by the game's own code, with the Web Audio API:",
         "oscillators, filters, delays and noise. No recordings, no samples.",
         f"Recorded from fixed seeds at 44.1 kHz.  {len(TRACKS)} tracks, {clock(sum(secs.values()))}.",
     ]
     ny = y0 + h - 60 - 34 * len(notes) - 20 - 34
+    # The tracks fill the space between the title and the notes, each row at most 118 high.
+    top = y0 + 50 + ph + 50
+    row = min(118, (ny - 40 - top) / len(TRACKS))
+    body.append(track_list(faces, x0 + 70, top, w - 140, row, row * 62 / 118))
     for i, line in enumerate(notes):
         body.append(mono.run(line, x0 + 70, ny + i * 34, 19, MUTED))
     medium = faces["mono-medium"]
@@ -459,7 +464,8 @@ def preview(faces: dict[str, Face]) -> str:
     ]
     x = height + 52
     body.append(faces["mono-medium"].run("THE SOUNDTRACK", x, 92, 19, MUTED, 0.16))
-    body.append(track_list(faces, x, 132, width - x - 52, 84, 44))
+    row = min(84, 420 / len(TRACKS))
+    body.append(track_list(faces, x, 132, width - x - 52, row, row * 44 / 84))
     secs = lengths()
     body.append(
         faces["mono"].run(f"{len(TRACKS)} tracks, {clock(sum(secs.values()))}, to play or download", x, 584, 17, MUTED)

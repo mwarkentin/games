@@ -566,23 +566,31 @@ instead (see below). When bringing a new artifact over:
 
 ## The soundtrack album
 
-Letterfield's music is also an album, `letterfield-soundtrack.html`: its four
-pieces, each in a longer cut, and a supernova between them, with notes on how
-each is made, to play or download.
+Letterfield's music is also an album, `letterfield-soundtrack.html`: the four
+pieces that take turns, each in a longer cut, a supernova between them, and
+the two heard only past the universe's edge, Hinterland (the wilds) and
+Dripstone (the void), with notes on how each is made, to play or download.
+Tracks are numbered in their files' names, so a new one goes at the end,
+never between, and the files people have linked to keep their names.
 
 - **Recorded from the game:** `scripts/render_album.py` plays the game's own
   music in headless Chromium (`letterfield.html#debug`, whose `__lf` hands
-  over the pieces, `audioOut` and the sound effects), each piece from a fixed
+  over the pieces in `musicTracks`, the places' own in `placeTracks`,
+  `audioOut` and the sound effects), each piece from a fixed
   seed into an `OfflineAudioContext`, scheduled as the game schedules it and
   through the same compressor and limiter. Each track is a cut in `TRACKS`:
-  where it stops and fades, in the piece's own bars. It serves the page from
+  where it stops and fades, in the piece's own bars, or in seconds for a
+  piece with none (Hinterland's phrases, Dripstone's drips), chosen for its
+  seed so the cut ends between phrases or drops. It serves the page from
   here with its Worker addresses blanked and refuses every other host, so it
   never reaches production. Renders are the same every time to about a
   millionth of full scale (Chromium sums three or more signals meeting at a
   node in no fixed order), so the MP3s' bytes can differ from one run to the
   next.
 - **One level:** ffmpeg measures each track by EBU R128 and brings it to
-  −17 LUFS, unless its true peak would pass −1.5 dBTP, then encodes LAME VBR
+  −17 LUFS, unless its true peak would pass −1.5 dBTP (so Dripstone, nearly
+  all silence, stays well under the rest rather than having its quiet
+  raised), then encodes LAME VBR
   (V2) MP3s at 44.1 kHz with ID3v2.3 tags and the 1400px cover, 24-bit FLACs
   with the 3000px cover for stores, and a zip. It prints each track's length,
   loudness and size, writes them to `_album/album.json`, and warns when the
@@ -598,7 +606,9 @@ each is made, to play or download.
   bucket's upload token (`tofu output -raw games_media_upload_token` in
   infra) as `CLOUDFLARE_API_TOKEN`, or `npx wrangler login`. The files are
   cached for a day, so a re-render that must show at once goes under a new
-  prefix (`letterfield/v2/`, in `PREFIX` and `ALBUM_URL` both). With
+  prefix (`letterfield/v2/`, in `PREFIX` and `ALBUM_URL` both). Adding a
+  track changes every MP3 (their tags count the tracks) and the zip, so
+  upload them all. With
   `ALBUM_URL` empty, the page lists the tracks without players or
   downloads, and `?album=<url>` overrides it for tests. `sw.js` stores only
   pages and `music/*.mid`, so the MP3s always come from the network.

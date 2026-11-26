@@ -182,10 +182,46 @@ TRACKS = [
         # Once through its arc, as written, to the rolled chord at its end.
         "render": {"piece": "lantern", "seed": 20261105, "stop": "arc", "tail": 2},
     },
+    # Past the universe's edge, where the pieces give way to the places' own:
+    # last on the album, so the tracks before keep their numbers.
+    {
+        "slug": "hinterland",
+        "title": "Hinterland",
+        # The wilds' piece has no bars, only phrases and the breaths between
+        # them, so its cut is in seconds, chosen for this seed: it stops after
+        # the far flute's answer at 5:16, before the next phrase would start
+        # (at 5:23), and the drone and the wind fade under its sagging note.
+        "render": {
+            "piece": "hinterland",
+            "seed": 20261106,
+            "fade_in": 4,
+            "stop": 320,
+            "fade_out": [318, 338],
+            "tail": 22,
+        },
+    },
+    {
+        "slug": "dripstone",
+        "title": "Dripstone",
+        # The void's drips, which have no bars either: three minutes of them,
+        # for this seed ending on the drop at 3:06 (the next would fall at
+        # 3:14), whose echoes ring out as the cave's breath fades. Nearly all
+        # silence, it's held back by PEAK_CEILING well before TARGET_LUFS, so
+        # its quiet rumble is raised no further than its drops allow.
+        "render": {
+            "piece": "dripstone",
+            "seed": 20261107,
+            "fade_in": 3,
+            "stop": 187,
+            "fade_out": [184, 200],
+            "tail": 16,
+        },
+    },
 ]
 
 # Played in the game's page (letterfield.html#debug), with its own functions:
-# the pieces from window.__lf.musicTracks, its output stage audioOut, the
+# the pieces from window.__lf.musicTracks, and the places' own past the
+# universe's edge from window.__lf.placeTracks, its output stage audioOut, the
 # effects novaSound, distantSound and markSound, and Lantern's lanternArc. Leaves the render, trimmed,
 # in window.__album for take_pcm, and answers with its length and peak.
 RENDER_JS = """
@@ -203,7 +239,9 @@ async (o) => {
   };
   if (o.piece) {
     const master = a.createGain(); master.gain.value = o.level; master.connect(out);
-    const make = lf.musicTracks.find(f => f.name === `${o.piece}Track`), t = make(a, master, o.seed), g = t.bus.gain;
+    // The pieces that take turns, or a place's own past the universe's edge.
+    const pieces = [...lf.musicTracks, ...Object.values(lf.placeTracks || {})];
+    const make = pieces.find(f => f.name === `${o.piece}Track`), t = make(a, master, o.seed), g = t.bus.gain;
     if (o.fade_in) ease(g, 0, 1, 0, o.fade_in); else g.value = 1;
     if (o.fade_out) ease(g, 1, o.fade_out[2] || 0, o.fade_out[0], o.fade_out[1]);
     // As the game plays it: a few seconds ahead, every second.

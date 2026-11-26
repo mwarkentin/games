@@ -88,6 +88,30 @@ def test_each_track_renders_from_the_games_own_code(page: Page, site_url, errors
     assert errors == []
 
 
+def test_every_piece_the_game_plays_is_on_the_album(page: Page, site_url, errors):
+    # The pieces that take turns in the universe, and the places' own past its
+    # edge (the wilds' Hinterland, the void's Dripstone), all where the
+    # renderer looks for them.
+    render_album.open_game(page, site_url)
+    names = page.evaluate(
+        "[...__lf.musicTracks, ...Object.values(__lf.placeTracks)].map(f => f.name.replace(/Track$/, ''))"
+    )
+    assert set(page.evaluate("Object.keys(__lf.placeTracks)")) == {"wilds", "void"}
+    assert sorted(names) == sorted(t["render"]["piece"] for t in render_album.TRACKS if "piece" in t["render"])
+    # New tracks go at the end, so the files people have linked to keep their names.
+    assert [t["slug"] for t in render_album.TRACKS][:5] == ["drift", "orbit", "supernova", "chimes", "lantern"]
+    assert errors == []
+
+
+def test_a_quiet_track_is_raised_only_as_far_as_its_peaks_allow():
+    # Dripstone, nearly all silence, measures far under the target: its drops'
+    # peaks, not its loudness, set how far it's raised, so its quiet isn't pushed up.
+    quiet = {"lufs": -44.8, "peak": -20.8}
+    assert render_album.gain_for(quiet) == pytest.approx(render_album.PEAK_CEILING - quiet["peak"])
+    assert quiet["lufs"] + render_album.gain_for(quiet) < render_album.TARGET_LUFS - 5
+    assert render_album.gain_for({"lufs": -35, "peak": -23}) == pytest.approx(render_album.TARGET_LUFS + 35)
+
+
 def test_lanterns_cut_is_once_through_its_arc(page: Page, site_url, errors):
     # Lantern stops by itself, a few seconds over the game's four minutes: its
     # arc is fitted to them, and ends with its last chord ringing out over a rest
@@ -238,11 +262,12 @@ def test_tracks_play_in_turn_from_wherever_one_starts(page: Page, site_url, erro
     expect(html).to_have_attribute("data-player", "idle")
     expect(page.locator(".dl").first).to_have_attribute("href", f"{ALBUM}/letterfield-01-drift.mp3")
     expect(page.locator("#zip")).to_have_attribute("href", f"{ALBUM}/letterfield-soundtrack.zip")
-    # Chimes, then Lantern after it, then the album's over.
-    play(page, 3)
+    # Hinterland, then Dripstone after it, then the album's over.
+    last = len(render_album.TRACKS) - 1
+    play(page, last - 1)
     expect(html).to_have_attribute("data-player", "playing")
-    expect(rows.nth(3)).to_have_attribute("aria-current", "true")
-    expect(rows.nth(4)).to_have_attribute("aria-current", "true")
+    expect(rows.nth(last - 1)).to_have_attribute("aria-current", "true")
+    expect(rows.nth(last)).to_have_attribute("aria-current", "true")
     expect(html).to_have_attribute("data-player", "idle")
     expect(page.locator(".track[aria-current]")).to_have_count(0)
     assert errors == []

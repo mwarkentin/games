@@ -1,3 +1,7 @@
+## 2026-11-26
+
+- The soundtrack has two more tracks, from past the universe's edge: Hinterland, the wilds' lone flute and its far-off answers, and Dripstone, the void's slow drips echoing in a cave, each with notes on how it's made.
+
 ## 2026-11-25
 
 - The survey log no longer slides sideways on a phone. A chart's tooltip near the screen's edge, like the one over a supernova's hour, stays on screen, and an hour's heading that doesn't fit on one line wraps onto two.
