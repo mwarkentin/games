@@ -412,9 +412,21 @@ Measured on `wrangler dev`, a 4-core sandbox shared with the load generator
 | the same, back within 1–6 s (the game now) | p50 1.2 s, p95 2.1 s |
 | 600 arriving, 30% behind 3 shared addresses | 415 of ~1,550 claims refused `slow down`, all from the shared addresses; 13 sockets turned away for 40 from one address in one sector |
 
-**On a Worker Preview** (every pull request gets one, on Cloudflare's real
-edge): the next step is to run `spike.js` against it, modestly (a few
-hundred players, under 20 arrivals a second), to confirm a sector's limit
-and the Atlas's work on the edge. Every player there comes from one
-address, the machine running it, so the per-address limits apply: run it
-with fewer than 40 players a sector, or the numbers are the limits'.
+**On a Worker Preview** (PR #135's, on Cloudflare's real edge, 2026-11-27),
+from one machine, so every player was one address and the runs kept under
+its limits: 40 sockets a sector, 120 joins and (on a Preview) 60 claims a
+minute. A plain `GET /v1/survey/world` from that machine took 250–550 ms,
+which every join below includes (a new TLS connection through its proxy).
+Run it with `NODE_USE_ENV_PROXY=1` behind a proxy; `spike.js` sends no
+`CF-Connecting-IP` there, since the edge refuses one.
+
+| run | result |
+| --- | --- |
+| 38 players in one sector, a claim each every ~45 s, 2 minutes | all joined (hello p50 703 ms, p95 929 ms); 97 claims answered at p50 89 ms, p95 186 ms; none refused |
+| 114 players over three sectors, arriving at 1.5 a second | all joined (p50 627 ms, p95 850 ms); 256 claims at p50 63 ms, p95 169 ms; the world map counted each wave within 5–15 s, and answered in 220–560 ms throughout |
+| those 114 dropped at once, back over 1–6 s | all back, hello p50 605 ms, p95 805 ms: no slower than joining at all; the world map counted 0, then 76, then all 114 within 15 s |
+
+So on the edge the survey behaves as it does locally, with no queueing at
+this size. One address can't load a sector anywhere near its limit there, so
+a sector's 750 and the Atlas's ceiling still rest on the local runs above.
+Testing those on the edge would take players from hundreds of addresses.

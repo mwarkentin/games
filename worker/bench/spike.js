@@ -12,6 +12,10 @@
 //   STORM=30                drop every socket 30 s in, and reconnect each after the game's backoff
 //   STORM_MIN=1 STORM_MAX=6 that backoff's range, in seconds (the game's first try after a drop: 1–6 s)
 //   OLD_SPAWN=1             start everyone at the world map's one `spawn`, as games did before `spawns`
+//   PLACE="0,0 1,0 0,1"     start players round these sectors instead, ignoring the world map's spawn:
+//                           on the edge every player here is one address, which a sector takes 40 of
+//   CLAIM_S=30              seconds between a player's claims, on average (20–40 s by default)
+//   WATCH=5                 read the world map every 5 s through the run, for the Atlas's view as load rises
 // Each player claims an address of its own with CF-Connecting-IP, which only
 // wrangler dev believes; on Cloudflare's edge every player here is one address.
 
@@ -24,8 +28,11 @@ const [base = 'http://127.0.0.1:8787', players = '600', rate = '20', seconds = '
 const N = Number(players), RATE = Number(rate), RUN_MS = Number(seconds) * 1000;
 const SHARED = Number(process.env.SHARED || 0), ADDRESSES = Number(process.env.ADDRESSES || 5);
 const STORM = Number(process.env.STORM || 0) * 1000;
+const PLACE = (process.env.PLACE || '').split(/\s+/).filter(Boolean).map((k) => k.split(',').map(Number));
+const CLAIM_MS = Number(process.env.CLAIM_S || 30) * 1000, WATCH = Number(process.env.WATCH || 0) * 1000;
 const STORM_MIN = Number(process.env.STORM_MIN ?? 1) * 1000, STORM_MAX = Number(process.env.STORM_MAX ?? 6) * 1000;
 const ws = base.replace(/^http/, 'ws');
+const LOCAL = /^https?:\/\/(127\.0\.0\.1|localhost)(:|\/|$)/.test(base);
 const pct = (list, p) => { const s = [...list].sort((a, b) => a - b); return s.length ? s[Math.min(s.length - 1, Math.floor(p * s.length))] : NaN; };
 const ms = (list) => `p50 ${pct(list, .5).toFixed(0)} / p95 ${pct(list, .95).toFixed(0)} / p99 ${pct(list, .99).toFixed(0)} ms`;
 const sleep = (t) => new Promise((r) => setTimeout(r, t));
@@ -46,7 +53,9 @@ const wordsIn = (sx, sy) => {
   return words.get(k);
 };
 
+let placed = 0;
 async function startAt() {
+  if (PLACE.length) { const [sx, sy] = PLACE[placed++ % PLACE.length]; return [sx * SECTOR + 96, sy * SECTOR + 96]; }
   const t = performance.now();
   try {
     const res = await fetch(`${base}/v1/survey/world`, { headers: { Origin: origin } });
@@ -78,7 +87,8 @@ function player(i) {
     let px = x, py = y, tries = 0;
     const open = (storm = false) => new Promise((resolve) => {
       const opened = performance.now();
-      const s = new WebSocket(`${ws}/v1/survey/${sx}/${sy}`, { headers: { Origin: origin, 'CF-Connecting-IP': ip } });
+      // Only wrangler dev takes an address from the client; Cloudflare's edge sets it, and refuses one sent.
+      const s = new WebSocket(`${ws}/v1/survey/${sx}/${sy}`, { headers: { Origin: origin, ...(LOCAL ? { 'CF-Connecting-IP': ip } : {}) } });
       sock = s;
       s.onopen = () => {
         s.send(JSON.stringify({ t: 'me', initials: 'HNX', token }));
@@ -92,7 +102,7 @@ function player(i) {
           const { w, x: wx, y: wy, d } = pool[Math.floor(Math.random() * pool.length)];
           pending.set(`${w}~${wx}~${wy}~${d}`, performance.now());
           try { s.send(JSON.stringify({ t: 'claim', w, x: wx, y: wy, d })); } catch { /* closed */ }
-          timers.push(setTimeout(claim, 20000 + Math.random() * 20000));
+          timers.push(setTimeout(claim, CLAIM_MS * (2 / 3 + Math.random() * 2 / 3)));
         };
         timers.push(setTimeout(move, Math.random() * 2000), setTimeout(claim, 5000 + Math.random() * 15000));
       };
@@ -141,12 +151,21 @@ function player(i) {
   })();
 }
 
+const watched = [];
+const watcher = WATCH && setInterval(async () => {
+  const t = performance.now();
+  try {
+    const m = await (await fetch(`${base}/v1/survey/world`, { headers: { Origin: origin } })).json();
+    watched.push(`${((t - t0) / 1000).toFixed(0)}s ${m.players}p/${m.sectors.length}s ${(performance.now() - t).toFixed(0)}ms`);
+  } catch { watched.push(`${((t - t0) / 1000).toFixed(0)}s failed`); }
+}, WATCH);
 const all = [];
 for (let i = 0; i < N; i++) {
   all.push(player(i));
   await sleep(1000 / RATE);
 }
 await Promise.all(all);
+clearInterval(watcher);
 await sleep(500);
 let after = null;
 try { after = await (await fetch(`${base}/v1/survey/world`, { headers: { Origin: origin } })).json(); } catch { /* left out */ }
@@ -159,5 +178,6 @@ console.log(`  claims answered: ${stats.claim.length} (${stats.first} first, ${s
 const where = [...landed].sort((a, b) => b[1] - a[1]);
 console.log(`  started in ${where.length} sectors: ${where.slice(0, 8).map(([k, n]) => `${k}: ${n}${fullBy.get(k) ? ` (${fullBy.get(k)} full)` : ''}`).join(', ')}`);
 if (STORM) console.log(`  storm at ${STORM / 1000} s: ${stats.dropped} dropped, ${stats.back} back over ${STORM_MIN / 1000}–${STORM_MAX / 1000} s, rejoined ${stats.helloStorm.length}, ${ms(stats.helloStorm)}`);
+if (watched.length) console.log(`  world map through the run (time, players online/sectors live, latency): ${watched.join(', ')}`);
 if (after) console.log(`  the Atlas after: ${after.players} online, ${after.sectors.length} sectors live, ${after.today?.charted ?? '?'} charted today`);
 process.exit(0);
