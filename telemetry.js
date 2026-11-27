@@ -40,16 +40,18 @@
     removeEventListener('unhandledrejection', keep);
   };
 
-  // What one page load may send, so a busy day (a link on a news site's front
-  // page) or one bug that throws every frame can't use up a month's quota in an
-  // hour and leave nothing to see the next problem by. Traces and session
-  // replays are a sample; a replay of a session with an error is always kept,
-  // since that's what an error is no use without. Errors are kept apart from
-  // those: no more than ERRORS_PER_PAGE from one page load, and no more than
-  // SAME_ERROR_PER_PAGE of any one message. Sentry's own spike protection
-  // comes on top of this, account-wide.
-  const TRACES = 0.2;
-  const REPLAYS = 0.02;
+  // How much each page load sends. Every page load's trace and one session in
+  // ten's replay, while the site is quiet enough for that to be worth having;
+  // a replay of a session with an error is always kept, since that's what an
+  // error is no use without. For a busy day (a link on a news site's front
+  // page), turn TRACES and REPLAYS down before it, so it can't use up a
+  // month's quota in an hour (see "The knobs" in worker/VIRAL.md). Errors
+  // are capped either way: no more than ERRORS_PER_PAGE from one page load,
+  // and no more than SAME_ERROR_PER_PAGE of any one message, so one bug that
+  // throws every frame can't. Sentry's own spike protection comes on top of
+  // this, account-wide.
+  const TRACES = 1;
+  const REPLAYS = 0.1;
   const ERRORS_PER_PAGE = 25;
   const SAME_ERROR_PER_PAGE = 3;
   let sent = 0;

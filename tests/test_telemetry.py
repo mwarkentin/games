@@ -116,7 +116,7 @@ def test_telemetry_does_nothing_on_other_hosts(page: Page, site_url, errors):
 
 
 def test_errors_reach_sentry_with_a_replay(page: Page, production, sentry, errors):
-    page.add_init_script("Math.random = () => 0")  # inside every sample: the page load's trace is sent
+    page.add_init_script("Math.random = () => 0")  # inside every sample, however low it's turned for a busy day
     page.goto(f"{production}/funnels-and-buckets")
     page.wait_for_function("window.Sentry?.getClient()")
     assert page.evaluate("!!Sentry.getClient().getIntegrationByName('ReplayCanvas')")

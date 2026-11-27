@@ -336,10 +336,11 @@ Everything it sends is labelled with the game's name, taken from the URL: a
 Filter on that rather than splitting games into projects or environments.
 
 Replays show what was on screen, canvases and leaderboards included, with
-text inputs masked. Traces and session replays are sampled (a fifth of page
-loads, one session in fifty), a session with an error always keeps its
-replay, and one page load sends at most 25 errors, 3 of any one message, so
-a busy day can't use up the month's quotas. To hide something else from replays, give it the
+text inputs masked. Every page load sends its trace and one session in ten
+its replay (`TRACES` and `REPLAYS`, which `worker/VIRAL.md` says when to
+turn down), a session with an error always keeps its replay, and one page
+load sends at most 25 errors, 3 of any one message, so a bug that throws
+every frame can't use up the month's quota. To hide something else from replays, give it the
 `sentry-mask` class. IP addresses aren't sent. `tests/test_telemetry.py`
 serves the site under its real hostname to check that it reports errors
 with a replay and never sends anything from elsewhere.

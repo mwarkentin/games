@@ -77,7 +77,7 @@ dashboard under DNS: a grey cloud is DNS only, an orange one proxied.
 | D1 (log reads) | cached per instance and per Cloudflare location, 15 s while running, a day once settled | a crowd on the log page reads each answer once per location every 15 s | fine |
 | Definitions | Wiktionary and Wikipedia, once per word ever, then D1 | at most 28,845 words ever; 20 new ones a minute per address | fine |
 | Share cards | ~50 ms of CPU each, 30 new ones a minute per address | a card is drawn once per state and kept in R2; over the limit the game's own preview stands in | fine |
-| Sentry | the plan's monthly quotas | before: a trace for every page load, a replay of every tenth session, every error | capped (see "What was fixed"); spike protection on top |
+| Sentry | the plan's monthly quotas | a trace for every page load and a replay of every tenth session: 100,000 traces and 10,000 replays for 100,000 visitors | errors capped per page load; turn traces and replays down beforehand (see "The knobs"); spike protection on top |
 | Counterscale | Analytics Engine: a write per page view | 100,000 | fine, pennies |
 | Fonts and CDNs | Google Fonts, jsDelivr, cdnjs, Sentry's CDN | their own CDNs | fine; every font has a system fallback |
 
@@ -104,10 +104,11 @@ dashboard under DNS: a grey cloud is DNS only, an orange one proxied.
   once.
 - **Crowded says to keep playing:** "Keep finding words: they save in this
   browser, and you'll join as soon as there's room."
-- **Sentry is sampled.** Traces for a fifth of page loads (from all of
-  them), session replays for one session in fifty (from one in ten), a replay
-  of every session with an error as before, and no more than 25 errors from
-  one page load, 3 of any one message.
+- **Sentry's errors are capped:** no more than 25 from one page load, 3 of
+  any one message, so a bug that throws every frame can't use up the month's
+  quota. Traces and replays stay as they were on a quiet day (every page
+  load's trace, one session in ten's replay), with a knob to turn them down
+  for the day (see "The knobs").
 
 ## An option: serving the site from Workers static assets
 
@@ -238,8 +239,9 @@ world is what Turnstile is for.
 - **Check the numbers are sane:**
   `curl -s https://api.games.michaelwarkentin.com/v1/survey/world -H 'Origin: https://games.michaelwarkentin.com' | jq 'del(.territories)'`
 - **Set a spending alert** (see "A spending alert"); there's none yet.
-- **Check Sentry's spike protection is on** for the games project, and that
-  an issue alert reaches you.
+- **Turn Sentry's sampling down** (see "The knobs"), and check its spike
+  protection is on for the games project and that an issue alert reaches
+  you.
 - **Know the Workers dashboard:** Workers & Pages → games-leaderboard →
   Metrics (requests, errors, CPU), Durable Objects (requests and duration by
   class), and Logs.
@@ -265,9 +267,11 @@ it's relaying. So turn knobs together, once, and only for a reason.
 | `VIEW_MS` | `src/survey.js` | how long the world map is cached (5 s) |
 | `LIST_MS` | `src/survey-social.js` | how long the surveyor list is cached (10 s) |
 | `SURVEY_URL` | `letterfield.html` | blank it, and the site's next deploy (Pages, a minute or two) makes everyone survey alone; the Worker needn't deploy |
+| `TRACES`, `REPLAYS` | `telemetry.js` | Sentry's share of page loads traced (1) and sessions replayed (0.1). For the day, 0.1 and 0.01: a site deploy, not the Worker's. Put them back after; a quiet day wants every trace |
 
-Blanking `SURVEY_URL` is the one switch that doesn't touch the Worker: it's
-a change to the site alone (keep `js/letterfield/` out of the same commit).
+Blanking `SURVEY_URL` and Sentry's sampling are the switches that don't
+touch the Worker: they're changes to the site alone (keep `js/letterfield/`
+out of the same commit), so they drop no sockets.
 Open sockets stay until each player reloads, or their tab sleeps and comes
 back.
 
@@ -356,7 +360,7 @@ included):
 | the ceiling: `MAX_ONLINE` (25,000) online all day, bots included | 600,000 | 18 M | 64 M | 210,000 GB-s | **~$18** |
 
 The surveyor list, guilds, the log, definitions and share cards add cents.
-GitHub Pages, Sentry (sampled) and Counterscale cost nothing more. So a
+GitHub Pages, Sentry and Counterscale cost nothing more. So a
 viral day costs less than a dollar, and the worst a day can cost, with
 the survey full of scripts all day, is about $18.
 
