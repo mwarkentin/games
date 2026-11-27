@@ -106,11 +106,11 @@ namespace_id = "7301"
   period = 60
 
 [[ratelimits]]
-name = "SURVEY_JOINS"      # sockets opened: a player roaming opens about 10 an hour
+name = "SURVEY_JOINS"      # sockets opened: a player roaming opens about 10 an hour; 240 lets 60 behind one address all rejoin at once after a deploy
 namespace_id = "7302"
 
   [ratelimits.simple]
-  limit = 120
+  limit = 240
   period = 60
 
 # Letterfield's emotes (src/survey-social.js): sent per address, from any
@@ -204,7 +204,7 @@ name = "SURVEY_JOINS"
 namespace_id = "7312"
 
   [previews.ratelimits.simple]
-  limit = 120
+  limit = 240
   period = 60
 
 [[previews.ratelimits]]
