@@ -39,12 +39,33 @@ The ceilings past those are far off: the Atlas takes about 3,000 reports a
 second against ~100 at the spike's peak, `MAX_ONLINE` is 25,000, and the
 worst day costs about $18.
 
+## Where the site is served from
+
+**The HTML, modules, music and icons come from GitHub Pages.**
+`.github/workflows/pages.yml` deploys `_site/` there on every push to
+`main`. Only the API (`api.games.michaelwarkentin.com`), the share Worker,
+the album's files in R2 and each pull request's preview are on Cloudflare.
+
+The `michaelwarkentin.com` zone is on Cloudflare (the API's custom domain
+needs it), but the `games.` record isn't proxied: Pages answers it directly,
+through GitHub's Fastly CDN. To check, look at the response headers:
+
+```sh
+curl -sI https://games.michaelwarkentin.com/letterfield | grep -iE '^(server|via|x-served-by|cf-ray):'
+```
+
+`server: GitHub.com`, `via: 1.1 varnish` and `x-served-by: cache-…` with no
+`cf-ray` mean Pages, straight. `server: cloudflare` with a `cf-ray` would
+mean Cloudflare's proxy (or a Worker) sits in front. On 2026-11-27 it was
+Pages, straight. The record itself is in mwarkentin/infra, and in the
+dashboard under DNS: a grey cloud is DNS only, an orange one proxied.
+
 ## Each part against the spike
 
 | part | its limit | at the spike's peak (5,000 at once) | verdict |
 | --- | --- | --- | --- |
 | GitHub Pages: page weight | first visit to Letterfield: 167 KB page + 149 KB modules (gzipped), + ~70 KB of Google Fonts | the same for every visitor; after that, the service worker and `max-age=600` | fine |
-| GitHub Pages: bandwidth | soft limit 100 GB a month | ~0.8 MB a first visit (with the service worker's copy of every other page, ~0.5 MB): 16 GB for 20,000, 80 GB for 100,000 | near the soft limit at the top of the range; GitHub sends an email first, and Fastly serves it all |
+| GitHub Pages: bandwidth | soft limit 100 GB a month | ~0.8 MB a first visit (with the service worker's copy of every other page, ~0.5 MB): 16 GB for 20,000, 80 GB for 100,000 | near the soft limit at the top of the range; GitHub sends an email first, and Fastly serves it all (see "An option: serving the site from Workers static assets") |
 | GitHub Pages: builds | soft limit 10 an hour | only on merges | fine; don't merge a burst of changes |
 | One sector | ~750 sockets (`MAX_PLAYERS`, measured: 55% CPU at 700) | crowds of up to `SPAWN_MAX` (300) placed, ~400 with a burst's overshoot | fine |
 | The spawn rule | the biggest crowd with room, read from a world map up to ~25 s old | at 40 arrivals a second, before: 607 in one sector; now 393 at most, over four | fixed |
@@ -87,6 +108,75 @@ worst day costs about $18.
   them), session replays for one session in fifty (from one in ten), a replay
   of every session with an error as before, and no more than 25 errors from
   one page load, 3 of any one message.
+
+## An option: serving the site from Workers static assets
+
+The `games-preview` Worker already serves `_site/` as static assets for
+every pull request (`preview/wrangler.toml`), so the live site could be
+served the same way, from a Worker of its own on Cloudflare, instead of
+from Pages. Not done; this is what it would mean.
+
+**What it would gain for a spike**
+
+- **No Pages limits.** No 100 GB-a-month soft limit on bandwidth (the one
+  Pages limit a big day could reach, at ~0.8 MB a first visit) and no 10
+  builds an hour.
+- **Cloudflare's network,** the same one the API is on, with requests to
+  static assets free and unlimited (they don't count as Worker requests).
+  Pages' Fastly CDN already serves a spike well, so this is about limits
+  and control, not speed.
+- **Its own cache headers.** Pages sets `max-age=600` on everything. A
+  `_headers` file in `_site/` could set them per path: long for icons,
+  previews and music, short for pages, `no-cache` for `sw.js`.
+- **Rollback in seconds.** `wrangler rollback` brings back the last version
+  at once, where Pages needs a revert, a build and a deploy.
+- **One platform** for the site, the API, the share cards and the previews:
+  one dashboard of metrics during the spike, with requests to the site
+  beside the API's.
+- **Deploying the site still wouldn't touch the survey.** A Worker for the
+  site is a separate script, so its deploys drop no sockets.
+
+**What it would take**
+
+- **A production Worker of its own** (say `games-site`), never
+  `games-preview`, so no preview can become the live site. Its
+  `wrangler.toml` is `preview/`'s: `[assets]` with `directory = "../_site"`
+  and `html_handling = "auto-trailing-slash"`, so `/war` serves `war.html`
+  as it does on Pages.
+- **A deploy job** in place of `pages.yml`: `build.sh`, then
+  `wrangler deploy`, with the Cloudflare token the leaderboard's deploy
+  already uses. It should run only on site changes, as `pages.yml` does.
+- **DNS, in mwarkentin/infra:** a Workers custom domain for
+  `games.michaelwarkentin.com` (as `worker_domains.tf` makes the API's),
+  replacing the record that points at Pages. Cloudflare makes the
+  certificate. Keep Pages deploying for a week or two, so moving back is
+  changing the record back.
+- **Caching and the service worker:** a `_headers` file built into
+  `_site/`, with `sw.js` never cached long, and a check that `sw.js`'s
+  network-first pages and hashed module addresses behave as on Pages. The
+  same origin and paths mean every player's stored copy and `localStorage`
+  carry over untouched. `tests/test_pwa.py` and the smoke tests run against
+  a local server, so a short test against `wrangler dev` would be worth
+  adding.
+- **What reads the hostname,** such as telemetry, analytics, Turnstile's
+  widget and `ALLOWED_ORIGINS`, keeps working: the hostname doesn't change.
+
+**What it would cost:** nothing more. Static asset requests are free on
+Workers Paid, which the account already pays for. Its limits are far above
+the site's: 100,000 files a version, 25 MiB a file, against ~60 files and
+3.6 MB.
+
+**Not recommended instead:** proxying the Pages record through Cloudflare
+(an orange cloud). It puts Cloudflare's cache in front, but GitHub can't
+renew the site's certificate behind a proxy, and two CDNs make it harder to
+tell which one served a stale page.
+
+**Recommendation:** make the move, but at a quiet time, not as a reaction
+to a spike. For one viral day Pages is fine: Fastly serves the traffic, and
+going past the soft limit once brings an email, not an outage. The move
+pays for itself afterwards, in limits that don't matter any more, per-path
+caching, instant rollbacks and one place to look. If a spike is days away,
+stay on Pages and don't change DNS the week of it.
 
 ## Rate limits and shared addresses
 
