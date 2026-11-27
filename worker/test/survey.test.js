@@ -14,7 +14,7 @@ import { CH, DEAL, DIRS, HOLDERS, MAP_VERSION, RC, RG, STRAY_MIN, THEMES, THEME_
 import { GUILD_TAGS_MAX } from '../src/survey-guild.js';
 import {
   ADDRESS_HEADER, ADDRESS_ONLINE, ADDRESS_SOCKETS, AREA, AREA_WORDS, Atlas, BATCH_MS, EDGE_CLOSE, pastEdge, DAILY_CLAIMS, dailyClaims, DAILY_LIST_MAX, CLAIM_BURST, CLAIM_REFILL_MS, FRAME_BURST, FRAME_REFILL_MS, MAX_ONLINE, MAX_PLAYERS, ONLINE_MS, PRESENCE_MAX, PRESENCE_MS,
-  QUIET, REPORT_BY_MAX, REPORT_MS, UNPASSED_HEADER, SAVE_MS, SAVE_POS_MS, SECTOR, SPAWN_MAX, Sector, VIEW_MS, addressOf, checkClaim, routeSurvey,
+  QUIET, REPORT_BY_MAX, REPORT_MS, UNPASSED_HEADER, SAVE_MS, SAVE_POS_MS, SECTOR, SPAWN_MAX, SPAWNS_MAX, Sector, VIEW_MS, addressOf, checkClaim, routeSurvey,
 } from '../src/survey.js';
 
 const ORIGIN = 'https://games.michaelwarkentin.com';
@@ -602,6 +602,33 @@ describe('Sector', () => {
     assert.deepEqual(join(2, -3).sent[1], { t: 'world', charted: 1002, total: AREA_WORDS, players: 40 });
   });
 
+  test('reports within a second when its crowd fills past where new players are sent, or has room again', async () => {
+    // New players are sent to a crowd with room for as long as the Atlas
+    // thinks it has some: up to REPORT_MS late, a burst of them filled one far
+    // past SPAWN_MAX (bench/spike.js).
+    const reports = [];
+    reportingSector(reports);
+    const first = join(2, -3);
+    await claim(first, words[0]);
+    await settle();
+    assert.equal(reports.length, 1);
+    clock += 1100;
+    const crowd = Array.from({ length: SPAWN_MAX }, () => join(2, -3));
+    for (const [i, ws] of crowd.slice(0, -1).entries()) await say(ws, { t: 'pos', x: 400 + (i % 50), y: -500 });
+    await settle();
+    assert.equal(reports.length, 1);  // still room: it waits for REPORT_MS as ever
+    await say(crowd.at(-1), { t: 'pos', x: 420, y: -510 });
+    await settle();
+    assert.equal(reports.length, 2);
+    assert.equal(reports[1].players, SPAWN_MAX);
+    clock += 1100;
+    await say(crowd[0], { t: 'pos', away: true });  // one looks away: room again
+    await say(crowd[1], { t: 'pos', x: 401, y: -500 });
+    await settle();
+    assert.equal(reports.length, 3);
+    assert.equal(reports[2].players, SPAWN_MAX - 1);
+  });
+
   test('tells its players of every claim before the totals that count it', async () => {
     // The game adds each claim it hears of to the last totals, until the next
     // ones, and its count never goes back: totals that counted a claim it
@@ -1141,6 +1168,29 @@ describe('Atlas', () => {
     }
   });
 
+  test('keeps its count of players online as a recount of every report would make it', async () => {
+    // The count is kept report by report rather than walked afresh each time
+    // (bench/atlas.js), so it must agree with a recount whatever the order:
+    // ids in two sectors, sectors reporting again, going quiet, and people
+    // counted without an id.
+    const pid = (n) => n.toString(16).padStart(12, '0');
+    const latest = new Map();
+    let seed = 7;
+    const rand = (n) => { seed = (seed * 1103515245 + 12345) % 2147483648; return seed % n; };
+    for (let step = 0; step < 300; step++) {
+      const sx = rand(4), ids = [...new Set(Array.from({ length: rand(6) }, () => rand(12)))];
+      const who = ids.map((n) => [pid(n), 'ABC', sx * 4, 0, 0, 0]);
+      const players = who.length + rand(3);
+      const [status, body] = await report({ sx, sy: 0, players, charted: counts(), who, perAddress: ids.map((n) => [hashed(n), 1]) });
+      assert.equal(status, 200);
+      latest.set(sx, { at: clock, who, players });
+      const fresh = [...latest.values()].filter((r) => clock - r.at < ONLINE_MS);
+      const recount = new Set(fresh.flatMap((r) => r.who.map((e) => e[0]))).size + fresh.reduce((a, r) => a + r.players - r.who.length, 0);
+      assert.equal(body.players, recount, `step ${step}`);
+      clock += rand(3) === 0 ? ONLINE_MS / 2 : 1000;
+    }
+  });
+
   test('tells the Atlas how many people each address has placed in a sector', async () => {
     const sector = new Sector(fakeState(), {});
     sector.now = () => clock;
@@ -1239,6 +1289,19 @@ describe('Atlas', () => {
     assert.deepEqual((await worldMap()).spawn, [-2 * SECTOR + 50, 5 * SECTOR + 60]);
   });
 
+  test('offers the biggest few crowds with room, with how many each could take, so a burst of newcomers spreads', async () => {
+    assert.deepEqual((await worldMap()).spawns, []);
+    for (let i = 0; i < SPAWNS_MAX + 2; i++) await report({ sx: i, sy: 1, players: 10 * (i + 1), charted: counts(), hot: [i * SECTOR + 5, SECTOR + 6] });
+    await report({ sx: -3, sy: 1, players: SPAWN_MAX, charted: counts() });  // full: not offered
+    clock += VIEW_MS;
+    const map = await worldMap();
+    assert.deepEqual(map.spawns, Array.from({ length: SPAWNS_MAX }, (_, k) => {
+      const i = SPAWNS_MAX + 1 - k;
+      return [i * SECTOR + 5, SECTOR + 6, 10 * (i + 1), SPAWN_MAX - 10 * (i + 1)];
+    }));
+    assert.deepEqual(map.spawn, map.spawns[0].slice(0, 2));  // as an older game reads it
+  });
+
   test("starts new players with the crowd of the most addresses, not one address's many sockets", async () => {
     await report({ sx: 3, sy: 3, players: 6, perAddress: Array.from({ length: 6 }, (_, i) => [hashed(i + 10), 1]), charted: counts(), hot: [3 * SECTOR + 7, 3 * SECTOR + 9] });
     await report({ sx: -2, sy: 5, players: ADDRESS_SOCKETS, perAddress: [[hashed(1), ADDRESS_SOCKETS]], charted: counts(), hot: [-2 * SECTOR + 50, 5 * SECTOR + 60] });
@@ -1249,8 +1312,20 @@ describe('Atlas', () => {
   test('starts new players beside the biggest crowd when every crowd is full', async () => {
     await report({ sx: 3, sy: 3, players: SPAWN_MAX, charted: counts() });
     await report({ sx: -6, sy: 1, players: SPAWN_MAX + 50, charted: counts() });
-    const [x, y] = (await worldMap()).spawn, sx = Math.floor(x / SECTOR), sy = Math.floor(y / SECTOR);
+    const map = await worldMap(), [x, y] = map.spawn, sx = Math.floor(x / SECTOR), sy = Math.floor(y / SECTOR);
     assert.equal(Math.max(Math.abs(sx + 6), Math.abs(sy - 1)), 1, `${sx},${sy} is not next to -6,1`);
+    assert.deepEqual(map.spawns, [[x, y, 0, SPAWN_MAX]]);
+  });
+
+  test('builds the world map afresh when a crowd fills up or has room again, for the next newcomer', async () => {
+    await report({ sx: 1, sy: 1, players: SPAWN_MAX - 1, charted: counts(), hot: [SECTOR + 5, SECTOR + 5] });
+    await report({ sx: -1, sy: 0, players: 20, charted: counts(), hot: [-SECTOR + 5, 5] });
+    assert.deepEqual((await worldMap()).spawn, [SECTOR + 5, SECTOR + 5]);
+    await report({ sx: 1, sy: 1, players: SPAWN_MAX, charted: counts() });
+    assert.deepEqual((await worldMap()).spawn, [-SECTOR + 5, 5]);  // within VIEW_MS, but it's full now
+    await report({ sx: 1, sy: 1, players: SPAWN_MAX + 5, charted: counts() });
+    await report({ sx: -1, sy: 0, players: 30, charted: counts() });
+    assert.equal((await worldMap()).spawns[0][2], 20);  // nothing crossed: the map waits out VIEW_MS
   });
 
   test('rebuilds the world map at most every few seconds', async () => {

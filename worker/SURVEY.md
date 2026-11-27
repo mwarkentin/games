@@ -39,7 +39,10 @@ job for everyone: chart them all.
   into small clusters and lost that moment. "The middle" is the median of
   where the crowd's players are looking. An earlier version used the latest
   claim, and a single straggler in the crowd's sector could pull newcomers
-  100 cells away from everyone.
+  100 cells away from everyone. A burst of newcomers all reading the same
+  world map spreads over the biggest few crowds with room (`spawns`), and
+  one whose crowd filled before they got there starts next door (see
+  [VIRAL.md](VIRAL.md)).
 - **It fails gracefully.**
   - Field notes stay personal and still work offline.
   - If the server can't be reached, the notes panel says so in one line and
@@ -102,8 +105,18 @@ From [Scaling One Million Checkboxes][omcb] and
 - **The world map** is one byte per territory (10 KB), plus players per
   sector and a starting spot for newcomers: the middle of the crowd of the
   most addresses with room, each address counted once there and in where
-  the middle is, so one address's sockets can't choose it. Each Worker instance fetches it
-  from the Atlas at most every 5 s, and browsers cache it for 5 s.
+  the middle is, so one address's sockets can't choose it. With it come the
+  biggest few crowds with room (`spawns`: where, how big, how much room),
+  which the game picks among by size or room, whichever is less, so a burst
+  of newcomers reading the same map doesn't all land in one. Each Worker instance fetches it
+  from the Atlas at most every 5 s, and browsers cache it for 5 s. A sector
+  whose crowd fills past `SPAWN_MAX`, or has room again, reports within a
+  second, and the Atlas builds the map afresh at once, so where newcomers
+  are sent is no staler than that.
+- **The Atlas's work per report** is the same at any size (about 0.3 ms in
+  Node, `bench/atlas.js`): it keeps who's online sector by sector as reports
+  come in, rather than walking everyone online on each one, which at 25,000
+  online was 2.4 ms a report and a ceiling near 400 reports a second.
 - **Hibernation, and why there are almost no timers.** Sectors use the
   [WebSocket Hibernation API][hib]. Cloudflare bills a Durable Object for
   wall-clock time while it's running *or while it can't hibernate*, and a
@@ -1902,12 +1915,18 @@ about 30 cents over the included million requests.
 
 - **A spending alert.** Workers Paid has no spending cap; `MAX_ONLINE`
   keeps the worst case near $18 a day, now that nobody's on the survey past
-  the universe's edge. A scheduled check of Cloudflare's
-  analytics API could open a GitHub issue when the month's usage passes a
-  threshold.
-- **Run `load.js` against a deployment.** That would confirm the per-sector
-  limit and the 0.8 ms per player-second on Cloudflare's edge rather than a
-  sandbox.
+  the universe's edge. A Cloudflare billing notification, or a scheduled
+  check of its analytics API, could say when the month's usage passes a
+  threshold (see "A spending alert" in [VIRAL.md](VIRAL.md)).
+- **Run `load.js` or `bench/spike.js` against a deployment** (a pull
+  request's Worker Preview, never production). That would confirm the
+  per-sector limit and the 0.8 ms per player-second on Cloudflare's edge
+  rather than a sandbox. One machine is one address there, so keep under
+  the per-address limits.
+- **Limits per surveyor with a pass.** Players behind one address share its
+  6 claims a minute and 300 words a day; see "Rate limits and shared
+  addresses" in [VIRAL.md](VIRAL.md) for counting them by player once they
+  hold a Turnstile pass.
 - **Bots from many addresses.** Each address is limited (see "Limits per
   address"), but a botnet or a pool of proxies still gets those limits once
   per address. "Watching for bots" says when it's happening. A

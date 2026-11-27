@@ -123,6 +123,7 @@ export const SAVE_MS = 60000;         // the atlas writes changed numbers to sto
 export const VIEW_MS = 5000;          // the world map is rebuilt, and cached, for this long
 export const ONLINE_MS = 2 * 60000;   // players count as online this long after their sector reported them
 export const SPAWN_MAX = 300;         // new players join the biggest crowd with fewer players than this
+export const SPAWNS_MAX = 4;          // crowds with room the world map offers, for the game to spread newcomers over
 export const MAX_ONLINE = 25000;      // players the whole survey takes at once: a ceiling on the bill
 export const ADDRESS_ONLINE = 40;     // players one address counts for toward MAX_ONLINE, however many sectors it's in
 export const QUIET = 32;              // a sector with fewer sockets than this sets a timer for a player leaving
@@ -1090,10 +1091,11 @@ export class Sector {
     this.overToday();
     const listing = this.listing();
     this.listedIds = new Set((listing.who ?? []).map((e) => e[0]));
+    this.reportedPlayers = this.headcount();
     return atlas(this.env).fetch('https://atlas/report', {
       method: 'POST',
       body: JSON.stringify({
-        sx, sy, players: this.headcount(), perAddress: this.perAddress(), charted: this.chartedCounts(), hot: this.crowd() ?? this.hot,
+        sx, sy, players: this.reportedPlayers, perAddress: this.perAddress(), charted: this.chartedCounts(), hot: this.crowd() ?? this.hot,
         day: this.overDay, overAt: this.overAt, novaSeq: this.heardNovaSeq(), ...listing, ...extra,
       }),
     });
@@ -1146,7 +1148,12 @@ export class Sector {
     const where = this.coords();
     if (!this.env.ATLAS || !where || !inArea(...where)) return;
     const since = this.now() - this.reportedAt;
-    const owed = this.novasOwed.length > 0 && since >= NOVA_REPORT_MS;
+    // A supernova here, or the crowd here just filled past SPAWN_MAX or
+    // emptied below it: new players are being sent here, or should be, so
+    // the Atlas hears it within a second rather than REPORT_MS. While a burst
+    // of newcomers arrives, the spot it hands out is only as fresh as this.
+    const owed = since >= NOVA_REPORT_MS && (this.novasOwed.length > 0
+      || (this.reportedPlayers !== undefined && (this.reportedPlayers < SPAWN_MAX) !== (this.headcount() < SPAWN_MAX)));
     // One forced while a report is out (someone left, and the sector may now
     // go quiet) goes as soon as that report is answered, or has failed.
     if (this.reporting && force) this.leaveDue = true;
@@ -1211,6 +1218,12 @@ export class Atlas {
     this.dirty = new Set();
     this.held = new Map();  // address → people it has placed in sectors reporting now (hold())
     this.heldOver = 0;      // how many those add up to past ADDRESS_ONLINE each
+    // Who those sectors list, kept up to date the same way (count()): each id
+    // → how many of their reports list it, and the people they count without
+    // an id. Working these out afresh on every report walked everyone online,
+    // most of what a report cost (bench/atlas.js).
+    this.ids = new Map();
+    this.unlisted = 0;
     this.saveTimer = null;
     this.view = null;      // the world map as JSON, rebuilt at most every VIEW_MS
     this.list = null;      // everyone on the surveyor list as JSON, rebuilt at most every LIST_MS
@@ -1284,9 +1297,14 @@ export class Atlas {
       const key = `${r.sx},${r.sy}`, done = r.charted.reduce((a, b) => a + b, 0), old = this.load().get(key);
       const inside = (v, s) => Number.isInteger(v) && fdiv(v, SECTOR) === s;
       const hot = Array.isArray(r.hot) && inside(r.hot[0], r.sx) && inside(r.hot[1], r.sy) ? r.hot.slice(0, 2) : old?.hot ?? null;
-      if (old?.held) this.hold(old.perAddress, -1);
-      this.rows.set(key, { sx: r.sx, sy: r.sy, players: r.players, perAddress: r.perAddress ?? [], held: true, charted: r.charted, done, hot, who: r.who ?? [], at: this.now() });
-      this.hold(r.perAddress ?? [], 1);
+      if (old?.held) this.release(old);
+      // A crowd that just filled up, or has room again, changes where new
+      // players start: the world map is built afresh for the next to ask.
+      if (((old?.players ?? 0) < SPAWN_MAX) !== (r.players < SPAWN_MAX)) this.view = null;
+      const row = { sx: r.sx, sy: r.sy, players: r.players, perAddress: r.perAddress ?? [], held: true, charted: r.charted, done, hot, who: r.who ?? [], at: this.now() };
+      this.rows.set(key, row);
+      this.hold(row.perAddress, 1);
+      this.count(row, 1);
       noteMates(this, key, r.who, this.now());  // who's online in each guild (survey-guild.js)
       // A sector nobody's in may not report again for days, so its last
       // count is stored straight away, whether it changed now or in a
@@ -1458,18 +1476,32 @@ export class Atlas {
     // two sectors' reports counts twice toward their address's held people
     // while counting once in ids: near the cap, players online can read low.
     // It only ever errs toward letting people in, so it's left that way.
-    let charted = 0, unlisted = 0;
-    const ids = new Set();
+    // The ids and people come from count(), kept up to date report by report,
+    // so this only walks the sectors, not everyone in them.
+    let charted = 0;
     for (const r of this.load().values()) {
       charted += r.done;
-      if (now - r.at >= ONLINE_MS) {
-        if (r.held) { this.hold(r.perAddress, -1); r.held = false; }
-        continue;
-      }
-      for (const e of r.who) ids.add(e[0]);
-      unlisted += Math.max(0, r.players - r.who.length);
+      if (r.held && now - r.at >= ONLINE_MS) this.release(r);
     }
-    return { charted, total: AREA_WORDS, players: Math.max(0, ids.size + unlisted - this.heldOver) };
+    return { charted, total: AREA_WORDS, players: Math.max(0, this.ids.size + this.unlisted - this.heldOver) };
+  }
+
+  // A sector's last report stops counting: it has reported again, or not for ONLINE_MS.
+  release(r) {
+    this.hold(r.perAddress, -1);
+    this.count(r, -1);
+    r.held = false;
+  }
+
+  // The ids a sector's report lists, and the people it counts without one,
+  // in or out of the players online (sign 1 or -1).
+  count(r, sign) {
+    for (const e of r.who) {
+      const n = (this.ids.get(e[0]) ?? 0) + sign;
+      if (n > 0) this.ids.set(e[0], n);
+      else this.ids.delete(e[0]);
+    }
+    this.unlisted += sign * Math.max(0, r.players - r.who.length);
   }
 
   // People each address has placed in sectors reporting now, kept up to
@@ -1498,26 +1530,35 @@ export class Atlas {
     for (const b of bytes) territories += String.fromCharCode(b);
     this.rollDay();
     return {
-      ...this.totals(), area: AREA, territories: btoa(territories), sectors, spawn: this.spawn(live),
+      ...this.totals(), area: AREA, territories: btoa(territories), sectors, ...this.spawn(live),
       today: this.statsNow(), yesterday: this.yesterday,
     };
   }
 
-  // Where a new player should start, as a cell: in the middle of the biggest
-  // crowd that still has room, so the first thing they see is lots of people
-  // at work; beside the biggest crowd if every crowd is full; or at the
-  // origin (null) while nobody is playing.
+  // Where a new player should start, as a cell (`spawn`): in the middle of
+  // the biggest crowd that still has room, so the first thing they see is
+  // lots of people at work; beside the biggest crowd if every crowd is full;
+  // or at the origin (null) while nobody is playing.
   // A crowd's size here counts each address once, where sectors say (an
   // older sector doesn't), so one address's sockets don't make the biggest.
+  // And `spawns`, the biggest few crowds with room, each [x, y, size, room]:
+  // everyone arriving within a few seconds reads the same world map, and the
+  // Atlas hears of them only with their sectors' next reports, so a burst of
+  // newcomers all sent to one crowd would fill it far past SPAWN_MAX
+  // (bench/spike.js). The game picks among these by how much each could take.
   spawn(live) {
     const centre = (r) => [r.sx * SECTOR + SECTOR / 2, r.sy * SECTOR + SECTOR / 2];
     const size = (r) => (r.perAddress?.length ? r.perAddress.length : r.players);
     const open = live.filter((r) => r.players < SPAWN_MAX).sort((a, b) => size(b) - size(a));
-    if (open.length) return open[0].hot ?? centre(open[0]);
-    if (!live.length) return null;
+    if (open.length) {
+      const spawns = open.slice(0, SPAWNS_MAX).map((r) => [...(r.hot ?? centre(r)), size(r), SPAWN_MAX - r.players]);
+      return { spawn: spawns[0].slice(0, 2), spawns };
+    }
+    if (!live.length) return { spawn: null, spawns: [] };
     const biggest = live.reduce((a, b) => (b.players > a.players ? b : a));
     const [dx, dy] = DIRS[Math.floor(Math.random() * 8)];
     const clamp = (v) => Math.max(-AREA, Math.min(AREA, v));
-    return centre({ sx: clamp(biggest.sx + dx), sy: clamp(biggest.sy + dy) });
+    const beside = centre({ sx: clamp(biggest.sx + dx), sy: clamp(biggest.sy + dy) });
+    return { spawn: beside, spawns: [[...beside, 0, SPAWN_MAX]] };
   }
 }

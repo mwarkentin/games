@@ -1,3 +1,8 @@
+## 2026-11-27
+
+- When lots of people arrive at once, newcomers spread over the crowds with room instead of all landing in one, and if the spot you're sent to is crowded you start next door, beside the crowd. A crowded survey now says to keep finding words, which save in your browser until there's room.
+- After the survey restarts, everyone comes back over a few seconds rather than all at once.
+
 ## 2026-11-26
 
 - The soundtrack has two more tracks, from past the universe's edge: Hinterland, the wilds' lone flute and its far-off answers, and Dripstone, the void's slow drips echoing in a cave, each with notes on how it's made.

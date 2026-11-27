@@ -40,6 +40,30 @@
     removeEventListener('unhandledrejection', keep);
   };
 
+  // What one page load may send, so a busy day (a link on a news site's front
+  // page) or one bug that throws every frame can't use up a month's quota in an
+  // hour and leave nothing to see the next problem by. Traces and session
+  // replays are a sample; a replay of a session with an error is always kept,
+  // since that's what an error is no use without. Errors are kept apart from
+  // those: no more than ERRORS_PER_PAGE from one page load, and no more than
+  // SAME_ERROR_PER_PAGE of any one message. Sentry's own spike protection
+  // comes on top of this, account-wide.
+  const TRACES = 0.2;
+  const REPLAYS = 0.02;
+  const ERRORS_PER_PAGE = 25;
+  const SAME_ERROR_PER_PAGE = 3;
+  let sent = 0;
+  const seen = new Map();
+  const beforeSend = (event) => {
+    const value = event.exception?.values?.[0];
+    const key = value ? `${value.type}: ${value.value}` : event.message ?? '';
+    const n = (seen.get(key) ?? 0) + 1;
+    seen.set(key, n);
+    if (n > SAME_ERROR_PER_PAGE || sent >= ERRORS_PER_PAGE) return null;
+    sent++;
+    return event;
+  };
+
   const init = () => {
     stopKeeping();
     // The add-on can arrive without the bundle it adds to.
@@ -55,9 +79,10 @@
         // Three of the games draw on a <canvas>, which replays leave blank without this.
         Sentry.replayCanvasIntegration(),
       ],
-      tracesSampleRate: 1,
-      replaysSessionSampleRate: 0.1,
+      tracesSampleRate: TRACES,
+      replaysSessionSampleRate: REPLAYS,
       replaysOnErrorSampleRate: 1,
+      beforeSend,
       dataCollection: { userInfo: false },
       // Tags label errors and replays; attributes label the spans of a trace.
       initialScope: { tags: { game }, attributes: { game } },

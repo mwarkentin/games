@@ -116,6 +116,7 @@ def test_telemetry_does_nothing_on_other_hosts(page: Page, site_url, errors):
 
 
 def test_errors_reach_sentry_with_a_replay(page: Page, production, sentry, errors):
+    page.add_init_script("Math.random = () => 0")  # inside every sample: the page load's trace is sent
     page.goto(f"{production}/funnels-and-buckets")
     page.wait_for_function("window.Sentry?.getClient()")
     assert page.evaluate("!!Sentry.getClient().getIntegrationByName('ReplayCanvas')")
@@ -136,6 +137,23 @@ def test_errors_reach_sentry_with_a_replay(page: Page, production, sentry, error
     assert any(span.get("is_segment") and span["name"] == "Pageload" for span in spans["items"])
     assert not any(b"{{auto}}" in body for body in sentry.bodies)
     assert errors == ["Uncaught: bucket overflow"], "the SDK shouldn't log errors of its own"
+
+
+def test_one_page_sends_only_a_few_of_the_same_error(page: Page, production, sentry, errors):
+    """Every error went to Sentry, so a bug that throws every frame, on a busy day, could use up the
+    month's quota in minutes and leave nothing to see the next one by."""
+    page.goto(f"{production}/funnels-and-buckets")
+    page.wait_for_function("window.Sentry?.getClient()")
+    # Two errors taking turns, as two bugs in one loop would: Sentry's own Dedupe only drops an
+    # error that's the same as the one just before it.
+    page.add_script_tag(
+        content="for (let i = 0; i < 12; i++) setTimeout(() => { throw new Error(i % 2 ? 'tick' : 'tock'); }, i * 20);"
+    )
+    sentry.wait_for(page, "event", 6)
+    page.wait_for_timeout(800)
+    values = [e["exception"]["values"][0]["value"] for e in sentry.items("event")]
+    assert values.count("tick") == 3 and values.count("tock") == 3, values
+    assert len(errors) == 12  # the page itself still sees every one
 
 
 def test_send_feedback_reaches_sentry_with_a_replay(page: Page, production, sentry, errors):

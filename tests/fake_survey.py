@@ -41,13 +41,15 @@ AREA, AREA_WORDS = 12, 1_119_752
 SIZE = (2 * AREA + 1) * 4  # territories per side of the shared world
 
 
-def world_map(charted=None, sectors=(), spawn=None, players=0):
-    """A GET /v1/survey/world answer. `charted` maps (tx, ty) territories to counts."""
+def world_map(charted=None, sectors=(), spawn=None, players=0, spawns=None):
+    """A GET /v1/survey/world answer. `charted` maps (tx, ty) territories to counts; `spawns`, the
+    crowds with room ([x, y, size, room]), is left out unless given, as an older Worker's was."""
     data = bytearray(SIZE * SIZE)
     for (tx, ty), n in (charted or {}).items():
         data[(ty + AREA * 4) * SIZE + tx + AREA * 4] = n
     return {"charted": sum(data), "total": AREA_WORDS, "players": players, "area": AREA,
-            "territories": base64.b64encode(bytes(data)).decode(), "sectors": list(sectors), "spawn": spawn}
+            "territories": base64.b64encode(bytes(data)).decode(), "sectors": list(sectors), "spawn": spawn,
+            **({"spawns": [list(s) for s in spawns]} if spawns is not None else {})}
 
 
 ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ23456789"  # the game's codes: no 0, 1, I, L or O

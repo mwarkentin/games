@@ -907,10 +907,71 @@ def test_new_players_start_where_the_atlas_suggests(page: Page, site_url, errors
     assert errors == []
 
 
+def test_new_players_pick_among_the_crowds_by_how_many_each_could_take(page: Page, site_url, errors):
+    """Every newcomer was sent to the one biggest crowd with room. Everyone arriving in the same
+    few seconds reads the same world map, so a burst of them filled it far past its room
+    (worker/bench/spike.js: 607 starting in a sector meant to take 300)."""
+    page.add_init_script("Math.random = () => 0.5")  # halfway through the crowds' weights: 1 for the first, 120 the second
+    spawns = [[3 * 192 + 40, -2 * 192 + 70, 290, 0], [-1 * 192 + 20, 1 * 192 + 30, 120, 180]]
+    fake = FakeSurvey(world=world_map(sectors=[[3, -2, 300], [-1, 1, 120]], spawn=spawns[0][:2], spawns=spawns, players=420))
+    open_game(page, site_url, fake)
+    page.wait_for_function("window.__lf.links.get('-1,1')?.you")
+    assert page.evaluate("[window.__lf.cam.x, window.__lf.cam.y]") == [-1 * 192 + 20.5, 1 * 192 + 30.5]
+    assert "3,-2" not in fake.sectors
+    assert errors == []
+
+
+def test_a_newcomer_whose_crowd_is_full_starts_next_door(page: Page, site_url, errors):
+    """A newcomer sent to a crowd that filled up before they got there sat in the middle of it,
+    surveying alone and told it was crowded, for a minute at a time."""
+    spot = [3 * 192 + 40, -2 * 192 + 70]  # 70 cells below the top of sector 3,-2, nearer it than any other edge
+    fake = FakeSurvey(world=world_map(sectors=[[3, -2, 300], [2, -2, 40]], spawn=spot, spawns=[[*spot, 290, 10]], players=340),
+                      full={"3,-2": "sector"})
+    open_game(page, site_url, fake)
+    expect(page.locator("#toast")).to_contain_text("That spot is crowded")
+    # Next door, in the emptiest neighbour (2,-2 has people in it), through its nearest edge.
+    page.wait_for_function("window.__lf.links.get('3,-3')?.m.is('live')")
+    page.wait_for_function("Math.floor(window.__lf.cam.y) === -2 * 192 - 24")
+    assert page.evaluate("Math.floor(window.__lf.cam.x / 192)") == 3
+    expect(page.locator("#survey")).to_have_attribute("data-state", "live")
+    assert fake.sectors.count("3,-2") == 1  # and isn't knocking on the crowded one
+    assert errors == []
+
+
+def test_a_player_who_moved_off_on_their_own_is_left_where_they_are(page: Page, site_url, errors):
+    """Moving a newcomer is only for one still where they were sent: a full sector met while
+    exploring keeps saying it's crowded, as before."""
+    fake = FakeSurvey(full="sector")  # no spot to start from: the origin, as nobody's playing
+    open_game(page, site_url, fake)
+    not_live(page, "offline", "This part of the map is crowded right now. Keep finding words: they save in this browser, and you’ll join as soon as there’s room.")
+    page.wait_for_timeout(1500)
+    assert page.evaluate("[window.__lf.cam.x, window.__lf.cam.y]") == [6, 6]
+    assert errors == []
+
+
+def test_a_dropped_socket_comes_back_over_several_seconds_not_all_at_once(page: Page, site_url, errors):
+    """A deploy of the Worker drops every socket on every sector at once, and every game came back
+    within half a second to a second and a half: the whole survey's crowd arriving together."""
+    page.add_init_script("Math.random = () => 0")  # the soonest any game tries again
+    page.clock.install()
+    fake = FakeSurvey()
+    open_game(page, site_url, fake)
+    expect(page.locator("#survey")).to_have_attribute("data-state", "live")
+    joined = fake.sectors.count("0,0")
+    fake.sockets["0,0"].close(code=1012)  # the service restarting
+    eventually(page, lambda: page.evaluate("window.__lf.linkStates()['0,0']") == "backoff")
+    page.clock.run_for(900)
+    assert fake.sectors.count("0,0") == joined  # not yet: a second at the soonest, and up to six
+    page.clock.run_for(300)
+    eventually(page, lambda: fake.sectors.count("0,0") == joined + 1)
+    expect(page.locator("#survey")).to_have_attribute("data-state", "live")
+    assert errors == []
+
+
 def test_full_sector_says_so(page: Page, site_url, errors):
     fake = FakeSurvey(full="sector")
     open_game(page, site_url, fake)
-    not_live(page, "offline", "This part of the map is crowded right now. Your finds still save in this browser.")
+    not_live(page, "offline", "This part of the map is crowded right now. Keep finding words: they save in this browser, and you’ll join as soon as there’s room.")
     expect(page.locator("#tCharted")).to_have_text(" · crowded")  # where the count would be: too many surveyors here
     circle(page, hidden_words(page)[0])
     expect(page.locator("#notesBadge")).to_have_text("1", timeout=LANDS)
@@ -926,7 +987,7 @@ def test_a_crowded_sector_is_asked_again_only_once_its_minute_is_up(page: Page, 
     page.clock.install()
     fake = FakeSurvey(full="sector")
     open_game(page, site_url, fake)
-    not_live(page, "offline", "This part of the map is crowded right now. Your finds still save in this browser.")
+    not_live(page, "offline", "This part of the map is crowded right now. Keep finding words: they save in this browser, and you’ll join as soon as there’s room.")
     assert len(fake.sectors) == 4
     page.clock.run_for(60_000)
     assert len(fake.sectors) == 4  # not inside the minute
@@ -949,7 +1010,7 @@ def test_a_full_sector_says_crowded_even_with_its_neighbours_live(page: Page, si
 def test_full_survey_says_so(page: Page, site_url, errors):
     fake = FakeSurvey(full="world")
     open_game(page, site_url, fake)
-    not_live(page, "offline", "The survey is crowded right now. Your finds still save in this browser.")
+    not_live(page, "offline", "The survey is crowded right now. Keep finding words: they save in this browser, and you’ll join as soon as there’s room.")
     assert errors == []
 
 
