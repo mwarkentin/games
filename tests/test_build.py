@@ -142,6 +142,8 @@ def test_site_contains_only_publishable_files(site_dir):
         "sitemap.xml",
         "robots.txt",
         "sw.js",
+        "_headers",  # how the site's Worker caches each path (scripts/build_headers.py)
+        "404.html",
         *(f"manifests/{app}.webmanifest" for app in apps),
         *(f"icons/{app}-{size}.png" for app in apps for size in ICON_SIZES),
         *module_files(),

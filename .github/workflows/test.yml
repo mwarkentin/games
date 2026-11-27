@@ -93,6 +93,11 @@ jobs:
       - uses: astral-sh/setup-uv@v10.2.0
       - name: Install dependencies
         run: uv sync --locked
+      # tests/test_site_worker.py serves the site through wrangler, which
+      # needs Node 22.
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
       - name: Find Playwright's version
         id: playwright
         run: echo "version=$(uv run python -c 'import importlib.metadata as m; print(m.version("playwright"))')" >> "$GITHUB_OUTPUT"

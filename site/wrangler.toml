@@ -1,0 +1,25 @@
+# The live site, games.michaelwarkentin.com, served as static assets: the
+# whole of _site/ as build.sh assembles it, with no code. The Site workflow
+# (.github/workflows/site.yml) builds and deploys it on pushes to main once
+# the SITE_ON_WORKERS repository variable is "true"; until then, and for a
+# week or two after the switch, GitHub Pages deploys the same build too. See
+# site/README.md for the cutover and rolling back.
+#
+# This is a Worker of its own, never games-preview (preview/wrangler.toml),
+# so no pull request's preview can ever become the live site.
+name = "games-site"
+compatibility_date = "2026-10-01"
+
+# No workers.dev address: the site answers only at its own domain, a Workers
+# custom domain made by OpenTofu in mwarkentin/infra. Keep `routes` out of
+# here, as in worker/wrangler.toml, so wrangler never owns the domain.
+workers_dev = false
+preview_urls = false
+
+# /war serves war.html, as on GitHub Pages; /war.html and /war/ redirect to
+# /war, keeping the query string. An address with no file gets 404.html with
+# a 404 status. _headers sets each path's caching (scripts/build_headers.py).
+[assets]
+directory = "../_site"
+html_handling = "auto-trailing-slash"
+not_found_handling = "404-page"

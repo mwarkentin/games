@@ -5,16 +5,21 @@
 # pull request's Worker Preview with scripts/point_preview.py, then runs
 # `wrangler preview` here. See "Previews" in AGENTS.md.
 #
-# This Worker is never deployed to production: the live site is GitHub
-# Pages. It has no code, only assets, so it needs no bindings or secrets.
+# This Worker is never deployed to production. The live site is GitHub Pages,
+# moving to games-site (site/wrangler.toml, see site/README.md), a Worker of
+# its own with these same asset rules, so no preview can become the live
+# site. It has no code, only assets, so it needs no bindings or secrets.
 name = "games-preview"
 compatibility_date = "2026-10-01"
 
-# /war is served from war.html and /war.html redirects to /war, as on
-# GitHub Pages. Wrangler uploads the branch's own _site/ for each Preview.
+# The same rules as games-site's: /war is served from war.html, /war.html
+# redirects to /war, an address with no file gets 404.html with a 404, and
+# the built _headers sets each path's caching. Wrangler uploads the
+# branch's own _site/ for each Preview.
 [assets]
 directory = "../_site"
 html_handling = "auto-trailing-slash"
+not_found_handling = "404-page"
 
 # Previews take nothing from the top level but the assets and compatibility
 # date, and there's nothing else to set.
