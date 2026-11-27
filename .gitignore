@@ -9,4 +9,6 @@ games.json
 __pycache__/
 .venv/
 .pytest_cache/
+
+# Local state from `wrangler dev` (site/, preview/, tests/test_site_worker.py)
 .wrangler/
