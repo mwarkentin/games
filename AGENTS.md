@@ -341,7 +341,11 @@ Everything it sends is labelled with the game's name, taken from the URL: a
 Filter on that rather than splitting games into projects or environments.
 
 Replays show what was on screen, canvases and leaderboards included, with
-text inputs masked. To hide something else from replays, give it the
+text inputs masked. Every page load sends its trace and one session in ten
+its replay (`TRACES` and `REPLAYS`, which `worker/VIRAL.md` says when to
+turn down), a session with an error always keeps its replay, and one page
+load sends at most 25 errors, 3 of any one message, so a bug that throws
+every frame can't use up the month's quota. To hide something else from replays, give it the
 `sentry-mask` class. IP addresses aren't sent. `tests/test_telemetry.py`
 serves the site under its real hostname to check that it reports errors
 with a replay and never sends anything from elsewhere.
@@ -771,6 +775,11 @@ per sector of the map, plus an Atlas for the world's totals
   away, and the log keeps nothing from there; finds made out there stay in
   the finder's field notes ("The edge, the void and the wilds" in
   `worker/SURVEY.md`). Playing alone, the map has no edge.
+- What happens when a crowd arrives at once (a link on a news site's front
+  page), the knobs, what to watch and what not to do on the day are in
+  `worker/VIRAL.md`. Every Worker deploy drops every socket and empties the
+  Atlas's memory, so don't deploy one mid-spike; `js/letterfield/**`
+  deploys it too.
 - Its list of surveyors and their emotes are `worker/src/survey-social.js`
   ("Surveyors and emotes" in `worker/SURVEY.md`), and its guilds
   `worker/src/survey-guild.js`, a Durable Object per guild ("Guilds").

@@ -1564,6 +1564,7 @@ const LINK_MOVES = {
   backoff: ['connecting', 'closed'],
   closed: [],
 };
+const REJOIN_MIN_MS = 1000, REJOIN_SPREAD_MS = 5000;  // a dropped live socket tries again 1–6 s later
 function openLink(sx, sy) {
   const k = sx + ',' + sy;
   if (links.has(k) || !mayJoin()) return;  // syncSurvey opens it once there's a pass
@@ -1614,12 +1615,20 @@ function linkMoved(l, to, from) {
     matesLost();
   }
   if (to === 'backoff') {
+    if (l.full === 'sector') startNextDoor(l);
     l.tries++;  // one more failure since it was last live
     // A full sector is asked again in a minute or so, past the minute the
     // survey counts joins over (SURVEY_JOINS), each at its own moment, so the
-    // sockets turned away together don't all come back together; anything
+    // sockets turned away together don't all come back together. A live
+    // socket that drops is most often its sector restarting (a deploy of the
+    // Worker drops every socket on every sector at once), so it comes back
+    // somewhere in the next few seconds rather than all of them in the same
+    // one (worker/bench/spike.js: a sector's crowd back within a second waited
+    // ~2 s for its hello, against a tenth of that spread over several). Anything
     // else backs off from a second.
-    const wait = l.full ? 60000 * (1 + Math.random() / 2) : Math.min(30000, 1000 * 2 ** (l.tries - 1)) * (.5 + Math.random());
+    const wait = l.full ? 60000 * (1 + Math.random() / 2)
+      : from === 'live' ? REJOIN_MIN_MS + Math.random() * REJOIN_SPREAD_MS
+      : Math.min(30000, 1000 * 2 ** (l.tries - 1)) * (.5 + Math.random());
     l.timer = setTimeout(() => {
       if (!l.m.is('backoff')) return;
       l.m.go(mayJoin() ? 'connecting' : 'closed');  // without a pass, syncSurvey opens it again once there is one
@@ -2031,8 +2040,8 @@ const SURVEY_STATUS = {
   paused: ['connecting', 'Paused while this tab is hidden.'],
   checking: ['connecting', 'Checking this is a person, not a bot…'],
   alone: ['offline', 'Couldn’t check this is a person, so you’re surveying alone for now. Your finds still save in this browser.'],
-  'full-world': ['offline', 'The survey is crowded right now. Your finds still save in this browser.'],
-  'full-sector': ['offline', 'This part of the map is crowded right now. Your finds still save in this browser.'],
+  'full-world': ['offline', 'The survey is crowded right now. Keep finding words: they save in this browser, and you’ll join as soon as there’s room.'],
+  'full-sector': ['offline', 'This part of the map is crowded right now. Keep finding words: they save in this browser, and you’ll join as soon as there’s room.'],
   offline: ['offline', 'Survey offline. Your finds still save in this browser.'],
   void: ['offline', 'Loose letters, nothing to find. The universe is behind you.'],
   wilds: ['offline', 'Words you find out here stay in your field notes, and nobody sees your caret.'],
@@ -2075,7 +2084,7 @@ async function fetchWorld(timeoutMs = 4000) {
     if (!m || !Number.isInteger(m.area) || typeof m.territories !== 'string' || !Array.isArray(m.sectors)) return null;
     const bytes = atob(m.territories), size = (2 * m.area + 1) * RG;
     if (bytes.length !== size * size) return null;
-    worldMap = { area: m.area, size, bytes, sectors: m.sectors.filter(q => Array.isArray(q) && q.every(Number.isInteger)), spawn: m.spawn };
+    worldMap = { area: m.area, size, bytes, sectors: m.sectors.filter(q => Array.isArray(q) && q.every(Number.isInteger)), spawn: m.spawn, spawns: m.spawns };
     if ([m.charted, m.total, m.players].every(Number.isInteger)) { world = { charted: m.charted, total: m.total, players: m.players }; worldExtra = 0; }
     return worldMap;
   } catch (_) {
@@ -2138,15 +2147,54 @@ async function refreshWorld() {
   else { worldNote.textContent = 'Couldn’t load the Universe map.'; worldCanvas.classList.remove('waiting'); }
   if (surveyEl.open) worldTimer = setTimeout(refreshWorld, 20000);
 }
-// New players start where the Atlas suggests: in the middle of the biggest
-// crowd that has room, so there's company from the start.
+// New players start where the Atlas suggests: in the middle of a big crowd
+// that has room, so there's company from the start. It offers the biggest few
+// (`spawns`, [x, y, size, room]), and each newcomer picks one by how big it is
+// and how many more it could take, whichever is less: everyone arriving in the
+// same few seconds reads the same map, and the Atlas only hears they've
+// arrived with their sectors' next reports, so all of them sent to the one
+// biggest crowd would fill it far past its room. An older Worker sends only
+// `spawn`.
+let spawned = null;  // where the Atlas started us ({k, x, y, moves}), until we move off on our own
 async function spawnSomewhere() {
   spawning = true;
   const m = await fetchWorld(2500), edge = m ? (m.area + 1) * SECTOR : 0;
   spawning = false;
-  const sp = m && Array.isArray(m.spawn) && m.spawn.length === 2 && m.spawn.every(v => Number.isInteger(v) && Math.abs(v) <= edge) ? m.spawn : null;
-  if (sp && cam.x === 6 && cam.y === 6) flyTo(sp[0] + .5 + (Math.random() - .5) * 8, sp[1] + .5 + (Math.random() - .5) * 8, cam.cs, { instant: true });
+  const at = p => Array.isArray(p) && p.length >= 2 && [p[0], p[1]].every(v => Number.isInteger(v) && Math.abs(v) <= edge);
+  const offers = m && Array.isArray(m.spawns) ? m.spawns.filter(at) : [];
+  const sp = offers.length ? pickSpawn(offers) : m && at(m.spawn) ? m.spawn : null;
+  if (sp && cam.x === 6 && cam.y === 6) {
+    flyTo(sp[0] + .5 + (Math.random() - .5) * 8, sp[1] + .5 + (Math.random() - .5) * 8, cam.cs, { instant: true });
+    spawned = { k: sectorKey(Math.floor(cam.x), Math.floor(cam.y)), x: cam.x, y: cam.y, moves: 0 };
+  }
   syncSurvey();
+}
+function pickSpawn(offers) {
+  const weight = ([, , size, room]) => Math.max(1, Math.min(Number.isInteger(size) ? size : 1, Number.isInteger(room) ? room : 1));
+  let r = Math.random() * offers.reduce((a, o) => a + weight(o), 0);
+  for (const o of offers) if ((r -= weight(o)) < 0) return o;
+  return offers[0];
+}
+// A newcomer sent to a crowd that filled up before they got there starts next
+// door instead: 24 cells into the sector beside it with the fewest surveyors
+// (the nearest edge's, of those as empty), still beside the crowd, rather than
+// surveying alone in the middle of one they can't join. Only while they're
+// still where they were sent, and at most twice.
+function startNextDoor(l) {
+  if (!spawned || l.k !== spawned.k || flight) return;
+  if (spawned.moves >= 2 || sectorKey(Math.floor(cam.x), Math.floor(cam.y)) !== l.k || Math.hypot(cam.x - spawned.x, cam.y - spawned.y) > 12) { spawned = null; return; }
+  const counts = new Map((worldMap?.sectors ?? []).map(([sx, sy, n]) => [sx + ',' + sy, n]));
+  const toEdge = o => o.dx > 0 ? (l.sx + 1) * SECTOR - cam.x : o.dx < 0 ? cam.x - l.sx * SECTOR : o.dy > 0 ? (l.sy + 1) * SECTOR - cam.y : cam.y - l.sy * SECTOR;
+  const next = [[1, 0], [-1, 0], [0, 1], [0, -1]].map(([dx, dy]) => ({ dx, dy, sx: l.sx + dx, sy: l.sy + dy }))
+    .filter(o => Math.abs(o.sx) <= SURVEY_AREA && Math.abs(o.sy) <= SURVEY_AREA && !links.get(o.sx + ',' + o.sy)?.full)
+    .sort((a, b) => (counts.get(a.sx + ',' + a.sy) ?? 0) - (counts.get(b.sx + ',' + b.sy) ?? 0) || toEdge(a) - toEdge(b))[0];
+  if (!next) return;
+  const INTO = 24;  // far enough that a phone's or a laptop's view leaves the crowded sector out
+  const x = next.dx > 0 ? next.sx * SECTOR + INTO : next.dx < 0 ? (next.sx + 1) * SECTOR - INTO : cam.x;
+  const y = next.dy > 0 ? next.sy * SECTOR + INTO : next.dy < 0 ? (next.sy + 1) * SECTOR - INTO : cam.y;
+  spawned = { k: next.sx + ',' + next.sy, x, y, moves: spawned.moves + 1 };
+  flyTo(x, y, cam.cs);
+  toast('<i></i><b class="wraps">That spot is crowded</b><span>Starting you next door, beside the crowd</span>', null, 5000);
 }
 
 /* ---------- Canvas + colours ---------- */
