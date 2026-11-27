@@ -1,8 +1,8 @@
 # AGENTS.md
 
 This repo is the source of [games.michaelwarkentin.com](https://games.michaelwarkentin.com):
-small browser games, published by GitHub Pages on every push to `main`, and
-ready to move to a Worker's static assets (`site/`, see Serving the site). Its
+small browser games, served by a Worker's static assets (`site/`, see
+Serving the site) and deployed on every push to `main`. Its
 sibling, [mwarkentin/tools](https://github.com/mwarkentin/tools), holds
 utilities; games live here so they get their own origin and their own rules.
 
@@ -78,9 +78,8 @@ utilities; games live here so they get their own origin and their own rules.
 - `preview/`: the `games-preview` Worker, which has no code and serves each
   pull request's build of the site as a Worker Preview (see Previews). It's
   never deployed to production.
-- `site/`: the `games-site` Worker, which has no code either and will serve
-  the live site in place of GitHub Pages (see Serving the site). Its deploys
-  are off until the owner turns them on.
+- `site/`: the `games-site` Worker, which has no code either and serves the
+  live site, in place of GitHub Pages (see Serving the site).
 
 ## Rules for every game
 
@@ -96,7 +95,8 @@ utilities; games live here so they get their own origin and their own rules.
   Counterscale's own address, for `analytics.js`, and
   `challenges.cloudflare.com`, for Turnstile on Letterfield's shared survey
   (loaded only once `TURNSTILE_SITE_KEY` is set, never cached by `sw.js`;
-  see `worker/TURNSTILE.md`).
+  see `worker/TURNSTILE.md`). Cloudflare also adds its Web Analytics beacon
+  to every page it serves, outside the build (see Analytics).
 - Phone first: playable at 375px wide in portrait with touch alone (an
   on-screen pad, taps or swipes), and with a keyboard on a computer. No
   sideways scrolling. Inputs, textareas and selects use `font-size: 16px`
@@ -398,6 +398,14 @@ defaults would read a referrer and UTM tags from the query string and watch
 `autoTrackPageviews: false`. `tests/test_analytics.py` checks all of this
 against a fake Counterscale.
 
+Cloudflare Web Analytics runs too, on trial as an alternative to
+Counterscale: its automatic setup puts a beacon from
+`static.cloudflareinsights.com` into every page Cloudflare serves to a
+browser, with no cookies. It's on purpose, so don't remove it. It isn't in
+the built pages, so local runs, tests and previews don't have it. It's
+switched off in Cloudflare's dashboard, not here. Whichever of the two
+loses the trial goes.
+
 ## Home-screen apps
 
 Every page can be added to a phone's Home Screen and keeps working offline.
@@ -436,34 +444,39 @@ scores, groups and initials saved in Safari don't carry over to it.
 
 ## Serving the site
 
-GitHub Pages serves the site today (`.github/workflows/pages.yml`, on every
-push to `main`). The `games-site` Worker (`site/wrangler.toml`) is ready to
-take over: the same `_site/` as static assets, with no code.
-`site/README.md` has how it serves the site and the cutover runbook.
+The `games-site` Worker (`site/wrangler.toml`) serves the live site: the
+same `_site/` as static assets, with no code. `site/README.md` has the
+details, the checks and rolling back.
 
-- **Off until the owner flips it.** `.github/workflows/site.yml` deploys it
-  on the same pushes only once the repository variable `SITE_ON_WORKERS` is
-  `true`, and even then it answers nowhere until mwarkentin/infra gives it
-  the domain. Pages keeps deploying alongside for a week or two after, so
-  moving back is a DNS change. Agents never change DNS, infra or the
-  variable.
-- **Addresses** follow `html_handling = "auto-trailing-slash"`: `/war`
-  serves `war.html`, as on Pages, but `/war.html` and `/war/` redirect to
-  `/war` with the query string kept, where Pages answers the first itself.
-  Keep linking pages by their plain address. Anything else is a 404 with
-  `404.html`.
-- **Caching** is `_headers`, built by `scripts/build_headers.py`: pages,
-  modules and `sw.js` checked on every load, manifests and `games.json` ten
-  minutes, icons, previews and music a week. A new kind of file in `_site/`
-  needs a rule there; a path in two rules for one header gets both values
-  joined, which `tests/test_site_worker.py` stops.
+- **Deploys:** `.github/workflows/site.yml` deploys it on every push to
+  `main` while the repository variable `SITE_ON_WORKERS` is `true`.
+  - GitHub Pages (`pages.yml`) still deploys the same build, as the
+    fallback for a week or two after the move on 2026-11-27, then goes.
+  - Agents never change DNS, infra or the variable.
+- **The domain:** a Workers route on the proxied `games` record, made in
+  mwarkentin/infra. Keep `routes` out of `site/wrangler.toml`, so wrangler
+  leaves the route alone.
+- **Addresses** follow `html_handling = "auto-trailing-slash"`:
+  - `/war` serves `war.html`, as on Pages.
+  - `/war.html` and `/war/` redirect to `/war`, keeping the query string,
+    where Pages answered the first itself.
+  - Keep linking pages by their plain address.
+  - Anything else is a 404 with `404.html`.
+- **Caching** is `_headers`, built by `scripts/build_headers.py`:
+  - Pages, modules and `sw.js` are checked on every load.
+  - Manifests and `games.json` keep ten minutes.
+  - Icons, previews and music keep a week.
+  - Pages also get their charset in `Content-Type`.
+  - A new kind of file in `_site/` needs a rule there.
+  - A path in two rules for one header gets both values joined, which
+    `tests/test_site_worker.py` stops.
 - **Tests:** `tests/test_site_worker.py` serves the built site through
   `wrangler dev` with `site/wrangler.toml` and checks addresses, redirects,
   404s, headers and that the service worker installs. It needs Node 22 and
   npx (the pytest jobs set up Node); in a sandbox that blocks
   `registry.npmjs.org` it fails at start-up.
 - `preview/wrangler.toml` has the same `[assets]` rules, and a test keeps
-  them equal, so each pull request's preview serves as the live site will.
+  them equal, so each pull request's preview serves as the live site does.
 
 ## Link previews
 

@@ -2,8 +2,9 @@
 
 `games-site` serves games.michaelwarkentin.com from Cloudflare instead of
 GitHub Pages: the whole of `_site/`, as `build.sh` assembles it, as static
-assets with no code (`wrangler.toml`). It's ready but not switched on. Until
-the cutover below, GitHub Pages serves the site as before.
+assets with no code (`wrangler.toml`). It has served the site since
+2026-11-27. GitHub Pages still deploys the same build behind it, so moving
+back stays one change (see Rolling back) until the end of the cutover.
 
 `worker/VIRAL.md` (section "An option: serving the site from Workers static
 assets") has the reasons: no Pages bandwidth or build limits, caching set per
@@ -45,9 +46,19 @@ the account already has.
 - **Nothing that reads the hostname changes:** telemetry, analytics,
   Turnstile's widget and the API's `ALLOWED_ORIGINS` all see
   games.michaelwarkentin.com as before.
+- **Added by Cloudflare, not the build:**
+  - Cloudflare Web Analytics' automatic setup puts its beacon
+    (`static.cloudflareinsights.com`) into every page served to a browser.
+    It's on purpose, on trial beside Counterscale (see Analytics in
+    AGENTS.md), and switched off in the dashboard: Web Analytics → the
+    site → disable automatic setup.
+  - Network Error Logging headers (`report-to`, `nel`), Cloudflare's
+    default, which report failed connections only.
+  - Neither is in `_site/`, so local runs, `wrangler dev` and previews
+    never have them.
 - **No other address.** `workers_dev` and `preview_urls` are off: the Worker
-  answers only at its custom domain, so there's never a second copy of the
-  site on another origin. Pull requests keep their previews on
+  answers only through its route on games.michaelwarkentin.com, so there's
+  never a second copy of the site on another origin. Pull requests keep their previews on
   `games-preview`, a separate Worker with the same asset rules, so no
   preview can become the live site.
 
@@ -60,116 +71,61 @@ with this config and checks all of the above.
 `wrangler deploy` here, on every push to `main` and by hand, with the same
 `CLOUDFLARE_API_TOKEN` secret and `CLOUDFLARE_ACCOUNT_ID` variable as the
 leaderboard's deploy. It's skipped until the repository variable
-`SITE_ON_WORKERS` is `true`. A deploy alone makes nothing live: until
-mwarkentin/infra gives the Worker its domain, it answers nowhere.
+`SITE_ON_WORKERS` is `true` (set by mwarkentin/infra, `games.tf`).
 
 `pages.yml` keeps deploying the same build alongside, until the end of the
 cutover.
 
+## How the domain reaches it
+
+All in mwarkentin/infra:
+- **The route:** `cloudflare_workers_route.games_site` in
+  `worker_domains.tf` sends `games.michaelwarkentin.com/*` to `games-site`.
+- **The record:** `cloudflare_dns_record.games` in
+  `dns_michaelwarkentin.tf` is proxied, so every request reaches the route.
+  It still names `mwarkentin.github.io`, which nothing reaches while it's
+  proxied.
+- **Why not a custom domain:** a custom domain makes its own record, and
+  Cloudflare won't make one while another exists for the name, so moving
+  would have meant two applies with the site offline between them.
+- **The certificate** is the zone's Universal SSL one.
+- **HTTPS:** the zone's Always Use HTTPS redirects plain HTTP, which Pages
+  did itself.
+
+Wrangler leaves the route alone, because `wrangler.toml` declares no
+`routes`. Keep it that way.
+
 ## The cutover
 
-Do it at a quiet time. **Not in the week of an expected traffic spike** (a
-launch, a post, a mention), and not as a reaction to one: Pages serves a
-spike fine, and going past its soft bandwidth limit once brings an email,
-not an outage. A DNS change mid-spike is a risk for no gain.
+1. **Done, 2026-11-27:** the deploys turned on (infra#45), the first deploy
+   ran by hand, and the route and proxied record went live (infra#46).
+2. **Check it** whenever something about serving changes:
 
-### 1. Turn on the deploys
+   ```sh
+   curl -sI https://games.michaelwarkentin.com/war
+   #   server: cloudflare and a cf-ray header (Pages sent server: GitHub.com, via: 1.1 varnish)
+   #   content-type: text/html; charset=utf-8
+   #   cache-control: public, max-age=0, must-revalidate
+   #   access-control-allow-origin: *
+   curl -sI https://games.michaelwarkentin.com/sw.js | grep -i cache-control     # no-cache
+   curl -sI https://games.michaelwarkentin.com/icons/war-192.png | grep -i cache  # public, max-age=604800
+   curl -sI 'https://games.michaelwarkentin.com/war.html?room=ABCD' | grep -i location   # /war?room=ABCD
+   curl -s -o /dev/null -w '%{http_code}\n' https://games.michaelwarkentin.com/nope       # 404
+   curl -s -o /dev/null -w '%{http_code} %{redirect_url}\n' http://games.michaelwarkentin.com/war   # 301 to https
+   ```
 
-1. Merge this pull request. Nothing changes for players.
-2. In the repository's Settings → Secrets and variables → Actions →
-   Variables, add `SITE_ON_WORKERS` = `true`.
-3. Run **Deploy site to Workers** by hand (Actions → the workflow → Run
-   workflow) and check it succeeds. This creates the `games-site` Worker.
-   The token needs Workers Scripts: Edit on the account, which the
-   leaderboard's deploy already uses; if it's limited to named scripts,
-   add `games-site` in mwarkentin/infra first.
-4. Check the latest pull request's preview, which serves the same build by
-   the same rules, on a phone: a game, the offline copy, a 404.
+   Then in a browser: a game plays, its leaderboard loads, Letterfield
+   joins the survey, a page works offline once visited, and Sentry and
+   Counterscale keep receiving. A phone that had the site installed should
+   carry on as before.
+3. **After a week or two,** once nothing has needed moving back:
+   - Delete `pages.yml`, and update AGENTS.md and this file.
+   - In mwarkentin/infra, make the `games` record's target something that
+     isn't Pages.
+   - Remove the custom domain from the repository's Pages settings, then
+     turn Pages off.
 
-### 2. Move the domain (in mwarkentin/infra)
-
-The `games.` record is DNS only today, pointing at GitHub Pages. It's
-replaced by a Workers custom domain, made the same way `worker_domains.tf`
-makes `api.games.michaelwarkentin.com`; Cloudflare makes the DNS record and
-the certificate itself. Follow the existing resource for the API's domain,
-which has the provider version's exact arguments; with the Cloudflare
-provider's v5 it's:
-
-```hcl
-# worker_domains.tf
-resource "cloudflare_workers_custom_domain" "games_site" {
-  account_id = var.cloudflare_account_id   # as the API's domain does
-  zone_id    = cloudflare_zone.michaelwarkentin_com.id   # or the zone variable it uses
-  hostname   = "games.michaelwarkentin.com"
-  service    = "games-site"
-  # environment = "production"   # v4 of the provider needs this; v5 doesn't take it
-}
-```
-
-and the record that points at Pages goes, whatever it's called there, for
-example:
-
-```hcl
-# remove:
-resource "cloudflare_dns_record" "games" {
-  zone_id = ...
-  name    = "games"
-  type    = "CNAME"
-  content = "mwarkentin.github.io"
-  proxied = false
-}
-```
-
-Cloudflare won't make a custom domain for a hostname that already has a DNS
-record, so this takes two applies, a minute apart at most (players with the
-site installed keep playing from their offline copies meanwhile):
-
-1. `tofu apply` with the record removed (or
-   `tofu apply -target=<the record's address>` after deleting it from the
-   config).
-2. `tofu apply` with the custom domain added. Wait for its certificate
-   (usually under a minute; the dashboard's Worker → Settings → Domains &
-   Routes shows it).
-
-If the repository's GitHub Pages settings are managed there too (a
-`github_repository`'s `pages` block with a `cname`), leave them as they are
-for now: Pages keeps the custom domain set, and its certificate, so moving
-back is only DNS. In the GitHub UI the same applies: don't remove the
-custom domain from Settings → Pages yet. GitHub will say the domain's DNS
-no longer points at it; that's expected.
-
-### 3. Check it
-
-Each of these from outside Cloudflare's dashboard, after DNS has had a few
-minutes (`dig +short games.michaelwarkentin.com` gives Cloudflare's
-addresses, not GitHub's 185.199.108–111.153):
-
-```sh
-curl -sI https://games.michaelwarkentin.com/war
-#   server: cloudflare
-#   cf-ray: ...                      (Pages sends neither; it says server: GitHub.com, via: 1.1 varnish)
-#   cache-control: public, max-age=0, must-revalidate
-#   access-control-allow-origin: *
-curl -sI https://games.michaelwarkentin.com/sw.js | grep -i cache-control     # no-cache
-curl -sI https://games.michaelwarkentin.com/icons/war-192.png | grep -i cache  # public, max-age=604800
-curl -sI 'https://games.michaelwarkentin.com/war.html?room=ABCD' | grep -i location   # /war?room=ABCD
-curl -s -o /dev/null -w '%{http_code}\n' https://games.michaelwarkentin.com/nope       # 404
-```
-
-Then in a browser: a game plays, its leaderboard loads (the API checks the
-origin, which hasn't changed), Letterfield joins the survey, the page
-works offline once visited, and Sentry and Counterscale keep receiving
-(both check the hostname). A phone that had the site installed should
-carry on as before.
-
-### 4. After a week or two
-
-Once nothing has needed moving back:
-
-1. Delete `pages.yml`, and update AGENTS.md and this file to say the site
-   is on Workers.
-2. Remove the custom domain from the repository's Pages settings (in
-   mwarkentin/infra, or Settings → Pages), then turn Pages off.
+Don't change any of this in the week of an expected traffic spike.
 
 ## Rolling back
 
@@ -184,11 +140,15 @@ Once nothing has needed moving back:
   ```
 
   The next push to `main` deploys again, so fix or revert there too.
-- **Back to Pages** (anything about Workers itself): the reverse of step 2.
-  Remove the custom domain, then put the DNS-only record pointing at Pages
-  back, two applies as before. Pages has kept deploying every push, so it
-  serves the current build. Set `SITE_ON_WORKERS` to `false` (or delete
-  it) to stop the Worker's deploys until the next try.
+- **Back to Pages** (anything about Workers itself): one infra pull request
+  setting `proxied = false` and `ttl = 600` on `cloudflare_dns_record.games`.
+  The route can stay: DNS-only traffic never reaches it.
+  - Pages has kept deploying every push, so it serves the current build.
+  - This works only while GitHub's certificate for the name lasts, since
+    GitHub can't renew it behind the proxy. That's one more reason to keep
+    the fallback window short.
+  - Set `SITE_ON_WORKERS` to `false` (`games.tf`) to stop the Worker's
+    deploys until the next try.
 
 Both keep every player's offline copies and `localStorage`: the origin
 never changes.

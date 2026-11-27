@@ -1,18 +1,18 @@
 # The live site, games.michaelwarkentin.com, served as static assets: the
 # whole of _site/ as build.sh assembles it, with no code. The Site workflow
-# (.github/workflows/site.yml) builds and deploys it on pushes to main once
-# the SITE_ON_WORKERS repository variable is "true"; until then, and for a
-# week or two after the switch, GitHub Pages deploys the same build too. See
-# site/README.md for the cutover and rolling back.
+# (.github/workflows/site.yml) builds and deploys it on pushes to main while
+# the SITE_ON_WORKERS repository variable is "true". GitHub Pages deploys the
+# same build too, as the fallback for a week or two after the move. See
+# site/README.md for checking it and rolling back.
 #
 # This is a Worker of its own, never games-preview (preview/wrangler.toml),
 # so no pull request's preview can ever become the live site.
 name = "games-site"
 compatibility_date = "2026-10-01"
 
-# No workers.dev address: the site answers only at its own domain, a Workers
-# custom domain made by OpenTofu in mwarkentin/infra. Keep `routes` out of
-# here, as in worker/wrangler.toml, so wrangler never owns the domain.
+# No workers.dev address: the site answers only through a Workers route on
+# games.michaelwarkentin.com, made by OpenTofu in mwarkentin/infra. Keep
+# `routes` out of here, so wrangler leaves that route alone.
 workers_dev = false
 preview_urls = false
 
