@@ -17,7 +17,9 @@ Cache-Control, where Pages gives everything max-age=600:
 - Icons, link previews and music: a week. They change rarely, and a stale
   one for a while does no harm.
 
-Every response also gets Access-Control-Allow-Origin: *, as Pages sends.
+Every response also gets Access-Control-Allow-Origin: *, as Pages sends,
+and pages get Content-Type: text/html; charset=utf-8, as Pages sent:
+Cloudflare's asset server sends text/html alone in production.
 Each path is in one rule only: Workers join two rules' values for the same
 header with a comma. GitHub Pages ignores _headers (it serves it as a file,
 harmlessly) and uses 404.html as its not-found page too.
@@ -35,6 +37,9 @@ from common import ROOT, game_files, generated_pages, insert_in_head, render_pag
 FRESH = "public, max-age=0, must-revalidate"
 SHORT = "public, max-age=600"
 LONG = "public, max-age=604800"
+# Pages name their charset in a <meta> tag too, but Pages' header said it,
+# and Cloudflare's production asset server leaves it off.
+HTML = "text/html; charset=utf-8"
 # Workers allow 100 rules in a _headers file.
 MAX_RULES = 100
 
@@ -47,7 +52,7 @@ def page_paths(root: Path = ROOT) -> list[str]:
 def header_rules(root: Path = ROOT) -> list[tuple[str, dict[str, str]]]:
     """[(path pattern, {header: value})], with no path matched by two rules for one header."""
     rules: list[tuple[str, dict[str, str]]] = [("/*", {"Access-Control-Allow-Origin": "*"})]
-    rules += [(path, {"Cache-Control": FRESH}) for path in page_paths(root)]
+    rules += [(path, {"Cache-Control": FRESH, "Content-Type": HTML}) for path in page_paths(root)]
     rules += [("/sw.js", {"Cache-Control": "no-cache"}), ("/js/*", {"Cache-Control": FRESH})]
     rules += [
         (path, {"Cache-Control": SHORT}) for path in ("/manifests/*", "/games.json", "/sitemap.xml", "/robots.txt")

@@ -4,13 +4,11 @@ name: Deploy site to Workers
 # (site/wrangler.toml) instead of GitHub Pages. It builds _site/ exactly as
 # pages.yml does and runs `wrangler deploy`, on the same pushes.
 #
-# Off until the owner flips it: the job is skipped until the SITE_ON_WORKERS
-# repository variable is "true". Deploying makes nothing live on its own,
-# either: the Worker has no workers.dev address, and only answers at
-# games.michaelwarkentin.com once mwarkentin/infra gives it that domain.
-# Meanwhile, and for a week or two after the switch, pages.yml keeps
-# deploying the same build, so moving back is a DNS change. See
-# site/README.md for the order of it all.
+# It runs while the SITE_ON_WORKERS repository variable is "true" (set by
+# mwarkentin/infra). The Worker has no workers.dev address: it answers only
+# through its route on games.michaelwarkentin.com, also made in infra.
+# pages.yml keeps deploying the same build for a week or two after the move,
+# so moving back is one DNS change. See site/README.md.
 
 on:
   push:
