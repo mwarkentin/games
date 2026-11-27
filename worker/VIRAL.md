@@ -188,13 +188,13 @@ each limit, and what they see:
 | --- | --- | --- | --- |
 | claims (`SURVEY_CLAIMS`) | 6 a minute | 7+ players each charting a word a minute | nothing: the claim waits a minute in the outbox and goes again; meanwhile someone elsewhere may chart it first |
 | words a day (`DAILY_CLAIMS`) | 300 a UTC day, in the shared world | 10 players charting 30 each; at 6 a minute, under an hour | "Today's charting limit reached · kept in your notes", for everyone there, until midnight UTC |
-| joins (`SURVEY_JOINS`) | 120 sockets a minute | 40+ players arriving or reconnecting at once (each opens 1–4) | "This part of the map is crowded right now", and a try a minute later |
+| joins (`SURVEY_JOINS`) | 240 sockets a minute (120 until 2026-11-27) | about 60+ players arriving or reconnecting at once (each opens 1–4) | "This part of the map is crowded right now", and a try a minute later |
 | sockets in one sector (`ADDRESS_SOCKETS`) | 40 | 40+ players from one address in one crowd, which the spawn rule makes likely | "crowded"; a newcomer is moved next door |
 | toward `MAX_ONLINE` (`ADDRESS_ONLINE`) | 40 counted | only matters near 25,000 | nothing |
 | emotes (`SURVEY_EMOTES`) | 20 a minute | rarely | "slow down" under the emote |
 | new guilds / guild joins | 5 / 20 an hour, in D1 | a class or a team joining from one invite | "too many requests, try again in a few minutes" |
 | link codes / tries / recovery codes | 10 / 20 / 5 an hour | rarely | the same |
-| Turnstile passes | 120 a minute | never in play | |
+| Turnstile passes | 240 a minute (the joins' binding, under its own key) | never in play | |
 
 Abuse is the other side: one address scripting the map gets 6 words a
 minute and 300 a day, and the pool of addresses it would take to chart the
@@ -212,13 +212,16 @@ world is what Turnstile is for.
   solver for each. It needs the daily count by id in the Atlas (one entry
   per surveyor, as the surveyor list already holds) and a second limiter
   key in the sector.
-- **Until then, for the day: `DAILY_CLAIMS` 300 → 1,000.** It's the limit
-  shared addresses meet first and the one that shows. A script at 6 a minute
-  still needs three hours to reach it, and the world would take one address
-  three years.
-- **`SURVEY_JOINS` 120 → 240 a minute.** A join it refuses wakes nothing,
-  and the claims limit is what stops a script charting, so a looser one
-  costs little and keeps a campus from being told "crowded" after a deploy.
+- **`DAILY_CLAIMS` stays at 300** (decided 2026-11-27). Raising it to 1,000
+  was weighed: it's the limit shared addresses meet first, but it would
+  give a pool of scripts' addresses three times the words a day. If
+  offices hit it on the day, `SURVEY_DAILY_CLAIMS` in `[vars]` raises it
+  without a code change (the Atlas reads it through `dailyClaims()`), at
+  the cost of a deploy.
+- **`SURVEY_JOINS` is 240 a minute** (from 120, 2026-11-27). A join it
+  refuses wakes nothing, and the claims limit is what stops a script
+  charting, so the looser one costs little and keeps a campus from being
+  told "crowded" after a deploy.
 - **Leave `SURVEY_CLAIMS` at 6 a minute.** It's the one that bounds a
   script; the per-surveyor limit above is the way to give shared addresses
   more.

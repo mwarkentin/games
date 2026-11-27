@@ -307,11 +307,13 @@ survey also limits each IP address, wherever it plays:
     word (see "The edge, the void and the wilds"). Before, sectors out there
     didn't report, so their words weren't capped, and one address could send
     the log up to about 8,600 rows a day.
-- **Sockets: 40 per address in a sector, and 120 new ones a minute per
+- **Sockets: 40 per address in a sector, and 240 new ones a minute per
   address.** A sector counts its own sockets exactly, so a few addresses
   can't fill it and lock everyone else out. A second binding
   (`SURVEY_JOINS`) counts sockets opened anywhere. A player roaming the map
-  opens about 10 an hour. The Worker asks it before forwarding a join, so a
+  opens about 10 an hour, and each opens 1–4 at once, so 240 lets about 60
+  people behind one address (a campus, a carrier's shared address) all
+  rejoin together after a deploy; it was 120. The Worker asks it before forwarding a join, so a
   join it refuses never wakes (or makes) a sector. Either limit is answered
   with `full`, and the game tries again in a minute or so. Every join counts
   toward `SURVEY_JOINS`, those then turned away for a full sector or a full

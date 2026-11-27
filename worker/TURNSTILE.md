@@ -32,7 +32,7 @@ without playing. The survey already limits each hashed IP address (see
 | claims (rate-limiting binding) | 6 a minute | one script racing everyone |
 | words charted in the shared world (counted by the Atlas) | 300 a UTC day | one address charting a lot slowly |
 | sockets in one sector | 40 | a few addresses filling a sector |
-| new sockets (rate-limiting binding) | 120 a minute | flooding every sector |
+| new sockets (rate-limiting binding) | 240 a minute | flooding every sector |
 
 At 300 a day, charting all 1,119,752 words takes one address about 3,700
 days. It takes 3,700 addresses one day. That's a small botnet, or a
@@ -103,7 +103,7 @@ those addresses also prove it's a browser with a person at it.
      own label, so there's still one secret to manage, and rotating it ends
      every pass.
    - **Asking for passes** counts against the `SURVEY_JOINS` limit
-     (120 a minute per address), under its own key.
+     (240 a minute per address), under its own key.
 
 The prototype answers:
 
