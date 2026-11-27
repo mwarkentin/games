@@ -1,0 +1,52 @@
+name: Deploy site to Workers
+
+# The live site served as static assets by the games-site Worker
+# (site/wrangler.toml) instead of GitHub Pages. It builds _site/ exactly as
+# pages.yml does and runs `wrangler deploy`, on the same pushes.
+#
+# It runs while the SITE_ON_WORKERS repository variable is "true" (set by
+# mwarkentin/infra). The Worker has no workers.dev address: it answers only
+# through its route on games.michaelwarkentin.com, also made in infra.
+# pages.yml keeps deploying the same build for a week or two after the move,
+# so moving back is one DNS change. See site/README.md.
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# One deploy at a time; a newer push waits rather than cutting one off.
+concurrency:
+  group: site
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    if: vars.SITE_ON_WORKERS == 'true' && vars.CLOUDFLARE_ACCOUNT_ID != ''
+    runs-on: ubuntu-latest
+    environment:
+      name: site
+      url: https://games.michaelwarkentin.com
+    env:
+      CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      WRANGLER_SEND_METRICS: 'false'
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0 # the colophon and dates come from full git history
+      - uses: astral-sh/setup-uv@v10.2.0
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+      - name: Build site
+        run: uv run --locked --no-dev ./build.sh
+      # The commit goes in the version's message, so `wrangler deployments
+      # list` and the dashboard say which build is live, and which to roll
+      # back to.
+      - name: Deploy
+        working-directory: site
+        run: npx --yes wrangler@4.151.0 deploy --message "$(git log -1 --format='%h %s' | cut -c1-100)"

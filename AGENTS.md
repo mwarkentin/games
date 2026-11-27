@@ -1,7 +1,8 @@
 # AGENTS.md
 
 This repo is the source of [games.michaelwarkentin.com](https://games.michaelwarkentin.com):
-small browser games, published by GitHub Pages on every push to `main`. Its
+small browser games, served by a Worker's static assets (`site/`, see
+Serving the site) and deployed on every push to `main`. Its
 sibling, [mwarkentin/tools](https://github.com/mwarkentin/tools), holds
 utilities; games live here so they get their own origin and their own rules.
 
@@ -34,7 +35,8 @@ utilities; games live here so they get their own origin and their own rules.
   build turns into `/changelog/<game>` (see Changelogs).
 - `build.sh` and `scripts/`: assemble the site in `_site/` (never committed).
   The build also generates `index.html`, `colophon.html`, the changelog
-  pages, `sitemap.xml`, `games.json` and each page's web app manifest, so
+  pages, `sitemap.xml`, `games.json`, each page's web app manifest,
+  `404.html` and `_headers` (each path's caching, see Serving the site), so
   don't create those by hand. Games are published as committed, apart from
   link-preview tags, `telemetry.js`, `feedback.js`, `analytics.js`, the
   home-screen app links and, for a page that imports modules, an import map
@@ -76,6 +78,8 @@ utilities; games live here so they get their own origin and their own rules.
 - `preview/`: the `games-preview` Worker, which has no code and serves each
   pull request's build of the site as a Worker Preview (see Previews). It's
   never deployed to production.
+- `site/`: the `games-site` Worker, which has no code either and serves the
+  live site, in place of GitHub Pages (see Serving the site).
 
 ## Rules for every game
 
@@ -91,7 +95,8 @@ utilities; games live here so they get their own origin and their own rules.
   Counterscale's own address, for `analytics.js`, and
   `challenges.cloudflare.com`, for Turnstile on Letterfield's shared survey
   (loaded only once `TURNSTILE_SITE_KEY` is set, never cached by `sw.js`;
-  see `worker/TURNSTILE.md`).
+  see `worker/TURNSTILE.md`). Cloudflare also adds its Web Analytics beacon
+  to every page it serves, outside the build (see Analytics).
 - Phone first: playable at 375px wide in portrait with touch alone (an
   on-screen pad, taps or swipes), and with a keyboard on a computer. No
   sideways scrolling. Inputs, textareas and selects use `font-size: 16px`
@@ -397,6 +402,14 @@ defaults would read a referrer and UTM tags from the query string and watch
 `autoTrackPageviews: false`. `tests/test_analytics.py` checks all of this
 against a fake Counterscale.
 
+Cloudflare Web Analytics runs too, on trial as an alternative to
+Counterscale: its automatic setup puts a beacon from
+`static.cloudflareinsights.com` into every page Cloudflare serves to a
+browser, with no cookies. It's on purpose, so don't remove it. It isn't in
+the built pages, so local runs, tests and previews don't have it. It's
+switched off in Cloudflare's dashboard, not here. Whichever of the two
+loses the trial goes.
+
 ## Home-screen apps
 
 Every page can be added to a phone's Home Screen and keeps working offline.
@@ -414,7 +427,9 @@ four seconds; modules and music come from the stored copy. Google Fonts are
 stored too. Nothing else goes through it, so the leaderboard, War's rooms,
 Sentry and Counterscale behave as they would without it. A hash of the
 pages, modules and music is the worker's version, so each deploy refreshes
-every stored copy.
+every stored copy. It works the same on GitHub Pages and on `games-site`
+(see Serving the site): the origin and addresses don't change, so stored
+copies carry over, and `sw.js` is never cached long by either.
 
 Each app's icon is `icons/<app>.svg`, a full-bleed 512×512 square with
 everything that matters inside the middle circle (radius 205), drawn with
@@ -430,6 +445,42 @@ The other tests block service workers so `page.route` sees every request;
 
 iPhones keep a Home Screen app's `localStorage` apart from Safari's, so
 scores, groups and initials saved in Safari don't carry over to it.
+
+## Serving the site
+
+The `games-site` Worker (`site/wrangler.toml`) serves the live site: the
+same `_site/` as static assets, with no code. `site/README.md` has the
+details, the checks and rolling back.
+
+- **Deploys:** `.github/workflows/site.yml` deploys it on every push to
+  `main` while the repository variable `SITE_ON_WORKERS` is `true`.
+  - GitHub Pages (`pages.yml`) still deploys the same build, as the
+    fallback for a week or two after the move on 2026-11-27, then goes.
+  - Agents never change DNS, infra or the variable.
+- **The domain:** a Workers route on the proxied `games` record, made in
+  mwarkentin/infra. Keep `routes` out of `site/wrangler.toml`, so wrangler
+  leaves the route alone.
+- **Addresses** follow `html_handling = "auto-trailing-slash"`:
+  - `/war` serves `war.html`, as on Pages.
+  - `/war.html` and `/war/` redirect to `/war`, keeping the query string,
+    where Pages answered the first itself.
+  - Keep linking pages by their plain address.
+  - Anything else is a 404 with `404.html`.
+- **Caching** is `_headers`, built by `scripts/build_headers.py`:
+  - Pages, modules and `sw.js` are checked on every load.
+  - Manifests and `games.json` keep ten minutes.
+  - Icons, previews and music keep a week.
+  - Pages also get their charset in `Content-Type`.
+  - A new kind of file in `_site/` needs a rule there.
+  - A path in two rules for one header gets both values joined, which
+    `tests/test_site_worker.py` stops.
+- **Tests:** `tests/test_site_worker.py` serves the built site through
+  `wrangler dev` with `site/wrangler.toml` and checks addresses, redirects,
+  404s, headers and that the service worker installs. It needs Node 22 and
+  npx (the pytest jobs set up Node); in a sandbox that blocks
+  `registry.npmjs.org` it fails at start-up.
+- `preview/wrangler.toml` has the same `[assets]` rules, and a test keeps
+  them equal, so each pull request's preview serves as the live site does.
 
 ## Link previews
 
@@ -506,7 +557,9 @@ kept up to date), and deletes it when the pull request closes.
 - **Hosting:** a [Worker Preview](https://developers.cloudflare.com/workers/previews/)
   of `games-preview` (`preview/wrangler.toml`), a Worker with nothing but
   static assets: the workflow runs `build.sh`, then `wrangler preview` uploads
-  `_site/`. `/war` serves `war.html`, as on GitHub Pages. It uses the same
+  `_site/`. `/war` serves `war.html`, as on GitHub Pages, by the same asset
+  rules as `games-site` (see Serving the site), `_headers` and 404 page
+  included, so a preview shows what the live site would. It uses the same
   Cloudflare token as the leaderboard Worker.
 - **Its own URLs:** `scripts/point_preview.py` rewrites the built site so the
   live site's address (link previews, the sitemap, the game list) becomes
