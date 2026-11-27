@@ -43,7 +43,7 @@ from common import ROOT, app_of, game_files
 SHARD_SECONDS = 450
 MAX_SHARDS = 3
 UNREAD = re.compile(
-    r"^(worker/|share/|preview/|docs/|AGENTS\.md$|CLAUDE\.md$|biome\.jsonc$|scripts/lint\.sh$|\.pre-commit-config\.yaml$|\.claude/)"
+    r"^(worker/|share/|preview/|docs/|site/README\.md$|AGENTS\.md$|CLAUDE\.md$|biome\.jsonc$|scripts/lint\.sh$|\.pre-commit-config\.yaml$|\.claude/)"
 )
 
 

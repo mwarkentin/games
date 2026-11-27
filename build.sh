@@ -25,5 +25,6 @@ mkdir -p "$SITE_DIR"
 "$PYTHON" scripts/build_changelog.py "$SITE_DIR"
 "$PYTHON" scripts/build_pwa.py "$SITE_DIR"
 "$PYTHON" scripts/build_sitemap.py "$SITE_DIR"
+"$PYTHON" scripts/build_headers.py "$SITE_DIR"
 
 echo "Site ready in $SITE_DIR"

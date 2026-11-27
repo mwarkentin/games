@@ -1,7 +1,8 @@
 # AGENTS.md
 
 This repo is the source of [games.michaelwarkentin.com](https://games.michaelwarkentin.com):
-small browser games, published by GitHub Pages on every push to `main`. Its
+small browser games, published by GitHub Pages on every push to `main`, and
+ready to move to a Worker's static assets (`site/`, see Serving the site). Its
 sibling, [mwarkentin/tools](https://github.com/mwarkentin/tools), holds
 utilities; games live here so they get their own origin and their own rules.
 
@@ -34,7 +35,8 @@ utilities; games live here so they get their own origin and their own rules.
   build turns into `/changelog/<game>` (see Changelogs).
 - `build.sh` and `scripts/`: assemble the site in `_site/` (never committed).
   The build also generates `index.html`, `colophon.html`, the changelog
-  pages, `sitemap.xml`, `games.json` and each page's web app manifest, so
+  pages, `sitemap.xml`, `games.json`, each page's web app manifest,
+  `404.html` and `_headers` (each path's caching, see Serving the site), so
   don't create those by hand. Games are published as committed, apart from
   link-preview tags, `telemetry.js`, `feedback.js`, `analytics.js`, the
   home-screen app links and, for a page that imports modules, an import map
@@ -76,6 +78,9 @@ utilities; games live here so they get their own origin and their own rules.
 - `preview/`: the `games-preview` Worker, which has no code and serves each
   pull request's build of the site as a Worker Preview (see Previews). It's
   never deployed to production.
+- `site/`: the `games-site` Worker, which has no code either and will serve
+  the live site in place of GitHub Pages (see Serving the site). Its deploys
+  are off until the owner turns them on.
 
 ## Rules for every game
 
@@ -410,7 +415,9 @@ four seconds; modules and music come from the stored copy. Google Fonts are
 stored too. Nothing else goes through it, so the leaderboard, War's rooms,
 Sentry and Counterscale behave as they would without it. A hash of the
 pages, modules and music is the worker's version, so each deploy refreshes
-every stored copy.
+every stored copy. It works the same on GitHub Pages and on `games-site`
+(see Serving the site): the origin and addresses don't change, so stored
+copies carry over, and `sw.js` is never cached long by either.
 
 Each app's icon is `icons/<app>.svg`, a full-bleed 512×512 square with
 everything that matters inside the middle circle (radius 205), drawn with
@@ -426,6 +433,37 @@ The other tests block service workers so `page.route` sees every request;
 
 iPhones keep a Home Screen app's `localStorage` apart from Safari's, so
 scores, groups and initials saved in Safari don't carry over to it.
+
+## Serving the site
+
+GitHub Pages serves the site today (`.github/workflows/pages.yml`, on every
+push to `main`). The `games-site` Worker (`site/wrangler.toml`) is ready to
+take over: the same `_site/` as static assets, with no code.
+`site/README.md` has how it serves the site and the cutover runbook.
+
+- **Off until the owner flips it.** `.github/workflows/site.yml` deploys it
+  on the same pushes only once the repository variable `SITE_ON_WORKERS` is
+  `true`, and even then it answers nowhere until mwarkentin/infra gives it
+  the domain. Pages keeps deploying alongside for a week or two after, so
+  moving back is a DNS change. Agents never change DNS, infra or the
+  variable.
+- **Addresses** follow `html_handling = "auto-trailing-slash"`: `/war`
+  serves `war.html`, as on Pages, but `/war.html` and `/war/` redirect to
+  `/war` with the query string kept, where Pages answers the first itself.
+  Keep linking pages by their plain address. Anything else is a 404 with
+  `404.html`.
+- **Caching** is `_headers`, built by `scripts/build_headers.py`: pages,
+  modules and `sw.js` checked on every load, manifests and `games.json` ten
+  minutes, icons, previews and music a week. A new kind of file in `_site/`
+  needs a rule there; a path in two rules for one header gets both values
+  joined, which `tests/test_site_worker.py` stops.
+- **Tests:** `tests/test_site_worker.py` serves the built site through
+  `wrangler dev` with `site/wrangler.toml` and checks addresses, redirects,
+  404s, headers and that the service worker installs. It needs Node 22 and
+  npx (the pytest jobs set up Node); in a sandbox that blocks
+  `registry.npmjs.org` it fails at start-up.
+- `preview/wrangler.toml` has the same `[assets]` rules, and a test keeps
+  them equal, so each pull request's preview serves as the live site will.
 
 ## Link previews
 
@@ -502,7 +540,9 @@ kept up to date), and deletes it when the pull request closes.
 - **Hosting:** a [Worker Preview](https://developers.cloudflare.com/workers/previews/)
   of `games-preview` (`preview/wrangler.toml`), a Worker with nothing but
   static assets: the workflow runs `build.sh`, then `wrangler preview` uploads
-  `_site/`. `/war` serves `war.html`, as on GitHub Pages. It uses the same
+  `_site/`. `/war` serves `war.html`, as on GitHub Pages, by the same asset
+  rules as `games-site` (see Serving the site), `_headers` and 404 page
+  included, so a preview shows what the live site would. It uses the same
   Cloudflare token as the leaderboard Worker.
 - **Its own URLs:** `scripts/point_preview.py` rewrites the built site so the
   live site's address (link previews, the sitemap, the game list) becomes
